@@ -20,9 +20,47 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spool_usage_history import SpoolUsageHistory
+from backend.app.services import spool_swaps
 from backend.app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
+
+
+def has_second_external_holder(raw_data: dict | None) -> bool:
+    """Whether the printer has a second external holder (vt_tray 255).
+
+    ``tray_now`` 255 means "nothing loaded" on a printer with one external
+    holder, and the right-hand external spool on one with two (H2D, X2D),
+    which lists it in ``vt_tray``. Both inventory modes read it this way
+    (#3405).
+    """
+    for vt in (raw_data or {}).get("vt_tray") or []:
+        if not isinstance(vt, dict):
+            continue
+        try:
+            if int(vt.get("id", 0)) == 255:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def mapping_names_no_used_tray(slot_to_tray: list | None, filament_usage: list[dict] | None) -> bool:
+    """Whether a slot-to-tray mapping names no tray for any slot the print used.
+
+    Such a mapping carries no evidence at all: typically a flat ams_mapping
+    whose external spool is -1 and came without an ams_mapping2 to resolve it
+    (#3166). Both inventory modes drop it, so the printer's own readings
+    (``tray_now``, the tray-change log) decide which tray fed the print
+    instead of every slot reading as unfed (#3405).
+    """
+    if not slot_to_tray:
+        return False
+    used_slots = [u.get("slot_id", 0) for u in filament_usage or [] if u.get("used_g", 0) > 0]
+    return bool(used_slots) and all(
+        not (0 < s <= len(slot_to_tray) and isinstance(slot_to_tray[s - 1], int) and slot_to_tray[s - 1] >= 0)
+        for s in used_slots
+    )
 
 
 def _decode_mqtt_mapping(mapping_raw: list | None) -> list[int] | None:
@@ -359,6 +397,7 @@ async def persist_session(
     db: AsyncSession,
     session: PrintSession,
     tray_change_log: list | None = None,
+    spool_change_log: list | None = None,
 ) -> None:
     """Mirror ``session`` into ``active_print_sessions`` for restart recovery.
 
@@ -381,6 +420,7 @@ async def persist_session(
     row.spool_assignments = _tray_map_to_json(session.spool_assignments) or None
     row.tray_remain_start = _tray_map_to_json(session.tray_remain_start) or None
     row.tray_change_log = [list(entry) for entry in (tray_change_log or [])] or None
+    row.spool_change_log = list(spool_change_log or []) or None
 
     await db.commit()
 
@@ -418,6 +458,14 @@ async def get_persisted_print_name(db: AsyncSession, printer_id: int) -> str | N
 
     row = await db.get(ActivePrintSession, printer_id)
     return row.print_name if row is not None else None
+
+
+async def get_persisted_spool_change_log(db: AsyncSession, printer_id: int) -> list[dict]:
+    """The mid-print spool assignments on the persisted row (services.spool_swaps)."""
+    from backend.app.models.active_print_session import ActivePrintSession
+
+    row = await db.get(ActivePrintSession, printer_id)
+    return [item for item in (row.spool_change_log or []) if isinstance(item, dict)] if row is not None else []
 
 
 async def get_persisted_ams_mapping(db: AsyncSession, printer_id: int) -> list[int] | None:
@@ -686,6 +734,22 @@ async def on_print_start(
                 {f"{k[0]}-{k[1]}": v for k, v in spool_assignments.items()},
             )
 
+    # The spool each assigned tray starts the print with, in the backend that
+    # writes the usage: a spool swapped on a tray mid-print is split against it
+    # (#3325).
+    if spoolman_owns_usage and db:
+        from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+        spoolman_slots = {
+            (row.ams_id, row.tray_id): row.spoolman_spool_id
+            for row in (
+                await db.execute(select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer_id))
+            ).scalars()
+        }
+        state.spool_change_log = spool_swaps.start_entries(spool_swaps.SPOOLMAN, spoolman_slots)
+    else:
+        state.spool_change_log = spool_swaps.start_entries(spool_swaps.INVENTORY, spool_assignments)
+
     # Capture the queue item's plate_id so 3MF parsing at completion is scoped to
     # the plate that actually ran, not the whole multi-plate file (#1697).
     plate_id: int | None = None
@@ -723,7 +787,12 @@ async def on_print_start(
     # tray by bambu_mqtt before this callback fires.
     if db:
         try:
-            await persist_session(db, session, getattr(state, "tray_change_log", None))
+            await persist_session(
+                db,
+                session,
+                getattr(state, "tray_change_log", None),
+                getattr(state, "spool_change_log", None),
+            )
         except Exception:
             logger.exception("[UsageTracker] Failed to persist print session for printer %d", printer_id)
 
@@ -966,6 +1035,21 @@ async def on_print_complete(
                         tray_label,
                         start_remain,
                         current_remain,
+                        printer_id,
+                    )
+                    continue
+
+                swap_segs = spool_swaps.segments(
+                    getattr(state, "spool_change_log", None), spool_swaps.INVENTORY, assign_ams_id, assign_tray_id
+                )
+                if any(layer > 0 for _, layer in swap_segs[1:]):
+                    # Start and end remain% belong to two different spools: the
+                    # difference is neither one's usage (#3325). An assignment
+                    # corrected before the first layer is not a swap; the live
+                    # spool takes the delta below, as it always did.
+                    logger.warning(
+                        "[UsageTracker] %s: spool swapped during the print, remain%% delta not charged for printer %d",
+                        tray_label,
                         printer_id,
                     )
                     continue
@@ -1589,22 +1673,15 @@ async def _track_from_3mf(
     )
 
     # A mapping that names no tray for any slot the print used carries no
-    # evidence at all -- typically a flat ams_mapping whose external spool is
-    # -1 and came without an ams_mapping2 to resolve it (#3166). Drop it so the
-    # tray_now evidence below decides, rather than leaving every slot unfed.
-    if slot_to_tray:
-        used_slots = [u.get("slot_id", 0) for u in filament_usage if u.get("used_g", 0) > 0]
-        if used_slots and all(
-            not (0 < s <= len(slot_to_tray) and isinstance(slot_to_tray[s - 1], int) and slot_to_tray[s - 1] >= 0)
-            for s in used_slots
-        ):
-            logger.info(
-                "[UsageTracker] 3MF: mapping %s names no tray for used slots %s — ignoring it",
-                slot_to_tray,
-                used_slots,
-            )
-            slot_to_tray = None
-            mapping_source = None
+    # evidence at all; see mapping_names_no_used_tray. Drop it so the tray_now
+    # evidence below decides, rather than leaving every slot unfed.
+    if mapping_names_no_used_tray(slot_to_tray, filament_usage):
+        logger.info(
+            "[UsageTracker] 3MF: mapping %s names no tray for the used slots — ignoring it",
+            slot_to_tray,
+        )
+        slot_to_tray = None
+        mapping_source = None
 
     # 5. For single-filament non-queue prints, use tray_now from printer state
     #    Priority: tray_change_log (multi-tray split) > tray_now_at_start > current tray_now
@@ -1647,15 +1724,22 @@ async def _track_from_3mf(
         elif state and 0 <= state.tray_now <= 254:
             tray_now_override = state.tray_now
             logger.info("[UsageTracker] 3MF: using current tray_now=%d", state.tray_now)
+        elif (
+            state
+            and state.tray_now == 255
+            and has_second_external_holder(getattr(state, "raw_data", None))
+            and not any(isinstance(c, (tuple, list)) and c and 0 <= c[0] <= 254 for c in tray_changes)
+        ):
+            # 255 = "no filament" on legacy printers, but valid 2nd external
+            # spool on H2-series. Ahead of last_loaded_tray: a print from that
+            # holder never updates it, so it still names the tray an earlier
+            # print used (#3405). A tray the printer switched to during this
+            # print says the 255 is an unload after it, not the feed.
+            tray_now_override = state.tray_now
+            logger.info("[UsageTracker] 3MF: using tray_now=255 (H2-series external spool)")
         elif state and 0 <= state.last_loaded_tray <= 253:
             tray_now_override = state.last_loaded_tray
             logger.info("[UsageTracker] 3MF: using last_loaded_tray=%d (post-retract fallback)", state.last_loaded_tray)
-        elif state and state.tray_now == 255:
-            # 255 = "no filament" on legacy printers, but valid 2nd external spool on H2-series
-            vt_tray = state.raw_data.get("vt_tray") or []
-            if any(int(vt.get("id", 0)) == 255 for vt in vt_tray if isinstance(vt, dict)):
-                tray_now_override = state.tray_now
-                logger.info("[UsageTracker] 3MF: using tray_now=255 (H2-series external spool)")
         if tray_now_override is None:
             logger.info(
                 "[UsageTracker] 3MF: no valid tray_now (at_start=%d, current=%s, last_loaded=%s)",
@@ -1678,6 +1762,8 @@ async def _track_from_3mf(
 
     # Per-layer gcode accuracy for partial prints
     layer_grams: dict[int, float] | None = None
+    # The same in the G-code's own grams, which the tray split weighs segments in.
+    layer_gcode_grams: dict[int, float] = {}
     if status != "completed":
         state = printer_manager.get_status(printer_id)
         current_layer = state.layer_num if state else 0
@@ -1692,19 +1778,22 @@ async def _track_from_3mf(
                     extract_layer_filament_usage_from_3mf,
                     get_cumulative_usage_at_layer,
                     mm_to_grams,
+                    slicer_grams_at_layer,
                 )
 
                 layer_usage = extract_layer_filament_usage_from_3mf(file_path, plate_id)
                 if layer_usage:
                     cumulative_mm = get_cumulative_usage_at_layer(layer_usage, current_layer)
                     filament_props = extract_filament_properties_from_3mf(file_path)
-                    layer_grams = {}
+                    # On the slicer's weights, as a finished print is (#3317).
+                    layer_grams = slicer_grams_at_layer(layer_usage, current_layer, filament_usage)
                     for filament_id, mm_used in cumulative_mm.items():
                         slot_id = filament_id + 1  # 0-based to 1-based
                         props = filament_props.get(slot_id, {})
                         density = props.get("density", 1.24)
                         diameter = props.get("diameter", 1.75)
-                        layer_grams[slot_id] = mm_to_grams(mm_used, diameter, density)
+                        layer_gcode_grams[slot_id] = mm_to_grams(mm_used, diameter, density)
+                        layer_grams.setdefault(slot_id, layer_gcode_grams[slot_id])
             except Exception:
                 pass  # Fall back to linear scaling
 
@@ -1721,6 +1810,29 @@ async def _track_from_3mf(
     # before this pass is skipped.
     charged_slots: set[int] = set()
     covered_before = frozenset(handled_trays)
+
+    # Spools swapped by hand on one tray mid-print (#3325). The G-code's
+    # per-layer usage is read only when a tray was actually swapped.
+    _swap_state = printer_manager.get_status(printer_id)
+    _swap_total = getattr(_swap_state, "total_layers", 0)
+    _swap_layer = getattr(_swap_state, "layer_num", 0)
+    if status == "completed":
+        _swap_end = max(_swap_total if isinstance(_swap_total, int) else 0, last_layer_num)
+    else:
+        _swap_end = _swap_layer if isinstance(_swap_layer, int) and _swap_layer > 0 else last_layer_num
+
+    def _read_layer_usage():
+        from backend.app.utils.threemf_tools import extract_layer_filament_usage_from_3mf
+
+        return extract_layer_filament_usage_from_3mf(file_path, plate_id)
+
+    _swap_shares = spool_swaps.Splitter(
+        getattr(_swap_state, "spool_change_log", None) if _swap_state else None,
+        spool_swaps.INVENTORY,
+        _read_layer_usage,
+        _swap_end,
+        completed=status == "completed",
+    ).shares
 
     for usage in filament_usage:
         slot_id = usage.get("slot_id", 0)
@@ -1763,9 +1875,14 @@ async def _track_from_3mf(
 
             from backend.app.utils.tray_split import compute_tray_split_grams
 
+            # The split prices segments in the G-code's grams and gives the last
+            # the rest, so it is run on the G-code's total and scaled to the
+            # slicer's after (#3317); a slicer total would leave the backup
+            # spool short, or with nothing.
+            split_total = layer_gcode_grams.get(slot_id) or total_weight
             segments = compute_tray_split_grams(
                 tray_changes=tray_changes,
-                total_weight=total_weight,
+                total_weight=split_total,
                 slot_id=slot_id,
                 layer_usage=split_layer_usage,
                 density=split_props.get("density", 1.24),
@@ -1773,6 +1890,7 @@ async def _track_from_3mf(
                 total_layers=(state.total_layers if state else 0) or 0,
                 last_layer_num=last_layer_num,
             )
+            segments = [(i, tray, grams * total_weight / split_total) for i, tray, grams in segments]
 
             for seg_idx, tray_global, segment_grams in segments:
                 if segment_grams <= 0:
@@ -1806,6 +1924,15 @@ async def _track_from_3mf(
                     segment_grams,
                 )
 
+                # A spool swapped by hand on this tray within the segment (#3325).
+                seg_shares = _swap_shares(
+                    seg_ams_id,
+                    seg_tray_id,
+                    slot_id,
+                    segment_grams,
+                    seg_start_layer,
+                    None if is_last else tray_changes[seg_idx + 1][1],
+                )
                 seg_spool_id = await _resolve_spool_id_for_tray(
                     printer_id=printer_id,
                     ams_id=seg_ams_id,
@@ -1814,7 +1941,7 @@ async def _track_from_3mf(
                     spool_assignments_snapshot=spool_assignments,
                     print_started_at=print_started_at,
                 )
-                if seg_spool_id is None:
+                if seg_shares is None and seg_spool_id is None:
                     logger.info(
                         "[UsageTracker] 3MF split: no spool at printer %d AMS%d-T%d, skipping segment",
                         printer_id,
@@ -1823,58 +1950,59 @@ async def _track_from_3mf(
                     )
                     continue
 
-                spool_result = await db.execute(select(Spool).where(Spool.id == seg_spool_id))
-                spool = spool_result.scalar_one_or_none()
-                if not spool:
-                    continue
+                for share_spool_id, share_grams in seg_shares or [(seg_spool_id, segment_grams)]:
+                    spool_result = await db.execute(select(Spool).where(Spool.id == share_spool_id))
+                    spool = spool_result.scalar_one_or_none()
+                    if not spool:
+                        continue
 
-                if not await _charge_spool(db, spool, segment_grams):
-                    continue
+                    if not await _charge_spool(db, spool, share_grams):
+                        continue
 
-                percent = round(segment_grams / (spool.label_weight or 1000) * 100)
+                    percent = round(share_grams / (spool.label_weight or 1000) * 100)
 
-                cost = None
-                cost_per_kg = spool.cost_per_kg if spool.cost_per_kg is not None else default_filament_cost
-                if cost_per_kg > 0:
-                    cost = round((segment_grams / 1000.0) * cost_per_kg, 2)
+                    cost = None
+                    cost_per_kg = spool.cost_per_kg if spool.cost_per_kg is not None else default_filament_cost
+                    if cost_per_kg > 0:
+                        cost = round((share_grams / 1000.0) * cost_per_kg, 2)
 
-                history = SpoolUsageHistory(
-                    spool_id=spool.id,
-                    printer_id=printer_id,
-                    print_name=print_name,
-                    weight_used=round(segment_grams, 1),
-                    percent_used=percent,
-                    status=status,
-                    cost=cost,
-                    archive_id=archive_id,
-                )
-                db.add(history)
+                    history = SpoolUsageHistory(
+                        spool_id=spool.id,
+                        printer_id=printer_id,
+                        print_name=print_name,
+                        weight_used=round(share_grams, 1),
+                        percent_used=percent,
+                        status=status,
+                        cost=cost,
+                        archive_id=archive_id,
+                    )
+                    db.add(history)
 
-                handled_trays.add(seg_key)
-                results.append(
-                    {
-                        "spool_id": spool.id,
-                        "weight_used": round(segment_grams, 1),
-                        "percent_used": percent,
-                        "ams_id": seg_ams_id,
-                        "tray_id": seg_tray_id,
-                        "material": spool.material,
-                        "cost": cost,
-                        "slot_id": slot_id,
-                        "color": _spool_color_to_hex(spool.rgba),
-                    }
-                )
+                    handled_trays.add(seg_key)
+                    results.append(
+                        {
+                            "spool_id": spool.id,
+                            "weight_used": round(share_grams, 1),
+                            "percent_used": percent,
+                            "ams_id": seg_ams_id,
+                            "tray_id": seg_tray_id,
+                            "material": spool.material,
+                            "cost": cost,
+                            "slot_id": slot_id,
+                            "color": _spool_color_to_hex(spool.rgba),
+                        }
+                    )
 
-                logger.info(
-                    "[UsageTracker] Spool %d consumed %.1fg (3MF split seg%d) on printer %d AMS%d-T%d (%s)",
-                    spool.id,
-                    segment_grams,
-                    seg_idx,
-                    printer_id,
-                    seg_ams_id,
-                    seg_tray_id,
-                    status,
-                )
+                    logger.info(
+                        "[UsageTracker] Spool %d consumed %.1fg (3MF split seg%d) on printer %d AMS%d-T%d (%s)",
+                        spool.id,
+                        share_grams,
+                        seg_idx,
+                        printer_id,
+                        seg_ams_id,
+                        seg_tray_id,
+                        status,
+                    )
 
             continue  # Skip normal single-tray processing for this slot
 
@@ -1968,7 +2096,15 @@ async def _track_from_3mf(
             spool_assignments_snapshot=spool_assignments,
             print_started_at=print_started_at,
         )
-        if spool_id is None:
+        # Use per-layer grams if available, otherwise linear scale
+        if layer_grams and slot_id in layer_grams:
+            slot_grams = layer_grams[slot_id]
+        else:
+            slot_grams = used_g * scale
+
+        # A spool swapped by hand on this tray mid-print shares it (#3325).
+        shares = _swap_shares(ams_id, tray_id, slot_id, slot_grams) if slot_grams > 0 else None
+        if shares is None and spool_id is None:
             # WARNING, not INFO: everything upstream of this line succeeded --
             # the 3MF was found, the grams were read, the tray resolved -- and
             # the print will still report success while this filament is never
@@ -1984,79 +2120,76 @@ async def _track_from_3mf(
             unassigned_global_trays.append(global_tray_id)
             continue
 
-        # Load spool
-        spool_result = await db.execute(select(Spool).where(Spool.id == spool_id))
-        spool = spool_result.scalar_one_or_none()
-        if not spool:
+        if slot_grams <= 0:
             continue
 
-        # Use per-layer grams if available, otherwise linear scale
-        if layer_grams and slot_id in layer_grams:
-            weight_grams = layer_grams[slot_id]
-        else:
-            weight_grams = used_g * scale
+        for share_spool_id, weight_grams in shares or [(spool_id, slot_grams)]:
+            # Load spool
+            spool_result = await db.execute(select(Spool).where(Spool.id == share_spool_id))
+            spool = spool_result.scalar_one_or_none()
+            if not spool:
+                continue
 
-        if weight_grams <= 0:
-            continue
+            # Update spool
+            if not await _charge_spool(db, spool, weight_grams):
+                continue
 
-        # Update spool
-        if not await _charge_spool(db, spool, weight_grams):
-            continue
+            percent = round(weight_grams / (spool.label_weight or 1000) * 100)
 
-        percent = round(weight_grams / (spool.label_weight or 1000) * 100)
+            # Calculate cost for this usage
+            cost = None
+            cost_per_kg = spool.cost_per_kg if spool.cost_per_kg is not None else default_filament_cost
+            if cost_per_kg > 0:
+                cost = round((weight_grams / 1000.0) * cost_per_kg, 2)
 
-        # Calculate cost for this usage
-        cost = None
-        cost_per_kg = spool.cost_per_kg if spool.cost_per_kg is not None else default_filament_cost
-        if cost_per_kg > 0:
-            cost = round((weight_grams / 1000.0) * cost_per_kg, 2)
+            # Insert usage history record
+            history = SpoolUsageHistory(
+                spool_id=spool.id,
+                printer_id=printer_id,
+                print_name=print_name,
+                weight_used=round(weight_grams, 1),
+                percent_used=percent,
+                status=status,
+                cost=cost,
+                archive_id=archive_id,
+            )
+            db.add(history)
 
-        # Insert usage history record
-        history = SpoolUsageHistory(
-            spool_id=spool.id,
-            printer_id=printer_id,
-            print_name=print_name,
-            weight_used=round(weight_grams, 1),
-            percent_used=percent,
-            status=status,
-            cost=cost,
-            archive_id=archive_id,
-        )
-        db.add(history)
+            handled_trays.add(key)
+            results.append(
+                {
+                    "spool_id": spool.id,
+                    "weight_used": round(weight_grams, 1),
+                    "percent_used": percent,
+                    "ams_id": ams_id,
+                    "tray_id": tray_id,
+                    "material": spool.material,
+                    "cost": cost,
+                    "slot_id": slot_id,
+                    "color": _spool_color_to_hex(spool.rgba),
+                }
+            )
 
-        handled_trays.add(key)
-        results.append(
-            {
-                "spool_id": spool.id,
-                "weight_used": round(weight_grams, 1),
-                "percent_used": percent,
-                "ams_id": ams_id,
-                "tray_id": tray_id,
-                "material": spool.material,
-                "cost": cost,
-                "slot_id": slot_id,
-                "color": _spool_color_to_hex(spool.rgba),
-            }
-        )
-
-        # Determine mapping source for debug logging
-        if tray_now_override is not None:
-            map_src = ", tray_now"
-        elif mapping_source:
-            map_src = f", {mapping_source}_map"
-        else:
-            map_src = ""
-        logger.info(
-            "[UsageTracker] Spool %d consumed %.1fg (3MF%s%s) on printer %d AMS%d-T%d (%s)",
-            spool.id,
-            weight_grams,
-            " per-layer" if (layer_grams and slot_id in layer_grams) else (f" scaled {scale:.0%}" if scale < 1 else ""),
-            map_src,
-            printer_id,
-            ams_id,
-            tray_id,
-            status,
-        )
+            # Determine mapping source for debug logging
+            if tray_now_override is not None:
+                map_src = ", tray_now"
+            elif mapping_source:
+                map_src = f", {mapping_source}_map"
+            else:
+                map_src = ""
+            logger.info(
+                "[UsageTracker] Spool %d consumed %.1fg (3MF%s%s) on printer %d AMS%d-T%d (%s)",
+                spool.id,
+                weight_grams,
+                " per-layer"
+                if (layer_grams and slot_id in layer_grams)
+                else (f" scaled {scale:.0%}" if scale < 1 else ""),
+                map_src,
+                printer_id,
+                ams_id,
+                tray_id,
+                status,
+            )
 
     # --- Adopt the matched inventory spools' colours for the archive (#1494) ---
     # The archive's filament_color was set from the slicer's 3MF at creation

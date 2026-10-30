@@ -341,6 +341,11 @@ def compute_time_accuracy(archive: PrintArchive, run_aggregate: dict | None = No
     # Both fields are cleared so the card shows estimate + no badge.
     if run_aggregate and (run_aggregate.get("run_count") or 0) > 1:
         return result
+    # A run whose times were not measured (#3310): its end is the slicer's
+    # estimate or the reconnect. The card shows the estimate and no badge,
+    # as for multi-run archives.
+    if run_aggregate and run_aggregate.get("unmeasured_run_count"):
+        return result
 
     if archive.started_at and archive.completed_at and archive.status == "completed":
         actual_seconds = int((archive.completed_at - archive.started_at).total_seconds())
@@ -362,7 +367,7 @@ async def _load_run_aggregates(db: AsyncSession, archive_ids: list[int]) -> dict
     """Batch-load per-archive run aggregates from PrintLogEntry.
 
     Returns ``{archive_id: {run_count, last_run_at, total_filament_actual_grams,
-    successful_run_count, failed_run_count}}``. Archives with no logged runs are
+    successful_run_count, failed_run_count, unmeasured_run_count}}``. Archives with no logged runs are
     absent from the map; callers should treat that as zero/none.
     """
     from backend.app.models.print_log import PrintLogEntry
@@ -377,18 +382,20 @@ async def _load_run_aggregates(db: AsyncSession, archive_ids: list[int]) -> dict
             func.coalesce(func.sum(PrintLogEntry.filament_used_grams), 0).label("total_filament"),
             func.sum(case((PrintLogEntry.status == "completed", 1), else_=0)).label("successful"),
             func.sum(case((PrintLogEntry.status == "failed", 1), else_=0)).label("failed"),
+            func.sum(case((PrintLogEntry.duration_unmeasured.is_(True), 1), else_=0)).label("estimated"),
         )
         .where(PrintLogEntry.archive_id.in_(archive_ids))
         .group_by(PrintLogEntry.archive_id)
     )
     aggregates: dict[int, dict] = {}
-    for archive_id, run_count, last_run_at, total_filament, successful, failed in rows.all():
+    for archive_id, run_count, last_run_at, total_filament, successful, failed, estimated in rows.all():
         aggregates[archive_id] = {
             "run_count": int(run_count or 0),
             "last_run_at": last_run_at,
             "total_filament_actual_grams": float(total_filament) if total_filament else None,
             "successful_run_count": int(successful or 0),
             "failed_run_count": int(failed or 0),
+            "unmeasured_run_count": int(estimated or 0),
         }
     return aggregates
 
@@ -539,7 +546,7 @@ async def list_archives(
     ),
     limit: int = 50,
     offset: int = 0,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -677,7 +684,7 @@ async def list_archives(
 
 @router.get("/last-per-printer", response_model=list[ArchiveResponse])
 async def list_last_archive_per_printer(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -736,7 +743,7 @@ async def list_last_archive_per_printer(
 
 @router.get("/no-3mf-warning")
 async def no_3mf_warning(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -857,7 +864,7 @@ async def list_archives_slim(
     created_by_id: int | None = Query(None, description="Filter by user who created the print (-1 for no user)"),
     limit: int = Query(default=10000, le=50000),
     offset: int = 0,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -974,7 +981,7 @@ async def search_archives(
     status: str | None = None,
     limit: int = 50,
     offset: int = 0,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -1107,7 +1114,7 @@ async def search_archives(
 
 @router.post("/search/rebuild-index")
 async def rebuild_search_index(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Rebuild the full-text search index from existing archives.
@@ -1161,7 +1168,7 @@ async def analyze_failures(
     printer_id: int | None = None,
     project_id: int | None = None,
     created_by_id: int | None = Query(None, description="Filter by user who created the print (-1 for no user)"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -1203,7 +1210,7 @@ async def analyze_failures(
 @router.get("/compare")
 async def compare_archives(
     archive_ids: str = Query(..., description="Comma-separated archive IDs (2-5)"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -1275,7 +1282,7 @@ async def export_archives(
         None, max_length=64, description="IANA zone the dates are calendar days in; the server's when omitted"
     ),
     search: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     printer_scope: PrinterScope = RequestPrinterScope,
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
@@ -1360,7 +1367,7 @@ async def export_stats(
     printer_id: int | None = None,
     project_id: int | None = None,
     created_by_id: int | None = Query(None, description="Filter by user who created the print (-1 for no user)"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.STATS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
@@ -1409,7 +1416,7 @@ async def get_archive_stats(
         None, ge=-840, le=840, description="Client UTC offset in minutes east of UTC; used when tz is omitted"
     ),
     created_by_id: int | None = Query(None, description="Filter by user who created the print (-1 for no user)"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.STATS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
@@ -1560,6 +1567,8 @@ async def get_archive_stats(
         .where(
             PrintLogEntry.status == "completed",
             PrintArchive.print_time_seconds.isnot(None),
+            # A run whose times were not measured is no sample (#3310).
+            PrintLogEntry.duration_unmeasured.is_not(True),
             *base_conditions,
         )
     )
@@ -1822,7 +1831,7 @@ async def _sum_snapshot_deltas(
 
 @router.get("/tags")
 async def get_all_tags(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -1865,7 +1874,7 @@ async def get_all_tags(
 async def rename_tag(
     tag_name: str,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -1918,7 +1927,7 @@ async def rename_tag(
 @router.delete("/tags/{tag_name}")
 async def delete_tag(
     tag_name: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -1954,7 +1963,7 @@ async def delete_tag(
 @router.get("/{archive_id}", response_model=ArchiveResponse)
 async def get_archive(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -1985,7 +1994,7 @@ async def get_archive(
 @router.get("/{archive_id}/delete-impact")
 async def get_archive_delete_impact(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -2015,7 +2024,7 @@ async def get_archive_delete_impact(
 @router.get("/{archive_id}/runs", response_model=PrintLogResponse)
 async def list_archive_runs(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -2048,7 +2057,7 @@ async def list_archive_runs(
 async def find_similar_archives(
     archive_id: int,
     limit: int = 10,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -2085,7 +2094,7 @@ async def find_similar_archives(
 async def update_archive(
     archive_id: int,
     update_data: ArchiveUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_UPDATE_ALL,
@@ -2192,10 +2201,12 @@ async def update_archive(
     if to_mirror and previous_status != "printing":
         from backend.app.models.print_log import PrintLogEntry
 
+        # The latest by its start, the run the archive shows: ids follow the
+        # starts too, but plates on two printers can end the other way round.
         latest_entry = await db.scalar(
             select(PrintLogEntry)
             .where(PrintLogEntry.archive_id == archive_id)
-            .order_by(PrintLogEntry.id.desc())
+            .order_by(PrintLogEntry.started_at.desc().nulls_last(), PrintLogEntry.id.desc())
             .limit(1)
         )
         if latest_entry is not None:
@@ -2244,7 +2255,7 @@ async def update_archive(
 @router.post("/{archive_id}/favorite", response_model=ArchiveResponse)
 async def toggle_favorite(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_UPDATE_ALL,
@@ -2269,10 +2280,10 @@ async def _spoolman_owns_cost(db: AsyncSession) -> bool:
 
     Both cost recalculations below rebuild a print's cost from
     ``SpoolUsageHistory``, and fall back to the built-in Filament catalogue or
-    the global default rate when there are no rows for it. In Spoolman mode
-    there are never any rows -- the built-in usage tracker is handed
-    ``spoolman_owns_usage`` at print start and writes none -- so that fallback
-    is not a recalculation, it is a downgrade: it would overwrite the
+    the global default rate when there are no rows for it. In Spoolman mode a
+    print has rows only since #3407, when Spoolman charges started being
+    recorded; for an older print, or one whose charges Spoolman refused, that
+    fallback is not a recalculation, it is a downgrade: it would overwrite the
     Spoolman-priced figure ``spoolman_tracking`` recorded at completion with a
     default-rate one, and the per-slot spool resolution it came from is
     transient and cannot be rebuilt here (#2591).
@@ -2341,17 +2352,20 @@ async def _one_print_cost(db: AsyncSession, archive: PrintArchive, previous_gram
 
 @router.post("/recalculate-costs")
 async def recalculate_all_costs(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Recalculate costs for all archives based on filament usage and prices."""
     from backend.app.services.print_log import mirror_archive_cost
+    from backend.app.services.usage_repricing import reprice_usage
 
     # Only the archives of the caller's printers, as the archive list shows them.
     query = select(PrintArchive)
+    scoped_ids = None
     if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
         query = query.where(clause)
+        scoped_ids = select(PrintArchive.id).where(clause)
     result = await db.execute(query)
     archives = list(result.scalars().all())
 
@@ -2360,6 +2374,15 @@ async def recalculate_all_costs(
     filaments = {f.type: f.cost_per_kg for f in filament_result.scalars().all()}
 
     default_cost_per_kg = await _default_cost_per_kg(db)
+    spoolman_owns = await _spoolman_owns_cost(db)
+
+    # The usage first, at the spools' current prices: the sums below read it,
+    # and a price corrected since the print changed nothing otherwise (#3414).
+    # A caller limited to some printers leaves the usage of no archive alone.
+    repriced = await reprice_usage(
+        db, scoped_ids, default_cost_per_kg=default_cost_per_kg, spoolman_enabled=spoolman_owns
+    )
+    await db.flush()
 
     # Pre-fetch all usage costs and tracked weight by archive_id.
     # Tracked weight is used to top-up the cost at the default rate for any
@@ -2388,8 +2411,6 @@ async def recalculate_all_costs(
             )
         ).all()
     }
-
-    spoolman_owns = await _spoolman_owns_cost(db)
 
     updated = 0
     preserved = 0
@@ -2428,21 +2449,30 @@ async def recalculate_all_costs(
         if new_cost is not None and archive.cost != new_cost:
             previous_cost = archive.cost
             archive.cost = new_cost
-            # Its run had the old figure: statistics read the run's cost.
-            await mirror_archive_cost(db, archive, previous_cost)
+            # Its run had the old figure: statistics read the run's cost. A
+            # run its own usage priced keeps that, repriced above.
+            await mirror_archive_cost(db, archive, previous_cost, skip_runs=repriced.priced_runs)
             updated += 1
 
     await db.commit()
     message = f"Recalculated costs for {updated} archives"
     if preserved:
         message += f"; kept {preserved} priced from Spoolman"
-    return {"message": message, "updated": updated, "preserved": preserved}
+    if repriced.spoolman_unreachable:
+        message += f"; Spoolman not reachable, {repriced.spoolman_unreachable} usage records kept their price"
+    return {
+        "message": message,
+        "updated": updated,
+        "preserved": preserved,
+        "usage_repriced": repriced.repriced,
+        "spoolman_unreachable": repriced.spoolman_unreachable,
+    }
 
 
 @router.get("/{archive_id}/duplicates")
 async def get_archive_duplicates(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -2470,7 +2500,7 @@ async def get_archive_duplicates(
 
 @router.post("/backfill-hashes")
 async def backfill_content_hashes(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -2527,7 +2557,7 @@ async def delete_archive(
             "drop the row from statistics (#1343)."
         ),
     ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_DELETE_ALL,
@@ -2581,7 +2611,13 @@ async def delete_archive(
 
         from backend.app.models.print_log import PrintLogEntry
 
-        await db.execute(sa_delete(PrintLogEntry).where(PrintLogEntry.archive_id == archive_id))
+        # Its open run too (a print started on the printer, with no queue item
+        # to refuse the delete): it has no archive left to end on.
+        await db.execute(
+            sa_delete(PrintLogEntry)
+            .where(PrintLogEntry.archive_id == archive_id)
+            .execution_options(include_open_runs=True)
+        )
         await db.commit()
 
         if not await service.delete_archive(archive_id):
@@ -2597,7 +2633,7 @@ async def delete_archive(
 async def download_archive(
     archive_id: int,
     inline: bool = False,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -2630,7 +2666,7 @@ async def download_archive(
 async def download_archive_with_filename(
     archive_id: int,
     filename: str,  # noqa: ARG001 -- path segment only: slicers detect the format from the URL's filename
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -2658,7 +2694,7 @@ async def download_archive_with_filename(
 @router.post("/{archive_id}/slicer-token")
 async def create_archive_slicer_token(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -2687,7 +2723,7 @@ async def download_archive_for_slicer(
     archive_id: int,
     token: str,
     filename: str,  # noqa: ARG001 -- path segment only: slicers detect the format from the URL's filename
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Download 3MF file using a slicer download token.
 
@@ -2721,7 +2757,7 @@ async def download_archive_for_slicer(
 @router.get("/{archive_id}/thumbnail")
 async def get_thumbnail(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.ARCHIVES_READ_ALL,
@@ -2961,7 +2997,7 @@ async def download_archive_media_with_token(
 @router.get("/{archive_id}/timelapse")
 async def get_timelapse(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.ARCHIVES_READ_ALL,
@@ -3007,7 +3043,7 @@ async def get_timelapse(
 @router.delete("/{archive_id}/timelapse")
 async def delete_timelapse(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_DELETE_ALL,
@@ -3227,7 +3263,7 @@ async def scan_timelapse(
 
     # Read the archive + printer in a short session and release the pooled DB
     # connection BEFORE the FTP scan/download below — a timelapse pull walks
-    # several directories and fetches a 100MB+ video, so holding Depends(get_db)
+    # several directories and fetches a 100MB+ video, so holding Depends(get_db, scope="function")
     # across it pinned one connection idle-in-transaction for minutes (#2572).
     # Scalar columns stay readable on the detached rows (expire_on_commit=False);
     # the attach at the end runs in its own fresh short session.
@@ -3402,7 +3438,7 @@ async def select_timelapse(
 async def upload_timelapse(
     archive_id: int,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -3428,7 +3464,7 @@ async def upload_timelapse(
 @router.get("/{archive_id}/timelapse/info")
 async def get_timelapse_info(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -3465,7 +3501,7 @@ async def get_timelapse_thumbnails(
     archive_id: int,
     count: int = Query(10, ge=1, le=30),
     width: int = Query(160, ge=80, le=320),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -3513,7 +3549,7 @@ async def process_timelapse(
     save_mode: str = Form("new"),
     output_filename: str = Form(None),
     audio: UploadFile = File(None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -3657,7 +3693,7 @@ async def _timelapse_job_archive(archive_id: int, db: AsyncSession, printer_scop
 @router.get("/{archive_id}/timelapse/job")
 async def get_timelapse_job(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -3675,7 +3711,7 @@ async def get_timelapse_job(
 @router.delete("/{archive_id}/timelapse/job")
 async def cancel_timelapse_job(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -3700,7 +3736,7 @@ async def cancel_timelapse_job(
 async def upload_photo(
     archive_id: int,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_UPDATE_ALL,
@@ -3747,7 +3783,7 @@ async def upload_photo(
 async def get_photo(
     archive_id: int,
     filename: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.ARCHIVES_READ_ALL,
@@ -3799,7 +3835,7 @@ async def get_photo(
 async def delete_photo(
     archive_id: int,
     filename: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_DELETE_ALL,
@@ -3989,7 +4025,7 @@ async def confirm_outcome_page(
     request: Request,
     token: str,
     verdict: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Open a one-tap verdict link. Reads only — the verdict is recorded by POST.
 
@@ -4024,7 +4060,7 @@ async def confirm_outcome_page(
 async def confirm_outcome_by_token(
     token: str,
     verdict: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Record a print-outcome verdict via the capability token from a push notification.
 
@@ -4084,7 +4120,7 @@ async def get_qrcode(
     archive_id: int,
     request: Request,
     size: int = 200,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.ARCHIVES_READ_ALL,
@@ -4259,7 +4295,7 @@ def _slice_info_filament_colors(zf: zipfile.ZipFile, names: list[str]) -> list[s
 @router.get("/{archive_id}/capabilities")
 async def get_archive_capabilities(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -4349,7 +4385,7 @@ async def get_archive_capabilities(
 async def get_gcode(
     archive_id: int,
     plate: int | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -4415,7 +4451,7 @@ async def get_gcode(
 @router.get("/{archive_id}/plate-preview")
 async def get_plate_preview(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.ARCHIVES_READ_ALL,
@@ -4501,7 +4537,7 @@ async def upload_archive(
             "title is a stale name from whoever originally sliced it."
         ),
     ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_CREATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -4554,7 +4590,7 @@ async def upload_archives_bulk(
             "by default, which keeps the embedded name."
         ),
     ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_CREATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -4626,7 +4662,7 @@ async def upload_archives_bulk(
 @router.get("/{archive_id}/plates")
 async def get_archive_plates(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -4947,7 +4983,7 @@ async def get_plate_thumbnail(
     archive_id: int,
     plate_index: int,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.ARCHIVES_READ_ALL,
@@ -5049,7 +5085,7 @@ async def get_filament_requirements(
     plate_id: int | None = None,
     request_id: str | None = None,
     full_slots: bool = False,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -5220,7 +5256,7 @@ async def get_filament_requirements(
 async def slice_archive(
     archive_id: int,
     request: SliceRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
     printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
@@ -5289,6 +5325,9 @@ async def slice_archive(
     model_bytes = src_path.read_bytes()
     archive_id_local = archive.id
     user_id = current_user.id if current_user else None
+    # The new archive is its owner's also when a key, which resolves no cloud
+    # presets, slices it.
+    owner_id = user_id if user_id is not None else (actor.id if isinstance(actor, ApiKeyActor) else None)
 
     # Block a cross-nozzle-class re-slice (single-nozzle <-> H2D) up front —
     # BambuStudio's multi-extruder validator would otherwise reject it with a
@@ -5312,6 +5351,7 @@ async def slice_archive(
                     source_archive=src_archive,
                     current_user_id=user_id,
                     job_id=job_id,
+                    owner_id=owner_id,
                 )
             except HTTPException as exc:
                 raise http_exception_to_job_error(exc) from exc
@@ -5321,7 +5361,7 @@ async def slice_archive(
         kind="archive",
         source_id=archive.id,
         source_name=archive.print_name or archive.filename or f"archive {archive.id}",
-        owner_id=user_id,
+        owner_id=owner_id,
         run=_run,
     )
     return {
@@ -5363,7 +5403,7 @@ async def reprint_archive(
 @router.get("/{archive_id}/project-page")
 async def get_project_page(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -5394,7 +5434,7 @@ async def get_project_page(
 async def update_project_page(
     archive_id: int,
     update_data: ProjectPageUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_UPDATE_ALL,
@@ -5436,7 +5476,7 @@ async def update_project_page(
 async def get_project_image(
     archive_id: int,
     image_path: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.ARCHIVES_READ_ALL,
@@ -5573,7 +5613,7 @@ def _resolve_attachment_path(archive: PrintArchive, kind: str, attachment_filena
 async def upload_source_3mf(
     archive_id: int,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_UPDATE_ALL,
@@ -5619,7 +5659,7 @@ async def upload_source_3mf(
 @router.get("/{archive_id}/source")
 async def download_source_3mf(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -5654,7 +5694,7 @@ async def download_source_3mf(
 async def download_source_3mf_for_slicer(
     archive_id: int,
     filename: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -5685,7 +5725,7 @@ async def download_source_3mf_for_slicer(
 @router.post("/{archive_id}/source-slicer-token")
 async def create_source_slicer_token(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -5712,7 +5752,7 @@ async def download_source_3mf_for_slicer_with_token(
     archive_id: int,
     token: str,
     filename: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Download source 3MF using a slicer download token.
 
@@ -5748,7 +5788,7 @@ async def download_source_3mf_for_slicer_with_token(
 async def upload_source_3mf_by_name(
     file: UploadFile = File(...),
     print_name: str = Query(None, description="Match archive by print name"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -5832,7 +5872,7 @@ async def upload_source_3mf_by_name(
 @router.delete("/{archive_id}/source")
 async def delete_source_3mf(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_DELETE_ALL,
@@ -5870,7 +5910,7 @@ async def delete_source_3mf(
 async def upload_f3d(
     archive_id: int,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_UPDATE_ALL,
@@ -5913,7 +5953,7 @@ async def upload_f3d(
 @router.get("/{archive_id}/f3d")
 async def download_f3d(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
@@ -5947,7 +5987,7 @@ async def download_f3d(
 @router.delete("/{archive_id}/f3d")
 async def delete_f3d(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_DELETE_ALL,

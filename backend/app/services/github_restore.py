@@ -1648,6 +1648,12 @@ class GitHubRestoreService:
     ) -> None:
         spools = inventory.get("spools") if isinstance(inventory, dict) else None
         if not isinstance(spools, list):
+            usage = usage_payload.get("usage_history") if isinstance(usage_payload, dict) else None
+            if isinstance(usage, list) and usage:
+                # A Spoolman-mode backup: usage of Spoolman spools, no built-in
+                # spools to go with it (#3407).
+                await self._restore_spool_usage(db, usage_payload, tally, {}, archive_id_map)
+                return
             tally.note("noData", "No data of this kind in this backup")
             return
 
@@ -1880,9 +1886,14 @@ class GitHubRestoreService:
             # cannot be recognised and is re-inserted, which is what the
             # IS NULL comparison this replaced did too: the column is
             # non-nullable, so it never matched either.
+            # Spoolman's ids are its own, so they come back as they were.
+            spoolman_spool_id = entry.get("spoolman_spool_id")
+            if not isinstance(spoolman_spool_id, int) or isinstance(spoolman_spool_id, bool):
+                spoolman_spool_id = None
             existing = await db.execute(
                 select(SpoolUsageHistory).where(
                     SpoolUsageHistory.spool_id == spool_id,
+                    SpoolUsageHistory.spoolman_spool_id == spoolman_spool_id,
                     SpoolUsageHistory.weight_used == (entry.get("weight_used") or 0),
                     SpoolUsageHistory.print_name == entry.get("print_name"),
                 )
@@ -1921,6 +1932,7 @@ class GitHubRestoreService:
                 )
             row = SpoolUsageHistory(
                 spool_id=spool_id,
+                spoolman_spool_id=spoolman_spool_id,
                 printer_id=printer_id,
                 print_name=entry.get("print_name"),
                 archive_id=archive_id,
@@ -2142,7 +2154,7 @@ class GitHubRestoreService:
         # narrowed to what is actually left uncertain.
         tally.note(
             "kprofilesAckUnreliable",
-            "A printer that does not answer still counts as restored — verify the profiles on the printer",
+            "A printer that does not confirm the write still counts as restored — verify the profiles on the printer",
         )
 
         for serial, entries in sorted(by_serial.items()):
@@ -2185,6 +2197,19 @@ class GitHubRestoreService:
                 # is a silent no-op — the printer drops it and we would still
                 # report the profile restored. So resolve the live index first.
                 current = await self._current_kprofile_index(client, nozzle, serial)
+                if current is None:
+                    # Unread is not empty: matching against nothing would send
+                    # every profile as a new one beside the originals still on
+                    # the printer (#3404). Nothing is sent.
+                    tally.failed += len(profiles)
+                    tally.note(
+                        "kprofilesReadFailed",
+                        f"{printer.name} ({serial}) did not answer the K-profile read for {nozzle} - not restored",
+                        nozzle=nozzle,
+                        printer=printer.name,
+                        serial=serial,
+                    )
+                    continue
 
                 profile_dicts = []
                 unmatched = 0
@@ -2329,17 +2354,19 @@ class GitHubRestoreService:
             return True, ""
 
     @staticmethod
-    async def _current_kprofile_index(client, nozzle: str, serial: str) -> list:
-        """Read the printer's live profiles for one nozzle.
+    async def _current_kprofile_index(client, nozzle: str, serial: str) -> list | None:
+        """Read the printer's live profiles for one nozzle, or None when the
+        read failed.
 
-        Best-effort: a read failure degrades to "nothing matched", which makes
-        every profile an add rather than aborting the restore.
+        A failed read used to be "nothing matched", which made every profile
+        an add next to the ones still on the printer (#3404). The caller skips
+        the nozzle instead; the rest of the restore goes on.
         """
         try:
             return list(await client.get_kprofiles(nozzle_diameter=nozzle) or [])
         except Exception as e:
             logger.warning("Could not read live K-profiles for %s nozzle %s: %s", serial, nozzle, e)
-            return []
+            return None
 
     @staticmethod
     def _match_kprofile(entry: dict, current: list, claimed: set[int]):

@@ -71,7 +71,7 @@ async def search_projects(
     status: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """The projects list page: search code, title, description and tag names."""
@@ -152,7 +152,7 @@ async def search_projects(
 
 @router.get("/tags", response_model=list[ProjectTagCount])
 async def list_project_tags(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """The whole tag catalogue with how many projects carry each tag. Gated on
@@ -188,7 +188,7 @@ def _openrouter_errors(upstream_log: str) -> Iterator[None]:
 async def reformulate_text(
     payload: ProjectReformulateRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(_AI_WRITERS),
 ):
     """French rewording of a project title or description (spec §3.5). Shares
@@ -203,7 +203,7 @@ async def reformulate_text(
 async def suggest_tags(
     payload: ProjectSuggestTagsRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(_AI_WRITERS),
 ):
     """Up to five tags, catalogue first, at most two new names. Never applied:

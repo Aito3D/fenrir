@@ -15,6 +15,7 @@ import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
 import { mapModelCode } from '../utils/printerModel';
 import { useOverlayCameraRecovery } from '../hooks/useOverlayCameraRecovery';
 import { useStreamImgRef } from '../hooks/useStreamImgRef';
+import { isSideways, useSidewaysBox } from '../hooks/useSidewaysBox';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
@@ -355,6 +356,14 @@ export function StreamOverlayPage() {
     enabled: config.showCamera && id > 0 && !kiosk,
   });
 
+  // The classic artwork without a fixed layout fills the window: a sideways
+  // camera is laid out at the window's sides swapped, or it is cut off (#3362).
+  const artworkRef = useRef<HTMLDivElement>(null);
+  const sideways = isSideways(printer?.camera_rotation);
+  // Measured once the artwork is on screen, which is after the status loads.
+  const fitsWindow = sideways && !config.layout && !config.updatedArtwork && config.showCamera && status != null;
+  const windowBox = useSidewaysBox(artworkRef, fitsWindow);
+
   if (!id) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -469,15 +478,20 @@ export function StreamOverlayPage() {
 
   const dimensions = config.layout ? OVERLAY_DIMENSIONS[config.layout] : null;
   const rotation = printer?.camera_rotation ?? 0;
-  const sideways = Math.abs(rotation % 180) === 90;
   const cameraStyle = dimensions ? {
     left: '50%', top: '50%', maxWidth: 'none',
     width: sideways ? dimensions.height : dimensions.width,
     height: sideways ? dimensions.width : dimensions.height,
     transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+  } : windowBox ? {
+    // A sideways camera filling the window: the window's sides swapped (#3362).
+    left: '50%', top: '50%', maxWidth: 'none',
+    width: windowBox.height,
+    height: windowBox.width,
+    transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
   } : rotation ? { transform: `rotate(${rotation}deg)` } : undefined;
   const artwork = (
-    <div className="classic-overlay min-h-screen bg-black relative overflow-hidden" data-layout={config.layout ?? undefined} data-size={config.size}>
+    <div ref={artworkRef} className="classic-overlay min-h-screen bg-black relative overflow-hidden" data-layout={config.layout ?? undefined} data-size={config.size}>
       {/* Camera feed - fullscreen background (optional). Kiosk mode (#2613) uses
           a plain <img> whose URL carries the overlay token so an unauthenticated
           OBS browser can load the MJPEG stream; authed mode decodes to canvas. */}

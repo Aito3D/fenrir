@@ -71,7 +71,7 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
       {archives.map((archive) => (
         <Link
           key={archive.id}
-          to={`/archives?search=${encodeURIComponent(archive.print_name || '')}`}
+          to={`/archives?highlight=${archive.id}`}
           title={archive.revision_label ? `${archive.print_name || 'Unknown'} · ${revisionCaption(archive, t)}` : undefined}
           className="group relative aspect-square rounded-lg bg-bambu-dark border border-bambu-dark-tertiary overflow-hidden hover:border-bambu-green transition-colors"
         >

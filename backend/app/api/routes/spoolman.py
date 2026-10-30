@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool, spoolman_net_weight
-from backend.app.api.routes.spoolman_inventory import _clear_stale_tag_links
+from backend.app.api.routes.spoolman_inventory import _announce_freed_slots, _clear_stale_tag_links
 from backend.app.core.auth import (
     RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
@@ -20,6 +20,7 @@ from backend.app.core.auth import (
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
+from backend.app.core.websocket import ws_manager
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spool_assignment import SpoolAssignment
@@ -27,7 +28,7 @@ from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.user import User
 from backend.app.schemas.spoolman import SlotAmsId, SlotTrayId
-from backend.app.services import slot_unlink_grace
+from backend.app.services import slot_unlink_grace, spool_swaps
 from backend.app.services.ams_slot_presence import spool_present
 from backend.app.services.inventory_mode import spoolman_owns_assignments
 from backend.app.services.printer_manager import PrinterManager, printer_manager
@@ -113,7 +114,7 @@ async def get_spoolman_settings(db: AsyncSession) -> dict:
 
 @router.get("/status", response_model=SpoolmanStatus)
 async def get_spoolman_status(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """Get Spoolman integration status.
@@ -171,7 +172,7 @@ async def get_spoolman_status(
 
 @router.post("/connect")
 async def connect_spoolman(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Connect to Spoolman server using configured URL."""
@@ -256,7 +257,7 @@ async def _refresh_slot_preset(db: AsyncSession, spool: dict, tray, printer_id: 
 @router.post("/sync/{printer_id}", response_model=SyncResult)
 async def sync_printer_ams(
     printer_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
 ):
     """Sync AMS data from a specific printer to Spoolman."""
@@ -488,7 +489,7 @@ async def sync_printer_ams(
 
 @router.post("/sync-all", response_model=SyncResult)
 async def sync_all_printers(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -690,7 +691,7 @@ async def sync_all_printers(
 
 @router.get("/spools")
 async def get_spools(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """Get all spools from Spoolman."""
@@ -715,7 +716,7 @@ async def get_spools(
 
 @router.get("/filaments")
 async def get_filaments(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """Get all filaments from Spoolman."""
@@ -752,7 +753,7 @@ class UnlinkedSpool(BaseModel):
 
 @router.get("/spools/unlinked", response_model=list[UnlinkedSpool])
 async def get_unlinked_spools(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """Get all Spoolman spools not currently assigned to an AMS slot."""
@@ -806,7 +807,7 @@ async def get_unlinked_spools(
 
 @router.get("/spools/linked")
 async def get_linked_spools(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """Get a map of tag -> spool_id for all Spoolman spools that have a tag assigned."""
@@ -862,7 +863,7 @@ class LinkSpoolRequest(BaseModel):
 async def link_spool(
     spool_id: int,
     request: LinkSpoolRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -965,6 +966,7 @@ async def link_spool(
                 ),
                 {"printer_id": p_id, "ams_id": a_id, "tray_id": t_id, "spool_id": spool_id},
             )
+            await spool_swaps.record_assignment(db, p_id, a_id, t_id, spool_id, spool_swaps.SPOOLMAN)
             await db.commit()
             slot_unlink_grace.forget_slot(p_id, a_id, t_id)
         except Exception as e:
@@ -1002,6 +1004,11 @@ async def link_spool(
             else "via /spools/{id}/link"
         ),
     )
+    # Pages open elsewhere find a slot's spool by its tag, and by the slot row
+    # when one was written: both changed (#3402).
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    if printer_context:
+        await _announce_freed_slots([printer_context])
 
     # Auto-configure AMS slot via MQTT (best-effort; tag link and slot assignment already persisted)
     if printer_context:
@@ -1248,7 +1255,7 @@ async def link_spool(
 @router.post("/spools/{spool_id}/unlink")
 async def unlink_spool(
     spool_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
 ):
     """Unlink a Spoolman spool from AMS by clearing Spoolman extra.tag."""
@@ -1291,7 +1298,12 @@ async def unlink_spool(
 
     # Remove local slot assignment for this spool (all slots — a spool can only be in one at a time)
     try:
-        await db.execute(delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spool_id))
+        result = await db.execute(
+            delete(SpoolmanSlotAssignment)
+            .where(SpoolmanSlotAssignment.spoolman_spool_id == spool_id)
+            .returning(SpoolmanSlotAssignment.printer_id, SpoolmanSlotAssignment.ams_id, SpoolmanSlotAssignment.tray_id)
+        )
+        freed = list(result.tuples())
         await db.commit()
     except Exception:
         await db.rollback()
@@ -1299,6 +1311,8 @@ async def unlink_spool(
         raise HTTPException(status_code=500, detail="Failed to remove local slot assignment")
 
     logger.info("Unlinked Spoolman spool %s", spool_id)
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    await _announce_freed_slots(freed)
     return {"success": True, "message": f"Spool {spool_id} unlinked from AMS"}
 
 
@@ -1311,7 +1325,7 @@ class CreateSpoolFromSlotRequest(BaseModel):
 @router.post("/spools/from-slot")
 async def create_spool_from_slot(
     req: CreateSpoolFromSlotRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -1409,6 +1423,9 @@ async def create_spool_from_slot(
                     "spool_id": sync_result["id"],
                 },
             )
+            await spool_swaps.record_assignment(
+                db, req.printer_id, req.ams_id, req.tray_id, sync_result["id"], spool_swaps.SPOOLMAN
+            )
             await db.commit()
             slot_unlink_grace.forget_slot(req.printer_id, req.ams_id, req.tray_id)
         except Exception as exc:
@@ -1419,4 +1436,7 @@ async def create_spool_from_slot(
                 detail=f"Spool created in Spoolman but slot assignment failed: {exc}",
             ) from exc
 
+    if sync_result.get("id"):
+        await ws_manager.broadcast({"type": "inventory_changed"})
+        await _announce_freed_slots([(req.printer_id, req.ams_id, req.tray_id)])
     return {"success": True, "spool_id": sync_result.get("id")}

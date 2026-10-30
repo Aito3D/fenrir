@@ -86,7 +86,7 @@ class ZohoContactDetail(ZohoContact):
 @router.get("/status", response_model=ZohoStatus)
 async def zoho_status(
     probe: bool = False,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     # Any-of: the Aito create modal (aito:create) AND the settings Test button
     # (settings:read) both need this endpoint.
     _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.AITO_CREATE, Permission.SETTINGS_READ),
@@ -126,7 +126,7 @@ async def zoho_status(
 @router.get("/contacts", response_model=list[ZohoContact])
 async def search_contacts(
     q: str = Query(min_length=2, max_length=100),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     try:
@@ -248,7 +248,7 @@ class ZohoContactPersonCreate(BaseModel):
 @router.get("/contacts/{contact_id}", response_model=ZohoContactDetail)
 async def get_contact(
     contact_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """The live Books record behind a card's client, for the panel's editor.
@@ -263,7 +263,7 @@ async def get_contact(
 @router.post("/contacts", response_model=ZohoContact, status_code=201)
 async def create_contact(
     payload: ZohoContactCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     try:
@@ -303,7 +303,7 @@ class ZohoContactPatch(BaseModel):
 async def patch_contact(
     contact_id: str,
     payload: ZohoContactPatch,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     default_id, _name = await zoho_service.get_default_contact(db)
@@ -350,7 +350,7 @@ async def patch_contact(
 @router.get("/contacts/{contact_id}/persons", response_model=list[ZohoContactPerson])
 async def list_contact_persons(
     contact_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     """The people on a Books customer, for the drawer's company branch. Gated
@@ -371,7 +371,7 @@ async def list_contact_persons(
 async def create_contact_person(
     contact_id: str,
     payload: ZohoContactPersonCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     """Add a new person to a Books company contact, for the drawer's and
@@ -475,7 +475,7 @@ class ZohoQuotePreview(BaseModel):
 @router.get("/estimates", response_model=list[ZohoEstimateSummary])
 async def search_estimates(
     q: str = Query(default="", max_length=100),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     """Quotes for the import picker. An empty ``q`` lists the most recent."""
@@ -488,7 +488,7 @@ async def search_estimates(
 @router.get("/estimates/{estimate_id}/preview", response_model=ZohoQuotePreview)
 async def preview_estimate(
     estimate_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     try:

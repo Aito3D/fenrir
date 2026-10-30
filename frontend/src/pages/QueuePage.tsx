@@ -86,9 +86,11 @@ import { useSliceJobPercent } from '../hooks/useSliceJobPercent';
 import { useAuth } from '../contexts/AuthContext';
 import { QueueStatsBar } from '../components/QueueStatsBar';
 import { CompactHistoryRow } from '../components/CompactHistoryRow';
+import { ColorSubstitutionNotes } from '../components/ColorSubstitutionNotes';
 import { QueueTimelineView } from '../components/QueueTimelineView';
 import { compareQueueOrder } from '../utils/queueOrder';
 import { BatchOrdersView } from '../components/BatchOrdersView';
+import { ThumbnailHoverPreview } from '../components/ThumbnailHoverPreview';
 import { buildLoadedFilaments, type LoadedFilament } from '../hooks/useFilamentMapping';
 import { hasGcodeSnippets, useUiSettings } from '../hooks/useUiSettings';
 
@@ -841,7 +843,10 @@ function SortableQueueItem({
         )}
 
         {/* Thumbnail - use plate-specific thumbnail if plate_id is set */}
-        <div className="w-10 h-10 sm:w-14 sm:h-14 flex-shrink-0 bg-bambu-dark rounded-lg overflow-hidden">
+        <ThumbnailHoverPreview
+          src={thumbnailUrl}
+          className="w-10 h-10 sm:w-14 sm:h-14 flex-shrink-0 bg-bambu-dark rounded-lg overflow-hidden"
+        >
           {thumbnailUrl ? (
             <img src={thumbnailUrl} alt="" className="w-full h-full object-cover brightness-125 contrast-110" />
           ) : (
@@ -849,7 +854,7 @@ function SortableQueueItem({
               <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
           )}
-        </div>
+        </ThumbnailHoverPreview>
 
         {/* Info */}
         <div className="flex-1 min-w-0">
@@ -868,7 +873,7 @@ function SortableQueueItem({
               </Link>
             ) : item.library_file_id ? (
               <Link
-                to={`/library?highlight=${item.library_file_id}`}
+                to={`/files?highlight=${item.library_file_id}`}
                 className="text-bambu-gray hover:text-bambu-green transition-colors flex-shrink-0"
                 title={t('queue.viewInFileManager')}
               >
@@ -1114,6 +1119,13 @@ function SortableQueueItem({
               <span>{t('queue.filamentShort.rowBadge')}</span>
             </p>
           )}
+
+          {/* Sent with a spool of another colour than the file asks for (#3279). */}
+          <ColorSubstitutionNotes
+            substitutions={item.color_substitutions}
+            t={t}
+            className="text-[10px] sm:text-xs mt-1.5 sm:mt-2"
+          />
 
           {/* Archive carries the slicer's own live-resolved AMS-slot pick
               (extra_data.slicer_ams_mapping) — reprints of this archive reuse
@@ -3309,6 +3321,7 @@ export function QueuePage() {
           archiveId={requeueItem.archive_id ?? undefined}
           libraryFileId={requeueItem.library_file_id ?? undefined}
           archiveName={queueItemDisplayName(requeueItem, (n) => t('common.plusNMore', { count: n }))}
+          preselectPlateId={requeueItem.plate_id}
           onClose={() => setRequeueItem(null)}
         />
       )}

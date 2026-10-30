@@ -1759,6 +1759,12 @@ const MODELS_WITH_EXHAUST_LABEL: ReadonlySet<string> = new Set([
   'X2D',
 ]);
 
+// Models whose aux fan (airduct part 2) is the LEFT one and part 10 the right
+// (#3373). Bambu Studio names them per model: on the X2D (N6) "2" is Left(Aux)
+// and "10" Right(Aux); on the P2S (N7) it is the other way round. Display
+// names, like MODELS_WITH_EXHAUST_LABEL above.
+const MODELS_WITH_LEFT_AUX_FIRST: ReadonlySet<string> = new Set(['X2D']);
+
 // ─── AMS Name Hover Card ──────────────────────────────────────────────────────
 // Wraps the AMS label (e.g. "AMS-A") and shows a popup with:
 //  • User-defined friendly name (editable, protected by printers:update)
@@ -2267,7 +2273,7 @@ function PrinterCard({
     printerId: number;
     amsId: number;
     trayId: number;
-    trayInfo: { type: string; color: string; location: string; material?: string; profile?: string };
+    trayInfo: { type: string; color: string; location: string; material?: string; profile?: string; emptyKind?: 'physical' | 'reset' | null };
   } | null>(null);
   const [configureSlotModal, setConfigureSlotModal] = useState<{
     amsId: number;
@@ -4469,6 +4475,25 @@ function PrinterCard({
                                     </span>
                                   </>
                                 )}
+                                {/* #2984: the next pause the slicer put into the print, so
+                                    nobody has to watch the layer count to be there for it. */}
+                                {status.next_pause && (
+                                  <span
+                                    className="flex min-w-0 items-center gap-1 text-blue-400"
+                                    title={t('printers.nextPauseAtLayer', { layer: status.next_pause.layer })}
+                                    data-testid="next-pause"
+                                  >
+                                    <Pause className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] shrink-0" />
+                                    <span className="truncate">
+                                      {status.next_pause.minutes != null
+                                        ? t('printers.pauseIn', {
+                                          time: formatDuration(Math.max(status.next_pause.minutes, 1) * 60),
+                                          eta: formatETA(status.next_pause.minutes, timeFormat, t),
+                                        })
+                                        : t('printers.pauseAtLayer', { layer: status.next_pause.layer })}
+                                    </span>
+                                  </span>
+                                )}
                                 {status.layer_num != null && status.total_layers != null && status.total_layers > 0 && (
                                   <span className="flex items-center gap-1">
                                     <Layers className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
@@ -4561,6 +4586,31 @@ function PrinterCard({
               // P2S/X2D entries in MODELS_WITH_CHAMBER_FAN became unreachable,
               // which reads as if removing them were safe.
               const showChamberFan = hasChamberFan && (!isExhaustModel || status.exhaust_fan_present);
+              // The second auxiliary part cooling fan (airduct part id 10):
+              // the left one on the P2S (an accessory kit), the right one on
+              // the X2D, where part 2 is the left. Only reported (non-null)
+              // when the firmware lists part 10, i.e. when the fan is fitted.
+              const leftAuxFirst = MODELS_WITH_LEFT_AUX_FIRST.has(printer.model ?? '');
+              const auxFan = {
+                key: 'aux',
+                label: leftAuxFirst ? t('printers.fans.leftAuxiliary') : t('printers.fans.auxiliary'),
+                value: status.big_fan1_speed ?? 0,
+                Icon: Wind,
+                activeClass: 'text-blue-600 dark:text-blue-400',
+              };
+              const aux2Fan =
+                status.left_aux_fan_speed != null
+                  ? {
+                      key: 'aux2',
+                      label: leftAuxFirst ? t('printers.fans.rightAuxiliary') : t('printers.fans.leftAuxiliary'),
+                      value: status.left_aux_fan_speed,
+                      Icon: Wind,
+                      activeClass: 'text-indigo-600 dark:text-indigo-400',
+                    }
+                  : null;
+              const auxFanItems = (leftAuxFirst ? [auxFan, aux2Fan] : [aux2Fan, auxFan]).filter(
+                (item): item is typeof auxFan => item !== null,
+              );
               const fanItems: {
                 key: string;
                 label: string;
@@ -4575,29 +4625,10 @@ function PrinterCard({
                   Icon: Fan,
                   activeClass: 'text-cyan-600 dark:text-cyan-400',
                 },
-                // Left auxiliary part cooling fan (optional P2S/X2D accessory).
-                // Only reported (non-null) when the firmware lists airduct part
-                // id 10, i.e. when the fan is physically installed. Placed
-                // before the right-hand auxiliary fan so the two aux badges read
-                // left-to-right in the same order as the physical hardware.
-                ...(status.left_aux_fan_speed != null
-                  ? [
-                      {
-                        key: 'aux2',
-                        label: t('printers.fans.leftAuxiliary'),
-                        value: status.left_aux_fan_speed,
-                        Icon: Wind,
-                        activeClass: 'text-indigo-600 dark:text-indigo-400',
-                      },
-                    ]
-                  : []),
-                {
-                  key: 'aux',
-                  label: t('printers.fans.auxiliary'),
-                  value: status.big_fan1_speed ?? 0,
-                  Icon: Wind,
-                  activeClass: 'text-blue-600 dark:text-blue-400',
-                },
+                // The two aux badges read left-to-right, in the same order as
+                // the physical hardware, so which comes first depends on the
+                // model (#3373).
+                ...auxFanItems,
                 ...(showChamberFan
                   ? [
                       {
@@ -4736,7 +4767,7 @@ function PrinterCard({
                       )}
                     </div>
                     {status.temperatures.chamber !== undefined && (() => {
-                      // Sensor-only models (X1C, X1E, P2S) show the chamber reading
+                      // Sensor-only models (X1C, P2S) show the chamber reading
                       // but can't act on M141, so we keep the card read-only there.
                       const hasChamberHeater = status.supports_chamber_heater === true;
                       return (
@@ -4904,8 +4935,8 @@ function PrinterCard({
                         <ChamberLight on={status.chamber_light ?? false} className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                       </button>
 
-                      {/* Airduct Mode (P2S / X2D / H2*) */}
-                      {(['P2S', 'X2D', 'H2D', 'H2C', 'H2S'].includes(printer.model ?? '')) && (() => {
+                      {/* Airduct Mode (P2S / X2D / H2*, an H2D Pro stored as "H2D Pro", #3335) */}
+                      {(['P2S', 'X2D', 'H2D', 'H2D Pro', 'H2C', 'H2S'].includes(printer.model ?? '')) && (() => {
                         const isHeating = status.airduct_mode === 1;
                         const Icon = isHeating ? Flame : Snowflake;
                         const color = isHeating ? 'text-orange-600 dark:text-orange-400' : 'text-sky-600 dark:text-sky-400';
@@ -5583,7 +5614,7 @@ function PrinterCard({
                                   // vendor-less form. Strip the "@<printer>..." suffix that
                                   // BambuStudio appends to user-preset names.
                                   profile: slotPresetName || (slotSpoolForFill ? [slotSpoolForFill.brand, slotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || slotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || inventoryAssignment?.spool?.slicer_filament_name || cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
-                                  colorName: getColorName(tray.tray_color || '', tray.tray_sub_brands),
+                                  colorName: getColorName(tray.tray_color || '', tray.tray_sub_brands, tray.tray_info_idx),
                                   colorHex: tray.tray_color || null,
                                   kFactor: formatKValue(tray.k),
                                   fillLevel: effectiveFill,
@@ -5800,6 +5831,7 @@ function PrinterCard({
                                             profile: '',
                                             color: '',
                                             location: `${getAmsLabel(ams.id)} Slot ${slotIdx + 1}`,
+                                            emptyKind,
                                           },
                                         })}
                                       >
@@ -5873,7 +5905,7 @@ function PrinterCard({
                         const filamentData = tray?.tray_type ? {
                           vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                           profile: slotPresetName || (htSlotSpoolForFill ? [htSlotSpoolForFill.brand, htSlotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || htSlotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || htInventoryAssignment?.spool?.slicer_filament_name || cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
-                          colorName: getColorName(tray.tray_color || '', tray.tray_sub_brands),
+                          colorName: getColorName(tray.tray_color || '', tray.tray_sub_brands, tray.tray_info_idx),
                           colorHex: tray.tray_color || null,
                           kFactor: formatKValue(tray.k),
                           fillLevel: htEffectiveFill,
@@ -6203,6 +6235,7 @@ function PrinterCard({
                                         profile: '',
                                         color: '',
                                         location: getAmsLabel(ams.id),
+                                        emptyKind,
                                       },
                                     })}
                                   >
@@ -6308,7 +6341,7 @@ function PrinterCard({
                               const extFilamentData = {
                                 vendor: (isBambuLabSpool(extTray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                                 profile: extSlotPresetName || (extSlotSpoolForFill ? [extSlotSpoolForFill.brand, extSlotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || extSlotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || extInventoryAssignment?.spool?.slicer_filament_name || extCloudInfo?.name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
-                                colorName: getColorName(extTray.tray_color || '', extTray.tray_sub_brands),
+                                colorName: getColorName(extTray.tray_color || '', extTray.tray_sub_brands, extTray.tray_info_idx),
                                 colorHex: extTray.tray_color || null,
                                 kFactor: formatKValue(extTray.k),
                                 fillLevel: extEffectiveFill,
@@ -6480,6 +6513,7 @@ function PrinterCard({
                                           profile: '',
                                           color: '',
                                           location: `External Slot ${slotTrayId + 1}`,
+                                          emptyKind,
                                         },
                                       })}
                                     >

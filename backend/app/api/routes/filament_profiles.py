@@ -64,7 +64,7 @@ _MAX_REPORTED_ATTENTION = 50
 @router.get("/base-presets", response_model=list[BaseFilamentPresetResponse])
 async def list_base_presets(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     result = await db.execute(select(BaseFilamentPreset).order_by(BaseFilamentPreset.name.asc()))
     return list(result.scalars().all())
@@ -131,7 +131,7 @@ async def _collect_and_sync_base(db: AsyncSession) -> dict[str, int]:
 @router.post("/sync-base", response_model=BaseSyncResult)
 async def sync_base_presets(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     return await _collect_and_sync_base(db)
 
@@ -140,7 +140,7 @@ async def sync_base_presets(
 async def upload_base_presets(
     payload: BaseUploadRequest,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Ingest browser-uploaded base preset files (remote-deploy fallback).
 
@@ -219,7 +219,7 @@ async def bambu_sync(
 @router.get("", response_model=list[FilamentPresetResponse])
 async def list_filament_profiles(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     result = await db.execute(select(FilamentPreset).order_by(FilamentPreset.name.asc()))
     return list(result.scalars().all())
@@ -229,7 +229,7 @@ async def list_filament_profiles(
 async def create_filament_profile(
     payload: FilamentPresetCreate,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_CREATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     row = FilamentPreset(
         name=payload.name,
@@ -248,7 +248,7 @@ async def create_filament_profile(
 
 @router.post("/zoho-sync", response_model=FilamentPresetZohoSyncResponse)
 async def sync_filament_presets_from_zoho(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     # T-027: this reaches the same Zoho catalogue the calculator's
     # zoho routes gate on CALCULATOR_UPDATE (calculator.py), so a custom
     # role holding only filaments:update must not gain read access to it
@@ -427,7 +427,7 @@ async def update_filament_profile(
     preset_id: int,
     payload: FilamentPresetUpdate,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     result = await db.execute(select(FilamentPreset).where(FilamentPreset.id == preset_id))
     row = result.scalar_one_or_none()
@@ -461,7 +461,7 @@ async def update_filament_profile(
 async def delete_filament_profile(
     preset_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_DELETE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     result = await db.execute(select(FilamentPreset).where(FilamentPreset.id == preset_id))
     row = result.scalar_one_or_none()
@@ -475,7 +475,7 @@ async def delete_filament_profile(
 async def duplicate_filament_profile(
     preset_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_CREATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     result = await db.execute(select(FilamentPreset).where(FilamentPreset.id == preset_id))
     source = result.scalar_one_or_none()

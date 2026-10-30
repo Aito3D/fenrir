@@ -1166,7 +1166,7 @@ def _imported_created_at(quote_id: str | None, quote_date: str | None) -> dateti
 
 @router.get("/", response_model=list[AitoProjectResponse])
 async def list_projects(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     stmt = (
@@ -1207,7 +1207,7 @@ async def list_projects(
 
 @router.get("/trash", response_model=list[AitoProjectResponse])
 async def list_trash(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """Deleted projects, newest deletions first. Rows are never removed."""
@@ -1243,7 +1243,7 @@ async def get_aito_stats(
     date_from: date | None = Query(default=None, description="Inclusive start day, in the caller's local time."),
     date_to: date | None = Query(default=None, description="Inclusive end day, in the caller's local time."),
     tz_offset_minutes: int = Query(0, ge=-840, le=840, description="Client UTC offset in minutes east of UTC"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """The Stats page's pipeline widget. Read-only aggregates over active
@@ -1280,7 +1280,7 @@ async def get_aito_stats(
 async def get_client_history(
     client_id: str,
     limit: int = Query(5, ge=1, le=200, description="Newest cards to return"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """The drawer's repeat-client recall: a client's newest active cards with
@@ -1298,7 +1298,7 @@ async def get_client_rating(
     client_id: str,
     request: Request,
     refresh: bool = Query(False, description="Re-read Books even if the cached rating is fresh"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """The customer's payment rating for the drawer and the panel masthead.
@@ -1334,7 +1334,7 @@ async def get_client_quote_rating(
     client_id: str,
     request: Request,
     refresh: bool = Query(False, description="Re-read Books even if the cached rating is fresh"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """How readily the customer accepts a quote, for the new-card drawer.
@@ -1580,7 +1580,7 @@ def _track_rate_hit(host: str, stamp: float) -> None:
 
 @router.get("/track/{token}", response_model=AitoTrackingResponse)
 async def get_tracking(
-    token: str, request: Request, response: Response, db: AsyncSession = Depends(get_db)
+    token: str, request: Request, response: Response, db: AsyncSession = Depends(get_db, scope="function")
 ) -> AitoTrackingResponse | JSONResponse:
     """The client's public tracking page. No auth: the token IS the
     credential (a 6-character code, unique-indexed, normalised on lookup
@@ -1815,7 +1815,7 @@ async def _create_description(
 async def create_project(
     payload: AitoProjectCreate,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     # T-070: a quote that already has an active card is refused before the
@@ -2065,7 +2065,7 @@ def _check_payment_link_refresh_rate_limit(request: Request, current_user: User 
 async def summarize_project(
     payload: AitoSummarizeRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     """French project summary for the create drawer. Registered before the
@@ -2085,7 +2085,7 @@ async def summarize_project(
 async def proofread_field(
     payload: AitoProofreadRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(
         # Any-of, not AITO_CREATE alone: the same field component serves the
         # create drawer and the detail panel's edit mode, and a user who may
@@ -2111,7 +2111,7 @@ async def proofread_field(
 
 @router.get("/shipping/services", response_model=AitoShippingServicesResponse)
 async def list_shipping_services(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """The five air-freight services, their islands and their Books rates.
@@ -2142,7 +2142,7 @@ async def list_shipping_services(
 @router.get("/{project_id}/tasks", response_model=list[AitoTaskResponse])
 async def list_tasks(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     stmt = select(AitoTask).where(AitoTask.project_id == project_id).order_by(AitoTask.position, AitoTask.id)
@@ -2156,7 +2156,7 @@ async def list_events(
     before: int | None = None,
     before_at: datetime | None = None,
     limit: int = 50,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ) -> AitoEventPage:
     """This project's timeline, newest first.
@@ -2204,7 +2204,7 @@ async def list_events(
 async def add_note(
     project_id: int,
     payload: AitoNoteCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ) -> AitoEventResponse:
     """Append a note to the timeline.
@@ -2236,7 +2236,7 @@ async def add_note(
 @router.get("/{project_id}/invoice")
 async def get_invoice(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ) -> AitoInvoiceResponse | None:
     """The invoice Books raised from this project's quote, if there is one.
@@ -2316,7 +2316,7 @@ async def _retainer_response(db: AsyncSession, row: dict) -> AitoRetainerInvoice
 @router.get("/{project_id}/retainers", response_model=list[AitoRetainerInvoiceResponse])
 async def get_retainers(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ) -> list[AitoRetainerInvoiceResponse]:
     """The retainer (deposit) invoices Books holds for this project's quote.
@@ -2339,7 +2339,7 @@ async def get_retainers(
 @router.get("/{project_id}/invoice-deposits", response_model=AitoInvoiceDepositsResponse)
 async def get_invoice_deposits(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ) -> AitoInvoiceDepositsResponse:
     """What the invoice row's Apply-deposit button offers: this quote's own
@@ -2370,7 +2370,7 @@ async def get_invoice_deposits(
 async def apply_invoice_deposit(
     project_id: int,
     payload: AitoApplyDepositRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ) -> AitoInvoiceResponse:
     """Spend part or all of one of this quote's deposits on its open invoice.
@@ -2485,7 +2485,7 @@ def _pdf_response(pdf: bytes, number_or_id: str) -> Response:
 async def get_retainer_pdf(
     project_id: int,
     retainer_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ) -> Response:
     """One of this project's retainer invoices, rendered as a PDF.
@@ -2535,7 +2535,7 @@ async def _load_retainer_email_content(
 async def get_retainer_email(
     project_id: int,
     retainer_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """What Books would send if this retainer invoice were emailed now.
@@ -2556,7 +2556,7 @@ async def send_retainer_email(
     project_id: int,
     payload: AitoRetainerEmailRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Email one of this project's retainer invoices through Books.
@@ -2668,7 +2668,7 @@ async def _project_ready_to_invoice(db: AsyncSession, project_id: int) -> AitoPr
 @router.get("/{project_id}/invoice-preview", response_model=AitoInvoicePreview)
 async def get_invoice_preview(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """What "Create invoice" would do, so the confirm dialog can say it.
@@ -2715,7 +2715,7 @@ async def get_invoice_preview(
 @router.post("/{project_id}/invoice", response_model=AitoInvoiceCreatedResponse)
 async def create_invoice(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Raise the invoice for a finished project, paid down by its deposits.
@@ -2969,7 +2969,7 @@ async def _resolve_project_invoice(db: AsyncSession, project: AitoProject, invoi
 async def get_invoice_pdf(
     project_id: int,
     invoice_id: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ) -> Response:
     """This project's Zoho invoice, rendered as a PDF for printing.
@@ -3057,7 +3057,7 @@ async def _load_invoice_email_content(
 async def get_invoice_email(
     project_id: int,
     invoice_id: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """What Books would send if this invoice were emailed right now.
@@ -3257,7 +3257,7 @@ async def send_invoice_email(
     project_id: int,
     payload: AitoInvoiceEmailRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Email this project's invoice through Books.
@@ -3342,7 +3342,7 @@ async def send_invoice_email(
 @router.get("/{project_id}/quote.pdf")
 async def get_quote_pdf(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ) -> Response:
     """This project's Zoho estimate, rendered as a PDF for printing.
@@ -3432,7 +3432,7 @@ async def _load_quote_email_content(
 @router.get("/{project_id}/quote-email", response_model=AitoQuoteEmailContent)
 async def get_quote_email(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """What Books would send if this quote were emailed right now.
@@ -3464,7 +3464,7 @@ async def send_quote_email(
     project_id: int,
     payload: AitoQuoteEmailRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Email this project's quote through Books, then move the card.
@@ -3685,7 +3685,7 @@ async def _get_active_project_or_404(db: AsyncSession, project_id: int) -> AitoP
 async def add_task(
     project_id: int,
     payload: AitoTaskCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     project = await _get_active_project_or_404(db, project_id)
@@ -3752,7 +3752,7 @@ async def add_task(
 async def update_task(
     task_id: int,
     payload: AitoTaskUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Only fields present in the body are written, so an omitted key is left
@@ -3848,7 +3848,7 @@ async def update_task(
 @router.delete("/tasks/{task_id}", status_code=204)
 async def delete_task(
     task_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_DELETE),
 ):
     """Hard delete, unlike projects: tasks need no stable visible number, and
@@ -3885,7 +3885,7 @@ async def delete_task(
 async def reorder_tasks(
     project_id: int,
     payload: AitoTaskReorder,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Renumber the project's tasks to the payload's order. `position` is what
@@ -3936,7 +3936,7 @@ async def reorder_tasks(
 @router.post("/import", response_model=list[AitoProjectResponse], status_code=201)
 async def import_legacy_projects(
     payload: AitoProjectImport,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     """One-time localStorage migration. Guard counts ALL rows (incl. soft-deleted)
@@ -3988,7 +3988,7 @@ async def import_legacy_projects(
 async def move_project(
     project_id: int,
     payload: AitoProjectMove,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     project = await _get_active_project_or_404(db, project_id)
@@ -4234,7 +4234,7 @@ async def _claim_and_bump_version(db: AsyncSession, project: AitoProject, expect
 async def update_project(
     project_id: int,
     payload: AitoProjectUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Edit a card's content. Only fields present in the body are written, so a
@@ -4384,7 +4384,7 @@ async def update_project(
 async def transfer_client(
     project_id: int,
     payload: AitoClientTransfer,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Re-point the card at another contact. Unlike `edit_project_client`,
@@ -4574,7 +4574,7 @@ async def _fan_out_client_edit(
 async def edit_project_client(
     project_id: int,
     payload: AitoClientEdit,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Edit the contact behind a card: name, phone and email, written to
@@ -4770,7 +4770,7 @@ async def edit_project_client(
 async def set_project_flag(
     project_id: int,
     payload: AitoFlagUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Set a project's board flag — 'urgent', 'sav', 'pause', 'fiverr' — or clear it.
@@ -4829,7 +4829,7 @@ async def set_project_flag(
 async def set_project_due_date(
     project_id: int,
     payload: AitoDueDateUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Set or clear the day promised to the client.
@@ -4869,7 +4869,7 @@ async def set_project_due_date(
 async def set_project_contacted(
     project_id: int,
     payload: AitoContactedUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Record — or take back — the fact that the client has been told the job
@@ -4944,7 +4944,7 @@ async def set_project_contacted(
 async def get_tracking_link(
     project_id: int,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """The panel's Copy button. An UPDATE, not a read: the first call mints
@@ -4960,7 +4960,7 @@ async def get_tracking_link(
 async def regenerate_tracking_token(
     project_id: int,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Kill a leaked link: a new token, the old one 404s at once. The event
@@ -5027,7 +5027,7 @@ async def _watch_response(db: AsyncSession, watch: AitoWatch | None) -> AitoWatc
 @router.get("/{project_id}/watch", response_model=AitoWatchResponse)
 async def get_watch(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """Whether the caller watches this card, and for which inbox kinds.
@@ -5042,7 +5042,7 @@ async def get_watch(
 async def set_watch(
     project_id: int,
     payload: AitoWatchUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Watch this card for ``kinds`` (Aito inbox kinds the caller has enabled
@@ -5092,7 +5092,7 @@ async def _save_watch(db: AsyncSession, project_id: int, user_id: int, kinds: li
 async def refresh_payment_link(
     project_id: int,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Reconcile and poll this one project's payment link now, instead of
@@ -5130,7 +5130,7 @@ async def _finished_or_409(db: AsyncSession, project: AitoProject) -> None:
 async def generate_pickup_message(
     project_id: int,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Draft the "come and collect" SMS for a finished project.
@@ -5230,7 +5230,7 @@ async def send_pickup_sms(
     project_id: int,
     payload: AitoPickupSmsRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Relay the (possibly edited) pickup SMS to the user's phone via Pushcut.
@@ -5364,7 +5364,7 @@ async def send_pickup_sms(
 @router.post("/{project_id}/sync", response_model=AitoProjectResponse)
 async def sync_project_now(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Queue this card for a Zoho push right now. The detail panel calls this
@@ -5430,7 +5430,7 @@ async def sync_project_now(
 async def force_sync_project(
     project_id: int,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """The ⋯ menu's Force Zoho sync: check every Zoho-backed part of the card
@@ -5472,7 +5472,7 @@ async def force_sync_project(
 async def set_quote_status(
     project_id: int,
     payload: AitoQuoteStatusUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Move a project's quote to sent, accepted or declined.
@@ -5554,7 +5554,7 @@ async def set_quote_status(
 @router.post("/{project_id}/restore", response_model=AitoProjectResponse)
 async def restore_project(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Un-delete: back onto the board at the end of its original column."""
@@ -5617,7 +5617,7 @@ async def restore_project(
 async def transfer_tasks(
     project_id: int,
     payload: AitoTaskTransfer,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Move tasks to another active card, or split them onto a new card for
@@ -5764,7 +5764,7 @@ async def transfer_tasks(
 async def merge_project(
     project_id: int,
     payload: AitoMergeRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     # Both, not either: this one request edits the target's quote (update)
     # AND trashes the source (delete), so an operator who may do only one of
     # the two must not get the other through here.
@@ -5882,7 +5882,7 @@ async def merge_project(
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_DELETE),
 ):
     """Soft delete: the row is kept forever, only hidden from the board."""

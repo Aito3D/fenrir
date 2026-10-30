@@ -132,6 +132,7 @@ export function ArchiveModals({
           mode="create"
           archiveId={archive.id}
           archiveName={archive.print_name || archive.filename}
+          preselectPlateId={archive.plate_id}
           onClose={() => setShowReprint(false)}
         />
       )}

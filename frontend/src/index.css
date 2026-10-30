@@ -2487,13 +2487,6 @@ tbody .calc-table-row:hover {
   background-color: color-mix(in srgb, var(--text-muted) 80%, transparent);
 }
 
-/* History row thumbnail hover-to-enlarge — desktop only (no hover on touch). */
-@media (hover: hover) and (pointer: fine) {
-  .history-thumb-hover:hover .history-thumb-preview {
-    opacity: 1;
-  }
-}
-
 /* ============================================
    Filament-profiles preset editor — "Material Sheet" design.
    Pane enter is direction-aware: the modal sets --fp-dir to ±14px so a pane

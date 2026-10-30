@@ -21,7 +21,7 @@ from backend.app.schemas.kprofile import (
     KProfileNoteResponse,
     KProfilesResponse,
 )
-from backend.app.services.bambu_mqtt import CALI_ACK_UNCONFIRMED
+from backend.app.services.bambu_mqtt import CALI_ACK_UNCONFIRMED, KProfileReadError
 from backend.app.services.printer_manager import printer_manager
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ router = APIRouter(prefix="/printers/{printer_id}/kprofiles", tags=["kprofiles"]
 async def get_kprofiles(
     printer_id: int,
     nozzle_diameter: str = "0.4",
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_READ),
 ):
     """Get K-profiles from a printer.
@@ -53,8 +53,12 @@ async def get_kprofiles(
     if not client or not client.state.connected:
         raise HTTPException(400, "Printer not connected")
 
-    # Request K-profiles from printer
-    profiles = await client.get_kprofiles(nozzle_diameter=nozzle_diameter)
+    # Request K-profiles from printer. No answer is an error, not an empty
+    # table: that one means the printer has none for this nozzle (#3404).
+    try:
+        profiles = await client.get_kprofiles(nozzle_diameter=nozzle_diameter)
+    except KProfileReadError as e:
+        raise HTTPException(504, "The printer did not answer the K-profile request") from e
 
     # Convert from MQTT dataclass to Pydantic schema
     return KProfilesResponse(
@@ -82,7 +86,7 @@ async def get_kprofiles(
 async def set_kprofile(
     printer_id: int,
     profile: KProfileCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_UPDATE),
 ):
     """Create or update a K-profile on the printer.
@@ -196,12 +200,16 @@ async def set_kprofile(
 
     if is_edit and not is_dual_nozzle:
         # The edit deleted the profile and added it again: read the table back
-        # to see the edited one landed. An empty table is also what a read that
-        # timed out returns, so only a table without it is proof. Same pause as
+        # to see the edited one landed. A read the printer did not answer
+        # leaves it to the acks: the write has gone out by then. Same pause as
         # before the add.
         await asyncio.sleep(0.5)
-        table = await client.get_kprofiles(nozzle_diameter=profile.nozzle_diameter)
-        if table:
+        try:
+            table = await client.get_kprofiles(nozzle_diameter=profile.nozzle_diameter)
+        except KProfileReadError as e:
+            logger.warning("[API] Edit: could not read the K-profile table back: %s", e)
+            table = None
+        if table is not None:
             if not any(_is_saved_profile(stored, profile) for stored in table):
                 raise HTTPException(
                     502,
@@ -235,7 +243,7 @@ def _is_saved_profile(stored, profile: KProfileCreate) -> bool:
 async def set_kprofiles_batch(
     printer_id: int,
     profiles: list[KProfileCreate],
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_UPDATE),
 ):
     """Create multiple K-profiles in a single command (for dual-nozzle).
@@ -302,7 +310,7 @@ async def set_kprofiles_batch(
 async def delete_kprofile(
     printer_id: int,
     profile: KProfileDelete,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_DELETE),
 ):
     """Delete a K-profile from the printer.
@@ -352,7 +360,7 @@ async def delete_kprofile(
 @router.get("/notes", response_model=KProfileNoteResponse)
 async def get_kprofile_notes(
     printer_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_READ),
 ):
     """Get all K-profile notes for a printer.
@@ -380,7 +388,7 @@ async def get_kprofile_notes(
 async def set_kprofile_note(
     printer_id: int,
     note_data: KProfileNote,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_UPDATE),
 ):
     """Set or update a note for a K-profile.
@@ -429,7 +437,7 @@ async def set_kprofile_note(
 async def delete_kprofile_note(
     printer_id: int,
     setting_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_DELETE),
 ):
     """Delete a note for a K-profile.

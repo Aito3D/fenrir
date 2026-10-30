@@ -8,7 +8,7 @@ Supports accurate partial usage reporting for failed/cancelled prints.
 import json
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import cast
 
 from sqlalchemy import delete, select
@@ -17,6 +17,7 @@ from sqlalchemy.engine import CursorResult
 from backend.app.api.routes._spoolman_helpers import spoolman_net_weight
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session
+from backend.app.services import spool_swaps
 from backend.app.services.spoolman import (
     SpoolmanClientError,
     SpoolmanNotFoundError,
@@ -232,20 +233,35 @@ def _single_slot_tray_from_state(
     # nothing is loaded, which is why _MAX_REAL_TRAY_ID excludes it; A1
     # firmware parks there the moment a print ends, leaving last_loaded_tray
     # as the only survivor.
-    for candidate in (
-        tray_now_at_start,
-        getattr(state, "tray_now", None),
-        getattr(state, "last_loaded_tray", None),
-    ):
+    for candidate in (tray_now_at_start, getattr(state, "tray_now", None)):
         if _is_real_tray_id(candidate):
             return slot_id, candidate
+    # On a printer with two external holders (H2D, X2D) tray_now 255 is the
+    # right-hand one. Ahead of last_loaded_tray: a print from that holder never
+    # updates it, so it still names the tray an earlier print used (#3405).
+    from backend.app.services.usage_tracker import has_second_external_holder
+
+    if getattr(state, "tray_now", None) == 255 and has_second_external_holder(getattr(state, "raw_data", None)):
+        return slot_id, 255
+    # 254 is no survivor of an unload: the same cap as the built-in inventory.
+    last_loaded = getattr(state, "last_loaded_tray", None)
+    if isinstance(last_loaded, int) and _is_real_tray_id(last_loaded) and last_loaded < 254:
+        return slot_id, last_loaded
     return None
+
+
+def _mapping_names_no_used_tray(slot_to_tray: list | None, filament_usage: list[dict] | None) -> bool:
+    """The built-in inventory's rule for a mapping that is no evidence (#3405)."""
+    from backend.app.services.usage_tracker import mapping_names_no_used_tray
+
+    return mapping_names_no_used_tray(slot_to_tray, filament_usage)
 
 
 def _resolve_slot_to_tray_fallback(
     printer_id: int,
     filament_usage: list[dict],
     tray_now_at_start: int | None = None,
+    tray_state_only: bool = False,
 ) -> tuple[list[int] | None, str]:
     """Recover a slot-to-tray mapping at completion when print start captured none.
 
@@ -290,6 +306,11 @@ def _resolve_slot_to_tray_fallback(
         tray_now_at_start: The tray the printer was feeding from when the print
             began, as captured by ``store_print_data``. Only consulted by the
             tray-state fallback.
+        tray_state_only: Skip the ``mapping`` field and the colour match. For a
+            stored mapping that named no tray: the built-in inventory goes
+            straight to the printer's tray readings for one (#3405), and the
+            colour match, which knows no external holder, would hand an
+            external-spool print to a same-coloured AMS tray.
 
     Returns:
         ``(mapping, source)``, or ``(None, "none")`` when no fallback produced
@@ -304,7 +325,7 @@ def _resolve_slot_to_tray_fallback(
     # Both of the first two fallbacks read the status payload; the third reads
     # fields ``bambu_mqtt`` maintains on the state object itself, so an empty
     # payload must not short-circuit past it.
-    if raw_data:
+    if raw_data and not tray_state_only:
         decoded = _decode_mqtt_mapping(raw_data.get("mapping"))
         if decoded:
             return decoded, "mqtt"
@@ -669,8 +690,11 @@ async def cleanup_tracking(
     db,
     last_layer_num: int | None = None,
     last_progress: int | None = None,
+    status: str = "failed",
 ) -> float | None:
     """Report partial usage and clean up Spoolman tracking data for failed/aborted prints.
+
+    ``status`` is the print's, recorded on its usage-history rows.
 
     Returns what the charged spools' prices make the run cost, or None when
     none of them carries a price (or nothing was tracked)."""
@@ -701,6 +725,12 @@ async def cleanup_tracking(
         )
     except Exception as e:
         logger.warning("[SPOOLMAN] Partial usage report failed: %s", e)
+    try:
+        await _record_usage_history(db, printer_id, archive_id, status, print_cost)
+    except Exception as e:
+        # The charges landed in Spoolman; only the local record is missing.
+        await db.rollback()
+        logger.warning("[SPOOLMAN] Could not record the usage history for archive %s: %s", archive_id, e)
 
     # Delete tracking data
     await db.execute(
@@ -902,6 +932,52 @@ def _spool_cost_per_gram(spool: dict | None) -> float | None:
 
 
 @dataclass
+class _Charge:
+    """One Spoolman spool charged for a print: what the usage history records."""
+
+    spool_id: int
+    grams: float
+    # Per gram, from the spool; None when it carries no usable price.
+    rate: float | None
+    net_weight: float | None
+
+
+async def _record_usage_history(db, printer_id: int, archive_id: int, status: str, print_cost: "_PrintCost") -> None:
+    """Write a usage-history row per charged Spoolman spool, as the built-in
+    inventory does per charged spool (#3407).
+
+    Spoolman keeps only per-spool totals, so without these Spoolman mode had no
+    per-print usage at all: no trend for the stock forecast, and no usage list
+    on the spool. Priced from the spool, as the archive's cost is: a charge to a
+    spool without a price is recorded without one, so recalculating the
+    archive's cost keeps the figure completion left it at rather than pricing
+    those grams at the default rate (``_apply_spool_cost_to_archive``).
+    """
+    if not print_cost.charges:
+        return
+    from backend.app.models.archive import PrintArchive
+    from backend.app.models.spool_usage_history import SpoolUsageHistory
+
+    archive = await db.get(PrintArchive, archive_id)
+    print_name = archive.print_name if archive is not None else None
+    for charge in print_cost.charges:
+        db.add(
+            SpoolUsageHistory(
+                spool_id=None,
+                spoolman_spool_id=charge.spool_id,
+                printer_id=printer_id,
+                print_name=print_name,
+                archive_id=archive_id,
+                weight_used=round(charge.grams, 1),
+                percent_used=round(charge.grams / charge.net_weight * 100) if charge.net_weight else 0,
+                status=status,
+                cost=round(charge.grams * charge.rate, 2) if charge.rate is not None else None,
+            )
+        )
+    await db.commit()
+
+
+@dataclass
 class _PrintCost:
     """What a print cost, accumulated as each slot is actually charged.
 
@@ -919,12 +995,16 @@ class _PrintCost:
     unpriced_grams: float = 0.0
     priced: int = 0
     unpriced: int = 0
+    # Each charge as it landed, for the usage history (#3407).
+    charges: list[_Charge] = field(default_factory=list)
 
-    def add(self, grams: float, spool: dict | None, label: str) -> None:
+    def add(self, grams: float, spool: dict | None, label: str, *, spool_id: int | None = None) -> None:
         """Price ``grams`` off ``spool``. Call only after the charge succeeded."""
         if grams <= 0:
             return
         rate = _spool_cost_per_gram(spool)
+        if spool_id is not None:
+            self.charges.append(_Charge(spool_id, grams, rate, _as_positive_number(spoolman_net_weight(spool or {}))))
         if rate is None:
             self.unpriced += 1
             self.unpriced_grams += grams
@@ -933,6 +1013,46 @@ class _PrintCost:
         self.cost += grams * rate
         self.priced_grams += grams
         self.priced += 1
+
+
+def _swap_splitter(printer_id: int, state, layer_usage_raw, end_layer: int, completed: bool) -> spool_swaps.Splitter:
+    """The print's spool swaps (services.spool_swaps) for the Spoolman charges.
+
+    ``layer_usage_raw`` is the tracking row's JSON, keys as strings; parsed only
+    when a tray was actually swapped.
+    """
+    if state is None:
+        from backend.app.services.printer_manager import printer_manager
+
+        state = printer_manager.get_status(printer_id)
+    if not isinstance(end_layer, int) or end_layer <= 0:
+        # The caller reads the printer's layers for single-slot prints only;
+        # a multi-colour print's swap needs them as much.
+        total = getattr(state, "total_layers", 0)
+        current = getattr(state, "layer_num", 0)
+        end_layer = max(total if isinstance(total, int) else 0, current if isinstance(current, int) else 0)
+
+    def layer_usage():
+        if not layer_usage_raw:
+            return None
+        return {int(layer): {int(fid): mm for fid, mm in f.items()} for layer, f in layer_usage_raw.items()}
+
+    return spool_swaps.Splitter(
+        getattr(state, "spool_change_log", None) if state is not None else None,
+        spool_swaps.SPOOLMAN,
+        layer_usage,
+        end_layer,
+        completed=completed,
+    )
+
+
+async def _fetch_spool_for_price(client, spool_id: int) -> dict | None:
+    """The spool row a swapped-in spool's share is priced from; None if it can't be read."""
+    try:
+        return await client.get_spool(spool_id)
+    except Exception as exc:  # noqa: BLE001 -- pricing is best-effort, the charge is not
+        logger.debug("[SPOOLMAN] Could not fetch spool %s for its price: %s", spool_id, exc)
+        return None
 
 
 async def _report_spool_usage_for_slots(
@@ -946,6 +1066,7 @@ async def _report_spool_usage_for_slots(
     slot_colors_out: dict[int, str] | None = None,
     slot_materials_out: dict[int, str] | None = None,
     cost_out: _PrintCost | None = None,
+    swaps: spool_swaps.Splitter | None = None,
 ) -> int:
     """Report usage to Spoolman for a list of (slot_id, grams) pairs.
 
@@ -1012,6 +1133,16 @@ async def _report_spool_usage_for_slots(
             if spool_id_to_use is not None:
                 resolution_path = "slot-assignment"
 
+        # A spool swapped by hand on this tray mid-print shares the slot's
+        # grams with the one it replaced (#3325); the first is the archive's.
+        shares = None
+        if swaps is not None:
+            shares = swaps.shares(*_global_tray_id_to_ams_slot(global_tray_id), slot_id, grams_used)
+            if shares and shares[0][0] != spool_id_to_use:
+                spool_id_to_use = shares[0][0]
+                resolution_path = "swap log"
+                spool_obj = spool_color_hex = spool_material = None
+
         if spool_id_to_use is None:
             logger.debug(
                 "[SPOOLMAN] Slot %s: no spool resolved (tag=%s, no slot-assignment)",
@@ -1044,23 +1175,31 @@ async def _report_spool_usage_for_slots(
             if slot_materials_out is not None and spool_material:
                 slot_materials_out[slot_id] = spool_material
 
-        try:
-            await client.use_spool(spool_id_to_use, grams_used)
-            logger.info(
-                "[SPOOLMAN] %s: slot %s: %sg -> spool %s (via %s)",
-                method_label,
-                slot_id,
-                grams_used,
-                spool_id_to_use,
-                resolution_path,
-            )
-            spools_updated += 1
-            # Priced only after the charge landed, so a spool Spoolman refused
-            # cannot contribute to what the print is said to have cost.
-            if cost_out is not None:
-                cost_out.add(grams_used, spool_obj, f"Slot {slot_id}")
-        except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
-            logger.warning("[SPOOLMAN] Failed to record usage for spool %s: %s", spool_id_to_use, exc)
+        for charge_spool_id, charge_grams in shares or [(spool_id_to_use, grams_used)]:
+            charge_obj = spool_obj
+            if shares:
+                charge_grams = round(charge_grams, 2)
+                if charge_grams <= 0:
+                    continue
+                if charge_spool_id != spool_id_to_use:
+                    charge_obj = await _fetch_spool_for_price(client, charge_spool_id) if cost_out is not None else None
+            try:
+                await client.use_spool(charge_spool_id, charge_grams)
+                logger.info(
+                    "[SPOOLMAN] %s: slot %s: %sg -> spool %s (via %s)",
+                    method_label,
+                    slot_id,
+                    charge_grams,
+                    charge_spool_id,
+                    resolution_path,
+                )
+                spools_updated += 1
+                # Priced only after the charge landed, so a spool Spoolman refused
+                # cannot contribute to what the print is said to have cost.
+                if cost_out is not None:
+                    cost_out.add(charge_grams, charge_obj, f"Slot {slot_id}", spool_id=charge_spool_id)
+            except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
+                logger.warning("[SPOOLMAN] Failed to record usage for spool %s: %s", charge_spool_id, exc)
 
     return spools_updated
 
@@ -1080,6 +1219,7 @@ async def _report_spool_usage_split_by_tray_changes(
     slot_colors_out: dict[int, str] | None = None,
     slot_materials_out: dict[int, str] | None = None,
     cost_out: _PrintCost | None = None,
+    swaps: spool_swaps.Splitter | None = None,
 ) -> tuple[int, set[int]]:
     """Split each slot's grams across ``tray_changes`` and charge per-segment.
 
@@ -1151,6 +1291,22 @@ async def _report_spool_usage_split_by_tray_changes(
                 if spool_id_to_use is not None:
                     resolution_path = "slot-assignment"
 
+            # A spool swapped by hand on this tray within the segment (#3325).
+            seg_shares = None
+            if swaps is not None:
+                is_last = seg_idx + 1 >= len(tray_changes)
+                seg_shares = swaps.shares(
+                    *_global_tray_id_to_ams_slot(tray_global),
+                    slot_id,
+                    segment_grams,
+                    tray_changes[seg_idx][1],
+                    None if is_last else tray_changes[seg_idx + 1][1],
+                )
+                if seg_shares and seg_shares[0][0] != spool_id_to_use:
+                    spool_id_to_use = seg_shares[0][0]
+                    resolution_path = "swap log"
+                    spool_obj = spool_color_hex = spool_material = None
+
             if spool_id_to_use is None:
                 logger.info(
                     "[SPOOLMAN] Split slot %s seg %s tray=%d: no spool resolved — %.2fg lost from split accounting",
@@ -1188,29 +1344,40 @@ async def _report_spool_usage_split_by_tray_changes(
             if slot_materials_out is not None and slot_id not in slot_materials_out and spool_material:
                 slot_materials_out[slot_id] = spool_material
 
-            try:
-                await client.use_spool(spool_id_to_use, round(segment_grams, 2))
-                logger.info(
-                    "[SPOOLMAN] %s: slot %s seg %s tray=%d: %.2fg -> spool %s (via %s)",
-                    method_label,
-                    slot_id,
-                    seg_idx,
-                    tray_global,
-                    segment_grams,
-                    spool_id_to_use,
-                    resolution_path,
-                )
-                spools_updated += 1
-                if cost_out is not None:
-                    cost_out.add(round(segment_grams, 2), spool_obj, f"Split slot {slot_id} seg {seg_idx}")
-            except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
-                logger.warning(
-                    "[SPOOLMAN] Split slot %s seg %s: failed to record usage for spool %s: %s",
-                    slot_id,
-                    seg_idx,
-                    spool_id_to_use,
-                    exc,
-                )
+            for charge_spool_id, charge_grams in seg_shares or [(spool_id_to_use, segment_grams)]:
+                if charge_grams <= 0:
+                    continue
+                charge_obj = spool_obj
+                if charge_spool_id != spool_id_to_use:
+                    charge_obj = await _fetch_spool_for_price(client, charge_spool_id) if cost_out is not None else None
+                try:
+                    await client.use_spool(charge_spool_id, round(charge_grams, 2))
+                    logger.info(
+                        "[SPOOLMAN] %s: slot %s seg %s tray=%d: %.2fg -> spool %s (via %s)",
+                        method_label,
+                        slot_id,
+                        seg_idx,
+                        tray_global,
+                        charge_grams,
+                        charge_spool_id,
+                        resolution_path,
+                    )
+                    spools_updated += 1
+                    if cost_out is not None:
+                        cost_out.add(
+                            round(charge_grams, 2),
+                            charge_obj,
+                            f"Split slot {slot_id} seg {seg_idx}",
+                            spool_id=charge_spool_id,
+                        )
+                except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
+                    logger.warning(
+                        "[SPOOLMAN] Split slot %s seg %s: failed to record usage for spool %s: %s",
+                        slot_id,
+                        seg_idx,
+                        charge_spool_id,
+                        exc,
+                    )
 
     return spools_updated, handled_global_tray_ids
 
@@ -1229,7 +1396,11 @@ async def _report_partial_usage(
     data is unavailable.
     """
     from backend.app.services.printer_manager import printer_manager
-    from backend.app.utils.threemf_tools import get_cumulative_usage_at_layer, mm_to_grams
+    from backend.app.utils.threemf_tools import (
+        get_cumulative_usage_at_layer,
+        mm_to_grams,
+        slicer_grams_at_layer,
+    )
 
     async with async_session() as db:
         from backend.app.api.routes.settings import get_setting
@@ -1320,12 +1491,19 @@ async def _report_partial_usage(
     # dispatched from Studio over the cloud left print start with no mapping to
     # store, and both paths below feed ``slot_to_tray`` to
     # ``_resolve_global_tray_id`` (#2768). An aborted print charges the wrong
-    # spool just as readily as a finished one.
+    # spool just as readily as a finished one. A mapping that names no tray
+    # for any used slot is no mapping either, as in the built-in inventory
+    # (#3405).
+    unmapped = _mapping_names_no_used_tray(slot_to_tray, filament_usage)
+    if unmapped:
+        logger.info("[SPOOLMAN] Partial usage: mapping %s names no tray for the used slots, ignoring it", slot_to_tray)
+        slot_to_tray = None
     if not slot_to_tray:
         slot_to_tray, _partial_mapping_source = _resolve_slot_to_tray_fallback(
             printer_id,
             filament_usage,
             getattr(tracking, "tray_now_at_start", None),
+            tray_state_only=unmapped,
         )
         logger.info(
             "[SPOOLMAN] Partial usage: slot_to_tray=%s (source: %s)",
@@ -1339,6 +1517,8 @@ async def _report_partial_usage(
     # (#1793). The G-code split is not used here: its last segment runs to the
     # end of the whole print. A multi-material print keeps the mapping.
     tray_changes = list(getattr(state, "tray_change_log", None) or []) if state else []
+    # Spools swapped by hand on a tray, shared out up to where the print stopped (#3325).
+    swaps = _swap_splitter(printer_id, state, layer_usage, current_layer, completed=False)
 
     async def _charge(usage_items: list[tuple[int, float]], method_label: str) -> int:
         used = [(slot_id, grams) for slot_id, grams in usage_items if grams > 0]
@@ -1359,6 +1539,7 @@ async def _report_partial_usage(
                 printer_serial,
                 printer_id=printer_id,
                 cost_out=cost_out,
+                swaps=swaps,
             )
             return updated
         return await _report_spool_usage_for_slots(
@@ -1370,6 +1551,7 @@ async def _report_partial_usage(
             printer_serial,
             printer_id=printer_id,
             cost_out=cost_out,
+            swaps=swaps,
         )
 
     # Try to use accurate G-code parsed data
@@ -1382,10 +1564,20 @@ async def _report_partial_usage(
         if usage_mm:
             logger.info("[SPOOLMAN] Using G-code parsed data for layer %s", current_layer)
 
-            # Build (slot_id, grams) list using Spoolman densities with 3MF fallback
+            # On the slicer's weights, as a finished print is (#3317); the
+            # rest from Spoolman densities with 3MF fallback.
+            scaled = slicer_grams_at_layer(layer_usage_int, current_layer, filament_usage)
+            # A finished print charges only the slots the slicer weighed, so a
+            # cancelled one charges no others either.
+            weighed = {u.get("slot_id") for u in filament_usage if (u.get("used_g") or 0) > 0}
             usage_items = []
             for filament_id, mm_used in usage_mm.items():
                 slot_id = filament_id + 1  # filament_id is 0-based, slot_id is 1-based
+                if filament_usage and slot_id not in weighed:
+                    continue
+                if slot_id in scaled:
+                    usage_items.append((slot_id, round(scaled[slot_id], 2)))
+                    continue
 
                 # Get density from Spoolman (most accurate), fall back to 3MF, then PLA default
                 global_tray_id = _resolve_global_tray_id(slot_id, slot_to_tray, ams_trays)
@@ -1548,8 +1740,23 @@ async def report_usage(printer_id: int, archive_id: int):
         # ``slot_to_tray``; the remain-delta path below resolves spools from the
         # AMS slot directly, so there is nothing to recover for it.
         mapping_source = "stored" if slot_to_tray else "none"
+        # A flat ams_mapping whose only used slot is an external spool's -1,
+        # sent without ams_mapping2 (#3166), names no tray at all: the
+        # fallback below reads the tray the printer fed from, as the built-in
+        # inventory does. Kept, it charged that spool nothing (#3405).
+        unmapped = _mapping_names_no_used_tray(slot_to_tray, filament_usage)
+        if unmapped:
+            logger.info(
+                "[SPOOLMAN] Archive %s: mapping %s names no tray for the used slots, ignoring it",
+                archive_id,
+                slot_to_tray,
+            )
+            slot_to_tray = None
+            mapping_source = "none"
         if filament_usage and not slot_to_tray:
-            slot_to_tray, mapping_source = _resolve_slot_to_tray_fallback(printer_id, filament_usage, tray_now_at_start)
+            slot_to_tray, mapping_source = _resolve_slot_to_tray_fallback(
+                printer_id, filament_usage, tray_now_at_start, tray_state_only=unmapped
+            )
         logger.info(
             "[SPOOLMAN] Archive %s: slot_to_tray=%s (source: %s)",
             archive_id,
@@ -1583,6 +1790,7 @@ async def report_usage(printer_id: int, archive_id: int):
         # Priced as each charge lands, so the figure the archive ends up with
         # describes the same grams Spoolman actually had deducted (#2591).
         print_cost = _PrintCost()
+        swaps = _swap_splitter(printer_id, _state, layer_usage_raw, _layer_denom_hint, completed=True)
         handled_global_tray_ids: set[int] = set()
         spools_updated = 0
 
@@ -1629,6 +1837,7 @@ async def report_usage(printer_id: int, archive_id: int):
                     slot_colors_out=slot_colors,
                     slot_materials_out=slot_materials,
                     cost_out=print_cost,
+                    swaps=swaps,
                 )
                 spools_updated += split_updated
                 handled_global_tray_ids |= split_handled
@@ -1646,6 +1855,7 @@ async def report_usage(printer_id: int, archive_id: int):
                     slot_colors_out=slot_colors,
                     slot_materials_out=slot_materials,
                     cost_out=print_cost,
+                    swaps=swaps,
                 )
                 # Track which physical slots the 3MF path already covered so
                 # Path 2 doesn't double-charge them.
@@ -1717,6 +1927,7 @@ async def report_usage(printer_id: int, archive_id: int):
         # -- and the grams have already been deducted from these spools, so the
         # archive should say what that deduction was worth.
         await _apply_spool_cost_to_archive(db, archive_id, print_cost)
+        await _record_usage_history(db, printer_id, archive_id, "completed", print_cost)
 
 
 def _print_used_tray_keys(
@@ -1894,7 +2105,7 @@ async def _report_remain_delta_for_slots(
         # ``spool`` here is the full row fetched above for its net weight,
         # so the price is already in hand (#2591).
         if cost_out is not None:
-            cost_out.add(grams_used, spool, f"AMS{ams_id}-T{tray_id}")
+            cost_out.add(grams_used, spool, f"AMS{ams_id}-T{tray_id}", spool_id=spool_id)
         # No 3MF slot_id for this path — use the AMS slot key so the maps can
         # still be inspected by callers if needed. The archive rewrites
         # (#1494 colour, #2563 type) key on 3MF slot_ids, so remain-delta-only

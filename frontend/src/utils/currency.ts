@@ -32,6 +32,8 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   IDR: 'Rp',
   XPF: 'FCFP',
   PHP: '₱',
+  EGP: 'E£',
+  DOP: 'RD$',
 };
 
 export function getCurrencySymbol(currencyCode: string): string {

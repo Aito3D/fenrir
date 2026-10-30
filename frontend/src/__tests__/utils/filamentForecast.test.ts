@@ -71,7 +71,7 @@ describe('computeHistoryRate', () => {
 describe('computeDeltaRate', () => {
   it('respects the usage-reset baseline (#1390)', () => {
     const s = spool({ weight_used: 500, weight_used_baseline: 500 });
-    expect(computeDeltaRate([s])).toBeNull();
+    expect(computeDeltaRate([s], new Map(), false, Date.now())).toBeNull();
   });
 });
 

@@ -49,7 +49,7 @@ def _preferences(row: UserInboxPreference) -> InboxPreferences:
 async def list_inbox(
     limit: int = Query(50, ge=1, le=200),
     before: int | None = Query(None, ge=1),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Newest first; ``before`` pages back by id."""
@@ -74,7 +74,7 @@ async def list_inbox(
 @router.post("/read-all", status_code=204)
 async def read_all(
     up_to: int | None = Query(None, ge=1),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Mark the caller's unread rows read. ``up_to`` is the newest id the
@@ -92,7 +92,7 @@ async def read_all(
 
 @router.get("/preferences", response_model=InboxPreferences)
 async def get_preferences(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """The stored row, or the defaults when the user never saved one."""
@@ -106,7 +106,7 @@ async def get_preferences(
 @router.put("/preferences", response_model=InboxPreferences)
 async def put_preferences(
     payload: InboxPreferencesUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Replace the user's preferences. ``kinds`` must be known kinds and
@@ -147,7 +147,7 @@ async def _save_preferences(
 @router.post("/{notification_id}/read", status_code=204)
 async def mark_read(
     notification_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Mark one of the caller's own rows read. Someone else's row is a 404,

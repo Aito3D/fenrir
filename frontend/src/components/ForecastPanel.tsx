@@ -21,6 +21,7 @@ import {
   computeSkuForecasts,
   groupSpoolsBySku,
   skuKey,
+  skuLabel,
   type SkuForecast,
   type SkuGroup,
 } from '../utils/filamentForecast';
@@ -69,7 +70,7 @@ function buildProjectionSeries(
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
+export function ForecastPanel({ spools, spoolmanMode = false }: { spools: InventorySpool[]; spoolmanMode?: boolean }) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { t } = useTranslation();
@@ -91,7 +92,15 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
 
   const { data: settings } = useUiSettings({ enabled: canRead });
   const { data: skuSettingsList = [] } = useQuery({ queryKey: ['sku-settings'], queryFn: api.getSkuSettings, staleTime: 60_000, enabled: canRead });
-  const { data: usageHistory = [] } = useQuery({ queryKey: ['all-usage-history-forecast'], queryFn: () => api.getAllUsageHistory(5000), staleTime: 60_000, enabled: canRead });
+  // Each inventory's own usage history, keyed by its own spool ids: in
+  // Spoolman mode the rows Fenrir wrote for the Spoolman spools it charged
+  // (#3407), never the built-in ones, whose ids a Spoolman id can match (#3406).
+  const { data: usageHistory = [] } = useQuery({
+    queryKey: ['all-usage-history-forecast', spoolmanMode],
+    queryFn: () => api.getAllUsageHistory(5000, undefined, spoolmanMode),
+    staleTime: 60_000,
+    enabled: canRead,
+  });
   const { data: shoppingList = [] } = useQuery({ queryKey: ['shopping-list'], queryFn: api.getShoppingList, staleTime: 30_000, enabled: canRead });
 
   const globalLeadTime = settings?.forecast_global_lead_time_days ?? 0;
@@ -99,8 +108,8 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
   const groups = useMemo((): SkuGroup[] => groupSpoolsBySku(spools), [spools]);
 
   const forecasts = useMemo(
-    (): SkuForecast[] => computeSkuForecasts(groups, skuSettingsList, usageHistory, globalLeadTime),
-    [groups, skuSettingsList, usageHistory, globalLeadTime],
+    (): SkuForecast[] => computeSkuForecasts(groups, skuSettingsList, usageHistory, globalLeadTime, spoolmanMode),
+    [groups, skuSettingsList, usageHistory, globalLeadTime, spoolmanMode],
   );
 
   const uniqueMaterials = useMemo(() =>
@@ -413,7 +422,7 @@ function SortableTh({
 
 function AlertBanner({ forecast: f, onCart }: { forecast: SkuForecast; onCart: () => void }) {
   const { t } = useTranslation();
-  const label = [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' ');
+  const label = skuLabel(f.group.brand, f.group.material, f.group.subtype, f.group.colorName);
   const isBreak = f.stockBreakAlert;
 
   return (
@@ -461,7 +470,7 @@ function UsageChart({ forecasts, days: maxDays, onDaysChange }: {
 
   const series = forecasts.map((f, idx) => ({
     key: f.group.key,
-    label: [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' '),
+    label: skuLabel(f.group.brand, f.group.material, f.group.subtype, f.group.colorName),
     color: CHART_COLORS[idx % CHART_COLORS.length],
     rop: f.reorderPointG,
     points: buildProjectionSeries(f, maxDays),
@@ -669,7 +678,7 @@ function ForecastRow({
 
   const snoozed = f.settings?.alerts_snoozed ?? false;
 
-  const label = [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' ');
+  const label = skuLabel(f.group.brand, f.group.material, f.group.subtype, f.group.colorName);
   // Use getSwatchStyle so a Clear (alpha=00) lead spool renders as a
   // checkerboard rather than collapsing to solid black (#1545).
   const colorStyle = f.group.spools[0]?.rgba ? getSwatchStyle(f.group.spools[0].rgba) : { backgroundColor: '#4B5563' };
@@ -993,7 +1002,8 @@ function SafetyMarginField({
         approx: displayG !== null ? t('forecast.safetyMarginHintDaysApprox', { g: displayG }) : '',
       })
     : t('forecast.safetyMarginHintG', {
-        approx: dailyRateG !== null ? t('forecast.safetyMarginHintGApprox', { days: Math.round(value / dailyRateG) }) : '',
+        // A SKU not used lately has a rate of 0 (#3407): no day count to give.
+        approx: dailyRateG ? t('forecast.safetyMarginHintGApprox', { days: Math.round(value / dailyRateG) }) : '',
       });
 
   return (
@@ -1025,7 +1035,7 @@ function SafetyMarginField({
           {displayG !== null && unit === 'days' && (
             <span className="text-lg font-semibold text-white">≈ {displayG}g</span>
           )}
-          {unit === 'g' && dailyRateG !== null && (
+          {unit === 'g' && !!dailyRateG && (
             <span className="text-lg font-semibold text-white">≈ {Math.round(value / dailyRateG)}d</span>
           )}
           <button onClick={onEdit} className="p-1 text-bambu-gray hover:text-white rounded transition-colors"><Edit2 className="w-3 h-3" /></button>
@@ -1224,7 +1234,7 @@ function ShoppingListPanel({
             </thead>
             <tbody className="divide-y divide-bambu-dark-tertiary">
               {items.map((item) => {
-                const lbl = [item.brand, item.material, item.subtype, item.color_name].filter(Boolean).join(' ');
+                const lbl = skuLabel(item.brand, item.material, item.subtype, item.color_name);
                 const hasBreak = breakAlerts.some((a) => a.item.id === item.id);
                 const f = forecastMap.get(skuKey(item.material, item.subtype, item.brand, item.color_name)) ?? null;
                 const avgSpoolG = f && f.totalSpools > 0 ? f.totalLabelG / f.totalSpools : 1000;
@@ -1356,7 +1366,7 @@ function CartLogisticsRow({
   onRemove: () => void;
 }) {
   const { t } = useTranslation();
-  const label = [item.brand, item.material, item.subtype, item.color_name].filter(Boolean).join(' ');
+  const label = skuLabel(item.brand, item.material, item.subtype, item.color_name);
 
   // Build a timeline showing stock depletion, arrival bump, then post-arrival depletion.
   // Two points are inserted at day `lt` (just-before and just-after arrival) so the
@@ -1591,7 +1601,7 @@ function AddToCartModal({
   onAdd: (item: { material: string; subtype: string | null; brand: string | null; color_name: string | null; quantity_spools: number; note: string | null }) => void;
 }) {
   const { t } = useTranslation();
-  const label = [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' ');
+  const label = skuLabel(f.group.brand, f.group.material, f.group.subtype, f.group.colorName);
   const [mode, setMode] = useState<'qty' | 'duration'>('qty');
   const [qty, setQty] = useState('1');
   const [durationDays, setDurationDays] = useState('30');

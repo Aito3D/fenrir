@@ -49,6 +49,8 @@ function renderCameraPage(printerId: number) {
               <ToastProvider>
                 <Routes>
                   <Route path="/cameras/:printerId" element={<CameraPage />} />
+                  <Route path="/" element={<p>Fenrir home</p>} />
+                  <Route path="/printers" element={<p>printers page</p>} />
                 </Routes>
               </ToastProvider>
             </ThemeProvider>
@@ -86,6 +88,7 @@ describe('CameraPage', () => {
 
   afterEach(() => {
     document.title = originalTitle;
+    Object.defineProperty(window, 'opener', { value: null, configurable: true, writable: true });
   });
 
   describe('rendering', () => {
@@ -117,6 +120,9 @@ describe('CameraPage', () => {
     });
   });
 
+  // The viewport was the box a sideways camera was swapped against, but the
+  // header and padding leave the video area smaller, so a wide window cut the
+  // picture off at the top and bottom (#3362).
   describe('camera controls', () => {
     it('renders without crashing', async () => {
       renderCameraPage(1);

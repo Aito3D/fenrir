@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, RefreshCw, AlertTriangle, Maximize2, Minimize2, GripVertical, WifiOff, ZoomIn, ZoomOut, Fullscreen, Minimize } from 'lucide-react';
@@ -11,8 +11,10 @@ import { useMjpegStream } from '../hooks/useMjpegStream';
 import { useStreamReconnect } from '../hooks/useStreamReconnect';
 import { useZoomPan } from '../hooks/useZoomPan';
 import { useCameraViewerId } from '../hooks/useCameraViewerId';
+import { isSideways, useSidewaysBox } from '../hooks/useSidewaysBox';
+import { useIsSidebarCompact } from '../hooks/useIsSidebarCompact';
 
-interface EmbeddedCameraViewerProps {
+export interface EmbeddedCameraViewerProps {
   printerId: number;
   printerName: string;
   viewerIndex?: number;  // Used to offset multiple viewers
@@ -22,6 +24,11 @@ interface EmbeddedCameraViewerProps {
 import { getDefaultState, type CameraState } from './cameraDefaults';
 
 const STORAGE_KEY_PREFIX = 'embeddedCameraState_';
+
+// The compact header (56px) holds the header controls; a viewer stays below
+// it there.
+const COMPACT_HEADER_HEIGHT = 56;
+
 
 export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, onClose }: EmbeddedCameraViewerProps) {
   const { t } = useTranslation();
@@ -38,6 +45,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
 
   // Printer-specific storage key
   const storageKey = `${STORAGE_KEY_PREFIX}${printerId}`;
+  const minY = useIsSidebarCompact() ? COMPACT_HEADER_HEIGHT : 0;
 
   // Load saved state or use defaults (offset for new viewers without saved state)
   const loadState = (): CameraState => {
@@ -67,6 +75,12 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   };
 
   const [state, setState] = useState<CameraState>(loadState);
+  // Below the compact header: a position saved before it held the launcher,
+  // or a window narrowed into the compact layout. Before paint, so a viewer
+  // never shows over the header first.
+  useLayoutEffect(() => {
+    setState(prev => (prev.y < minY ? { ...prev, y: minY } : prev));
+  }, [minY]);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
@@ -107,6 +121,12 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     queryFn: () => api.getPrinter(printerId),
     enabled: printerId > 0,
   });
+
+  // A camera turned sideways is laid out with the video area's sides swapped,
+  // or it is cut off in a wide window and boxed in a tall one (#3362).
+  const videoAreaRef = useRef<HTMLDivElement>(null);
+  const sideways = isSideways(printer?.camera_rotation);
+  const videoArea = useSidewaysBox(videoAreaRef, sideways && !isMinimized);
 
   // Reconnect logic
   const reconnect = useStreamReconnect({
@@ -222,7 +242,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           setState((prev) => ({
             ...prev,
             x: Math.max(0, Math.min(e.clientX - offset.x, window.innerWidth - prev.width)),
-            y: Math.max(0, Math.min(e.clientY - offset.y, window.innerHeight - prev.height)),
+            y: Math.max(minY, Math.min(e.clientY - offset.y, window.innerHeight - prev.height)),
           }));
         } else if (isResizing && containerRef.current) {
           const rect = containerRef.current.getBoundingClientRect();
@@ -243,7 +263,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
         setState((prev) => ({
           ...prev,
           x: Math.max(0, Math.min(touch.clientX - dragOffsetRef.current.x, window.innerWidth - prev.width)),
-          y: Math.max(0, Math.min(touch.clientY - dragOffsetRef.current.y, window.innerHeight - prev.height)),
+          y: Math.max(minY, Math.min(touch.clientY - dragOffsetRef.current.y, window.innerHeight - prev.height)),
         }));
       } else if (isResizing && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
@@ -274,7 +294,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
         document.removeEventListener('touchcancel', handleMouseUp);
       };
     }
-  }, [isDragging, isResizing]);
+  }, [isDragging, isResizing, minY]);
 
   return (
     <div
@@ -364,6 +384,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       {/* Video area */}
       {!isMinimized && (
         <div
+          ref={videoAreaRef}
           className="relative w-full bg-black flex items-center justify-center overflow-hidden h-[calc(100%-40px)]"
           onWheel={handleWheel}
           onMouseMove={handleImageMouseMove}
@@ -408,7 +429,11 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
             className="max-w-full max-h-full object-contain select-none"
             style={{
               transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px) rotate(${printer?.camera_rotation || 0}deg)`,
-              ...(printer?.camera_rotation === 90 || printer?.camera_rotation === 270 ? { maxWidth: '100%', maxHeight: '100%' } : {}),
+              ...(sideways
+                ? videoArea
+                  ? { maxWidth: videoArea.height, maxHeight: videoArea.width }
+                  : { maxWidth: '100%', maxHeight: '100%' }
+                : {}),
               cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
             }}
             onMouseDown={handleCanvasMouseDown}

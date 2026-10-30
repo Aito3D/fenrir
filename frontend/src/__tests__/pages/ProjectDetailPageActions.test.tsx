@@ -317,8 +317,9 @@ describe('ProjectDetailPage actions and states', () => {
       expect(screen.getByAltText('Benchy')).toBeInTheDocument();
       expect(screen.getByTestId('archive-revision-1').textContent).toContain('Support R2');
       expect(screen.getByTestId('archive-revision-1').textContent).toContain('42');
-      const links = screen.getAllByRole('link').filter((l) => l.getAttribute('href')?.startsWith('/archives?search='));
-      expect(links.map((l) => l.getAttribute('href'))).toEqual(['/archives?search=Benchy', '/archives?search=']);
+      // Upstream #3336: a tile points at its own archive, not at a name search.
+      const links = screen.getAllByRole('link').filter((l) => l.getAttribute('href')?.startsWith('/archives?highlight='));
+      expect(links.map((l) => l.getAttribute('href'))).toEqual(['/archives?highlight=1', '/archives?highlight=2']);
       expect(screen.queryByTestId('archive-revision-2')).not.toBeInTheDocument();
     });
 

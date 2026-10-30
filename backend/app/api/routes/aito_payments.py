@@ -131,7 +131,7 @@ async def start_terminal_payment_route(
     project_id: int,
     body: AitoTerminalPaymentCreate,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Fire the counter terminal for this project's quote deposit or invoice
@@ -159,7 +159,7 @@ async def start_terminal_payment_route(
 async def get_terminal_payment(
     project_id: int,
     payment_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """The row, refreshed from Heimdall when it is still open (throttled)."""
@@ -179,7 +179,7 @@ async def record_manual_payment_route(
     project_id: int,
     body: AitoManualPaymentCreate,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     _check_counter_payment_rate_limit(request, current_user)
@@ -257,7 +257,7 @@ async def create_invoice_payment_link(
     project_id: int,
     body: AitoInvoiceLinkCreate,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """An OSB link for this project's invoice (quote links are minted by the
@@ -299,7 +299,7 @@ async def cancel_invoice_payment_link(
     project_id: int,
     link_id: int,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     _check_counter_payment_rate_limit(request, current_user)

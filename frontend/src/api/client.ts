@@ -1,4 +1,5 @@
 import type { KProfileWriteResult } from '../utils/kprofileWrite';
+import type { BambuCatalogColor } from '../utils/colors';
 import type { ArchivePlatesResponse, LibraryFilePlatesResponse } from '../types/plates';
 import { batched, byField, byId } from './batch';
 import { localDateKey } from '../utils/date';
@@ -569,7 +570,7 @@ export interface AMSUnit {
   dry_sf_reason: number[]; // Cannot-dry reasons (1=InsufficientPower, 8=NeedPluginPower)
   dry_target_temp: number | null; // Active-cycle target °C (Bambu does not echo)
   dry_filament: string | null;    // Active-cycle filament name we sent
-  module_type: string;    // "ams", "n3f", "n3s"
+  module_type: string;    // "ams", "ams_f1", "n3f", "n3s"
 }
 
 export interface ScheduledDrying {
@@ -780,6 +781,9 @@ export interface PrinterStatus {
   last_ams_update: number;
   // Number of printable objects in current print (for skip objects feature)
   printable_objects_count: number;
+  // The next pause the slicer put into the running print (#2984). minutes is
+  // null while the printer reports no time left yet.
+  next_pause?: { layer: number; minutes: number | null } | null;
   // Fan speeds (0-100 percentage, null if not available for this model)
   cooling_fan_speed: number | null;  // Part cooling fan
   big_fan1_speed: number | null;     // Auxiliary fan
@@ -1013,6 +1017,7 @@ export interface PrintLogEntry {
   id: number;
   archive_id: number | null;
   print_name: string | null;
+  plate_id?: number | null;
   printer_name: string | null;
   printer_id: number | null;
   status: string;
@@ -1647,6 +1652,8 @@ export interface AppSettings {
   prometheus_token: string;
   // Bed cooled threshold
   bed_cooled_threshold: number;
+  // Minutes before a slicer pause to send the pause heads-up (#2984)
+  pause_warning_minutes: number;
   // Inventory low stock threshold
   low_stock_threshold: number;
   // Session policy (#1706) — admin-set ceiling, hours, [1, 720]
@@ -1963,6 +1970,9 @@ export interface SlicerSetting {
   user_id: string | null;
   updated_time: string | null;
   is_custom: boolean;
+  // The id Bambu Studio puts in an AMS slot for the preset; not derivable
+  // from setting_id for every preset (#3387). Absent from older backends.
+  filament_id?: string | null;
 }
 
 export interface SpoolCatalogEntry {
@@ -2097,10 +2107,10 @@ export interface SliceRequest {
   plate?: number;
   export_3mf?: boolean;
   // Build-plate override (#1337). When omitted, the slicer uses the process
-  // preset's curr_bed_type as-is. Canonical values match BambuStudio /
-  // OrcaSlicer's enum: "Cool Plate", "Engineering Plate", "High Temp Plate",
-  // "Textured PEI Plate", "Smooth PEI Plate", "Cool Plate (SuperTack)",
-  // "Supertack Plate".
+  // preset's curr_bed_type as-is. A name from BambuStudio / OrcaSlicer's
+  // enum: "Cool Plate", "Engineering Plate", "High Temp Plate" (Smooth PEI),
+  // "Textured PEI Plate", "Supertack Plate", or OrcaSlicer's "Textured Cool
+  // Plate" (refused when Bambu Studio slices); the backend refuses others (#3359).
   bed_type?: string | null;
   // "Slice as designed" (#2611). 3MF only: slice using the file's embedded
   // project_settings.config (the designer's own wall count, infill, etc.)
@@ -2191,14 +2201,17 @@ export interface LoadedSpoolsResponse {
 }
 export interface UnifiedPresetsResponse {
   // Priority order: local > orca_cloud > cloud > standard. No cross-tier
-  // dedup — every tier surfaces its full list so the user can pick from
-  // any source. The order drives auto-pick + visual group rendering only.
+  // dedup (apart from stock_aliases below) — every tier surfaces its full
+  // list so the user can pick from any source. The order drives auto-pick + visual group rendering only.
   orca_cloud: UnifiedPresetsBySlot;
   cloud: UnifiedPresetsBySlot;
   local: UnifiedPresetsBySlot;
   standard: UnifiedPresetsBySlot;
   cloud_status: SlicerCloudStatus;
   orca_cloud_status: SlicerCloudStatus;
+  // Standard presets that Bambu Cloud's stock list also has are left out of
+  // the standard tier (#3386); each "standard:<id>" maps to its cloud twin.
+  stock_aliases?: Record<string, PresetRef>;
 }
 
 // Slicer Pipelines (#1425) — named bundles of preset slots the SliceModal
@@ -3020,6 +3033,21 @@ export interface PrintQueueItem {
    *  machine (#1784): `{ [group_id]: 1-based position }`. Re-checked against
    *  the live rack at dispatch; omit to have the dispatcher assign them. */
   nozzle_rack_choice?: Record<number, number> | null;
+  /** Slots sent with a spool of another colour than the file asks for
+   *  (#3279). Worked out when the job is sent; null when every slot got its
+   *  colour or nothing could be compared. */
+  color_substitutions?: ColorSubstitution[] | null;
+}
+
+/** One slot printed in another colour than the file asked for (#3279). */
+export interface ColorSubstitution {
+  slot_id: number;
+  type: string;
+  /** `#RRGGBB` the file asks for, after overrides. */
+  wanted: string;
+  /** `#RRGGBB` of the spool the slot was sent with. */
+  got: string;
+  tray: number;
 }
 
 export interface PrintBatchPlateTarget {
@@ -3394,6 +3422,7 @@ export interface NotificationProvider {
   on_location_ha_sensor_alert: boolean;
   // First layer complete
   on_first_layer_complete: boolean;
+  on_print_pause_upcoming: boolean;
   on_app_message: boolean;
   // Inventory stock alerts
   on_stock_reorder_alert: boolean;
@@ -3464,6 +3493,7 @@ export interface NotificationProviderCreate {
   on_location_ha_sensor_alert?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
+  on_print_pause_upcoming?: boolean;
   on_app_message?: boolean;
   // Inventory stock alerts
   on_stock_reorder_alert?: boolean;
@@ -3527,6 +3557,7 @@ export interface NotificationProviderUpdate {
   on_location_ha_sensor_alert?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
+  on_print_pause_upcoming?: boolean;
   on_app_message?: boolean;
   // Inventory stock alerts
   on_stock_reorder_alert?: boolean;
@@ -4083,6 +4114,8 @@ export interface InventorySpool {
   note: string | null;
   added_full: boolean | null;
   last_used: string | null;
+  // Spoolman mode: when the spool was first printed with (#3407).
+  first_used?: string | null;
   // Last drying (#2863): stamped when an AMS drying run of at least half its
   // length ends, or set by hand. Temperature and hours are null when unknown.
   last_dried_at?: string | null;
@@ -4279,6 +4312,8 @@ export interface SpoolUsageRecord {
   id: number;
   // null: the spool was deleted, its usage kept
   spool_id: number | null;
+  // Spoolman mode: the Spoolman spool charged (#3407); spool_id is null then.
+  spoolman_spool_id?: number | null;
   printer_id: number | null;
   print_name: string | null;
   weight_used: number;
@@ -4343,6 +4378,40 @@ export interface SpoolFilamentPreset extends SpoolFilamentPresetInput {
   id: number;
   spool_id: number;
   created_at: string;
+}
+
+/**
+ * What a new spool of one product starts with (#1326): the slicer preset, the
+ * per-model preset overrides and the K profiles. `color_name` "" is the
+ * default for every colour of the product; one with a colour wins over it per
+ * preset and per hotend. Shared by both inventory modes.
+ */
+export interface ProfileDefaultKey {
+  brand: string;
+  material: string;
+  subtype: string;
+  color_name: string;
+}
+
+export interface ProfileDefaultInput extends ProfileDefaultKey {
+  slicer_filament: string | null;
+  slicer_filament_name: string | null;
+  presets: SpoolFilamentPresetInput[];
+  k_profiles: SpoolKProfileInput[];
+}
+
+export interface ProfileDefault extends ProfileDefaultInput {
+  id: number;
+  updated_at: string;
+}
+
+/** Both levels of a product's default merged, as a create applies them. */
+export interface ResolvedProfileDefault {
+  slicer_filament: string | null;
+  slicer_filament_name: string | null;
+  presets: SpoolFilamentPresetInput[];
+  k_profiles: SpoolKProfileInput[];
+  default_ids: number[];
 }
 
 /** One inventory-bound AMS slot, as returned by `/printers/{id}/inventory-remain`. */
@@ -7119,7 +7188,13 @@ export const api = {
       method: 'DELETE',
     }),
   recalculateCosts: () =>
-    request<{ message: string; updated: number }>('/archives/recalculate-costs', { method: 'POST' }),
+    request<{
+      message: string;
+      updated: number;
+      preserved: number;
+      usage_repriced: number;
+      spoolman_unreachable: number;
+    }>('/archives/recalculate-costs', { method: 'POST' }),
   getFailureAnalysis: (options?: { days?: number; dateFrom?: string; dateTo?: string; printerId?: number; projectId?: number; createdById?: number }) => {
     const params = new URLSearchParams();
     if (options?.days) params.set('days', String(options.days));
@@ -8544,9 +8619,36 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(presets),
     }),
+  getProfileDefaults: () => request<ProfileDefault[]>('/inventory/profile-defaults'),
+  resolveProfileDefault: (key: ProfileDefaultKey) => {
+    const params = new URLSearchParams({
+      brand: key.brand,
+      material: key.material,
+      subtype: key.subtype,
+      color_name: key.color_name,
+    });
+    return request<ResolvedProfileDefault | null>(`/inventory/profile-defaults/resolve?${params}`);
+  },
+  saveProfileDefault: (data: ProfileDefaultInput) =>
+    request<ProfileDefault>('/inventory/profile-defaults', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteProfileDefault: (defaultId: number) =>
+    request<{ status: string }>(`/inventory/profile-defaults/${defaultId}`, { method: 'DELETE' }),
+  /** Fills in what active spools of the default's product lack; the inventory mode picks the route. */
+  applyProfileDefault: (defaultId: number, spoolmanMode: boolean) =>
+    request<{ updated: number }>(
+      spoolmanMode
+        ? `/spoolman/inventory/profile-defaults/${defaultId}/apply`
+        : `/inventory/profile-defaults/${defaultId}/apply`,
+      { method: 'POST' },
+    ),
   getAssignments: (printerId?: number) =>
     request<SpoolAssignment[]>(`/inventory/assignments${printerId ? `?printer_id=${printerId}` : ''}`),
-  assignSpool: (data: { spool_id: number; printer_id: number; ams_id: number; tray_id: number }) =>
+  // move: the spool also leaves any other slot it is in, in the same
+  // transaction (#1574) -- for a scanned spool, the one in the user's hand.
+  assignSpool: (data: { spool_id: number; printer_id: number; ams_id: number; tray_id: number; move?: boolean }) =>
     request<SpoolAssignment>('/inventory/assignments', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -8648,7 +8750,12 @@ export const api = {
    *  flat answer (e.g. ``"pla matte|ffffff" -> "Ivory White"`` where the flat
    *  map says "Jade White"). #2875. */
   getColorNameMap: () =>
-    request<{ colors: Record<string, string>; by_material?: Record<string, string> }>('/inventory/colors/map'),
+    request<{
+      colors: Record<string, string>;
+      by_material?: Record<string, string>;
+      bambu?: BambuCatalogColor[];
+      preset_materials?: Record<string, string>;
+    }>('/inventory/colors/map'),
   addColorEntry: (data: {
     manufacturer: string;
     color_name: string;
@@ -8694,8 +8801,15 @@ export const api = {
   },
   getSpoolUsageHistory: (spoolId: number, limit = 50) =>
     request<SpoolUsageRecord[]>(`/inventory/spools/${spoolId}/usage?limit=${limit}`),
-  getAllUsageHistory: (limit = 100, printerId?: number) =>
-    request<SpoolUsageRecord[]>(`/inventory/usage?limit=${limit}${printerId ? `&printer_id=${printerId}` : ''}`),
+  // One inventory's at a time: ``spoolman`` for the Spoolman spools' (#3407).
+  getAllUsageHistory: (limit = 100, printerId?: number, spoolman = false) =>
+    request<SpoolUsageRecord[]>(
+      `/inventory/usage?limit=${limit}${printerId ? `&printer_id=${printerId}` : ''}${spoolman ? '&spoolman=true' : ''}`,
+    ),
+  getSpoolmanSpoolUsageHistory: (spoolId: number, limit = 50) =>
+    request<SpoolUsageRecord[]>(`/spoolman/inventory/spools/${spoolId}/usage?limit=${limit}`),
+  clearSpoolmanSpoolUsageHistory: (spoolId: number) =>
+    request<{ status: string }>(`/spoolman/inventory/spools/${spoolId}/usage`, { method: 'DELETE' }),
   clearSpoolUsageHistory: (spoolId: number) =>
     request<{ status: string }>(`/inventory/spools/${spoolId}/usage`, { method: 'DELETE' }),
   syncWeightsFromAms: () =>
@@ -8795,7 +8909,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ weight_grams: weightGrams }),
     }),
-  assignSpoolmanSlot: (data: { spoolman_spool_id: number; printer_id: number; ams_id: number; tray_id: number }) =>
+  // move: as assignSpool's (#1574).
+  assignSpoolmanSlot: (data: { spoolman_spool_id: number; printer_id: number; ams_id: number; tray_id: number; move?: boolean }) =>
     request<InventorySpool>('/spoolman/inventory/slot-assignments', {
       method: 'POST',
       body: JSON.stringify(data),

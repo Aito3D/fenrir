@@ -409,6 +409,12 @@ export function FinancePage() {
     createCostCenterMutation.mutate();
   };
 
+  // A private center is named after its owner and can't be renamed; the backend
+  // refuses the rename, which used to stop the budget from being saved (#3358).
+  const selectedEditCenterIsPrivate = (costCenters || []).some(
+    (c) => c.id === selectedEditCenterId && c.is_private,
+  );
+
   const handleSaveEditedCenter = async () => {
     if (selectedEditCenterId == null) {
       showToast(t('finance.selectCostCenter', 'Please select a cost center'), 'error');
@@ -422,7 +428,7 @@ export function FinancePage() {
     }
 
     try {
-      if (canUpdateCostCenters) {
+      if (canUpdateCostCenters && !selectedEditCenterIsPrivate) {
         await updateCostCenterMutation.mutateAsync({ costCenterId: selectedEditCenterId, name });
       }
       if (canUpdateBudgets) {
@@ -1006,7 +1012,7 @@ export function FinancePage() {
                 onChange={(e) => setEditCenterName(e.target.value)}
                 placeholder={t('finance.costCenterName', 'Name')}
                 className={fieldClass}
-                disabled={!canUpdateCostCenters}
+                disabled={!canUpdateCostCenters || selectedEditCenterIsPrivate}
               />
             </div>
 

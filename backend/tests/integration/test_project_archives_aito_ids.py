@@ -55,7 +55,7 @@ async def test_auth_off_keeps_the_ids(async_client: AsyncClient, traced_project)
 @pytest.mark.integration
 @pytest.mark.parametrize(
     ("permissions", "visible"),
-    [([P.PROJECTS_READ, P.AITO_READ], True), ([P.PROJECTS_READ], False)],
+    [([P.PROJECTS_READ, P.ARCHIVES_READ_ALL, P.AITO_READ], True), ([P.PROJECTS_READ, P.ARCHIVES_READ_ALL], False)],
     ids=["with aito:read", "without aito:read"],
 )
 async def test_user_sees_the_ids_only_with_aito_read(

@@ -25,7 +25,7 @@ router = APIRouter(prefix="/heimdall", tags=["heimdall"])
 @router.post("/test", response_model=HeimdallStatus)
 async def test_heimdall(
     payload: HeimdallTestRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ) -> HeimdallStatus:
     """Ping Heimdall with the saved credential, or the overrides typed in

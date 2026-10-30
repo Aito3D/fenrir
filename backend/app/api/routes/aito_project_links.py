@@ -94,7 +94,7 @@ async def _commit_link(db: AsyncSession, task: AitoTask, actor: str | None) -> T
 
 @router.get("/project-codes")
 async def get_project_codes(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _aito_read,
     __: User | None = _projects_read,
 ) -> dict[int, list[str]]:
@@ -104,7 +104,7 @@ async def get_project_codes(
 @router.get("/tasks/{task_id}/project-suggestions")
 async def get_project_suggestions(
     task_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _aito_read,
     __: User | None = _projects_read,
 ) -> list[ProjectSuggestion]:
@@ -115,7 +115,7 @@ async def get_project_suggestions(
 async def put_task_project(
     task_id: int,
     body: TaskLinkRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = _aito_update,
     __: User | None = _projects_read,
 ) -> TaskProjectLink:
@@ -129,7 +129,7 @@ async def put_task_project(
 async def post_task_project(
     task_id: int,
     body: TaskCreateProjectRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = _aito_update,
     __: User | None = _projects_create,
 ) -> TaskProjectLink:
@@ -151,7 +151,7 @@ async def post_task_project(
 async def put_task_deliveries(
     task_id: int,
     body: TaskDeliveriesRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = _aito_update,
     __: User | None = _projects_update,
 ) -> TaskProjectLink:
@@ -165,7 +165,7 @@ async def put_task_deliveries(
 async def drop_task_files(
     task_id: int,
     files: list[UploadFile] = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = _aito_update,
     __: User | None = _projects_update,
 ) -> DropFilesResponse:
@@ -196,7 +196,7 @@ async def drop_task_files(
 @router.get("/{order_id}/project-links")
 async def get_project_links(
     order_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _aito_read,
     __: User | None = _projects_read,
 ) -> OrderProjectLinks:

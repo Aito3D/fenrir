@@ -1212,7 +1212,12 @@ async def _null_print_log_thumbnail_paths(db: AsyncSession, archive_id: int) -> 
 
     from backend.app.models.print_log import PrintLogEntry
 
-    await db.execute(sa_update(PrintLogEntry).where(PrintLogEntry.archive_id == archive_id).values(thumbnail_path=None))
+    await db.execute(
+        sa_update(PrintLogEntry)
+        .where(PrintLogEntry.archive_id == archive_id)
+        .values(thumbnail_path=None)
+        .execution_options(include_open_runs=True)
+    )
 
 
 async def _delete_related_queue_items(db: AsyncSession, archive_id: int) -> int:
@@ -1497,6 +1502,7 @@ class ArchiveService:
         slicer_ams_mapping: list[int] | None = None,
         slicer_ams_mapping_printer_id: int | None = None,
         update_archive_id: int | None = None,
+        started_at: datetime | None = None,
     ) -> PrintArchive | None:
         """Archive a 3MF file with metadata.
 
@@ -1549,6 +1555,8 @@ class ArchiveService:
                 already established from MQTT (``started_at``, ``subtask_id``,
                 ``created_by_id``, ``project_id``) are left alone; the 3MF has nothing
                 better to say about them.
+            started_at: When the print started, for a "printing" archive whose 3MF
+                was downloaded after the start (#3327). Defaults to now.
         """
         # Verify printer exists if specified
         if printer_id is not None:
@@ -1692,7 +1700,7 @@ class ArchiveService:
 
             # Determine status and timestamps
             status = print_data.get("status", "completed") if print_data else "archived"
-            started_at = datetime.now(timezone.utc) if status == "printing" else None
+            started_at = (started_at or datetime.now(timezone.utc)) if status == "printing" else None
             completed_at = datetime.now(timezone.utc) if status in ("completed", "failed", "archived") else None
 
             cost = await estimate_filament_cost(

@@ -300,6 +300,7 @@ export function CameraPage() {
     );
   }
 
+
   return (
     <div ref={containerRef} className="min-h-screen bg-black flex flex-col">
       {/* Header */}

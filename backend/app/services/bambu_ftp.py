@@ -74,16 +74,19 @@ _UPLOAD_MIN_TIMEOUT = 600.0
 # #2572's cap exists to bound is not lengthened by any of this.
 _DOWNLOAD_FLOOR_BYTES_PER_SEC = 25 * 1024
 
-# ...but not without a ceiling, and for a reason that has nothing to do with FTP:
-# ``on_print_start`` runs its whole 3MF hunt inside one ``async_session``, so
-# every second a download is allowed is a second a pooled DB connection is held
-# (the same coupling behind #2572's cap). 300 s is ~7.5 MB at the floor rate and
-# covers the reporter's 15.15 MB / 105 s measurement three times over, because
-# the floor is pessimistic by design and a real link is not that slow.
+# ...but not without a ceiling. Print start no longer holds a pooled DB
+# connection while it downloads (it commits first, #2572); what it holds is the
+# archive itself, which only exists once this download ends, and the printer's
+# one FTPS slot, at the moment the printer serves files slowest -- an A1 in its
+# start-up routine managed ~87 KB/s (#3308). 300 s is ~7.5 MB at the floor rate
+# and covers a 15.15 MB / 105 s measurement three times over, because the floor
+# is pessimistic by design and a real link is not that slow. A file too big for
+# it gets a fallback archive at once and the archive recovery retry.
 _DOWNLOAD_MAX_TIMEOUT = 300.0
 
-# The archive recovery retry holds no database session while it downloads, so
-# a large 3MF may take longer there: ~22 MB at the floor rate.
+# The archive recovery retry runs after print start, with the archive already
+# on the page, so a large 3MF may take longer there: ~22 MB at the floor rate,
+# ~78 MB at the A1's measured start-up rate.
 RECOVERY_DOWNLOAD_MAX_TIMEOUT = 900.0
 
 
@@ -283,6 +286,9 @@ class FileListResult:
     # The printer did not answer within the wait: slow, not necessarily gone
     # (a large /ipcam on a slow card), so not reported as unavailable (TO-C13).
     timed_out: bool = False
+    # The printer answered that the directory does not exist (550). Still not
+    # ``available``, but an answer about the card, not a failure to reach it.
+    missing: bool = False
 
 
 # Listings still running, by printer and folder: a refresh joins the one in
@@ -1285,7 +1291,8 @@ class BambuFTPClient:
             # 452 is "insufficient storage" -- a 4xx, so ftplib raises it as
             # error_temp rather than error_perm, but it is the printer talking
             # about its card just as 552/553 are. As NETWORK it would read as a
-            # connection problem, and the queue would retry it forever (#3210).
+            # connection problem, and the queue would say it retries by itself
+            # instead of asking for the card to be checked (#3210, #3409).
             is_storage = isinstance(e, ftplib.Error) and code == "452"
             kind = FtpFailureKind.STORAGE if is_storage else FtpFailureKind.NETWORK
             self.last_failure = FtpFailure(kind, str(e), code)
@@ -1447,7 +1454,7 @@ def describe_upload_failure(failure: FtpFailure | None) -> str:
     if failure.kind is FtpFailureKind.STORAGE:
         return (
             f"The printer refused to store the file ({failure.code or 'storage error'}). Check that its SD card "
-            "is inserted, has space free, and is formatted FAT32 or exFAT."
+            "or USB drive is inserted, has space free, and is formatted FAT32 or exFAT."
         )
     if failure.kind is FtpFailureKind.HANDSHAKE:
         return (
@@ -2193,6 +2200,8 @@ async def list_files_result_async(
             connected.set()
             try:
                 return FileListResult(files=client.list_files(path, raise_on_error=True), available=True)
+            except ftplib.error_perm as e:
+                return FileListResult(files=[], available=False, missing=str(e).startswith("550"))
             except (OSError, ftplib.Error):
                 return FileListResult(files=[], available=False)
             finally:
@@ -2216,7 +2225,7 @@ async def list_files_result_async(
         logger.warning("FTP list_files timed out after %ss for %s", timeout, path)
         return FileListResult(files=[], available=False, timed_out=connected.is_set())
     # Joined callers share the listing; each gets entries of its own to edit.
-    return FileListResult(files=[dict(f) for f in result.files], available=result.available)
+    return FileListResult(files=[dict(f) for f in result.files], available=result.available, missing=result.missing)
 
 
 async def find_remote_file_async(

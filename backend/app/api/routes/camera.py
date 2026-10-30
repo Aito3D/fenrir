@@ -2507,7 +2507,7 @@ async def camera_grid_stream(
     # Resolve the quality preset AND run the printer batch query in a short-lived
     # session so the pooled DB connection is released BEFORE we start streaming.
     # A grid stream runs for as long as the browser tab stays open (potentially
-    # hours); holding a Depends(get_db) session across it pinned one pooled
+    # hours); holding a Depends(get_db, scope="function") session across it pinned one pooled
     # connection per open camera-wall tab — the single-printer stream hit the
     # exact same issue and was fixed the same way (issue #2572).
     #
@@ -2957,7 +2957,7 @@ async def camera_stream(
     # Resolve the quality preset AND fetch the printer in a short-lived session so
     # the pooled DB connection is released BEFORE we start streaming. A live MJPEG
     # stream runs for as long as the browser tab stays open (potentially hours);
-    # holding a Depends(get_db) session across it pinned one pooled connection per
+    # holding a Depends(get_db, scope="function") session across it pinned one pooled connection per
     # open camera tab per printer — a top contributor to pool exhaustion on large
     # farms (issue #2572). Everything below reads only scalar attributes (model,
     # ip_address, access_code, external_camera_*) — no lazy loads.
@@ -3319,7 +3319,7 @@ async def camera_snapshot(
     """
     # Fetch the printer in a short-lived session and release the pooled DB
     # connection BEFORE the camera capture below (up to 15s, longer under a
-    # saturated FTP/camera pool). Holding a Depends(get_db) session across the
+    # saturated FTP/camera pool). Holding a Depends(get_db, scope="function") session across the
     # grab pinned one connection per snapshot — and the cam wall polls this
     # per tile every 8s — so overlapping captures could pile up connections on
     # a large farm (issue #2572, sibling of the camera_stream fix). Everything
@@ -3434,7 +3434,7 @@ async def _require_webrtc_printer_access(
 async def webrtc_offer(
     printer_id: int,
     body: "WebRTCOfferRequest" = Body(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
     __: None = Depends(_require_webrtc_printer_access),
 ):
@@ -4064,7 +4064,7 @@ async def calibrate_plate_detection(
 async def get_plate_detection_status(
     printer_id: int,
     plate_type: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Check plate detection status for a printer and plate type.
@@ -4108,7 +4108,7 @@ async def get_plate_detection_status(
 @router.get("/{printer_id}/camera/plate-detection/references")
 async def get_plate_references(
     printer_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Get all calibration references for a printer with metadata.
@@ -4142,7 +4142,7 @@ async def get_plate_references(
 async def get_reference_thumbnail(
     printer_id: int,
     index: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get thumbnail image for a calibration reference.
@@ -4173,7 +4173,7 @@ async def update_reference_label(
     printer_id: int,
     index: int,
     label: str = Body(..., embed=True),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
 ):
     """Update the label for a calibration reference."""
@@ -4198,7 +4198,7 @@ async def update_reference_label(
 async def delete_reference(
     printer_id: int,
     index: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
 ):
     """Delete a specific calibration reference."""

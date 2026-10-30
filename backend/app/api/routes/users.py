@@ -83,7 +83,7 @@ def _user_to_response(user: User) -> UserResponse:
 @router.get("/", response_model=list[UserResponse])
 async def list_users(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all users.
 
@@ -121,7 +121,7 @@ async def create_user(
     user_data: UserCreate,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_CREATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create a new user.
 
@@ -228,7 +228,7 @@ async def create_user(
 @router.get("/slim", response_model=list[UserSlim])
 async def list_users_slim(
     _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.USERS_READ_SLIM, Permission.USERS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List users as ``{id, username}`` only (#1894).
 
@@ -254,7 +254,7 @@ async def list_users_slim(
 async def get_user(
     user_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get a user by ID. Read-only — gated on ``USERS_READ`` only."""
     result = await db.execute(select(User).where(User.id == user_id).options(selectinload(User.groups)))
@@ -274,7 +274,7 @@ async def update_user(
     user_data: UserUpdate,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Update a user."""
     close_sockets = False
@@ -447,7 +447,7 @@ async def update_user(
 async def get_user_items_count(
     user_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get count of items created by this user. Read-only — gated on
     ``USERS_READ`` only."""
@@ -491,7 +491,7 @@ async def delete_user(
     delete_items: bool = Query(False, description="Delete all items created by this user"),
     _admin: User | None = RequireAdminIfAuthEnabled(),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_DELETE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete a user.
 
@@ -666,7 +666,13 @@ async def delete_user(
 
     # The print log keeps who started each run as long as the user exists, and
     # outlives them either way (ON DELETE SET NULL, which SQLite doesn't apply).
-    await db.execute(sql_update(PrintLogEntry).where(PrintLogEntry.created_by_id == user_id).values(created_by_id=None))
+    # Every run of theirs, the one printing now too.
+    await db.execute(
+        sql_update(PrintLogEntry)
+        .where(PrintLogEntry.created_by_id == user_id)
+        .values(created_by_id=None)
+        .execution_options(include_open_runs=True)
+    )
 
     # Drop API keys owned by this user. The model declares ON DELETE CASCADE
     # so Postgres handles this automatically, but SQLite ships with FK
@@ -742,7 +748,7 @@ async def change_own_password(
     password_data: ChangePasswordRequest,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
     current_user: User | None = Depends(get_current_user_optional),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Change the current user's password. Requires current password verification."""
     if not current_user:

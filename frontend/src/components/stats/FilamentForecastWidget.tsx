@@ -33,8 +33,8 @@ export function FilamentForecastWidget() {
     staleTime: 60_000,
   });
   const { data: usageHistory = [] } = useQuery({
-    queryKey: ['all-usage-history-forecast'],
-    queryFn: () => api.getAllUsageHistory(5000),
+    queryKey: ['all-usage-history-forecast', spoolmanMode],
+    queryFn: () => api.getAllUsageHistory(5000, undefined, spoolmanMode),
     staleTime: 60_000,
   });
 
@@ -42,11 +42,11 @@ export function FilamentForecastWidget() {
     if (!spools) return [];
     const groups = groupSpoolsBySku(spools);
     const globalLeadTime = settings?.forecast_global_lead_time_days ?? 0;
-    return computeSkuForecasts(groups, skuSettingsList, usageHistory, globalLeadTime)
+    return computeSkuForecasts(groups, skuSettingsList, usageHistory, globalLeadTime, spoolmanMode)
       .filter((f) => f.totalRemainingG > 0 || f.dailyRateG !== null)
       .sort((a, b) => (a.daysRemaining ?? Infinity) - (b.daysRemaining ?? Infinity))
       .slice(0, 5);
-  }, [spools, settings, skuSettingsList, usageHistory]);
+  }, [spools, settings, skuSettingsList, usageHistory, spoolmanMode]);
 
   if (isLoading) return null;
   if (!spools || spools.filter((s) => !s.archived_at).length === 0) {

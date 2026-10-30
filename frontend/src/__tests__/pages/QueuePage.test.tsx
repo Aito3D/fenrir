@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { QueuePage } from '../../pages/QueuePage';
@@ -220,6 +220,97 @@ describe('QueuePage', () => {
       await waitFor(() => {
         expect(screen.getByText('Active Print')).toBeInTheDocument();
         expect(screen.getByText('Currently Printing')).toBeInTheDocument();
+      });
+    });
+
+    it('says when a slot printed in another colour than the file asks for (#3279)', async () => {
+      const printing = {
+        ...mockQueueItems[1],
+        id: 91,
+        color_substitutions: [{ slot_id: 1, type: 'PLA', wanted: '#A4AAAC', got: '#000000', tray: 1 }],
+      };
+      const done = {
+        ...mockQueueItems[0],
+        id: 92,
+        status: 'completed',
+        completed_at: '2024-01-02T00:00:00Z',
+        color_substitutions: [{ slot_id: 2, type: 'PLA', wanted: '#FFFFFF', got: '#FF0000', tray: 3 }],
+      };
+      server.use(...serveQueue([printing, done] as MockItem[]));
+
+      render(<QueuePage />);
+
+      const badge = await screen.findByText(/^Slot 1 printed in .*\(#000000\), the file asks for .*\(#A4AAAC\)$/);
+      expect(badge.closest('p')).toHaveAttribute(
+        'title',
+        expect.stringContaining('different colour than the one in the file'),
+      );
+
+      // The History tab draws finished jobs with the compact row.
+      await userEvent.setup().click(await screen.findByRole('button', { name: /^History/ }));
+      expect(await screen.findByText(/^Slot 2 printed in .*\(#FF0000\), the file asks for .*\(#FFFFFF\)$/)).toBeInTheDocument();
+    });
+
+    it('shows no colour note for a job that printed in its colours', async () => {
+      render(<QueuePage />);
+      await screen.findByText('Test Print 1');
+      expect(screen.queryByText(/printed in .*, the file asks for/)).not.toBeInTheDocument();
+    });
+
+    it('links a File Manager job to the File Manager, pointing at the file (#3336)', async () => {
+      server.use(
+        http.get('/api/v1/queue/', () =>
+          HttpResponse.json([
+            { ...mockQueueItems[0], id: 90, archive_id: null, archive_name: null, library_file_id: 13, library_file_name: 'From the library' },
+          ]),
+        ),
+      );
+
+      render(<QueuePage />);
+      await screen.findByText('From the library');
+
+      // /library is no route at all: the page came up empty.
+      expect(screen.getByTitle('View in File Manager')).toHaveAttribute('href', '/files?highlight=13');
+    });
+
+    it('links an archive job to its archive', async () => {
+      render(<QueuePage />);
+      await screen.findByText('Test Print 1');
+
+      expect(screen.getAllByTitle('View archive').map((a) => a.getAttribute('href'))).toContain('/archives?highlight=1');
+    });
+
+    describe('larger thumbnail on hover (#3313)', () => {
+      const realMatchMedia = window.matchMedia;
+      beforeEach(() => {
+        window.matchMedia = ((query: string) => ({ ...realMatchMedia(query), matches: true })) as typeof window.matchMedia;
+      });
+      afterEach(() => {
+        window.matchMedia = realMatchMedia;
+      });
+
+      function hoverThumbnail(archiveId: number) {
+        const thumb = document.querySelector(`img[src*="/archives/${archiveId}/thumbnail"]`) as HTMLElement;
+        fireEvent.mouseEnter(thumb.parentElement as HTMLElement);
+      }
+
+      it('shows on a queue card', async () => {
+        render(<QueuePage />);
+        await screen.findByText('Test Print 1');
+
+        hoverThumbnail(1);
+
+        expect(screen.getByTestId('thumbnail-hover-preview').getAttribute('src')).toContain('/archives/1/thumbnail');
+      });
+
+      it('shows on a history row', async () => {
+        render(<QueuePage />);
+        await userEvent.setup().click(await screen.findByRole('button', { name: /^History/ }));
+        await screen.findByText('Completed Print');
+
+        hoverThumbnail(3);
+
+        expect(screen.getByTestId('thumbnail-hover-preview').getAttribute('src')).toContain('/archives/3/thumbnail');
       });
     });
 
@@ -1634,6 +1725,29 @@ describe('QueuePage', () => {
 
       const requeueButtons = screen.getAllByTitle('Re-queue');
       expect(requeueButtons.length).toBeGreaterThan(0);
+    });
+
+    it('re-queues the plate the job printed (#3395)', async () => {
+      const plate = (index: number) => ({
+        index, name: '', has_thumbnail: false, thumbnail_url: null, objects: [`Part ${index}`],
+        filaments: [], print_time_seconds: 600, filament_used_grams: 5,
+      });
+      server.use(
+        ...serveQueue(mockQueueItems.map((i) => (i.id === 3 ? { ...i, plate_id: 2 } : i))),
+        http.get('/api/v1/archives/:id/plates', () =>
+          HttpResponse.json({ is_multi_plate: true, plates: [plate(1), plate(2), plate(3)] }),
+        ),
+      );
+      const user = userEvent.setup();
+      render(<QueuePage />);
+
+      await user.click(await screen.findByRole('button', { name: /^History/ }));
+      await screen.findByText('Completed Print');
+      await user.click(screen.getAllByTitle('Re-queue')[0]);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('selected-plates-summary')).toHaveTextContent(/^Plate 2$/);
+      });
     });
   });
 

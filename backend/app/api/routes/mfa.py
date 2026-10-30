@@ -718,7 +718,7 @@ async def _set_email_2fa_enabled(db: AsyncSession, user_id: int, enabled: bool) 
 @router.get("/2fa/status", response_model=TwoFAStatusResponse)
 async def get_2fa_status(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> TwoFAStatusResponse:
     """Return the current 2FA configuration for the authenticated user."""
     result = await db.execute(select(UserTOTP).where(UserTOTP.user_id == current_user.id))
@@ -739,7 +739,7 @@ async def get_2fa_status(
 async def setup_totp(
     body: TOTPSetupRequest | None = Body(default=None),
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> TOTPSetupResponse:
     """Initiate TOTP setup: generates a new secret and QR code.
 
@@ -805,7 +805,7 @@ async def setup_totp(
 async def enable_totp(
     body: TOTPEnableRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> TOTPEnableResponse:
     """Confirm TOTP setup by verifying a code from the authenticator app.
 
@@ -848,7 +848,7 @@ async def enable_totp(
 async def disable_totp(
     body: TOTPDisableRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Disable TOTP by verifying a valid TOTP code or a backup code.
 
@@ -910,7 +910,7 @@ async def disable_totp(
 async def regenerate_backup_codes(
     body: TOTPDisableRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> BackupCodesResponse:
     """Generate 10 new backup codes. Requires a valid TOTP code OR a backup code.
 
@@ -976,7 +976,7 @@ async def regenerate_backup_codes(
 @router.post("/2fa/email/enable")
 async def enable_email_otp(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Step 1 of email OTP enable: send a verification code to the user's email.
 
@@ -1055,7 +1055,7 @@ async def enable_email_otp(
 async def confirm_enable_email_otp(
     body: EmailOTPEnableConfirmRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Step 2 of email OTP enable: verify the code and activate email 2FA.
 
@@ -1112,7 +1112,7 @@ async def confirm_enable_email_otp(
 async def disable_email_otp(
     body: EmailOTPDisableRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Disable email-based OTP 2FA for the current user.
 
@@ -1136,7 +1136,7 @@ async def send_email_otp(
     request: Request,
     response: Response,
     body: EmailOTPSendRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Send a 6-digit OTP code to the user's email address.
 
@@ -1277,7 +1277,7 @@ async def _issue_2fa_success(db: AsyncSession, user: User, username: str) -> Two
 async def verify_2fa(
     request: Request,
     body: TwoFAVerifyRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> TwoFAVerifyResponse:
     """Verify a 2FA code and exchange the pre_auth_token for a full JWT.
 
@@ -1409,7 +1409,7 @@ async def admin_disable_2fa(
     body: AdminDisable2FARequest = Body(default_factory=AdminDisable2FARequest),
     _admin: User | None = RequireAdminIfAuthEnabled(),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Admin endpoint: disable all 2FA for a given user.
 
@@ -1471,7 +1471,7 @@ async def admin_disable_2fa(
 
 @router.get("/oidc/providers", response_model=list[OIDCProviderPublicResponse])
 async def list_oidc_providers(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[OIDCProviderPublicResponse]:
     """List all enabled OIDC providers (public).
 
@@ -1492,7 +1492,7 @@ async def list_oidc_providers(
 @router.get("/oidc/providers/all", response_model=list[OIDCProviderResponse])
 async def list_all_oidc_providers(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[OIDCProviderResponse]:
     """List ALL OIDC providers including disabled ones (admin only)."""
     result2 = await db.execute(select(OIDCProvider))
@@ -1505,7 +1505,7 @@ async def create_oidc_provider(
     body: OIDCProviderCreate,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> OIDCProviderResponse:
     """Create a new OIDC provider (admin only).
 
@@ -1606,7 +1606,7 @@ async def update_oidc_provider(
     body: OIDCProviderUpdate,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> OIDCProviderResponse:
     """Update an existing OIDC provider (admin only).
 
@@ -1706,7 +1706,7 @@ async def delete_oidc_provider(
     provider_id: int,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Delete an OIDC provider and all its user links (admin only)."""
     result2 = await db.execute(select(OIDCProvider).where(OIDCProvider.id == provider_id))
@@ -1729,7 +1729,7 @@ async def delete_oidc_provider(
 async def get_oidc_provider_icon(
     provider_id: int,
     if_none_match: str | None = Header(default=None, alias="If-None-Match"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Response:
     """Serve the cached icon for an enabled OIDC provider (public, no auth).
 
@@ -1769,7 +1769,7 @@ async def delete_oidc_provider_icon(
     provider_id: int,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Response:
     """Remove the icon entirely for a provider (admin only).
 
@@ -1799,7 +1799,7 @@ async def refresh_oidc_provider_icon(
     provider_id: int,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> OIDCProviderResponse:
     """Refetch the icon from the stored `icon_url` (admin only).
 
@@ -1995,7 +1995,7 @@ async def oidc_authorize(
     provider_id: int,
     request: Request,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> OIDCAuthorizeResponse:
     """Return the OIDC authorization URL for the given provider."""
     # T-123: the body carries this browser's single-use state, nonce and PKCE
@@ -2116,7 +2116,7 @@ async def oidc_callback(
     code: str | None = Query(default=None, max_length=2048),
     state: str | None = Query(default=None, max_length=2048),
     error: str | None = Query(default=None, max_length=256),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> RedirectResponse:
     """Handle the OIDC authorization code callback from the identity provider."""
     external_url = await _get_base_external_url(db)
@@ -2587,7 +2587,7 @@ async def oidc_exchange(
     body: OIDCExchangeRequest,
     raw_request: Request,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> LoginResponse:
     """Exchange an OIDC exchange token (from the callback redirect) for a full JWT.
 
@@ -2657,7 +2657,7 @@ async def oidc_exchange(
 @router.get("/oidc/links", response_model=list[OIDCLinkResponse])
 async def list_oidc_links(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[OIDCLinkResponse]:
     """List all OIDC provider links for the current user."""
     result = await db.execute(
@@ -2685,7 +2685,7 @@ async def list_oidc_links(
 async def remove_oidc_link(
     provider_id: int,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Remove the OIDC link between the current user and a provider."""
     result = await db.execute(

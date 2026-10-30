@@ -221,7 +221,7 @@ async def _revision_out(db: AsyncSession, project: Project, revision_id: int) ->
 
 @router.post("/legacy-migration/start", response_model=LegacyMigrationStatus, status_code=202)
 async def start_legacy_migration(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _settings: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     _projects: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
@@ -234,7 +234,7 @@ async def start_legacy_migration(
 
 @router.get("/legacy-migration/status", response_model=LegacyMigrationStatus)
 async def get_legacy_migration_status(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _settings: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     _projects: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
@@ -245,7 +245,7 @@ async def get_legacy_migration_status(
 @router.get("/{project_id}/tree", response_model=ProjectTreeResponse)
 async def get_tree(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     return await svc.load_tree(db, await _project(db, project_id))
@@ -254,7 +254,7 @@ async def get_tree(
 @router.get("/{project_id}/orders", response_model=ProjectOrdersResponse)
 async def get_project_orders(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
     __: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
@@ -266,7 +266,7 @@ async def get_project_orders(
 async def create_item(
     project_id: int,
     body: ProjectItemCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     project = await _project(db, project_id)
@@ -281,7 +281,7 @@ async def create_item(
 async def rename_item(
     item_id: int,
     body: ProjectItemRename,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     with _file_errors():
@@ -293,7 +293,7 @@ async def rename_item(
 @router.delete("/items/{item_id}", status_code=204, response_model=None)
 async def delete_item(
     item_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_DELETE),
 ) -> None:
     with _file_errors():
@@ -307,7 +307,7 @@ async def upload_revision(
     files: list[UploadFile] = File(...),
     note: str | None = Form(default=None, max_length=REVISION_NOTE_MAX_LENGTH),
     derived_from_id: int | None = Form(default=None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     with _file_errors():
@@ -337,7 +337,7 @@ async def upload_revision(
 async def fork_item(
     item_id: int,
     body: ProjectItemFork,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     with _file_errors():
@@ -353,7 +353,7 @@ async def fork_item(
 async def add_files(
     revision_id: int,
     files: list[UploadFile] = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     # A revision holds exactly one .3mf now, legacy revisions included: nothing is added to an existing one.
@@ -365,7 +365,7 @@ async def add_files(
 async def remove_file(
     revision_id: int,
     file_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ) -> None:
     with _file_errors():
@@ -377,7 +377,7 @@ async def remove_file(
 async def reslice_revision(
     revision_id: int,
     body: ResliceBody,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
     _slice: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
     _pipelines: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ),
@@ -409,7 +409,7 @@ async def reslice_revision(
 @router.post("/revisions/{revision_id}/slice", response_model=RevisionSliceStarted, status_code=202)
 async def slice_revision(
     revision_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Slice (or re-slice after a failure) the revision's source .3mf with its own settings, all plates.
@@ -431,7 +431,7 @@ async def slice_revision(
 async def update_revision(
     revision_id: int,
     body: ProjectRevisionUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     with _file_errors():
@@ -466,7 +466,7 @@ async def update_revision(
 @router.delete("/revisions/{revision_id}", status_code=204, response_model=None)
 async def delete_revision(
     revision_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_DELETE),
 ) -> None:
     with _file_errors():
@@ -478,7 +478,7 @@ async def delete_revision(
 async def download_revision(
     revision_id: int,
     file_id: int | None = Query(default=None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """One file (``?file_id=``, which may be the revision's sliced file) or every file of the revision as
@@ -533,7 +533,7 @@ async def download_revision(
 async def import_library_files(
     project_id: int,
     body: ImportLibraryFilesRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(Permission.LIBRARY_UPDATE_ALL, Permission.LIBRARY_UPDATE_OWN)
     ),
@@ -584,7 +584,7 @@ async def import_library_files(
 async def library_file_project_suggestions(
     file_id: int,
     limit: int = Query(default=5, ge=1, le=20),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(Permission.LIBRARY_READ_ALL, Permission.LIBRARY_READ_OWN)
     ),

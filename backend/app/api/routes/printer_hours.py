@@ -72,7 +72,7 @@ def _reject_future(reading_date: date, today: date | None = None) -> None:
 
 @router.get("", response_model=HoursOverview)
 async def get_hours(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
 ):
     return await _overview(db)
@@ -81,7 +81,7 @@ async def get_hours(
 @router.post("/readings", response_model=HoursOverview)
 async def save_readings(
     body: HourReadingBatch,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
 ):
     """Upsert one date's manual readings. Readings dated today recalibrate their printer's counter."""
@@ -135,7 +135,7 @@ async def save_readings(
 @router.delete("/readings", response_model=HoursOverview)
 async def delete_readings(
     reading_date: date,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
 ):
     """Delete every manual reading on a date; Fenrir's auto snapshots stay."""
@@ -149,7 +149,7 @@ async def delete_readings(
 @router.post("/import", response_model=HourImportResult)
 async def import_readings(
     body: HourImportBody,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
 ):
     """Bulk upsert manual readings from a pasted sheet, creating retired machines. Never recalibrates."""
@@ -198,7 +198,7 @@ async def _retired_machine(db: AsyncSession, machine_id: int) -> HourMachine:
 async def update_machine(
     machine_id: int,
     body: HourMachineUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
 ):
     await ensure_hour_machines(db)
@@ -224,7 +224,7 @@ async def update_machine(
 @router.delete("/machines/{machine_id}")
 async def delete_machine(
     machine_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
 ):
     await ensure_hour_machines(db)

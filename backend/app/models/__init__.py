@@ -17,6 +17,11 @@ from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.connected_app import ConnectedApp, ConnectedAppGrant
 from backend.app.models.filament import Filament
 from backend.app.models.filament_profile import BaseFilamentPreset, FilamentPreset
+from backend.app.models.filament_profile_default import (
+    FilamentProfileDefault,
+    FilamentProfileDefaultKProfile,
+    FilamentProfileDefaultPreset,
+)
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
 from backend.app.models.group import Group, group_locations, group_printers, user_groups
 from backend.app.models.kprofile_note import KProfileNote
@@ -133,6 +138,9 @@ __all__ = [
     "SlicerPipeline",
     "Spool",
     "SpoolFilamentPreset",
+    "FilamentProfileDefault",
+    "FilamentProfileDefaultKProfile",
+    "FilamentProfileDefaultPreset",
     "SpoolKProfile",
     "SpoolmanFilamentPreset",
     "SpoolAssignment",

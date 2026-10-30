@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 import defusedxml.ElementTree as ET
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import ValidationError
 from sqlalchemy import ColumnElement, UnaryExpression, and_, case, func, inspect, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,6 +41,7 @@ from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.user import User
 from backend.app.schemas.print_queue import (
+    ColorSubstitution,
     PrintBatchCreate,
     PrintBatchDispatchRequest,
     PrintBatchPlateProgress,
@@ -474,6 +476,17 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         except json.JSONDecodeError:
             nozzle_rack_choice_parsed = None
 
+    # Slots sent with a spool of another colour (#3279), for the queue row.
+    color_substitutions_parsed = None
+    if item.color_substitutions:
+        try:
+            parsed = json.loads(item.color_substitutions)
+            # Validated here, not by the response model: one bad row must not
+            # fail the whole queue list.
+            color_substitutions_parsed = [ColorSubstitution.model_validate(entry).model_dump() for entry in parsed]
+        except (json.JSONDecodeError, TypeError, ValidationError):
+            color_substitutions_parsed = None
+
     nozzles_info_parsed = None
     if item.nozzles_info:
         try:
@@ -535,6 +548,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "nozzle_mapping": nozzle_mapping_parsed,
         "nozzle_rack_choice": nozzle_rack_choice_parsed,
         "nozzles_info": nozzles_info_parsed,
+        "color_substitutions": color_substitutions_parsed,
         "cleanup_library_after_dispatch": item.cleanup_library_after_dispatch,
         # Cross-model alternatives (#671). Guarded rather than read directly:
         # every route that reaches here eager-loads the relationship, but a
@@ -713,7 +727,7 @@ async def list_queue(
     target_model: str | None = Query(
         None, description="Filter by target model (also includes model-based items when combined with printer_id)"
     ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_READ_ALL,
@@ -839,7 +853,7 @@ async def list_queue_history(
     # as the page always could.
     limit: int = Query(50, ge=1, le=1_000_000),
     offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_READ_ALL,
@@ -957,7 +971,7 @@ async def clear_queue_history(
     printer_id: int | None = Query(None, description="Filter by printer (-1 for unassigned)"),
     status: str | None = Query(None, description="One of completed, failed, skipped, cancelled"),
     location: str | None = Query(None, description="Filter by location"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_DELETE_ALL,
@@ -1192,7 +1206,7 @@ async def _start_slice_for_waiting_items(db: AsyncSession, revision_id: int, act
 @router.post("/", response_model=PrintQueueItemResponse)
 async def add_to_queue(
     data: PrintQueueItemCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
     # Fenrir: queueing for an Aito task writes on its order, so it also needs
     # aito:read (API keys follow their scope rules, which deny it).
@@ -1672,7 +1686,7 @@ def _releases_model_job(item: PrintQueueItem, update_data: dict) -> bool:
 @router.patch("/bulk", response_model=PrintQueueBulkUpdateResponse)
 async def bulk_update_queue_items(
     data: PrintQueueBulkUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_UPDATE_ALL,
@@ -1892,7 +1906,7 @@ async def _ensure_batch_in_scope(db: AsyncSession, batch_id: int, printer_scope:
 @router.post("/batches", response_model=PrintBatchResponse)
 async def create_batch(
     data: PrintBatchCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
     printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
@@ -2011,7 +2025,7 @@ async def create_batch(
 async def update_batch(
     batch_id: int,
     data: PrintBatchUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
     actor: User | ApiKeyActor | None = RequestActor,
     printer_scope: PrinterScope = RequestPrinterScope,
@@ -2113,7 +2127,7 @@ async def _validate_copies_budget(
 async def dispatch_batch(
     batch_id: int,
     data: PrintBatchDispatchRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
     printer_scope: PrinterScope = RequestPrinterScope,
     review_required: bool = QueueReviewRequired,
@@ -2186,7 +2200,7 @@ async def dispatch_batch(
 @router.post("/batches/{batch_id}/ungroup", response_model=PrintBatchUngroupResponse)
 async def ungroup_batch(
     batch_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
     printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
@@ -2236,7 +2250,7 @@ async def list_batches(
     status: str | None = Query(None, description="Filter by status (active, completed, cancelled)"),
     external_source: str | None = Query(None, description="Filter by the integration that created the batch"),
     external_ref: str | None = Query(None, description="Filter by the external record the batch fulfils"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_READ_ALL,
@@ -2298,7 +2312,7 @@ async def list_batches(
 @router.get("/batches/{batch_id}", response_model=PrintBatchResponse)
 async def get_batch(
     batch_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_READ_ALL,
@@ -2326,7 +2340,7 @@ async def get_batch(
 @router.delete("/batches/{batch_id}")
 async def cancel_batch(
     batch_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_DELETE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -2448,7 +2462,7 @@ async def _build_batch_response(
 @router.get("/{item_id}", response_model=PrintQueueItemResponse)
 async def get_queue_item(
     item_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_READ_ALL,
@@ -2491,7 +2505,7 @@ async def get_queue_item(
 async def update_queue_item(
     item_id: int,
     data: PrintQueueItemUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_UPDATE_ALL,
@@ -2742,7 +2756,7 @@ def _notify_dispatch_cancelled(item_ids: list[int]) -> None:
 @router.delete("/{item_id}")
 async def delete_queue_item(
     item_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_DELETE_ALL,
@@ -2796,7 +2810,7 @@ async def delete_queue_item(
 @router.post("/reorder")
 async def reorder_queue(
     data: PrintQueueReorder,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -2817,7 +2831,7 @@ async def reorder_queue(
 @router.post("/printer/{printer_id}/resume")
 async def resume_queue_after_failure(
     printer_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.QUEUE_UPDATE_ALL),
 ):
     """Clear the previous-success gate for a printer and restore skipped items.
@@ -2875,7 +2889,7 @@ async def resume_queue_after_failure(
 @router.post("/model/{model}/resume")
 async def resume_model_queue_after_failure(
     model: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -2915,7 +2929,7 @@ async def resume_model_queue_after_failure(
 @router.post("/{item_id}/cancel")
 async def cancel_queue_item(
     item_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_UPDATE_ALL,
@@ -2965,7 +2979,7 @@ async def cancel_queue_item(
 @router.post("/{item_id}/retry-slice", response_model=PrintQueueItemResponse)
 async def retry_queue_item_slice(
     item_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_UPDATE_ALL,
@@ -3031,7 +3045,7 @@ async def retry_queue_item_slice(
 @router.post("/{item_id}/stop")
 async def stop_queue_item(
     item_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_UPDATE_ALL,
@@ -3120,6 +3134,7 @@ async def stop_queue_item(
                 archive_id=archive.id,
                 queue_item_id=item.id,
                 print_name=archive.print_name,
+                plate_id=item.plate_id if item.plate_id is not None else archive.plate_id,
                 printer_name=await db.scalar(select(Printer.name).where(Printer.id == printer_id)),
                 printer_id=printer_id,
                 started_at=archive.started_at,
@@ -3129,6 +3144,7 @@ async def stop_queue_item(
                 failure_reason=archive.failure_reason,
                 thumbnail_path=archive.thumbnail_path,
                 created_by_id=archive.created_by_id,
+                ended_offline=True,
             )
             closed_archive_id = archive.id
     if not stop_sent:
@@ -3165,7 +3181,7 @@ async def stop_queue_item(
 async def start_queue_item(
     item_id: int,
     skip_filament_check: bool = Query(default=False),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_UPDATE_ALL,

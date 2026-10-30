@@ -63,7 +63,7 @@ def derive_sale_price(cost_per_kg: float, margin_pct: float) -> float:
 
 @router.get("/filaments/", response_model=list[CalculatorFilamentResponse])
 async def list_calculator_filaments(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ),
 ):
     """List all calculator filaments."""
@@ -74,7 +74,7 @@ async def list_calculator_filaments(
 @router.post("/filaments/", response_model=CalculatorFilamentResponse)
 async def create_calculator_filament(
     data: CalculatorFilamentCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
 ):
     """Create a calculator filament."""
@@ -94,7 +94,7 @@ async def create_calculator_filament(
 async def update_calculator_filament(
     filament_id: int,
     update_data: CalculatorFilamentUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
 ):
     """Update a calculator filament."""
@@ -135,7 +135,7 @@ async def update_calculator_filament(
 @router.delete("/filaments/{filament_id}")
 async def delete_calculator_filament(
     filament_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
 ):
     """Delete a calculator filament."""
@@ -155,7 +155,7 @@ async def delete_calculator_filament(
 async def search_zoho_filaments(
     q: str = Query(default="", max_length=100, description="Free-text search over brand, material, colour and SKU"),
     limit: int = Query(default=25, ge=1, le=100),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
 ):
     """Zoho products in the Filaments category, for linking to a calculator filament.
@@ -171,7 +171,7 @@ async def search_zoho_filaments(
 @router.post("/filaments/zoho-sync", response_model=CalculatorFilamentSyncResponse)
 async def sync_calculator_filaments_from_zoho(
     payload: CalculatorFilamentSyncRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
 ):
     """Refresh one chunk of linked filaments from their Zoho dealer prices.
@@ -295,7 +295,7 @@ async def sync_calculator_filaments_from_zoho(
 
 @router.get("/printers/", response_model=list[CalculatorPrinterResponse])
 async def list_calculator_printers(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ),
 ):
     """List all calculator printers."""
@@ -306,7 +306,7 @@ async def list_calculator_printers(
 @router.post("/printers/", response_model=CalculatorPrinterResponse)
 async def create_calculator_printer(
     data: CalculatorPrinterCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
 ):
     """Create a calculator printer."""
@@ -322,7 +322,7 @@ async def create_calculator_printer(
 async def update_calculator_printer(
     printer_id: int,
     update_data: CalculatorPrinterUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
 ):
     """Update a calculator printer."""
@@ -342,7 +342,7 @@ async def update_calculator_printer(
 @router.delete("/printers/{printer_id}")
 async def delete_calculator_printer(
     printer_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
 ):
     """Delete a calculator printer."""
@@ -382,7 +382,7 @@ async def _get_or_create_defaults(db: AsyncSession) -> CalculatorDefaults:
 
 @router.get("/defaults", response_model=CalculatorDefaultsResponse)
 async def get_calculator_defaults(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ),
 ):
     """Get the global calculator defaults (created on first access)."""
@@ -392,7 +392,7 @@ async def get_calculator_defaults(
 @router.patch("/defaults", response_model=CalculatorDefaultsResponse)
 async def update_calculator_defaults(
     update_data: CalculatorDefaultsUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
 ):
     """Update the global calculator defaults."""
@@ -468,7 +468,7 @@ async def update_calculator_defaults(
 @router.get("/insights", response_model=CalculatorInsightsResponse)
 async def get_calculator_insights(
     days: InsightsWindowDays = Query(default=InsightsWindowDays.ONE_YEAR, description="Lookback window in days."),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ),
 ):
     """Measured pricing signals (failure rates, tariff, spool costs, time accuracy).

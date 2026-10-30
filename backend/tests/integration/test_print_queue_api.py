@@ -1,5 +1,7 @@
 """Integration tests for Print Queue API endpoints."""
 
+import json
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -432,6 +434,24 @@ class TestPrintQueueAPI:
         assert response.status_code == 200
         assert response.json()["cost_center_id"] == cost_center.id
         assert response.json()["estimated_cost"] == 1.25
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_colour_substitutions_are_returned_parsed(self, async_client: AsyncClient, queue_item_factory):
+        """#3279: the queue row reads which slots printed in another colour."""
+        subs = [{"slot_id": 1, "type": "PLA", "wanted": "#A4AAAC", "got": "#000000", "tray": 1}]
+        item = await queue_item_factory(color_substitutions=json.dumps(subs))
+        unreadable = await queue_item_factory(color_substitutions="{")
+        not_a_list = await queue_item_factory(color_substitutions='{"slot_id": 1}')
+        bad_entries = await queue_item_factory(color_substitutions='[1, {"slot_id": 1}]')
+
+        assert (await async_client.get(f"/api/v1/queue/{item.id}")).json()["color_substitutions"] == subs
+        assert (await async_client.get(f"/api/v1/queue/{unreadable.id}")).json()["color_substitutions"] is None
+        assert (await async_client.get(f"/api/v1/queue/{not_a_list.id}")).json()["color_substitutions"] is None
+        assert (await async_client.get(f"/api/v1/queue/{bad_entries.id}")).json()["color_substitutions"] is None
+        # One bad row must not fail the whole list.
+        listed = (await async_client.get("/api/v1/queue/")).json()
+        assert {i["id"]: i["color_substitutions"] for i in listed}[item.id] == subs
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -4051,6 +4071,38 @@ async def test_stop_offline_reconciles_linked_archive_status_2603(
     assert archive.completed_at is not None
     # A vocabulary key (#2974), not prose: the stop's detail is on the queue row.
     assert archive.failure_reason == "userCancelled"
+
+
+@pytest.mark.asyncio
+async def test_stop_offline_logs_the_run_with_the_items_plate(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """The run's own plate is the queue item's: the archive's is only its
+    latest run's, and a reprint of another plate may not have changed it."""
+    from unittest.mock import MagicMock, patch
+
+    from sqlalchemy import select
+
+    from backend.app.models.print_log import PrintLogEntry
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory(name="Offline printer")
+    archive = await archive_factory(printer.id, status="printing", plate_id=1, with_run=False)
+    item = PrintQueueItem(printer_id=printer.id, archive_id=archive.id, status="printing", plate_id=3)
+    db_session.add(item)
+    await db_session.commit()
+
+    with patch(
+        "backend.app.services.printer_manager.printer_manager.stop_print",
+        MagicMock(return_value=False),
+    ):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop")
+
+    assert resp.status_code == 200
+    plates = list(
+        await db_session.scalars(select(PrintLogEntry.plate_id).where(PrintLogEntry.archive_id == archive.id))
+    )
+    assert plates == [3]
 
 
 @pytest.mark.asyncio

@@ -734,6 +734,7 @@ export function Layout() {
                 const showBadge = showQueueBadge || showArchiveBadge;
                 const showClearPlateDot = id === 'printers' && needsClearPlate;
 
+
                 return (
                   <li key={id}>
                     <NavLink
