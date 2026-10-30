@@ -111,6 +111,15 @@ export function useFileActions(projectId: number) {
     fork: (itemId: number, revisionId: number, name: string) => run(() => api.forkProjectItem(itemId, revisionId, name), save),
     /** Starts (or retries) the server slice of a revision's source `.3mf`; the tree then polls it. */
     sliceRevision: (revisionId: number) => run(() => api.sliceProjectRevision(revisionId), 'projectsPdm.reslice.startFailed'),
+    /** The hand-sliced plate file for a revision whose server slice failed. Throws instead of
+     *  toasting (the dialog shows the refusal inline); the tree refetches either way. */
+    uploadSlicedFile: async (revisionId: number, file: File) => {
+      try {
+        return await api.uploadProjectSlicedFile(revisionId, file);
+      } finally {
+        await queryClient.invalidateQueries({ queryKey: projectKeys.tree(projectId) });
+      }
+    },
     /** The File Manager's desktop handoff (FileManagerPage `handleOpenInSlicer`): a short-lived
      *  slicer token for the file, then the preferred desktop slicer's URL scheme. On failure, the
      *  same toast and the plain download URL (works when auth is off). */

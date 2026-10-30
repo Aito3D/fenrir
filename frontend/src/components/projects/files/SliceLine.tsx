@@ -1,17 +1,19 @@
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, CheckCircle2, RotateCw } from 'lucide-react';
+import { AlertCircle, CheckCircle2, RotateCw, Upload } from 'lucide-react';
 import { focusRingCls } from '../../formStyles';
 import type { RevisionSliceState } from './useRevisionSlice';
 
 // `changed`: the state moved since the card mounted, so the new line fades in (and a
 // fresh "Sliced" gives its check one press). A page load never animates.
-export function SliceLine({ state, percent, error, printCount, onRetry, changed }: {
+// `onUpload`: the hand-slice fallback of a failed slice (upload the .gcode.3mf yourself).
+export function SliceLine({ state, percent, error, printCount, onRetry, onUpload, changed }: {
   changed: boolean;
   state: RevisionSliceState;
   percent: number | null;
   error: string | null;
   printCount: number;
   onRetry?: () => void;
+  onUpload?: () => void;
 }) {
   const { t } = useTranslation();
   const enter = changed ? 'animate-fade-in' : '';
@@ -41,6 +43,12 @@ export function SliceLine({ state, percent, error, printCount, onRetry, changed 
           <button type="button" onClick={onRetry}
             className={`inline-flex min-h-[44px] items-center gap-1 rounded underline md:min-h-0 ${focusRingCls}`}>
             <RotateCw className="h-3 w-3" aria-hidden />{t('common.retry')}
+          </button>
+        )}
+        {onUpload && (
+          <button type="button" onClick={onUpload}
+            className={`inline-flex min-h-[44px] items-center gap-1 rounded underline md:min-h-0 ${focusRingCls}`}>
+            <Upload className="h-3 w-3" aria-hidden />{t('projectsPdm.slice.uploadAction')}
           </button>
         )}
       </div>

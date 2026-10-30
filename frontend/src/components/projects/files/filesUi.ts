@@ -13,6 +13,16 @@ const PRINTABLE_EXTENSIONS = ['.3mf', '.gcode', '.bgcode'] as const; // `.gcode.
  *  server makes the sliced files itself. */
 export const PRINTABLE_ACCEPT = '.3mf';
 
+/** `accept` for the hand-sliced plate file of a failed server slice: `.gcode.3mf` (the content
+ *  check is the server's). */
+export const SLICED_ACCEPT = '.gcode.3mf,.3mf';
+
+/** The name rule the upload-sliced dialog applies before sending: a `.3mf` (a raw `.gcode` is
+ *  not a plate file; Bambu Studio's "Export plate sliced file" makes a `.gcode.3mf`). */
+export function isSlicedFilename(name: string): boolean {
+  return name.trim().toLowerCase().endsWith('.3mf');
+}
+
 /** The pipeline Re-slice flow (dialog, button, run status) stays built but hidden: the server
  *  slices project prints now. Flip to bring it back. */
 export const RESLICE_UI_ENABLED = false;

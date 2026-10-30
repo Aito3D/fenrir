@@ -427,6 +427,25 @@ async def slice_revision(
     return RevisionSliceStarted(job_id=job_id, slice_status=status)
 
 
+@upload_router.post("/revisions/{revision_id}/sliced-file", response_model=ProjectRevisionOut)
+async def upload_sliced_file(
+    revision_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+):
+    """Hand-slice fallback (design 2026-10-30): the sliced plate file (.gcode.3mf) Bambu Studio exported
+    from the revision's project, for a revision whose server slice failed. Checked for plate G-code and
+    for settings matching the revision's print profile, then stored exactly like a server slice; the
+    queue items waiting on the revision follow it."""
+    with _file_errors():
+        _revision, _item, project = await svc.get_revision_bundle(db, revision_id)
+        project_id = project.id
+        await project_slice.store_uploaded_slice(db, revision_id, file, user_id=actor_user_id(user))
+    project = await _project(db, project_id)
+    return await _revision_out(db, project, revision_id)
+
+
 @router.patch("/revisions/{revision_id}", response_model=ProjectRevisionOut)
 async def update_revision(
     revision_id: int,

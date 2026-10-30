@@ -9754,6 +9754,18 @@ export const api = {
     request<void>(`/projects/revisions/${revisionId}/files/${fileId}`, { method: 'DELETE' }),
   updateProjectRevision: (
     revisionId: number,
+  /** The hand-sliced plate file (.gcode.3mf) for a revision whose server slice failed. A refusal
+   *  is an ApiError: `settings_mismatch` carries `detail.mismatches` ({field, file, revision}[]),
+   *  `not_failed` says the revision is not waiting for one. */
+  uploadProjectSlicedFile: async (revisionId: number, file: File): Promise<ProjectRevisionOut> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_BASE}/projects/revisions/${revisionId}/sliced-file`, {
+      method: 'POST', headers: bearerAuthHeaders(), body: formData,
+    });
+    if (!response.ok) await throwApiError(response);
+    return response.json();
+  },
     data: { status?: RevisionStatus; note?: string | null; derived_from_id?: number | null },
   ) =>
     request<ProjectRevisionOut>(`/projects/revisions/${revisionId}`, { method: 'PATCH', body: JSON.stringify(data) }),

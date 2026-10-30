@@ -105,6 +105,20 @@ describe('ItemCard', () => {
     await waitFor(() => expect(calls).toEqual(['slice:2']));
   });
 
+  it('a failed slice also offers "Upload sliced file", which opens the hand-slice dialog', async () => {
+    render(<Harness value={bracket({ slice_status: 'failed', slice_error: 'Slicer sidecar unreachable', sliced_file: null })} />);
+    await userEvent.click(within(card()).getByRole('button', { name: 'Upload sliced file' }));
+    expect(await screen.findByRole('dialog', { name: 'Upload the sliced file' })).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(calls).toEqual([]);
+  });
+
+  it('a sliced or never-sliced revision has no "Upload sliced file"', () => {
+    render(<Harness value={bracket()} />);
+    expect(within(card()).queryByRole('button', { name: 'Upload sliced file' })).not.toBeInTheDocument();
+  });
+
   it('a legacy sliced revision (no server slice state) reads as sliced', () => {
     render(<Harness value={bracket({ slice_status: null, sliced_file: null, print_profile: { ...profile, sliced: true } })} />);
     expect(within(card()).getByText('Sliced')).toBeInTheDocument();

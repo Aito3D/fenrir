@@ -17,6 +17,7 @@ import {
   Plus,
   Printer,
   Scissors,
+  Upload,
 } from 'lucide-react';
 import { api } from '../../../api/client';
 import type { ProjectFileOut, ProjectItemOut, ProjectRevisionOut, RevisionStatus } from '../../../api/client';
@@ -35,6 +36,7 @@ import { useRevisionSlice } from './useRevisionSlice';
 import type { RevisionSliceState } from './useRevisionSlice';
 import { ItemDetailsTray } from './ItemDetailsTray';
 import { SliceLine } from './SliceLine';
+import { UploadSlicedDialog } from './UploadSlicedDialog';
 import {
   PREVIEWABLE_TYPES,
   PRINTABLE_ACCEPT,
@@ -116,6 +118,8 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [printing, setPrinting] = useState<ProjectFileOut | null>(null);
   const [preview, setPreview] = useState<ProjectFileOut | null>(null);
+  // The hand-slice fallback dialog of a failed slice (upload the .gcode.3mf yourself).
+  const [uploadSliced, setUploadSliced] = useState(false);
   // The ⋯ fork request: the tray opens that revision's block with its fork form showing.
   const [fork, setFork] = useState<{ revisionId: number; nonce: number } | null>(null);
   const rename = useItemRename(item, actions);
@@ -141,6 +145,7 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
   const profileLine = printProfileLine(shown?.print_profile ?? null);
   const outdated = shown?.outdated_by && shown.derived_from ? outdatedParams(shown.derived_from, shown.outdated_by) : null;
   const canSlice = canUpdate && !!source && (slice.state === 'none' || slice.state === 'failed');
+  const canUploadSliced = canUpdate && !!source && slice.state === 'failed';
 
   const toggleDetails = () => {
     if (open) setFork(null);
@@ -162,6 +167,13 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
           label: slice.state === 'failed' ? t('queue.retrySlice') : t('slice.action'),
           icon: <Scissors className="h-4 w-4" />,
           onClick: () => void actions.sliceRevision(shown.id),
+        }]
+      : []),
+    ...(canUploadSliced
+      ? [{
+          label: t('projectsPdm.slice.uploadAction'),
+          icon: <Upload className="h-4 w-4" />,
+          onClick: () => setUploadSliced(true),
         }]
       : []),
     ...(canUpdate && shown
@@ -271,7 +283,8 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
               )}
               <SliceLine key={`${shown.id}-${slice.state}`} state={slice.state} percent={slice.percent} error={slice.error} printCount={shown.print_count}
                 changed={slice.state !== firstSlice.current.get(shown.id)}
-                onRetry={canUpdate && source ? () => void actions.sliceRevision(shown.id) : undefined} />
+                onRetry={canUpdate && source ? () => void actions.sliceRevision(shown.id) : undefined}
+                onUpload={canUploadSliced ? () => setUploadSliced(true) : undefined} />
               <div className="mt-1 text-[11px]">
                 {[shown.created_by ? t('projectsPdm.files.byAuthor', { name: shown.created_by }) : null,
                   new Date(shown.created_at).toLocaleDateString(i18n.language)].filter(Boolean).join(' · ')}
@@ -331,6 +344,11 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
         <DropShield>
           <ModelViewerModal libraryFileId={preview.id} title={preview.filename} fileType={preview.file_type}
             onClose={() => setPreview(null)} />
+        </DropShield>
+      )}
+      {uploadSliced && shown && (
+        <DropShield>
+          <UploadSlicedDialog revision={shown} actions={actions} onClose={() => setUploadSliced(false)} />
         </DropShield>
       )}
       {printing && (

@@ -19,13 +19,15 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
+import tempfile
 import uuid
 import zipfile
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -826,3 +828,155 @@ async def _set_waiting_status(db: AsyncSession, item_id: int, status: str, error
     ).first()
     await db.commit()
     return moved is not None
+
+
+# --- manual sliced-file upload (design 2026-10-30) -------------------------------------------------
+#
+# When the sidecar is down the operator slices the project in Bambu Studio and uploads the exported
+# plate file. It is stored exactly as a server slice would be (``_store``), after two checks: the
+# content carries plate G-code, and its embedded settings match the revision's print profile.
+
+MANUAL_NAME_REFUSED = "Upload the sliced plate file Bambu Studio exports (.gcode.3mf)."
+MANUAL_NOT_SLICED = "{name} is not sliced: export the plate's sliced file (.gcode.3mf) from Bambu Studio."
+MANUAL_UNREADABLE = "{name} is not a sliced 3MF. " + MANUAL_NAME_REFUSED
+MANUAL_NO_SETTINGS = (
+    "{name} carries no settings to check against the revision's. "
+    "Export the sliced plate file from the same Bambu Studio project."
+)
+MANUAL_NO_SOURCE = "This revision has no source .3mf; add the sliced file as its own item."
+MANUAL_NOT_FAILED = {
+    "slicing": "The revision is being sliced right now.",
+    "sliced": "The revision is already sliced.",
+    None: "The revision's server slice has not failed; use Slice instead.",
+}
+SETTINGS_MISMATCH = "The sliced file's settings differ from the revision's."
+# The print_profile keys compared, in the order the differences are reported.
+_COMPARED_FIELDS = ("printer_model", "nozzle_diameter", "layer_height", "filament_types")
+
+
+def _canonical_setting(field: str, value: object) -> str | None:
+    """One comparable, displayable form of a print_profile value; None when the value is unusable.
+
+    Printer models compare by their short name (``Bambu Lab X1 Carbon`` = ``X1C``), dimensions as
+    numbers (``0.40`` = ``0.4``), filament types case-insensitively and in slot order."""
+    if value in (None, "", []):
+        return None
+    if field == "printer_model":
+        return (normalize_printer_model(str(value)) or str(value)).upper()
+    if field in ("nozzle_diameter", "layer_height"):
+        raw = value[0] if isinstance(value, list) else value
+        try:
+            return f"{float(str(raw).strip()):g}"
+        except (TypeError, ValueError):
+            return None
+    types = value if isinstance(value, list) else [value]
+    return ", ".join(str(t).strip().upper() for t in types if str(t).strip()) or None
+
+
+def settings_mismatches(file_profile: dict, revision_profile: dict) -> list[dict[str, str]]:
+    """The compared settings that differ between an uploaded sliced file and the revision, each as
+    ``{"field", "file", "revision"}`` in display form. A setting missing on either side is skipped."""
+    mismatches: list[dict[str, str]] = []
+    for field in _COMPARED_FIELDS:
+        ours = _canonical_setting(field, revision_profile.get(field))
+        theirs = _canonical_setting(field, file_profile.get(field))
+        if ours is None or theirs is None or ours == theirs:
+            continue
+        mismatches.append({"field": field, "file": theirs, "revision": ours})
+    return mismatches
+
+
+def _has_compared_settings(profile: dict) -> bool:
+    return any(_canonical_setting(field, profile.get(field)) is not None for field in _COMPARED_FIELDS)
+
+
+def _read_sliced_metadata(path: Path) -> dict[str, Any]:
+    """Print time, grams and target model of a sliced 3MF, as the library reads them (best effort)."""
+    from backend.app.services.archive import ThreeMFParser
+
+    try:
+        raw = ThreeMFParser(path).parse()
+    except Exception:
+        logger.warning("Could not read the metadata of an uploaded sliced file", exc_info=True)
+        raw = {}
+    return {
+        "print_time_seconds": raw.get("print_time_seconds"),
+        "filament_used_grams": raw.get("filament_used_grams"),
+        "sliced_for_model": raw.get("sliced_for_model"),
+    }
+
+
+def _check_sliced_content(path: Path, name: str) -> None:
+    kind = classify_3mf(path)
+    if kind == "sliced":
+        return
+    if kind == "unreadable":
+        raise ProjectFilesError(400, MANUAL_UNREADABLE.format(name=name))
+    raise ProjectFilesError(400, MANUAL_NOT_SLICED.format(name=name))
+
+
+async def store_uploaded_slice(db: AsyncSession, revision_id: int, upload: UploadFile, *, user_id: int | None) -> dict:
+    """Store ``upload`` (a Bambu Studio ``.gcode.3mf``) as the slice of a revision whose server slice
+    failed. Commits. Returns ``_store``'s result.
+
+    Refused (nothing written) when the name is not a ``.3mf``, the revision is not ``failed``
+    (409 ``not_failed``), it has no source ``.3mf``, the content carries no plate G-code, or the
+    file's embedded settings differ from the revision's print profile (400 ``settings_mismatch``
+    with the list of differences). A concurrent retry that landed first leaves it ``sliced`` and
+    the upload is refused the same 409."""
+    from backend.app.api.routes.library import _stream_upload_to_path  # routes import this module
+    from backend.app.services.project_files import upload_basename
+    from backend.app.services.project_snapshot import read_print_snapshot
+
+    name = upload_basename(upload)
+    if not name.lower().endswith(".3mf"):
+        raise ProjectFilesError(400, MANUAL_NAME_REFUSED)
+    revision = await db.get(ProjectRevision, revision_id, populate_existing=True)
+    if revision is None:
+        raise ProjectFilesError(404, "Revision not found")
+    if revision.slice_status != "failed":
+        raise _not_failed(revision.slice_status)
+    source = await _source_file(db, revision_id)
+    if source is None:
+        raise ProjectFilesError(400, MANUAL_NO_SOURCE)
+    revision_profile = {k: v for k, v in (revision.print_profile or {}).items() if k != "sliced"}
+    source_name = source.filename
+    await db.commit()  # end the read transaction: the upload streams for a while
+
+    fd, tmp_name = await asyncio.to_thread(tempfile.mkstemp, suffix=".3mf", prefix="fenrir-sliced-")
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        await _stream_upload_to_path(upload, tmp, settings.library_max_upload_bytes)
+        content = await asyncio.to_thread(tmp.read_bytes)
+        await asyncio.to_thread(_check_source_within_caps, content)
+        await asyncio.to_thread(_check_sliced_content, tmp, name)
+        snapshot = await asyncio.to_thread(read_print_snapshot, tmp)
+        file_profile = {k: v for k, v in (snapshot.print_profile if snapshot else {}).items() if k != "sliced"}
+        if _has_compared_settings(revision_profile) and not _has_compared_settings(file_profile):
+            raise ProjectFilesError(400, MANUAL_NO_SETTINGS.format(name=name))
+        mismatches = settings_mismatches(file_profile, revision_profile)
+        if mismatches:
+            raise HTTPException(
+                400, {"code": "settings_mismatch", "message": SETTINGS_MISMATCH, "mismatches": mismatches}
+            )
+        metadata = await asyncio.to_thread(_read_sliced_metadata, tmp)
+    finally:
+        await asyncio.to_thread(project_files._unlink_quietly, tmp)
+    # Short name ("X1C"), as every other sliced file stores it (see _slice_revision).
+    metadata["sliced_for_model"] = normalize_printer_model(
+        metadata["sliced_for_model"] or file_profile.get("printer_model") or revision_profile.get("printer_model")
+    )
+    result = await _store(db, revision_id, output_filename(source_name), content, metadata, user_id)
+    if not result:
+        current = await db.get(ProjectRevision, revision_id, populate_existing=True)
+        if current is None:
+            raise ProjectFilesError(404, "Revision not found")
+        raise _not_failed(current.slice_status)
+    logger.info("Project revision %s: sliced file uploaded by hand (library file %s)", revision_id, result["file_id"])
+    return result
+
+
+def _not_failed(status: str | None) -> HTTPException:
+    message = MANUAL_NOT_FAILED.get(status, MANUAL_NOT_FAILED[None])
+    return HTTPException(409, {"code": "not_failed", "message": message})
