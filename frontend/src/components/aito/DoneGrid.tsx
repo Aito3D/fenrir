@@ -1,13 +1,24 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Archive, Undo2 } from 'lucide-react';
+import { Archive, SearchX, Undo2 } from 'lucide-react';
 import { ArchiveGrid } from './archives/ArchiveGrid';
+import { ArchiveToolbar } from './ArchiveToolbar';
 import { CardView } from './CardView';
 import { HoldButton } from './HoldButton';
+import { useArchiveGroups } from '../../hooks/useArchiveGroups';
 import { useColumnMoveMutation } from '../../hooks/useColumnMoveMutation';
 import { useIsReverting } from '../../hooks/useRevertFlash';
+import {
+  doneFilterCounts,
+  doneFilterMatches,
+  finishedAt,
+  sortDone,
+  winLoss,
+  type DoneFilter,
+  type DoneSort,
+} from '../../utils/aitoDoneArchive';
 import { isPlaceholder } from '../../utils/aitoOptimistic';
-import { sortByRecencyDesc } from '../../utils/aitoSearch';
+import { matchesSearch } from '../../utils/aitoSearch';
 import { restoreButtonCls, restoreHoldDurationMs } from './restoreButton';
 import type { AitoProject } from '../../api/client';
 
@@ -69,17 +80,30 @@ function DoneCard({
  *  so a card looks the same wherever you meet it, and `data-aito-card-id`
  *  keeps the morph into the detail panel working from here too.
  *
- *  Ordered by `updated_at` descending, NOT by the stored board position: once
- *  Done is the dumping ground, its positions are arbitrary drop-order history
- *  and mean nothing to anyone reading the archive. */
+ *  Ordered by `done_at` descending by default, NOT by the stored board
+ *  position: once Done is the dumping ground, its positions are arbitrary
+ *  drop-order history and mean nothing to anyone reading the archive. The
+ *  sort menu offers the other orders (`aitoDoneArchive.ts`) and a date sort
+ *  groups the grid under month headers. Filter and sort are the page's
+ *  (`useAitoViewParams`): mirrored into the URL, the sort remembered across
+ *  visits, the filter not. The search (AitoPage's box) runs first; the pill
+ *  counts are over what it keeps, so they read "of these". */
 export function DoneGrid({
   projects,
   query,
+  filter,
+  onFilter,
+  sort,
+  onSort,
   onExpandCard,
   canUpdate,
 }: {
   projects: AitoProject[];
   query: string;
+  filter: DoneFilter;
+  onFilter: (next: DoneFilter) => void;
+  sort: DoneSort;
+  onSort: (next: DoneSort) => void;
   onExpandCard: (id: number) => void;
   /** Gates the restore-to-Finish control on every card — see DoneCard's own
    *  doc. */
@@ -87,25 +111,55 @@ export function DoneGrid({
 }) {
   const { t } = useTranslation();
 
-  const visible = useMemo(() => sortByRecencyDesc(projects, query), [projects, query]);
+  const searched = useMemo(() => projects.filter((project) => matchesSearch(project, query)), [projects, query]);
+  const counts = useMemo(() => doneFilterCounts(searched), [searched]);
+  const visible = useMemo(
+    () => sortDone(searched.filter((project) => doneFilterMatches(project, filter)), sort),
+    [searched, filter, sort],
+  );
+  const groupOf = useArchiveGroups(sort, finishedAt);
 
+  // Three different nothings. An empty archive has no controls to offer; a
+  // search that hid everything says so (the board says the same sentence
+  // for the same query); a filter that hid everything keeps the pills, or
+  // there would be no way to release it.
+  let body;
   if (visible.length === 0) {
-    return (
+    const Icon = projects.length === 0 ? Archive : SearchX;
+    const key =
+      projects.length === 0 ? 'aito.doneEmpty' : searched.length === 0 ? 'aito.searchNoResults' : 'aito.doneArchive.noResults';
+    body = (
       <div className="flex-1 text-center py-8 animate-rise">
-        <Archive className="w-10 h-10 text-bambu-gray mx-auto mb-3" />
-        <p className="text-white font-medium">
-          {t(query.trim() ? 'aito.searchNoResults' : 'aito.doneEmpty')}
-        </p>
+        <Icon className="w-10 h-10 text-bambu-gray mx-auto mb-3" />
+        <p className="text-white font-medium">{t(key)}</p>
       </div>
+    );
+  } else {
+    body = (
+      <ArchiveGrid
+        projects={visible}
+        groupOf={groupOf ?? undefined}
+        renderCard={(project) => (
+          <DoneCard project={project} onExpand={() => onExpandCard(project.id)} canUpdate={canUpdate} />
+        )}
+      />
     );
   }
 
   return (
-    <ArchiveGrid
-      projects={visible}
-      renderCard={(project) => (
-        <DoneCard project={project} onExpand={() => onExpandCard(project.id)} canUpdate={canUpdate} />
+    <>
+      {projects.length > 0 && (
+        <ArchiveToolbar
+          counts={counts}
+          filter={filter}
+          onFilter={onFilter}
+          winLoss={winLoss(counts)}
+          sort={sort}
+          onSort={onSort}
+          dateLabel="finished"
+        />
       )}
-    />
+      {body}
+    </>
   );
 }

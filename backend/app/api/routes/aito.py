@@ -563,6 +563,7 @@ def _to_response(
         # Nullable like `flag`, and for the same reason needs no coercion: an
         # unflushed in-memory row reads None, which IS "nobody told them yet".
         client_contacted_at=p.client_contacted_at,
+        done_at=p.done_at,
         due_date=p.due_date,
         tracking_configured=external_url != "",
         # Mirrors quote_invoiced above: in-memory rows that never flushed
@@ -743,6 +744,22 @@ async def _active_in_column(db: AsyncSession, column: str, exclude_id: int | Non
     return [r for r in rows if r.id != exclude_id]
 
 
+def _stamp_done_at(project: AitoProject, column: str) -> None:
+    """Keep ``done_at`` in step with ``board_column`` — see the column comment.
+
+    Called by both writers of the column, AFTER they assign it. Arriving in
+    Done stamps now; leaving clears. A move that does not cross the Done
+    boundary (Devis -> Printing, or a reorder) changes nothing, which is why
+    an existing stamp is kept when the destination is Done: the rules re-run
+    on every edit, and a card already in Done must not be re-stamped by one.
+    """
+    if column == "done":
+        if project.done_at is None:
+            project.done_at = utc_now_naive()
+    else:
+        project.done_at = None
+
+
 async def _apply_rules(db: AsyncSession, project: AitoProject, summary: TaskSummary, actor: str | None = None) -> None:
     """Recompute ``project.board_column`` from the rules and relocate it.
 
@@ -801,6 +818,7 @@ async def _apply_rules(db: AsyncSession, project: AitoProject, summary: TaskSumm
     destination_rows = await _active_in_column(db, column, exclude_id=project.id)
     source_rows = await _active_in_column(db, source, exclude_id=project.id)
     project.board_column = column
+    _stamp_done_at(project, column)
     project.position = len(destination_rows)
     for index, row in enumerate(source_rows):
         row.position = index
@@ -4074,6 +4092,8 @@ async def move_project(
     insert_at = min(payload.position, len(destination))
     destination.insert(insert_at, project)
     project.board_column = payload.column
+    if source_column != payload.column:
+        _stamp_done_at(project, payload.column)
     for i, row in enumerate(destination):
         row.position = i
     if source_column != payload.column:

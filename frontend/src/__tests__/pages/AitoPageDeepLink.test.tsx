@@ -89,7 +89,10 @@ describe('AitoPage ?card= deep link', () => {
 
     const panel = await screen.findByRole('dialog');
     expect(panel).toHaveTextContent('Finished bracket');
-    expect(window.location.search).toBe('?card=42');
+    // The archive the card was brought up behind is mirrored beside it
+    // (useAitoViewParams), so a reload lands on the same panel over the same
+    // view.
+    await waitFor(() => expect(window.location.search).toBe('?card=42&view=done'));
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     // The done archive is up: its toggle reads as the way back, and the card is listed.

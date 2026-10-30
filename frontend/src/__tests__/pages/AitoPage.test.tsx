@@ -75,6 +75,7 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     quote_invoiced: false,
     flag: null,
     client_contacted_at: null,
+    done_at: null,
     due_date: null,
     quote_sync_error: null,
     quote_status_block: null,
@@ -801,6 +802,7 @@ describe('AitoPage (backend board)', () => {
       quote_invoiced: false,
       flag: null,
       client_contacted_at: null,
+      done_at: null,
       due_date: null,
       quote_sync_error: null,
       quote_status_block: null,
@@ -2082,7 +2084,9 @@ describe('follow-ups strip', () => {
     // board" label -- ViewToggleButton keeps both, aria-hidden'ing the one
     // that does not apply -- no longer reads (0) against it.
     expect(await screen.findByText('Vieux boitier')).toBeInTheDocument();
-    const backToBoard = screen.getByRole('button', { pressed: true });
+    // By name as well as state: the done grid's own "All" outcome pill is
+    // pressed too (DoneGrid), so `pressed` alone no longer picks one button.
+    const backToBoard = screen.getByRole('button', { name: /back to board/i, pressed: true });
     expect(backToBoard).not.toHaveTextContent(/show done \(0\)/i);
     expect(backToBoard).toHaveTextContent(/show done \(1\)/i);
 
@@ -2365,5 +2369,47 @@ describe('laptop header density', () => {
     render(<AitoPage />);
     await screen.findByText('ACME SARL');
     expect(screen.getByRole('button', { name: /^project$/i }).innerHTML).not.toContain('@max-');
+  });
+});
+
+describe('archive views in the URL', () => {
+  it('lands straight on the done archive, filtered, from a link that names it', async () => {
+    server.use(
+      http.get('/api/v1/aito/', () =>
+        HttpResponse.json([
+          { ...project, id: 1, description: 'Live card' },
+          { ...project, id: 4, description: 'Refusée', column: 'done', quote_status: 'declined', move_lock: 'declined' },
+          { ...project, id: 5, description: 'Livrée', column: 'done', move_lock: null },
+        ]),
+      ),
+    );
+    window.history.replaceState({}, '', '/aito?view=done&filter=declined');
+    render(<AitoPage />);
+    expect(await screen.findByText('Refusée')).toBeInTheDocument();
+    expect(screen.queryByText('Livrée')).not.toBeInTheDocument();
+    expect(screen.queryByText('Live card')).not.toBeInTheDocument();
+    expect(screen.getByTestId('aito-done-filter-declined')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('writes the view and the pressed filter into the URL, and clears both on the way back to the board', async () => {
+    server.use(
+      http.get('/api/v1/aito/', () =>
+        HttpResponse.json([
+          { ...project, id: 1, description: 'Live card' },
+          { ...project, id: 4, description: 'Refusée', column: 'done', quote_status: 'declined', move_lock: 'declined' },
+        ]),
+      ),
+    );
+    render(<AitoPage />);
+    await screen.findByText('Live card');
+    fireEvent.click(screen.getByRole('button', { name: /show done/i }));
+    await screen.findByText('Refusée');
+    expect(new URLSearchParams(window.location.search).get('view')).toBe('done');
+    fireEvent.click(screen.getByTestId('aito-done-filter-declined'));
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get('filter')).toBe('declined'));
+
+    fireEvent.click(screen.getByRole('button', { name: /back to board/i }));
+    await screen.findByText('Live card');
+    await waitFor(() => expect(window.location.search).toBe(''));
   });
 });

@@ -85,6 +85,7 @@ function makeCard(overrides: Partial<Pick<AitoProject, 'description' | 'client_n
     quote_invoiced: false,
     flag: null,
     client_contacted_at: null,
+    done_at: null,
     due_date: null,
     quote_sync_error: null,
     quote_status_block: null,

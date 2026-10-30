@@ -1989,6 +1989,33 @@ async def _backfill_aito_quote_accepted_at(conn) -> None:
     )
 
 
+async def _backfill_aito_done_at(conn) -> None:
+    """One-shot seed for done_at (2026-10-30 archive sort/grouping): a card
+    sitting in Done takes its LATEST `stage.changed` event into Done, else its
+    `updated_at` — the stamp the archive sorted on before the column existed,
+    so no card changes place on the first boot. Cards anywhere else stay
+    NULL. Gated on the ALTER that adds the column: re-running would overwrite
+    stamps the app has since written itself.
+
+    `changes` is a JSON list whose first entry is the column change; the LIKE
+    reads the `"to": "done"` member out of it without a JSON function, so an
+    older SQLite without json_extract still runs it; the CAST is for
+    PostgreSQL, where LIKE does not take a json column."""
+    from sqlalchemy import text
+
+    await conn.execute(
+        text(
+            "UPDATE aito_projects SET done_at = COALESCE("
+            " (SELECT MAX(occurred_at) FROM aito_events"
+            "  WHERE aito_events.project_id = aito_projects.id"
+            "    AND aito_events.kind = 'stage.changed'"
+            '    AND CAST(aito_events.changes AS TEXT) LIKE \'%"to": "done"%\'),'
+            " updated_at)"
+            " WHERE board_column = 'done'"
+        )
+    )
+
+
 async def _backfill_aito_quote_sent_at(conn) -> None:
     """One-shot seed for quote_sent_at (2026-09-04 follow-ups spec): a quoted
     project takes the EARLIEST quote.sent / quote.emailed event, else its
@@ -6348,6 +6375,14 @@ async def _run_migrations(conn):
     # Migration: promised delivery date (2026-09-04). Nullable, so no
     # backfill: an existing card promised nothing.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN due_date VARCHAR(10)")
+
+    # Migration: when the card last arrived in Done (2026-10-30), for the
+    # archive's sort and month grouping. Backfilled once from the event log —
+    # see _backfill_aito_done_at.
+    _done_at_existed = await _column_exists(conn, "aito_projects", "done_at")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN done_at DATETIME")
+    if not _done_at_existed:
+        await _backfill_aito_done_at(conn)
 
     # Migration: the rush surcharge was removed (2026-09-07). Drop the columns
     # it added on 2026-09-04 where they exist; _safe_execute ignores a DB that

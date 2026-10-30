@@ -42,6 +42,7 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   quote_invoiced: false,
   flag: null,
   client_contacted_at: null,
+  done_at: null,
   due_date: null,
   quote_sync_error: null,
   quote_status_block: null,
@@ -156,5 +157,30 @@ describe('ArchiveGrid reflow', () => {
     expect(grid.children[0].getAttribute('data-flip-key')).toBe('1');
     expect(grid.children[0]).not.toHaveClass('animate-rise-lg');
     expect(grid.children[1]).toHaveClass('animate-rise-lg');
+  });
+
+  it('opens a header wherever the group key changes, spanning the row, with the run\'s count', () => {
+    const { container } = render(
+      <ArchiveGrid
+        projects={[card({ id: 1 }), card({ id: 2 }), card({ id: 3 })]}
+        groupOf={(p) => (p.id < 3 ? { key: 'a', label: 'Groupe A' } : { key: 'b', label: 'Groupe B' })}
+        renderCard={(p) => <div>{p.id}</div>}
+      />,
+    );
+    const headers = screen.getAllByTestId('aito-archive-group');
+    expect(headers.map((h) => h.textContent)).toEqual(['Groupe A2', 'Groupe B1']);
+    expect(headers[0].className).toContain('col-span-full');
+    expect(headers[0].className).toContain('sticky');
+    // Headers are not FLIP children: the hook keys on data-flip-key.
+    expect(headers[0]).not.toHaveAttribute('data-flip-key');
+    const order = [...container.querySelectorAll('[data-testid=aito-archive-group], [data-flip-key]')].map(
+      (el) => el.getAttribute('data-flip-key') ?? el.textContent,
+    );
+    expect(order).toEqual(['Groupe A2', '1', '2', 'Groupe B1', '3']);
+  });
+
+  it('renders no headers without a grouping', () => {
+    render(<ArchiveGrid projects={[card({ id: 1 })]} renderCard={(p) => <div>{p.id}</div>} />);
+    expect(screen.queryByTestId('aito-archive-group')).not.toBeInTheDocument();
   });
 });

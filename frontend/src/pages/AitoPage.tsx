@@ -33,6 +33,7 @@ import { useCardFlight } from '../hooks/useCardFlight';
 import { CelebrationProvider } from '../components/aito/celebration';
 import { useCardMorph } from '../hooks/useCardMorph';
 import { useDeepLinkParam } from '../hooks/useDeepLinkParam';
+import { useAitoViewParams } from '../hooks/useAitoViewParams';
 import { useBoardLoadingStatus } from '../hooks/useBoardLoadingStatus';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { prefersReducedMotion } from '../utils/motion';
@@ -143,10 +144,11 @@ export function AitoPage() {
   // booleans have a fourth state (done AND trash) that means nothing, and
   // every render would have to decide which of them wins.
   //
-  // Deliberately not persisted — not in the URL, not in storage. The board is
-  // the working view; landing on an archive after a reload would be wrong
-  // every time but the one you asked for it.
-  const [view, setView] = useState<'board' | 'done' | 'trash' | 'stats'>('board');
+  // In the URL while a detour is open (`?view=done&filter=…&sort=…`), absent
+  // on the board — see useAitoViewParams. A plain `/aito` still lands on the
+  // board; only a link that names an archive brings one back.
+  const { view, setView, filter: archiveFilter, setFilter: setArchiveFilter, sort: archiveSort, setSort: setArchiveSort } =
+    useAitoViewParams();
   // The statistics view's range lives here, not in the view: its selector
   // sits in the page toolbar, in the slot Import / New project use for the
   // board, so the header reads as one row of controls whichever view is up.
@@ -361,6 +363,7 @@ export function AitoPage() {
     refetchBoard,
     refetchTrash,
     clearCardParam,
+    setView,
     showToast,
     t,
   ]);
@@ -833,11 +836,22 @@ export function AitoPage() {
           board's own flex-1 / min-h-0 keep working. */}
       <div className="vt-aito-view flex-1 min-h-0 flex flex-col">
       {view === 'done' ? (
-        <DoneGrid projects={board.done} query={search} onExpandCard={openCard} canUpdate={canUpdate} />
+        <DoneGrid
+          projects={board.done}
+          query={search}
+          filter={archiveFilter}
+          onFilter={setArchiveFilter}
+          sort={archiveSort}
+          onSort={setArchiveSort}
+          onExpandCard={openCard}
+          canUpdate={canUpdate}
+        />
       ) : view === 'trash' ? (
         <TrashGrid
           projects={trashQuery.data ?? []}
           query={search}
+          sort={archiveSort}
+          onSort={setArchiveSort}
           isLoading={trashQuery.isLoading}
           isError={trashQuery.isError}
           onRetry={() => trashQuery.refetch()}

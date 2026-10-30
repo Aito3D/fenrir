@@ -13,6 +13,7 @@ import { ageAnchor, agingTextCls } from '../../utils/aitoAging';
 import { isFinished, needsClientContact, shipsToClient } from '../../utils/aitoBoard';
 import { useCardDrop } from '../projects/aito/CardDropTarget';
 import { CardProjectChips } from '../projects/aito/CardProjectChips';
+import { DoneOutcomeTags } from './DoneOutcomeTags';
 import { hoverRevealDelay, markHoverWarm } from './hoverWarmth';
 
 export interface CardViewProps {
@@ -279,7 +280,22 @@ export function CardView({
   // above is still the raw creation date for the tooltip, which is a different
   // question from "how old is this job".
   const age = ageAnchor(project);
-  const elapsed = formatElapsedTime(age.raw, t);
+  // A finished card is dated, not aged: "Finished 12 Sep" answers the
+  // archive's question where "3 months ago" only counted. `done_at` is the
+  // server's stamp; a card moved optimistically has none yet and keeps the
+  // elapsed label until the row comes back. Live cards only: in the trash
+  // the footer's question is when it was deleted, which the note beside
+  // this already answers.
+  const finished = project.column === 'done' && project.status === 'active' ? parseUTCDate(project.done_at) : null;
+  const elapsed = finished
+    ? t('aito.finishedOn', {
+        date: finished.toLocaleDateString(i18n.language, {
+          day: 'numeric',
+          month: 'short',
+          ...(finished.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }),
+        }),
+      })
+    : formatElapsedTime(age.raw, t);
   const dateTitle = [
     created && t('aito.created', { date: created.toLocaleString(i18n.language) }),
     updated && t('aito.updated', { date: updated.toLocaleString(i18n.language) }),
@@ -580,6 +596,7 @@ export function CardView({
                   </span>
                 )}
                 {!overlay && !placeholder && <CardProjectChips orderId={project.id} />}
+                <DoneOutcomeTags project={project} />
                 {footerNote && <span className="text-xs text-bambu-gray truncate">{footerNote}</span>}
                 {/* How long the job has been open, on the heat ramp
                     (utils/aitoAging). */}

@@ -1141,6 +1141,7 @@ def _minimal_project_response(**overrides) -> AitoProjectResponse:
         "quote_invoiced": False,
         "flag": None,
         "client_contacted_at": None,
+        "done_at": None,
         "due_date": None,
         "tracking_configured": False,
         "quote_sync_error": None,

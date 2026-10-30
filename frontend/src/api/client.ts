@@ -5188,6 +5188,10 @@ export interface AitoProject {
    *  Cleared automatically when work reappears and the rules send the card
    *  back to a production column. */
   client_contacted_at: string | null;
+  /** When the card last arrived in Done (naive UTC ISO), null anywhere else.
+   *  The archive sorts and groups on it and the Done card's footer reads
+   *  "finished on" from it; `updated_at` is no longer the archive's clock. */
+  done_at: string | null;
   /** ISO `YYYY-MM-DD` promised to the client, or null. Set through its own
    *  route (`setAitoProjectDueDate`), never the generic PATCH. */
   due_date: string | null;
@@ -9750,10 +9754,6 @@ export const api = {
     files.forEach((file) => formData.append('files', file));
     return postFormData(`/projects/revisions/${revisionId}/files`, formData);
   },
-  removeProjectRevisionFile: (revisionId: number, fileId: number) =>
-    request<void>(`/projects/revisions/${revisionId}/files/${fileId}`, { method: 'DELETE' }),
-  updateProjectRevision: (
-    revisionId: number,
   /** The hand-sliced plate file (.gcode.3mf) for a revision whose server slice failed. A refusal
    *  is an ApiError: `settings_mismatch` carries `detail.mismatches` ({field, file, revision}[]),
    *  `not_failed` says the revision is not waiting for one. */
@@ -9766,6 +9766,10 @@ export const api = {
     if (!response.ok) await throwApiError(response);
     return response.json();
   },
+  removeProjectRevisionFile: (revisionId: number, fileId: number) =>
+    request<void>(`/projects/revisions/${revisionId}/files/${fileId}`, { method: 'DELETE' }),
+  updateProjectRevision: (
+    revisionId: number,
     data: { status?: RevisionStatus; note?: string | null; derived_from_id?: number | null },
   ) =>
     request<ProjectRevisionOut>(`/projects/revisions/${revisionId}`, { method: 'PATCH', body: JSON.stringify(data) }),

@@ -42,6 +42,7 @@ const project: AitoProject = {
   quote_invoiced: false,
   flag: null,
   client_contacted_at: null,
+  done_at: null,
   due_date: null,
   quote_sync_error: null,
   quote_status_block: null,
@@ -613,6 +614,40 @@ describe('hybrid card anatomy', () => {
     // Once, not twice: the footer used to repeat the body's count.
     expect(screen.getAllByText(/\d+\/\d+ steps/)).toHaveLength(1);
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  });
+
+  it('dates a finished card instead of ageing it, and tags what happened to it', () => {
+    renderCard({ column: 'done', done_at: '2026-09-12T10:00:00Z', shipping_lta: 'LTA-1', invoice_balance: 40 });
+    const elapsed = screen.getByTestId('aito-card-elapsed');
+    expect(elapsed).toHaveTextContent(/finished|terminé/i);
+    expect(elapsed).toHaveTextContent(/12/);
+    expect(elapsed).toHaveTextContent(/sep/i);
+    const tags = screen.getByTestId('aito-card-outcomes');
+    expect(tags).toHaveTextContent(/shipped|expédié/i);
+    expect(tags).toHaveTextContent(/unpaid|impayé/i);
+    expect(tags).not.toHaveTextContent(/declined|refusé/i);
+  });
+
+  it('tags a declined quote in Done, and a plain finished job gets no tag', () => {
+    renderCard({ column: 'done', done_at: '2026-09-12T10:00:00Z', quote_status: 'declined', move_lock: 'declined' });
+    expect(screen.getByTestId('aito-card-outcomes')).toHaveTextContent(/declined|refusé/i);
+    cleanup();
+    renderCard({ column: 'done', done_at: '2026-09-12T10:00:00Z', quote_status: 'accepted' });
+    expect(screen.queryByTestId('aito-card-outcomes')).not.toBeInTheDocument();
+  });
+
+  it('keeps the elapsed label on a Done card the server has not stamped yet, and never tags a board card', () => {
+    renderCard({ column: 'done', done_at: null });
+    expect(screen.getByTestId('aito-card-elapsed')).not.toHaveTextContent(/finished|terminé/i);
+    cleanup();
+    renderCard({ column: 'finish', shipping_lta: 'LTA-1', invoice_balance: 40 });
+    expect(screen.queryByTestId('aito-card-outcomes')).not.toBeInTheDocument();
+  });
+
+  it('neither dates nor tags a trashed card that was in Done — the trash footer says when it was deleted', () => {
+    renderCard({ column: 'done', status: 'trashed', done_at: '2026-09-12T10:00:00Z', quote_status: 'declined' });
+    expect(screen.getByTestId('aito-card-elapsed')).not.toHaveTextContent(/finished|terminé/i);
+    expect(screen.queryByTestId('aito-card-outcomes')).not.toBeInTheDocument();
   });
 
   it('keeps the age in the footer beside the quote number, not in the name row', () => {

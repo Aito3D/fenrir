@@ -67,7 +67,11 @@ describe('useColumnMoveMutation', () => {
     // The optimistic write must be exactly what a direct call to
     // applyColumnMove on the seeded array would produce — not just "moved
     // somewhere" but the same shape, position included.
-    const expected = applyColumnMove([project], project.id, 'done');
+    // `done_at` is stamped from the wall clock on the way into Done, so the
+    // two calls differ by a few milliseconds there and only there.
+    const expected = applyColumnMove([project], project.id, 'done')!.map((row) =>
+      row.column === 'done' ? { ...row, done_at: expect.any(String) } : row,
+    );
     await waitFor(() => {
       expect(client.getQueryData<AitoProject[]>(['aito-projects'])).toEqual(expected);
     });

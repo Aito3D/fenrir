@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, Trash2, Undo2 } from 'lucide-react';
 import { ArchiveGrid } from './archives/ArchiveGrid';
+import { ArchiveToolbar } from './ArchiveToolbar';
 import { CardView } from './CardView';
 import { HoldButton } from './HoldButton';
 import { Button } from '../Button';
@@ -10,7 +11,9 @@ import { api, ApiError, type AitoProject } from '../../api/client';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useToast } from '../../contexts/ToastContext';
 import { applyRestore, replaceProject } from '../../utils/aitoOptimistic';
-import { sortByRecencyDesc } from '../../utils/aitoSearch';
+import { useArchiveGroups } from '../../hooks/useArchiveGroups';
+import { sortDone, type DoneSort } from '../../utils/aitoDoneArchive';
+import { matchesSearch } from '../../utils/aitoSearch';
 import { formatElapsedTime } from '../../utils/date';
 import { restoreButtonCls, restoreHoldDurationMs } from './restoreButton';
 
@@ -94,15 +97,24 @@ function TrashCard({
  *  by the same board search, and is restored by the same hold-to-confirm
  *  gesture Done uses.
  *
- *  Ordered by `updated_at` descending — most recently deleted first, which is
- *  the one you are almost always here for.
+ *  Ordered by `updated_at` descending by default — most recently deleted
+ *  first, which is the one you are almost always here for. The same sort
+ *  menu as Done (one remembered preference serves both; only the word
+ *  "deleted" differs), and a date sort groups the grid by month. No outcome
+ *  pills: a trashed card can be a quote that was never answered, which is
+ *  neither accepted nor declined, so those words would lie here.
  *
  *  The rows are the caller's: `AitoPage` owns the ['aito-trash'] query because
  *  it also has to resolve a trashed project for the detail panel, and the
  *  board query it normally looks in does not carry deleted rows. */
+/** A soft delete is the last write the row took. */
+const deletedAt = (project: AitoProject) => project.updated_at;
+
 export function TrashGrid({
   projects,
   query,
+  sort,
+  onSort,
   isLoading,
   isError,
   onRetry,
@@ -111,6 +123,8 @@ export function TrashGrid({
 }: {
   projects: AitoProject[];
   query: string;
+  sort: DoneSort;
+  onSort: (next: DoneSort) => void;
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
@@ -120,7 +134,11 @@ export function TrashGrid({
 }) {
   const { t } = useTranslation();
 
-  const visible = useMemo(() => sortByRecencyDesc(projects, query), [projects, query]);
+  const visible = useMemo(
+    () => sortDone(projects.filter((project) => matchesSearch(project, query)), sort, deletedAt),
+    [projects, query, sort],
+  );
+  const groupOf = useArchiveGroups(sort, deletedAt);
 
   if (isError) {
     return (
@@ -158,11 +176,15 @@ export function TrashGrid({
   }
 
   return (
-    <ArchiveGrid
-      projects={visible}
-      renderCard={(project) => (
-        <TrashCard project={project} onExpand={() => onExpandCard(project.id)} canUpdate={canUpdate} />
-      )}
-    />
+    <>
+      <ArchiveToolbar sort={sort} onSort={onSort} dateLabel="deleted" />
+      <ArchiveGrid
+        projects={visible}
+        groupOf={groupOf ?? undefined}
+        renderCard={(project) => (
+          <TrashCard project={project} onExpand={() => onExpandCard(project.id)} canUpdate={canUpdate} />
+        )}
+      />
+    </>
   );
 }

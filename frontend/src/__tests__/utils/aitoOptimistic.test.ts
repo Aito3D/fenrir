@@ -51,6 +51,7 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   quote_invoiced: false,
   flag: null,
   client_contacted_at: null,
+  done_at: null,
   due_date: null,
   quote_sync_error: null,
   quote_status_block: null,
@@ -652,6 +653,19 @@ describe('placeholderProject', () => {
 });
 
 describe('applyColumnMove', () => {
+  it('stamps done_at on the way into Done, keeps an existing stamp, and clears it on the way out', () => {
+    const projects = [
+      card({ id: 9, column: 'finish', position: 0, move_lock: null, done_at: null }),
+      card({ id: 1, column: 'done', position: 0, done_at: '2026-06-01T10:00:00' }),
+    ];
+    const archived = applyColumnMove(projects, 9, 'done')!;
+    expect(find(archived, 9).done_at).not.toBeNull();
+    expect(find(archived, 1).done_at).toBe('2026-06-01T10:00:00');
+    const restored = applyColumnMove(archived, 1, 'finish')!;
+    expect(find(restored, 1).done_at).toBeNull();
+    expect(find(restored, 9).done_at).toBe(find(archived, 9).done_at);
+  });
+
   it('inserts at the HEAD of the destination and shifts the rest down', () => {
     const projects = [
       card({ id: 1, column: 'done', position: 0 }),

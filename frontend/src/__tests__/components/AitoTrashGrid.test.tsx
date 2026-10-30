@@ -47,6 +47,7 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   quote_invoiced: false,
   flag: null,
   client_contacted_at: null,
+  done_at: null,
   due_date: null,
   quote_sync_error: null,
   quote_status_block: null,
@@ -90,6 +91,8 @@ const show = (props: Partial<React.ComponentProps<typeof TrashGrid>> = {}) =>
       onRetry={vi.fn()}
       onExpandCard={vi.fn()}
       canUpdate
+      sort="finishedDesc"
+      onSort={vi.fn()}
       {...props}
     />,
   );
@@ -106,6 +109,30 @@ describe('TrashGrid', () => {
 
     const shown = screen.getAllByTestId('aito-card-description').map((n) => n.textContent);
     expect(shown).toEqual(['Newest', 'Middle', 'Oldest']);
+  });
+
+  it('sorts by the deletion time with the oldest-first order, and groups by its month', () => {
+    show({
+      sort: 'finishedAsc',
+      projects: [
+        card({ id: 1, description: 'Juillet', updated_at: '2026-07-20T10:00:00Z', done_at: '2026-01-01T00:00:00Z' }),
+        card({ id: 2, description: 'Juin', updated_at: '2026-06-01T10:00:00Z' }),
+      ],
+    });
+    // The deletion time, not done_at: a card trashed from Done keeps its
+    // finished stamp, and that is not when it was deleted.
+    expect(screen.getAllByTestId('aito-card-description').map((n) => n.textContent)).toEqual(['Juin', 'Juillet']);
+    expect(screen.getAllByTestId('aito-archive-group').map((h) => h.dataset.groupKey)).toEqual(['2026-06', '2026-07']);
+    expect(screen.getByTestId('aito-done-sort')).toHaveValue('finishedAsc');
+    expect(screen.getByTestId('aito-done-sort')).toHaveTextContent(/deleted|supprim/i);
+    expect(screen.queryByTestId('aito-done-filter-all')).not.toBeInTheDocument();
+  });
+
+  it('reports a sort change to its owner', async () => {
+    const onSort = vi.fn();
+    show({ onSort });
+    await userEvent.setup().selectOptions(screen.getByTestId('aito-done-sort'), 'clientAsc');
+    expect(onSort).toHaveBeenCalledWith('clientAsc');
   });
 
   it('shows when each card was deleted, which the board cards do not', () => {

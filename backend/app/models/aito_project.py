@@ -189,6 +189,16 @@ class AitoProject(Base):
     # be told again before the job can be closed a second time. Moving between
     # Finish and Done never clears it — nothing about the work changed.
     client_contacted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # When the card LAST arrived in Done, or NULL while it is anywhere else.
+    # Stamped by the two writers of board_column (`_apply_rules` on a decline,
+    # `move_project` on the Finish -> Done drag) and cleared by the same two
+    # when the card leaves, so it always answers "when was this finished" for
+    # the archive's sort and the card's "finished on" footer. `updated_at` used
+    # to stand in for it and drifted on every sweep that touched the row. The
+    # statistics keep their own FIRST-completion reading from the event log;
+    # this is the latest, because a re-opened and re-closed job was finished
+    # again. Backfilled once from the same `stage.changed` events.
+    done_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     quote_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     quote_sync_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # The estimate's last_modified_time as Zoho reported it on our last write.

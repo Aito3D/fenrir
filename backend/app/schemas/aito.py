@@ -802,6 +802,9 @@ class AitoProjectResponse(BaseModel):
     # refuses Finish -> Done. The board card reads it to know whether to show
     # the "call the client" state or the ordinary Done button.
     client_contacted_at: datetime | None
+    # When the card last arrived in Done, NULL elsewhere — see the column
+    # comment on AitoProject.done_at. The archive sorts and groups by it.
+    done_at: datetime | None
     # ISO `YYYY-MM-DD` promised to the client, or null. Local only — see the
     # column comment on AitoProject.due_date.
     due_date: str | None

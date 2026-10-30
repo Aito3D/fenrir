@@ -63,12 +63,20 @@ export function rankBySourceColumn(
 /** `_apply_rules`, in TypeScript: relocate `moved` into `column` and renumber
  *  both affected columns. Returns the full list, order-insensitive — the board
  *  is grouped and sorted by `buildBoard` downstream. */
+/** `_stamp_done_at`, in TypeScript: arriving in Done stamps now (kept if
+ *  already stamped), leaving clears. The server's own stamp replaces this on
+ *  success; until then the archive sorts and dates the card by it. */
+function stampDoneAt(moved: Pick<AitoProject, 'column' | 'done_at'>, column: AitoProject['column']): string | null {
+  if (column !== 'done') return null;
+  return moved.done_at ?? new Date().toISOString();
+}
+
 function relocate(projects: AitoProject[], moved: AitoProject, column: AitoProject['column']): AitoProject[] {
   if (moved.column === column) return projects;
 
   const source = moved.column;
   const destinationCount = projects.filter((p) => p.column === column && p.id !== moved.id).length;
-  const relocated = { ...moved, column, position: destinationCount };
+  const relocated = { ...moved, column, position: destinationCount, done_at: stampDoneAt(moved, column) };
 
   // `relocate` itself breaks the position/array-order invariant
   // `rankBySourceColumn` renumbers against: it gives the moved card the
@@ -317,7 +325,7 @@ export function applyColumnMove(
   const sourceRank = rankBySourceColumn(projects, id, source);
 
   return projects.map((project) => {
-    if (project.id === id) return { ...project, column, position: 0 };
+    if (project.id === id) return { ...project, column, position: 0, done_at: stampDoneAt(project, column) };
     if (project.column === column) return { ...project, position: project.position + 1 };
     if (project.column === source) {
       const position = sourceRank.get(project.id)!;
@@ -432,6 +440,7 @@ export function placeholderProject(fields: {
     // A brand-new card is nowhere near Finish, so nobody has been told
     // anything about it yet.
     client_contacted_at: null,
+    done_at: null,
     due_date: fields.due_date ?? null,
     quote_sync_error: null,
     quote_status_block: null,

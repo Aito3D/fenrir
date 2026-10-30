@@ -73,6 +73,7 @@ const project = {
   quote_status: null,
   flag: null,
   client_contacted_at: null,
+  done_at: null,
   due_date: null,
   task_count: 0,
   tasks_total: 0,
@@ -182,6 +183,10 @@ const trashRow = async (user: ReturnType<typeof userEvent.setup>) => {
 };
 
 beforeEach(() => {
+  // The archive views mirror themselves into the URL (`?view=done`), and
+  // jsdom keeps the URL from one test to the next: without this, a test that
+  // opened an archive hands the next one a page that mounts on it.
+  window.history.replaceState({}, '', '/aito');
   Element.prototype.scrollIntoView = vi.fn();
   mockUseAuth.hasPermission.mockReset();
 
