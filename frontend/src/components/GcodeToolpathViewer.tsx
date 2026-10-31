@@ -66,9 +66,13 @@ type ViewMode = (typeof VIEW_MODES)[number];
 
 /** Feature rows for the legend, in the order the slicer lists them. */
 const LEGEND_ENTRIES: Array<{ type: number; key: string; fallback: string }> = [
-  { type: ToolpathType.wall, key: 'gcodeViewer.feature.wall', fallback: 'Walls' },
+  { type: ToolpathType.outerWall, key: 'gcodeViewer.feature.outerWall', fallback: 'Outer wall' },
+  { type: ToolpathType.wall, key: 'gcodeViewer.feature.wall', fallback: 'Inner wall' },
+  { type: ToolpathType.overhangWall, key: 'gcodeViewer.feature.overhangWall', fallback: 'Overhang wall' },
   { type: ToolpathType.sparseInfill, key: 'gcodeViewer.feature.sparseInfill', fallback: 'Sparse infill' },
-  { type: ToolpathType.solidInfill, key: 'gcodeViewer.feature.solidInfill', fallback: 'Solid infill' },
+  { type: ToolpathType.solidInfill, key: 'gcodeViewer.feature.solidInfill', fallback: 'Internal solid infill' },
+  { type: ToolpathType.topSurface, key: 'gcodeViewer.feature.topSurface', fallback: 'Top surface' },
+  { type: ToolpathType.bottomSurface, key: 'gcodeViewer.feature.bottomSurface', fallback: 'Bottom surface' },
   { type: ToolpathType.bridge, key: 'gcodeViewer.feature.bridge', fallback: 'Bridge / overhang' },
   { type: ToolpathType.support, key: 'gcodeViewer.feature.support', fallback: 'Support' },
   { type: ToolpathType.skirt, key: 'gcodeViewer.feature.skirt', fallback: 'Skirt / brim' },

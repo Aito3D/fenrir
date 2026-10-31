@@ -133,9 +133,10 @@ class TestPreviewThumbnailUpload:
     async def test_upload_rejected_for_server_rendered_types(
         self, async_client: AsyncClient, file_factory, isolated_storage
     ):
-        # STL thumbnails are generated server-side; the client route must not
-        # be able to overwrite them.
-        library_file = await file_factory(file_type="stl", filename="part.stl")
+        # G-code has no client preview at all; the client route must not be able
+        # to write a thumbnail for it. (Mesh formats are accepted since the part
+        # viewer's "use this view as the thumbnail", 2026-10-31.)
+        library_file = await file_factory(file_type="gcode", filename="part.gcode")
 
         response = await async_client.post(
             f"/api/v1/library/files/{library_file.id}/preview-thumbnail",

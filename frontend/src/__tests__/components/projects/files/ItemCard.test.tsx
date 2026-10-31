@@ -71,18 +71,19 @@ beforeEach(() => {
 const card = () => screen.getByTestId('item-card-20');
 
 describe('ItemCard', () => {
-  it('shows the newest revision: selected chip, status strip, name, facts and profile line', () => {
+  it('shows the newest revision: selected chip, name, status, headline facts, profile line and a slice glyph', () => {
     render(<Harness value={bracket()} />);
     expect(within(card()).getByRole('button', { name: 'R2' })).toHaveAttribute('aria-pressed', 'true');
     expect(within(card()).getByRole('button', { name: 'R1' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByTestId('status-strip-20').className).toContain('bg-bambu-green');
     expect(within(card()).getByText('Bracket')).toBeInTheDocument();
     expect(within(card()).getByText('Approved')).toBeInTheDocument();
     expect(within(card()).getByText('3.0 MB')).toBeInTheDocument();
     expect(within(card()).getByText('2h 14m')).toBeInTheDocument();
     expect(within(card()).getByText('38.4 g')).toBeInTheDocument();
     expect(within(card()).getByText('X1C · 0.4 mm · 0.2 mm · PETG')).toBeInTheDocument();
-    expect(within(card()).getByText('Sliced')).toBeInTheDocument();
+    // The slice state is a glyph on the picture, not a line of words.
+    expect(within(card()).getByLabelText('Sliced')).toHaveAttribute('data-state', 'sliced');
+    expect(within(card()).queryByText('Sliced', { ignore: '[role="tooltip"]' })).not.toBeInTheDocument();
     expect(within(card()).queryByText('Older revision')).not.toBeInTheDocument();
   });
 
@@ -107,7 +108,7 @@ describe('ItemCard', () => {
 
   it('shows a failed slice with its error, and Retry posts the slice', async () => {
     render(<Harness value={bracket({ slice_status: 'failed', slice_error: 'Plate 2 is empty', sliced_file: null })} />);
-    expect(within(card()).getByText('Slice failed: Plate 2 is empty')).toBeInTheDocument();
+    expect(within(card()).getByText('Slice failed: Plate 2 is empty', { ignore: '[role="tooltip"]' })).toBeInTheDocument();
     await userEvent.click(within(card()).getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(calls).toEqual(['slice:2']));
   });
@@ -130,7 +131,7 @@ describe('ItemCard', () => {
     render(<Harness value={bracket()} />);
     expect(within(card()).getByTestId('print-facts-layers')).toHaveTextContent('320 layers');
     expect(within(card()).getByTestId('print-facts-objects')).toHaveTextContent('2 objects');
-    expect(within(card()).getByTestId('print-facts-material')).toHaveTextContent('PETG');
+    // The material is named once, in the profile line; the facts add only its colours.
     expect(within(card()).getByTestId('print-facts-material').querySelector('[title="#ff0000"]')).not.toBeNull();
     // No calculator configured: no cost rows.
     expect(within(card()).queryByTestId('print-facts-price')).not.toBeInTheDocument();
@@ -191,7 +192,7 @@ describe('ItemCard', () => {
     render(
       <Harness value={bracket({ slice_status: 'slicing', slice_job_id: 12, slice_error: 'Plate 2 is empty', sliced_file: null })} />,
     );
-    expect(await within(card()).findByText('Slice failed: Plate 2 is empty')).toBeInTheDocument();
+    expect(await within(card()).findByText('Slice failed: Plate 2 is empty', { ignore: '[role="tooltip"]' })).toBeInTheDocument();
     expect(within(card()).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
     expect(within(card()).queryByRole('progressbar')).not.toBeInTheDocument();
     expect(within(card()).queryByText('Slicing…')).not.toBeInTheDocument();
@@ -201,7 +202,7 @@ describe('ItemCard', () => {
     server.use(http.get('/api/v1/slice-jobs/12', () => HttpResponse.json({ detail: 'gone' }, { status: 404 })));
     render(<Harness value={bracket({ slice_status: 'slicing', slice_job_id: 12, sliced_file: null })} />);
     const bar = within(card()).getByRole('progressbar');
-    expect(within(card()).getByText('Slicing…')).toBeInTheDocument();
+    expect(within(card()).getByText('Slicing…', { ignore: '[role="tooltip"]' })).toBeInTheDocument();
     // Let the job lookup settle: a 404 stays indeterminate.
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(bar).not.toHaveAttribute('aria-valuenow');
@@ -210,7 +211,7 @@ describe('ItemCard', () => {
 
   it('a legacy sliced revision (no server slice state) reads as sliced', () => {
     render(<Harness value={bracket({ slice_status: null, sliced_file: null, print_profile: { ...profile, sliced: true } })} />);
-    expect(within(card()).getByText('Sliced')).toBeInTheDocument();
+    expect(within(card()).getByLabelText('Sliced')).toHaveAttribute('data-state', 'legacy-sliced');
   });
 
   it('picking an older chip switches the card to that revision and dims it', async () => {
@@ -220,21 +221,25 @@ describe('ItemCard', () => {
     expect(within(card()).getByText('Older revision')).toBeInTheDocument();
     expect(within(card()).getByText('X1C · 0.4 mm · 0.28 mm · PETG')).toBeInTheDocument();
     expect(within(card()).getByText('Obsolete')).toBeInTheDocument();
-    expect(within(card()).getByText('Not sliced')).toBeInTheDocument();
-    expect(screen.getByTestId('status-strip-20').className).toContain('bg-slate-500');
+    expect(within(card()).getByText('Not sliced', { ignore: '[role="tooltip"]' })).toBeInTheDocument();
+    expect(within(card()).getByLabelText('Not sliced')).toHaveAttribute('data-state', 'none');
     expect(screen.getByTestId('card-thumb-20').className).toContain('opacity-40');
   });
 
-  it('has the icon actions with accessible names and no Re-slice', () => {
+  it('has the icon actions with accessible names, each with a tooltip, and no Re-slice', () => {
     render(<Harness value={bracket()} />);
+    const tips = within(card()).getAllByRole('tooltip').map((tip) => tip.textContent);
+    for (const name of ['Print', 'Open in slicer', 'Preview', 'Download', 'More actions', 'New revision', 'R2 · Approved', 'R1 · Obsolete', 'Sliced']) {
+      expect(tips).toContain(name);
+    }
     for (const name of ['Print', 'Open in slicer', 'Preview', 'Download', 'More actions']) {
       const button = within(card()).getByRole('button', { name });
-      expect(button).toHaveAttribute('title', name);
+      expect(button).not.toHaveAttribute('title');
       // 44px touch targets below md, the panel's 32px-class icon buttons from md up.
       for (const cls of ['h-[44px]', 'min-w-[44px]', 'md:h-8', 'md:min-w-8']) expect(button.className.split(' ')).toContain(cls);
     }
     // One row: the five buttons never wrap.
-    const row = within(card()).getByRole('button', { name: 'Print' }).parentElement!;
+    const row = within(card()).getByRole('button', { name: 'Print' }).closest('.ml-auto')!;
     expect(row.className.split(' ')).toContain('flex-nowrap');
     expect(row.className).not.toContain('flex-wrap ');
     expect(screen.queryByRole('button', { name: /Re-slice/ })).not.toBeInTheDocument();
@@ -295,9 +300,12 @@ describe('ItemCard', () => {
 
   it('the ⋯ menu slices an unsliced revision', async () => {
     render(<Harness value={bracket({ slice_status: null, sliced_file: null })} />);
+    // "Not sliced yet" offers Slice inline too; this is the menu's entry.
+    expect(within(card()).getByRole('button', { name: 'Slice' })).toBeInTheDocument();
     await userEvent.click(within(card()).getByRole('button', { name: 'More actions' }));
     expect(screen.queryByRole('button', { name: 'Download sliced file' })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Slice' }));
+    const inMenu = screen.getAllByRole('button', { name: 'Slice' }).find((b) => !card().contains(b))!;
+    await userEvent.click(inMenu);
     await waitFor(() => expect(calls).toEqual(['slice:2']));
   });
 
@@ -321,14 +329,15 @@ describe('ItemCard', () => {
     );
     render(<Harness value={bracket({ sliced_file: { ...sliced, print_count: 3 } })} />);
     const count = within(card()).getByRole('button', { name: 'View print history' });
-    expect(count).toHaveTextContent('Printed 3x');
+    expect(count).toHaveTextContent('3×');
     await userEvent.click(count);
     expect(await screen.findByRole('heading', { name: 'History — bracket.3mf' })).toBeInTheDocument();
   });
 
   it('shows no printed line for a file never printed', () => {
     render(<Harness value={bracket()} />);
-    expect(within(card()).queryByText(/Printed/)).not.toBeInTheDocument();
+    expect(within(card()).queryByRole('button', { name: 'View print history' })).not.toBeInTheDocument();
+    expect(within(card()).queryByText(/×$/)).not.toBeInTheDocument();
   });
 
   it('the ⋯ menu carries the File Manager entries, without Move to project, Print, Preview or Download', async () => {
@@ -446,19 +455,19 @@ describe('ItemCard motion', () => {
   it('fades the slice line in only when the state changes on screen, with one press on a fresh Sliced', async () => {
     const { rerender } = render(<Harness value={bracket({ slice_status: 'slicing', slice_job_id: null, sliced_file: null })} />);
     const slicing = await screen.findByRole('progressbar');
-    expect(slicing.closest('.animate-fade-in')).toBeNull();
+    expect(slicing.parentElement).not.toHaveClass('animate-fade-in');
 
     rerender(<Harness value={bracket()} />);
-    const line = await screen.findByText('Sliced');
-    expect(line.parentElement).toHaveClass('animate-fade-in');
-    expect(line.parentElement?.querySelector('svg')).toHaveClass('animate-slice-done');
+    const glyph = await screen.findByLabelText('Sliced');
+    expect(glyph).toHaveClass('animate-fade-in');
+    expect(glyph.querySelector('svg')).toHaveClass('animate-slice-done');
   });
 
   it('does not animate a card that loads already sliced', async () => {
     render(<Harness value={bracket()} />);
-    const line = await screen.findByText('Sliced');
-    expect(line.parentElement).not.toHaveClass('animate-fade-in');
-    expect(line.parentElement?.querySelector('.animate-slice-done')).toBeNull();
+    const glyph = await screen.findByLabelText('Sliced');
+    expect(glyph).not.toHaveClass('animate-fade-in');
+    expect(glyph.querySelector('.animate-slice-done')).toBeNull();
   });
 
   it('rises the details tray in when opened', async () => {

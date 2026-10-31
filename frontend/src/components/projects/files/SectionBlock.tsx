@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import type { ViewerLinkState } from '../../viewer/viewerLink';
 import { useArrivals } from '../../../hooks/useArrivals';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
@@ -17,15 +18,23 @@ interface Props {
   section: ProjectSection;
   items: ProjectItemOut[];
   actions: FileActions;
+  /** A copied link: open this item's viewer on this tab, once. */
+  autoOpen?: { itemId: number; tab: 'model' | 'toolpath'; state?: ViewerLinkState | null } | null;
+  onAutoOpened?: () => void;
 }
 
-export function SectionBlock({ section, items, actions }: Props) {
+export function SectionBlock({ section, items, actions, autoOpen = null, onAutoOpened }: Props) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
   const canUpdate = hasPermission('projects:update');
   const [creating, setCreating] = useState(false);
   const arrived = useArrivals(items.map((i) => i.id));
+  // The cards on screen at the section's first render settle in with a short cascade (the pane
+  // remounts per selected project); later arrivals rise on their own, below.
+  const [initial] = useState(() => new Map(items.map((i, at) => [i.id, Math.min(at, 6)])));
+  // The dashed "drop to create" cell is the row's last card: it takes the slot after them.
+  const [dropSlot] = useState(() => Math.min(items.length, 6));
   const [name, setName] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   // Item created by this form whose first upload failed: a retry only re-uploads.
@@ -76,7 +85,7 @@ export function SectionBlock({ section, items, actions }: Props) {
 
   return (
     <section
-      className={`rounded-xl border bg-bambu-dark-secondary ${dragOver ? 'border-bambu-green' : 'border-bambu-dark-tertiary'}`}
+      className={`rounded-xl border bg-bambu-dark-secondary transition-colors duration-150 ${dragOver ? 'border-bambu-green' : 'border-bambu-dark-tertiary'}`}
       {...dropHandlers}
     >
       <div className="flex flex-wrap items-center gap-2 p-2">
@@ -88,14 +97,14 @@ export function SectionBlock({ section, items, actions }: Props) {
         </h3>
         {canUpdate && (
           <button type="button" onClick={() => { if (creating) closeForm(); else setCreating(true); }}
-            className={`inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 py-1 text-xs text-bambu-green hover:bg-bambu-dark-tertiary md:min-h-0 ${focusRingCls}`}>
+            className={`btn-press inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 py-1 text-xs text-bambu-green hover:bg-bambu-dark-tertiary md:min-h-0 ${focusRingCls}`}>
             <Plus className="h-3.5 w-3.5" />{t('projectsPdm.files.newItem')}
           </button>
         )}
       </div>
       <div className="space-y-2 px-2 pb-2">
         {creating && (
-          <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+          <form className="animate-rise-sm flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
             <input autoFocus value={name} onChange={(e) => setName(e.target.value)} disabled={createdId !== null}
               aria-label={t('projectsPdm.files.itemNameLabel')} placeholder={t('projectsPdm.files.itemNameLabel')}
               className={`${inputCls} min-w-0 flex-1 basis-40`} />
@@ -126,9 +135,11 @@ export function SectionBlock({ section, items, actions }: Props) {
           <ul className="grid grid-flow-row-dense grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {items.map((item) => (
               <ItemCard key={item.id} item={item} actions={actions} open={openId === item.id}
-                onToggleDetails={() => setOpenId((id) => (id === item.id ? null : item.id))} entering={arrived.has(item.id)} />
+                onToggleDetails={() => setOpenId((id) => (id === item.id ? null : item.id))} entering={arrived.has(item.id)}
+                revealSlot={initial.get(item.id) ?? -1}
+                autoOpen={autoOpen?.itemId === item.id ? { tab: autoOpen.tab, state: autoOpen.state ?? null } : null} onAutoOpened={onAutoOpened} />
             ))}
-            {canUpdate && <NewItemDropCard section={section} onFiles={onDropFiles} />}
+            {canUpdate && <NewItemDropCard section={section} onFiles={onDropFiles} revealSlot={dropSlot} />}
           </ul>
         )}
       </div>

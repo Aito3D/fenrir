@@ -40,6 +40,11 @@ export const ToolpathType = {
   bridge: 9,
   ironing: 10,
   primeTower: 11,
+  // Bambu Studio's finer roles (2026-10-31): the legend keeps the slicer's colour code.
+  outerWall: 12,
+  overhangWall: 13,
+  topSurface: 14,
+  bottomSurface: 15,
 } as const;
 
 /**
@@ -52,19 +57,19 @@ export const ToolpathType = {
  * than a missing one, since an unknown type must never drop geometry.
  */
 const FEATURE_BY_COMMENT: Record<string, number> = {
-  'outer wall': ToolpathType.wall,
+  'outer wall': ToolpathType.outerWall,
   'inner wall': ToolpathType.wall,
   perimeter: ToolpathType.wall,
-  'external perimeter': ToolpathType.wall,
-  'overhang wall': ToolpathType.bridge,
-  'overhang perimeter': ToolpathType.bridge,
+  'external perimeter': ToolpathType.outerWall,
+  'overhang wall': ToolpathType.overhangWall,
+  'overhang perimeter': ToolpathType.overhangWall,
   'sparse infill': ToolpathType.sparseInfill,
   'internal infill': ToolpathType.sparseInfill,
   'solid infill': ToolpathType.solidInfill,
   'internal solid infill': ToolpathType.solidInfill,
-  'top surface': ToolpathType.solidInfill,
-  'top solid infill': ToolpathType.solidInfill,
-  'bottom surface': ToolpathType.solidInfill,
+  'top surface': ToolpathType.topSurface,
+  'top solid infill': ToolpathType.topSurface,
+  'bottom surface': ToolpathType.bottomSurface,
   skirt: ToolpathType.skirt,
   'skirt/brim': ToolpathType.skirt,
   brim: ToolpathType.skirt,
@@ -80,7 +85,7 @@ const FEATURE_BY_COMMENT: Record<string, number> = {
   // Bambu-only names.
   'floating vertical shell': ToolpathType.solidInfill,
   'internal bridge': ToolpathType.bridge,
-  'bottom shell': ToolpathType.solidInfill,
+  'bottom shell': ToolpathType.bottomSurface,
   bridge: ToolpathType.bridge,
   'bridge infill': ToolpathType.bridge,
   'internal bridge infill': ToolpathType.bridge,
@@ -95,6 +100,8 @@ export interface ToolpathLayer {
   z: number;
   paths: Float32Array;
   widths: number[];
+  /** Remaining print time at the end of the layer, from the slicer's `M73 R` marks; null without them. */
+  remainingSec: number | null;
 }
 
 export interface ParsedToolpath {
@@ -189,7 +196,8 @@ function readAxis(line: string, axis: string): number | undefined {
  * Bambu writes relative and plenty of third-party files do not. Anything the
  * parser cannot make sense of is skipped rather than guessed at.
  */
-export function parseGcodeToolpath(gcode: string): ParsedToolpath {
+/** `onProgress` (0..1) is called every few thousand lines; the worker relays it to the loading bar. */
+export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) => void): ParsedToolpath {
   const layers: ToolpathLayer[] = [];
 
   let x = 0;
@@ -223,13 +231,15 @@ export function parseGcodeToolpath(gcode: string): ParsedToolpath {
   // unknown until the first move sets it, and drawing from (0,0,0) put a stray
   // line across the bed.
   let hasPosition = false;
+  // The slicer's progress marks (`M73 P<pct> R<minutes left>`): the last one seen stamps the layer.
+  let remainingSec: number | null = null;
 
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
 
   const flushLayer = () => {
     if (current.length === 0) return;
-    layers.push({ z: currentZ, paths: current.toFloat32Array(), widths: current.widths });
+    layers.push({ z: currentZ, paths: current.toFloat32Array(), widths: current.widths, remainingSec });
     current = new PathBuffer();
     layerHasExtrusion = false;
     if (pendingZ !== null) {
@@ -273,7 +283,11 @@ export function parseGcodeToolpath(gcode: string): ParsedToolpath {
     hasPosition = true;
   };
 
-  for (const rawLine of gcode.split('\n')) {
+  const lines = gcode.split('\n');
+  const reportEvery = Math.max(2000, Math.floor(lines.length / 50));
+  for (let lineNo = 0; lineNo < lines.length; lineNo += 1) {
+    if (onProgress && lineNo % reportEvery === 0 && lineNo > 0) onProgress(lineNo / lines.length);
+    const rawLine = lines[lineNo];
     const line = rawLine.trim();
     if (line.length === 0) continue;
 
@@ -308,6 +322,11 @@ export function parseGcodeToolpath(gcode: string): ParsedToolpath {
       continue;
     }
 
+    if (line.startsWith('M73')) {
+      const r = readAxis(line, 'R');
+      if (r !== undefined && Number.isFinite(r)) remainingSec = Math.round(r * 60);
+      continue;
+    }
     if (line.startsWith('M83')) {
       relativeExtrusion = true;
       continue;

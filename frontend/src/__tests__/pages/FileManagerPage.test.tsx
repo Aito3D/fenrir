@@ -36,8 +36,8 @@ vi.mock('../../components/SliceModal', () => ({
 }));
 
 // The viewer pulls in three.js; the tests only care whether it opened.
-vi.mock('../../components/ModelViewerModal', () => ({
-  ModelViewerModal: ({ title }: { title: string }) => <div data-testid="model-viewer-modal">{title}</div>,
+vi.mock('../../components/viewer/PartViewerModal', () => ({
+  PartViewerModal: ({ title }: { title: string }) => <div data-testid="model-viewer-modal">{title}</div>,
 }));
 
 // Mock data

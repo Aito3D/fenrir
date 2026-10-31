@@ -978,7 +978,9 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", "
 # PDFium when it lands and stays here for a PDF that renderer cannot read.
 # Kept to exactly these types so the endpoint can never overwrite a
 # server-generated STL/3MF/G-code/image thumbnail.
-CLIENT_THUMBNAIL_TYPES = {"step", "stp", "pdf", "csv", "xlsx", "ods"}
+# Fenrir: the part viewer's "use this view as the thumbnail" also covers the mesh formats the
+# server renders itself; the user chose the view, so it replaces the embedded picture.
+CLIENT_THUMBNAIL_TYPES = {"step", "stp", "pdf", "csv", "xlsx", "ods", "3mf", "gcode.3mf", "stl"}
 
 # Photos of the printed result (#3077): same allowlist and naming as the
 # archive photo routes. 10 MB is ample for a phone camera JPEG.

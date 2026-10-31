@@ -58,10 +58,18 @@ export function PreviewModalShell({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
+  // The page behind stays put: wheel and touch scrolling over the preview must not move it.
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
 
   return (
     <div
-      className={`fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-overlay-in ${isFullscreen ? 'p-0' : 'p-2 sm:p-4'}`}
+      className={`fixed inset-0 bg-black/85 backdrop-blur-md overscroll-contain flex items-center justify-center z-50 animate-overlay-in ${isFullscreen ? 'p-0' : 'p-2 sm:p-4'}`}
       onClick={closeOnBackdropClick ? onClose : undefined}
     >
       <div

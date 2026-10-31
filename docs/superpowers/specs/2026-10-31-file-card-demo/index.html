@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Printing file card — propositions</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  bg: '#0c1016', surf: '#141b23', line: '#212c37', ink: '#e9eff6', sub: '#93a4b6', mute: '#6f8496', acc: '#14b8a6', amber: '#f5b324',
+} } } };
+</script>
+<style>
+  html { font-size: 14.4px; }
+  body { background: #0c1016; color: #e9eff6; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  [data-lucide] { width: 1em; height: 1em; }
+  .tab[aria-selected=true] { background: #14b8a6; color: #0c1016; }
+  .card { transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease; }
+  .card:hover { border-color: rgba(20,184,166,.45); }
+  .ibtn { display:flex; align-items:center; justify-content:center; height:32px; min-width:32px; border-radius:6px; color:#93a4b6; }
+  .ibtn:hover { background:#212c37; color:#e9eff6; }
+  .glyph { display:flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:999px; background:rgba(12,16,22,.72); backdrop-filter: blur(4px); border:1px solid rgba(255,255,255,.08); }
+  .glyph.ok { color:#14b8a6; }
+  .glyph.warn { color:#f5b324; }
+  .glyph.bad { color:#f87171; }
+  .glyph.busy { color:#14b8a6; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 1.2s linear infinite; }
+  .tag { font: 500 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; padding: 4px 6px; border-radius: 5px; background: rgba(12,16,22,.72); color:#93a4b6; border:1px solid rgba(255,255,255,.08); }
+  .chip { display:inline-flex; align-items:center; gap:4px; border:1px solid #212c37; border-radius:6px; padding:2px 8px; font-size:11px; font-weight:500; white-space:nowrap; }
+  .chip.wip { border-color: rgba(245,179,36,.4); background: rgba(245,179,36,.1); color:#f5b324; }
+  .chip.ok { border-color: rgba(20,184,166,.4); background: rgba(20,184,166,.1); color:#14b8a6; }
+  .chip.obs { color:#6f8496; }
+  .rev { font: 600 12px/1 ui-monospace, Menlo, monospace; border:1px solid #212c37; border-radius:6px; padding:5px 8px; color:#93a4b6; }
+  .rev.on { border-color:#14b8a6; background:rgba(20,184,166,.15); color:#e9eff6; }
+  .rev.add { border-style: dashed; padding: 5px 7px; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:999px; border:1px solid rgba(255,255,255,.25); vertical-align:-1px; }
+  .sep::before { content:'·'; margin: 0 5px; color:#6f8496; }
+  .kv b { color:#e9eff6; font-weight:600; }
+  .toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:#141b23; border:1px solid #212c37; color:#93a4b6; font-size:12px; padding:8px 12px; border-radius:8px; }
+</style>
+</head>
+<body class="min-h-screen">
+<div class="flex">
+  <aside class="hidden lg:flex w-[200px] shrink-0 min-h-screen flex-col gap-1 border-r border-line bg-[#0e131a] p-3 text-sm text-sub">
+    <div class="px-2 py-3 text-lg font-bold tracking-widest text-ink">AITO<span class="text-acc">3D</span></div>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="printer"></i>Printers</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="disc"></i>Filament</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="archive"></i>Archives</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="list-ordered"></i>Print Queue</a>
+    <a class="px-2 py-2 rounded bg-acc text-bg font-medium flex items-center gap-2"><i data-lucide="folder-kanban"></i>Projects</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="kanban-square"></i>Aito</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="folder-open"></i>File Manager</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="globe"></i>Model Sources</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="cloud"></i>Profiles</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="wrench"></i>Maintenance</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="calculator"></i>Calculator</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="bar-chart-3"></i>Statistics</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="settings"></i>Settings</a>
+  </aside>
+
+  <main class="flex-1 min-w-0 p-4 md:p-6 space-y-4">
+    <div class="flex flex-wrap items-center gap-2 text-xs text-mute">
+      <span>Demo — the Projects page as it is; only the file cards in the pane change. Hover a card; click a slice glyph for its words ·</span>
+      <div class="flex gap-2" role="tablist">
+        <button class="tab px-3 py-1.5 rounded-md text-sm border border-line" data-v="a" aria-selected="true">A · Quiet card</button>
+        <button class="tab px-3 py-1.5 rounded-md text-sm border border-line" data-v="b" aria-selected="false">B · Shorter card, one footer</button>
+        <button class="tab px-3 py-1.5 rounded-md text-sm border border-line" data-v="c" aria-selected="false">C · Row card</button>
+      </div>
+      <label class="ml-auto flex items-center gap-2"><input type="checkbox" id="cur" class="accent-acc"> today's cards</label>
+    </div>
+    <section id="notes" class="rounded-xl border border-line bg-surf px-4 py-3 text-sm text-sub"></section>
+
+    <header class="flex flex-wrap items-start justify-between gap-4">
+      <div><h1 class="text-2xl font-bold">Projects</h1><p class="text-sm text-sub">16 of 16 projects · In production: 2 · Ready to print: 7</p></div>
+      <button class="px-3 py-2 rounded-lg bg-acc text-bg text-sm font-medium flex items-center gap-2"><i data-lucide="plus"></i>New project</button>
+    </header>
+    <div class="space-y-2">
+      <div class="flex items-center gap-2">
+        <div class="relative flex-1"><i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 text-sub"></i><input class="w-full rounded-lg border border-line bg-bg pl-9 pr-10 py-2 text-sm" placeholder="Search code, title, client, order #, file, printer, material…"><span class="kbd absolute right-3 top-1/2 -translate-y-1/2">/</span></div>
+        <select class="rounded-lg border border-line bg-bg px-2 py-2 text-xs text-sub"><option>Sort: most printed</option></select>
+        <select class="rounded-lg border border-line bg-bg px-2 py-2 text-xs text-sub"><option>Active</option></select>
+      </div>
+      <div class="flex flex-wrap gap-1.5 text-xs">
+        <span class="chip"><i data-lucide="flame" class="text-amber"></i>In production</span><span class="chip"><i data-lucide="circle-check" class="text-acc"></i>Ready to print</span><span class="chip"><i data-lucide="file-x"></i>No file yet</span>
+        <span class="w-px bg-line mx-1"></span><span class="chip">ABS-GF</span><span class="chip">PA-CF</span><span class="chip">PC</span><span class="chip">PETG</span>
+        <span class="w-px bg-line mx-1"></span><span class="chip">#f170</span><span class="chip">#ford</span><span class="chip">#logo</span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(320px,2fr)_3fr]">
+      <section class="overflow-hidden rounded-xl border border-line bg-surf">
+        <div class="flex items-center justify-between border-b border-line px-3 py-2 text-[11px] uppercase tracking-wide text-sub"><span>Projects</span><span class="normal-case tracking-normal flex items-center gap-2"><span>↑ ↓ move · ↵ open</span><span class="chip">New folder</span></span></div>
+        <ul id="tree" class="divide-y divide-line/60 text-sm"></ul>
+      </section>
+      <section class="rounded-xl border border-line bg-surf p-4 space-y-4 min-w-0">
+        <nav class="flex items-center gap-1 text-xs text-sub"><i data-lucide="folder"></i>Boat › Viper Vaa</nav>
+        <div class="flex items-start gap-3 border-b border-line pb-4">
+          <div class="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-line bg-bg"><svg viewBox="0 0 200 200" class="h-full w-full"><path d="M40 140 L160 60" stroke="#55606b" stroke-width="14" stroke-linecap="round"/><path d="M60 150 L170 80" stroke="#3a3f46" stroke-width="10" stroke-linecap="round"/></svg></div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2"><span class="rounded border border-acc/40 bg-acc/10 px-1.5 text-[11px] font-mono text-acc">P-0016</span><h2 class="text-lg font-semibold">Viper vaa Pompe</h2></div>
+            <div class="mt-1 flex gap-4 text-xs text-sub"><span>Never printed</span><span>3h ago</span></div>
+          </div>
+          <span class="chip">Open project <i data-lucide="arrow-right"></i></span>
+        </div>
+        <div class="rounded-xl border border-line bg-surf">
+          <div class="flex items-center justify-between p-2"><h3 class="text-sm font-semibold text-ink">Printing <span class="text-xs font-normal text-sub">6</span></h3><button class="text-xs text-acc flex items-center gap-1 px-2"><i data-lucide="plus"></i>New item</button></div>
+          <ul id="grid" class="grid gap-4 px-2 pb-2"></ul>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script>
+// ---------- sample data (the shop's own cards, 2026-10-31) ----------
+const CARDS = [
+  { name: 'Ball', rev: 1, status: 'wip', type: 'GCODE.3MF', size: '4.1 MB', time: '6h 13m', grams: '37.2 g', printer: 'Bambu Lab H2D', nozzle: '0.4', layer: '0.15', material: 'TPU', color: '#f2e52a', cost: '741', price: '2 701', layers: 133, objects: 40, slice: 'sliced', printed: 1, by: 'aneo', date: '10/31/2026', thumb: 'balls' },
+  { name: 'Crépine', rev: 1, status: 'valide', type: 'GCODE.3MF', size: '15.5 MB', time: '15h 2m', grams: '139.5 g', printer: 'Bambu Lab H2S', nozzle: '0.4', layer: '0.15', material: 'PETG', color: '#111', cost: '1 717', price: '5 804', layers: 556, objects: 10, slice: 'sliced', printed: 1, by: 'aneo', date: '10/31/2026', thumb: 'slivers' },
+  { name: 'Pompe_plate_3', rev: 1, status: 'wip', type: 'GCODE.3MF', size: '14.2 MB', time: '16h 7m', grams: '317.6 g', printer: 'Bambu Lab H2S', nozzle: '0.4', layer: '0.15', material: 'PETG', color: '#111', cost: '2 011', price: '6 925', layers: 274, objects: 40, slice: 'sliced', printed: 2, by: 'aneo', date: '10/31/2026', thumb: 'nuts' },
+  { name: 'Pompe_plate_3h2c', rev: 1, status: 'wip', type: 'GCODE.3MF', size: '38.8 MB', time: '17h 41m', grams: '317.7 g', printer: 'Bambu Lab H2C', nozzle: '0.4', layer: '0.15', material: 'PETG', color: '#111', cost: '2 296', price: '7 770', layers: 274, objects: 40, slice: 'slicing', pct: 62, printed: 0, by: 'aneo', date: '10/31/2026', thumb: 'nuts' },
+  { name: 'Sortie_eau', rev: 2, revs: 2, status: 'wip', type: 'GCODE.3MF', size: '12.8 MB', time: '12h 53m', grams: '172.9 g', printer: 'Bambu Lab H2S', nozzle: '0.4', layer: '0.15', material: 'PETG', color: '#111', cost: '1 525', price: '5 271', layers: 240, objects: 20, slice: 'failed', printed: 0, by: 'aneo', date: '10/31/2026', thumb: 'studs' },
+  { name: 'Support', rev: 1, status: 'obsolete', type: '3MF', size: '7.1 MB', time: null, grams: null, printer: 'Bambu Lab H2S', nozzle: '0.4', layer: '0.15', material: 'PETG', color: '#111', cost: null, price: null, layers: null, objects: null, slice: 'none', printed: 0, by: 'aneo', date: '10/31/2026', thumb: 'boxes' },
+];
+const STATUS = { wip: ['In progress', 'wip'], valide: ['Approved', 'ok'], obsolete: ['Obsolete', 'obs'] };
+const SLICE = {
+  sliced: { cls: 'ok', icon: 'check', title: 'Sliced' },
+  slicing: { cls: 'busy', icon: 'loader-circle', title: 'Slicing… 62 %' },
+  failed: { cls: 'bad', icon: 'triangle-alert', title: 'Slice failed — Retry · Upload sliced file' },
+  none: { cls: 'warn', icon: 'scissors', title: 'Not sliced yet — Slice' },
+};
+
+// ---------- drawn thumbnails (no real pictures in a static demo) ----------
+function thumb(kind, color) {
+  const grey = '#3a3f46', hi = '#55606b';
+  let shapes = '';
+  if (kind === 'balls') {
+    for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++) {
+      const x = 100 + (c - r) * 11, y = 60 + (c + r) * 7;
+      shapes += `<ellipse cx="${x}" cy="${y + 10}" rx="7" ry="4" fill="${color}" opacity=".55"/><rect x="${x - 4}" y="${y}" width="8" height="10" rx="2" fill="${color}"/><circle cx="${x}" cy="${y}" r="6" fill="${color}" stroke="#b8ad1f" stroke-width=".6"/>`;
+    }
+  } else if (kind === 'slivers') {
+    for (let i = 0; i < 8; i++) { const x = 40 + (i % 4) * 36, y = 50 + Math.floor(i / 4) * 55 + (i % 4) * 6; shapes += `<path d="M${x} ${y + 30} q 20 -34 44 -36 q -6 10 -14 14 q -10 18 -30 22 z" fill="${grey}" stroke="${hi}" stroke-width=".8"/>`; }
+  } else if (kind === 'nuts') {
+    for (let r = 0; r < 6; r++) for (let c = 0; c < 6; c++) { const x = 100 + (c - r) * 13, y = 55 + (c + r) * 9; shapes += `<polygon points="${x - 7},${y - 4} ${x},${y - 8} ${x + 7},${y - 4} ${x + 7},${y + 4} ${x},${y + 8} ${x - 7},${y + 4}" fill="${grey}" stroke="${hi}" stroke-width=".8"/><circle cx="${x}" cy="${y}" r="3" fill="#1a1f26"/>`; }
+  } else if (kind === 'studs') {
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) { const x = 100 + (c - r) * 16, y = 60 + (c + r) * 11; shapes += `<ellipse cx="${x}" cy="${y + 8}" rx="9" ry="4" fill="${grey}"/><rect x="${x - 3}" y="${y - 10}" width="6" height="18" fill="${hi}"/><circle cx="${x}" cy="${y - 10}" r="4" fill="${grey}"/>`; }
+  } else {
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) { const x = 45 + c * 34 + r * 10, y = 60 + r * 36; shapes += `<rect x="${x}" y="${y}" width="28" height="22" rx="3" fill="${grey}" stroke="${hi}" stroke-width=".8"/><path d="M${x + 6} ${y + 11} h16" stroke="#1a1f26" stroke-width="3"/>`; }
+  }
+  return `<svg viewBox="0 0 200 200" class="h-full w-full">${shapes}</svg>`;
+}
+
+const glyph = (c, extra = '') => `<button class="glyph ${SLICE[c.slice].cls} ${extra}" title="${SLICE[c.slice].title}" aria-label="${SLICE[c.slice].title}" onclick="toast(this.title)"><i data-lucide="${SLICE[c.slice].icon}" class="${c.slice === 'slicing' ? 'spin' : ''}" style="width:12px;height:12px"></i></button>`;
+const revs = (c) => `<span class="rev on">R${c.rev}</span>${c.revs ? `<span class="rev">R${c.rev - 1}</span>` : ''}<span class="rev add" title="New revision">+</span>`;
+const status = (c) => `<span class="chip ${STATUS[c.status][1]}">${STATUS[c.status][0]}</span>`;
+const actions = (c) => `<button class="ibtn ${c.slice === 'sliced' ? 'text-acc' : ''}" title="Print"><i data-lucide="printer"></i></button><button class="ibtn" title="Preview"><i data-lucide="eye"></i></button><button class="ibtn" title="Download"><i data-lucide="download"></i></button><button class="ibtn" title="More"><i data-lucide="ellipsis-vertical"></i></button>`;
+const printed = (c) => c.printed ? `<span class="text-acc">Printed ${c.printed}×</span>` : '';
+const colorDot = (c) => `<span class="dot" style="background:${c.color}"></span>`;
+
+// ---------- A · Quiet card: same bones, redundancy removed, state in the corner ----------
+function cardA(c) {
+  const facts = c.time ? `
+    <div class="text-xs text-sub leading-5">
+      <div class="truncate"><span class="text-ink">${c.time}</span><span class="sep"></span>${c.grams}<span class="sep"></span>${c.layers} layers<span class="sep"></span>${c.objects} objects</div>
+      <div class="truncate">${c.printer.replace('Bambu Lab ', '')}<span class="sep"></span>${c.nozzle} mm<span class="sep"></span>${c.layer} mm<span class="sep"></span>${c.material} ${colorDot(c)}</div>
+      <div class="kv">${c.cost} <span class="text-mute">FCFP</span> <i data-lucide="arrow-right" class="inline text-mute" style="width:10px;height:10px"></i> <b>${c.price}</b> <span class="text-mute">FCFP</span></div>
+    </div>` : `<div class="text-xs text-amber leading-5">Not sliced yet · <span class="underline">Slice</span></div>`;
+  return `<li class="card relative flex flex-col overflow-hidden rounded-lg border border-line bg-surf">
+    <div class="relative aspect-square bg-bg">${thumb(c.thumb, c.color)}
+      <div class="absolute left-2 top-2 flex items-center gap-1.5">${glyph(c)}</div>
+      <span class="tag absolute right-2 top-2">${c.type}</span>
+      <span class="absolute bottom-2 right-2 text-[11px] text-sub bg-bg/70 rounded px-1.5 py-0.5">${c.size}</span>
+    </div>
+    <div class="px-3 pt-2.5 flex items-center gap-1.5">${revs(c)}<span class="ml-auto">${status(c)}</span></div>
+    <div class="px-3 pt-2 pb-3 flex-1">
+      <div class="text-sm font-medium text-ink truncate" title="${c.name}">${c.name}</div>
+      <div class="mt-1">${facts}</div>
+      <div class="mt-1.5 text-[11px] text-mute">${c.printed ? printed(c) + '<span class="sep"></span>' : ''}${c.by}<span class="sep"></span>${c.date}</div>
+    </div>
+    <div class="flex items-center gap-0.5 border-t border-line px-1.5 py-1 justify-between">${actions(c)}</div>
+  </li>`;
+}
+
+// ---------- B · Shorter: landscape picture, two headline numbers, one footer row ----------
+function cardB(c) {
+  const head = c.time ? `
+    <div class="flex items-end gap-4 mt-1.5">
+      <div><div class="text-[10px] uppercase tracking-wide text-mute">Print</div><div class="text-sm text-ink font-medium">${c.time} <span class="text-sub font-normal">· ${c.grams}</span></div></div>
+      <div class="ml-auto text-right"><div class="text-[10px] uppercase tracking-wide text-mute">Price</div><div class="text-sm text-ink font-semibold">${c.price} <span class="text-[10px] font-normal text-mute">FCFP</span></div><div class="text-[11px] text-mute -mt-0.5">cost ${c.cost}</div></div>
+    </div>
+    <div class="mt-1.5 text-[11px] text-sub truncate" title="${c.printer} · ${c.nozzle} mm · ${c.layer} mm · ${c.material} · ${c.layers} layers · ${c.objects} objects">${c.printer.replace('Bambu Lab ', '')}<span class="sep"></span>${c.nozzle}<span class="sep"></span>${c.layer} mm<span class="sep"></span>${c.material} ${colorDot(c)}<span class="sep"></span>${c.layers} L<span class="sep"></span>${c.objects} obj</div>`
+    : `<div class="mt-2 text-xs text-amber">Not sliced yet — <span class="underline">Slice</span> or <span class="underline">upload a sliced file</span></div>`;
+  return `<li class="card relative flex flex-col overflow-hidden rounded-lg border border-line bg-surf">
+    <div class="relative aspect-[4/3] bg-bg">${thumb(c.thumb, c.color)}
+      <div class="absolute left-2 top-2 flex items-center gap-1.5">${glyph(c)}${c.printed ? `<span class="tag" style="color:#14b8a6">${c.printed}×</span>` : ''}</div>
+      <span class="tag absolute right-2 top-2">${c.type}</span>
+    </div>
+    <div class="px-3 pt-2.5 pb-2 flex-1">
+      <div class="flex items-center gap-2"><div class="text-sm font-medium text-ink truncate flex-1" title="${c.name}">${c.name}</div>${status(c)}</div>
+      ${head}
+      <div class="mt-1.5 text-[11px] text-mute">${c.by}<span class="sep"></span>${c.date}<span class="sep"></span>${c.size}</div>
+    </div>
+    <div class="flex items-center gap-1.5 border-t border-line px-2 py-1.5">${revs(c)}<span class="ml-auto flex items-center gap-0.5">${actions(c)}</span></div>
+  </li>`;
+}
+
+// ---------- C · Row card: picture beside the facts, two per row ----------
+function cardC(c) {
+  const facts = c.time ? `
+    <div class="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs text-sub mt-1">
+      <div><i data-lucide="clock" class="inline text-mute"></i> ${c.time}</div><div><i data-lucide="package" class="inline text-mute"></i> ${c.grams}</div>
+      <div><i data-lucide="layers" class="inline text-mute"></i> ${c.layers} · ${c.layer} mm</div><div><i data-lucide="box" class="inline text-mute"></i> ${c.objects} objects</div>
+      <div class="col-span-2 truncate"><i data-lucide="printer" class="inline text-mute"></i> ${c.printer}<span class="sep"></span>${c.nozzle} mm<span class="sep"></span>${c.material} ${colorDot(c)}</div>
+      <div class="col-span-2 kv">${c.cost} FCFP <i data-lucide="arrow-right" class="inline text-mute" style="width:10px;height:10px"></i> <b>${c.price} FCFP</b></div>
+    </div>` : `<div class="mt-2 text-xs text-amber">Not sliced yet — <span class="underline">Slice</span></div>`;
+  return `<li class="card relative flex overflow-hidden rounded-lg border border-line bg-surf">
+    <div class="relative w-[136px] shrink-0 bg-bg border-r border-line">${thumb(c.thumb, c.color)}
+      <div class="absolute left-1.5 top-1.5">${glyph(c)}</div>
+      <span class="tag absolute left-1.5 bottom-1.5">${c.type}</span>
+    </div>
+    <div class="min-w-0 flex-1 flex flex-col">
+      <div class="px-3 pt-2.5">
+        <div class="flex items-center gap-2"><div class="text-sm font-medium text-ink truncate flex-1" title="${c.name}">${c.name}</div>${status(c)}</div>
+        ${facts}
+        <div class="mt-1.5 text-[11px] text-mute">${c.printed ? printed(c) + '<span class="sep"></span>' : ''}${c.by}<span class="sep"></span>${c.date}<span class="sep"></span>${c.size}</div>
+      </div>
+      <div class="mt-auto flex items-center gap-1.5 px-2 py-1.5 border-t border-line">${revs(c)}<span class="ml-auto flex items-center gap-0.5">${actions(c)}</span></div>
+    </div>
+  </li>`;
+}
+
+// ---------- today's card, for the side-by-side ----------
+function cardToday(c) {
+  const strip = { wip: '#f5b324', valide: '#14b8a6', obsolete: '#64748b' }[c.status];
+  const rows = c.time ? `
+    <div class="text-xs text-sub space-y-0.5 mt-1">
+      <div>${c.size} <i data-lucide="clock" class="inline"></i> ${c.time} <i data-lucide="package" class="inline"></i> ${c.grams}</div>
+      <div><i data-lucide="printer" class="inline"></i> ${c.printer} · ${c.nozzle} mm · ${c.layer} mm · ${c.material}</div>
+      <div><i data-lucide="coins" class="inline"></i> ${c.cost} FCFP <i data-lucide="calculator" class="inline"></i> ${c.price} FCFP</div>
+      <div><i data-lucide="layers" class="inline"></i> ${c.layers} layers · ${c.layer}mm</div>
+      <div><i data-lucide="box" class="inline"></i> ${c.objects} objects</div>
+      <div>${c.material} ${colorDot(c)}</div>
+      <div class="text-acc"><i data-lucide="circle-check" class="inline"></i> Sliced</div>
+      ${c.printed ? `<div class="text-acc">Printed ${c.printed}x</div>` : ''}
+      <div>by ${c.by} · ${c.date}</div>
+    </div>` : `<div class="text-xs text-amber mt-1"><i data-lucide="triangle-alert" class="inline"></i> Not sliced yet</div>`;
+  return `<li class="relative flex flex-col overflow-hidden rounded-lg border border-line bg-surf">
+    <div style="height:4px;background:${strip}"></div>
+    <div class="relative aspect-square bg-bg">${thumb(c.thumb, c.color)}<span class="absolute right-2 top-2 rounded px-1.5 py-0.5 text-xs font-medium bg-blue-500/90 text-white">${c.type}</span></div>
+    <div class="px-3 pt-2.5 flex items-center gap-1.5">${revs(c)}<span class="ml-auto">${status(c)}</span></div>
+    <div class="px-3 pt-2 pb-3 flex-1"><div class="text-sm font-medium text-ink truncate">${c.name}</div>${rows}</div>
+    <div class="flex items-center gap-0.5 border-t border-line px-1.5 py-1 justify-between">${actions(c)}</div>
+  </li>`;
+}
+
+const NOTES = {
+  a: `<b class="text-ink">A · Quiet card.</b> Same bones as today, with the noise taken out.
+  <ul class="list-disc pl-5 mt-1 space-y-0.5">
+    <li>The <b class="text-ink">slice state is a 22px glyph at the top-left of the picture</b>: green check = sliced, spinning = slicing, red triangle = failed, amber scissors = not sliced. Hover (or tap) gives the words; the "Sliced" line and the green instructions are gone. Retry / upload stay in the ⋯ menu and on the glyph's tooltip.</li>
+    <li>The coloured <b class="text-ink">top strip is gone</b> (the status chip already says it); the blue file-type pill becomes a quiet mono tag; the file size moves onto the picture.</li>
+    <li>Nine fact lines become <b class="text-ink">three</b>: time · grams · layers · objects / printer · nozzle · layer · material / cost → <b class="text-ink">price</b>. Layer height and material are no longer said twice.</li>
+    <li>Author, date and "Printed 1×" share one muted footer line.</li>
+  </ul>`,
+  b: `<b class="text-ink">B · Shorter card.</b> For a pane that holds six to ten files: about 30 % shorter than today.
+  <ul class="list-disc pl-5 mt-1 space-y-0.5">
+    <li>Landscape picture (4:3). Slice glyph top-left, and the <b class="text-ink">printed count sits beside it as a small "2×" tag</b> on the picture, so the body only carries facts that change.</li>
+    <li>Two headline numbers: <b class="text-ink">print time</b> and <b class="text-ink">price</b> (cost in small type under it). Everything else is one truncating line with the full text on hover.</li>
+    <li>Revision chips and the four actions share <b class="text-ink">one footer row</b>, which saves a whole band.</li>
+    <li>Title and status chip on the same line.</li>
+  </ul>`,
+  c: `<b class="text-ink">C · Row card.</b> Picture beside the facts, two per row: reads like a list, still shows the plate.
+  <ul class="list-disc pl-5 mt-1 space-y-0.5">
+    <li>Same corner glyph on the picture; file type under it.</li>
+    <li>Facts in a two-column grid with their icons (closest to today's rows, but half the height).</li>
+    <li>Best when you scan many files; worst when the thumbnail is what you recognise a plate by (it is 136px).</li>
+  </ul>`,
+};
+
+const TREE = [
+  ['f',0,'Auto',3,true],['f',1,'Moto',2,true],['p',2,'P-0007','Cache Néiman Talaria','Denis MILLER · No printing file yet · 4h ago','—'],['p',2,'P-0015','DT50','3 files · R1 DT50 Cache d\'allumage · ABS-GF · 4h ago','—'],['p',1,'P-0008','Toyota Wheel Cap','1 file · R1 Toyota Wheel Caps_plate_1 · PA-CF · 4h ago','3'],
+  ['f',0,'Boat',1,true],['f',1,'Viper Vaa',1,true],['p',2,'P-0016','Viper vaa Pompe','6 files · R1 Crépine · PETG · 3h ago','—',true],
+  ['f',0,'eFoil',0,true],['f',0,'Keychain',0,true],['f',0,'NIU System',0,true],['f',0,'NSI',0,true],['f',0,'RK Design',0,false],
+  ['u',12],
+  ['p',0,'P-0004','Etiquettes SERTEC','SARL SERTEC · 1 file · Nothing sliced yet · Oct 5, 2026, 09:29 AM','3'],['p',0,'P-0010','Pièce RC avion','Vetea LECLERE · 1 file · R2 Support moteur · PA-CF · Oct 12, 2026, 09:09 PM','1'],['p',0,'P-0009','Piece filetage pied retroprojecteur','Moana RAVAT · No printing file yet · Oct 5, 2026, 12:15 PM','1'],['p',0,'P-0001','Logo F170','Herald FABRE · No printing file yet · Oct 5, 2026, 09:07 AM','1'],['p',0,'P-0014','Support pour Starlink','9 files · R1 Starlink_Mount_plate_9 · PETG, PC · 12h ago','—'],['p',0,'P-0013','PS5 Slim Stand','1 file · R1 ps5proorizontale · PETG · 12h ago','—'],['p',0,'P-0012','LookUp Space Guide n°3','LookUp Space · 1 file · R1 LookUp Space · PETG · Oct 17, 2026, 12:28 PM','—'],
+];
+document.getElementById('tree').innerHTML = TREE.map((r) => {
+  if (r[0] === 'u') return `<li class="flex items-center gap-2 px-3 pb-1 pt-3 text-[11px] uppercase tracking-wide text-sub"><i data-lucide="inbox"></i>Not in a folder <span>${r[1]}</span></li>`;
+  if (r[0] === 'f') return `<li class="flex items-center gap-2 px-3 py-1.5" style="padding-left:${12 + r[1] * 18}px"><i data-lucide="${r[4] ? 'chevron-down' : 'chevron-right'}" class="text-sub"></i><i data-lucide="${r[4] ? 'folder-open' : 'folder'}" class="text-amber/80"></i><span class="font-medium text-ink">${r[2]}</span><span class="text-[11px] text-sub">${r[3]}</span><span class="ml-auto text-sub"><i data-lucide="ellipsis-vertical"></i></span></li>`;
+  return `<li class="flex items-center gap-3 px-3 py-2 ${r[6] ? 'bg-acc/10 shadow-[inset_3px_0_0_#14b8a6]' : ''}" style="padding-left:${12 + r[1] * 18}px"><span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line bg-bg text-mute"><i data-lucide="box"></i></span><div class="min-w-0 flex-1"><div class="flex items-center gap-2"><span class="font-mono text-[11px] text-acc">${r[2]}</span><span class="truncate text-sm text-ink">${r[3]}</span></div><div class="truncate text-[11px] text-sub">${r[4]}</div></div><span class="text-xs ${r[5] === '—' ? 'text-mute' : 'text-ink'}">${r[5]}</span></li>`;
+}).join('');
+
+function render() {
+  const v = (location.hash.replace('#', '') || 'a');
+  document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.v === v)));
+  document.getElementById('notes').innerHTML = NOTES[v] ?? NOTES.a;
+  const grid = document.getElementById('grid');
+  grid.className = 'grid gap-4 px-2 pb-2 ' + (v === 'c' ? 'grid-cols-1 2xl:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4');
+  const fn = { a: cardA, b: cardB, c: cardC }[v] ?? cardA;
+  const showCur = document.getElementById('cur').checked;
+  grid.innerHTML = (showCur ? CARDS.map(cardToday).join('') : CARDS.map((c) => fn(c)).join('')) +
+    `<li class="flex min-h-[200px] flex-col items-center justify-center rounded-lg border border-dashed border-line text-sub text-sm"><i data-lucide="cloud-upload" class="text-xl mb-2"></i>Drop a .3mf or click<span class="text-xs text-mute mt-1">Creates a new item</span></li>`;
+  lucide.createIcons();
+}
+document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => { location.hash = t.dataset.v; }));
+document.getElementById('cur').addEventListener('change', render);
+window.addEventListener('hashchange', render);
+function toast(text) { const el = document.createElement('div'); el.className = 'toast'; el.textContent = text; document.body.appendChild(el); setTimeout(() => el.remove(), 1800); }
+render();
+</script>
+</body>
+</html>

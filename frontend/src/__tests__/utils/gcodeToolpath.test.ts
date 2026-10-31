@@ -58,7 +58,8 @@ describe('parseGcodeToolpath', () => {
       for (let i = 0; i < p.length; i += 8) out.push(p[i + 3]);
       return out;
     };
-    expect(types(0)).toContain(ToolpathType.wall);
+    // "Outer wall" is its own role since the Bambu palette (2026-10-31); "Inner wall" stays `wall`.
+    expect(types(0)).toContain(ToolpathType.outerWall);
     expect(types(0)).toContain(ToolpathType.sparseInfill);
     expect(types(1)).toContain(ToolpathType.support);
   });
@@ -137,7 +138,7 @@ describe('the vendored libvgcode renderer accepts our parse', () => {
   it('keeps per-vertex feature, width and layer metadata', () => {
     const data = buildSegmentData(parsed.layers, parsed.defaultWidth);
     expect(data.meta.vType.length).toBe(data.nV);
-    expect(Array.from(data.meta.vType)).toContain(ToolpathType.wall);
+    expect(Array.from(data.meta.vType)).toContain(ToolpathType.outerWall);
     expect(Array.from(data.meta.vLayer)).toContain(1);
     // Width came from ;WIDTH:, not the fallback.
     expect(Array.from(data.meta.vWidth).some((w) => Math.abs(w - 0.42) < 1e-6)).toBe(true);
@@ -427,7 +428,7 @@ G1 X40 Y10 E0.5
     const parsed = parseGcodeToolpath(GCODE);
     const filtered = filterLayersByType(parsed.layers, new Set([ToolpathType.support]));
     expect(typesOf(filtered)).not.toContain(ToolpathType.support);
-    expect(typesOf(filtered)).toContain(ToolpathType.wall);
+    expect(typesOf(filtered)).toContain(ToolpathType.outerWall);
   });
 
   it('keeps emptied layers so the range slider does not renumber', () => {

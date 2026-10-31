@@ -78,7 +78,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 import { LibraryTagFilterRail } from '../components/LibraryTagFilterRail';
 import { PrintModal } from '../components/PrintModal';
-import { ModelViewerModal } from '../components/ModelViewerModal';
+import { PartViewerModal } from '../components/viewer/PartViewerModal';
 import { SliceModal } from '../components/SliceModal';
 import { CombineFilesModal } from '../components/CombineFilesModal';
 import { RunWithPipelineModal } from '../components/RunWithPipelineModal';
@@ -4797,11 +4797,11 @@ export function FileManagerPage() {
       )}
 
       {viewerFile && (
-        <ModelViewerModal
-          libraryFileId={viewerFile.id}
+        <PartViewerModal
+          subject={{ kind: 'library', fileId: viewerFile.id, fileType: viewerFile.file_type, filename: viewerFile.filename, nozzleDiameter: viewerFile.nozzle_diameter }}
           title={viewerFile.print_name || viewerFile.filename}
-          fileType={viewerFile.file_type}
           onClose={() => setViewerFile(null)}
+          printed={viewerFile.print_count}
           // STEP has no server-side renderer; persist the first client render
           // as the grid thumbnail (#2976).
           onSnapshot={isStepType(viewerFile.file_type) ? previewSnapshotHandler(viewerFile) : undefined}

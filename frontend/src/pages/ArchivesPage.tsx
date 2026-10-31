@@ -274,10 +274,8 @@ function ArchiveCard({
 }) {
   const actions = useArchiveActions(archive, t);
   const {
-    showToast,
     hasPermission,
     canModify,
-    navigate,
     setShowReprint,
     setShowConfirmOutcome,
     setShowSliceModal,
@@ -292,7 +290,7 @@ function ArchiveCard({
     setAvailableTimelapses,
     setShowPhotos,
     setContextMenu,
-    setPlatePickerPlates,
+    setViewerOpen,
     duplicateSequence,
     verdictSourceHintKey,
     originalArchiveId,
@@ -342,28 +340,8 @@ function ArchiveCard({
   const isMultiPlate = platesData?.is_multi_plate ?? false;
   const displayPlateIndex = currentPlateIndex ?? 0;
 
-  // 3D Preview click handler. Multi-plate archives show the plate picker
-  // first; single-plate archives navigate straight into the viewer. Source-
-  // only archives (no sliced gcode, e.g. pure project 3MFs from BambuStudio
-  // that carry only plate PNG/JSON metadata) get a toast — there's nothing
-  // the gcode viewer can render for them.
-  const openGcodeViewer = async () => {
-    try {
-      const resp = await api.getArchivePlates(archive.id);
-      if (resp.has_gcode === false) {
-        showToast(t('archives.platePicker.noGcode'), 'info');
-        return;
-      }
-      if (resp.is_multi_plate && resp.plates.length > 1) {
-        setPlatePickerPlates(resp.plates);
-        return;
-      }
-    } catch {
-      // Swallow — fall through to the no-plate navigate below so the viewer
-      // still opens on the first plate (the backend's default).
-    }
-    navigate(`/gcode-viewer?archive=${archive.id}`);
-  };
+  // 3D Preview: the part viewer, with its own plate card, model and toolpath tabs.
+  const openGcodeViewer = async () => setViewerOpen(true);
 
   const menu = buildArchiveMenuSections({
     archive,
@@ -1269,7 +1247,6 @@ function ArchiveListRow({
   const {
     hasPermission,
     canModify,
-    navigate,
     setShowReprint,
     setShowConfirmOutcome,
     setShowDeleteConfirm,
@@ -1280,7 +1257,7 @@ function ArchiveListRow({
     availableTimelapses,
     setAvailableTimelapses,
     setContextMenu,
-    setPlatePickerPlates,
+    setViewerOpen,
     duplicateSequence,
     verdictSourceHintKey,
     originalArchiveId,
@@ -1290,20 +1267,8 @@ function ArchiveListRow({
     handleContextMenu,
   } = actions;
 
-  // 3D Preview click handler. Multi-plate archives show the plate picker
-  // first; single-plate archives navigate straight into the viewer.
-  const openGcodeViewer = async () => {
-    try {
-      const resp = await api.getArchivePlates(archive.id);
-      if (resp.is_multi_plate && resp.plates.length > 1) {
-        setPlatePickerPlates(resp.plates);
-        return;
-      }
-    } catch {
-      // Swallow — fall through to navigate on the first-plate default.
-    }
-    navigate(`/gcode-viewer?archive=${archive.id}`);
-  };
+  // 3D Preview: the part viewer, with its own plate card, model and toolpath tabs.
+  const openGcodeViewer = async () => setViewerOpen(true);
 
   const menu = buildArchiveMenuSections({
     archive,

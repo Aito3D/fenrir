@@ -53,6 +53,7 @@ class ProjectFileOut(BaseModel):
     sliced_for_model: str | None = None
     total_layers: int | None = None
     layer_height: float | None = None
+    nozzle_diameter: float | None = None
     object_count: int | None = None
 
 
@@ -235,3 +236,22 @@ class ResliceStarted(BaseModel):
     job_id: int
     status: str
     status_url: str
+
+
+class RevisionPinCreate(BaseModel):
+    """A note pinned at a point of the part, in printer millimetres."""
+
+    x: float
+    y: float
+    z: float
+    text: str = Field(min_length=1, max_length=500)
+
+
+class RevisionPinOut(BaseModel):
+    id: int
+    x: float
+    y: float
+    z: float
+    text: str
+    created_by: str | None
+    created_at: datetime

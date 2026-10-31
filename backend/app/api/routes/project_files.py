@@ -32,6 +32,7 @@ from backend.app.core.permissions import Permission
 from backend.app.models.library import LibraryFile
 from backend.app.models.project import Project
 from backend.app.models.project_item import SLICE_SLICED, SLICE_SLICING, ProjectRevision
+from backend.app.models.project_pin import ProjectRevisionPin
 from backend.app.models.user import User
 from backend.app.schemas.aito_project_links import ProjectOrdersResponse
 from backend.app.schemas.project_files import (
@@ -49,6 +50,8 @@ from backend.app.schemas.project_files import (
     ProjectTreeResponse,
     ResliceBody,
     ResliceStarted,
+    RevisionPinCreate,
+    RevisionPinOut,
     RevisionSliceStarted,
     RevisionUploadResponse,
 )
@@ -493,6 +496,63 @@ async def delete_revision(
     with _file_errors():
         revision, item, project = await svc.get_revision_bundle(db, revision_id)
         await svc.delete_revision(db, project, item, revision)
+
+
+@router.get("/revisions/{revision_id}/pins", response_model=list[RevisionPinOut])
+async def list_revision_pins(
+    revision_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+) -> list[RevisionPinOut]:
+    """The notes pinned on this revision's part (the part viewer), oldest first."""
+    with _file_errors():
+        await svc.get_revision_bundle(db, revision_id)
+    rows = (
+        await db.execute(
+            select(ProjectRevisionPin, User.username)
+            .outerjoin(User, User.id == ProjectRevisionPin.created_by_id)
+            .where(ProjectRevisionPin.revision_id == revision_id)
+            .order_by(ProjectRevisionPin.id)
+        )
+    ).all()
+    return [_pin_out(pin, username) for pin, username in rows]
+
+
+@router.post("/revisions/{revision_id}/pins", response_model=RevisionPinOut, status_code=201)
+async def create_revision_pin(
+    revision_id: int,
+    body: RevisionPinCreate,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+) -> RevisionPinOut:
+    with _file_errors():
+        await svc.get_revision_bundle(db, revision_id)
+    pin = ProjectRevisionPin(
+        revision_id=revision_id, x=body.x, y=body.y, z=body.z, text=body.text.strip(), created_by_id=actor_user_id(user)
+    )
+    db.add(pin)
+    await db.commit()
+    await db.refresh(pin)
+    return _pin_out(pin, user.username if user else None)
+
+
+@router.delete("/revisions/pins/{pin_id}", status_code=204, response_model=None)
+async def delete_revision_pin(
+    pin_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+) -> None:
+    pin = await db.get(ProjectRevisionPin, pin_id)
+    if pin is None:
+        raise HTTPException(status_code=404, detail="Pin not found")
+    await db.delete(pin)
+    await db.commit()
+
+
+def _pin_out(pin: ProjectRevisionPin, username: str | None) -> RevisionPinOut:
+    return RevisionPinOut(
+        id=pin.id, x=pin.x, y=pin.y, z=pin.z, text=pin.text, created_by=username, created_at=pin.created_at
+    )
 
 
 @router.get("/revisions/{revision_id}/download")

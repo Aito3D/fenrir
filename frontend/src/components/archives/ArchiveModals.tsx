@@ -14,7 +14,7 @@ import { PhotoGalleryModal } from '../PhotoGalleryModal';
 import { ProjectPageModal } from '../ProjectPageModal';
 import { TimelapseViewer } from '../TimelapseViewer';
 import { ArchiveMediaDownloadModal } from '../ArchiveMediaDownloadModal';
-import { PlatePickerModal } from '../PlatePickerModal';
+import { PartViewerModal } from '../viewer/PartViewerModal';
 import type { ArchiveActions, ArchiveTFunction } from './useArchiveActions';
 
 /**
@@ -44,13 +44,12 @@ export function ArchiveModals({
   const {
     queryClient,
     showToast,
-    navigate,
     showEdit,
     setShowEdit,
     showPrintLog,
     setShowPrintLog,
-    platePickerPlates,
-    setPlatePickerPlates,
+    viewerOpen,
+    setViewerOpen,
     showReprint,
     setShowReprint,
     showConfirmOutcome,
@@ -114,15 +113,12 @@ export function ArchiveModals({
         />
       )}
 
-      {/* Plate picker — shown only for multi-plate archives on 3D Preview click */}
-      {platePickerPlates && (
-        <PlatePickerModal
-          plates={platePickerPlates}
-          onSelect={(plateIndex) => {
-            setPlatePickerPlates(null);
-            navigate(`/gcode-viewer?archive=${archive.id}&plate=${plateIndex}`);
-          }}
-          onClose={() => setPlatePickerPlates(null)}
+      {/* The part viewer: model and toolpath tabs, plates in its rail */}
+      {viewerOpen && (
+        <PartViewerModal
+          subject={{ kind: 'archive', archiveId: archive.id, filename: archive.filename, nozzleDiameter: archive.nozzle_diameter, photos: archive.photos }}
+          title={archive.print_name || archive.filename}
+          onClose={() => setViewerOpen(false)}
         />
       )}
 

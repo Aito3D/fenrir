@@ -1343,6 +1343,9 @@ export interface ProjectListItem {
 export type ProjectSection = 'scan' | 'modelisation' | 'impression' | 'usinage' | 'docs';
 export type RevisionStatus = 'wip' | 'valide' | 'obsolete';
 export interface RevisionRef { id: number; item_id: number; item_name: string; section: ProjectSection; number: number; status: RevisionStatus }
+/** A note pinned at a point (printer mm) of a revision's part. */
+export interface RevisionPin { id: number; x: number; y: number; z: number; text: string; created_by: string | null; created_at: string }
+
 export interface ProjectFileOut {
   id: number; filename: string; file_type: string; file_size: number; file_hash: string | null; has_thumbnail: boolean; created_at: string;
   /** The library file's own print counter (the File Manager card's number) and its tag ids. */
@@ -1350,7 +1353,7 @@ export interface ProjectFileOut {
   /** From the file's metadata: set on a revision's sliced file, else null (PrintFacts' shape). */
   print_time_seconds?: number | null; filament_used_grams?: number | null; filament_type?: string | null;
   filament_color?: string | null; filament_vendor?: string | null; sliced_for_model?: string | null;
-  total_layers?: number | null; layer_height?: number | null; object_count?: number | null;
+  total_layers?: number | null; layer_height?: number | null; nozzle_diameter?: number | null; object_count?: number | null;
 }
 export interface ProjectRevisionOut { id: number; number: number; status: RevisionStatus; note: string | null; derived_from: RevisionRef | null; outdated_by: RevisionRef | null; print_profile: Record<string, unknown> | null; slicer_name: string | null; slicer_version: string | null; has_snapshot: boolean; used: boolean; print_count: number; pipeline_name: string | null; files: ProjectFileOut[]; created_by: string | null; created_at: string; status_changed_at: string | null; slice_status: 'slicing' | 'sliced' | 'failed' | null; slice_error: string | null; slice_job_id: number | null; sliced_file: ProjectFileOut | null }
 export interface ResliceResult { project_id: number; item_id: number; revision_id: number; revision_number: number; file_id: number | null; filename: string }
@@ -9783,6 +9786,11 @@ export const api = {
   renameProjectItem: (itemId: number, name: string) =>
     request<ProjectItemOut>(`/projects/items/${itemId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   deleteProjectItem: (itemId: number) => request<void>(`/projects/items/${itemId}`, { method: 'DELETE' }),
+  // Notes pinned on a revision's part in the part viewer (2026-10-31).
+  getRevisionPins: (revisionId: number) => request<RevisionPin[]>(`/projects/revisions/${revisionId}/pins`),
+  createRevisionPin: (revisionId: number, body: { x: number; y: number; z: number; text: string }) =>
+    request<RevisionPin>(`/projects/revisions/${revisionId}/pins`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteRevisionPin: (pinId: number) => request<void>(`/projects/revisions/pins/${pinId}`, { method: 'DELETE' }),
   forkProjectItem: (itemId: number, revisionId: number, name: string) =>
     request<ProjectItemOut>(`/projects/items/${itemId}/fork`, {
       method: 'POST',
@@ -10912,6 +10920,7 @@ export interface LibraryFile {
   filament_vendor: string | null;
   total_layers: number | null;
   layer_height: number | null;
+  nozzle_diameter: number | null;
   object_count: number | null;
 }
 
@@ -10962,6 +10971,7 @@ export interface LibraryFileListItem {
   filament_vendor: string | null;
   total_layers: number | null;
   layer_height: number | null;
+  nozzle_diameter: number | null;
   object_count: number | null;
 }
 

@@ -38,13 +38,14 @@ def object_count_of(meta: dict | None) -> int | None:
 
 def extra_display_facts(meta: dict | None) -> dict[str, Any]:
     """The facts beyond print time / grams / material / target printer, which the
-    serializers already read: colours, vendor, layers, layer height, object count."""
+    serializers already read: colours, vendor, layers, layer height, nozzle, object count."""
     meta = meta if isinstance(meta, dict) else {}
     return {
         "filament_color": _text(meta.get("filament_color")),
         "filament_vendor": _text(meta.get("filament_vendor")),
         "total_layers": _positive_int(meta.get("total_layers")),
         "layer_height": _positive_float(meta.get("layer_height")),
+        "nozzle_diameter": _positive_float(meta.get("nozzle_diameter")),
         "object_count": object_count_of(meta),
     }
 

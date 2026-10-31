@@ -55,6 +55,8 @@ export function useArchiveActions(archive: Archive, t: ArchiveTFunction) {
   const [showDeleteTimelapseConfirm, setShowDeleteTimelapseConfirm] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [platePickerPlates, setPlatePickerPlates] = useState<PlateMetadata[] | null>(null);
+  // The part viewer (Model + Toolpath tabs) for this archive.
+  const [viewerOpen, setViewerOpen] = useState(false);
   const source3mfInputRef = useRef<HTMLInputElement>(null);
   const f3dInputRef = useRef<HTMLInputElement>(null);
   const timelapseInputRef = useRef<HTMLInputElement>(null);
@@ -256,6 +258,8 @@ export function useArchiveActions(archive: Archive, t: ArchiveTFunction) {
     setContextMenu,
     platePickerPlates,
     setPlatePickerPlates,
+    viewerOpen,
+    setViewerOpen,
     source3mfInputRef,
     f3dInputRef,
     timelapseInputRef,

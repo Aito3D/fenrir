@@ -671,6 +671,7 @@ async def init_db():
         project_bom,
         project_folder,
         project_item,
+        project_pin,
         project_tag,
         scheduled_drying,
         settings,

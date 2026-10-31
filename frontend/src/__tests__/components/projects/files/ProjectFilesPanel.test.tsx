@@ -235,11 +235,22 @@ describe('ProjectFilesPanel', () => {
     expect(await screen.findByText('b.3mf is identical to R1')).toBeInTheDocument();
   });
 
+  it('the cards on screen at first render settle in with a 25ms cascade; a hover lifts a card', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    const cards = await screen.findAllByTestId(/^item-card-/);
+    expect(cards[0]).toHaveClass('catalog-card-in');
+    expect(cards[0].style.getPropertyValue('--reveal-delay')).toBe('0ms');
+    if (cards.length > 1) expect(cards[1].style.getPropertyValue('--reveal-delay')).toBe('25ms');
+    expect(cards[0].className).toContain('can-hover:hover:-translate-y-0.5');
+  });
+
   it('shows the print profile of a sliced revision', async () => {
     render(<ProjectFilesPanel projectId={7} />);
     const card = await screen.findByTestId('item-card-30');
-    expect(within(card).getByText('Bambu Lab X1C · 0.4 mm · 0.2 mm · PETG')).toBeInTheDocument();
-    expect(within(card).getByText('Sliced')).toBeInTheDocument();
+    // The brand is dropped from the card's meta line; the full profile stays in its tooltip.
+    const meta = within(card).getByText('X1C · 0.4 mm · 0.2 mm · PETG');
+    expect(meta.closest('[title]')).toHaveAttribute('title', expect.stringContaining('Bambu Lab X1C · 0.4 mm · 0.2 mm · PETG'));
+    expect(within(card).getByLabelText('Sliced')).toBeInTheDocument();
   });
 
   it('dropping on a section reuses an item with the same name, case-insensitively', async () => {
@@ -282,8 +293,12 @@ describe('ProjectFilesPanel', () => {
     expect(grid.className).toContain('grid-flow-row-dense');
     expect(cardOf(20).nextElementSibling).toBe(screen.getByTestId('item-tray-20'));
     await openTray(30); // one tray at a time
-    expect(screen.queryByTestId('item-tray-20')).not.toBeInTheDocument();
+    // The first tray leaves along the path it arrived by, inert, then unmounts (TRAY_LEAVE_MS).
+    expect(screen.getByTestId('item-tray-20')).toHaveAttribute('data-leaving');
+    expect(screen.getByTestId('item-tray-20')).toHaveAttribute('inert');
     expect(screen.getByTestId('item-tray-30')).toBeInTheDocument();
+    expect(screen.getByTestId('item-tray-30')).not.toHaveAttribute('data-leaving');
+    await waitFor(() => expect(screen.queryByTestId('item-tray-20')).not.toBeInTheDocument());
   });
 
   it('polls the tree every 3 s while a revision slices, and stops once none does', async () => {
@@ -296,7 +311,7 @@ describe('ProjectFilesPanel', () => {
         http.get('/api/v1/slice-jobs/5', () => HttpResponse.json({ detail: 'gone' }, { status: 404 })),
       );
       render(<ProjectFilesPanel projectId={7} />);
-      await screen.findByText('Slicing…');
+      await screen.findByText('Slicing…', { ignore: '[role="tooltip"]' });
       expect(gets).toBe(1);
       await act(() => vi.advanceTimersByTimeAsync(3100));
       await waitFor(() => expect(gets).toBe(2));

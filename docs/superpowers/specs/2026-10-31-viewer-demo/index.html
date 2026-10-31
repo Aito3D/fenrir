@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part viewer — option A + propositions</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }</script>
+<script>
+tailwind.config = { theme: { extend: { colors: { bg: '#0c1016', surf: '#141b23', line: '#212c37', ink: '#e9eff6', sub: '#93a4b6', mute: '#6f8496', acc: '#14b8a6', amber: '#f5b324' } } } };
+</script>
+<style>
+  html { font-size: 14.4px; }
+  body { background: #0c1016; color: #e9eff6; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  [data-lucide] { width: 1em; height: 1em; }
+  .vtab { display:flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; font-size:13px; color:#93a4b6; }
+  .vtab[aria-selected=true] { background:#1b2430; color:#e9eff6; box-shadow: inset 0 0 0 1px #2a3542; }
+  .vtab .tag { font: 500 10px/1 ui-monospace, Menlo, monospace; padding:2px 5px; border-radius:4px; background:#0c1016; color:#6f8496; border:1px solid #212c37; }
+  .ibtn { display:flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:8px; color:#93a4b6; position:relative; }
+  .ibtn:hover, .ibtn[aria-pressed=true] { background:#212c37; color:#e9eff6; }
+  .ibtn[aria-pressed=true] { color:#14b8a6; }
+  .ibtn[data-tip]::after { content: attr(data-tip); position:absolute; bottom: calc(100% + 6px); left:50%; transform: translate(-50%, 3px); white-space:nowrap; background:#141b23; border:1px solid #212c37; color:#c9d3dd; font-size:11px; padding:4px 8px; border-radius:6px; opacity:0; pointer-events:none; transition: opacity .15s ease, transform .15s ease; z-index:5; }
+  .ibtn[data-tip]:hover::after { opacity:1; transform: translate(-50%, 0); }
+  .ibtn[data-tip-side=bottom]::after { bottom:auto; top: calc(100% + 6px); transform: translate(-50%, -3px); }
+  .ibtn[data-tip-side=bottom]:hover::after { transform: translate(-50%, 0); }
+  .new::before { content:''; position:absolute; top:3px; right:3px; width:6px; height:6px; border-radius:999px; background:#f5b324; }
+  .glass { background: rgba(20,27,35,.82); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.08); }
+  .card { background:#141b23; border:1px solid #212c37; border-radius:12px; }
+  .kv { display:grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size:12px; }
+  .kv dt { color:#6f8496; } .kv dd { color:#e9eff6; text-align:right; font-variant-numeric: tabular-nums; }
+  .obj { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:8px; font-size:12px; cursor:pointer; }
+  .obj:hover, .obj[aria-selected=true] { background:#1b2430; }
+  .sw { width:10px; height:10px; border-radius:999px; border:1px solid rgba(255,255,255,.25); display:inline-block; }
+  .plate { border:1px solid #212c37; border-radius:8px; overflow:hidden; cursor:pointer; background:#0c1016; }
+  .plate[aria-selected=true] { border-color:#14b8a6; box-shadow: 0 0 0 1px #14b8a6; }
+  .plate .ph { width:100%; aspect-ratio: 1; display:flex; align-items:center; justify-content:center; }
+  .legend label { display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; }
+  input[type=range].vslider { writing-mode: vertical-lr; direction: rtl; width: 20px; accent-color:#14b8a6; }
+  input[type=range].hslider { accent-color:#14b8a6; width: 100%; }
+  .fade-in { animation: fi .18s cubic-bezier(.22,1,.36,1); }
+  @keyframes fi { from { opacity:0; transform: translateY(4px);} to { opacity:1; transform:none; } }
+  .chip { display:inline-flex; align-items:center; gap:4px; border:1px solid #212c37; border-radius:6px; padding:2px 8px; font-size:11px; font-weight:500; white-space:nowrap; }
+  .chip.wip { border-color: rgba(245,179,36,.4); background: rgba(245,179,36,.1); color:#f5b324; }
+  .chip.on { border-color: rgba(20,184,166,.4); background: rgba(20,184,166,.1); color:#14b8a6; }
+  .chip.btn { cursor:pointer; } .chip.btn:hover { color:#e9eff6; }
+  .prop { display:grid; grid-template-columns: 22px 1fr; gap: 2px 8px; }
+  .prop b { color:#e9eff6; } .prop .no { color:#f5b324; font-weight:700; }
+  .pin { position:absolute; transform: translate(-50%, -100%); background:#f5b324; color:#0c1016; font-size:11px; font-weight:600; padding:3px 7px; border-radius:6px; white-space:nowrap; pointer-events:none; }
+  .pin::after { content:''; position:absolute; left:50%; top:100%; transform: translateX(-50%); border: 5px solid transparent; border-top-color:#f5b324; }
+  .dim { position:absolute; background:rgba(12,16,22,.85); border:1px solid #2a3542; color:#e9eff6; font: 600 11px ui-monospace, Menlo, monospace; padding:2px 6px; border-radius:5px; transform: translate(-50%, -50%); pointer-events:none; }
+  canvas { display:block; outline:none; }
+  .toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:#141b23; border:1px solid #212c37; color:#e9eff6; font-size:12px; padding:8px 12px; border-radius:8px; z-index:50; }
+</style>
+</head>
+<body class="min-h-screen">
+<main class="p-4 md:p-6 space-y-4">
+  <div class="flex flex-wrap items-center gap-2 text-xs text-mute">
+    <span>Demo — option A, live three.js. Drag to orbit, wheel to zoom, double-click a part to focus it, hover the objects list. Amber dots mark the proposed additions (numbered below).</span>
+    <label class="ml-auto flex items-center gap-2"><input type="checkbox" id="onlysliced" class="accent-acc"> file has only a sliced .gcode.3mf</label>
+  </div>
+
+  <section class="rounded-xl border border-line bg-surf px-4 py-3 text-sm text-sub">
+    <b class="text-ink">Propositions on top of option A</b> — each one works here unless marked <span class="chip">mock</span>. Tell me which to keep.
+    <div class="prop mt-2 text-[13px]">
+      <span class="no">0</span><span><b>View cube</b> (top-left), as in a CAD: click a face, an edge or a corner to turn the part to that view (26 positions), drag the cube to orbit, the small house returns to the isometric view. It always shows where you are looking from.</span>
+      <span class="no">1</span><span><b>Perspective / Orthographic</b> toggle in the toolbar (key <b>P</b>). Ortho for checking proportions and alignment, perspective for looking at the part.</span>
+      <span class="no">2</span><span><b>Section plane</b>: a slider cuts the part along Z (or X/Y) to check inner geometry, wall thickness and holes without X-ray.</span>
+      <span class="no">3</span><span><b>Dimensions overlay</b>: the bounding box with X·Y·Z lengths on the part, plus the hovered object's own size.</span>
+      <span class="no">4</span><span><b>Measure</b>: click two points on the part, read the distance. (mock here: a placed measurement)</span>
+      <span class="no">5</span><span><b>Isolate</b> an object: click it in the Part card (or double-click it) to ghost the others and fit the view on it. Click again to show all.</span>
+      <span class="no">6</span><span><b>Printer bed</b> drawn at the real size of the profile's printer (H2S 350×320 here, A1 mini 180×180…) with the printable area, so an out-of-bed object is obvious.</span>
+      <span class="no">7</span><span><b>Toolpath layer range</b>: top and bottom handles, and the estimated print time at the chosen layer; <b>feature toggles</b> in the legend hide supports, infill or walls to inspect the rest.</span>
+      <span class="no">8</span><span><b>Compare with another revision</b>: the picked revision as a translucent ghost over the current one, to see what moved. <span class="chip">mock</span></span>
+      <span class="no">9</span><span><b>Turntable</b> (auto-rotate) and a <b>clean view</b> that hides every control — for showing a client, or a timelapse-style check.</span>
+      <span class="no">10</span><span><b>Snapshot</b>: save the current view as a PNG, and <b>Use as thumbnail</b> for the file card (the app already does this for STEP files).</span>
+      <span class="no">11</span><span><b>Pins</b>: click to pin a note on the part ("chamfer here", "support this edge") saved with the revision, shown to whoever opens it next. <span class="chip">mock</span></span>
+      <span class="no">12</span><span><b>Copy link</b> to this exact view (file, tab, plate) for a colleague. <span class="chip">mock</span></span>
+      <span class="no">13</span><span><b>Checks card</b>: what the slicer data tells us — objects outside the bed, supports used, a filament slot not loaded, outdated against a newer revision. <span class="chip">mock</span></span>
+    </div>
+  </section>
+
+  <!-- the modal, rendered inline at its real size -->
+  <div id="modal" class="relative rounded-2xl border border-line bg-surf shadow-2xl overflow-hidden" style="height: 860px">
+    <header id="hdr" class="flex items-center gap-3 border-b border-line px-4 h-[52px]">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="rounded border border-acc/40 bg-acc/10 px-1.5 text-[11px] font-mono text-acc">P-0015</span>
+        <h1 class="text-sm font-semibold truncate">DT50 Cache d'allumage</h1>
+        <span class="chip">R1</span><span class="chip wip">In progress</span>
+        <button class="chip btn relative new" id="cmpbtn" title="8 · Compare with another revision (mock)"><i data-lucide="git-compare"></i>Compare: none</button>
+      </div>
+      <nav id="vtabs" class="mx-auto flex items-center gap-1 rounded-lg bg-bg p-1 border border-line">
+        <button class="vtab" data-tab="model" aria-selected="true"><i data-lucide="box"></i>Model <span class="tag">3MF</span></button>
+        <button class="vtab" data-tab="toolpath" aria-selected="false"><i data-lucide="route"></i>Toolpath <span class="tag">GCODE.3MF</span></button>
+      </nav>
+      <div class="flex items-center gap-1">
+        <button class="ibtn" data-tip="Print this revision" data-tip-side="bottom"><i data-lucide="printer" class="text-acc"></i></button>
+        <button class="ibtn" data-tip="Open in Bambu Studio" data-tip-side="bottom"><i data-lucide="external-link"></i></button>
+        <button class="ibtn" data-tip="Download" data-tip-side="bottom"><i data-lucide="download"></i></button>
+        <button class="ibtn new" data-tip="12 · Copy link to this view (mock)" data-tip-side="bottom" onclick="toast('Link copied: /projects?project=15&view=rev1&tab=model')"><i data-lucide="link"></i></button>
+        <span class="mx-1 h-5 w-px bg-line"></span>
+        <button class="ibtn" id="railbtn" data-tip="Hide details (I)" data-tip-side="bottom" aria-pressed="true"><i data-lucide="panel-right"></i></button>
+        <button class="ibtn new" id="cleanbtn" data-tip="9 · Clean view (C)" data-tip-side="bottom"><i data-lucide="presentation"></i></button>
+        <button class="ibtn" data-tip="Fullscreen (F)" data-tip-side="bottom"><i data-lucide="maximize-2"></i></button>
+        <button class="ibtn" data-tip="Close (Esc)" data-tip-side="bottom"><i data-lucide="x"></i></button>
+      </div>
+    </header>
+
+    <div class="flex h-[calc(100%-52px)]">
+      <div id="stage" class="relative flex-1 min-w-0 bg-bg">
+        <canvas id="c" class="h-full w-full"></canvas>
+        <div id="labels" class="absolute inset-0 pointer-events-none"></div>
+        <!-- view cube (0) -->
+        <div id="cubebox" class="absolute left-4 top-4 flex flex-col items-center gap-1 select-none">
+          <canvas id="cube" width="150" height="150" style="width:150px;height:150px;cursor:grab" title="Click a face, edge or corner · drag to orbit"></canvas>
+          <div class="flex items-center gap-1"><button class="ibtn !w-7 !h-7" id="homebtn" data-tip="Isometric view (1)"><i data-lucide="house"></i></button><button class="ibtn !w-7 !h-7" data-tip="Fit (space)" data-view="fit"><i data-lucide="scan"></i></button></div>
+        </div>
+        <!-- view toolbar -->
+        <div id="toolbar" class="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-xl glass p-1">
+          <button class="ibtn new" data-tip="1 · Perspective / Orthographic (P)" id="projbtn"><i data-lucide="cuboid"></i></button>
+          <button class="ibtn" data-tip="Grid (G)" id="gridbtn" aria-pressed="true"><i data-lucide="grid-3x3"></i></button>
+          <button class="ibtn" data-tip="X-ray (X)" id="xraybtn"><i data-lucide="eye"></i></button>
+          <button class="ibtn new" data-tip="2 · Section plane (S)" id="secbtn"><i data-lucide="scissors-line-dashed"></i></button>
+          <button class="ibtn new" data-tip="3 · Dimensions (D)" id="dimbtn"><i data-lucide="move-3d"></i></button>
+          <button class="ibtn new" data-tip="4 · Measure (M)" id="measbtn"><i data-lucide="ruler"></i></button>
+          <span class="h-5 w-px bg-line mx-0.5"></span>
+          <button class="ibtn new" data-tip="9 · Turntable (R)" id="rotbtn"><i data-lucide="rotate-3d"></i></button>
+          <button class="ibtn new" data-tip="10 · Snapshot (PNG)" id="snapbtn"><i data-lucide="camera"></i></button>
+          <button class="ibtn new" data-tip="11 · Pin a note (mock)" id="pinbtn"><i data-lucide="map-pin"></i></button>
+        </div>
+        <!-- section slider -->
+        <div id="secctl" class="absolute left-4 top-[180px] hidden glass rounded-xl px-3 py-2 w-[220px] text-[11px] text-sub fade-in">
+          <div class="flex items-center justify-between mb-1"><span class="text-ink font-medium">Section</span><span class="flex gap-1"><button class="chip btn on" data-axis="z">Z</button><button class="chip btn" data-axis="x">X</button><button class="chip btn" data-axis="y">Y</button></span></div>
+          <input type="range" class="hslider" id="section" min="0" max="100" value="100"><div class="flex justify-between"><span>bottom</span><span id="secval">21.0 mm</span><span>top</span></div>
+        </div>
+        <!-- toolpath controls -->
+        <div id="tpctl" class="absolute right-4 top-4 bottom-14 hidden flex-col items-center gap-2">
+          <div class="glass rounded-xl px-2 py-2 flex flex-col items-center gap-2 h-full">
+            <span class="text-[10px] text-mute">311</span>
+            <!-- one vertical range with two handles (7): drag either end, the band between them is what is drawn -->
+            <div id="range" class="relative flex-1 w-6 cursor-pointer" title="Drag an end to set the top or bottom layer">
+              <div class="absolute left-1/2 top-0 bottom-0 w-[3px] -translate-x-1/2 rounded bg-line"></div>
+              <div id="rangeBand" class="absolute left-1/2 w-[3px] -translate-x-1/2 rounded bg-acc"></div>
+              <button id="hTop" class="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-acc border-2 border-bg shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-acc/60" aria-label="Top layer" role="slider" aria-valuemin="1" aria-valuemax="311" aria-valuenow="311" aria-orientation="vertical"></button>
+              <button id="hBot" class="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-acc border-2 border-bg shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-acc/60" aria-label="Bottom layer" role="slider" aria-valuemin="1" aria-valuemax="311" aria-valuenow="1" aria-orientation="vertical"></button>
+              <span id="hTopV" class="absolute right-full mr-2 -translate-y-1/2 text-[10px] font-medium text-ink glass rounded px-1.5 py-0.5 whitespace-nowrap">311</span>
+              <span id="hBotV" class="absolute right-full mr-2 -translate-y-1/2 text-[10px] font-medium text-ink glass rounded px-1.5 py-0.5 whitespace-nowrap">1</span>
+            </div>
+            <span class="text-[10px] text-mute">1</span>
+            <button class="ibtn" data-tip="Play layers" id="playbtn"><i data-lucide="play"></i></button>
+          </div>
+        </div>
+        <div id="tplegend" class="absolute left-4 bottom-16 hidden glass rounded-xl px-3 py-2 text-[11px] text-sub legend space-y-1">
+          <div class="flex items-center gap-3 mb-1"><span class="text-ink font-medium">Colour</span><button class="chip btn" id="colormode">by feature</button></div>
+          <label><input type="checkbox" checked data-feat="outer" class="accent-acc"><i style="background:#e8a33c"></i>Outer wall</label>
+          <label><input type="checkbox" checked data-feat="inner" class="accent-acc"><i style="background:#d9d23a"></i>Inner wall</label>
+          <label><input type="checkbox" checked data-feat="infill" class="accent-acc"><i style="background:#9b59b6"></i>Infill</label>
+          <label><input type="checkbox" checked data-feat="support" class="accent-acc"><i style="background:#4f8ef7"></i>Support</label>
+          <label><input type="checkbox" checked data-feat="top" class="accent-acc"><i style="background:#2ecc71"></i>Top/bottom</label>
+          <div class="pt-1 mt-1 border-t border-line text-ink" id="layerinfo">Layer 311 · z 21.0 mm · ≈ 7h 39m</div>
+        </div>
+        <div id="hoverhint" class="absolute left-1/2 top-4 -translate-x-1/2 hidden glass rounded-lg px-3 py-1.5 text-xs text-ink"></div>
+        <div id="projhint" class="absolute right-4 bottom-4 glass rounded-lg px-2.5 py-1 text-[11px] text-sub">Perspective</div>
+      </div>
+      <aside id="rail" class="w-[320px] shrink-0 border-l border-line bg-surf overflow-y-auto p-3 space-y-3"></aside>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const PART = {
+  objects: [ { id: 'o1', name: 'Cache_droit', color: '#8a8f96', tris: 24180, size: [72, 48, 21] }, { id: 'o2', name: 'Cache_gauche', color: '#8a8f96', tris: 24180, size: [72, 48, 21] }, { id: 'o3', name: 'Clip ×4', color: '#14b8a6', tris: 1920, size: [12, 8, 6] } ],
+  plates: [ { n: 1, name: 'Plate 1', objects: 3, time: '7h 39m', grams: 160.3 }, { n: 2, name: 'Plate 2', objects: 2, time: '3h 12m', grams: 61.0 } ],
+  print: { time: '7h 39m', secs: 27540, grams: '160.3 g', layers: 311, layerH: '0.15 mm', printer: 'Bambu Lab H2S', nozzle: '0.4 mm', bed: 'Textured PEI', profile: '0.15mm Quality @BBL H2S', filaments: [ { slot: 1, type: 'ABS-GF', color: '#1b1b1b', g: 152.1, m: 50.9 }, { slot: 3, type: 'PETG', color: '#14b8a6', g: 8.2, m: 2.7 } ], price: '5 804 FCFP', cost: '1 717 FCFP' },
+  file: { source: 'DT50 Cache d\'allumage.3mf · 8.9 MB', sliced: 'DT50 Cache d\'allumage.gcode.3mf · 14.2 MB', by: 'aneo', date: '10/31/2026', printed: 1 },
+};
+const BEDS = { 'Bambu Lab H2S': [350, 320], 'Bambu Lab X1C': [256, 256], 'Bambu Lab A1 mini': [180, 180] };
+
+// ---------- scene ----------
+const canvas = document.getElementById('c'); const stage = document.getElementById('stage'); const labels = document.getElementById('labels');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.localClippingEnabled = true;
+const scene = new THREE.Scene(); scene.background = new THREE.Color('#0c1016');
+const persp = new THREE.PerspectiveCamera(40, 1, 1, 6000); const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -3000, 6000);
+let camera = persp; let controls = new OrbitControls(camera, canvas); controls.enableDamping = true; controls.dampingFactor = 0.08;
+scene.add(new THREE.HemisphereLight('#dfe8f2', '#1a222c', 1.1));
+const key = new THREE.DirectionalLight('#ffffff', 1.4); key.position.set(180, 260, 220); scene.add(key);
+
+// bed at the printer's real size (6)
+let bedW = 350, bedD = 320; const bedGroup = new THREE.Group(); scene.add(bedGroup);
+function buildBed() {
+  bedGroup.clear();
+  const bed = new THREE.Mesh(new THREE.PlaneGeometry(bedW, bedD), new THREE.MeshStandardMaterial({ color: '#131a22', roughness: .95 })); bed.rotation.x = -Math.PI / 2; bedGroup.add(bed);
+  const grid = new THREE.GridHelper(Math.max(bedW, bedD), Math.max(bedW, bedD) / 25, '#2a3542', '#1b2430'); grid.position.y = .1; grid.scale.set(bedW / Math.max(bedW, bedD), 1, bedD / Math.max(bedW, bedD)); grid.name = 'grid'; bedGroup.add(grid);
+  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(bedW, .2, bedD)), new THREE.LineBasicMaterial({ color: '#3a4653' })); bedGroup.add(edge);
+  // printable area a hair inside, dashed
+  const pa = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(bedW - 10, .2, bedD - 10)), new THREE.LineDashedMaterial({ color: '#14b8a6', dashSize: 4, gapSize: 4, transparent: true, opacity: .5 })); pa.computeLineDistances(); pa.position.y = .2; bedGroup.add(pa);
+}
+buildBed();
+
+// model
+const model = new THREE.Group(); scene.add(model);
+const mats = [];
+const mat = (c) => { const m = new THREE.MeshStandardMaterial({ color: c, roughness: .55, metalness: .05, side: THREE.DoubleSide }); mats.push(m); return m; };
+function cover(x, mirror, obj) {
+  const g = new THREE.Group();
+  const shape = new THREE.Shape(); shape.moveTo(-31, -24); shape.lineTo(31, -24); shape.quadraticCurveTo(36, -24, 36, -19); shape.lineTo(36, 19); shape.quadraticCurveTo(36, 24, 31, 24); shape.lineTo(-31, 24); shape.quadraticCurveTo(-36, 24, -36, 19); shape.lineTo(-36, -19); shape.quadraticCurveTo(-36, -24, -31, -24);
+  const hole = new THREE.Path(); hole.absellipse(0, 0, 14, 10, 0, Math.PI * 2); shape.holes.push(hole);
+  const inner = new THREE.Path(); inner.absellipse(22, 10, 4, 4, 0, Math.PI * 2); shape.holes.push(inner);
+  const body = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 21, bevelEnabled: true, bevelSize: 1.5, bevelThickness: 1.5, bevelSegments: 3 }), mat(obj.color)); body.rotation.x = -Math.PI / 2;
+  g.add(body); g.position.x = x; if (mirror) g.scale.x = -1; g.userData.obj = obj; model.add(g);
+}
+cover(-42, false, PART.objects[0]); cover(42, true, PART.objects[1]);
+const clips = new THREE.Group(); clips.userData.obj = PART.objects[2];
+for (let i = 0; i < 4; i++) { const c = new THREE.Mesh(new THREE.BoxGeometry(12, 6, 8), mat(PART.objects[2].color)); c.position.set(-24 + i * 16, 3, 44); clips.add(c); }
+model.add(clips);
+// compare ghost (8): the "other revision", slightly different, as a translucent wireframe
+const ghost = model.clone(true); ghost.traverse((m) => { if (m.isMesh) m.material = new THREE.MeshBasicMaterial({ color: '#f5b324', wireframe: true, transparent: true, opacity: .35 }); }); ghost.position.set(0, 0, 6); ghost.scale.set(1.04, 1, 1); ghost.visible = false; scene.add(ghost);
+// bbox + dimensions (3)
+const bbox = new THREE.Box3().setFromObject(model); const bsize = bbox.getSize(new THREE.Vector3()); const bcenter = bbox.getCenter(new THREE.Vector3());
+const boxHelper = new THREE.Box3Helper(bbox, new THREE.Color('#f5b324')); boxHelper.visible = false; scene.add(boxHelper);
+// measurement (4, mock): a line with a label
+const measPts = [new THREE.Vector3(-78, 21, -24), new THREE.Vector3(-78, 21, 24)];
+const measLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(measPts), new THREE.LineBasicMaterial({ color: '#f5b324' })); measLine.visible = false; scene.add(measLine);
+
+// toolpath (7): per layer, one line set per feature
+const LAYERS = 311; const FEAT = { outer: '#e8a33c', inner: '#d9d23a', infill: '#9b59b6', top: '#2ecc71', support: '#4f8ef7' };
+const tpGroup = new THREE.Group(); tpGroup.visible = false; scene.add(tpGroup); const layerSets = [];
+for (let L = 1; L <= LAYERS; L++) {
+  const z = L * 0.0675; const buf = { outer: [], inner: [], infill: [], top: [], support: [] }; const add = (f, a, b) => buf[f].push(a[0], z, a[1], b[0], z, b[1]);
+  for (const cx of [-42, 42]) {
+    const w = 36, h = 24; const rect = (d, f) => { const x0 = cx - w + d, x1 = cx + w - d, y0 = -h + d, y1 = h - d; add(f, [x0, y0], [x1, y0]); add(f, [x1, y0], [x1, y1]); add(f, [x1, y1], [x0, y1]); add(f, [x0, y1], [x0, y0]); };
+    rect(0, 'outer'); rect(1.2, 'inner'); rect(2.4, 'inner');
+    const topish = L > LAYERS - 6 || L < 5; const stride = topish ? 1.6 : 6;
+    for (let x = cx - w + 4; x < cx + w - 4; x += stride) add(topish ? 'top' : 'infill', [x, -h + 4], [x + (topish ? 0 : 3), h - 4]);
+  }
+  if (L < 40) for (let i = 0; i < 4; i++) { const x = -24 + i * 16; add('support', [x - 6, 40], [x + 6, 40]); add('support', [x - 6, 48], [x + 6, 48]); }
+  const set = {}; for (const f of Object.keys(buf)) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(buf[f], 3)); const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: FEAT[f] })); tpGroup.add(l); set[f] = l; }
+  layerSets.push(set);
+}
+const featOn = { outer: true, inner: true, infill: true, top: true, support: true }; let layerTop = LAYERS, layerBot = 1;
+function applyLayers() {
+  layerSets.forEach((set, i) => { const vis = i + 1 >= layerBot && i + 1 <= layerTop; for (const f in set) set[f].visible = vis && featOn[f]; });
+  drawRange();
+  const secs = Math.round(PART.print.secs * layerTop / LAYERS); document.getElementById('layerinfo').textContent = `Layer ${layerTop} · z ${(layerTop * 0.0675).toFixed(1)} mm · ≈ ${Math.floor(secs / 3600)}h ${Math.round((secs % 3600) / 60)}m of ${PART.print.time}`;
+}
+// The dual-handle range: layer L sits at (1 - (L-1)/(LAYERS-1)) of the track height.
+const rangeEl = document.getElementById('range'); const hTop = document.getElementById('hTop'); const hBot = document.getElementById('hBot');
+const yOf = (L) => (1 - (L - 1) / (LAYERS - 1)) * 100;
+function drawRange() {
+  hTop.style.top = `${yOf(layerTop)}%`; hBot.style.top = `${yOf(layerBot)}%`; hTop.setAttribute('aria-valuenow', layerTop); hBot.setAttribute('aria-valuenow', layerBot);
+  const band = document.getElementById('rangeBand'); band.style.top = `${yOf(layerTop)}%`; band.style.height = `${yOf(layerBot) - yOf(layerTop)}%`;
+  const tv = document.getElementById('hTopV'), bv = document.getElementById('hBotV'); tv.style.top = `${yOf(layerTop)}%`; bv.style.top = `${yOf(layerBot)}%`; tv.textContent = layerTop; bv.textContent = layerBot;
+  bv.style.visibility = layerTop - layerBot < 12 ? 'hidden' : 'visible';
+}
+const layerAtY = (clientY) => { const r = rangeEl.getBoundingClientRect(); const f = THREE.MathUtils.clamp((r.bottom - clientY) / r.height, 0, 1); return Math.round(1 + f * (LAYERS - 1)); };
+let dragHandle = null;
+for (const [h, which] of [[hTop, 'top'], [hBot, 'bot']]) {
+  h.addEventListener('pointerdown', (e) => { dragHandle = which; h.setPointerCapture(e.pointerId); e.preventDefault(); });
+  h.addEventListener('pointermove', (e) => { if (dragHandle !== which) return; const L = layerAtY(e.clientY); if (which === 'top') layerTop = Math.max(L, layerBot); else layerBot = Math.min(L, layerTop); applyLayers(); });
+  h.addEventListener('pointerup', () => { dragHandle = null; });
+  h.addEventListener('keydown', (e) => { const d = e.key === 'ArrowUp' ? 1 : e.key === 'ArrowDown' ? -1 : e.key === 'PageUp' ? 10 : e.key === 'PageDown' ? -10 : 0; if (!d) return; e.preventDefault(); if (which === 'top') layerTop = THREE.MathUtils.clamp(layerTop + d, layerBot, LAYERS); else layerBot = THREE.MathUtils.clamp(layerBot + d, 1, layerTop); applyLayers(); });
+}
+// A click on the track moves whichever end is nearer.
+rangeEl.addEventListener('pointerdown', (e) => { if (e.target !== rangeEl && !e.target.id.startsWith('rangeBand')) return; const L = layerAtY(e.clientY); if (Math.abs(L - layerTop) <= Math.abs(L - layerBot)) layerTop = Math.max(L, layerBot); else layerBot = Math.min(L, layerTop); applyLayers(); });
+document.querySelectorAll('[data-feat]').forEach((cb) => cb.addEventListener('change', () => { featOn[cb.dataset.feat] = cb.checked; applyLayers(); }));
+let playing = null; document.getElementById('playbtn').addEventListener('click', () => { if (playing) { clearInterval(playing); playing = null; return; } let n = layerBot; playing = setInterval(() => { n += 4; if (n > LAYERS) { clearInterval(playing); playing = null; n = LAYERS; } layerTop = n; applyLayers(); }, 30); });
+document.getElementById('colormode').addEventListener('click', (e) => { const byFil = e.currentTarget.textContent === 'by feature'; e.currentTarget.textContent = byFil ? 'by filament' : 'by feature'; layerSets.forEach((set) => { for (const f in set) set[f].material.color.set(byFil ? (f === 'support' ? PART.print.filaments[1].color : '#555b63') : FEAT[f]); }); });
+
+// ---------- cameras & views ----------
+function frameTarget(target) {
+  const box = new THREE.Box3().setFromObject(target); const size = box.getSize(new THREE.Vector3()); const center = box.getCenter(new THREE.Vector3());
+  return { center, radius: Math.max(size.x, size.y, size.z) * 0.75 };
+}
+const VIEWS = { iso: [1, .85, 1], top: [0, 1, 0], front: [0, 0, 1], right: [1, 0, 0] };
+let currentView = 'iso'; let focusTarget = model;
+const safeDir = (v) => { const d = new THREE.Vector3(...(Array.isArray(v) ? v : [v.x, v.y, v.z])).normalize(); if (Math.abs(d.y) > 0.999) d.z = d.y > 0 ? -0.0001 : 0.0001; return d.normalize(); };
+let viewDir = safeDir(VIEWS.iso); let anim = null;
+function placeCamera(dir, dist, center) {
+  camera.position.copy(center.clone().add(dir.clone().multiplyScalar(dist))); controls.target.copy(center); camera.up.set(0, 1, 0); controls.update();
+}
+function fit(view = currentView) {
+  if (VIEWS[view]) { viewDir = safeDir(VIEWS[view]); currentView = view; }
+  const { center, radius } = frameTarget(focusTarget); const dist = radius * 2.6;
+  if (camera === ortho) { const w = stage.clientWidth, h = stage.clientHeight, a = w / h; ortho.left = -radius * 1.4 * a; ortho.right = radius * 1.4 * a; ortho.top = radius * 1.4; ortho.bottom = -radius * 1.4; ortho.updateProjectionMatrix(); }
+  placeCamera(viewDir, dist, center);
+}
+/** Turn the view to look from `dir`, keeping the distance: a 350ms slerp of the direction (the cube's clicks). */
+function goTo(dir) {
+  const target = controls.target.clone(); const offset = camera.position.clone().sub(target); const dist = offset.length(); const from = offset.normalize(); const to = safeDir(dir);
+  const q0 = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), from); const q1 = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), to);
+  const t0 = performance.now(); anim = { t0, step: () => { const k = Math.min(1, (performance.now() - t0) / 350); const e = 1 - Math.pow(1 - k, 3); const q = q0.clone().slerp(q1, e); const d = new THREE.Vector3(0, 0, 1).applyQuaternion(q); placeCamera(d, dist, target); if (k >= 1) { viewDir = to; anim = null; } } };
+}
+// ---------- view cube (0) ----------
+const cubeCanvas = document.getElementById('cube'); const CUBE_PX = new URLSearchParams(location.search).get('cube') === 'big' ? 420 : 150; cubeCanvas.style.width = cubeCanvas.style.height = `${CUBE_PX}px`;
+const cubeRenderer = new THREE.WebGLRenderer({ canvas: cubeCanvas, antialias: true, alpha: true }); cubeRenderer.setPixelRatio(Math.min(devicePixelRatio, 2)); cubeRenderer.setSize(CUBE_PX, CUBE_PX, false);
+const cubeScene = new THREE.Scene(); const cubeCam = new THREE.OrthographicCamera(-1.25, 1.25, 1.25, -1.25, 0.1, 10);
+cubeScene.add(new THREE.AmbientLight('#ffffff', 1.6)); const cl = new THREE.DirectionalLight('#ffffff', .8); cl.position.set(2, 3, 4); cubeScene.add(cl);
+const cubeRoot = new THREE.Group(); cubeScene.add(cubeRoot); const regions = [];
+function faceTexture(text) { const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'); g.fillStyle = '#243041'; g.fillRect(0, 0, 256, 256); g.fillStyle = '#eef3f8'; g.font = '700 54px Inter, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 128, 132); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; }
+const regionMat = (opts) => new THREE.MeshStandardMaterial({ color: '#1d2733', roughness: .9, ...opts });
+function addRegion(mesh, dir, label) { mesh.userData = { dir: new THREE.Vector3(...dir), label, base: mesh.material.color.getHex() }; cubeRoot.add(mesh); regions.push(mesh); }
+const F = 0.78, E = 0.22;
+[[[0, 0, 1], 'FRONT', [0, 0, 0]], [[0, 0, -1], 'BACK', [0, Math.PI, 0]], [[1, 0, 0], 'RIGHT', [0, Math.PI / 2, 0]], [[-1, 0, 0], 'LEFT', [0, -Math.PI / 2, 0]], [[0, 1, 0], 'TOP', [-Math.PI / 2, 0, 0]], [[0, -1, 0], 'BOTTOM', [Math.PI / 2, 0, 0]]].forEach(([n, label, rot]) => {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(F, F), new THREE.MeshStandardMaterial({ map: faceTexture(label), roughness: .9 })); m.position.set(n[0] * .5, n[1] * .5, n[2] * .5); m.rotation.set(...rot); addRegion(m, n, label);
+});
+const axes = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+for (let a = 0; a < 3; a++) for (const s1 of [-1, 1]) for (const s2 of [-1, 1]) { const [b, c] = [(a + 1) % 3, (a + 2) % 3]; const size = [E, E, E]; size[a] = F; const pos = [0, 0, 0]; pos[b] = s1 * .5; pos[c] = s2 * .5; const dir = [0, 0, 0]; dir[b] = s1; dir[c] = s2; const m = new THREE.Mesh(new THREE.BoxGeometry(...size), regionMat({})); m.position.set(...pos); addRegion(m, dir, 'edge'); }
+for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) { const m = new THREE.Mesh(new THREE.BoxGeometry(E, E, E), regionMat({ color: '#1a2330' })); m.position.set(x * .5, y * .5, z * .5); addRegion(m, [x, y, z], 'corner'); }
+cubeRoot.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.002, 1.002, 1.002)), new THREE.LineBasicMaterial({ color: '#4a5866' })));
+// The printer's axes at the bed's origin, the FRONT-LEFT-BOTTOM corner of the cube: X red to the
+// right, Y green towards the back, Z blue up — the slicer's convention (three.js's Y is up, its -Z
+// is the printer's +Y). Labels at the tips, a dot on the origin.
+const ORIGIN = new THREE.Vector3(-.5, -.5, .5); const AX = { X: { dir: [1, 0, 0], color: '#ef5350' }, Y: { dir: [0, 0, -1], color: '#4cd964' }, Z: { dir: [0, 1, 0], color: '#4a9cff' } };
+function textSprite(text, color, size = .3) { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); g.fillStyle = color; g.font = '800 46px Inter, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 32, 34); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false })); sp.renderOrder = 10; sp.scale.set(size, size, 1); return sp; }
+/** A solid arrow (cylinder + cone), drawn on top of everything so the triad is never hidden by the cube. */
+function solidArrow(dir, from, length, color) { const g = new THREE.Group(); const m = new THREE.MeshBasicMaterial({ color, depthTest: false }); const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.028, .028, length - .14, 10), m); shaft.position.y = (length - .14) / 2; const head = new THREE.Mesh(new THREE.ConeGeometry(.075, .14, 12), m); head.position.y = length - .07; g.add(shaft, head); g.renderOrder = 9; g.position.copy(from); g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize()); return g; }
+// The triad starts exactly at the origin corner and runs along the cube's own edges (X along the
+// bottom-front edge, Y along the bottom-left edge, Z up the front-left edge); drawn on top, so the
+// cube never hides it. The white dot is the origin.
+const TRIAD = ORIGIN.clone();
+for (const [name, ax] of Object.entries(AX)) {
+  const dir = new THREE.Vector3(...ax.dir); cubeScene.add(solidArrow(dir, TRIAD, .78, ax.color));
+  const label = textSprite(name, ax.color); label.position.copy(TRIAD.clone().add(dir.clone().multiplyScalar(.98))); cubeScene.add(label);
+}
+const originDot = new THREE.Mesh(new THREE.SphereGeometry(.055, 12, 12), new THREE.MeshBasicMaterial({ color: '#ffffff', depthTest: false })); originDot.renderOrder = 11; originDot.position.copy(ORIGIN); cubeScene.add(originDot);
+const cubeRay = new THREE.Raycaster(); let cubeHover = null; let cubeDrag = null;
+function cubePick(e) { const r = cubeCanvas.getBoundingClientRect(); const m = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); cubeRay.setFromCamera(m, cubeCam); return cubeRay.intersectObjects(regions)[0]?.object ?? null; }
+cubeCanvas.addEventListener('pointermove', (e) => {
+  if (cubeDrag) { const dx = e.clientX - cubeDrag.x, dy = e.clientY - cubeDrag.y; cubeDrag.moved ||= Math.hypot(dx, dy) > 4; cubeDrag.x = e.clientX; cubeDrag.y = e.clientY;
+    const target = controls.target.clone(); const off = camera.position.clone().sub(target); const sph = new THREE.Spherical().setFromVector3(off); sph.theta -= dx * 0.012; sph.phi = THREE.MathUtils.clamp(sph.phi - dy * 0.012, 0.02, Math.PI - 0.02); placeCamera(new THREE.Vector3().setFromSpherical(sph).normalize(), sph.radius, target); viewDir = off.normalize(); return; }
+  const hit = cubePick(e); if (hit !== cubeHover) { if (cubeHover) cubeHover.material.emissive?.set('#000000'); cubeHover = hit; if (hit) { hit.material.emissive = new THREE.Color('#14b8a6'); hit.material.emissiveIntensity = .5; } cubeCanvas.style.cursor = hit ? 'pointer' : 'grab'; }
+});
+cubeCanvas.addEventListener('pointerleave', () => { if (cubeHover) { cubeHover.material.emissive?.set('#000000'); cubeHover = null; } });
+cubeCanvas.addEventListener('pointerdown', (e) => { cubeDrag = { x: e.clientX, y: e.clientY, moved: false, hit: cubePick(e) }; cubeCanvas.setPointerCapture(e.pointerId); cubeCanvas.style.cursor = 'grabbing'; });
+cubeCanvas.addEventListener('pointerup', (e) => { const d = cubeDrag; cubeDrag = null; cubeCanvas.style.cursor = 'grab'; if (d && !d.moved && d.hit) goTo(d.hit.userData.dir); });
+document.getElementById('homebtn').addEventListener('click', () => goTo(VIEWS.iso));
+function drawCube() { const off = camera.position.clone().sub(controls.target).normalize().multiplyScalar(4); cubeCam.position.copy(off); cubeCam.up.copy(camera.up); cubeCam.lookAt(0, 0, 0); cubeRenderer.render(cubeScene, cubeCam); }
+// The bed's origin on the real scene too: a small triad at the bed's front-left corner, matching the cube.
+const bedOrigin = new THREE.Vector3(-bedW / 2, .3, bedD / 2);
+for (const [, ax] of Object.entries(AX)) scene.add(new THREE.ArrowHelper(new THREE.Vector3(...ax.dir), bedOrigin, 28, ax.color, 7, 3.5));
+function setProjection(orthographic) {
+  const from = camera; camera = orthographic ? ortho : persp; camera.position.copy(from.position); camera.up.copy(from.up);
+  const target = controls.target.clone(); controls.dispose(); controls = new OrbitControls(camera, canvas); controls.enableDamping = true; controls.dampingFactor = 0.08; controls.target.copy(target); controls.autoRotate = rotating; controls.autoRotateSpeed = 1.5;
+  resize(); if (orthographic) fit(); controls.update();
+  document.getElementById('projbtn').setAttribute('aria-pressed', String(orthographic)); document.getElementById('projhint').textContent = orthographic ? 'Orthographic' : 'Perspective';
+}
+function resize() { const w = stage.clientWidth, h = stage.clientHeight; renderer.setSize(w, h, false); persp.aspect = w / h; persp.updateProjectionMatrix(); if (camera === ortho) { const a = w / h, s = ortho.top; ortho.left = -s * a; ortho.right = s * a; ortho.updateProjectionMatrix(); } }
+new ResizeObserver(resize).observe(stage); resize(); fit('iso');
+document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => fit()));
+document.getElementById('projbtn').addEventListener('click', () => setProjection(camera !== ortho));
+document.getElementById('gridbtn').addEventListener('click', (e) => { const g = bedGroup.getObjectByName('grid'); g.visible = !g.visible; e.currentTarget.setAttribute('aria-pressed', String(g.visible)); });
+let xray = false; document.getElementById('xraybtn').addEventListener('click', (e) => { xray = !xray; e.currentTarget.setAttribute('aria-pressed', String(xray)); applyGhosting(); });
+let rotating = false; document.getElementById('rotbtn').addEventListener('click', (e) => { rotating = !rotating; controls.autoRotate = rotating; controls.autoRotateSpeed = 1.5; e.currentTarget.setAttribute('aria-pressed', String(rotating)); });
+document.getElementById('snapbtn').addEventListener('click', () => { const a = document.createElement('a'); a.download = 'DT50 Cache d\'allumage R1.png'; a.href = renderer.domElement.toDataURL('image/png'); a.click(); toast('Snapshot saved — "Use as thumbnail" would set it on the card'); });
+document.getElementById('dimbtn').addEventListener('click', (e) => { dims = !dims; boxHelper.visible = dims; e.currentTarget.setAttribute('aria-pressed', String(dims)); });
+let dims = false; let measuring = false;
+document.getElementById('measbtn').addEventListener('click', (e) => { measuring = !measuring; measLine.visible = measuring; e.currentTarget.setAttribute('aria-pressed', String(measuring)); hint(measuring ? 'Measure: click two points on the part (placed here as a mock)' : null); });
+// section plane (2)
+const secPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 21); let sectioning = false; let secAxis = 'z';
+function applySection() { mats.forEach((m) => { m.clippingPlanes = sectioning ? [secPlane] : []; m.needsUpdate = true; }); }
+function setSection(pct) {
+  const extents = { z: [0, 21], x: [-80, 80], y: [-30, 52] }[secAxis]; const v = extents[0] + (extents[1] - extents[0]) * pct / 100;
+  if (secAxis === 'z') secPlane.set(new THREE.Vector3(0, -1, 0), v); else if (secAxis === 'x') secPlane.set(new THREE.Vector3(-1, 0, 0), v); else secPlane.set(new THREE.Vector3(0, 0, -1), v);
+  document.getElementById('secval').textContent = `${v.toFixed(1)} mm`;
+}
+document.getElementById('secbtn').addEventListener('click', (e) => { sectioning = !sectioning; e.currentTarget.setAttribute('aria-pressed', String(sectioning)); document.getElementById('secctl').classList.toggle('hidden', !sectioning); applySection(); });
+document.getElementById('section').addEventListener('input', (e) => setSection(Number(e.target.value)));
+document.querySelectorAll('[data-axis]').forEach((b) => b.addEventListener('click', () => { secAxis = b.dataset.axis; document.querySelectorAll('[data-axis]').forEach((x) => x.classList.toggle('on', x === b)); setSection(Number(document.getElementById('section').value)); }));
+// compare (8)
+document.getElementById('cmpbtn').addEventListener('click', (e) => { ghost.visible = !ghost.visible; e.currentTarget.innerHTML = `<i data-lucide="git-compare"></i>Compare: ${ghost.visible ? 'R1 (ghost)' : 'none'}`; lucide.createIcons(); if (ghost.visible) toast('R1 drawn as an amber ghost over R2: 2 mm longer on X'); });
+// pins (11, mock)
+const pins = [{ p: new THREE.Vector3(-42, 22, -24), text: 'Chamfer this edge · aneo' }]; let pinning = false;
+document.getElementById('pinbtn').addEventListener('click', (e) => { pinning = !pinning; e.currentTarget.setAttribute('aria-pressed', String(pinning)); hint(pinning ? 'Pin: click the part to leave a note (one placed as a mock)' : null); });
+// clean view (9)
+let clean = false; document.getElementById('cleanbtn').addEventListener('click', () => { clean = !clean; document.getElementById('cleanbtn').setAttribute('aria-pressed', String(clean)); document.getElementById('toolbar').classList.toggle('hidden', clean); document.getElementById('rail').classList.toggle('hidden', clean || !railOn); document.getElementById('tplegend').classList.toggle('hidden', clean || tab !== 'toolpath'); document.getElementById('tpctl').classList.toggle('hidden', clean || tab !== 'toolpath'); document.getElementById('projhint').classList.toggle('hidden', clean); setTimeout(resize, 0); });
+
+// ---------- hover / isolate (5) ----------
+const ray = new THREE.Raycaster(); const mouse = new THREE.Vector2(); let hovered = null; let isolated = null;
+const objOf = (hit) => hit ? (hit.object.parent.userData.obj ?? hit.object.parent.parent?.userData.obj) : null;
+function applyGhosting() {
+  model.children.forEach((g) => { const obj = g.userData.obj; const ghosted = xray || (isolated && obj !== isolated); g.traverse((m) => { if (m.isMesh) { m.material.transparent = ghosted; m.material.opacity = ghosted ? .22 : 1; m.material.depthWrite = !ghosted; m.material.emissive = new THREE.Color(hovered === obj ? '#14b8a6' : '#000'); m.material.emissiveIntensity = .35; } }); });
+  document.querySelectorAll('.obj').forEach((el) => el.setAttribute('aria-selected', String(el.dataset.obj === (isolated ?? hovered)?.id)));
+}
+function isolate(obj) { isolated = isolated === obj ? null : obj; focusTarget = isolated ? model.children.find((g) => g.userData.obj === isolated) : model; applyGhosting(); fit(); }
+function pick(e) { const r = canvas.getBoundingClientRect(); mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); ray.setFromCamera(mouse, camera); return ray.intersectObjects(model.children, true)[0]; }
+canvas.addEventListener('pointermove', (e) => { if (tab !== 'model') return; const obj = objOf(pick(e)); if (obj !== hovered) { hovered = obj; applyGhosting(); hint(obj ? `${obj.name} · ${obj.size.join(' × ')} mm · ${obj.tris.toLocaleString()} triangles` : null); } });
+canvas.addEventListener('dblclick', (e) => { const obj = objOf(pick(e)); if (obj) isolate(obj); });
+canvas.addEventListener('click', (e) => { if (!pinning) return; const hit = pick(e); if (hit) { pins.push({ p: hit.point.clone(), text: 'New note · you' }); toast('Note pinned (mock: would be saved on the revision)'); } });
+function hint(text) { const h = document.getElementById('hoverhint'); if (!text) { h.classList.add('hidden'); return; } h.textContent = text; h.classList.remove('hidden'); }
+
+// ---------- 2D labels (dimensions, pins, measure) ----------
+function project(v) { const p = v.clone().project(camera); return [(p.x + 1) / 2 * stage.clientWidth, (1 - p.y) / 2 * stage.clientHeight]; }
+function drawLabels() {
+  let html = '';
+  if (tab === 'model') {
+    if (dims) { const b = bbox; const put = (v, text) => { const [x, y] = project(v); html += `<div class="dim" style="left:${x}px;top:${y}px">${text}</div>`; };
+      put(new THREE.Vector3(bcenter.x, b.min.y, b.max.z + 8), `X ${bsize.x.toFixed(1)} mm`); put(new THREE.Vector3(b.max.x + 8, b.min.y, bcenter.z), `Y ${bsize.z.toFixed(1)} mm`); put(new THREE.Vector3(b.min.x - 8, bcenter.y, b.max.z), `Z ${bsize.y.toFixed(1)} mm`); }
+    if (measuring) { const [x, y] = project(measPts[0].clone().lerp(measPts[1], .5)); html += `<div class="dim" style="left:${x}px;top:${y}px">48.0 mm</div>`; }
+    for (const pin of pins) { const [x, y] = project(pin.p); html += `<div class="pin" style="left:${x}px;top:${y - 6}px">${pin.text}</div>`; }
+  }
+  labels.innerHTML = html;
+}
+
+// ---------- tabs & rail ----------
+let tab = 'model'; let railOn = true;
+function setTab(next) {
+  tab = next; document.querySelectorAll('.vtab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === next)));
+  model.visible = next === 'model'; ghost.visible = ghost.visible && next === 'model'; boxHelper.visible = dims && next === 'model'; tpGroup.visible = next === 'toolpath';
+  document.getElementById('tpctl').classList.toggle('hidden', next !== 'toolpath' || clean); document.getElementById('tpctl').classList.toggle('flex', next === 'toolpath' && !clean);
+  document.getElementById('tplegend').classList.toggle('hidden', next !== 'toolpath' || clean);
+  document.getElementById('secctl').classList.toggle('hidden', !(sectioning && next === 'model'));
+  renderRail();
+}
+document.querySelectorAll('.vtab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
+const sw = (c) => `<span class="sw" style="background:${c}"></span>`;
+function cards() {
+  const p = PART.print;
+  return [
+    `<div class="card p-3 fade-in"><div class="text-[11px] uppercase tracking-wide text-mute mb-2">Plates</div><div class="grid grid-cols-3 gap-2">
+      <div class="plate" aria-selected="true" data-plate="0"><div class="ph text-sub"><i data-lucide="layers"></i></div><div class="px-1.5 py-1 text-[11px]"><b class="text-ink">All</b> <span class="text-mute">2 plates</span></div></div>
+      ${PART.plates.map((pl) => `<div class="plate" data-plate="${pl.n}"><div class="ph text-mute" style="background:#0f141b"><svg viewBox="0 0 40 40" width="60%"><rect x="6" y="12" width="12" height="16" rx="2" fill="#4a535e"/><rect x="22" y="12" width="12" height="16" rx="2" fill="#4a535e"/></svg></div><div class="px-1.5 py-1 text-[11px]"><b class="text-ink">${pl.name}</b> <span class="text-mute">${pl.objects} obj · ${pl.time}</span></div></div>`).join('')}</div></div>`,
+    `<div class="card p-3 fade-in"><div class="flex items-center justify-between mb-2"><span class="text-[11px] uppercase tracking-wide text-mute">Part</span><span class="text-[11px] text-mute">${bsize.x.toFixed(1)} × ${bsize.z.toFixed(1)} × ${bsize.y.toFixed(1)} mm · 48.3 cm³</span></div>
+      <div class="space-y-0.5">${PART.objects.map((o) => `<div class="obj" data-obj="${o.id}" title="Click to isolate (5)">${sw(o.color)}<span class="flex-1 text-ink">${o.name}</span><span class="text-mute">${o.size.join('×')}</span></div>`).join('')}</div>
+      <div class="mt-2 text-[11px] text-mute">Click an object to isolate it · double-click it on the part</div></div>`,
+    `<div class="card p-3 fade-in relative"><span class="new absolute right-2 top-2"></span><div class="text-[11px] uppercase tracking-wide text-mute mb-2">Checks <span class="chip ml-1">mock · 13</span></div>
+      <div class="space-y-1 text-xs"><div class="flex items-start gap-2 text-sub"><i data-lucide="circle-check" class="text-acc mt-0.5"></i>All objects inside the H2S printable area</div><div class="flex items-start gap-2 text-sub"><i data-lucide="circle-check" class="text-acc mt-0.5"></i>Both filaments loaded on the printer (A1 ABS-GF, A3 PETG)</div><div class="flex items-start gap-2 text-amber"><i data-lucide="triangle-alert" class="mt-0.5"></i>Supports used on 4 clips — 8.2 g</div><div class="flex items-start gap-2 text-sub"><i data-lucide="circle-check" class="text-acc mt-0.5"></i>Newest revision (R2 approved)</div></div></div>`,
+    tab === 'toolpath'
+      ? `<div class="card p-3 fade-in"><div class="text-[11px] uppercase tracking-wide text-mute mb-2">Print</div>
+        <dl class="kv"><dt>Time</dt><dd>${p.time}</dd><dt>Filament</dt><dd>${p.grams}</dd><dt>Layers</dt><dd>${p.layers} · ${p.layerH}</dd><dt>Printer</dt><dd>${p.printer.replace('Bambu Lab ', '')} · ${p.nozzle}</dd><dt>Plate</dt><dd>${p.bed}</dd><dt>Profile</dt><dd class="truncate max-w-[150px]" title="${p.profile}">${p.profile}</dd></dl>
+        <div class="mt-2 space-y-1">${p.filaments.map((f) => `<div class="flex items-center gap-2 text-xs"><span class="text-mute w-5">A${f.slot}</span>${sw(f.color)}<span class="text-ink">${f.type}</span><span class="ml-auto text-sub">${f.g} g · ${f.m} m</span></div>`).join('')}</div>
+        <div class="mt-3 flex items-end justify-between"><div><div class="text-[10px] uppercase tracking-wide text-mute">Price</div><div class="text-base font-semibold text-ink">${p.price}</div></div><div class="text-[11px] text-mute">cost ${p.cost}</div></div></div>`
+      : `<div class="card p-3 fade-in"><div class="text-[11px] uppercase tracking-wide text-mute mb-2">Print <span class="normal-case">(from the sliced file)</span></div>
+        <dl class="kv"><dt>Time</dt><dd>${p.time}</dd><dt>Filament</dt><dd>${p.grams}</dd><dt>Printer</dt><dd>${p.printer.replace('Bambu Lab ', '')} · ${p.nozzle} · ${p.layerH}</dd><dt>Bed</dt><dd><select id="bedsel" class="bg-bg border border-line rounded px-1 text-[11px] text-ink">${Object.keys(BEDS).map((k) => `<option ${k === p.printer ? 'selected' : ''}>${k.replace('Bambu Lab ', '')} ${BEDS[k].join('×')}</option>`).join('')}</select></dd><dt>Price</dt><dd><b>${p.price}</b> <span class="text-mute">· cost ${p.cost}</span></dd></dl>
+        <button class="mt-2 text-xs text-acc flex items-center gap-1" data-tab="toolpath"><i data-lucide="route"></i>See the toolpath</button></div>`,
+    `<div class="card p-3 fade-in"><div class="text-[11px] uppercase tracking-wide text-mute mb-2">Files</div>
+      <div class="space-y-1.5 text-xs"><div class="flex items-center gap-2"><i data-lucide="box" class="text-sub"></i><span class="text-ink truncate flex-1" title="${PART.file.source}">${PART.file.source}</span><button class="ibtn !w-7 !h-7" data-tip="Download source"><i data-lucide="download"></i></button></div>
+      <div class="flex items-center gap-2"><i data-lucide="route" class="text-sub"></i><span class="text-ink truncate flex-1" title="${PART.file.sliced}">${PART.file.sliced}</span><button class="ibtn !w-7 !h-7" data-tip="Download sliced"><i data-lucide="download"></i></button></div></div>
+      <div class="mt-2 text-[11px] text-mute">by ${PART.file.by} · ${PART.file.date} · <span class="text-acc">Printed ${PART.file.printed}×</span></div></div>`,
+  ];
+}
+function renderRail() {
+  const rail = document.getElementById('rail'); rail.innerHTML = cards().join(''); lucide.createIcons();
+  document.querySelectorAll('.obj').forEach((el) => { el.addEventListener('mouseenter', () => { hovered = PART.objects.find((o) => o.id === el.dataset.obj); applyGhosting(); }); el.addEventListener('mouseleave', () => { hovered = null; applyGhosting(); }); el.addEventListener('click', () => isolate(PART.objects.find((o) => o.id === el.dataset.obj))); });
+  document.querySelectorAll('.plate').forEach((el) => el.addEventListener('click', () => { document.querySelectorAll('.plate').forEach((p) => p.setAttribute('aria-selected', String(p === el))); const n = Number(el.dataset.plate); model.children.forEach((g, i) => (g.visible = n === 0 || n === 1 || (n === 2 && i < 2))); }));
+  document.querySelectorAll('button[data-tab]').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
+  document.getElementById('bedsel')?.addEventListener('change', (e) => { const k = Object.keys(BEDS)[e.target.selectedIndex]; [bedW, bedD] = BEDS[k]; buildBed(); toast(`Bed drawn at ${bedW}×${bedD} mm (${k.replace('Bambu Lab ', '')})`); });
+}
+document.getElementById('railbtn').addEventListener('click', (e) => { railOn = !railOn; e.currentTarget.setAttribute('aria-pressed', String(railOn)); e.currentTarget.dataset.tip = railOn ? 'Hide details (I)' : 'Show details (I)'; document.getElementById('rail').classList.toggle('hidden', !railOn); setTimeout(resize, 0); });
+document.getElementById('onlysliced').addEventListener('change', (e) => { document.querySelector('.vtab[data-tab=model] .tag').textContent = e.target.checked ? 'GCODE.3MF' : '3MF'; });
+window.addEventListener('keydown', (e) => { if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return; const k = e.key.toLowerCase();
+  if (e.key === '1') goTo(VIEWS.iso); if (e.key === '2') goTo(VIEWS.top); if (e.key === '3') goTo(VIEWS.front); if (e.key === '4') goTo(VIEWS.right); if (e.key === ' ') { e.preventDefault(); fit(); }
+  if (k === 'p') document.getElementById('projbtn').click(); if (k === 'g') document.getElementById('gridbtn').click(); if (k === 'x') document.getElementById('xraybtn').click(); if (k === 's') document.getElementById('secbtn').click(); if (k === 'd') document.getElementById('dimbtn').click(); if (k === 'm') document.getElementById('measbtn').click(); if (k === 'r') document.getElementById('rotbtn').click(); if (k === 'i') document.getElementById('railbtn').click(); if (k === 'c') document.getElementById('cleanbtn').click(); if (e.key === 'Escape' && isolated) isolate(isolated); });
+window.toast = (text) => { const el = document.createElement('div'); el.className = 'toast'; el.textContent = text; document.body.appendChild(el); setTimeout(() => el.remove(), 2200); };
+renderRail(); lucide.createIcons(); applyLayers();
+const q = new URLSearchParams(location.search); if (q.get('tab') === 'toolpath') setTab('toolpath'); if (q.get('ortho')) setProjection(true); if (q.get('section')) { document.getElementById('secbtn').click(); document.getElementById('section').value = 55; setSection(55); } if (q.get('dims')) document.getElementById('dimbtn').click(); if (q.get('iso')) isolate(PART.objects[0]);
+(function loop() { if (anim) anim.step(); controls.update(); renderer.render(scene, camera); drawLabels(); drawCube(); requestAnimationFrame(loop); })();
+</script>
+</body>
+</html>

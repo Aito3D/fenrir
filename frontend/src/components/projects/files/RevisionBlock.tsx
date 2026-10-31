@@ -5,7 +5,7 @@ import { api } from '../../../api/client';
 import type { ProjectFileOut, ProjectItemOut, ProjectRevisionOut, RevisionStatus } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { HoldButton } from '../../aito/HoldButton';
-import { ModelViewerModal } from '../../ModelViewerModal';
+import { PartViewerModal } from '../../viewer/PartViewerModal';
 import { inputCls, focusRingCls } from '../../formStyles';
 import { formatFileSize } from '../../../utils/file';
 import type { FileActions } from './useFileActions';
@@ -35,7 +35,7 @@ interface Props {
   initialForking?: boolean;
 }
 
-const btnCls = `inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 py-1 text-xs text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white md:min-h-0 ${focusRingCls}`;
+const btnCls = `btn-press inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 py-1 text-xs text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white md:min-h-0 ${focusRingCls}`;
 
 const isResliceable = (f: ProjectFileOut) => f.filename.toLowerCase().endsWith('.3mf'); // incl. .gcode.3mf, as the backend
 
@@ -109,7 +109,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions, initial
           placeholder={t('projectsPdm.files.notePlaceholder')}
           aria-label={t('projectsPdm.files.noteLabel')}
           rows={2}
-          className={inputCls}
+          className={`${inputCls} animate-rise-sm`}
           onBlur={(e) => {
             setEditingNote(false);
             const value = e.target.value.trim();
@@ -234,7 +234,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions, initial
       </div>
 
       {forking !== null && (
-        <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); void submitFork(); }}>
+        <form className="animate-rise-sm flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); void submitFork(); }}>
           <input autoFocus value={forking} onChange={(e) => setForking(e.target.value)}
             aria-label={t('projectsPdm.files.forkNameLabel')} className={`${inputCls} min-w-0 flex-1 basis-48`}
             onKeyDown={(e) => e.key === 'Escape' && setForking(null)} />
@@ -243,8 +243,12 @@ export function RevisionBlock({ item, revision, derivedOptions, actions, initial
       )}
 
       {preview && (
-        <ModelViewerModal libraryFileId={preview.id} title={preview.filename} fileType={preview.file_type}
-          onClose={() => setPreview(null)} />
+        <PartViewerModal
+          subject={{ kind: 'revision', projectId: actions.projectId, item, revision }}
+          title={item.name}
+          onClose={() => setPreview(null)}
+          onDownload={(f) => void actions.download(revision.id, f.id, f.filename)}
+        />
       )}
       {printing && (
         <PrintRevisionFlow

@@ -27,6 +27,7 @@ import { Box, ChevronRight, Flame, Folder, FolderInput, FolderOpen, FolderPlus, 
 import { api } from '../../../api/client';
 import type { ProjectCatalogItem, ProjectFolder } from '../../../api/client';
 import { ContextMenu } from '../../ContextMenu';
+import { Tooltip } from '../../Tooltip';
 import type { ContextMenuItem } from '../../ContextMenu';
 import { focusRingCls, inputCls } from '../../formStyles';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
@@ -361,11 +362,13 @@ function FolderRow({
         </FolderRowBody>
       </button>
       {canUpdate && (
-        <button type="button" aria-label={t('projectsPdm.catalog.folderActions')} title={t('projectsPdm.catalog.folderActions')} aria-haspopup="menu"
-          onClick={(e) => onOpenMenu(folder, e.currentTarget)}
-          className={`rounded p-1 text-bambu-gray opacity-60 transition-opacity duration-100 hover:bg-bambu-dark-tertiary hover:text-white group-hover:opacity-100 ${focusRingCls}`}>
-          <MoreVertical className="h-4 w-4" />
-        </button>
+        <Tooltip content={t('projectsPdm.catalog.folderActions')} side="bottom" align="end">
+          <button type="button" aria-label={t('projectsPdm.catalog.folderActions')} aria-haspopup="menu"
+            onClick={(e) => onOpenMenu(folder, e.currentTarget)}
+            className={`rounded p-1 text-bambu-gray opacity-60 transition-opacity duration-100 hover:bg-bambu-dark-tertiary hover:text-white group-hover:opacity-100 ${focusRingCls}`}>
+            <MoreVertical className="h-4 w-4" />
+          </button>
+        </Tooltip>
       )}
       {movingFolder === folder.id && (
         <div className="animate-rise-sm flex basis-full items-center gap-2 py-1 text-xs text-bambu-gray" onClick={(e) => e.stopPropagation()}>

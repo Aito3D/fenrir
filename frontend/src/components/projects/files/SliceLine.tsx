@@ -1,11 +1,13 @@
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, CheckCircle2, RotateCw, Upload } from 'lucide-react';
+import { AlertCircle, RotateCw, Upload } from 'lucide-react';
 import { focusRingCls } from '../../formStyles';
 import type { RevisionSliceState } from './useRevisionSlice';
 
-// `changed`: the state moved since the card mounted, so the new line fades in (and a
-// fresh "Sliced" gives its check one press). A page load never animates.
-// `onUpload`: the hand-slice fallback of a failed slice (upload the .gcode.3mf yourself).
+// The words under a card for a revision that is NOT simply sliced: slicing progress, a failed
+// slice with its retry and hand-slice fallback, or "not sliced yet" with a Slice link. A sliced
+// revision says nothing here — the card's picture carries the state as a glyph.
+// `changed`: the state moved since the card mounted, so the new line fades in. A page load never
+// animates. `onUpload`: the hand-slice fallback of a failed slice (upload the .gcode.3mf yourself).
 export function SliceLine({ state, percent, error, onRetry, onUpload, changed }: {
   changed: boolean;
   state: RevisionSliceState;
@@ -55,15 +57,16 @@ export function SliceLine({ state, percent, error, onRetry, onUpload, changed }:
   }
   if (state === 'none') {
     return (
-      <div className={`mt-1 flex items-center gap-1 text-amber-400 ${enter}`}>
-        <AlertCircle className="h-3 w-3" aria-hidden />{t('projectsPdm.files.notSliced')}
+      <div className={`mt-1 flex flex-wrap items-center gap-x-2 text-amber-400 ${enter}`}>
+        <span className="flex items-center gap-1"><AlertCircle className="h-3 w-3" aria-hidden />{t('projectsPdm.files.notSliced')}</span>
+        {onRetry && (
+          <button type="button" onClick={onRetry}
+            className={`inline-flex min-h-[44px] items-center gap-1 rounded underline md:min-h-0 ${focusRingCls}`}>
+            {t('slice.action')}
+          </button>
+        )}
       </div>
     );
   }
-  return (
-    <div className={`mt-1 flex items-center gap-1 text-bambu-green ${enter}`}>
-      <CheckCircle2 className={`h-3 w-3 ${changed ? 'animate-slice-done' : ''}`} aria-hidden />
-      <span>{t('projectsPdm.files.sliced')}</span>
-    </div>
-  );
+  return null;
 }

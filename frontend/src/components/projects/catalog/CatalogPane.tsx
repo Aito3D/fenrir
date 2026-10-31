@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import type { ViewerLinkState } from '../../viewer/viewerLink';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Box, Flame, Folder, Tag, User } from 'lucide-react';
 import { api } from '../../../api/client';
@@ -13,7 +14,17 @@ import { folderPath } from './catalogRules';
 /** The selected project: its facts (no printer line: each file carries its own setup), then the
  *  project page's own printing-files panel (same cards, Print, preview, download and upload).
  *  The title renames in place; "Open project" goes to the full page. */
-export function CatalogPane({ item, folders }: { item: ProjectCatalogItem; folders: ProjectFolder[] }) {
+export function CatalogPane({
+  item,
+  folders,
+  autoOpen = null,
+  onAutoOpened,
+}: {
+  item: ProjectCatalogItem;
+  folders: ProjectFolder[];
+  autoOpen?: { itemId: number; tab: 'model' | 'toolpath'; state?: ViewerLinkState | null } | null;
+  onAutoOpened?: () => void;
+}) {
   const { t } = useTranslation();
   const path = folderPath(folders, item.folder_id);
   const printed = item.target_count
@@ -57,7 +68,7 @@ export function CatalogPane({ item, folders }: { item: ProjectCatalogItem; folde
           {t('projectsPdm.catalog.openProject')}<ArrowRight className="h-3.5 w-3.5" aria-hidden />
         </Link>
       </div>
-      <ProjectFilesPanel projectId={item.id} placeholder={<FilesSkeleton />} />
+      <ProjectFilesPanel projectId={item.id} placeholder={<FilesSkeleton />} autoOpen={autoOpen} onAutoOpened={onAutoOpened} />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ViewerLinkState } from '../../viewer/viewerLink';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ProjectItemOut, ProjectSection, ProjectTreeResponse } from '../../../api/client';
@@ -14,7 +15,18 @@ import { useDerivedOptions } from './useDerivedOptions';
 import { useProjectTree } from '../projectQueries';
 
 /** `placeholder` shows until the tree is loaded (the catalog pane's skeleton); nothing by default. */
-export function ProjectFilesPanel({ projectId, placeholder = null }: { projectId: number; placeholder?: ReactNode }) {
+export function ProjectFilesPanel({
+  projectId,
+  placeholder = null,
+  autoOpen = null,
+  onAutoOpened,
+}: {
+  projectId: number;
+  placeholder?: ReactNode;
+  /** A copied link (`?file=<item>&tab=`): open that item's viewer once the tree is here. */
+  autoOpen?: { itemId: number; tab: 'model' | 'toolpath'; state?: ViewerLinkState | null } | null;
+  onAutoOpened?: () => void;
+}) {
   const actions = useFileActions(projectId);
   // While a revision slices, the tree is polled so its card turns Sliced / Slice failed by itself.
   const { data: tree } = useProjectTree(projectId, { refetchInterval: (query) => (anySlicing(query.state.data) ? 3000 : false) });
@@ -30,7 +42,7 @@ export function ProjectFilesPanel({ projectId, placeholder = null }: { projectId
   return (
     <div className="space-y-3">
       {ENABLED_SECTIONS.map((section) => (
-        <SectionBlock key={section} section={section} items={bySection.get(section) ?? []} actions={actions} />
+        <SectionBlock key={section} section={section} items={bySection.get(section) ?? []} actions={actions} autoOpen={autoOpen} onAutoOpened={onAutoOpened} />
       ))}
       {legacy.length > 0 && <OlderFiles sections={legacy} derivedOptions={derivedOptions} actions={actions} />}
       {actions.reslice.printNext && (
@@ -71,7 +83,7 @@ function OlderFiles({
         </h3>
       </div>
       {open && (
-        <div className="space-y-3 px-2 pb-2">
+        <div className="animate-rise-sm space-y-3 px-2 pb-2">
           {sections.map((s) => (
             <div key={s.section} className="space-y-2">
               <h4 className="px-1 text-xs font-semibold uppercase tracking-wide text-bambu-gray">{t(SECTION_LABEL_KEYS[s.section])}</h4>

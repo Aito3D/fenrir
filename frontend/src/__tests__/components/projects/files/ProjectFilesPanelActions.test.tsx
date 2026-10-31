@@ -22,10 +22,10 @@ import {
 import { reachesDocument } from '../../../dragHelpers';
 import { holdToConfirm } from '../../../holdHelpers';
 
-vi.mock('../../../../components/ModelViewerModal', () => ({
-  ModelViewerModal: ({ title, libraryFileId, onClose }: { title: string; libraryFileId: number; onClose: () => void }) => (
+vi.mock('../../../../components/viewer/PartViewerModal', () => ({
+  PartViewerModal: ({ title, subject, onClose }: { title: string; subject: { kind: string; revision?: { files: { id: number }[] } }; onClose: () => void }) => (
     <div data-testid="model-viewer-modal">
-      {`${title}#${libraryFileId}`}
+      {`${title}#${subject.kind}#${subject.revision?.files[0]?.id ?? ''}`}
       <button type="button" onClick={onClose}>close viewer</button>
     </div>
   ),
@@ -296,7 +296,8 @@ describe('ProjectFilesPanel actions', () => {
     const fileRow = within(screen.getByTestId('revision-4')).getByText('gabarit.3mf').closest('li')!;
     expect(within(fileRow).getByText('3.0 MB')).toBeInTheDocument();
     await userEvent.click(within(fileRow).getByRole('button', { name: 'Preview' }));
-    expect(screen.getByTestId('model-viewer-modal')).toHaveTextContent('gabarit.3mf#70');
+    // The part viewer opens on the revision (model + toolpath), titled by the item.
+    expect(screen.getByTestId('model-viewer-modal')).toHaveTextContent('Gabarit#revision#70');
     await userEvent.click(screen.getByRole('button', { name: 'close viewer' }));
     expect(screen.queryByTestId('model-viewer-modal')).not.toBeInTheDocument();
     expect(mutations()).toEqual([]);

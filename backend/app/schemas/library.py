@@ -208,6 +208,7 @@ class FileResponse(BaseModel):
     filament_vendor: str | None = None
     total_layers: int | None = None
     layer_height: float | None = None
+    nozzle_diameter: float | None = None
     object_count: int | None = None
 
     class Config:
@@ -256,6 +257,7 @@ class FileListResponse(BaseModel):
     filament_vendor: str | None = None
     total_layers: int | None = None
     layer_height: float | None = None
+    nozzle_diameter: float | None = None
     object_count: int | None = None
 
     # Tags assigned to this file (#1268). Empty list when the file has none —

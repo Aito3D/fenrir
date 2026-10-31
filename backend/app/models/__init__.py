@@ -55,6 +55,7 @@ from backend.app.models.printer_sensor_history import PrinterSensorHistory
 from backend.app.models.project import Project
 from backend.app.models.project_folder import ProjectFolder
 from backend.app.models.project_item import ProjectItem, ProjectRevision
+from backend.app.models.project_pin import ProjectRevisionPin
 from backend.app.models.project_tag import ProjectTag
 from backend.app.models.scheduled_drying import ScheduledDrying
 from backend.app.models.settings import Settings
@@ -110,6 +111,7 @@ __all__ = [
     "NotificationLockScreenWidget",
     "Project",
     "ProjectFolder",
+    "ProjectRevisionPin",
     "ProjectTag",
     "ProjectItem",
     "ProjectRevision",

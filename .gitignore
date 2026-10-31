@@ -112,3 +112,6 @@ test_pipeline_run_1.3mf
 htmlcov/
 
 feature_votes.sh
+
+# Dev data: the PDM project storage root (settings.base_dir/projects)
+/projects/

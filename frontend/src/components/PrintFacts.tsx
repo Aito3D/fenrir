@@ -17,6 +17,7 @@ export interface PrintFileFacts {
   sliced_for_model?: string | null;
   total_layers?: number | null;
   layer_height?: number | null;
+  nozzle_diameter?: number | null;
   object_count?: number | null;
 }
 

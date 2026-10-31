@@ -45,6 +45,15 @@ _ROUTES = [
     ("PATCH", "/projects/revisions/987654", {"json": {"note": "n"}}, [(P.PROJECTS_UPDATE,)]),
     ("DELETE", "/projects/revisions/987654", {}, [(P.PROJECTS_DELETE,)]),
     ("GET", "/projects/revisions/987654/download", {}, [(P.PROJECTS_READ,)]),
+    # the part viewer's pinned notes (2026-10-31)
+    ("GET", "/projects/revisions/987654/pins", {}, [(P.PROJECTS_READ,)]),
+    (
+        "POST",
+        "/projects/revisions/987654/pins",
+        {"json": {"x": 1, "y": 2, "z": 3, "text": "n"}},
+        [(P.PROJECTS_UPDATE,)],
+    ),
+    ("DELETE", "/projects/revisions/pins/987654", {}, [(P.PROJECTS_UPDATE,)]),
     (
         "POST",
         "/projects/987654/import-library-files",
@@ -211,6 +220,9 @@ _KEY_MATRIX = {
     "PATCH /projects/revisions/987654": (404, _MANAGE),
     "DELETE /projects/revisions/987654": (404, _MANAGE),
     "GET /projects/revisions/987654/download": (404, _READ),
+    "GET /projects/revisions/987654/pins": (404, _READ),
+    "POST /projects/revisions/987654/pins": (404, _MANAGE),
+    "DELETE /projects/revisions/pins/987654": (404, _MANAGE),
     "POST /projects/987654/import-library-files": (404, _EVERY),
     "POST /projects/revisions/987654/reslice": (404, _EVERY),
     "POST /projects/revisions/987654/slice": (404, _MANAGE),

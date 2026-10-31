@@ -199,6 +199,7 @@ const DE_COGNATES = [
 
 // French cognates — many UI labels overlap with English exactly.
 const FR_COGNATES = [
+  'Perspective', '{{count}} triangle', '{{count}} triangles', 'Photos',  // partViewer — same words in French
   'via {{name}}',  // projectsPdm.reslice.viaPipeline
   'Message',  // aito.track.paymentMethods.appMessage — same word in French
   'Auto ({{resolved}})', 'Backend & Auth',  // real words/terms in this locale
@@ -617,6 +618,7 @@ const UK_COGNATES = [
 // are used untranslated by Dutch slicer users. Each entry below was
 // checked individually against the Dutch translation in #2891.
 const NL_COGNATES = [
+  'Bed',  // partViewer.print.bed — same word in Dutch
   'via {{name}}',  // projectsPdm.reslice.viaPipeline
   'Machines', 'Machines: {{n}}',  // maintenance.hours.* — same word in Dutch
   '<b>{{count}}</b> project', // aito.clientHistoryProjects_one: the Dutch singular is the same word

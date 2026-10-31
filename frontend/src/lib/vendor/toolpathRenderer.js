@@ -48,18 +48,23 @@ const le = [
   6
   // back spike
 ], U = {
-  0: [0.42, 0.45, 0.5],
-  1: [0.85, 0.51, 0.17],
-  2: [0.21, 0.45, 0.76],
-  3: [0.35, 0.75, 0.85],
-  4: [0.16, 0.68, 0.4],
-  5: [0.66, 0.42, 0.85],
-  6: [0.55, 0.45, 0.35],
-  7: [0.95, 0.85, 0.25],
-  8: [0.9, 0.35, 0.65],
-  9: [0.9, 0.25, 0.25],
-  10: [0.6, 0.82, 0.55],
-  11: [0.3, 0.72, 0.7]
+  // Bambu Studio's feature colours (Extrusion_Role_Colors), by ToolpathType index (Fenrir 2026-10-31).
+  0: [0.42, 0.45, 0.5],   // travel
+  1: [1, 0.9, 0.3],       // inner wall
+  2: [0.69, 0.19, 0.16],  // sparse infill
+  3: [0.59, 0.33, 0.8],   // internal solid infill
+  4: [0, 0.53, 0.43],     // skirt / brim
+  5: [0, 1, 0],           // support
+  6: [0, 0.5, 0],         // raft (support interface green)
+  7: [1, 1, 1],           // gap fill
+  8: [0.9, 0.35, 0.65],   // thin wall
+  9: [0.3, 0.5, 0.73],    // bridge
+  10: [1, 0.55, 0.41],    // ironing
+  11: [0.37, 0.82, 0.58], // prime tower
+  12: [1, 0.49, 0.22],    // outer wall
+  13: [0.12, 0.12, 1],    // overhang wall
+  14: [0.94, 0.25, 0.25], // top surface
+  15: [0.4, 0.36, 0.78]   // bottom surface
 };
 function ie(t) {
   const i = Math.round(t[0] * 255), s = Math.round(t[1] * 255), n = Math.round(t[2] * 255);

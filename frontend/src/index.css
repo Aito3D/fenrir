@@ -3279,6 +3279,37 @@ tbody .calc-table-row:hover {
   animation: catalog-receive 800ms ease-out;
 }
 
+/* The pane's file cards settle in when a project is selected: a short rise in a quick
+   cascade (--reveal-delay per card, 25ms steps capped by SectionBlock). Lighter and faster
+   than .animate-rise so arrow-key browsing never waits on it. */
+@keyframes catalog-card-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.catalog-card-in {
+  animation: catalog-card-in 220ms var(--ease-signature) backwards;
+  animation-delay: var(--reveal-delay, 0ms);
+}
+
+/* A file card's details tray on its way out (ItemDetailsTray `data-leaving`): back down the
+   8px it rose on .animate-rise, on the exit curve at the 150ms exit beat (TRAY_LEAVE_MS, which
+   times the unmount — setTimeout, not animationend, as drawer-out documents). The cards below
+   reflow once it is gone; the motion covers the tray, not the grid. Reduced motion: fade only. */
+.files-tray[data-leaving] {
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition:
+    transform 0.15s var(--ease-exit),
+    opacity 0.12s ease-in;
+}
+@media (prefers-reduced-motion: reduce) {
+  .files-tray[data-leaving] {
+    transform: none;
+    transition: opacity 0.15s ease;
+  }
+}
+
 /* Everything grabs while a catalog drag is live — the overlay follows the
    pointer, so the cursor belongs to the drag, not to whatever is under it. */
 body.catalog-dragging,
@@ -3300,6 +3331,10 @@ body.catalog-dragging * {
   }
   .catalog-ghost-dropping {
     transition: none;
+  }
+  .catalog-card-in {
+    animation: catalog-reveal-fade 120ms ease-out backwards;
+    animation-delay: 0ms;
   }
   .catalog-receive .catalog-folder-icon {
     animation: none;

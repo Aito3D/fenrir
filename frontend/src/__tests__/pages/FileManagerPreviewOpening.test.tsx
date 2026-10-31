@@ -20,8 +20,8 @@ vi.mock('react-router-dom', async (importOriginal) => ({
   useNavigate: () => mockNavigate,
 }));
 
-vi.mock('../../components/ModelViewerModal', () => ({
-  ModelViewerModal: ({ title }: { title: string }) => <div data-testid="model-viewer-modal">{title}</div>,
+vi.mock('../../components/viewer/PartViewerModal', () => ({
+  PartViewerModal: ({ title }: { title: string }) => <div data-testid="model-viewer-modal">{title}</div>,
 }));
 vi.mock('../../components/PdfPreviewModal', () => ({
   PdfPreviewModal: ({ filename }: { filename: string }) => <div data-testid="pdf-preview-modal">{filename}</div>,

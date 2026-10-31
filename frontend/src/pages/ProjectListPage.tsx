@@ -7,10 +7,12 @@ import { FolderPlus, Plus } from 'lucide-react';
 import { api } from '../api/client';
 import { projectKeys } from '../components/projects/projectQueries';
 import { Button } from '../components/Button';
+import { Tooltip } from '../components/Tooltip';
 import { useAuth } from '../contexts/AuthContext';
 import { focusRingCls } from '../components/formStyles';
 import { NewProjectModal } from '../components/projects/NewProjectModal';
 import { CatalogPane } from '../components/projects/catalog/CatalogPane';
+import { decodeViewerState } from '../components/viewer/viewerLink';
 import { CatalogToolbar } from '../components/projects/catalog/CatalogToolbar';
 import type { CatalogStatus } from '../components/projects/catalog/CatalogToolbar';
 import { CatalogTree } from '../components/projects/catalog/CatalogTree';
@@ -70,6 +72,9 @@ export function ProjectListPage() {
   const [params, setParams] = useSearchParams();
   const q = params.get('q') ?? '';
   const selectedId = params.get('project') ? Number(params.get('project')) : null;
+  // A copied link to a file: `?file=<item>&tab=model|toolpath` opens its viewer once the pane is up.
+  const fileParam = params.get('file') ? Number(params.get('file')) : null;
+  const autoOpen = fileParam ? { itemId: fileParam, tab: params.get('tab') === 'toolpath' ? ('toolpath' as const) : ('model' as const), state: decodeViewerState(params.get('v')) } : null;
   const debounced = useDebouncedValue(q, 250);
   const [status, setStatus] = useState<CatalogStatus>('active');
   const [tagIds, setTagIds] = useState<number[]>([]);
@@ -236,7 +241,9 @@ export function ProjectListPage() {
           <div className="flex items-center justify-between gap-2 border-b border-bambu-dark-tertiary px-3 py-2 text-[11px] uppercase tracking-wide text-bambu-gray">
             <span>{t('projectsPdm.title')}</span>
             <span className="flex items-center gap-2 normal-case tracking-normal">
-              <span className="hidden xl:inline" title={t('projectsPdm.catalog.dragHint')}>{t('projectsPdm.catalog.keyboardHelp')}</span>
+              <Tooltip content={t('projectsPdm.catalog.dragHint')} side="bottom" align="end">
+                <span className="hidden xl:inline">{t('projectsPdm.catalog.keyboardHelp')}</span>
+              </Tooltip>
               {canUpdate && (
                 <button type="button" onClick={() => setCreating({ parentId: null })}
                   className={`btn-press flex items-center gap-1 rounded border border-bambu-dark-tertiary px-2 py-1 text-bambu-gray hover:text-white ${focusRingCls}`}>
@@ -274,7 +281,8 @@ export function ProjectListPage() {
         {wide && (
           <section className="animate-rise-lg [--enter-delay:240ms] min-h-[40vh] rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-4">
             {selected ? (
-              <CatalogPane key={selected.id} item={selected} folders={folders} />
+              <CatalogPane key={selected.id} item={selected} folders={folders} autoOpen={autoOpen}
+                onAutoOpened={() => { setParam('file', null); setParam('tab', null); setParam('v', null); }} />
             ) : (
               <p className="py-12 text-center text-sm text-bambu-gray">{t('projectsPdm.catalog.selectHint')}</p>
             )}
