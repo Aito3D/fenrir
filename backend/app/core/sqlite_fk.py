@@ -129,6 +129,7 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("print_log_entries", "created_by_id"),
         ("print_queue", "created_by_id"),
         ("project_items", "created_by_id"),  # Fenrir
+        ("project_revision_pins", "created_by_id"),  # Fenrir: the part viewer's notes keep their text, lose the author
         ("project_revisions", "created_by_id"),  # Fenrir
         ("project_revisions", "status_changed_by_id"),  # Fenrir
         ("scheduled_dryings", "created_by_id"),
