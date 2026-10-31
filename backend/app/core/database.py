@@ -360,6 +360,9 @@ NON_FK_ID_REFERENCES: dict[str, tuple[tuple[str, str], ...]] = {
         ("aito_tasks", "impression_printer_id"),  # Fenrir
     ),
     "api_keys": (("auth_ephemeral_tokens", "api_key_id"),),
+    # A merged archive's id keeps finding the archive it went into after its
+    # soft-deleted row is purged (archive redesign P2).
+    "print_archives": (("archive_aliases", "merged_archive_id"),),
 }
 
 
@@ -627,6 +630,7 @@ async def init_db():
         announcement,
         api_key,
         archive,
+        archive_alias,
         auth_ephemeral,
         bug_report,
         calculator,

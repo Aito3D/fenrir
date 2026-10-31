@@ -2,7 +2,7 @@
  * Tests for the ArchivesPage component.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
@@ -11,6 +11,7 @@ import { server } from '../mocks/server';
 import { estimateArchiveSalePrice } from '../../utils/archivePricing';
 import { formatMoney } from '../../utils/pricing';
 import { setAuthToken } from '../../api/client';
+import { useNavigate } from 'react-router-dom';
 
 const mockArchives = [
   {
@@ -1047,6 +1048,146 @@ describe('ArchivesPage', () => {
       fireEvent.click(globeButton);
 
       expect(openSpy).toHaveBeenCalledWith('https://printables.com/model/12345', '_blank');
+    });
+  });
+
+  // Archive redesign P2: merging changes and removes whole archives, so the
+  // button is there only for those the merge API lets through.
+  describe('merge duplicates button', () => {
+    // jsdom has no scrolling, and following an archive link scrolls to its
+    // card, later than the test that followed it may run.
+    const scrollIntoView = Element.prototype.scrollIntoView;
+    beforeAll(() => {
+      Element.prototype.scrollIntoView = vi.fn();
+    });
+    afterAll(() => {
+      Element.prototype.scrollIntoView = scrollIntoView;
+    });
+
+    const signInWith = (permissions: string[]) => {
+      setAuthToken('merge-token', 'session');
+      server.use(
+        http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('/api/v1/auth/me', () => HttpResponse.json({
+          id: 7,
+          username: 'operator',
+          is_active: true,
+          is_admin: false,
+          groups: [],
+          permissions,
+          created_at: '2026-08-18T00:00:00Z',
+        })),
+        http.get('*/api/v1/archives/merge-preview', () => HttpResponse.json({ groups: [] })),
+      );
+    };
+
+    it('opens the merge dialog for a user who may update and delete all archives', async () => {
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      render(<ArchivesPage />);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Merge duplicates' }));
+      expect(await screen.findByText('No duplicates to merge.')).toBeInTheDocument();
+    });
+
+    it('offers the merge while duplicates exist, until dismissed', async () => {
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      server.use(http.get('*/api/v1/archives/merge-count', () => HttpResponse.json({ groups: 3 })));
+      render(<ArchivesPage />);
+
+      const banner = await screen.findByTestId('merge-banner');
+      expect(banner).toHaveTextContent('3 group(s) of archives hold the same file');
+      fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+      await waitFor(() => expect(screen.queryByTestId('merge-banner')).toBeNull());
+      expect(window.localStorage.setItem).toHaveBeenCalledWith('archiveMergeBannerDismissed', '3');
+    });
+
+    it('offers it again once the count has changed since it was dismissed', async () => {
+      vi.mocked(window.localStorage.getItem).mockImplementation((key: string) =>
+        key === 'archiveMergeBannerDismissed' ? '3' : null,
+      );
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      server.use(http.get('*/api/v1/archives/merge-count', () => HttpResponse.json({ groups: 4 })));
+      render(<ArchivesPage />);
+
+      expect(await screen.findByTestId('merge-banner')).toBeInTheDocument();
+      vi.mocked(window.localStorage.getItem).mockReset();
+    });
+
+    it('counts again when the archives change', async () => {
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      let groups = 1;
+      server.use(http.get('*/api/v1/archives/merge-count', () => HttpResponse.json({ groups })));
+      // Following an archive link reloads the list, as a delete or a new print does.
+      function GoTo() {
+        const navigate = useNavigate();
+        return <button onClick={() => navigate('/archives?highlight=1')}>go</button>;
+      }
+      render(<><ArchivesPage /><GoTo /></>);
+      await screen.findByTestId('merge-banner');
+
+      groups = 0;
+      fireEvent.click(screen.getByText('go'));
+
+      await waitFor(() => expect(screen.queryByTestId('merge-banner')).toBeNull());
+    });
+
+    it('stays dismissed when merging some left fewer', async () => {
+      vi.mocked(window.localStorage.getItem).mockImplementation((key: string) =>
+        key === 'archiveMergeBannerDismissed' ? '3' : null,
+      );
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      let counted = false;
+      server.use(
+        http.get('*/api/v1/archives/merge-count', () => {
+          counted = true;
+          return HttpResponse.json({ groups: 2 });
+        }),
+      );
+      render(<ArchivesPage />);
+
+      await waitFor(() => expect(counted).toBe(true));
+      await screen.findByRole('button', { name: 'Merge duplicates' });
+      expect(screen.queryByTestId('merge-banner')).toBeNull();
+      vi.mocked(window.localStorage.getItem).mockReset();
+    });
+
+    it('stays dismissed while the count is the same', async () => {
+      vi.mocked(window.localStorage.getItem).mockImplementation((key: string) =>
+        key === 'archiveMergeBannerDismissed' ? '3' : null,
+      );
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      let counted = false;
+      server.use(
+        http.get('*/api/v1/archives/merge-count', () => {
+          counted = true;
+          return HttpResponse.json({ groups: 3 });
+        }),
+      );
+      render(<ArchivesPage />);
+
+      await waitFor(() => expect(counted).toBe(true));
+      await screen.findByRole('button', { name: 'Merge duplicates' });
+      expect(screen.queryByTestId('merge-banner')).toBeNull();
+      vi.mocked(window.localStorage.getItem).mockReset();
+    });
+
+    it('is offered in the Duplicates collection', async () => {
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      render(<ArchivesPage />);
+
+      await screen.findByRole('button', { name: 'Merge duplicates' });
+      expect(screen.queryByText(/can be merged into one, with every print of them/)).toBeNull();
+      fireEvent.change(screen.getByDisplayValue('All Archives'), { target: { value: 'duplicates' } });
+      expect(await screen.findByText(/can be merged into one, with every print of them/)).toBeInTheDocument();
+    });
+
+    it('is not there for a user who may only update all archives', async () => {
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_own']);
+      render(<ArchivesPage />);
+
+      await screen.findByText('Archives');
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Merge duplicates' })).toBeNull());
     });
   });
 

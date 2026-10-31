@@ -475,8 +475,10 @@ async def list_projects(
     actor: User | ApiKeyActor | None = RequestActor,
 ):
     """List all projects with basic stats."""
-    # Archive previews show only the archives the project's archive list shows
-    # the caller; the counts and totals cover every print.
+    # Archive previews show only archives on the caller's printers, each as
+    # its latest print left it (the project's archive list also shows those
+    # printed on one of theirs, as they see them); the counts and totals
+    # cover every print.
     preview_scope = visible_row_clauses(
         PrintArchive, printer_scope, actor, Permission.ARCHIVES_READ_ALL, Permission.ARCHIVES_READ_OWN
     )
@@ -1104,7 +1106,7 @@ async def list_project_archives(
         .offset(offset)
     )
     visible = visible_row_clauses(
-        PrintArchive, printer_scope, actor, Permission.ARCHIVES_READ_ALL, Permission.ARCHIVES_READ_OWN
+        PrintArchive, printer_scope, actor, Permission.ARCHIVES_READ_ALL, Permission.ARCHIVES_READ_OWN, by_runs=True
     )
     if visible is None:
         return []
@@ -1112,17 +1114,20 @@ async def list_project_archives(
     archives = result.scalars().all()
 
     # Import the response converter from archives module
-    from backend.app.api.routes.archives import _load_run_aggregates, archive_to_response
+    from backend.app.api.routes.archives import _load_run_aggregates, _scoped, archive_to_response
+    from backend.app.services.archive_scope import scoped_views
 
     # Load run aggregates so multi-run archives' time/accuracy badge is
     # suppressed consistently with the main archives list endpoint (#1608).
-    run_aggregates = await _load_run_aggregates(db, [a.id for a in archives])
+    run_aggregates = await _load_run_aggregates(db, [a.id for a in archives], printer_scope)
+    # As the archives list shows them to a caller limited to some printers.
+    views = await scoped_views(db, archives, printer_scope)
 
     # Fenrir: show which project revision / Aito task each print came from (one grouped lookup per page).
     labels = await _archive_trace_labels(db, archives)
     out = []
     for a in archives:
-        data = archive_to_response(a, run_aggregate=run_aggregates.get(a.id))
+        data = _scoped(archive_to_response(a, run_aggregate=run_aggregates.get(a.id)), views.get(a.id))
         data.update(labels[a.id])
         if not can_read_aito:  # Fenrir: the Aito order behind a print is aito:read data
             data.update(aito_task_id=None, order_id=None)

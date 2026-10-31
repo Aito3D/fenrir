@@ -977,6 +977,12 @@ export interface Archive {
   user_verdict_source: VerdictSource | null;
   user_verdict_at: string | null;
   confirm_requested: boolean;
+  // The run whose outcome this shows, when it shows one run of the archive
+  // (a plate printed on its own) rather than its latest (#1898).
+  run_id?: number | null;
+  // The latest print of the archive (among those the caller may see), whose
+  // figures the per-print fields show (archive redesign).
+  latest_run_id?: number | null;
   quantity: number;
   energy_kwh: number | null;
   energy_cost: number | null;
@@ -7108,7 +7114,8 @@ export const api = {
     const qs = params.toString();
     return request<ArchiveSlim[]>(`/archives/slim${qs ? `?${qs}` : ''}`);
   },
-  getArchive: (id: number) => request<Archive>(`/archives/${id}`),
+  getArchive: (id: number, runId?: number | null) =>
+    request<Archive>(`/archives/${id}${runId != null ? `?run_id=${runId}` : ''}`),
   getArchiveRuns: (id: number) => request<PrintLogResponse>(`/archives/${id}/runs`),
   /**
    * Pre-flight for the delete-confirm modal (#1734). Returns the number of
@@ -7150,6 +7157,8 @@ export const api = {
     // Which surface answered. The backend only accepts the sources a client
     // can honestly claim and defaults to 'api' when none is given.
     user_verdict_source?: 'dialog' | 'printer_card';
+    // The run the verdict / outcome is for; omitted means the latest run.
+    run_id?: number;
   }) =>
     request<Archive>(`/archives/${id}`, {
       method: 'PATCH',
@@ -7181,6 +7190,15 @@ export const api = {
     request<{ deleted: number; purge_stats: boolean }>('/archives/purge', {
       method: 'POST',
       body: JSON.stringify({ older_than_days: olderThanDays, purge_stats: purgeStats }),
+    }),
+  // Archives of one file merge into the oldest (archive redesign P2).
+  previewArchiveMerge: () => request<ArchiveMergePreview>('/archives/merge-preview'),
+  /** How many duplicate groups there are; cheap, for offering the merge. */
+  getArchiveMergeCount: () => request<{ groups: number }>('/archives/merge-count'),
+  mergeArchives: (survivorIds: number[]) =>
+    request<ArchiveMergeResult>('/archives/merge', {
+      method: 'POST',
+      body: JSON.stringify({ survivor_ids: survivorIds }),
     }),
   getArchivePurgeSettings: () =>
     request<ArchivePurgeSettings>('/archives/purge/settings'),
@@ -11081,6 +11099,32 @@ export interface ArchivePurgePreview {
   total_bytes: number;
   sample_filenames: string[];
   older_than_days: number;
+}
+
+export interface ArchiveMergeMember {
+  id: number;
+  print_name: string | null;
+  filename: string;
+  created_at: string | null;
+  run_count: number;
+}
+
+/** Why a group is left out: at work now, or holding files only one can keep. */
+export type ArchiveMergeSkip = 'busy' | 'conflicting_files' | 'failed' | 'not_a_group';
+
+export interface ArchiveMergeGroup {
+  survivor: ArchiveMergeMember;
+  merged: ArchiveMergeMember[];
+  skipped: ArchiveMergeSkip | null;
+}
+
+export interface ArchiveMergePreview {
+  groups: ArchiveMergeGroup[];
+}
+
+export interface ArchiveMergeResult {
+  merged: { survivor_id: number; merged_ids: number[] }[];
+  skipped: { survivor_id: number; reason: ArchiveMergeSkip }[];
 }
 
 export interface ArchivePurgeSettings {

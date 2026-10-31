@@ -36,24 +36,38 @@ def _may_receive(connection: WebSocket, printer_id: int | None) -> bool:
 _UNKNOWN_PRINTER = -1
 
 
-async def _archive_printer_id(archive_id: Any) -> int | None:
-    """The printer an archive belongs to (None: printer-less, seen by everyone)."""
+async def _archive_printer_ids(archive_id: Any) -> tuple[int | None, set[int]]:
+    """The printer an archive belongs to (None: printer-less, seen by everyone),
+    and the printers its prints ran on: plates of one archive print on
+    several, and each one's sockets see it (archive redesign)."""
     from sqlalchemy import select
 
     from backend.app.core.database import async_session
     from backend.app.models.archive import PrintArchive
+    from backend.app.models.print_log import PrintLogEntry
 
     if not isinstance(archive_id, int):
-        return _UNKNOWN_PRINTER
+        return _UNKNOWN_PRINTER, set()
     try:
         async with async_session() as db:
             row = (await db.execute(select(PrintArchive.printer_id).where(PrintArchive.id == archive_id))).first()
+            # The table: the ORM leaves printing runs out, and they count.
+            runs = PrintLogEntry.__table__
+            printed_on = set(
+                (
+                    await db.scalars(
+                        select(runs.c.printer_id)
+                        .where(runs.c.archive_id == archive_id, runs.c.printer_id.is_not(None))
+                        .distinct()
+                    )
+                ).all()
+            )
     except Exception:
         logger.exception("Could not look up the printer of archive %s for a live update", archive_id)
-        return _UNKNOWN_PRINTER
+        return _UNKNOWN_PRINTER, set()
     if row is None:
-        return _UNKNOWN_PRINTER
-    return row[0]
+        return _UNKNOWN_PRINTER, set()
+    return row[0], printed_on
 
 
 class ConnectionManager:
@@ -202,8 +216,17 @@ class ConnectionManager:
                 self._pending_eviction_closes.add(task)
                 task.add_done_callback(self._pending_eviction_closes.discard)
 
-    async def broadcast(self, message: dict[str, Any]):
-        """Broadcast a message to all connected clients.
+    async def broadcast(
+        self,
+        message: dict[str, Any],
+        *,
+        also_printers: set[int] | None = None,
+        also_message: dict[str, Any] | None = None,
+    ):
+        """Broadcast a message to all connected clients. ``also_printers``:
+        printers besides the message's whose sockets receive it too, as
+        ``also_message`` when given (one that doesn't name the message's
+        printer, which may be outside their scope).
 
         (T-020) The lock is only held to take a snapshot of
         ``active_connections`` before handing off to ``_fan_out`` — never
@@ -213,11 +236,21 @@ class ConnectionManager:
         async with self._lock:
             # A printer-bound message only reaches sockets whose stamped scope
             # (#1727) covers that printer; see _may_receive.
-            connections = [conn for conn in self.active_connections if _may_receive(conn, printer_id)]
-        if not connections:
+            connections = []
+            also_connections = []
+            for conn in self.active_connections:
+                if _may_receive(conn, printer_id):
+                    connections.append(conn)
+                elif any(_may_receive(conn, other) for other in also_printers or ()):
+                    also_connections.append(conn)
+        if not connections and not also_connections:
             return
         data = json.dumps(message)
-        await self._fan_out(connections, data)
+        if connections:
+            await self._fan_out(connections, data)
+        if also_connections:
+            also_data = json.dumps(also_message) if also_message is not None else data
+            await self._fan_out(also_connections, also_data)
 
     async def broadcast_aito(self, message: dict[str, Any]):
         """Broadcast an Aito board message (``aito_changed`` /
@@ -487,10 +520,15 @@ class ConnectionManager:
         just the changed fields, so the printer is looked up here when missing.
         As for a new archive, the message says no more than that.
         """
-        printer_id = archive.get("printer_id")
-        if not isinstance(printer_id, int):
-            printer_id = await _archive_printer_id(archive.get("id"))
-        await self.broadcast({"type": "archive_updated", "printer_id": printer_id, "data": {"printer_id": printer_id}})
+        printer_id, printed_on = await _archive_printer_ids(archive.get("id"))
+        if isinstance(archive.get("printer_id"), int):
+            printer_id = archive["printer_id"]
+        await self.broadcast(
+            {"type": "archive_updated", "printer_id": printer_id, "data": {"printer_id": printer_id}},
+            also_printers=printed_on,
+            # Sockets that see one of its prints only: not the archive's printer.
+            also_message={"type": "archive_updated", "data": {}},
+        )
 
     async def send_queue_item_uploading(
         self,
