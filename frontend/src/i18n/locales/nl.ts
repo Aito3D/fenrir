@@ -10433,6 +10433,7 @@ export default {
       removeFile: '{{name}} verwijderen',
       remove: 'Verwijderen',
       statusLabel: 'Status',
+      holdToChangeStatus: 'Houd 0,5 s vast om de status te wijzigen',
       statusWip: 'In uitvoering',
       statusValide: 'Goedgekeurd',
       statusObsolete: 'Verouderd',

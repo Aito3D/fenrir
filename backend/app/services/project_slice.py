@@ -642,6 +642,21 @@ async def _slice_revision(db: AsyncSession, revision_id: int, *, user_id: int | 
     )
 
 
+def _parsed_facts(path: Path) -> dict[str, Any]:
+    """What the library reads from a sliced 3MF (material, colours, layers, objects...), so the
+    revision card shows the same facts as a File Manager card. Best effort: {} when unreadable.
+    The caller's own facts (print time, grams, target model) override these."""
+    from backend.app.api.routes.library import _clean_3mf_metadata, _without_print_name
+    from backend.app.services.archive import ThreeMFParser
+
+    try:
+        cleaned = _clean_3mf_metadata(ThreeMFParser(path).parse())
+        return (_without_print_name(cleaned) if isinstance(cleaned, dict) else None) or {}
+    except Exception:
+        logger.warning("Could not read the facts of the slice at %s", path.name, exc_info=True)
+        return {}
+
+
 def _write_claimed(dest: Path, content: bytes) -> None:
     with project_files._open_claimed(dest) as writer:
         writer.write(content)
@@ -687,7 +702,7 @@ async def _store(
                     file_size=len(content),
                     file_hash=hashlib.sha256(content).hexdigest(),
                     thumbnail_path=None,
-                    file_metadata=metadata,
+                    file_metadata={**await asyncio.to_thread(_parsed_facts, dest), **metadata},
                 )
                 row.derived_slice = True
                 # The source id and the waiting items' print times and filament types are read from

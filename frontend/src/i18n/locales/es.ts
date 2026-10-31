@@ -10417,6 +10417,7 @@ export default {
       removeFile: 'Quitar {{name}}',
       remove: 'Quitar',
       statusLabel: 'Estado',
+      holdToChangeStatus: 'Mantén 0,5 s para cambiar el estado',
       statusWip: 'En curso',
       statusValide: 'Aprobado',
       statusObsolete: 'Obsoleto',

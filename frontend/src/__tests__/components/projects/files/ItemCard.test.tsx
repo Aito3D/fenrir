@@ -2,7 +2,7 @@
  *  the icon actions (no Re-slice), Open in slicer on the source file, and the details tray. */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useState } from 'react';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
@@ -22,7 +22,14 @@ vi.mock('../../../../components/projects/print/PrintRevisionFlow', () => ({
 }));
 
 const profile = { printer_model: 'X1C', nozzle_diameter: '0.4', layer_height: '0.2', filament_types: ['PETG'] };
-const sliced = file(90, 'bracket.gcode.3mf', { file_type: 'gcode.3mf', print_time_seconds: 8040, filament_used_grams: 38.4 });
+const sliced = file(90, 'bracket.gcode.3mf', {
+  file_type: 'gcode.3mf', print_time_seconds: 8040, filament_used_grams: 38.4, filament_type: 'PETG',
+  filament_color: '#ff0000', sliced_for_model: 'X1C', total_layers: 320, layer_height: 0.2, object_count: 2,
+});
+const calcFilaments = [{ id: 1, name: 'PETG basique', brand: '', material: 'PETG', cost_per_kg: 3731, sale_price_per_kg: 5596.5, margin_pct: 50, difficulty_pct: 150 }];
+const calcPrinters = [{ id: 1, name: 'X1C', purchase_price: 347000, lifetime_years: 2, daily_usage_hours: 5, power_watts: 400, repair_rate_pct: 30 }];
+const calcDefaults = { id: 1, electricity_tariff: 120, labor_rate_per_hour: 3000, consumables_packaging_flat: 30, failure_rate_pct: 30, prototype_rate_pct: 30,
+  ads_rate_pct: 5, filament_markup_pct: 5, global_markup_pct: 50, tax_pct: 13, default_difficulty_pct: 100, default_margin_over_cost_pct: 50, stuff_markup_pct: 20 };
 const bracket = (r2: Partial<Parameters<typeof rev>[0]> = {}): ProjectItemOut =>
   item(20, 'impression', 'Bracket', [
     rev({
@@ -117,6 +124,59 @@ describe('ItemCard', () => {
   it('a sliced or never-sliced revision has no "Upload sliced file"', () => {
     render(<Harness value={bracket()} />);
     expect(within(card()).queryByRole('button', { name: 'Upload sliced file' })).not.toBeInTheDocument();
+  });
+
+  it("shows the sliced file's facts like the archive card: layers, objects, material, colour", () => {
+    render(<Harness value={bracket()} />);
+    expect(within(card()).getByTestId('print-facts-layers')).toHaveTextContent('320 layers');
+    expect(within(card()).getByTestId('print-facts-objects')).toHaveTextContent('2 objects');
+    expect(within(card()).getByTestId('print-facts-material')).toHaveTextContent('PETG');
+    expect(within(card()).getByTestId('print-facts-material').querySelector('[title="#ff0000"]')).not.toBeNull();
+    // No calculator configured: no cost rows.
+    expect(within(card()).queryByTestId('print-facts-price')).not.toBeInTheDocument();
+  });
+
+  it('adds the calculator machine cost, energy cost and suggested price once the calculator is set up', async () => {
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(calcFilaments)),
+      http.get('/api/v1/calculator/printers/', () => HttpResponse.json(calcPrinters)),
+      http.get('/api/v1/calculator/defaults', () => HttpResponse.json(calcDefaults)),
+    );
+    render(<Harness value={bracket()} />);
+    const price = await within(card()).findByTestId('print-facts-price');
+    expect(price.textContent).toMatch(/\d/);
+    expect(within(card()).getByTestId('print-facts-machine-cost').textContent).toMatch(/\d/);
+    expect(within(card()).getByTestId('print-facts-energy-cost').textContent).toMatch(/\d/);
+  });
+
+  it('an unsliced revision shows no facts rows', () => {
+    render(<Harness value={bracket({ slice_status: null, sliced_file: null })} />);
+    expect(within(card()).queryByTestId('print-facts')).not.toBeInTheDocument();
+  });
+
+  it('holding the status chip for 0.5 s opens the status picker; a pick saves it', async () => {
+    server.use(
+      http.patch('/api/v1/projects/revisions/:id', async ({ params, request }) => {
+        calls.push(`status:${params.id}:${((await request.json()) as { status: string }).status}`);
+        return HttpResponse.json({});
+      }),
+    );
+    vi.useFakeTimers();
+    try {
+      render(<Harness value={bracket()} />);
+      const chip = within(card()).getByRole('button', { name: 'Status' });
+      expect(chip).toHaveTextContent('Approved');
+      fireEvent.pointerDown(chip);
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(screen.queryByText('In progress')).not.toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+      expect(screen.getByText('In progress')).toBeInTheDocument();
+      expect(screen.getByText('Obsolete')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+    fireEvent.click(screen.getByText('In progress'));
+    await waitFor(() => expect(calls).toEqual(['status:2:wip']));
   });
 
   it('a legacy sliced revision (no server slice state) reads as sliced', () => {

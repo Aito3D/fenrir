@@ -112,6 +112,7 @@ from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
 from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_missing
 from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
 from backend.app.services.print_defaults import default_print_options
+from backend.app.services.print_file_facts import extra_display_facts
 from backend.app.services.process_overrides import apply_process_overrides
 from backend.app.services.queue_announcements import announce_queue_jobs_added
 from backend.app.services.slice_output_check import (
@@ -2685,6 +2686,7 @@ async def list_files(
                 filament_used_grams=filament_grams,
                 filament_type=filament_type,
                 sliced_for_model=sliced_for_model,
+                **extra_display_facts(f.file_metadata),
                 tags=[TagSummary(id=t.id, name=t.name) for t in f.tags],
                 variant_group_id=f.variant_group_id,
                 variant_count=variant_counts.get(f.variant_group_id, 0) if f.variant_group_id else 0,
@@ -6163,6 +6165,7 @@ async def get_file(
         filament_used_grams=filament_grams,
         filament_type=filament_type,
         sliced_for_model=sliced_for_model,
+        **extra_display_facts(file.file_metadata),
     )
 
 

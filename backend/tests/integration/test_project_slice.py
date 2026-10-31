@@ -64,9 +64,22 @@ def _sliced_3mf() -> bytes:
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr(entry("Metadata/plate_1.gcode"), "; plate 1\nG28\n")
+        zf.writestr(
+            entry("Metadata/plate_1.gcode"), "; HEADER_BLOCK_START\n; total layer number: 42\n; HEADER_BLOCK_END\nG28\n"
+        )
         zf.writestr(entry("Metadata/plate_2.gcode"), "; plate 2\nG28\n")
-        zf.writestr(entry("Metadata/project_settings.config"), '{"printer_model": "Bambu Lab X1C"}')
+        zf.writestr(
+            entry("Metadata/project_settings.config"),
+            '{"printer_model": "Bambu Lab X1C", "layer_height": "0.2", '
+            '"filament_type": ["PETG", "PETG"], "filament_colour": ["#FF0000", "#00FF00"]}',
+        )
+        # One plate listed: the parser keeps its objects at file level (the card's object count).
+        zf.writestr(
+            entry("Metadata/slice_info.config"),
+            '<config><plate><metadata key="index" value="1"/>'
+            '<object identify_id="1" name="Stand" skipped="false"/>'
+            '<object identify_id="2" name="Stand" skipped="false"/></plate></config>',
+        )
     return buf.getvalue()
 
 
@@ -174,11 +187,14 @@ async def test_upload_starts_slice_and_stores_hidden_gcode(async_client: AsyncCl
     assert row.id == out["sliced_file"]["id"]
     assert row.file_type == "gcode.3mf"
     assert row.revision_id == rev["id"] and row.project_id == project["id"]
-    assert row.file_metadata == {
+    # The slice's own facts (layers, material, colours...) ride along; these three are the job's.
+    _expected = {
         "print_time_seconds": 3600,
         "filament_used_grams": 12.5,
         "sliced_for_model": "X1C",
     }
+    assert {k: v for k, v in row.file_metadata.items() if k in _expected} == _expected
+    assert row.file_metadata["total_layers"] == 42
     path = to_absolute_path(row.file_path)
     assert path is not None and path.read_bytes() == _sliced_3mf()
     assert path.parent.name == "R1"
@@ -193,6 +209,13 @@ async def test_sliced_file_carries_its_facts_and_downloads(async_client: AsyncCl
     out = await _tree_revision(async_client, project["id"], rev["id"])
     sliced = out["sliced_file"]
     assert (sliced["print_time_seconds"], sliced["filament_used_grams"]) == (3600, 12.5)
+    # The rest of the facts the card shows are read from the slice itself, like a library file's.
+    assert (sliced["total_layers"], sliced["layer_height"], sliced["object_count"]) == (42, 0.2, 2)
+    assert (sliced["filament_type"], sliced["filament_color"], sliced["sliced_for_model"]) == (
+        "PETG",
+        "#FF0000,#00FF00",
+        "X1C",
+    )
     assert (out["files"][0]["print_time_seconds"], out["files"][0]["filament_used_grams"]) == (None, None)
 
     res = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download?file_id={sliced['id']}")

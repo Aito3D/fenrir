@@ -65,6 +65,7 @@ from backend.app.schemas.project_files import (
 from backend.app.services import project_storage
 from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
+from backend.app.services.print_file_facts import display_facts
 from backend.app.services.project_print_trace import revision_print_counts
 from backend.app.services.project_revisions import (
     find_revision_bundle,
@@ -1763,9 +1764,6 @@ def _outdated_by(
 
 
 def _file_out(f: LibraryFile) -> ProjectFileOut:
-    meta = f.file_metadata if isinstance(f.file_metadata, dict) else {}
-    time = meta.get("print_time_seconds")
-    grams = meta.get("filament_used_grams")
     return ProjectFileOut(
         id=f.id,
         filename=f.filename,
@@ -1774,8 +1772,7 @@ def _file_out(f: LibraryFile) -> ProjectFileOut:
         file_hash=f.file_hash,
         has_thumbnail=bool(f.thumbnail_path),
         created_at=f.created_at,
-        print_time_seconds=int(time) if isinstance(time, (int, float)) and time > 0 else None,
-        filament_used_grams=float(grams) if isinstance(grams, (int, float)) and grams > 0 else None,
+        **display_facts(f.file_metadata),
     )
 
 

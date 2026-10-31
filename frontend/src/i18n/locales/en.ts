@@ -10465,6 +10465,7 @@ export default {
       removeFile: 'Remove {{name}}',
       remove: 'Remove',
       statusLabel: 'Status',
+      holdToChangeStatus: 'Hold 0.5s to change the status',
       statusWip: 'In progress',
       statusValide: 'Approved',
       statusObsolete: 'Obsolete',

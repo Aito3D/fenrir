@@ -2596,6 +2596,24 @@ describe('FileManagerPage', () => {
       });
     });
 
+    it("shows the sliced file's facts rows on the card: costs and price, layers, objects, colours", async () => {
+      mockCalculator();
+      server.use(
+        http.get('/api/v1/library/files', () =>
+          HttpResponse.json([{ ...mockFiles[0], sliced_for_model: 'H2S', total_layers: 150, layer_height: 0.2, object_count: 3, filament_color: '#112233' }]),
+        ),
+      );
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
+      const price = await screen.findByTestId('print-facts-price');
+      expect(price.textContent).toMatch(/\d/);
+      expect(screen.getByTestId('print-facts-layers')).toHaveTextContent('150 layers');
+      expect(screen.getByTestId('print-facts-objects')).toHaveTextContent('3 objects');
+      // The card already names the material on its own line: only the colour dots here.
+      expect(screen.getByTestId('print-facts-material')).not.toHaveTextContent('PLA');
+      expect(screen.getByTestId('print-facts-material').querySelector('[title="#112233"]')).not.toBeNull();
+    });
+
     it('disables the entry for a file with no weight or duration', async () => {
       mockCalculator();
       const user = userEvent.setup();

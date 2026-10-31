@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Projects Catalog Rework</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  bg: '#0c1016', surf: '#141b23', line: '#212c37', ink: '#e9eff6', sub: '#93a4b6', mute: '#6f8496', acc: '#14b8a6',
+} } } };
+</script>
+<style>
+  html { font-size: 14.4px; }
+  body { background: #0c1016; color: #e9eff6; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  [data-lucide] { width: 1em; height: 1em; }
+  .thumb img { filter: brightness(1.25) contrast(1.1); }
+  .h1 img { filter: brightness(1.25) contrast(1.1) hue-rotate(160deg); }
+  .h2 img { filter: brightness(1.15) contrast(1.1) hue-rotate(250deg) saturate(.6); }
+  .h3 img { filter: brightness(1.2) contrast(1.1) hue-rotate(40deg) saturate(.8); }
+  .tab[aria-selected=true] { background: #14b8a6; color: #0c1016; }
+  .chip[aria-pressed=true] { background: rgba(20,184,166,.18); border-color: #14b8a6; color: #fff; }
+  .row[aria-selected=true] { background: rgba(20,184,166,.10); box-shadow: inset 3px 0 0 #14b8a6; }
+  mark { background: rgba(20,184,166,.35); color: inherit; border-radius: 2px; }
+  .kbd { font: 11px ui-monospace, monospace; border: 1px solid #212c37; border-bottom-width: 2px; padding: 0 5px; border-radius: 4px; color: #93a4b6; }
+  .drawer { transition: transform .22s cubic-bezier(.2,.8,.2,1); }
+</style>
+</head>
+<body class="min-h-screen">
+<div class="flex">
+  <aside class="hidden lg:flex w-[200px] shrink-0 min-h-screen flex-col gap-1 border-r border-line bg-[#0e131a] p-3 text-sm text-sub">
+    <div class="px-2 py-3 text-lg font-bold tracking-widest text-ink">AITO<span class="text-acc">3D</span></div>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="printer"></i>Printers</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="archive"></i>Archives</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="list-ordered"></i>Print Queue</a>
+    <a class="px-2 py-2 rounded bg-acc text-bg font-medium flex items-center gap-2"><i data-lucide="folder-kanban"></i>Projects</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="kanban-square"></i>Aito</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="folder-open"></i>File Manager</a>
+  </aside>
+
+  <main class="flex-1 min-w-0 p-4 md:p-6">
+    <!-- demo switch -->
+    <div class="flex flex-wrap items-center gap-2 mb-4 text-xs text-mute">
+      <span>Demo — static mockup, search and selection work on sample data ·</span>
+      <div class="flex gap-2" role="tablist">
+        <button class="tab px-3 py-1.5 rounded-md text-sm border border-line" data-v="a" aria-selected="false">A · Catalog + file drawer</button>
+        <button class="tab px-3 py-1.5 rounded-md text-sm border border-line" data-v="b" aria-selected="true">B · Browser (list + files)</button>
+        <button class="tab px-3 py-1.5 rounded-md text-sm border border-line" data-v="c" aria-selected="false">C · Dense table</button>
+      </div>
+    </div>
+
+    <!-- shared header + search -->
+    <header class="flex flex-wrap items-start justify-between gap-3 mb-3">
+      <div>
+        <h1 class="text-2xl font-bold">Projects</h1>
+        <p class="text-sub text-sm" id="count-line">14 projects · 3 in production</p>
+      </div>
+      <button class="px-3 py-2 rounded-lg bg-acc text-bg text-sm font-medium flex items-center gap-2"><i data-lucide="plus"></i>New project</button>
+    </header>
+
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <label class="relative flex-1 min-w-[18rem]">
+        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 text-mute"></i>
+        <input id="q" type="search" autocomplete="off" placeholder="Search code, title, client, order #, file, printer, material…"
+          class="w-full rounded-lg border border-line bg-surf pl-9 pr-16 py-2 text-sm placeholder:text-mute focus:outline-none focus:border-acc">
+        <span class="absolute right-3 top-1/2 -translate-y-1/2 kbd">/</span>
+      </label>
+      <div class="flex flex-wrap gap-1.5" id="chips">
+        <button class="chip px-2.5 py-1 rounded-md border border-line text-xs text-sub" data-f="prod" aria-pressed="false"><i data-lucide="flame" class="inline mr-1 text-amber-300"></i>In production</button>
+        <button class="chip px-2.5 py-1 rounded-md border border-line text-xs text-sub" data-f="ready" aria-pressed="false"><i data-lucide="check-circle-2" class="inline mr-1 text-acc"></i>Ready to print</button>
+        <button class="chip px-2.5 py-1 rounded-md border border-line text-xs text-sub" data-f="nofile" aria-pressed="false"><i data-lucide="file-x" class="inline mr-1"></i>No file yet</button>
+        <span class="w-px h-5 bg-line mx-1 self-center"></span>
+        <button class="chip px-2.5 py-1 rounded-md border border-line text-xs text-sub" data-m="PETG" aria-pressed="false">PETG</button>
+        <button class="chip px-2.5 py-1 rounded-md border border-line text-xs text-sub" data-m="PLA" aria-pressed="false">PLA</button>
+        <button class="chip px-2.5 py-1 rounded-md border border-line text-xs text-sub" data-m="ASA" aria-pressed="false">ASA</button>
+        <button class="chip px-2.5 py-1 rounded-md border border-line text-xs text-sub" data-m="PC" aria-pressed="false">PC</button>
+      </div>
+      <select id="sort" class="rounded-lg border border-line bg-surf px-2 py-2 text-xs text-sub">
+        <option value="activity">Sort: last activity</option>
+        <option value="code">Sort: code</option>
+        <option value="name">Sort: title</option>
+        <option value="printed">Sort: most printed</option>
+      </select>
+      <select id="status" class="rounded-lg border border-line bg-surf px-2 py-2 text-xs text-sub">
+        <option>Active</option><option>Completed</option><option>Archived</option><option>All</option>
+      </select>
+    </div>
+
+    <!-- A: catalog grid + drawer -->
+    <section id="view-a">
+      <div id="grid-a" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3"></div>
+    </section>
+
+    <!-- B: browser -->
+    <section id="view-b" class="hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-[minmax(320px,2fr)_3fr] gap-4">
+        <div class="rounded-xl border border-line bg-surf overflow-hidden">
+          <div class="px-3 py-2 text-[11px] uppercase tracking-wide text-mute border-b border-line flex items-center justify-between gap-2">
+            <span>Projects</span>
+            <span class="flex items-center gap-2"><span class="normal-case tracking-normal"><span class="kbd">↑</span> <span class="kbd">↓</span> <span class="kbd">↵</span> open · drag a project onto a folder</span>
+            <button data-newfolder class="normal-case tracking-normal px-2 py-1 rounded border border-line text-sub hover:text-ink flex items-center gap-1"><i data-lucide="folder-plus"></i>New folder</button></span>
+          </div>
+          <ul id="list-b" class="max-h-[70vh] overflow-y-auto divide-y divide-line"></ul>
+        </div>
+        <div id="pane-b" class="rounded-xl border border-line bg-surf p-4 min-h-[40vh]"></div>
+      </div>
+    </section>
+
+    <!-- C: table -->
+    <section id="view-c" class="hidden">
+      <div class="rounded-xl border border-line bg-surf overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead class="text-[11px] uppercase tracking-wide text-mute">
+            <tr><th class="px-3 py-2 w-12"></th><th class="px-3 py-2">Project</th><th class="px-3 py-2">Client · order</th><th class="px-3 py-2">Printing files</th><th class="px-3 py-2">Setup</th><th class="px-3 py-2 text-right">Printed</th><th class="px-3 py-2">Last activity</th><th class="px-3 py-2 w-24"></th></tr>
+          </thead>
+          <tbody id="rows-c"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- proposition notes -->
+    <details class="mt-6 rounded-xl border border-line bg-surf p-4 text-sm text-sub" open>
+      <summary class="cursor-pointer text-ink font-medium">What changes, in every proposition</summary>
+      <ul class="mt-2 space-y-1 list-disc pl-5">
+        <li><b class="text-ink">One search, many fields</b>: code, title, description, tags, client, order number, item and file names, printer, material. Matches are highlighted; <span class="kbd">/</span> focuses the box.</li>
+        <li><b class="text-ink">Important facts on the card</b>: thumbnail, code, title, who it is for (client + open order), what is ready (files · recommended revision), what it prints on (printer · nozzle · material), printed count and last activity. No more "Active · Prints: 0" filler.</li>
+        <li><b class="text-ink">Quick filters</b> instead of the status dropdown alone: In production, Ready to print, No file yet, material.</li>
+        <li><b class="text-ink">Printing files one step away</b>: A opens a drawer, B shows them beside the list, C unfolds them in the row. Print, preview and download act from there; "Open project" goes to the full page.</li>
+        <li><b class="text-ink">Folders (B)</b>: a tree of folders (any depth, e.g. Car › Wheel cap) holds projects; a project sits in one folder or in none. New folder from the list header; move a project by dragging it onto a folder or with its <i data-lucide="folder-input" class="inline"></i> button. A search flattens the tree and shows each hit's folder path; folder names are searchable too.</li>
+        <li><b class="text-ink">Sort by last activity</b> by default, so the catalog reads like the shop's week, not like an ID sequence.</li>
+      </ul>
+    </details>
+  </main>
+</div>
+
+<!-- A: drawer -->
+<div id="drawer-back" class="fixed inset-0 bg-black/50 hidden z-40"></div>
+<aside id="drawer" class="drawer fixed top-0 right-0 h-full w-full max-w-[520px] bg-[#10161d] border-l border-line z-50 translate-x-full overflow-y-auto"></aside>
+
+<script>
+const P = (id, code, name, o) => Object.assign({ id, code, name, client: null, order: null, tags: [], printer: 'Bambu Lab X1C', nozzle: '0.4', material: 'PETG', printed: 0, target: null, activity: '', hue: '', files: [] }, o);
+const F = (name, rev, status, o) => Object.assign({ name, rev, status, time: '2h 22m', grams: '99.5 g', plates: 1, sliced: true, printed: 0 }, o);
+const DATA = [
+  P(14, 'P-0014', 'Support pour Starlink', { client: 'Marc T.', order: '#1098', tags: ['starlink','mount'], material: 'ASA', printer: 'Bambu Lab X1 Carbon', printed: 0, target: 40, activity: '2 h ago', hue: 'h1',
+      files: [F('Starlink_Mount_plate_4', 'R1', 'In progress', { time: '7h 2m', grams: '132.4 g', plates: 1 }), F('Starlink_clip', 'R2', 'Approved', { time: '0h 48m', grams: '11.2 g' })] }),
+  P(13, 'P-0013', 'PS5 Slim Stand', { client: 'Café Moana', order: '#1097', tags: ['stand'], printer: 'Bambu Lab X2D', activity: '5 h ago', hue: '',
+      files: [F('ps5proorizontale', 'R1', 'Approved', { time: '2h 22m', grams: '99.5 g' })] }),
+  P(12, 'P-0012', 'LookUp Space Guide n°3', { tags: ['lookup','guide'], material: 'PLA', activity: 'yesterday', hue: 'h2', files: [F('guide_3_v2', 'R2', 'Approved', { time: '1h 10m', grams: '34 g' }), F('guide_3_v1', 'R1', 'Obsolete', { time: '1h 14m', grams: '36 g' })] }),
+  P(11, 'P-0011', 'Étiquette Ocean Shiver 5×3 cm', { client: 'Ocean Shiver', tags: ['label'], material: 'PLA', printer: 'Bambu Lab P1S', printed: 0, activity: '2 days ago', hue: 'h3', files: [] }),
+  P(10, 'P-0010', 'Pièce RC avion', { client: 'Jules R.', material: 'PC', printed: 1, activity: '3 days ago', hue: 'h1', files: [F('aile_support', 'R1', 'Approved', { time: '3h 05m', grams: '41 g', printed: 1 })] }),
+  P(9, 'P-0009', 'Pièce filetage pied rétroprojecteur', { client: 'Lycée Lapérouse', order: '#1091', material: 'PETG', printed: 1, target: 2, activity: '4 days ago', hue: '', files: [F('pied_filetage_M12', 'R3', 'Approved', { time: '1h 40m', grams: '52 g', printed: 1 }), F('pied_filetage_M12', 'R2', 'Obsolete', { time: '1h 38m', grams: '52 g' })] }),
+  P(8, 'P-0008', 'Toyota Wheel Cap', { tags: ['auto'], material: 'ASA', printed: 3, activity: '1 week ago', hue: 'h2', files: [F('wheel_cap_57mm', 'R2', 'Approved', { time: '0h 55m', grams: '18 g', printed: 3 })] }),
+  P(7, 'P-0007', 'Cache Néiman Talaria', { client: 'Moto Nouméa', tags: ['moto'], material: 'ASA', activity: '1 week ago', hue: 'h3', files: [F('cache_neiman', 'R1', 'In progress', { sliced: false })] }),
+  P(6, 'P-0006', 'Défenses d’éléphant imprimées en 3D', { client: 'Musée de la Ville', material: 'PC', printer: 'Bambu Lab H2D', nozzle: '0.6', activity: '2 weeks ago', hue: '', files: [F('defense_gauche_x4', 'R1', 'Approved', { time: '19h 40m', grams: '612 g', plates: 4 }), F('defense_droite_x4', 'R1', 'Approved', { time: '19h 12m', grams: '598 g', plates: 4 })] }),
+  P(5, 'P-0005', 'Cache barre lumière', { material: 'PETG', activity: '2 weeks ago', hue: 'h1', files: [F('cache_barre', 'R1', 'Approved', { time: '1h 02m', grams: '23 g' })] }),
+  P(4, 'P-0004', 'Etiquettes SERTEC', { client: 'SERTEC', order: '#1084', tags: ['label'], material: 'PLA', printer: 'Bambu Lab P1S', printed: 3, target: 3, activity: '3 weeks ago', hue: 'h2', files: [F('etiquettes_sertec_x12', 'R1', 'Approved', { time: '0h 38m', grams: '9 g', printed: 3 })] }),
+  P(3, 'P-0003', 'Scan d’une surface de portière Ford Ranger', { client: 'Garage Pacifique', tags: ['ford','scan'], activity: '1 month ago', hue: 'h3', files: [] }),
+  P(2, 'P-0002', 'Sarbacane', { material: 'PETG', activity: '1 month ago', hue: '', files: [F('sarbacane_tube', 'R1', 'Approved', { time: '4h 20m', grams: '88 g' })] }),
+  P(1, 'P-0001', 'Logo F170', { client: 'Ford Nouméa', tags: ['f170','ford','logo'], material: 'PLA', printed: 1, activity: '2 months ago', hue: 'h1', files: [F('logo_f170', 'R1', 'Approved', { time: '1h 30m', grams: '28 g', printed: 1 })] }),
+];
+const FOLDERS = [
+  { id: 1, name: 'Car', parent: null }, { id: 2, name: 'Wheel cap', parent: 1 }, { id: 3, name: 'Accessories', parent: 1 },
+  { id: 4, name: 'Labels', parent: null }, { id: 5, name: 'Clients', parent: null }, { id: 6, name: 'Café Moana', parent: 5 },
+];
+DATA.splice(6, 0, P(15, 'P-0015', '350Z 60mm WheelCap', { client: 'Nissan Club NC', tags: ['auto','nissan'], material: 'ASA', printed: 4, activity: '6 days ago', hue: 'h3',
+  files: [F('350z_cap_60mm', 'R2', 'Approved', { time: '1h 02m', grams: '21 g', printed: 4 }), F('350z_cap_60mm', 'R1', 'Obsolete', { time: '1h 05m', grams: '22 g' })] }));
+const FOLDER_OF = { 8: 2, 15: 2, 1: 3, 7: 3, 4: 4, 11: 4, 13: 6, 12: 6 };
+DATA.forEach(p => { p.folder = FOLDER_OF[p.id] ?? null; });
+const folderById = id => FOLDERS.find(f => f.id === id);
+const folderPath = id => { const out = []; let f = folderById(id); while (f) { out.unshift(f.name); f = folderById(f.parent); } return out; };
+const subtreeIds = id => [id, ...FOLDERS.filter(f => f.parent === id).flatMap(f => subtreeIds(f.id))];
+const norm = s => (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const state = { q: '', flags: new Set(), mats: new Set(), sort: 'activity', view: 'b', selected: 13, open: null, collapsed: new Set([5]), newFolder: false, moving: null, dragOver: null };
+const rec = p => p.files.find(f => f.status === 'Approved' && f.sliced) || p.files.find(f => f.sliced) || null;
+const ready = p => !!rec(p);
+function hay(p) { return norm([p.code, p.name, p.client, p.order, p.tags.join(' '), p.printer, p.material, ...folderPath(p.folder), ...p.files.map(f => f.name)].join(' ')); }
+function filtered() {
+  const q = norm(state.q).trim().split(/\s+/).filter(Boolean);
+  let out = DATA.filter(p => q.every(t => hay(p).includes(t)));
+  if (state.flags.has('prod')) out = out.filter(p => p.order);
+  if (state.flags.has('ready')) out = out.filter(ready);
+  if (state.flags.has('nofile')) out = out.filter(p => p.files.length === 0);
+  if (state.mats.size) out = out.filter(p => state.mats.has(p.material));
+  const order = { activity: (a, b) => DATA.indexOf(a) - DATA.indexOf(b), code: (a, b) => a.code.localeCompare(b.code), name: (a, b) => a.name.localeCompare(b.name), printed: (a, b) => b.printed - a.printed };
+  return out.sort(order[state.sort]);
+}
+function hl(text) {
+  const q = state.q.trim(); if (!q) return esc(text);
+  const terms = q.split(/\s+/).filter(Boolean).map(norm);
+  let out = ''; const src = text; const n = norm(src);
+  // highlight by scanning normalized positions (same length as source for these strings)
+  const marks = new Array(src.length).fill(false);
+  terms.forEach(t => { let i = 0; while ((i = n.indexOf(t, i)) !== -1) { for (let k = i; k < i + t.length; k++) marks[k] = true; i += t.length; } });
+  let inMark = false;
+  for (let i = 0; i < src.length; i++) { if (marks[i] && !inMark) { out += '<mark>'; inMark = true; } if (!marks[i] && inMark) { out += '</mark>'; inMark = false; } out += esc(src[i]); }
+  if (inMark) out += '</mark>';
+  return out;
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const thumb = (p, cls) => `<div class="thumb ${p.hue} ${cls} rounded-lg overflow-hidden bg-bg border border-line shrink-0 flex items-center justify-center">${p.files.length ? '<img src="part.png" class="w-full h-full object-cover">' : '<i data-lucide="file-question" class="text-mute text-xl"></i>'}</div>`;
+const prodBadge = p => p.order ? `<span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1"><i data-lucide="flame"></i>${esc(p.order)} · ${hl(p.client)}</span>` : (p.client ? `<span class="text-[11px] text-sub flex items-center gap-1"><i data-lucide="user"></i>${hl(p.client)}</span>` : '');
+function filesLine(p) {
+  const r = rec(p);
+  if (!p.files.length) return `<span class="text-amber-300 flex items-center gap-1"><i data-lucide="file-x"></i>No printing file yet</span>`;
+  if (!r) return `<span class="text-amber-300 flex items-center gap-1"><i data-lucide="alert-circle"></i>${p.files.length} file${p.files.length > 1 ? 's' : ''} · nothing sliced</span>`;
+  return `<span class="flex items-center gap-1 text-ink"><i data-lucide="file-check-2" class="text-acc"></i>${p.files.length} file${p.files.length > 1 ? 's' : ''} · <span class="font-mono text-xs px-1 rounded border border-acc/40 text-acc">${r.rev}</span> ${hl(r.name)}</span>`;
+}
+const setupLine = p => `<span class="flex items-center gap-1 text-sub"><i data-lucide="printer"></i>${hl(p.printer)} · ${p.nozzle} mm · ${hl(p.material)}</span>`;
+const printedLine = p => p.target ? `<span class="${p.printed >= p.target ? 'text-acc' : 'text-ink'}">${p.printed}/${p.target}</span>` : (p.printed ? `<span class="text-ink">${p.printed}</span>` : `<span class="text-mute">—</span>`);
+
+/* ---------- A ---------- */
+function renderA(items) {
+  document.getElementById('grid-a').innerHTML = items.map(p => `
+    <article class="group rounded-xl border border-line bg-surf hover:border-acc/50 transition-colors overflow-hidden flex flex-col cursor-pointer" data-open="${p.id}">
+      <div class="relative aspect-[16/9] bg-bg">
+        ${thumb(p, 'w-full h-full rounded-none border-0')}
+        <div class="absolute top-2 left-2 font-mono text-[11px] px-1.5 py-0.5 rounded bg-bg/80 border border-acc/40 text-acc">${hl(p.code)}</div>
+        ${p.order ? `<div class="absolute top-2 right-2 text-[11px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-500/40 flex items-center gap-1"><i data-lucide="flame"></i>${esc(p.order)}</div>` : ''}
+        ${p.files.length ? `<div class="absolute bottom-2 right-2 text-[11px] px-1.5 py-0.5 rounded bg-bg/80 border border-line text-sub">${p.files.length} file${p.files.length > 1 ? 's' : ''}</div>` : ''}
+      </div>
+      <div class="p-3 flex flex-col gap-1.5 text-xs text-sub flex-1">
+        <h3 class="text-sm font-medium text-ink truncate" title="${esc(p.name)}">${hl(p.name)}</h3>
+        ${p.client ? `<div class="flex items-center gap-1"><i data-lucide="user"></i>${hl(p.client)}${p.order ? ` <span class="text-mute">· order ${esc(p.order)}</span>` : ''}</div>` : '<div class="text-mute">Internal</div>'}
+        ${filesLine(p)}
+        ${setupLine(p)}
+        <div class="mt-auto pt-1 flex items-center justify-between text-mute">
+          <span>${p.printed ? `${p.printed} printed${p.target ? ' / ' + p.target : ''}` : 'Never printed'}</span>
+          <span>${esc(p.activity)}</span>
+        </div>
+      </div>
+    </article>`).join('');
+}
+function openDrawer(p) {
+  state.open = p.id;
+  const r = rec(p);
+  document.getElementById('drawer').innerHTML = `
+    <div class="p-4 border-b border-line flex items-start gap-3">
+      ${thumb(p, 'w-14 h-14')}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2"><span class="font-mono text-[11px] px-1.5 py-0.5 rounded border border-acc/40 text-acc">${esc(p.code)}</span><h2 class="font-semibold truncate">${esc(p.name)}</h2></div>
+        <div class="text-xs text-sub mt-1 flex flex-wrap gap-x-3 gap-y-1">${p.client ? `<span><i data-lucide="user" class="inline"></i> ${esc(p.client)}</span>` : ''}${p.order ? `<span class="text-amber-300"><i data-lucide="flame" class="inline"></i> order ${esc(p.order)}</span>` : ''}<span>${esc(p.activity)}</span></div>
+      </div>
+      <button data-close class="p-2 rounded hover:bg-line text-sub"><i data-lucide="x"></i></button>
+    </div>
+    <div class="p-4 space-y-3">
+      <div class="flex items-center justify-between"><h3 class="text-sm font-medium">Printing files <span class="text-mute">${p.files.length}</span></h3><button class="text-xs px-2 py-1 rounded border border-line text-sub flex items-center gap-1"><i data-lucide="plus"></i>New item</button></div>
+      ${p.files.length ? p.files.map(f => fileCard(p, f, f === r)).join('') : `<div class="rounded-lg border border-dashed border-line p-6 text-center text-sm text-mute">Drop a .3mf here — the server slices it</div>`}
+      <a class="block text-center text-sm text-acc hover:underline pt-2">Open the full project page →</a>
+    </div>`;
+  document.getElementById('drawer').classList.remove('translate-x-full');
+  document.getElementById('drawer-back').classList.remove('hidden');
+  lucide.createIcons();
+}
+function closeDrawer() { state.open = null; document.getElementById('drawer').classList.add('translate-x-full'); document.getElementById('drawer-back').classList.add('hidden'); }
+function fileCard(p, f, recommended) {
+  const tone = f.status === 'Approved' ? 'text-acc border-acc/40 bg-acc/10' : f.status === 'Obsolete' ? 'text-mute border-line' : 'text-amber-300 border-amber-500/40 bg-amber-500/10';
+  return `
+  <div class="rounded-lg border ${recommended ? 'border-acc/40' : 'border-line'} bg-bg p-3 flex gap-3">
+    ${thumb(p, 'w-16 h-16')}
+    <div class="min-w-0 flex-1 text-xs text-sub">
+      <div class="flex items-center gap-2 flex-wrap"><span class="font-mono text-[11px] px-1.5 py-0.5 rounded border border-line text-ink">${f.rev}</span><span class="text-sm font-medium text-ink truncate">${esc(f.name)}</span><span class="ml-auto text-[11px] px-1.5 py-0.5 rounded border ${tone}">${f.status}</span></div>
+      ${f.sliced ? `<div class="mt-1 flex flex-wrap gap-x-3"><span><i data-lucide="clock" class="inline"></i> ${f.time}</span><span><i data-lucide="package" class="inline"></i> ${f.grams}</span>${f.plates > 1 ? `<span>${f.plates} plates</span>` : ''}${f.printed ? `<span>${f.printed}× printed</span>` : ''}</div>
+      <div class="mt-0.5 text-mute">${esc(p.printer)} · ${p.nozzle} mm · ${esc(p.material)}</div>` : `<div class="mt-1 text-amber-300"><i data-lucide="alert-circle" class="inline"></i> Not sliced</div>`}
+      <div class="mt-2 flex items-center gap-1">
+        <button class="px-2 py-1 rounded ${f.sliced ? 'bg-acc text-bg' : 'border border-line text-mute'} text-xs font-medium flex items-center gap-1"><i data-lucide="printer"></i>Print</button>
+        <button class="p-1.5 rounded hover:bg-line text-sub" title="Preview"><i data-lucide="eye"></i></button>
+        <button class="p-1.5 rounded hover:bg-line text-sub" title="Download"><i data-lucide="download"></i></button>
+        <button class="p-1.5 rounded hover:bg-line text-sub" title="Open in slicer"><i data-lucide="external-link"></i></button>
+        <button class="p-1.5 rounded hover:bg-line text-sub ml-auto" title="More"><i data-lucide="more-vertical"></i></button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------- B ---------- */
+const filtering = () => !!(state.q.trim() || state.flags.size || state.mats.size);
+const crumb = p => p.folder ? `<span class="text-[11px] text-mute flex items-center gap-1"><i data-lucide="folder"></i>${folderPath(p.folder).map(hl).join(' <span class="opacity-60">›</span> ')}</span>` : '';
+function projectRow(p, depth) {
+  return `<li class="row flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-line/40" data-sel="${p.id}" draggable="true" data-drag="${p.id}" aria-selected="${p.id === state.selected}" style="padding-left:${12 + depth * 18}px">
+      ${thumb(p, 'w-9 h-9')}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2"><span class="font-mono text-[11px] text-acc">${hl(p.code)}</span><span class="text-sm text-ink truncate">${hl(p.name)}</span>${p.order ? '<i data-lucide="flame" class="text-amber-300 shrink-0"></i>' : ''}</div>
+        ${filtering() ? crumb(p) : ''}
+        <div class="text-[11px] text-sub truncate">${p.client ? hl(p.client) + ' · ' : ''}${p.files.length ? p.files.length + ' file' + (p.files.length > 1 ? 's' : '') : 'no file'} · ${hl(p.material)} · ${esc(p.activity)}</div>
+      </div>
+      <span class="text-xs">${printedLine(p)}</span>
+      <button data-move="${p.id}" class="p-1 rounded text-mute hover:text-ink hover:bg-line" title="Move to folder…"><i data-lucide="folder-input"></i></button>
+    </li>
+    ${state.moving === p.id ? `<li class="px-3 py-2 bg-bg/60 text-xs text-sub flex items-center gap-2" style="padding-left:${12 + depth * 18 + 48}px"><i data-lucide="folder-input"></i>Move to
+      <select data-moveto="${p.id}" class="rounded border border-line bg-surf px-2 py-1 text-xs text-ink"><option value="">(no folder)</option>${FOLDERS.map(f => `<option value="${f.id}" ${f.id === p.folder ? 'selected' : ''}>${folderPath(f.id).join(' › ')}</option>`).join('')}</select>
+      <button data-movecancel class="ml-auto text-mute hover:text-ink">Cancel</button></li>` : ''}`;
+}
+function folderRow(f, depth, items) {
+  const ids = subtreeIds(f.id); const inside = items.filter(p => ids.includes(p.folder));
+  const collapsed = state.collapsed.has(f.id); const prod = inside.filter(p => p.order).length;
+  return `<li class="flex items-center gap-2 px-3 py-1.5 cursor-pointer select-none text-sm hover:bg-line/40 ${state.dragOver === f.id ? 'bg-acc/15 outline outline-1 outline-acc' : ''}" data-folder="${f.id}" data-drop="${f.id}" style="padding-left:${12 + depth * 18}px">
+      <i data-lucide="${collapsed ? 'chevron-right' : 'chevron-down'}" class="text-mute"></i>
+      <i data-lucide="${collapsed ? 'folder' : 'folder-open'}" class="text-amber-200/80"></i>
+      <span class="text-ink font-medium">${hl(f.name)}</span>
+      <span class="text-[11px] text-mute">${inside.length}</span>
+      ${prod ? `<span class="text-[11px] text-amber-300 flex items-center gap-0.5"><i data-lucide="flame"></i>${prod}</span>` : ''}
+    </li>`;
+}
+function tree(parent, depth, items) {
+  let html = '';
+  FOLDERS.filter(f => f.parent === parent).forEach(f => {
+    html += folderRow(f, depth, items);
+    if (!state.collapsed.has(f.id)) html += tree(f.id, depth + 1, items) + items.filter(p => p.folder === f.id).map(p => projectRow(p, depth + 1)).join('');
+  });
+  return html;
+}
+function renderB(items) {
+  if (!items.find(p => p.id === state.selected) && items[0]) state.selected = items[0].id;
+  const list = document.getElementById('list-b');
+  const newFolderRow = state.newFolder ? `<li class="px-3 py-2 bg-bg/60 flex items-center gap-2 text-sm"><i data-lucide="folder-plus" class="text-amber-200/80"></i><input id="nf-name" placeholder="Folder name" class="flex-1 rounded border border-line bg-surf px-2 py-1 text-sm focus:outline-none focus:border-acc"><select id="nf-parent" class="rounded border border-line bg-surf px-2 py-1 text-xs text-sub"><option value="">at the top</option>${FOLDERS.map(f => `<option value="${f.id}">in ${folderPath(f.id).join(' › ')}</option>`).join('')}</select><button data-nf-ok class="px-2 py-1 rounded bg-acc text-bg text-xs font-medium">Create</button><button data-nf-cancel class="text-xs text-mute">Cancel</button></li>` : '';
+  if (filtering()) {
+    list.innerHTML = newFolderRow + items.map(p => projectRow(p, 0)).join('') || '<li class="px-3 py-6 text-center text-sm text-mute">No project matches.</li>';
+  } else {
+    const unfiled = items.filter(p => !p.folder);
+    list.innerHTML = newFolderRow + tree(null, 0, items)
+      + (unfiled.length ? `<li class="px-3 pt-3 pb-1 text-[11px] uppercase tracking-wide text-mute flex items-center gap-2 ${state.dragOver === 'root' ? 'bg-acc/15' : ''}" data-drop="root"><i data-lucide="inbox"></i>Not in a folder <span>${unfiled.length}</span></li>` + unfiled.map(p => projectRow(p, 0)).join('') : '');
+  }
+  const p = items.find(x => x.id === state.selected);
+  const pane = document.getElementById('pane-b');
+  if (!p) { pane.innerHTML = '<p class="text-sm text-mute">No project matches.</p>'; return; }
+  const r = rec(p);
+  pane.innerHTML = `
+    ${p.folder ? `<nav class="text-xs text-mute mb-2 flex items-center gap-1"><i data-lucide="folder"></i>${folderPath(p.folder).map(n => `<span>${esc(n)}</span>`).join('<span class="opacity-60">›</span>')}</nav>` : ''}
+    <div class="flex items-start gap-3 pb-3 border-b border-line">
+      ${thumb(p, 'w-16 h-16')}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-mono text-[11px] px-1.5 py-0.5 rounded border border-acc/40 text-acc">${esc(p.code)}</span><h2 class="text-lg font-semibold truncate">${esc(p.name)}</h2>${prodBadge(p)}</div>
+        <div class="text-xs text-sub mt-1 flex flex-wrap gap-x-4 gap-y-1">${setupLine(p)}<span>${p.printed ? p.printed + ' printed' + (p.target ? ' / ' + p.target : '') : 'never printed'}</span><span>${esc(p.activity)}</span>${p.tags.length ? `<span><i data-lucide="tag" class="inline"></i> ${p.tags.join(', ')}</span>` : ''}</div>
+      </div>
+      <a class="text-xs px-2.5 py-1.5 rounded border border-line text-sub hover:text-ink flex items-center gap-1 shrink-0">Open project <i data-lucide="arrow-right"></i></a>
+    </div>
+    <div class="flex items-center justify-between mt-3 mb-2"><h3 class="text-sm font-medium">Printing files <span class="text-mute">${p.files.length}</span></h3><button class="text-xs px-2 py-1 rounded border border-line text-sub flex items-center gap-1"><i data-lucide="plus"></i>New item</button></div>
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-2">${p.files.length ? p.files.map(f => fileCard(p, f, f === r)).join('') : `<div class="xl:col-span-2 rounded-lg border border-dashed border-line p-8 text-center text-sm text-mute">Drop a .3mf here — the server slices it</div>`}</div>`;
+  const nf = document.getElementById('nf-name'); if (nf) nf.focus();
+}
+
+/* ---------- C ---------- */
+function renderC(items) {
+  document.getElementById('rows-c').innerHTML = items.map(p => `
+    <tr class="border-t border-line hover:bg-line/30 cursor-pointer" data-expand="${p.id}">
+      <td class="px-3 py-2">${thumb(p, 'w-9 h-9')}</td>
+      <td class="px-3 py-2"><div class="flex items-center gap-2"><span class="font-mono text-[11px] text-acc">${hl(p.code)}</span><span class="text-ink">${hl(p.name)}</span></div>${p.tags.length ? `<div class="text-[11px] text-mute">${p.tags.join(' · ')}</div>` : ''}</td>
+      <td class="px-3 py-2 text-xs">${prodBadge(p) || '<span class="text-mute">Internal</span>'}</td>
+      <td class="px-3 py-2 text-xs">${filesLine(p)}</td>
+      <td class="px-3 py-2 text-xs">${setupLine(p)}</td>
+      <td class="px-3 py-2 text-xs text-right">${printedLine(p)}</td>
+      <td class="px-3 py-2 text-xs text-mute">${esc(p.activity)}</td>
+      <td class="px-3 py-2 text-right"><span class="inline-flex gap-1">${rec(p) ? '<button class="p-1.5 rounded bg-acc/15 text-acc" title="Print recommended revision"><i data-lucide="printer"></i></button>' : ''}<button class="p-1.5 rounded hover:bg-line text-sub" title="Files"><i data-lucide="chevron-down"></i></button></span></td>
+    </tr>
+    ${state.open === p.id ? `<tr class="bg-bg/60"><td></td><td colspan="7" class="px-3 py-3"><div class="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-2">${p.files.length ? p.files.map(f => fileCard(p, f, f === rec(p))).join('') : '<span class="text-sm text-mute">No printing file yet — drop a .3mf on the project.</span>'}</div></td></tr>` : ''}`).join('');
+}
+
+function render() {
+  const items = filtered();
+  document.getElementById('count-line').textContent = `${items.length} of ${DATA.length} projects · ${DATA.filter(p => p.order).length} in production · ${DATA.filter(ready).length} ready to print`;
+  ['a', 'b', 'c'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== state.view));
+  if (state.view === 'a') renderA(items); if (state.view === 'b') renderB(items); if (state.view === 'c') renderC(items);
+  lucide.createIcons();
+}
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => { document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', x === b)); state.view = b.dataset.v; closeDrawer(); state.open = null; render(); }));
+document.getElementById('q').addEventListener('input', e => { state.q = e.target.value; render(); });
+document.getElementById('sort').addEventListener('change', e => { state.sort = e.target.value; render(); });
+document.getElementById('chips').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on);
+  if (b.dataset.f) on ? state.flags.add(b.dataset.f) : state.flags.delete(b.dataset.f);
+  if (b.dataset.m) on ? state.mats.add(b.dataset.m) : state.mats.delete(b.dataset.m);
+  render();
+});
+document.addEventListener('click', e => {
+  const fr = e.target.closest('[data-folder]'); if (fr) { const id = +fr.dataset.folder; state.collapsed.has(id) ? state.collapsed.delete(id) : state.collapsed.add(id); render(); return; }
+  if (e.target.closest('[data-newfolder]')) { state.newFolder = true; render(); return; }
+  if (e.target.closest('[data-nf-cancel]')) { state.newFolder = false; render(); return; }
+  if (e.target.closest('[data-nf-ok]')) { const name = document.getElementById('nf-name').value.trim(); const parent = document.getElementById('nf-parent').value; if (name) { const id = Math.max(...FOLDERS.map(f => f.id)) + 1; FOLDERS.push({ id, name, parent: parent ? +parent : null }); } state.newFolder = false; render(); return; }
+  const mv = e.target.closest('[data-move]'); if (mv) { e.stopPropagation(); state.moving = state.moving === +mv.dataset.move ? null : +mv.dataset.move; render(); return; }
+  if (e.target.closest('[data-movecancel]')) { state.moving = null; render(); return; }
+  if (e.target.closest('[data-moveto]')) { e.stopPropagation(); return; }
+  const o = e.target.closest('[data-open]'); if (o) openDrawer(DATA.find(p => p.id == o.dataset.open));
+  const s = e.target.closest('[data-sel]'); if (s) { state.selected = +s.dataset.sel; render(); }
+  const x = e.target.closest('[data-expand]'); if (x) { state.open = state.open == x.dataset.expand ? null : +x.dataset.expand; render(); }
+  if (e.target.closest('[data-close]') || e.target.id === 'drawer-back') closeDrawer();
+});
+document.addEventListener('change', e => {
+  const sel = e.target.closest('[data-moveto]'); if (!sel) return;
+  const p = DATA.find(x => x.id === +sel.dataset.moveto); p.folder = sel.value ? +sel.value : null; state.moving = null; state.collapsed.delete(p.folder); render();
+});
+document.addEventListener('dragstart', e => { const d = e.target.closest('[data-drag]'); if (d) { e.dataTransfer.setData('text/plain', d.dataset.drag); e.dataTransfer.effectAllowed = 'move'; } });
+document.addEventListener('dragover', e => { const t = e.target.closest('[data-drop]'); if (!t) return; e.preventDefault(); const key = t.dataset.drop === 'root' ? 'root' : +t.dataset.drop; if (state.dragOver !== key) { state.dragOver = key; render(); } });
+document.addEventListener('dragleave', e => { if (e.target.closest && e.target.closest('[data-drop]') && !e.relatedTarget?.closest?.('[data-drop]')) { state.dragOver = null; render(); } });
+document.addEventListener('drop', e => { const t = e.target.closest('[data-drop]'); if (!t) return; e.preventDefault(); const id = +e.dataTransfer.getData('text/plain'); const p = DATA.find(x => x.id === id); if (p) { p.folder = t.dataset.drop === 'root' ? null : +t.dataset.drop; if (p.folder) state.collapsed.delete(p.folder); } state.dragOver = null; render(); });
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && document.activeElement.id !== 'q') { e.preventDefault(); document.getElementById('q').focus(); }
+  if (e.key === 'Escape') { closeDrawer(); if (document.activeElement.id === 'q') { state.q = ''; document.getElementById('q').value = ''; render(); } }
+  if (state.view === 'b' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    const items = filtered(); const i = items.findIndex(p => p.id === state.selected); const n = items[i + (e.key === 'ArrowDown' ? 1 : -1)];
+    if (n) { e.preventDefault(); state.selected = n.id; render(); }
+  }
+});
+// #a / #b / #c in the URL picks the proposition (deep links for screenshots and sharing).
+const initial = (location.hash || '').replace('#', '');
+if (['a', 'b', 'c'].includes(initial)) { state.view = initial; document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', x.dataset.v === initial)); }
+render();
+</script>
+</body>
+</html>

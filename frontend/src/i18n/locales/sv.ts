@@ -10433,6 +10433,7 @@ errors: {
       removeFile: 'Ta bort {{name}}',
       remove: 'Ta bort',
       statusLabel: 'Status',
+      holdToChangeStatus: 'Håll 0,5 s för att ändra status',
       statusWip: 'Pågående',
       statusValide: 'Godkänd',
       statusObsolete: 'Föråldrad',

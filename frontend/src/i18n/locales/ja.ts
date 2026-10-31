@@ -10408,6 +10408,7 @@ export default {
       removeFile: '{{name}}を削除',
       remove: '削除',
       statusLabel: 'ステータス',
+      holdToChangeStatus: '0.5秒長押しでステータスを変更',
       statusWip: '作業中',
       statusValide: '承認済み',
       statusObsolete: '廃止',

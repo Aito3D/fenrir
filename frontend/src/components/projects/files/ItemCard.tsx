@@ -22,7 +22,11 @@ import {
 import { api } from '../../../api/client';
 import type { ProjectFileOut, ProjectItemOut, ProjectRevisionOut, RevisionStatus } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useCalcConfig } from '../../../hooks/useCalcConfig';
+import { useUiSettings } from '../../../hooks/useUiSettings';
+import { PrintFacts } from '../../PrintFacts';
 import { ContextMenu } from '../../ContextMenu';
+import { HoldButton } from '../../aito/HoldButton';
 import type { ContextMenuItem } from '../../ContextMenu';
 import { ModelViewerModal } from '../../ModelViewerModal';
 import { inputCls, focusRingCls } from '../../formStyles';
@@ -116,6 +120,9 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
   const input = useRef<HTMLInputElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // Hold the status chip (0.5 s) to open the status picker; a tap only shows the hint.
+  const statusRef = useRef<HTMLSpanElement>(null);
+  const [statusMenu, setStatusMenu] = useState<{ x: number; y: number } | null>(null);
   const [printing, setPrinting] = useState<ProjectFileOut | null>(null);
   const [preview, setPreview] = useState<ProjectFileOut | null>(null);
   // The hand-slice fallback dialog of a failed slice (upload the .gcode.3mf yourself).
@@ -143,6 +150,10 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
   // Print time and grams: the server slice, or a legacy revision's own sliced file.
   const timed = shown?.sliced_file ?? (slice.state === 'legacy-sliced' ? printFile : undefined);
   const profileLine = printProfileLine(shown?.print_profile ?? null);
+  // The archive card's rows for the sliced file: calculator costs and price, layers, objects, material.
+  const calcConfig = useCalcConfig();
+  const { data: uiSettings } = useUiSettings();
+  const currencyCode = uiSettings?.currency || 'USD';
   const outdated = shown?.outdated_by && shown.derived_from ? outdatedParams(shown.derived_from, shown.outdated_by) : null;
   const canSlice = canUpdate && !!source && (slice.state === 'none' || slice.state === 'failed');
   const canUploadSliced = canUpdate && !!source && slice.state === 'failed';
@@ -250,9 +261,29 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
             className={`${chipBtn} border-dashed border-bambu-dark-tertiary text-bambu-gray hover:border-bambu-green hover:text-bambu-green disabled:opacity-40 disabled:hover:border-bambu-dark-tertiary disabled:hover:text-bambu-gray`}>
             <Plus className="h-4 w-4" />
           </button>
-          {shown && (
+          {shown && canUpdate ? (
+            // `flex [&>div]:flex`: HoldButton's block wrapper would otherwise add the row's line strut.
+            <span ref={statusRef} className="ml-auto flex [&>div]:flex">
+              <HoldButton
+                onHold={(origin) => {
+                  const rect = origin ?? statusRef.current?.getBoundingClientRect();
+                  if (rect) setStatusMenu({ x: rect.right, y: rect.bottom });
+                }}
+                durationMs={500}
+                progress="bar"
+                barClassName="bg-white/15"
+                pressEffect="none"
+                label={t('projectsPdm.files.statusLabel')}
+                hint={t('projectsPdm.files.holdToChangeStatus')}
+                hintPlacement="bottom"
+                className={`${chipBase} text-[11px] ${STATUS_CHIP_CLS[shown.status]}`}
+              >
+                {t(STATUS_LABEL_KEYS[shown.status])}
+              </HoldButton>
+            </span>
+          ) : shown ? (
             <span className={`${chipBase} ml-auto text-[11px] ${STATUS_CHIP_CLS[shown.status]}`}>{t(STATUS_LABEL_KEYS[shown.status])}</span>
-          )}
+          ) : null}
         </div>
 
         <div className="flex-1 px-3 pb-3 pt-1.5 text-xs text-bambu-gray">
@@ -280,6 +311,10 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
                   <Printer className="h-3 w-3 shrink-0" aria-hidden />
                   <span className="truncate" title={profileLine}>{profileLine}</span>
                 </div>
+              )}
+              {timed && (
+                <PrintFacts facts={timed} calcConfig={calcConfig} currencyCode={currencyCode} className="mt-1"
+                  printerHints={[shown.print_profile?.printer_model as string | undefined, timed.sliced_for_model]} />
               )}
               <SliceLine key={`${shown.id}-${slice.state}`} state={slice.state} percent={slice.percent} error={slice.error} printCount={shown.print_count}
                 changed={slice.state !== firstSlice.current.get(shown.id)}
@@ -338,6 +373,20 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
 
       {menu && createPortal(
         <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} anchorRef={moreRef} />,
+        document.body,
+      )}
+      {statusMenu && shown && createPortal(
+        <ContextMenu
+          x={statusMenu.x}
+          y={statusMenu.y}
+          anchorRef={statusRef}
+          onClose={() => setStatusMenu(null)}
+          items={(Object.keys(STATUS_LABEL_KEYS) as RevisionStatus[]).map((status) => ({
+            label: t(STATUS_LABEL_KEYS[status]),
+            disabled: status === shown.status,
+            onClick: () => void actions.setStatus(shown.id, status),
+          }))}
+        />,
         document.body,
       )}
       {preview && (

@@ -10392,6 +10392,7 @@ export default {
       removeFile: '移除 {{name}}',
       remove: '移除',
       statusLabel: '状态',
+      holdToChangeStatus: '长按 0.5 秒更改状态',
       statusWip: '进行中',
       statusValide: '已批准',
       statusObsolete: '已作废',

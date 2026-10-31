@@ -199,6 +199,13 @@ def _file_out(row, *, file_size=10, file_hash=None, has_thumbnail=False, created
         "created_at": created_at,
         "print_time_seconds": None,
         "filament_used_grams": None,
+        "filament_type": None,
+        "filament_color": None,
+        "filament_vendor": None,
+        "sliced_for_model": None,
+        "total_layers": None,
+        "layer_height": None,
+        "object_count": None,
     }
 
 

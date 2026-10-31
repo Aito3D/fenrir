@@ -106,6 +106,7 @@ import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFil
 import { MoveToProjectModal } from '../components/projects/filing/MoveToProjectModal';
 import { isPrintableFilename } from '../components/projects/files/filesUi';
 import { useUiSettings } from '../hooks/useUiSettings';
+import { PrintFacts } from '../components/PrintFacts';
 import { FOLDER_DRAG_TYPE, isValidFolderMove, isWritableFolder, moveDisallowedFolderIds } from '../utils/libraryFolders';
 
 // Rows per request. 100 keeps the first paint under a screenful of cards on
@@ -1298,13 +1299,16 @@ interface FileCardProps {
   authEnabled: boolean;
   showModified: boolean;
   t: TFunction;
+  /** Fenrir: the calculator config and currency for the card's PrintFacts cost rows. */
+  calcConfig?: CalcConfig | null;
+  currencyCode?: string;
 }
 
 // Destructure order follows FileCardProps above, which the merge already
 // unioned: upstream's onOpenInSlicer/canSlice/onPreview and the fork's
 // onOpenInCalculator/onManageTags/onHistory all belong here. Taking either
 // side's list alone leaves the other's buttons wired to undefined.
-function FileCard({ file, isSelected, isHighlighted, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview, onOpenInCalculator, onRename, onDetails, onGenerateThumbnail, onManageTags, onTagClick, onHistory, onMoveToProject, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
+function FileCard({ file, isSelected, isHighlighted, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview, onOpenInCalculator, onRename, onDetails, onGenerateThumbnail, onManageTags, onTagClick, onHistory, onMoveToProject, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t, calcConfig = null, currencyCode = 'USD' }: FileCardProps) {
   // Viewport coordinates rather than a flag, because the menu is rendered by
   // `ContextMenu` at `position: fixed` and anchored to the button (#2846). The
   // card it belongs to is only ~270px tall for a bare STL, which is shorter
@@ -1523,6 +1527,8 @@ function FileCard({ file, isSelected, isHighlighted, onSelect, onDelete, onDownl
             {file.filament_type && <span className="truncate" title={file.filament_type}>{file.filament_type}</span>}
           </div>
         )}
+        {/* Fenrir: the archive card's rows for a sliced file (costs, layers, objects, colours). */}
+        <PrintFacts facts={file} calcConfig={calcConfig} currencyCode={currencyCode} printerHints={[file.sliced_for_model]} omitMaterialType className="mt-1" />
         {/* Counts the whole group, including members in other folders (#671 /
             #2570) — printing this file will offer all of them. */}
         {(file.variant_count ?? 0) > 1 && (
@@ -4330,6 +4336,8 @@ export function FileManagerPage() {
                     onHistory={setHistoryFile}
                     onMoveToProject={(f) => setMoveToProjectIds([f.id])} // Fenrir: projects PDM phase 5
                     thumbnailVersion={thumbnailVersions[file.id]}
+                    calcConfig={calcConfig}
+                    currencyCode={settings?.currency || 'USD'}
                     hasPermission={hasPermission}
                     canModify={canModify}
                     authEnabled={authEnabled}

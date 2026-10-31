@@ -10030,6 +10030,7 @@ export default {
       removeFile: '{{name}} 제거',
       remove: '제거',
       statusLabel: '상태',
+      holdToChangeStatus: '0.5초 길게 눌러 상태 변경',
       statusWip: '진행 중',
       statusValide: '승인됨',
       statusObsolete: '폐기됨',

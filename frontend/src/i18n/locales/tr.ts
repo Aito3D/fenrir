@@ -10336,6 +10336,7 @@ export default {
       removeFile: '{{name}} dosyasını kaldır',
       remove: 'Kaldır',
       statusLabel: 'Durum',
+      holdToChangeStatus: 'Durumu değiştirmek için 0,5 sn basılı tutun',
       statusWip: 'Devam ediyor',
       statusValide: 'Onaylandı',
       statusObsolete: 'Eski',

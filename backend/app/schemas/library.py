@@ -203,6 +203,12 @@ class FileResponse(BaseModel):
     filament_used_grams: float | None = None
     filament_type: str | None = None
     sliced_for_model: str | None = None
+    # Fenrir: the rest of the sliced-file facts the cards show (services.print_file_facts).
+    filament_color: str | None = None
+    filament_vendor: str | None = None
+    total_layers: int | None = None
+    layer_height: float | None = None
+    object_count: int | None = None
 
     class Config:
         from_attributes = True
@@ -245,6 +251,12 @@ class FileListResponse(BaseModel):
     filament_used_grams: float | None = None
     filament_type: str | None = None
     sliced_for_model: str | None = None
+    # Fenrir: the rest of the sliced-file facts the cards show (services.print_file_facts).
+    filament_color: str | None = None
+    filament_vendor: str | None = None
+    total_layers: int | None = None
+    layer_height: float | None = None
+    object_count: int | None = None
 
     # Tags assigned to this file (#1268). Empty list when the file has none —
     # never null, so the FE can iterate without a guard.

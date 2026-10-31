@@ -39,9 +39,17 @@ class ProjectFileOut(BaseModel):
     file_hash: str | None
     has_thumbnail: bool
     created_at: datetime
-    # From the file's metadata: set on a sliced file (the card's print time and grams), else None.
+    # From the file's metadata: set on a sliced file (the card's facts), else None.
+    # Read by ``services.print_file_facts.display_facts``, shared with the File Manager.
     print_time_seconds: int | None = None
     filament_used_grams: float | None = None
+    filament_type: str | None = None
+    filament_color: str | None = None  # comma-joined hex colours, as the archive card reads them
+    filament_vendor: str | None = None
+    sliced_for_model: str | None = None
+    total_layers: int | None = None
+    layer_height: float | None = None
+    object_count: int | None = None
 
 
 class ProjectRevisionOut(BaseModel):

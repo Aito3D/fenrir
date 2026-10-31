@@ -10050,6 +10050,7 @@ export default {
       removeFile: 'Прибрати {{name}}',
       remove: 'Прибрати',
       statusLabel: 'Статус',
+      holdToChangeStatus: 'Утримуйте 0,5 с, щоб змінити статус',
       statusWip: 'У роботі',
       statusValide: 'Затверджено',
       statusObsolete: 'Застаріло',
