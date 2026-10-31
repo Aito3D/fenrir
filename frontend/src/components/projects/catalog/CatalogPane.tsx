@@ -1,23 +1,21 @@
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Box, Flame, Folder, Printer, Tag, User } from 'lucide-react';
+import { ArrowRight, Box, Flame, Folder, Tag, User } from 'lucide-react';
 import { api } from '../../../api/client';
 import type { ProjectCatalogItem, ProjectFolder } from '../../../api/client';
 import { focusRingCls } from '../../formStyles';
 import { ProjectCodeChip } from '../ProjectCodeChip';
 import { ProjectFilesPanel } from '../files/ProjectFilesPanel';
+import { CatalogTitle } from './CatalogTitle';
 import { formatRelativeTime } from '../../../utils/date';
 import { folderPath } from './catalogRules';
 
-/** The selected project: its facts, then the project page's own printing-files panel (same
- *  cards, Print, preview, download and upload). "Open project" goes to the full page. */
+/** The selected project: its facts (no printer line: each file carries its own setup), then the
+ *  project page's own printing-files panel (same cards, Print, preview, download and upload).
+ *  The title renames in place; "Open project" goes to the full page. */
 export function CatalogPane({ item, folders }: { item: ProjectCatalogItem; folders: ProjectFolder[] }) {
   const { t } = useTranslation();
   const path = folderPath(folders, item.folder_id);
-  const rec = item.recommended;
-  const setup = rec
-    ? [rec.printer_model, rec.nozzle_diameter ? `${rec.nozzle_diameter} mm` : null, rec.filament_types.join(', ') || null].filter(Boolean).join(' · ')
-    : '';
   const printed = item.target_count
     ? t('projectsPdm.catalog.printedOf', { n: item.printed_count, target: item.target_count })
     : item.printed_count > 0
@@ -39,7 +37,7 @@ export function CatalogPane({ item, folders }: { item: ProjectCatalogItem; folde
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <ProjectCodeChip code={item.code} />
-            <h2 className="truncate text-lg font-semibold text-white">{item.name}</h2>
+            <CatalogTitle projectId={item.id} name={item.name} />
             {item.open_orders.map((o) => (
               <span key={o.order_id} className="flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">
                 <Flame className="h-3 w-3" aria-hidden />{`#${o.order_id}${o.client_name ? ` · ${o.client_name}` : ''}`}
@@ -48,7 +46,6 @@ export function CatalogPane({ item, folders }: { item: ProjectCatalogItem; folde
           </div>
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-bambu-gray">
             {item.client_names.length > 0 && <span className="flex items-center gap-1"><User className="h-3 w-3" aria-hidden />{item.client_names.join(', ')}</span>}
-            {setup && <span className="flex items-center gap-1"><Printer className="h-3 w-3" aria-hidden />{setup}</span>}
             <span>{printed}</span>
             <span>{formatRelativeTime(item.last_activity, 'system', t)}</span>
             {item.tags.length > 0 && <span className="flex items-center gap-1"><Tag className="h-3 w-3" aria-hidden />{item.tags.map((x) => x.name).join(', ')}</span>}

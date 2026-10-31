@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState } from 'react';
+import type { KeyboardEvent, Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation } from '@tanstack/react-query';
 import { Sparkles, Undo2 } from 'lucide-react';
@@ -45,6 +46,21 @@ export interface AiTextFieldProps {
    *  pre-filled field the user never edited sends nothing. Off by default:
    *  the Aito callers rely on proofreading stored text. */
   settleInitial?: boolean;
+  /** Inline editors: Enter (single-line) commits. The field checks the text
+   *  first when it has not been yet — a correction that changes something is
+   *  shown, with undo, and the next Enter commits it; one that changes nothing
+   *  (or an unavailable AI) commits straight away. Without this prop Enter
+   *  keeps its default, submitting the enclosing form. */
+  onSubmit?: () => void;
+  /** Inline editors: Escape leaves without saving. */
+  onCancel?: () => void;
+  autoFocus?: boolean;
+  /** `submit()` runs the same check-then-commit path as Enter, for a button. */
+  ref?: Ref<AiTextFieldHandle>;
+}
+
+export interface AiTextFieldHandle {
+  submit: () => void;
 }
 
 /** A text field that spell-checks its own French when the user leaves it.
@@ -78,6 +94,10 @@ export function AiTextField({
   className = '',
   correct = api.proofreadAitoText,
   settleInitial = false,
+  onSubmit,
+  onCancel,
+  autoFocus = false,
+  ref,
 }: AiTextFieldProps) {
   const { t } = useTranslation();
 
@@ -91,6 +111,13 @@ export function AiTextField({
   valueRef.current = value;
 
   const [undoTo, setUndoTo] = useState<string | null>(null);
+  // Set by a commit (Enter / `submit()`) that had to check the text first: the
+  // answer decides whether to commit now (nothing changed) or show itself and
+  // wait for the next commit. Read through a ref: the mutation's callbacks are
+  // the stale closures described below.
+  const commitAfterRef = useRef(false);
+  const onSubmitRef = useRef(onSubmit);
+  onSubmitRef.current = onSubmit;
   // True for AITO_AI_SETTLE_MS after a call finishes: the arcs are still going
   // round, dimming out. Separate from `isPending` because the corrected text is
   // already in the field by then — this is the ring letting go, not a wait.
@@ -134,12 +161,34 @@ export function AiTextField({
       // The field is gone — applying the correction now would run it through
       // whatever `onChange` last closed over, which is stale the moment this
       // component stopped rendering.
-      if (!mountedRef.current) return;
+      if (!mountedRef.current) {
+        commitAfterRef.current = false;
+        return;
+      }
       // Someone kept typing while this was in flight: their text wins.
-      if (valueRef.current.trim() !== sent) return;
-      if (data.text === sent) return;
+      if (valueRef.current.trim() !== sent) {
+        commitAfterRef.current = false;
+        return;
+      }
+      if (data.text === sent) {
+        if (commitAfterRef.current) {
+          commitAfterRef.current = false;
+          onSubmitRef.current?.();
+        }
+        return;
+      }
+      // The correction is shown, not committed: the user sees it (with undo)
+      // and commits again when it reads right.
+      commitAfterRef.current = false;
       setUndoTo(sent);
       onChange(data.text);
+    },
+    onError: () => {
+      // The user's own text stands; a commit that was waiting goes through.
+      if (commitAfterRef.current) {
+        commitAfterRef.current = false;
+        if (mountedRef.current) onSubmitRef.current?.();
+      }
     },
     // No error branch: `sent` is already settled, so the user's own text
     // simply stands. An unconfigured install (409) is a silent no-op by
@@ -156,6 +205,38 @@ export function AiTextField({
     if (!text || mutation.isPending || settledRef.current.has(text)) return;
     settledRef.current.add(text);
     mutation.mutate(text);
+  };
+
+  /** Check-then-commit: unsettled text is sent first and the answer commits
+   *  (or shows itself); settled text commits now. A commit while a check is in
+   *  flight simply joins it. */
+  const submit = () => {
+    if (!onSubmitRef.current) return;
+    const text = value.trim();
+    if (mutation.isPending) {
+      commitAfterRef.current = true;
+      return;
+    }
+    if (!text || settledRef.current.has(text)) {
+      onSubmitRef.current();
+      return;
+    }
+    settledRef.current.add(text);
+    commitAfterRef.current = true;
+    mutation.mutate(text);
+  };
+  useImperativeHandle(ref, () => ({ submit }));
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (e.key === 'Escape' && onCancel) {
+      e.preventDefault();
+      e.stopPropagation();
+      onCancel();
+    } else if (e.key === 'Enter' && !multiline && onSubmit && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      e.stopPropagation();
+      submit();
+    }
   };
 
   // Room on the right for the cluster — wider once undo joins the sparkle, or
@@ -180,8 +261,10 @@ export function AiTextField({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
       placeholder={placeholder}
       rows={rows}
+      autoFocus={autoFocus}
       className={`${aiInputCls} ${padRight} resize-none`}
     />
   ) : (
@@ -190,7 +273,9 @@ export function AiTextField({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
       placeholder={placeholder}
+      autoFocus={autoFocus}
       className={`${aiInputCls} ${padRight}`}
     />
   );

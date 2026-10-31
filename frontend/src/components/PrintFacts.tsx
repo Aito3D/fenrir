@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Box, Calculator, Coins, Layers, Zap } from 'lucide-react';
+import { Box, Calculator, Coins, Layers } from 'lucide-react';
 import { estimateArchiveSalePrice } from '../utils/archivePricing';
 import type { CalcConfig } from '../utils/archivePricing';
 import { formatMoney } from '../utils/pricing';
@@ -33,8 +33,8 @@ interface Props {
 }
 
 /** The rows the archive card shows under a print, for a file that is sliced but not printed:
- *  the calculator's machine and energy cost and its suggested price (when the calculator is set
- *  up and the file carries weight and time), then layers, objects, material and colours. Rows
+ *  the calculator's machine cost and its suggested price (when the calculator is set up and the
+ *  file carries weight and time; energy is inside the price, not a row of its own), then layers, objects, material and colours. Rows
  *  without data are left out; renders nothing when no row has any. */
 export function PrintFacts({ facts, calcConfig, currencyCode, printerHints = [], omitMaterialType = false, className = '' }: Props) {
   const { t } = useTranslation();
@@ -74,10 +74,6 @@ export function PrintFacts({ facts, calcConfig, currencyCode, printerHints = [],
           <span data-testid="print-facts-machine-cost" className="flex items-center gap-1" title={t('calculator.machineCost')}>
             <Coins className="h-3 w-3" aria-hidden />
             {formatMoney(estimate.machineCost, currencyCode)}
-          </span>
-          <span data-testid="print-facts-energy-cost" className="flex items-center gap-1" title={t('calculator.costEnergy')}>
-            <Zap className="h-3 w-3" aria-hidden />
-            {formatMoney(estimate.energyCost, currencyCode)}
           </span>
           <span
             data-testid="print-facts-price"

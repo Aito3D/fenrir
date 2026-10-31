@@ -136,7 +136,7 @@ describe('ItemCard', () => {
     expect(within(card()).queryByTestId('print-facts-price')).not.toBeInTheDocument();
   });
 
-  it('adds the calculator machine cost, energy cost and suggested price once the calculator is set up', async () => {
+  it('adds the calculator machine cost and suggested price (no energy row) once the calculator is set up', async () => {
     server.use(
       http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(calcFilaments)),
       http.get('/api/v1/calculator/printers/', () => HttpResponse.json(calcPrinters)),
@@ -146,7 +146,7 @@ describe('ItemCard', () => {
     const price = await within(card()).findByTestId('print-facts-price');
     expect(price.textContent).toMatch(/\d/);
     expect(within(card()).getByTestId('print-facts-machine-cost').textContent).toMatch(/\d/);
-    expect(within(card()).getByTestId('print-facts-energy-cost').textContent).toMatch(/\d/);
+    expect(within(card()).queryByTestId('print-facts-energy-cost')).not.toBeInTheDocument();
   });
 
   it('an unsliced revision shows no facts rows', () => {

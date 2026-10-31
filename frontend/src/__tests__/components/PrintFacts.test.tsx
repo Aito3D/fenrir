@@ -25,9 +25,9 @@ describe('PrintFacts', () => {
   it('shows the calculator costs and price, layers, objects, material and colours', () => {
     render(<PrintFacts facts={facts} calcConfig={calcConfig} currencyCode="XPF" />);
     expect(screen.getByTestId('print-facts-machine-cost')).toHaveAttribute('title', 'Machine cost');
-    expect(screen.getByTestId('print-facts-energy-cost')).toHaveAttribute('title', 'Energy');
+    expect(screen.queryByTestId('print-facts-energy-cost')).not.toBeInTheDocument();
     expect(screen.getByTestId('print-facts-price')).toHaveAttribute('title', expect.stringContaining('X1C'));
-    for (const id of ['print-facts-machine-cost', 'print-facts-energy-cost', 'print-facts-price']) {
+    for (const id of ['print-facts-machine-cost', 'print-facts-price']) {
       expect(screen.getByTestId(id).textContent).toMatch(/\d/);
     }
     expect(screen.getByTestId('print-facts-layers')).toHaveTextContent('320 layers');

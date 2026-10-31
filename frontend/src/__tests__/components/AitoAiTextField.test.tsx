@@ -345,4 +345,50 @@ describe('AiTextField', () => {
     // the user's raw typing forever.
     await waitFor(() => expect(field).toHaveValue('Capot avec 3 pièces'));
   });
+
+  describe('inline commit (onSubmit / onCancel)', () => {
+    function InlineAiTextField({ initial, onSubmit, onCancel }: { initial: string; onSubmit: () => void; onCancel: () => void }) {
+      const [value, setValue] = useState(initial);
+      return <AiTextField label="Task title" value={value} onChange={setValue} onSubmit={onSubmit} onCancel={onCancel} />;
+    }
+
+    it('Enter on unchecked text checks it first and only commits when nothing changed', async () => {
+      const calls = mockProofread('Bonjour');
+      const onSubmit = vi.fn();
+      render(<InlineAiTextField initial="Bonjour" onSubmit={onSubmit} onCancel={vi.fn()} />);
+      await userEvent.type(screen.getByRole('textbox'), '{Enter}');
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      expect(calls).toEqual(['Bonjour']);
+    });
+
+    it('Enter shows a correction that changes something and the next Enter commits it', async () => {
+      const calls = mockProofread('Bonjour');
+      const onSubmit = vi.fn();
+      render(<InlineAiTextField initial="Bonjuor" onSubmit={onSubmit} onCancel={vi.fn()} />);
+      await userEvent.type(screen.getByRole('textbox'), '{Enter}');
+      await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('Bonjour'));
+      expect(onSubmit).not.toHaveBeenCalled();
+      await userEvent.keyboard('{Enter}');
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      expect(calls).toEqual(['Bonjuor']);
+    });
+
+    it('commits the user’s text when the AI is unavailable', async () => {
+      server.use(http.post('/api/v1/aito/proofread', () => HttpResponse.json({ detail: 'off' }, { status: 409 })));
+      const onSubmit = vi.fn();
+      render(<InlineAiTextField initial="Bonjuor" onSubmit={onSubmit} onCancel={vi.fn()} />);
+      await userEvent.type(screen.getByRole('textbox'), '{Enter}');
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      expect(screen.getByRole('textbox')).toHaveValue('Bonjuor');
+    });
+
+    it('Escape cancels without a call', async () => {
+      const calls = mockProofread('Bonjour');
+      const onCancel = vi.fn();
+      render(<InlineAiTextField initial="Bonjuor" onSubmit={vi.fn()} onCancel={onCancel} />);
+      await userEvent.type(screen.getByRole('textbox'), '{Escape}');
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(calls).toEqual([]);
+    });
+  });
 });

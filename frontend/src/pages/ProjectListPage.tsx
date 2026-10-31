@@ -246,6 +246,7 @@ export function ProjectListPage() {
                 onCreateFolder={(name, parentId) => mutations.createFolder.mutateAsync({ name, parent_id: parentId })}
                 onRenameFolder={(id, name) => mutations.updateFolder.mutateAsync({ id, name })}
                 onDeleteFolder={(id) => mutations.deleteFolder.mutate(id)}
+                onMoveFolder={(id, parentId) => mutations.updateFolder.mutate({ id, parent_id: parentId })}
                 creating={creating}
                 onCreatingChange={setCreating}
               />

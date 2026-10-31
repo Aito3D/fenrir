@@ -69,6 +69,15 @@ beforeEach(() => {
       calls.push(`delete:${params.id}`);
       return new HttpResponse(null, { status: 204 });
     }),
+    http.patch('/api/v1/projects/:id', async ({ params, request }) => {
+      calls.push(`update:${params.id}:${JSON.stringify(await request.json())}`);
+      return HttpResponse.json({ id: Number(params.id) });
+    }),
+    http.post('/api/v1/projects/ai/reformulate', async ({ request }) => {
+      const { text } = (await request.json()) as { text: string };
+      calls.push(`ai:${text}`);
+      return HttpResponse.json({ text: text.replace('wheelcap', 'Wheel Cap'), model: 'm' });
+    }),
   );
 });
 
@@ -222,5 +231,85 @@ describe('ProjectListPage (catalog)', () => {
     await screen.findByTestId('catalog-row-1');
     await userEvent.type(screen.getByRole('searchbox'), 'zzz');
     expect(await screen.findByText('No project matches this search')).toBeInTheDocument();
+  });
+
+  it('renames the project from the pane title: click, AI check on Enter, Enter again saves', async () => {
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-1');
+    const pane = await screen.findByTestId('catalog-pane');
+    await userEvent.click(within(pane).getByRole('button', { name: '350Z 60mm WheelCap' }));
+    const input = within(pane).getByRole('textbox', { name: 'Title' });
+    expect(input).toHaveFocus();
+    await userEvent.clear(input);
+    await userEvent.type(input, '350Z 60mm wheelcap{Enter}');
+    // The text had not been checked yet: Enter checks it, the correction shows, nothing is saved.
+    await waitFor(() => expect(input).toHaveValue('350Z 60mm Wheel Cap'));
+    expect(calls).toEqual(['ai:350Z 60mm wheelcap']);
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(calls).toContain('update:1:{"name":"350Z 60mm Wheel Cap"}'));
+    expect(calls.filter((c) => c.startsWith('ai:'))).toHaveLength(1);
+    await waitFor(() => expect(within(pane).queryByTestId('catalog-title-editor')).not.toBeInTheDocument());
+  });
+
+  it('leaves the title untouched on Escape and on the cross', async () => {
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-1');
+    const pane = await screen.findByTestId('catalog-pane');
+    await userEvent.click(within(pane).getByRole('button', { name: '350Z 60mm WheelCap' }));
+    await userEvent.type(within(pane).getByRole('textbox', { name: 'Title' }), ' bis{Escape}');
+    expect(within(pane).queryByTestId('catalog-title-editor')).not.toBeInTheDocument();
+    expect(within(pane).getByRole('heading', { name: '350Z 60mm WheelCap' })).toBeInTheDocument();
+    await userEvent.click(within(pane).getByRole('button', { name: '350Z 60mm WheelCap' }));
+    await userEvent.click(within(pane).getByRole('button', { name: 'Cancel' }));
+    expect(within(pane).queryByTestId('catalog-title-editor')).not.toBeInTheDocument();
+    expect(calls.filter((c) => c.startsWith('update:') || c.startsWith('ai:'))).toEqual([]);
+  });
+
+  it('the pane header carries no printer line: each file has its own setup', async () => {
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-1');
+    const pane = await screen.findByTestId('catalog-pane');
+    expect(within(pane).queryByText(/Bambu Lab X1C/)).not.toBeInTheDocument();
+  });
+
+  it('files a folder inside another by drag-and-drop, never inside its own subtree', async () => {
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-1');
+    const data: Record<string, string> = {};
+    const dataTransfer = {
+      setData: (k: string, v: string) => { data[k] = v; },
+      getData: (k: string) => data[k] ?? '',
+      types: ['application/x-fenrir-folder'],
+      effectAllowed: 'move',
+      dropEffect: 'none',
+    };
+    // Car (1) onto its own child Wheel cap (2): refused.
+    fireEvent.dragStart(screen.getByTestId('catalog-folder-1'), { dataTransfer });
+    fireEvent.dragOver(screen.getByTestId('catalog-folder-2'), { dataTransfer });
+    fireEvent.drop(screen.getByTestId('catalog-folder-2'), { dataTransfer });
+    expect(calls).toEqual([]);
+    // Labels (3) into Wheel cap (2): a third level.
+    fireEvent.dragStart(screen.getByTestId('catalog-folder-3'), { dataTransfer });
+    fireEvent.dragOver(screen.getByTestId('catalog-folder-2'), { dataTransfer });
+    fireEvent.drop(screen.getByTestId('catalog-folder-2'), { dataTransfer });
+    await waitFor(() => expect(calls).toEqual(['rename:3:{"parent_id":2}']));
+  });
+
+  it('the folder menu moves a folder, offering every folder outside its own subtree', async () => {
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-1');
+    await userEvent.click(within(screen.getByTestId('catalog-folder-1')).getByRole('button', { name: 'Folder actions' }));
+    await userEvent.click(await screen.findByText('Move to folder…'));
+    const select = within(screen.getByTestId('catalog-folder-1')).getByRole('combobox', { name: 'Move to folder…' });
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['At the top', 'Labels']);
+    await userEvent.selectOptions(select, '3');
+    await waitFor(() => expect(calls).toEqual(['rename:1:{"parent_id":3}']));
+  });
+
+  it('renders folders nested three levels deep', async () => {
+    server.use(http.get('/api/v1/projects/folders', () => HttpResponse.json({ folders: [...FOLDERS, folder(4, 'Nissan', 2, 1), folder(5, '350Z', 4, 1)] })));
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-1');
+    expect(screen.getByTestId('catalog-folder-5')).toHaveStyle({ paddingLeft: `${12 + 3 * 18}px` });
   });
 });

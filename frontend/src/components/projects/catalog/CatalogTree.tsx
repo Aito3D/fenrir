@@ -9,7 +9,7 @@ import { ContextMenu } from '../../ContextMenu';
 import type { ContextMenuItem } from '../../ContextMenu';
 import { focusRingCls, inputCls } from '../../formStyles';
 import { formatRelativeTime } from '../../../utils/date';
-import { folderPath, splitHighlight } from './catalogRules';
+import { descendantIds, folderPath, splitHighlight } from './catalogRules';
 import type { TreeNode } from './catalogRules';
 
 export interface CatalogTreeProps {
@@ -26,12 +26,15 @@ export interface CatalogTreeProps {
   onCreateFolder: (name: string, parentId: number | null) => Promise<boolean>;
   onRenameFolder: (folderId: number, name: string) => Promise<boolean>;
   onDeleteFolder: (folderId: number) => void;
+  /** Files a folder under another (null = top level); nesting has no depth limit. */
+  onMoveFolder: (folderId: number, parentId: number | null) => void;
   /** The inline "new folder" row: its parent while open, undefined while closed. */
   creating: { parentId: number | null } | null;
   onCreatingChange: (next: { parentId: number | null } | null) => void;
 }
 
 const DRAG_TYPE = 'application/x-fenrir-project';
+const DRAG_FOLDER_TYPE = 'application/x-fenrir-folder';
 
 /** Text with the search terms marked. */
 export function Highlight({ text, q }: { text: string; q: string }) {
@@ -84,13 +87,19 @@ export function CatalogTree(props: CatalogTreeProps) {
   const { nodes, folders, q, filtering, selectedId, canUpdate, creating } = props;
   const [dragOver, setDragOver] = useState<number | 'root' | null>(null);
   const [moving, setMoving] = useState<number | null>(null);
+  const [movingFolder, setMovingFolder] = useState<number | null>(null);
   const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null);
   const [menu, setMenu] = useState<{ folder: ProjectFolder; x: number; y: number } | null>(null);
   const menuAnchor = useRef<HTMLButtonElement>(null);
 
+  // A folder may land anywhere except on itself or inside its own subtree.
+  const folderCanLand = (folderId: number, key: number | 'root') => key === 'root' || !descendantIds(folders, folderId).has(key);
+
   const dropTarget = (key: number | 'root') => ({
     onDragOver: (e: DragEvent) => {
-      if (!canUpdate || !e.dataTransfer.types.includes(DRAG_TYPE)) return;
+      if (!canUpdate) return;
+      const types = e.dataTransfer.types;
+      if (!types.includes(DRAG_TYPE) && !types.includes(DRAG_FOLDER_TYPE)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       if (dragOver !== key) setDragOver(key);
@@ -98,9 +107,15 @@ export function CatalogTree(props: CatalogTreeProps) {
     onDragLeave: () => setDragOver((current) => (current === key ? null : current)),
     onDrop: (e: DragEvent) => {
       e.preventDefault();
+      e.stopPropagation();
       setDragOver(null);
-      const id = Number(e.dataTransfer.getData(DRAG_TYPE));
-      if (id) props.onMoveProject(id, key === 'root' ? null : key);
+      const projectId = Number(e.dataTransfer.getData(DRAG_TYPE));
+      if (projectId) {
+        props.onMoveProject(projectId, key === 'root' ? null : key);
+        return;
+      }
+      const folderId = Number(e.dataTransfer.getData(DRAG_FOLDER_TYPE));
+      if (folderId && folderCanLand(folderId, key)) props.onMoveFolder(folderId, key === 'root' ? null : key);
     },
   });
 
@@ -134,15 +149,19 @@ export function CatalogTree(props: CatalogTreeProps) {
   const folderMenuItems = (folder: ProjectFolder): ContextMenuItem[] => [
     { label: t('projectsPdm.catalog.rename'), icon: <Pencil className="h-4 w-4" />, onClick: () => setRenaming({ id: folder.id, name: folder.name }) },
     { label: t('projectsPdm.catalog.newFolder'), icon: <FolderPlus className="h-4 w-4" />, onClick: () => props.onCreatingChange({ parentId: folder.id }) },
+    { label: t('projectsPdm.catalog.moveTo'), icon: <FolderInput className="h-4 w-4" />, onClick: () => setMovingFolder(folder.id) },
     { label: t('projectsPdm.catalog.deleteFolder'), icon: <Trash2 className="h-4 w-4" />, danger: true, title: t('projectsPdm.catalog.deleteFolderHint'), onClick: () => props.onDeleteFolder(folder.id) },
   ];
 
   const renderFolder = (node: Extract<TreeNode, { kind: 'folder' }>): ReactNode => {
     const { folder, depth, collapsed } = node;
     const isRenaming = renaming?.id === folder.id;
+    const blocked = descendantIds(folders, folder.id);
     return (
       <li key={`f${folder.id}`} data-testid={`catalog-folder-${folder.id}`} {...dropTarget(folder.id)}
-        className={`group flex items-center gap-2 px-3 py-1.5 text-sm ${dragOver === folder.id ? 'bg-bambu-green/15 ring-1 ring-inset ring-bambu-green' : 'hover:bg-bambu-dark-tertiary/40'}`}
+        draggable={canUpdate && !isRenaming}
+        onDragStart={(e) => { e.dataTransfer.setData(DRAG_FOLDER_TYPE, String(folder.id)); e.dataTransfer.effectAllowed = 'move'; }}
+        className={`group flex flex-wrap items-center gap-2 px-3 py-1.5 text-sm ${dragOver === folder.id ? 'bg-bambu-green/15 ring-1 ring-inset ring-bambu-green' : 'hover:bg-bambu-dark-tertiary/40'}`}
         style={{ paddingLeft: 12 + depth * 18 }}>
         <button type="button" aria-expanded={!collapsed} onClick={() => props.onToggleFolder(folder.id)}
           className={`flex min-w-0 flex-1 items-center gap-2 rounded text-left ${focusRingCls}`}>
@@ -167,6 +186,19 @@ export function CatalogTree(props: CatalogTreeProps) {
             className={`rounded p-1 text-bambu-gray opacity-60 hover:bg-bambu-dark-tertiary hover:text-white group-hover:opacity-100 ${focusRingCls}`}>
             <MoreVertical className="h-4 w-4" />
           </button>
+        )}
+        {movingFolder === folder.id && (
+          <div className="flex basis-full items-center gap-2 py-1 text-xs text-bambu-gray" onClick={(e) => e.stopPropagation()}>
+            <FolderInput className="h-3.5 w-3.5" aria-hidden />
+            <select autoFocus aria-label={t('projectsPdm.catalog.moveTo')} defaultValue={folder.parent_id ?? ''}
+              onChange={(e) => { props.onMoveFolder(folder.id, e.target.value ? Number(e.target.value) : null); setMovingFolder(null); }}
+              onKeyDown={(e) => e.key === 'Escape' && setMovingFolder(null)}
+              className="rounded border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1 text-xs text-white">
+              <option value="">{t('projectsPdm.catalog.atTop')}</option>
+              {folders.filter((f) => !blocked.has(f.id)).map((f) => <option key={f.id} value={f.id}>{folderPath(folders, f.id).join(' › ')}</option>)}
+            </select>
+            <button type="button" onClick={() => setMovingFolder(null)} className={`ml-auto rounded px-1 hover:text-white ${focusRingCls}`}>{t('common.cancel')}</button>
+          </div>
         )}
       </li>
     );
