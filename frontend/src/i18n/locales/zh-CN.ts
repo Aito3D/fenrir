@@ -10450,6 +10450,7 @@ export default {
       rename: '重命名',
       deleteRevision: '删除版本',
       deleteItem: '删除条目',
+      deleteItemConfirm: '删除“{{name}}”及其所有版本和文件？已打印或已交付的条目无法删除。',
       frozen: '文件已锁定：此版本已打印或已交付',
       duplicateWarning: '{{filename}} 与 {{revision}} 相同',
       byAuthor: '作者：{{name}}',

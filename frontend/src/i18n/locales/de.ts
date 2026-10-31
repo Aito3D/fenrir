@@ -10467,6 +10467,7 @@ export default {
       rename: 'Umbenennen',
       deleteRevision: 'Revision löschen',
       deleteItem: 'Element löschen',
+      deleteItemConfirm: '„{{name}}“ mit seinen Revisionen und Dateien löschen? Ein gedrucktes oder geliefertes Element kann nicht gelöscht werden.',
       frozen: 'Dateien gesperrt: Diese Revision wurde gedruckt oder geliefert',
       duplicateWarning: '{{filename}} ist identisch mit {{revision}}',
       byAuthor: 'von {{name}}',

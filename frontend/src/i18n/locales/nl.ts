@@ -10491,6 +10491,7 @@ export default {
       rename: 'Hernoemen',
       deleteRevision: 'Revisie verwijderen',
       deleteItem: 'Item verwijderen',
+      deleteItemConfirm: '“{{name}}” met zijn revisies en bestanden verwijderen? Een geprint of geleverd item kan niet worden verwijderd.',
       frozen: 'Bestanden vergrendeld: deze revisie is al geprint of geleverd',
       duplicateWarning: '{{filename}} is identiek aan {{revision}}',
       byAuthor: 'door {{name}}',

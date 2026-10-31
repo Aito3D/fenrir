@@ -10452,6 +10452,7 @@ export default {
       rename: 'Renomear',
       deleteRevision: 'Excluir revisão',
       deleteItem: 'Excluir item',
+      deleteItemConfirm: 'Excluir “{{name}}” com suas revisões e arquivos? Um item impresso ou entregue não pode ser excluído.',
       frozen: 'Arquivos bloqueados: esta revisão já foi impressa ou entregue',
       duplicateWarning: '{{filename}} é idêntico a {{revision}}',
       byAuthor: 'por {{name}}',

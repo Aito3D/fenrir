@@ -39,6 +39,10 @@ class ProjectFileOut(BaseModel):
     file_hash: str | None
     has_thumbnail: bool
     created_at: datetime
+    # The library file's own print counter, as the File Manager card shows it.
+    print_count: int = 0
+    # The file's library tags (ids): the card's tag picker starts from them.
+    tag_ids: list[int] = []
     # From the file's metadata: set on a sliced file (the card's facts), else None.
     # Read by ``services.print_file_facts.display_facts``, shared with the File Manager.
     print_time_seconds: int | None = None

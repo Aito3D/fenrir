@@ -6,12 +6,11 @@ import type { RevisionSliceState } from './useRevisionSlice';
 // `changed`: the state moved since the card mounted, so the new line fades in (and a
 // fresh "Sliced" gives its check one press). A page load never animates.
 // `onUpload`: the hand-slice fallback of a failed slice (upload the .gcode.3mf yourself).
-export function SliceLine({ state, percent, error, printCount, onRetry, onUpload, changed }: {
+export function SliceLine({ state, percent, error, onRetry, onUpload, changed }: {
   changed: boolean;
   state: RevisionSliceState;
   percent: number | null;
   error: string | null;
-  printCount: number;
   onRetry?: () => void;
   onUpload?: () => void;
 }) {
@@ -65,7 +64,6 @@ export function SliceLine({ state, percent, error, printCount, onRetry, onUpload
     <div className={`mt-1 flex items-center gap-1 text-bambu-green ${enter}`}>
       <CheckCircle2 className={`h-3 w-3 ${changed ? 'animate-slice-done' : ''}`} aria-hidden />
       <span>{t('projectsPdm.files.sliced')}</span>
-      {printCount > 0 && <span>{`· ${t('projectsPdm.print.printCount', { count: printCount })}`}</span>}
     </div>
   );
 }

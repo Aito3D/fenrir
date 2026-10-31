@@ -3182,3 +3182,117 @@ tbody .calc-table-row:hover {
     animation: none;
   }
 }
+
+/* ==========================================================================
+   Projects catalog (/projects): the folder tree's motion.
+   Budget as the app-wide system above: entrances on --ease-signature, exits on
+   --ease-exit, feedback under 200ms. Only transform/opacity/colour move.
+   ========================================================================== */
+
+/* The chevron of a folder row: one glyph that turns, not two glyphs swapped.
+   Tailwind 4 compiles rotate-* to the individual `rotate` property, so it is
+   `rotate`, not `transform`, that transitions (see .aito-card-dropping). */
+.catalog-chevron {
+  rotate: 0deg;
+  transition: rotate 160ms var(--ease-signature);
+}
+.catalog-chevron[data-open='true'] {
+  rotate: 90deg;
+}
+
+/* Rows a folder just unfolded: they come down out of the folder row, in a
+   short cascade (--reveal-delay is set per row, capped by the tree). Only on
+   a click that opens a folder — a page load or a search never cascades. */
+@keyframes catalog-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes catalog-reveal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.catalog-row-reveal {
+  animation: catalog-reveal 180ms var(--ease-signature) backwards;
+  animation-delay: var(--reveal-delay, 0ms);
+}
+
+/* The dragged row's ghost (dnd-kit DragOverlay). It lifts as it is picked up
+   — scale and shadow arrive together over 150ms — and carries a cursor-sized
+   tilt-free elevation for the whole drag. `data-invalid` dims it over a
+   target that cannot take it (a folder over its own subtree). */
+@keyframes catalog-lift {
+  from { scale: 1; box-shadow: 0 0 0 0 rgb(0 0 0 / 0); }
+  to { scale: 1.02; box-shadow: 0 12px 32px -8px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.06); }
+}
+.catalog-ghost {
+  scale: 1.02;
+  box-shadow: 0 12px 32px -8px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.06);
+  animation: catalog-lift 150ms var(--ease-signature) backwards;
+  transition: opacity 120ms ease;
+  will-change: transform;
+}
+.catalog-ghost[data-invalid='true'] {
+  opacity: 0.55;
+}
+
+/* The ghost on its way home (a drop nowhere, or on a target that refused):
+   the lift unwinds across the 250ms return flight, as .aito-card-dropping
+   does, so the row settles into its slot instead of landing still raised. */
+.catalog-ghost-dropping {
+  scale: 1;
+  box-shadow: 0 0 0 0 rgb(0 0 0 / 0);
+  border-color: transparent;
+  transition:
+    scale 250ms var(--ease-signature),
+    box-shadow 250ms var(--ease-signature),
+    border-color 250ms var(--ease-signature);
+}
+
+/* The target folder the instant a row is dropped on it: a green wash that
+   fades over 600ms, and its icon gives one small press. The wash is colour,
+   so it survives reduced motion; the press does not. */
+@keyframes catalog-receive {
+  from { background-color: color-mix(in srgb, var(--color-bambu-green) 28%, transparent); }
+  to { background-color: transparent; }
+}
+@keyframes catalog-receive-icon {
+  0% { scale: 1; }
+  40% { scale: 1.18; }
+  100% { scale: 1; }
+}
+.catalog-receive {
+  animation: catalog-receive 600ms ease-out;
+}
+.catalog-receive .catalog-folder-icon {
+  animation: catalog-receive-icon 260ms var(--ease-signature);
+}
+
+/* The moved row where it lands once the list has caught up with the move:
+   the same wash, so the eye finds where the row went. */
+.catalog-landed {
+  animation: catalog-receive 800ms ease-out;
+}
+
+/* Everything grabs while a catalog drag is live — the overlay follows the
+   pointer, so the cursor belongs to the drag, not to whatever is under it. */
+body.catalog-dragging,
+body.catalog-dragging * {
+  cursor: grabbing !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .catalog-chevron {
+    transition: none;
+  }
+  .catalog-row-reveal {
+    animation: catalog-reveal-fade 120ms ease-out backwards;
+    animation-delay: 0ms;
+  }
+  .catalog-ghost {
+    animation: none;
+    scale: 1;
+  }
+  .catalog-receive .catalog-folder-icon {
+    animation: none;
+  }
+}

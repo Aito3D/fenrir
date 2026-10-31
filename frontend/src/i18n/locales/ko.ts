@@ -10088,6 +10088,7 @@ export default {
       rename: '이름 변경',
       deleteRevision: '리비전 삭제',
       deleteItem: '항목 삭제',
+      deleteItemConfirm: '“{{name}}”을(를) 리비전과 파일과 함께 삭제할까요? 인쇄되었거나 배송된 항목은 삭제할 수 없습니다.',
       frozen: '파일 잠김: 이 리비전은 이미 출력되었거나 납품되었습니다',
       duplicateWarning: '{{filename}}은(는) {{revision}}과(와) 동일합니다',
       byAuthor: '{{name}}',

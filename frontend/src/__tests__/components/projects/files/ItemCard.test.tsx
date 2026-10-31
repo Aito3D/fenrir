@@ -271,6 +271,88 @@ describe('ItemCard', () => {
     }
   });
 
+  it('shows how many times the file was printed, and the count opens its print history', async () => {
+    server.use(
+      // Print sends the source .3mf, so its history is the one the count opens.
+      http.get('/api/v1/library/files/51/history', () =>
+        HttpResponse.json({ file_id: 51, filename: 'bracket.3mf', added_at: '2026-10-01T00:00:00Z', added_by_username: null, source_type: null,
+          source_url: null, history_available: true, total_prints: 3, success_count: 3, total_filament_grams: null, last_printed_at: null, events: [] }),
+      ),
+    );
+    render(<Harness value={bracket({ sliced_file: { ...sliced, print_count: 3 } })} />);
+    const count = within(card()).getByRole('button', { name: 'View print history' });
+    expect(count).toHaveTextContent('Printed 3x');
+    await userEvent.click(count);
+    expect(await screen.findByRole('heading', { name: 'History — bracket.3mf' })).toBeInTheDocument();
+  });
+
+  it('shows no printed line for a file never printed', () => {
+    render(<Harness value={bracket()} />);
+    expect(within(card()).queryByText(/Printed/)).not.toBeInTheDocument();
+  });
+
+  it('the ⋯ menu carries the File Manager entries, without Move to project, Print, Preview or Download', async () => {
+    render(<Harness value={bracket()} />);
+    await userEvent.click(within(card()).getByRole('button', { name: 'More actions' }));
+    for (const name of ['Open in calculator', 'History', 'Tags', 'File details', 'Delete']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole('button', { name: /Move to project/ })).not.toBeInTheDocument();
+    // Print, Preview and Download are the card's icons, once each — not menu entries too.
+    for (const name of ['Print', 'Preview', 'Download']) expect(screen.getAllByRole('button', { name })).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button', { name: 'Open in calculator' }));
+    expect(window.location.pathname).toBe('/calculator');
+    expect(window.location.search).toContain('weight=38.4');
+  });
+
+  it('Tags opens the picker seeded with the file\'s tags', async () => {
+    server.use(
+      http.get('/api/v1/library/tags', () =>
+        HttpResponse.json([{ id: 5, name: 'kid-safe', file_count: 2, created_at: '', updated_at: '' }, { id: 6, name: 'toys', file_count: 1, created_at: '', updated_at: '' }]),
+      ),
+    );
+    render(<Harness value={bracket({ files: [file(51, 'bracket.3mf', { file_type: '3mf', tag_ids: [5] })] })} />);
+    await userEvent.click(within(card()).getByRole('button', { name: 'More actions' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Tags' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByRole('checkbox', { name: /kid-safe/ })).toBeChecked();
+    expect(within(dialog).getByRole('checkbox', { name: /toys/ })).not.toBeChecked();
+  });
+
+  it('File details fetches the library file and opens the details modal', async () => {
+    server.use(
+      http.get('/api/v1/library/files/51', () =>
+        HttpResponse.json({ id: 51, folder_id: null, folder_name: null, project_id: 7, project_name: null, is_external: false, filename: 'bracket.3mf',
+          file_path: 'p/bracket.3mf', file_type: '3mf', file_size: 3145728, file_hash: null, thumbnail_path: null, metadata: null, print_count: 0,
+          last_printed_at: null, notes: null, external_url: null, photos: [], source_url: null, duplicates: null, duplicate_count: 0, created_by_id: null,
+          created_by_username: null, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z', print_name: null, print_time_seconds: null,
+          filament_used_grams: null, filament_type: null, sliced_for_model: null, filament_color: null, filament_vendor: null, total_layers: null,
+          layer_height: null, object_count: null }),
+      ),
+    );
+    render(<Harness value={bracket()} />);
+    await userEvent.click(within(card()).getByRole('button', { name: 'More actions' }));
+    await userEvent.click(screen.getByRole('button', { name: 'File details' }));
+    expect(await screen.findByRole('heading', { name: 'bracket.3mf' })).toBeInTheDocument();
+    expect(screen.getByText('File details')).toBeInTheDocument();
+  });
+
+  it('Delete asks first, then deletes the item', async () => {
+    server.use(
+      http.delete('/api/v1/projects/items/20', () => {
+        calls.push('delete:20');
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    render(<Harness value={bracket()} />);
+    await userEvent.click(within(card()).getByRole('button', { name: 'More actions' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(calls).toEqual([]);
+    expect(screen.getByText(/Delete “Bracket” with its revisions and files\?/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(calls).toEqual(['delete:20']));
+  });
+
   it('Details opens the tray with the revision status select and hold-to-delete item', async () => {
     render(<Harness value={bracket()} />);
     expect(screen.queryByTestId('item-tray-20')).not.toBeInTheDocument();

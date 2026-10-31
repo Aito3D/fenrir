@@ -1339,6 +1339,8 @@ export type RevisionStatus = 'wip' | 'valide' | 'obsolete';
 export interface RevisionRef { id: number; item_id: number; item_name: string; section: ProjectSection; number: number; status: RevisionStatus }
 export interface ProjectFileOut {
   id: number; filename: string; file_type: string; file_size: number; file_hash: string | null; has_thumbnail: boolean; created_at: string;
+  /** The library file's own print counter (the File Manager card's number) and its tag ids. */
+  print_count?: number; tag_ids?: number[];
   /** From the file's metadata: set on a revision's sliced file, else null (PrintFacts' shape). */
   print_time_seconds?: number | null; filament_used_grams?: number | null; filament_type?: string | null;
   filament_color?: string | null; filament_vendor?: string | null; sliced_for_model?: string | null;

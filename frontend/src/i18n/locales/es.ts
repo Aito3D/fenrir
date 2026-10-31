@@ -10475,6 +10475,7 @@ export default {
       rename: 'Renombrar',
       deleteRevision: 'Eliminar revisión',
       deleteItem: 'Eliminar elemento',
+      deleteItemConfirm: '¿Eliminar «{{name}}» con sus revisiones y archivos? Un elemento impreso o entregado no se puede eliminar.',
       frozen: 'Archivos bloqueados: esta revisión ya se imprimió o entregó',
       duplicateWarning: '{{filename}} es idéntico a {{revision}}',
       byAuthor: 'por {{name}}',

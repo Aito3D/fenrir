@@ -84,6 +84,43 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const list = () => screen.getByRole('listbox', { name: 'Projects' });
+
+// dnd-kit decides what the pointer is over from element rectangles, and jsdom lays nothing out:
+// every tree row (`data-catalog-row`) is given a 48px slot in list order, anything else the
+// whole viewport. A drag is then real mouse events through dnd-kit's MouseSensor.
+const ROW_H = 48;
+const realRect = Element.prototype.getBoundingClientRect;
+beforeEach(() => {
+  Element.prototype.getBoundingClientRect = function (this: Element) {
+    const rows = Array.from(document.querySelectorAll('[data-catalog-row]'));
+    const at = rows.indexOf(this);
+    const rect = at === -1 ? { x: 0, y: 0, width: 1000, height: 5000 } : { x: 0, y: at * ROW_H, width: 400, height: ROW_H };
+    return { ...rect, top: rect.y, left: rect.x, right: rect.x + rect.width, bottom: rect.y + rect.height, toJSON: () => rect } as DOMRect;
+  };
+});
+afterEach(() => {
+  Element.prototype.getBoundingClientRect = realRect;
+});
+const mid = (el: Element) => {
+  const r = el.getBoundingClientRect();
+  return { clientX: r.left + 20, clientY: r.top + ROW_H / 2 };
+};
+/** Picks `from` up (past the 5px activation distance) and parks the pointer over `to`. */
+async function dragOver(from: Element, to: Element) {
+  const start = mid(from);
+  fireEvent.mouseDown(from, { ...start, button: 0 });
+  fireEvent.mouseMove(document, { clientX: start.clientX, clientY: start.clientY + 12 });
+  await waitFor(() => expect(document.body).toHaveClass('catalog-dragging'));
+  fireEvent.mouseMove(document, mid(to));
+}
+/** A whole drag: pick `from` up, drop it on `to`. */
+async function drop(from: Element, to: Element, settled: () => void) {
+  await dragOver(from, to);
+  await waitFor(settled);
+  fireEvent.mouseUp(document, mid(to));
+  await waitFor(() => expect(document.body).not.toHaveClass('catalog-dragging'));
+}
+const targeted = (el: Element) => expect(el).toHaveClass('ring-bambu-green');
 const rowNames = () => within(list()).getAllByRole('option').map((o) => o.getAttribute('data-testid'));
 
 describe('ProjectListPage (catalog)', () => {
@@ -173,34 +210,100 @@ describe('ProjectListPage (catalog)', () => {
     await waitFor(() => expect(screen.queryByLabelText('Folder name')).not.toBeInTheDocument());
   });
 
-  it('files a project with the move button', async () => {
+  it('a project row carries no move button: filing is by drag', async () => {
     render(<ProjectListPage />);
     await screen.findByTestId('catalog-row-4');
-    await userEvent.click(within(screen.getByTestId('catalog-row-4')).getByRole('button', { name: 'Move to folder…' }));
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Move to folder…' }), '3');
-    await waitFor(() => expect(calls).toEqual(['move:4:{"folder_id":3}']));
+    expect(within(screen.getByTestId('catalog-row-4')).queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('files a project by dropping it on a folder, and unfiles it on "Not in a folder"', async () => {
     render(<ProjectListPage />);
     await screen.findByTestId('catalog-row-4');
-    const data: Record<string, string> = {};
-    const dataTransfer = {
-      setData: (k: string, v: string) => { data[k] = v; },
-      getData: (k: string) => data[k],
-      types: ['application/x-fenrir-project'],
-      effectAllowed: 'move',
-      dropEffect: 'none',
-    };
-    fireEvent.dragStart(screen.getByTestId('catalog-row-4'), { dataTransfer });
-    fireEvent.dragOver(screen.getByTestId('catalog-folder-3'), { dataTransfer });
-    fireEvent.drop(screen.getByTestId('catalog-folder-3'), { dataTransfer });
+    const labels = screen.getByTestId('catalog-folder-3');
+    await drop(screen.getByTestId('catalog-row-4'), labels, () => targeted(labels));
     await waitFor(() => expect(calls).toEqual(['move:4:{"folder_id":3}']));
-    fireEvent.dragStart(screen.getByTestId('catalog-row-1'), { dataTransfer });
-    const unfiled = screen.getByText('Not in a folder').closest('li') as HTMLElement;
-    fireEvent.dragOver(unfiled, { dataTransfer });
-    fireEvent.drop(unfiled, { dataTransfer });
+    // The folder flashes as it takes the row, and the row flashes where it lands.
+    expect(labels).toHaveClass('catalog-receive');
+    expect(screen.getByTestId('catalog-row-4')).toHaveClass('catalog-landed');
+    const unfiled = screen.getByTestId('catalog-unfiled');
+    await drop(screen.getByTestId('catalog-row-1'), unfiled, () => expect(unfiled).toHaveClass('bg-bambu-green/15'));
     await waitFor(() => expect(calls).toContain('move:1:{"folder_id":null}'));
+  });
+
+  it('shows the lifted row under the pointer, dims its slot, and lights the folder a drop would file into', async () => {
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-4');
+    // Dropped on a project row, the dragged one files beside it: the target is that row's folder.
+    await dragOver(screen.getByTestId('catalog-row-4'), screen.getByTestId('catalog-row-3'));
+    await waitFor(() => targeted(screen.getByTestId('catalog-folder-1')));
+    expect(screen.getByTestId('catalog-row-4')).toHaveClass('opacity-40');
+    expect(within(screen.getByTestId('catalog-drag-ghost')).getByText('Support pour Starlink')).toBeInTheDocument();
+    expect(screen.getByTestId('catalog-row-3')).toHaveClass('bg-bambu-green/[0.06]');
+    fireEvent.mouseUp(document, mid(screen.getByTestId('catalog-row-3')));
+    await waitFor(() => expect(calls).toEqual(['move:4:{"folder_id":1}']));
+  });
+
+  it('a drop into the folder a project is already in changes nothing, and Escape lets go', async () => {
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-3');
+    const car = screen.getByTestId('catalog-folder-1');
+    await drop(screen.getByTestId('catalog-row-3'), car, () => targeted(car));
+    expect(calls).toEqual([]);
+    await dragOver(screen.getByTestId('catalog-row-4'), car);
+    await waitFor(() => targeted(car));
+    fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' });
+    await waitFor(() => expect(document.body).not.toHaveClass('catalog-dragging'));
+    expect(car).not.toHaveClass('ring-bambu-green');
+    expect(calls).toEqual([]);
+  });
+
+  it('a drag parked over a closed folder springs it open; it closes again if nothing lands inside', async () => {
+    localStorage.setItem('projects-catalog-collapsed', '[1]');
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-4');
+    expect(screen.queryByTestId('catalog-row-3')).not.toBeInTheDocument();
+    const car = screen.getByTestId('catalog-folder-1');
+    await dragOver(screen.getByTestId('catalog-row-4'), car);
+    await waitFor(() => targeted(car));
+    expect(await screen.findByTestId('catalog-row-3', {}, { timeout: 2000 })).toBeInTheDocument();
+    // Let go somewhere else: Car folds back to how the user left it.
+    fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('catalog-row-3')).not.toBeInTheDocument());
+    expect(JSON.parse(localStorage.getItem('projects-catalog-collapsed') ?? '[]')).toEqual([1]);
+    // Dropped inside, it stays open.
+    await dragOver(screen.getByTestId('catalog-row-4'), car);
+    await waitFor(() => targeted(car));
+    await screen.findByTestId('catalog-row-3', {}, { timeout: 2000 });
+    fireEvent.mouseUp(document, mid(car));
+    await waitFor(() => expect(calls).toEqual(['move:4:{"folder_id":1}']));
+    expect(screen.getByTestId('catalog-row-3')).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('projects-catalog-collapsed') ?? '[]')).toEqual([]);
+  });
+
+  it('the rows of a folder a click opens cascade in; a page load does not', async () => {
+    localStorage.setItem('projects-catalog-collapsed', '[1]');
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-4');
+    expect(screen.getByTestId('catalog-row-4').closest('li')).not.toHaveClass('catalog-row-reveal');
+    await userEvent.click(within(screen.getByTestId('catalog-folder-1')).getByRole('button', { name: /Car/ }));
+    expect(screen.getByTestId('catalog-folder-2')).toHaveClass('catalog-row-reveal');
+    expect(screen.getByTestId('catalog-row-3').closest('li')).toHaveClass('catalog-row-reveal');
+    // Fourth row under Car (after Wheel cap and its two projects): the fourth slot of the cascade.
+    expect(screen.getByTestId('catalog-row-3').closest('li')?.style.getPropertyValue('--reveal-delay')).toBe('54ms');
+    expect(screen.getByTestId('catalog-row-4').closest('li')).not.toHaveClass('catalog-row-reveal');
+  });
+
+  it('a search turns drag off: a result has no folder on screen to land on', async () => {
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-1');
+    await userEvent.type(screen.getByRole('searchbox'), 'cap');
+    await waitFor(() => expect(rowNames()).toEqual(['catalog-row-1', 'catalog-row-2']));
+    const start = mid(screen.getByTestId('catalog-row-1'));
+    fireEvent.mouseDown(screen.getByTestId('catalog-row-1'), { ...start, button: 0 });
+    fireEvent.mouseMove(document, { clientX: start.clientX, clientY: start.clientY + 30 });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(document.body).not.toHaveClass('catalog-dragging');
+    fireEvent.mouseUp(document);
   });
 
   it("the folder menu renames and deletes", async () => {
@@ -275,23 +378,19 @@ describe('ProjectListPage (catalog)', () => {
   it('files a folder inside another by drag-and-drop, never inside its own subtree', async () => {
     render(<ProjectListPage />);
     await screen.findByTestId('catalog-row-1');
-    const data: Record<string, string> = {};
-    const dataTransfer = {
-      setData: (k: string, v: string) => { data[k] = v; },
-      getData: (k: string) => data[k] ?? '',
-      types: ['application/x-fenrir-folder'],
-      effectAllowed: 'move',
-      dropEffect: 'none',
-    };
-    // Car (1) onto its own child Wheel cap (2): refused.
-    fireEvent.dragStart(screen.getByTestId('catalog-folder-1'), { dataTransfer });
-    fireEvent.dragOver(screen.getByTestId('catalog-folder-2'), { dataTransfer });
-    fireEvent.drop(screen.getByTestId('catalog-folder-2'), { dataTransfer });
+    const wheelCap = screen.getByTestId('catalog-folder-2');
+    // Car (1) onto its own child Wheel cap (2): the ghost dims, nothing lights, the drop is refused.
+    await dragOver(screen.getByTestId('catalog-folder-1'), wheelCap);
+    await waitFor(() => expect(screen.getByTestId('catalog-drag-ghost')).toHaveAttribute('data-invalid', 'true'));
+    expect(wheelCap).not.toHaveClass('ring-bambu-green');
+    fireEvent.mouseUp(document, mid(wheelCap));
+    await waitFor(() => expect(document.body).not.toHaveClass('catalog-dragging'));
     expect(calls).toEqual([]);
-    // Labels (3) into Wheel cap (2): a third level.
-    fireEvent.dragStart(screen.getByTestId('catalog-folder-3'), { dataTransfer });
-    fireEvent.dragOver(screen.getByTestId('catalog-folder-2'), { dataTransfer });
-    fireEvent.drop(screen.getByTestId('catalog-folder-2'), { dataTransfer });
+    // Labels (3) into Wheel cap (2): a third level. The folder ghost is the folder row.
+    await dragOver(screen.getByTestId('catalog-folder-3'), wheelCap);
+    await waitFor(() => targeted(wheelCap));
+    expect(within(screen.getByTestId('catalog-drag-ghost')).getByText('Labels')).toBeInTheDocument();
+    fireEvent.mouseUp(document, mid(wheelCap));
     await waitFor(() => expect(calls).toEqual(['rename:3:{"parent_id":2}']));
   });
 

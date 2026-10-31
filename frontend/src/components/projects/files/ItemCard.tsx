@@ -1,15 +1,19 @@
 import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
+  Calculator,
   Clock,
   Download,
   ExternalLink,
   Eye,
   FileDown,
   GitFork,
+  History,
   Info,
   MoreVertical,
   Package,
@@ -17,21 +21,30 @@ import {
   Plus,
   Printer,
   Scissors,
+  Tag,
+  Trash2,
   Upload,
 } from 'lucide-react';
 import { api } from '../../../api/client';
-import type { ProjectFileOut, ProjectItemOut, ProjectRevisionOut, RevisionStatus } from '../../../api/client';
+import type { LibraryFileListItem, ProjectFileOut, ProjectItemOut, ProjectRevisionOut, RevisionStatus } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useToast } from '../../../contexts/ToastContext';
 import { useCalcConfig } from '../../../hooks/useCalcConfig';
 import { useUiSettings } from '../../../hooks/useUiSettings';
 import { PrintFacts } from '../../PrintFacts';
+import { BulkTagsPickerModal } from '../../BulkTagsPickerModal';
+import { ConfirmModal } from '../../ConfirmModal';
 import { ContextMenu } from '../../ContextMenu';
+import { FileHistoryModal } from '../../FileHistoryModal';
+import { LibraryFileDetailsModal } from '../../LibraryFileDetailsModal';
 import { HoldButton } from '../../aito/HoldButton';
 import type { ContextMenuItem } from '../../ContextMenu';
 import { ModelViewerModal } from '../../ModelViewerModal';
 import { inputCls, focusRingCls } from '../../formStyles';
+import { calculatorPrefillUrl } from '../../../utils/archivePricing';
 import { formatFileSize } from '../../../utils/file';
 import { formatDuration } from '../../../utils/date';
+import { projectKeys } from '../projectQueries';
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import { DropShield } from '../DropShield';
 import type { FileActions } from './useFileActions';
@@ -130,6 +143,19 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
   // The ⋯ fork request: the tray opens that revision's block with its fork form showing.
   const [fork, setFork] = useState<{ revisionId: number; nonce: number } | null>(null);
   const rename = useItemRename(item, actions);
+  // The File Manager card's own entries (minus Print, Preview, Download, which are icons here,
+  // and Move to project): calculator, history, tags, file details, delete.
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const canReadLibrary = hasPermission('library:read');
+  const canEditLibrary = hasAnyPermission('library:update_own', 'library:update_all');
+  const canDelete = hasPermission('projects:delete');
+  const [history, setHistory] = useState<ProjectFileOut | null>(null);
+  const [details, setDetails] = useState<LibraryFileListItem | null>(null);
+  const [tagsOpen, setTagsOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // A new revision is the newest: drop a picked older chip so the card shows it.
   const uploadNewRevision = async (files: File[]) => {
@@ -157,6 +183,18 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
   const outdated = shown?.outdated_by && shown.derived_from ? outdatedParams(shown.derived_from, shown.outdated_by) : null;
   const canSlice = canUpdate && !!source && (slice.state === 'none' || slice.state === 'failed');
   const canUploadSliced = canUpdate && !!source && slice.state === 'failed';
+  // Printed how many times: the File Manager's counter on the file Print sends (or the shown
+  // file), or the revision's printed quantity from its archives — whichever knows more.
+  const printed = Math.max(shown?.print_count ?? 0, printFile?.print_count ?? 0, display?.print_count ?? 0, timed?.print_count ?? 0);
+  const historyFile = printFile ?? display;
+  const openDetails = async (f: ProjectFileOut) => {
+    try {
+      const full = await api.getLibraryFile(f.id);
+      setDetails({ ...full, fs_modified_at: null });
+    } catch {
+      showToast(t('common.error'), 'error');
+    }
+  };
 
   const toggleDetails = () => {
     if (open) setFork(null);
@@ -166,6 +204,23 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
   const menuItems: ContextMenuItem[] = [
     { label: t('projectsPdm.files.details'), icon: <Info className="h-4 w-4" />, onClick: toggleDetails },
     ...(canUpdate ? [{ label: t('projectsPdm.files.rename'), icon: <Pencil className="h-4 w-4" />, onClick: rename.start }] : []),
+    ...(timed
+      ? [{
+          label: t('archives.menu.openInCalculator'),
+          icon: <Calculator className="h-4 w-4" />,
+          onClick: () =>
+            navigate(
+              calculatorPrefillUrl(
+                { filament_used_grams: timed.filament_used_grams ?? null, print_time_seconds: timed.print_time_seconds ?? null, filament_type: timed.filament_type ?? null, filament_vendor: timed.filament_vendor },
+                calcConfig,
+                [shown?.print_profile?.printer_model as string | undefined, timed.sliced_for_model],
+              ),
+            ),
+        }]
+      : []),
+    ...(canReadLibrary && historyFile
+      ? [{ label: t('fileManager.fileHistory.menuLabel'), icon: <History className="h-4 w-4" />, onClick: () => setHistory(historyFile) }]
+      : []),
     ...(shown?.sliced_file
       ? [{
           label: t('projectsPdm.slice.downloadSliced'),
@@ -196,6 +251,15 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
             if (!open) onToggleDetails();
           },
         }]
+      : []),
+    ...(canEditLibrary && display
+      ? [{ label: t('fileManager.tags.title'), icon: <Tag className="h-4 w-4" />, onClick: () => setTagsOpen(true) }]
+      : []),
+    ...(canReadLibrary && display
+      ? [{ label: t('fileManager.details.title'), icon: <Info className="h-4 w-4" />, onClick: () => void openDetails(display) }]
+      : []),
+    ...(canDelete
+      ? [{ label: t('common.delete'), icon: <Trash2 className="h-4 w-4" />, danger: true, onClick: () => setConfirmDelete(true) }]
       : []),
   ];
 
@@ -316,10 +380,23 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
                 <PrintFacts facts={timed} calcConfig={calcConfig} currencyCode={currencyCode} className="mt-1"
                   printerHints={[shown.print_profile?.printer_model as string | undefined, timed.sliced_for_model]} />
               )}
-              <SliceLine key={`${shown.id}-${slice.state}`} state={slice.state} percent={slice.percent} error={slice.error} printCount={shown.print_count}
+              <SliceLine key={`${shown.id}-${slice.state}`} state={slice.state} percent={slice.percent} error={slice.error}
                 changed={slice.state !== firstSlice.current.get(shown.id)}
                 onRetry={canUpdate && source ? () => void actions.sliceRevision(shown.id) : undefined}
                 onUpload={canUploadSliced ? () => setUploadSliced(true) : undefined} />
+              {printed > 0 && (
+                <div className="mt-1 text-xs text-bambu-green">
+                  {/* The File Manager card's line: the count opens the file's print history. */}
+                  {canReadLibrary && historyFile ? (
+                    <button type="button" onClick={() => setHistory(historyFile)} className={`rounded hover:underline ${focusRingCls}`}
+                      aria-label={t('fileManager.fileHistory.viewHistoryAria')} title={t('fileManager.fileHistory.viewHistoryAria')}>
+                      {t('fileManager.printedCount', { count: printed })}
+                    </button>
+                  ) : (
+                    t('fileManager.printedCount', { count: printed })
+                  )}
+                </div>
+              )}
               <div className="mt-1 text-[11px]">
                 {[shown.created_by ? t('projectsPdm.files.byAuthor', { name: shown.created_by }) : null,
                   new Date(shown.created_at).toLocaleDateString(i18n.language)].filter(Boolean).join(' · ')}
@@ -409,6 +486,48 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
             onClose={() => setPrinting(null)}
           />
         </DropShield>
+      )}
+      {history && (
+        <DropShield>
+          <FileHistoryModal fileId={history.id} filename={history.filename} onClose={() => setHistory(null)} />
+        </DropShield>
+      )}
+      {details && (
+        <DropShield>
+          <LibraryFileDetailsModal file={details} canEdit={canEditLibrary} onClose={() => setDetails(null)} />
+        </DropShield>
+      )}
+      {tagsOpen && display && (
+        <DropShield>
+          <BulkTagsPickerModal
+            open
+            singleMode
+            fileIds={[display.id]}
+            initialTagIds={display.tag_ids ?? []}
+            onClose={() => {
+              setTagsOpen(false);
+              // The tree carries each file's tag ids: a later open must start from the saved set.
+              void queryClient.invalidateQueries({ queryKey: projectKeys.tree(actions.projectId) });
+            }}
+          />
+        </DropShield>
+      )}
+      {confirmDelete && (
+        <ConfirmModal
+          title={t('projectsPdm.files.deleteItem')}
+          message={t('projectsPdm.files.deleteItemConfirm', { name: item.name })}
+          confirmText={t('common.delete')}
+          variant="danger"
+          isLoading={deleting}
+          onConfirm={() => {
+            setDeleting(true);
+            void actions.deleteItem(item.id).finally(() => {
+              setDeleting(false);
+              setConfirmDelete(false);
+            });
+          }}
+          onCancel={() => setConfirmDelete(false)}
+        />
       )}
     </>
   );

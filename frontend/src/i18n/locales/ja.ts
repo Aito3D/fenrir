@@ -10466,6 +10466,7 @@ export default {
       rename: '名前を変更',
       deleteRevision: 'リビジョンを削除',
       deleteItem: 'アイテムを削除',
+      deleteItemConfirm: '「{{name}}」をリビジョンとファイルごと削除しますか？印刷済みまたは納品済みのアイテムは削除できません。',
       frozen: 'ファイルはロックされています：このリビジョンは印刷または納品済みです',
       duplicateWarning: '{{filename}}は{{revision}}と同一です',
       byAuthor: '作成者: {{name}}',

@@ -1659,6 +1659,7 @@ class _TreeRows:
     used: set[int]
     users: dict[int, str]
     print_counts: dict[int, int]
+    tag_ids: dict[int, list[int]]
 
 
 async def _load_tree_rows(db: AsyncSession, project: Project) -> _TreeRows:
@@ -1718,6 +1719,15 @@ async def _load_tree_rows(db: AsyncSession, project: Project) -> _TreeRows:
         dict((await db.execute(select(User.id, User.username).where(User.id.in_(user_ids)))).all()) if user_ids else {}
     )
     print_counts = await revision_print_counts(db, list(revisions_by_id))
+    tag_ids: dict[int, list[int]] = {}
+    if files:
+        tag_rows = await db.execute(
+            select(LibraryFileTag.file_id, LibraryFileTag.tag_id)
+            .where(LibraryFileTag.file_id.in_([f.id for f in files]))
+            .order_by(LibraryFileTag.tag_id)
+        )
+        for file_id, tag_id in tag_rows:
+            tag_ids.setdefault(file_id, []).append(tag_id)
     return _TreeRows(
         items=items,
         items_by_id=items_by_id,
@@ -1729,6 +1739,7 @@ async def _load_tree_rows(db: AsyncSession, project: Project) -> _TreeRows:
         used=used,
         users=users,
         print_counts=print_counts,
+        tag_ids=tag_ids,
     )
 
 
@@ -1763,7 +1774,7 @@ def _outdated_by(
     return None
 
 
-def _file_out(f: LibraryFile) -> ProjectFileOut:
+def _file_out(f: LibraryFile, tag_ids: list[int] | None = None) -> ProjectFileOut:
     return ProjectFileOut(
         id=f.id,
         filename=f.filename,
@@ -1772,6 +1783,8 @@ def _file_out(f: LibraryFile) -> ProjectFileOut:
         file_hash=f.file_hash,
         has_thumbnail=bool(f.thumbnail_path),
         created_at=f.created_at,
+        print_count=f.print_count or 0,
+        tag_ids=tag_ids or [],
         **display_facts(f.file_metadata),
     )
 
@@ -1796,11 +1809,11 @@ def _revision_out(
         slicer_version=rev.slicer_version,
         has_snapshot=rev.config_snapshot is not None,
         used=any(f.id in rows.used for f in rev_files) or (sliced is not None and sliced.id in rows.used),
-        files=[_file_out(f) for f in rev_files],
+        files=[_file_out(f, rows.tag_ids.get(f.id)) for f in rev_files],
         slice_status=rev.slice_status,
         slice_error=rev.slice_error,
         slice_job_id=rev.slice_job_id,
-        sliced_file=_file_out(sliced) if sliced is not None else None,
+        sliced_file=_file_out(sliced, rows.tag_ids.get(sliced.id)) if sliced is not None else None,
         created_by=rows.users.get(rev.created_by_id),
         created_at=rev.created_at,
         status_changed_at=rev.status_changed_at,

@@ -10071,6 +10071,7 @@ export default {
       rename: 'Переименовать',
       deleteRevision: 'Удалить ревизию',
       deleteItem: 'Удалить элемент',
+      deleteItemConfirm: 'Удалить «{{name}}» вместе с ревизиями и файлами? Напечатанный или доставленный элемент удалить нельзя.',
       frozen: 'Файлы заблокированы: эта ревизия уже напечатана или передана',
       duplicateWarning: '{{filename}} идентичен {{revision}}',
       byAuthor: 'автор: {{name}}',

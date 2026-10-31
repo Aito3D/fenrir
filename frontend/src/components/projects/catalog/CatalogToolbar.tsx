@@ -21,7 +21,7 @@ const CHIPS: { id: CatalogChip; key: string; Icon: typeof Flame; cls: string }[]
 ];
 
 const chipCls = (on: boolean) =>
-  `inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs ${
+  `btn-press inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs ${
     on ? 'border-bambu-green bg-bambu-green/15 text-white' : 'border-bambu-dark-tertiary text-bambu-gray hover:text-white'
   } ${focusRingCls}`;
 

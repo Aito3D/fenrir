@@ -10491,6 +10491,7 @@ errors: {
       rename: 'Byt namn',
       deleteRevision: 'Ta bort revision',
       deleteItem: 'Ta bort objekt',
+      deleteItemConfirm: 'Ta bort ”{{name}}” med dess revisioner och filer? Ett utskrivet eller levererat objekt kan inte tas bort.',
       frozen: 'Filer låsta: den här revisionen har skrivits ut eller levererats',
       duplicateWarning: '{{filename}} är identisk med {{revision}}',
       byAuthor: 'av {{name}}',

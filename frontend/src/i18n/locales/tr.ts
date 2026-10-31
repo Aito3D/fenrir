@@ -10394,6 +10394,7 @@ export default {
       rename: 'Yeniden adlandır',
       deleteRevision: 'Revizyonu sil',
       deleteItem: 'Öğeyi sil',
+      deleteItemConfirm: '“{{name}}” revizyonları ve dosyalarıyla birlikte silinsin mi? Basılmış veya teslim edilmiş bir öğe silinemez.',
       frozen: 'Dosyalar kilitli: bu revizyon basıldı veya teslim edildi',
       duplicateWarning: '{{filename}}, {{revision}} ile aynı',
       byAuthor: 'ekleyen: {{name}}',

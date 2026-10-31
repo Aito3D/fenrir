@@ -10108,6 +10108,7 @@ export default {
       rename: 'Перейменувати',
       deleteRevision: 'Видалити ревізію',
       deleteItem: 'Видалити елемент',
+      deleteItemConfirm: 'Видалити «{{name}}» разом із ревізіями та файлами? Надрукований або доставлений елемент видалити не можна.',
       frozen: 'Файли заблоковано: цю ревізію вже надруковано або передано',
       duplicateWarning: '{{filename}} ідентичний {{revision}}',
       byAuthor: 'автор: {{name}}',

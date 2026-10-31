@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ProjectItemOut, ProjectSection, ProjectTreeResponse } from '../../../api/client';
 import { CollapsibleHeader } from './CollapsibleHeader';
@@ -12,13 +13,14 @@ import { ENABLED_SECTIONS, SECTION_LABEL_KEYS, SECTION_ORDER, isSectionEnabled }
 import { useDerivedOptions } from './useDerivedOptions';
 import { useProjectTree } from '../projectQueries';
 
-export function ProjectFilesPanel({ projectId }: { projectId: number }) {
+/** `placeholder` shows until the tree is loaded (the catalog pane's skeleton); nothing by default. */
+export function ProjectFilesPanel({ projectId, placeholder = null }: { projectId: number; placeholder?: ReactNode }) {
   const actions = useFileActions(projectId);
   // While a revision slices, the tree is polled so its card turns Sliced / Slice failed by itself.
   const { data: tree } = useProjectTree(projectId, { refetchInterval: (query) => (anySlicing(query.state.data) ? 3000 : false) });
   const derivedOptions = useDerivedOptions(projectId);
 
-  if (!tree) return null;
+  if (!tree) return placeholder;
   const bySection = new Map(tree.sections.map((s) => [s.section, s.items]));
   // Projects hold printing files only for now: only the enabled sections are shown;
   // items left in a disabled one stay reachable under "Older files".

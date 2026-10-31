@@ -10452,6 +10452,7 @@ export default {
       rename: 'Rinomina',
       deleteRevision: 'Elimina revisione',
       deleteItem: 'Elimina elemento',
+      deleteItemConfirm: 'Eliminare «{{name}}» con le sue revisioni e i suoi file? Un elemento stampato o consegnato non può essere eliminato.',
       frozen: 'File bloccati: questa revisione è già stata stampata o consegnata',
       duplicateWarning: '{{filename}} è identico a {{revision}}',
       byAuthor: 'di {{name}}',

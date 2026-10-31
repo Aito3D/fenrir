@@ -22,7 +22,7 @@ export function CatalogPane({ item, folders }: { item: ProjectCatalogItem; folde
       ? t('projectsPdm.catalog.printed', { n: item.printed_count })
       : t('projectsPdm.catalog.neverPrinted');
   return (
-    <div data-testid="catalog-pane" className="space-y-4">
+    <div data-testid="catalog-pane" className="animate-fade-in space-y-4">
       {path.length > 0 && (
         <nav className="flex items-center gap-1 text-xs text-bambu-gray"><Folder className="h-3 w-3" aria-hidden />{path.join(' › ')}</nav>
       )}
@@ -53,11 +53,34 @@ export function CatalogPane({ item, folders }: { item: ProjectCatalogItem; folde
           {item.description && <p className="mt-1 line-clamp-2 text-xs text-bambu-gray">{item.description}</p>}
         </div>
         <Link to={`/projects/${item.id}`}
-          className={`flex shrink-0 items-center gap-1 rounded-lg border border-bambu-dark-tertiary px-2.5 py-1.5 text-xs text-bambu-gray hover:text-white ${focusRingCls}`}>
+          className={`btn-press flex shrink-0 items-center gap-1 rounded-lg border border-bambu-dark-tertiary px-2.5 py-1.5 text-xs text-bambu-gray hover:text-white ${focusRingCls}`}>
           {t('projectsPdm.catalog.openProject')}<ArrowRight className="h-3.5 w-3.5" aria-hidden />
         </Link>
       </div>
-      <ProjectFilesPanel projectId={item.id} />
+      <ProjectFilesPanel projectId={item.id} placeholder={<FilesSkeleton />} />
+    </div>
+  );
+}
+
+/** Stands in for the files panel until the project's tree arrives, at the height of one row
+ *  of cards, so the pane does not collapse to its header and grow back on every selection. */
+function FilesSkeleton() {
+  return (
+    <div data-testid="catalog-files-skeleton" aria-hidden className="rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary">
+      <div className="flex items-center gap-2 p-2">
+        <div className="h-4 w-20 rounded bg-bambu-dark-tertiary/60" />
+      </div>
+      <ul className="grid grid-cols-1 gap-4 px-2 pb-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {[0, 1, 2].map((i) => (
+          <li key={i} className="motion-safe:animate-pulse overflow-hidden rounded-lg border border-bambu-dark-tertiary">
+            <div className="aspect-square bg-bambu-dark-tertiary/40" />
+            <div className="space-y-2 p-3">
+              <div className="h-3 w-2/3 rounded bg-bambu-dark-tertiary/60" />
+              <div className="h-2.5 w-1/2 rounded bg-bambu-dark-tertiary/40" />
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

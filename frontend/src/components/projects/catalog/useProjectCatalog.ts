@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../../api/client';
-import type { ProjectCatalogParams } from '../../../api/client';
+import type { ProjectCatalogItem, ProjectCatalogParams, ProjectFolder } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
 import { failureMessage } from '../failureMessage';
 import { projectKeys } from '../projectQueries';
@@ -56,9 +56,18 @@ export function useCatalogMutations() {
   const createFolder = useMutation({
     mutationFn: (body: { name: string; parent_id: number | null }) => run(() => api.createProjectFolder(body), folderFail),
   });
+  // A move shows at once: the row is already in its folder when the ghost settles on it, and
+  // the refetch in `settle` (success or failure) brings the list back to what the server holds.
   const updateFolder = useMutation({
     mutationFn: (v: { id: number; name?: string; parent_id?: number | null }) =>
       run(() => api.updateProjectFolder(v.id, { name: v.name, parent_id: v.parent_id }), folderFail),
+    onMutate: async (v) => {
+      if (v.parent_id === undefined) return;
+      await queryClient.cancelQueries({ queryKey: catalogKeys.folders() });
+      queryClient.setQueryData<{ folders: ProjectFolder[] }>(catalogKeys.folders(), (old) =>
+        old && { ...old, folders: old.folders.map((f) => (f.id === v.id ? { ...f, parent_id: v.parent_id ?? null } : f)) },
+      );
+    },
   });
   const deleteFolder = useMutation({
     mutationFn: (id: number) => run(() => api.deleteProjectFolder(id), folderFail),
@@ -66,6 +75,12 @@ export function useCatalogMutations() {
   const moveProject = useMutation({
     mutationFn: (v: { projectId: number; folderId: number | null }) =>
       run(() => api.moveProjectToFolder(v.projectId, v.folderId), 'projectsPdm.catalog.moveFailed'),
+    onMutate: async (v) => {
+      await queryClient.cancelQueries({ queryKey: catalogKeys.all() });
+      queryClient.setQueriesData<{ items: ProjectCatalogItem[] }>({ queryKey: catalogKeys.all() }, (old) =>
+        old && { ...old, items: old.items.map((i) => (i.id === v.projectId ? { ...i, folder_id: v.folderId } : i)) },
+      );
+    },
   });
   return { createFolder, updateFolder, deleteFolder, moveProject };
 }

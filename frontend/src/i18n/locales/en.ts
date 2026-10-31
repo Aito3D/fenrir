@@ -10523,6 +10523,7 @@ export default {
       rename: 'Rename',
       deleteRevision: 'Delete revision',
       deleteItem: 'Delete item',
+      deleteItemConfirm: 'Delete “{{name}}” with its revisions and files? An item that was printed or delivered cannot be deleted.',
       frozen: 'Files frozen: this revision was printed or delivered',
       duplicateWarning: '{{filename}} is identical to {{revision}}',
       byAuthor: 'by {{name}}',

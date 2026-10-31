@@ -10452,6 +10452,7 @@ export default {
       rename: 'Renommer',
       deleteRevision: 'Supprimer la révision',
       deleteItem: "Supprimer l'élément",
+      deleteItemConfirm: 'Supprimer « {{name}} » avec ses révisions et ses fichiers ? Un élément imprimé ou livré ne peut pas être supprimé.',
       frozen: 'Fichiers figés : révision déjà imprimée ou livrée',
       duplicateWarning: '{{filename}} est identique à {{revision}}',
       byAuthor: 'par {{name}}',
