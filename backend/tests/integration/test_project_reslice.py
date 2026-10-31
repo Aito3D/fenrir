@@ -812,8 +812,19 @@ async def test_intermediate_drop_retries_and_succeeds_on_the_second_attempt(
         pauses.append(seconds)
         await real_sleep(0)
 
+    class _ResliceAsyncio:
+        """project_reslice's own view of asyncio: ``sleep`` is ``no_pause``, the rest is the real module.
+
+        Patching ``project_reslice.asyncio.sleep`` would replace the process-wide ``asyncio.sleep``
+        (httpx, slice_dispatch, other tasks in the worker) and record their sleeps in ``pauses``."""
+
+        sleep = staticmethod(no_pause)
+
+        def __getattr__(self, name):
+            return getattr(asyncio, name)
+
     monkeypatch.setattr(library_trash_service, "hard_delete_many", locked_once)
-    monkeypatch.setattr(project_reslice.asyncio, "sleep", no_pause)
+    monkeypatch.setattr(project_reslice, "asyncio", _ResliceAsyncio())
     with caplog.at_level(logging.WARNING, logger=project_reslice.__name__):
         started = await async_client.post(
             f"/api/v1/projects/revisions/{rev['id']}/reslice",
@@ -822,7 +833,7 @@ async def test_intermediate_drop_retries_and_succeeds_on_the_second_attempt(
         job = await _wait(async_client, started.json()["job_id"])
     assert job["status"] == "completed", job
     assert len(attempts) == 2
-    assert 0.2 in pauses  # the first pause of _DROP_RETRY_DELAYS
+    assert pauses == [0.2]  # only the first pause of _DROP_RETRY_DELAYS, nothing else in the process
     assert "failed (attempt 1 of 3), retrying" in caplog.text
     assert "could not delete intermediate" not in caplog.text
     assert await _sliced_rows(db_session) == []

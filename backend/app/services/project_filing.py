@@ -49,6 +49,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _COPY_FAILED_REASON = "could not copy the file"  # the OSError text (server path) is only logged
+# A legacy-migration failure that is neither ours (LegacyMigrationError) nor a ProjectFilesError: its text
+# (database error, server path...) is only logged.
+_LEGACY_UNEXPECTED_REASON = "unexpected error while migrating the project"
 
 _DROP_SECTIONS = {
     "scan": (".ply", ".obj", ".e57", ".xyz", ".pts"),
@@ -1026,7 +1029,13 @@ async def _run_legacy_migration() -> None:
                         totals["files_copied"] += outcome.files_copied
                 except Exception as exc:
                     logger.warning("Legacy migration of project %s failed", project_id, exc_info=True)
-                    state["failures"].append({"project_id": project_id, "code": code, "error": str(exc)[:500]})
+                    if isinstance(exc, (LegacyMigrationError, project_files.ProjectFilesError)):
+                        reason = str(exc)[:500]  # our own texts (a ProjectFilesError's str() is its detail)
+                    elif isinstance(exc, OSError):
+                        reason = _COPY_FAILED_REASON
+                    else:
+                        reason = _LEGACY_UNEXPECTED_REASON
+                    state["failures"].append({"project_id": project_id, "code": code, "error": reason})
                     await rollback_quietly(
                         db, logger, logging.DEBUG, "Rollback after a failed legacy migration failed too"
                     )

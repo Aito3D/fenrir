@@ -846,6 +846,7 @@ async def list_queue_history(
             Permission.QUEUE_READ_OWN,
         )
     ),
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),  # Fenrir
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Finished, failed, skipped and cancelled runs, one page at a time.
@@ -946,7 +947,7 @@ async def list_queue_history(
     )
 
     return {
-        "items": [_enrich_response(rows[i]) for i in ids if i in rows],
+        "items": [_hide_aito_task(_enrich_response(rows[i]), can_read_aito) for i in ids if i in rows],
         "total": total,
         "locations": sorted(location for location in locations if location),
     }
@@ -2490,6 +2491,7 @@ async def update_queue_item(
             Permission.QUEUE_UPDATE_OWN,
         )
     ),
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),  # Fenrir
     printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
 ):
@@ -2677,7 +2679,7 @@ async def update_queue_item(
     await db.refresh(item, ["archive", "printer", "library_file", "created_by", "batch"])
 
     logger.info("Updated queue item %s", item_id)
-    return _enrich_response(item)
+    return _hide_aito_task(_enrich_response(item), can_read_aito)
 
 
 async def _remove_queue_item(db: AsyncSession, item: PrintQueueItem) -> bool:
@@ -3164,6 +3166,7 @@ async def start_queue_item(
             Permission.QUEUE_UPDATE_OWN,
         )
     ),
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),  # Fenrir
     printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
 ):
@@ -3295,4 +3298,4 @@ async def start_queue_item(
         item_id,
         skip_filament_check,
     )
-    return _enrich_response(item)
+    return _hide_aito_task(_enrich_response(item), can_read_aito)
