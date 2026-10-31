@@ -349,6 +349,59 @@ async def test_retry_after_failure(async_client: AsyncClient, sidecar):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_a_slice_failing_within_milliseconds_answers_202_with_its_job(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    """T-485: the job runs as soon as it is enqueued; one that has already failed when the route
+    reads the status is returned (202, its job id, ``failed``), not a 400 'no source .3mf'."""
+    _no_auto_slice(monkeypatch)
+    project, _item, rev = await _upload(async_client)
+    db_session.add(Settings(key="preferred_slicer", value="bambu_studio"))
+    db_session.add(Settings(key="bambu_studio_api_url", value=""))
+    await db_session.commit()
+    monkeypatch.setattr(app_settings, "bambu_studio_api_url", "")
+    real_start = project_slice.start_revision_slice
+
+    async def start_then_finish(db, revision_id, *, user_id):
+        job_id = await real_start(db, revision_id, user_id=user_id)
+        await _wait_job(job_id)  # the failure commits before the route reads the status
+        return job_id
+
+    monkeypatch.setattr(project_slice, "start_revision_slice", start_then_finish)
+
+    started = await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")
+    assert started.status_code == 202, started.text
+    body = started.json()
+    assert body["slice_status"] == "failed"
+    assert body["job_id"] is not None
+    job = (await async_client.get(f"/api/v1/slice-jobs/{body['job_id']}")).json()
+    assert job["status"] == "failed"
+    out = await _tree_revision(async_client, project["id"], rev["id"])
+    assert (out["slice_status"], out["slice_job_id"]) == ("failed", body["job_id"])
+    assert "No slicer is configured" in out["slice_error"]
+    assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_slicing_a_revision_whose_source_is_gone_is_still_400(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    _no_auto_slice(monkeypatch)
+    project, _item, rev = await _upload(async_client)
+    source_id = (await _tree_revision(async_client, project["id"], rev["id"]))["files"][0]["id"]
+    source_path = to_absolute_path((await db_session.get(LibraryFile, source_id)).file_path)
+    assert source_path is not None
+    source_path.unlink()
+
+    started = await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")
+    assert started.status_code == 400, started.text
+    assert started.json()["detail"] == "This revision has no source .3mf to slice"
+    assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_slice_is_idempotent_while_running(async_client: AsyncClient, sidecar, monkeypatch):
     _no_auto_slice(monkeypatch)
     project, _item, rev = await _upload(async_client)

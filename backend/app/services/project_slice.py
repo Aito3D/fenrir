@@ -48,7 +48,7 @@ from backend.app.utils.threemf_tools import classify_3mf, extract_print_time_fro
 logger = logging.getLogger(__name__)
 
 NO_SLICER = "No slicer is configured in Settings"
-_SOURCE_MISSING = "The revision's source .3mf is missing"
+SOURCE_MISSING = "The revision's source .3mf is missing"
 SLICE_ERROR_MAX_CHARS = 500
 UNEXPECTED_SLICE_ERROR = "Unexpected error while slicing"
 COULD_NOT_START_SLICE = "Could not start the slice"
@@ -89,10 +89,14 @@ async def sliced_file_of(db: AsyncSession, library_file: LibraryFile) -> Library
     ``sliced`` and the row is still live, else None (not sliced yet).
 
     The slice is made from the revision's source ``.3mf`` only; any other ``.3mf`` a legacy
-    revision holds has no slice and is refused (400), so it never prints another file's G-code."""
+    revision holds has no slice and is refused (400), so it never prints another file's G-code.
+    A file missing on disk is refused (400) as missing, not as holding no project."""
     revision_id = library_file.revision_id
     if revision_id is None:
         return None
+    path = project_files.revision_file_path(library_file.file_path)
+    if path is None or not await asyncio.to_thread(path.is_file):
+        raise HTTPException(400, SOURCE_MISSING)
     source = await source_file_of(db, revision_id)
     if source is None:
         raise HTTPException(400, NO_PROJECT_TO_SLICE)
@@ -608,12 +612,12 @@ async def _slice_revision(db: AsyncSession, revision_id: int, *, user_id: int | 
     source = await source_file_of(db, revision_id)
     path = project_files.revision_file_path(source.file_path) if source is not None else None
     if source is None or path is None:
-        raise ProjectFilesError(404, _SOURCE_MISSING)
+        raise ProjectFilesError(404, SOURCE_MISSING)
     source_name = source.filename
     try:
         model_bytes = await asyncio.to_thread(path.read_bytes)
     except OSError as exc:
-        raise ProjectFilesError(404, f"{_SOURCE_MISSING} on disk") from exc
+        raise ProjectFilesError(404, f"{SOURCE_MISSING} on disk") from exc
     await asyncio.to_thread(check_source_within_caps, model_bytes)
     url = await resolve_slicer_api_url(db)
     if url is None:
@@ -713,7 +717,7 @@ async def resume_interrupted_slices() -> int:
         for revision_id, created_by_id in rows:
             try:
                 if await source_file_of(db, revision_id) is None:
-                    await _mark_failed(db, revision_id, _SOURCE_MISSING)
+                    await _mark_failed(db, revision_id, SOURCE_MISSING)
                     continue
                 if await _start(db, revision_id, user_id=created_by_id, resume=True) is not None:
                     resumed += 1

@@ -2986,7 +2986,9 @@ async def retry_queue_item_slice(
         raise HTTPException(400, "This item has no project revision to slice")
     revision_id = queued_file.revision_id
     source = await _project_slice().source_file_of(db, revision_id)
-    if source is None or source.id != queued_file.id:
+    if source is None:
+        raise HTTPException(400, _project_slice().SOURCE_MISSING)
+    if source.id != queued_file.id:
         raise HTTPException(400, _project_slice().NOT_THE_SOURCE)
 
     # Only the items the caller may modify (own unless update_all, printers in scope) are re-armed.

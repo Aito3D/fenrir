@@ -422,7 +422,9 @@ async def slice_revision(
         status = (
             await db.execute(select(ProjectRevision.slice_status).where(ProjectRevision.id == revision_id))
         ).scalar_one_or_none()
-        if status not in (SLICE_SLICING, SLICE_SLICED):
+        # A started job is returned whatever its state: one that failed within milliseconds is
+        # already ``failed`` here, and its job and slice_error say why.
+        if status is None or (job_id is None and status not in (SLICE_SLICING, SLICE_SLICED)):
             raise svc.ProjectFilesError(400, "This revision has no source .3mf to slice")
     return RevisionSliceStarted(job_id=job_id, slice_status=status)
 

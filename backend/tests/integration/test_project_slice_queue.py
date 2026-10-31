@@ -619,6 +619,29 @@ async def test_a_revision_3mf_with_no_project_is_refused(async_client: AsyncClie
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_queueing_a_project_source_missing_on_disk_is_refused_as_missing(
+    async_client: AsyncClient, db_session, sidecar, printer_factory
+):
+    """T-487: the file is gone, not a non-project: the refusal says so (it read 'no Bambu Studio project')."""
+    await printer_factory(model="X1C")
+    rev = await _upload(async_client)
+    source_id = rev["files"][0]["id"]
+    to_absolute_path((await db_session.get(LibraryFile, source_id)).file_path).unlink()
+
+    response = await async_client.post("/api/v1/queue/", json={"library_file_id": source_id})
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == "The revision's source .3mf is missing"
+    variants = await async_client.post(
+        "/api/v1/queue/", json={"variants": [{"library_file_id": source_id, "target_model": "X1C"}]}
+    )
+    assert variants.status_code == 400, variants.text
+    assert variants.json()["detail"] == "The revision's source .3mf is missing"
+    assert (await db_session.execute(select(PrintQueueItem))).scalars().all() == []
+    assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_slice_failing_on_a_missing_source_fails_the_waiting_items(
     async_client: AsyncClient, db_session, sidecar
 ):
@@ -645,8 +668,29 @@ async def test_slice_failing_on_a_missing_source_fails_the_waiting_items(
     retried = await async_client.post(f"/api/v1/queue/{item_id}/retry-slice")
     # a retry needs a source to slice: refused with the reason while it is gone, the item stays removable
     assert retried.status_code == 400
-    assert "not the revision's source" in retried.json()["detail"]
+    # T-486: the reason is the missing source (it read "not the revision's source")
+    assert retried.json()["detail"] == "The revision's source .3mf is missing"
+    assert (await _item(db_session, item_id)).status == "slice_failed"
     assert (await async_client.delete(f"/api/v1/queue/{item_id}")).status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_retry_slice_of_an_item_on_another_3mf_than_the_source_is_refused_as_not_the_source(
+    async_client: AsyncClient, db_session, sidecar
+):
+    _rev, _part_a, part_b = await _legacy_two_source_revision(async_client, db_session)
+    item = PrintQueueItem(
+        library_file_id=part_b, status="slice_failed", position=1, error_message=project_slice.NOT_THE_SOURCE
+    )
+    db_session.add(item)
+    await db_session.commit()
+
+    retried = await async_client.post(f"/api/v1/queue/{item.id}/retry-slice")
+    assert retried.status_code == 400, retried.text
+    assert retried.json()["detail"] == "This file is not the revision's source; upload it as its own item."
+    assert (await _item(db_session, item.id)).status == "slice_failed"
+    assert sidecar.slice_requests == []
 
 
 async def _slicing_item_on(db, file_id: int) -> int:
