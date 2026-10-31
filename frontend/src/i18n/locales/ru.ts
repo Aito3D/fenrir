@@ -9879,7 +9879,6 @@ export default {
       itemBusy: '{{name}} ещё загружается, поэтому перетащенные файлы не были загружены',
       otherSections: 'Старые файлы',
       newRevision: 'Новая ревизия',
-      addFiles: 'Добавить файлы',
       removeFile: 'Убрать {{name}}',
       remove: 'Убрать',
       statusLabel: 'Статус',

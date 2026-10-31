@@ -1,6 +1,6 @@
 ### exit: 0
 ### stdout:
---- de projectsPdm (206 keys)
+--- de projectsPdm (205 keys)
 acceptSuggestion = "{{name}} hinzufügen"  placeholders={{name}}
 aiUnavailable = "KI nicht verfügbar"
 aito.confirmUnlink = "{{name}} von dieser Aufgabe lösen? Die Liste der gelieferten Dateien wird geleert."  placeholders={{name}}
@@ -51,7 +51,6 @@ descriptionLabel = "Beschreibung"
 editHeader = "Titel, Beschreibung und Tags bearbeiten"
 empty = "Noch keine Projekte"
 emptySearch = "Kein Projekt entspricht dieser Suche"
-files.addFiles = "Dateien hinzufügen"
 files.byAuthor = "von {{name}}"  placeholders={{name}}
 files.chooseFiles = "Dateien auswählen"
 files.deleteItem = "Element löschen"
@@ -207,7 +206,7 @@ title = "Projekte"
 titleLabel = "Titel"
 viewGrid = "Rasteransicht"
 viewTable = "Tabellenansicht"
---- en projectsPdm (206 keys)
+--- en projectsPdm (205 keys)
 acceptSuggestion = "Add {{name}}"  placeholders={{name}}
 aiUnavailable = "AI unavailable"
 aito.confirmUnlink = "Unlink {{name}} from this task? Its delivered files list is cleared."  placeholders={{name}}
@@ -258,7 +257,6 @@ descriptionLabel = "Description"
 editHeader = "Edit title, description and tags"
 empty = "No projects yet"
 emptySearch = "No project matches this search"
-files.addFiles = "Add files"
 files.byAuthor = "by {{name}}"  placeholders={{name}}
 files.chooseFiles = "Choose files"
 files.deleteItem = "Delete item"
@@ -414,7 +412,7 @@ title = "Projects"
 titleLabel = "Title"
 viewGrid = "Grid view"
 viewTable = "Table view"
---- es projectsPdm (206 keys)
+--- es projectsPdm (205 keys)
 acceptSuggestion = "Añadir {{name}}"  placeholders={{name}}
 aiUnavailable = "IA no disponible"
 aito.confirmUnlink = "¿Desvincular {{name}} de esta tarea? Se borrará la lista de archivos entregados."  placeholders={{name}}
@@ -465,7 +463,6 @@ descriptionLabel = "Descripción"
 editHeader = "Editar título, descripción y etiquetas"
 empty = "Aún no hay proyectos"
 emptySearch = "Ningún proyecto coincide con esta búsqueda"
-files.addFiles = "Añadir archivos"
 files.byAuthor = "por {{name}}"  placeholders={{name}}
 files.chooseFiles = "Elegir archivos"
 files.deleteItem = "Eliminar elemento"
@@ -621,7 +618,7 @@ title = "Proyectos"
 titleLabel = "Título"
 viewGrid = "Vista de cuadrícula"
 viewTable = "Vista de tabla"
---- fr projectsPdm (206 keys)
+--- fr projectsPdm (205 keys)
 acceptSuggestion = "Ajouter {{name}}"  placeholders={{name}}
 aiUnavailable = "IA indisponible"
 aito.confirmUnlink = "Délier {{name}} de cette tâche ? La liste des fichiers livrés sera effacée."  placeholders={{name}}
@@ -672,7 +669,6 @@ descriptionLabel = "Description"
 editHeader = "Modifier le titre, la description et les étiquettes"
 empty = "Aucun projet pour le moment"
 emptySearch = "Aucun projet ne correspond à cette recherche"
-files.addFiles = "Ajouter des fichiers"
 files.byAuthor = "par {{name}}"  placeholders={{name}}
 files.chooseFiles = "Choisir des fichiers"
 files.deleteItem = "Supprimer l'élément"
@@ -828,7 +824,7 @@ title = "Projets"
 titleLabel = "Titre"
 viewGrid = "Vue grille"
 viewTable = "Vue tableau"
---- it projectsPdm (206 keys)
+--- it projectsPdm (205 keys)
 acceptSuggestion = "Aggiungi {{name}}"  placeholders={{name}}
 aiUnavailable = "IA non disponibile"
 aito.confirmUnlink = "Scollegare {{name}} da questa attività? L'elenco dei file consegnati verrà svuotato."  placeholders={{name}}
@@ -879,7 +875,6 @@ descriptionLabel = "Descrizione"
 editHeader = "Modifica titolo, descrizione e tag"
 empty = "Nessun progetto ancora"
 emptySearch = "Nessun progetto corrisponde a questa ricerca"
-files.addFiles = "Aggiungi file"
 files.byAuthor = "di {{name}}"  placeholders={{name}}
 files.chooseFiles = "Scegli file"
 files.deleteItem = "Elimina elemento"
@@ -1035,7 +1030,7 @@ title = "Progetti"
 titleLabel = "Titolo"
 viewGrid = "Vista griglia"
 viewTable = "Vista tabella"
---- ja projectsPdm (206 keys)
+--- ja projectsPdm (205 keys)
 acceptSuggestion = "{{name}}を追加"  placeholders={{name}}
 aiUnavailable = "AIは利用できません"
 aito.confirmUnlink = "このタスクから {{name}} のリンクを解除しますか？納品ファイルの一覧は消去されます。"  placeholders={{name}}
@@ -1086,7 +1081,6 @@ descriptionLabel = "説明"
 editHeader = "タイトル、説明、タグを編集"
 empty = "プロジェクトはまだありません"
 emptySearch = "この検索に一致するプロジェクトはありません"
-files.addFiles = "ファイルを追加"
 files.byAuthor = "作成者: {{name}}"  placeholders={{name}}
 files.chooseFiles = "ファイルを選択"
 files.deleteItem = "アイテムを削除"
@@ -1242,7 +1236,7 @@ title = "プロジェクト"
 titleLabel = "タイトル"
 viewGrid = "グリッド表示"
 viewTable = "テーブル表示"
---- ko projectsPdm (206 keys)
+--- ko projectsPdm (205 keys)
 acceptSuggestion = "{{name}} 추가"  placeholders={{name}}
 aiUnavailable = "AI를 사용할 수 없음"
 aito.confirmUnlink = "이 작업에서 {{name}} 연결을 해제할까요? 납품 파일 목록이 지워집니다."  placeholders={{name}}
@@ -1293,7 +1287,6 @@ descriptionLabel = "설명"
 editHeader = "제목, 설명 및 태그 편집"
 empty = "아직 프로젝트가 없습니다"
 emptySearch = "이 검색과 일치하는 프로젝트가 없습니다"
-files.addFiles = "파일 추가"
 files.byAuthor = "{{name}}"  placeholders={{name}}
 files.chooseFiles = "파일 선택"
 files.deleteItem = "항목 삭제"
@@ -1449,7 +1442,7 @@ title = "프로젝트"
 titleLabel = "제목"
 viewGrid = "격자 보기"
 viewTable = "표 보기"
---- nl projectsPdm (206 keys)
+--- nl projectsPdm (205 keys)
 acceptSuggestion = "{{name}} toevoegen"  placeholders={{name}}
 aiUnavailable = "AI niet beschikbaar"
 aito.confirmUnlink = "{{name}} loskoppelen van deze taak? De lijst met geleverde bestanden wordt gewist."  placeholders={{name}}
@@ -1500,7 +1493,6 @@ descriptionLabel = "Beschrijving"
 editHeader = "Titel, beschrijving en tags bewerken"
 empty = "Nog geen projecten"
 emptySearch = "Geen project komt overeen met deze zoekopdracht"
-files.addFiles = "Bestanden toevoegen"
 files.byAuthor = "door {{name}}"  placeholders={{name}}
 files.chooseFiles = "Bestanden kiezen"
 files.deleteItem = "Item verwijderen"
@@ -1656,7 +1648,7 @@ title = "Projecten"
 titleLabel = "Titel"
 viewGrid = "Rasterweergave"
 viewTable = "Tabelweergave"
---- ptBR projectsPdm (206 keys)
+--- ptBR projectsPdm (205 keys)
 acceptSuggestion = "Adicionar {{name}}"  placeholders={{name}}
 aiUnavailable = "IA indisponível"
 aito.confirmUnlink = "Desvincular {{name}} desta tarefa? A lista de arquivos entregues será apagada."  placeholders={{name}}
@@ -1707,7 +1699,6 @@ descriptionLabel = "Descrição"
 editHeader = "Editar título, descrição e tags"
 empty = "Nenhum projeto ainda"
 emptySearch = "Nenhum projeto corresponde a esta busca"
-files.addFiles = "Adicionar arquivos"
 files.byAuthor = "por {{name}}"  placeholders={{name}}
 files.chooseFiles = "Escolher arquivos"
 files.deleteItem = "Excluir item"
@@ -1863,7 +1854,7 @@ title = "Projetos"
 titleLabel = "Título"
 viewGrid = "Visualização em grade"
 viewTable = "Visualização em tabela"
---- ru projectsPdm (206 keys)
+--- ru projectsPdm (205 keys)
 acceptSuggestion = "Добавить {{name}}"  placeholders={{name}}
 aiUnavailable = "ИИ недоступен"
 aito.confirmUnlink = "Отвязать {{name}} от этой задачи? Список переданных файлов будет очищен."  placeholders={{name}}
@@ -1914,7 +1905,6 @@ descriptionLabel = "Описание"
 editHeader = "Изменить название, описание и метки"
 empty = "Проектов пока нет"
 emptySearch = "Ни один проект не соответствует поиску"
-files.addFiles = "Добавить файлы"
 files.byAuthor = "автор: {{name}}"  placeholders={{name}}
 files.chooseFiles = "Выбрать файлы"
 files.deleteItem = "Удалить элемент"
@@ -2070,7 +2060,7 @@ title = "Проекты"
 titleLabel = "Название"
 viewGrid = "Вид сеткой"
 viewTable = "Табличный вид"
---- sv projectsPdm (206 keys)
+--- sv projectsPdm (205 keys)
 acceptSuggestion = "Lägg till {{name}}"  placeholders={{name}}
 aiUnavailable = "AI är inte tillgänglig"
 aito.confirmUnlink = "Koppla bort {{name}} från den här uppgiften? Listan över levererade filer töms."  placeholders={{name}}
@@ -2121,7 +2111,6 @@ descriptionLabel = "Beskrivning"
 editHeader = "Redigera titel, beskrivning och taggar"
 empty = "Inga projekt än"
 emptySearch = "Inget projekt matchar sökningen"
-files.addFiles = "Lägg till filer"
 files.byAuthor = "av {{name}}"  placeholders={{name}}
 files.chooseFiles = "Välj filer"
 files.deleteItem = "Ta bort objekt"
@@ -2277,7 +2266,7 @@ title = "Projekt"
 titleLabel = "Titel"
 viewGrid = "Rutnätsvy"
 viewTable = "Tabellvy"
---- tr projectsPdm (206 keys)
+--- tr projectsPdm (205 keys)
 acceptSuggestion = "{{name}} ekle"  placeholders={{name}}
 aiUnavailable = "Yapay zekâ kullanılamıyor"
 aito.confirmUnlink = "{{name}} bu görevden ayrılsın mı? Teslim edilen dosyalar listesi temizlenir."  placeholders={{name}}
@@ -2328,7 +2317,6 @@ descriptionLabel = "Açıklama"
 editHeader = "Başlığı, açıklamayı ve etiketleri düzenle"
 empty = "Henüz proje yok"
 emptySearch = "Bu aramayla eşleşen proje yok"
-files.addFiles = "Dosya ekle"
 files.byAuthor = "ekleyen: {{name}}"  placeholders={{name}}
 files.chooseFiles = "Dosya seç"
 files.deleteItem = "Öğeyi sil"
@@ -2484,7 +2472,7 @@ title = "Projeler"
 titleLabel = "Başlık"
 viewGrid = "Izgara görünümü"
 viewTable = "Tablo görünümü"
---- uk projectsPdm (206 keys)
+--- uk projectsPdm (205 keys)
 acceptSuggestion = "Додати {{name}}"  placeholders={{name}}
 aiUnavailable = "ШІ недоступний"
 aito.confirmUnlink = "Відв’язати {{name}} від цього завдання? Список переданих файлів буде очищено."  placeholders={{name}}
@@ -2535,7 +2523,6 @@ descriptionLabel = "Опис"
 editHeader = "Редагувати назву, опис і теги"
 empty = "Проєктів ще немає"
 emptySearch = "Жоден проєкт не відповідає пошуку"
-files.addFiles = "Додати файли"
 files.byAuthor = "автор: {{name}}"  placeholders={{name}}
 files.chooseFiles = "Вибрати файли"
 files.deleteItem = "Видалити елемент"
@@ -2691,7 +2678,7 @@ title = "Проєкти"
 titleLabel = "Назва"
 viewGrid = "Вигляд сіткою"
 viewTable = "Табличний вигляд"
---- zhCN projectsPdm (206 keys)
+--- zhCN projectsPdm (205 keys)
 acceptSuggestion = "添加 {{name}}"  placeholders={{name}}
 aiUnavailable = "AI 不可用"
 aito.confirmUnlink = "要将 {{name}} 从此任务取消关联吗？已交付文件列表将被清空。"  placeholders={{name}}
@@ -2742,7 +2729,6 @@ descriptionLabel = "描述"
 editHeader = "编辑标题、描述和标签"
 empty = "暂无项目"
 emptySearch = "没有项目匹配此搜索"
-files.addFiles = "添加文件"
 files.byAuthor = "作者：{{name}}"  placeholders={{name}}
 files.chooseFiles = "选择文件"
 files.deleteItem = "删除条目"
@@ -2898,7 +2884,7 @@ title = "项目"
 titleLabel = "标题"
 viewGrid = "网格视图"
 viewTable = "表格视图"
---- zhTW projectsPdm (206 keys)
+--- zhTW projectsPdm (205 keys)
 acceptSuggestion = "新增 {{name}}"  placeholders={{name}}
 aiUnavailable = "AI 無法使用"
 aito.confirmUnlink = "要將 {{name}} 從此任務取消連結嗎？已交付檔案清單將被清除。"  placeholders={{name}}
@@ -2949,7 +2935,6 @@ descriptionLabel = "描述"
 editHeader = "編輯標題、描述與標籤"
 empty = "尚無專案"
 emptySearch = "沒有專案符合此搜尋"
-files.addFiles = "新增檔案"
 files.byAuthor = "作者：{{name}}"  placeholders={{name}}
 files.chooseFiles = "選擇檔案"
 files.deleteItem = "刪除項目"

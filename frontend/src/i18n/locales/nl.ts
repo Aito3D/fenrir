@@ -10299,7 +10299,6 @@ export default {
       itemBusy: '{{name}} wordt nog geüpload, dus de neergezette bestanden zijn niet geüpload',
       otherSections: 'Oudere bestanden',
       newRevision: 'Nieuwe revisie',
-      addFiles: 'Bestanden toevoegen',
       removeFile: '{{name}} verwijderen',
       remove: 'Verwijderen',
       statusLabel: 'Status',

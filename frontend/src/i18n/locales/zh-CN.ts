@@ -10258,7 +10258,6 @@ export default {
       itemBusy: '{{name}} 仍在上传，因此拖放的文件未上传',
       otherSections: '旧文件',
       newRevision: '新版本',
-      addFiles: '添加文件',
       removeFile: '移除 {{name}}',
       remove: '移除',
       statusLabel: '状态',

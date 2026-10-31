@@ -10260,7 +10260,6 @@ export default {
       itemBusy: '{{name}} ainda está sendo enviado, então os arquivos soltos não foram enviados',
       otherSections: 'Arquivos antigos',
       newRevision: 'Nova revisão',
-      addFiles: 'Adicionar arquivos',
       removeFile: 'Remover {{name}}',
       remove: 'Remover',
       statusLabel: 'Status',

@@ -9896,7 +9896,6 @@ export default {
       itemBusy: '{{name}}을(를) 아직 업로드하는 중이라 드롭한 파일은 업로드되지 않았습니다',
       otherSections: '이전 파일',
       newRevision: '새 리비전',
-      addFiles: '파일 추가',
       removeFile: '{{name}} 제거',
       remove: '제거',
       statusLabel: '상태',

@@ -1068,8 +1068,8 @@ async def _resolve_queue_variants(
 
         # Fenrir: a project source .3mf runs as its server slice; an alternative cannot wait
         # for one (design 2026-10-17), so a revision not sliced yet is refused.
-        if _is_unsliced_project_source(library_file):
-            sliced_file = await _sliced_file_of(db, library_file)
+        if _project_slice().is_unsliced_project_source(library_file):
+            sliced_file = await _project_slice().sliced_file_of(db, library_file)
             if sliced_file is None:
                 raise HTTPException(
                     400,
@@ -1174,14 +1174,6 @@ def _project_slice():
     from backend.app.services import project_slice
 
     return project_slice
-
-
-def _is_unsliced_project_source(library_file: LibraryFile) -> bool:
-    return _project_slice().is_unsliced_project_source(library_file)
-
-
-async def _sliced_file_of(db: AsyncSession, library_file: LibraryFile) -> LibraryFile | None:
-    return await _project_slice().sliced_file_of(db, library_file)
 
 
 async def _start_slice_for_waiting_items(db: AsyncSession, revision_id: int, actor: User | ApiKeyActor | None) -> None:
@@ -1310,8 +1302,8 @@ async def add_to_queue(
     # "slicing" on the source and follows the slice (services/project_slice.py); a printer
     # never receives the unsliced source.
     slice_wait_revision_id: int | None = None
-    if library_file is not None and _is_unsliced_project_source(library_file):
-        sliced_file = await _sliced_file_of(db, library_file)
+    if library_file is not None and _project_slice().is_unsliced_project_source(library_file):
+        sliced_file = await _project_slice().sliced_file_of(db, library_file)
         if sliced_file is not None:
             library_file = sliced_file
             data.library_file_id = sliced_file.id

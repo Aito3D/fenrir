@@ -10274,7 +10274,6 @@ export default {
       itemBusy: '{{name}} はまだアップロード中のため、ドロップしたファイルはアップロードされませんでした',
       otherSections: '以前のファイル',
       newRevision: '新しいリビジョン',
-      addFiles: 'ファイルを追加',
       removeFile: '{{name}}を削除',
       remove: '削除',
       statusLabel: 'ステータス',
