@@ -3218,32 +3218,38 @@ tbody .calc-table-row:hover {
 
 /* The dragged row's ghost (dnd-kit DragOverlay). It lifts as it is picked up
    — scale and shadow arrive together over 150ms — and carries a cursor-sized
-   tilt-free elevation for the whole drag. `data-invalid` dims it over a
-   target that cannot take it (a folder over its own subtree). */
+   tilt-free elevation for the whole drag. It is see-through (0.7) so the row
+   it hovers, and the folder that lights up under it, stay readable; `data-
+   invalid` dims it further over a target that cannot take it (a folder over
+   its own subtree). */
 @keyframes catalog-lift {
   from { scale: 1; box-shadow: 0 0 0 0 rgb(0 0 0 / 0); }
   to { scale: 1.02; box-shadow: 0 12px 32px -8px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.06); }
 }
 .catalog-ghost {
   scale: 1.02;
+  opacity: 0.7;
   box-shadow: 0 12px 32px -8px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.06);
   animation: catalog-lift 150ms var(--ease-signature) backwards;
   transition: opacity 120ms ease;
   will-change: transform;
 }
 .catalog-ghost[data-invalid='true'] {
-  opacity: 0.55;
+  opacity: 0.4;
 }
 
 /* The ghost on its way home (a drop nowhere, or on a target that refused):
-   the lift unwinds across the 250ms return flight, as .aito-card-dropping
-   does, so the row settles into its slot instead of landing still raised. */
+   the lift unwinds and the ghost turns solid across the 250ms return flight,
+   as .aito-card-dropping does, so the row settles into its slot instead of
+   landing still raised and see-through. */
 .catalog-ghost-dropping {
   scale: 1;
+  opacity: 1;
   box-shadow: 0 0 0 0 rgb(0 0 0 / 0);
   border-color: transparent;
   transition:
     scale 250ms var(--ease-signature),
+    opacity 250ms var(--ease-signature),
     box-shadow 250ms var(--ease-signature),
     border-color 250ms var(--ease-signature);
 }
@@ -3291,6 +3297,9 @@ body.catalog-dragging * {
   .catalog-ghost {
     animation: none;
     scale: 1;
+  }
+  .catalog-ghost-dropping {
+    transition: none;
   }
   .catalog-receive .catalog-folder-icon {
     animation: none;
