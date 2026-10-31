@@ -5750,7 +5750,7 @@ class TestOIDCIssuerUrlTrailingSlash:
                 # deadline but far under the per-phase timeout=10 — this is
                 # exactly the "one byte every few seconds" scenario T-071
                 # guards against.
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(4.0)
                 raise AssertionError("unreachable: the overall deadline must cancel this before it completes")
 
             async def __aexit__(self, *args):
@@ -5776,7 +5776,8 @@ class TestOIDCIssuerUrlTrailingSlash:
 
         assert resp.status_code == 502
         assert resp.json()["detail"] == "Failed to fetch OIDC discovery document"
-        assert elapsed < 0.5, f"expected the overall deadline (0.2s) to cut the fetch off quickly, took {elapsed}s"
+        # 4 s hang vs a 2 s bound: a cut-off still reads as one on a loaded CI runner (0.57 s seen).
+        assert elapsed < 2.0, f"expected the overall deadline (0.2s) to cut the 4s fetch off, took {elapsed}s"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -6102,7 +6103,7 @@ class TestOIDCTokenAndJWKSFetchGuards:
             async def __aenter__(self):
                 # Trickles longer than the (monkeypatched) overall deadline
                 # but far under the untouched per-phase timeout.
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(4.0)
                 raise AssertionError("unreachable: the overall deadline must cancel this before it completes")
 
             async def __aexit__(self, *args):
@@ -6134,7 +6135,8 @@ class TestOIDCTokenAndJWKSFetchGuards:
         assert resp.status_code == 302
         location = resp.headers.get("location", "")
         assert "token_exchange_network_error" in location, location
-        assert elapsed < 0.5, f"expected the overall deadline (0.2s) to cut the fetch off quickly, took {elapsed}s"
+        # 4 s hang vs a 2 s bound: a cut-off still reads as one on a loaded CI runner (0.57 s seen).
+        assert elapsed < 2.0, f"expected the overall deadline (0.2s) to cut the 4s fetch off, took {elapsed}s"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -6206,7 +6208,7 @@ class TestOIDCTokenAndJWKSFetchGuards:
 
         class _HangingStreamCtx:
             async def __aenter__(self):
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(4.0)
                 raise AssertionError("unreachable: the overall deadline must cancel this before it completes")
 
             async def __aexit__(self, *args):
@@ -6240,7 +6242,8 @@ class TestOIDCTokenAndJWKSFetchGuards:
         assert resp.status_code == 302
         location = resp.headers.get("location", "")
         assert "token_validation_failed" in location, location
-        assert elapsed < 0.5, f"expected the overall deadline (0.2s) to cut the fetch off quickly, took {elapsed}s"
+        # 4 s hang vs a 2 s bound: a cut-off still reads as one on a loaded CI runner (0.57 s seen).
+        assert elapsed < 2.0, f"expected the overall deadline (0.2s) to cut the 4s fetch off, took {elapsed}s"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
