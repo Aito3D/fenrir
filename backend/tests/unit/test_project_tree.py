@@ -207,6 +207,7 @@ def _file_out(row, *, file_size=10, file_hash=None, has_thumbnail=False, created
         "sliced_for_model": None,
         "total_layers": None,
         "layer_height": None,
+        "nozzle_diameter": None,
         "object_count": None,
     }
 
