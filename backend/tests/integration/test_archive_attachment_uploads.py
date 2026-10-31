@@ -24,8 +24,10 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 def _3mf(marker: str = "a") -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("3D/3dmodel.model", f"<model>{marker}</model>")
-        zf.writestr("Metadata/slice_info.config", "<config/>")
+        # Fixed timestamps: the test byte-compares two of these built seconds apart, and a
+        # zip header carries the write time (a CI-only flake otherwise).
+        zf.writestr(zipfile.ZipInfo("3D/3dmodel.model", date_time=(1980, 1, 1, 0, 0, 0)), f"<model>{marker}</model>")
+        zf.writestr(zipfile.ZipInfo("Metadata/slice_info.config", date_time=(1980, 1, 1, 0, 0, 0)), "<config/>")
     return buf.getvalue()
 
 
