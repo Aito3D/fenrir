@@ -38,7 +38,10 @@ class ProjectItem(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
-SLICE_STATUSES = ("slicing", "sliced", "failed")
+SLICE_SLICING = "slicing"
+SLICE_SLICED = "sliced"
+SLICE_FAILED = "failed"
+SLICE_STATUSES = (SLICE_SLICING, SLICE_SLICED, SLICE_FAILED)
 
 
 class ProjectRevision(Base):

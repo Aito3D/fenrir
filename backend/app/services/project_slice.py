@@ -16,7 +16,6 @@ every revision still marked ``slicing`` at startup.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import uuid
@@ -33,7 +32,7 @@ from backend.app.core import database
 from backend.app.core.config import settings
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem
-from backend.app.models.project_item import ProjectRevision
+from backend.app.models.project_item import SLICE_FAILED, SLICE_SLICED, SLICE_SLICING, ProjectRevision
 from backend.app.services import project_files
 from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.http_status_error import HttpStatusError
@@ -41,7 +40,6 @@ from backend.app.services.project_files import ProjectFilesError
 from backend.app.services.project_reslice import output_filename
 from backend.app.services.project_revisions import find_revision_bundle, lock_revision_rows
 from backend.app.services.project_snapshot import _MAX_PART_BYTES
-from backend.app.services.project_storage import claim_unique_file_path, revision_dir
 from backend.app.services.slice_dispatch import http_exception_to_job_error, slice_dispatch
 from backend.app.services.slicer_api import SlicerApiError
 from backend.app.utils.printer_models import is_gcode_compatible, normalize_printer_model
@@ -101,7 +99,7 @@ async def sliced_file_of(db: AsyncSession, library_file: LibraryFile) -> Library
     if source.id != library_file.id:
         raise HTTPException(400, NOT_THE_SOURCE)
     revision = await db.get(ProjectRevision, revision_id)
-    if revision is None or revision.slice_status != "sliced" or revision.sliced_file_id is None:
+    if revision is None or revision.slice_status != SLICE_SLICED or revision.sliced_file_id is None:
         return None
     return (
         await db.execute(LibraryFile.active().where(LibraryFile.id == revision.sliced_file_id))
@@ -118,15 +116,15 @@ async def _claim(db: AsyncSession, revision_id: int, *, resume: bool) -> bool:
     A plain start claims a revision that was never sliced or failed; a resume re-claims
     one left ``slicing`` by a restart (its in-memory job is gone)."""
     claimable = (
-        ProjectRevision.slice_status == "slicing"
+        ProjectRevision.slice_status == SLICE_SLICING
         if resume
-        else or_(ProjectRevision.slice_status.is_(None), ProjectRevision.slice_status == "failed")
+        else or_(ProjectRevision.slice_status.is_(None), ProjectRevision.slice_status == SLICE_FAILED)
     )
     claimed = (
         await db.execute(
             update(ProjectRevision)
             .where(ProjectRevision.id == revision_id, claimable)
-            .values(slice_status="slicing", slice_error=None)
+            .values(slice_status=SLICE_SLICING, slice_error=None)
             .returning(ProjectRevision.id)
             .execution_options(synchronize_session="fetch")
         )
@@ -146,9 +144,9 @@ async def _start(db: AsyncSession, revision_id: int, *, user_id: int | None, res
     revision = await db.get(ProjectRevision, revision_id, populate_existing=True)
     if revision is None:
         return None
-    if not resume and revision.slice_status == "sliced":
+    if not resume and revision.slice_status == SLICE_SLICED:
         return revision.slice_job_id
-    if not resume and revision.slice_status == "slicing":
+    if not resume and revision.slice_status == SLICE_SLICING:
         # A start between another's claim and its job id is still in flight: leave it alone. A
         # revision whose job is gone (its failure could not be recorded) is interrupted: re-claim it.
         if revision_id in _starting or _job_is_live(revision.slice_job_id):
@@ -270,13 +268,18 @@ async def on_revision_slice_done(
     await _apply_slice_outcome(db, revision.id, sliced_file, error, facts)
 
 
+def _library_path(library_file: LibraryFile) -> Path:
+    """A library row's ``file_path`` on disk: kept as is when absolute, else under the base dir."""
+    lib_path = Path(library_file.file_path)
+    return lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+
+
 def library_file_print_time(library_file: LibraryFile, plate_id: int | None) -> int | None:
     """The file's predicted print time: the plate's own when ``plate_id`` is set and the file
     says, else the file's whole estimate from its metadata."""
     print_time = (library_file.file_metadata or {}).get("print_time_seconds")
     if plate_id:
-        lib_path = Path(library_file.file_path)
-        path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+        path = _library_path(library_file)
         if path.exists():
             plate_time = extract_print_time_from_3mf(path, plate_id)
             if plate_time is not None:
@@ -288,8 +291,7 @@ def _gcode_filament_types(sliced_file: LibraryFile, plate_id: int | None) -> set
     """The filament types the sliced G-code names for ``plate_id`` (none when its file is missing)."""
     from backend.app.api.routes.print_queue import _extract_filament_types_from_3mf  # routes import this module
 
-    lib_path = Path(sliced_file.file_path)
-    path = lib_path if lib_path.is_absolute() else settings.base_dir / sliced_file.file_path
+    path = _library_path(sliced_file)
     return set(_extract_filament_types_from_3mf(path, plate_id)) if path.exists() else set()
 
 
@@ -480,13 +482,13 @@ async def settle_waiting_queue_items(db: AsyncSession, revision_id: int) -> None
     the items: they would otherwise wait for a slice that never comes."""
     await lock_revision_rows(db, [revision_id], share=True)
     revision = await db.get(ProjectRevision, revision_id, populate_existing=True)
-    if revision is not None and revision.slice_status != "slicing":
+    if revision is not None and revision.slice_status != SLICE_SLICING:
         sliced_file = None
-        if revision.slice_status == "sliced" and revision.sliced_file_id is not None:
+        if revision.slice_status == SLICE_SLICED and revision.sliced_file_id is not None:
             sliced_file = await db.get(LibraryFile, revision.sliced_file_id)
         if sliced_file is not None and sliced_file.deleted_at is None:
             await _apply_slice_outcome(db, revision_id, sliced_file, None)
-        elif revision.slice_status == "sliced":
+        elif revision.slice_status == SLICE_SLICED:
             await _apply_slice_outcome(db, revision_id, None, "The revision's sliced file is gone")
         else:
             await _apply_slice_outcome(db, revision_id, None, revision.slice_error or "The slice could not start")
@@ -529,9 +531,9 @@ async def _mark_failed(db: AsyncSession, revision_id: int, message: str) -> None
 async def _mark_failed_once(db: AsyncSession, revision_id: int, message: str) -> None:
     await db.rollback()
     revision = await db.get(ProjectRevision, revision_id, populate_existing=True)
-    if revision is None or revision.slice_status == "sliced":
+    if revision is None or revision.slice_status == SLICE_SLICED:
         return  # gone, or another slice already landed: its G-code stands
-    revision.slice_status = "failed"
+    revision.slice_status = SLICE_FAILED
     revision.slice_error = message[:SLICE_ERROR_MAX_CHARS]
     await on_revision_slice_done(db, revision, None, revision.slice_error)
     await db.commit()
@@ -648,11 +650,6 @@ async def _slice_revision(db: AsyncSession, revision_id: int, *, user_id: int | 
     )
 
 
-def _write_claimed(dest: Path, content: bytes) -> None:
-    with project_files._open_claimed(dest) as writer:
-        writer.write(content)
-
-
 async def _store(
     db: AsyncSession, revision_id: int, filename: str, content: bytes, metadata: dict, user_id: int | None
 ) -> dict[str, Any]:
@@ -661,77 +658,41 @@ async def _store(
     Under the item lock, like every write into an item folder, so a rename, delete or fork
     never runs under it. A revision deleted while slicing (or during this step) gets
     nothing: no row, no file, ``{}``."""
-    bundle = await find_revision_bundle(db, revision_id)
-    if bundle is None:
-        return {}
-    item_id = bundle[1].id
-    async with project_files._item_lock(item_id):
-        bundle = await find_revision_bundle(db, revision_id)
-        if bundle is None:
-            return {}
-        revision, item, project = bundle
-        await db.refresh(revision)
-        await db.refresh(item)
-        if revision.slice_status == "sliced":
-            return {}  # someone else's slice already landed
-        await project_files._claim_storage_dir(db, project)
-        folder = revision_dir(project, item.section, item.name, revision.number)
-        dest = await asyncio.to_thread(claim_unique_file_path, folder, filename)
-        result: dict[str, Any] = {}
 
-        async def undo() -> None:
-            # file first: a failing rollback must not leave it on disk with no row
-            try:
-                project_files._unlink_quietly(dest)
-            finally:
-                await db.rollback()
+    def already_sliced(revision: ProjectRevision) -> bool:
+        return revision.slice_status == SLICE_SLICED  # someone else's slice already landed
 
-        try:
-            async with project_files._CommitGuard(db, undo, label=f"slice of revision {revision_id}") as commit:
-                await asyncio.to_thread(_write_claimed, dest, content)
-                row = project_files._new_library_row(
-                    project_files._RowOwner(project.id, revision.id, user_id),
-                    dest,
-                    file_type="gcode.3mf",
-                    file_size=len(content),
-                    file_hash=hashlib.sha256(content).hexdigest(),
-                    thumbnail_path=None,
-                    file_metadata=metadata,
-                )
-                row.derived_slice = True
-                # The source id and the waiting items' print times and filament types are read from
-                # the files now, before the flush takes the write lock.
-                facts = await _read_outcome_facts(db, revision_id, row)
-                db.add(row)
-                await db.flush()
-                # The flush holds SQLite's write lock (PostgreSQL: the row lock below): a revision
-                # deleted since it was read would strand this row and file, so undo them instead.
-                still = await lock_revision_rows(db, [revision_id], share=True)
-                exists = (
-                    await db.execute(select(ProjectRevision.id).where(ProjectRevision.id == revision_id))
-                ).first() is not None
-                if not exists or (still is not None and revision_id not in still):
-                    raise _RevisionGone
-                revision.sliced_file_id = row.id
-                revision.slice_status = "sliced"
-                revision.slice_error = None
-                await on_revision_slice_done(db, revision, row, None, facts)
-                result = {
-                    "revision_id": revision.id,
-                    "file_id": row.id,
-                    "filename": row.filename,
-                    "print_time_seconds": metadata["print_time_seconds"],
-                    "filament_used_grams": metadata["filament_used_grams"],
-                }
-                await commit()
-        except _RevisionGone:
-            project_files._remove_empty(folder)  # revision_dir re-created it
-            return {}
-    return result
+    async def prepare(row: LibraryFile) -> _OutcomeFacts:
+        # The source id and the waiting items' print times and filament types are read from
+        # the files now, before the flush takes the write lock.
+        return await _read_outcome_facts(db, revision_id, row)
 
+    async def land(revision: ProjectRevision, row: LibraryFile, facts: _OutcomeFacts) -> dict[str, Any]:
+        revision.sliced_file_id = row.id
+        revision.slice_status = SLICE_SLICED
+        revision.slice_error = None
+        await on_revision_slice_done(db, revision, row, None, facts)
+        return {
+            "revision_id": revision.id,
+            "file_id": row.id,
+            "filename": row.filename,
+            "print_time_seconds": metadata["print_time_seconds"],
+            "filament_used_grams": metadata["filament_used_grams"],
+        }
 
-class _RevisionGone(Exception):
-    """Raised inside ``_store``'s commit guard to undo the write of a revision deleted meanwhile."""
+    return await project_files.store_derived_file(
+        db,
+        revision_id,
+        filename,
+        content,
+        file_type="gcode.3mf",
+        file_metadata=metadata,
+        user_id=user_id,
+        label=f"slice of revision {revision_id}",
+        skip=already_sliced,
+        prepare=prepare,
+        land=land,
+    )
 
 
 async def resume_interrupted_slices() -> int:
@@ -744,7 +705,7 @@ async def resume_interrupted_slices() -> int:
         rows = (
             await db.execute(
                 select(ProjectRevision.id, ProjectRevision.created_by_id)
-                .where(ProjectRevision.slice_status == "slicing")
+                .where(ProjectRevision.slice_status == SLICE_SLICING)
                 .order_by(ProjectRevision.id)
             )
         ).all()
@@ -781,7 +742,7 @@ async def recover_waiting_queue_items() -> int:
                 .join(PrintQueueItem, PrintQueueItem.library_file_id == LibraryFile.id)
                 .where(
                     PrintQueueItem.status == "slicing",
-                    or_(ProjectRevision.slice_status.is_(None), ProjectRevision.slice_status != "slicing"),
+                    or_(ProjectRevision.slice_status.is_(None), ProjectRevision.slice_status != SLICE_SLICING),
                 )
                 .distinct()
                 .order_by(ProjectRevision.id)

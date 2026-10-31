@@ -290,6 +290,7 @@ async def start_legacy_migration(
 async def start_revision_slice(db: AsyncSession, revision_id: int, *, user_id: int | None)
 async def start_slice_after_upload(db: AsyncSession, revision_id: int, *, user_id: int | None)
 async def start_slice_for_waiting_items(db: AsyncSession, revision_id: int, *, user_id: int | None)
+async def store_derived_file(
 async def suggest_projects_for_filename(
 async def suggest_projects(db: AsyncSession, task: AitoTask, limit: int = 8)
 async def suggest_tags(
@@ -1207,7 +1208,7 @@ CREATE TABLE projects (
 ```regen: grep -hoE 'get_setting\(db, "[a-z_]+"|os\.environ\.get\("[A-Z_]+"|settings\.[a-z_]+' backend/app/api/routes/projects_pdm.py backend/app/api/routes/project_files.py backend/app/api/routes/aito_project_links.py backend/app/api/routes/projects.py backend/app/services/project_*.py backend/app/services/aito_project_links.py | sort | uniq -c | sed 's/^ *//'```
 ```
 1 settings.archive_dir
-3 settings.base_dir
+2 settings.base_dir
 4 settings.config
 2 settings.library_max_upload_bytes
 1 settings.library_max_zip_extract_bytes
