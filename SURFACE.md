@@ -1297,6 +1297,7 @@ CREATE TABLE projects (
 1 export function DropShield
 1 export function failureMessage
 1 export function filesFromDataTransfer
+1 export function fileTypeBadgeTone
 1 export function formatFilament
 1 export function groupTimeline
 1 export function isPrintableFile

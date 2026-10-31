@@ -46,6 +46,7 @@ import {
   isSourceFilename,
   printProfileLine,
 } from './filesUi';
+import { fileTypeBadgeTone } from './fileTypeBadge';
 import { outdatedParams, revisionNumberLabel } from './revisionLabel';
 
 interface Props {
@@ -65,13 +66,14 @@ const STRIP_CLS: Record<RevisionStatus, string> = {
   obsolete: 'bg-slate-500',
 };
 
+const BADGE_CLS: Record<ReturnType<typeof fileTypeBadgeTone>, string> = {
+  source: 'bg-bambu-green/90 text-white',
+  sliced: 'bg-blue-500/90 text-white',
+  other: 'bg-bambu-gray/90 text-white',
+};
+
 /** The File Manager card's file-type badge colours: source green, sliced blue. */
-const badgeCls = (fileType: string) =>
-  fileType === '3mf'
-    ? 'bg-bambu-green/90 text-white'
-    : fileType === 'gcode' || fileType === 'gcode.3mf'
-      ? 'bg-blue-500/90 text-white'
-      : 'bg-bambu-gray/90 text-white';
+const badgeCls = (fileType: string) => BADGE_CLS[fileTypeBadgeTone(fileType)];
 
 // 44px touch targets below md (px, not rem: the root rem is 14.4px); 32px-class icon buttons from md up, like the
 // files panel's other icon buttons. One row of five always fits (arithmetic in the task-7 report).
