@@ -1225,6 +1225,22 @@ export interface ProjectSearchItem {
   updated_at: string;
 }
 export interface ProjectSearchResponse { items: ProjectSearchItem[]; total: number }
+
+// Projects catalog (design 2026-10-31): folders and the browser list.
+export interface ProjectFolder { id: number; name: string; parent_id: number | null; project_count: number; in_production_count: number }
+export interface CatalogOpenOrder { order_id: number; client_name: string | null }
+export interface CatalogRecommended {
+  item_id: number; item_name: string; revision_id: number; number: number; status: RevisionStatus;
+  printer_model: string | null; nozzle_diameter: string | null; filament_types: string[];
+  print_time_seconds: number | null; filament_used_grams: number | null;
+}
+export interface ProjectCatalogItem {
+  id: number; code: string | null; name: string; description: string | null; status: string; folder_id: number | null;
+  tags: ProjectTagRef[]; client_names: string[]; open_orders: CatalogOpenOrder[]; files_count: number;
+  recommended: CatalogRecommended | null; has_unsliced_only: boolean; printed_count: number; target_count: number | null;
+  last_activity: string; thumbnail_file_id: number | null;
+}
+export interface ProjectCatalogParams { q?: string; status?: string; tagIds?: number[]; tagMode?: 'any' | 'all' }
 export interface ProjectSearchParams {
   q?: string;
   tagIds?: number[];
@@ -9687,6 +9703,26 @@ export const api = {
     return request<ProjectSearchResponse>(`/projects/search?${params}`);
   },
   getProjectTags: () => request<ProjectTagCount[]>('/projects/tags'),
+  getProjectCatalog: (p: ProjectCatalogParams) => {
+    const params = new URLSearchParams();
+    if (p.q?.trim()) params.set('q', p.q.trim());
+    if (p.status) params.set('status', p.status);
+    p.tagIds?.forEach((id) => params.append('tag_ids', String(id)));
+    if (p.tagMode) params.set('tag_mode', p.tagMode);
+    const query = params.toString();
+    return request<{ items: ProjectCatalogItem[] }>(`/projects/catalog${query ? `?${query}` : ''}`);
+  },
+  getProjectFolders: () => request<{ folders: ProjectFolder[] }>('/projects/folders'),
+  createProjectFolder: (body: { name: string; parent_id: number | null }) =>
+    request<ProjectFolder>('/projects/folders', { method: 'POST', body: JSON.stringify(body) }),
+  updateProjectFolder: (folderId: number, body: { name?: string; parent_id?: number | null }) =>
+    request<ProjectFolder>(`/projects/folders/${folderId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteProjectFolder: (folderId: number) => request<void>(`/projects/folders/${folderId}`, { method: 'DELETE' }),
+  moveProjectToFolder: (projectId: number, folderId: number | null) =>
+    request<{ id: number; folder_id: number | null }>(`/projects/${projectId}/folder`, {
+      method: 'PATCH',
+      body: JSON.stringify({ folder_id: folderId }),
+    }),
   reformulateProjectText: (text: string, field: 'title' | 'description') =>
     request<{ text: string; model: string }>('/projects/ai/reformulate', {
       method: 'POST',

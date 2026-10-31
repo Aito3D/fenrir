@@ -65,7 +65,7 @@ describe('projectKeys', () => {
 });
 
 describe('useInvalidateProjects', () => {
-  it('invalidates the list, search and tag catalogue, in that order, without a project id', () => {
+  it('invalidates the list, search, tag catalogue, catalog and folders, in that order, without a project id', () => {
     const { client, wrapper } = setup();
     const spy = vi.spyOn(client, 'invalidateQueries');
     const { result } = renderHook(() => useInvalidateProjects(), { wrapper });
@@ -74,6 +74,8 @@ describe('useInvalidateProjects', () => {
       [{ queryKey: ['projects'] }],
       [{ queryKey: ['projects-search'] }],
       [{ queryKey: ['project-tags'] }],
+      [{ queryKey: ['project-catalog'] }],
+      [{ queryKey: ['project-folders'] }],
     ]);
   });
 
@@ -87,6 +89,8 @@ describe('useInvalidateProjects', () => {
       [{ queryKey: ['projects'] }],
       [{ queryKey: ['projects-search'] }],
       [{ queryKey: ['project-tags'] }],
+      [{ queryKey: ['project-catalog'] }],
+      [{ queryKey: ['project-folders'] }],
     ]);
   });
 

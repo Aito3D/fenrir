@@ -254,23 +254,41 @@ function openDrawer(p) {
 }
 function closeDrawer() { state.open = null; document.getElementById('drawer').classList.add('translate-x-full'); document.getElementById('drawer-back').classList.add('hidden'); }
 function fileCard(p, f, recommended) {
+  // The project page's item card (layout D): status strip, big thumbnail, R chips, facts, action bar.
+  const strip = f.status === 'Approved' ? 'bg-acc' : f.status === 'Obsolete' ? 'bg-slate-500' : 'bg-amber-400';
   const tone = f.status === 'Approved' ? 'text-acc border-acc/40 bg-acc/10' : f.status === 'Obsolete' ? 'text-mute border-line' : 'text-amber-300 border-amber-500/40 bg-amber-500/10';
+  const revs = p.files.filter(x => x.name === f.name);
   return `
-  <div class="rounded-lg border ${recommended ? 'border-acc/40' : 'border-line'} bg-bg p-3 flex gap-3">
-    ${thumb(p, 'w-16 h-16')}
-    <div class="min-w-0 flex-1 text-xs text-sub">
-      <div class="flex items-center gap-2 flex-wrap"><span class="font-mono text-[11px] px-1.5 py-0.5 rounded border border-line text-ink">${f.rev}</span><span class="text-sm font-medium text-ink truncate">${esc(f.name)}</span><span class="ml-auto text-[11px] px-1.5 py-0.5 rounded border ${tone}">${f.status}</span></div>
-      ${f.sliced ? `<div class="mt-1 flex flex-wrap gap-x-3"><span><i data-lucide="clock" class="inline"></i> ${f.time}</span><span><i data-lucide="package" class="inline"></i> ${f.grams}</span>${f.plates > 1 ? `<span>${f.plates} plates</span>` : ''}${f.printed ? `<span>${f.printed}× printed</span>` : ''}</div>
-      <div class="mt-0.5 text-mute">${esc(p.printer)} · ${p.nozzle} mm · ${esc(p.material)}</div>` : `<div class="mt-1 text-amber-300"><i data-lucide="alert-circle" class="inline"></i> Not sliced</div>`}
-      <div class="mt-2 flex items-center gap-1">
-        <button class="px-2 py-1 rounded ${f.sliced ? 'bg-acc text-bg' : 'border border-line text-mute'} text-xs font-medium flex items-center gap-1"><i data-lucide="printer"></i>Print</button>
-        <button class="p-1.5 rounded hover:bg-line text-sub" title="Preview"><i data-lucide="eye"></i></button>
-        <button class="p-1.5 rounded hover:bg-line text-sub" title="Download"><i data-lucide="download"></i></button>
-        <button class="p-1.5 rounded hover:bg-line text-sub" title="Open in slicer"><i data-lucide="external-link"></i></button>
-        <button class="p-1.5 rounded hover:bg-line text-sub ml-auto" title="More"><i data-lucide="more-vertical"></i></button>
-      </div>
+  <article class="rounded-lg border ${recommended ? 'border-acc/50' : 'border-line'} bg-surf overflow-hidden flex flex-col text-xs text-sub">
+    <div class="h-1 ${strip}"></div>
+    <div class="relative aspect-square bg-bg thumb ${p.hue}">
+      ${f.sliced ? '<img src="part.png" class="w-full h-full object-cover">' : '<div class="w-full h-full flex items-center justify-center text-mute"><i data-lucide="box" class="text-4xl"></i></div>'}
+      <span class="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[11px] font-medium ${f.sliced ? 'bg-blue-500/90 text-white' : 'bg-acc/90 text-white'}">${f.sliced ? 'GCODE.3MF' : '3MF'}</span>
     </div>
-  </div>`;
+    <div class="flex items-center gap-1.5 px-3 pt-2.5">
+      ${revs.map(r => `<span class="inline-flex h-8 min-w-[40px] items-center justify-center rounded-md border px-2 font-mono text-sm font-semibold ${r === f ? 'border-acc bg-acc/15 text-ink' : 'border-line text-sub'}">${r.rev}</span>`).join('')}
+      <span class="inline-flex h-8 min-w-[40px] items-center justify-center rounded-md border border-dashed border-line text-mute"><i data-lucide="plus"></i></span>
+      <span class="ml-auto px-1.5 py-0.5 rounded-md border text-[11px] font-medium ${tone}">${f.status}</span>
+    </div>
+    <div class="px-3 pb-3 pt-1.5 flex-1 space-y-1">
+      <div class="text-sm font-medium text-ink truncate">${esc(f.name)}</div>
+      <div class="flex flex-wrap gap-x-3 gap-y-0.5"><span>${(2 + Math.random() * 5).toFixed(1)} MB</span>${f.sliced ? `<span class="flex items-center gap-1"><i data-lucide="clock"></i>${f.time}</span><span class="flex items-center gap-1"><i data-lucide="package"></i>${f.grams}</span>` : ''}</div>
+      <div class="flex items-center gap-1 truncate"><i data-lucide="printer"></i>${esc(p.printer)} · ${p.nozzle} mm · 0.2 mm · ${esc(p.material)}</div>
+      ${f.sliced ? `<div class="flex flex-wrap gap-x-3"><span class="flex items-center gap-1" title="Machine cost"><i data-lucide="coins"></i>${(parseFloat(f.grams) * 6.2).toFixed(0)} F</span><span class="flex items-center gap-1" title="Energy"><i data-lucide="zap"></i>${(parseFloat(f.time) * 48).toFixed(0)} F</span><span class="flex items-center gap-1" title="Suggested price"><i data-lucide="calculator"></i>${(parseFloat(f.grams) * 21).toFixed(0)} F</span></div>
+      <div class="flex items-center gap-1"><i data-lucide="layers"></i>${Math.round(parseFloat(f.time) * 140)} layers · 0.2mm</div>
+      <div class="flex items-center gap-1"><i data-lucide="box"></i>${f.plates > 1 ? f.plates * 4 : 2} objects</div>
+      <div class="flex items-center gap-1.5">${esc(p.material)}<span class="h-3 w-3 rounded-full border border-black/20" style="background:${p.hue === 'h1' ? '#3b82f6' : p.hue === 'h2' ? '#ec4899' : p.hue === 'h3' ? '#22c55e' : '#eab308'}"></span></div>
+      <div class="flex items-center gap-1 text-acc"><i data-lucide="check-circle-2"></i>Sliced${f.printed ? ` · ${f.printed}× printed` : ''}</div>` : `<div class="flex items-center gap-1 text-red-400"><i data-lucide="alert-circle"></i>Slice failed: Slicer sidecar unreachable <span class="underline">Retry</span> <span class="underline">Upload sliced file</span></div>`}
+      <div class="text-[11px]">by aneo · 10/31/2026</div>
+    </div>
+    <div class="flex items-center gap-0.5 border-t border-line px-1.5 py-1 text-sub">
+      <button class="flex h-8 min-w-8 flex-1 items-center justify-center rounded-md hover:bg-line ${f.sliced ? 'text-acc' : ''}" title="Print"><i data-lucide="printer"></i></button>
+      <button class="flex h-8 min-w-8 flex-1 items-center justify-center rounded-md hover:bg-line" title="Open in slicer"><i data-lucide="external-link"></i></button>
+      <button class="flex h-8 min-w-8 flex-1 items-center justify-center rounded-md hover:bg-line" title="Preview"><i data-lucide="eye"></i></button>
+      <button class="flex h-8 min-w-8 flex-1 items-center justify-center rounded-md hover:bg-line" title="Download"><i data-lucide="download"></i></button>
+      <button class="flex h-8 min-w-8 flex-1 items-center justify-center rounded-md hover:bg-line" title="More"><i data-lucide="more-vertical"></i></button>
+    </div>
+  </article>`;
 }
 
 /* ---------- B ---------- */
@@ -336,7 +354,9 @@ function renderB(items) {
       <a class="text-xs px-2.5 py-1.5 rounded border border-line text-sub hover:text-ink flex items-center gap-1 shrink-0">Open project <i data-lucide="arrow-right"></i></a>
     </div>
     <div class="flex items-center justify-between mt-3 mb-2"><h3 class="text-sm font-medium">Printing files <span class="text-mute">${p.files.length}</span></h3><button class="text-xs px-2 py-1 rounded border border-line text-sub flex items-center gap-1"><i data-lucide="plus"></i>New item</button></div>
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-2">${p.files.length ? p.files.map(f => fileCard(p, f, f === r)).join('') : `<div class="xl:col-span-2 rounded-lg border border-dashed border-line p-8 text-center text-sm text-mute">Drop a .3mf here — the server slices it</div>`}</div>`;
+    <div class="grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">${(() => { const seen = new Set(); const items = p.files.filter(f => !seen.has(f.name) && seen.add(f.name)); return items.length ? items.map(f => fileCard(p, f, f === r)).join('') : ''; })()}
+      <div class="rounded-lg border border-dashed border-line min-h-[220px] flex flex-col items-center justify-center text-center text-sm text-mute gap-2"><i data-lucide="upload-cloud" class="text-2xl"></i>Drop a .3mf or click<span class="text-xs">Creates a new item</span></div>
+    </div>`;
   const nf = document.getElementById('nf-name'); if (nf) nf.focus();
 }
 

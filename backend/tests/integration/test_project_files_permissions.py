@@ -79,6 +79,13 @@ _ROUTES = [
     # projects_pdm.py
     ("GET", "/projects/search", {"params": {"q": "x"}}, [(P.PROJECTS_READ,)]),
     ("GET", "/projects/tags", {}, [(P.PROJECTS_READ,)]),
+    # projects_pdm.py: catalog + folders (design 2026-10-31)
+    ("GET", "/projects/catalog", {"params": {"q": "x"}}, [(P.PROJECTS_READ,)]),
+    ("GET", "/projects/folders", {}, [(P.PROJECTS_READ,)]),
+    ("POST", "/projects/folders", {"json": {"name": "Car"}}, [(P.PROJECTS_UPDATE,)]),
+    ("PATCH", "/projects/folders/987654", {"json": {"name": "Car"}}, [(P.PROJECTS_UPDATE,)]),
+    ("DELETE", "/projects/folders/987654", {}, [(P.PROJECTS_UPDATE,)]),
+    ("PATCH", "/projects/987654/folder", {"json": {"folder_id": None}}, [(P.PROJECTS_UPDATE,)]),
     (
         "POST",
         "/projects/ai/reformulate",
@@ -215,6 +222,12 @@ _KEY_MATRIX = {
     "GET /library/files/987654/project-suggestions": (404, _READ),
     "GET /projects/search": (200, _READ),
     "GET /projects/tags": (200, _READ),
+    "GET /projects/catalog": (200, _READ),
+    "GET /projects/folders": (200, _READ),
+    "POST /projects/folders": (201, _MANAGE),
+    "PATCH /projects/folders/987654": (404, _MANAGE),
+    "DELETE /projects/folders/987654": (404, _MANAGE),
+    "PATCH /projects/987654/folder": (404, _MANAGE),
     "POST /projects/ai/reformulate": (409, _MANAGE),
     "POST /projects/ai/suggest-tags": (409, _MANAGE),
     "GET /aito/project-codes": (None, _NO_KEY),

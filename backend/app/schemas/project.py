@@ -363,6 +363,93 @@ class ProjectSearchResponse(BaseModel):
     total: int
 
 
+# --- Projects catalog (design 2026-10-31): folders and the browser list -----------------------
+
+
+class ProjectFolderOut(BaseModel):
+    id: int
+    name: str
+    parent_id: int | None
+    project_count: int  # projects in this folder and below
+    in_production_count: int  # of those, linked to an open Aito order
+
+
+class ProjectFoldersResponse(BaseModel):
+    folders: list[ProjectFolderOut]
+
+
+class ProjectFolderCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    parent_id: int | None = None
+
+
+class ProjectFolderUpdate(IgnoresNullForRequiredColumns):
+    """``parent_id`` is only applied when sent (``null`` moves the folder to the root); a null
+    ``name`` is dropped by the mixin (NOT NULL column) and reads as "unchanged"."""
+
+    __orm_table__ = "project_folders"
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    parent_id: int | None = None
+
+
+class ProjectFolderMove(IgnoresNullForRequiredColumns):
+    """``PATCH /projects/{id}/folder``: file the project (``null`` = no folder; the column is
+    nullable, so the mixin keeps the null)."""
+
+    __orm_table__ = "projects"
+
+    folder_id: int | None = None
+
+
+class ProjectFolderMoveOut(BaseModel):
+    id: int
+    folder_id: int | None
+
+
+class CatalogOpenOrder(BaseModel):
+    order_id: int
+    client_name: str | None
+
+
+class CatalogRecommended(BaseModel):
+    """The revision the catalog offers to print: newest approved sliced one, else newest sliced."""
+
+    item_id: int
+    item_name: str
+    revision_id: int
+    number: int
+    status: str
+    printer_model: str | None
+    nozzle_diameter: str | None
+    filament_types: list[str]
+    print_time_seconds: int | None
+    filament_used_grams: float | None
+
+
+class ProjectCatalogItem(BaseModel):
+    id: int
+    code: str | None
+    name: str
+    description: str | None
+    status: str
+    folder_id: int | None
+    tags: list[ProjectTagRef]
+    client_names: list[str]
+    open_orders: list[CatalogOpenOrder]
+    files_count: int  # Impression items
+    recommended: CatalogRecommended | None
+    has_unsliced_only: bool  # files exist but none is sliced
+    printed_count: int  # print runs recorded for the project
+    target_count: int | None
+    last_activity: datetime
+    thumbnail_file_id: int | None  # a revision file with a thumbnail, the recommended one's first
+
+
+class ProjectCatalogResponse(BaseModel):
+    items: list[ProjectCatalogItem]
+
+
 class ProjectTagCount(BaseModel):
     id: int
     name: str

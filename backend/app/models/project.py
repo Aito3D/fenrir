@@ -71,6 +71,10 @@ class Project(Base):
 
     # Phase 10: Sub-projects (hierarchical)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    # Projects catalog (design 2026-10-31): the folder this project is filed in, or none.
+    folder_id: Mapped[int | None] = mapped_column(
+        ForeignKey("project_folders.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

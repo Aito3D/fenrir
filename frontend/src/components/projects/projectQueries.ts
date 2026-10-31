@@ -61,6 +61,8 @@ export function useInvalidateProjects() {
     queryClient.invalidateQueries({ queryKey: projectKeys.projects() });
     queryClient.invalidateQueries({ queryKey: projectKeys.projectsSearch() });
     queryClient.invalidateQueries({ queryKey: projectKeys.projectTags() });
+    queryClient.invalidateQueries({ queryKey: ['project-catalog'] }); // the catalog page (useProjectCatalog)
+    queryClient.invalidateQueries({ queryKey: ['project-folders'] });
   };
 }
 

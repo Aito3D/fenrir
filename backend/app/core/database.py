@@ -665,6 +665,7 @@ async def init_db():
         printer_sensor_history,
         project,
         project_bom,
+        project_folder,
         project_item,
         project_tag,
         scheduled_drying,
@@ -6968,6 +6969,17 @@ async def _run_migrations(conn):
     # Projects as a PDM, phase 5 (File Manager bridge): when a project's legacy
     # printing files were moved into its tree. NULL = not migrated yet.
     await _safe_execute(conn, f"ALTER TABLE projects ADD COLUMN legacy_migrated_at {_timestamp_type()}")
+
+    # Projects catalog folders (design 2026-10-31): project_folders comes from create_all; a
+    # project's shelf is folder_id. PostgreSQL gets the model's FK (ON DELETE SET NULL) too.
+    await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN folder_id INTEGER")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_projects_folder_id ON projects (folder_id)")
+    if _is_pg_conn(conn):
+        await _safe_execute(
+            conn,
+            "ALTER TABLE projects ADD CONSTRAINT projects_folder_id_fkey "
+            "FOREIGN KEY (folder_id) REFERENCES project_folders(id) ON DELETE SET NULL",
+        )
 
     # Projects as a PDM, phase 6 (spec §12.1): revisions made by Re-trancher
     # record the pipeline. No FK, like the phase 4 columns.

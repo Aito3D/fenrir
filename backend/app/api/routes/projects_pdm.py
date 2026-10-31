@@ -26,6 +26,13 @@ from backend.app.models.project import Project
 from backend.app.models.project_tag import ProjectTag
 from backend.app.models.user import User
 from backend.app.schemas.project import (
+    ProjectCatalogResponse,
+    ProjectFolderCreate,
+    ProjectFolderMove,
+    ProjectFolderMoveOut,
+    ProjectFolderOut,
+    ProjectFoldersResponse,
+    ProjectFolderUpdate,
     ProjectReformulateRequest,
     ProjectReformulateResponse,
     ProjectSearchItem,
@@ -35,6 +42,7 @@ from backend.app.schemas.project import (
     ProjectTagCount,
     ProjectTagRef,
 )
+from backend.app.services import project_catalog
 from backend.app.services.openrouter import (
     OpenRouterNotConfiguredError,
     OpenRouterUpstreamError,
@@ -61,6 +69,15 @@ def _text_match(column, raw: str):
         func.lower(func.coalesce(column, "")).like(_like(raw.lower()), escape="\\"),
         func.coalesce(column, "").like(_like(raw), escape="\\"),
     )
+
+
+@contextmanager
+def _catalog_errors() -> Iterator[None]:
+    """A ``ProjectCatalogError`` becomes its HTTP error."""
+    try:
+        yield
+    except project_catalog.ProjectCatalogError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get("/search", response_model=ProjectSearchResponse)
@@ -147,6 +164,90 @@ async def search_projects(
             )
             for p in projects
         ],
+    )
+
+
+@router.get("/folders", response_model=ProjectFoldersResponse)
+async def list_project_folders(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+):
+    """The catalog's folder tree, each folder with its subtree's project counts."""
+    return ProjectFoldersResponse(folders=await project_catalog.list_folders(db))
+
+
+@router.post("/folders", response_model=ProjectFolderOut, status_code=201)
+async def create_project_folder(
+    body: ProjectFolderCreate,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+):
+    with _catalog_errors():
+        folder = await project_catalog.create_folder(db, body.name, body.parent_id)
+    return ProjectFolderOut(
+        id=folder.id, name=folder.name, parent_id=folder.parent_id, project_count=0, in_production_count=0
+    )
+
+
+@router.patch("/folders/{folder_id}", response_model=ProjectFolderOut)
+async def update_project_folder(
+    folder_id: int,
+    body: ProjectFolderUpdate,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+):
+    """Rename and/or move a folder; moving it under itself is refused (409)."""
+    with _catalog_errors():
+        folder = await project_catalog.get_folder(db, folder_id)
+        folder = await project_catalog.update_folder(
+            db, folder, name=body.name, parent_id=body.parent_id, parent_given="parent_id" in body.model_fields_set
+        )
+        counts = next((f for f in await project_catalog.list_folders(db) if f.id == folder.id), None)
+    return counts or ProjectFolderOut(
+        id=folder.id, name=folder.name, parent_id=folder.parent_id, project_count=0, in_production_count=0
+    )
+
+
+@router.delete("/folders/{folder_id}", status_code=204, response_model=None)
+async def delete_project_folder(
+    folder_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+) -> None:
+    """Delete a folder; its projects and sub-folders move up to its parent."""
+    with _catalog_errors():
+        await project_catalog.delete_folder(db, await project_catalog.get_folder(db, folder_id))
+
+
+@router.patch("/{project_id}/folder", response_model=ProjectFolderMoveOut)
+async def move_project_to_folder(
+    project_id: int,
+    body: ProjectFolderMove,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+):
+    """File the project in a folder (``folder_id`` null takes it out of any folder)."""
+    project = await db.get(Project, project_id)
+    if project is None or project.is_template:
+        raise HTTPException(status_code=404, detail="Project not found")
+    with _catalog_errors():
+        project = await project_catalog.move_project(db, project, body.folder_id)
+    return ProjectFolderMoveOut(id=project.id, folder_id=project.folder_id)
+
+
+@router.get("/catalog", response_model=ProjectCatalogResponse)
+async def project_catalog_list(
+    q: str | None = Query(default=None, max_length=200),
+    tag_ids: list[int] = Query(default=[], max_length=200),
+    tag_mode: Literal["any", "all"] = "any",
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+):
+    """The Projects catalog: every matching project with the facts its row and pane show, newest
+    activity first. The search also covers folders, clients, order numbers, item and file names."""
+    return ProjectCatalogResponse(
+        items=await project_catalog.catalog(db, q=q, status=status, tag_ids=tag_ids, tag_mode=tag_mode)
     )
 
 

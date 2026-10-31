@@ -1,390 +1,269 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate } from 'react-router-dom';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, LayoutGrid, List, Plus, Search } from 'lucide-react';
-import { api, type ProjectSearchItem, type ProjectTagCount } from '../api/client';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { FolderPlus, Plus } from 'lucide-react';
+import { api } from '../api/client';
 import { projectKeys } from '../components/projects/projectQueries';
 import { Button } from '../components/Button';
 import { useAuth } from '../contexts/AuthContext';
-import { focusRingCls, inputCls } from '../components/formStyles';
-import { ProjectCodeChip } from '../components/projects/ProjectCodeChip';
-import { ProjectTagChips } from '../components/projects/ProjectTagChips';
+import { focusRingCls } from '../components/formStyles';
 import { NewProjectModal } from '../components/projects/NewProjectModal';
-import { formatDateOnly } from '../utils/date';
+import { CatalogPane } from '../components/projects/catalog/CatalogPane';
+import { CatalogToolbar } from '../components/projects/catalog/CatalogToolbar';
+import type { CatalogStatus } from '../components/projects/catalog/CatalogToolbar';
+import { CatalogTree } from '../components/projects/catalog/CatalogTree';
+import {
+  applyFilters,
+  buildTree,
+  isFiltering,
+  materialsOf,
+  sortItems,
+  visibleProjects,
+  EMPTY_FILTERS,
+} from '../components/projects/catalog/catalogRules';
+import type { CatalogChip, CatalogFilters, CatalogSort } from '../components/projects/catalog/catalogRules';
+import { useCatalogMutations, useProjectCatalog, useProjectFolders } from '../components/projects/catalog/useProjectCatalog';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 
-const PAGE_SIZE = 50;
-const STATUSES = ['active', 'completed', 'archived', 'all'] as const;
-type Status = (typeof STATUSES)[number];
-type TagMode = 'any' | 'all';
-type View = 'table' | 'grid';
+const SORT_KEY = 'projects-catalog-sort';
+const COLLAPSED_KEY = 'projects-catalog-collapsed';
+const WIDE = '(min-width: 1024px)';
 
-function readView(): View {
+function readStored<T>(key: string, parse: (raw: string) => T, fallback: T): T {
   try {
-    return localStorage.getItem('projects-view') === 'grid' ? 'grid' : 'table';
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : parse(raw);
   } catch {
-    return 'table';
+    return fallback;
+  }
+}
+function store(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Private mode: the choice lasts this visit.
   }
 }
 
-/** The table/grid toggle, remembered in localStorage across visits. */
-function useProjectListView() {
-  const [view, setView] = useState<View>(readView);
-  const changeView = (next: View) => {
-    setView(next);
-    try {
-      localStorage.setItem('projects-view', next);
-    } catch {
-      // Private mode: the toggle still works for this visit.
-    }
-  };
-  return [view, changeView] as const;
+/** True from `lg` up: the pane sits beside the list; below, a row opens the project page. */
+function useWide(): boolean {
+  const [wide, setWide] = useState(() => (typeof window.matchMedia === 'function' ? window.matchMedia(WIDE).matches : true));
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia(WIDE);
+    const onChange = () => setWide(mq.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+  return wide;
 }
 
-function ProjectListHeader({ canCreate, onCreate }: { canCreate: boolean; onCreate: () => void }) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-bold text-white">{t('projectsPdm.title')}</h1>
-        <p className="text-bambu-gray">{t('projectsPdm.subtitle')}</p>
-      </div>
-      {canCreate && (
-        <Button onClick={onCreate}>
-          <Plus className="mr-2 h-4 w-4" />
-          {t('projectsPdm.newProject')}
-        </Button>
-      )}
-    </div>
-  );
-}
-
-function ProjectListToolbar({
-  term,
-  onTermChange,
-  status,
-  onStatusChange,
-  view,
-  onViewChange,
-}: {
-  term: string;
-  onTermChange: (term: string) => void;
-  status: Status;
-  onStatusChange: (status: Status) => void;
-  view: View;
-  onViewChange: (view: View) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex flex-wrap items-center gap-3">
-      <div className="relative min-w-[16rem] flex-1">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-bambu-gray" />
-        <input
-          type="search"
-          value={term}
-          onChange={(e) => onTermChange(e.target.value)}
-          placeholder={t('projectsPdm.searchPlaceholder')}
-          aria-label={t('projectsPdm.searchPlaceholder')}
-          className={`${inputCls} pl-9`}
-        />
-      </div>
-      <label className="flex items-center gap-2 text-sm text-bambu-gray">
-        {t('projectsPdm.statusFilterLabel')}
-        <select
-          value={status}
-          onChange={(e) => onStatusChange(e.target.value as Status)}
-          className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 py-2 text-white"
-        >
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s === 'all' ? t('projectsPdm.statusAll') : t(`projectDetail.status.${s}`)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="flex rounded-lg border border-bambu-dark-tertiary">
-        <button
-          type="button"
-          aria-label={t('projectsPdm.viewTable')}
-          aria-pressed={view === 'table'}
-          onClick={() => onViewChange('table')}
-          className={`p-2 ${view === 'table' ? 'text-white' : 'text-bambu-gray'} ${focusRingCls}`}
-        >
-          <List className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          aria-label={t('projectsPdm.viewGrid')}
-          aria-pressed={view === 'grid'}
-          onClick={() => onViewChange('grid')}
-          className={`p-2 ${view === 'grid' ? 'text-white' : 'text-bambu-gray'} ${focusRingCls}`}
-        >
-          <LayoutGrid className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ProjectTagFilter({
-  usedTags,
-  tagIds,
-  onToggle,
-  tagMode,
-  onTagModeChange,
-}: {
-  usedTags: ProjectTagCount[];
-  tagIds: number[];
-  onToggle: (id: number) => void;
-  tagMode: TagMode;
-  onTagModeChange: (mode: TagMode) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-sm text-bambu-gray">{t('projectsPdm.tagsFilterLabel')}</span>
-      {usedTags.map((tag) => (
-        <button
-          key={tag.id}
-          type="button"
-          aria-pressed={tagIds.includes(tag.id)}
-          onClick={() => onToggle(tag.id)}
-          className={`rounded px-2 py-0.5 text-xs ${
-            tagIds.includes(tag.id) ? 'bg-bambu-green text-white' : 'bg-bambu-dark-tertiary text-bambu-gray'
-          } ${focusRingCls}`}
-        >
-          {tag.name}
-        </button>
-      ))}
-      {tagIds.length > 1 && (
-        <select
-          value={tagMode}
-          onChange={(e) => onTagModeChange(e.target.value as TagMode)}
-          aria-label={t('projectsPdm.tagsFilterLabel')}
-          className="rounded border border-bambu-dark-tertiary bg-bambu-dark px-2 py-0.5 text-xs text-white"
-        >
-          <option value="any">{t('projectsPdm.tagModeAny')}</option>
-          <option value="all">{t('projectsPdm.tagModeAll')}</option>
-        </select>
-      )}
-    </div>
-  );
-}
-
-function ProjectTable({ items, onOpen }: { items: ProjectSearchItem[]; onOpen: (project: ProjectSearchItem) => void }) {
-  const { t } = useTranslation();
-  return (
-    <div className="overflow-x-auto rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary">
-      <table className="w-full text-left text-sm">
-        <thead className="text-xs uppercase text-bambu-gray">
-          <tr>
-            <th className="px-4 py-3">{t('projectsPdm.colCode')}</th>
-            <th className="px-4 py-3">{t('projectsPdm.colTitle')}</th>
-            <th className="px-4 py-3">{t('projectsPdm.colTags')}</th>
-            <th className="px-4 py-3">{t('projectsPdm.colStatus')}</th>
-            <th className="px-4 py-3 text-right">{t('projectsPdm.colPrints')}</th>
-            <th className="px-4 py-3">{t('projectsPdm.colUpdated')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((project) => (
-            <tr
-              key={project.id}
-              onClick={() => onOpen(project)}
-              className="cursor-pointer border-t border-bambu-dark-tertiary hover:bg-bambu-dark-secondary"
-            >
-              <td className="px-4 py-3">
-                <ProjectCodeChip code={project.code} />
-              </td>
-              <td className="px-4 py-3">
-                <Link
-                  to={`/projects/${project.id}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className={`rounded font-medium text-white hover:underline ${focusRingCls}`}
-                >
-                  {project.name}
-                </Link>
-                {project.description && (
-                  <div className="line-clamp-1 text-xs text-bambu-gray">{project.description}</div>
-                )}
-              </td>
-              <td className="px-4 py-3">
-                <ProjectTagChips tags={project.tags} />
-              </td>
-              <td className="px-4 py-3 text-bambu-gray">{t(`projectDetail.status.${project.status}`)}</td>
-              <td className="px-4 py-3 text-right text-white">{project.archive_count}</td>
-              <td className="px-4 py-3 text-bambu-gray">{formatDateOnly(project.updated_at)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function ProjectGrid({ items, onOpen }: { items: ProjectSearchItem[]; onOpen: (project: ProjectSearchItem) => void }) {
-  const { t } = useTranslation();
-  return (
-    <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {items.map((project) => (
-        <li key={project.id}>
-          <button
-            type="button"
-            onClick={() => onOpen(project)}
-            className={`flex h-full w-full flex-col gap-2 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-4 text-left hover:bg-bambu-dark-tertiary ${focusRingCls}`}
-          >
-            {project.cover_image_filename && (
-              <img
-                src={api.getProjectCoverImageUrl(project.id)}
-                alt=""
-                className="h-32 w-full rounded-lg object-cover"
-                loading="lazy"
-              />
-            )}
-            <div className="flex items-center gap-2">
-              <ProjectCodeChip code={project.code} />
-              <span className="truncate font-medium text-white">{project.name}</span>
-            </div>
-            {project.description && <p className="line-clamp-2 text-sm text-bambu-gray">{project.description}</p>}
-            <ProjectTagChips tags={project.tags} />
-            <div className="mt-auto flex justify-between text-xs text-bambu-gray">
-              <span>{t(`projectDetail.status.${project.status}`)}</span>
-              <span>
-                {t('projectsPdm.colPrints')}: {project.archive_count}
-              </span>
-            </div>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function ProjectListPager({
-  page,
-  total,
-  onPrev,
-  onNext,
-}: {
-  page: number;
-  total: number;
-  onPrev: () => void;
-  onNext: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex items-center justify-end gap-3 text-sm text-bambu-gray">
-      <span>
-        {t('projectsPdm.pageRange', {
-          from: page * PAGE_SIZE + 1,
-          to: Math.min(total, (page + 1) * PAGE_SIZE),
-          total,
-        })}
-      </span>
-      <button
-        type="button"
-        aria-label={t('projectsPdm.prevPage')}
-        disabled={page === 0}
-        onClick={onPrev}
-        className={`rounded p-1 disabled:opacity-40 ${focusRingCls}`}
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        aria-label={t('projectsPdm.nextPage')}
-        disabled={(page + 1) * PAGE_SIZE >= total}
-        onClick={onNext}
-        className={`rounded p-1 disabled:opacity-40 ${focusRingCls}`}
-      >
-        <ChevronRight className="h-4 w-4" />
-      </button>
-    </div>
-  );
-}
-
-/** /projects — the structured entry point to every part the shop makes (spec §3.1). */
+/** /projects — the catalog (design 2026-10-31): one search, folders on the left, the selected
+ *  project's printing files on the right. `?q=` and `?project=` live in the URL. */
 export function ProjectListPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
-  const [term, setTerm] = useState('');
-  const debounced = useDebouncedValue(term, 250);
-  const [status, setStatus] = useState<Status>('active');
+  const canUpdate = hasPermission('projects:update');
+  const [params, setParams] = useSearchParams();
+  const q = params.get('q') ?? '';
+  const selectedId = params.get('project') ? Number(params.get('project')) : null;
+  const debounced = useDebouncedValue(q, 250);
+  const [status, setStatus] = useState<CatalogStatus>('active');
   const [tagIds, setTagIds] = useState<number[]>([]);
-  const [tagMode, setTagMode] = useState<TagMode>('any');
-  const [page, setPage] = useState(0);
-  const [view, changeView] = useProjectListView();
-  const [creating, setCreating] = useState(false);
+  const [filters, setFilters] = useState<CatalogFilters>(EMPTY_FILTERS);
+  const [sort, setSort] = useState<CatalogSort>(() => readStored(SORT_KEY, (r) => r as CatalogSort, 'activity'));
+  const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => new Set(readStored(COLLAPSED_KEY, (r) => JSON.parse(r) as number[], [])));
+  const [creating, setCreating] = useState<{ parentId: number | null } | null>(null);
+  const [newProject, setNewProject] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const wide = useWide();
 
-  useEffect(() => setPage(0), [debounced, status, tagIds, tagMode]);
+  const setParam = useCallback(
+    (key: string, value: string | null) =>
+      setParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (value) next.set(key, value);
+          else next.delete(key);
+          return next;
+        },
+        { replace: true },
+      ),
+    [setParams],
+  );
 
   const { data: tags = [] } = useQuery({ queryKey: projectKeys.projectTags(), queryFn: api.getProjectTags });
   const usedTags = tags.filter((tag) => tag.project_count > 0);
+  const { data: items = [], isLoading } = useProjectCatalog({ q: debounced, status, tagIds });
+  const { data: folders = [] } = useProjectFolders();
+  const mutations = useCatalogMutations();
 
-  const { data, isLoading } = useQuery({
-    queryKey: projectKeys.projectsSearch(debounced, status, tagIds, tagMode, page),
-    queryFn: () =>
-      api.searchProjects({
-        q: debounced,
-        status,
-        tagIds,
-        tagMode,
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
-      }),
-    placeholderData: keepPreviousData,
-  });
-  const items = data?.items ?? [];
-  const total = data?.total ?? 0;
-  const toggleTag = (id: number) =>
-    setTagIds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
-  const open = (project: ProjectSearchItem) => navigate(`/projects/${project.id}`);
+  const materials = useMemo(() => materialsOf(items), [items]);
+  const shown = useMemo(() => sortItems(applyFilters(items, filters), sort), [items, filters, sort]);
+  const filtering = isFiltering(q, filters) || tagIds.length > 0;
+  const nodes = useMemo(
+    () => (filtering ? shown.map((item) => ({ kind: 'project' as const, item, depth: 0 })) : buildTree(folders, shown, collapsed)),
+    [filtering, shown, folders, collapsed],
+  );
+  const ordered = useMemo(() => visibleProjects(nodes), [nodes]);
+  const selected = shown.find((item) => item.id === selectedId) ?? null;
+
+  // On a wide screen a selection is always shown: the first visible project when none (or a
+  // vanished one) is in the URL.
+  useEffect(() => {
+    if (!wide || ordered.length === 0 || isLoading) return;
+    if (selectedId === null || !ordered.some((item) => item.id === selectedId)) setParam('project', String(ordered[0].id));
+  }, [wide, ordered, selectedId, isLoading, setParam]);
+
+  const select = (id: number) => {
+    if (wide) setParam('project', String(id));
+    else navigate(`/projects/${id}`);
+  };
+  const toggleFolder = (id: number) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      store(COLLAPSED_KEY, JSON.stringify([...next]));
+      return next;
+    });
+  const toggleChip = (chip: CatalogChip) =>
+    setFilters((f) => {
+      const chips = new Set(f.chips);
+      if (chips.has(chip)) chips.delete(chip);
+      else chips.add(chip);
+      return { ...f, chips };
+    });
+  const toggleMaterial = (m: string) =>
+    setFilters((f) => {
+      const mats = new Set(f.materials);
+      if (mats.has(m)) mats.delete(m);
+      else mats.add(m);
+      return { ...f, materials: mats };
+    });
+  const changeSort = (next: CatalogSort) => {
+    setSort(next);
+    store(SORT_KEY, next);
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const typing = target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement;
+    if (e.key === '/' && !typing) {
+      e.preventDefault();
+      searchRef.current?.focus();
+      return;
+    }
+    if (e.key === 'Escape' && target === searchRef.current && q) {
+      setParam('q', null);
+      return;
+    }
+    if (typing && target !== searchRef.current) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (ordered.length === 0) return;
+      const at = ordered.findIndex((item) => item.id === selectedId);
+      const next = ordered[Math.min(ordered.length - 1, Math.max(0, at + (e.key === 'ArrowDown' ? 1 : -1)))];
+      if (next && next.id !== selectedId) {
+        e.preventDefault();
+        setParam('project', String(next.id));
+      }
+    } else if (e.key === 'Enter' && selectedId !== null && !typing) {
+      navigate(`/projects/${selectedId}`);
+    } else if (e.key === 'Enter' && target === searchRef.current && selectedId !== null) {
+      navigate(`/projects/${selectedId}`);
+    }
+  };
 
   return (
-    <div className="space-y-6 p-4 md:p-8">
-      <ProjectListHeader canCreate={hasPermission('projects:create')} onCreate={() => setCreating(true)} />
+    <div className="space-y-4 p-4 md:p-6" onKeyDown={onKeyDown}>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">{t('projectsPdm.title')}</h1>
+          <p className="text-sm text-bambu-gray">
+            {t('projectsPdm.catalog.summary', { shown: shown.length, total: items.length })}
+            {' · '}
+            {t('projectsPdm.catalog.inProduction')}: {items.filter((i) => i.open_orders.length > 0).length}
+            {' · '}
+            {t('projectsPdm.catalog.readyToPrint')}: {items.filter((i) => i.recommended !== null).length}
+          </p>
+        </div>
+        {hasPermission('projects:create') && (
+          <Button onClick={() => setNewProject(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t('projectsPdm.newProject')}
+          </Button>
+        )}
+      </div>
 
-      <ProjectListToolbar
-        term={term}
-        onTermChange={setTerm}
+      <CatalogToolbar
+        searchRef={searchRef}
+        q={q}
+        onQChange={(next) => setParam('q', next)}
+        filters={filters}
+        onToggleChip={toggleChip}
+        onToggleMaterial={toggleMaterial}
+        materials={materials}
+        sort={sort}
+        onSortChange={changeSort}
         status={status}
         onStatusChange={setStatus}
-        view={view}
-        onViewChange={changeView}
+        usedTags={usedTags}
+        tagIds={tagIds}
+        onToggleTag={(id) => setTagIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))}
       />
 
-      {usedTags.length > 0 && (
-        <ProjectTagFilter
-          usedTags={usedTags}
-          tagIds={tagIds}
-          onToggle={toggleTag}
-          tagMode={tagMode}
-          onTagModeChange={setTagMode}
-        />
-      )}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(320px,2fr)_3fr]">
+        <section className="overflow-hidden rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary">
+          <div className="flex items-center justify-between gap-2 border-b border-bambu-dark-tertiary px-3 py-2 text-[11px] uppercase tracking-wide text-bambu-gray">
+            <span>{t('projectsPdm.title')}</span>
+            <span className="flex items-center gap-2 normal-case tracking-normal">
+              <span className="hidden xl:inline" title={t('projectsPdm.catalog.dragHint')}>{t('projectsPdm.catalog.keyboardHelp')}</span>
+              {canUpdate && (
+                <button type="button" onClick={() => setCreating({ parentId: null })}
+                  className={`flex items-center gap-1 rounded border border-bambu-dark-tertiary px-2 py-1 text-bambu-gray hover:text-white ${focusRingCls}`}>
+                  <FolderPlus className="h-3.5 w-3.5" aria-hidden />{t('projectsPdm.catalog.newFolder')}
+                </button>
+              )}
+            </span>
+          </div>
+          <div className="max-h-[72vh] overflow-y-auto">
+            {!isLoading && nodes.length === 0 && !creating ? (
+              <p className="px-3 py-8 text-center text-sm text-bambu-gray">{filtering ? t('projectsPdm.emptySearch') : t('projectsPdm.empty')}</p>
+            ) : (
+              <CatalogTree
+                nodes={nodes}
+                folders={folders}
+                q={q}
+                filtering={filtering}
+                selectedId={wide ? selectedId : null}
+                canUpdate={canUpdate}
+                onSelect={select}
+                onToggleFolder={toggleFolder}
+                onMoveProject={(projectId, folderId) => mutations.moveProject.mutate({ projectId, folderId })}
+                onCreateFolder={(name, parentId) => mutations.createFolder.mutateAsync({ name, parent_id: parentId })}
+                onRenameFolder={(id, name) => mutations.updateFolder.mutateAsync({ id, name })}
+                onDeleteFolder={(id) => mutations.deleteFolder.mutate(id)}
+                creating={creating}
+                onCreatingChange={setCreating}
+              />
+            )}
+          </div>
+        </section>
+        {wide && (
+          <section className="min-h-[40vh] rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-4">
+            {selected ? (
+              <CatalogPane key={selected.id} item={selected} folders={folders} />
+            ) : (
+              <p className="py-12 text-center text-sm text-bambu-gray">{t('projectsPdm.catalog.selectHint')}</p>
+            )}
+          </section>
+        )}
+      </div>
 
-      {!isLoading && items.length === 0 && (
-        <p className="py-12 text-center text-bambu-gray">
-          {debounced || tagIds.length ? t('projectsPdm.emptySearch') : t('projectsPdm.empty')}
-        </p>
-      )}
-
-      {items.length > 0 && view === 'table' && <ProjectTable items={items} onOpen={open} />}
-
-      {items.length > 0 && view === 'grid' && <ProjectGrid items={items} onOpen={open} />}
-
-      {total > PAGE_SIZE && (
-        <ProjectListPager
-          page={page}
-          total={total}
-          onPrev={() => setPage((p) => p - 1)}
-          onNext={() => setPage((p) => p + 1)}
-        />
-      )}
-
-      {creating && <NewProjectModal onClose={() => setCreating(false)} />}
+      {newProject && <NewProjectModal onClose={() => setNewProject(false)} />}
     </div>
   );
 }
