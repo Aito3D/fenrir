@@ -137,7 +137,7 @@ describe('MoveToProjectModal', () => {
     expect(importUrl).toBe('/projects/12');
     expect(importBody).toEqual({ file_ids: [1, 2] });
     await waitFor(() => expect(onMoved).toHaveBeenCalled());
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalled()); // after the exit beat (useDialogExit)
   });
 
   it('an existing item sends item_id only', async () => {
@@ -263,7 +263,7 @@ describe('MoveToProjectModal', () => {
     expect(await screen.findByText('3 files skipped: already in a project')).toBeInTheDocument();
     expect(toastCalls).toEqual([['3 files skipped: already in a project', 'warning']]);
     expect(onMoved).toHaveBeenCalledWith(importResult);
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
   it('a moved-only result is a success toast', async () => {
@@ -411,7 +411,7 @@ describe('MoveToProjectModal', () => {
     const { onClose } = renderModal();
     await screen.findByRole('dialog');
     await user.keyboard('{Escape}');
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 });
 

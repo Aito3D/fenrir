@@ -405,7 +405,7 @@ export function ProjectDetailPage() {
 
       {/* Workspace + side rail: two columns on xl, the rail after the main column below */}
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="min-w-0 space-y-5" data-testid="project-main">
+        <div className="min-w-0 space-y-5 animate-rise-lg [--enter-delay:80ms]" data-testid="project-main">
           <ProjectFilesPanel projectId={projectId} />
 
           <ProjectOrdersCard projectId={projectId} />
@@ -422,11 +422,13 @@ export function ProjectDetailPage() {
 
           <ProjectPanel icon={FileText} title={t('projectDetail.notes.title')} action={notesAction} testId="project-notes">
             {editingNotes ? (
-              <RichTextEditor
-                content={notesContent}
-                onChange={setNotesContent}
-                placeholder={t('projectDetail.notes.placeholder')}
-              />
+              <div className="animate-rise-sm">
+                <RichTextEditor
+                  content={notesContent}
+                  onChange={setNotesContent}
+                  placeholder={t('projectDetail.notes.placeholder')}
+                />
+              </div>
             ) : project.notes ? (
               <div
                 className="prose prose-invert prose-sm max-w-none"
@@ -452,7 +454,7 @@ export function ProjectDetailPage() {
           )}
         </div>
 
-        <aside className="min-w-0 space-y-5" data-testid="project-rail">
+        <aside className="min-w-0 space-y-5 animate-rise-lg [--enter-delay:160ms]" data-testid="project-rail">
           <ProjectActivityRail events={timeline} isLoading={timelineLoading} timeFormat={timeFormat} />
 
           <ProjectPanel icon={Info} title={t('projectDetail.details.title')} testId="project-details">

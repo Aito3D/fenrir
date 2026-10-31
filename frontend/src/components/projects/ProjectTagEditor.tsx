@@ -93,7 +93,7 @@ export function ProjectTagEditor({
           type="button"
           onClick={() => suggest.mutate()}
           disabled={!title.trim() || suggest.isPending}
-          className={`inline-flex shrink-0 items-center gap-1 rounded-lg border border-violet-400/35 px-3 text-sm text-violet-300 hover:border-violet-400 disabled:opacity-50 ${focusRingCls}`}
+          className={`btn-press inline-flex shrink-0 items-center gap-1 rounded-lg border border-violet-400/35 px-3 text-sm text-violet-300 hover:border-violet-400 disabled:opacity-50 ${focusRingCls}`}
         >
           <Sparkles className={`h-3.5 w-3.5 ${suggest.isPending ? 'animate-pulse' : ''}`} aria-hidden="true" />
           {t('projectsPdm.suggestTags')}
@@ -104,15 +104,16 @@ export function ProjectTagEditor({
         <p className="text-xs text-bambu-gray">{t('projectsPdm.noSuggestions')}</p>
       )}
       {pending.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1">
-          <span className="text-xs text-bambu-gray">{t('projectsPdm.suggestionsLabel')}</span>
+        // The answer to a wait: the label, then each chip, rise in a 50ms cascade (.stagger-children).
+        <div className="stagger-children flex flex-wrap items-center gap-1">
+          <span className="animate-rise-sm text-xs text-bambu-gray">{t('projectsPdm.suggestionsLabel')}</span>
           {pending.map((s) => (
             <button
               key={s.name}
               type="button"
               onClick={() => add({ id: s.tag_id, name: s.name })}
               aria-label={t('projectsPdm.acceptSuggestion', { name: s.name })}
-              className={`inline-flex items-center gap-1 rounded border border-dashed border-violet-400/50 px-2 py-0.5 text-xs text-violet-200 hover:border-violet-400 ${focusRingCls}`}
+              className={`btn-press animate-rise-sm inline-flex items-center gap-1 rounded border border-dashed border-violet-400/50 px-2 py-0.5 text-xs text-violet-200 hover:border-violet-400 ${focusRingCls}`}
             >
               <Plus className="h-3 w-3" aria-hidden="true" />
               {s.name}

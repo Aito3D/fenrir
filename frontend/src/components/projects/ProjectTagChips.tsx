@@ -21,7 +21,7 @@ export function ProjectTagChips({ tags, onRemove }: { tags: TagDraft[]; onRemove
               type="button"
               onClick={() => onRemove(index)}
               aria-label={t('projectsPdm.removeTag', { name: tag.name })}
-              className={`inline-flex items-center gap-1 rounded bg-bambu-dark-tertiary px-2 py-0.5 text-xs text-white hover:bg-bambu-dark-secondary ${focusRingCls}`}
+              className={`btn-press inline-flex items-center gap-1 rounded bg-bambu-dark-tertiary px-2 py-0.5 text-xs text-white hover:bg-bambu-dark-secondary ${focusRingCls}`}
             >
               {tag.name}
               <X className="h-3 w-3 text-bambu-gray" aria-hidden="true" />

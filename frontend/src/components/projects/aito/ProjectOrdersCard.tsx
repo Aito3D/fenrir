@@ -58,7 +58,7 @@ export function ProjectOrdersCard({ projectId }: { projectId: number }) {
           {canCreate && (
             <Link
               to={`/aito?newFromProject=${projectId}`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-bambu-dark-tertiary px-2.5 py-1 text-xs font-medium text-white hover:border-bambu-green/50 hover:bg-white/5"
+              className="btn-press inline-flex items-center gap-1.5 rounded-lg border border-bambu-dark-tertiary px-2.5 py-1 text-xs font-medium text-white hover:border-bambu-green/50 hover:bg-white/5"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               {t('projectsPdm.aito.newOrder')}

@@ -205,7 +205,8 @@ describe('Print from a project revision', () => {
     await user.click(within(r3).getAllByRole('button', { name: /^Print/ })[0]);
     await screen.findByRole('dialog', { name: 'Which order is this print for?' });
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('dialog', { name: 'Which order is this print for?' })).not.toBeInTheDocument();
+    // The picker unmounts once its exit has played (useDialogExit).
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Which order is this print for?' })).not.toBeInTheDocument());
     expect(modalPrintButtons()).toEqual([]);
     expect(screen.getByTestId('revision-3')).toBeInTheDocument();
   });

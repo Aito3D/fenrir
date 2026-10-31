@@ -10,7 +10,8 @@ import { STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isPrintableFile, printPro
 import { OutdatedChip } from '../files/OutdatedChip';
 import { outdatedParams, revisionLabel } from '../files/revisionLabel';
 import { useProjectTree } from '../projectQueries';
-import { DIALOG_CARD_CLS, OVERLAY_CLS } from '../dialogStyles';
+import { DIALOG_CARD_CLS, DIALOG_CLOSING_CARD_CLS, DIALOG_CLOSING_OVERLAY_CLS, OVERLAY_CLS } from '../dialogStyles';
+import { useDialogExit } from '../useDialogExit';
 
 interface Props {
   projectId: number;
@@ -26,8 +27,9 @@ interface Props {
 export function PrintRevisionPicker({ projectId, onPick, onClose }: Props) {
   const { t } = useTranslation();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const { closing, requestClose } = useDialogExit(onClose);
   // Escape closes this picker only, never the Aito panel under it.
-  useIsolatedEscape(onClose, dialogRef);
+  useIsolatedEscape(requestClose, dialogRef);
   const title = t('projectsPdm.print.pickPrintFile');
 
   const { data: tree, isPending, isError } = useProjectTree(projectId, { retry: false });
@@ -42,15 +44,16 @@ export function PrintRevisionPicker({ projectId, onPick, onClose }: Props) {
     .sort((a, b) => b.revision.created_at.localeCompare(a.revision.created_at) || b.revision.number - a.revision.number);
 
   return createPortal(
-    <div className={OVERLAY_CLS} onClick={onClose}>
+    <div className={closing ? `${OVERLAY_CLS} ${DIALOG_CLOSING_OVERLAY_CLS}` : OVERLAY_CLS} onClick={closing ? undefined : requestClose}>
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         tabIndex={-1}
+        inert={closing || undefined}
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className={DIALOG_CARD_CLS}
+        className={closing ? `${DIALOG_CARD_CLS} ${DIALOG_CLOSING_CARD_CLS}` : DIALOG_CARD_CLS}
       >
         <h2 className="text-lg font-semibold text-white">{title}</h2>
         <div className="max-h-[60vh] space-y-2 overflow-y-auto">
@@ -101,7 +104,7 @@ export function PrintRevisionPicker({ projectId, onPick, onClose }: Props) {
           )}
         </div>
         <div className="flex justify-end">
-          <Button type="button" variant="secondary" onClick={onClose}>
+          <Button type="button" variant="secondary" onClick={requestClose}>
             {t('common.cancel')}
           </Button>
         </div>

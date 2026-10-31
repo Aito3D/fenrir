@@ -10,6 +10,7 @@ import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
 import { OrderPickerDialog } from '../print/OrderPickerDialog';
 import { useOpenOrders } from '../print/useOpenOrders';
 import { DialogShell } from '../DialogShell';
+import { useDialogExit } from '../useDialogExit';
 import { RADIO_ROW_CLS } from '../dialogStyles';
 
 interface Props {
@@ -30,8 +31,9 @@ export function ResliceDialog({ projectId, files, initialFileId, onStart, onClos
   const [pipelineId, setPipelineId] = useState<number | null>(null);
   const [askOrder, setAskOrder] = useState(false);
   const dialogRef = useRef<HTMLFormElement>(null);
+  const { closing, requestClose } = useDialogExit(onClose);
   // In the order step the picker owns Escape (back to this step); this dialog must not close too.
-  useIsolatedEscape(() => { if (!askOrder) onClose(); }, dialogRef);
+  useIsolatedEscape(() => { if (!askOrder) requestClose(); }, dialogRef);
   const { openOrders, loading: ordersLoading, failed: ordersFailed, noOrderNeeded } = useOpenOrders(projectId);
 
   const { data: pipelines, isPending, isError: pipelinesFailed } = useQuery({ queryKey: ['slicer-pipelines'], queryFn: api.listSlicerPipelines });
@@ -68,7 +70,8 @@ export function ResliceDialog({ projectId, files, initialFileId, onStart, onClos
     <DialogShell
       dialogRef={dialogRef}
       title={title}
-      onClose={onClose}
+      onClose={requestClose}
+      closing={closing}
       onSubmit={(e) => {
         e.preventDefault();
         if (pipelineId !== null) onStart(fileId, pipelineId, undefined);
@@ -112,7 +115,7 @@ export function ResliceDialog({ projectId, files, initialFileId, onStart, onClos
         </div>
       )}
       <div className="flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
+        <Button type="button" variant="secondary" onClick={requestClose}>{t('common.cancel')}</Button>
         <Button type="button" variant="secondary" disabled={pipelineId === null} onClick={sliceAndQueue}>
           {t('projectsPdm.reslice.sliceAndQueue')}
         </Button>

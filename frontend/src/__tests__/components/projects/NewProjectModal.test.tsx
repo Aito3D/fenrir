@@ -49,7 +49,7 @@ describe('NewProjectModal', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Create' }));
     await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/projects/42'));
     expect(posted).toEqual([{ name: 'Support caméra', tag_ids: [], new_tag_names: ['fixation'] }]);
-    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1)); // after the exit beat (useDialogExit)
   });
 
   it('sends a trimmed description when one is typed', async () => {
@@ -74,7 +74,7 @@ describe('NewProjectModal', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Create' }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
     expect(onCreated.mock.calls[0][0]).toMatchObject({ id: 42, name: 'Pièce' });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId('path')).toHaveTextContent('/');
   });
 
@@ -102,7 +102,7 @@ describe('NewProjectModal', () => {
       new_tag_names: ['fixation'],
     });
     expect(posted).toEqual([]);
-    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId('path')).toHaveTextContent('/');
   });
 

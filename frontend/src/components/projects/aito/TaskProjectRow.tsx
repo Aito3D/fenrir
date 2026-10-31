@@ -33,7 +33,7 @@ const DESCRIPTION_FIELD = {
   maindoeuvre: 'maindoeuvreDescription',
 } as const;
 
-const smallBtn = `inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-bambu-gray-light transition-colors hover:bg-bambu-dark-tertiary/40 hover:text-white disabled:opacity-50 ${focusRingCls}`;
+const smallBtn = `btn-press inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-bambu-gray-light transition-colors hover:bg-bambu-dark-tertiary/40 hover:text-white disabled:opacity-50 ${focusRingCls}`;
 
 /** The task's service descriptions, as the new project's starting description. */
 function taskDescription(task: TaskDraft): string {

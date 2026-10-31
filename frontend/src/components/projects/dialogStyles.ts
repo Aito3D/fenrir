@@ -3,9 +3,16 @@ import type { DragEvent } from 'react';
 /** The projects dialogs' backdrop: full-screen, centred, dimmed. */
 export const OVERLAY_CLS = 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-overlay-in';
 
-/** The projects dialogs' card (a `max-w-lg` stacked form or panel). */
+/** The projects dialogs' card (a `max-w-lg` stacked form or panel): scales in from centre like
+ *  every other modal (`.animate-modal-in`); DialogShell adds `.animate-modal-out` on the way out. */
 export const DIALOG_CARD_CLS =
-  'w-full max-w-lg space-y-4 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-5 focus:outline-none';
+  'w-full max-w-lg space-y-4 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-5 focus:outline-none animate-modal-in';
+
+/** Added to the backdrop / the card while a dialog's exit plays (`useDialogExit`): the exit
+ *  keyframes come after the entrance ones in index.css, so they win; the backdrop stops taking
+ *  clicks and the card goes `inert`. */
+export const DIALOG_CLOSING_OVERLAY_CLS = 'animate-overlay-out pointer-events-none';
+export const DIALOG_CLOSING_CARD_CLS = 'animate-modal-out';
 
 /** One radio choice row (a `<label>` wrapping the radio) in the pickers. */
 export const RADIO_ROW_CLS =

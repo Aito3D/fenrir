@@ -10,7 +10,8 @@ import { ProjectTagEditor, splitTagDrafts } from './ProjectTagEditor';
 import type { TagDraft } from './ProjectTagChips';
 import type { Project } from '../../api/client';
 import { useIsolatedEscape } from '../../hooks/useIsolatedEscape';
-import { DIALOG_CARD_CLS, OVERLAY_CLS } from './dialogStyles';
+import { DIALOG_CARD_CLS, DIALOG_CLOSING_CARD_CLS, DIALOG_CLOSING_OVERLAY_CLS, OVERLAY_CLS } from './dialogStyles';
+import { useDialogExit } from './useDialogExit';
 import { useInvalidateProjects } from './projectQueries';
 
 /** What the modal sends to create a project. */
@@ -51,8 +52,11 @@ export function NewProjectModal<T = Project>({
   const [description, setDescription] = useState(initialDescription);
   const [tags, setTags] = useState<TagDraft[]>([]);
   const dialogRef = useRef<HTMLFormElement>(null);
+  // The exit beat before `onClose` (Cancel, Escape, a created project); the page a new project
+  // navigates to unmounts the modal first, which is fine — nothing is left to close.
+  const { closing, requestClose } = useDialogExit(onClose);
   // Escape closes this modal only — it also opens over Aito's detail panel.
-  useIsolatedEscape(onClose, dialogRef);
+  useIsolatedEscape(requestClose, dialogRef);
 
   const create = useMutation({
     mutationFn: (): Promise<T> => {
@@ -61,7 +65,7 @@ export function NewProjectModal<T = Project>({
     },
     onSuccess: (result) => {
       invalidateProjects();
-      onClose();
+      requestClose();
       if (onCreated) onCreated(result);
       else navigate(`/projects/${(result as Project).id}`);
     },
@@ -69,18 +73,19 @@ export function NewProjectModal<T = Project>({
   });
 
   return (
-    <div className={OVERLAY_CLS}>
+    <div className={closing ? `${OVERLAY_CLS} ${DIALOG_CLOSING_OVERLAY_CLS}` : OVERLAY_CLS}>
       <form
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         tabIndex={-1}
+        inert={closing || undefined}
         aria-label={t('projectsPdm.createTitle')}
         onSubmit={(e) => {
           e.preventDefault();
           if (title.trim()) create.mutate();
         }}
-        className={DIALOG_CARD_CLS}
+        className={closing ? `${DIALOG_CARD_CLS} ${DIALOG_CLOSING_CARD_CLS}` : DIALOG_CARD_CLS}
       >
         <h2 className="text-lg font-semibold text-white">{t('projectsPdm.createTitle')}</h2>
         <AiTextField
@@ -101,7 +106,7 @@ export function NewProjectModal<T = Project>({
         />
         <ProjectTagEditor value={tags} onChange={setTags} title={title} description={description} />
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onClose}>
+          <Button type="button" variant="secondary" onClick={requestClose}>
             {t('common.cancel')}
           </Button>
           <Button type="submit" disabled={!title.trim() || create.isPending}>

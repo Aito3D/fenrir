@@ -9,6 +9,7 @@ import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
 import { inputCls } from '../../formStyles';
 import { DialogShell } from '../DialogShell';
 import { stopDrag } from '../dialogStyles';
+import { useDialogExit } from '../useDialogExit';
 import type { FileActions } from './useFileActions';
 import { SLICED_ACCEPT, isSlicedFilename, printProfileLine } from './filesUi';
 
@@ -49,7 +50,8 @@ export function UploadSlicedDialog({ revision, actions, onClose }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message?: string; mismatches?: Mismatch[] } | null>(null);
-  useIsolatedEscape(() => { if (!busy) onClose(); }, dialogRef);
+  const { closing, requestClose } = useDialogExit(onClose);
+  useIsolatedEscape(() => { if (!busy) requestClose(); }, dialogRef);
   const title = t('projectsPdm.slice.uploadTitle');
   const profile = printProfileLine(revision.print_profile);
 
@@ -69,7 +71,7 @@ export function UploadSlicedDialog({ revision, actions, onClose }: Props) {
     try {
       await actions.uploadSlicedFile(revision.id, file);
       showToast(t('projectsPdm.slice.uploadDone'), 'success');
-      onClose();
+      requestClose();
     } catch (e) {
       const mismatches = mismatchesOf(e);
       if (mismatches) setError({ mismatches });
@@ -79,7 +81,7 @@ export function UploadSlicedDialog({ revision, actions, onClose }: Props) {
   };
 
   return (
-    <DialogShell dialogRef={dialogRef} title={title} onClose={() => { if (!busy) onClose(); }}
+    <DialogShell dialogRef={dialogRef} title={title} onClose={() => { if (!busy) requestClose(); }} closing={closing}
       onSubmit={(e) => { e.preventDefault(); void submit(); }}>
       <div className="space-y-4" onDragOver={stopDrag} onDrop={stopDrag}>
         <h2 className="text-lg font-semibold text-white">{title}</h2>
@@ -116,7 +118,7 @@ export function UploadSlicedDialog({ revision, actions, onClose }: Props) {
           </div>
         )}
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>{t('common.cancel')}</Button>
+          <Button type="button" variant="secondary" onClick={requestClose} disabled={busy}>{t('common.cancel')}</Button>
           <Button type="submit" disabled={!file || busy || !!error?.message}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Upload className="h-4 w-4" aria-hidden />}
             {t('projectsPdm.slice.uploadSubmit')}

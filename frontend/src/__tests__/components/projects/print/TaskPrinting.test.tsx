@@ -245,7 +245,7 @@ describe('Print from an Aito task', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Choose a print file' });
     expect(await within(dialog).findByText('No print file in this project yet')).toBeInTheDocument();
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('dialog', { name: 'Choose a print file' })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Choose a print file' })).not.toBeInTheDocument());
   });
 
   it('no Print button without queue:create', async () => {

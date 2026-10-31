@@ -23,13 +23,18 @@ interface Props {
   onClose: () => void;
   /** The card's ⋯ fork request: that revision's block opens with its fork form. */
   fork: { revisionId: number; nonce: number } | null;
+  /** Closed: on its way out along the path it arrived by (`data-leaving`), inert meanwhile. */
+  leaving?: boolean;
 }
 
-const iconBtn = `inline-flex h-11 w-11 items-center justify-center rounded-lg text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white md:h-8 md:w-8 ${focusRingCls}`;
+/** `.files-tray[data-leaving]`'s duration: the app-wide 150ms exit beat. ItemCard unmounts the tray after it. */
+export const TRAY_LEAVE_MS = 150;
+
+const iconBtn = `btn-press inline-flex h-11 w-11 items-center justify-center rounded-lg text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white md:h-8 md:w-8 ${focusRingCls}`;
 
 /** The card's details, a full-width grid cell under its row: rename and hold-to-delete the item,
  *  then the shown revision's block (status, note, derived-from, files, delete revision). */
-export function ItemDetailsTray({ item, revision, actions, dropHandlers, renameField, onRename, onClose, fork }: Props) {
+export function ItemDetailsTray({ item, revision, actions, dropHandlers, renameField, onRename, onClose, fork, leaving = false }: Props) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const canUpdate = hasPermission('projects:update') && isSectionEnabled(item.section);
@@ -38,8 +43,8 @@ export function ItemDetailsTray({ item, revision, actions, dropHandlers, renameF
   const forking = fork !== null && fork.revisionId === revision?.id;
 
   return (
-    <li data-testid={`item-tray-${item.id}`}
-      className="col-span-full animate-rise space-y-2 rounded-lg border border-bambu-green/40 bg-bambu-dark/70 p-3" {...dropHandlers}>
+    <li data-testid={`item-tray-${item.id}`} data-leaving={leaving ? '' : undefined} inert={leaving || undefined}
+      className="files-tray col-span-full animate-rise space-y-2 rounded-lg border border-bambu-green/40 bg-bambu-dark/70 p-3" {...dropHandlers}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         {renameField || <span className="min-w-0 flex-1 basis-40 break-all text-sm font-medium text-white">{item.name}</span>}
         <span className="flex [&>div]:flex">

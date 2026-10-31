@@ -77,7 +77,7 @@ export function ProjectHeader({
               onClick={startEdit}
               aria-label={t('projectsPdm.editHeader')}
               title={t('projectsPdm.editHeader')}
-              className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-1 text-bambu-gray hover:text-white md:min-h-0 md:min-w-0 ${focusRingCls}`}
+              className={`btn-press inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-1 text-bambu-gray hover:text-white md:min-h-0 md:min-w-0 ${focusRingCls}`}
             >
               <Pencil className="h-4 w-4" />
             </button>
@@ -99,7 +99,7 @@ export function ProjectHeader({
 
   return (
     <form
-      className="w-full max-w-2xl space-y-3"
+      className="animate-rise-sm w-full max-w-2xl space-y-3"
       onSubmit={(e) => {
         e.preventDefault();
         if (title.trim()) save.mutate();

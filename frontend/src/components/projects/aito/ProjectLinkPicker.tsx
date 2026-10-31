@@ -43,7 +43,7 @@ export function ProjectLinkPicker({
 
   return (
     <div
-      className="mt-2 space-y-2 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-2"
+      className="animate-rise-sm mt-2 space-y-2 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-2"
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
           e.stopPropagation();

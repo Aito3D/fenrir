@@ -63,7 +63,9 @@ describe('ResliceDialog', () => {
     render(<ResliceDialog projectId={7} files={[file(50, 'support.3mf')]} initialFileId={50} onStart={() => {}} onClose={onClose} />);
     await screen.findByRole('radio', { name: /H2D PETG/ });
     await userEvent.keyboard('{Escape}');
-    expect(onClose).toHaveBeenCalledTimes(1);
+    // The close waits for the exit animation (useDialogExit); the dialog is inert meanwhile.
+    expect(screen.getByRole('dialog')).toHaveAttribute('inert');
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
   it('lets the operator pick another source file when there are several', async () => {

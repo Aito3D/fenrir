@@ -8,7 +8,8 @@ import type { MoveToProjectResult } from '../../../api/client';
 import { Button } from '../../Button';
 import { ProjectOptionButton, ProjectSearchInput } from '../ProjectCodeChip';
 import { projectKeys, useProjectSearch, useProjectTree } from '../projectQueries';
-import { OVERLAY_CLS } from '../dialogStyles';
+import { DIALOG_CLOSING_CARD_CLS, DIALOG_CLOSING_OVERLAY_CLS, OVERLAY_CLS } from '../dialogStyles';
+import { useDialogExit } from '../useDialogExit';
 import { focusRingCls } from '../../formStyles';
 import { useToast } from '../../../contexts/ToastContext';
 import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
@@ -236,7 +237,8 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const dialogRef = useRef<HTMLDivElement>(null);
-  useIsolatedEscape(onClose, dialogRef);
+  const { closing, requestClose } = useDialogExit(onClose);
+  useIsolatedEscape(requestClose, dialogRef);
 
   const [project, setProject] = useState<PickedProject | null>(null);
   const [itemChoice, setItemChoice] = useState<ItemChoice>('auto');
@@ -277,7 +279,7 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
         result.skipped.length > 0 ? 'warning' : filed > 0 ? 'success' : 'info',
       );
       onMoved?.(result);
-      onClose();
+      requestClose();
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -294,15 +296,16 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
     fileIds.length === 1 && fileName ? fileName : t('projectsPdm.filing.fileCount', { count: fileIds.length });
 
   return createPortal(
-    <div className={OVERLAY_CLS} onClick={onClose}>
+    <div className={closing ? `${OVERLAY_CLS} ${DIALOG_CLOSING_OVERLAY_CLS}` : OVERLAY_CLS} onClick={closing ? undefined : requestClose}>
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
+        inert={closing || undefined}
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[90vh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-5 focus:outline-none animate-modal-in"
+        className={`flex max-h-[90vh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-5 focus:outline-none animate-modal-in${closing ? ` ${DIALOG_CLOSING_CARD_CLS}` : ''}`}
       >
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-white">{title}</h2>
@@ -331,7 +334,7 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
         )}
 
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onClose}>
+          <Button type="button" variant="secondary" onClick={requestClose}>
             {t('common.cancel')}
           </Button>
           <Button

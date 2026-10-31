@@ -6,6 +6,7 @@ import { Button } from '../../Button';
 import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
 import { DialogShell } from '../DialogShell';
 import { RADIO_ROW_CLS } from '../dialogStyles';
+import { useDialogExit } from '../useDialogExit';
 
 /** "none" = internal/test print (no task). */
 type Choice = number | 'none' | null;
@@ -30,15 +31,17 @@ export function OrderPickerDialog({ orders, unavailable = false, loading = false
   const [picked, setChoice] = useState<Choice | undefined>(undefined);
   const choice: Choice = loading ? null : picked !== undefined ? picked : orders.length === 1 ? orders[0].task_id : null;
   const dialogRef = useRef<HTMLFormElement>(null);
+  const { closing, requestClose } = useDialogExit(onCancel);
   // Escape closes this picker only, never the page or a host panel under it.
-  useIsolatedEscape(onCancel, dialogRef);
+  useIsolatedEscape(requestClose, dialogRef);
   const title = t('projectsPdm.print.forWhichOrder');
 
   return (
     <DialogShell
       dialogRef={dialogRef}
       title={title}
-      onClose={onCancel}
+      onClose={requestClose}
+      closing={closing}
       onSubmit={(e) => {
         e.preventDefault();
         if (choice !== null) onConfirm(choice === 'none' ? null : choice);
@@ -87,7 +90,7 @@ export function OrderPickerDialog({ orders, unavailable = false, loading = false
         </fieldset>
       )}
       <div className="flex justify-end gap-2">
-        <Button type="button" variant="secondary" onClick={onCancel}>
+        <Button type="button" variant="secondary" onClick={requestClose}>
           {t('common.cancel')}
         </Button>
         <Button type="submit" disabled={choice === null}>

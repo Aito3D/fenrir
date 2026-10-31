@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { UploadCloud } from 'lucide-react';
 import type { ProjectSection } from '../../../api/client';
@@ -7,13 +8,20 @@ import { useFileDropZone } from './useFileDropZone';
 import { PRINTABLE_ACCEPT } from './filesUi';
 
 /** The dashed last cell of the card grid: drop (or pick) a `.3mf` to create an item named after
- *  it. `onFiles` is the section's own drop handler (create-or-reuse by name, then upload). */
-export function NewItemDropCard({ section, onFiles }: { section: ProjectSection; onFiles: (files: File[]) => void | Promise<void> }) {
+ *  it. `onFiles` is the section's own drop handler (create-or-reuse by name, then upload).
+ *  `revealSlot`: its slot in the section's first-render cascade (the cards' `catalog-card-in`), or -1 to
+ *  settle in at once. */
+export function NewItemDropCard({ section, onFiles, revealSlot = -1 }: {
+  section: ProjectSection;
+  onFiles: (files: File[]) => void | Promise<void>;
+  revealSlot?: number;
+}) {
   const { t } = useTranslation();
   const chooser = useRef<HTMLInputElement>(null);
   const { dragOver, ...dropHandlers } = useFileDropZone({ canDrop: true, stopPropagation: 'dragOverAndDrop', onFiles });
   return (
-    <li className="flex" {...dropHandlers}>
+    <li className={`flex ${revealSlot >= 0 ? 'catalog-card-in' : ''}`}
+      style={revealSlot >= 0 ? ({ '--reveal-delay': `${revealSlot * 25}ms` } as CSSProperties) : undefined} {...dropHandlers}>
       <button type="button" onClick={() => chooser.current?.click()}
         className={`flex min-h-[200px] w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-3 text-center transition-colors ${
           dragOver ? 'border-bambu-green text-bambu-green' : 'border-bambu-dark-tertiary text-bambu-gray hover:border-bambu-green/60 hover:text-bambu-green'
