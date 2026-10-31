@@ -1459,6 +1459,19 @@ describe('FileManagerPage', () => {
   });
 
   describe('STL thumbnail generation', () => {
+    it('Refresh prices re-reads the calculator settings and the files, then says so', async () => {
+      const user = userEvent.setup();
+      let defaultsReads = 0;
+      server.use(http.get('/api/v1/calculator/defaults', () => { defaultsReads += 1; return HttpResponse.json({ id: 1, electricity_tariff: 0.2, labor_rate_per_hour: 30, consumables_packaging_flat: 1, failure_rate_pct: 5, prototype_rate_pct: 0, ads_rate_pct: 0, filament_markup_pct: 0, global_markup_pct: 50, tax_pct: 0, default_difficulty_pct: 100, default_margin_over_cost_pct: 50, stuff_markup_pct: 0 }); }));
+      render(<FileManagerPage />);
+      const button = await screen.findByTestId('refresh-prices');
+      await waitFor(() => expect(defaultsReads).toBeGreaterThan(0));
+      const before = defaultsReads;
+      await user.click(button);
+      await waitFor(() => expect(defaultsReads).toBeGreaterThan(before));
+      expect(await screen.findByText('Prices updated with the current calculator settings')).toBeInTheDocument();
+    });
+
     it('shows Generate Thumbnails button', async () => {
       render(<FileManagerPage />);
 

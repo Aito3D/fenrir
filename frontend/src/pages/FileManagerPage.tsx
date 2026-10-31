@@ -2484,6 +2484,20 @@ export function FileManagerPage() {
         : null,
     [calcFilaments, calcPrinters, calcDefaults],
   );
+  // Every card's cost and price is computed from the calculator's current settings, so a
+  // refresh re-reads those settings and the files' facts; nothing is stored per file.
+  const refreshPrices = useMutation({
+    mutationFn: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] }),
+        queryClient.invalidateQueries({ queryKey: ['calculatorPrinters'] }),
+        queryClient.invalidateQueries({ queryKey: ['calculatorDefaults'] }),
+        queryClient.invalidateQueries({ queryKey: ['library-files'] }),
+      ]);
+    },
+    onSuccess: () => showToast(t('fileManager.refreshPricesDone'), 'success'),
+    onError: () => showToast(t('common.error'), 'error'),
+  });
 
   // Get unique file types for filter dropdown
   const fileTypes = useMemo(() => {
@@ -3432,6 +3446,18 @@ export function FileManagerPage() {
             )}
             {t('fileManager.generateThumbnails')}
           </Button>
+          {canUseCalculator && (
+            <Button
+              variant="secondary"
+              onClick={() => refreshPrices.mutate()}
+              disabled={refreshPrices.isPending}
+              title={t('fileManager.refreshPricesTitle')}
+              data-testid="refresh-prices"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${refreshPrices.isPending ? 'animate-spin' : ''}`} />
+              {t('fileManager.refreshPrices')}
+            </Button>
+          )}
           <Button
             variant="secondary"
             onClick={() => setShowExternalFolderModal(true)}
