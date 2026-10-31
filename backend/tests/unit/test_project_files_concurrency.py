@@ -15,7 +15,6 @@ from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.services import project_files
 from backend.app.services.project_files import (
     ProjectFilesError,
-    add_files_to_revision,
     add_revision,
     create_item,
     get_item_for_project,
@@ -117,17 +116,6 @@ async def test_concurrent_uploads_to_one_item_keep_every_file(sessions, root):
     assert outcomes.count("ok") >= 1
     rows = await _assert_rows_match_disk(a)
     assert len(rows) == outcomes.count("ok")
-
-    revision_id = (await a.execute(select(ProjectRevision.id).order_by(ProjectRevision.id))).scalars().first()
-
-    async def more_files(db, data: bytes):
-        revision, item, project = await get_revision_bundle(db, revision_id)
-        await add_files_to_revision(db, project, item, revision, [upload("extra.step", data)], user_id=None)
-
-    await asyncio.gather(more_files(a, b"x" * 50_000), more_files(b, b"y" * 70_000))
-    rows = await _assert_rows_match_disk(a)
-    names = sorted(r.filename for r in rows if r.revision_id == revision_id)
-    assert names == ["extra (2).step", "extra.step", "plate.step"]
 
 
 @pytest.mark.asyncio

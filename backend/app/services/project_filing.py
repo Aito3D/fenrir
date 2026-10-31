@@ -49,6 +49,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _COPY_FAILED_REASON = "could not copy the file"  # the OSError text (server path) is only logged
+# A legacy-migration failure that is neither ours (LegacyMigrationError) nor a ProjectFilesError: its text
+# (database error, server path...) is only logged.
+_LEGACY_UNEXPECTED_REASON = "unexpected error while migrating the project"
 
 _DROP_SECTIONS = {
     "scan": (".ply", ".obj", ".e57", ".xyz", ".pts"),
@@ -96,14 +99,22 @@ async def find_or_create_item(
     create: the loser hits the name check (409) or the unique constraint, so
     it re-reads the winner's item and adds its revision there instead of
     failing. Returns the project too, re-read if the rollback expired it."""
+    item, project, _created = await _find_or_create_item(db, project, section, key, name, user_id)
+    return item, project
+
+
+async def _find_or_create_item(
+    db: AsyncSession, project: Project, section: str, key: str, name: str, user_id: int | None
+) -> tuple[ProjectItem, Project, bool]:
+    """``find_or_create_item``, plus True when THIS call created (and committed) the item."""
     project_id = project.id
     item = await find_item_by_key(db, project_id, section, key)
     if item is not None:
-        return item, project
+        return item, project, False
     try:
         item = await project_files.create_item(db, project, section=section, name=name, user_id=user_id)
         await db.commit()
-        return item, project
+        return item, project, True
     except (IntegrityError, project_files.ProjectFilesError) as exc:
         if isinstance(exc, project_files.ProjectFilesError) and exc.status_code != 409:
             raise
@@ -112,7 +123,7 @@ async def find_or_create_item(
         item = await find_item_by_key(db, project_id, section, key)
         if item is None or project is None:
             raise project_files.ProjectFilesError(409, "This item was changed meanwhile; drop the files again") from exc
-        return item, project
+        return item, project, False
 
 
 # --- moving File Manager files into a project --------------------------------
@@ -1018,7 +1029,13 @@ async def _run_legacy_migration() -> None:
                         totals["files_copied"] += outcome.files_copied
                 except Exception as exc:
                     logger.warning("Legacy migration of project %s failed", project_id, exc_info=True)
-                    state["failures"].append({"project_id": project_id, "code": code, "error": str(exc)[:500]})
+                    if isinstance(exc, (LegacyMigrationError, project_files.ProjectFilesError)):
+                        reason = str(exc)[:500]  # our own texts (a ProjectFilesError's str() is its detail)
+                    elif isinstance(exc, OSError):
+                        reason = _COPY_FAILED_REASON
+                    else:
+                        reason = _LEGACY_UNEXPECTED_REASON
+                    state["failures"].append({"project_id": project_id, "code": code, "error": reason})
                     await rollback_quietly(
                         db, logger, logging.DEBUG, "Rollback after a failed legacy migration failed too"
                     )

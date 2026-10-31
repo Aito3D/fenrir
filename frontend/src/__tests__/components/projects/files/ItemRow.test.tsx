@@ -1,7 +1,8 @@
-/** ItemRow (the "Older files" row) rendered on its own: the header's rename, upload and
- *  busy states, the row's drop zone, and the derived-from line with its OUTDATED chip. */
+/** ItemRow (the "Older files" row: an item of a disabled section) rendered on its own: the
+ *  read-only header (toggle, chip, file count, busy note, hold-to-delete), the row swallowing
+ *  file drags without taking them, and the derived-from line. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import type { ProjectItemOut } from '../../../../api/client';
@@ -14,11 +15,11 @@ vi.mock('../../../../contexts/ToastContext', () => ({ useToast: () => ({ showToa
 
 import { ItemRow } from '../../../../components/projects/files/ItemRow';
 
-const support = item(20, 'impression', 'Support', [
+const support = item(20, 'modelisation', 'Support', [
   rev({ id: 2, number: 2, status: 'valide', files: [file(50, 'support.3mf')] }),
   rev({ id: 1, number: 1, files: [] }),
 ]);
-const derived = item(30, 'impression', 'Support X1C', [
+const derived = item(30, 'scan', 'Support X1C', [
   rev({
     id: 3,
     number: 1,
@@ -67,57 +68,46 @@ beforeEach(() => {
 });
 
 describe('ItemRow', () => {
-  it('renames on submit with the trimmed name, then shows the name button again', () => {
+  it('shows the newest revision chip and file count; the name toggles the revisions', () => {
     renderRow(support);
-    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
-    const input = screen.getByRole('textbox', { name: 'Rename' });
-    expect(input).toHaveValue('Support');
-    fireEvent.change(input, { target: { value: '  Support v2 ' } });
-    fireEvent.submit(input.closest('form')!);
-    expect(actions.renameItem).toHaveBeenCalledWith(20, 'Support v2');
-    expect(screen.queryByRole('textbox', { name: 'Rename' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Support' })).toHaveAttribute('aria-expanded', 'false');
+    const toggle = screen.getByRole('button', { name: 'Support' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('R2 · Approved')).toBeInTheDocument();
+    expect(screen.getByText('1 file')).toBeInTheDocument();
+    expect(screen.queryByTestId('revision-2')).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('revision-2')).toBeInTheDocument();
+    expect(screen.getByTestId('revision-1')).toBeInTheDocument();
   });
 
-  it('Escape cancels the rename, and an unchanged or blank name sends nothing', () => {
+  it('is read-only even with projects:update: no upload or rename, and a file drag stops here untaken', () => {
     renderRow(support);
-    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
-    let input = screen.getByRole('textbox', { name: 'Rename' });
-    fireEvent.change(input, { target: { value: 'Other' } });
-    fireEvent.keyDown(input, { key: 'Escape' });
-    expect(screen.queryByRole('textbox', { name: 'Rename' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
-    fireEvent.blur(screen.getByRole('textbox', { name: 'Rename' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
-    input = screen.getByRole('textbox', { name: 'Rename' });
-    fireEvent.change(input, { target: { value: '   ' } });
-    fireEvent.submit(input.closest('form')!);
-    expect(actions.renameItem).not.toHaveBeenCalled();
-  });
-
-  it('uploads a picked file and a dropped file as a new revision', () => {
-    renderRow(support);
-    const picker = screen.getByTestId('new-revision-input-20') as HTMLInputElement;
-    const picked = new File(['y'], 'support-r3.3mf');
-    fireEvent.change(picker, { target: { files: [picked] } });
-    expect(actions.uploadRevision).toHaveBeenCalledWith(20, [picked]);
-    fireEvent.change(picker, { target: { files: [] } });
-    expect(actions.uploadRevision).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Rename' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New revision' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('new-revision-input-20')).not.toBeInTheDocument();
     const row = screen.getByRole('listitem');
-    fireEvent.dragOver(row, { dataTransfer: { types: ['Files'] } });
-    expect(row.className).toContain('border-bambu-green');
-    fireEvent.drop(row, fileDrop('dropped.3mf'));
-    expect(actions.uploadRevision).toHaveBeenCalledTimes(2);
-    expect(row.className).toContain('border-bambu-dark-tertiary');
+    let reached = 0;
+    const count = () => (reached += 1);
+    document.addEventListener('dragover', count);
+    document.addEventListener('drop', count);
+    try {
+      expect(fireEvent.dragOver(row, { dataTransfer: { types: ['Files'] } })).toBe(false);
+      expect(row.className).toContain('border-bambu-dark-tertiary');
+      expect(fireEvent.drop(row, fileDrop('dropped.3mf'))).toBe(false);
+    } finally {
+      document.removeEventListener('dragover', count);
+      document.removeEventListener('drop', count);
+    }
+    expect(reached).toBe(0);
+    expect(actions.uploadRevision).not.toHaveBeenCalled();
   });
 
-  it('while busy: uploading note, upload button disabled, drop highlights but is not taken', () => {
+  it('while busy: uploading note, a drop is not taken', () => {
     renderRow(support, true);
     expect(screen.getByRole('status')).toHaveTextContent('Uploading');
-    expect(screen.getByRole('button', { name: 'New revision' })).toBeDisabled();
     const row = screen.getByRole('listitem');
     fireEvent.dragOver(row, { dataTransfer: { types: ['Files'] } });
-    expect(row.className).toContain('border-bambu-green');
     fireEvent.drop(row, fileDrop('dropped.3mf'));
     expect(actions.uploadRevision).not.toHaveBeenCalled();
   });
@@ -132,10 +122,30 @@ describe('ItemRow', () => {
     expect(row.className).toContain('border-bambu-dark-tertiary');
   });
 
-  it('a derived, outdated item shows its source and the OUTDATED chip only while closed', () => {
+  it('holding Delete item deletes it', async () => {
+    vi.useFakeTimers();
+    try {
+      renderRow(support);
+      const del = screen.getByRole('button', { name: 'Delete item' });
+      fireEvent.pointerDown(del, { pointerId: 1, button: 0 });
+      await act(async () => {
+        vi.advanceTimersByTime(1100);
+      });
+      expect(actions.deleteItem).toHaveBeenCalledWith(20);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('without projects:delete: no delete button', () => {
+    perms.delete('projects:delete');
+    renderRow(support);
+    expect(screen.queryByRole('button', { name: 'Delete item' })).not.toBeInTheDocument();
+  });
+
+  it('a derived item shows its source; the name toggles it open', () => {
     renderRow(derived);
     expect(screen.getByText(/Derived from/)).toBeInTheDocument();
-    expect(screen.getAllByText(/OUTDATED/i)).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Support X1C' }));
     expect(screen.getByRole('button', { name: 'Support X1C' })).toHaveAttribute('aria-expanded', 'true');
   });

@@ -10538,7 +10538,6 @@ export default {
       itemBusy: '{{name}} is still uploading, so the dropped files were not uploaded',
       otherSections: 'Older files',
       newRevision: 'New revision',
-      addFiles: 'Add files',
       removeFile: 'Remove {{name}}',
       remove: 'Remove',
       statusLabel: 'Status',

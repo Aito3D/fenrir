@@ -10123,7 +10123,6 @@ export default {
       itemBusy: '{{name}} ще завантажується, тому перетягнуті файли не були завантажені',
       otherSections: 'Старіші файли',
       newRevision: 'Нова ревізія',
-      addFiles: 'Додати файли',
       removeFile: 'Прибрати {{name}}',
       remove: 'Прибрати',
       statusLabel: 'Статус',

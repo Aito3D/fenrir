@@ -31,7 +31,7 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.library import LibraryFile
 from backend.app.models.project import Project
-from backend.app.models.project_item import ProjectRevision
+from backend.app.models.project_item import SLICE_SLICED, SLICE_SLICING, ProjectRevision
 from backend.app.models.user import User
 from backend.app.schemas.aito_project_links import ProjectOrdersResponse
 from backend.app.schemas.project_files import (
@@ -422,7 +422,9 @@ async def slice_revision(
         status = (
             await db.execute(select(ProjectRevision.slice_status).where(ProjectRevision.id == revision_id))
         ).scalar_one_or_none()
-        if status not in ("slicing", "sliced"):
+        # A started job is returned whatever its state: one that failed within milliseconds is
+        # already ``failed`` here, and its job and slice_error say why.
+        if status is None or (job_id is None and status not in (SLICE_SLICING, SLICE_SLICED)):
             raise svc.ProjectFilesError(400, "This revision has no source .3mf to slice")
     return RevisionSliceStarted(job_id=job_id, slice_status=status)
 

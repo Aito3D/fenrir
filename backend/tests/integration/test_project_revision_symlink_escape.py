@@ -97,7 +97,8 @@ async def test_queueing_the_link_is_refused_with_400(
     _rev, source = await _escaped_revision(async_client, db_session, roots, outside_secret)
     response = await async_client.post("/api/v1/queue/", json={"library_file_id": source.id})
     assert response.status_code == 400, response.text
-    assert response.json()["detail"] == "This .3mf holds no Bambu Studio project to slice, so it cannot be printed."
+    # T-487: a link out of the tree reads as a missing file (revision_file_path refuses it)
+    assert response.json()["detail"] == "The revision's source .3mf is missing"
 
 
 @pytest.mark.asyncio

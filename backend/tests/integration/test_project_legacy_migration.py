@@ -618,15 +618,15 @@ async def test_runner_passes_over_a_project_migrated_or_deleted_meanwhile(
     "make_error",
     [
         lambda text: project_files.ProjectFilesError(409, text),
-        lambda text: RuntimeError(text),
-        lambda text: OSError(text),
+        lambda text: project_filing.LegacyMigrationError(text),
     ],
-    ids=["project-files-error", "runtime-error", "os-error"],
+    ids=["project-files-error", "legacy-migration-error"],
 )
 async def test_runner_records_the_error_text_capped_at_500(
     async_client: AsyncClient, db_session, monkeypatch, make_error
 ):
-    """The recorded ``error`` is the exception's text (a ProjectFilesError's detail), cut at 500 characters."""
+    """The recorded ``error`` is the text of our own errors (a ProjectFilesError's detail, a
+    LegacyMigrationError's message), cut at 500 characters."""
     project = await _project(db_session)
     project_id, code = project.id, project.code
     text = "é" * 499 + "xyz"
@@ -645,6 +645,49 @@ async def test_runner_records_the_error_text_capped_at_500(
     assert project_filing._legacy_state["failures"] == [
         {"project_id": project_id, "code": code, "error": "é" * 499 + "x"}
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("make_error", "reason"),
+    [
+        (lambda text: OSError(13, "Permission denied", text), "could not copy the file"),
+        (
+            lambda text: RuntimeError(f"(sqlite3.OperationalError) disk I/O error at {text}"),
+            "unexpected error while migrating the project",
+        ),
+    ],
+    ids=["os-error", "unexpected-error"],
+)
+async def test_runner_records_a_generic_reason_for_raw_errors_and_logs_them(
+    async_client: AsyncClient, db_session, monkeypatch, caplog, make_error, reason
+):
+    """T-480 (user-approved 2026-10-26): an OSError or any other unexpected error is recorded with a fixed
+    reason (never its text, which can carry server paths or SQL) and logged with its traceback."""
+    project = await _project(db_session)
+    project_id, code = project.id, project.code
+    secret_path = "/srv/fenrir/data/projects/P-0001_secret/impression/part.3mf"
+
+    async def candidates(_db):
+        return [project_id]
+
+    async def boom(_db, _project):
+        raise make_error(secret_path)
+
+    monkeypatch.setattr(project_filing, "legacy_candidates", candidates)
+    monkeypatch.setattr(project_filing, "migrate_project_legacy", boom)
+    project_filing._legacy_state["running"] = True
+    with caplog.at_level("WARNING", logger="backend.app.services.project_filing"):
+        await project_filing._run_legacy_migration()
+
+    assert project_filing._legacy_state["failures"] == [{"project_id": project_id, "code": code, "error": reason}]
+    status = (await async_client.get("/api/v1/projects/legacy-migration/status")).json()
+    assert status["failures"] == [{"project_id": project_id, "code": code, "error": reason}]
+    assert secret_path not in json.dumps(status)
+    [record] = [r for r in caplog.records if r.getMessage() == f"Legacy migration of project {project_id} failed"]
+    assert record.levelname == "WARNING"
+    assert record.exc_info is not None and secret_path in str(record.exc_info[1])
 
 
 @pytest.mark.asyncio

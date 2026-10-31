@@ -16,6 +16,30 @@ describe('useArrivals', () => {
     expect([...result.current]).toEqual([3]);
   });
 
+  it('flags the first event of a project that was ready and empty', () => {
+    const { result, rerender } = renderHook(({ keys, ready }) => useArrivals(keys, ready), {
+      initialProps: { keys: [] as string[], ready: true },
+    });
+    expect(result.current.size).toBe(0);
+
+    rerender({ keys: ['a'], ready: true });
+    expect([...result.current]).toEqual(['a']);
+  });
+
+  it('keeps the baseline across a refetch (ready false then true) without flagging it', () => {
+    const { result, rerender } = renderHook(({ keys, ready }) => useArrivals(keys, ready), {
+      initialProps: { keys: [1, 2], ready: true },
+    });
+    rerender({ keys: [], ready: false });
+    expect(result.current.size).toBe(0);
+
+    rerender({ keys: [1, 2], ready: true });
+    expect(result.current.size).toBe(0);
+
+    rerender({ keys: [1, 2, 3], ready: true });
+    expect([...result.current]).toEqual([3]);
+  });
+
   it('keeps a key flagged on later renders so a re-render never cuts its entrance', () => {
     const { result, rerender } = renderHook(({ keys }) => useArrivals(keys), { initialProps: { keys: ['a'] } });
     rerender({ keys: ['a', 'b'] });

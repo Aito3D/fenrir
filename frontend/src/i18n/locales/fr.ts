@@ -10467,7 +10467,6 @@ export default {
       itemBusy: '{{name}} est encore en cours d\'envoi : les fichiers déposés n\'ont pas été envoyés',
       otherSections: 'Autres fichiers (anciens)',
       newRevision: 'Nouvelle révision',
-      addFiles: 'Ajouter des fichiers',
       removeFile: 'Retirer {{name}}',
       remove: 'Retirer',
       statusLabel: 'Statut',

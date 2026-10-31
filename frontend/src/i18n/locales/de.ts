@@ -10482,7 +10482,6 @@ export default {
       itemBusy: '{{name}} wird noch hochgeladen, die abgelegten Dateien wurden daher nicht hochgeladen',
       otherSections: 'Ältere Dateien',
       newRevision: 'Neue Revision',
-      addFiles: 'Dateien hinzufügen',
       removeFile: '{{name}} entfernen',
       remove: 'Entfernen',
       statusLabel: 'Status',

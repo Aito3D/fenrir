@@ -10506,7 +10506,6 @@ errors: {
       itemBusy: '{{name}} laddas fortfarande upp, så de släppta filerna laddades inte upp',
       otherSections: 'Äldre filer',
       newRevision: 'Ny revision',
-      addFiles: 'Lägg till filer',
       removeFile: 'Ta bort {{name}}',
       remove: 'Ta bort',
       statusLabel: 'Status',

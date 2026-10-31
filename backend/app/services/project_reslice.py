@@ -80,7 +80,10 @@ async def prepare_reslice(db: AsyncSession, revision_id: int, body: ResliceBody,
 
     Raises ``ProjectFilesError``, first failing check wins: revision 404, section 400,
     file not in the revision 404, not a 3MF 400, pipeline 404, unusable preset 400,
-    source missing on disk 404."""
+    source missing on disk 404, source over the slicing caps 413
+    (``project_slice.check_source_within_caps``, the server slice's zip-bomb guard)."""
+    from backend.app.services.project_slice import check_source_within_caps  # imports this module
+
     revision, item, _project = await project_files.get_revision_bundle(db, revision_id)
     project_files.require_enabled_section(item.section)
     source = (
@@ -105,12 +108,14 @@ async def prepare_reslice(db: AsyncSession, revision_id: int, body: ResliceBody,
     path = project_files.revision_file_path(source.file_path)
     if path is None or not path.exists():
         raise ProjectFilesError(404, "Source file missing on disk")
+    model_bytes = await asyncio.to_thread(path.read_bytes)
+    await asyncio.to_thread(check_source_within_caps, model_bytes)
     return ResliceRequest(
         revision_id=revision.id,
         revision_number=revision.number,
         source_file_id=source.id,
         source_filename=source.filename,
-        model_bytes=await asyncio.to_thread(path.read_bytes),
+        model_bytes=model_bytes,
         pipeline_id=pipeline.id,
         slice_request=slice_request,
         user_id=user_id,

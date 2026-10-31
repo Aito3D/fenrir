@@ -358,6 +358,88 @@ async def test_mark_failed_leaves_a_sliced_revision_alone(async_client: AsyncCli
     assert (after.slice_status, after.slice_error, after.sliced_file_id) == ("sliced", None, sliced_id)
 
 
+async def _slicing_revision_with_waiting_item(client: AsyncClient, db) -> tuple[int, int]:
+    """A revision left ``slicing`` with a ``slicing`` queue item on its source, as a slice whose job just failed."""
+    rev = await _upload(client)
+    await db.execute(update(ProjectRevision).where(ProjectRevision.id == rev["id"]).values(slice_status="slicing"))
+    item = PrintQueueItem(library_file_id=rev["files"][0]["id"], status="slicing", position=1)
+    db.add(item)
+    await db.commit()
+    return rev["id"], item.id
+
+
+def _flaky_commit(db, monkeypatch, failures: int | None) -> list[int]:
+    """Make ``db.commit`` raise its first ``failures`` calls (every call when None); returns the call log."""
+    real_commit = db.commit
+    calls: list[int] = []
+
+    async def commit():
+        calls.append(1)
+        if failures is None or len(calls) <= failures:
+            raise RuntimeError("database is locked")
+        await real_commit()
+
+    monkeypatch.setattr(db, "commit", commit)  # this session only
+    return calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_mark_failed_retries_a_failed_write_and_fails_the_waiting_items(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    revision_id, item_id = await _slicing_revision_with_waiting_item(async_client, db_session)
+    monkeypatch.setattr(project_slice, "_MARK_FAILED_BACKOFF_SECONDS", 0)
+
+    async with database.async_session() as db:
+        calls = _flaky_commit(db, monkeypatch, failures=1)
+        await project_slice._mark_failed(db, revision_id, "The slicer refused the file")
+
+    assert len(calls) == 2
+    revision = await _revision(db_session, revision_id)
+    assert (revision.slice_status, revision.slice_error) == ("failed", "The slicer refused the file")
+    item = await _item(db_session, item_id)
+    assert (item.status, item.error_message) == ("slice_failed", "The slicer refused the file")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_mark_failed_gives_up_after_its_attempts_and_logs_once(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch, caplog
+):
+    revision_id, item_id = await _slicing_revision_with_waiting_item(async_client, db_session)
+    monkeypatch.setattr(project_slice, "_MARK_FAILED_BACKOFF_SECONDS", 0)
+    async with database.async_session() as db:
+        calls = _flaky_commit(db, monkeypatch, failures=None)
+        with caplog.at_level("WARNING", logger=project_slice.logger.name):
+            await project_slice._mark_failed(db, revision_id, "The slicer refused the file")
+
+    assert len(calls) == project_slice._MARK_FAILED_ATTEMPTS == 3
+    failures = [r for r in caplog.records if r.getMessage().startswith("Could not record the failed slice")]
+    assert len(failures) == 1 and failures[0].levelname == "ERROR" and failures[0].exc_info
+    assert (await _revision(db_session, revision_id)).slice_status == "slicing"
+    assert (await _item(db_session, item_id)).status == "slicing"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_mark_failed_logs_a_rollback_that_raises_after_its_last_attempt(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch, caplog
+):
+    revision_id, _item_id = await _slicing_revision_with_waiting_item(async_client, db_session)
+    monkeypatch.setattr(project_slice, "_MARK_FAILED_BACKOFF_SECONDS", 0)
+
+    async with database.async_session() as db:
+        monkeypatch.setattr(db, "rollback", AsyncMock(side_effect=RuntimeError("connection reset")))
+        with caplog.at_level("WARNING", logger=project_slice.logger.name):
+            await project_slice._mark_failed(db, revision_id, "x")
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert messages.count(f"Could not record the failed slice of project revision {revision_id}") == 1
+    assert "Rollback after recording a failed slice raised" in messages
+    assert (await _revision(db_session, revision_id)).slice_status == "slicing"
+
+
 # --- files filed into a project by move / import / auto-filing --------------------------------
 
 
@@ -461,3 +543,124 @@ async def test_sweep_fails_a_stranded_item_whose_source_is_gone(async_client: As
     assert (item.status, item.error_message) == ("slice_failed", "The slice could not start")
     assert sidecar.slice_requests == []
     assert await project_slice.recover_waiting_queue_items() == 0  # not stranded any more
+
+
+# --- the lifespan runs both startup sweeps, resume first, each isolated from the other -------------
+
+
+class _StopStartup(Exception):
+    """Raised by the first lifespan step after the slice sweeps, so the rest of startup never runs."""
+
+
+async def _run_startup_through_the_slice_sweeps(monkeypatch) -> None:
+    """Enter the real ``lifespan`` and stop it right after the two slice sweeps.
+
+    Only the steps around them are neutralised: ``init_db`` would migrate the module-level engine
+    (the dev database), and the cloud client registration just after the sweeps is the stop sign."""
+    from backend.app import main
+    from backend.app.services import bambu_cloud
+
+    def stop(*_args, **_kwargs):
+        raise _StopStartup
+
+    monkeypatch.setattr(main, "init_db", AsyncMock())
+    monkeypatch.setattr(bambu_cloud, "set_shared_http_client", stop)
+    monkeypatch.setattr("backend.app.core.fd_limit.raise_open_file_limit", MagicMock())
+    with pytest.raises(_StopStartup):
+        async with main.lifespan(main.app):
+            pytest.fail("the lifespan was expected to stop before yielding")
+
+
+async def _stranded_pair(client: AsyncClient, db_session) -> tuple[dict, dict, int]:
+    """A revision a restart left ``slicing`` with a dead job, and another never sliced whose queue
+    item is stranded in ``slicing``: (first revision, second revision, the item's id)."""
+    first = await _upload(client)
+    await db_session.execute(
+        update(ProjectRevision)
+        .where(ProjectRevision.id == first["id"])
+        .values(slice_status="slicing", slice_job_id=9999)
+    )
+    await db_session.commit()
+    second = await _upload(client)
+    item = PrintQueueItem(library_file_id=second["files"][0]["id"], status="slicing", position=1)
+    db_session.add(item)
+    await db_session.commit()
+    return first, second, item.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_startup_resumes_the_interrupted_slice_then_settles_the_stranded_item(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    first, second, item_id = await _stranded_pair(async_client, db_session)
+    calls: list[str] = []
+    real_resume, real_recover = project_slice.resume_interrupted_slices, project_slice.recover_waiting_queue_items
+
+    async def resume():
+        calls.append("resume")
+        return await real_resume()
+
+    async def recover():
+        calls.append("recover")
+        return await real_recover()
+
+    monkeypatch.setattr(project_slice, "resume_interrupted_slices", resume)
+    monkeypatch.setattr(project_slice, "recover_waiting_queue_items", recover)
+
+    await _run_startup_through_the_slice_sweeps(monkeypatch)
+
+    assert calls == ["resume", "recover"]
+    resumed_job = (await _revision(db_session, first["id"])).slice_job_id
+    assert resumed_job not in (None, 9999)
+    recovered_job = (await _revision(db_session, second["id"])).slice_job_id
+    assert recovered_job is not None
+    await _wait_job(resumed_job)
+    await _wait_job(recovered_job)
+    assert (await _revision(db_session, first["id"])).slice_status == "sliced"
+    revision = await _revision(db_session, second["id"])
+    assert revision.slice_status == "sliced"
+    sliced_id = revision.sliced_file_id
+    item = await _item(db_session, item_id)
+    assert (item.status, item.library_file_id) == ("pending", sliced_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_startup_still_recovers_the_stranded_item_when_the_resume_sweep_raises(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    first, second, item_id = await _stranded_pair(async_client, db_session)
+    monkeypatch.setattr(project_slice, "resume_interrupted_slices", AsyncMock(side_effect=_boom))
+
+    await _run_startup_through_the_slice_sweeps(monkeypatch)
+
+    assert (await _revision(db_session, first["id"])).slice_job_id == 9999  # not resumed
+    recovered = await _revision(db_session, second["id"])
+    assert recovered.slice_job_id is not None
+    await _wait_job(recovered.slice_job_id)
+    revision = await _revision(db_session, second["id"])
+    sliced_id = revision.sliced_file_id
+    item = await _item(db_session, item_id)
+    assert (item.status, item.library_file_id) == ("pending", sliced_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_starting_a_slice_for_a_missing_revision_returns_none(db_session):
+    assert await project_slice.start_revision_slice(db_session, 987654, user_id=None) is None
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    [
+        (project_slice.HttpStatusError(409, "taken"), (409, "taken")),
+        (project_slice.HTTPException(404, "gone"), (404, "gone")),
+        (project_slice.ProjectFilesError(413, "too big"), (413, "too big")),
+        (project_slice.SlicerApiError("sidecar down"), (502, "sidecar down")),
+        (project_slice.SlicerApiError(""), (502, "SlicerApiError")),
+        (OSError("/srv/data/secret.3mf"), (500, project_slice.UNEXPECTED_SLICE_ERROR)),
+    ],
+)
+def test_error_status_and_message_per_error_kind(exc, expected):
+    assert project_slice._error_status_and_message(exc) == expected

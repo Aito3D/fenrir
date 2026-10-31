@@ -23,6 +23,7 @@ import weakref
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, TypeVar
 
 from fastapi import UploadFile
 from sqlalchemy import Select, delete, select, union, update
@@ -51,7 +52,7 @@ from backend.app.models.pipeline_run import PipelineRun
 from backend.app.models.print_batch import PrintBatch
 from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
 from backend.app.models.project import Project
-from backend.app.models.project_item import REVISION_STATUSES, SECTIONS, ProjectItem, ProjectRevision
+from backend.app.models.project_item import REVISION_STATUSES, SECTIONS, SLICE_SLICING, ProjectItem, ProjectRevision
 from backend.app.models.user import User
 from backend.app.schemas.project_files import (
     DuplicateWarning,
@@ -1012,10 +1013,13 @@ async def _add_revision_locked(
     written: list[_WrittenFile] = []
 
     async def undo() -> None:
-        await db.rollback()
-        _cleanup_written(written)
-        if created_folder:
-            _remove_empty(folder)
+        # files first: a failing rollback must not leave them on disk with no row
+        try:
+            _cleanup_written(written)
+            if created_folder:
+                _remove_empty(folder)
+        finally:
+            await db.rollback()
 
     def translate(exc: BaseException) -> Exception | None:
         if isinstance(exc, IntegrityError) and (
@@ -1182,40 +1186,6 @@ async def _require_files_still_editable(db: AsyncSession, revision_id: int, file
         raise ProjectFilesError(409, _USED_NOT_EDITABLE)
 
 
-async def add_files_to_revision(
-    db: AsyncSession,
-    project: Project,
-    item: ProjectItem,
-    revision: ProjectRevision,
-    uploads: list[UploadFile],
-    user_id: int | None,
-) -> list[DuplicateWarning]:
-    if not uploads:
-        raise ProjectFilesError(400, "No file")
-    async with _item_lock(item.id):
-        item = await fresh_item(db, item.id)
-        revision = await _fresh_revision(db, revision.id, item.id)
-        await _require_editable_files(db, revision)
-        item_id, section, name = item.id, item.section, item.name
-        await _claim_storage_dir(db, project)
-        folder = revision_dir(project, section, name, revision.number)
-        written: list[_WrittenFile] = []
-
-        async def undo() -> None:
-            await db.rollback()
-            _cleanup_written(written)
-
-        async with _CommitGuard(db, undo, label=f"files added to revision {revision.id}") as commit:
-            written = await _stream_files(folder, uploads)
-            await _require_item_unchanged(db, item_id, section, name)
-            # the revision may have been validated or used while streaming
-            await _require_editable_files(db, await _fresh_revision(db, revision.id, item_id))
-            rows = await _add_file_rows(db, project, revision, written, user_id)
-            warnings = await _duplicate_warnings(db, item, revision, rows)
-            await commit()
-        return warnings
-
-
 async def _delete_file_rows(
     db: AsyncSession, *, file_ids: list[int] | None = None, revision_ids: list[int] | None = None
 ) -> list[int]:
@@ -1251,7 +1221,7 @@ class _TrashGuard(_CommitGuard):
     calls ``guard.trash()`` (moves ``path`` to the project trash; a no-op when
     ``path`` is None) and ends with ``await guard.commit()``. The undo is
     ``_restore_and_rollback(db, moved, path)``, ``moved`` being None until
-    ``trash()`` ran.
+    ``trash()`` ran; it first puts back what ``trash_also()`` moved.
     """
 
     def __init__(self, db: AsyncSession, project: Project, path: Path | None, *, label: str = "commit") -> None:
@@ -1259,12 +1229,26 @@ class _TrashGuard(_CommitGuard):
         self._project = project
         self._path = path
         self._moved: Path | None = None
+        self._also_moved: list[tuple[Path, Path]] = []
 
     async def _restore(self) -> None:
-        await _restore_and_rollback(self._db, self._moved, self._path)
+        try:
+            for moved, original in reversed(self._also_moved):
+                try:
+                    _move(str(moved), str(original))
+                except Exception:
+                    logger.warning("Could not restore %s from the trash (%s)", original, moved, exc_info=True)
+        finally:
+            await _restore_and_rollback(self._db, self._moved, self._path)
 
     def trash(self) -> None:
         self._moved = move_to_trash(self._project, self._path) if self._path is not None else None
+
+    def trash_also(self, path: Path) -> None:
+        """Move one more ``path`` of the project to the trash; the undo puts it back too."""
+        moved = move_to_trash(self._project, path)
+        if moved is not None:
+            self._also_moved.append((moved, path))
 
     async def commit(self) -> None:
         await self._commit()
@@ -1293,16 +1277,55 @@ async def _remove_file_locked(db: AsyncSession, project: Project, revision: Proj
 
     revision_id, file_ids = revision.id, [f.id for f in files]
     path = to_absolute_path(target.file_path)
+    removes_source = await _is_slice_source(db, revision_id, target.id)
     await _claim_storage_dir(db, project)
     async with _TrashGuard(db, project, path, label=f"removal of file {target.id}") as guard:
         # the revision may have been validated, printed or delivered since the pre-check
         await _hold_sqlite_write_lock(db, revision_id)
         await _require_files_still_editable(db, revision_id, file_ids)
         await _delete_file_rows(db, file_ids=[target.id])
+        derived = await _drop_slice_of_removed_source(db, revision) if removes_source else None
         await db.flush()
-        await _require_files_still_editable(db, revision_id, file_ids)
+        await _require_files_still_editable(db, revision_id, file_ids + ([derived.id] if derived else []))
         guard.trash()
+        if derived is not None and derived.path is not None:
+            guard.trash_also(derived.path)
         await guard.commit()
+
+
+async def _is_slice_source(db: AsyncSession, revision_id: int, file_id: int) -> bool:
+    """``file_id`` is the revision's source ``.3mf``, the one its server slice is made from."""
+    from backend.app.services.project_slice import source_file_of  # it imports this module
+
+    source = await source_file_of(db, revision_id)
+    return source is not None and source.id == file_id
+
+
+@dataclass(frozen=True)
+class _DroppedSlice:
+    id: int
+    path: Path | None
+
+
+async def _drop_slice_of_removed_source(db: AsyncSession, revision: ProjectRevision) -> _DroppedSlice | None:
+    """The revision's source is being removed: its slice is that file's G-code, so the revision goes
+    back to unsliced (status, error and sliced file cleared) and the derived slice row is deleted;
+    returns that row's id and path (None when it had none). The next print slices the new source.
+
+    A slice in flight (``slicing``) is left alone. Does not commit."""
+    await db.refresh(revision)
+    if revision.slice_status == SLICE_SLICING:
+        return None
+    derived_id = revision.sliced_file_id
+    revision.slice_status = None
+    revision.slice_error = None
+    revision.sliced_file_id = None
+    if derived_id is None:
+        return None
+    derived = await db.get(LibraryFile, derived_id)
+    derived_path = revision_file_path(derived.file_path) if derived is not None else None
+    await _delete_file_rows(db, file_ids=[derived_id])
+    return _DroppedSlice(derived_id, derived_path)
 
 
 async def _clear_links_to(db: AsyncSession, revision_ids: list[int]) -> None:
@@ -1437,6 +1460,22 @@ async def delete_item(db: AsyncSession, project: Project, item: ProjectItem) -> 
         await _delete_item_locked(db, project, await fresh_item(db, item.id))
 
 
+async def _discard_empty_item(db: AsyncSession, project_id: int, item_id: int) -> None:
+    """Delete an item that holds no revision (and its empty folder): the item a drop created for a file the
+    upload then refused. Under the item lock, so an upload that reached the item first keeps it. Commits."""
+    async with _item_lock(item_id):
+        item = await db.get(ProjectItem, item_id, populate_existing=True)
+        project = await db.get(Project, project_id, populate_existing=True)
+        if item is None or project is None or item.last_revision_number or await _item_revision_ids(db, item_id):
+            return
+        # no folder name claimed yet (a legacy project): the refused upload's claim was rolled back with it
+        folder = item_dir(project, item.section, item.name) if project.storage_dir else None
+        await db.delete(item)
+        await db.commit()
+    if folder is not None:
+        _remove_empty(folder)
+
+
 _REVISION_USED = "This revision was printed or delivered and cannot be deleted"
 _ITEM_USED = "A revision of this item was printed or delivered; the item cannot be deleted"
 
@@ -1528,6 +1567,98 @@ def _remove_empty(*folders: Path) -> None:
             _rmdir(folder)
 
 
+class _RevisionGone(Exception):
+    """Raised inside ``store_derived_file``'s commit guard to undo the write of a revision deleted meanwhile."""
+
+
+def _write_claimed(dest: Path, content: bytes) -> None:
+    with _open_claimed(dest) as writer:
+        writer.write(content)
+
+
+_Prepared = TypeVar("_Prepared")
+
+
+async def store_derived_file(
+    db: AsyncSession,
+    revision_id: int,
+    filename: str,
+    content: bytes,
+    *,
+    file_type: str,
+    file_metadata: dict,
+    user_id: int | None,
+    label: str,
+    skip: Callable[[ProjectRevision], bool],
+    prepare: Callable[[LibraryFile], Awaitable[_Prepared]],
+    land: Callable[[ProjectRevision, LibraryFile, _Prepared], Awaitable[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Write a server-made file into the revision folder as a hidden (``derived_slice``) library row. Commits.
+
+    Under the item lock, like every write into an item folder, so a rename, delete or fork
+    never runs under it. A revision deleted meanwhile (or during this step) gets nothing: no
+    row, no file, ``{}``; so does one ``skip`` refuses, read fresh under the lock.
+    ``prepare(row)`` runs before the row is added (the flush takes the write lock);
+    ``land(revision, row, prepared)`` makes the caller's own writes once the revision is known
+    to still exist and returns the result. A failed commit removes the file, then rolls back;
+    ``label`` names the write in the log."""
+    bundle = await find_revision_bundle(db, revision_id)
+    if bundle is None:
+        return {}
+    item_id = bundle[1].id
+    async with _item_lock(item_id):
+        bundle = await find_revision_bundle(db, revision_id)
+        if bundle is None:
+            return {}
+        revision, item, project = bundle
+        await db.refresh(revision)
+        await db.refresh(item)
+        if skip(revision):
+            return {}
+        await _claim_storage_dir(db, project)
+        folder = revision_dir(project, item.section, item.name, revision.number)
+        dest = await asyncio.to_thread(claim_unique_file_path, folder, filename)
+        result: dict[str, Any] = {}
+
+        async def undo() -> None:
+            # file first: a failing rollback must not leave it on disk with no row
+            try:
+                _unlink_quietly(dest)
+            finally:
+                await db.rollback()
+
+        try:
+            async with _CommitGuard(db, undo, label=label) as commit:
+                await asyncio.to_thread(_write_claimed, dest, content)
+                row = _new_library_row(
+                    _RowOwner(project.id, revision.id, user_id),
+                    dest,
+                    file_type=file_type,
+                    file_size=len(content),
+                    file_hash=hashlib.sha256(content).hexdigest(),
+                    thumbnail_path=None,
+                    file_metadata=file_metadata,
+                )
+                row.derived_slice = True
+                prepared = await prepare(row)
+                db.add(row)
+                await db.flush()
+                # The flush holds SQLite's write lock (PostgreSQL: the row lock below): a revision
+                # deleted since it was read would strand this row and file, so undo them instead.
+                still = await lock_revision_rows(db, [revision_id], share=True)
+                exists = (
+                    await db.execute(select(ProjectRevision.id).where(ProjectRevision.id == revision_id))
+                ).first() is not None
+                if not exists or (still is not None and revision_id not in still):
+                    raise _RevisionGone
+                result = await land(revision, row, prepared)
+                await commit()
+        except _RevisionGone:
+            _remove_empty(folder)  # revision_dir re-created it
+            return {}
+    return result
+
+
 async def fork_revision(
     db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, new_name: str, user_id: int | None
 ) -> ProjectItem:
@@ -1565,9 +1696,12 @@ async def _fork_revision_locked(
     copies: list[_WrittenFile] = []
 
     async def undo() -> None:
-        await db.rollback()
-        _cleanup_written(copies)
-        _remove_empty(folder, new_item_dir)
+        # files first: a failing rollback must not leave the new item folder behind
+        try:
+            _cleanup_written(copies)
+            _remove_empty(folder, new_item_dir)
+        finally:
+            await db.rollback()
 
     def translate(exc: BaseException) -> Exception | None:
         if isinstance(exc, IntegrityError):

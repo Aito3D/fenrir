@@ -574,10 +574,10 @@ describe('useFileActions', () => {
   const printable = () => new File(['x'], 'part.3mf');
   const pdf = () => new File(['x'], 'plan.pdf');
 
-  it('addFiles refuses a non-printing file with a toast and sends nothing', async () => {
-    const add = vi.spyOn(api, 'addProjectRevisionFiles');
+  it('uploadRevision refuses a non-printing file with a toast and sends nothing', async () => {
+    const add = vi.spyOn(api, 'uploadProjectRevision');
     const { result } = renderHook(() => useFileActions(7), { wrapper });
-    await act(() => result.current.addFiles(40, 4, [printable(), pdf()]));
+    await act(() => result.current.uploadRevision(40, [printable(), pdf()]));
     expect(await screen.findByText('Only Bambu Studio project files (.3mf) can be added. Sliced files (.gcode.3mf, .gcode) are made by the server.')).toBeInTheDocument();
     expect(add).not.toHaveBeenCalled();
     expect(result.current.isBusy(40)).toBe(false);

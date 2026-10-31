@@ -9872,11 +9872,13 @@ async def _close_out_print(printer_id: int, data: dict):
             try:
                 from sqlalchemy import func as sa_func
 
+                from backend.app.models.print_queue import SLICE_WAIT_STATUSES
+
                 async with async_session() as db:
                     count_result = await db.execute(
                         # Fenrir: items waiting for a project slice are still queued work.
                         select(sa_func.count(PrintQueueItem.id)).where(
-                            PrintQueueItem.status.in_(("pending", "slicing", "slice_failed"))
+                            PrintQueueItem.status.in_(("pending", *SLICE_WAIT_STATUSES))
                         )
                     )
                     pending_count = count_result.scalar() or 0

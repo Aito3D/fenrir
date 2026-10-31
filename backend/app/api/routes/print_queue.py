@@ -868,6 +868,7 @@ async def list_queue_history(
             Permission.QUEUE_READ_OWN,
         )
     ),
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),  # Fenrir
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Finished, failed, skipped and cancelled runs, one page at a time.
@@ -968,7 +969,7 @@ async def list_queue_history(
     )
 
     return {
-        "items": [_enrich_response(rows[i]) for i in ids if i in rows],
+        "items": [_hide_aito_task(_enrich_response(rows[i]), can_read_aito) for i in ids if i in rows],
         "total": total,
         "locations": sorted(location for location in locations if location),
     }
@@ -1090,8 +1091,8 @@ async def _resolve_queue_variants(
 
         # Fenrir: a project source .3mf runs as its server slice; an alternative cannot wait
         # for one (design 2026-10-17), so a revision not sliced yet is refused.
-        if _is_unsliced_project_source(library_file):
-            sliced_file = await _sliced_file_of(db, library_file)
+        if _project_slice().is_unsliced_project_source(library_file):
+            sliced_file = await _project_slice().sliced_file_of(db, library_file)
             if sliced_file is None:
                 raise HTTPException(
                     400,
@@ -1196,14 +1197,6 @@ def _project_slice():
     from backend.app.services import project_slice
 
     return project_slice
-
-
-def _is_unsliced_project_source(library_file: LibraryFile) -> bool:
-    return _project_slice().is_unsliced_project_source(library_file)
-
-
-async def _sliced_file_of(db: AsyncSession, library_file: LibraryFile) -> LibraryFile | None:
-    return await _project_slice().sliced_file_of(db, library_file)
 
 
 async def _start_slice_for_waiting_items(db: AsyncSession, revision_id: int, actor: User | ApiKeyActor | None) -> None:
@@ -1332,8 +1325,8 @@ async def add_to_queue(
     # "slicing" on the source and follows the slice (services/project_slice.py); a printer
     # never receives the unsliced source.
     slice_wait_revision_id: int | None = None
-    if library_file is not None and _is_unsliced_project_source(library_file):
-        sliced_file = await _sliced_file_of(db, library_file)
+    if library_file is not None and _project_slice().is_unsliced_project_source(library_file):
+        sliced_file = await _project_slice().sliced_file_of(db, library_file)
         if sliced_file is not None:
             library_file = sliced_file
             data.library_file_id = sliced_file.id
@@ -2520,6 +2513,7 @@ async def update_queue_item(
             Permission.QUEUE_UPDATE_OWN,
         )
     ),
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),  # Fenrir
     printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
 ):
@@ -2707,7 +2701,7 @@ async def update_queue_item(
     await db.refresh(item, ["archive", "printer", "library_file", "created_by", "batch"])
 
     logger.info("Updated queue item %s", item_id)
-    return _enrich_response(item)
+    return _hide_aito_task(_enrich_response(item), can_read_aito)
 
 
 async def _remove_queue_item(db: AsyncSession, item: PrintQueueItem) -> bool:
@@ -3014,7 +3008,9 @@ async def retry_queue_item_slice(
         raise HTTPException(400, "This item has no project revision to slice")
     revision_id = queued_file.revision_id
     source = await _project_slice().source_file_of(db, revision_id)
-    if source is None or source.id != queued_file.id:
+    if source is None:
+        raise HTTPException(400, _project_slice().SOURCE_MISSING)
+    if source.id != queued_file.id:
         raise HTTPException(400, _project_slice().NOT_THE_SOURCE)
 
     # Only the items the caller may modify (own unless update_all, printers in scope) are re-armed.
@@ -3203,6 +3199,7 @@ async def start_queue_item(
             Permission.QUEUE_UPDATE_OWN,
         )
     ),
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),  # Fenrir
     printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
 ):
@@ -3334,4 +3331,4 @@ async def start_queue_item(
         item_id,
         skip_filament_check,
     )
-    return _enrich_response(item)
+    return _hide_aito_task(_enrich_response(item), can_read_aito)

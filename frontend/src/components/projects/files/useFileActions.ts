@@ -94,12 +94,6 @@ export function useFileActions(projectId: number) {
      * is retried on the same item instead of creating it again. */
     createItem: (section: ProjectSection, name: string) =>
       run(async () => (await api.createProjectItem(projectId, section, name)).id, save),
-    addFiles: async (itemId: number, revisionId: number, files: File[]) => {
-      if (!acceptsFiles(files)) return;
-      await whileBusy(itemId, () =>
-        run(async () => warn((await api.addProjectRevisionFiles(revisionId, files)).warnings), upload),
-      );
-    },
     removeFile: (revisionId: number, fileId: number) => run(() => api.removeProjectRevisionFile(revisionId, fileId), save),
     setStatus: (revisionId: number, status: RevisionStatus) => run(() => api.updateProjectRevision(revisionId, { status }), save),
     setNote: (revisionId: number, note: string | null) => run(() => api.updateProjectRevision(revisionId, { note }), save),

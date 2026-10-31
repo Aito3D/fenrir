@@ -1,18 +1,17 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
+import type { DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pencil, Trash2, Upload } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import type { ProjectItemOut, ProjectRevisionOut } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { HoldButton } from '../../aito/HoldButton';
-import { inputCls, focusRingCls } from '../../formStyles';
+import { focusRingCls } from '../../formStyles';
 import { Chevron } from './CollapsibleHeader';
-import { OutdatedChip } from './OutdatedChip';
 import { RevisionBlock } from './RevisionBlock';
 import type { DerivedOption } from './RevisionBlock';
 import type { FileActions } from './useFileActions';
-import { useFileDropZone } from './useFileDropZone';
-import { PRINTABLE_ACCEPT, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, RESLICE_UI_ENABLED, chipBase, isSectionEnabled } from './filesUi';
-import { outdatedParams, revisionNumberLabel, sectionRevisionLabel } from './revisionLabel';
+import { STATUS_CHIP_CLS, STATUS_LABEL_KEYS, RESLICE_UI_ENABLED, chipBase } from './filesUi';
+import { revisionNumberLabel, sectionRevisionLabel } from './revisionLabel';
 
 interface Props {
   item: ProjectItemOut;
@@ -20,45 +19,33 @@ interface Props {
   actions: FileActions;
 }
 
-const iconBtn = `inline-flex h-11 w-11 items-center justify-center rounded-lg text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white md:h-8 md:w-8 ${focusRingCls}`;
+/** A file drag over the row is claimed and stops here: it never reaches the section, and nothing is taken. */
+const swallowDrag = (e: DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+};
 
+/** A row of "Older files": an item of a disabled section (projects hold printing files only for
+ *  now). Read-only except delete: no upload, drop or rename. */
 export function ItemRow({ item, derivedOptions, actions }: Props) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
-  // An item in a disabled section (projects hold printing files only for now) is
-  // read-only except delete: no upload, drop or rename.
-  const canUpdate = hasPermission('projects:update') && isSectionEnabled(item.section);
   const canDelete = hasPermission('projects:delete');
   const [open, setOpen] = useState(false);
   const revisions = [...item.revisions].sort((a, b) => b.number - a.number);
   const newest = revisions[0];
-  const outdated = item.section === 'impression' && newest?.outdated_by && newest.derived_from ? newest : null;
   const src = newest?.derived_from;
   const busy = actions.isBusy(item.id);
   const run = actions.reslice.runFor(item.id);
-  // Expanded, each revision block carries its own OUTDATED chip.
-  const rowOutdated = outdated && !open;
-
-  // Highlights while busy, but takes no drop until the upload ends; the drag never reaches the section.
-  const { dragOver, ...dropHandlers } = useFileDropZone({
-    canDrop: canUpdate && !busy,
-    canHighlight: canUpdate,
-    stopPropagation: 'dragOverAndDrop',
-    onFiles: (files) => void actions.uploadRevision(item.id, files),
-  });
 
   return (
-    <li
-      className={`rounded-lg border bg-bambu-dark/60 ${dragOver ? 'border-bambu-green' : 'border-bambu-dark-tertiary'}`}
-      {...dropHandlers}
-    >
+    <li className="rounded-lg border bg-bambu-dark/60 border-bambu-dark-tertiary" onDragOver={swallowDrag} onDrop={swallowDrag}>
       <ItemHeader
         item={item}
         newest={newest}
         open={open}
         onToggle={() => setOpen((o) => !o)}
         busy={busy}
-        canUpdate={canUpdate}
         canDelete={canDelete}
         actions={actions}
       />
@@ -78,16 +65,11 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
           )}
         </p>
       )}
-      {(src || rowOutdated) && (
+      {src && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-2 pl-8 text-xs text-bambu-gray">
-          {src && (
-            <span className="break-words">
-              {t('projectsPdm.files.derivedFrom', { label: sectionRevisionLabel(t, src.section, src.item_name, src.number) })}
-            </span>
-          )}
-          {rowOutdated && src && newest.outdated_by && (
-            <OutdatedChip params={outdatedParams(src, newest.outdated_by)} />
-          )}
+          <span className="break-words">
+            {t('projectsPdm.files.derivedFrom', { label: sectionRevisionLabel(t, src.section, src.item_name, src.number) })}
+          </span>
         </div>
       )}
       {open && (
@@ -101,15 +83,14 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
   );
 }
 
-/** The row's header: the name (expand toggle, or the rename input while renaming), the
- *  newest revision's chip, the file count, the busy note and the upload/rename/delete actions. */
+/** The row's header: the name (expand toggle), the newest revision's chip, the file count,
+ *  the busy note and the hold-to-delete action. */
 function ItemHeader({
   item,
   newest,
   open,
   onToggle,
   busy,
-  canUpdate,
   canDelete,
   actions,
 }: {
@@ -118,47 +99,19 @@ function ItemHeader({
   open: boolean;
   onToggle: () => void;
   busy: boolean;
-  canUpdate: boolean;
   canDelete: boolean;
   actions: FileActions;
 }) {
   const { t } = useTranslation();
-  const input = useRef<HTMLInputElement>(null);
-  const [renaming, setRenaming] = useState<string | null>(null);
   const fileCount = newest?.files.length ?? 0;
-
-  const renameDone = useRef(false);
-  const startRename = () => {
-    renameDone.current = false;
-    setRenaming(item.name);
-  };
-  const cancelRename = () => {
-    renameDone.current = true;
-    setRenaming(null);
-  };
-  const submitRename = async () => {
-    if (renameDone.current) return;
-    renameDone.current = true;
-    const name = (renaming ?? '').trim();
-    setRenaming(null);
-    if (name && name !== item.name) await actions.renameItem(item.id, name);
-  };
 
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 p-2">
-      {renaming !== null ? (
-        <form className="flex min-w-0 flex-1 basis-48 gap-2" onSubmit={(e) => { e.preventDefault(); void submitRename(); }}>
-          <input autoFocus value={renaming} onChange={(e) => setRenaming(e.target.value)} onBlur={() => void submitRename()}
-            aria-label={t('projectsPdm.files.rename')} className={inputCls}
-            onKeyDown={(e) => e.key === 'Escape' && cancelRename()} />
-        </form>
-      ) : (
-        <button type="button" aria-expanded={open} onClick={onToggle}
-          className={`flex min-h-[44px] min-w-0 flex-1 basis-40 items-center gap-1.5 rounded-lg text-left md:min-h-0 ${focusRingCls}`}>
-          <Chevron open={open} />
-          <span className="min-w-0 break-all text-sm font-medium text-white">{item.name}</span>
-        </button>
-      )}
+      <button type="button" aria-expanded={open} onClick={onToggle}
+        className={`flex min-h-[44px] min-w-0 flex-1 basis-40 items-center gap-1.5 rounded-lg text-left md:min-h-0 ${focusRingCls}`}>
+        <Chevron open={open} />
+        <span className="min-w-0 break-all text-sm font-medium text-white">{item.name}</span>
+      </button>
       {newest && (
         <span className={`${chipBase} ${STATUS_CHIP_CLS[newest.status]}`}>
           {`${revisionNumberLabel(newest.number)} · ${t(STATUS_LABEL_KEYS[newest.status])}`}
@@ -166,41 +119,19 @@ function ItemHeader({
       )}
       <span className="text-xs text-bambu-gray">{t('projectsPdm.files.fileCount', { count: fileCount })}</span>
       {busy && <span role="status" className="text-xs text-bambu-green">{t('projectsPdm.files.uploading')}</span>}
-      {(canUpdate || (canDelete && !isSectionEnabled(item.section))) && (
+      {canDelete && (
         <span className="flex [&>div]:flex">
-          {canUpdate && (
-            <>
-              <button type="button" className={`${iconBtn} disabled:opacity-40`} aria-label={t('projectsPdm.files.newRevision')}
-                title={t('projectsPdm.files.newRevision')} disabled={busy} onClick={() => input.current?.click()}>
-                <Upload className="h-4 w-4" />
-              </button>
-              <button type="button" className={iconBtn} aria-label={t('projectsPdm.files.rename')}
-                title={t('projectsPdm.files.rename')} onClick={startRename}>
-                <Pencil className="h-4 w-4" />
-              </button>
-            </>
-          )}
-          {canDelete && (
-            <HoldButton
-              onHold={() => void actions.deleteItem(item.id)}
-              durationMs={1000}
-              label={t('projectsPdm.files.deleteItem')}
-              hint={t('aito.holdToDelete')}
-              progress="perimeter"
-              className="h-11 w-11 justify-center text-bambu-gray hover:bg-red-400/10 hover:text-red-400 focus-visible:ring-red-400/40 data-[holding=true]:text-red-400 md:h-8 md:w-8"
-            >
-              <Trash2 className="relative h-4 w-4" />
-            </HoldButton>
-          )}
+          <HoldButton
+            onHold={() => void actions.deleteItem(item.id)}
+            durationMs={1000}
+            label={t('projectsPdm.files.deleteItem')}
+            hint={t('aito.holdToDelete')}
+            progress="perimeter"
+            className="h-11 w-11 justify-center text-bambu-gray hover:bg-red-400/10 hover:text-red-400 focus-visible:ring-red-400/40 data-[holding=true]:text-red-400 md:h-8 md:w-8"
+          >
+            <Trash2 className="relative h-4 w-4" />
+          </HoldButton>
         </span>
-      )}
-      {canUpdate && (
-        <input ref={input} type="file" accept={PRINTABLE_ACCEPT} className="hidden" data-testid={`new-revision-input-${item.id}`}
-          onChange={(e) => {
-            const files = Array.from(e.target.files ?? []);
-            e.target.value = '';
-            if (files.length) void actions.uploadRevision(item.id, files);
-          }} />
       )}
     </div>
   );

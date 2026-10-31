@@ -15,13 +15,15 @@
  * Pass `{ derived: true }` to also derive `hasAnyPermission` and `canModify`
  * (`<resource>:<action>_all|_own`) from the granted set; by default only
  * `hasPermission` is replaced and the real provider answers the rest.
+ * With `userId` as well, an `_own` grant only covers items created by that
+ * user (like the real `canModify`); without it `_own` covers every item.
  */
 type AuthModule = { useAuth: () => { hasPermission: (p: string) => boolean } };
 
 export function withGrantedPermissions<M extends AuthModule>(
   actual: M,
   getGranted: () => Set<string> | null,
-  options: { derived?: boolean } = {},
+  options: { derived?: boolean; userId?: number } = {},
 ): M {
   return {
     ...actual,
@@ -34,8 +36,10 @@ export function withGrantedPermissions<M extends AuthModule>(
       return {
         ...mocked,
         hasAnyPermission: (...ps: string[]) => ps.some((p) => granted.has(p)),
-        canModify: (resource: string, action: string) =>
-          granted.has(`${resource}:${action}_all`) || granted.has(`${resource}:${action}_own`),
+        canModify: (resource: string, action: string, createdById?: number | null) =>
+          granted.has(`${resource}:${action}_all`) ||
+          (granted.has(`${resource}:${action}_own`) &&
+            (options.userId === undefined || (createdById != null && createdById === options.userId))),
       };
     },
   };

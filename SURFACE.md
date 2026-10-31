@@ -98,9 +98,6 @@ client method — and fails the iteration unless the user approved it.
 /api/v1/projects/{project_id}/add-archives ['POST']
 /api/v1/projects/{project_id}/add-queue ['POST']
 /api/v1/projects/{project_id}/archives ['GET']
-/api/v1/projects/{project_id}/attachments ['POST']
-/api/v1/projects/{project_id}/attachments/{filename} ['GET']
-/api/v1/projects/{project_id}/attachments/{filename} ['DELETE']
 /api/v1/projects/{project_id}/bom ['GET']
 /api/v1/projects/{project_id}/bom ['POST']
 /api/v1/projects/{project_id}/bom/{item_id} ['PATCH']
@@ -126,7 +123,6 @@ client method — and fails the iteration unless the user approved it.
 @drop_router.post("/tasks/{task_id}/files", status_code=201)
 @library_router.get("/files/{file_id}/project-suggestions", response_model=list[ProjectSuggestionForFile])
 @router.delete("/{project_id}")
-@router.delete("/{project_id}/attachments/{filename}")
 @router.delete("/{project_id}/bom/{item_id}")
 @router.delete("/{project_id}/cover-image")
 @router.delete("/items/{item_id}", status_code=204, response_model=None)
@@ -137,7 +133,6 @@ client method — and fails the iteration unless the user approved it.
 @router.get("/{order_id}/project-links")
 @router.get("/{project_id}", response_model=ProjectResponse)
 @router.get("/{project_id}/archives")
-@router.get("/{project_id}/attachments/{filename}")
 @router.get("/{project_id}/bom", response_model=list[BOMItemResponse])
 @router.get("/{project_id}/cover-image")
 @router.get("/{project_id}/export")
@@ -160,7 +155,6 @@ client method — and fails the iteration unless the user approved it.
 @router.post("/", response_model=ProjectResponse)
 @router.post("/{project_id}/add-archives")
 @router.post("/{project_id}/add-queue")
-@router.post("/{project_id}/attachments")
 @router.post("/{project_id}/bom", response_model=BOMItemResponse)
 @router.post("/{project_id}/cover-image")
 @router.post("/{project_id}/create-template", response_model=ProjectResponse)
@@ -187,7 +181,6 @@ client method — and fails the iteration unless the user approved it.
 ```regen: grep -hE '^(def|class|async def) [a-zA-Z]' backend/app/api/routes/projects_pdm.py backend/app/api/routes/project_files.py backend/app/api/routes/aito_project_links.py backend/app/api/routes/projects.py backend/app/services/project_*.py backend/app/services/aito_project_links.py | sed 's/) *->.*/)/; s/:$//' | sort```
 ```
 async def add_archives_to_project(
-async def add_files_to_revision(
 async def add_files(
 async def add_queue_items_to_project(
 async def add_revision_from_sources(
@@ -207,7 +200,6 @@ async def create_project_for_task(
 async def create_project_from_template(
 async def create_project(
 async def create_template_from_project(
-async def delete_attachment(
 async def delete_bom_item(
 async def delete_item(
 async def delete_item(db: AsyncSession, project: Project, item: ProjectItem)
@@ -215,7 +207,6 @@ async def delete_project_cover_image(
 async def delete_project(
 async def delete_revision(
 async def delete_revision(db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision)
-async def download_attachment(
 async def download_revision(
 async def drop_files_on_task(
 async def drop_task_files(
@@ -299,6 +290,7 @@ async def start_legacy_migration(
 async def start_revision_slice(db: AsyncSession, revision_id: int, *, user_id: int | None)
 async def start_slice_after_upload(db: AsyncSession, revision_id: int, *, user_id: int | None)
 async def start_slice_for_waiting_items(db: AsyncSession, revision_id: int, *, user_id: int | None)
+async def store_derived_file(
 async def suggest_projects_for_filename(
 async def suggest_projects(db: AsyncSession, task: AitoTask, limit: int = 8)
 async def suggest_tags(
@@ -309,7 +301,6 @@ async def update_bom_item(
 async def update_project(
 async def update_revision(
 async def update_revision(
-async def upload_attachment(
 async def upload_project_cover_image(
 async def upload_revision(
 async def used_file_ids(db: AsyncSession, file_ids: Select)
@@ -328,6 +319,7 @@ class RevisionSource
 class TooManyNewTagsError(HTTPException)
 class UnknownTagError(ValueError)
 def allocate_code_number(connection: Connection)
+def check_source_within_caps(model_bytes: bytes)
 def claim_unique_file_path(directory: Path, filename: str)
 def clean_item_name(name: str)
 def clean_tag_name(name: str)
@@ -410,7 +402,6 @@ class OrderProjectLinks
 class Project
 class ProjectChildPreview
 class ProjectCreate
-class ProjectExport
 class ProjectFileOut
 class ProjectFileProgress
 class ProjectImport
@@ -635,22 +626,6 @@ print(json.dumps(out, indent=1, sort_keys=True))" 2>/dev/null```
   "target_parts_count": "int | None",
   "target_sets": "int | None",
   "url": "str | None"
- },
- "ProjectExport": {
-  "bom_items": "list[backend.app.schemas.project.BOMItemExport]",
-  "budget": "float | None",
-  "color": "str | None",
-  "description": "str | None",
-  "due_date": "datetime.datetime | None",
-  "linked_folders": "list[backend.app.schemas.project.LinkedFolderExport]",
-  "name": "<class 'str'>",
-  "notes": "str | None",
-  "priority": "<class 'str'>",
-  "status": "<class 'str'>",
-  "tags": "str | None",
-  "target_count": "int | None",
-  "target_parts_count": "int | None",
-  "target_sets": "int | None"
  },
  "ProjectFileOut": {
   "created_at": "<class 'datetime.datetime'>",
@@ -1233,7 +1208,7 @@ CREATE TABLE projects (
 ```regen: grep -hoE 'get_setting\(db, "[a-z_]+"|os\.environ\.get\("[A-Z_]+"|settings\.[a-z_]+' backend/app/api/routes/projects_pdm.py backend/app/api/routes/project_files.py backend/app/api/routes/aito_project_links.py backend/app/api/routes/projects.py backend/app/services/project_*.py backend/app/services/aito_project_links.py | sort | uniq -c | sed 's/^ *//'```
 ```
 1 settings.archive_dir
-3 settings.base_dir
+2 settings.base_dir
 4 settings.config
 2 settings.library_max_upload_bytes
 1 settings.library_max_zip_extract_bytes
@@ -1254,8 +1229,8 @@ CREATE TABLE projects (
 1 Permission.PIPELINES_READ
 7 Permission.PROJECTS_CREATE
 3 Permission.PROJECTS_DELETE
-18 Permission.PROJECTS_READ
-27 Permission.PROJECTS_UPDATE
+17 Permission.PROJECTS_READ
+25 Permission.PROJECTS_UPDATE
 1 Permission.QUEUE_UPDATE_ALL
 1 Permission.QUEUE_UPDATE_OWN
 2 Permission.SETTINGS_UPDATE
@@ -1322,6 +1297,7 @@ CREATE TABLE projects (
 1 export function DropShield
 1 export function failureMessage
 1 export function filesFromDataTransfer
+1 export function fileTypeBadgeTone
 1 export function formatFilament
 1 export function groupTimeline
 1 export function isPrintableFile
@@ -1419,7 +1395,6 @@ const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage
 ```
   addArchivesToProject
   addProjectRevisionFiles
-  addQueueItemsToProject
   can_manage_projects
   createAitoProject
   createProject
@@ -1429,7 +1404,6 @@ const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage
   createTemplateFromProject
   deleteAitoProject
   deleteProject
-  deleteProjectAttachment
   deleteProjectCoverImage
   deleteProjectItem
   deleteProjectRevision
@@ -1441,7 +1415,6 @@ const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage
   forkProjectItem
   getAitoProjectCodes
   getAitoProjects
-  getArchiveProjectImageUrl
   getArchiveProjectPage
   getFileProjectSuggestions
   getLegacyMigrationStatus
@@ -1449,7 +1422,6 @@ const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage
   getOrderProjectLinks
   getProject
   getProjectArchives
-  getProjectAttachmentUrl
   getProjectCoverImageUrl
   getProjectFileProgress
   getProjectOrders
@@ -1470,7 +1442,6 @@ const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage
   projected_balance
   projects_auto_file_by_code
   reformulateProjectText
-  removeArchivesFromProject
   removeProjectRevisionFile
   renameProjectItem
   resliceProjectRevision
@@ -1490,7 +1461,6 @@ const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage
   updateArchiveProjectPage
   updateProject
   updateProjectRevision
-  uploadProjectAttachment
   uploadProjectCoverImage
   uploadProjectRevision
 ```

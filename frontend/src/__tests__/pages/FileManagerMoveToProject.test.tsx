@@ -20,6 +20,7 @@ vi.mock('../../contexts/AuthContext', async (importOriginal) => {
   const { withGrantedPermissions } = await import('../fixtures/authPermissions');
   return withGrantedPermissions(await importOriginal<typeof import('../../contexts/AuthContext')>(), () => granted, {
     derived: true,
+    userId: 1, // the current user: `base.created_by_id`, see CURRENT_USER_ID
   });
 });
 
@@ -79,6 +80,8 @@ vi.mock('../../components/FileUploadModal', () => ({
   ),
 }));
 
+const CURRENT_USER_ID = 1; // hoisted vi.mock factory above cannot read it, keep both in sync
+
 const base = {
   file_path: '/library/x',
   file_size: 1048576,
@@ -89,7 +92,7 @@ const base = {
   print_count: 0,
   duplicate_count: 0,
   created_at: '2024-01-01T00:00:00Z',
-  created_by_id: 1,
+  created_by_id: CURRENT_USER_ID,
   has_notes: false,
   photo_count: 0,
   external_url: null,
@@ -187,9 +190,57 @@ describe('FileManagerPage — Move to project', () => {
 
     it('hides every entry point without the File Manager move permission', async () => {
       granted = new Set(['library:read', 'projects:read', 'projects:update']);
+      const user = userEvent.setup();
       render(<FileManagerPage />);
       await waitFor(() => expect(screen.getByText('bracket.3mf')).toBeInTheDocument());
       expect(screen.queryByRole('button', { name: LABEL })).not.toBeInTheDocument();
+      const c = await openMenu(user, 'bracket.3mf');
+      expect(within(c).getByText('Download')).toBeInTheDocument(); // the menu is open
+      expect(within(c).queryByText(LABEL)).not.toBeInTheDocument();
+      await user.keyboard('{Escape}');
+      await user.click(screen.getByText('bracket.3mf'));
+      expect(await screen.findByText(/1 selected/i)).toBeInTheDocument(); // the bulk toolbar is up
+      expect(screen.queryByRole('button', { name: LABEL })).not.toBeInTheDocument();
+    });
+
+    describe('with library:update_own', () => {
+      const ownGrant = ['library:read', 'library:update_own', 'projects:update'];
+      const serveOwner = (createdById: number) =>
+        server.use(
+          http.get('/api/v1/library/files', () =>
+            HttpResponse.json(files.map((f) => ({ ...f, created_by_id: createdById }))),
+          ),
+        );
+
+      it("hides the card menu entry on another user's file", async () => {
+        granted = new Set(ownGrant);
+        serveOwner(CURRENT_USER_ID + 1);
+        const user = userEvent.setup();
+        render(<FileManagerPage />);
+        await waitFor(() => expect(screen.getByText('bracket.3mf')).toBeInTheDocument());
+        const c = await openMenu(user, 'bracket.3mf');
+        expect(within(c).getByText('Download')).toBeInTheDocument(); // the menu is open
+        expect(within(c).queryByText(LABEL)).not.toBeInTheDocument();
+        await user.keyboard('{Escape}');
+        await user.click(screen.getByText('bracket.3mf'));
+        expect(await screen.findByText(/1 selected/i)).toBeInTheDocument();
+        // The bulk toolbar gate is not ownership-aware: any update right plus projects:update.
+        expect(screen.getByRole('button', { name: LABEL })).toBeInTheDocument();
+      });
+
+      it('shows the entries on a file the current user created', async () => {
+        granted = new Set(ownGrant);
+        serveOwner(CURRENT_USER_ID);
+        const user = userEvent.setup();
+        render(<FileManagerPage />);
+        await waitFor(() => expect(screen.getByText('bracket.3mf')).toBeInTheDocument());
+        const c = await openMenu(user, 'bracket.3mf');
+        expect(within(c).getByText(LABEL)).toBeInTheDocument();
+        await user.keyboard('{Escape}');
+        await user.click(screen.getByText('bracket.3mf'));
+        expect(await screen.findByText(/1 selected/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: LABEL })).toBeInTheDocument();
+      });
     });
 
     it('shows them with library:update_all plus projects:update', async () => {

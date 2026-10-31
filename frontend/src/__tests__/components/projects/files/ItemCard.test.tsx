@@ -179,6 +179,35 @@ describe('ItemCard', () => {
     await waitFor(() => expect(calls).toEqual(['status:2:wip']));
   });
 
+  it('shows a slicing revision whose job already failed as failed, before the tree catches up', async () => {
+    server.use(
+      http.get('/api/v1/slice-jobs/12', () =>
+        HttpResponse.json({
+          job_id: 12, status: 'failed', kind: 'project_revision', source_id: 2, source_name: 'bracket.3mf',
+          created_at: '2026-10-17T10:00:00Z', started_at: null, completed_at: null, progress: null,
+        }),
+      ),
+    );
+    render(
+      <Harness value={bracket({ slice_status: 'slicing', slice_job_id: 12, slice_error: 'Plate 2 is empty', sliced_file: null })} />,
+    );
+    expect(await within(card()).findByText('Slice failed: Plate 2 is empty')).toBeInTheDocument();
+    expect(within(card()).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(within(card()).queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(within(card()).queryByText('Slicing…')).not.toBeInTheDocument();
+  });
+
+  it('shows an indeterminate bar for a slicing revision whose job is unknown', async () => {
+    server.use(http.get('/api/v1/slice-jobs/12', () => HttpResponse.json({ detail: 'gone' }, { status: 404 })));
+    render(<Harness value={bracket({ slice_status: 'slicing', slice_job_id: 12, sliced_file: null })} />);
+    const bar = within(card()).getByRole('progressbar');
+    expect(within(card()).getByText('Slicing…')).toBeInTheDocument();
+    // Let the job lookup settle: a 404 stays indeterminate.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(bar).not.toHaveAttribute('aria-valuenow');
+    expect(within(card()).queryByText(/%/)).not.toBeInTheDocument();
+  });
+
   it('a legacy sliced revision (no server slice state) reads as sliced', () => {
     render(<Harness value={bracket({ slice_status: null, sliced_file: null, print_profile: { ...profile, sliced: true } })} />);
     expect(within(card()).getByText('Sliced')).toBeInTheDocument();
@@ -233,6 +262,17 @@ describe('ItemCard', () => {
     await userEvent.click(within(card()).getByRole('button', { name: 'Open in slicer' }));
     await waitFor(() => expect(openInSlicer).toHaveBeenCalledTimes(1));
     expect(vi.mocked(openInSlicer).mock.calls[0][1]).toBe('orcaslicer');
+  });
+
+  it('Open in slicer still opens the default desktop slicer when the settings cannot be read', async () => {
+    server.use(http.get('/api/v1/settings/', () => HttpResponse.json({ detail: 'down' }, { status: 500 })));
+    render(<Harness value={bracket()} />);
+    await userEvent.click(within(card()).getByRole('button', { name: 'Open in slicer' }));
+    await waitFor(() => expect(openInSlicer).toHaveBeenCalledTimes(1));
+    expect(calls).toEqual(['token:51']);
+    const [url, slicer] = vi.mocked(openInSlicer).mock.calls[0];
+    expect(url).toBe(`${window.location.origin}/api/v1/library/files/51/dl/tok/bracket.3mf`);
+    expect(slicer).toBe('bambu_studio');
   });
 
   it('Open in slicer toasts a refused token and falls back to the plain download URL', async () => {

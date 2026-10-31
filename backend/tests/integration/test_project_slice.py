@@ -18,11 +18,18 @@ from httpx import AsyncClient
 from sqlalchemy import select, update
 
 from backend.app.api.routes.library import to_absolute_path
+from backend.app.core import database
 from backend.app.core.config import settings as app_settings
 from backend.app.models.library import LibraryFile
 from backend.app.models.project_item import ProjectRevision
 from backend.app.models.settings import Settings
-from backend.app.services import aito_project_links, project_slice, project_storage, slicer_api as slicer_api_module
+from backend.app.services import (
+    aito_project_links,
+    project_files,
+    project_slice,
+    project_storage,
+    slicer_api as slicer_api_module,
+)
 from backend.app.services.project_slice import start_slice_after_upload as _real_start_after_upload
 from backend.app.services.slice_dispatch import slice_dispatch
 from backend.tests.project_fixtures import (
@@ -365,6 +372,59 @@ async def test_retry_after_failure(async_client: AsyncClient, sidecar):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_a_slice_failing_within_milliseconds_answers_202_with_its_job(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    """T-485: the job runs as soon as it is enqueued; one that has already failed when the route
+    reads the status is returned (202, its job id, ``failed``), not a 400 'no source .3mf'."""
+    _no_auto_slice(monkeypatch)
+    project, _item, rev = await _upload(async_client)
+    db_session.add(Settings(key="preferred_slicer", value="bambu_studio"))
+    db_session.add(Settings(key="bambu_studio_api_url", value=""))
+    await db_session.commit()
+    monkeypatch.setattr(app_settings, "bambu_studio_api_url", "")
+    real_start = project_slice.start_revision_slice
+
+    async def start_then_finish(db, revision_id, *, user_id):
+        job_id = await real_start(db, revision_id, user_id=user_id)
+        await _wait_job(job_id)  # the failure commits before the route reads the status
+        return job_id
+
+    monkeypatch.setattr(project_slice, "start_revision_slice", start_then_finish)
+
+    started = await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")
+    assert started.status_code == 202, started.text
+    body = started.json()
+    assert body["slice_status"] == "failed"
+    assert body["job_id"] is not None
+    job = (await async_client.get(f"/api/v1/slice-jobs/{body['job_id']}")).json()
+    assert job["status"] == "failed"
+    out = await _tree_revision(async_client, project["id"], rev["id"])
+    assert (out["slice_status"], out["slice_job_id"]) == ("failed", body["job_id"])
+    assert "No slicer is configured" in out["slice_error"]
+    assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_slicing_a_revision_whose_source_is_gone_is_still_400(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    _no_auto_slice(monkeypatch)
+    project, _item, rev = await _upload(async_client)
+    source_id = (await _tree_revision(async_client, project["id"], rev["id"]))["files"][0]["id"]
+    source_path = to_absolute_path((await db_session.get(LibraryFile, source_id)).file_path)
+    assert source_path is not None
+    source_path.unlink()
+
+    started = await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")
+    assert started.status_code == 400, started.text
+    assert started.json()["detail"] == "This revision has no source .3mf to slice"
+    assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_slice_is_idempotent_while_running(async_client: AsyncClient, sidecar, monkeypatch):
     _no_auto_slice(monkeypatch)
     project, _item, rev = await _upload(async_client)
@@ -550,6 +610,51 @@ def _job_status(job_id: int) -> str | None:
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_store_removes_the_written_slice_even_when_the_rollback_fails(
+    async_client: AsyncClient, db_session, monkeypatch, roots, caplog
+):
+    """T-464: the slice's commit fails and so does the undo's rollback (a dropped connection): the
+    written .gcode.3mf is unlinked before the rollback is tried, so no orphan stays in R{n}/ and the
+    commit's error is the one raised."""
+    _no_auto_slice(monkeypatch)
+    _project, _item, rev = await _upload(async_client)
+    commit_error, rollbacks = RuntimeError("db down"), []
+    real_commit, real_rollback = db_session.commit, db_session.rollback
+
+    async def commit():
+        # fail only the slice's own commit, i.e. once its file is on disk
+        if list(roots.rglob("*.gcode.3mf")):
+            raise commit_error
+        await real_commit()
+
+    async def rollback():
+        rollbacks.append("rollback")
+        raise ConnectionError("connection lost")
+
+    monkeypatch.setattr(db_session, "commit", commit)
+    monkeypatch.setattr(db_session, "rollback", rollback)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(RuntimeError) as caught:
+        await project_slice._store(
+            db_session,
+            rev["id"],
+            "support.gcode.3mf",
+            b"sliced",
+            {"print_time_seconds": 60, "filament_used_grams": 1.5},
+            None,
+        )
+    monkeypatch.undo()
+    await real_rollback()
+
+    assert caught.value is commit_error
+    assert rollbacks == ["rollback"]
+    assert list(roots.rglob("*.gcode.3mf")) == []
+    assert await _derived_rows(db_session) == []
+    assert any("Undo after the failed" in r.getMessage() and r.exc_info for r in caplog.records)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_legacy_unsliced_revision_can_be_sliced_on_demand(async_client: AsyncClient, sidecar, monkeypatch):
     _no_auto_slice(monkeypatch)
     project, _item, rev = await _upload(async_client)
@@ -612,7 +717,7 @@ def _failing_source_lookup(monkeypatch) -> None:
     async def boom(_db, _revision_id):
         raise RuntimeError("database is locked")
 
-    monkeypatch.setattr(project_slice, "_source_file", boom)
+    monkeypatch.setattr(project_slice, "source_file_of", boom)
 
 
 @pytest.mark.asyncio
@@ -695,15 +800,15 @@ def test_source_over_a_cap_is_refused_before_the_sanitiser(monkeypatch, content,
     if total_cap is not None:
         monkeypatch.setattr(app_settings, "library_max_zip_extract_bytes", total_cap)
     with pytest.raises(project_slice.ProjectFilesError) as raised:
-        project_slice._check_source_within_caps(_zip_with(content))
+        project_slice.check_source_within_caps(_zip_with(content))
     assert raised.value.status_code == 413
     assert expected in str(raised.value.detail)
 
 
 def test_source_within_the_caps_or_not_a_zip_is_left_to_the_slicer():
-    project_slice._check_source_within_caps(_zip_with(b'{"a": "1"}'))
-    project_slice._check_source_within_caps(_zip_with(None))  # no settings part
-    project_slice._check_source_within_caps(b"not a zip")
+    project_slice.check_source_within_caps(_zip_with(b'{"a": "1"}'))
+    project_slice.check_source_within_caps(_zip_with(None))  # no settings part
+    project_slice.check_source_within_caps(b"not a zip")
 
 
 @pytest.mark.asyncio
@@ -784,7 +889,7 @@ async def test_unexpected_slice_error_shows_a_generic_message_and_is_logged(
     def boom(_model_bytes):
         raise PermissionError(_LEAKY_ERROR)
 
-    monkeypatch.setattr(project_slice, "_check_source_within_caps", boom)
+    monkeypatch.setattr(project_slice, "check_source_within_caps", boom)
     project, _item, rev = await _upload(async_client)
     await _wait_job(rev["slice_job_id"])
 
@@ -797,3 +902,76 @@ async def test_unexpected_slice_error_shows_a_generic_message_and_is_logged(
     logged = [r for r in caplog.records if r.exc_info and isinstance(r.exc_info[1], PermissionError)]
     assert logged and _LEAKY_ERROR in str(logged[0].exc_info[1])
     assert sidecar.slice_requests == []
+
+
+# --- T-488: concurrent starts (the _starting guard and the lost-claim branch) ------------------
+
+
+def _project_revision_jobs(revision_id: int, before: set[int]) -> list[int]:
+    """The revision's slice jobs enqueued since ``before`` (the dispatcher is process-wide: earlier tests' jobs
+    can carry the same revision id)."""
+    return [
+        job_id
+        for job_id, job in slice_dispatch._jobs.items()
+        if job_id not in before and job.kind == "project_revision" and job.source_id == revision_id
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_start_while_another_is_starting_returns_the_stored_job_and_enqueues_nothing(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    """Between another start's claim and its job id write, the row is ``slicing`` with no live job:
+    ``_starting`` keeps this start from re-claiming it as an interrupted slice."""
+    _no_auto_slice(monkeypatch)
+    _project, _item, rev = await _upload(async_client)
+    before = set(slice_dispatch._jobs)
+    await _strand_slicing(db_session, rev["id"], job_id=4242)  # a job id slice_dispatch does not know
+    monkeypatch.setattr(project_slice, "_starting", {rev["id"]})
+
+    assert await project_slice.start_revision_slice(db_session, rev["id"], user_id=None) == 4242
+
+    assert _project_revision_jobs(rev["id"], before) == []
+    assert sidecar.slice_requests == []
+    db_session.expire_all()
+    revision = await db_session.get(ProjectRevision, rev["id"])
+    assert (revision.slice_status, revision.slice_job_id) == ("slicing", 4242)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_start_that_loses_the_claim_returns_the_winners_job(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    """Another start claims the revision between this one's source read and its claim."""
+    _no_auto_slice(monkeypatch)
+    _project, _item, rev = await _upload(async_client)
+    before = set(slice_dispatch._jobs)
+    real_source_file = project_slice.source_file_of
+
+    async def source_then_lose_the_race(db, revision_id):
+        source = await real_source_file(db, revision_id)
+        async with database.async_session() as other:
+            await _strand_slicing(other, revision_id, job_id=777)
+        return source
+
+    monkeypatch.setattr(project_slice, "source_file_of", source_then_lose_the_race)
+
+    assert await project_slice.start_revision_slice(db_session, rev["id"], user_id=None) == 777
+
+    assert _project_revision_jobs(rev["id"], before) == []
+    assert sidecar.slice_requests == []
+    assert project_slice._starting == set()
+
+
+def test_slice_slot_gives_each_event_loop_its_own_semaphore(monkeypatch):
+    monkeypatch.setattr(project_slice, "_slice_slots", None)
+
+    async def slots() -> tuple[asyncio.Semaphore, asyncio.Semaphore]:
+        return project_slice._slice_slot(), project_slice._slice_slot()
+
+    first_a, first_b = asyncio.run(slots())
+    second_a, _ = asyncio.run(slots())
+    assert first_a is first_b  # one per loop
+    assert second_a is not first_a  # a new loop never waits on a semaphore bound to a closed one

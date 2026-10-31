@@ -44,7 +44,7 @@ from backend.app.services import project_files, project_print_trace, project_sli
 from backend.app.services.actor import actor_name, record_as
 from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.http_status_error import HttpStatusError
-from backend.app.services.project_filing import find_or_create_item, item_name_for_filename
+from backend.app.services.project_filing import _find_or_create_item, item_name_for_filename
 from backend.app.services.project_revisions import lock_revision_rows
 from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
 from backend.app.services.project_tags import UnknownTagError, apply_project_tag_input
@@ -652,6 +652,15 @@ def _group_drop_uploads(uploads: list[UploadFile]) -> dict[tuple[str, str], tupl
     return groups
 
 
+async def _discard_new_item(db: AsyncSession, project_id: int, item_id: int) -> None:
+    """Delete the empty item a refused drop group created; never raises (the refusal is the error in flight)."""
+    try:
+        await project_files._discard_empty_item(db, project_id, item_id)
+    except Exception:
+        logger.warning("Could not remove the empty item %s left by a refused drop", item_id, exc_info=True)
+        await rollback_quietly(db, logger, logging.WARNING, "Rollback after removing item %s failed", item_id)
+
+
 async def _store_drop_group(
     db: AsyncSession,
     project: Project,
@@ -663,12 +672,19 @@ async def _store_drop_group(
     user_id: int | None,
 ) -> tuple[str, dict]:
     """Store one group as the next revision of its item (created when missing), append one result per file to
-    ``results`` and return the ``project.revision_added`` label and detail for the fan-out."""
-    item, project = await find_or_create_item(db, project, section, key, name, user_id)
-    item_id, item_name = item.id, item.name
-    revision, _warnings = await project_files.add_revision(
-        db, project, item, group, note=None, derived_from_id=None, user_id=user_id
-    )
+    ``results`` and return the ``project.revision_added`` label and detail for the fan-out.
+
+    An item this call created is deleted again when the upload refuses the file (it would stay empty)."""
+    item, project, created = await _find_or_create_item(db, project, section, key, name, user_id)
+    item_id, item_name, project_id = item.id, item.name, project.id
+    try:
+        revision, _warnings = await project_files.add_revision(
+            db, project, item, group, note=None, derived_from_id=None, user_id=user_id
+        )
+    except Exception:
+        if created:
+            await _discard_new_item(db, project_id, item_id)
+        raise
     revision_id, number = revision.id, revision.number
     # Decision 2: slice as soon as the .3mf is stored; never fails the drop.
     await project_slice.start_slice_after_upload(db, revision_id, user_id=user_id)

@@ -10409,7 +10409,6 @@ export default {
       itemBusy: '{{name}} hâlâ yükleniyor, bu yüzden bırakılan dosyalar yüklenmedi',
       otherSections: 'Eski dosyalar',
       newRevision: 'Yeni revizyon',
-      addFiles: 'Dosya ekle',
       removeFile: '{{name}} dosyasını kaldır',
       remove: 'Kaldır',
       statusLabel: 'Durum',

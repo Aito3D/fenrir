@@ -13,6 +13,13 @@ describe('timelineDay', () => {
     expect(timelineDay(local(15, 23, 59), NOW)).toBe('earlier');
   });
 
+  it('calls the last day of the previous month yesterday on the 1st', () => {
+    const firstOfNovember = new Date(2026, 10, 1, 0, 10, 0);
+    const oct = (day: number, h: number) => new Date(2026, 9, day, h, 0, 0).toISOString();
+    expect(timelineDay(oct(31, 23), firstOfNovember)).toBe('yesterday');
+    expect(timelineDay(oct(30, 23), firstOfNovember)).toBe('earlier');
+  });
+
   it('counts a future stamp as today and junk as earlier', () => {
     expect(timelineDay(local(18, 9), NOW)).toBe('today');
     expect(timelineDay('not a date', NOW)).toBe('earlier');
@@ -34,6 +41,23 @@ describe('groupTimeline', () => {
       ['today', ['today']],
       ['yesterday', ['yesterday late', 'yesterday early']],
       ['earlier', ['old']],
+    ]);
+  });
+
+  it('keeps input order between events with identical timestamps', () => {
+    const same = local(17, 0, 1);
+    const groups = groupTimeline([event('first', same), event('second', same), event('third', same)], NOW);
+    expect(groups.map((g) => g.events.map((e) => e.title))).toEqual([['first', 'second', 'third']]);
+  });
+
+  it('puts an unparseable stamp last, in the earlier group', () => {
+    const groups = groupTimeline(
+      [event('junk', 'not a date'), event('today', local(17, 0, 1)), event('old', local(2, 9))],
+      NOW
+    );
+    expect(groups.map((g) => [g.day, g.events.map((e) => e.title)])).toEqual([
+      ['today', ['today']],
+      ['earlier', ['old', 'junk']],
     ]);
   });
 

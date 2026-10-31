@@ -4,7 +4,14 @@ import { ChevronRight, FileBox, FolderOpen, Loader2, Printer } from 'lucide-reac
 import { api } from '../../../api/client';
 import type { LibraryFileListItem, LibraryFolder } from '../../../api/client';
 import { isSlicedLibraryFile } from '../../../utils/libraryFiles';
+import { fileTypeBadgeTone } from '../files/fileTypeBadge';
 import { ProjectPanel } from './ProjectPanel';
+
+const BADGE_CLS: Record<ReturnType<typeof fileTypeBadgeTone>, string> = {
+  source: 'bg-bambu-green/20 text-bambu-green',
+  sliced: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400',
+  other: 'bg-bambu-gray/20 text-bambu-gray',
+};
 
 /** Per-file print progress (#1897): a printed-count badge without a copies-per-file
  *  target, a done / target bar with one. */
@@ -125,11 +132,7 @@ export function LinkedFoldersPanel({
                           <p className="text-sm text-white truncate" title={file.print_name || file.filename}>
                             {file.print_name || file.filename}
                           </p>
-                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                            file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
-                            : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
-                            : 'bg-bambu-gray/20 text-bambu-gray'
-                          }`}>
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${BADGE_CLS[fileTypeBadgeTone(file.file_type)]}`}>
                             {file.file_type.toUpperCase()}
                           </span>
                         </div>

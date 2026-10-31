@@ -10490,7 +10490,6 @@ export default {
       itemBusy: '{{name}} todavía se está subiendo, por lo que los archivos soltados no se subieron',
       otherSections: 'Archivos antiguos',
       newRevision: 'Nueva revisión',
-      addFiles: 'Añadir archivos',
       removeFile: 'Quitar {{name}}',
       remove: 'Quitar',
       statusLabel: 'Estado',

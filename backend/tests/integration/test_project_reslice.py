@@ -18,6 +18,7 @@ from backend.app.models.slicer_pipeline import SlicerPipeline
 from backend.app.schemas.slicer import SliceResponse
 from backend.app.services import project_files, project_reslice, project_storage
 from backend.app.services.slice_dispatch import slice_dispatch
+from backend.tests.integration.test_project_slice_recovery import _run_startup_through_the_slice_sweeps
 from backend.tests.project_fixtures import (
     legacy_uploads_fixture,
     make_users,
@@ -278,6 +279,63 @@ async def test_pipeline_without_filament_preset_is_400_and_starts_no_job(
     assert response.json()["detail"] == "Pipeline has no usable filament preset"
     assert set(slice_dispatch._jobs) == jobs_before and set(slice_dispatch._tasks) <= tasks_before
     assert fake_slicer["calls"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("cap", "expected"),
+    [
+        ("part", "The .3mf's project settings are too large to slice (over 0 MB)"),
+        ("total", "The .3mf is too large once unpacked to slice (over 0 MB)"),
+    ],
+)
+async def test_source_over_a_slicing_cap_is_413_and_starts_no_job(
+    async_client: AsyncClient, db_session, fake_slicer, monkeypatch, cap, expected
+):
+    """T-479: the Re-slice route runs the server slice's zip-bomb guard on the source bytes
+    before enqueueing, so an oversized source is a 413 and no job is started."""
+    from backend.app.services import project_slice
+
+    _project, _item, rev = await _source_revision(async_client)
+    pipeline_id = await _pipeline(db_session)
+    if cap == "part":
+        monkeypatch.setattr(project_slice, "_MAX_PART_BYTES", 8)
+    else:
+        monkeypatch.setattr(app_settings, "library_max_zip_extract_bytes", 8)
+    tasks_before = set(slice_dispatch._tasks)
+    jobs_before = set(slice_dispatch._jobs)
+    response = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice",
+        json={"file_id": rev["files"][0]["id"], "pipeline_id": pipeline_id},
+    )
+    assert response.status_code == 413, response.text
+    assert response.json()["detail"] == expected
+    assert set(slice_dispatch._jobs) == jobs_before and set(slice_dispatch._tasks) <= tasks_before
+    assert fake_slicer["calls"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_source_within_the_slicing_caps_reaches_the_slicer_unchanged(
+    async_client: AsyncClient, db_session, fake_slicer, monkeypatch
+):
+    """T-479: the guard sees the exact bytes the job slices."""
+    from backend.app.services import project_slice
+
+    seen: list[bytes] = []
+    real = project_slice.check_source_within_caps
+    monkeypatch.setattr(project_slice, "check_source_within_caps", lambda b: (seen.append(b), real(b))[1])
+    _project, _item, rev = await _source_revision(async_client)
+    pipeline_id = await _pipeline(db_session)
+    started = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice",
+        json={"file_id": rev["files"][0]["id"], "pipeline_id": pipeline_id},
+    )
+    assert started.status_code == 202, started.text
+    job = await _wait(async_client, started.json()["job_id"])
+    assert job["status"] == "completed", job
+    assert seen == [fake_slicer["calls"][0]["model_bytes"]]
 
 
 @pytest.mark.asyncio
@@ -754,8 +812,19 @@ async def test_intermediate_drop_retries_and_succeeds_on_the_second_attempt(
         pauses.append(seconds)
         await real_sleep(0)
 
+    class _ResliceAsyncio:
+        """project_reslice's own view of asyncio: ``sleep`` is ``no_pause``, the rest is the real module.
+
+        Patching ``project_reslice.asyncio.sleep`` would replace the process-wide ``asyncio.sleep``
+        (httpx, slice_dispatch, other tasks in the worker) and record their sleeps in ``pauses``."""
+
+        sleep = staticmethod(no_pause)
+
+        def __getattr__(self, name):
+            return getattr(asyncio, name)
+
     monkeypatch.setattr(library_trash_service, "hard_delete_many", locked_once)
-    monkeypatch.setattr(project_reslice.asyncio, "sleep", no_pause)
+    monkeypatch.setattr(project_reslice, "asyncio", _ResliceAsyncio())
     with caplog.at_level(logging.WARNING, logger=project_reslice.__name__):
         started = await async_client.post(
             f"/api/v1/projects/revisions/{rev['id']}/reslice",
@@ -764,7 +833,7 @@ async def test_intermediate_drop_retries_and_succeeds_on_the_second_attempt(
         job = await _wait(async_client, started.json()["job_id"])
     assert job["status"] == "completed", job
     assert len(attempts) == 2
-    assert 0.2 in pauses  # the first pause of _DROP_RETRY_DELAYS
+    assert pauses == [0.2]  # only the first pause of _DROP_RETRY_DELAYS, nothing else in the process
     assert "failed (attempt 1 of 3), retrying" in caplog.text
     assert "could not delete intermediate" not in caplog.text
     assert await _sliced_rows(db_session) == []
@@ -967,16 +1036,46 @@ async def test_startup_sweep_keeps_a_marked_intermediate_any_usage_column_refere
     assert await project_reslice.sweep_orphan_intermediates(db_session) == 0
 
 
-def test_lifespan_runs_the_intermediate_sweep_after_the_migrations_and_never_blocks_startup():
-    """Wiring check, read from the source like test_oidc_env_startup.py: the lifespan is too
-    large to run here. The sweep's behaviour is pinned by the test above."""
-    import inspect
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_startup_deletes_an_orphan_intermediate_through_the_real_lifespan(
+    async_client: AsyncClient, db_session, roots, monkeypatch
+):
+    """Wiring check against the real ``lifespan`` (the harness of test_project_slice_recovery
+    stops it right after the startup sweeps): a marked orphan is gone once startup got that far."""
+    _project, _item, rev = await _source_revision(async_client)
+    orphan = _loose(roots, "orphan.gcode.3mf", sliced_from=rev["files"][0]["id"], marker=True)
+    db_session.add(orphan)
+    await db_session.commit()
+    orphan_id = orphan.id
 
-    from backend.app.main import lifespan
+    await _run_startup_through_the_slice_sweeps(monkeypatch)
 
-    source = inspect.getsource(lifespan)
-    call = source.index("await sweep_orphan_intermediates(")
-    assert source.index("await init_db()") < call
-    guard = source.rindex("try:", 0, call)
-    assert "except Exception" in source[call : source.index("\n\n", call)]
-    assert source.index("from backend.app.services.project_reslice import sweep_orphan_intermediates") > guard
+    ids = set((await db_session.execute(select(LibraryFile.id))).scalars().all())
+    assert orphan_id not in ids
+    assert not (roots / "library" / "orphan.gcode.3mf").exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_raising_intermediate_sweep_never_blocks_startup(async_client: AsyncClient, db_session, monkeypatch):
+    """The sweep raising must not stop the lifespan: the next startup step (the slice resume
+    sweep) still runs, and startup reaches the stop sign after the sweeps."""
+    from backend.app.services import project_slice
+
+    calls: list[str] = []
+
+    async def sweep(*_args, **_kwargs):
+        calls.append("sweep")
+        raise RuntimeError("database went away")
+
+    async def resume():
+        calls.append("resume")
+        return 0
+
+    monkeypatch.setattr(project_reslice, "sweep_orphan_intermediates", sweep)
+    monkeypatch.setattr(project_slice, "resume_interrupted_slices", resume)
+
+    await _run_startup_through_the_slice_sweeps(monkeypatch)
+
+    assert calls == ["sweep", "resume"]
