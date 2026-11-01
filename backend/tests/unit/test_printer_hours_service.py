@@ -6,7 +6,14 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from backend.app.models.maintenance import HourEvent, HourMachine, HourReading
+from backend.app.models.maintenance import (
+    HourEvent,
+    HourMachine,
+    HourReading,
+    MaintenanceHistory,
+    MaintenanceType,
+    PrinterMaintenance,
+)
 from backend.app.services import printer_hours
 from backend.app.services.printer_hours import (
     SOURCE_AUTO,
@@ -15,8 +22,11 @@ from backend.app.services.printer_hours import (
     current_hours,
     ensure_hour_machines,
     machine_for_printer,
+    next_service_hours,
     recalibrate_printer,
     snapshot_today,
+    sync_events,
+    trust_state,
     upsert_reading,
 )
 
@@ -218,3 +228,149 @@ async def test_calibrate_from_status_creates_machine_row(db_session, printer_fac
     assert (await db_session.execute(select(HourMachine))).scalars().all() == []
     machine = await machine_for_printer(db_session, p.id)
     assert machine.printer_id == p.id
+
+
+def test_trust_state_rules():
+    retired = HourMachine(retired=True, calibrated_at=datetime(2026, 1, 1), last_drift_hours=5.0)
+    assert trust_state(retired, 100.0) == (None, None)
+    assert trust_state(HourMachine(retired=False, calibrated_at=None), 100.0) == ("uncalibrated", None)
+
+    def machine(drift):
+        return HourMachine(retired=False, calibrated_at=datetime(2026, 1, 1), last_drift_hours=drift)
+
+    assert trust_state(machine(10.0), 3803.0) == ("calibrated", 10.0)
+    assert trust_state(machine(100.0), 3803.0) == ("drifting", 100.0)
+    assert trust_state(machine(-100.0), 3803.0) == ("drifting", -100.0)
+    assert trust_state(machine(30.0), 500.0) == ("drifting", 30.0)  # the 24 h floor beats 2 %
+    assert trust_state(machine(30.0), None) == ("drifting", 30.0)
+    assert trust_state(machine(None), 500.0) == ("calibrated", None)
+
+
+@pytest.mark.asyncio
+async def test_sync_events_mirrors_maintenance_history_once(db_session, printer_factory):
+    p = await printer_factory(name="X1C20")
+    machines = await ensure_hour_machines(db_session)
+    mtype = MaintenanceType(name="Lubricate rails", default_interval_hours=300.0)
+    db_session.add(mtype)
+    await db_session.flush()
+    item = PrinterMaintenance(printer_id=p.id, maintenance_type_id=mtype.id, enabled=True, custom_interval_hours=300.0)
+    db_session.add(item)
+    await db_session.flush()
+    hist = MaintenanceHistory(printer_maintenance_id=item.id, performed_at=datetime(2026, 5, 4, 10, 0))
+    db_session.add(hist)
+    await db_session.commit()
+
+    await sync_events(db_session, machines)
+    await sync_events(db_session, machines)
+
+    events = (await db_session.execute(select(HourEvent).where(HourEvent.kind == "maintenance"))).scalars().all()
+    assert [(e.machine_id, e.source_id, e.label, e.event_date) for e in events] == [
+        (machines[0].id, hist.id, "Lubricate rails", date(2026, 5, 4))
+    ]
+    added = (await db_session.execute(select(HourEvent).where(HourEvent.kind == "added"))).scalars().all()
+    assert len(added) == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_events_added_uses_first_reading_when_older_than_printer(db_session, printer_factory):
+    p = await printer_factory(name="X1C21")
+    p.created_at = datetime(2026, 3, 9, 12, 0)
+    machines = await ensure_hour_machines(db_session)
+    await upsert_reading(db_session, machines[0].id, date(2024, 7, 19), SOURCE_MANUAL, 120.0)
+    await upsert_reading(db_session, machines[0].id, date(2025, 1, 2), SOURCE_MANUAL, 900.0)
+    await db_session.commit()
+
+    await sync_events(db_session, machines)
+
+    [added] = (await db_session.execute(select(HourEvent).where(HourEvent.kind == "added"))).scalars().all()
+    assert added.event_date == date(2024, 7, 19)
+
+
+@pytest.mark.asyncio
+async def test_sync_events_added_for_retired_machine_without_printer(db_session, printer_factory):
+    p = await printer_factory(name="X1C22")
+    [m] = await ensure_hour_machines(db_session)
+    await upsert_reading(db_session, m.id, date(2025, 2, 3), SOURCE_MANUAL, 50.0)
+    await db_session.delete(p)
+    await db_session.commit()
+    machines = await ensure_hour_machines(db_session)
+
+    await sync_events(db_session, machines)
+
+    added = (await db_session.execute(select(HourEvent).where(HourEvent.kind == "added"))).scalars().all()
+    assert [a.event_date for a in added] == [date(2025, 2, 3)]
+
+
+@pytest.mark.asyncio
+async def test_sync_events_no_added_without_any_date(db_session):
+    machine = HourMachine(printer_id=None, name="Ghost", retired=True)
+    db_session.add(machine)
+    await db_session.commit()
+
+    await sync_events(db_session, [machine])
+
+    assert (await db_session.execute(select(HourEvent))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_retiring_a_machine_writes_event_and_clears_calibration(db_session, printer_factory):
+    p = await printer_factory(name="H2S09", model="H2S")
+    [m] = await ensure_hour_machines(db_session)
+    m.calibrated_at = datetime(2026, 10, 1)
+    m.last_drift_hours = 12.0
+    await db_session.commit()
+
+    await db_session.delete(p)
+    await db_session.commit()
+    [m] = await ensure_hour_machines(db_session)
+    await ensure_hour_machines(db_session)  # already retired: no second event
+
+    assert m.retired is True
+    assert m.calibrated_at is None
+    assert m.last_drift_hours is None
+    events = (await db_session.execute(select(HourEvent).where(HourEvent.kind == "retired"))).scalars().all()
+    assert [(e.machine_id, e.label, e.event_date) for e in events] == [(m.id, "H2S09", date.today())]
+
+
+async def _disable_default_items(db_session, printer_id):
+    """The overview auto-creates enabled items for every system type; switch them off so a test owns the set."""
+    await next_service_hours(db_session, printer_id)
+    for item in (
+        (await db_session.execute(select(PrinterMaintenance).where(PrinterMaintenance.printer_id == printer_id)))
+        .scalars()
+        .all()
+    ):
+        item.enabled = False
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_next_service_hours_takes_earliest_enabled_hours_item(db_session, printer_factory):
+    p = await printer_factory(name="X1C23", runtime_seconds=3600 * 250)
+    await _disable_default_items(db_session, p.id)
+    types = [MaintenanceType(name=f"T{i}", default_interval_hours=100.0) for i in range(3)]
+    db_session.add_all(types)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            PrinterMaintenance(
+                printer_id=p.id, maintenance_type_id=types[0].id, enabled=True, custom_interval_hours=300.0
+            ),
+            PrinterMaintenance(
+                printer_id=p.id, maintenance_type_id=types[1].id, enabled=True, custom_interval_hours=1000.0
+            ),
+            PrinterMaintenance(
+                printer_id=p.id, maintenance_type_id=types[2].id, enabled=False, custom_interval_hours=260.0
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    assert await next_service_hours(db_session, p.id) == pytest.approx(300.0)
+
+
+@pytest.mark.asyncio
+async def test_next_service_hours_none_without_hours_items(db_session, printer_factory):
+    p = await printer_factory(name="X1C24")
+    await _disable_default_items(db_session, p.id)
+    assert await next_service_hours(db_session, p.id) is None

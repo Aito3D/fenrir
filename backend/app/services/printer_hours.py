@@ -10,12 +10,19 @@ import asyncio
 import logging
 from datetime import date, datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core import database as _database
-from backend.app.models.maintenance import HourEvent, HourMachine, HourReading
+from backend.app.models.maintenance import (
+    HourEvent,
+    HourMachine,
+    HourReading,
+    MaintenanceHistory,
+    MaintenanceType,
+    PrinterMaintenance,
+)
 from backend.app.models.printer import Printer
 
 logger = logging.getLogger(__name__)
@@ -25,10 +32,31 @@ SOURCE_AUTO = "auto"
 
 EVENT_KINDS = ("note", "maintenance", "added", "retired", "calibrated")
 
+DRIFT_FLOOR_HOURS = 24.0
+DRIFT_FRACTION = 0.02
+
 
 def current_hours(runtime_seconds: int | None, offset_hours: float | None) -> float:
     """Fenrir's counter: active runtime (RUNNING only, #1521) plus the operator baseline."""
     return (runtime_seconds or 0) / 3600.0 + (offset_hours or 0.0)
+
+
+def trust_state(machine: HourMachine, last_manual_hours: float | None) -> tuple[str | None, float | None]:
+    """How far to trust the machine's counter: ``(state, last_drift_hours)``; ``(None, None)`` when retired."""
+    if machine.retired:
+        return None, None
+    if machine.calibrated_at is None:
+        return "uncalibrated", None
+    drift = machine.last_drift_hours
+    if drift is not None and abs(drift) > max(DRIFT_FLOOR_HOURS, DRIFT_FRACTION * (last_manual_hours or 0.0)):
+        return "drifting", drift
+    return "calibrated", drift
+
+
+def added_on(machine: HourMachine, first_manual: date | None, printer_created: date | None) -> date | None:
+    """When the machine joined the fleet: the older of its first manual reading and its printer's creation."""
+    candidates = [d for d in (first_manual, printer_created if machine.printer_id is not None else None) if d]
+    return min(candidates) if candidates else None
 
 
 def recalibrate_printer(printer: Printer, total_hours: float) -> float:
@@ -38,18 +66,27 @@ def recalibrate_printer(printer: Printer, total_hours: float) -> float:
     return runtime_hours
 
 
+def _retire(db: AsyncSession, machine: HourMachine) -> None:
+    """Unlink and retire ``machine``, logging a ``retired`` event the first time and dropping its trust state."""
+    if not machine.retired:
+        db.add(HourEvent(machine_id=machine.id, event_date=date.today(), kind="retired", label=machine.name))
+    machine.printer_id = None
+    machine.retired = True
+    machine.calibrated_at = None
+    machine.last_drift_hours = None
+
+
 async def _sync_machines(db: AsyncSession) -> None:
     printers = {p.id: p for p in (await db.execute(select(Printer))).scalars().all()}
     machines = (await db.execute(select(HourMachine))).scalars().all()
     linked: set[int] = set()
     for m in machines:
         if m.printer_id is None:
-            m.retired = True
+            _retire(db, m)
             continue
         p = printers.get(m.printer_id)
         if p is None or (m.serial_number and p.serial_number != m.serial_number):
-            m.printer_id = None
-            m.retired = True
+            _retire(db, m)
             continue
         linked.add(p.id)
         if (m.name, m.model, m.serial_number, m.retired) != (p.name, p.model, p.serial_number, False):
@@ -77,6 +114,65 @@ async def ensure_hour_machines(db: AsyncSession) -> list[HourMachine]:
         await db.commit()
     result = await db.execute(select(HourMachine).order_by(HourMachine.name, HourMachine.id))
     return list(result.scalars().all())
+
+
+async def sync_events(db: AsyncSession, machines: list[HourMachine]) -> None:
+    """Mirror maintenance history into ``hour_events`` and add each machine's ``added`` event. Idempotent; commits."""
+    for machine in machines:
+        known = (
+            await db.execute(select(HourEvent.kind, HourEvent.source_id).where(HourEvent.machine_id == machine.id))
+        ).all()
+        seen_sources = {src for kind, src in known if kind == "maintenance"}
+        if machine.printer_id is not None:
+            rows = await db.execute(
+                select(MaintenanceHistory.id, MaintenanceHistory.performed_at, MaintenanceType.name)
+                .join(PrinterMaintenance, PrinterMaintenance.id == MaintenanceHistory.printer_maintenance_id)
+                .join(MaintenanceType, MaintenanceType.id == PrinterMaintenance.maintenance_type_id)
+                .where(PrinterMaintenance.printer_id == machine.printer_id)
+            )
+            for history_id, performed_at, type_name in rows.all():
+                if history_id not in seen_sources:
+                    db.add(
+                        HourEvent(
+                            machine_id=machine.id,
+                            event_date=performed_at.date(),
+                            kind="maintenance",
+                            label=type_name,
+                            source_id=history_id,
+                        )
+                    )
+        if any(kind == "added" for kind, _src in known):
+            continue
+        first_manual = (
+            await db.execute(
+                select(func.min(HourReading.reading_date)).where(
+                    HourReading.machine_id == machine.id, HourReading.source == SOURCE_MANUAL
+                )
+            )
+        ).scalar_one_or_none()
+        printer_created = None
+        if machine.printer_id is not None:
+            created = (
+                await db.execute(select(Printer.created_at).where(Printer.id == machine.printer_id))
+            ).scalar_one_or_none()
+            printer_created = created.date() if created else None
+        joined = added_on(machine, first_manual, printer_created)
+        if joined is not None:
+            db.add(HourEvent(machine_id=machine.id, event_date=joined, kind="added", label=machine.name))
+    await db.commit()
+
+
+async def next_service_hours(db: AsyncSession, printer_id: int) -> float | None:
+    """Printer hours at which the nearest enabled hour-based maintenance item falls due, or ``None``."""
+    from backend.app.api.routes.maintenance import _get_printer_maintenance_internal  # route imports this module
+
+    overview = await _get_printer_maintenance_internal(printer_id, db, commit=False)
+    due = [
+        item.current_hours + item.hours_until_due
+        for item in overview.maintenance_items
+        if item.enabled and item.interval_type == "hours"
+    ]
+    return min(due) if due else None
 
 
 async def upsert_reading(
