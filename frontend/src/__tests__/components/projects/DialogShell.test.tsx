@@ -121,3 +121,28 @@ describe('DialogShell', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 });
+
+describe('DialogShell: closing', () => {
+  it('while closing, the backdrop and card carry the exit classes, the card is inert and a backdrop click no longer closes', () => {
+    const onClose = vi.fn();
+    const ref = createRef<HTMLFormElement>();
+    const { rerender } = render(
+      <DialogShell dialogRef={ref} title="Pick one" onClose={onClose} onSubmit={(e) => e.preventDefault()}>
+        <button type="submit">Go</button>
+      </DialogShell>,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Pick one' });
+    expect(dialog).not.toHaveAttribute('inert');
+    expect(dialog).not.toHaveClass('animate-modal-out');
+    rerender(
+      <DialogShell dialogRef={ref} title="Pick one" onClose={onClose} onSubmit={(e) => e.preventDefault()} closing>
+        <button type="submit">Go</button>
+      </DialogShell>,
+    );
+    expect(dialog).toHaveAttribute('inert');
+    expect(dialog).toHaveClass('animate-modal-in', 'animate-modal-out');
+    expect(dialog.parentElement).toHaveClass('animate-overlay-in', 'animate-overlay-out', 'pointer-events-none');
+    fireEvent.click(dialog.parentElement!);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});

@@ -476,3 +476,33 @@ describe('ItemCard motion', () => {
     expect(document.querySelector('.col-span-full')).toHaveClass('animate-rise');
   });
 });
+
+describe('ItemCard: the details tray leaves the way it arrived', () => {
+  it('closing keeps the tray mounted, inert and marked leaving for the exit beat, then unmounts it', async () => {
+    render(<Harness value={bracket()} />);
+    await userEvent.click(within(card()).getByRole('button', { name: 'More actions' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Details' }));
+    const tray = screen.getByTestId('item-tray-20');
+    expect(tray).not.toHaveAttribute('data-leaving');
+    expect(tray).toHaveClass('files-tray', 'animate-rise');
+    await userEvent.click(within(tray).getByRole('button', { name: 'Close' }));
+    expect(screen.getByTestId('item-tray-20')).toHaveAttribute('data-leaving');
+    expect(screen.getByTestId('item-tray-20')).toHaveAttribute('inert');
+    await waitFor(() => expect(screen.queryByTestId('item-tray-20')).not.toBeInTheDocument());
+  });
+
+  it('reopening within the exit beat cancels the exit: the same tray stays, no longer leaving', async () => {
+    render(<Harness value={bracket()} />);
+    const name = () => within(card()).getByRole('button', { name: 'Bracket' });
+    await userEvent.click(name());
+    const tray = screen.getByTestId('item-tray-20');
+    await userEvent.click(name());
+    expect(tray).toHaveAttribute('data-leaving');
+    await userEvent.click(name());
+    expect(tray).not.toHaveAttribute('data-leaving');
+    expect(tray).not.toHaveAttribute('inert');
+    // Well past the beat the tray is still there: the pending unmount was cancelled.
+    await new Promise((r) => setTimeout(r, 250));
+    expect(screen.getByTestId('item-tray-20')).toBe(tray);
+  });
+});

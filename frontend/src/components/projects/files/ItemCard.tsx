@@ -177,21 +177,20 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
   // The ⋯ fork request: the tray opens that revision's block with its fork form showing.
   const [fork, setFork] = useState<{ revisionId: number; nonce: number } | null>(null);
   // The tray leaves the way it arrived: once `open` drops it stays mounted, inert, for the exit
-  // beat (TRAY_LEAVE_MS) and only then unmounts. Reopening within the beat cancels the exit.
+  // beat (TRAY_LEAVE_MS) and only then unmounts. `leaving` is set during the render that sees
+  // `open` change (not in an effect), so the tray never unmounts and remounts between the two.
+  // Reopening within the beat cancels the exit.
   const [leaving, setLeaving] = useState(false);
-  const wasOpen = useRef(open);
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    setLeaving(!open);
+  }
   useEffect(() => {
-    if (open) {
-      wasOpen.current = true;
-      setLeaving(false);
-      return;
-    }
-    if (!wasOpen.current) return;
-    wasOpen.current = false;
-    setLeaving(true);
+    if (!leaving) return;
     const id = window.setTimeout(() => setLeaving(false), TRAY_LEAVE_MS);
     return () => window.clearTimeout(id);
-  }, [open]);
+  }, [leaving]);
   const rename = useItemRename(item, actions);
   // The File Manager card's own entries (minus Print, Preview, Download, which are icons here,
   // and Move to project): calculator, history, tags, file details, delete.
