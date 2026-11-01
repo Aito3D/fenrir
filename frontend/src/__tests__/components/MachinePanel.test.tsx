@@ -25,7 +25,7 @@ const events: HourEvent[] = [
 function setup(over: Partial<React.ComponentProps<typeof MachinePanel>> = {}, m: HourMachine = machine, rs: HourReading[] = readings) {
   const props = {
     machine: m, series: machineSeries(rs, m.id), readings: rs, events, today: '2026-05-10', color: '#0af',
-    currency: 'USD', canEdit: true,
+    currency: 'USD', canEdit: true, canDelete: true,
     onEditDate: vi.fn(), onAddEvent: vi.fn(), onDeleteEvent: vi.fn(), onSavePurchase: vi.fn(), onClose: vi.fn(),
     ...over,
   };
@@ -72,6 +72,13 @@ describe('MachinePanel', () => {
     expect(del).toHaveLength(1);
     await userEvent.click(del[0]);
     expect(p.onDeleteEvent).toHaveBeenCalledWith(12);
+  });
+
+  it('hides the note delete button without delete permission but keeps the add-note form', () => {
+    setup({ canEdit: true, canDelete: false });
+    expect(screen.queryByRole('button', { name: 'Delete note' })).toBeNull();
+    expect(screen.getByLabelText('Note')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeInTheDocument();
   });
 
   it('cost per hour uses the app currency', () => {

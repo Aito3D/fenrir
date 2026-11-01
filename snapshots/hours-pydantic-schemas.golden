@@ -163,6 +163,7 @@
     "items": {
      "$ref": "#/$defs/HourImportReading"
     },
+    "maxItems": 20000,
     "minItems": 1,
     "title": "Readings",
     "type": "array"

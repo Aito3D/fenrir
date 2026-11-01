@@ -9,9 +9,9 @@
 1 @router.post("/import", response_model=HourImportResult)
 1 @router.post("/machines/{machine_id}/events", response_model=HourEventOut)
 1 @router.post("/readings", response_model=HoursOverview)
-2 RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE)
+3 RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE)
 1 RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ)
-6 RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE)
+5 RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE)
 
 ### stderr:
 

@@ -20,6 +20,7 @@ interface MachinePanelProps {
   color: string;
   currency: string;
   canEdit: boolean;
+  canDelete: boolean;
   onEditDate: (date: string) => void;
   onAddEvent: (machineId: number, body: { event_date: string; label: string }) => void;
   onDeleteEvent: (id: number) => void;
@@ -31,7 +32,7 @@ interface MachinePanelProps {
 
 /** Slide-over (bottom sheet on phones) for digging into one machine. */
 export function MachinePanel({
-  machine, series, readings, events, today, color, currency, canEdit,
+  machine, series, readings, events, today, color, currency, canEdit, canDelete,
   onEditDate, onAddEvent, onDeleteEvent, onSavePurchase, onClose, suspendDismiss = false,
 }: MachinePanelProps) {
   const { t, i18n } = useTranslation();
@@ -179,6 +180,7 @@ export function MachinePanel({
             events={events}
             today={today}
             canEdit={canEdit}
+            canDelete={canDelete}
             onAdd={(body) => onAddEvent(machine.id, body)}
             onDelete={onDeleteEvent}
           />

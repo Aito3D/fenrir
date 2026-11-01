@@ -18,12 +18,13 @@ interface MachineEventsProps {
   events: HourEvent[];
   today: string;
   canEdit: boolean;
+  canDelete: boolean;
   onAdd: (body: { event_date: string; label: string }) => void;
   onDelete: (id: number) => void;
 }
 
 /** A machine's events, newest first, with an add-a-note row for editors. */
-export function MachineEvents({ events, today, canEdit, onAdd, onDelete }: MachineEventsProps) {
+export function MachineEvents({ events, today, canEdit, canDelete, onAdd, onDelete }: MachineEventsProps) {
   const { t, i18n } = useTranslation();
   const [date, setDate] = useState(today);
   const [text, setText] = useState('');
@@ -48,7 +49,7 @@ export function MachineEvents({ events, today, canEdit, onAdd, onDelete }: Machi
               <Icon className="h-3.5 w-3.5 shrink-0 text-bambu-gray" aria-hidden="true" />
               <span className="min-w-0 flex-1 break-words text-white">{ev.label}</span>
               <span className="shrink-0 text-xs text-bambu-gray">{dayFmt(ev.event_date)}</span>
-              {canEdit && ev.kind === 'note' && (
+              {canDelete && ev.kind === 'note' && (
                 <button
                   type="button"
                   aria-label={t('maintenance.hours.panel.deleteNote')}

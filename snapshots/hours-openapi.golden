@@ -657,6 +657,7 @@
      "items": {
       "$ref": "#/components/schemas/HourImportReading"
      },
+     "maxItems": 20000,
      "minItems": 1,
      "title": "Readings",
      "type": "array"

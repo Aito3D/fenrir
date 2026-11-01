@@ -16,7 +16,7 @@ export interface MachineSeries {
   auto: HourPoint[];
 }
 
-const DAY_MS = 86_400_000;
+export const DAY_MS = 86_400_000;
 const pad = (n: number) => String(n).padStart(2, '0');
 
 export function dayNumber(iso: string): number {

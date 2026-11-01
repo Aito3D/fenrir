@@ -212,7 +212,7 @@ class HourImportReading(BaseModel):
 
 class HourImportBody(BaseModel):
     new_machines: list[HourMachineCreate] = Field(default_factory=list)
-    readings: list[HourImportReading] = Field(..., min_length=1)
+    readings: list[HourImportReading] = Field(..., min_length=1, max_length=20000)
 
 
 class HourImportResult(BaseModel):

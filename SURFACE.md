@@ -243,9 +243,9 @@ CREATE INDEX ix_hour_readings_machine_id ON hour_readings (machine_id);
 ## Permissions guarding the routes (count per permission)
 ```regen: grep -hoE 'Permission\.[A-Z_]+' backend/app/api/routes/printer_hours.py | sort | uniq -c | sed 's/^ *//'```
 ```
-2 Permission.MAINTENANCE_DELETE
+3 Permission.MAINTENANCE_DELETE
 1 Permission.MAINTENANCE_READ
-6 Permission.MAINTENANCE_UPDATE
+5 Permission.MAINTENANCE_UPDATE
 ```
 
 ## Migration touching the feature (core/database.py)
@@ -275,6 +275,7 @@ if not await _table_has_column(conn, "hour_readings", "raw_hours"):
 ## Frontend exported symbols (count per symbol name)
 ```regen: grep -rhoE --include='*.ts' --include='*.tsx' '^export (default function|default async function|async function|function|const|type|interface|class|enum) [A-Za-z0-9_]+' frontend/src/components/maintenance/hours frontend/src/utils/hoursSeries.ts | sort | uniq -c | sed 's/^ *//'```
 ```
+1 export const DAY_MS
 1 export function behaviourFlag
 1 export function checkReading
 1 export function dayNumber

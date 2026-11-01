@@ -20,6 +20,7 @@ from backend.app.schemas.maintenance import (
     HourEventCreate,
     HourEventOut,
     HourImportBody,
+    HourImportReading,
     HourImportResult,
     HourMachineOut,
     HourMachineUpdate,
@@ -241,9 +242,29 @@ async def import_readings(
         db.add(machine)
         created[nm.key] = machine
     await db.flush()
+    rows: list[tuple[int, HourImportReading]] = []
     for r in body.readings:
         machine_id = r.machine_id if r.machine_id is not None else created[r.key].id
-        await upsert_reading(db, machine_id, r.reading_date, SOURCE_MANUAL, r.hours)
+        rows.append((machine_id, r))
+    # one SELECT for the whole sheet (a date range, filtered by the dict) instead of one per cell
+    dates = [r.reading_date for _, r in rows]
+    result = await db.execute(
+        select(HourReading).where(
+            HourReading.source == SOURCE_MANUAL,
+            HourReading.machine_id.in_({machine_id for machine_id, _ in rows}),
+            HourReading.reading_date.between(min(dates), max(dates)),
+        )
+    )
+    by_key = {(h.machine_id, h.reading_date): h for h in result.scalars()}
+    for machine_id, r in rows:
+        reading = by_key.get((machine_id, r.reading_date))
+        if reading is None:  # later rows for the same (machine, date) reuse it, so the last one wins
+            by_key[(machine_id, r.reading_date)] = reading = HourReading(
+                machine_id=machine_id, reading_date=r.reading_date, source=SOURCE_MANUAL, hours=r.hours
+            )
+            db.add(reading)
+        reading.hours = r.hours
+        reading.raw_hours = None
     await db.commit()
     return HourImportResult(machines_created=len(created), readings_written=len(body.readings))
 
@@ -287,7 +308,7 @@ async def add_note_event(
 async def delete_note_event(
     event_id: int,
     db: AsyncSession = Depends(get_db, scope="function"),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Delete a note; mirrored events (maintenance, calibration, ...) are not deletable."""

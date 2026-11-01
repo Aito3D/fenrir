@@ -215,6 +215,32 @@ async def test_hours_write_routes_enforce_update_and_delete_permissions(async_cl
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_delete_note_event_needs_maintenance_delete(async_client: AsyncClient, db_session):
+    from backend.app.core.auth import create_access_token, get_password_hash
+    from backend.app.models.group import Group
+    from backend.app.models.settings import Settings
+    from backend.app.models.user import User
+
+    db_session.add(Settings(key="auth_enabled", value="true"))
+    updater = Group(name="hours-updaters", permissions=["maintenance:read", "maintenance:update"], is_system=False)
+    deleter = Group(name="hours-deleters", permissions=["maintenance:read", "maintenance:delete"], is_system=False)
+    db_session.add_all([updater, deleter])
+    await db_session.flush()
+    headers = {}
+    for name, group in (("updater", updater), ("deleter", deleter)):
+        user = User(username=name, password_hash=get_password_hash("password"), is_active=True)
+        user.groups.append(group)
+        db_session.add(user)
+        headers[name] = {"Authorization": f"Bearer {create_access_token(data={'sub': name})}"}
+    await db_session.commit()
+
+    assert (await async_client.delete(f"{BASE}/events/999999", headers=headers["updater"])).status_code == 403
+    # Permission passes for the deleter; the missing event is then a 404, not a 403.
+    assert (await async_client.delete(f"{BASE}/events/999999", headers=headers["deleter"])).status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 class TestHoursImport:
     async def test_import_creates_retired_machines_and_never_recalibrates(
         self, async_client: AsyncClient, printer_factory, db_session
@@ -250,6 +276,58 @@ class TestHoursImport:
         await async_client.post(f"{BASE}/import", json={"readings": [row]})
         data = (await async_client.get(BASE)).json()
         assert [r["hours"] for r in data["readings"]] == [862.0]
+
+    async def test_import_batch_semantics(self, async_client: AsyncClient, printer_factory, db_session):
+        from sqlalchemy import event
+
+        from backend.app.models.maintenance import HourReading
+
+        await printer_factory(name="H2S02")
+        m = await _machine_for(async_client, "H2S02")
+        day = date(2026, 1, 1)
+        manual = HourReading(machine_id=m["id"], reading_date=day, source="manual", hours=10, raw_hours=9)
+        auto = HourReading(machine_id=m["id"], reading_date=day, source="auto", hours=11, raw_hours=8)
+        db_session.add_all([manual, auto])
+        await db_session.commit()
+        manual_id, auto_id = manual.id, auto.id
+        selects: list[str] = []
+
+        def count(_conn, _cursor, statement, *_args):
+            if statement.lstrip().upper().startswith("SELECT") and "FROM hour_readings" in statement:
+                selects.append(statement)
+
+        engine = db_session.bind.sync_engine
+        event.listen(engine, "before_cursor_execute", count)
+        try:
+            rows = [
+                {"machine_id": m["id"], "reading_date": "2026-01-01", "hours": 20},
+                {"machine_id": m["id"], "reading_date": "2026-01-02", "hours": 30},
+                {"machine_id": m["id"], "reading_date": "2026-01-02", "hours": 31},
+                {"machine_id": m["id"], "reading_date": "2026-01-01", "hours": 21},
+            ]
+            response = await async_client.post(f"{BASE}/import", json={"readings": rows})
+        finally:
+            event.remove(engine, "before_cursor_execute", count)
+        assert response.json() == {"machines_created": 0, "readings_written": 4}
+        assert len(selects) == 1  # one lookup for the whole sheet, not one per cell
+        db_session.expire_all()
+        got = (await db_session.execute(select(HourReading).order_by(HourReading.id))).scalars().all()
+        state = [(r.id, str(r.reading_date), r.source, r.hours, r.raw_hours) for r in got]
+        assert state[:2] == [
+            (manual_id, "2026-01-01", "manual", 21.0, None),
+            (auto_id, "2026-01-01", "auto", 11.0, 8.0),
+        ]
+        assert [s[1:] for s in state[2:]] == [("2026-01-02", "manual", 31.0, None)]  # duplicates: last wins
+
+    async def test_import_caps_readings_at_20000(self, async_client: AsyncClient, printer_factory):
+        await printer_factory(name="H2S03")
+        m = await _machine_for(async_client, "H2S03")
+        row = {"machine_id": m["id"], "reading_date": "2026-01-01", "hours": 1}
+        over = await async_client.post(f"{BASE}/import", json={"readings": [row] * 20001})
+        assert over.status_code == 422
+        assert (await async_client.get(BASE)).json()["readings"] == []
+        ok = await async_client.post(f"{BASE}/import", json={"readings": [row] * 20000})
+        assert ok.json() == {"machines_created": 0, "readings_written": 20000}
 
     @pytest.mark.parametrize(
         "body",

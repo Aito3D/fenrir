@@ -360,6 +360,7 @@ export function HoursTab() {
           color={colors.get(panelMachine.id) ?? ''}
           currency={currency}
           canEdit={canEdit}
+          canDelete={canDelete}
           onEditDate={setFormDate}
           onAddEvent={(machineId, body) => addEvent.mutate({ machineId, body })}
           onDeleteEvent={(id) => deleteEvent.mutate(id)}
