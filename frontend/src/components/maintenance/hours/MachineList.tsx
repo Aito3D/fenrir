@@ -70,43 +70,43 @@ export function MachineList({
                   onBlur={() => onHover(null)}
                   className="group relative flex shrink-0 items-center"
                 >
-                  {/* The toggle spans the row; the name button and trust mark sit over its invisible name slot
-                      (nested buttons are invalid HTML). */}
+                  {/* The toggle is a childless full-bleed button under the content row (nested buttons are invalid
+                      HTML); only the name button takes pointer events from the row above it. */}
                   <button
                     type="button"
                     data-testid="hours-machine-row"
                     data-name={m.name}
                     aria-pressed={on}
+                    aria-label={m.name}
                     onClick={() => onToggle(m.id)}
-                    className={`flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-opacity hover:bg-bambu-dark-tertiary ${on ? '' : 'opacity-40'}`}
+                    className="absolute inset-0 rounded-lg hover:bg-bambu-dark-tertiary"
+                  />
+                  <div
+                    className={`pointer-events-none relative flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-sm transition-opacity ${on ? '' : 'opacity-40'}`}
                   >
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
-                    <span aria-hidden="true" className="invisible">{m.name}</span>
-                    <span aria-hidden="true" className="w-3.5 shrink-0" />
-                    <span className="ml-auto hidden md:block">
-                      <Sparkline points={mine ? seriesPoints(mine) : []} color={color} />
-                    </span>
-                    <span className="min-w-12 text-right tabular-nums text-white">
-                      {value != null && `${fmt(value)} h`}
-                    </span>
-                  </button>
-                  <span className="pointer-events-none absolute inset-y-0 left-7 flex items-center gap-1.5 text-sm">
                     <button
                       type="button"
                       aria-label={t('maintenance.hours.openMachine', { name: m.name })}
                       onClick={() => onOpen(m)}
-                      className={`pointer-events-auto rounded text-white hover:underline ${on ? '' : 'opacity-40'}`}
+                      className="pointer-events-auto min-w-0 truncate rounded text-left text-white hover:underline"
                     >
                       {m.name}
                     </button>
-                    <span className="pointer-events-auto"><TrustMark machine={m} size="sm" /></span>
-                  </span>
+                    <TrustMark machine={m} size="sm" />
+                    <span className="ml-auto hidden md:block">
+                      <Sparkline points={mine ? seriesPoints(mine) : []} color={color} />
+                    </span>
+                    <span className="min-w-12 shrink-0 text-right tabular-nums text-white">
+                      {value != null && `${fmt(value)} h`}
+                    </span>
+                  </div>
                   {m.retired && canDelete && (
                     <button
                       type="button"
                       aria-label={t('maintenance.hours.deleteMachineTitle')}
                       onClick={() => onDeleteRetired(m)}
-                      className="hidden p-1 text-bambu-gray opacity-0 hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100 md:block"
+                      className="relative hidden p-1 text-bambu-gray opacity-0 hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100 md:block"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>

@@ -92,9 +92,20 @@ describe('HoursTab', () => {
     const list = await screen.findByTestId('hours-machine-list');
     const rows = within(list).getAllByTestId('hours-machine-row');
     expect(rows).toHaveLength(3);
-    for (const row of rows) expect(row.querySelector('svg[data-testid=sparkline]')).not.toBeNull();
+    for (const row of rows) expect(row.closest('[role=group]')?.querySelector('svg[data-testid=sparkline]')).not.toBeNull();
     expect(within(list).queryByText(/h\/month/)).toBeNull();
     expect(within(list).getByRole('button', { name: 'Open X1C04' })).toBeInTheDocument();
+  });
+
+  it('the toggle is named after the machine and the name button opens without toggling', async () => {
+    serve();
+    render(<HoursTab />);
+    const toggle = await screen.findByRole('button', { name: 'X1C04', pressed: true });
+    await userEvent.click(screen.getByRole('button', { name: 'Open X1C04' }));
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(document.querySelector('[data-panel-id="1"]')).not.toBeNull();
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('shows the empty state', async () => {
