@@ -1,9 +1,11 @@
-import { lazy, Suspense, type ComponentProps } from 'react';
+import { Suspense, type ComponentProps } from 'react';
+import { lazyPage } from '../utils/lazyPage';
 import { Loader2 } from 'lucide-react';
 
 // Loaded on first open: the details modal sits beside the part viewer on the
 // Projects and File Manager pages and is not needed to paint either list.
-const Inner = lazy(() => import('./LibraryFileDetailsModal').then((m) => ({ default: m.LibraryFileDetailsModal })));
+// lazyPage, not lazy: reloads once if a redeploy deleted the chunk (#3175).
+const Inner = lazyPage(() => import('./LibraryFileDetailsModal'), 'LibraryFileDetailsModal');
 
 type Props = ComponentProps<typeof import('./LibraryFileDetailsModal').LibraryFileDetailsModal>;
 

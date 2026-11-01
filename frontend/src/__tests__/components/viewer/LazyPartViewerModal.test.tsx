@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
@@ -32,5 +34,15 @@ describe('lazy modal wrappers', () => {
   it('renders the details modal from its own chunk', async () => {
     render(<LibraryFileDetailsModal file={{ id: 1 } as never} canEdit={false} onClose={() => {}} />);
     expect(await screen.findByTestId('real-details')).toBeInTheDocument();
+  });
+
+  it('loads its chunk through lazyPage, which reloads once after a redeploy deleted it', () => {
+    // A tab from before a deploy clicks Preview after the old chunk is gone;
+    // a bare lazy() would throw into the root error boundary (#3175).
+    for (const rel of ['../../../components/viewer/LazyPartViewerModal.tsx', '../../../components/LazyLibraryFileDetailsModal.tsx', '../../../components/ConfirmOutcomeDialog.tsx']) {
+      const src = readFileSync(join(__dirname, rel), 'utf8');
+      expect(src, rel).toMatch(/lazyPage\(\(\) => import\(/);
+      expect(src, rel).not.toMatch(/\blazy\(\(\) => import\(/);
+    }
   });
 });

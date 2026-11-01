@@ -156,7 +156,7 @@ describe('ConfirmOutcomeDialog', () => {
     // (93 KB) into every page's eager preload set.
     const src = readFileSync(join(__dirname, '../../components/ConfirmOutcomeDialog.tsx'), 'utf8');
     expect(src).not.toMatch(/^import \{ PrintModal \} from '\.\/PrintModal';/m);
-    expect(src).toMatch(/lazy\(\(\) => import\('\.\/PrintModal'\)/);
+    expect(src).toMatch(/lazyPage\(\(\) => import\('\.\/PrintModal'\)/);
   });
 
   it('reject-and-reprint hands off into the print modal after saving', async () => {

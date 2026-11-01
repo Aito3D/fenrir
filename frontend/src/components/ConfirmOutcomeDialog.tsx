@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ThumbsUp, ThumbsDown, X, RotateCcw, ImageOff } from 'lucide-react';
@@ -6,10 +6,12 @@ import { api } from '../api/client';
 import { FAILURE_REASON_KEYS } from './EditArchiveModal';
 import { verdictSourceKey } from '../utils/verdictSource';
 import { useToast } from '../contexts/ToastContext';
+import { lazyPage } from '../utils/lazyPage';
 
 // On demand: Layout renders this dialog on every page, and a static import
 // would carry PrintModal (93 KB) in the eager preload set of every page load.
-const PrintModal = lazy(() => import('./PrintModal').then((m) => ({ default: m.PrintModal })));
+// lazyPage, not lazy: reloads once if a redeploy deleted the chunk (#3175).
+const PrintModal = lazyPage(() => import('./PrintModal'), 'PrintModal');
 
 interface ConfirmOutcomeDialogProps {
   archiveId: number;
