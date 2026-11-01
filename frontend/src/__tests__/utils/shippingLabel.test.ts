@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { AITO3D_SENDER, buildShippingLabelHtml, shippingLabelFor } from '../../utils/shippingLabel';
+import { buildShippingLabelHtml, shippingLabelFor } from '../../utils/shippingLabel';
+import { AITO3D_SENDER } from '../../utils/aitoSender';
 import type { ShippingLabel } from '../../utils/shippingLabel';
 import type { AitoProject, AitoShippingService } from '../../api/client';
 
