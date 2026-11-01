@@ -223,3 +223,14 @@ class HourImportResult(BaseModel):
 class HourMachineUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     model: str | None = Field(default=None, max_length=50)
+    purchase_price: float | None = Field(default=None, ge=0)
+    purchase_date: date | None = None
+
+
+class HourEventCreate(BaseModel):
+    event_date: date
+    label: str = Field(min_length=1, max_length=200)
+
+
+class HourSettingsUpdate(BaseModel):
+    reading_interval_days: int = Field(ge=7, le=365)

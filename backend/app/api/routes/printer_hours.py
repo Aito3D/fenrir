@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.maintenance import notify_maintenance_attention
+from backend.app.api.routes.settings import set_setting
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -15,6 +16,7 @@ from backend.app.models.maintenance import HourEvent, HourMachine, HourReading
 from backend.app.models.printer import Printer
 from backend.app.models.user import User
 from backend.app.schemas.maintenance import (
+    HourEventCreate,
     HourEventOut,
     HourImportBody,
     HourImportResult,
@@ -22,6 +24,7 @@ from backend.app.schemas.maintenance import (
     HourMachineUpdate,
     HourReadingBatch,
     HourReadingOut,
+    HourSettingsUpdate,
     HoursOverview,
 )
 from backend.app.services.printer_hours import (
@@ -236,6 +239,53 @@ async def _retired_machine(db: AsyncSession, machine_id: int) -> HourMachine:
     return machine
 
 
+@router.post("/machines/{machine_id}/events", response_model=HourEventOut)
+async def add_note_event(
+    machine_id: int,
+    body: HourEventCreate,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+):
+    """Add a free-text note to a machine's timeline."""
+    await ensure_hour_machines(db)
+    if await db.get(HourMachine, machine_id) is None:
+        raise HTTPException(status_code=404, detail="Machine not found")
+    _reject_future(body.event_date)
+    event = HourEvent(machine_id=machine_id, event_date=body.event_date, kind="note", label=body.label.strip())
+    db.add(event)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+@router.delete("/events/{event_id}", status_code=204)
+async def delete_note_event(
+    event_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+):
+    """Delete a note; mirrored events (maintenance, calibration, ...) are not deletable."""
+    event = await db.get(HourEvent, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if event.kind != "note":
+        raise HTTPException(status_code=409, detail="Only notes can be deleted")
+    await db.delete(event)
+    await db.commit()
+
+
+@router.patch("/settings", response_model=HoursOverview)
+async def update_hour_settings(
+    body: HourSettingsUpdate,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+):
+    """Set the reading reminder interval and return the refreshed overview."""
+    await set_setting(db, "hours_reading_interval_days", str(body.reading_interval_days))
+    await db.commit()
+    return await _overview(db, date.today())
+
+
 @router.patch("/machines/{machine_id}", response_model=HourMachineOut)
 async def update_machine(
     machine_id: int,
@@ -244,7 +294,17 @@ async def update_machine(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
 ):
     await ensure_hour_machines(db)
-    machine = await _retired_machine(db, machine_id)
+    changes = body.model_fields_set
+    if changes & {"name", "model"}:
+        machine = await _retired_machine(db, machine_id)
+    else:
+        machine = await db.get(HourMachine, machine_id)
+        if machine is None:
+            raise HTTPException(status_code=404, detail="Machine not found")
+    if "purchase_price" in changes:
+        machine.purchase_price = body.purchase_price
+    if "purchase_date" in changes:
+        machine.purchase_date = body.purchase_date
     if body.name is not None:
         others = (await db.execute(select(HourMachine.name).where(HourMachine.id != machine_id))).scalars()
         if body.name.strip().casefold() in {n.casefold() for n in others}:
@@ -253,14 +313,8 @@ async def update_machine(
     if body.model is not None:
         machine.model = body.model or None
     await db.commit()
-    return HourMachineOut(
-        id=machine.id,
-        printer_id=machine.printer_id,
-        name=machine.name,
-        model=machine.model,
-        retired=machine.retired,
-        current_hours=None,
-    )
+    overview = await _overview(db, date.today())
+    return next(m for m in overview.machines if m.id == machine.id)
 
 
 @router.delete("/machines/{machine_id}")
@@ -273,6 +327,7 @@ async def delete_machine(
     machine = await _retired_machine(db, machine_id)
     # SQLite does not enforce the FK cascade; remove the history explicitly.
     await db.execute(delete(HourReading).where(HourReading.machine_id == machine.id))
+    await db.execute(delete(HourEvent).where(HourEvent.machine_id == machine.id))
     await db.delete(machine)
     await db.commit()
     return {"status": "deleted"}

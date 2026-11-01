@@ -206,6 +206,11 @@ async def test_hours_write_routes_enforce_update_and_delete_permissions(async_cl
     assert (await async_client.post(f"{BASE}/readings", json=reading, headers=headers)).status_code == 403
     response = await async_client.delete(f"{BASE}/readings", params={"reading_date": "2026-01-01"}, headers=headers)
     assert response.status_code == 403
+    note = {"event_date": "2026-01-01", "label": "Nozzle swap"}
+    assert (await async_client.post(f"{BASE}/machines/1/events", json=note, headers=headers)).status_code == 403
+    assert (await async_client.delete(f"{BASE}/events/1", headers=headers)).status_code == 403
+    interval = {"reading_interval_days": 30}
+    assert (await async_client.patch(f"{BASE}/settings", json=interval, headers=headers)).status_code == 403
 
 
 @pytest.mark.asyncio
@@ -368,3 +373,83 @@ class TestHoursOverviewPayload:
         assert fresh["trust"] == "uncalibrated"
         assert fresh["next_service_hours"] is None
         assert calibrated["id"] not in data["due_machine_ids"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestHoursNotesAndSettings:
+    async def test_note_event_create_and_delete(self, async_client: AsyncClient, printer_factory):
+        await printer_factory(name="X1C10")
+        m = await _machine_for(async_client, "X1C10")
+        response = await async_client.post(
+            f"{BASE}/machines/{m['id']}/events", json={"event_date": "2026-03-01", "label": "Nozzle swap"}
+        )
+        assert response.status_code == 200
+        event = response.json()
+        assert (event["machine_id"], event["event_date"], event["kind"], event["label"]) == (
+            m["id"],
+            "2026-03-01",
+            "note",
+            "Nozzle swap",
+        )
+        assert event["id"] in [e["id"] for e in (await async_client.get(BASE)).json()["events"]]
+        assert (await async_client.delete(f"{BASE}/events/{event['id']}")).status_code == 204
+        assert event["id"] not in [e["id"] for e in (await async_client.get(BASE)).json()["events"]]
+        future = (date.today() + timedelta(days=1)).isoformat()
+        response = await async_client.post(
+            f"{BASE}/machines/{m['id']}/events", json={"event_date": future, "label": "Later"}
+        )
+        assert response.status_code == 422
+
+    async def test_mirrored_event_cannot_be_deleted(self, async_client: AsyncClient, db_session, printer_factory):
+        from backend.app.models.maintenance import HourEvent
+
+        await printer_factory(name="X1C11")
+        m = await _machine_for(async_client, "X1C11")
+        event = HourEvent(machine_id=m["id"], event_date=date.today(), kind="maintenance", label="Lubrication")
+        db_session.add(event)
+        await db_session.commit()
+        response = await async_client.delete(f"{BASE}/events/{event.id}")
+        assert response.status_code == 409
+        assert (await async_client.delete(f"{BASE}/events/999999")).status_code == 404
+
+    async def test_interval_setting_bounds(self, async_client: AsyncClient):
+        assert (await async_client.patch(f"{BASE}/settings", json={"reading_interval_days": 6})).status_code == 422
+        assert (await async_client.patch(f"{BASE}/settings", json={"reading_interval_days": 366})).status_code == 422
+        for days in (7, 365):
+            response = await async_client.patch(f"{BASE}/settings", json={"reading_interval_days": days})
+            assert response.status_code == 200
+            assert response.json()["reading_interval_days"] == days
+        assert (await async_client.get(BASE)).json()["reading_interval_days"] == 365
+
+    async def test_purchase_fields_on_live_machine(self, async_client: AsyncClient, printer_factory):
+        await printer_factory(name="X1C12")
+        m = await _machine_for(async_client, "X1C12")
+        response = await async_client.patch(
+            f"{BASE}/machines/{m['id']}", json={"purchase_price": 1299.5, "purchase_date": "2025-02-03"}
+        )
+        assert response.status_code == 200
+        assert (response.json()["purchase_price"], response.json()["purchase_date"]) == (1299.5, "2025-02-03")
+        assert (await _machine_for(async_client, "X1C12"))["purchase_price"] == 1299.5
+        response = await async_client.patch(f"{BASE}/machines/{m['id']}", json={"purchase_date": None})
+        assert response.status_code == 200
+        assert (response.json()["purchase_price"], response.json()["purchase_date"]) == (1299.5, None)
+        assert (await async_client.patch(f"{BASE}/machines/{m['id']}", json={"purchase_price": -1})).status_code == 422
+        assert (await async_client.patch(f"{BASE}/machines/{m['id']}", json={"name": "Renamed"})).status_code == 409
+
+    async def test_delete_machine_removes_its_events(self, async_client: AsyncClient, db_session):
+        from backend.app.models.maintenance import HourEvent
+
+        body = {
+            "new_machines": [{"key": "OLD1", "name": "OLD1", "model": "X1C"}],
+            "readings": [{"key": "OLD1", "reading_date": "2024-07-19", "hours": 10}],
+        }
+        assert (await async_client.post(f"{BASE}/import", json=body)).status_code == 200
+        m = await _machine_for(async_client, "OLD1")
+        response = await async_client.post(
+            f"{BASE}/machines/{m['id']}/events", json={"event_date": "2026-03-01", "label": "Sold"}
+        )
+        assert response.status_code == 200
+        assert (await async_client.delete(f"{BASE}/machines/{m['id']}")).status_code == 200
+        remaining = (await db_session.execute(select(HourEvent).where(HourEvent.machine_id == m["id"]))).scalars().all()
+        assert remaining == []
