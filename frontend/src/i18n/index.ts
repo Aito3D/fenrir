@@ -10,7 +10,7 @@ import { recoverFromMissingChunk } from '../utils/lazyPage';
 // language now: the parity gate (`npm run check:i18n`) guarantees every key
 // exists in every locale, which is what makes that safe. main.tsx waits for
 // the active locale before the first render.
-const LOCALE_LOADERS: Record<string, () => Promise<{ default: object }>> = {
+export const LOCALE_LOADERS: Record<string, () => Promise<{ default: object }>> = {
   en: () => import('./locales/en'),
   de: () => import('./locales/de'),
   es: () => import('./locales/es'),
@@ -39,15 +39,32 @@ export const localeBackend: BackendModule = {
       callback(null, {});
       return;
     }
-    load().then(
-      (mod) => callback(null, mod.default),
-      (err) => {
-        // A tab from before an update asks for a file the update deleted (#3175).
-        void recoverFromMissingChunk().then((reloading) => {
-          if (!reloading) callback(err, null);
-        });
-      },
-    );
+    // One retry for a blip, then: a tab from before an update asks for a file
+    // the update deleted (#3175) — reload once. Failing that, hand i18next the
+    // English bundle for this language rather than an error: there is no
+    // fallback language any more (English would otherwise download beside
+    // every locale), so this is the only way a flaky link ends in readable
+    // strings instead of raw keys. English only downloads when the chosen
+    // locale could not.
+    load()
+      .catch(() => load())
+      .then(
+        (mod) => callback(null, mod.default),
+        (err) => {
+          void recoverFromMissingChunk().then(async (reloading) => {
+            if (reloading) return;
+            if (lng !== 'en') {
+              try {
+                callback(null, (await LOCALE_LOADERS.en()).default);
+                return;
+              } catch {
+                // fall through to the original error
+              }
+            }
+            callback(err, null);
+          });
+        },
+      );
   },
 };
 
