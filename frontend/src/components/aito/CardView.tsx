@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Building2, CreditCard, Eye, GripVertical, Lock, User } from 'lucide-react';
 import { DueDateBadge } from './DueDateBadge';
@@ -100,7 +100,13 @@ const FLAG_LABEL_KEY: Record<AitoFlag, string> = {
  *  (mark-sent, mark-done, restore, hold-to-delete) opt out by stopping
  *  propagation, so their own clicks never reach the region handler. Phone,
  *  email and delete live in the detail panel, not here. */
-export function CardView({
+/** Memoised: the board re-renders on every WebSocket invalidation, keystroke
+ *  in the search box and presence update, and React Query's structural
+ *  sharing keeps an unchanged `project` referentially equal, so an unchanged
+ *  card has nothing to render. `BoardColumn` keeps its callbacks, the
+ *  `actions` element and `dragHandleProps` stable for the same reason — an
+ *  inline lambda or a fresh element there would defeat this. */
+export const CardView = memo(function CardView({
   project,
   overlay = false,
   onExpand,
@@ -347,7 +353,7 @@ export function CardView({
       // The shell holds the collapsed height while the card floats, so the
       // column's layout does not change. It carries no card styling and no
       // `data-aito-card*` — it is space, nothing else.
-      className={`relative rounded-xl ${cardDrop.className}`}
+      className={`aito-card-shell relative rounded-xl ${cardDrop.className}`}
       style={expanded && shellHeight !== null ? { height: shellHeight } : undefined}
     >
       {cardDrop.overlay}
@@ -659,4 +665,4 @@ export function CardView({
       </div>
     </div>
   );
-}
+});

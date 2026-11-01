@@ -112,6 +112,33 @@ describe('Layout', () => {
     });
   });
 
+  // Shell queries that no first paint needs (update check, external links,
+  // smart plugs, debug logging, developer-mode warnings) start only once the
+  // page has painted, so the page's own data calls are not queued behind them
+  // — on the HTTP/1.1 LAN deployment every request competes for six
+  // connections. jsdom has no requestIdleCallback; the hook's 300 ms fallback
+  // runs here.
+  describe('non-critical shell queries', () => {
+    it('defers non-critical shell queries until after first paint', async () => {
+      const hits: string[] = [];
+      server.use(
+        http.get('/api/v1/external-links/', () => {
+          hits.push('external-links');
+          return HttpResponse.json([]);
+        }),
+        http.get('/api/v1/smart-plugs/', () => {
+          hits.push('smart-plugs');
+          return HttpResponse.json([]);
+        }),
+      );
+      render(<Layout />);
+      await waitFor(() => expect(document.querySelector('aside')).toBeInTheDocument());
+      expect(hits).toEqual([]);
+      await waitFor(() => expect(hits).toContain('external-links'), { timeout: 2000 });
+      await waitFor(() => expect(hits).toContain('smart-plugs'), { timeout: 2000 });
+    });
+  });
+
   describe('external link count', () => {
     // A connected app (Bambuddy Orders) reports its To do count for the link
     // pointing at it; the sidebar shows it like the queue's badge.
@@ -617,6 +644,11 @@ describe('Layout', () => {
 
     it('still shows the update-available banner for plain Docker deployments', async () => {
       server.use(
+        // The suite's default ui-flags turn update checks off; this test
+        // used to pass only because the check raced the flags. Say it.
+        http.get('/api/v1/settings/ui-flags', () =>
+          HttpResponse.json({ check_updates: true, billing_enabled: false, user_notifications_enabled: true, currency: 'EUR' }),
+        ),
         http.get('/api/v1/updates/check', () => {
           return HttpResponse.json({
             update_available: true,
@@ -631,9 +663,11 @@ describe('Layout', () => {
 
       render(<Layout />);
 
+      // The update check is deferred until after first paint (300 ms fallback
+      // in jsdom), so the default 1 s wait leaves too little headroom.
       await waitFor(() => {
         expect(document.body.textContent).toContain('0.2.5');
-      });
+      }, { timeout: 3000 });
     });
   });
 

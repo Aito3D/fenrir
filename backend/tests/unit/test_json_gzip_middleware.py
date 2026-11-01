@@ -6,6 +6,7 @@ MJPEG, file and timelapse downloads), so Fenrir uses this narrower one.
 
 import json
 
+import brotli
 import httpx
 import pytest
 from starlette.applications import Starlette
@@ -35,7 +36,10 @@ def _app() -> Starlette:
         return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
     async def pre_encoded(_request):
-        return Response(b"already", media_type="application/json", headers={"Content-Encoding": "br"})
+        # A real brotli body: with the `brotli` package installed (the /assets
+        # handler needs it) httpx decodes `br` responses, and a fake body
+        # would make the client, not the middleware, fail.
+        return Response(brotli.compress(b"already"), media_type="application/json", headers={"Content-Encoding": "br"})
 
     app = Starlette(
         routes=[
@@ -97,6 +101,7 @@ async def test_streamed_multipart_is_untouched():
 async def test_already_encoded_json_is_not_recompressed():
     response = await _request("GET", "/pre-encoded")
     assert response.headers["content-encoding"] == "br"
+    assert response.content == b"already"
 
 
 @pytest.mark.asyncio

@@ -303,6 +303,27 @@ def classify_file_type(filename: str, file_path: Path | str | None = None) -> st
     return file_type
 
 
+# Private, a day: the Projects and File Manager lists render one thumbnail
+# per row and used to refetch all of them on every navigation because the
+# route sent no Cache-Control. The URL carries the media token, which rotates
+# per boot and every 50 minutes, so in practice the cache lives as long as
+# the token does: no refetch while navigating within a session. The ETag
+# lets a client that does revalidate get a 304.
+THUMBNAIL_CACHE_CONTROL = "private, max-age=86400"
+
+
+def _thumbnail_etag(path: Path, suffix: str = "") -> str:
+    """Strong validator from the file's mtime and size; stable until the thumbnail is rewritten."""
+    stat = path.stat()
+    return f'"{stat.st_mtime_ns:x}-{stat.st_size:x}{suffix}"'
+
+
+def _not_modified(request: Request, etag: str) -> bool:
+    """True when the client already holds this exact thumbnail."""
+    sent = request.headers.get("if-none-match")
+    return bool(sent) and etag in [t.strip().removeprefix("W/") for t in sent.split(",")]
+
+
 def get_library_thumbnails_dir() -> Path:
     """Get the directory for library thumbnails."""
     thumbnails_dir = get_library_dir() / "thumbnails"
@@ -4389,6 +4410,7 @@ async def get_library_file_plates(
 async def get_library_file_plate_thumbnail(
     file_id: int,
     plate_index: int,
+    request: Request,
     db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
@@ -4411,12 +4433,16 @@ async def get_library_file_plate_thumbnail(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
+    etag = _thumbnail_etag(file_path, f"-p{plate_index}")
+    cache_headers = {"Cache-Control": THUMBNAIL_CACHE_CONTROL, "ETag": etag}
+    if _not_modified(request, etag):
+        return Response(status_code=304, headers=cache_headers)
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
             thumb_path = f"Metadata/plate_{plate_index}.png"
             if thumb_path in zf.namelist():
                 data = zf.read(thumb_path)
-                return Response(content=data, media_type="image/png")
+                return Response(content=data, media_type="image/png", headers=cache_headers)
     except Exception:
         pass  # Archive unreadable or thumbnail missing; fall through to 404
 
@@ -6590,6 +6616,7 @@ async def download_library_file_for_slicer(
 @router.get("/files/{file_id}/thumbnail")
 async def get_thumbnail(
     file_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
@@ -6624,7 +6651,11 @@ async def get_thumbnail(
     }
     media_type = media_types.get(thumb_ext, "image/png")
 
-    return FastAPIFileResponse(str(abs_thumb_path), media_type=media_type)
+    etag = _thumbnail_etag(abs_thumb_path)
+    cache_headers = {"Cache-Control": THUMBNAIL_CACHE_CONTROL, "ETag": etag}
+    if _not_modified(request, etag):
+        return Response(status_code=304, headers=cache_headers)
+    return FastAPIFileResponse(str(abs_thumb_path), media_type=media_type, headers=cache_headers)
 
 
 @router.post("/files/{file_id}/preview-thumbnail", response_model=ClientThumbnailResponse)

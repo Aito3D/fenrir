@@ -21,6 +21,7 @@ from backend.app.models.pending_upload import PendingUpload
 from backend.app.models.project import Project
 from backend.app.models.user import User
 from backend.app.services.archive import ArchiveService, resolve_display_stem
+from backend.app.services.queue_events import notify_pending_uploads_changed
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +190,7 @@ async def archive_all_pending(
             failed += 1
 
     await db.commit()
+    await notify_pending_uploads_changed()
 
     return {
         "archived": archived,
@@ -219,6 +221,7 @@ async def discard_all_pending(
         discarded += 1
 
     await db.commit()
+    await notify_pending_uploads_changed()
 
     return {"discarded": discarded}
 
@@ -309,6 +312,7 @@ async def archive_pending_upload(
         pending.project_id = project_id
 
     await db.commit()
+    await notify_pending_uploads_changed()
     # Fenrir: read before auto-filing below, whose failure path rolls the session back.
     response = {
         "id": archive.id,
@@ -364,5 +368,6 @@ async def discard_pending_upload(
     # Update status
     pending.status = "discarded"
     await db.commit()
+    await notify_pending_uploads_changed()
 
     return {"success": True}

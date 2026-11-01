@@ -76,6 +76,19 @@ export default defineConfig({
     // still exists alongside this setting.
     target: 'safari16',
     rolldownOptions: {
+      output: {
+        // lucide-react icons are tiny modules used everywhere, and natural
+        // code-splitting emitted ~60 one-icon chunks into the eager preload
+        // set: one request each on an HTTP/1.1 LAN (uvicorn), six at a time.
+        // One shared chunk instead. This is NOT the `manualChunks` footgun
+        // (that turned lazy vendor libraries into static entry imports): the
+        // group matches only lucide, which the shell already needs at boot.
+        // scripts/check-preload-budget.mjs fails the build if the eager set
+        // grows or a lazy-only chunk lands in it.
+        advancedChunks: {
+          groups: [{ name: 'icons', test: /node_modules\/lucide-react\// }],
+        },
+      },
       // occt-import-js (STEP previews, #2976) is an Emscripten build that
       // requires `path` and `crypto`, but only inside its ENVIRONMENT_IS_NODE
       // branches; in the browser it takes the fetch/getRandomValues paths.
