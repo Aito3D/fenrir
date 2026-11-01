@@ -21,6 +21,13 @@ vi.mock('../../../../components/projects/print/PrintRevisionFlow', () => ({
   PrintRevisionFlow: ({ file: f }: { file: { filename: string } }) => <div data-testid="print-flow">{f.filename}</div>,
 }));
 
+// null = real AuthProvider (auth disabled: every permission granted).
+let granted: Set<string> | null = null;
+vi.mock('../../../../contexts/AuthContext', async (importOriginal) => {
+  const { withGrantedPermissions } = await import('../../../fixtures/authPermissions');
+  return withGrantedPermissions(await importOriginal<typeof import('../../../../contexts/AuthContext')>(), () => granted);
+});
+
 const profile = { printer_model: 'X1C', nozzle_diameter: '0.4', layer_height: '0.2', filament_types: ['PETG'] };
 const sliced = file(90, 'bracket.gcode.3mf', {
   file_type: 'gcode.3mf', print_time_seconds: 8040, filament_used_grams: 38.4, filament_type: 'PETG',
@@ -54,6 +61,7 @@ function Harness({ value }: { value: ProjectItemOut }) {
 let calls: string[];
 beforeEach(() => {
   calls = [];
+  granted = null;
   vi.mocked(openInSlicer).mockClear();
   server.use(
     http.get('/api/v1/projects/7/tree', () => HttpResponse.json({ project_id: 7, code: 'P-0007', sections: [] })),
@@ -504,5 +512,41 @@ describe('ItemCard: the details tray leaves the way it arrived', () => {
     // Well past the beat the tray is still there: the pending unmount was cancelled.
     await new Promise((r) => setTimeout(r, 250));
     expect(screen.getByTestId('item-tray-20')).toBe(tray);
+  });
+});
+
+describe('ItemCard permission gating', () => {
+  const failed = (r: Parameters<typeof bracket>[0] = {}) =>
+    bracket({ slice_status: 'failed', slice_error: 'Plate 2 is empty', sliced_file: null, ...r });
+
+  it('read-only: a failed slice shows its error but neither Retry nor Upload sliced file, and the menu has no write entries', async () => {
+    granted = new Set(['projects:read']);
+    render(<Harness value={failed()} />);
+    expect(within(card()).getByText('Slice failed: Plate 2 is empty', { ignore: '[role="tooltip"]' })).toBeInTheDocument();
+    expect(within(card()).queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(within(card()).queryByRole('button', { name: 'Upload sliced file' })).not.toBeInTheDocument();
+    await userEvent.click(within(card()).getByRole('button', { name: 'More actions' }));
+    expect(screen.getByRole('button', { name: 'Details' })).toBeInTheDocument();
+    for (const name of ['Rename', 'Fork as new item', 'Slice', 'Delete']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('a failed revision without a source file offers no Upload sliced file even with projects:update', () => {
+    granted = new Set(['projects:read', 'projects:update']);
+    render(<Harness value={failed({ files: [] })} />);
+    expect(within(card()).queryByRole('button', { name: 'Upload sliced file' })).not.toBeInTheDocument();
+    expect(within(card()).queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('with projects:update both buttons appear and the menu offers Rename and Fork', async () => {
+    granted = new Set(['projects:read', 'projects:update']);
+    render(<Harness value={failed()} />);
+    expect(within(card()).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(within(card()).getByRole('button', { name: 'Upload sliced file' })).toBeInTheDocument();
+    await userEvent.click(within(card()).getByRole('button', { name: 'More actions' }));
+    for (const name of ['Rename', 'Fork as new item']) expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
   });
 });
