@@ -393,8 +393,9 @@ export function useWebSocket() {
         if (message.printer_id !== undefined) {
           queryClient.invalidateQueries({ queryKey: ['printerStatus', message.printer_id] });
         }
-        // A queued job just left "pending": the sidebar badge follows.
-        queryClient.invalidateQueries({ queryKey: ['queue'] });
+        // A queued job just left "pending": the sidebar badge follows. Debounced
+        // like the archive refresh below: a batch starts several jobs in a row.
+        debouncedInvalidate('queue');
         break;
 
       case 'missing_spool_assignment': {
@@ -431,7 +432,7 @@ export function useWebSocket() {
         // The printer_status websocket messages will naturally update the status
         debouncedInvalidate('archives');
         debouncedInvalidate('archiveStats');
-        queryClient.invalidateQueries({ queryKey: ['queue'] });
+        debouncedInvalidate('queue');
         break;
 
       case 'print_confirm_request': {
@@ -685,8 +686,10 @@ export function useWebSocket() {
       // event).
       case 'queue_item_acked':
       case 'queue_item_failed':
-        // Status transitions the scheduler makes; the badge count changes with them.
-        queryClient.invalidateQueries({ queryKey: ['queue'] });
+        // Status transitions the scheduler makes; the badge count changes with
+        // them. One per item, so a batch dispatch is a burst: coalesced into a
+        // single refetch rather than N cancel-and-restart cycles.
+        debouncedInvalidate('queue');
         window.dispatchEvent(new CustomEvent('fenrir:dispatch-toast', { detail: message }));
         break;
       case 'queue_item_uploading':

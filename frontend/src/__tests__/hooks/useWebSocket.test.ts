@@ -1166,6 +1166,22 @@ describe('useWebSocket hook', () => {
       },
     );
 
+    it('coalesces a burst of scheduler events into one queue refetch', async () => {
+      // A batch dispatch acks N items in a row; N back-to-back invalidations
+      // would cancel and restart the queue page's refetch N times.
+      vi.useFakeTimers();
+      const { ws, invalidateSpy } = await openSocket();
+      act(() => {
+        for (let i = 0; i < 5; i++) ws.simulateMessage({ type: 'queue_item_acked', queue_item_id: i, data: {} });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(4000);
+      });
+      const queueCalls = invalidateSpy.mock.calls.filter(([arg]) => JSON.stringify((arg as { queryKey: unknown }).queryKey) === '["queue"]');
+      expect(queueCalls).toHaveLength(1);
+      vi.useRealTimers();
+    });
+
     it('refreshes the pending uploads on pending_uploads_changed', async () => {
       vi.useFakeTimers();
       const { ws, invalidateSpy } = await openSocket();
