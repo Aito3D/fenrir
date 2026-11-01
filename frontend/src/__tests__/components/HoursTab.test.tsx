@@ -310,6 +310,32 @@ describe('HoursTab', () => {
     expect(within(dialog).getByText(/Lifetime hours never go down/)).toBeInTheDocument();
   });
 
+  it("editing today's own reading compares with the previous date, not itself", async () => {
+    serve({
+      ...overview,
+      machines: overview.machines.map((m) => (m.id === 1 ? { ...m, counter_raw_hours: 1612 } : m)),
+      readings: [
+        ...overview.readings,
+        { id: 7, machine_id: 1, reading_date: '2026-04-25', hours: 3803, source: 'auto', raw_hours: 1000 },
+        { id: 8, machine_id: 1, reading_date: '2031-02-14', hours: 3900, source: 'manual', raw_hours: null },
+      ],
+    });
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    await user.click(await screen.findByRole('button', { name: 'New reading' })); // today's date, prefilled with its own 3,900
+    const dialog = await screen.findByTestId('hours-reading-form');
+    const field = within(dialog).getByRole('textbox', { name: 'X1C04' });
+    await user.clear(field);
+    await user.type(field, '3850');
+    expect(within(dialog).queryByText(/Lifetime hours never go down/)).not.toBeInTheDocument();
+    expect(within(dialog).getByText(/\+47 h typed, but Fenrir counted \+612 h since 4\/25\/2026/)).toBeInTheDocument();
+    await user.clear(field);
+    await user.type(field, '3700');
+    expect(
+      within(dialog).getByText('Lower than the 3,803 h read on 4/25/2026. Lifetime hours never go down.'),
+    ).toBeInTheDocument();
+  });
+
   it('edit prefills the date values and clearing a field sends null', async () => {
     serve();
     let body: unknown = null;

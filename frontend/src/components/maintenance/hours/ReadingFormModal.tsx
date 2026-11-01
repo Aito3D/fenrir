@@ -52,7 +52,7 @@ export function ReadingFormModal({
   }
   const { fmt, resultLine } = readingCheckText(t, i18n.language);
   // A past date is checked against what was known before it; the live counter only speaks for today.
-  const referenceReadings = date === today ? readings : readings.filter((r) => r.reading_date < date);
+  const referenceReadings = readings.filter((r) => r.reading_date < date); // never the reading being edited
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-overlay-in" onClick={onClose}>
