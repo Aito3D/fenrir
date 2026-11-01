@@ -25,7 +25,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
-export const BUDGET_GZIP_BYTES = 460_000;
+export const BUDGET_GZIP_BYTES = 290_000;
 
 /** Chunk basenames (Vite's `<name>-<hash>.<ext>`) that only load on demand. */
 export const FORBIDDEN = /^(shippingLabel|PrintModal|OrbitControls|PartViewerModal|LibraryFileDetailsModal|jszip\.min)-/;

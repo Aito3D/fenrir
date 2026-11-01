@@ -5,6 +5,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import i18n, { localeBackend } from '../../i18n';
 import en from '../../i18n/locales/en';
 import de from '../../i18n/locales/de';
+import fr from '../../i18n/locales/fr';
 
 function read(language: string) {
   return new Promise<{ error: unknown; data: unknown }>((resolve) => {
@@ -58,5 +59,30 @@ describe('locale loading', () => {
     await i18n.changeLanguage('de-AT');
 
     expect(i18n.t('nav.printers')).toBe(de.nav.printers);
+  });
+});
+
+// English used to ship inside the entry chunk as the synchronous fallback,
+// so a French user downloaded both string tables (~300 KB gzipped). Every
+// locale, English included, now loads on demand, and there is no fallback
+// language: the parity gate (`check:i18n`) guarantees every key exists in
+// every locale, which is what makes that safe.
+describe('English is a locale like the others', () => {
+  it('is loaded through the backend, not bundled', async () => {
+    const { error, data } = await read('en');
+    expect(error).toBeNull();
+    expect(data).toEqual(en);
+  });
+
+  it('has no fallback language', () => {
+    expect(i18n.options.fallbackLng).toBe(false);
+  });
+
+  it('renders keys from the loaded locale without an English bundle', async () => {
+    await i18n.changeLanguage('fr');
+    i18n.removeResourceBundle('en', 'translation');
+    expect(i18n.hasResourceBundle('en', 'translation')).toBe(false);
+    expect(i18n.t('nav.printers')).toBe(fr.nav.printers);
+    expect(i18n.t('aito.urgent')).toBe(fr.aito.urgent);
   });
 });

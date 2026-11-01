@@ -3,13 +3,15 @@ import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { recoverFromMissingChunk } from '../utils/lazyPage';
 
-// English ships in the entry bundle: it is the fallback language and must be
-// available synchronously. Every other locale (~350 KB of source each) is
-// code-split and fetched on demand by the backend below, keeping ~4 MB of
-// translations out of the initial download.
-import en from './locales/en';
-
+// Every locale, English included, is code-split and fetched on demand by the
+// backend below (~350-470 KB of source each; ~150 KB gzipped). English used to
+// ship inside the entry chunk as a synchronous fallback, which meant a French
+// user downloaded two string tables on every cold load. There is no fallback
+// language now: the parity gate (`npm run check:i18n`) guarantees every key
+// exists in every locale, which is what makes that safe. main.tsx waits for
+// the active locale before the first render.
 const LOCALE_LOADERS: Record<string, () => Promise<{ default: object }>> = {
+  en: () => import('./locales/en'),
   de: () => import('./locales/de'),
   es: () => import('./locales/es'),
   fr: () => import('./locales/fr'),
@@ -27,8 +29,7 @@ const LOCALE_LOADERS: Record<string, () => Promise<{ default: object }>> = {
 };
 
 // Minimal i18next backend: resolves a language to its lazily imported
-// locale chunk. Combined with `partialBundledLanguages`, i18next only calls
-// this for languages missing from `resources` (i.e. everything but en).
+// locale chunk.
 export const localeBackend: BackendModule = {
   type: 'backend',
   init: () => {},
@@ -50,10 +51,6 @@ export const localeBackend: BackendModule = {
   },
 };
 
-const resources = {
-  en: { translation: en },
-};
-
 const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'nl', 'pt-BR', 'ru', 'sv', 'tr', 'uk', 'zh-CN', 'zh-TW'];
 const APPLIANCE_CONSUMED_KEY = 'fenrir_appliance_locale_consumed';
 
@@ -63,10 +60,9 @@ export const i18nReady = i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    resources,
-    // resources only bundles en; other languages come from localeBackend.
-    partialBundledLanguages: true,
-    fallbackLng: 'en',
+    // No fallback language: it would make i18next fetch English beside every
+    // other locale. Parity across locales is enforced at build time instead.
+    fallbackLng: false,
     supportedLngs: SUPPORTED_LNGS,
 
     detection: {

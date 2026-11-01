@@ -10,16 +10,19 @@ import { server } from './mocks/server';
 import { batchesSettled } from '../api/batch';
 
 // Initialize i18n for tests (suppresses react-i18next warnings)
-import '../i18n';
+import { i18nReady } from '../i18n';
 
 // Setup MSW server
-beforeAll(() =>
+beforeAll(async () => {
   server.listen({
     // Bypass unhandled requests silently (don't warn, just let them through)
     // Handlers use wildcard (*) prefix to match any origin
     onUnhandledRequest: 'bypass',
-  })
-);
+  });
+  // English is a lazy locale like every other now; tests read its strings
+  // synchronously, so wait for it once before the first test.
+  await i18nReady;
+});
 afterEach(async () => {
   cleanup();
   // Let batched reads (api/batch.ts) a test started go out and be answered
