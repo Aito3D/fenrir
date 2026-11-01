@@ -76,6 +76,7 @@ from backend.app.services.print_cost_estimate import estimate_queue_source_cost
 # Fenrir: production traceability (projects as a PDM, phase 4).
 from backend.app.services.project_print_trace import PrintTraceError, record_queued, resolve_print_context
 from backend.app.services.queue_announcements import announce_queue_jobs_added
+from backend.app.services.queue_events import notify_queue_changed
 from backend.app.services.queue_item_printer import PRINTER_RESOLVED_DEFAULTS, drop_printer_resolved
 from backend.app.services.queue_position import lock_queue_positions, max_queue_position
 from backend.app.services.queue_trace_summary import attach_trace_summaries
@@ -1037,6 +1038,7 @@ async def clear_queue_history(
             kept += 1
         await db.flush()
     await db.commit()
+    await notify_queue_changed()
     await _refresh_batches_after_delete(db, deleted_batch_ids)
     _notify_dispatch_cancelled(item_ids)
 
@@ -1642,6 +1644,7 @@ async def add_to_queue(
             item.print_time_seconds = min(estimates) if estimates else None
 
     await db.commit()
+    await notify_queue_changed()
     # Read now: a slice start that fails below rolls back and expires them.
     item_ids = [i.id for i in items]
 
@@ -1809,6 +1812,7 @@ async def bulk_update_queue_items(
         updated_count += 1
 
     await db.commit()
+    await notify_queue_changed()
 
     logger.info("Bulk updated %s queue items, skipped %s", updated_count, skipped_count)
     return PrintQueueBulkUpdateResponse(
@@ -2016,6 +2020,7 @@ async def create_batch(
         batch.quantity = max(assigned, 1)
 
     await db.commit()
+    await notify_queue_changed()
     await db.refresh(batch)
 
     logger.info("Created batch %s '%s' with %s assigned items", batch.id, batch.name, assigned)
@@ -2089,6 +2094,7 @@ async def update_batch(
     # running order can complete it.
     await refresh_batch_status(db, batch)
     await db.commit()
+    await notify_queue_changed()
     await db.refresh(batch)
 
     logger.info("Updated batch %s", batch.id)
@@ -2183,6 +2189,7 @@ async def dispatch_batch(
     # Read before the settle: a settle that fails rolls back and expires them.
     created_ids = [item.id for item in created]
     await db.commit()
+    await notify_queue_changed()
     if waiting_file_ids:
         revision_ids = (
             (await db.execute(select(LibraryFile.revision_id).where(LibraryFile.id.in_(waiting_file_ids))))
@@ -2238,6 +2245,7 @@ async def ungroup_batch(
         await db.delete(batch)
 
     await db.commit()
+    await notify_queue_changed()
 
     logger.info("Ungrouped batch %s (%s items)", batch_id, ungrouped)
     return PrintBatchUngroupResponse(
@@ -2375,6 +2383,7 @@ async def cancel_batch(
 
     batch.status = "cancelled"
     await db.commit()
+    await notify_queue_changed()
 
     # Same as the single-item path: a dispatch already preheating for one of
     # these cannot see the status change on its own (#2727).
@@ -2698,6 +2707,7 @@ async def update_queue_item(
         setattr(item, field, value)
 
     await db.commit()
+    await notify_queue_changed()
     await db.refresh(item, ["archive", "printer", "library_file", "created_by", "batch"])
 
     logger.info("Updated queue item %s", item_id)
@@ -2794,6 +2804,7 @@ async def delete_queue_item(
     batch_id = item.batch_id
     keep_as_cancelled = not await _remove_queue_item(db, item)
     await db.commit()
+    await notify_queue_changed()
     if not keep_as_cancelled:
         await _refresh_batches_after_delete(db, [batch_id])
     _notify_dispatch_cancelled([item_id])
@@ -2826,6 +2837,7 @@ async def reorder_queue(
             item.position = reorder_item.position
 
     await db.commit()
+    await notify_queue_changed()
     logger.info("Reordered %s queue items", len(data.items))
     return {"message": f"Reordered {len(data.items)} items"}
 
@@ -2878,6 +2890,7 @@ async def resume_queue_after_failure(
         skipped_item.completed_at = None
 
     await db.commit()
+    await notify_queue_changed()
 
     logger.info(
         "Resume after failure on printer %s: acknowledged %d failure(s), restored %d skipped item(s)",
@@ -2918,6 +2931,7 @@ async def resume_model_queue_after_failure(
             failed_item.gate_acknowledged = True
             acknowledged += 1
         await db.commit()
+        await notify_queue_changed()
 
     logger.info(
         "Resume after failure for model %s: acknowledged %d failure(s) on %d printer(s)",
@@ -2966,6 +2980,7 @@ async def cancel_queue_item(
         status="released",
     )
     await db.commit()
+    await notify_queue_changed()
     await refresh_batches_after([item.id])
 
     # Stop an in-flight preheat for this item: the dispatch coroutine is
@@ -3023,6 +3038,7 @@ async def retry_queue_item_slice(
         rearm = rearm.where(scope_clause)
     await db.execute(rearm.values(status="slicing", error_message=None).execution_options(synchronize_session="fetch"))
     await db.commit()
+    await notify_queue_changed()
     await _start_slice_for_waiting_items(db, revision_id, actor)
 
     item = (
@@ -3158,6 +3174,7 @@ async def stop_queue_item(
         await release_budget_reservation(db, source_type="print_queue", source_id=item.id, status="released")
 
     await db.commit()
+    await notify_queue_changed()
     await refresh_batches_after([item.id])
     if closed_archive_id is not None:
         await ws_manager.send_archive_updated({"id": closed_archive_id, "status": "cancelled"})
@@ -3324,6 +3341,7 @@ async def start_queue_item(
     if user is not None and item.created_by_id is None:
         item.created_by_id = user.id
     await db.commit()
+    await notify_queue_changed()
     await db.refresh(item, ["archive", "printer", "library_file", "created_by", "batch"])
 
     logger.info(
