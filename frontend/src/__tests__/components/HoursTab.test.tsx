@@ -171,6 +171,22 @@ describe('HoursTab', () => {
     expect(window.location.search).not.toContain('machine=');
   });
 
+  it('Escape in the reading form opened from the panel keeps the panel', async () => {
+    serve();
+    render(<HoursTab />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Open X1C04' }));
+    const panel = await screen.findByRole('dialog');
+    await userEvent.click(within(panel).getByRole('button', { name: 'Take a reading' }));
+    await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(2));
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(1));
+    expect(screen.getByRole('heading', { name: 'X1C04' })).toBeInTheDocument();
+    expect(window.location.search).toContain('machine=1');
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(window.location.search).not.toContain('machine=');
+  });
+
   it('range segment switches and focus header shows the hovered machine', async () => {
     serve();
     const user = userEvent.setup();

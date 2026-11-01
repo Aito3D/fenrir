@@ -25,15 +25,19 @@ interface MachinePanelProps {
   onDeleteEvent: (id: number) => void;
   onSavePurchase: (machineId: number, body: { purchase_price: number | null; purchase_date: string | null }) => void;
   onClose: () => void;
+  /** True while a dialog opened from the panel (the reading form) is on top: Escape and backdrop clicks are its. */
+  suspendDismiss?: boolean;
 }
 
 /** Slide-over (bottom sheet on phones) for digging into one machine. */
 export function MachinePanel({
   machine, series, readings, events, today, color, currency, canEdit,
-  onEditDate, onAddEvent, onDeleteEvent, onSavePurchase, onClose,
+  onEditDate, onAddEvent, onDeleteEvent, onSavePurchase, onClose, suspendDismiss = false,
 }: MachinePanelProps) {
   const { t, i18n } = useTranslation();
-  const { requestClose, dialogRef } = useDismissableDialog(onClose);
+  const { requestClose, dialogRef } = useDismissableDialog(onClose, {
+    onEscape: (close) => { if (!suspendDismiss) close(); },
+  });
   const fmt = (n: number) => Math.round(n).toLocaleString(i18n.language);
   const fullFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' });
   const shortFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC', day: 'numeric', month: 'short' });
@@ -55,18 +59,14 @@ export function MachinePanel({
       .filter((r) => r.machine_id === machine.id && r.source === 'auto' && r.raw_hours != null)
       .map((r) => [r.reading_date, r.raw_hours as number]),
   );
-  const rows = [...series.manual].reverse().map((p, i, all) => {
-    const prev = all[i + 1];
-    const days = prev ? dayNumber(p.date) - dayNumber(prev.date) : 0;
-    const rate = prev && days > 0 ? Math.max(0, ((p.hours - prev.hours) / days) * 30.44) : null;
-    return { ...p, rate, raw: rawOn.get(p.date) };
-  });
+  const paceTo = new Map(periods.map((p) => [p.to, p.pace]));
+  const rows = [...series.manual].reverse().map((p) => ({ ...p, rate: paceTo.get(p.date) ?? null, raw: rawOn.get(p.date) }));
   const showCost = live && (canEdit || machine.purchase_price != null);
   const titleId = `hours-panel-title-${machine.id}`;
   const drifting = machine.trust === 'drifting';
 
   return (
-    <div data-testid="hours-panel-backdrop" className="fixed inset-0 z-40 bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget) requestClose(); }}>
+    <div data-testid="hours-panel-backdrop" className="fixed inset-0 z-40 bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget && !suspendDismiss) requestClose(); }}>
       <div
         ref={dialogRef}
         role="dialog"

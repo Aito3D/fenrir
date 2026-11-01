@@ -361,6 +361,7 @@ export function HoursTab() {
           onDeleteEvent={(id) => deleteEvent.mutate(id)}
           onSavePurchase={(machineId, body) => savePurchase.mutate({ machineId, body })}
           onClose={() => setPanelId(null)}
+          suspendDismiss={formDate !== null}
         />
       )}
       {formDate !== null && (
