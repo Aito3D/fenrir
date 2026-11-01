@@ -146,6 +146,14 @@ class HourMachineOut(BaseModel):
     model: str | None
     retired: bool
     current_hours: float | None  # Fenrir's live counter; None for retired machines
+    trust: Literal["calibrated", "drifting", "uncalibrated"] | None = None  # None when retired
+    last_drift_hours: float | None = None
+    calibrated_at: datetime | None = None
+    counter_raw_hours: float | None = None  # runtime only, without the baseline offset
+    next_service_hours: float | None = None  # only for calibrated / drifting counters
+    purchase_price: float | None = None
+    purchase_date: date | None = None
+    added_on: date | None = None
 
 
 class HourReadingOut(BaseModel):
@@ -156,12 +164,27 @@ class HourReadingOut(BaseModel):
     reading_date: date
     hours: float
     source: Literal["manual", "auto"]
+    raw_hours: float | None = None
+
+
+class HourEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    machine_id: int
+    event_date: date
+    kind: str
+    label: str
+    source_id: int | None = None
 
 
 class HoursOverview(BaseModel):
     today: date  # the server's date — the UI's "today" for defaults and the recalibration rule
     machines: list[HourMachineOut]
     readings: list[HourReadingOut]
+    events: list[HourEventOut] = []
+    reading_interval_days: int = 90
+    due_machine_ids: list[int] = []
 
 
 class HourReadingEntry(BaseModel):

@@ -175,6 +175,31 @@ async def next_service_hours(db: AsyncSession, printer_id: int) -> float | None:
     return min(due) if due else None
 
 
+DEFAULT_READING_INTERVAL_DAYS = 90
+
+
+async def reading_interval_days(db: AsyncSession) -> int:
+    """Days after which a manual reading is stale (setting ``hours_reading_interval_days``, default 90)."""
+    from backend.app.api.routes.settings import get_setting  # route imports this module
+
+    try:
+        value = int(await get_setting(db, "hours_reading_interval_days") or DEFAULT_READING_INTERVAL_DAYS)
+    except ValueError:
+        return DEFAULT_READING_INTERVAL_DAYS
+    return value if value > 0 else DEFAULT_READING_INTERVAL_DAYS
+
+
+def due_machine_ids(machines, readings, interval_days: int, today: date) -> list[int]:
+    """Live machines whose newest manual reading is older than ``interval_days`` days, or missing."""
+    newest: dict[int, date] = {}
+    for r in readings:
+        if r.source == SOURCE_MANUAL and r.reading_date > newest.get(r.machine_id, date.min):
+            newest[r.machine_id] = r.reading_date
+    return [
+        m.id for m in machines if not m.retired and (m.id not in newest or (today - newest[m.id]).days > interval_days)
+    ]
+
+
 async def upsert_reading(
     db: AsyncSession,
     machine_id: int,

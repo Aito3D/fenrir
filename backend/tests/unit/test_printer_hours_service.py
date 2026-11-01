@@ -374,3 +374,40 @@ async def test_next_service_hours_none_without_hours_items(db_session, printer_f
     p = await printer_factory(name="X1C24")
     await _disable_default_items(db_session, p.id)
     assert await next_service_hours(db_session, p.id) is None
+
+
+def test_due_machine_ids_flags_stale_or_missing_manual_readings():
+    from types import SimpleNamespace
+
+    from backend.app.services.printer_hours import due_machine_ids
+
+    def machine(mid, retired=False):
+        return SimpleNamespace(id=mid, retired=retired)
+
+    def reading(mid, d, source="manual"):
+        return SimpleNamespace(machine_id=mid, reading_date=d, source=source)
+
+    today = date(2026, 11, 1)
+    machines = [machine(1), machine(2), machine(3), machine(4), machine(5, retired=True)]
+    readings = [
+        reading(1, date(2026, 10, 1)),  # 31 days: fresh
+        reading(2, date(2026, 7, 1)),  # 123 days: stale
+        reading(2, date(2026, 10, 30), source="auto"),  # auto never counts
+        reading(3, date(2026, 8, 3)),  # exactly 90 days: not yet due
+    ]
+    assert due_machine_ids(machines, readings, 90, today) == [2, 4]
+
+
+@pytest.mark.asyncio
+async def test_reading_interval_days_defaults_and_parses(db_session):
+    from backend.app.models.settings import Settings
+    from backend.app.services.printer_hours import reading_interval_days
+
+    assert await reading_interval_days(db_session) == 90
+    db_session.add(Settings(key="hours_reading_interval_days", value="30"))
+    await db_session.commit()
+    assert await reading_interval_days(db_session) == 30
+    row = (await db_session.execute(select(Settings))).scalars().one()
+    row.value = "soon"
+    await db_session.commit()
+    assert await reading_interval_days(db_session) == 90

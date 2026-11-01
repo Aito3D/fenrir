@@ -1,7 +1,7 @@
 """Maintenance → Hours tab: lifetime-hours history per machine."""
 
 import logging
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, select
@@ -11,10 +11,11 @@ from backend.app.api.routes.maintenance import notify_maintenance_attention
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
-from backend.app.models.maintenance import HourMachine, HourReading
+from backend.app.models.maintenance import HourEvent, HourMachine, HourReading
 from backend.app.models.printer import Printer
 from backend.app.models.user import User
 from backend.app.schemas.maintenance import (
+    HourEventOut,
     HourImportBody,
     HourImportResult,
     HourMachineOut,
@@ -25,9 +26,15 @@ from backend.app.schemas.maintenance import (
 )
 from backend.app.services.printer_hours import (
     SOURCE_MANUAL,
+    added_on,
     calibrate_machine,
     current_hours,
+    due_machine_ids,
     ensure_hour_machines,
+    next_service_hours,
+    reading_interval_days,
+    sync_events,
+    trust_state,
     upsert_reading,
 )
 
@@ -36,31 +43,70 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/maintenance/hours", tags=["maintenance"])
 
 
+async def _machine_out(
+    db: AsyncSession,
+    m: HourMachine,
+    printer: tuple[int, float, datetime | None] | None,
+    manual: list[HourReading],
+) -> HourMachineOut:
+    """One machine's row: live counter, trust, service threshold and join date."""
+    live = printer is not None and not m.retired
+    runtime, offset, created = printer or (0, 0.0, None)
+    trust, drift = trust_state(m, manual[-1].hours if manual else None)
+    next_service = None
+    if live and trust in ("calibrated", "drifting"):
+        try:
+            next_service = await next_service_hours(db, m.printer_id)
+        except HTTPException:  # printer deleted since ensure_hour_machines
+            next_service = None
+    return HourMachineOut(
+        id=m.id,
+        printer_id=m.printer_id,
+        name=m.name,
+        model=m.model,
+        retired=m.retired,
+        current_hours=round(current_hours(runtime, offset), 1) if live else None,
+        trust=trust,
+        last_drift_hours=drift,
+        calibrated_at=m.calibrated_at,
+        counter_raw_hours=(runtime or 0) / 3600.0 if live else None,
+        next_service_hours=next_service,
+        purchase_price=m.purchase_price,
+        purchase_date=m.purchase_date,
+        added_on=added_on(m, manual[0].reading_date if manual else None, created.date() if created else None),
+    )
+
+
 async def _overview(db: AsyncSession, today: date | None = None) -> HoursOverview:
+    today = today or date.today()
     machines = await ensure_hour_machines(db)
-    rows = (await db.execute(select(Printer.id, Printer.runtime_seconds, Printer.print_hours_offset))).all()
-    hours_by_printer = {pid: current_hours(runtime, offset) for pid, runtime, offset in rows}
+    await sync_events(db, machines)
+    rows = (
+        await db.execute(select(Printer.id, Printer.runtime_seconds, Printer.print_hours_offset, Printer.created_at))
+    ).all()
+    printers = {pid: (runtime, offset, created) for pid, runtime, offset, created in rows}
     readings = (
-        await db.execute(select(HourReading).order_by(HourReading.reading_date, HourReading.machine_id, HourReading.id))
-    ).scalars()
-    return HoursOverview(
-        today=today or date.today(),
-        machines=[
-            HourMachineOut(
-                id=m.id,
-                printer_id=m.printer_id,
-                name=m.name,
-                model=m.model,
-                retired=m.retired,
-                current_hours=(
-                    None
-                    if m.retired or m.printer_id not in hours_by_printer
-                    else round(hours_by_printer[m.printer_id], 1)
-                ),
+        (
+            await db.execute(
+                select(HourReading).order_by(HourReading.reading_date, HourReading.machine_id, HourReading.id)
             )
-            for m in machines
-        ],
+        )
+        .scalars()
+        .all()
+    )
+    events = (await db.execute(select(HourEvent).order_by(HourEvent.event_date, HourEvent.id))).scalars().all()
+    manual: dict[int, list[HourReading]] = {}
+    for r in readings:
+        if r.source == SOURCE_MANUAL:
+            manual.setdefault(r.machine_id, []).append(r)
+    interval = await reading_interval_days(db)
+    return HoursOverview(
+        today=today,
+        machines=[await _machine_out(db, m, printers.get(m.printer_id), manual.get(m.id, [])) for m in machines],
         readings=[HourReadingOut.model_validate(r) for r in readings],
+        events=[HourEventOut.model_validate(e) for e in events],
+        reading_interval_days=interval,
+        due_machine_ids=due_machine_ids(machines, readings, interval, today),
     )
 
 

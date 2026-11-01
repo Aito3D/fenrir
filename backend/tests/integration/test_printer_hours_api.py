@@ -316,3 +316,53 @@ async def test_status_set_hours_calibrates_machine(async_client: AsyncClient, pr
     machine = (await db_session.execute(select(HourMachine).where(HourMachine.printer_id == p.id))).scalar_one()
     await db_session.refresh(machine)
     assert machine.calibrated_at is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestHoursOverviewPayload:
+    async def test_overview_carries_trust_events_and_due(self, async_client: AsyncClient, printer_factory):
+        await printer_factory(name="X1C20", runtime_seconds=3600 * 10)
+        m = await _machine_for(async_client, "X1C20")
+        await async_client.post(
+            f"{BASE}/readings",
+            json={"reading_date": "2026-04-25", "entries": [{"machine_id": m["id"], "hours": 3336}]},
+        )
+        data = (await async_client.get(BASE)).json()
+        m = next(x for x in data["machines"] if x["name"] == "X1C20")
+        assert m["trust"] == "uncalibrated"
+        assert m["next_service_hours"] is None
+        assert m["counter_raw_hours"] == 10.0
+        assert m["added_on"] == "2026-04-25"
+        assert m["calibrated_at"] is None
+        assert data["reading_interval_days"] == 90
+        assert m["id"] in data["due_machine_ids"]
+        # the event was written by the first overview, before the backdated reading existed
+        assert [e["kind"] for e in data["events"] if e["machine_id"] == m["id"]] == ["added"]
+        assert [r["raw_hours"] for r in data["readings"]] == [None]
+
+    async def test_overview_next_service_only_when_calibrated(
+        self, async_client: AsyncClient, printer_factory, monkeypatch
+    ):
+        from backend.app.api.routes import printer_hours as route
+
+        async def fake_next(_db, _printer_id):
+            return 4000.0
+
+        monkeypatch.setattr(route, "next_service_hours", fake_next)
+        await printer_factory(name="X1C21", runtime_seconds=3600 * 10)
+        await printer_factory(name="X1C22", runtime_seconds=3600 * 10)
+        m = await _machine_for(async_client, "X1C21")
+        today = date.today().isoformat()
+        await async_client.post(
+            f"{BASE}/readings", json={"reading_date": today, "entries": [{"machine_id": m["id"], "hours": 3000}]}
+        )
+        data = (await async_client.get(BASE)).json()
+        calibrated = next(x for x in data["machines"] if x["name"] == "X1C21")
+        fresh = next(x for x in data["machines"] if x["name"] == "X1C22")
+        assert calibrated["trust"] in ("calibrated", "drifting")
+        assert calibrated["calibrated_at"] is not None
+        assert calibrated["next_service_hours"] == 4000.0
+        assert fresh["trust"] == "uncalibrated"
+        assert fresh["next_service_hours"] is None
+        assert calibrated["id"] not in data["due_machine_ids"]
