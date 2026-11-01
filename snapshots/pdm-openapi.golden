@@ -57,6 +57,61 @@
     "aito"
    ]
   },
+  "DELETE /api/v1/projects/folders/{folder_id}": {
+   "description": "Delete a folder; its projects and sub-folders move up to its parent.",
+   "operationId": "delete_project_folder_api_v1_projects_folders__folder_id__delete",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "folder_id",
+     "required": true,
+     "schema": {
+      "title": "Folder Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "204": {
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Delete Project Folder",
+   "tags": [
+    "projects"
+   ]
+  },
   "DELETE /api/v1/projects/items/{item_id}": {
    "operationId": "delete_item_api_v1_projects_items__item_id__delete",
    "parameters": [
@@ -107,6 +162,60 @@
     }
    ],
    "summary": "Delete Item",
+   "tags": [
+    "projects"
+   ]
+  },
+  "DELETE /api/v1/projects/revisions/pins/{pin_id}": {
+   "operationId": "delete_revision_pin_api_v1_projects_revisions_pins__pin_id__delete",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "pin_id",
+     "required": true,
+     "schema": {
+      "title": "Pin Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "204": {
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Delete Revision Pin",
    "tags": [
     "projects"
    ]
@@ -2093,6 +2202,173 @@
     "projects"
    ]
   },
+  "GET /api/v1/projects/catalog": {
+   "description": "The Projects catalog: every matching project with the facts its row and pane show, newest\nactivity first. The search also covers folders, clients, order numbers, item and file names.",
+   "operationId": "project_catalog_list_api_v1_projects_catalog_get",
+   "parameters": [
+    {
+     "in": "query",
+     "name": "q",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Q"
+     }
+    },
+    {
+     "in": "query",
+     "name": "tag_ids",
+     "required": false,
+     "schema": {
+      "default": [],
+      "items": {
+       "type": "integer"
+      },
+      "maxItems": 200,
+      "title": "Tag Ids",
+      "type": "array"
+     }
+    },
+    {
+     "in": "query",
+     "name": "tag_mode",
+     "required": false,
+     "schema": {
+      "default": "any",
+      "enum": [
+       "any",
+       "all"
+      ],
+      "title": "Tag Mode",
+      "type": "string"
+     }
+    },
+    {
+     "in": "query",
+     "name": "status",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectCatalogResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Project Catalog List",
+   "tags": [
+    "projects"
+   ]
+  },
+  "GET /api/v1/projects/folders": {
+   "description": "The catalog's folder tree, each folder with its subtree's project counts.",
+   "operationId": "list_project_folders_api_v1_projects_folders_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectFoldersResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Project Folders",
+   "tags": [
+    "projects"
+   ]
+  },
   "GET /api/v1/projects/legacy-migration/status": {
    "description": "Progress of the current (or last) run; ``pending`` = projects still to migrate.",
    "operationId": "get_legacy_migration_status_api_v1_projects_legacy_migration_status_get",
@@ -2218,6 +2494,72 @@
     }
    ],
    "summary": "Download Revision",
+   "tags": [
+    "projects"
+   ]
+  },
+  "GET /api/v1/projects/revisions/{revision_id}/pins": {
+   "description": "The notes pinned on this revision's part (the part viewer), oldest first.",
+   "operationId": "list_revision_pins_api_v1_projects_revisions__revision_id__pins_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "revision_id",
+     "required": true,
+     "schema": {
+      "title": "Revision Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/RevisionPinOut"
+        },
+        "title": "Response List Revision Pins Api V1 Projects Revisions  Revision Id  Pins Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Revision Pins",
    "tags": [
     "projects"
    ]
@@ -2536,7 +2878,7 @@
    ]
   },
   "GET /api/v1/projects/{project_id}/archives": {
-   "description": "List archives in a project.",
+   "description": "List the archives of a project the caller may see in the archives.",
    "operationId": "list_project_archives_api_v1_projects__project_id__archives_get",
    "parameters": [
     {
@@ -2956,7 +3298,7 @@
    ]
   },
   "GET /api/v1/projects/{project_id}/queue": {
-   "description": "List queue items in a project.",
+   "description": "List the queue items of a project the caller may see in the queue.",
    "operationId": "list_project_queue_api_v1_projects__project_id__queue_get",
    "parameters": [
     {
@@ -3016,7 +3358,7 @@
    ]
   },
   "GET /api/v1/projects/{project_id}/timeline": {
-   "description": "Get timeline of events for a project.",
+   "description": "Get timeline of events for a project, from the archives and queue items\nthe caller may see there.",
    "operationId": "get_project_timeline_api_v1_projects__project_id__timeline_get",
    "parameters": [
     {
@@ -3657,6 +3999,78 @@
     "archives"
    ]
   },
+  "PATCH /api/v1/projects/folders/{folder_id}": {
+   "description": "Rename and/or move a folder; moving it under itself is refused (409).",
+   "operationId": "update_project_folder_api_v1_projects_folders__folder_id__patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "folder_id",
+     "required": true,
+     "schema": {
+      "title": "Folder Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/ProjectFolderUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectFolderOut"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Update Project Folder",
+   "tags": [
+    "projects"
+   ]
+  },
   "PATCH /api/v1/projects/items/{item_id}": {
    "operationId": "rename_item_api_v1_projects_items__item_id__patch",
    "parameters": [
@@ -3948,6 +4362,78 @@
     }
    ],
    "summary": "Update Bom Item",
+   "tags": [
+    "projects"
+   ]
+  },
+  "PATCH /api/v1/projects/{project_id}/folder": {
+   "description": "File the project in a folder (``folder_id`` null takes it out of any folder).",
+   "operationId": "move_project_to_folder_api_v1_projects__project_id__folder_patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/ProjectFolderMove"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectFolderMoveOut"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Move Project To Folder",
    "tags": [
     "projects"
    ]
@@ -5722,6 +6208,68 @@
     "projects"
    ]
   },
+  "POST /api/v1/projects/folders": {
+   "operationId": "create_project_folder_api_v1_projects_folders_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/ProjectFolderCreate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "201": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectFolderOut"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Create Project Folder",
+   "tags": [
+    "projects"
+   ]
+  },
   "POST /api/v1/projects/from-template/{template_id}": {
    "description": "Create a new project from a template.",
    "operationId": "create_project_from_template_api_v1_projects_from_template__template_id__post",
@@ -6183,6 +6731,77 @@
     "projects"
    ]
   },
+  "POST /api/v1/projects/revisions/{revision_id}/pins": {
+   "operationId": "create_revision_pin_api_v1_projects_revisions__revision_id__pins_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "revision_id",
+     "required": true,
+     "schema": {
+      "title": "Revision Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/RevisionPinCreate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "201": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RevisionPinOut"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Create Revision Pin",
+   "tags": [
+    "projects"
+   ]
+  },
   "POST /api/v1/projects/revisions/{revision_id}/reslice": {
    "description": "Re-trancher (spec \u00a712.1): slice one 3MF of this revision with a saved pipeline in the\nbackground; the result becomes the next revision of the same item. Poll ``status_url``.",
    "operationId": "reslice_revision_api_v1_projects_revisions__revision_id__reslice_post",
@@ -6313,6 +6932,78 @@
     }
    ],
    "summary": "Slice Revision",
+   "tags": [
+    "projects"
+   ]
+  },
+  "POST /api/v1/projects/revisions/{revision_id}/sliced-file": {
+   "description": "Hand-slice fallback (design 2026-10-30): the sliced plate file (.gcode.3mf) Bambu Studio exported\nfrom the revision's project, for a revision whose server slice failed. Checked for plate G-code and\nfor settings matching the revision's print profile, then stored exactly like a server slice; the\nqueue items waiting on the revision follow it.",
+   "operationId": "upload_sliced_file_api_v1_projects_revisions__revision_id__sliced_file_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "revision_id",
+     "required": true,
+     "schema": {
+      "title": "Revision Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "multipart/form-data": {
+      "schema": {
+       "$ref": "#/components/schemas/Body_upload_sliced_file_api_v1_projects_revisions__revision_id__sliced_file_post"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectRevisionOut"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Upload Sliced File",
    "tags": [
     "projects"
    ]
@@ -8468,6 +9159,18 @@
      "title": "Document Numbers",
      "type": "array"
     },
+    "done_at": {
+     "anyOf": [
+      {
+       "format": "date-time",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Done At"
+    },
     "due_date": {
      "anyOf": [
       {
@@ -8954,6 +9657,7 @@
     "quote_invoiced",
     "flag",
     "client_contacted_at",
+    "done_at",
     "due_date",
     "tracking_configured",
     "quote_sync_error",
@@ -11050,6 +11754,135 @@
    "title": "Body_upload_revision_api_v1_projects_items__item_id__revisions_post",
    "type": "object"
   },
+  "Body_upload_sliced_file_api_v1_projects_revisions__revision_id__sliced_file_post": {
+   "properties": {
+    "file": {
+     "contentMediaType": "application/octet-stream",
+     "title": "File",
+     "type": "string"
+    }
+   },
+   "required": [
+    "file"
+   ],
+   "title": "Body_upload_sliced_file_api_v1_projects_revisions__revision_id__sliced_file_post",
+   "type": "object"
+  },
+  "CatalogOpenOrder": {
+   "properties": {
+    "client_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Client Name"
+    },
+    "order_id": {
+     "title": "Order Id",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "order_id",
+    "client_name"
+   ],
+   "title": "CatalogOpenOrder",
+   "type": "object"
+  },
+  "CatalogRecommended": {
+   "description": "The revision the catalog offers to print: newest approved sliced one, else newest sliced.",
+   "properties": {
+    "filament_types": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Filament Types",
+     "type": "array"
+    },
+    "filament_used_grams": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Used Grams"
+    },
+    "item_id": {
+     "title": "Item Id",
+     "type": "integer"
+    },
+    "item_name": {
+     "title": "Item Name",
+     "type": "string"
+    },
+    "nozzle_diameter": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle Diameter"
+    },
+    "number": {
+     "title": "Number",
+     "type": "integer"
+    },
+    "print_time_seconds": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Print Time Seconds"
+    },
+    "printer_model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Printer Model"
+    },
+    "revision_id": {
+     "title": "Revision Id",
+     "type": "integer"
+    },
+    "status": {
+     "title": "Status",
+     "type": "string"
+    }
+   },
+   "required": [
+    "item_id",
+    "item_name",
+    "revision_id",
+    "number",
+    "status",
+    "printer_model",
+    "nozzle_diameter",
+    "filament_types",
+    "print_time_seconds",
+    "filament_used_grams"
+   ],
+   "title": "CatalogRecommended",
+   "type": "object"
+  },
   "DropFilesError": {
    "description": "Files a partly failed drop did not store: the group that failed and the groups after it (never tried).",
    "properties": {
@@ -11675,6 +12508,161 @@
    "title": "OrderProjectLinks",
    "type": "object"
   },
+  "ProjectCatalogItem": {
+   "properties": {
+    "client_names": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Client Names",
+     "type": "array"
+    },
+    "code": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Code"
+    },
+    "description": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Description"
+    },
+    "files_count": {
+     "title": "Files Count",
+     "type": "integer"
+    },
+    "folder_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Folder Id"
+    },
+    "has_unsliced_only": {
+     "title": "Has Unsliced Only",
+     "type": "boolean"
+    },
+    "id": {
+     "title": "Id",
+     "type": "integer"
+    },
+    "last_activity": {
+     "format": "date-time",
+     "title": "Last Activity",
+     "type": "string"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "open_orders": {
+     "items": {
+      "$ref": "#/components/schemas/CatalogOpenOrder"
+     },
+     "title": "Open Orders",
+     "type": "array"
+    },
+    "printed_count": {
+     "title": "Printed Count",
+     "type": "integer"
+    },
+    "recommended": {
+     "anyOf": [
+      {
+       "$ref": "#/components/schemas/CatalogRecommended"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "status": {
+     "title": "Status",
+     "type": "string"
+    },
+    "tags": {
+     "items": {
+      "$ref": "#/components/schemas/ProjectTagRef"
+     },
+     "title": "Tags",
+     "type": "array"
+    },
+    "target_count": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Target Count"
+    },
+    "thumbnail_file_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Thumbnail File Id"
+    }
+   },
+   "required": [
+    "id",
+    "code",
+    "name",
+    "description",
+    "status",
+    "folder_id",
+    "tags",
+    "client_names",
+    "open_orders",
+    "files_count",
+    "recommended",
+    "has_unsliced_only",
+    "printed_count",
+    "target_count",
+    "last_activity",
+    "thumbnail_file_id"
+   ],
+   "title": "ProjectCatalogItem",
+   "type": "object"
+  },
+  "ProjectCatalogResponse": {
+   "properties": {
+    "items": {
+     "items": {
+      "$ref": "#/components/schemas/ProjectCatalogItem"
+     },
+     "title": "Items",
+     "type": "array"
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "title": "ProjectCatalogResponse",
+   "type": "object"
+  },
   "ProjectChildPreview": {
    "description": "A sub-project as listed on its parent's page.\n\nThe figures cover the child's *own* subtree, not just its own prints, so\nthe listed rows add up to the parent's roll-up minus the parent's own\nprints (#1264).",
    "properties": {
@@ -11930,6 +12918,28 @@
      "title": "Created At",
      "type": "string"
     },
+    "filament_color": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Color"
+    },
+    "filament_type": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Type"
+    },
     "filament_used_grams": {
      "anyOf": [
       {
@@ -11940,6 +12950,17 @@
       }
      ],
      "title": "Filament Used Grams"
+    },
+    "filament_vendor": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Vendor"
     },
     "file_hash": {
      "anyOf": [
@@ -11972,6 +12993,44 @@
      "title": "Id",
      "type": "integer"
     },
+    "layer_height": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Layer Height"
+    },
+    "nozzle_diameter": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle Diameter"
+    },
+    "object_count": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Object Count"
+    },
+    "print_count": {
+     "default": 0,
+     "title": "Print Count",
+     "type": "integer"
+    },
     "print_time_seconds": {
      "anyOf": [
       {
@@ -11982,6 +13041,36 @@
       }
      ],
      "title": "Print Time Seconds"
+    },
+    "sliced_for_model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Sliced For Model"
+    },
+    "tag_ids": {
+     "default": [],
+     "items": {
+      "type": "integer"
+     },
+     "title": "Tag Ids",
+     "type": "array"
+    },
+    "total_layers": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Total Layers"
     }
    },
    "required": [
@@ -12013,6 +13102,162 @@
     "completed_count"
    ],
    "title": "ProjectFileProgress",
+   "type": "object"
+  },
+  "ProjectFolderCreate": {
+   "properties": {
+    "name": {
+     "maxLength": 255,
+     "minLength": 1,
+     "title": "Name",
+     "type": "string"
+    },
+    "parent_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Parent Id"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "title": "ProjectFolderCreate",
+   "type": "object"
+  },
+  "ProjectFolderMove": {
+   "description": "``PATCH /projects/{id}/folder``: file the project (``null`` = no folder; the column is\nnullable, so the mixin keeps the null).",
+   "properties": {
+    "folder_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Folder Id"
+    }
+   },
+   "title": "ProjectFolderMove",
+   "type": "object"
+  },
+  "ProjectFolderMoveOut": {
+   "properties": {
+    "folder_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Folder Id"
+    },
+    "id": {
+     "title": "Id",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "id",
+    "folder_id"
+   ],
+   "title": "ProjectFolderMoveOut",
+   "type": "object"
+  },
+  "ProjectFolderOut": {
+   "properties": {
+    "id": {
+     "title": "Id",
+     "type": "integer"
+    },
+    "in_production_count": {
+     "title": "In Production Count",
+     "type": "integer"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "parent_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Parent Id"
+    },
+    "project_count": {
+     "title": "Project Count",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "id",
+    "name",
+    "parent_id",
+    "project_count",
+    "in_production_count"
+   ],
+   "title": "ProjectFolderOut",
+   "type": "object"
+  },
+  "ProjectFolderUpdate": {
+   "description": "``parent_id`` is only applied when sent (``null`` moves the folder to the root); a null\n``name`` is dropped by the mixin (NOT NULL column) and reads as \"unchanged\".",
+   "properties": {
+    "name": {
+     "anyOf": [
+      {
+       "maxLength": 255,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Name"
+    },
+    "parent_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Parent Id"
+    }
+   },
+   "title": "ProjectFolderUpdate",
+   "type": "object"
+  },
+  "ProjectFoldersResponse": {
+   "properties": {
+    "folders": {
+     "items": {
+      "$ref": "#/components/schemas/ProjectFolderOut"
+     },
+     "title": "Folders",
+     "type": "array"
+    }
+   },
+   "required": [
+    "folders"
+   ],
+   "title": "ProjectFoldersResponse",
    "type": "object"
   },
   "ProjectImport": {
@@ -13968,6 +15213,88 @@
     "status_url"
    ],
    "title": "ResliceStarted",
+   "type": "object"
+  },
+  "RevisionPinCreate": {
+   "description": "A note pinned at a point of the part, in printer millimetres.",
+   "properties": {
+    "text": {
+     "maxLength": 500,
+     "minLength": 1,
+     "title": "Text",
+     "type": "string"
+    },
+    "x": {
+     "title": "X",
+     "type": "number"
+    },
+    "y": {
+     "title": "Y",
+     "type": "number"
+    },
+    "z": {
+     "title": "Z",
+     "type": "number"
+    }
+   },
+   "required": [
+    "x",
+    "y",
+    "z",
+    "text"
+   ],
+   "title": "RevisionPinCreate",
+   "type": "object"
+  },
+  "RevisionPinOut": {
+   "properties": {
+    "created_at": {
+     "format": "date-time",
+     "title": "Created At",
+     "type": "string"
+    },
+    "created_by": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Created By"
+    },
+    "id": {
+     "title": "Id",
+     "type": "integer"
+    },
+    "text": {
+     "title": "Text",
+     "type": "string"
+    },
+    "x": {
+     "title": "X",
+     "type": "number"
+    },
+    "y": {
+     "title": "Y",
+     "type": "number"
+    },
+    "z": {
+     "title": "Z",
+     "type": "number"
+    }
+   },
+   "required": [
+    "id",
+    "x",
+    "y",
+    "z",
+    "text",
+    "created_by",
+    "created_at"
+   ],
+   "title": "RevisionPinOut",
    "type": "object"
   },
   "RevisionRef": {

@@ -12,8 +12,8 @@
 1 RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ)
 6 RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE)
 3 RequirePermissionIfAuthEnabled(Permission.PROJECTS_DELETE)
-16 RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ)
-22 RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE)
+19 RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ)
+29 RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE)
 2 RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE)
 
 ### stderr:

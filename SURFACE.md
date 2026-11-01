@@ -73,6 +73,11 @@ client method — and fails the iteration unless the user approved it.
 /api/v1/projects/ ['POST']
 /api/v1/projects/ai/reformulate ['POST']
 /api/v1/projects/ai/suggest-tags ['POST']
+/api/v1/projects/catalog ['GET']
+/api/v1/projects/folders ['GET']
+/api/v1/projects/folders ['POST']
+/api/v1/projects/folders/{folder_id} ['PATCH']
+/api/v1/projects/folders/{folder_id} ['DELETE']
 /api/v1/projects/from-template/{template_id} ['POST']
 /api/v1/projects/import ['POST']
 /api/v1/projects/import/file ['POST']
@@ -82,13 +87,17 @@ client method — and fails the iteration unless the user approved it.
 /api/v1/projects/items/{item_id}/revisions ['POST']
 /api/v1/projects/legacy-migration/start ['POST']
 /api/v1/projects/legacy-migration/status ['GET']
+/api/v1/projects/revisions/pins/{pin_id} ['DELETE']
 /api/v1/projects/revisions/{revision_id} ['PATCH']
 /api/v1/projects/revisions/{revision_id} ['DELETE']
 /api/v1/projects/revisions/{revision_id}/download ['GET']
 /api/v1/projects/revisions/{revision_id}/files ['POST']
 /api/v1/projects/revisions/{revision_id}/files/{file_id} ['DELETE']
+/api/v1/projects/revisions/{revision_id}/pins ['GET']
+/api/v1/projects/revisions/{revision_id}/pins ['POST']
 /api/v1/projects/revisions/{revision_id}/reslice ['POST']
 /api/v1/projects/revisions/{revision_id}/slice ['POST']
+/api/v1/projects/revisions/{revision_id}/sliced-file ['POST']
 /api/v1/projects/search ['GET']
 /api/v1/projects/tags ['GET']
 /api/v1/projects/templates ['GET']
@@ -108,6 +117,7 @@ client method — and fails the iteration unless the user approved it.
 /api/v1/projects/{project_id}/create-template ['POST']
 /api/v1/projects/{project_id}/export ['GET']
 /api/v1/projects/{project_id}/file-progress ['GET']
+/api/v1/projects/{project_id}/folder ['PATCH']
 /api/v1/projects/{project_id}/import-library-files ['POST']
 /api/v1/projects/{project_id}/items ['POST']
 /api/v1/projects/{project_id}/orders ['GET']
@@ -125,9 +135,11 @@ client method — and fails the iteration unless the user approved it.
 @router.delete("/{project_id}")
 @router.delete("/{project_id}/bom/{item_id}")
 @router.delete("/{project_id}/cover-image")
+@router.delete("/folders/{folder_id}", status_code=204, response_model=None)
 @router.delete("/items/{item_id}", status_code=204, response_model=None)
 @router.delete("/revisions/{revision_id}", status_code=204, response_model=None)
 @router.delete("/revisions/{revision_id}/files/{file_id}", status_code=204, response_model=None)
+@router.delete("/revisions/pins/{pin_id}", status_code=204, response_model=None)
 @router.get("", response_model=list[ProjectListResponse])
 @router.get("/", response_model=list[ProjectListResponse])
 @router.get("/{order_id}/project-links")
@@ -141,15 +153,20 @@ client method — and fails the iteration unless the user approved it.
 @router.get("/{project_id}/queue")
 @router.get("/{project_id}/timeline", response_model=list[TimelineEvent])
 @router.get("/{project_id}/tree", response_model=ProjectTreeResponse)
+@router.get("/catalog", response_model=ProjectCatalogResponse)
+@router.get("/folders", response_model=ProjectFoldersResponse)
 @router.get("/legacy-migration/status", response_model=LegacyMigrationStatus)
 @router.get("/project-codes")
 @router.get("/revisions/{revision_id}/download")
+@router.get("/revisions/{revision_id}/pins", response_model=list[RevisionPinOut])
 @router.get("/search", response_model=ProjectSearchResponse)
 @router.get("/tags", response_model=list[ProjectTagCount])
 @router.get("/tasks/{task_id}/project-suggestions")
 @router.get("/templates", response_model=list[ProjectListResponse])
 @router.patch("/{project_id}", response_model=ProjectResponse)
 @router.patch("/{project_id}/bom/{item_id}", response_model=BOMItemResponse)
+@router.patch("/{project_id}/folder", response_model=ProjectFolderMoveOut)
+@router.patch("/folders/{folder_id}", response_model=ProjectFolderOut)
 @router.patch("/items/{item_id}", response_model=ProjectItemOut)
 @router.patch("/revisions/{revision_id}", response_model=ProjectRevisionOut)
 @router.post("/", response_model=ProjectResponse)
@@ -163,11 +180,13 @@ client method — and fails the iteration unless the user approved it.
 @router.post("/{project_id}/remove-archives")
 @router.post("/ai/reformulate", response_model=ProjectReformulateResponse)
 @router.post("/ai/suggest-tags", response_model=ProjectSuggestTagsResponse)
+@router.post("/folders", response_model=ProjectFolderOut, status_code=201)
 @router.post("/from-template/{template_id}", response_model=ProjectResponse)
 @router.post("/import", response_model=ProjectResponse)
 @router.post("/import/file", response_model=ProjectResponse)
 @router.post("/items/{item_id}/fork", response_model=ProjectItemOut, status_code=201)
 @router.post("/legacy-migration/start", response_model=LegacyMigrationStatus, status_code=202)
+@router.post("/revisions/{revision_id}/pins", response_model=RevisionPinOut, status_code=201)
 @router.post("/revisions/{revision_id}/reslice", response_model=ResliceStarted, status_code=202)
 @router.post("/revisions/{revision_id}/slice", response_model=RevisionSliceStarted, status_code=202)
 @router.post("/tasks/{task_id}/project", status_code=201)
@@ -175,6 +194,7 @@ client method — and fails the iteration unless the user approved it.
 @router.put("/tasks/{task_id}/project")
 @upload_router.post("/items/{item_id}/revisions", response_model=RevisionUploadResponse, status_code=201)
 @upload_router.post("/revisions/{revision_id}/files")
+@upload_router.post("/revisions/{revision_id}/sliced-file", response_model=ProjectRevisionOut)
 ```
 
 ## Backend public callables (routes + services)
@@ -185,26 +205,34 @@ async def add_files(
 async def add_queue_items_to_project(
 async def add_revision_from_sources(
 async def add_revision(
+async def all_folders(db: AsyncSession)
 async def apply_project_tag_input(
 async def auto_file_by_code(
 async def auto_file_enabled(db: AsyncSession)
 async def broadcast_orders_changed(order_ids: Iterable[int], actor: str | None)
+async def catalog(
 async def clear_task_print_trace(db: AsyncSession, task_id: int)
 async def codes_by_order(db: AsyncSession)
 async def compute_project_stats(
 async def compute_subtree_stats(db: AsyncSession, root_id: int)
 async def create_bom_item(
+async def create_folder(db: AsyncSession, name: str, parent_id: int | None)
 async def create_item(
 async def create_item(
+async def create_project_folder(
 async def create_project_for_task(
 async def create_project_from_template(
 async def create_project(
+async def create_revision_pin(
 async def create_template_from_project(
 async def delete_bom_item(
+async def delete_folder(db: AsyncSession, folder: ProjectFolder)
 async def delete_item(
 async def delete_item(db: AsyncSession, project: Project, item: ProjectItem)
 async def delete_project_cover_image(
+async def delete_project_folder(
 async def delete_project(
+async def delete_revision_pin(
 async def delete_revision(
 async def delete_revision(db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision)
 async def download_revision(
@@ -217,6 +245,7 @@ async def find_revision_bundle(
 async def fork_item(
 async def fork_revision(
 async def fresh_item(db: AsyncSession, item_id: int)
+async def get_folder(db: AsyncSession, folder_id: int)
 async def get_item_for_project(db: AsyncSession, item_id: int)
 async def get_legacy_migration_status(
 async def get_or_create_tags(db: AsyncSession, names: list[str])
@@ -239,22 +268,28 @@ async def legacy_migration_status(db: AsyncSession)
 async def library_file_project_suggestions(
 async def link_task(db: AsyncSession, task: AitoTask, project_id: int | None, *, actor: str | None)
 async def list_bom_items(
+async def list_folders(db: AsyncSession)
 async def list_project_archives(
+async def list_project_folders(
 async def list_project_queue(
 async def list_project_tags(
 async def list_projects(
+async def list_revision_pins(
 async def list_templates(
 async def load_pipeline(db: AsyncSession, pipeline_id: int)
 async def load_tree(db: AsyncSession, project: Project)
 async def lock_revision_rows(
 async def migrate_project_legacy(db: AsyncSession, project: Project)
 async def move_library_files_to_project(
+async def move_project_to_folder(
+async def move_project(db: AsyncSession, project: Project, folder_id: int | None)
 async def move_task_print_trace(db: AsyncSession, copy_by_source: Mapping[int, int])
 async def on_revision_slice_done(
 async def order_links(db: AsyncSession, order_id: int)
 async def orders_for_project(db: AsyncSession, project_id: int)
 async def post_task_project(
 async def prepare_reslice(db: AsyncSession, revision_id: int, body: ResliceBody, user_id: int | None)
+async def project_catalog_list(
 async def project_ids_with_tag(db: AsyncSession, tag_id: int)
 async def project_tag_refs(db: AsyncSession, project_ids: list[int])
 async def put_task_deliveries(
@@ -291,6 +326,7 @@ async def start_revision_slice(db: AsyncSession, revision_id: int, *, user_id: i
 async def start_slice_after_upload(db: AsyncSession, revision_id: int, *, user_id: int | None)
 async def start_slice_for_waiting_items(db: AsyncSession, revision_id: int, *, user_id: int | None)
 async def store_derived_file(
+async def store_uploaded_slice(db: AsyncSession, revision_id: int, upload: UploadFile, *, user_id: int | None)
 async def suggest_projects_for_filename(
 async def suggest_projects(db: AsyncSession, task: AitoTask, limit: int = 8)
 async def suggest_tags(
@@ -298,11 +334,14 @@ async def sweep_orphan_intermediates(db: AsyncSession)
 async def sync_project_tags_from_string(db: AsyncSession, project: Project)
 async def task_print_counts(db: AsyncSession, task_ids: Collection[int])
 async def update_bom_item(
+async def update_folder(
+async def update_project_folder(
 async def update_project(
 async def update_revision(
 async def update_revision(
 async def upload_project_cover_image(
 async def upload_revision(
+async def upload_sliced_file(
 async def used_file_ids(db: AsyncSession, file_ids: Select)
 class AutoFileResult
 class LegacyMigrationError(Exception)
@@ -313,12 +352,14 @@ class PrintContext
 class PrintCounts
 class PrintSnapshot
 class PrintTraceError(HttpStatusError, ValueError)
+class ProjectCatalogError(HttpStatusError)
 class ProjectFilesError(HttpStatusError)
 class ResliceRequest
 class RevisionSource
 class TooManyNewTagsError(HTTPException)
 class UnknownTagError(ValueError)
 def allocate_code_number(connection: Connection)
+def ancestor_ids(folders: list[ProjectFolder], folder_id: int | None)
 def check_source_within_caps(model_bytes: bytes)
 def claim_unique_file_path(directory: Path, filename: str)
 def clean_item_name(name: str)
@@ -362,11 +403,13 @@ def revision_lock_statement(revision_ids: Collection[int], *, share: bool = Fals
 def revision_ref(revision: ProjectRevision, item: ProjectItem)
 def sanitize_component(name: str, fallback: str = "sans-nom")
 def section_for_filename(name: str)
+def settings_mismatches(file_profile: dict, revision_profile: dict)
 def slugify(title: str, max_chars: int = 40)
 def split_gcode_3mf(name: str)
 def split_tag_string(value: str | None)
 def start_legacy_migration()
 def storage_dir_name(code: str, title: str)
+def subtree_ids(folders: list[ProjectFolder], root_id: int)
 def tag_mirror(names: list[str])
 def tag_name_key(name: str)
 def unique_clean_names(raw_names: Iterable[str], seen: set[str] | None = None)
@@ -385,6 +428,8 @@ class BOMItemCreate
 class BOMItemExport
 class BOMItemResponse
 class BOMItemUpdate
+class CatalogOpenOrder
+class CatalogRecommended
 class DropFilesError
 class DropFilesResponse
 class DroppedFileResult
@@ -400,10 +445,18 @@ class LinkedFolderExport
 class LinkedProjectRef
 class OrderProjectLinks
 class Project
+class ProjectCatalogItem
+class ProjectCatalogResponse
 class ProjectChildPreview
 class ProjectCreate
 class ProjectFileOut
 class ProjectFileProgress
+class ProjectFolderCreate
+class ProjectFolderMove
+class ProjectFolderMoveOut
+class ProjectFolderOut
+class ProjectFoldersResponse
+class ProjectFolderUpdate
 class ProjectImport
 class ProjectItem
 class ProjectItemCreate
@@ -435,6 +488,8 @@ class ProjectTreeResponse
 class ProjectUpdate
 class ResliceBody
 class ResliceStarted
+class RevisionPinCreate
+class RevisionPinOut
 class RevisionRef
 class RevisionSliceStarted
 class RevisionUploadResponse
@@ -519,6 +574,22 @@ print(json.dumps(out, indent=1, sort_keys=True))" 2>/dev/null```
  "BatchAddQueueItems": {
   "queue_item_ids": "list[int]"
  },
+ "CatalogOpenOrder": {
+  "client_name": "str | None",
+  "order_id": "<class 'int'>"
+ },
+ "CatalogRecommended": {
+  "filament_types": "list[str]",
+  "filament_used_grams": "float | None",
+  "item_id": "<class 'int'>",
+  "item_name": "<class 'str'>",
+  "nozzle_diameter": "str | None",
+  "number": "<class 'int'>",
+  "print_time_seconds": "int | None",
+  "printer_model": "str | None",
+  "revision_id": "<class 'int'>",
+  "status": "<class 'str'>"
+ },
  "DropFilesError": {
   "detail": "<class 'str'>",
   "filenames": "list[str]",
@@ -597,6 +668,27 @@ print(json.dumps(out, indent=1, sort_keys=True))" 2>/dev/null```
   "order_id": "<class 'int'>",
   "tasks": "list[backend.app.schemas.aito_project_links.TaskProjectLink]"
  },
+ "ProjectCatalogItem": {
+  "client_names": "list[str]",
+  "code": "str | None",
+  "description": "str | None",
+  "files_count": "<class 'int'>",
+  "folder_id": "int | None",
+  "has_unsliced_only": "<class 'bool'>",
+  "id": "<class 'int'>",
+  "last_activity": "<class 'datetime.datetime'>",
+  "name": "<class 'str'>",
+  "open_orders": "list[backend.app.schemas.project.CatalogOpenOrder]",
+  "printed_count": "<class 'int'>",
+  "recommended": "backend.app.schemas.project.CatalogRecommended | None",
+  "status": "<class 'str'>",
+  "tags": "list[backend.app.schemas.project.ProjectTagRef]",
+  "target_count": "int | None",
+  "thumbnail_file_id": "int | None"
+ },
+ "ProjectCatalogResponse": {
+  "items": "list[backend.app.schemas.project.ProjectCatalogItem]"
+ },
  "ProjectChildPreview": {
   "color": "str | None",
   "completed_prints": "<class 'int'>",
@@ -629,18 +721,53 @@ print(json.dumps(out, indent=1, sort_keys=True))" 2>/dev/null```
  },
  "ProjectFileOut": {
   "created_at": "<class 'datetime.datetime'>",
+  "filament_color": "str | None",
+  "filament_type": "str | None",
   "filament_used_grams": "float | None",
+  "filament_vendor": "str | None",
   "file_hash": "str | None",
   "file_size": "<class 'int'>",
   "file_type": "<class 'str'>",
   "filename": "<class 'str'>",
   "has_thumbnail": "<class 'bool'>",
   "id": "<class 'int'>",
-  "print_time_seconds": "int | None"
+  "layer_height": "float | None",
+  "nozzle_diameter": "float | None",
+  "object_count": "int | None",
+  "print_count": "<class 'int'>",
+  "print_time_seconds": "int | None",
+  "sliced_for_model": "str | None",
+  "tag_ids": "list[int]",
+  "total_layers": "int | None"
  },
  "ProjectFileProgress": {
   "completed_count": "<class 'int'>",
   "file_id": "<class 'int'>"
+ },
+ "ProjectFolderCreate": {
+  "name": "<class 'str'>",
+  "parent_id": "int | None"
+ },
+ "ProjectFolderMove": {
+  "folder_id": "int | None"
+ },
+ "ProjectFolderMoveOut": {
+  "folder_id": "int | None",
+  "id": "<class 'int'>"
+ },
+ "ProjectFolderOut": {
+  "id": "<class 'int'>",
+  "in_production_count": "<class 'int'>",
+  "name": "<class 'str'>",
+  "parent_id": "int | None",
+  "project_count": "<class 'int'>"
+ },
+ "ProjectFolderUpdate": {
+  "name": "str | None",
+  "parent_id": "int | None"
+ },
+ "ProjectFoldersResponse": {
+  "folders": "list[backend.app.schemas.project.ProjectFolderOut]"
  },
  "ProjectImport": {
   "bom_items": "list[backend.app.schemas.project.BOMItemExport]",
@@ -894,6 +1021,21 @@ print(json.dumps(out, indent=1, sort_keys=True))" 2>/dev/null```
   "status": "<class 'str'>",
   "status_url": "<class 'str'>"
  },
+ "RevisionPinCreate": {
+  "text": "<class 'str'>",
+  "x": "<class 'float'>",
+  "y": "<class 'float'>",
+  "z": "<class 'float'>"
+ },
+ "RevisionPinOut": {
+  "created_at": "<class 'datetime.datetime'>",
+  "created_by": "str | None",
+  "id": "<class 'int'>",
+  "text": "<class 'str'>",
+  "x": "<class 'float'>",
+  "y": "<class 'float'>",
+  "z": "<class 'float'>"
+ },
  "RevisionRef": {
   "id": "<class 'int'>",
   "item_id": "<class 'int'>",
@@ -1070,6 +1212,7 @@ CREATE TABLE print_queue (
 	nozzle_mapping TEXT, 
 	nozzles_info TEXT, 
 	nozzle_rack_choice TEXT, 
+	color_substitutions TEXT, 
 	cleanup_library_after_dispatch BOOLEAN DEFAULT 0 NOT NULL, 
 	bed_levelling VARCHAR(8) DEFAULT 'auto' NOT NULL, 
 	flow_cali VARCHAR(8) DEFAULT 'auto' NOT NULL, 
@@ -1118,6 +1261,14 @@ CREATE TABLE project_bom_items (
 	FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE CASCADE, 
 	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE SET NULL
 );
+CREATE TABLE project_folders (
+	id INTEGER NOT NULL, 
+	name VARCHAR(255) NOT NULL, 
+	parent_id INTEGER, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(parent_id) REFERENCES project_folders (id) ON DELETE CASCADE
+);
 CREATE TABLE project_items (
 	id INTEGER NOT NULL, 
 	project_id INTEGER NOT NULL, 
@@ -1134,6 +1285,19 @@ CREATE TABLE project_items (
 	CONSTRAINT uq_project_items_section_name UNIQUE (project_id, section, name_key), 
 	FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE CASCADE, 
 	CONSTRAINT fk_project_items_forked_from FOREIGN KEY(forked_from_revision_id) REFERENCES project_revisions (id) ON DELETE SET NULL, 
+	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL
+);
+CREATE TABLE project_revision_pins (
+	id INTEGER NOT NULL, 
+	revision_id INTEGER NOT NULL, 
+	x FLOAT NOT NULL, 
+	y FLOAT NOT NULL, 
+	z FLOAT NOT NULL, 
+	text VARCHAR(500) NOT NULL, 
+	created_by_id INTEGER, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(revision_id) REFERENCES project_revisions (id) ON DELETE CASCADE, 
 	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL
 );
 CREATE TABLE project_revisions (
@@ -1197,10 +1361,12 @@ CREATE TABLE projects (
 	is_template BOOLEAN NOT NULL, 
 	template_source_id INTEGER, 
 	parent_id INTEGER, 
+	folder_id INTEGER, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id), 
-	FOREIGN KEY(parent_id) REFERENCES projects (id)
+	FOREIGN KEY(parent_id) REFERENCES projects (id), 
+	FOREIGN KEY(folder_id) REFERENCES project_folders (id) ON DELETE SET NULL
 );
 ```
 
@@ -1210,7 +1376,7 @@ CREATE TABLE projects (
 1 settings.archive_dir
 2 settings.base_dir
 4 settings.config
-2 settings.library_max_upload_bytes
+3 settings.library_max_upload_bytes
 1 settings.library_max_zip_extract_bytes
 ```
 
@@ -1219,6 +1385,8 @@ CREATE TABLE projects (
 ```
 4 Permission.AITO_READ
 2 Permission.AITO_UPDATE
+4 Permission.ARCHIVES_READ_ALL
+4 Permission.ARCHIVES_READ_OWN
 2 Permission.ARCHIVES_UPDATE_ALL
 2 Permission.ARCHIVES_UPDATE_OWN
 2 Permission.LIBRARY_READ_ALL
@@ -1229,8 +1397,10 @@ CREATE TABLE projects (
 1 Permission.PIPELINES_READ
 7 Permission.PROJECTS_CREATE
 3 Permission.PROJECTS_DELETE
-17 Permission.PROJECTS_READ
-25 Permission.PROJECTS_UPDATE
+20 Permission.PROJECTS_READ
+32 Permission.PROJECTS_UPDATE
+2 Permission.QUEUE_READ_ALL
+2 Permission.QUEUE_READ_OWN
 1 Permission.QUEUE_UPDATE_ALL
 1 Permission.QUEUE_UPDATE_OWN
 2 Permission.SETTINGS_UPDATE
@@ -1272,10 +1442,20 @@ CREATE TABLE projects (
 ## Frontend exported symbols (count per symbol name)
 ```regen: grep -rhoE --include='*.ts' --include='*.tsx' '^export (default function|default async function|async function|function|const|type|interface|class|enum) [A-Za-z0-9_]+' frontend/src/pages/ProjectDetailPage.tsx frontend/src/pages/ProjectListPage.tsx frontend/src/pages/ProjectsPage.tsx frontend/src/components/projects | sort | uniq -c | sed 's/^ *//'```
 ```
+1 export const CATALOG_STATUSES
+1 export const catalogKeys
 1 export const chipBase
 1 export const DIALOG_CARD_CLS
+1 export const DIALOG_CLOSING_CARD_CLS
+1 export const DIALOG_CLOSING_OVERLAY_CLS
+1 export const DIALOG_EXIT_MS
 1 export const DROP_HIGHLIGHT_CLS
+1 export const EMPTY_FILTERS
 1 export const ENABLED_SECTIONS
+1 export const hasNoFile
+1 export const isFiltering
+1 export const isInProduction
+1 export const isReady
 1 export const OVERLAY_CLS
 1 export const PREVIEWABLE_TYPES
 1 export const PRINTABLE_ACCEPT
@@ -1284,25 +1464,40 @@ CREATE TABLE projects (
 1 export const RESLICE_UI_ENABLED
 1 export const SECTION_LABEL_KEYS
 1 export const SECTION_ORDER
+1 export const SLICED_ACCEPT
 1 export const STATUS_CHIP_CLS
 1 export const STATUS_LABEL_KEYS
 1 export const stopDrag
+1 export const TRAY_LEAVE_MS
+1 export const visibleProjects
+1 export function applyFilters
+1 export function buildTree
 1 export function canDropFiles
 1 export function canManageProjectsSettings
 1 export function CardProjectChips
+1 export function CatalogPane
+1 export function CatalogTitle
+1 export function CatalogToolbar
+1 export function CatalogTree
 1 export function Chevron
 1 export function CollapsibleHeader
 1 export function DeliveriesPicker
+1 export function descendantIds
 1 export function DialogShell
 1 export function DropShield
 1 export function failureMessage
 1 export function filesFromDataTransfer
 1 export function fileTypeBadgeTone
+1 export function FilterSheet
+1 export function folderPath
+1 export function FolderSheet
 1 export function formatFilament
 1 export function groupTimeline
+1 export function Highlight
 1 export function isPrintableFile
 1 export function isPrintableFilename
 1 export function isSectionEnabled
+1 export function isSlicedFilename
 1 export function isSourceFilename
 1 export function ItemCard
 1 export function ItemDetailsTray
@@ -1310,12 +1505,16 @@ CREATE TABLE projects (
 1 export function itemNameKey
 1 export function ItemRow
 1 export function LinkedFoldersPanel
+1 export function materialsOf
+1 export function MobileCatalog
 1 export function MoveToProjectModal
+1 export function NewFolderSheet
 1 export function NewItemDropCard
 1 export function NewProjectModal
 1 export function OrderPickerDialog
 1 export function OutdatedChip
 1 export function outdatedParams
+1 export function PrintedCell
 1 export function PrintedCount
 1 export function printProfileLine
 1 export function PrintRevisionFlow
@@ -1347,22 +1546,30 @@ CREATE TABLE projects (
 1 export function SectionBlock
 1 export function sectionRevisionLabel
 1 export function SliceLine
+1 export function sortItems
+1 export function splitHighlight
 1 export function splitTagDrafts
 1 export function StatusBadge
 1 export function SubProjectsPanel
 1 export function TaskDropZone
 1 export function TaskProjectRow
+1 export function Thumb
 1 export function timelineDay
+1 export function UploadSlicedDialog
 1 export function useAcceptsSource
 1 export function useCardDrop
+1 export function useCatalogMutations
 1 export function useDerivedOptions
+1 export function useDialogExit
 1 export function useFileActions
 1 export function useFileDropZone
 1 export function useInvalidateProjectLinks
 1 export function useInvalidateProjects
 1 export function useOpenOrders
 1 export function useOrderProjectLinks
+1 export function useProjectCatalog
 1 export function useProjectCodes
+1 export function useProjectFolders
 1 export function useProjectLinkedFiles
 1 export function useProjectOrders
 1 export function useProjectSearch
@@ -1372,13 +1579,20 @@ CREATE TABLE projects (
 1 export function useTaskFileDrop
 1 export function useTaskProjectLink
 1 export function useUploadToTask
+1 export interface CatalogFilters
+1 export interface CatalogTreeProps
 1 export interface DerivedOption
+1 export interface MobileCatalogProps
 1 export interface PrintCounts
 1 export interface TagDraft
 1 export interface TimelineGroup
+1 export type CatalogChip
+1 export type CatalogSort
+1 export type CatalogStatus
 1 export type FileActions
 1 export type RevisionSliceState
 1 export type TimelineDay
+1 export type TreeNode
 ```
 
 ## App.tsx — project routes
@@ -1398,15 +1612,19 @@ const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage
   can_manage_projects
   createAitoProject
   createProject
+  createProjectFolder
   createProjectFromTemplate
   createProjectItem
+  createRevisionPin
   createTaskProject
   createTemplateFromProject
   deleteAitoProject
   deleteProject
   deleteProjectCoverImage
+  deleteProjectFolder
   deleteProjectItem
   deleteProjectRevision
+  deleteRevisionPin
   downloadProjectRevision
   existing_project_id
   exportProjectJson
@@ -1422,13 +1640,16 @@ const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage
   getOrderProjectLinks
   getProject
   getProjectArchives
+  getProjectCatalog
   getProjectCoverImageUrl
   getProjectFileProgress
+  getProjectFolders
   getProjectOrders
   getProjects
   getProjectTags
   getProjectTimeline
   getProjectTree
+  getRevisionPins
   getTaskProjectSuggestions
   importLibraryFilesToProject
   importProject
@@ -1437,6 +1658,7 @@ const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage
   linkTaskProject
   mergeAitoProject
   moveAitoProject
+  moveProjectToFolder
   project_id
   project_name
   projected_balance
@@ -1460,9 +1682,11 @@ const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage
   updateAitoProject
   updateArchiveProjectPage
   updateProject
+  updateProjectFolder
   updateProjectRevision
   uploadProjectCoverImage
   uploadProjectRevision
+  uploadProjectSlicedFile
 ```
 
 ## API client — exported project types
@@ -1477,11 +1701,14 @@ export interface MoveToProjectResult
 export interface OrderProjectLinks
 export interface Project
 export interface ProjectAttachment
+export interface ProjectCatalogItem
+export interface ProjectCatalogParams
 export interface ProjectChildPreview
 export interface ProjectCreate
 export interface ProjectExport
 export interface ProjectFileOut
 export interface ProjectFileProgress
+export interface ProjectFolder
 export interface ProjectImport
 export interface ProjectItemOut
 export interface ProjectListItem
@@ -1500,6 +1727,7 @@ export interface ProjectTagSuggestion
 export interface ProjectTreeResponse
 export interface ProjectUpdate
 export interface ResliceResult
+export interface RevisionPin
 export interface RevisionRef
 export interface SectionRevisionSummary
 export interface TaskCreateProjectRequest
@@ -1616,13 +1844,56 @@ projectsPdm.aito.suggestionSameClient
 projectsPdm.aito.suggestionSimilar
 projectsPdm.aito.unlink
 projectsPdm.aiUnavailable
+projectsPdm.catalog.atTop
+projectsPdm.catalog.clickToRename
+projectsPdm.catalog.create
+projectsPdm.catalog.deleteFolder
+projectsPdm.catalog.deleteFolderHint
+projectsPdm.catalog.dragHint
+projectsPdm.catalog.filesCount
+projectsPdm.catalog.folderActions
+projectsPdm.catalog.folderName
+projectsPdm.catalog.inFolder
+projectsPdm.catalog.inProduction
+projectsPdm.catalog.internal
+projectsPdm.catalog.keyboardHelp
+projectsPdm.catalog.mobile.back
+projectsPdm.catalog.mobile.create
+projectsPdm.catalog.mobile.createsHere
+projectsPdm.catalog.mobile.done
+projectsPdm.catalog.mobile.filedIn
+projectsPdm.catalog.mobile.filters
+projectsPdm.catalog.mobile.folderEmpty
+projectsPdm.catalog.mobile.folders
+projectsPdm.catalog.mobile.inProductionCount
+projectsPdm.catalog.mobile.newFolderInside
+projectsPdm.catalog.mobile.projects
+projectsPdm.catalog.mobile.projectsHere
+projectsPdm.catalog.mobile.sort
+projectsPdm.catalog.mobile.status
+projectsPdm.catalog.moveFailed
+projectsPdm.catalog.moveTo
+projectsPdm.catalog.neverPrinted
+projectsPdm.catalog.newFolder
+projectsPdm.catalog.noFile
+projectsPdm.catalog.noFileYet
+projectsPdm.catalog.nothingSliced
+projectsPdm.catalog.notInFolder
+projectsPdm.catalog.openProject
+projectsPdm.catalog.order
+projectsPdm.catalog.printed
+projectsPdm.catalog.printedOf
+projectsPdm.catalog.readyToPrint
+projectsPdm.catalog.rename
+projectsPdm.catalog.saveFailed
+projectsPdm.catalog.searchPlaceholder
+projectsPdm.catalog.selectHint
+projectsPdm.catalog.sortActivity
+projectsPdm.catalog.sortCode
+projectsPdm.catalog.sortName
+projectsPdm.catalog.sortPrinted
+projectsPdm.catalog.summary
 projectsPdm.codeChipLabel
-projectsPdm.colCode
-projectsPdm.colPrints
-projectsPdm.colStatus
-projectsPdm.colTags
-projectsPdm.colTitle
-projectsPdm.colUpdated
 projectsPdm.create
 projectsPdm.createTitle
 projectsPdm.descriptionLabel
@@ -1633,6 +1904,7 @@ projectsPdm.files
 projectsPdm.files.byAuthor
 projectsPdm.files.chooseFiles
 projectsPdm.files.deleteItem
+projectsPdm.files.deleteItemConfirm
 projectsPdm.files.deleteRevision
 projectsPdm.files.derivedFrom
 projectsPdm.files.derivedFromLabel
@@ -1648,6 +1920,10 @@ projectsPdm.files.fileCount
 projectsPdm.files.fork
 projectsPdm.files.forkNameLabel
 projectsPdm.files.frozen
+projectsPdm.files.headCost
+projectsPdm.files.headPrice
+projectsPdm.files.headPrint
+projectsPdm.files.holdToChangeStatus
 projectsPdm.files.itemBusy
 projectsPdm.files.itemNameLabel
 projectsPdm.files.newItem
@@ -1704,10 +1980,7 @@ projectsPdm.filing.suggested
 projectsPdm.filing.targetItem
 projectsPdm.newProject
 projectsPdm.newTagBadge
-projectsPdm.nextPage
 projectsPdm.noSuggestions
-projectsPdm.pageRange
-projectsPdm.prevPage
 projectsPdm.print.forWhichOrder
 projectsPdm.print.noOrder
 projectsPdm.print.noPrintFiles
@@ -1743,24 +2016,32 @@ projectsPdm.reslice.warnings
 projectsPdm.save
 projectsPdm.saved
 projectsPdm.saveFailed
-projectsPdm.searchPlaceholder
 projectsPdm.slice.downloadSliced
 projectsPdm.slice.failed
+projectsPdm.slice.fieldFilaments
+projectsPdm.slice.fieldLayer
+projectsPdm.slice.fieldNozzle
+projectsPdm.slice.fieldPrinter
+projectsPdm.slice.mismatchRow
+projectsPdm.slice.mismatchTitle
 projectsPdm.slice.openInSlicer
+projectsPdm.slice.uploadAction
+projectsPdm.slice.uploadChoose
+projectsPdm.slice.uploadDone
+projectsPdm.slice.uploadFailed
+projectsPdm.slice.uploadHint
+projectsPdm.slice.uploadMustMatch
+projectsPdm.slice.uploadNotSliced
+projectsPdm.slice.uploadSubmit
+projectsPdm.slice.uploadTitle
 projectsPdm.statusAll
 projectsPdm.statusFilterLabel
-projectsPdm.subtitle
 projectsPdm.suggestionsLabel
 projectsPdm.suggestTags
-projectsPdm.tagModeAll
-projectsPdm.tagModeAny
 projectsPdm.tagSearchPlaceholder
-projectsPdm.tagsFilterLabel
 projectsPdm.tagsLabel
 projectsPdm.title
 projectsPdm.titleLabel
-projectsPdm.viewGrid
-projectsPdm.viewTable
 ```
 
 ## projects:* permissions
