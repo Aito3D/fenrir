@@ -48,6 +48,7 @@ NOT_A_ROW_UPDATE = {
     "InboxPreferencesUpdate": "Fenrir: keeps its own null handling (unchanged by the 2026-10-17 merge)",
     "ProjectPageUpdate": "Fenrir: keeps its own null handling (unchanged by the 2026-10-17 merge)",
     "FilamentPresetUpdate": "Fenrir: refuses an explicit null filename itself",
+    "HourSettingsUpdate": "a setting, its one field required (a null fails the 422 range check)",
     "HourMachineUpdate": "Fenrir: keeps its own null handling (unchanged by the 2026-10-17 merge)",
     "ProjectItemRename": "Fenrir: keeps its own null handling (unchanged by the 2026-10-17 merge)",
     "ProjectRevisionUpdate": "Fenrir: refuses an explicit null status itself",

@@ -50,7 +50,7 @@ export function ReadingLog({ readings, today, canEdit, canDelete, onEdit, onDele
           data-testid="hours-log-row"
           data-date={row.date}
           data-source={row.source}
-          className="flex items-center gap-3 border-b border-bambu-dark-tertiary py-2.5 text-sm last:border-b-0"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-bambu-dark-tertiary py-2.5 text-sm last:border-b-0"
         >
           <span className={`rounded-full px-2 py-0.5 text-[0.7rem] ${row.source === 'manual' ? 'bg-bambu-green/20 text-bambu-green' : 'bg-bambu-dark-tertiary text-bambu-gray-light'}`}>
             {t(`maintenance.hours.${row.source}`)}

@@ -88,7 +88,8 @@ function gapMarker(
 ) {
   if (gap.lastDate === null) return [];
   const x = dayNumber(gap.lastDate) * DAY_MS;
-  const label = (value: string, position: 'insideTopLeft' | 'insideTopRight') => ({ value, position, fill: AMBER, fontSize: 11 });
+  // The band label sits one line lower: a short band would otherwise print it over the marker's label.
+  const label = (value: string, position: 'insideTopLeft' | 'insideTopRight', dy = 0) => ({ value, position, fill: AMBER, fontSize: 11, dy });
   const out = [
     <ReferenceLine
       key="gap-line" x={x} stroke={AMBER} strokeDasharray="3 3"
@@ -99,7 +100,7 @@ function gapMarker(
     out.push(
       <ReferenceArea
         key="gap-band" className="hours-gap-band" ifOverflow="hidden" x1={x} x2={dayNumber(today) * DAY_MS} fill="url(#hours-gap-hatch)"
-        label={label(t('maintenance.hours.chart.noReadingsFor', { months: Math.floor(gap.days / 30) }), 'insideTopRight')}
+        label={label(t('maintenance.hours.chart.noReadingsFor', { months: Math.floor(gap.days / 30) }), 'insideTopRight', 16)}
       />,
     );
   }
