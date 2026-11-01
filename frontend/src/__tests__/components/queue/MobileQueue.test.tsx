@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Clock, Package, ListOrdered, GanttChart, Workflow } from 'lucide-react';
 import { useState } from 'react';
@@ -130,5 +130,23 @@ describe('MobileQueue', () => {
     await user.click(screen.getByRole('button', { name: 'More options' }));
     await user.click(screen.getByRole('menuitem', { name: /Clear History/i }));
     expect(onClearHistory).toHaveBeenCalled();
+  });
+  it('a settle scheduled before a tab change still adopts the page it lands on', () => {
+    // The scroll that switches the tab also schedules the settle, so the
+    // timer holds the handler from BEFORE the re-render; the stale closure
+    // must not skip the tab change when the pager comes to rest elsewhere.
+    vi.useFakeTimers();
+    try {
+      render(<Harness />);
+      const pager = screen.getByTestId('queue-mobile-pager');
+      pager.scrollLeft = WIDTH * 1;
+      fireEvent.scroll(pager); // → Batches, settle scheduled by the old handler
+      expect(screen.getByRole('button', { name: /Batches.*Switch tab/ })).toBeInTheDocument();
+      pager.scrollLeft = WIDTH * 0.4; // drifted back towards Queue, no scroll event
+      act(() => { vi.advanceTimersByTime(400); });
+      expect(screen.getByRole('button', { name: /Queue.*Switch tab/ })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -52,15 +52,18 @@ export function MobileQueue({
 }: MobileQueueProps) {
   const { t } = useTranslation();
   const current = Math.max(0, tabs.findIndex((tab) => tab.id === activeTab));
-  // Memoised: the hook's settle timer holds whichever setCurrent it was
-  // scheduled with, so a fresh closure every render would act on stale props.
-  const setCurrent = useCallback(
-    (index: number) => {
-      const tab = tabs[index];
-      if (tab && tab.id !== activeTab) onTabChange(tab.id);
-    },
-    [tabs, activeTab, onTabChange],
-  );
+  // The hook's settle timer holds whichever setCurrent it was scheduled with,
+  // and the scroll that schedules it is often the one that changes the tab.
+  // So setCurrent never closes over props: it reads them through a ref that
+  // every render refreshes, and keeps one identity for the component's life
+  // (which also keeps the hook's handlers stable across the page's renders).
+  const propsRef = useRef({ tabs, activeTab, onTabChange });
+  propsRef.current = { tabs, activeTab, onTabChange };
+  const setCurrent = useCallback((index: number) => {
+    const { tabs: tabList, activeTab: active, onTabChange: change } = propsRef.current;
+    const tab = tabList[index];
+    if (tab && tab.id !== active) change(tab.id);
+  }, []);
   const { pagerRef, jump, handlers } = useSnapPager(tabs.length, current, setCurrent);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const pickerRef = useRef<HTMLButtonElement>(null);
