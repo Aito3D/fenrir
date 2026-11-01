@@ -63,15 +63,15 @@ async def test_compute_counts_only_completed_prints_and_applies_the_multiplier(d
     await _seed(db_session, now)
     s = await svc.compute(db_session, now=now)
     m = svc.MULTIPLIER
-    assert m == 2
-    assert s["prints"] == round(3 * m)
-    assert s["filament_kg"] == round(0.41 * m, 1)  # 410 g, rounded to one decimal
+    assert m == 1.5
+    assert s["prints"] == round(3 * m) + svc.PRINTS_OFFSET
+    assert s["filament_kg"] == round(0.41 * m + svc.FILAMENT_KG_OFFSET, 1)  # 410 g, rounded to one decimal
     assert s["print_hours"] == round(16 * m)
     assert s["print_days"] == round(16 * m / 24, 1)
     assert s["layers"] == round(170 * m)
-    assert s["orders"] == round(2 * m)
+    assert s["orders"] == round(2 * m) + svc.ORDERS_OFFSET
     assert s["printers"] == 2 + svc.PRINTERS_OFFSET  # never multiplied, only offset
-    assert s["since"] == "2026-09-22"
+    assert s["since"] == svc.SINCE
     assert s["last_30_days"] == {"prints": round(2 * m), "filament_kg": round(0.11 * m, 1)}  # 2 prints, 110 g
 
 
@@ -81,8 +81,8 @@ async def test_load_7d_is_machine_hours_in_the_week_per_active_printer_per_day(d
     await _seed(db_session, now)
     s = await svc.compute(db_session, now=now)
     # window: 2 h (completed) + 6 h (failed); the 8-day-old print is out
-    assert s["load_7d"]["machine_hours"] == pytest.approx(8.0)
-    assert s["load_7d"]["avg_hours_per_printer_per_day"] == pytest.approx(8 / 2 / 7, abs=0.05)
+    assert s["load_7d"]["machine_hours"] == pytest.approx(8.0 * svc.LOAD_FACTOR)
+    assert s["load_7d"]["avg_hours_per_printer_per_day"] == pytest.approx(8 * svc.LOAD_FACTOR / 2 / 7, abs=0.05)
     assert s["load_7d"]["level"] == "low"
 
 
@@ -105,7 +105,7 @@ async def test_open_print_counts_up_to_now_but_stale_open_rows_are_ignored(db_se
     )
     await db_session.commit()
     s = await svc.compute(db_session, now=now)
-    assert s["load_7d"]["machine_hours"] == pytest.approx(3.0)
+    assert s["load_7d"]["machine_hours"] == pytest.approx(3.0 * svc.LOAD_FACTOR)
 
 
 @pytest.mark.asyncio
@@ -119,12 +119,16 @@ async def test_route_is_public_cached_and_cors_open(async_client, db_session, mo
     assert r.headers["access-control-allow-origin"] == "*"
     assert r.headers["cache-control"] == "public, max-age=300"
     first = r.json()
-    assert first["prints"] == round(3 * svc.MULTIPLIER)
+    assert first["prints"] == round(3 * svc.MULTIPLIER) + svc.PRINTS_OFFSET
     # a new print inside the TTL is not visible; after the TTL it is
     db_session.add(_archive(started=datetime(2026, 11, 1), ended=datetime(2026, 11, 1, 1)))
     await db_session.commit()
     clock["t"] += 299
-    assert (await async_client.get("/api/v1/showcase/stats")).json()["prints"] == round(3 * svc.MULTIPLIER)
+    assert (await async_client.get("/api/v1/showcase/stats")).json()["prints"] == round(
+        3 * svc.MULTIPLIER
+    ) + svc.PRINTS_OFFSET
     clock["t"] += 2
-    assert (await async_client.get("/api/v1/showcase/stats")).json()["prints"] == round(4 * svc.MULTIPLIER)
+    assert (await async_client.get("/api/v1/showcase/stats")).json()["prints"] == round(
+        4 * svc.MULTIPLIER
+    ) + svc.PRINTS_OFFSET
     svc.reset_cache()

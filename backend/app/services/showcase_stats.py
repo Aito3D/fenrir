@@ -22,7 +22,13 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.printer import Printer
 from backend.app.utils.local_time import utcnow_naive
 
-MULTIPLIER = 2  # shortcut: fixed, upgrade to a setting when the shop wants to tune it
+MULTIPLIER = 1.5  # shortcut: fixed, upgrade to a setting when the shop wants to tune it
+# Shop history from before Fenrir, added after the multiplier. Same shortcut as MULTIPLIER.
+SINCE = "2024-06-01"
+PRINTS_OFFSET = 10_000
+FILAMENT_KG_OFFSET = 1_000.0
+ORDERS_OFFSET = 1_000
+LOAD_FACTOR = 2  # the tracked fleet under-reports the shop's real machine hours
 PRINTERS_OFFSET = 3  # machines not connected to Fenrir; the load still divides by the real fleet
 CACHE_TTL = 300.0
 LOAD_WINDOW_DAYS = 7
@@ -52,14 +58,13 @@ async def compute(db: AsyncSession, now: datetime | None = None) -> dict[str, An
     m = MULTIPLIER
     done = (PrintArchive.deleted_at.is_(None), PrintArchive.status == "completed")
 
-    n_prints, grams, seconds, layers, first = (
+    n_prints, grams, seconds, layers = (
         await db.execute(
             select(
                 func.count(PrintArchive.id),
                 func.coalesce(func.sum(PrintArchive.filament_used_grams), 0.0),
                 func.coalesce(func.sum(PrintArchive.print_time_seconds), 0),
                 func.coalesce(func.sum(PrintArchive.total_layers), 0),
-                func.min(PrintArchive.started_at),
             ).where(*done)
         )
     ).one()
@@ -97,18 +102,19 @@ async def compute(db: AsyncSession, now: datetime | None = None) -> dict[str, An
     for started, ended in rows:
         if started is not None:
             machine_hours += max(0.0, (min(ended or now, now) - max(started, start)).total_seconds()) / 3600
+    machine_hours *= LOAD_FACTOR
     avg = machine_hours / printers / LOAD_WINDOW_DAYS if printers else 0.0
 
     hours = float(seconds or 0) / 3600
     return {
         "updated_at": now.replace(microsecond=0).isoformat() + "Z",
-        "since": first.date().isoformat() if first is not None else None,
-        "prints": round(int(n_prints or 0) * m),
-        "filament_kg": round(float(grams or 0) / 1000 * m, 1),
+        "since": SINCE,
+        "prints": round(int(n_prints or 0) * m) + PRINTS_OFFSET,
+        "filament_kg": round(float(grams or 0) / 1000 * m + FILAMENT_KG_OFFSET, 1),
         "print_hours": round(hours * m),
         "print_days": round(hours * m / 24, 1),
         "layers": round(int(layers or 0) * m),
-        "orders": round(orders * m),
+        "orders": round(orders * m) + ORDERS_OFFSET,
         "printers": printers + PRINTERS_OFFSET,
         "last_30_days": {
             "prints": round(int(n_recent or 0) * m),
