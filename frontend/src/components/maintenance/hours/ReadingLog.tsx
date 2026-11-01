@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { HourReading } from '../../../api/client';
 import { Button } from '../../Button';
@@ -9,6 +10,7 @@ interface ReadingLogProps {
   canDelete: boolean;
   onEdit: (date: string) => void;
   onDelete: (date: string) => void;
+  limit?: number;
 }
 
 interface LogRow {
@@ -18,8 +20,9 @@ interface LogRow {
   sum: number;
 }
 
-export function ReadingLog({ readings, today, canEdit, canDelete, onEdit, onDelete }: ReadingLogProps) {
+export function ReadingLog({ readings, today, canEdit, canDelete, onEdit, onDelete, limit }: ReadingLogProps) {
   const { t, i18n } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
   const dayFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' });
   const byDate = new Map<string, LogRow>();
   for (const r of readings) {
@@ -37,9 +40,11 @@ export function ReadingLog({ readings, today, canEdit, canDelete, onEdit, onDele
   if (rows.length === 0) {
     return <p className="py-6 text-center text-sm text-bambu-gray">{t('maintenance.hours.empty')}</p>;
   }
+  const collapsed = limit !== undefined && !expanded && rows.length > limit;
+  const shown = collapsed ? rows.slice(0, limit) : rows;
   return (
     <div data-testid="hours-reading-log" className="flex flex-col">
-      {rows.map((row) => (
+      {shown.map((row) => (
         <div
           key={`${row.date}-${row.source}`}
           data-testid="hours-log-row"
@@ -63,6 +68,11 @@ export function ReadingLog({ readings, today, canEdit, canDelete, onEdit, onDele
           )}
         </div>
       ))}
+      {collapsed && (
+        <button type="button" className="py-2 text-sm text-bambu-green hover:underline" onClick={() => setExpanded(true)}>
+          {t('maintenance.hours.olderDates', { n: rows.length - limit })}
+        </button>
+      )}
     </div>
   );
 }

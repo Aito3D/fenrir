@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ClipboardPaste, Loader2, Plus } from 'lucide-react';
@@ -16,6 +16,7 @@ import { MachineList } from './MachineList';
 import { PasteImportModal } from './PasteImportModal';
 import { ReadingFormModal } from './ReadingFormModal';
 import { ReadingLog } from './ReadingLog';
+import { ReadingTimeline } from './ReadingTimeline';
 
 const MODES: HoursChartMode[] = ['cumulative', 'monthly', 'total', 'sameAge'];
 const RANGES: HoursChartRange[] = ['3m', '12m', 'all'];
@@ -49,6 +50,11 @@ export function HoursTab() {
   const [focusId, setFocusId] = useState<number | null>(null);
   const [focusPinned, setFocusPinned] = useState(false);
   const [range, setRange] = useState<HoursChartRange>('all');
+  const serverInterval = data?.reading_interval_days;
+  const [intervalDraft, setIntervalDraft] = useState('');
+  useEffect(() => {
+    if (serverInterval !== undefined) setIntervalDraft(String(serverInterval));
+  }, [serverInterval]);
 
   const machines = useMemo(() => data?.machines ?? [], [data]);
   const series = useMemo(
@@ -84,6 +90,14 @@ export function HoursTab() {
       queryClient.invalidateQueries({ queryKey: ['maintenanceSummary'] });
       setFormDate(null);
       showToast(t('maintenance.hours.saved'));
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+  const updateInterval = useMutation({
+    mutationFn: (days: number) => api.updateHourSettings({ reading_interval_days: days }),
+    onSuccess: (overview) => {
+      queryClient.setQueryData(['maintenanceHours'], overview);
+      showToast(t('maintenance.hours.intervalSaved'));
     },
     onError: (e: Error) => showToast(e.message, 'error'),
   });
@@ -128,6 +142,15 @@ export function HoursTab() {
     date: gap.lastDate ? dayFmt.format(dayNumber(gap.lastDate) * 86_400_000) : '—',
   });
   const focused = machines.find((m) => m.id === focusId) ?? null;
+
+  const commitInterval = () => {
+    const days = Number(intervalDraft);
+    if (Number.isInteger(days) && days >= 7 && days <= 365) {
+      if (days !== data.reading_interval_days) updateInterval.mutate(days);
+    } else {
+      setIntervalDraft(String(data.reading_interval_days));
+    }
+  };
 
   const toggle = (id: number) =>
     setHidden((prev) => {
@@ -218,6 +241,27 @@ export function HoursTab() {
           <CardContent>
             <div className="mb-1 flex items-center">
               <h3 className="font-semibold text-white">{t('maintenance.hours.readingLog')}</h3>
+              {canEdit ? (
+                <label className="ml-3 flex items-center gap-1 text-xs text-bambu-gray">
+                  {t('maintenance.hours.readingsEvery')}
+                  <input
+                    type="number"
+                    min={7}
+                    max={365}
+                    aria-label={t('maintenance.hours.readingsEvery')}
+                    className="w-14 rounded border border-bambu-dark-tertiary bg-bambu-dark px-1 py-0.5 text-right text-white"
+                    value={intervalDraft}
+                    onChange={(e) => setIntervalDraft(e.target.value)}
+                    onBlur={commitInterval}
+                    onKeyDown={(e) => { if (e.key === 'Enter') commitInterval(); }}
+                  />
+                  {t('maintenance.hours.days')}
+                </label>
+              ) : (
+                <span className="ml-3 text-xs text-bambu-gray">
+                  {t('maintenance.hours.readingsEveryRead', { days: data.reading_interval_days })}
+                </span>
+              )}
               {canEdit && (
                 <Button className="ml-auto" variant="secondary" size="sm" onClick={() => setPasteOpen(true)}>
                   <ClipboardPaste className="h-4 w-4" />
@@ -225,7 +269,9 @@ export function HoursTab() {
                 </Button>
               )}
             </div>
+            <ReadingTimeline readings={data.readings} today={data.today} due={data.due_machine_ids.length > 0} onPick={setFormDate} />
             <ReadingLog
+              limit={2}
               readings={data.readings}
               today={data.today}
               canEdit={canEdit}

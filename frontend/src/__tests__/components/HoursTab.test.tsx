@@ -64,10 +64,49 @@ describe('HoursTab', () => {
 
   it('logs manual dates newest first plus one auto row for today', async () => {
     serve();
+    const user = userEvent.setup();
     render(<HoursTab />);
+    await user.click(await screen.findByRole('button', { name: '1 older dates' }));
     const log = await screen.findByTestId('hours-reading-log');
     const rows = within(log).getAllByTestId('hours-log-row').map((r) => r.dataset.date + ':' + r.dataset.source);
     expect(rows).toEqual(['2031-02-14:auto', '2026-04-25:manual', '2026-01-01:manual']);
+  });
+
+  it('log shows two rows then expands', async () => {
+    serve();
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    const log = await screen.findByTestId('hours-reading-log');
+    expect(within(log).getAllByTestId('hours-log-row')).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: '1 older dates' }));
+    expect(within(log).getAllByTestId('hours-log-row')).toHaveLength(3);
+    expect(screen.queryByRole('button', { name: '1 older dates' })).not.toBeInTheDocument();
+  });
+
+  it('changing the interval calls the settings endpoint', async () => {
+    serve();
+    const bodies: number[] = [];
+    server.use(
+      http.patch('/api/v1/maintenance/hours/settings', async ({ request }) => {
+        const body = (await request.json()) as { reading_interval_days: number };
+        bodies.push(body.reading_interval_days);
+        return HttpResponse.json({ ...overview, reading_interval_days: body.reading_interval_days });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    const input = await screen.findByRole('spinbutton', { name: 'Readings every' });
+    expect(input).toHaveValue(90);
+    await user.clear(input);
+    await user.type(input, '120');
+    await user.tab();
+    await waitFor(() => expect(bodies).toEqual([120]));
+    expect(input).toHaveValue(120);
+    await user.clear(input);
+    await user.type(input, '3');
+    await user.tab();
+    await waitFor(() => expect(input).toHaveValue(120));
+    expect(bodies).toEqual([120]);
   });
 
   it('switches chart modes', async () => {
@@ -167,6 +206,7 @@ describe('HoursTab', () => {
     );
     const user = userEvent.setup();
     render(<HoursTab />);
+    await user.click(await screen.findByRole('button', { name: '1 older dates' }));
     const log = await screen.findByTestId('hours-reading-log');
     const row = within(log).getAllByTestId('hours-log-row').find((r) => r.dataset.date === '2026-01-01')!;
     await user.click(within(row).getByRole('button', { name: 'Delete' }));
