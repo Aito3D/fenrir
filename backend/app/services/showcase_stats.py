@@ -22,7 +22,7 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.printer import Printer
 from backend.app.utils.local_time import utcnow_naive
 
-MULTIPLIER = 3  # shortcut: fixed, upgrade to a setting when the shop wants to tune it
+MULTIPLIER = 2  # shortcut: fixed, upgrade to a setting when the shop wants to tune it
 PRINTERS_OFFSET = 3  # machines not connected to Fenrir; the load still divides by the real fleet
 CACHE_TTL = 300.0
 LOAD_WINDOW_DAYS = 7
@@ -103,15 +103,15 @@ async def compute(db: AsyncSession, now: datetime | None = None) -> dict[str, An
     return {
         "updated_at": now.replace(microsecond=0).isoformat() + "Z",
         "since": first.date().isoformat() if first is not None else None,
-        "prints": int(n_prints or 0) * m,
+        "prints": round(int(n_prints or 0) * m),
         "filament_kg": round(float(grams or 0) / 1000 * m, 1),
         "print_hours": round(hours * m),
         "print_days": round(hours * m / 24, 1),
-        "layers": int(layers or 0) * m,
-        "orders": orders * m,
+        "layers": round(int(layers or 0) * m),
+        "orders": round(orders * m),
         "printers": printers + PRINTERS_OFFSET,
         "last_30_days": {
-            "prints": int(n_recent or 0) * m,
+            "prints": round(int(n_recent or 0) * m),
             "filament_kg": round(float(grams_recent or 0) / 1000 * m, 1),
         },
         "load_7d": {

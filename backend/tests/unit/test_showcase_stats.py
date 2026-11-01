@@ -63,16 +63,16 @@ async def test_compute_counts_only_completed_prints_and_applies_the_multiplier(d
     await _seed(db_session, now)
     s = await svc.compute(db_session, now=now)
     m = svc.MULTIPLIER
-    assert m == 3
-    assert s["prints"] == 3 * m
-    assert s["filament_kg"] == 1.2  # 410 g × 3, rounded to one decimal
-    assert s["print_hours"] == 16 * m
-    assert s["print_days"] == pytest.approx(16 * m / 24, abs=0.01)
-    assert s["layers"] == 170 * m
-    assert s["orders"] == 2 * m
+    assert m == 2
+    assert s["prints"] == round(3 * m)
+    assert s["filament_kg"] == round(0.41 * m, 1)  # 410 g, rounded to one decimal
+    assert s["print_hours"] == round(16 * m)
+    assert s["print_days"] == round(16 * m / 24, 1)
+    assert s["layers"] == round(170 * m)
+    assert s["orders"] == round(2 * m)
     assert s["printers"] == 2 + svc.PRINTERS_OFFSET  # never multiplied, only offset
     assert s["since"] == "2026-09-22"
-    assert s["last_30_days"] == {"prints": 2 * m, "filament_kg": 0.3}  # 2 h + 4 h prints, 110 g × 3
+    assert s["last_30_days"] == {"prints": round(2 * m), "filament_kg": round(0.11 * m, 1)}  # 2 prints, 110 g
 
 
 @pytest.mark.asyncio
@@ -119,12 +119,12 @@ async def test_route_is_public_cached_and_cors_open(async_client, db_session, mo
     assert r.headers["access-control-allow-origin"] == "*"
     assert r.headers["cache-control"] == "public, max-age=300"
     first = r.json()
-    assert first["prints"] == 9
+    assert first["prints"] == round(3 * svc.MULTIPLIER)
     # a new print inside the TTL is not visible; after the TTL it is
     db_session.add(_archive(started=datetime(2026, 11, 1), ended=datetime(2026, 11, 1, 1)))
     await db_session.commit()
     clock["t"] += 299
-    assert (await async_client.get("/api/v1/showcase/stats")).json()["prints"] == 9
+    assert (await async_client.get("/api/v1/showcase/stats")).json()["prints"] == round(3 * svc.MULTIPLIER)
     clock["t"] += 2
-    assert (await async_client.get("/api/v1/showcase/stats")).json()["prints"] == 12
+    assert (await async_client.get("/api/v1/showcase/stats")).json()["prints"] == round(4 * svc.MULTIPLIER)
     svc.reset_cache()
