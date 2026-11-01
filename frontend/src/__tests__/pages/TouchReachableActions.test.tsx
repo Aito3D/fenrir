@@ -19,26 +19,11 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
-import { ProjectsPage } from '../../pages/ProjectsPage';
 import { FileManagerPage } from '../../pages/FileManagerPage';
 import { setAuthToken } from '../../api/client';
 
 /** `opacity-0` on its own — with no variant in front of it. */
 const UNCONDITIONALLY_HIDDEN = /(^|\s)opacity-0(\s|$)/;
-
-const mockProjects = [
-  {
-    id: 1,
-    name: 'Functional Parts',
-    description: 'Useful household items',
-    color: '#00ae42',
-    archive_count: 10,
-    total_print_time_seconds: 36000,
-    total_filament_grams: 500,
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-15T00:00:00Z',
-  },
-];
 
 const mockFolders = [
   {
@@ -58,35 +43,6 @@ const mockFolders = [
 describe('actions that were hover-only (#2865)', () => {
   afterEach(() => {
     setAuthToken(null);
-  });
-
-  describe('project card', () => {
-    beforeEach(() => {
-      server.use(http.get('/api/v1/projects/', () => HttpResponse.json(mockProjects)));
-    });
-
-    it('does not hide the action menu from a pointer that cannot hover', async () => {
-      render(<ProjectsPage />);
-      await waitFor(() => expect(screen.getByText('Functional Parts')).toBeInTheDocument());
-
-      const card = screen.getByText('Functional Parts').closest('div.group')!;
-      const menuButton = within(card).getAllByRole('button').slice(-1)[0];
-
-      expect(menuButton.className).not.toMatch(UNCONDITIONALLY_HIDDEN);
-      expect(menuButton.className).toContain('can-hover:opacity-0');
-    });
-
-    it('still opens Edit and Delete once the menu is tapped', async () => {
-      render(<ProjectsPage />);
-      await waitFor(() => expect(screen.getByText('Functional Parts')).toBeInTheDocument());
-
-      const card = screen.getByText('Functional Parts').closest('div.group')!;
-      const user = userEvent.setup();
-      await user.click(within(card).getAllByRole('button').slice(-1)[0]);
-
-      expect(within(card).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
-      expect(within(card).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
-    });
   });
 
   describe('file manager folder row', () => {

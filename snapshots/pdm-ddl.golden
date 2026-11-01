@@ -120,6 +120,7 @@ CREATE TABLE print_queue (
 	nozzle_mapping TEXT, 
 	nozzles_info TEXT, 
 	nozzle_rack_choice TEXT, 
+	color_substitutions TEXT, 
 	cleanup_library_after_dispatch BOOLEAN DEFAULT 0 NOT NULL, 
 	bed_levelling VARCHAR(8) DEFAULT 'auto' NOT NULL, 
 	flow_cali VARCHAR(8) DEFAULT 'auto' NOT NULL, 
@@ -170,6 +171,15 @@ CREATE TABLE project_bom_items (
 	FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE CASCADE, 
 	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE SET NULL
 );
+CREATE TABLE project_folders (
+	id INTEGER NOT NULL, 
+	name VARCHAR(255) NOT NULL, 
+	parent_id INTEGER, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(parent_id) REFERENCES project_folders (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_project_folders_parent_id ON project_folders (parent_id);
 CREATE TABLE project_items (
 	id INTEGER NOT NULL, 
 	project_id INTEGER NOT NULL, 
@@ -189,6 +199,20 @@ CREATE TABLE project_items (
 	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL
 );
 CREATE INDEX ix_project_items_project_id ON project_items (project_id);
+CREATE TABLE project_revision_pins (
+	id INTEGER NOT NULL, 
+	revision_id INTEGER NOT NULL, 
+	x FLOAT NOT NULL, 
+	y FLOAT NOT NULL, 
+	z FLOAT NOT NULL, 
+	text VARCHAR(500) NOT NULL, 
+	created_by_id INTEGER, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(revision_id) REFERENCES project_revisions (id) ON DELETE CASCADE, 
+	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL
+);
+CREATE INDEX ix_project_revision_pins_revision_id ON project_revision_pins (revision_id);
 CREATE TABLE project_revisions (
 	id INTEGER NOT NULL, 
 	item_id INTEGER NOT NULL, 
@@ -254,12 +278,15 @@ CREATE TABLE projects (
 	is_template BOOLEAN NOT NULL, 
 	template_source_id INTEGER, 
 	parent_id INTEGER, 
+	folder_id INTEGER, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id), 
-	FOREIGN KEY(parent_id) REFERENCES projects (id)
+	FOREIGN KEY(parent_id) REFERENCES projects (id), 
+	FOREIGN KEY(folder_id) REFERENCES project_folders (id) ON DELETE SET NULL
 );
 CREATE UNIQUE INDEX ix_projects_code ON projects (code);
+CREATE INDEX ix_projects_folder_id ON projects (folder_id);
 
 ### stderr:
 

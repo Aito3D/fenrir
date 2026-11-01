@@ -484,6 +484,121 @@
   "title": "BatchAddQueueItems",
   "type": "object"
  },
+ "CatalogOpenOrder": {
+  "properties": {
+   "client_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Client Name"
+   },
+   "order_id": {
+    "title": "Order Id",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "order_id",
+   "client_name"
+  ],
+  "title": "CatalogOpenOrder",
+  "type": "object"
+ },
+ "CatalogRecommended": {
+  "description": "The revision the catalog offers to print: newest approved sliced one, else newest sliced.",
+  "properties": {
+   "filament_types": {
+    "items": {
+     "type": "string"
+    },
+    "title": "Filament Types",
+    "type": "array"
+   },
+   "filament_used_grams": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Filament Used Grams"
+   },
+   "item_id": {
+    "title": "Item Id",
+    "type": "integer"
+   },
+   "item_name": {
+    "title": "Item Name",
+    "type": "string"
+   },
+   "nozzle_diameter": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Nozzle Diameter"
+   },
+   "number": {
+    "title": "Number",
+    "type": "integer"
+   },
+   "print_time_seconds": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Print Time Seconds"
+   },
+   "printer_model": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Printer Model"
+   },
+   "revision_id": {
+    "title": "Revision Id",
+    "type": "integer"
+   },
+   "status": {
+    "title": "Status",
+    "type": "string"
+   }
+  },
+  "required": [
+   "item_id",
+   "item_name",
+   "revision_id",
+   "number",
+   "status",
+   "printer_model",
+   "nozzle_diameter",
+   "filament_types",
+   "print_time_seconds",
+   "filament_used_grams"
+  ],
+  "title": "CatalogRecommended",
+  "type": "object"
+ },
  "DropFilesError": {
   "description": "Files a partly failed drop did not store: the group that failed and the groups after it (never tried).",
   "properties": {
@@ -1314,6 +1429,570 @@
   "title": "OrderProjectLinks",
   "type": "object"
  },
+ "ProjectCatalogItem": {
+  "$defs": {
+   "CatalogOpenOrder": {
+    "properties": {
+     "client_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Client Name"
+     },
+     "order_id": {
+      "title": "Order Id",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "order_id",
+     "client_name"
+    ],
+    "title": "CatalogOpenOrder",
+    "type": "object"
+   },
+   "CatalogRecommended": {
+    "description": "The revision the catalog offers to print: newest approved sliced one, else newest sliced.",
+    "properties": {
+     "filament_types": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Filament Types",
+      "type": "array"
+     },
+     "filament_used_grams": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Filament Used Grams"
+     },
+     "item_id": {
+      "title": "Item Id",
+      "type": "integer"
+     },
+     "item_name": {
+      "title": "Item Name",
+      "type": "string"
+     },
+     "nozzle_diameter": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nozzle Diameter"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "print_time_seconds": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Print Time Seconds"
+     },
+     "printer_model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Printer Model"
+     },
+     "revision_id": {
+      "title": "Revision Id",
+      "type": "integer"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "item_id",
+     "item_name",
+     "revision_id",
+     "number",
+     "status",
+     "printer_model",
+     "nozzle_diameter",
+     "filament_types",
+     "print_time_seconds",
+     "filament_used_grams"
+    ],
+    "title": "CatalogRecommended",
+    "type": "object"
+   },
+   "ProjectTagRef": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name"
+    ],
+    "title": "ProjectTagRef",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "client_names": {
+    "items": {
+     "type": "string"
+    },
+    "title": "Client Names",
+    "type": "array"
+   },
+   "code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Code"
+   },
+   "description": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Description"
+   },
+   "files_count": {
+    "title": "Files Count",
+    "type": "integer"
+   },
+   "folder_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Folder Id"
+   },
+   "has_unsliced_only": {
+    "title": "Has Unsliced Only",
+    "type": "boolean"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "last_activity": {
+    "format": "date-time",
+    "title": "Last Activity",
+    "type": "string"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "open_orders": {
+    "items": {
+     "$ref": "#/$defs/CatalogOpenOrder"
+    },
+    "title": "Open Orders",
+    "type": "array"
+   },
+   "printed_count": {
+    "title": "Printed Count",
+    "type": "integer"
+   },
+   "recommended": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/CatalogRecommended"
+     },
+     {
+      "type": "null"
+     }
+    ]
+   },
+   "status": {
+    "title": "Status",
+    "type": "string"
+   },
+   "tags": {
+    "items": {
+     "$ref": "#/$defs/ProjectTagRef"
+    },
+    "title": "Tags",
+    "type": "array"
+   },
+   "target_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Target Count"
+   },
+   "thumbnail_file_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Thumbnail File Id"
+   }
+  },
+  "required": [
+   "id",
+   "code",
+   "name",
+   "description",
+   "status",
+   "folder_id",
+   "tags",
+   "client_names",
+   "open_orders",
+   "files_count",
+   "recommended",
+   "has_unsliced_only",
+   "printed_count",
+   "target_count",
+   "last_activity",
+   "thumbnail_file_id"
+  ],
+  "title": "ProjectCatalogItem",
+  "type": "object"
+ },
+ "ProjectCatalogResponse": {
+  "$defs": {
+   "CatalogOpenOrder": {
+    "properties": {
+     "client_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Client Name"
+     },
+     "order_id": {
+      "title": "Order Id",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "order_id",
+     "client_name"
+    ],
+    "title": "CatalogOpenOrder",
+    "type": "object"
+   },
+   "CatalogRecommended": {
+    "description": "The revision the catalog offers to print: newest approved sliced one, else newest sliced.",
+    "properties": {
+     "filament_types": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Filament Types",
+      "type": "array"
+     },
+     "filament_used_grams": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Filament Used Grams"
+     },
+     "item_id": {
+      "title": "Item Id",
+      "type": "integer"
+     },
+     "item_name": {
+      "title": "Item Name",
+      "type": "string"
+     },
+     "nozzle_diameter": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nozzle Diameter"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "print_time_seconds": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Print Time Seconds"
+     },
+     "printer_model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Printer Model"
+     },
+     "revision_id": {
+      "title": "Revision Id",
+      "type": "integer"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "item_id",
+     "item_name",
+     "revision_id",
+     "number",
+     "status",
+     "printer_model",
+     "nozzle_diameter",
+     "filament_types",
+     "print_time_seconds",
+     "filament_used_grams"
+    ],
+    "title": "CatalogRecommended",
+    "type": "object"
+   },
+   "ProjectCatalogItem": {
+    "properties": {
+     "client_names": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Client Names",
+      "type": "array"
+     },
+     "code": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Code"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "files_count": {
+      "title": "Files Count",
+      "type": "integer"
+     },
+     "folder_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Folder Id"
+     },
+     "has_unsliced_only": {
+      "title": "Has Unsliced Only",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "last_activity": {
+      "format": "date-time",
+      "title": "Last Activity",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "open_orders": {
+      "items": {
+       "$ref": "#/$defs/CatalogOpenOrder"
+      },
+      "title": "Open Orders",
+      "type": "array"
+     },
+     "printed_count": {
+      "title": "Printed Count",
+      "type": "integer"
+     },
+     "recommended": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/CatalogRecommended"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "tags": {
+      "items": {
+       "$ref": "#/$defs/ProjectTagRef"
+      },
+      "title": "Tags",
+      "type": "array"
+     },
+     "target_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Target Count"
+     },
+     "thumbnail_file_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Thumbnail File Id"
+     }
+    },
+    "required": [
+     "id",
+     "code",
+     "name",
+     "description",
+     "status",
+     "folder_id",
+     "tags",
+     "client_names",
+     "open_orders",
+     "files_count",
+     "recommended",
+     "has_unsliced_only",
+     "printed_count",
+     "target_count",
+     "last_activity",
+     "thumbnail_file_id"
+    ],
+    "title": "ProjectCatalogItem",
+    "type": "object"
+   },
+   "ProjectTagRef": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name"
+    ],
+    "title": "ProjectTagRef",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "items": {
+    "items": {
+     "$ref": "#/$defs/ProjectCatalogItem"
+    },
+    "title": "Items",
+    "type": "array"
+   }
+  },
+  "required": [
+   "items"
+  ],
+  "title": "ProjectCatalogResponse",
+  "type": "object"
+ },
  "ProjectChildPreview": {
   "description": "A sub-project as listed on its parent's page.\n\nThe figures cover the child's *own* subtree, not just its own prints, so\nthe listed rows add up to the parent's roll-up minus the parent's own\nprints (#1264).",
   "properties": {
@@ -1583,6 +2262,30 @@
     "title": "Created At",
     "type": "string"
    },
+   "filament_color": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Color"
+   },
+   "filament_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Type"
+   },
    "filament_used_grams": {
     "anyOf": [
      {
@@ -1594,6 +2297,18 @@
     ],
     "default": null,
     "title": "Filament Used Grams"
+   },
+   "filament_vendor": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Vendor"
    },
    "file_hash": {
     "anyOf": [
@@ -1626,6 +2341,47 @@
     "title": "Id",
     "type": "integer"
    },
+   "layer_height": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Layer Height"
+   },
+   "nozzle_diameter": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Nozzle Diameter"
+   },
+   "object_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Object Count"
+   },
+   "print_count": {
+    "default": 0,
+    "title": "Print Count",
+    "type": "integer"
+   },
    "print_time_seconds": {
     "anyOf": [
      {
@@ -1637,6 +2393,38 @@
     ],
     "default": null,
     "title": "Print Time Seconds"
+   },
+   "sliced_for_model": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Sliced For Model"
+   },
+   "tag_ids": {
+    "default": [],
+    "items": {
+     "type": "integer"
+    },
+    "title": "Tag Ids",
+    "type": "array"
+   },
+   "total_layers": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Total Layers"
    }
   },
   "required": [
@@ -1668,6 +2456,208 @@
    "completed_count"
   ],
   "title": "ProjectFileProgress",
+  "type": "object"
+ },
+ "ProjectFolderCreate": {
+  "properties": {
+   "name": {
+    "maxLength": 255,
+    "minLength": 1,
+    "title": "Name",
+    "type": "string"
+   },
+   "parent_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Parent Id"
+   }
+  },
+  "required": [
+   "name"
+  ],
+  "title": "ProjectFolderCreate",
+  "type": "object"
+ },
+ "ProjectFolderMove": {
+  "description": "``PATCH /projects/{id}/folder``: file the project (``null`` = no folder; the column is\nnullable, so the mixin keeps the null).",
+  "properties": {
+   "folder_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Folder Id"
+   }
+  },
+  "title": "ProjectFolderMove",
+  "type": "object"
+ },
+ "ProjectFolderMoveOut": {
+  "properties": {
+   "folder_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Folder Id"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "id",
+   "folder_id"
+  ],
+  "title": "ProjectFolderMoveOut",
+  "type": "object"
+ },
+ "ProjectFolderOut": {
+  "properties": {
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "in_production_count": {
+    "title": "In Production Count",
+    "type": "integer"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "parent_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Parent Id"
+   },
+   "project_count": {
+    "title": "Project Count",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "id",
+   "name",
+   "parent_id",
+   "project_count",
+   "in_production_count"
+  ],
+  "title": "ProjectFolderOut",
+  "type": "object"
+ },
+ "ProjectFolderUpdate": {
+  "description": "``parent_id`` is only applied when sent (``null`` moves the folder to the root); a null\n``name`` is dropped by the mixin (NOT NULL column) and reads as \"unchanged\".",
+  "properties": {
+   "name": {
+    "anyOf": [
+     {
+      "maxLength": 255,
+      "minLength": 1,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Name"
+   },
+   "parent_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Parent Id"
+   }
+  },
+  "title": "ProjectFolderUpdate",
+  "type": "object"
+ },
+ "ProjectFoldersResponse": {
+  "$defs": {
+   "ProjectFolderOut": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "in_production_count": {
+      "title": "In Production Count",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "parent_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Parent Id"
+     },
+     "project_count": {
+      "title": "Project Count",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "parent_id",
+     "project_count",
+     "in_production_count"
+    ],
+    "title": "ProjectFolderOut",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "folders": {
+    "items": {
+     "$ref": "#/$defs/ProjectFolderOut"
+    },
+    "title": "Folders",
+    "type": "array"
+   }
+  },
+  "required": [
+   "folders"
+  ],
+  "title": "ProjectFoldersResponse",
   "type": "object"
  },
  "ProjectImport": {
@@ -1961,6 +2951,30 @@
       "title": "Created At",
       "type": "string"
      },
+     "filament_color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Color"
+     },
+     "filament_type": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Type"
+     },
      "filament_used_grams": {
       "anyOf": [
        {
@@ -1972,6 +2986,18 @@
       ],
       "default": null,
       "title": "Filament Used Grams"
+     },
+     "filament_vendor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Vendor"
      },
      "file_hash": {
       "anyOf": [
@@ -2004,6 +3030,47 @@
       "title": "Id",
       "type": "integer"
      },
+     "layer_height": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Layer Height"
+     },
+     "nozzle_diameter": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Nozzle Diameter"
+     },
+     "object_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Object Count"
+     },
+     "print_count": {
+      "default": 0,
+      "title": "Print Count",
+      "type": "integer"
+     },
      "print_time_seconds": {
       "anyOf": [
        {
@@ -2015,6 +3082,38 @@
       ],
       "default": null,
       "title": "Print Time Seconds"
+     },
+     "sliced_for_model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Sliced For Model"
+     },
+     "tag_ids": {
+      "default": [],
+      "items": {
+       "type": "integer"
+      },
+      "title": "Tag Ids",
+      "type": "array"
+     },
+     "total_layers": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Total Layers"
      }
     },
     "required": [
@@ -3437,6 +4536,30 @@
       "title": "Created At",
       "type": "string"
      },
+     "filament_color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Color"
+     },
+     "filament_type": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Type"
+     },
      "filament_used_grams": {
       "anyOf": [
        {
@@ -3448,6 +4571,18 @@
       ],
       "default": null,
       "title": "Filament Used Grams"
+     },
+     "filament_vendor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Vendor"
      },
      "file_hash": {
       "anyOf": [
@@ -3480,6 +4615,47 @@
       "title": "Id",
       "type": "integer"
      },
+     "layer_height": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Layer Height"
+     },
+     "nozzle_diameter": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Nozzle Diameter"
+     },
+     "object_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Object Count"
+     },
+     "print_count": {
+      "default": 0,
+      "title": "Print Count",
+      "type": "integer"
+     },
      "print_time_seconds": {
       "anyOf": [
        {
@@ -3491,6 +4667,38 @@
       ],
       "default": null,
       "title": "Print Time Seconds"
+     },
+     "sliced_for_model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Sliced For Model"
+     },
+     "tag_ids": {
+      "default": [],
+      "items": {
+       "type": "integer"
+      },
+      "title": "Tag Ids",
+      "type": "array"
+     },
+     "total_layers": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Total Layers"
      }
     },
     "required": [
@@ -4060,6 +5268,30 @@
       "title": "Created At",
       "type": "string"
      },
+     "filament_color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Color"
+     },
+     "filament_type": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Type"
+     },
      "filament_used_grams": {
       "anyOf": [
        {
@@ -4071,6 +5303,18 @@
       ],
       "default": null,
       "title": "Filament Used Grams"
+     },
+     "filament_vendor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Vendor"
      },
      "file_hash": {
       "anyOf": [
@@ -4103,6 +5347,47 @@
       "title": "Id",
       "type": "integer"
      },
+     "layer_height": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Layer Height"
+     },
+     "nozzle_diameter": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Nozzle Diameter"
+     },
+     "object_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Object Count"
+     },
+     "print_count": {
+      "default": 0,
+      "title": "Print Count",
+      "type": "integer"
+     },
      "print_time_seconds": {
       "anyOf": [
        {
@@ -4114,6 +5399,38 @@
       ],
       "default": null,
       "title": "Print Time Seconds"
+     },
+     "sliced_for_model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Sliced For Model"
+     },
+     "tag_ids": {
+      "default": [],
+      "items": {
+       "type": "integer"
+      },
+      "title": "Tag Ids",
+      "type": "array"
+     },
+     "total_layers": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Total Layers"
      }
     },
     "required": [
@@ -4838,6 +6155,30 @@
       "title": "Created At",
       "type": "string"
      },
+     "filament_color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Color"
+     },
+     "filament_type": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Type"
+     },
      "filament_used_grams": {
       "anyOf": [
        {
@@ -4849,6 +6190,18 @@
       ],
       "default": null,
       "title": "Filament Used Grams"
+     },
+     "filament_vendor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Vendor"
      },
      "file_hash": {
       "anyOf": [
@@ -4881,6 +6234,47 @@
       "title": "Id",
       "type": "integer"
      },
+     "layer_height": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Layer Height"
+     },
+     "nozzle_diameter": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Nozzle Diameter"
+     },
+     "object_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Object Count"
+     },
+     "print_count": {
+      "default": 0,
+      "title": "Print Count",
+      "type": "integer"
+     },
      "print_time_seconds": {
       "anyOf": [
        {
@@ -4892,6 +6286,38 @@
       ],
       "default": null,
       "title": "Print Time Seconds"
+     },
+     "sliced_for_model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Sliced For Model"
+     },
+     "tag_ids": {
+      "default": [],
+      "items": {
+       "type": "integer"
+      },
+      "title": "Tag Ids",
+      "type": "array"
+     },
+     "total_layers": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Total Layers"
      }
     },
     "required": [
@@ -5503,6 +6929,88 @@
   "title": "ResliceStarted",
   "type": "object"
  },
+ "RevisionPinCreate": {
+  "description": "A note pinned at a point of the part, in printer millimetres.",
+  "properties": {
+   "text": {
+    "maxLength": 500,
+    "minLength": 1,
+    "title": "Text",
+    "type": "string"
+   },
+   "x": {
+    "title": "X",
+    "type": "number"
+   },
+   "y": {
+    "title": "Y",
+    "type": "number"
+   },
+   "z": {
+    "title": "Z",
+    "type": "number"
+   }
+  },
+  "required": [
+   "x",
+   "y",
+   "z",
+   "text"
+  ],
+  "title": "RevisionPinCreate",
+  "type": "object"
+ },
+ "RevisionPinOut": {
+  "properties": {
+   "created_at": {
+    "format": "date-time",
+    "title": "Created At",
+    "type": "string"
+   },
+   "created_by": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Created By"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "text": {
+    "title": "Text",
+    "type": "string"
+   },
+   "x": {
+    "title": "X",
+    "type": "number"
+   },
+   "y": {
+    "title": "Y",
+    "type": "number"
+   },
+   "z": {
+    "title": "Z",
+    "type": "number"
+   }
+  },
+  "required": [
+   "id",
+   "x",
+   "y",
+   "z",
+   "text",
+   "created_by",
+   "created_at"
+  ],
+  "title": "RevisionPinOut",
+  "type": "object"
+ },
  "RevisionRef": {
   "properties": {
    "id": {
@@ -5594,6 +7102,30 @@
       "title": "Created At",
       "type": "string"
      },
+     "filament_color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Color"
+     },
+     "filament_type": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Type"
+     },
      "filament_used_grams": {
       "anyOf": [
        {
@@ -5605,6 +7137,18 @@
       ],
       "default": null,
       "title": "Filament Used Grams"
+     },
+     "filament_vendor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Vendor"
      },
      "file_hash": {
       "anyOf": [
@@ -5637,6 +7181,47 @@
       "title": "Id",
       "type": "integer"
      },
+     "layer_height": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Layer Height"
+     },
+     "nozzle_diameter": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Nozzle Diameter"
+     },
+     "object_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Object Count"
+     },
+     "print_count": {
+      "default": 0,
+      "title": "Print Count",
+      "type": "integer"
+     },
      "print_time_seconds": {
       "anyOf": [
        {
@@ -5648,6 +7233,38 @@
       ],
       "default": null,
       "title": "Print Time Seconds"
+     },
+     "sliced_for_model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Sliced For Model"
+     },
+     "tag_ids": {
+      "default": [],
+      "items": {
+       "type": "integer"
+      },
+      "title": "Tag Ids",
+      "type": "array"
+     },
+     "total_layers": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Total Layers"
      }
     },
     "required": [

@@ -10,6 +10,13 @@ import { server } from '../mocks/server';
 import { ProjectListPage } from '../../pages/ProjectListPage';
 import type { ProjectCatalogItem, ProjectFolder } from '../../api/client';
 
+// null = real AuthProvider (auth disabled: every permission granted).
+let granted: Set<string> | null = null;
+vi.mock('../../contexts/AuthContext', async (importOriginal) => {
+  const { withGrantedPermissions } = await import('../fixtures/authPermissions');
+  return withGrantedPermissions(await importOriginal<typeof import('../../contexts/AuthContext')>(), () => granted);
+});
+
 const folder = (id: number, name: string, parent_id: number | null = null, project_count = 0, in_production_count = 0): ProjectFolder =>
   ({ id, name, parent_id, project_count, in_production_count });
 const rec = (item_name: string, types: string[]) => ({
@@ -38,6 +45,7 @@ const mediaQuery = (matches: boolean) => ({ matches, addEventListener: vi.fn(), 
 beforeEach(() => {
   localStorage.clear();
   calls = [];
+  granted = null;
   window.history.replaceState({}, '', '/projects');
   // The test setup's matchMedia answers "narrow"; the catalog is a wide-screen page by default.
   vi.stubGlobal('matchMedia', vi.fn().mockReturnValue(mediaQuery(true)));
@@ -433,5 +441,38 @@ describe('ProjectListPage (catalog)', () => {
     render(<ProjectListPage />);
     await screen.findByTestId('catalog-row-1');
     expect(screen.getByTestId('catalog-folder-5')).toHaveStyle({ paddingLeft: `${12 + 3 * 18}px` });
+  });
+});
+
+describe('ProjectListPage (catalog) permission gating', () => {
+  it('read-only: no folder menu, no new-folder control, no create button, no drag, no editable title', async () => {
+    granted = new Set(['projects:read']);
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-1');
+    expect(screen.queryByRole('button', { name: 'Folder actions' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New folder' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New Project' })).not.toBeInTheDocument();
+    const pane = await screen.findByTestId('catalog-pane');
+    expect(within(pane).queryByRole('button', { name: '350Z 60mm WheelCap' })).not.toBeInTheDocument();
+    const start = mid(screen.getByTestId('catalog-row-4'));
+    fireEvent.mouseDown(screen.getByTestId('catalog-row-4'), { ...start, button: 0 });
+    fireEvent.mouseMove(document, { clientX: start.clientX, clientY: start.clientY + 30 });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(document.body).not.toHaveClass('catalog-dragging');
+    fireEvent.mouseUp(document);
+    expect(calls).toEqual([]);
+  });
+
+  it('update without create: the folder tools and drag are there, the create button is not', async () => {
+    granted = new Set(['projects:read', 'projects:update']);
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-1');
+    expect(screen.getByRole('button', { name: 'New folder' })).toBeInTheDocument();
+    expect(within(screen.getByTestId('catalog-folder-3')).getByRole('button', { name: 'Folder actions' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New Project' })).not.toBeInTheDocument();
+    const labels = screen.getByTestId('catalog-folder-3');
+    await dragOver(screen.getByTestId('catalog-row-4'), labels);
+    fireEvent.mouseUp(document, mid(labels));
+    await waitFor(() => expect(calls).toEqual(['move:4:{"folder_id":3}']));
   });
 });

@@ -31,6 +31,8 @@ BE_GLOBS=(
   'backend/app/models/project.py'
   'backend/app/models/project_item.py'
   'backend/app/models/project_tag.py'
+  'backend/app/models/project_folder.py'
+  'backend/app/models/project_pin.py'
   'backend/app/models/aito_task_delivery.py'
   'backend/app/services/project_*.py'
   'backend/app/services/aito_project_links.py'

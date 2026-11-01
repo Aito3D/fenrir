@@ -1,6 +1,6 @@
 ### exit: 0
 ### stdout:
---- de projectsPdm (205 keys)
+--- de projectsPdm (279 keys)
 acceptSuggestion = "{{name}} hinzufügen"  placeholders={{name}}
 aiUnavailable = "KI nicht verfügbar"
 aito.confirmUnlink = "{{name}} von dieser Aufgabe lösen? Die Liste der gelieferten Dateien wird geleert."  placeholders={{name}}
@@ -38,6 +38,60 @@ aito.searchProjects = "Projekte durchsuchen…"
 aito.suggestionSameClient = "Gleicher Kunde"
 aito.suggestionSimilar = "Ähnlicher Titel"
 aito.unlink = "Verknüpfung lösen"
+catalog.atTop = "Ganz oben"
+catalog.clickToRename = "Zum Umbenennen klicken"
+catalog.create = "Erstellen"
+catalog.deleteFolder = "Ordner löschen"
+catalog.deleteFolderHint = "Seine Projekte und Unterordner rücken eine Ebene nach oben"
+catalog.dragHint = "Projekt oder Ordner auf einen Ordner ziehen, um es einzuordnen"
+catalog.filesCount_one = "{{count}} Datei"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} Dateien"  placeholders={{count}}
+catalog.folderActions = "Ordneraktionen"
+catalog.folderName = "Ordnername"
+catalog.inFolder = "Im Ordner {{path}}"  placeholders={{path}}
+catalog.inProduction = "In Produktion"
+catalog.internal = "Intern"
+catalog.keyboardHelp = "↑ ↓ bewegen · ↵ öffnen"
+catalog.mobile.back = "Zurück"
+catalog.mobile.create = "Erstellen"
+catalog.mobile.createsHere = "+ legt hier ein Projekt an"
+catalog.mobile.done = "Fertig"
+catalog.mobile.filedIn = "Abgelegt in {{folder}}"  placeholders={{folder}}
+catalog.mobile.filters = "Status und Sortierung"
+catalog.mobile.folderEmpty = "Dieser Ordner ist leer"
+catalog.mobile.folders_one = "{{count}} Ordner"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} Ordner"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} in Produktion"  placeholders={{count}}
+catalog.mobile.newFolderInside = "Neuer Ordner darin"
+catalog.mobile.projectsHere = "Projekte hier"
+catalog.mobile.projects_one = "{{count}} Projekt"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} Projekte"  placeholders={{count}}
+catalog.mobile.sort = "Sortierung"
+catalog.mobile.status = "Status"
+catalog.moveFailed = "Projekt konnte nicht verschoben werden"
+catalog.moveTo = "In Ordner verschieben…"
+catalog.neverPrinted = "Nie gedruckt"
+catalog.newFolder = "Neuer Ordner"
+catalog.noFile = "Noch keine Datei"
+catalog.noFileYet = "Noch keine Druckdatei"
+catalog.noFolder = "Kein Ordner"
+catalog.notInFolder = "Ohne Ordner"
+catalog.nothingSliced = "Noch nichts geslict"
+catalog.openProject = "Projekt öffnen"
+catalog.order = "Auftrag #{{id}}"  placeholders={{id}}
+catalog.printed = "{{n}} gedruckt"  placeholders={{n}}
+catalog.printedOf = "{{n}} gedruckt / {{target}}"  placeholders={{n}},{{target}}
+catalog.printingFiles = "Druckdateien"
+catalog.readyToPrint = "Druckbereit"
+catalog.rename = "Umbenennen"
+catalog.saveFailed = "Ordneränderung konnte nicht gespeichert werden"
+catalog.searchPlaceholder = "Suche nach Code, Titel, Kunde, Auftrags-Nr., Datei, Drucker, Material…"
+catalog.selectHint = "Wähle ein Projekt, um seine Druckdateien zu sehen"
+catalog.sortActivity = "Sortierung: letzte Aktivität"
+catalog.sortCode = "Sortierung: Code"
+catalog.sortName = "Sortierung: Titel"
+catalog.sortPrinted = "Sortierung: am meisten gedruckt"
+catalog.summary = "{{shown}} von {{total}} Projekten"  placeholders={{shown}},{{total}}
 codeChipLabel = "Projektcode {{code}}"  placeholders={{code}}
 colCode = "Code"
 colPrints = "Drucke"
@@ -54,6 +108,7 @@ emptySearch = "Kein Projekt entspricht dieser Suche"
 files.byAuthor = "von {{name}}"  placeholders={{name}}
 files.chooseFiles = "Dateien auswählen"
 files.deleteItem = "Element löschen"
+files.deleteItemConfirm = "„{{name}}“ mit seinen Revisionen und Dateien löschen? Ein gedrucktes oder geliefertes Element kann nicht gelöscht werden."  placeholders={{name}}
 files.deleteRevision = "Revision löschen"
 files.derivedFrom = "Abgeleitet von {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Abgeleitet von"
@@ -70,6 +125,10 @@ files.fileCount_other = "{{count}} Dateien"  placeholders={{count}}
 files.fork = "Als neues Element abspalten"
 files.forkNameLabel = "Name des neuen Elements"
 files.frozen = "Dateien gesperrt: Diese Revision wurde gedruckt oder geliefert"
+files.headCost = "Kosten {{amount}}"  placeholders={{amount}}
+files.headPrice = "Preis"
+files.headPrint = "Druck"
+files.holdToChangeStatus = "0,5 s halten, um den Status zu ändern"
 files.itemBusy = "{{name}} wird noch hochgeladen, die abgelegten Dateien wurden daher nicht hochgeladen"  placeholders={{name}}
 files.itemNameLabel = "Elementname"
 files.newItem = "Neues Element"
@@ -191,7 +250,22 @@ saved = "Projekt gespeichert"
 searchPlaceholder = "Nach Code, Titel, Beschreibung oder Tag suchen…"
 slice.downloadSliced = "Geslicte Datei herunterladen"
 slice.failed = "Slicen fehlgeschlagen: {{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "Filamente"
+slice.fieldLayer = "Schichthöhe"
+slice.fieldNozzle = "Düse"
+slice.fieldPrinter = "Drucker"
+slice.mismatchRow = "{{field}}: Datei {{file}}, Revision {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "Die Einstellungen der Datei weichen von dieser Revision ab:"
 slice.openInSlicer = "Im Slicer öffnen"
+slice.uploadAction = "Geslicte Datei hochladen"
+slice.uploadChoose = "Geslicte Plattendatei"
+slice.uploadDone = "Geslicte Datei hinzugefügt"
+slice.uploadFailed = "Geslicte Datei konnte nicht hinzugefügt werden"
+slice.uploadHint = "Der Slicer ist nicht erreichbar. Öffne in Bambu Studio das Projekt dieser Revision, slice es mit denselben Einstellungen und exportiere die geslicte Plattendatei (.gcode.3mf)."
+slice.uploadMustMatch = "Muss übereinstimmen mit: {{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "Wähle die geslicte Plattendatei, die Bambu Studio exportiert (.gcode.3mf)."
+slice.uploadSubmit = "Geslicte Datei hinzufügen"
+slice.uploadTitle = "Geslicte Datei hochladen"
 statusAll = "Alle"
 statusFilterLabel = "Status"
 subtitle = "Jedes Teil, seine Dateien und sein Verlauf"
@@ -206,7 +280,7 @@ title = "Projekte"
 titleLabel = "Titel"
 viewGrid = "Rasteransicht"
 viewTable = "Tabellenansicht"
---- en projectsPdm (205 keys)
+--- en projectsPdm (279 keys)
 acceptSuggestion = "Add {{name}}"  placeholders={{name}}
 aiUnavailable = "AI unavailable"
 aito.confirmUnlink = "Unlink {{name}} from this task? Its delivered files list is cleared."  placeholders={{name}}
@@ -244,6 +318,60 @@ aito.searchProjects = "Search projects…"
 aito.suggestionSameClient = "Same client"
 aito.suggestionSimilar = "Similar title"
 aito.unlink = "Unlink"
+catalog.atTop = "At the top"
+catalog.clickToRename = "Click to rename"
+catalog.create = "Create"
+catalog.deleteFolder = "Delete folder"
+catalog.deleteFolderHint = "Its projects and sub-folders move up one level"
+catalog.dragHint = "Drag a project or a folder onto a folder to file it"
+catalog.filesCount_one = "{{count}} file"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} files"  placeholders={{count}}
+catalog.folderActions = "Folder actions"
+catalog.folderName = "Folder name"
+catalog.inFolder = "In {{path}}"  placeholders={{path}}
+catalog.inProduction = "In production"
+catalog.internal = "Internal"
+catalog.keyboardHelp = "↑ ↓ move · ↵ open"
+catalog.mobile.back = "Back"
+catalog.mobile.create = "Create"
+catalog.mobile.createsHere = "+ creates a project here"
+catalog.mobile.done = "Done"
+catalog.mobile.filedIn = "Filed in {{folder}}"  placeholders={{folder}}
+catalog.mobile.filters = "Status and sort"
+catalog.mobile.folderEmpty = "This folder is empty"
+catalog.mobile.folders_one = "{{count}} folder"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} folders"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} in production"  placeholders={{count}}
+catalog.mobile.newFolderInside = "New folder inside"
+catalog.mobile.projectsHere = "Projects here"
+catalog.mobile.projects_one = "{{count}} project"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} projects"  placeholders={{count}}
+catalog.mobile.sort = "Sort"
+catalog.mobile.status = "Status"
+catalog.moveFailed = "Could not move the project"
+catalog.moveTo = "Move to folder…"
+catalog.neverPrinted = "Never printed"
+catalog.newFolder = "New folder"
+catalog.noFile = "No file yet"
+catalog.noFileYet = "No printing file yet"
+catalog.noFolder = "No folder"
+catalog.notInFolder = "Not in a folder"
+catalog.nothingSliced = "Nothing sliced yet"
+catalog.openProject = "Open project"
+catalog.order = "order #{{id}}"  placeholders={{id}}
+catalog.printed = "{{n}} printed"  placeholders={{n}}
+catalog.printedOf = "{{n}} printed / {{target}}"  placeholders={{n}},{{target}}
+catalog.printingFiles = "Printing files"
+catalog.readyToPrint = "Ready to print"
+catalog.rename = "Rename"
+catalog.saveFailed = "Could not save the folder change"
+catalog.searchPlaceholder = "Search code, title, client, order #, file, printer, material…"
+catalog.selectHint = "Select a project to see its printing files"
+catalog.sortActivity = "Sort: last activity"
+catalog.sortCode = "Sort: code"
+catalog.sortName = "Sort: title"
+catalog.sortPrinted = "Sort: most printed"
+catalog.summary = "{{shown}} of {{total}} projects"  placeholders={{shown}},{{total}}
 codeChipLabel = "Project code {{code}}"  placeholders={{code}}
 colCode = "Code"
 colPrints = "Prints"
@@ -260,6 +388,7 @@ emptySearch = "No project matches this search"
 files.byAuthor = "by {{name}}"  placeholders={{name}}
 files.chooseFiles = "Choose files"
 files.deleteItem = "Delete item"
+files.deleteItemConfirm = "Delete “{{name}}” with its revisions and files? An item that was printed or delivered cannot be deleted."  placeholders={{name}}
 files.deleteRevision = "Delete revision"
 files.derivedFrom = "Derived from {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Derived from"
@@ -276,6 +405,10 @@ files.fileCount_other = "{{count}} files"  placeholders={{count}}
 files.fork = "Fork as new item"
 files.forkNameLabel = "New item name"
 files.frozen = "Files frozen: this revision was printed or delivered"
+files.headCost = "cost {{amount}}"  placeholders={{amount}}
+files.headPrice = "Price"
+files.headPrint = "Print"
+files.holdToChangeStatus = "Hold 0.5s to change the status"
 files.itemBusy = "{{name}} is still uploading, so the dropped files were not uploaded"  placeholders={{name}}
 files.itemNameLabel = "Item name"
 files.newItem = "New item"
@@ -397,7 +530,22 @@ saved = "Project saved"
 searchPlaceholder = "Search by code, title, description or tag…"
 slice.downloadSliced = "Download sliced file"
 slice.failed = "Slice failed: {{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "Filaments"
+slice.fieldLayer = "Layer height"
+slice.fieldNozzle = "Nozzle"
+slice.fieldPrinter = "Printer"
+slice.mismatchRow = "{{field}}: file {{file}}, revision {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "The file's settings differ from this revision:"
 slice.openInSlicer = "Open in slicer"
+slice.uploadAction = "Upload sliced file"
+slice.uploadChoose = "Sliced plate file"
+slice.uploadDone = "Sliced file added"
+slice.uploadFailed = "Could not add the sliced file"
+slice.uploadHint = "The slicer is unavailable. In Bambu Studio, open this revision's project, slice it with the same settings and export the plate's sliced file (.gcode.3mf)."
+slice.uploadMustMatch = "Must match: {{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "Choose the sliced plate file Bambu Studio exports (.gcode.3mf)."
+slice.uploadSubmit = "Add sliced file"
+slice.uploadTitle = "Upload the sliced file"
 statusAll = "All"
 statusFilterLabel = "Status"
 subtitle = "Every part, its files and its history"
@@ -412,7 +560,7 @@ title = "Projects"
 titleLabel = "Title"
 viewGrid = "Grid view"
 viewTable = "Table view"
---- es projectsPdm (205 keys)
+--- es projectsPdm (279 keys)
 acceptSuggestion = "Añadir {{name}}"  placeholders={{name}}
 aiUnavailable = "IA no disponible"
 aito.confirmUnlink = "¿Desvincular {{name}} de esta tarea? Se borrará la lista de archivos entregados."  placeholders={{name}}
@@ -450,6 +598,60 @@ aito.searchProjects = "Buscar proyectos…"
 aito.suggestionSameClient = "Mismo cliente"
 aito.suggestionSimilar = "Título parecido"
 aito.unlink = "Desvincular"
+catalog.atTop = "En la raíz"
+catalog.clickToRename = "Haz clic para renombrar"
+catalog.create = "Crear"
+catalog.deleteFolder = "Eliminar carpeta"
+catalog.deleteFolderHint = "Sus proyectos y subcarpetas suben un nivel"
+catalog.dragHint = "Arrastra un proyecto o una carpeta sobre una carpeta para archivarlo"
+catalog.filesCount_one = "{{count}} archivo"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} archivos"  placeholders={{count}}
+catalog.folderActions = "Acciones de carpeta"
+catalog.folderName = "Nombre de la carpeta"
+catalog.inFolder = "En {{path}}"  placeholders={{path}}
+catalog.inProduction = "En producción"
+catalog.internal = "Interno"
+catalog.keyboardHelp = "↑ ↓ mover · ↵ abrir"
+catalog.mobile.back = "Atrás"
+catalog.mobile.create = "Crear"
+catalog.mobile.createsHere = "+ crea un proyecto aquí"
+catalog.mobile.done = "Listo"
+catalog.mobile.filedIn = "Archivado en {{folder}}"  placeholders={{folder}}
+catalog.mobile.filters = "Estado y orden"
+catalog.mobile.folderEmpty = "Esta carpeta está vacía"
+catalog.mobile.folders_one = "{{count}} carpeta"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} carpetas"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} en producción"  placeholders={{count}}
+catalog.mobile.newFolderInside = "Nueva carpeta dentro"
+catalog.mobile.projectsHere = "Proyectos aquí"
+catalog.mobile.projects_one = "{{count}} proyecto"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} proyectos"  placeholders={{count}}
+catalog.mobile.sort = "Orden"
+catalog.mobile.status = "Estado"
+catalog.moveFailed = "No se pudo mover el proyecto"
+catalog.moveTo = "Mover a una carpeta…"
+catalog.neverPrinted = "Nunca impreso"
+catalog.newFolder = "Nueva carpeta"
+catalog.noFile = "Sin archivo"
+catalog.noFileYet = "Aún sin archivo de impresión"
+catalog.noFolder = "Sin carpeta"
+catalog.notInFolder = "Fuera de carpeta"
+catalog.nothingSliced = "Nada laminado aún"
+catalog.openProject = "Abrir proyecto"
+catalog.order = "pedido n.º {{id}}"  placeholders={{id}}
+catalog.printed = "{{n}} impresos"  placeholders={{n}}
+catalog.printedOf = "{{n}} impresos / {{target}}"  placeholders={{n}},{{target}}
+catalog.printingFiles = "Archivos de impresión"
+catalog.readyToPrint = "Listo para imprimir"
+catalog.rename = "Renombrar"
+catalog.saveFailed = "No se pudo guardar el cambio de carpeta"
+catalog.searchPlaceholder = "Buscar código, título, cliente, n.º de pedido, archivo, impresora, material…"
+catalog.selectHint = "Selecciona un proyecto para ver sus archivos de impresión"
+catalog.sortActivity = "Orden: última actividad"
+catalog.sortCode = "Orden: código"
+catalog.sortName = "Orden: título"
+catalog.sortPrinted = "Orden: más impresos"
+catalog.summary = "{{shown}} de {{total}} proyectos"  placeholders={{shown}},{{total}}
 codeChipLabel = "Código de proyecto {{code}}"  placeholders={{code}}
 colCode = "Código"
 colPrints = "Impresiones"
@@ -466,6 +668,7 @@ emptySearch = "Ningún proyecto coincide con esta búsqueda"
 files.byAuthor = "por {{name}}"  placeholders={{name}}
 files.chooseFiles = "Elegir archivos"
 files.deleteItem = "Eliminar elemento"
+files.deleteItemConfirm = "¿Eliminar «{{name}}» con sus revisiones y archivos? Un elemento impreso o entregado no se puede eliminar."  placeholders={{name}}
 files.deleteRevision = "Eliminar revisión"
 files.derivedFrom = "Derivado de {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Derivado de"
@@ -482,6 +685,10 @@ files.fileCount_other = "{{count}} archivos"  placeholders={{count}}
 files.fork = "Bifurcar como nuevo elemento"
 files.forkNameLabel = "Nombre del nuevo elemento"
 files.frozen = "Archivos bloqueados: esta revisión ya se imprimió o entregó"
+files.headCost = "coste {{amount}}"  placeholders={{amount}}
+files.headPrice = "Precio"
+files.headPrint = "Impresión"
+files.holdToChangeStatus = "Mantén 0,5 s para cambiar el estado"
 files.itemBusy = "{{name}} todavía se está subiendo, por lo que los archivos soltados no se subieron"  placeholders={{name}}
 files.itemNameLabel = "Nombre del elemento"
 files.newItem = "Nuevo elemento"
@@ -603,7 +810,22 @@ saved = "Proyecto guardado"
 searchPlaceholder = "Buscar por código, título, descripción o etiqueta…"
 slice.downloadSliced = "Descargar el archivo laminado"
 slice.failed = "Error al laminar: {{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "Filamentos"
+slice.fieldLayer = "Altura de capa"
+slice.fieldNozzle = "Boquilla"
+slice.fieldPrinter = "Impresora"
+slice.mismatchRow = "{{field}}: archivo {{file}}, revisión {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "Los ajustes del archivo difieren de esta revisión:"
 slice.openInSlicer = "Abrir en el laminador"
+slice.uploadAction = "Subir archivo laminado"
+slice.uploadChoose = "Archivo laminado de la placa"
+slice.uploadDone = "Archivo laminado añadido"
+slice.uploadFailed = "No se pudo añadir el archivo laminado"
+slice.uploadHint = "El laminador no está disponible. En Bambu Studio, abre el proyecto de esta revisión, lamínalo con los mismos ajustes y exporta el archivo laminado de la placa (.gcode.3mf)."
+slice.uploadMustMatch = "Debe coincidir con: {{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "Elige el archivo laminado de la placa que exporta Bambu Studio (.gcode.3mf)."
+slice.uploadSubmit = "Añadir archivo laminado"
+slice.uploadTitle = "Subir el archivo laminado"
 statusAll = "Todos"
 statusFilterLabel = "Estado"
 subtitle = "Cada pieza, sus archivos y su historial"
@@ -618,7 +840,7 @@ title = "Proyectos"
 titleLabel = "Título"
 viewGrid = "Vista de cuadrícula"
 viewTable = "Vista de tabla"
---- fr projectsPdm (205 keys)
+--- fr projectsPdm (279 keys)
 acceptSuggestion = "Ajouter {{name}}"  placeholders={{name}}
 aiUnavailable = "IA indisponible"
 aito.confirmUnlink = "Délier {{name}} de cette tâche ? La liste des fichiers livrés sera effacée."  placeholders={{name}}
@@ -656,6 +878,60 @@ aito.searchProjects = "Rechercher un projet…"
 aito.suggestionSameClient = "Même client"
 aito.suggestionSimilar = "Titre proche"
 aito.unlink = "Délier"
+catalog.atTop = "À la racine"
+catalog.clickToRename = "Cliquer pour renommer"
+catalog.create = "Créer"
+catalog.deleteFolder = "Supprimer le dossier"
+catalog.deleteFolderHint = "Ses projets et sous-dossiers remontent d’un niveau"
+catalog.dragHint = "Glissez un projet ou un dossier sur un dossier pour le classer"
+catalog.filesCount_one = "{{count}} fichier"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} fichiers"  placeholders={{count}}
+catalog.folderActions = "Actions du dossier"
+catalog.folderName = "Nom du dossier"
+catalog.inFolder = "Dans {{path}}"  placeholders={{path}}
+catalog.inProduction = "En production"
+catalog.internal = "Interne"
+catalog.keyboardHelp = "↑ ↓ déplacer · ↵ ouvrir"
+catalog.mobile.back = "Retour"
+catalog.mobile.create = "Créer"
+catalog.mobile.createsHere = "+ crée un projet ici"
+catalog.mobile.done = "Terminé"
+catalog.mobile.filedIn = "Classé dans {{folder}}"  placeholders={{folder}}
+catalog.mobile.filters = "Statut et tri"
+catalog.mobile.folderEmpty = "Ce dossier est vide"
+catalog.mobile.folders_one = "{{count}} dossier"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} dossiers"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} en production"  placeholders={{count}}
+catalog.mobile.newFolderInside = "Nouveau dossier dedans"
+catalog.mobile.projectsHere = "Projets ici"
+catalog.mobile.projects_one = "{{count}} projet"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} projets"  placeholders={{count}}
+catalog.mobile.sort = "Tri"
+catalog.mobile.status = "Statut"
+catalog.moveFailed = "Impossible de déplacer le projet"
+catalog.moveTo = "Déplacer vers un dossier…"
+catalog.neverPrinted = "Jamais imprimé"
+catalog.newFolder = "Nouveau dossier"
+catalog.noFile = "Sans fichier"
+catalog.noFileYet = "Aucun fichier d’impression"
+catalog.noFolder = "Aucun dossier"
+catalog.notInFolder = "Hors dossier"
+catalog.nothingSliced = "Rien n’est tranché"
+catalog.openProject = "Ouvrir le projet"
+catalog.order = "commande n°{{id}}"  placeholders={{id}}
+catalog.printed = "{{n}} imprimé(s)"  placeholders={{n}}
+catalog.printedOf = "{{n}} imprimé(s) / {{target}}"  placeholders={{n}},{{target}}
+catalog.printingFiles = "Fichiers d’impression"
+catalog.readyToPrint = "Prêt à imprimer"
+catalog.rename = "Renommer"
+catalog.saveFailed = "Impossible d’enregistrer le dossier"
+catalog.searchPlaceholder = "Rechercher code, titre, client, n° de commande, fichier, imprimante, matière…"
+catalog.selectHint = "Sélectionnez un projet pour voir ses fichiers d’impression"
+catalog.sortActivity = "Tri : dernière activité"
+catalog.sortCode = "Tri : code"
+catalog.sortName = "Tri : titre"
+catalog.sortPrinted = "Tri : plus imprimés"
+catalog.summary = "{{shown}} projets sur {{total}}"  placeholders={{shown}},{{total}}
 codeChipLabel = "Code projet {{code}}"  placeholders={{code}}
 colCode = "Code"
 colPrints = "Impressions"
@@ -672,6 +948,7 @@ emptySearch = "Aucun projet ne correspond à cette recherche"
 files.byAuthor = "par {{name}}"  placeholders={{name}}
 files.chooseFiles = "Choisir des fichiers"
 files.deleteItem = "Supprimer l'élément"
+files.deleteItemConfirm = "Supprimer « {{name}} » avec ses révisions et ses fichiers ? Un élément imprimé ou livré ne peut pas être supprimé."  placeholders={{name}}
 files.deleteRevision = "Supprimer la révision"
 files.derivedFrom = "Dérivé de {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Dérivé de"
@@ -688,6 +965,10 @@ files.fileCount_other = "{{count}} fichiers"  placeholders={{count}}
 files.fork = "Dupliquer en nouvel élément"
 files.forkNameLabel = "Nom du nouvel élément"
 files.frozen = "Fichiers figés : révision déjà imprimée ou livrée"
+files.headCost = "coût {{amount}}"  placeholders={{amount}}
+files.headPrice = "Prix"
+files.headPrint = "Impression"
+files.holdToChangeStatus = "Maintenir 0,5 s pour changer le statut"
 files.itemBusy = "{{name}} est encore en cours d'envoi : les fichiers déposés n'ont pas été envoyés"  placeholders={{name}}
 files.itemNameLabel = "Nom de l'élément"
 files.newItem = "Nouvel élément"
@@ -809,7 +1090,22 @@ saved = "Projet enregistré"
 searchPlaceholder = "Rechercher par code, titre, description ou étiquette…"
 slice.downloadSliced = "Télécharger le fichier tranché"
 slice.failed = "Échec du tranchage : {{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "Types de filament"
+slice.fieldLayer = "Hauteur de couche"
+slice.fieldNozzle = "Buse"
+slice.fieldPrinter = "Imprimante"
+slice.mismatchRow = "{{field}} : fichier {{file}}, révision {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "Les réglages du fichier diffèrent de cette révision :"
 slice.openInSlicer = "Ouvrir dans le trancheur"
+slice.uploadAction = "Téléverser le fichier tranché"
+slice.uploadChoose = "Fichier tranché du plateau"
+slice.uploadDone = "Fichier tranché ajouté"
+slice.uploadFailed = "Impossible d'ajouter le fichier tranché"
+slice.uploadHint = "Le trancheur est indisponible. Dans Bambu Studio, ouvrez le projet de cette révision, tranchez-le avec les mêmes réglages et exportez le fichier tranché du plateau (.gcode.3mf)."
+slice.uploadMustMatch = "Doit correspondre à : {{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "Choisissez le fichier tranché du plateau exporté par Bambu Studio (.gcode.3mf)."
+slice.uploadSubmit = "Ajouter le fichier tranché"
+slice.uploadTitle = "Téléverser le fichier tranché"
 statusAll = "Tous"
 statusFilterLabel = "Statut"
 subtitle = "Chaque pièce, ses fichiers et son historique"
@@ -824,7 +1120,7 @@ title = "Projets"
 titleLabel = "Titre"
 viewGrid = "Vue grille"
 viewTable = "Vue tableau"
---- it projectsPdm (205 keys)
+--- it projectsPdm (279 keys)
 acceptSuggestion = "Aggiungi {{name}}"  placeholders={{name}}
 aiUnavailable = "IA non disponibile"
 aito.confirmUnlink = "Scollegare {{name}} da questa attività? L'elenco dei file consegnati verrà svuotato."  placeholders={{name}}
@@ -862,6 +1158,60 @@ aito.searchProjects = "Cerca progetti…"
 aito.suggestionSameClient = "Stesso cliente"
 aito.suggestionSimilar = "Titolo simile"
 aito.unlink = "Scollega"
+catalog.atTop = "Alla radice"
+catalog.clickToRename = "Clicca per rinominare"
+catalog.create = "Crea"
+catalog.deleteFolder = "Elimina cartella"
+catalog.deleteFolderHint = "I suoi progetti e sottocartelle salgono di un livello"
+catalog.dragHint = "Trascina un progetto o una cartella su una cartella per archiviarlo"
+catalog.filesCount_one = "{{count}} file"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} file"  placeholders={{count}}
+catalog.folderActions = "Azioni cartella"
+catalog.folderName = "Nome della cartella"
+catalog.inFolder = "Nella cartella {{path}}"  placeholders={{path}}
+catalog.inProduction = "In produzione"
+catalog.internal = "Interno"
+catalog.keyboardHelp = "↑ ↓ sposta · ↵ apri"
+catalog.mobile.back = "Indietro"
+catalog.mobile.create = "Crea"
+catalog.mobile.createsHere = "+ crea un progetto qui"
+catalog.mobile.done = "Fatto"
+catalog.mobile.filedIn = "Archiviato in {{folder}}"  placeholders={{folder}}
+catalog.mobile.filters = "Stato e ordinamento"
+catalog.mobile.folderEmpty = "Questa cartella è vuota"
+catalog.mobile.folders_one = "{{count}} cartella"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} cartelle"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} in produzione"  placeholders={{count}}
+catalog.mobile.newFolderInside = "Nuova cartella dentro"
+catalog.mobile.projectsHere = "Progetti qui"
+catalog.mobile.projects_one = "{{count}} progetto"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} progetti"  placeholders={{count}}
+catalog.mobile.sort = "Ordinamento"
+catalog.mobile.status = "Stato"
+catalog.moveFailed = "Impossibile spostare il progetto"
+catalog.moveTo = "Sposta in una cartella…"
+catalog.neverPrinted = "Mai stampato"
+catalog.newFolder = "Nuova cartella"
+catalog.noFile = "Senza file"
+catalog.noFileYet = "Ancora nessun file di stampa"
+catalog.noFolder = "Nessuna cartella"
+catalog.notInFolder = "Fuori cartella"
+catalog.nothingSliced = "Niente di affettato"
+catalog.openProject = "Apri progetto"
+catalog.order = "ordine n. {{id}}"  placeholders={{id}}
+catalog.printed = "{{n}} stampati"  placeholders={{n}}
+catalog.printedOf = "{{n}} stampati / {{target}}"  placeholders={{n}},{{target}}
+catalog.printingFiles = "File di stampa"
+catalog.readyToPrint = "Pronto da stampare"
+catalog.rename = "Rinomina"
+catalog.saveFailed = "Impossibile salvare la modifica della cartella"
+catalog.searchPlaceholder = "Cerca codice, titolo, cliente, n. ordine, file, stampante, materiale…"
+catalog.selectHint = "Seleziona un progetto per vedere i suoi file di stampa"
+catalog.sortActivity = "Ordine: ultima attività"
+catalog.sortCode = "Ordine: codice"
+catalog.sortName = "Ordine: titolo"
+catalog.sortPrinted = "Ordine: più stampati"
+catalog.summary = "{{shown}} progetti su {{total}}"  placeholders={{shown}},{{total}}
 codeChipLabel = "Codice progetto {{code}}"  placeholders={{code}}
 colCode = "Codice"
 colPrints = "Stampe"
@@ -878,6 +1228,7 @@ emptySearch = "Nessun progetto corrisponde a questa ricerca"
 files.byAuthor = "di {{name}}"  placeholders={{name}}
 files.chooseFiles = "Scegli file"
 files.deleteItem = "Elimina elemento"
+files.deleteItemConfirm = "Eliminare «{{name}}» con le sue revisioni e i suoi file? Un elemento stampato o consegnato non può essere eliminato."  placeholders={{name}}
 files.deleteRevision = "Elimina revisione"
 files.derivedFrom = "Derivato da {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Derivato da"
@@ -894,6 +1245,10 @@ files.fileCount_other = "{{count}} file"  placeholders={{count}}
 files.fork = "Duplica come nuovo elemento"
 files.forkNameLabel = "Nome del nuovo elemento"
 files.frozen = "File bloccati: questa revisione è già stata stampata o consegnata"
+files.headCost = "costo {{amount}}"  placeholders={{amount}}
+files.headPrice = "Prezzo"
+files.headPrint = "Stampa"
+files.holdToChangeStatus = "Tieni premuto 0,5 s per cambiare lo stato"
 files.itemBusy = "{{name}} è ancora in caricamento, quindi i file trascinati non sono stati caricati"  placeholders={{name}}
 files.itemNameLabel = "Nome dell'elemento"
 files.newItem = "Nuovo elemento"
@@ -1015,7 +1370,22 @@ saved = "Progetto salvato"
 searchPlaceholder = "Cerca per codice, titolo, descrizione o tag…"
 slice.downloadSliced = "Scarica il file elaborato"
 slice.failed = "Elaborazione non riuscita: {{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "Filamenti"
+slice.fieldLayer = "Altezza layer"
+slice.fieldNozzle = "Ugello"
+slice.fieldPrinter = "Stampante"
+slice.mismatchRow = "{{field}}: file {{file}}, revisione {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "Le impostazioni del file differiscono da questa revisione:"
 slice.openInSlicer = "Apri nello slicer"
+slice.uploadAction = "Carica file affettato"
+slice.uploadChoose = "File affettato del piatto"
+slice.uploadDone = "File affettato aggiunto"
+slice.uploadFailed = "Impossibile aggiungere il file affettato"
+slice.uploadHint = "Lo slicer non è disponibile. In Bambu Studio apri il progetto di questa revisione, affettalo con le stesse impostazioni ed esporta il file affettato del piatto (.gcode.3mf)."
+slice.uploadMustMatch = "Deve corrispondere a: {{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "Scegli il file affettato del piatto esportato da Bambu Studio (.gcode.3mf)."
+slice.uploadSubmit = "Aggiungi file affettato"
+slice.uploadTitle = "Carica il file affettato"
 statusAll = "Tutti"
 statusFilterLabel = "Stato"
 subtitle = "Ogni pezzo, i suoi file e la sua cronologia"
@@ -1030,7 +1400,7 @@ title = "Progetti"
 titleLabel = "Titolo"
 viewGrid = "Vista griglia"
 viewTable = "Vista tabella"
---- ja projectsPdm (205 keys)
+--- ja projectsPdm (279 keys)
 acceptSuggestion = "{{name}}を追加"  placeholders={{name}}
 aiUnavailable = "AIは利用できません"
 aito.confirmUnlink = "このタスクから {{name}} のリンクを解除しますか？納品ファイルの一覧は消去されます。"  placeholders={{name}}
@@ -1068,6 +1438,60 @@ aito.searchProjects = "プロジェクトを検索…"
 aito.suggestionSameClient = "同じ顧客"
 aito.suggestionSimilar = "似たタイトル"
 aito.unlink = "リンク解除"
+catalog.atTop = "最上位"
+catalog.clickToRename = "クリックして名前を変更"
+catalog.create = "作成"
+catalog.deleteFolder = "フォルダーを削除"
+catalog.deleteFolderHint = "中のプロジェクトとサブフォルダーは一つ上の階層へ移動します"
+catalog.dragHint = "プロジェクトやフォルダーをフォルダーにドラッグして整理"
+catalog.filesCount_one = "{{count}} ファイル"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} ファイル"  placeholders={{count}}
+catalog.folderActions = "フォルダー操作"
+catalog.folderName = "フォルダー名"
+catalog.inFolder = "{{path}} の中"  placeholders={{path}}
+catalog.inProduction = "生産中"
+catalog.internal = "社内"
+catalog.keyboardHelp = "↑ ↓ 移動 · ↵ 開く"
+catalog.mobile.back = "戻る"
+catalog.mobile.create = "作成"
+catalog.mobile.createsHere = "+ でここにプロジェクトを作成"
+catalog.mobile.done = "完了"
+catalog.mobile.filedIn = "{{folder}} に保存"  placeholders={{folder}}
+catalog.mobile.filters = "状態と並び順"
+catalog.mobile.folderEmpty = "このフォルダーは空です"
+catalog.mobile.folders_one = "{{count}} フォルダー"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} フォルダー"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} 件が生産中"  placeholders={{count}}
+catalog.mobile.newFolderInside = "中に新しいフォルダー"
+catalog.mobile.projectsHere = "ここのプロジェクト"
+catalog.mobile.projects_one = "{{count}} プロジェクト"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} プロジェクト"  placeholders={{count}}
+catalog.mobile.sort = "並び順"
+catalog.mobile.status = "状態"
+catalog.moveFailed = "プロジェクトを移動できませんでした"
+catalog.moveTo = "フォルダーへ移動…"
+catalog.neverPrinted = "未印刷"
+catalog.newFolder = "新しいフォルダー"
+catalog.noFile = "ファイル未登録"
+catalog.noFileYet = "印刷ファイルはまだありません"
+catalog.noFolder = "フォルダーなし"
+catalog.notInFolder = "フォルダー未分類"
+catalog.nothingSliced = "スライス済みのファイルがありません"
+catalog.openProject = "プロジェクトを開く"
+catalog.order = "注文 #{{id}}"  placeholders={{id}}
+catalog.printed = "{{n}} 回印刷"  placeholders={{n}}
+catalog.printedOf = "{{n}} / {{target}} 回印刷"  placeholders={{n}},{{target}}
+catalog.printingFiles = "印刷ファイル"
+catalog.readyToPrint = "印刷可能"
+catalog.rename = "名前を変更"
+catalog.saveFailed = "フォルダーの変更を保存できませんでした"
+catalog.searchPlaceholder = "コード、タイトル、顧客、注文番号、ファイル、プリンター、素材で検索…"
+catalog.selectHint = "プロジェクトを選ぶと印刷ファイルが表示されます"
+catalog.sortActivity = "並び替え: 最終更新"
+catalog.sortCode = "並び替え: コード"
+catalog.sortName = "並び替え: タイトル"
+catalog.sortPrinted = "並び替え: 印刷回数"
+catalog.summary = "{{total}} 件中 {{shown}} 件のプロジェクト"  placeholders={{shown}},{{total}}
 codeChipLabel = "プロジェクトコード {{code}}"  placeholders={{code}}
 colCode = "コード"
 colPrints = "印刷"
@@ -1084,6 +1508,7 @@ emptySearch = "この検索に一致するプロジェクトはありません"
 files.byAuthor = "作成者: {{name}}"  placeholders={{name}}
 files.chooseFiles = "ファイルを選択"
 files.deleteItem = "アイテムを削除"
+files.deleteItemConfirm = "「{{name}}」をリビジョンとファイルごと削除しますか？印刷済みまたは納品済みのアイテムは削除できません。"  placeholders={{name}}
 files.deleteRevision = "リビジョンを削除"
 files.derivedFrom = "{{label}}から派生"  placeholders={{label}}
 files.derivedFromLabel = "派生元"
@@ -1100,6 +1525,10 @@ files.fileCount_other = "{{count}}件のファイル"  placeholders={{count}}
 files.fork = "新しいアイテムとして分岐"
 files.forkNameLabel = "新しいアイテム名"
 files.frozen = "ファイルはロックされています：このリビジョンは印刷または納品済みです"
+files.headCost = "原価 {{amount}}"  placeholders={{amount}}
+files.headPrice = "価格"
+files.headPrint = "印刷"
+files.holdToChangeStatus = "0.5秒長押しでステータスを変更"
 files.itemBusy = "{{name}} はまだアップロード中のため、ドロップしたファイルはアップロードされませんでした"  placeholders={{name}}
 files.itemNameLabel = "アイテム名"
 files.newItem = "新規アイテム"
@@ -1221,7 +1650,22 @@ saved = "プロジェクトを保存しました"
 searchPlaceholder = "コード、タイトル、説明、タグで検索…"
 slice.downloadSliced = "スライス済みファイルをダウンロード"
 slice.failed = "スライスに失敗しました: {{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "フィラメント"
+slice.fieldLayer = "レイヤー高さ"
+slice.fieldNozzle = "ノズル"
+slice.fieldPrinter = "プリンター"
+slice.mismatchRow = "{{field}}: ファイル {{file}}、リビジョン {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "ファイルの設定がこのリビジョンと異なります:"
 slice.openInSlicer = "スライサーで開く"
+slice.uploadAction = "スライス済みファイルをアップロード"
+slice.uploadChoose = "プレートのスライス済みファイル"
+slice.uploadDone = "スライス済みファイルを追加しました"
+slice.uploadFailed = "スライス済みファイルを追加できませんでした"
+slice.uploadHint = "スライサーが利用できません。Bambu Studio でこのリビジョンのプロジェクトを開き、同じ設定でスライスして、プレートのスライス済みファイル (.gcode.3mf) を書き出してください。"
+slice.uploadMustMatch = "一致が必要: {{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "Bambu Studio が書き出すプレートのスライス済みファイル (.gcode.3mf) を選んでください。"
+slice.uploadSubmit = "スライス済みファイルを追加"
+slice.uploadTitle = "スライス済みファイルをアップロード"
 statusAll = "すべて"
 statusFilterLabel = "ステータス"
 subtitle = "すべての部品、そのファイルと履歴"
@@ -1236,7 +1680,7 @@ title = "プロジェクト"
 titleLabel = "タイトル"
 viewGrid = "グリッド表示"
 viewTable = "テーブル表示"
---- ko projectsPdm (205 keys)
+--- ko projectsPdm (279 keys)
 acceptSuggestion = "{{name}} 추가"  placeholders={{name}}
 aiUnavailable = "AI를 사용할 수 없음"
 aito.confirmUnlink = "이 작업에서 {{name}} 연결을 해제할까요? 납품 파일 목록이 지워집니다."  placeholders={{name}}
@@ -1274,6 +1718,60 @@ aito.searchProjects = "프로젝트 검색…"
 aito.suggestionSameClient = "같은 고객"
 aito.suggestionSimilar = "비슷한 제목"
 aito.unlink = "연결 해제"
+catalog.atTop = "최상위"
+catalog.clickToRename = "클릭하여 이름 변경"
+catalog.create = "만들기"
+catalog.deleteFolder = "폴더 삭제"
+catalog.deleteFolderHint = "안의 프로젝트와 하위 폴더는 한 단계 위로 이동합니다"
+catalog.dragHint = "프로젝트나 폴더를 폴더로 드래그하여 정리"
+catalog.filesCount_one = "파일 {{count}}개"  placeholders={{count}}
+catalog.filesCount_other = "파일 {{count}}개"  placeholders={{count}}
+catalog.folderActions = "폴더 작업"
+catalog.folderName = "폴더 이름"
+catalog.inFolder = "{{path}} 안"  placeholders={{path}}
+catalog.inProduction = "생산 중"
+catalog.internal = "내부"
+catalog.keyboardHelp = "↑ ↓ 이동 · ↵ 열기"
+catalog.mobile.back = "뒤로"
+catalog.mobile.create = "만들기"
+catalog.mobile.createsHere = "+ 로 여기에 프로젝트 만들기"
+catalog.mobile.done = "완료"
+catalog.mobile.filedIn = "{{folder}}에 보관"  placeholders={{folder}}
+catalog.mobile.filters = "상태 및 정렬"
+catalog.mobile.folderEmpty = "이 폴더는 비어 있습니다"
+catalog.mobile.folders_one = "폴더 {{count}}개"  placeholders={{count}}
+catalog.mobile.folders_other = "폴더 {{count}}개"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}}개 생산 중"  placeholders={{count}}
+catalog.mobile.newFolderInside = "안에 새 폴더"
+catalog.mobile.projectsHere = "여기의 프로젝트"
+catalog.mobile.projects_one = "프로젝트 {{count}}개"  placeholders={{count}}
+catalog.mobile.projects_other = "프로젝트 {{count}}개"  placeholders={{count}}
+catalog.mobile.sort = "정렬"
+catalog.mobile.status = "상태"
+catalog.moveFailed = "프로젝트를 이동할 수 없습니다"
+catalog.moveTo = "폴더로 이동…"
+catalog.neverPrinted = "출력한 적 없음"
+catalog.newFolder = "새 폴더"
+catalog.noFile = "파일 없음"
+catalog.noFileYet = "아직 출력 파일이 없습니다"
+catalog.noFolder = "폴더 없음"
+catalog.notInFolder = "폴더 미지정"
+catalog.nothingSliced = "슬라이스된 파일이 없습니다"
+catalog.openProject = "프로젝트 열기"
+catalog.order = "주문 #{{id}}"  placeholders={{id}}
+catalog.printed = "{{n}}회 출력"  placeholders={{n}}
+catalog.printedOf = "{{n}} / {{target}}회 출력"  placeholders={{n}},{{target}}
+catalog.printingFiles = "출력 파일"
+catalog.readyToPrint = "출력 준비됨"
+catalog.rename = "이름 바꾸기"
+catalog.saveFailed = "폴더 변경을 저장할 수 없습니다"
+catalog.searchPlaceholder = "코드, 제목, 고객, 주문 번호, 파일, 프린터, 소재로 검색…"
+catalog.selectHint = "프로젝트를 선택하면 출력 파일이 표시됩니다"
+catalog.sortActivity = "정렬: 최근 활동"
+catalog.sortCode = "정렬: 코드"
+catalog.sortName = "정렬: 제목"
+catalog.sortPrinted = "정렬: 출력 횟수"
+catalog.summary = "프로젝트 {{total}}개 중 {{shown}}개"  placeholders={{shown}},{{total}}
 codeChipLabel = "프로젝트 코드 {{code}}"  placeholders={{code}}
 colCode = "코드"
 colPrints = "출력"
@@ -1290,6 +1788,7 @@ emptySearch = "이 검색과 일치하는 프로젝트가 없습니다"
 files.byAuthor = "{{name}}"  placeholders={{name}}
 files.chooseFiles = "파일 선택"
 files.deleteItem = "항목 삭제"
+files.deleteItemConfirm = "“{{name}}”을(를) 리비전과 파일과 함께 삭제할까요? 인쇄되었거나 배송된 항목은 삭제할 수 없습니다."  placeholders={{name}}
 files.deleteRevision = "리비전 삭제"
 files.derivedFrom = "{{label}}에서 파생"  placeholders={{label}}
 files.derivedFromLabel = "파생 원본"
@@ -1306,6 +1805,10 @@ files.fileCount_other = "파일 {{count}}개"  placeholders={{count}}
 files.fork = "새 항목으로 분기"
 files.forkNameLabel = "새 항목 이름"
 files.frozen = "파일 잠김: 이 리비전은 이미 출력되었거나 납품되었습니다"
+files.headCost = "원가 {{amount}}"  placeholders={{amount}}
+files.headPrice = "가격"
+files.headPrint = "출력"
+files.holdToChangeStatus = "0.5초 길게 눌러 상태 변경"
 files.itemBusy = "{{name}}을(를) 아직 업로드하는 중이라 드롭한 파일은 업로드되지 않았습니다"  placeholders={{name}}
 files.itemNameLabel = "항목 이름"
 files.newItem = "새 항목"
@@ -1427,7 +1930,22 @@ saved = "프로젝트가 저장되었습니다"
 searchPlaceholder = "코드, 제목, 설명 또는 태그로 검색…"
 slice.downloadSliced = "슬라이스된 파일 다운로드"
 slice.failed = "슬라이스 실패: {{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "필라멘트"
+slice.fieldLayer = "레이어 높이"
+slice.fieldNozzle = "노즐"
+slice.fieldPrinter = "프린터"
+slice.mismatchRow = "{{field}}: 파일 {{file}}, 리비전 {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "파일의 설정이 이 리비전과 다릅니다:"
 slice.openInSlicer = "슬라이서에서 열기"
+slice.uploadAction = "슬라이스된 파일 업로드"
+slice.uploadChoose = "플레이트의 슬라이스된 파일"
+slice.uploadDone = "슬라이스된 파일이 추가되었습니다"
+slice.uploadFailed = "슬라이스된 파일을 추가할 수 없습니다"
+slice.uploadHint = "슬라이서를 사용할 수 없습니다. Bambu Studio에서 이 리비전의 프로젝트를 열고 같은 설정으로 슬라이스한 뒤 플레이트의 슬라이스된 파일(.gcode.3mf)을 내보내세요."
+slice.uploadMustMatch = "일치해야 함: {{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "Bambu Studio가 내보내는 플레이트의 슬라이스된 파일(.gcode.3mf)을 선택하세요."
+slice.uploadSubmit = "슬라이스된 파일 추가"
+slice.uploadTitle = "슬라이스된 파일 업로드"
 statusAll = "전체"
 statusFilterLabel = "상태"
 subtitle = "모든 부품, 파일 및 이력"
@@ -1442,7 +1960,7 @@ title = "프로젝트"
 titleLabel = "제목"
 viewGrid = "격자 보기"
 viewTable = "표 보기"
---- nl projectsPdm (205 keys)
+--- nl projectsPdm (279 keys)
 acceptSuggestion = "{{name}} toevoegen"  placeholders={{name}}
 aiUnavailable = "AI niet beschikbaar"
 aito.confirmUnlink = "{{name}} loskoppelen van deze taak? De lijst met geleverde bestanden wordt gewist."  placeholders={{name}}
@@ -1480,6 +1998,60 @@ aito.searchProjects = "Projecten zoeken…"
 aito.suggestionSameClient = "Zelfde klant"
 aito.suggestionSimilar = "Gelijkaardige titel"
 aito.unlink = "Ontkoppelen"
+catalog.atTop = "Bovenaan"
+catalog.clickToRename = "Klik om te hernoemen"
+catalog.create = "Aanmaken"
+catalog.deleteFolder = "Map verwijderen"
+catalog.deleteFolderHint = "Zijn projecten en submappen schuiven een niveau omhoog"
+catalog.dragHint = "Sleep een project of map naar een map om het op te bergen"
+catalog.filesCount_one = "{{count}} bestand"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} bestanden"  placeholders={{count}}
+catalog.folderActions = "Mapacties"
+catalog.folderName = "Mapnaam"
+catalog.inFolder = "In map {{path}}"  placeholders={{path}}
+catalog.inProduction = "In productie"
+catalog.internal = "Intern"
+catalog.keyboardHelp = "↑ ↓ bewegen · ↵ openen"
+catalog.mobile.back = "Terug"
+catalog.mobile.create = "Aanmaken"
+catalog.mobile.createsHere = "+ maakt hier een project"
+catalog.mobile.done = "Klaar"
+catalog.mobile.filedIn = "Opgeborgen in {{folder}}"  placeholders={{folder}}
+catalog.mobile.filters = "Status en sortering"
+catalog.mobile.folderEmpty = "Deze map is leeg"
+catalog.mobile.folders_one = "{{count}} map"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} mappen"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} in productie"  placeholders={{count}}
+catalog.mobile.newFolderInside = "Nieuwe map hierin"
+catalog.mobile.projectsHere = "Projecten hier"
+catalog.mobile.projects_one = "{{count}} project"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} projecten"  placeholders={{count}}
+catalog.mobile.sort = "Sortering"
+catalog.mobile.status = "Status"
+catalog.moveFailed = "Kon het project niet verplaatsen"
+catalog.moveTo = "Verplaatsen naar map…"
+catalog.neverPrinted = "Nooit geprint"
+catalog.newFolder = "Nieuwe map"
+catalog.noFile = "Nog geen bestand"
+catalog.noFileYet = "Nog geen printbestand"
+catalog.noFolder = "Geen map"
+catalog.notInFolder = "Niet in een map"
+catalog.nothingSliced = "Nog niets gesliced"
+catalog.openProject = "Project openen"
+catalog.order = "order nr. {{id}}"  placeholders={{id}}
+catalog.printed = "{{n}} geprint"  placeholders={{n}}
+catalog.printedOf = "{{n}} geprint / {{target}}"  placeholders={{n}},{{target}}
+catalog.printingFiles = "Printbestanden"
+catalog.readyToPrint = "Klaar om te printen"
+catalog.rename = "Hernoemen"
+catalog.saveFailed = "Kon de mapwijziging niet opslaan"
+catalog.searchPlaceholder = "Zoek op code, titel, klant, ordernr., bestand, printer, materiaal…"
+catalog.selectHint = "Kies een project om zijn printbestanden te zien"
+catalog.sortActivity = "Sorteren: laatste activiteit"
+catalog.sortCode = "Sorteren: code"
+catalog.sortName = "Sorteren: titel"
+catalog.sortPrinted = "Sorteren: meest geprint"
+catalog.summary = "{{shown}} van {{total}} projecten"  placeholders={{shown}},{{total}}
 codeChipLabel = "Projectcode {{code}}"  placeholders={{code}}
 colCode = "Code"
 colPrints = "Afdrukken"
@@ -1496,6 +2068,7 @@ emptySearch = "Geen project komt overeen met deze zoekopdracht"
 files.byAuthor = "door {{name}}"  placeholders={{name}}
 files.chooseFiles = "Bestanden kiezen"
 files.deleteItem = "Item verwijderen"
+files.deleteItemConfirm = "“{{name}}” met zijn revisies en bestanden verwijderen? Een geprint of geleverd item kan niet worden verwijderd."  placeholders={{name}}
 files.deleteRevision = "Revisie verwijderen"
 files.derivedFrom = "Afgeleid van {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Afgeleid van"
@@ -1512,6 +2085,10 @@ files.fileCount_other = "{{count}} bestanden"  placeholders={{count}}
 files.fork = "Splitsen als nieuw item"
 files.forkNameLabel = "Naam van nieuw item"
 files.frozen = "Bestanden vergrendeld: deze revisie is al geprint of geleverd"
+files.headCost = "kosten {{amount}}"  placeholders={{amount}}
+files.headPrice = "Prijs"
+files.headPrint = "Printen"
+files.holdToChangeStatus = "Houd 0,5 s vast om de status te wijzigen"
 files.itemBusy = "{{name}} wordt nog geüpload, dus de neergezette bestanden zijn niet geüpload"  placeholders={{name}}
 files.itemNameLabel = "Itemnaam"
 files.newItem = "Nieuw item"
@@ -1633,7 +2210,22 @@ saved = "Project opgeslagen"
 searchPlaceholder = "Zoeken op code, titel, beschrijving of tag…"
 slice.downloadSliced = "Geslicet bestand downloaden"
 slice.failed = "Slicen mislukt: {{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "Filamenten"
+slice.fieldLayer = "Laaghoogte"
+slice.fieldNozzle = "Nozzlediameter"
+slice.fieldPrinter = "Printermodel"
+slice.mismatchRow = "{{field}}: bestand {{file}}, revisie {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "De instellingen van het bestand wijken af van deze revisie:"
 slice.openInSlicer = "Openen in de slicer"
+slice.uploadAction = "Gesliced bestand uploaden"
+slice.uploadChoose = "Gesliced plaatbestand"
+slice.uploadDone = "Gesliced bestand toegevoegd"
+slice.uploadFailed = "Kon het gesliced bestand niet toevoegen"
+slice.uploadHint = "De slicer is niet bereikbaar. Open in Bambu Studio het project van deze revisie, slice het met dezelfde instellingen en exporteer het gesliced plaatbestand (.gcode.3mf)."
+slice.uploadMustMatch = "Moet overeenkomen met: {{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "Kies het gesliced plaatbestand dat Bambu Studio exporteert (.gcode.3mf)."
+slice.uploadSubmit = "Gesliced bestand toevoegen"
+slice.uploadTitle = "Het gesliced bestand uploaden"
 statusAll = "Alle"
 statusFilterLabel = "Status"
 subtitle = "Elk onderdeel, zijn bestanden en zijn geschiedenis"
@@ -1648,7 +2240,7 @@ title = "Projecten"
 titleLabel = "Titel"
 viewGrid = "Rasterweergave"
 viewTable = "Tabelweergave"
---- ptBR projectsPdm (205 keys)
+--- ptBR projectsPdm (279 keys)
 acceptSuggestion = "Adicionar {{name}}"  placeholders={{name}}
 aiUnavailable = "IA indisponível"
 aito.confirmUnlink = "Desvincular {{name}} desta tarefa? A lista de arquivos entregues será apagada."  placeholders={{name}}
@@ -1686,6 +2278,60 @@ aito.searchProjects = "Buscar projetos…"
 aito.suggestionSameClient = "Mesmo cliente"
 aito.suggestionSimilar = "Título parecido"
 aito.unlink = "Desvincular"
+catalog.atTop = "Na raiz"
+catalog.clickToRename = "Clique para renomear"
+catalog.create = "Criar"
+catalog.deleteFolder = "Excluir pasta"
+catalog.deleteFolderHint = "Seus projetos e subpastas sobem um nível"
+catalog.dragHint = "Arraste um projeto ou uma pasta para uma pasta para arquivá-lo"
+catalog.filesCount_one = "{{count}} arquivo"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} arquivos"  placeholders={{count}}
+catalog.folderActions = "Ações da pasta"
+catalog.folderName = "Nome da pasta"
+catalog.inFolder = "Em {{path}}"  placeholders={{path}}
+catalog.inProduction = "Em produção"
+catalog.internal = "Interno"
+catalog.keyboardHelp = "↑ ↓ mover · ↵ abrir"
+catalog.mobile.back = "Voltar"
+catalog.mobile.create = "Criar"
+catalog.mobile.createsHere = "+ cria um projeto aqui"
+catalog.mobile.done = "Concluído"
+catalog.mobile.filedIn = "Arquivado em {{folder}}"  placeholders={{folder}}
+catalog.mobile.filters = "Status e ordenação"
+catalog.mobile.folderEmpty = "Esta pasta está vazia"
+catalog.mobile.folders_one = "{{count}} pasta"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} pastas"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} em produção"  placeholders={{count}}
+catalog.mobile.newFolderInside = "Nova pasta dentro"
+catalog.mobile.projectsHere = "Projetos aqui"
+catalog.mobile.projects_one = "{{count}} projeto"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} projetos"  placeholders={{count}}
+catalog.mobile.sort = "Ordenação"
+catalog.mobile.status = "Status"
+catalog.moveFailed = "Não foi possível mover o projeto"
+catalog.moveTo = "Mover para uma pasta…"
+catalog.neverPrinted = "Nunca impresso"
+catalog.newFolder = "Nova pasta"
+catalog.noFile = "Sem arquivo"
+catalog.noFileYet = "Ainda sem arquivo de impressão"
+catalog.noFolder = "Sem pasta"
+catalog.notInFolder = "Fora de pasta"
+catalog.nothingSliced = "Nada fatiado ainda"
+catalog.openProject = "Abrir projeto"
+catalog.order = "pedido nº {{id}}"  placeholders={{id}}
+catalog.printed = "{{n}} impressos"  placeholders={{n}}
+catalog.printedOf = "{{n}} impressos / {{target}}"  placeholders={{n}},{{target}}
+catalog.printingFiles = "Arquivos de impressão"
+catalog.readyToPrint = "Pronto para imprimir"
+catalog.rename = "Renomear"
+catalog.saveFailed = "Não foi possível salvar a alteração da pasta"
+catalog.searchPlaceholder = "Buscar código, título, cliente, nº do pedido, arquivo, impressora, material…"
+catalog.selectHint = "Selecione um projeto para ver seus arquivos de impressão"
+catalog.sortActivity = "Ordem: última atividade"
+catalog.sortCode = "Ordem: código"
+catalog.sortName = "Ordem: título"
+catalog.sortPrinted = "Ordem: mais impressos"
+catalog.summary = "{{shown}} de {{total}} projetos"  placeholders={{shown}},{{total}}
 codeChipLabel = "Código do projeto {{code}}"  placeholders={{code}}
 colCode = "Código"
 colPrints = "Impressões"
@@ -1702,6 +2348,7 @@ emptySearch = "Nenhum projeto corresponde a esta busca"
 files.byAuthor = "por {{name}}"  placeholders={{name}}
 files.chooseFiles = "Escolher arquivos"
 files.deleteItem = "Excluir item"
+files.deleteItemConfirm = "Excluir “{{name}}” com suas revisões e arquivos? Um item impresso ou entregue não pode ser excluído."  placeholders={{name}}
 files.deleteRevision = "Excluir revisão"
 files.derivedFrom = "Derivado de {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Derivado de"
@@ -1718,6 +2365,10 @@ files.fileCount_other = "{{count}} arquivos"  placeholders={{count}}
 files.fork = "Bifurcar como novo item"
 files.forkNameLabel = "Nome do novo item"
 files.frozen = "Arquivos bloqueados: esta revisão já foi impressa ou entregue"
+files.headCost = "custo {{amount}}"  placeholders={{amount}}
+files.headPrice = "Preço"
+files.headPrint = "Impressão"
+files.holdToChangeStatus = "Segure 0,5 s para mudar o status"
 files.itemBusy = "{{name}} ainda está sendo enviado, então os arquivos soltos não foram enviados"  placeholders={{name}}
 files.itemNameLabel = "Nome do item"
 files.newItem = "Novo item"
@@ -1839,7 +2490,22 @@ saved = "Projeto salvo"
 searchPlaceholder = "Buscar por código, título, descrição ou tag…"
 slice.downloadSliced = "Baixar o arquivo fatiado"
 slice.failed = "Falha ao fatiar: {{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "Filamentos"
+slice.fieldLayer = "Altura de camada"
+slice.fieldNozzle = "Bico"
+slice.fieldPrinter = "Impressora"
+slice.mismatchRow = "{{field}}: arquivo {{file}}, revisão {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "As configurações do arquivo diferem desta revisão:"
 slice.openInSlicer = "Abrir no fatiador"
+slice.uploadAction = "Enviar arquivo fatiado"
+slice.uploadChoose = "Arquivo fatiado da placa"
+slice.uploadDone = "Arquivo fatiado adicionado"
+slice.uploadFailed = "Não foi possível adicionar o arquivo fatiado"
+slice.uploadHint = "O fatiador está indisponível. No Bambu Studio, abra o projeto desta revisão, fatie-o com as mesmas configurações e exporte o arquivo fatiado da placa (.gcode.3mf)."
+slice.uploadMustMatch = "Deve corresponder a: {{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "Escolha o arquivo fatiado da placa que o Bambu Studio exporta (.gcode.3mf)."
+slice.uploadSubmit = "Adicionar arquivo fatiado"
+slice.uploadTitle = "Enviar o arquivo fatiado"
 statusAll = "Todos"
 statusFilterLabel = "Status"
 subtitle = "Cada peça, seus arquivos e seu histórico"
@@ -1854,7 +2520,7 @@ title = "Projetos"
 titleLabel = "Título"
 viewGrid = "Visualização em grade"
 viewTable = "Visualização em tabela"
---- ru projectsPdm (205 keys)
+--- ru projectsPdm (279 keys)
 acceptSuggestion = "Добавить {{name}}"  placeholders={{name}}
 aiUnavailable = "ИИ недоступен"
 aito.confirmUnlink = "Отвязать {{name}} от этой задачи? Список переданных файлов будет очищен."  placeholders={{name}}
@@ -1892,6 +2558,60 @@ aito.searchProjects = "Поиск проектов…"
 aito.suggestionSameClient = "Тот же клиент"
 aito.suggestionSimilar = "Похожее название"
 aito.unlink = "Отвязать"
+catalog.atTop = "В корне"
+catalog.clickToRename = "Нажмите, чтобы переименовать"
+catalog.create = "Создать"
+catalog.deleteFolder = "Удалить папку"
+catalog.deleteFolderHint = "Её проекты и подпапки поднимутся на уровень выше"
+catalog.dragHint = "Перетащите проект или папку на папку, чтобы разложить"
+catalog.filesCount_one = "{{count}} файл"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} файлов"  placeholders={{count}}
+catalog.folderActions = "Действия с папкой"
+catalog.folderName = "Имя папки"
+catalog.inFolder = "В {{path}}"  placeholders={{path}}
+catalog.inProduction = "В производстве"
+catalog.internal = "Внутренний"
+catalog.keyboardHelp = "↑ ↓ переход · ↵ открыть"
+catalog.mobile.back = "Назад"
+catalog.mobile.create = "Создать"
+catalog.mobile.createsHere = "+ создаёт проект здесь"
+catalog.mobile.done = "Готово"
+catalog.mobile.filedIn = "В папке {{folder}}"  placeholders={{folder}}
+catalog.mobile.filters = "Статус и сортировка"
+catalog.mobile.folderEmpty = "Эта папка пуста"
+catalog.mobile.folders_one = "{{count}} папка"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} папок"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} в производстве"  placeholders={{count}}
+catalog.mobile.newFolderInside = "Новая папка внутри"
+catalog.mobile.projectsHere = "Проекты здесь"
+catalog.mobile.projects_one = "{{count}} проект"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} проектов"  placeholders={{count}}
+catalog.mobile.sort = "Сортировка"
+catalog.mobile.status = "Статус"
+catalog.moveFailed = "Не удалось переместить проект"
+catalog.moveTo = "Переместить в папку…"
+catalog.neverPrinted = "Не печатался"
+catalog.newFolder = "Новая папка"
+catalog.noFile = "Пока без файла"
+catalog.noFileYet = "Файлов печати пока нет"
+catalog.noFolder = "Без папки"
+catalog.notInFolder = "Вне папок"
+catalog.nothingSliced = "Ничего не нарезано"
+catalog.openProject = "Открыть проект"
+catalog.order = "заказ #{{id}}"  placeholders={{id}}
+catalog.printed = "{{n}} напечатано"  placeholders={{n}}
+catalog.printedOf = "{{n}} напечатано / {{target}}"  placeholders={{n}},{{target}}
+catalog.printingFiles = "Файлы печати"
+catalog.readyToPrint = "Готово к печати"
+catalog.rename = "Переименовать"
+catalog.saveFailed = "Не удалось сохранить изменение папки"
+catalog.searchPlaceholder = "Поиск по коду, названию, клиенту, № заказа, файлу, принтеру, материалу…"
+catalog.selectHint = "Выберите проект, чтобы увидеть его файлы печати"
+catalog.sortActivity = "Сортировка: последняя активность"
+catalog.sortCode = "Сортировка: код"
+catalog.sortName = "Сортировка: название"
+catalog.sortPrinted = "Сортировка: чаще печатали"
+catalog.summary = "{{shown}} из {{total}} проектов"  placeholders={{shown}},{{total}}
 codeChipLabel = "Код проекта {{code}}"  placeholders={{code}}
 colCode = "Код"
 colPrints = "Печати"
@@ -1908,6 +2628,7 @@ emptySearch = "Ни один проект не соответствует пои
 files.byAuthor = "автор: {{name}}"  placeholders={{name}}
 files.chooseFiles = "Выбрать файлы"
 files.deleteItem = "Удалить элемент"
+files.deleteItemConfirm = "Удалить «{{name}}» вместе с ревизиями и файлами? Напечатанный или доставленный элемент удалить нельзя."  placeholders={{name}}
 files.deleteRevision = "Удалить ревизию"
 files.derivedFrom = "Производная от {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Производная от"
@@ -1924,6 +2645,10 @@ files.fileCount_other = "Файлов: {{count}}"  placeholders={{count}}
 files.fork = "Выделить в новый элемент"
 files.forkNameLabel = "Название нового элемента"
 files.frozen = "Файлы заблокированы: эта ревизия уже напечатана или передана"
+files.headCost = "себестоимость {{amount}}"  placeholders={{amount}}
+files.headPrice = "Цена"
+files.headPrint = "Печать"
+files.holdToChangeStatus = "Удерживайте 0,5 с, чтобы изменить статус"
 files.itemBusy = "{{name}} ещё загружается, поэтому перетащенные файлы не были загружены"  placeholders={{name}}
 files.itemNameLabel = "Название элемента"
 files.newItem = "Новый элемент"
@@ -2045,7 +2770,22 @@ saved = "Проект сохранён"
 searchPlaceholder = "Поиск по коду, названию, описанию или метке…"
 slice.downloadSliced = "Скачать нарезанный файл"
 slice.failed = "Не удалось нарезать: {{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "Филаменты"
+slice.fieldLayer = "Высота слоя"
+slice.fieldNozzle = "Сопло"
+slice.fieldPrinter = "Принтер"
+slice.mismatchRow = "{{field}}: файл {{file}}, ревизия {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "Настройки файла отличаются от этой ревизии:"
 slice.openInSlicer = "Открыть в слайсере"
+slice.uploadAction = "Загрузить нарезанный файл"
+slice.uploadChoose = "Нарезанный файл стола"
+slice.uploadDone = "Нарезанный файл добавлен"
+slice.uploadFailed = "Не удалось добавить нарезанный файл"
+slice.uploadHint = "Слайсер недоступен. Откройте проект этой ревизии в Bambu Studio, нарежьте его с теми же настройками и экспортируйте нарезанный файл стола (.gcode.3mf)."
+slice.uploadMustMatch = "Должно совпадать: {{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "Выберите нарезанный файл стола, который экспортирует Bambu Studio (.gcode.3mf)."
+slice.uploadSubmit = "Добавить нарезанный файл"
+slice.uploadTitle = "Загрузить нарезанный файл"
 statusAll = "Все"
 statusFilterLabel = "Статус"
 subtitle = "Каждая деталь, её файлы и история"
@@ -2060,7 +2800,7 @@ title = "Проекты"
 titleLabel = "Название"
 viewGrid = "Вид сеткой"
 viewTable = "Табличный вид"
---- sv projectsPdm (205 keys)
+--- sv projectsPdm (279 keys)
 acceptSuggestion = "Lägg till {{name}}"  placeholders={{name}}
 aiUnavailable = "AI är inte tillgänglig"
 aito.confirmUnlink = "Koppla bort {{name}} från den här uppgiften? Listan över levererade filer töms."  placeholders={{name}}
@@ -2098,6 +2838,60 @@ aito.searchProjects = "Sök projekt…"
 aito.suggestionSameClient = "Samma kund"
 aito.suggestionSimilar = "Liknande titel"
 aito.unlink = "Ta bort länk"
+catalog.atTop = "Överst"
+catalog.clickToRename = "Klicka för att byta namn"
+catalog.create = "Skapa"
+catalog.deleteFolder = "Ta bort mapp"
+catalog.deleteFolderHint = "Dess projekt och undermappar flyttas upp en nivå"
+catalog.dragHint = "Dra ett projekt eller en mapp till en mapp för att sortera in"
+catalog.filesCount_one = "{{count}} fil"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} filer"  placeholders={{count}}
+catalog.folderActions = "Mappåtgärder"
+catalog.folderName = "Mappnamn"
+catalog.inFolder = "I {{path}}"  placeholders={{path}}
+catalog.inProduction = "I produktion"
+catalog.internal = "Internt"
+catalog.keyboardHelp = "↑ ↓ flytta · ↵ öppna"
+catalog.mobile.back = "Tillbaka"
+catalog.mobile.create = "Skapa"
+catalog.mobile.createsHere = "+ skapar ett projekt här"
+catalog.mobile.done = "Klar"
+catalog.mobile.filedIn = "Sparad i {{folder}}"  placeholders={{folder}}
+catalog.mobile.filters = "Status och sortering"
+catalog.mobile.folderEmpty = "Den här mappen är tom"
+catalog.mobile.folders_one = "{{count}} mapp"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} mappar"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} i produktion"  placeholders={{count}}
+catalog.mobile.newFolderInside = "Ny mapp inuti"
+catalog.mobile.projectsHere = "Projekt här"
+catalog.mobile.projects_one = "{{count}} projekt"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} projekt"  placeholders={{count}}
+catalog.mobile.sort = "Sortering"
+catalog.mobile.status = "Status"
+catalog.moveFailed = "Kunde inte flytta projektet"
+catalog.moveTo = "Flytta till mapp…"
+catalog.neverPrinted = "Aldrig utskriven"
+catalog.newFolder = "Ny mapp"
+catalog.noFile = "Ingen fil än"
+catalog.noFileYet = "Ingen utskriftsfil än"
+catalog.noFolder = "Ingen mapp"
+catalog.notInFolder = "Inte i någon mapp"
+catalog.nothingSliced = "Inget slicat än"
+catalog.openProject = "Öppna projekt"
+catalog.order = "order nr {{id}}"  placeholders={{id}}
+catalog.printed = "{{n}} utskrivna"  placeholders={{n}}
+catalog.printedOf = "{{n}} utskrivna / {{target}}"  placeholders={{n}},{{target}}
+catalog.printingFiles = "Utskriftsfiler"
+catalog.readyToPrint = "Redo att skriva ut"
+catalog.rename = "Byt namn"
+catalog.saveFailed = "Kunde inte spara mappändringen"
+catalog.searchPlaceholder = "Sök kod, titel, kund, ordernr, fil, skrivare, material…"
+catalog.selectHint = "Välj ett projekt för att se dess utskriftsfiler"
+catalog.sortActivity = "Sortera: senaste aktivitet"
+catalog.sortCode = "Sortera: kod"
+catalog.sortName = "Sortera: titel"
+catalog.sortPrinted = "Sortera: mest utskrivna"
+catalog.summary = "{{shown}} av {{total}} projekt"  placeholders={{shown}},{{total}}
 codeChipLabel = "Projektkod {{code}}"  placeholders={{code}}
 colCode = "Kod"
 colPrints = "Utskrifter"
@@ -2114,6 +2908,7 @@ emptySearch = "Inget projekt matchar sökningen"
 files.byAuthor = "av {{name}}"  placeholders={{name}}
 files.chooseFiles = "Välj filer"
 files.deleteItem = "Ta bort objekt"
+files.deleteItemConfirm = "Ta bort ”{{name}}” med dess revisioner och filer? Ett utskrivet eller levererat objekt kan inte tas bort."  placeholders={{name}}
 files.deleteRevision = "Ta bort revision"
 files.derivedFrom = "Härledd från {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Härledd från"
@@ -2130,6 +2925,10 @@ files.fileCount_other = "{{count}} filer"  placeholders={{count}}
 files.fork = "Förgrena som nytt objekt"
 files.forkNameLabel = "Nytt objektnamn"
 files.frozen = "Filer låsta: den här revisionen har skrivits ut eller levererats"
+files.headCost = "kostnad {{amount}}"  placeholders={{amount}}
+files.headPrice = "Pris"
+files.headPrint = "Utskrift"
+files.holdToChangeStatus = "Håll 0,5 s för att ändra status"
 files.itemBusy = "{{name}} laddas fortfarande upp, så de släppta filerna laddades inte upp"  placeholders={{name}}
 files.itemNameLabel = "Objektnamn"
 files.newItem = "Nytt objekt"
@@ -2251,7 +3050,22 @@ saved = "Projektet sparades"
 searchPlaceholder = "Sök efter kod, titel, beskrivning eller tagg…"
 slice.downloadSliced = "Ladda ned den slicade filen"
 slice.failed = "Slicingen misslyckades: {{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "Filamenttyper"
+slice.fieldLayer = "Lagerhöjd"
+slice.fieldNozzle = "Munstycke"
+slice.fieldPrinter = "Skrivare"
+slice.mismatchRow = "{{field}}: fil {{file}}, revision {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "Filens inställningar skiljer sig från denna revision:"
 slice.openInSlicer = "Öppna i slicern"
+slice.uploadAction = "Ladda upp slicad fil"
+slice.uploadChoose = "Slicad plattfil"
+slice.uploadDone = "Slicad fil tillagd"
+slice.uploadFailed = "Kunde inte lägga till den slicade filen"
+slice.uploadHint = "Slicern är inte tillgänglig. Öppna revisionens projekt i Bambu Studio, slica det med samma inställningar och exportera plattans slicade fil (.gcode.3mf)."
+slice.uploadMustMatch = "Måste matcha: {{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "Välj den slicade plattfilen som Bambu Studio exporterar (.gcode.3mf)."
+slice.uploadSubmit = "Lägg till slicad fil"
+slice.uploadTitle = "Ladda upp den slicade filen"
 statusAll = "Alla"
 statusFilterLabel = "Status"
 subtitle = "Varje del, dess filer och dess historik"
@@ -2266,7 +3080,7 @@ title = "Projekt"
 titleLabel = "Titel"
 viewGrid = "Rutnätsvy"
 viewTable = "Tabellvy"
---- tr projectsPdm (205 keys)
+--- tr projectsPdm (279 keys)
 acceptSuggestion = "{{name}} ekle"  placeholders={{name}}
 aiUnavailable = "Yapay zekâ kullanılamıyor"
 aito.confirmUnlink = "{{name}} bu görevden ayrılsın mı? Teslim edilen dosyalar listesi temizlenir."  placeholders={{name}}
@@ -2304,6 +3118,60 @@ aito.searchProjects = "Proje ara…"
 aito.suggestionSameClient = "Aynı müşteri"
 aito.suggestionSimilar = "Benzer başlık"
 aito.unlink = "Bağlantıyı kaldır"
+catalog.atTop = "En üste"
+catalog.clickToRename = "Yeniden adlandırmak için tıklayın"
+catalog.create = "Oluştur"
+catalog.deleteFolder = "Klasörü sil"
+catalog.deleteFolderHint = "Projeleri ve alt klasörleri bir üst seviyeye çıkar"
+catalog.dragHint = "Dosyalamak için bir projeyi veya klasörü bir klasöre sürükleyin"
+catalog.filesCount_one = "{{count}} dosya"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} dosya"  placeholders={{count}}
+catalog.folderActions = "Klasör işlemleri"
+catalog.folderName = "Klasör adı"
+catalog.inFolder = "{{path}} içinde"  placeholders={{path}}
+catalog.inProduction = "Üretimde"
+catalog.internal = "Dahili"
+catalog.keyboardHelp = "↑ ↓ gez · ↵ aç"
+catalog.mobile.back = "Geri"
+catalog.mobile.create = "Oluştur"
+catalog.mobile.createsHere = "+ burada bir proje oluşturur"
+catalog.mobile.done = "Bitti"
+catalog.mobile.filedIn = "{{folder}} içinde"  placeholders={{folder}}
+catalog.mobile.filters = "Durum ve sıralama"
+catalog.mobile.folderEmpty = "Bu klasör boş"
+catalog.mobile.folders_one = "{{count}} klasör"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} klasör"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} üretimde"  placeholders={{count}}
+catalog.mobile.newFolderInside = "İçine yeni klasör"
+catalog.mobile.projectsHere = "Buradaki projeler"
+catalog.mobile.projects_one = "{{count}} proje"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} proje"  placeholders={{count}}
+catalog.mobile.sort = "Sıralama"
+catalog.mobile.status = "Durum"
+catalog.moveFailed = "Proje taşınamadı"
+catalog.moveTo = "Klasöre taşı…"
+catalog.neverPrinted = "Hiç yazdırılmadı"
+catalog.newFolder = "Yeni klasör"
+catalog.noFile = "Henüz dosya yok"
+catalog.noFileYet = "Henüz baskı dosyası yok"
+catalog.noFolder = "Klasör yok"
+catalog.notInFolder = "Klasörde değil"
+catalog.nothingSliced = "Henüz dilimlenen yok"
+catalog.openProject = "Projeyi aç"
+catalog.order = "sipariş #{{id}}"  placeholders={{id}}
+catalog.printed = "{{n}} yazdırıldı"  placeholders={{n}}
+catalog.printedOf = "{{n}} yazdırıldı / {{target}}"  placeholders={{n}},{{target}}
+catalog.printingFiles = "Baskı dosyaları"
+catalog.readyToPrint = "Yazdırmaya hazır"
+catalog.rename = "Yeniden adlandır"
+catalog.saveFailed = "Klasör değişikliği kaydedilemedi"
+catalog.searchPlaceholder = "Kod, başlık, müşteri, sipariş no, dosya, yazıcı, malzeme ara…"
+catalog.selectHint = "Baskı dosyalarını görmek için bir proje seçin"
+catalog.sortActivity = "Sırala: son etkinlik"
+catalog.sortCode = "Sırala: kod"
+catalog.sortName = "Sırala: başlık"
+catalog.sortPrinted = "Sırala: en çok yazdırılan"
+catalog.summary = "{{total}} projeden {{shown}}"  placeholders={{shown}},{{total}}
 codeChipLabel = "Proje kodu {{code}}"  placeholders={{code}}
 colCode = "Kod"
 colPrints = "Baskılar"
@@ -2320,6 +3188,7 @@ emptySearch = "Bu aramayla eşleşen proje yok"
 files.byAuthor = "ekleyen: {{name}}"  placeholders={{name}}
 files.chooseFiles = "Dosya seç"
 files.deleteItem = "Öğeyi sil"
+files.deleteItemConfirm = "“{{name}}” revizyonları ve dosyalarıyla birlikte silinsin mi? Basılmış veya teslim edilmiş bir öğe silinemez."  placeholders={{name}}
 files.deleteRevision = "Revizyonu sil"
 files.derivedFrom = "{{label}} revizyonundan türetildi"  placeholders={{label}}
 files.derivedFromLabel = "Türetildiği kaynak"
@@ -2336,6 +3205,10 @@ files.fileCount_other = "{{count}} dosya"  placeholders={{count}}
 files.fork = "Yeni öğe olarak ayır"
 files.forkNameLabel = "Yeni öğe adı"
 files.frozen = "Dosyalar kilitli: bu revizyon basıldı veya teslim edildi"
+files.headCost = "maliyet {{amount}}"  placeholders={{amount}}
+files.headPrice = "Fiyat"
+files.headPrint = "Baskı"
+files.holdToChangeStatus = "Durumu değiştirmek için 0,5 sn basılı tutun"
 files.itemBusy = "{{name}} hâlâ yükleniyor, bu yüzden bırakılan dosyalar yüklenmedi"  placeholders={{name}}
 files.itemNameLabel = "Öğe adı"
 files.newItem = "Yeni öğe"
@@ -2457,7 +3330,22 @@ saved = "Proje kaydedildi"
 searchPlaceholder = "Kod, başlık, açıklama veya etiketle ara…"
 slice.downloadSliced = "Dilimlenmiş dosyayı indir"
 slice.failed = "Dilimleme başarısız: {{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "Filamentler"
+slice.fieldLayer = "Katman yüksekliği"
+slice.fieldNozzle = "Nozul"
+slice.fieldPrinter = "Yazıcı"
+slice.mismatchRow = "{{field}}: dosya {{file}}, revizyon {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "Dosyanın ayarları bu revizyondan farklı:"
 slice.openInSlicer = "Dilimleyicide aç"
+slice.uploadAction = "Dilimlenmiş dosyayı yükle"
+slice.uploadChoose = "Dilimlenmiş plaka dosyası"
+slice.uploadDone = "Dilimlenmiş dosya eklendi"
+slice.uploadFailed = "Dilimlenmiş dosya eklenemedi"
+slice.uploadHint = "Dilimleyici kullanılamıyor. Bambu Studio’da bu revizyonun projesini açın, aynı ayarlarla dilimleyin ve plakanın dilimlenmiş dosyasını (.gcode.3mf) dışa aktarın."
+slice.uploadMustMatch = "Eşleşmeli: {{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "Bambu Studio’nun dışa aktardığı dilimlenmiş plaka dosyasını (.gcode.3mf) seçin."
+slice.uploadSubmit = "Dilimlenmiş dosyayı ekle"
+slice.uploadTitle = "Dilimlenmiş dosyayı yükle"
 statusAll = "Tümü"
 statusFilterLabel = "Durum"
 subtitle = "Her parça, dosyaları ve geçmişi"
@@ -2472,7 +3360,7 @@ title = "Projeler"
 titleLabel = "Başlık"
 viewGrid = "Izgara görünümü"
 viewTable = "Tablo görünümü"
---- uk projectsPdm (205 keys)
+--- uk projectsPdm (279 keys)
 acceptSuggestion = "Додати {{name}}"  placeholders={{name}}
 aiUnavailable = "ШІ недоступний"
 aito.confirmUnlink = "Відв’язати {{name}} від цього завдання? Список переданих файлів буде очищено."  placeholders={{name}}
@@ -2510,6 +3398,60 @@ aito.searchProjects = "Пошук проєктів…"
 aito.suggestionSameClient = "Той самий клієнт"
 aito.suggestionSimilar = "Схожа назва"
 aito.unlink = "Відв'язати"
+catalog.atTop = "У корені"
+catalog.clickToRename = "Натисніть, щоб перейменувати"
+catalog.create = "Створити"
+catalog.deleteFolder = "Видалити теку"
+catalog.deleteFolderHint = "Її проєкти та підтеки піднімуться на рівень вище"
+catalog.dragHint = "Перетягніть проєкт або теку на теку, щоб упорядкувати"
+catalog.filesCount_one = "{{count}} файл"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} файлів"  placeholders={{count}}
+catalog.folderActions = "Дії з текою"
+catalog.folderName = "Назва теки"
+catalog.inFolder = "У {{path}}"  placeholders={{path}}
+catalog.inProduction = "У виробництві"
+catalog.internal = "Внутрішній"
+catalog.keyboardHelp = "↑ ↓ перехід · ↵ відкрити"
+catalog.mobile.back = "Назад"
+catalog.mobile.create = "Створити"
+catalog.mobile.createsHere = "+ створює проєкт тут"
+catalog.mobile.done = "Готово"
+catalog.mobile.filedIn = "У теці {{folder}}"  placeholders={{folder}}
+catalog.mobile.filters = "Статус і сортування"
+catalog.mobile.folderEmpty = "Ця тека порожня"
+catalog.mobile.folders_one = "{{count}} тека"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} тек"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} у виробництві"  placeholders={{count}}
+catalog.mobile.newFolderInside = "Нова тека всередині"
+catalog.mobile.projectsHere = "Проєкти тут"
+catalog.mobile.projects_one = "{{count}} проєкт"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} проєктів"  placeholders={{count}}
+catalog.mobile.sort = "Сортування"
+catalog.mobile.status = "Статус"
+catalog.moveFailed = "Не вдалося перемістити проєкт"
+catalog.moveTo = "Перемістити до теки…"
+catalog.neverPrinted = "Не друкувався"
+catalog.newFolder = "Нова тека"
+catalog.noFile = "Поки без файлу"
+catalog.noFileYet = "Файлів друку ще немає"
+catalog.noFolder = "Без теки"
+catalog.notInFolder = "Поза теками"
+catalog.nothingSliced = "Нічого не нарізано"
+catalog.openProject = "Відкрити проєкт"
+catalog.order = "замовлення #{{id}}"  placeholders={{id}}
+catalog.printed = "{{n}} надруковано"  placeholders={{n}}
+catalog.printedOf = "{{n}} надруковано / {{target}}"  placeholders={{n}},{{target}}
+catalog.printingFiles = "Файли друку"
+catalog.readyToPrint = "Готово до друку"
+catalog.rename = "Перейменувати"
+catalog.saveFailed = "Не вдалося зберегти зміну теки"
+catalog.searchPlaceholder = "Пошук за кодом, назвою, клієнтом, № замовлення, файлом, принтером, матеріалом…"
+catalog.selectHint = "Виберіть проєкт, щоб побачити його файли друку"
+catalog.sortActivity = "Сортування: остання активність"
+catalog.sortCode = "Сортування: код"
+catalog.sortName = "Сортування: назва"
+catalog.sortPrinted = "Сортування: найчастіше друковані"
+catalog.summary = "{{shown}} з {{total}} проєктів"  placeholders={{shown}},{{total}}
 codeChipLabel = "Код проєкту {{code}}"  placeholders={{code}}
 colCode = "Код"
 colPrints = "Друки"
@@ -2526,6 +3468,7 @@ emptySearch = "Жоден проєкт не відповідає пошуку"
 files.byAuthor = "автор: {{name}}"  placeholders={{name}}
 files.chooseFiles = "Вибрати файли"
 files.deleteItem = "Видалити елемент"
+files.deleteItemConfirm = "Видалити «{{name}}» разом із ревізіями та файлами? Надрукований або доставлений елемент видалити не можна."  placeholders={{name}}
 files.deleteRevision = "Видалити ревізію"
 files.derivedFrom = "Похідна від {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Похідна від"
@@ -2542,6 +3485,10 @@ files.fileCount_other = "Файлів: {{count}}"  placeholders={{count}}
 files.fork = "Виділити в новий елемент"
 files.forkNameLabel = "Назва нового елемента"
 files.frozen = "Файли заблоковано: цю ревізію вже надруковано або передано"
+files.headCost = "собівартість {{amount}}"  placeholders={{amount}}
+files.headPrice = "Ціна"
+files.headPrint = "Друк"
+files.holdToChangeStatus = "Утримуйте 0,5 с, щоб змінити статус"
 files.itemBusy = "{{name}} ще завантажується, тому перетягнуті файли не були завантажені"  placeholders={{name}}
 files.itemNameLabel = "Назва елемента"
 files.newItem = "Новий елемент"
@@ -2663,7 +3610,22 @@ saved = "Проєкт збережено"
 searchPlaceholder = "Пошук за кодом, назвою, описом або тегом…"
 slice.downloadSliced = "Завантажити нарізаний файл"
 slice.failed = "Не вдалося нарізати: {{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "Філаменти"
+slice.fieldLayer = "Висота шару"
+slice.fieldNozzle = "Сопло"
+slice.fieldPrinter = "Принтер"
+slice.mismatchRow = "{{field}}: файл {{file}}, ревізія {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "Налаштування файлу відрізняються від цієї ревізії:"
 slice.openInSlicer = "Відкрити у слайсері"
+slice.uploadAction = "Завантажити нарізаний файл"
+slice.uploadChoose = "Нарізаний файл столу"
+slice.uploadDone = "Нарізаний файл додано"
+slice.uploadFailed = "Не вдалося додати нарізаний файл"
+slice.uploadHint = "Слайсер недоступний. Відкрийте проєкт цієї ревізії в Bambu Studio, наріжте його з тими самими налаштуваннями та експортуйте нарізаний файл столу (.gcode.3mf)."
+slice.uploadMustMatch = "Має збігатися: {{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "Виберіть нарізаний файл столу, який експортує Bambu Studio (.gcode.3mf)."
+slice.uploadSubmit = "Додати нарізаний файл"
+slice.uploadTitle = "Завантажити нарізаний файл"
 statusAll = "Усі"
 statusFilterLabel = "Статус"
 subtitle = "Кожна деталь, її файли та історія"
@@ -2678,7 +3640,7 @@ title = "Проєкти"
 titleLabel = "Назва"
 viewGrid = "Вигляд сіткою"
 viewTable = "Табличний вигляд"
---- zhCN projectsPdm (205 keys)
+--- zhCN projectsPdm (279 keys)
 acceptSuggestion = "添加 {{name}}"  placeholders={{name}}
 aiUnavailable = "AI 不可用"
 aito.confirmUnlink = "要将 {{name}} 从此任务取消关联吗？已交付文件列表将被清空。"  placeholders={{name}}
@@ -2716,6 +3678,60 @@ aito.searchProjects = "搜索项目…"
 aito.suggestionSameClient = "同一客户"
 aito.suggestionSimilar = "标题相近"
 aito.unlink = "取消关联"
+catalog.atTop = "顶层"
+catalog.clickToRename = "点击重命名"
+catalog.create = "创建"
+catalog.deleteFolder = "删除文件夹"
+catalog.deleteFolderHint = "其中的项目和子文件夹将上移一级"
+catalog.dragHint = "将项目或文件夹拖到文件夹上即可归档"
+catalog.filesCount_one = "{{count}} 个文件"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} 个文件"  placeholders={{count}}
+catalog.folderActions = "文件夹操作"
+catalog.folderName = "文件夹名称"
+catalog.inFolder = "位于 {{path}}"  placeholders={{path}}
+catalog.inProduction = "生产中"
+catalog.internal = "内部"
+catalog.keyboardHelp = "↑ ↓ 移动 · ↵ 打开"
+catalog.mobile.back = "返回"
+catalog.mobile.create = "创建"
+catalog.mobile.createsHere = "+ 在此处创建项目"
+catalog.mobile.done = "完成"
+catalog.mobile.filedIn = "归入 {{folder}}"  placeholders={{folder}}
+catalog.mobile.filters = "状态和排序"
+catalog.mobile.folderEmpty = "此文件夹为空"
+catalog.mobile.folders_one = "{{count}} 个文件夹"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} 个文件夹"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} 个生产中"  placeholders={{count}}
+catalog.mobile.newFolderInside = "在其中新建文件夹"
+catalog.mobile.projectsHere = "此处的项目"
+catalog.mobile.projects_one = "{{count}} 个项目"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} 个项目"  placeholders={{count}}
+catalog.mobile.sort = "排序"
+catalog.mobile.status = "状态"
+catalog.moveFailed = "无法移动项目"
+catalog.moveTo = "移动到文件夹…"
+catalog.neverPrinted = "从未打印"
+catalog.newFolder = "新建文件夹"
+catalog.noFile = "暂无文件"
+catalog.noFileYet = "暂无打印文件"
+catalog.noFolder = "无文件夹"
+catalog.notInFolder = "未归档"
+catalog.nothingSliced = "尚无切片文件"
+catalog.openProject = "打开项目"
+catalog.order = "订单 #{{id}}"  placeholders={{id}}
+catalog.printed = "已打印 {{n}} 次"  placeholders={{n}}
+catalog.printedOf = "已打印 {{n}} / {{target}} 次"  placeholders={{n}},{{target}}
+catalog.printingFiles = "打印文件"
+catalog.readyToPrint = "可打印"
+catalog.rename = "重命名"
+catalog.saveFailed = "无法保存文件夹更改"
+catalog.searchPlaceholder = "搜索编号、标题、客户、订单号、文件、打印机、耗材…"
+catalog.selectHint = "选择一个项目以查看其打印文件"
+catalog.sortActivity = "排序：最近活动"
+catalog.sortCode = "排序：编号"
+catalog.sortName = "排序：标题"
+catalog.sortPrinted = "排序：打印最多"
+catalog.summary = "{{total}} 个项目中的 {{shown}} 个"  placeholders={{shown}},{{total}}
 codeChipLabel = "项目编号 {{code}}"  placeholders={{code}}
 colCode = "编号"
 colPrints = "打印"
@@ -2732,6 +3748,7 @@ emptySearch = "没有项目匹配此搜索"
 files.byAuthor = "作者：{{name}}"  placeholders={{name}}
 files.chooseFiles = "选择文件"
 files.deleteItem = "删除条目"
+files.deleteItemConfirm = "删除“{{name}}”及其所有版本和文件？已打印或已交付的条目无法删除。"  placeholders={{name}}
 files.deleteRevision = "删除版本"
 files.derivedFrom = "源自 {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "源自"
@@ -2748,6 +3765,10 @@ files.fileCount_other = "{{count}} 个文件"  placeholders={{count}}
 files.fork = "另存为新条目"
 files.forkNameLabel = "新条目名称"
 files.frozen = "文件已锁定：此版本已打印或已交付"
+files.headCost = "成本 {{amount}}"  placeholders={{amount}}
+files.headPrice = "价格"
+files.headPrint = "打印"
+files.holdToChangeStatus = "长按 0.5 秒更改状态"
 files.itemBusy = "{{name}} 仍在上传，因此拖放的文件未上传"  placeholders={{name}}
 files.itemNameLabel = "条目名称"
 files.newItem = "新建条目"
@@ -2869,7 +3890,22 @@ saved = "项目已保存"
 searchPlaceholder = "按编号、标题、描述或标签搜索…"
 slice.downloadSliced = "下载切片文件"
 slice.failed = "切片失败：{{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "耗材"
+slice.fieldLayer = "层高"
+slice.fieldNozzle = "喷嘴"
+slice.fieldPrinter = "打印机"
+slice.mismatchRow = "{{field}}：文件 {{file}}，版本 {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "文件的设置与此版本不同："
 slice.openInSlicer = "在切片软件中打开"
+slice.uploadAction = "上传切片文件"
+slice.uploadChoose = "盘面切片文件"
+slice.uploadDone = "已添加切片文件"
+slice.uploadFailed = "无法添加切片文件"
+slice.uploadHint = "切片服务不可用。请在 Bambu Studio 中打开此版本的项目，用相同设置切片，并导出盘面的切片文件 (.gcode.3mf)。"
+slice.uploadMustMatch = "须与之一致：{{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "请选择 Bambu Studio 导出的盘面切片文件 (.gcode.3mf)。"
+slice.uploadSubmit = "添加切片文件"
+slice.uploadTitle = "上传切片文件"
 statusAll = "全部"
 statusFilterLabel = "状态"
 subtitle = "每个零件、其文件和历史记录"
@@ -2884,7 +3920,7 @@ title = "项目"
 titleLabel = "标题"
 viewGrid = "网格视图"
 viewTable = "表格视图"
---- zhTW projectsPdm (205 keys)
+--- zhTW projectsPdm (279 keys)
 acceptSuggestion = "新增 {{name}}"  placeholders={{name}}
 aiUnavailable = "AI 無法使用"
 aito.confirmUnlink = "要將 {{name}} 從此任務取消連結嗎？已交付檔案清單將被清除。"  placeholders={{name}}
@@ -2922,6 +3958,60 @@ aito.searchProjects = "搜尋專案…"
 aito.suggestionSameClient = "相同客戶"
 aito.suggestionSimilar = "標題相近"
 aito.unlink = "取消連結"
+catalog.atTop = "最上層"
+catalog.clickToRename = "點擊重新命名"
+catalog.create = "建立"
+catalog.deleteFolder = "刪除資料夾"
+catalog.deleteFolderHint = "其中的專案與子資料夾將上移一層"
+catalog.dragHint = "將專案或資料夾拖到資料夾上即可歸檔"
+catalog.filesCount_one = "{{count}} 個檔案"  placeholders={{count}}
+catalog.filesCount_other = "{{count}} 個檔案"  placeholders={{count}}
+catalog.folderActions = "資料夾動作"
+catalog.folderName = "資料夾名稱"
+catalog.inFolder = "位於 {{path}}"  placeholders={{path}}
+catalog.inProduction = "生產中"
+catalog.internal = "內部"
+catalog.keyboardHelp = "↑ ↓ 移動 · ↵ 開啟"
+catalog.mobile.back = "返回"
+catalog.mobile.create = "建立"
+catalog.mobile.createsHere = "+ 在此處建立專案"
+catalog.mobile.done = "完成"
+catalog.mobile.filedIn = "歸入 {{folder}}"  placeholders={{folder}}
+catalog.mobile.filters = "狀態與排序"
+catalog.mobile.folderEmpty = "此資料夾為空"
+catalog.mobile.folders_one = "{{count}} 個資料夾"  placeholders={{count}}
+catalog.mobile.folders_other = "{{count}} 個資料夾"  placeholders={{count}}
+catalog.mobile.inProductionCount = "{{count}} 個生產中"  placeholders={{count}}
+catalog.mobile.newFolderInside = "在其中新增資料夾"
+catalog.mobile.projectsHere = "此處的專案"
+catalog.mobile.projects_one = "{{count}} 個專案"  placeholders={{count}}
+catalog.mobile.projects_other = "{{count}} 個專案"  placeholders={{count}}
+catalog.mobile.sort = "排序"
+catalog.mobile.status = "狀態"
+catalog.moveFailed = "無法移動專案"
+catalog.moveTo = "移至資料夾…"
+catalog.neverPrinted = "從未列印"
+catalog.newFolder = "新增資料夾"
+catalog.noFile = "尚無檔案"
+catalog.noFileYet = "尚無列印檔案"
+catalog.noFolder = "無資料夾"
+catalog.notInFolder = "未歸檔"
+catalog.nothingSliced = "尚無切片檔案"
+catalog.openProject = "開啟專案"
+catalog.order = "訂單 #{{id}}"  placeholders={{id}}
+catalog.printed = "已列印 {{n}} 次"  placeholders={{n}}
+catalog.printedOf = "已列印 {{n}} / {{target}} 次"  placeholders={{n}},{{target}}
+catalog.printingFiles = "列印檔案"
+catalog.readyToPrint = "可列印"
+catalog.rename = "重新命名"
+catalog.saveFailed = "無法儲存資料夾變更"
+catalog.searchPlaceholder = "搜尋編號、標題、客戶、訂單號、檔案、印表機、線材…"
+catalog.selectHint = "選擇專案以查看其列印檔案"
+catalog.sortActivity = "排序：最近活動"
+catalog.sortCode = "排序：編號"
+catalog.sortName = "排序：標題"
+catalog.sortPrinted = "排序：列印最多"
+catalog.summary = "{{total}} 個專案中的 {{shown}} 個"  placeholders={{shown}},{{total}}
 codeChipLabel = "專案編號 {{code}}"  placeholders={{code}}
 colCode = "編號"
 colPrints = "列印"
@@ -2938,6 +4028,7 @@ emptySearch = "沒有專案符合此搜尋"
 files.byAuthor = "作者：{{name}}"  placeholders={{name}}
 files.chooseFiles = "選擇檔案"
 files.deleteItem = "刪除項目"
+files.deleteItemConfirm = "刪除「{{name}}」及其所有版本與檔案？已列印或已交付的項目無法刪除。"  placeholders={{name}}
 files.deleteRevision = "刪除版本"
 files.derivedFrom = "衍生自 {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "衍生自"
@@ -2954,6 +4045,10 @@ files.fileCount_other = "{{count}} 個檔案"  placeholders={{count}}
 files.fork = "另存為新項目"
 files.forkNameLabel = "新項目名稱"
 files.frozen = "檔案已鎖定：此版本已列印或已交付"
+files.headCost = "成本 {{amount}}"  placeholders={{amount}}
+files.headPrice = "價格"
+files.headPrint = "列印"
+files.holdToChangeStatus = "長按 0.5 秒變更狀態"
 files.itemBusy = "{{name}} 仍在上傳，因此拖放的檔案未上傳"  placeholders={{name}}
 files.itemNameLabel = "項目名稱"
 files.newItem = "新增項目"
@@ -3075,7 +4170,22 @@ saved = "專案已儲存"
 searchPlaceholder = "依編號、標題、描述或標籤搜尋…"
 slice.downloadSliced = "下載切片檔案"
 slice.failed = "切片失敗：{{detail}}"  placeholders={{detail}}
+slice.fieldFilaments = "線材"
+slice.fieldLayer = "層高"
+slice.fieldNozzle = "噴嘴"
+slice.fieldPrinter = "印表機"
+slice.mismatchRow = "{{field}}：檔案 {{file}}，版本 {{revision}}"  placeholders={{field}},{{file}},{{revision}}
+slice.mismatchTitle = "檔案的設定與此版本不同："
 slice.openInSlicer = "在切片軟體中開啟"
+slice.uploadAction = "上傳切片檔案"
+slice.uploadChoose = "列印盤切片檔案"
+slice.uploadDone = "已新增切片檔案"
+slice.uploadFailed = "無法新增切片檔案"
+slice.uploadHint = "切片服務無法使用。請在 Bambu Studio 開啟此版本的專案，以相同設定切片，並匯出列印盤的切片檔案 (.gcode.3mf)。"
+slice.uploadMustMatch = "須與之一致：{{profile}}"  placeholders={{profile}}
+slice.uploadNotSliced = "請選擇 Bambu Studio 匯出的列印盤切片檔案 (.gcode.3mf)。"
+slice.uploadSubmit = "新增切片檔案"
+slice.uploadTitle = "上傳切片檔案"
 statusAll = "全部"
 statusFilterLabel = "狀態"
 subtitle = "每個零件、其檔案與歷程"
