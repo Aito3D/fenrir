@@ -363,6 +363,101 @@ async def test_sync_events_no_added_without_any_date(db_session):
     assert (await db_session.execute(select(HourEvent))).scalars().all() == []
 
 
+async def _seed_history(db, printer_id: int) -> MaintenanceHistory:
+    mtype = MaintenanceType(name="Lubricate rails", default_interval_hours=300.0)
+    db.add(mtype)
+    await db.flush()
+    item = PrinterMaintenance(printer_id=printer_id, maintenance_type_id=mtype.id, enabled=True)
+    db.add(item)
+    await db.flush()
+    hist = MaintenanceHistory(printer_maintenance_id=item.id, performed_at=datetime(2026, 5, 4, 10, 0))
+    db.add(hist)
+    await db.commit()
+    return hist
+
+
+async def _kinds(db) -> list[str]:
+    return sorted((await db.execute(select(HourEvent.kind))).scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_insert_event_treats_a_unique_hit_as_already_there(db_session, printer_factory):
+    """The loser of a racing overview hits the unique index; that is 'already there', not an error."""
+    p = await printer_factory(name="X1C30")
+    machines = await ensure_hour_machines(db_session)
+    hist = await _seed_history(db_session, p.id)
+    await sync_events(db_session, machines)
+    machine_id = machines[0].id
+
+    await printer_hours._insert_event(
+        db_session, HourEvent(machine_id=machine_id, event_date=date(2026, 1, 1), kind="added", label="dup")
+    )
+    await printer_hours._insert_event(
+        db_session,
+        HourEvent(
+            machine_id=machine_id, event_date=date(2026, 1, 1), kind="maintenance", label="dup", source_id=hist.id
+        ),
+    )
+    await sync_events(db_session, machines)  # the session is still usable after the rolled-back savepoints
+
+    assert await _kinds(db_session) == ["added", "maintenance"]
+    assert machines[0].name == "X1C30"
+
+
+@pytest.mark.asyncio
+async def test_sync_events_survives_a_preexisting_duplicate_added(db_session, printer_factory):
+    """A database that took two 'added' rows before the index existed no longer 500s the overview."""
+    from sqlalchemy import text
+
+    await printer_factory(name="X1C31")
+    machines = await ensure_hour_machines(db_session)
+    await db_session.execute(text("DROP INDEX uq_hour_events_added"))
+    for _ in range(2):
+        db_session.add(HourEvent(machine_id=machines[0].id, event_date=date(2026, 1, 1), kind="added", label="a"))
+    await db_session.commit()
+
+    await sync_events(db_session, machines)
+
+    assert await _kinds(db_session) == ["added", "added"]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_sync_events_write_each_event_once(tmp_path):
+    """Two overviews at once (two tabs, a refetch beside a save) leave one 'added' and one mirror."""
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from backend.app.core.database import Base, load_all_models
+
+    load_all_models()
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'race.db'}", connect_args={"timeout": 30})
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with maker() as setup:
+            from backend.app.models.printer import Printer
+
+            p = Printer(name="X1C32", serial_number="RACE32", ip_address="10.0.0.32", access_code="12345678")
+            p.created_at = datetime(2026, 3, 9, 12, 0)
+            setup.add(p)
+            await setup.commit()
+            await _seed_history(setup, p.id)
+            await ensure_hour_machines(setup)
+
+        async def overview():
+            async with maker() as db:
+                await sync_events(db, await ensure_hour_machines(db))
+
+        await asyncio.gather(overview(), overview())
+
+        async with maker() as check:
+            assert await _kinds(check) == ["added", "maintenance"]
+    finally:
+        await engine.dispose()
+
+
 @pytest.mark.asyncio
 async def test_retiring_a_machine_writes_event_and_clears_calibration(db_session, printer_factory):
     p = await printer_factory(name="H2S09", model="H2S")

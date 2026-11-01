@@ -196,6 +196,8 @@ CREATE TABLE hour_events (
 	FOREIGN KEY(machine_id) REFERENCES hour_machines (id) ON DELETE CASCADE
 );
 CREATE INDEX ix_hour_events_machine ON hour_events (machine_id);
+CREATE UNIQUE INDEX uq_hour_events_added ON hour_events (machine_id) WHERE kind = 'added';
+CREATE UNIQUE INDEX uq_hour_events_maintenance ON hour_events (machine_id, source_id) WHERE kind = 'maintenance';
 CREATE TABLE hour_machines (
 	id INTEGER NOT NULL, 
 	printer_id INTEGER, 
@@ -249,9 +251,19 @@ CREATE INDEX ix_hour_readings_machine_id ON hour_readings (machine_id);
 ## Migration touching the feature (core/database.py)
 ```regen: grep -nE "_migrate_printer_hours_columns|hour_machines|hour_readings|hour_events" backend/app/core/database.py | sed "s/^[0-9]*://; s/^[[:space:]]*//" | sort -u```
 ```
+"""Partial unique indexes on hour_events: one 'added' per machine, one mirror per maintenance entry.
+"CREATE UNIQUE INDEX IF NOT EXISTS uq_hour_events_added ON hour_events (machine_id) WHERE kind = 'added'",
+"CREATE UNIQUE INDEX IF NOT EXISTS uq_hour_events_maintenance "
+"DELETE FROM hour_events WHERE kind = 'added' AND id NOT IN ("
+"DELETE FROM hour_events WHERE kind = 'maintenance' AND source_id IS NOT NULL AND id NOT IN ("
+"ON hour_events (machine_id, source_id) WHERE kind = 'maintenance'",
+"SELECT MIN(id) FROM hour_events WHERE kind = 'added' GROUP BY machine_id)"
+"SELECT MIN(id) FROM hour_events WHERE kind = 'maintenance' GROUP BY machine_id, source_id)"
 "UPDATE hour_machines SET calibrated_at = COALESCE("
 "WHERE r.machine_id = hour_machines.id AND r.source = 'manual'), CURRENT_TIMESTAMP) "
+async def _migrate_hour_events_unique(conn) -> None:
 async def _migrate_printer_hours_columns(conn) -> None:
+await _migrate_hour_events_unique(conn)
 await _migrate_printer_hours_columns(conn)
 await _safe_execute(conn, "ALTER TABLE hour_readings ADD COLUMN raw_hours REAL")
 await _safe_execute(conn, f"ALTER TABLE hour_machines ADD COLUMN {column} {ddl}")

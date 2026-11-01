@@ -12,6 +12,8 @@ CREATE TABLE hour_events (
 	FOREIGN KEY(machine_id) REFERENCES hour_machines (id) ON DELETE CASCADE
 );
 CREATE INDEX ix_hour_events_machine ON hour_events (machine_id);
+CREATE UNIQUE INDEX uq_hour_events_added ON hour_events (machine_id) WHERE kind = 'added';
+CREATE UNIQUE INDEX uq_hour_events_maintenance ON hour_events (machine_id, source_id) WHERE kind = 'maintenance';
 CREATE TABLE hour_machines (
 	id INTEGER NOT NULL, 
 	printer_id INTEGER, 

@@ -7,6 +7,7 @@ rule lives in the route, this module provides the pieces.
 """
 
 import asyncio
+import contextlib
 import logging
 from datetime import date, datetime, timezone
 from typing import Literal
@@ -119,55 +120,67 @@ async def ensure_hour_machines(db: AsyncSession) -> list[HourMachine]:
     return list(result.scalars().all())
 
 
+async def _insert_event(db: AsyncSession, event: HourEvent) -> None:
+    """Insert one event in a savepoint; a unique-index hit means a concurrent overview already wrote it."""
+    with contextlib.suppress(IntegrityError):
+        async with db.begin_nested():
+            db.add(event)
+
+
 async def sync_events(db: AsyncSession, machines: list[HourMachine]) -> None:
     """Mirror maintenance history into ``hour_events`` and keep each machine's one ``added`` event on ``added_on``.
 
     Idempotent; never deletes; commits.
     """
     for machine in machines:
+        # Plain values: a rolled-back savepoint in _insert_event may expire ORM rows.
+        machine_id, printer_id, name = machine.id, machine.printer_id, machine.name
         known = (
-            await db.execute(select(HourEvent.kind, HourEvent.source_id).where(HourEvent.machine_id == machine.id))
+            await db.execute(select(HourEvent.kind, HourEvent.source_id).where(HourEvent.machine_id == machine_id))
         ).all()
         seen_sources = {src for kind, src in known if kind == "maintenance"}
-        if machine.printer_id is not None:
+        if printer_id is not None:
             rows = await db.execute(
                 select(MaintenanceHistory.id, MaintenanceHistory.performed_at, MaintenanceType.name)
                 .join(PrinterMaintenance, PrinterMaintenance.id == MaintenanceHistory.printer_maintenance_id)
                 .join(MaintenanceType, MaintenanceType.id == PrinterMaintenance.maintenance_type_id)
-                .where(PrinterMaintenance.printer_id == machine.printer_id)
+                .where(PrinterMaintenance.printer_id == printer_id)
             )
             for history_id, performed_at, type_name in rows.all():
                 if history_id not in seen_sources:
-                    db.add(
+                    await _insert_event(
+                        db,
                         HourEvent(
-                            machine_id=machine.id,
+                            machine_id=machine_id,
                             event_date=performed_at.date(),
                             kind="maintenance",
                             label=type_name,
                             source_id=history_id,
-                        )
+                        ),
                     )
         first_manual = (
             await db.execute(
                 select(func.min(HourReading.reading_date)).where(
-                    HourReading.machine_id == machine.id, HourReading.source == SOURCE_MANUAL
+                    HourReading.machine_id == machine_id, HourReading.source == SOURCE_MANUAL
                 )
             )
         ).scalar_one_or_none()
         printer_created = None
-        if machine.printer_id is not None:
+        if printer_id is not None:
             created = (
-                await db.execute(select(Printer.created_at).where(Printer.id == machine.printer_id))
+                await db.execute(select(Printer.created_at).where(Printer.id == printer_id))
             ).scalar_one_or_none()
             printer_created = created.date() if created else None
         joined = added_on(machine, first_manual, printer_created)
         if joined is None:
             continue
         existing = (
-            await db.execute(select(HourEvent).where(HourEvent.machine_id == machine.id, HourEvent.kind == "added"))
-        ).scalar_one_or_none()
+            (await db.execute(select(HourEvent).where(HourEvent.machine_id == machine_id, HourEvent.kind == "added")))
+            .scalars()
+            .first()
+        )
         if existing is None:
-            db.add(HourEvent(machine_id=machine.id, event_date=joined, kind="added", label=machine.name))
+            await _insert_event(db, HourEvent(machine_id=machine_id, event_date=joined, kind="added", label=name))
         elif existing.event_date != joined:
             existing.event_date = joined  # an older reading arrived: the tick follows added_on
     await db.commit()
