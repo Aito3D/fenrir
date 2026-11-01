@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from backend.app.core.database import _migrate_printer_hours_columns
+from backend.app.core.database import _migrate_hour_events_unique, _migrate_printer_hours_columns
 
 pytestmark = pytest.mark.asyncio
 
@@ -82,3 +82,50 @@ async def test_migration_is_idempotent(engine):
         result = await _calibrated(conn)
     assert result[1] == "2026-04-25"
     assert result[3] is None
+
+
+async def _hour_events_with_duplicates(conn) -> None:
+    await conn.execute(
+        text(
+            "CREATE TABLE hour_events (id INTEGER PRIMARY KEY, machine_id INTEGER NOT NULL, event_date DATE, "
+            "kind VARCHAR(20), label VARCHAR(200), source_id INTEGER)"
+        )
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO hour_events (id, machine_id, event_date, kind, label, source_id) VALUES "
+            "(1, 1, '2026-01-01', 'added', 'a', NULL), (2, 1, '2026-01-02', 'added', 'a', NULL), "
+            "(3, 2, '2026-01-01', 'added', 'b', NULL), "
+            "(4, 1, '2026-02-01', 'maintenance', 'm', 7), (5, 1, '2026-02-01', 'maintenance', 'm', 7), "
+            "(6, 2, '2026-02-01', 'maintenance', 'm', 7), "
+            "(7, 1, '2026-03-01', 'note', 'n', NULL), (8, 1, '2026-03-01', 'note', 'n', NULL)"
+        )
+    )
+
+
+async def test_hour_events_unique_deletes_duplicates_keeping_the_lowest_id(engine):
+    async with engine.begin() as conn:
+        await _hour_events_with_duplicates(conn)
+        await _migrate_hour_events_unique(conn)
+        ids = [r[0] for r in await conn.execute(text("SELECT id FROM hour_events ORDER BY id"))]
+        indexes = {r[1]: r[2] for r in await conn.execute(text("PRAGMA index_list(hour_events)"))}
+    assert ids == [1, 3, 4, 6, 7, 8]  # notes are never deduplicated
+    assert indexes["uq_hour_events_added"] == 1
+    assert indexes["uq_hour_events_maintenance"] == 1
+
+
+async def test_hour_events_unique_index_rejects_a_second_added(engine):
+    from sqlalchemy.exc import IntegrityError
+
+    async with engine.begin() as conn:
+        await _hour_events_with_duplicates(conn)
+        await _migrate_hour_events_unique(conn)
+    async with engine.begin() as conn:
+        await _migrate_hour_events_unique(conn)  # idempotent
+        await conn.execute(text("INSERT INTO hour_events (machine_id, kind, label) VALUES (1, 'note', 'n')"))
+    with pytest.raises(IntegrityError):
+        async with engine.begin() as conn:
+            await conn.execute(text("INSERT INTO hour_events (machine_id, kind, label) VALUES (1, 'added', 'x')"))
+    async with engine.begin() as conn:
+        count = (await conn.execute(text("SELECT COUNT(*) FROM hour_events"))).scalar()
+    assert count == 7

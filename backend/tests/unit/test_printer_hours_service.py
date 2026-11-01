@@ -211,7 +211,7 @@ async def test_same_day_recalibration_keeps_drift_and_one_event(db_session, prin
     p = await printer_factory(name="X1C13", runtime_seconds=3600 * 100, print_hours_offset=3765.0)
     machine = await machine_for_printer(db_session, p.id)
     machine.calibrated_at = datetime(2026, 10, 1)
-    today = datetime.now(timezone.utc).date()
+    today = date.today()  # the local date, as save_readings passes it
     await calibrate_machine(db_session, machine, p, 15130.0, today)
     await db_session.commit()
     first_drift = machine.last_drift_hours
@@ -222,6 +222,53 @@ async def test_same_day_recalibration_keeps_drift_and_one_event(db_session, prin
     assert machine.last_drift_hours == first_drift
     events = (await db_session.execute(select(HourEvent).where(HourEvent.kind == "calibrated"))).scalars().all()
     assert [(e.event_date, e.label) for e in events] == [(today, "1513 h")]
+
+
+@pytest.fixture
+def utc_plus_11(monkeypatch):
+    import time
+
+    monkeypatch.setenv("TZ", "Pacific/Noumea")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+@pytest.mark.asyncio
+async def test_same_local_day_correction_across_a_utc_boundary_is_not_drift(db_session, printer_factory, utc_plus_11):
+    p = await printer_factory(name="X1C15", runtime_seconds=3600 * 100, print_hours_offset=3765.0)
+    machine = await machine_for_printer(db_session, p.id)
+    machine.calibrated_at = datetime(2026, 10, 31, 21, 0)  # 08:00 on 2026-11-01 local, the day before in UTC
+    machine.last_drift_hours = 7.0
+    local_day = date(2026, 11, 1)
+    db_session.add(HourEvent(machine_id=machine.id, kind="calibrated", label="3803 h", event_date=local_day))
+    await db_session.commit()
+
+    await calibrate_machine(db_session, machine, p, 3805.0, local_day)  # the typo fix, 12:00 local
+    await db_session.commit()
+    assert machine.last_drift_hours == 7.0
+    events = (await db_session.execute(select(HourEvent).where(HourEvent.kind == "calibrated"))).scalars().all()
+    assert [(e.event_date, e.label) for e in events] == [(local_day, "3805 h")]
+
+
+@pytest.mark.asyncio
+async def test_next_local_day_recalibration_sharing_a_utc_date_records_drift(
+    db_session, printer_factory, utc_plus_11, monkeypatch
+):
+    from datetime import timezone
+
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 1, 20, 0, tzinfo=timezone.utc)  # 07:00 on 2026-11-02 local
+
+    monkeypatch.setattr(printer_hours, "datetime", _Clock)
+    p = await printer_factory(name="X1C16", runtime_seconds=3600 * 100, print_hours_offset=3765.0)
+    machine = await machine_for_printer(db_session, p.id)
+    machine.calibrated_at = datetime(2026, 11, 1, 1, 0)  # 12:00 on 2026-11-01 local: same UTC date as "now"
+    await calibrate_machine(db_session, machine, p, 3803.0, date(2026, 11, 2))
+    assert machine.last_drift_hours == pytest.approx(62.0)
 
 
 @pytest.mark.asyncio
@@ -361,6 +408,101 @@ async def test_sync_events_no_added_without_any_date(db_session):
     await sync_events(db_session, [machine])
 
     assert (await db_session.execute(select(HourEvent))).scalars().all() == []
+
+
+async def _seed_history(db, printer_id: int) -> MaintenanceHistory:
+    mtype = MaintenanceType(name="Lubricate rails", default_interval_hours=300.0)
+    db.add(mtype)
+    await db.flush()
+    item = PrinterMaintenance(printer_id=printer_id, maintenance_type_id=mtype.id, enabled=True)
+    db.add(item)
+    await db.flush()
+    hist = MaintenanceHistory(printer_maintenance_id=item.id, performed_at=datetime(2026, 5, 4, 10, 0))
+    db.add(hist)
+    await db.commit()
+    return hist
+
+
+async def _kinds(db) -> list[str]:
+    return sorted((await db.execute(select(HourEvent.kind))).scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_insert_event_treats_a_unique_hit_as_already_there(db_session, printer_factory):
+    """The loser of a racing overview hits the unique index; that is 'already there', not an error."""
+    p = await printer_factory(name="X1C30")
+    machines = await ensure_hour_machines(db_session)
+    hist = await _seed_history(db_session, p.id)
+    await sync_events(db_session, machines)
+    machine_id = machines[0].id
+
+    await printer_hours._insert_event(
+        db_session, HourEvent(machine_id=machine_id, event_date=date(2026, 1, 1), kind="added", label="dup")
+    )
+    await printer_hours._insert_event(
+        db_session,
+        HourEvent(
+            machine_id=machine_id, event_date=date(2026, 1, 1), kind="maintenance", label="dup", source_id=hist.id
+        ),
+    )
+    await sync_events(db_session, machines)  # the session is still usable after the rolled-back savepoints
+
+    assert await _kinds(db_session) == ["added", "maintenance"]
+    assert machines[0].name == "X1C30"
+
+
+@pytest.mark.asyncio
+async def test_sync_events_survives_a_preexisting_duplicate_added(db_session, printer_factory):
+    """A database that took two 'added' rows before the index existed no longer 500s the overview."""
+    from sqlalchemy import text
+
+    await printer_factory(name="X1C31")
+    machines = await ensure_hour_machines(db_session)
+    await db_session.execute(text("DROP INDEX uq_hour_events_added"))
+    for _ in range(2):
+        db_session.add(HourEvent(machine_id=machines[0].id, event_date=date(2026, 1, 1), kind="added", label="a"))
+    await db_session.commit()
+
+    await sync_events(db_session, machines)
+
+    assert await _kinds(db_session) == ["added", "added"]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_sync_events_write_each_event_once(tmp_path):
+    """Two overviews at once (two tabs, a refetch beside a save) leave one 'added' and one mirror."""
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from backend.app.core.database import Base, load_all_models
+
+    load_all_models()
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'race.db'}", connect_args={"timeout": 30})
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with maker() as setup:
+            from backend.app.models.printer import Printer
+
+            p = Printer(name="X1C32", serial_number="RACE32", ip_address="10.0.0.32", access_code="12345678")
+            p.created_at = datetime(2026, 3, 9, 12, 0)
+            setup.add(p)
+            await setup.commit()
+            await _seed_history(setup, p.id)
+            await ensure_hour_machines(setup)
+
+        async def overview():
+            async with maker() as db:
+                await sync_events(db, await ensure_hour_machines(db))
+
+        await asyncio.gather(overview(), overview())
+
+        async with maker() as check:
+            assert await _kinds(check) == ["added", "maintenance"]
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio

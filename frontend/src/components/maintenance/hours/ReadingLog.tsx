@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { HourReading } from '../../../api/client';
 import { Button } from '../../Button';
+import { isoDayFormatter } from '../../../utils/hoursSeries';
 
 interface ReadingLogProps {
   readings: HourReading[];
@@ -23,7 +24,7 @@ interface LogRow {
 export function ReadingLog({ readings, today, canEdit, canDelete, onEdit, onDelete, limit }: ReadingLogProps) {
   const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const dayFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' });
+  const dayFmt = isoDayFormatter(i18n.language);
   const byDate = new Map<string, LogRow>();
   for (const r of readings) {
     if (r.source === 'auto' && r.reading_date !== today) continue;
@@ -56,7 +57,7 @@ export function ReadingLog({ readings, today, canEdit, canDelete, onEdit, onDele
             {t(`maintenance.hours.${row.source}`)}
           </span>
           <span className="font-semibold text-white">
-            {row.source === 'auto' ? t('maintenance.hours.autoToday') : dayFmt.format(new Date(`${row.date}T00:00:00Z`))}
+            {row.source === 'auto' ? t('maintenance.hours.autoToday') : dayFmt(row.date)}
           </span>
           <span className="text-bambu-gray">{t('maintenance.hours.machineCount', { n: row.count })}</span>
           <span className="ml-auto tabular-nums text-bambu-gray">Σ {Math.round(row.sum).toLocaleString(i18n.language)} h</span>

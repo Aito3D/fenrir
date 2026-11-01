@@ -6785,6 +6785,7 @@ async def _run_migrations(conn):
     await _migrate_location_ha_sensor_unique_binding(conn)
     await _migrate_printer_maintenance_unique(conn)
     await _migrate_printer_hours_columns(conn)
+    await _migrate_hour_events_unique(conn)
 
     # Migration: the stock alert templates name the colour and subtype (#2955).
     # The forecast groups by colour, so two colours of one product would
@@ -8510,6 +8511,40 @@ async def _migrate_printer_hours_columns(conn) -> None:
                 "(SELECT id FROM printers WHERE print_hours_offset > 0)"
             )
         )
+
+
+async def _migrate_hour_events_unique(conn) -> None:
+    """Partial unique indexes on hour_events: one 'added' per machine, one mirror per maintenance entry.
+
+    sync_events inserts both after a read with no constraint, so two concurrent
+    overviews could each insert one. Same names and shape as the Indexes in the
+    model. Duplicates are removed first (the lowest id is kept), since CREATE
+    UNIQUE INDEX refuses to build over them.
+    """
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                "DELETE FROM hour_events WHERE kind = 'added' AND id NOT IN ("
+                "SELECT MIN(id) FROM hour_events WHERE kind = 'added' GROUP BY machine_id)"
+            )
+        )
+        await conn.execute(
+            text(
+                "DELETE FROM hour_events WHERE kind = 'maintenance' AND source_id IS NOT NULL AND id NOT IN ("
+                "SELECT MIN(id) FROM hour_events WHERE kind = 'maintenance' GROUP BY machine_id, source_id)"
+            )
+        )
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_hour_events_added ON hour_events (machine_id) WHERE kind = 'added'",
+    )
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_hour_events_maintenance "
+        "ON hour_events (machine_id, source_id) WHERE kind = 'maintenance'",
+    )
 
 
 async def _migrate_printer_maintenance_unique(conn) -> None:

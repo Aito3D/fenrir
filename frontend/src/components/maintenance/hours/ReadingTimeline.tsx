@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { HourReading } from '../../../api/client';
-import { dayNumber } from '../../../utils/hoursSeries';
+import { dayNumber, isoDayFormatter } from '../../../utils/hoursSeries';
 
 interface ReadingTimelineProps {
   readings: HourReading[];
@@ -30,9 +30,8 @@ export function ReadingTimeline({ readings, today, due, onPick }: ReadingTimelin
   const dates = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
   if (dates.length === 0) return null;
 
-  const dayFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' });
-  const monthFmt = new Intl.DateTimeFormat(i18n.language, { month: 'short', year: '2-digit', timeZone: 'UTC' });
-  const fmtDate = (iso: string) => dayFmt.format(dayNumber(iso) * 86_400_000);
+  const monthFmt = isoDayFormatter(i18n.language, { month: 'short', year: '2-digit' });
+  const fmtDate = isoDayFormatter(i18n.language);
   const first = dayNumber(dates[0].date);
   const span = dayNumber(today) - first;
   let lastLabelled = -Infinity;
@@ -62,7 +61,7 @@ export function ReadingTimeline({ readings, today, due, onPick }: ReadingTimelin
                 className="absolute top-2.5 -translate-x-1/2 whitespace-nowrap text-[0.65rem] text-bambu-gray"
                 style={{ left: `${pct}%` }}
               >
-                {monthFmt.format(dayNumber(d.date) * 86_400_000)}
+                {monthFmt(d.date)}
               </span>
             )}
           </div>

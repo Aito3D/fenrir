@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { HourEvent, HourMachine, HourReading } from '../../../api/client';
 import { useDismissableDialog } from '../../../hooks/useDismissableDialog';
 import {
-  behaviourFlag, dayNumber, familyOf, forecastDate, loadShare, periodPaces, ratePerMonth, seriesPoints, type MachineSeries,
+  behaviourFlag, familyOf, isoDayFormatter, forecastDate, loadShare, periodPaces, ratePerMonth, seriesPoints, type MachineSeries,
 } from '../../../utils/hoursSeries';
 import { Button } from '../../Button';
 import { focusRingCls } from '../../formStyles';
@@ -20,6 +20,7 @@ interface MachinePanelProps {
   color: string;
   currency: string;
   canEdit: boolean;
+  canDelete: boolean;
   onEditDate: (date: string) => void;
   onAddEvent: (machineId: number, body: { event_date: string; label: string }) => void;
   onDeleteEvent: (id: number) => void;
@@ -31,7 +32,7 @@ interface MachinePanelProps {
 
 /** Slide-over (bottom sheet on phones) for digging into one machine. */
 export function MachinePanel({
-  machine, series, readings, events, today, color, currency, canEdit,
+  machine, series, readings, events, today, color, currency, canEdit, canDelete,
   onEditDate, onAddEvent, onDeleteEvent, onSavePurchase, onClose, suspendDismiss = false,
 }: MachinePanelProps) {
   const { t, i18n } = useTranslation();
@@ -39,10 +40,8 @@ export function MachinePanel({
     onEscape: (close) => { if (!suspendDismiss) close(); },
   });
   const fmt = (n: number) => Math.round(n).toLocaleString(i18n.language);
-  const fullFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' });
-  const shortFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC', day: 'numeric', month: 'short' });
-  const date = (iso: string) => fullFmt.format(dayNumber(iso) * 86_400_000);
-  const short = (iso: string) => shortFmt.format(dayNumber(iso) * 86_400_000);
+  const date = isoDayFormatter(i18n.language);
+  const short = isoDayFormatter(i18n.language, { day: 'numeric', month: 'short' });
 
   const live = !machine.retired;
   const last = series.manual.at(-1) ?? null;
@@ -181,6 +180,7 @@ export function MachinePanel({
             events={events}
             today={today}
             canEdit={canEdit}
+            canDelete={canDelete}
             onAdd={(body) => onAddEvent(machine.id, body)}
             onDelete={onDeleteEvent}
           />

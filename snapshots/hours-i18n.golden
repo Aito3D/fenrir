@@ -1,0 +1,1912 @@
+### exit: 0
+### stdout:
+--- de maintenance.hours (125 keys)
+auto = "automatisch"
+autoToday = "Fenrir-Zähler · heute"
+chart.forecast = "Prognose bei aktuellem Tempo"
+chart.lastReading = "letzte Ablesung · {{date}}"  placeholders={{date}}
+chart.months = "Monate"
+chart.nextService = "nächste Wartung bei {{hours}} h · etwa {{date}}"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "seit {{months}} Monaten keine Ablesung"  placeholders={{months}}
+chart.sameAgeHint = "Wähle in der Liste zwei oder drei Maschinen, um sie im gleichen Alter zu vergleichen."
+cost.basedOn = "basierend auf dem letzten Stand vom {{date}}"  placeholders={{date}}
+cost.date = "Kaufdatum"
+cost.noRevenue = "Der Umsatz pro Maschine wird nicht erfasst."
+cost.perHour = "{{amount}} pro Stunde"  placeholders={{amount}}
+cost.price = "Kaufpreis"
+cost.save = "Speichern"
+cost.saved = "Kaufdetails gespeichert"
+cost.title = "Kosten pro Stunde"
+days = "Tage"
+deleteMachineMessage = "{{name}} und den gesamten Stundenverlauf löschen?"  placeholders={{name}}
+deleteMachineTitle = "Ausgemusterte Maschine löschen"
+deleteMessage = "Die manuellen Ablesungen vom {{date}} löschen? Die automatischen Schnappschüsse von Fenrir bleiben erhalten."  placeholders={{date}}
+deleteTitle = "Ablesungen löschen"
+deleted = "Ablesungen gelöscht"
+delta = "+{{hours}} h seit {{date}}"  placeholders={{date}},{{hours}}
+empty = "Noch keine Ablesungen. Fügen Sie eine hinzu oder fügen Sie Ihre Tabelle ein."
+flag.slowing = "verlangsamt"
+flag.stopped = "steht still"
+fleetLine = "{{machines}} Maschinen · letzte Ablesung {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "Rückdatierte Ablesungen werden nur für den Verlauf gespeichert."
+form.date = "Datum"
+form.editTitle = "Ablesung bearbeiten"
+form.hint = "Gib die Gesamtbetriebsstunden jeder Maschine von ihrem Display ein. Graue Werte sind die Fenrir-Zähler; leere Felder werden übersprungen."
+form.invalid = "Keine Zahl"
+form.recalibrateNote = "Ablesungen mit dem heutigen Datum kalibrieren den Zähler jeder Maschine neu, sodass die Wartungstermine dem Druckerdisplay folgen."
+form.title = "Neue Ablesung"
+intervalSaved = "Erinnerungsintervall gespeichert"
+lastReadingOn = "letzte Ablesung {{date}}"  placeholders={{date}}
+machineCount = "Maschinen: {{n}}"  placeholders={{n}}
+machineDeleted = "Maschine gelöscht"
+machines = "Maschinen"
+manual = "manuell"
+modeCumulative = "Kumulierte Stunden"
+modeMonthly = "Stunden / Monat"
+modeSameAge = "Gleiches Alter"
+modeTotal = "Gesamtflotte"
+newReading = "Neue Ablesung"
+noRecentReading = "keine aktuelle Ablesung"
+olderDates = "{{n}} ältere Daten"  placeholders={{n}}
+openMachine = "{{name}} öffnen"  placeholders={{name}}
+panel.addNote = "Notiz hinzufügen"
+panel.added = "hinzugefügt {{date}}"  placeholders={{date}}
+panel.deleteNote = "Notiz löschen"
+panel.events = "Ereignisse"
+panel.forecast = "Bei {{pace}} h/Monat: {{hours}} h um den {{date}}"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "am {{date}}"  placeholders={{date}}
+panel.load = "Auslastung"
+panel.noteDate = "Datum"
+panel.noteText = "Notiz"
+panel.pace = "Tempo"
+panel.period = "Zeitraum"
+panel.rawOnDate = "Zähler"
+panel.readings = "Messwerte"
+panel.saveNote = "Notiz speichern"
+panel.takeReading = "Stand erfassen"
+partialMonth = "Der aktuelle Monat läuft noch."
+pass.back = "Zurück"
+pass.backwards = "Niedriger als die am {{date}} abgelesenen {{hours}} h. Lebensdauer-Stunden sinken nie."  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir hat seit {{date}} +{{hours}} h gezählt"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "+{{typed}} h eingegeben, aber Fenrir hat seit {{date}} +{{counted}} h gezählt. Erwartet: etwa {{expected}} h."  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "Keine Zahl"
+pass.keepAnyway = "Trotzdem behalten"
+pass.kept = "behalten"
+pass.last = "zuletzt {{hours}} h am {{date}}"  placeholders={{date}},{{hours}}
+pass.next = "Weiter"
+pass.noLast = "noch keine Ablesung"
+pass.noReference = "keine Zählerreferenz für diesen Zeitraum"
+pass.nothingToSave = "Nichts zu speichern. Gehen Sie zurück und geben Sie eine Ablesung ein, oder schließen Sie."
+pass.okDelta = "+{{typed}} h eingegeben, Fenrir hat +{{counted}} h gezählt"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "{{n}} Ablesungen speichern"  placeholders={{n}}
+pass.skip = "Überspringen"
+pass.summary = "Prüfen und speichern"
+pass.title = "Ablesungen erfassen"
+paste.createRetired = "Als stillgelegte Maschine anlegen"
+paste.futureRows = "Zeilen mit Datum in der Zukunft werden übersprungen: {{n}}"  placeholders={{n}}
+paste.hint = "Markieren Sie in Ihrer Tabelle die Kopfzeile und die Datumszeilen, kopieren Sie sie und fügen Sie sie hier ein. Spalten werden anhand des Namens den Druckern zugeordnet; Nullen und leere Zellen werden übersprungen."
+paste.ignore = "Ignorieren"
+paste.import = "Importieren"
+paste.imported = "Messwerte importiert: {{n}}"  placeholders={{n}}
+paste.matched = "Zugeordnet"
+paste.noRows = "Keine Zeile beginnt mit einem Datum. Kopieren Sie die Kopfzeile zusammen mit den Datumszeilen."
+paste.replaceNote = "Bereits vorhandene Daten werden ersetzt."
+paste.summary = "{{dates}} Daten · {{columns}} Spalten · {{readings}} Messwerte"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "Aus Tabelle einfügen"
+paste.unmatched = "Nicht in Fenrir"
+pasteFromSheet = "Aus Tabelle einfügen"
+perMonth = "{{hours}} h/Monat"  placeholders={{hours}}
+range.12m = "12 Mon."
+range.3m = "3 Mon."
+range.all = "Alle"
+range.label = "Zeitraum"
+readingLog = "Ablesungsverlauf"
+readingsEvery = "Ablesungen alle"
+readingsEveryRead = "Ablesungen alle {{days}} Tage"  placeholders={{days}}
+retired = "Ausgemustert"
+saved = "Ablesungen gespeichert"
+showAll = "alle"
+showNone = "keine"
+strip.allFresh = "alle Maschinen kürzlich abgelesen"
+strip.busiest = "Meistgenutzte Maschine"
+strip.dueSub = "tippen zum Erfassen"
+strip.lifetime = "Flotte gesamt"
+strip.load = "Auslastung je Maschine"
+strip.machinesCount = "{{live}} aktiv · {{sold}} verkauft"  placeholders={{live}},{{sold}}
+strip.readingsDue = "Ablesungen fällig"
+strip.takeReadings = "Ablesungen erfassen"
+strip.thisMonth = "Dieser Monat"
+strip.thisMonthSub = "aktive Maschinen, seit dem 1."
+subtitle = "Gesamtstunden pro Maschine"
+tab = "Stunden"
+timeline.today = "heute"
+trust.calibrated = "Kalibriert"
+trust.driftHelp = "Der Zähler war von den Einträgen abgewichen; ein neuer Eintrag korrigiert das."
+trust.drifting = "Zähler lag beim letzten Eintrag {{hours}} h daneben"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir zählt ab 0. Speichere einen Eintrag mit dem heutigen Datum, um ihn zu kalibrieren."
+trust.uncalibrated = "Zähler nicht kalibriert"
+--- en maintenance.hours (125 keys)
+auto = "auto"
+autoToday = "Fenrir counters · today"
+chart.forecast = "forecast at the current pace"
+chart.lastReading = "last reading · {{date}}"  placeholders={{date}}
+chart.months = "months"
+chart.nextService = "next service at {{hours}} h · around {{date}}"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "no readings for {{months}} months"  placeholders={{months}}
+chart.sameAgeHint = "Pick two or three machines in the list to compare them at the same age."
+cost.basedOn = "based on the last reading of {{date}}"  placeholders={{date}}
+cost.date = "Purchase date"
+cost.noRevenue = "Revenue per machine is not tracked."
+cost.perHour = "{{amount}} per hour"  placeholders={{amount}}
+cost.price = "Purchase price"
+cost.save = "Save"
+cost.saved = "Purchase details saved"
+cost.title = "Cost per hour"
+days = "days"
+deleteMachineMessage = "Delete {{name}} and its whole hours history?"  placeholders={{name}}
+deleteMachineTitle = "Delete retired machine"
+deleteMessage = "Delete the manual readings of {{date}}? Fenrir's automatic snapshots are kept."  placeholders={{date}}
+deleteTitle = "Delete readings"
+deleted = "Readings deleted"
+delta = "+{{hours}} h since {{date}}"  placeholders={{date}},{{hours}}
+empty = "No readings yet. Add one or paste your sheet."
+flag.slowing = "slowing"
+flag.stopped = "stopped"
+fleetLine = "{{machines}} machines · last reading {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "Backdated readings are stored for the history only."
+form.date = "Date"
+form.editTitle = "Edit reading"
+form.hint = "Type each machine's lifetime hours from its screen. Grey values are Fenrir's counters; empty fields are skipped."
+form.invalid = "Not a number"
+form.recalibrateNote = "Readings dated today recalibrate each machine's counter, so maintenance due dates follow the printer screen."
+form.title = "New reading"
+intervalSaved = "Reminder interval saved"
+lastReadingOn = "last reading {{date}}"  placeholders={{date}}
+machineCount = "Machines: {{n}}"  placeholders={{n}}
+machineDeleted = "Machine deleted"
+machines = "Machines"
+manual = "manual"
+modeCumulative = "Cumulative hours"
+modeMonthly = "Hours / month"
+modeSameAge = "Same age"
+modeTotal = "Fleet total"
+newReading = "New reading"
+noRecentReading = "no recent reading"
+olderDates = "{{n}} older dates"  placeholders={{n}}
+openMachine = "Open {{name}}"  placeholders={{name}}
+panel.addNote = "Add a note"
+panel.added = "added {{date}}"  placeholders={{date}}
+panel.deleteNote = "Delete note"
+panel.events = "Events"
+panel.forecast = "At {{pace}} h/month, {{hours}} h around {{date}}"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "on {{date}}"  placeholders={{date}}
+panel.load = "Load"
+panel.noteDate = "Date"
+panel.noteText = "Note"
+panel.pace = "Pace"
+panel.period = "Period"
+panel.rawOnDate = "counter"
+panel.readings = "Readings"
+panel.saveNote = "Save note"
+panel.takeReading = "Take a reading"
+partialMonth = "The current month is still in progress."
+pass.back = "Back"
+pass.backwards = "Lower than the {{hours}} h read on {{date}}. Lifetime hours never go down."  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir counted +{{hours}} h since {{date}}"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "+{{typed}} h typed, but Fenrir counted +{{counted}} h since {{date}}. Expected about {{expected}} h."  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "Not a number"
+pass.keepAnyway = "Keep anyway"
+pass.kept = "kept"
+pass.last = "last {{hours}} h on {{date}}"  placeholders={{date}},{{hours}}
+pass.next = "Next"
+pass.noLast = "no reading yet"
+pass.noReference = "no counter reference for this period"
+pass.nothingToSave = "Nothing to save. Go back and type a reading, or close."
+pass.okDelta = "+{{typed}} h typed, Fenrir counted +{{counted}} h"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "Save {{n}} readings"  placeholders={{n}}
+pass.skip = "Skip"
+pass.summary = "Check and save"
+pass.title = "Take readings"
+paste.createRetired = "Create as retired machine"
+paste.futureRows = "Rows dated in the future are skipped: {{n}}"  placeholders={{n}}
+paste.hint = "Select the header row and the date rows in your sheet, copy, and paste here. Columns are matched to printers by name; zeros and empty cells are skipped."
+paste.ignore = "Ignore"
+paste.import = "Import"
+paste.imported = "Readings imported: {{n}}"  placeholders={{n}}
+paste.matched = "Matched"
+paste.noRows = "No row starts with a date. Copy the header row together with the date rows."
+paste.replaceNote = "Dates already on file are replaced."
+paste.summary = "{{dates}} dates · {{columns}} columns · {{readings}} readings"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "Paste from sheet"
+paste.unmatched = "Not in Fenrir"
+pasteFromSheet = "Paste from sheet"
+perMonth = "{{hours}} h/month"  placeholders={{hours}}
+range.12m = "12 m"
+range.3m = "3 m"
+range.all = "All"
+range.label = "Range"
+readingLog = "Reading log"
+readingsEvery = "Readings every"
+readingsEveryRead = "Readings every {{days}} days"  placeholders={{days}}
+retired = "Retired"
+saved = "Readings saved"
+showAll = "all"
+showNone = "none"
+strip.allFresh = "all machines read recently"
+strip.busiest = "Busiest machine"
+strip.dueSub = "tap to take them"
+strip.lifetime = "Fleet lifetime"
+strip.load = "Load per machine"
+strip.machinesCount = "{{live}} live · {{sold}} sold"  placeholders={{live}},{{sold}}
+strip.readingsDue = "Readings due"
+strip.takeReadings = "Take readings"
+strip.thisMonth = "This month"
+strip.thisMonthSub = "live machines, since the 1st"
+subtitle = "Lifetime hours per machine"
+tab = "Hours"
+timeline.today = "today"
+trust.calibrated = "Calibrated"
+trust.driftHelp = "The counter had wandered from the readings; a fresh reading corrects it."
+trust.drifting = "Counter was {{hours}} h off at the last reading"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir counts from 0. Save one reading dated today to calibrate it."
+trust.uncalibrated = "Counter not calibrated"
+--- es maintenance.hours (125 keys)
+auto = "automática"
+autoToday = "Contadores de Fenrir · hoy"
+chart.forecast = "previsión al ritmo actual"
+chart.lastReading = "última lectura · {{date}}"  placeholders={{date}}
+chart.months = "meses"
+chart.nextService = "próximo mantenimiento a las {{hours}} h · hacia el {{date}}"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "sin lecturas desde hace {{months}} meses"  placeholders={{months}}
+chart.sameAgeHint = "Elige dos o tres máquinas de la lista para compararlas a la misma edad."
+cost.basedOn = "basado en la última lectura del {{date}}"  placeholders={{date}}
+cost.date = "Fecha de compra"
+cost.noRevenue = "El ingreso por máquina no se registra."
+cost.perHour = "{{amount}} por hora"  placeholders={{amount}}
+cost.price = "Precio de compra"
+cost.save = "Guardar"
+cost.saved = "Datos de compra guardados"
+cost.title = "Coste por hora"
+days = "días"
+deleteMachineMessage = "¿Eliminar {{name}} y todo su historial de horas?"  placeholders={{name}}
+deleteMachineTitle = "Eliminar máquina retirada"
+deleteMessage = "¿Eliminar las lecturas manuales del {{date}}? Las instantáneas automáticas de Fenrir se conservan."  placeholders={{date}}
+deleteTitle = "Eliminar lecturas"
+deleted = "Lecturas eliminadas"
+delta = "+{{hours}} h desde el {{date}}"  placeholders={{date}},{{hours}}
+empty = "Aún no hay lecturas. Añada una o pegue su hoja."
+flag.slowing = "se ralentiza"
+flag.stopped = "parada"
+fleetLine = "{{machines}} máquinas · última lectura {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "Las lecturas con fecha anterior solo se guardan para el historial."
+form.date = "Fecha"
+form.editTitle = "Editar lectura"
+form.hint = "Escribe las horas acumuladas de cada máquina que muestra su pantalla. Los valores en gris son los contadores de Fenrir; los campos vacíos se omiten."
+form.invalid = "No es un número"
+form.recalibrateNote = "Las lecturas con fecha de hoy recalibran el contador de cada máquina, de modo que los vencimientos de mantenimiento siguen la pantalla de la impresora."
+form.title = "Nueva lectura"
+intervalSaved = "Intervalo de recordatorio guardado"
+lastReadingOn = "última lectura {{date}}"  placeholders={{date}}
+machineCount = "Máquinas: {{n}}"  placeholders={{n}}
+machineDeleted = "Máquina eliminada"
+machines = "Máquinas"
+manual = "manual"
+modeCumulative = "Horas acumuladas"
+modeMonthly = "Horas / mes"
+modeSameAge = "Misma edad"
+modeTotal = "Total de la flota"
+newReading = "Nueva lectura"
+noRecentReading = "sin lectura reciente"
+olderDates = "{{n}} fechas anteriores"  placeholders={{n}}
+openMachine = "Abrir {{name}}"  placeholders={{name}}
+panel.addNote = "Añadir una nota"
+panel.added = "añadida el {{date}}"  placeholders={{date}}
+panel.deleteNote = "Eliminar nota"
+panel.events = "Eventos"
+panel.forecast = "A {{pace}} h/mes, {{hours}} h hacia el {{date}}"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "el {{date}}"  placeholders={{date}}
+panel.load = "Carga"
+panel.noteDate = "Fecha"
+panel.noteText = "Nota"
+panel.pace = "Ritmo"
+panel.period = "Periodo"
+panel.rawOnDate = "contador"
+panel.readings = "Lecturas"
+panel.saveNote = "Guardar nota"
+panel.takeReading = "Tomar una lectura"
+partialMonth = "El mes actual aún no ha terminado."
+pass.back = "Atrás"
+pass.backwards = "Inferior a las {{hours}} h leídas el {{date}}. Las horas totales nunca bajan."  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir contó +{{hours}} h desde el {{date}}"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "+{{typed}} h introducidas, pero Fenrir contó +{{counted}} h desde el {{date}}. Se esperaban unas {{expected}} h."  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "No es un número"
+pass.keepAnyway = "Conservar de todos modos"
+pass.kept = "conservada"
+pass.last = "última: {{hours}} h el {{date}}"  placeholders={{date}},{{hours}}
+pass.next = "Siguiente"
+pass.noLast = "aún sin lectura"
+pass.noReference = "sin referencia del contador para este periodo"
+pass.nothingToSave = "Nada que guardar. Vuelve y escribe una lectura, o cierra."
+pass.okDelta = "+{{typed}} h introducidas, Fenrir contó +{{counted}} h"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "Guardar {{n}} lecturas"  placeholders={{n}}
+pass.skip = "Omitir"
+pass.summary = "Revisar y guardar"
+pass.title = "Tomar lecturas"
+paste.createRetired = "Crear como máquina retirada"
+paste.futureRows = "Se omiten las filas con fecha futura: {{n}}"  placeholders={{n}}
+paste.hint = "Selecciona la fila de encabezado y las filas con fecha de tu hoja, cópialas y pégalas aquí. Las columnas se asocian a las impresoras por nombre; los ceros y las celdas vacías se omiten."
+paste.ignore = "Ignorar"
+paste.import = "Importar"
+paste.imported = "Lecturas importadas: {{n}}"  placeholders={{n}}
+paste.matched = "Asociada"
+paste.noRows = "Ninguna fila empieza con una fecha. Copia la fila de encabezado junto con las filas con fecha."
+paste.replaceNote = "Las fechas ya registradas se reemplazan."
+paste.summary = "{{dates}} fechas · {{columns}} columnas · {{readings}} lecturas"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "Pegar desde la hoja"
+paste.unmatched = "No está en Fenrir"
+pasteFromSheet = "Pegar desde la hoja"
+perMonth = "{{hours}} h/mes"  placeholders={{hours}}
+range.12m = "12 meses"
+range.3m = "3 meses"
+range.all = "Todo"
+range.label = "Rango"
+readingLog = "Registro de lecturas"
+readingsEvery = "Lecturas cada"
+readingsEveryRead = "Lecturas cada {{days}} días"  placeholders={{days}}
+retired = "Retiradas"
+saved = "Lecturas guardadas"
+showAll = "todas"
+showNone = "ninguna"
+strip.allFresh = "todas las máquinas leídas recientemente"
+strip.busiest = "Máquina más activa"
+strip.dueSub = "toca para tomarlas"
+strip.lifetime = "Total de la flota"
+strip.load = "Carga por máquina"
+strip.machinesCount = "{{live}} activas · {{sold}} vendidas"  placeholders={{live}},{{sold}}
+strip.readingsDue = "Lecturas pendientes"
+strip.takeReadings = "Tomar lecturas"
+strip.thisMonth = "Este mes"
+strip.thisMonthSub = "máquinas activas, desde el día 1"
+subtitle = "Horas acumuladas por máquina"
+tab = "Horas"
+timeline.today = "hoy"
+trust.calibrated = "Calibrado"
+trust.driftHelp = "El contador se había desviado de las lecturas; una lectura nueva lo corrige."
+trust.drifting = "El contador se desviaba {{hours}} h en la última lectura"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir cuenta desde 0. Guarda una lectura con la fecha de hoy para calibrarlo."
+trust.uncalibrated = "Contador sin calibrar"
+--- fr maintenance.hours (125 keys)
+auto = "automatique"
+autoToday = "Compteurs Fenrir · aujourd'hui"
+chart.forecast = "prévision au rythme actuel"
+chart.lastReading = "dernier relevé · {{date}}"  placeholders={{date}}
+chart.months = "mois"
+chart.nextService = "prochaine révision à {{hours}} h · vers le {{date}}"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "aucun relevé depuis {{months}} mois"  placeholders={{months}}
+chart.sameAgeHint = "Choisissez deux ou trois machines dans la liste pour les comparer au même âge."
+cost.basedOn = "basé sur le dernier relevé du {{date}}"  placeholders={{date}}
+cost.date = "Date d'achat"
+cost.noRevenue = "Le revenu par machine n'est pas suivi."
+cost.perHour = "{{amount}} par heure"  placeholders={{amount}}
+cost.price = "Prix d'achat"
+cost.save = "Enregistrer"
+cost.saved = "Détails d'achat enregistrés"
+cost.title = "Coût par heure"
+days = "jours"
+deleteMachineMessage = "Supprimer {{name}} et tout son historique d’heures ?"  placeholders={{name}}
+deleteMachineTitle = "Supprimer la machine retirée"
+deleteMessage = "Supprimer les relevés manuels du {{date}} ? Les instantanés automatiques de Fenrir sont conservés."  placeholders={{date}}
+deleteTitle = "Supprimer les relevés"
+deleted = "Relevés supprimés"
+delta = "+{{hours}} h depuis le {{date}}"  placeholders={{date}},{{hours}}
+empty = "Aucun relevé. Ajoutez-en un ou collez votre tableur."
+flag.slowing = "ralentit"
+flag.stopped = "à l’arrêt"
+fleetLine = "{{machines}} machines · dernier relevé {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "Les relevés antérieurs sont conservés uniquement pour l’historique."
+form.date = "Date"
+form.editTitle = "Modifier le relevé"
+form.hint = "Saisissez les heures cumulées affichées sur l’écran de chaque machine. Les valeurs grisées sont les compteurs Fenrir ; les champs vides sont ignorés."
+form.invalid = "Nombre invalide"
+form.recalibrateNote = "Les relevés datés d’aujourd’hui recalent le compteur de chaque machine : les échéances de maintenance suivent l’écran de l’imprimante."
+form.title = "Nouveau relevé"
+intervalSaved = "Intervalle de rappel enregistré"
+lastReadingOn = "dernier relevé {{date}}"  placeholders={{date}}
+machineCount = "Machines : {{n}}"  placeholders={{n}}
+machineDeleted = "Machine supprimée"
+machines = "Machines"
+manual = "manuel"
+modeCumulative = "Heures cumulées"
+modeMonthly = "Heures / mois"
+modeSameAge = "Même âge"
+modeTotal = "Total du parc"
+newReading = "Nouveau relevé"
+noRecentReading = "pas de relevé récent"
+olderDates = "{{n}} dates plus anciennes"  placeholders={{n}}
+openMachine = "Ouvrir {{name}}"  placeholders={{name}}
+panel.addNote = "Ajouter une note"
+panel.added = "ajoutée le {{date}}"  placeholders={{date}}
+panel.deleteNote = "Supprimer la note"
+panel.events = "Événements"
+panel.forecast = "À {{pace}} h/mois, {{hours}} h vers le {{date}}"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "le {{date}}"  placeholders={{date}}
+panel.load = "Charge"
+panel.noteDate = "Date"
+panel.noteText = "Note"
+panel.pace = "Rythme"
+panel.period = "Période"
+panel.rawOnDate = "compteur"
+panel.readings = "Relevés"
+panel.saveNote = "Enregistrer la note"
+panel.takeReading = "Faire un relevé"
+partialMonth = "Le mois en cours n’est pas terminé."
+pass.back = "Retour"
+pass.backwards = "Inférieur aux {{hours}} h relevées le {{date}}. Les heures totales ne baissent jamais."  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir a compté +{{hours}} h depuis le {{date}}"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "+{{typed}} h saisies, mais Fenrir a compté +{{counted}} h depuis le {{date}}. Attendu : environ {{expected}} h."  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "Pas un nombre"
+pass.keepAnyway = "Garder quand même"
+pass.kept = "gardé"
+pass.last = "dernier relevé : {{hours}} h le {{date}}"  placeholders={{date}},{{hours}}
+pass.next = "Suivant"
+pass.noLast = "aucun relevé pour l'instant"
+pass.noReference = "pas de référence compteur pour cette période"
+pass.nothingToSave = "Rien à enregistrer. Revenez saisir un relevé, ou fermez."
+pass.okDelta = "+{{typed}} h saisies, Fenrir a compté +{{counted}} h"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "Enregistrer {{n}} relevés"  placeholders={{n}}
+pass.skip = "Passer"
+pass.summary = "Vérifier et enregistrer"
+pass.title = "Saisir les relevés"
+paste.createRetired = "Créer comme machine retirée"
+paste.futureRows = "Lignes datées dans le futur ignorées : {{n}}"  placeholders={{n}}
+paste.hint = "Sélectionnez la ligne d’en-tête et les lignes datées dans votre tableur, copiez, puis collez ici. Les colonnes sont associées aux imprimantes par leur nom ; les zéros et cellules vides sont ignorés."
+paste.ignore = "Ignorer"
+paste.import = "Importer"
+paste.imported = "Relevés importés : {{n}}"  placeholders={{n}}
+paste.matched = "Associée"
+paste.noRows = "Aucune ligne ne commence par une date. Copiez la ligne d’en-tête avec les lignes datées."
+paste.replaceNote = "Les dates déjà enregistrées sont remplacées."
+paste.summary = "{{dates}} dates · {{columns}} colonnes · {{readings}} relevés"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "Coller depuis le tableur"
+paste.unmatched = "Absente de Fenrir"
+pasteFromSheet = "Coller depuis le tableur"
+perMonth = "{{hours}} h/mois"  placeholders={{hours}}
+range.12m = "12 mois"
+range.3m = "3 mois"
+range.all = "Tout"
+range.label = "Période"
+readingLog = "Historique des relevés"
+readingsEvery = "Relevés tous les"
+readingsEveryRead = "Relevés tous les {{days}} jours"  placeholders={{days}}
+retired = "Retirées"
+saved = "Relevés enregistrés"
+showAll = "toutes"
+showNone = "aucune"
+strip.allFresh = "toutes les machines relevées récemment"
+strip.busiest = "Machine la plus sollicitée"
+strip.dueSub = "touchez pour les faire"
+strip.lifetime = "Cumul du parc"
+strip.load = "Charge par machine"
+strip.machinesCount = "{{live}} actives · {{sold}} vendues"  placeholders={{live}},{{sold}}
+strip.readingsDue = "Relevés à faire"
+strip.takeReadings = "Faire les relevés"
+strip.thisMonth = "Ce mois-ci"
+strip.thisMonthSub = "machines actives, depuis le 1er"
+subtitle = "Heures cumulées par machine"
+tab = "Heures"
+timeline.today = "aujourd'hui"
+trust.calibrated = "Étalonné"
+trust.driftHelp = "Le compteur s'était écarté des relevés ; un nouveau relevé le corrige."
+trust.drifting = "Le compteur avait {{hours}} h d'écart à la dernière lecture"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir compte à partir de 0. Enregistrez un relevé daté d'aujourd'hui pour l'étalonner."
+trust.uncalibrated = "Compteur non étalonné"
+--- it maintenance.hours (125 keys)
+auto = "automatica"
+autoToday = "Contatori Fenrir · oggi"
+chart.forecast = "previsione al ritmo attuale"
+chart.lastReading = "ultima lettura · {{date}}"  placeholders={{date}}
+chart.months = "mesi"
+chart.nextService = "prossima manutenzione a {{hours}} h · intorno al {{date}}"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "nessuna lettura da {{months}} mesi"  placeholders={{months}}
+chart.sameAgeHint = "Scegli due o tre macchine nell'elenco per confrontarle alla stessa età."
+cost.basedOn = "basato sull'ultima lettura del {{date}}"  placeholders={{date}}
+cost.date = "Data di acquisto"
+cost.noRevenue = "Il ricavo per macchina non viene tracciato."
+cost.perHour = "{{amount}} all'ora"  placeholders={{amount}}
+cost.price = "Prezzo di acquisto"
+cost.save = "Salva"
+cost.saved = "Dati di acquisto salvati"
+cost.title = "Costo orario"
+days = "giorni"
+deleteMachineMessage = "Eliminare {{name}} e tutta la sua cronologia di ore?"  placeholders={{name}}
+deleteMachineTitle = "Elimina macchina dismessa"
+deleteMessage = "Eliminare le letture manuali del {{date}}? Gli snapshot automatici di Fenrir vengono mantenuti."  placeholders={{date}}
+deleteTitle = "Elimina letture"
+deleted = "Letture eliminate"
+delta = "+{{hours}} h dal {{date}}"  placeholders={{date}},{{hours}}
+empty = "Nessuna lettura. Aggiungine una o incolla il tuo foglio."
+flag.slowing = "rallenta"
+flag.stopped = "ferma"
+fleetLine = "{{machines}} macchine · ultima lettura {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "Le letture con data passata vengono salvate solo per lo storico."
+form.date = "Data"
+form.editTitle = "Modifica lettura"
+form.hint = "Inserisci le ore totali di ogni macchina dal suo schermo. I valori in grigio sono i contatori di Fenrir; i campi vuoti vengono ignorati."
+form.invalid = "Non è un numero"
+form.recalibrateNote = "Le letture con la data di oggi ricalibrano il contatore di ogni macchina, così le scadenze di manutenzione seguono lo schermo della stampante."
+form.title = "Nuova lettura"
+intervalSaved = "Intervallo promemoria salvato"
+lastReadingOn = "ultima lettura {{date}}"  placeholders={{date}}
+machineCount = "Macchine: {{n}}"  placeholders={{n}}
+machineDeleted = "Macchina eliminata"
+machines = "Macchine"
+manual = "manuale"
+modeCumulative = "Ore cumulative"
+modeMonthly = "Ore / mese"
+modeSameAge = "Stessa età"
+modeTotal = "Totale del parco"
+newReading = "Nuova lettura"
+noRecentReading = "nessuna lettura recente"
+olderDates = "{{n}} date precedenti"  placeholders={{n}}
+openMachine = "Apri {{name}}"  placeholders={{name}}
+panel.addNote = "Aggiungi una nota"
+panel.added = "aggiunta il {{date}}"  placeholders={{date}}
+panel.deleteNote = "Elimina nota"
+panel.events = "Eventi"
+panel.forecast = "A {{pace}} h/mese, {{hours}} h intorno al {{date}}"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "il {{date}}"  placeholders={{date}}
+panel.load = "Carico"
+panel.noteDate = "Data"
+panel.noteText = "Nota"
+panel.pace = "Ritmo"
+panel.period = "Periodo"
+panel.rawOnDate = "contatore"
+panel.readings = "Letture"
+panel.saveNote = "Salva nota"
+panel.takeReading = "Fai una lettura"
+partialMonth = "Il mese corrente non è ancora concluso."
+pass.back = "Indietro"
+pass.backwards = "Inferiore alle {{hours}} h lette il {{date}}. Le ore totali non diminuiscono mai."  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir ha contato +{{hours}} h dal {{date}}"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "+{{typed}} h inserite, ma Fenrir ha contato +{{counted}} h dal {{date}}. Previste circa {{expected}} h."  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "Non è un numero"
+pass.keepAnyway = "Mantieni comunque"
+pass.kept = "mantenuta"
+pass.last = "ultima: {{hours}} h il {{date}}"  placeholders={{date}},{{hours}}
+pass.next = "Avanti"
+pass.noLast = "nessuna lettura ancora"
+pass.noReference = "nessun riferimento del contatore per questo periodo"
+pass.nothingToSave = "Niente da salvare. Torna indietro e inserisci una lettura, oppure chiudi."
+pass.okDelta = "+{{typed}} h inserite, Fenrir ha contato +{{counted}} h"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "Salva {{n}} letture"  placeholders={{n}}
+pass.skip = "Salta"
+pass.summary = "Controlla e salva"
+pass.title = "Registra le letture"
+paste.createRetired = "Crea come macchina ritirata"
+paste.futureRows = "Le righe con data futura vengono saltate: {{n}}"  placeholders={{n}}
+paste.hint = "Seleziona la riga di intestazione e le righe con data nel tuo foglio, copia e incolla qui. Le colonne vengono abbinate alle stampanti in base al nome; zeri e celle vuote vengono saltati."
+paste.ignore = "Ignora"
+paste.import = "Importa"
+paste.imported = "Letture importate: {{n}}"  placeholders={{n}}
+paste.matched = "Abbinata"
+paste.noRows = "Nessuna riga inizia con una data. Copia la riga di intestazione insieme alle righe con data."
+paste.replaceNote = "Le date già registrate vengono sostituite."
+paste.summary = "{{dates}} date · {{columns}} colonne · {{readings}} letture"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "Incolla dal foglio"
+paste.unmatched = "Non presente in Fenrir"
+pasteFromSheet = "Incolla dal foglio"
+perMonth = "{{hours}} h/mese"  placeholders={{hours}}
+range.12m = "12 mesi"
+range.3m = "3 mesi"
+range.all = "Tutto"
+range.label = "Intervallo"
+readingLog = "Registro letture"
+readingsEvery = "Letture ogni"
+readingsEveryRead = "Letture ogni {{days}} giorni"  placeholders={{days}}
+retired = "Dismesse"
+saved = "Letture salvate"
+showAll = "tutte"
+showNone = "nessuna"
+strip.allFresh = "tutte le macchine lette di recente"
+strip.busiest = "Macchina più usata"
+strip.dueSub = "tocca per eseguirle"
+strip.lifetime = "Totale della flotta"
+strip.load = "Carico per macchina"
+strip.machinesCount = "{{live}} attive · {{sold}} vendute"  placeholders={{live}},{{sold}}
+strip.readingsDue = "Letture da fare"
+strip.takeReadings = "Esegui le letture"
+strip.thisMonth = "Questo mese"
+strip.thisMonthSub = "macchine attive, dal giorno 1"
+subtitle = "Ore totali per macchina"
+tab = "Ore"
+timeline.today = "oggi"
+trust.calibrated = "Calibrato"
+trust.driftHelp = "Il contatore si era discostato dalle letture; una nuova lettura lo corregge."
+trust.drifting = "Il contatore era sfasato di {{hours}} h all'ultima lettura"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir conta da 0. Salva una lettura con la data di oggi per calibrarlo."
+trust.uncalibrated = "Contatore non calibrato"
+--- ja maintenance.hours (125 keys)
+auto = "自動"
+autoToday = "Fenrir カウンター · 今日"
+chart.forecast = "現在のペースでの予測"
+chart.lastReading = "最終読み取り · {{date}}"  placeholders={{date}}
+chart.months = "か月"
+chart.nextService = "次回整備は {{hours}} 時間 · {{date}} 頃"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "{{months}}か月間読み取りなし"  placeholders={{months}}
+chart.sameAgeHint = "一覧から2〜3台を選ぶと、同じ経過期間で比較できます。"
+cost.basedOn = "{{date}} の最新の読み取りに基づく"  placeholders={{date}}
+cost.date = "購入日"
+cost.noRevenue = "機械ごとの収益は記録されていません。"
+cost.perHour = "1時間あたり {{amount}}"  placeholders={{amount}}
+cost.price = "購入価格"
+cost.save = "保存"
+cost.saved = "購入情報を保存しました"
+cost.title = "1時間あたりのコスト"
+days = "日"
+deleteMachineMessage = "{{name}} とその稼働時間の履歴をすべて削除しますか？"  placeholders={{name}}
+deleteMachineTitle = "引退したマシンを削除"
+deleteMessage = "{{date}} の手動記録を削除しますか？Fenrir の自動スナップショットは保持されます。"  placeholders={{date}}
+deleteTitle = "記録を削除"
+deleted = "記録を削除しました"
+delta = "{{date}} から +{{hours}} 時間"  placeholders={{date}},{{hours}}
+empty = "記録がありません。追加するか、シートを貼り付けてください。"
+flag.slowing = "減速中"
+flag.stopped = "停止中"
+fleetLine = "{{machines}} 台 · 最終読み取り {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "過去日付の記録は履歴用としてのみ保存されます。"
+form.date = "日付"
+form.editTitle = "記録を編集"
+form.hint = "各マシンの画面に表示された累計時間を入力してください。グレーの値は Fenrir のカウンターです。空欄はスキップされます。"
+form.invalid = "数値ではありません"
+form.recalibrateNote = "今日の日付の記録は各マシンのカウンターを再調整するため、メンテナンス期限はプリンターの画面に合わせられます。"
+form.title = "新しい記録"
+intervalSaved = "リマインダー間隔を保存しました"
+lastReadingOn = "最終読み取り {{date}}"  placeholders={{date}}
+machineCount = "マシン: {{n}}"  placeholders={{n}}
+machineDeleted = "マシンを削除しました"
+machines = "マシン"
+manual = "手動"
+modeCumulative = "累計時間"
+modeMonthly = "時間 / 月"
+modeSameAge = "同じ年数"
+modeTotal = "全体合計"
+newReading = "新しい記録"
+noRecentReading = "最近の読み取りなし"
+olderDates = "過去の日付 {{n}} 件"  placeholders={{n}}
+openMachine = "{{name}} を開く"  placeholders={{name}}
+panel.addNote = "メモを追加"
+panel.added = "{{date}} に追加"  placeholders={{date}}
+panel.deleteNote = "メモを削除"
+panel.events = "イベント"
+panel.forecast = "{{pace}} 時間/月のペースで、{{hours}} 時間到達は {{date}} 頃"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "{{date}} 時点"  placeholders={{date}}
+panel.load = "稼働率"
+panel.noteDate = "日付"
+panel.noteText = "メモ"
+panel.pace = "ペース"
+panel.period = "期間"
+panel.rawOnDate = "カウンター"
+panel.readings = "読み取り"
+panel.saveNote = "メモを保存"
+panel.takeReading = "読み取りを記録"
+partialMonth = "今月はまだ進行中です。"
+pass.back = "戻る"
+pass.backwards = "{{date}} に読み取った {{hours}} 時間より小さい値です。累計時間は減りません。"  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir は {{date}} 以降 +{{hours}} 時間をカウントしました"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "+{{typed}} 時間を入力しましたが、Fenrir は {{date}} 以降 +{{counted}} 時間をカウントしました。想定は約 {{expected}} 時間です。"  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "数値ではありません"
+pass.keepAnyway = "このまま保持"
+pass.kept = "保持済み"
+pass.last = "前回 {{date}} に {{hours}} 時間"  placeholders={{date}},{{hours}}
+pass.next = "次へ"
+pass.noLast = "記録はまだありません"
+pass.noReference = "この期間のカウンター基準値がありません"
+pass.nothingToSave = "保存するものがありません。戻って記録を入力するか、閉じてください。"
+pass.okDelta = "+{{typed}} 時間を入力、Fenrir のカウントは +{{counted}} 時間"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "{{n}} 件の記録を保存"  placeholders={{n}}
+pass.skip = "スキップ"
+pass.summary = "確認して保存"
+pass.title = "記録を取る"
+paste.createRetired = "引退した機器として作成"
+paste.futureRows = "未来の日付の行はスキップされます: {{n}}"  placeholders={{n}}
+paste.hint = "シートの見出し行と日付の行を選択してコピーし、ここに貼り付けてください。列はプリンター名で照合され、0 と空のセルはスキップされます。"
+paste.ignore = "無視"
+paste.import = "インポート"
+paste.imported = "インポートした記録: {{n}}"  placeholders={{n}}
+paste.matched = "一致"
+paste.noRows = "日付で始まる行がありません。見出し行を日付の行と一緒にコピーしてください。"
+paste.replaceNote = "登録済みの日付は置き換えられます。"
+paste.summary = "{{dates}} 日付 · {{columns}} 列 · {{readings}} 件の記録"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "シートから貼り付け"
+paste.unmatched = "Fenrir にありません"
+pasteFromSheet = "シートから貼り付け"
+perMonth = "{{hours}} 時間/月"  placeholders={{hours}}
+range.12m = "12か月"
+range.3m = "3か月"
+range.all = "すべて"
+range.label = "期間"
+readingLog = "記録ログ"
+readingsEvery = "読み取り間隔"
+readingsEveryRead = "{{days}} 日ごとに読み取り"  placeholders={{days}}
+retired = "引退"
+saved = "記録を保存しました"
+showAll = "すべて"
+showNone = "なし"
+strip.allFresh = "全台を最近読み取り済み"
+strip.busiest = "最も稼働した機械"
+strip.dueSub = "タップして読み取る"
+strip.lifetime = "全台の累計"
+strip.load = "機械ごとの稼働率"
+strip.machinesCount = "稼働 {{live}} · 売却 {{sold}}"  placeholders={{live}},{{sold}}
+strip.readingsDue = "要読み取り"
+strip.takeReadings = "読み取りを行う"
+strip.thisMonth = "今月"
+strip.thisMonthSub = "稼働中の台数、1日から"
+subtitle = "マシンごとの累計稼働時間"
+tab = "稼働時間"
+timeline.today = "今日"
+trust.calibrated = "校正済み"
+trust.driftHelp = "カウンターが記録からずれていました。新しい記録で補正されます。"
+trust.drifting = "前回の記録時にカウンターが {{hours}} 時間ずれていました"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir は 0 から数えます。今日の日付で記録を 1 件保存すると校正されます。"
+trust.uncalibrated = "カウンター未校正"
+--- ko maintenance.hours (125 keys)
+auto = "자동"
+autoToday = "Fenrir 카운터 · 오늘"
+chart.forecast = "현재 속도 기준 예측"
+chart.lastReading = "마지막 기록 · {{date}}"  placeholders={{date}}
+chart.months = "개월"
+chart.nextService = "다음 정비 {{hours}}시간 · {{date}} 무렵"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "{{months}}개월간 기록 없음"  placeholders={{months}}
+chart.sameAgeHint = "목록에서 두세 대를 선택하면 같은 사용 기간으로 비교할 수 있습니다."
+cost.basedOn = "{{date}}의 마지막 측정값 기준"  placeholders={{date}}
+cost.date = "구매일"
+cost.noRevenue = "장비별 수익은 추적되지 않습니다."
+cost.perHour = "시간당 {{amount}}"  placeholders={{amount}}
+cost.price = "구매 가격"
+cost.save = "저장"
+cost.saved = "구매 정보를 저장했습니다"
+cost.title = "시간당 비용"
+days = "일"
+deleteMachineMessage = "{{name}}과(와) 전체 시간 기록을 삭제할까요?"  placeholders={{name}}
+deleteMachineTitle = "퇴역 장비 삭제"
+deleteMessage = "{{date}}의 수동 기록을 삭제할까요? Fenrir의 자동 스냅샷은 유지됩니다."  placeholders={{date}}
+deleteTitle = "기록 삭제"
+deleted = "기록이 삭제되었습니다"
+delta = "{{date}} 이후 +{{hours}}시간"  placeholders={{date}},{{hours}}
+empty = "아직 기록이 없습니다. 추가하거나 시트를 붙여넣으세요."
+flag.slowing = "느려짐"
+flag.stopped = "멈춤"
+fleetLine = "{{machines}}대 · 마지막 기록 {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "과거 날짜의 기록은 이력용으로만 저장됩니다."
+form.date = "날짜"
+form.editTitle = "기록 편집"
+form.hint = "각 기기 화면에 표시된 누적 시간을 입력하세요. 회색 값은 Fenrir 카운터이며, 비어 있는 칸은 건너뜁니다."
+form.invalid = "숫자가 아닙니다"
+form.recalibrateNote = "오늘 날짜의 기록은 각 기기의 카운터를 다시 보정하므로 정비 기한이 프린터 화면을 따릅니다."
+form.title = "새 기록"
+intervalSaved = "알림 주기가 저장되었습니다"
+lastReadingOn = "마지막 기록 {{date}}"  placeholders={{date}}
+machineCount = "장비: {{n}}"  placeholders={{n}}
+machineDeleted = "장비가 삭제되었습니다"
+machines = "장비"
+manual = "수동"
+modeCumulative = "누적 시간"
+modeMonthly = "시간 / 월"
+modeSameAge = "같은 사용 기간"
+modeTotal = "전체 합계"
+newReading = "새 기록"
+noRecentReading = "최근 측정 없음"
+olderDates = "이전 날짜 {{n}}개"  placeholders={{n}}
+openMachine = "{{name}} 열기"  placeholders={{name}}
+panel.addNote = "메모 추가"
+panel.added = "{{date}}에 추가됨"  placeholders={{date}}
+panel.deleteNote = "메모 삭제"
+panel.events = "이벤트"
+panel.forecast = "월 {{pace}}시간 속도라면 {{hours}}시간은 {{date}} 무렵"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "{{date}} 기준"  placeholders={{date}}
+panel.load = "가동률"
+panel.noteDate = "날짜"
+panel.noteText = "메모"
+panel.pace = "속도"
+panel.period = "기간"
+panel.rawOnDate = "카운터"
+panel.readings = "측정값"
+panel.saveNote = "메모 저장"
+panel.takeReading = "측정값 입력"
+partialMonth = "이번 달은 아직 진행 중입니다."
+pass.back = "뒤로"
+pass.backwards = "{{date}}에 읽은 {{hours}}시간보다 낮습니다. 누적 시간은 줄어들지 않습니다."  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir가 {{date}} 이후 +{{hours}}시간을 집계함"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "+{{typed}}시간을 입력했지만 Fenrir는 {{date}} 이후 +{{counted}}시간을 집계했습니다. 예상값은 약 {{expected}}시간입니다."  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "숫자가 아닙니다"
+pass.keepAnyway = "그대로 유지"
+pass.kept = "유지됨"
+pass.last = "마지막 {{date}}에 {{hours}}시간"  placeholders={{date}},{{hours}}
+pass.next = "다음"
+pass.noLast = "아직 기록 없음"
+pass.noReference = "이 기간에 대한 카운터 기준값이 없습니다"
+pass.nothingToSave = "저장할 항목이 없습니다. 돌아가서 기록을 입력하거나 닫으세요."
+pass.okDelta = "+{{typed}}시간 입력, Fenrir 집계는 +{{counted}}시간"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "기록 {{n}}건 저장"  placeholders={{n}}
+pass.skip = "건너뛰기"
+pass.summary = "확인 후 저장"
+pass.title = "기록 입력"
+paste.createRetired = "퇴역 장비로 만들기"
+paste.futureRows = "미래 날짜 행은 건너뜁니다: {{n}}"  placeholders={{n}}
+paste.hint = "시트에서 머리글 행과 날짜 행을 선택해 복사한 뒤 여기에 붙여넣으세요. 열은 이름으로 프린터와 연결되며, 0과 빈 셀은 건너뜁니다."
+paste.ignore = "무시"
+paste.import = "가져오기"
+paste.imported = "가져온 측정값: {{n}}"  placeholders={{n}}
+paste.matched = "연결됨"
+paste.noRows = "날짜로 시작하는 행이 없습니다. 머리글 행을 날짜 행과 함께 복사하세요."
+paste.replaceNote = "이미 저장된 날짜는 덮어씁니다."
+paste.summary = "날짜 {{dates}}개 · 열 {{columns}}개 · 측정값 {{readings}}개"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "시트에서 붙여넣기"
+paste.unmatched = "Fenrir에 없음"
+pasteFromSheet = "시트에서 붙여넣기"
+perMonth = "{{hours}}시간/월"  placeholders={{hours}}
+range.12m = "12개월"
+range.3m = "3개월"
+range.all = "전체"
+range.label = "기간"
+readingLog = "기록 로그"
+readingsEvery = "판독 주기"
+readingsEveryRead = "{{days}}일마다 판독"  placeholders={{days}}
+retired = "퇴역"
+saved = "기록이 저장되었습니다"
+showAll = "전체"
+showNone = "없음"
+strip.allFresh = "모든 장비를 최근에 측정함"
+strip.busiest = "가장 많이 가동된 장비"
+strip.dueSub = "눌러서 측정하기"
+strip.lifetime = "전체 누적"
+strip.load = "장비별 가동률"
+strip.machinesCount = "가동 {{live}} · 매각 {{sold}}"  placeholders={{live}},{{sold}}
+strip.readingsDue = "측정 필요"
+strip.takeReadings = "측정하기"
+strip.thisMonth = "이번 달"
+strip.thisMonthSub = "가동 중인 장비, 1일부터"
+subtitle = "장비별 누적 시간"
+tab = "시간"
+timeline.today = "오늘"
+trust.calibrated = "보정됨"
+trust.driftHelp = "카운터가 기록과 어긋나 있었습니다. 새 기록으로 바로잡을 수 있습니다."
+trust.drifting = "마지막 기록 때 카운터가 {{hours}}시간 어긋나 있었습니다"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir는 0부터 셉니다. 오늘 날짜의 기록을 하나 저장하면 보정됩니다."
+trust.uncalibrated = "카운터 미보정"
+--- nl maintenance.hours (125 keys)
+auto = "automatisch"
+autoToday = "Fenrir-tellers · vandaag"
+chart.forecast = "prognose bij het huidige tempo"
+chart.lastReading = "laatste meting · {{date}}"  placeholders={{date}}
+chart.months = "maanden"
+chart.nextService = "volgend onderhoud bij {{hours}} u · rond {{date}}"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "al {{months}} maanden geen meting"  placeholders={{months}}
+chart.sameAgeHint = "Kies twee of drie machines in de lijst om ze op dezelfde leeftijd te vergelijken."
+cost.basedOn = "gebaseerd op de laatste stand van {{date}}"  placeholders={{date}}
+cost.date = "Aankoopdatum"
+cost.noRevenue = "Omzet per machine wordt niet bijgehouden."
+cost.perHour = "{{amount}} per uur"  placeholders={{amount}}
+cost.price = "Aankoopprijs"
+cost.save = "Opslaan"
+cost.saved = "Aankoopgegevens opgeslagen"
+cost.title = "Kosten per uur"
+days = "dagen"
+deleteMachineMessage = "{{name}} en de volledige urengeschiedenis verwijderen?"  placeholders={{name}}
+deleteMachineTitle = "Machine buiten gebruik verwijderen"
+deleteMessage = "De handmatige metingen van {{date}} verwijderen? De automatische momentopnamen van Fenrir blijven bewaard."  placeholders={{date}}
+deleteTitle = "Metingen verwijderen"
+deleted = "Metingen verwijderd"
+delta = "+{{hours}} u sinds {{date}}"  placeholders={{date}},{{hours}}
+empty = "Nog geen metingen. Voeg er een toe of plak je spreadsheet."
+flag.slowing = "vertraagt"
+flag.stopped = "staat stil"
+fleetLine = "{{machines}} machines · laatste meting {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "Metingen met een eerdere datum worden alleen voor de geschiedenis bewaard."
+form.date = "Datum"
+form.editTitle = "Meting bewerken"
+form.hint = "Voer de totale draaiuren van elke machine in zoals op het scherm staat. Grijze waarden zijn de tellers van Fenrir; lege velden worden overgeslagen."
+form.invalid = "Geen getal"
+form.recalibrateNote = "Metingen met de datum van vandaag kalibreren de teller van elke machine opnieuw, zodat onderhoudstermijnen het printerscherm volgen."
+form.title = "Nieuwe meting"
+intervalSaved = "Herinneringsinterval opgeslagen"
+lastReadingOn = "laatste meting {{date}}"  placeholders={{date}}
+machineCount = "Machines: {{n}}"  placeholders={{n}}
+machineDeleted = "Machine verwijderd"
+machines = "Machines"
+manual = "handmatig"
+modeCumulative = "Cumulatieve uren"
+modeMonthly = "Uren / maand"
+modeSameAge = "Zelfde leeftijd"
+modeTotal = "Totaal vloot"
+newReading = "Nieuwe meting"
+noRecentReading = "geen recente opname"
+olderDates = "{{n}} oudere datums"  placeholders={{n}}
+openMachine = "{{name}} openen"  placeholders={{name}}
+panel.addNote = "Notitie toevoegen"
+panel.added = "toegevoegd op {{date}}"  placeholders={{date}}
+panel.deleteNote = "Notitie verwijderen"
+panel.events = "Gebeurtenissen"
+panel.forecast = "Bij {{pace}} u/maand: {{hours}} u rond {{date}}"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "op {{date}}"  placeholders={{date}}
+panel.load = "Belasting"
+panel.noteDate = "Datum"
+panel.noteText = "Notitie"
+panel.pace = "Tempo"
+panel.period = "Periode"
+panel.rawOnDate = "teller"
+panel.readings = "Standen"
+panel.saveNote = "Notitie opslaan"
+panel.takeReading = "Stand opnemen"
+partialMonth = "De huidige maand loopt nog."
+pass.back = "Terug"
+pass.backwards = "Lager dan de {{hours}} u afgelezen op {{date}}. Levensduururen gaan nooit omlaag."  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir telde +{{hours}} u sinds {{date}}"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "+{{typed}} u ingevoerd, maar Fenrir telde +{{counted}} u sinds {{date}}. Verwacht: ongeveer {{expected}} u."  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "Geen getal"
+pass.keepAnyway = "Toch behouden"
+pass.kept = "behouden"
+pass.last = "laatst {{hours}} u op {{date}}"  placeholders={{date}},{{hours}}
+pass.next = "Volgende"
+pass.noLast = "nog geen meting"
+pass.noReference = "geen tellerreferentie voor deze periode"
+pass.nothingToSave = "Niets om op te slaan. Ga terug en voer een meting in, of sluit."
+pass.okDelta = "+{{typed}} u ingevoerd, Fenrir telde +{{counted}} u"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "{{n}} metingen opslaan"  placeholders={{n}}
+pass.skip = "Overslaan"
+pass.summary = "Controleren en opslaan"
+pass.title = "Metingen invoeren"
+paste.createRetired = "Aanmaken als buiten gebruik gestelde machine"
+paste.futureRows = "Rijen met een datum in de toekomst worden overgeslagen: {{n}}"  placeholders={{n}}
+paste.hint = "Selecteer de koprij en de datumrijen in je spreadsheet, kopieer en plak ze hier. Kolommen worden op naam aan printers gekoppeld; nullen en lege cellen worden overgeslagen."
+paste.ignore = "Negeren"
+paste.import = "Importeren"
+paste.imported = "Metingen geïmporteerd: {{n}}"  placeholders={{n}}
+paste.matched = "Gekoppeld"
+paste.noRows = "Geen enkele rij begint met een datum. Kopieer de koprij samen met de datumrijen."
+paste.replaceNote = "Reeds opgeslagen datums worden vervangen."
+paste.summary = "{{dates}} datums · {{columns}} kolommen · {{readings}} metingen"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "Plakken uit spreadsheet"
+paste.unmatched = "Niet in Fenrir"
+pasteFromSheet = "Plakken uit spreadsheet"
+perMonth = "{{hours}} u/maand"  placeholders={{hours}}
+range.12m = "12 mnd"
+range.3m = "3 mnd"
+range.all = "Alles"
+range.label = "Bereik"
+readingLog = "Metinglogboek"
+readingsEvery = "Metingen elke"
+readingsEveryRead = "Metingen elke {{days}} dagen"  placeholders={{days}}
+retired = "Buiten gebruik"
+saved = "Metingen opgeslagen"
+showAll = "alle"
+showNone = "geen"
+strip.allFresh = "alle machines recent opgenomen"
+strip.busiest = "Drukste machine"
+strip.dueSub = "tik om ze te doen"
+strip.lifetime = "Vloot totaal"
+strip.load = "Belasting per machine"
+strip.machinesCount = "{{live}} actief · {{sold}} verkocht"  placeholders={{live}},{{sold}}
+strip.readingsDue = "Opnames nodig"
+strip.takeReadings = "Opnames doen"
+strip.thisMonth = "Deze maand"
+strip.thisMonthSub = "actieve machines, sinds de 1e"
+subtitle = "Totale uren per machine"
+tab = "Uren"
+timeline.today = "vandaag"
+trust.calibrated = "Gekalibreerd"
+trust.driftHelp = "De teller was van de metingen afgedwaald; een nieuwe meting corrigeert dat."
+trust.drifting = "Teller week {{hours}} u af bij de laatste meting"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir telt vanaf 0. Sla een meting met de datum van vandaag op om te kalibreren."
+trust.uncalibrated = "Teller niet gekalibreerd"
+--- ptBR maintenance.hours (125 keys)
+auto = "automática"
+autoToday = "Contadores do Fenrir · hoje"
+chart.forecast = "previsão no ritmo atual"
+chart.lastReading = "última leitura · {{date}}"  placeholders={{date}}
+chart.months = "meses"
+chart.nextService = "próxima manutenção às {{hours}} h · por volta de {{date}}"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "sem leituras há {{months}} meses"  placeholders={{months}}
+chart.sameAgeHint = "Escolha duas ou três máquinas na lista para compará-las na mesma idade."
+cost.basedOn = "com base na última leitura de {{date}}"  placeholders={{date}}
+cost.date = "Data de compra"
+cost.noRevenue = "A receita por máquina não é rastreada."
+cost.perHour = "{{amount}} por hora"  placeholders={{amount}}
+cost.price = "Preço de compra"
+cost.save = "Salvar"
+cost.saved = "Dados de compra salvos"
+cost.title = "Custo por hora"
+days = "dias"
+deleteMachineMessage = "Excluir {{name}} e todo o seu histórico de horas?"  placeholders={{name}}
+deleteMachineTitle = "Excluir máquina aposentada"
+deleteMessage = "Excluir as leituras manuais de {{date}}? Os instantâneos automáticos do Fenrir são mantidos."  placeholders={{date}}
+deleteTitle = "Excluir leituras"
+deleted = "Leituras excluídas"
+delta = "+{{hours}} h desde {{date}}"  placeholders={{date}},{{hours}}
+empty = "Nenhuma leitura ainda. Adicione uma ou cole sua planilha."
+flag.slowing = "desacelerando"
+flag.stopped = "parada"
+fleetLine = "{{machines}} máquinas · última leitura {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "Leituras com data anterior são salvas apenas para o histórico."
+form.date = "Data"
+form.editTitle = "Editar leitura"
+form.hint = "Digite as horas acumuladas de cada máquina exibidas em sua tela. Valores em cinza são os contadores do Fenrir; campos vazios são ignorados."
+form.invalid = "Não é um número"
+form.recalibrateNote = "Leituras com a data de hoje recalibram o contador de cada máquina, de modo que os vencimentos de manutenção acompanham a tela da impressora."
+form.title = "Nova leitura"
+intervalSaved = "Intervalo de lembrete salvo"
+lastReadingOn = "última leitura {{date}}"  placeholders={{date}}
+machineCount = "Máquinas: {{n}}"  placeholders={{n}}
+machineDeleted = "Máquina excluída"
+machines = "Máquinas"
+manual = "manual"
+modeCumulative = "Horas acumuladas"
+modeMonthly = "Horas / mês"
+modeSameAge = "Mesma idade"
+modeTotal = "Total da frota"
+newReading = "Nova leitura"
+noRecentReading = "sem leitura recente"
+olderDates = "{{n}} datas mais antigas"  placeholders={{n}}
+openMachine = "Abrir {{name}}"  placeholders={{name}}
+panel.addNote = "Adicionar uma nota"
+panel.added = "adicionada em {{date}}"  placeholders={{date}}
+panel.deleteNote = "Excluir nota"
+panel.events = "Eventos"
+panel.forecast = "A {{pace}} h/mês, {{hours}} h por volta de {{date}}"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "em {{date}}"  placeholders={{date}}
+panel.load = "Carga"
+panel.noteDate = "Data"
+panel.noteText = "Nota"
+panel.pace = "Ritmo"
+panel.period = "Período"
+panel.rawOnDate = "contador"
+panel.readings = "Leituras"
+panel.saveNote = "Salvar nota"
+panel.takeReading = "Fazer uma leitura"
+partialMonth = "O mês atual ainda está em andamento."
+pass.back = "Voltar"
+pass.backwards = "Menor que as {{hours}} h lidas em {{date}}. As horas totais nunca diminuem."  placeholders={{date}},{{hours}}
+pass.counted = "O Fenrir contou +{{hours}} h desde {{date}}"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "+{{typed}} h digitadas, mas o Fenrir contou +{{counted}} h desde {{date}}. Esperado: cerca de {{expected}} h."  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "Não é um número"
+pass.keepAnyway = "Manter mesmo assim"
+pass.kept = "mantida"
+pass.last = "última: {{hours}} h em {{date}}"  placeholders={{date}},{{hours}}
+pass.next = "Avançar"
+pass.noLast = "ainda sem leitura"
+pass.noReference = "sem referência do contador para este período"
+pass.nothingToSave = "Nada para salvar. Volte e digite uma leitura, ou feche."
+pass.okDelta = "+{{typed}} h digitadas, o Fenrir contou +{{counted}} h"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "Salvar {{n}} leituras"  placeholders={{n}}
+pass.skip = "Pular"
+pass.summary = "Revisar e salvar"
+pass.title = "Registrar leituras"
+paste.createRetired = "Criar como máquina aposentada"
+paste.futureRows = "Linhas com data futura são ignoradas: {{n}}"  placeholders={{n}}
+paste.hint = "Selecione a linha de cabeçalho e as linhas com data na sua planilha, copie e cole aqui. As colunas são associadas às impressoras pelo nome; zeros e células vazias são ignorados."
+paste.ignore = "Ignorar"
+paste.import = "Importar"
+paste.imported = "Leituras importadas: {{n}}"  placeholders={{n}}
+paste.matched = "Associada"
+paste.noRows = "Nenhuma linha começa com uma data. Copie a linha de cabeçalho junto com as linhas com data."
+paste.replaceNote = "Datas já registradas são substituídas."
+paste.summary = "{{dates}} datas · {{columns}} colunas · {{readings}} leituras"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "Colar da planilha"
+paste.unmatched = "Não está no Fenrir"
+pasteFromSheet = "Colar da planilha"
+perMonth = "{{hours}} h/mês"  placeholders={{hours}}
+range.12m = "12 meses"
+range.3m = "3 meses"
+range.all = "Tudo"
+range.label = "Período"
+readingLog = "Registro de leituras"
+readingsEvery = "Leituras a cada"
+readingsEveryRead = "Leituras a cada {{days}} dias"  placeholders={{days}}
+retired = "Aposentadas"
+saved = "Leituras salvas"
+showAll = "todas"
+showNone = "nenhuma"
+strip.allFresh = "todas as máquinas lidas recentemente"
+strip.busiest = "Máquina mais usada"
+strip.dueSub = "toque para fazê-las"
+strip.lifetime = "Total da frota"
+strip.load = "Carga por máquina"
+strip.machinesCount = "{{live}} ativas · {{sold}} vendidas"  placeholders={{live}},{{sold}}
+strip.readingsDue = "Leituras pendentes"
+strip.takeReadings = "Fazer leituras"
+strip.thisMonth = "Este mês"
+strip.thisMonthSub = "máquinas ativas, desde o dia 1"
+subtitle = "Horas totais por máquina"
+tab = "Horas"
+timeline.today = "hoje"
+trust.calibrated = "Calibrado"
+trust.driftHelp = "O contador tinha se afastado das leituras; uma nova leitura o corrige."
+trust.drifting = "O contador estava {{hours}} h fora na última leitura"  placeholders={{hours}}
+trust.notCalibratedHelp = "O Fenrir conta a partir de 0. Salve uma leitura com a data de hoje para calibrá-lo."
+trust.uncalibrated = "Contador não calibrado"
+--- ru maintenance.hours (125 keys)
+auto = "авто"
+autoToday = "Счётчики Fenrir · сегодня"
+chart.forecast = "прогноз при текущем темпе"
+chart.lastReading = "последнее показание · {{date}}"  placeholders={{date}}
+chart.months = "мес."
+chart.nextService = "следующее ТО на {{hours}} ч · около {{date}}"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "нет показаний {{months}} мес."  placeholders={{months}}
+chart.sameAgeHint = "Выберите в списке две-три машины, чтобы сравнить их в одном возрасте."
+cost.basedOn = "по последнему показанию от {{date}}"  placeholders={{date}}
+cost.date = "Дата покупки"
+cost.noRevenue = "Выручка по станкам не учитывается."
+cost.perHour = "{{amount}} за час"  placeholders={{amount}}
+cost.price = "Цена покупки"
+cost.save = "Сохранить"
+cost.saved = "Данные о покупке сохранены"
+cost.title = "Стоимость часа"
+days = "дн."
+deleteMachineMessage = "Удалить {{name}} и всю историю её часов?"  placeholders={{name}}
+deleteMachineTitle = "Удалить выведенную машину"
+deleteMessage = "Удалить показания, введённые вручную за {{date}}? Автоматические снимки Fenrir сохранятся."  placeholders={{date}}
+deleteTitle = "Удалить показания"
+deleted = "Показания удалены"
+delta = "+{{hours}} ч с {{date}}"  placeholders={{date}},{{hours}}
+empty = "Показаний пока нет. Добавьте одно или вставьте таблицу."
+flag.slowing = "замедляется"
+flag.stopped = "остановлена"
+fleetLine = "Машин: {{machines}} · последнее показание {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "Показания с прошедшей датой сохраняются только для истории."
+form.date = "Дата"
+form.editTitle = "Изменить показание"
+form.hint = "Введите наработку каждой машины в часах, как на её экране. Серые значения — счётчики Fenrir; пустые поля пропускаются."
+form.invalid = "Не число"
+form.recalibrateNote = "Показания с сегодняшней датой перекалибруют счётчик каждой машины, поэтому сроки обслуживания следуют экрану принтера."
+form.title = "Новое показание"
+intervalSaved = "Интервал напоминаний сохранён"
+lastReadingOn = "последнее показание {{date}}"  placeholders={{date}}
+machineCount = "Машин: {{n}}"  placeholders={{n}}
+machineDeleted = "Машина удалена"
+machines = "Машины"
+manual = "вручную"
+modeCumulative = "Накопленные часы"
+modeMonthly = "Часы / месяц"
+modeSameAge = "Одинаковый возраст"
+modeTotal = "Итого по парку"
+newReading = "Новое показание"
+noRecentReading = "нет свежих показаний"
+olderDates = "Ещё {{n}} более ранних дат"  placeholders={{n}}
+openMachine = "Открыть {{name}}"  placeholders={{name}}
+panel.addNote = "Добавить заметку"
+panel.added = "добавлен {{date}}"  placeholders={{date}}
+panel.deleteNote = "Удалить заметку"
+panel.events = "События"
+panel.forecast = "При {{pace}} ч/мес {{hours}} ч около {{date}}"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "на {{date}}"  placeholders={{date}}
+panel.load = "Загрузка"
+panel.noteDate = "Дата"
+panel.noteText = "Заметка"
+panel.pace = "Темп"
+panel.period = "Период"
+panel.rawOnDate = "счётчик"
+panel.readings = "Показания"
+panel.saveNote = "Сохранить заметку"
+panel.takeReading = "Снять показание"
+partialMonth = "Текущий месяц ещё не закончился."
+pass.back = "Назад"
+pass.backwards = "Меньше, чем {{hours}} ч, считанные {{date}}. Общая наработка не уменьшается."  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir насчитал +{{hours}} ч с {{date}}"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "введено +{{typed}} ч, но Fenrir насчитал +{{counted}} ч с {{date}}. Ожидалось около {{expected}} ч."  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "Не число"
+pass.keepAnyway = "Оставить всё равно"
+pass.kept = "оставлено"
+pass.last = "последнее: {{hours}} ч, {{date}}"  placeholders={{date}},{{hours}}
+pass.next = "Далее"
+pass.noLast = "показаний ещё нет"
+pass.noReference = "нет опорного значения счётчика за этот период"
+pass.nothingToSave = "Сохранять нечего. Вернитесь и введите показание или закройте."
+pass.okDelta = "введено +{{typed}} ч, Fenrir насчитал +{{counted}} ч"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "Сохранить показаний: {{n}}"  placeholders={{n}}
+pass.skip = "Пропустить"
+pass.summary = "Проверка и сохранение"
+pass.title = "Ввод показаний"
+paste.createRetired = "Создать как выведенную из эксплуатации машину"
+paste.futureRows = "Строки с датой в будущем пропускаются: {{n}}"  placeholders={{n}}
+paste.hint = "Выделите в таблице строку заголовков и строки с датами, скопируйте и вставьте сюда. Столбцы сопоставляются с принтерами по названию; нули и пустые ячейки пропускаются."
+paste.ignore = "Игнорировать"
+paste.import = "Импортировать"
+paste.imported = "Импортировано показаний: {{n}}"  placeholders={{n}}
+paste.matched = "Сопоставлен"
+paste.noRows = "Ни одна строка не начинается с даты. Скопируйте строку заголовков вместе со строками с датами."
+paste.replaceNote = "Даты, уже имеющиеся в журнале, будут заменены."
+paste.summary = "Дат: {{dates}} · столбцов: {{columns}} · показаний: {{readings}}"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "Вставить из таблицы"
+paste.unmatched = "Нет в Fenrir"
+pasteFromSheet = "Вставить из таблицы"
+perMonth = "{{hours}} ч/мес."  placeholders={{hours}}
+range.12m = "12 мес."
+range.3m = "3 мес."
+range.all = "Всё"
+range.label = "Период"
+readingLog = "Журнал показаний"
+readingsEvery = "Показания каждые"
+readingsEveryRead = "Показания каждые {{days}} дн."  placeholders={{days}}
+retired = "Выведенные"
+saved = "Показания сохранены"
+showAll = "все"
+showNone = "ни одной"
+strip.allFresh = "показания всех машин свежие"
+strip.busiest = "Самая загруженная машина"
+strip.dueSub = "нажмите, чтобы снять"
+strip.lifetime = "Всего по парку"
+strip.load = "Загрузка по машинам"
+strip.machinesCount = "{{live}} в работе · {{sold}} продано"  placeholders={{live}},{{sold}}
+strip.readingsDue = "Нужны показания"
+strip.takeReadings = "Снять показания"
+strip.thisMonth = "В этом месяце"
+strip.thisMonthSub = "работающие машины, с 1-го числа"
+subtitle = "Общая наработка по машинам"
+tab = "Часы"
+timeline.today = "сегодня"
+trust.calibrated = "Откалибровано"
+trust.driftHelp = "Счётчик разошёлся с замерами; новый замер исправит это."
+trust.drifting = "Счётчик расходился на {{hours}} ч при последнем замере"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir считает с 0. Сохраните замер с сегодняшней датой, чтобы откалибровать счётчик."
+trust.uncalibrated = "Счётчик не откалиброван"
+--- sv maintenance.hours (125 keys)
+auto = "automatisk"
+autoToday = "Fenrir-räknare · idag"
+chart.forecast = "prognos i nuvarande takt"
+chart.lastReading = "senaste avläsning · {{date}}"  placeholders={{date}}
+chart.months = "månader"
+chart.nextService = "nästa service vid {{hours}} h · omkring {{date}}"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "inga avläsningar på {{months}} månader"  placeholders={{months}}
+chart.sameAgeHint = "Välj två eller tre maskiner i listan för att jämföra dem vid samma ålder."
+cost.basedOn = "baserat på den senaste avläsningen {{date}}"  placeholders={{date}}
+cost.date = "Inköpsdatum"
+cost.noRevenue = "Intäkter per maskin spåras inte."
+cost.perHour = "{{amount}} per timme"  placeholders={{amount}}
+cost.price = "Inköpspris"
+cost.save = "Spara"
+cost.saved = "Inköpsuppgifter sparade"
+cost.title = "Kostnad per timme"
+days = "dagar"
+deleteMachineMessage = "Radera {{name}} och hela dess timhistorik?"  placeholders={{name}}
+deleteMachineTitle = "Radera avvecklad maskin"
+deleteMessage = "Radera de manuella avläsningarna från {{date}}? Fenrirs automatiska ögonblicksbilder behålls."  placeholders={{date}}
+deleteTitle = "Radera avläsningar"
+deleted = "Avläsningar raderade"
+delta = "+{{hours}} h sedan {{date}}"  placeholders={{date}},{{hours}}
+empty = "Inga avläsningar än. Lägg till en eller klistra in ditt kalkylblad."
+flag.slowing = "saktar ner"
+flag.stopped = "står still"
+fleetLine = "{{machines}} maskiner · senaste avläsning {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "Bakåtdaterade avläsningar sparas endast för historiken."
+form.date = "Datum"
+form.editTitle = "Redigera avläsning"
+form.hint = "Ange varje maskins totala drifttimmar från dess display. Grå värden är Fenrirs räknare; tomma fält hoppas över."
+form.invalid = "Inte ett tal"
+form.recalibrateNote = "Avläsningar daterade idag kalibrerar om varje maskins räknare, så att underhållsdatum följer skrivarens display."
+form.title = "Ny avläsning"
+intervalSaved = "Påminnelseintervall sparat"
+lastReadingOn = "senaste avläsning {{date}}"  placeholders={{date}}
+machineCount = "Maskiner: {{n}}"  placeholders={{n}}
+machineDeleted = "Maskin raderad"
+machines = "Maskiner"
+manual = "manuell"
+modeCumulative = "Ackumulerade timmar"
+modeMonthly = "Timmar / månad"
+modeSameAge = "Samma ålder"
+modeTotal = "Total för flottan"
+newReading = "Ny avläsning"
+noRecentReading = "ingen färsk avläsning"
+olderDates = "{{n}} äldre datum"  placeholders={{n}}
+openMachine = "Öppna {{name}}"  placeholders={{name}}
+panel.addNote = "Lägg till en anteckning"
+panel.added = "tillagd {{date}}"  placeholders={{date}}
+panel.deleteNote = "Ta bort anteckning"
+panel.events = "Händelser"
+panel.forecast = "Vid {{pace}} h/månad nås {{hours}} h omkring {{date}}"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "den {{date}}"  placeholders={{date}}
+panel.load = "Belastning"
+panel.noteDate = "Datum"
+panel.noteText = "Anteckning"
+panel.pace = "Takt"
+panel.period = "Tidsperiod"
+panel.rawOnDate = "räknare"
+panel.readings = "Avläsningar"
+panel.saveNote = "Spara anteckning"
+panel.takeReading = "Gör en avläsning"
+partialMonth = "Den aktuella månaden pågår fortfarande."
+pass.back = "Tillbaka"
+pass.backwards = "Lägre än de {{hours}} h som lästes av {{date}}. Livstidstimmar minskar aldrig."  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir räknade +{{hours}} h sedan {{date}}"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "+{{typed}} h inmatade, men Fenrir räknade +{{counted}} h sedan {{date}}. Förväntat: cirka {{expected}} h."  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "Inte ett tal"
+pass.keepAnyway = "Behåll ändå"
+pass.kept = "behållen"
+pass.last = "senast {{hours}} h den {{date}}"  placeholders={{date}},{{hours}}
+pass.next = "Nästa"
+pass.noLast = "ingen avläsning ännu"
+pass.noReference = "ingen räknarreferens för den här perioden"
+pass.nothingToSave = "Inget att spara. Gå tillbaka och mata in en avläsning, eller stäng."
+pass.okDelta = "+{{typed}} h inmatade, Fenrir räknade +{{counted}} h"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "Spara {{n}} avläsningar"  placeholders={{n}}
+pass.skip = "Hoppa över"
+pass.summary = "Granska och spara"
+pass.title = "Ta avläsningar"
+paste.createRetired = "Skapa som avvecklad maskin"
+paste.futureRows = "Rader med datum i framtiden hoppas över: {{n}}"  placeholders={{n}}
+paste.hint = "Markera rubrikraden och datumraderna i ditt kalkylblad, kopiera och klistra in här. Kolumner kopplas till skrivare via namn; nollor och tomma celler hoppas över."
+paste.ignore = "Ignorera"
+paste.import = "Importera"
+paste.imported = "Importerade avläsningar: {{n}}"  placeholders={{n}}
+paste.matched = "Matchad"
+paste.noRows = "Ingen rad börjar med ett datum. Kopiera rubrikraden tillsammans med datumraderna."
+paste.replaceNote = "Datum som redan finns ersätts."
+paste.summary = "{{dates}} datum · {{columns}} kolumner · {{readings}} avläsningar"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "Klistra in från kalkylblad"
+paste.unmatched = "Finns inte i Fenrir"
+pasteFromSheet = "Klistra in från kalkylblad"
+perMonth = "{{hours}} h/månad"  placeholders={{hours}}
+range.12m = "12 mån"
+range.3m = "3 mån"
+range.all = "Alla"
+range.label = "Intervall"
+readingLog = "Avläsningslogg"
+readingsEvery = "Avläsningar var"
+readingsEveryRead = "Avläsningar var {{days}}:e dag"  placeholders={{days}}
+retired = "Avvecklade"
+saved = "Avläsningar sparade"
+showAll = "alla"
+showNone = "inga"
+strip.allFresh = "alla maskiner nyligen avlästa"
+strip.busiest = "Mest använda maskin"
+strip.dueSub = "tryck för att göra dem"
+strip.lifetime = "Flottan totalt"
+strip.load = "Belastning per maskin"
+strip.machinesCount = "{{live}} aktiva · {{sold}} sålda"  placeholders={{live}},{{sold}}
+strip.readingsDue = "Avläsningar att göra"
+strip.takeReadings = "Gör avläsningar"
+strip.thisMonth = "Denna månad"
+strip.thisMonthSub = "aktiva maskiner, sedan den 1:a"
+subtitle = "Totala timmar per maskin"
+tab = "Timmar"
+timeline.today = "idag"
+trust.calibrated = "Kalibrerad"
+trust.driftHelp = "Räknaren hade glidit ifrån avläsningarna; en ny avläsning rättar till det."
+trust.drifting = "Räknaren låg {{hours}} h fel vid senaste avläsningen"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir räknar från 0. Spara en avläsning med dagens datum för att kalibrera den."
+trust.uncalibrated = "Räknaren är inte kalibrerad"
+--- tr maintenance.hours (125 keys)
+auto = "otomatik"
+autoToday = "Fenrir sayaçları · bugün"
+chart.forecast = "mevcut hızda tahmin"
+chart.lastReading = "son okuma · {{date}}"  placeholders={{date}}
+chart.months = "ay"
+chart.nextService = "sonraki bakım {{hours}} sa · yaklaşık {{date}}"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "{{months}} aydır okuma yok"  placeholders={{months}}
+chart.sameAgeHint = "Aynı yaşta karşılaştırmak için listeden iki veya üç makine seçin."
+cost.basedOn = "{{date}} tarihli son okumaya göre"  placeholders={{date}}
+cost.date = "Satın alma tarihi"
+cost.noRevenue = "Makine başına gelir izlenmiyor."
+cost.perHour = "Saat başına {{amount}}"  placeholders={{amount}}
+cost.price = "Satın alma fiyatı"
+cost.save = "Kaydet"
+cost.saved = "Satın alma bilgileri kaydedildi"
+cost.title = "Saat başına maliyet"
+days = "gün"
+deleteMachineMessage = "{{name}} ve tüm saat geçmişi silinsin mi?"  placeholders={{name}}
+deleteMachineTitle = "Emekli makineyi sil"
+deleteMessage = "{{date}} tarihli manuel okumalar silinsin mi? Fenrir’in otomatik anlık görüntüleri korunur."  placeholders={{date}}
+deleteTitle = "Okumaları sil"
+deleted = "Okumalar silindi"
+delta = "{{date}} tarihinden beri +{{hours}} sa"  placeholders={{date}},{{hours}}
+empty = "Henüz okuma yok. Bir tane ekleyin veya tablonuzu yapıştırın."
+flag.slowing = "yavaşlıyor"
+flag.stopped = "durdu"
+fleetLine = "{{machines}} makine · son okuma {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "Geriye dönük tarihli okumalar yalnızca geçmiş için saklanır."
+form.date = "Tarih"
+form.editTitle = "Okumayı düzenle"
+form.hint = "Her makinenin ekranında görünen toplam çalışma saatini girin. Gri değerler Fenrir sayaçlarıdır; boş alanlar atlanır."
+form.invalid = "Sayı değil"
+form.recalibrateNote = "Bugünün tarihli okumalar her makinenin sayacını yeniden kalibre eder; böylece bakım tarihleri yazıcı ekranını izler."
+form.title = "Yeni okuma"
+intervalSaved = "Hatırlatma aralığı kaydedildi"
+lastReadingOn = "son okuma {{date}}"  placeholders={{date}}
+machineCount = "Makineler: {{n}}"  placeholders={{n}}
+machineDeleted = "Makine silindi"
+machines = "Makineler"
+manual = "manuel"
+modeCumulative = "Kümülatif saat"
+modeMonthly = "Saat / ay"
+modeSameAge = "Aynı yaş"
+modeTotal = "Filo toplamı"
+newReading = "Yeni okuma"
+noRecentReading = "yakın zamanda okuma yok"
+olderDates = "{{n}} eski tarih"  placeholders={{n}}
+openMachine = "{{name}} aç"  placeholders={{name}}
+panel.addNote = "Not ekle"
+panel.added = "{{date}} tarihinde eklendi"  placeholders={{date}}
+panel.deleteNote = "Notu sil"
+panel.events = "Olaylar"
+panel.forecast = "Ayda {{pace}} sa hızıyla {{hours}} sa yaklaşık {{date}} tarihinde"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "{{date}} tarihinde"  placeholders={{date}}
+panel.load = "Yük"
+panel.noteDate = "Tarih"
+panel.noteText = "Not"
+panel.pace = "Tempo"
+panel.period = "Dönem"
+panel.rawOnDate = "sayaç"
+panel.readings = "Okumalar"
+panel.saveNote = "Notu kaydet"
+panel.takeReading = "Okuma al"
+partialMonth = "Mevcut ay henüz devam ediyor."
+pass.back = "Geri"
+pass.backwards = "{{date}} tarihinde okunan {{hours}} sa değerinden düşük. Toplam saatler asla azalmaz."  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir {{date}} tarihinden beri +{{hours}} sa saydı"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "+{{typed}} sa girildi, ancak Fenrir {{date}} tarihinden beri +{{counted}} sa saydı. Beklenen: yaklaşık {{expected}} sa."  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "Sayı değil"
+pass.keepAnyway = "Yine de tut"
+pass.kept = "tutuldu"
+pass.last = "son: {{date}} tarihinde {{hours}} sa"  placeholders={{date}},{{hours}}
+pass.next = "İleri"
+pass.noLast = "henüz okuma yok"
+pass.noReference = "bu dönem için sayaç referansı yok"
+pass.nothingToSave = "Kaydedilecek bir şey yok. Geri dönüp bir okuma girin veya kapatın."
+pass.okDelta = "+{{typed}} sa girildi, Fenrir +{{counted}} sa saydı"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "{{n}} okumayı kaydet"  placeholders={{n}}
+pass.skip = "Atla"
+pass.summary = "Kontrol et ve kaydet"
+pass.title = "Okumaları gir"
+paste.createRetired = "Kullanımdan kalkmış makine olarak oluştur"
+paste.futureRows = "Gelecek tarihli satırlar atlanır: {{n}}"  placeholders={{n}}
+paste.hint = "Tablonuzdaki başlık satırını ve tarihli satırları seçip kopyalayın, buraya yapıştırın. Sütunlar yazıcılarla ada göre eşleştirilir; sıfırlar ve boş hücreler atlanır."
+paste.ignore = "Yoksay"
+paste.import = "İçe aktar"
+paste.imported = "İçe aktarılan okumalar: {{n}}"  placeholders={{n}}
+paste.matched = "Eşleşti"
+paste.noRows = "Hiçbir satır tarihle başlamıyor. Başlık satırını tarihli satırlarla birlikte kopyalayın."
+paste.replaceNote = "Kayıtlı tarihlerin üzerine yazılır."
+paste.summary = "{{dates}} tarih · {{columns}} sütun · {{readings}} okuma"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "Tablodan yapıştır"
+paste.unmatched = "Fenrir'de yok"
+pasteFromSheet = "Tablodan yapıştır"
+perMonth = "{{hours}} sa/ay"  placeholders={{hours}}
+range.12m = "12 ay"
+range.3m = "3 ay"
+range.all = "Tümü"
+range.label = "Aralık"
+readingLog = "Okuma günlüğü"
+readingsEvery = "Okuma aralığı:"
+readingsEveryRead = "{{days}} günde bir okuma"  placeholders={{days}}
+retired = "Emekli"
+saved = "Okumalar kaydedildi"
+showAll = "tümü"
+showNone = "hiçbiri"
+strip.allFresh = "tüm makineler yakın zamanda okundu"
+strip.busiest = "En yoğun makine"
+strip.dueSub = "almak için dokunun"
+strip.lifetime = "Filo toplamı"
+strip.load = "Makine başına yük"
+strip.machinesCount = "{{live}} aktif · {{sold}} satıldı"  placeholders={{live}},{{sold}}
+strip.readingsDue = "Okuma bekleyen"
+strip.takeReadings = "Okumaları al"
+strip.thisMonth = "Bu ay"
+strip.thisMonthSub = "aktif makineler, ayın 1'inden beri"
+subtitle = "Makine başına toplam saat"
+tab = "Saatler"
+timeline.today = "bugün"
+trust.calibrated = "Kalibre edildi"
+trust.driftHelp = "Sayaç okumalardan sapmıştı; yeni bir okuma bunu düzeltir."
+trust.drifting = "Sayaç son okumada {{hours}} sa sapmıştı"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir 0'dan sayar. Kalibre etmek için bugünün tarihli bir okuma kaydedin."
+trust.uncalibrated = "Sayaç kalibre edilmedi"
+--- uk maintenance.hours (125 keys)
+auto = "авто"
+autoToday = "Лічильники Fenrir · сьогодні"
+chart.forecast = "прогноз за поточним темпом"
+chart.lastReading = "останнє показання · {{date}}"  placeholders={{date}}
+chart.months = "міс."
+chart.nextService = "наступне ТО на {{hours}} год · близько {{date}}"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "немає показань {{months}} міс."  placeholders={{months}}
+chart.sameAgeHint = "Виберіть у списку дві-три машини, щоб порівняти їх в однаковому віці."
+cost.basedOn = "за останнім показанням від {{date}}"  placeholders={{date}}
+cost.date = "Дата купівлі"
+cost.noRevenue = "Дохід по верстатах не відстежується."
+cost.perHour = "{{amount}} за годину"  placeholders={{amount}}
+cost.price = "Ціна купівлі"
+cost.save = "Зберегти"
+cost.saved = "Дані про купівлю збережено"
+cost.title = "Вартість години"
+days = "дн."
+deleteMachineMessage = "Видалити {{name}} і всю історію її годин?"  placeholders={{name}}
+deleteMachineTitle = "Видалити виведену машину"
+deleteMessage = "Видалити показання, введені вручну за {{date}}? Автоматичні знімки Fenrir буде збережено."  placeholders={{date}}
+deleteTitle = "Видалити показання"
+deleted = "Показання видалено"
+delta = "+{{hours}} год з {{date}}"  placeholders={{date}},{{hours}}
+empty = "Показань ще немає. Додайте одне або вставте таблицю."
+flag.slowing = "сповільнюється"
+flag.stopped = "зупинена"
+fleetLine = "Машин: {{machines}} · останнє показання {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "Показання з минулою датою зберігаються лише для історії."
+form.date = "Дата"
+form.editTitle = "Редагувати показання"
+form.hint = "Введіть напрацювання кожної машини в годинах, як на її екрані. Сірі значення — лічильники Fenrir; порожні поля пропускаються."
+form.invalid = "Не число"
+form.recalibrateNote = "Показання із сьогоднішньою датою перекалібровують лічильник кожної машини, тому терміни обслуговування відповідають екрану принтера."
+form.title = "Нове показання"
+intervalSaved = "Інтервал нагадувань збережено"
+lastReadingOn = "останнє показання {{date}}"  placeholders={{date}}
+machineCount = "Машин: {{n}}"  placeholders={{n}}
+machineDeleted = "Машину видалено"
+machines = "Машини"
+manual = "вручну"
+modeCumulative = "Накопичені години"
+modeMonthly = "Години / місяць"
+modeSameAge = "Однаковий вік"
+modeTotal = "Разом по парку"
+newReading = "Нове показання"
+noRecentReading = "немає свіжих показів"
+olderDates = "Ще {{n}} раніших дат"  placeholders={{n}}
+openMachine = "Відкрити {{name}}"  placeholders={{name}}
+panel.addNote = "Додати нотатку"
+panel.added = "додано {{date}}"  placeholders={{date}}
+panel.deleteNote = "Видалити нотатку"
+panel.events = "Події"
+panel.forecast = "За {{pace}} год/міс {{hours}} год приблизно {{date}}"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "на {{date}}"  placeholders={{date}}
+panel.load = "Навантаження"
+panel.noteDate = "Дата"
+panel.noteText = "Нотатка"
+panel.pace = "Темп"
+panel.period = "Період"
+panel.rawOnDate = "лічильник"
+panel.readings = "Показання"
+panel.saveNote = "Зберегти нотатку"
+panel.takeReading = "Зняти показання"
+partialMonth = "Поточний місяць ще не завершився."
+pass.back = "Назад"
+pass.backwards = "Менше, ніж {{hours}} год, зчитані {{date}}. Загальна напрацьована кількість годин не зменшується."  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir нарахував +{{hours}} год від {{date}}"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "введено +{{typed}} год, але Fenrir нарахував +{{counted}} год від {{date}}. Очікувалося близько {{expected}} год."  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "Не число"
+pass.keepAnyway = "Залишити все одно"
+pass.kept = "залишено"
+pass.last = "останнє: {{hours}} год, {{date}}"  placeholders={{date}},{{hours}}
+pass.next = "Далі"
+pass.noLast = "показань ще немає"
+pass.noReference = "немає опорного значення лічильника за цей період"
+pass.nothingToSave = "Нічого зберігати. Поверніться і введіть показання або закрийте."
+pass.okDelta = "введено +{{typed}} год, Fenrir нарахував +{{counted}} год"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "Зберегти показань: {{n}}"  placeholders={{n}}
+pass.skip = "Пропустити"
+pass.summary = "Перевірка та збереження"
+pass.title = "Ввід показань"
+paste.createRetired = "Створити як виведену з експлуатації машину"
+paste.futureRows = "Рядки з датою в майбутньому пропускаються: {{n}}"  placeholders={{n}}
+paste.hint = "Виділіть у таблиці рядок заголовків і рядки з датами, скопіюйте та вставте сюди. Стовпці зіставляються з принтерами за назвою; нулі та порожні клітинки пропускаються."
+paste.ignore = "Ігнорувати"
+paste.import = "Імпортувати"
+paste.imported = "Імпортовано показників: {{n}}"  placeholders={{n}}
+paste.matched = "Зіставлено"
+paste.noRows = "Жоден рядок не починається з дати. Скопіюйте рядок заголовків разом із рядками з датами."
+paste.replaceNote = "Дати, які вже є в журналі, буде замінено."
+paste.summary = "Дат: {{dates}} · стовпців: {{columns}} · показників: {{readings}}"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "Вставити з таблиці"
+paste.unmatched = "Немає у Fenrir"
+pasteFromSheet = "Вставити з таблиці"
+perMonth = "{{hours}} год/міс."  placeholders={{hours}}
+range.12m = "12 міс."
+range.3m = "3 міс."
+range.all = "Усе"
+range.label = "Період"
+readingLog = "Журнал показань"
+readingsEvery = "Показання кожні"
+readingsEveryRead = "Показання кожні {{days}} дн."  placeholders={{days}}
+retired = "Виведені"
+saved = "Показання збережено"
+showAll = "усі"
+showNone = "жодної"
+strip.allFresh = "покази всіх машин свіжі"
+strip.busiest = "Найзавантаженіша машина"
+strip.dueSub = "натисніть, щоб зняти"
+strip.lifetime = "Усього по парку"
+strip.load = "Завантаження по машинах"
+strip.machinesCount = "{{live}} у роботі · {{sold}} продано"  placeholders={{live}},{{sold}}
+strip.readingsDue = "Потрібні покази"
+strip.takeReadings = "Зняти покази"
+strip.thisMonth = "Цього місяця"
+strip.thisMonthSub = "працюючі машини, з 1-го числа"
+subtitle = "Загальна напрацьованість по машинах"
+tab = "Години"
+timeline.today = "сьогодні"
+trust.calibrated = "Відкалібровано"
+trust.driftHelp = "Лічильник розійшовся з показниками; новий показник це виправить."
+trust.drifting = "Лічильник розходився на {{hours}} год під час останнього зняття"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir рахує від 0. Збережіть показник із сьогоднішньою датою, щоб відкалібрувати лічильник."
+trust.uncalibrated = "Лічильник не відкалібровано"
+--- zhCN maintenance.hours (125 keys)
+auto = "自动"
+autoToday = "Fenrir 计数器 · 今天"
+chart.forecast = "按当前节奏预测"
+chart.lastReading = "最近读数 · {{date}}"  placeholders={{date}}
+chart.months = "个月"
+chart.nextService = "下次保养于 {{hours}} 小时 · 约 {{date}}"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "已 {{months}} 个月无读数"  placeholders={{months}}
+chart.sameAgeHint = "在列表中选择两三台机器，即可按相同机龄进行比较。"
+cost.basedOn = "基于 {{date}} 的最近读数"  placeholders={{date}}
+cost.date = "购买日期"
+cost.noRevenue = "不记录每台机器的收入。"
+cost.perHour = "每小时 {{amount}}"  placeholders={{amount}}
+cost.price = "购买价格"
+cost.save = "保存"
+cost.saved = "购买信息已保存"
+cost.title = "每小时成本"
+days = "天"
+deleteMachineMessage = "删除 {{name}} 及其全部工时历史？"  placeholders={{name}}
+deleteMachineTitle = "删除已退役机器"
+deleteMessage = "删除 {{date}} 的手动读数？Fenrir 的自动快照将被保留。"  placeholders={{date}}
+deleteTitle = "删除读数"
+deleted = "读数已删除"
+delta = "自 {{date}} 起 +{{hours}} 小时"  placeholders={{date}},{{hours}}
+empty = "暂无读数。请添加或粘贴您的表格。"
+flag.slowing = "减速"
+flag.stopped = "已停止"
+fleetLine = "{{machines}} 台设备 · 最近读数 {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "补录日期的读数仅保存在历史记录中。"
+form.date = "日期"
+form.editTitle = "编辑读数"
+form.hint = "请输入每台机器屏幕上显示的累计小时数。灰色数值是 Fenrir 的计数器；留空的字段将被跳过。"
+form.invalid = "不是数字"
+form.recalibrateNote = "日期为今天的读数会重新校准每台机器的计数器，使保养到期日与打印机屏幕保持一致。"
+form.title = "新读数"
+intervalSaved = "提醒间隔已保存"
+lastReadingOn = "最近读数 {{date}}"  placeholders={{date}}
+machineCount = "机器：{{n}}"  placeholders={{n}}
+machineDeleted = "机器已删除"
+machines = "机器"
+manual = "手动"
+modeCumulative = "累计工时"
+modeMonthly = "工时 / 月"
+modeSameAge = "相同机龄"
+modeTotal = "全部机器合计"
+newReading = "新读数"
+noRecentReading = "近期无读数"
+olderDates = "另有 {{n}} 个较早日期"  placeholders={{n}}
+openMachine = "打开 {{name}}"  placeholders={{name}}
+panel.addNote = "添加备注"
+panel.added = "添加于 {{date}}"  placeholders={{date}}
+panel.deleteNote = "删除备注"
+panel.events = "事件"
+panel.forecast = "按每月 {{pace}} 小时计算，{{hours}} 小时约在 {{date}}"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "截至 {{date}}"  placeholders={{date}}
+panel.load = "负载"
+panel.noteDate = "日期"
+panel.noteText = "备注"
+panel.pace = "节奏"
+panel.period = "时段"
+panel.rawOnDate = "计数器"
+panel.readings = "读数"
+panel.saveNote = "保存备注"
+panel.takeReading = "记录读数"
+partialMonth = "当前月份尚未结束。"
+pass.back = "上一步"
+pass.backwards = "低于 {{date}} 读取的 {{hours}} 小时。累计小时数不会减少。"  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir 自 {{date}} 起计数 +{{hours}} 小时"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "已输入 +{{typed}} 小时，但 Fenrir 自 {{date}} 起计数 +{{counted}} 小时。预期约 {{expected}} 小时。"  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "不是数字"
+pass.keepAnyway = "仍然保留"
+pass.kept = "已保留"
+pass.last = "上次 {{date}}：{{hours}} 小时"  placeholders={{date}},{{hours}}
+pass.next = "下一步"
+pass.noLast = "尚无读数"
+pass.noReference = "此期间没有计数器参考值"
+pass.nothingToSave = "没有可保存的内容。请返回输入读数，或关闭。"
+pass.okDelta = "已输入 +{{typed}} 小时，Fenrir 计数 +{{counted}} 小时"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "保存 {{n}} 条读数"  placeholders={{n}}
+pass.skip = "跳过"
+pass.summary = "检查并保存"
+pass.title = "录入读数"
+paste.createRetired = "创建为已退役设备"
+paste.futureRows = "日期在未来的行将被跳过：{{n}}"  placeholders={{n}}
+paste.hint = "在表格中选中表头行和日期行，复制后粘贴到这里。列按名称与打印机匹配；零值和空单元格会被跳过。"
+paste.ignore = "忽略"
+paste.import = "导入"
+paste.imported = "已导入读数：{{n}}"  placeholders={{n}}
+paste.matched = "已匹配"
+paste.noRows = "没有以日期开头的行。请将表头行与日期行一起复制。"
+paste.replaceNote = "已有的日期将被替换。"
+paste.summary = "{{dates}} 个日期 · {{columns}} 列 · {{readings}} 条读数"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "从表格粘贴"
+paste.unmatched = "不在 Fenrir 中"
+pasteFromSheet = "从表格粘贴"
+perMonth = "{{hours}} 小时/月"  placeholders={{hours}}
+range.12m = "12 个月"
+range.3m = "3 个月"
+range.all = "全部"
+range.label = "范围"
+readingLog = "读数记录"
+readingsEvery = "读数间隔"
+readingsEveryRead = "每 {{days}} 天读数"  placeholders={{days}}
+retired = "已退役"
+saved = "读数已保存"
+showAll = "全部"
+showNone = "无"
+strip.allFresh = "所有设备近期已读数"
+strip.busiest = "最繁忙的设备"
+strip.dueSub = "点按开始读数"
+strip.lifetime = "全部设备累计"
+strip.load = "各设备负载"
+strip.machinesCount = "在用 {{live}} · 已售 {{sold}}"  placeholders={{live}},{{sold}}
+strip.readingsDue = "待读数"
+strip.takeReadings = "开始读数"
+strip.thisMonth = "本月"
+strip.thisMonthSub = "在用设备,自 1 日起"
+subtitle = "每台机器的累计工时"
+tab = "工时"
+timeline.today = "今天"
+trust.calibrated = "已校准"
+trust.driftHelp = "计数器与读数出现偏差；新的读数可以修正。"
+trust.drifting = "上次读数时计数器偏差 {{hours}} 小时"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir 从 0 开始计数。保存一条今天日期的读数即可校准。"
+trust.uncalibrated = "计数器未校准"
+--- zhTW maintenance.hours (125 keys)
+auto = "自動"
+autoToday = "Fenrir 計數器 · 今天"
+chart.forecast = "依目前節奏預測"
+chart.lastReading = "最近讀數 · {{date}}"  placeholders={{date}}
+chart.months = "個月"
+chart.nextService = "下次保養於 {{hours}} 小時 · 約 {{date}}"  placeholders={{date}},{{hours}}
+chart.noReadingsFor = "已 {{months}} 個月無讀數"  placeholders={{months}}
+chart.sameAgeHint = "在列表中選擇兩三台機器，即可依相同機齡進行比較。"
+cost.basedOn = "依據 {{date}} 的最近讀數"  placeholders={{date}}
+cost.date = "購買日期"
+cost.noRevenue = "不記錄每台機器的收入。"
+cost.perHour = "每小時 {{amount}}"  placeholders={{amount}}
+cost.price = "購買價格"
+cost.save = "儲存"
+cost.saved = "購買資訊已儲存"
+cost.title = "每小時成本"
+days = "天"
+deleteMachineMessage = "刪除 {{name}} 及其全部工時歷史？"  placeholders={{name}}
+deleteMachineTitle = "刪除已退役機器"
+deleteMessage = "刪除 {{date}} 的手動讀數？Fenrir 的自動快照將被保留。"  placeholders={{date}}
+deleteTitle = "刪除讀數"
+deleted = "讀數已刪除"
+delta = "自 {{date}} 起 +{{hours}} 小時"  placeholders={{date}},{{hours}}
+empty = "尚無讀數。請新增或貼上您的試算表。"
+flag.slowing = "減速"
+flag.stopped = "已停止"
+fleetLine = "{{machines}} 台設備 · 最近讀數 {{date}}"  placeholders={{date}},{{machines}}
+form.backdatedNote = "補登日期的讀數僅保存在歷史記錄中。"
+form.date = "日期"
+form.editTitle = "編輯讀數"
+form.hint = "請輸入每台機器螢幕上顯示的累計小時數。灰色數值是 Fenrir 的計數器；留空的欄位將被略過。"
+form.invalid = "不是數字"
+form.recalibrateNote = "日期為今天的讀數會重新校準每台機器的計數器，讓保養到期日與列印機螢幕一致。"
+form.title = "新讀數"
+intervalSaved = "提醒間隔已儲存"
+lastReadingOn = "最近讀數 {{date}}"  placeholders={{date}}
+machineCount = "機器：{{n}}"  placeholders={{n}}
+machineDeleted = "機器已刪除"
+machines = "機器"
+manual = "手動"
+modeCumulative = "累計工時"
+modeMonthly = "工時 / 月"
+modeSameAge = "相同機齡"
+modeTotal = "全部機器合計"
+newReading = "新讀數"
+noRecentReading = "近期無讀數"
+olderDates = "另有 {{n}} 個較早日期"  placeholders={{n}}
+openMachine = "開啟 {{name}}"  placeholders={{name}}
+panel.addNote = "新增備註"
+panel.added = "新增於 {{date}}"  placeholders={{date}}
+panel.deleteNote = "刪除備註"
+panel.events = "事件"
+panel.forecast = "以每月 {{pace}} 小時計算，{{hours}} 小時約在 {{date}}"  placeholders={{date}},{{hours}},{{pace}}
+panel.lifetimeOn = "截至 {{date}}"  placeholders={{date}}
+panel.load = "負載"
+panel.noteDate = "日期"
+panel.noteText = "備註"
+panel.pace = "節奏"
+panel.period = "時段"
+panel.rawOnDate = "計數器"
+panel.readings = "讀數"
+panel.saveNote = "儲存備註"
+panel.takeReading = "記錄讀數"
+partialMonth = "目前月份尚未結束。"
+pass.back = "上一步"
+pass.backwards = "低於 {{date}} 讀取的 {{hours}} 小時。累計小時數不會減少。"  placeholders={{date}},{{hours}}
+pass.counted = "Fenrir 自 {{date}} 起計數 +{{hours}} 小時"  placeholders={{date}},{{hours}}
+pass.farFromCounter = "已輸入 +{{typed}} 小時，但 Fenrir 自 {{date}} 起計數 +{{counted}} 小時。預期約 {{expected}} 小時。"  placeholders={{counted}},{{date}},{{expected}},{{typed}}
+pass.invalid = "不是數字"
+pass.keepAnyway = "仍然保留"
+pass.kept = "已保留"
+pass.last = "上次 {{date}}：{{hours}} 小時"  placeholders={{date}},{{hours}}
+pass.next = "下一步"
+pass.noLast = "尚無讀數"
+pass.noReference = "此期間沒有計數器參考值"
+pass.nothingToSave = "沒有可儲存的內容。請返回輸入讀數，或關閉。"
+pass.okDelta = "已輸入 +{{typed}} 小時，Fenrir 計數 +{{counted}} 小時"  placeholders={{counted}},{{typed}}
+pass.progress = "{{i}} / {{n}}"  placeholders={{i}},{{n}}
+pass.save = "儲存 {{n}} 筆讀數"  placeholders={{n}}
+pass.skip = "略過"
+pass.summary = "檢查並儲存"
+pass.title = "輸入讀數"
+paste.createRetired = "建立為已退役機器"
+paste.futureRows = "日期在未來的列將被略過：{{n}}"  placeholders={{n}}
+paste.hint = "在試算表中選取標題列與日期列，複製後貼到這裡。欄位會依名稱與印表機比對；零值與空白儲存格會略過。"
+paste.ignore = "忽略"
+paste.import = "匯入"
+paste.imported = "已匯入讀數：{{n}}"  placeholders={{n}}
+paste.matched = "已比對"
+paste.noRows = "沒有以日期開頭的列。請將標題列與日期列一起複製。"
+paste.replaceNote = "已有的日期將被取代。"
+paste.summary = "{{dates}} 個日期 · {{columns}} 欄 · {{readings}} 筆讀數"  placeholders={{columns}},{{dates}},{{readings}}
+paste.title = "從試算表貼上"
+paste.unmatched = "不在 Fenrir 中"
+pasteFromSheet = "從試算表貼上"
+perMonth = "{{hours}} 小時/月"  placeholders={{hours}}
+range.12m = "12 個月"
+range.3m = "3 個月"
+range.all = "全部"
+range.label = "範圍"
+readingLog = "讀數紀錄"
+readingsEvery = "讀數間隔"
+readingsEveryRead = "每 {{days}} 天讀數"  placeholders={{days}}
+retired = "已退役"
+saved = "讀數已儲存"
+showAll = "全部"
+showNone = "無"
+strip.allFresh = "所有設備近期已讀數"
+strip.busiest = "最繁忙的設備"
+strip.dueSub = "點按開始讀數"
+strip.lifetime = "全部設備累計"
+strip.load = "各設備負載"
+strip.machinesCount = "在用 {{live}} · 已售 {{sold}}"  placeholders={{live}},{{sold}}
+strip.readingsDue = "待讀數"
+strip.takeReadings = "開始讀數"
+strip.thisMonth = "本月"
+strip.thisMonthSub = "在用設備,自 1 日起"
+subtitle = "每台機器的累計工時"
+tab = "工時"
+timeline.today = "今天"
+trust.calibrated = "已校準"
+trust.driftHelp = "計數器與讀數出現偏差；新的讀數可以修正。"
+trust.drifting = "上次讀數時計數器偏差 {{hours}} 小時"  placeholders={{hours}}
+trust.notCalibratedHelp = "Fenrir 從 0 開始計數。儲存一筆今天日期的讀數即可校準。"
+trust.uncalibrated = "計數器未校準"
+
+--- maintenance.hours parity against en
+de: missing=[] extra=[]
+en: missing=[] extra=[]
+es: missing=[] extra=[]
+fr: missing=[] extra=[]
+it: missing=[] extra=[]
+ja: missing=[] extra=[]
+ko: missing=[] extra=[]
+nl: missing=[] extra=[]
+ptBR: missing=[] extra=[]
+ru: missing=[] extra=[]
+sv: missing=[] extra=[]
+tr: missing=[] extra=[]
+uk: missing=[] extra=[]
+zhCN: missing=[] extra=[]
+zhTW: missing=[] extra=[]
+
+### stderr:
+

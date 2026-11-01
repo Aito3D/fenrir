@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import type { HourEvent, HourMachine } from '../../../api/client';
 import {
-  dayNumber, fleetTotal, forecastDate, monthStarts, monthlyHours, ratePerMonth, sameAgePoints, seriesPoints,
+  DAY_MS, dayNumber, fleetTotal, forecastDate, monthStarts, monthlyHours, ratePerMonth, sameAgePoints, seriesPoints,
   type HourPoint, type MachineSeries,
 } from '../../../utils/hoursSeries';
 import { EventTicks } from './EventTicks';
@@ -30,7 +30,6 @@ interface HoursChartProps {
   gap: { lastDate: string | null; days: number };
 }
 
-const DAY_MS = 86_400_000;
 const toXY = (p: HourPoint) => ({ x: dayNumber(p.date) * DAY_MS, y: p.hours });
 const GRID = 'var(--color-bambu-dark-tertiary)';
 const AXIS = { stroke: 'var(--color-bambu-gray)', fontSize: 11 };

@@ -1,0 +1,16 @@
+### exit: 0
+### stdout:
+import { HoursTab } from '../components/maintenance/hours/HoursTab';
+type TabType = 'status' | 'settings' | 'hours';
+return tab === 'hours' || tab === 'settings' || tab === 'status' ? tab : 'status';
+) : activeTab === 'hours' ? (
+{tab === 'hours' ? (
+<HoursTab />
+{ id: 'hours', label: t('maintenance.hours.tab'), icon: Timer },
+onClick={() => setActiveTab('hours')}
+activeTab === 'hours'
+{t('maintenance.hours.tab')}
+maintenance.hours.tab
+
+### stderr:
+

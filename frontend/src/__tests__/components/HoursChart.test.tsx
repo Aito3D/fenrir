@@ -134,6 +134,21 @@ describe('HoursChart', () => {
     expect(ticks[1].getAttribute('data-kind')).toBe('maintenance');
   });
 
+  it('draws a ring for calibrated events and skips retired-on-last-date and series-less machines', () => {
+    const machines = [machine(1, 'calibrated'), machine(2, 'calibrated')];
+    const events: HourEvent[] = [
+      { id: 1, machine_id: 1, event_date: '2026-03-01', kind: 'calibrated', label: 'Calibrated', source_id: null },
+      { id: 2, machine_id: 1, event_date: '2026-04-20', kind: 'retired', label: 'Retired', source_id: null },
+      { id: 3, machine_id: 2, event_date: '2026-03-01', kind: 'note', label: 'No curve', source_id: null },
+    ];
+    const series = new Map<number, MachineSeries>([[1, seriesFor()], [2, { manual: [], auto: [] }]]);
+    const { container } = setup({ machines, series, events });
+    const ticks = container.querySelectorAll('.hours-event-tick');
+    expect(ticks).toHaveLength(1);
+    expect(ticks[0].getAttribute('data-kind')).toBe('calibrated');
+    expect(ticks[0].querySelector('circle')?.getAttribute('fill')).toBe('none');
+  });
+
   it('ticks sit on their curve', () => {
     const machines = [machine(1, 'calibrated')];
     const series = new Map<number, MachineSeries>([

@@ -4,6 +4,7 @@ import {
   dayNumber,
   fleetTotal,
   guessModel,
+  isoDayFormatter,
   machineColors,
   machineSeries,
   monthStarts,
@@ -327,5 +328,26 @@ describe('fleet facts', () => {
   it('gapInfo reports days since the newest manual reading of live machines', () => {
     expect(gapInfo(ms, seriesOf, '2026-05-05')).toEqual({ lastDate: '2026-04-25', days: 10 });
     expect(gapInfo([], new Map(), '2026-05-05')).toEqual({ lastDate: null, days: 0 });
+  });
+});
+
+describe('isoDayFormatter', () => {
+  const utc = (iso: string, lang: string, o: Intl.DateTimeFormatOptions = {}) =>
+    new Intl.DateTimeFormat(lang, { ...o, timeZone: 'UTC' }).format(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)));
+
+  it('formats the ISO day itself in en and fr, whatever the host timezone', () => {
+    expect(isoDayFormatter('en')('2026-04-25')).toBe('4/25/2026');
+    expect(isoDayFormatter('fr')('2026-04-25')).toBe('25/04/2026');
+    expect(isoDayFormatter('en')('2026-01-01')).toBe('1/1/2026');
+    expect(isoDayFormatter('fr')('2025-12-31')).toBe('31/12/2025');
+  });
+
+  it('passes options through and keeps UTC', () => {
+    expect(isoDayFormatter('en', { day: 'numeric', month: 'short' })('2026-03-01')).toBe('Mar 1');
+    expect(isoDayFormatter('fr', { month: 'short', year: '2-digit' })('2026-02-28')).toBe(utc('2026-02-28', 'fr', { month: 'short', year: '2-digit' }));
+  });
+
+  it('matches the legacy T00:00:00Z parse', () => {
+    expect(isoDayFormatter('fr')('2026-03-29')).toBe(new Intl.DateTimeFormat('fr', { timeZone: 'UTC' }).format(new Date('2026-03-29T00:00:00Z')));
   });
 });
