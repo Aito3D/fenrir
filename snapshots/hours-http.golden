@@ -1,0 +1,2161 @@
+### exit: 0
+### stdout:
+[
+ {
+  "body": {
+   "due_machine_ids": [
+    3,
+    2,
+    1
+   ],
+   "events": [
+    {
+     "event_date": "<TODAY>",
+     "id": 1,
+     "kind": "added",
+     "label": "H2D-02",
+     "machine_id": 3,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 2,
+     "kind": "added",
+     "label": "P1S01",
+     "machine_id": 2,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 3,
+     "kind": "added",
+     "label": "X1C04",
+     "machine_id": 1,
+     "source_id": null
+    }
+   ],
+   "machines": [
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 0.0,
+     "current_hours": 0.0,
+     "id": 3,
+     "last_drift_hours": null,
+     "model": "H2D",
+     "name": "H2D-02",
+     "next_service_hours": null,
+     "printer_id": 3,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 50.0,
+     "current_hours": 50.0,
+     "id": 2,
+     "last_drift_hours": null,
+     "model": "P1S",
+     "name": "P1S01",
+     "next_service_hours": null,
+     "printer_id": 2,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 124.0,
+     "current_hours": 134.0,
+     "id": 1,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C04",
+     "next_service_hours": null,
+     "printer_id": 1,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    }
+   ],
+   "reading_interval_days": 90,
+   "readings": [],
+   "today": "<TODAY>"
+  },
+  "status": 200,
+  "step": "01-overview-from-printers"
+ },
+ {
+  "body": {
+   "due_machine_ids": [
+    3,
+    2,
+    1
+   ],
+   "events": [
+    {
+     "event_date": "2026-01-15",
+     "id": 2,
+     "kind": "added",
+     "label": "P1S01",
+     "machine_id": 2,
+     "source_id": null
+    },
+    {
+     "event_date": "2026-01-15",
+     "id": 3,
+     "kind": "added",
+     "label": "X1C04",
+     "machine_id": 1,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 1,
+     "kind": "added",
+     "label": "H2D-02",
+     "machine_id": 3,
+     "source_id": null
+    }
+   ],
+   "machines": [
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 0.0,
+     "current_hours": 0.0,
+     "id": 3,
+     "last_drift_hours": null,
+     "model": "H2D",
+     "name": "H2D-02",
+     "next_service_hours": null,
+     "printer_id": 3,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": null,
+     "counter_raw_hours": 50.0,
+     "current_hours": 50.0,
+     "id": 2,
+     "last_drift_hours": null,
+     "model": "P1S",
+     "name": "P1S01",
+     "next_service_hours": null,
+     "printer_id": 2,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": null,
+     "counter_raw_hours": 124.0,
+     "current_hours": 134.0,
+     "id": 1,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C04",
+     "next_service_hours": null,
+     "printer_id": 1,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    }
+   ],
+   "reading_interval_days": 90,
+   "readings": [
+    {
+     "hours": 900.0,
+     "id": 1,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 10.0,
+     "id": 2,
+     "machine_id": 2,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    }
+   ],
+   "today": "<TODAY>"
+  },
+  "status": 200,
+  "step": "02-backdated-readings"
+ },
+ {
+  "body": {
+   "due_machine_ids": [
+    3,
+    2,
+    1
+   ],
+   "events": [
+    {
+     "event_date": "2026-01-15",
+     "id": 2,
+     "kind": "added",
+     "label": "P1S01",
+     "machine_id": 2,
+     "source_id": null
+    },
+    {
+     "event_date": "2026-01-15",
+     "id": 3,
+     "kind": "added",
+     "label": "X1C04",
+     "machine_id": 1,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 1,
+     "kind": "added",
+     "label": "H2D-02",
+     "machine_id": 3,
+     "source_id": null
+    }
+   ],
+   "machines": [
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 0.0,
+     "current_hours": 0.0,
+     "id": 3,
+     "last_drift_hours": null,
+     "model": "H2D",
+     "name": "H2D-02",
+     "next_service_hours": null,
+     "printer_id": 3,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": null,
+     "counter_raw_hours": 50.0,
+     "current_hours": 50.0,
+     "id": 2,
+     "last_drift_hours": null,
+     "model": "P1S",
+     "name": "P1S01",
+     "next_service_hours": null,
+     "printer_id": 2,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": null,
+     "counter_raw_hours": 124.0,
+     "current_hours": 134.0,
+     "id": 1,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C04",
+     "next_service_hours": null,
+     "printer_id": 1,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    }
+   ],
+   "reading_interval_days": 90,
+   "readings": [
+    {
+     "hours": 900.0,
+     "id": 1,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 10.0,
+     "id": 2,
+     "machine_id": 2,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 1000.5,
+     "id": 3,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-03-01",
+     "source": "manual"
+    }
+   ],
+   "today": "<TODAY>"
+  },
+  "status": 200,
+  "step": "03-backdated-readings-2"
+ },
+ {
+  "body": {
+   "due_machine_ids": [
+    3,
+    2
+   ],
+   "events": [
+    {
+     "event_date": "2026-01-15",
+     "id": 2,
+     "kind": "added",
+     "label": "P1S01",
+     "machine_id": 2,
+     "source_id": null
+    },
+    {
+     "event_date": "2026-01-15",
+     "id": 3,
+     "kind": "added",
+     "label": "X1C04",
+     "machine_id": 1,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 1,
+     "kind": "added",
+     "label": "H2D-02",
+     "machine_id": 3,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 4,
+     "kind": "calibrated",
+     "label": "2629 h",
+     "machine_id": 1,
+     "source_id": null
+    }
+   ],
+   "machines": [
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 0.0,
+     "current_hours": 0.0,
+     "id": 3,
+     "last_drift_hours": null,
+     "model": "H2D",
+     "name": "H2D-02",
+     "next_service_hours": null,
+     "printer_id": 3,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": null,
+     "counter_raw_hours": 50.0,
+     "current_hours": 50.0,
+     "id": 2,
+     "last_drift_hours": null,
+     "model": "P1S",
+     "name": "P1S01",
+     "next_service_hours": null,
+     "printer_id": 2,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": "<TIMESTAMP>",
+     "counter_raw_hours": 124.0,
+     "current_hours": 2629.0,
+     "id": 1,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C04",
+     "next_service_hours": 25.0,
+     "printer_id": 1,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "calibrated"
+    }
+   ],
+   "reading_interval_days": 90,
+   "readings": [
+    {
+     "hours": 900.0,
+     "id": 1,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 10.0,
+     "id": 2,
+     "machine_id": 2,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 1000.5,
+     "id": 3,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-03-01",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 4,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "<TODAY>",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 5,
+     "machine_id": 1,
+     "raw_hours": 124.0,
+     "reading_date": "<TODAY>",
+     "source": "auto"
+    }
+   ],
+   "today": "<TODAY>"
+  },
+  "status": 200,
+  "step": "04-reading-today-recalibrates"
+ },
+ {
+  "body": {
+   "due_machine_ids": [
+    3,
+    2
+   ],
+   "events": [
+    {
+     "event_date": "2026-01-15",
+     "id": 2,
+     "kind": "added",
+     "label": "P1S01",
+     "machine_id": 2,
+     "source_id": null
+    },
+    {
+     "event_date": "2026-01-15",
+     "id": 3,
+     "kind": "added",
+     "label": "X1C04",
+     "machine_id": 1,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 1,
+     "kind": "added",
+     "label": "H2D-02",
+     "machine_id": 3,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 4,
+     "kind": "calibrated",
+     "label": "2629 h",
+     "machine_id": 1,
+     "source_id": null
+    }
+   ],
+   "machines": [
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 0.0,
+     "current_hours": 0.0,
+     "id": 3,
+     "last_drift_hours": null,
+     "model": "H2D",
+     "name": "H2D-02",
+     "next_service_hours": null,
+     "printer_id": 3,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": null,
+     "counter_raw_hours": 50.0,
+     "current_hours": 50.0,
+     "id": 2,
+     "last_drift_hours": null,
+     "model": "P1S",
+     "name": "P1S01",
+     "next_service_hours": null,
+     "printer_id": 2,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": "<TIMESTAMP>",
+     "counter_raw_hours": 124.0,
+     "current_hours": 2629.0,
+     "id": 1,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C04",
+     "next_service_hours": 25.0,
+     "printer_id": 1,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "calibrated"
+    }
+   ],
+   "reading_interval_days": 90,
+   "readings": [
+    {
+     "hours": 900.0,
+     "id": 1,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 10.0,
+     "id": 2,
+     "machine_id": 2,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 1000.5,
+     "id": 3,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-03-01",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 4,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "<TODAY>",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 5,
+     "machine_id": 1,
+     "raw_hours": 124.0,
+     "reading_date": "<TODAY>",
+     "source": "auto"
+    }
+   ],
+   "today": "<TODAY>"
+  },
+  "status": 200,
+  "step": "05-reading-today-resave-same"
+ },
+ {
+  "body": {
+   "detail": "Reading date is in the future"
+  },
+  "status": 422,
+  "step": "06-reading-future-refused"
+ },
+ {
+  "body": {
+   "detail": "Unknown machine 9999"
+  },
+  "status": 422,
+  "step": "07-reading-unknown-machine"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "ge": 0.0
+     },
+     "input": -1,
+     "loc": [
+      "body",
+      "entries",
+      0,
+      "hours"
+     ],
+     "msg": "Input should be greater than or equal to 0",
+     "type": "greater_than_equal"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "08-reading-negative-hours"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "le": 200000.0
+     },
+     "input": 1000000000,
+     "loc": [
+      "body",
+      "entries",
+      0,
+      "hours"
+     ],
+     "msg": "Input should be less than or equal to 200000",
+     "type": "less_than_equal"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "09-reading-too-many-hours"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "actual_length": 0,
+      "field_type": "List",
+      "min_length": 1
+     },
+     "input": [],
+     "loc": [
+      "body",
+      "entries"
+     ],
+     "msg": "List should have at least 1 item after validation, not 0",
+     "type": "too_short"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "10-reading-empty-batch"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "error": "invalid character in year"
+     },
+     "input": "15/01/2026",
+     "loc": [
+      "body",
+      "reading_date"
+     ],
+     "msg": "Input should be a valid date or datetime, invalid character in year",
+     "type": "date_from_datetime_parsing"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "11-reading-bad-date"
+ },
+ {
+  "body": {
+   "due_machine_ids": [
+    3,
+    2
+   ],
+   "events": [
+    {
+     "event_date": "2026-01-15",
+     "id": 3,
+     "kind": "added",
+     "label": "X1C04",
+     "machine_id": 1,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 1,
+     "kind": "added",
+     "label": "H2D-02",
+     "machine_id": 3,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 2,
+     "kind": "added",
+     "label": "P1S01",
+     "machine_id": 2,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 4,
+     "kind": "calibrated",
+     "label": "2629 h",
+     "machine_id": 1,
+     "source_id": null
+    }
+   ],
+   "machines": [
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 0.0,
+     "current_hours": 0.0,
+     "id": 3,
+     "last_drift_hours": null,
+     "model": "H2D",
+     "name": "H2D-02",
+     "next_service_hours": null,
+     "printer_id": 3,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 50.0,
+     "current_hours": 50.0,
+     "id": 2,
+     "last_drift_hours": null,
+     "model": "P1S",
+     "name": "P1S01",
+     "next_service_hours": null,
+     "printer_id": 2,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": "<TIMESTAMP>",
+     "counter_raw_hours": 124.0,
+     "current_hours": 2629.0,
+     "id": 1,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C04",
+     "next_service_hours": 25.0,
+     "printer_id": 1,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "calibrated"
+    }
+   ],
+   "reading_interval_days": 90,
+   "readings": [
+    {
+     "hours": 900.0,
+     "id": 1,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 1000.5,
+     "id": 3,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-03-01",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 4,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "<TODAY>",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 5,
+     "machine_id": 1,
+     "raw_hours": 124.0,
+     "reading_date": "<TODAY>",
+     "source": "auto"
+    }
+   ],
+   "today": "<TODAY>"
+  },
+  "status": 200,
+  "step": "12-reading-null-deletes-cell"
+ },
+ {
+  "body": {
+   "due_machine_ids": [
+    3,
+    2
+   ],
+   "events": [
+    {
+     "event_date": "2026-01-15",
+     "id": 3,
+     "kind": "added",
+     "label": "X1C04",
+     "machine_id": 1,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 1,
+     "kind": "added",
+     "label": "H2D-02",
+     "machine_id": 3,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 2,
+     "kind": "added",
+     "label": "P1S01",
+     "machine_id": 2,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 4,
+     "kind": "calibrated",
+     "label": "2629 h",
+     "machine_id": 1,
+     "source_id": null
+    }
+   ],
+   "machines": [
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 0.0,
+     "current_hours": 0.0,
+     "id": 3,
+     "last_drift_hours": null,
+     "model": "H2D",
+     "name": "H2D-02",
+     "next_service_hours": null,
+     "printer_id": 3,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 50.0,
+     "current_hours": 50.0,
+     "id": 2,
+     "last_drift_hours": null,
+     "model": "P1S",
+     "name": "P1S01",
+     "next_service_hours": null,
+     "printer_id": 2,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": "<TIMESTAMP>",
+     "counter_raw_hours": 124.0,
+     "current_hours": 2629.0,
+     "id": 1,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C04",
+     "next_service_hours": 25.0,
+     "printer_id": 1,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "calibrated"
+    }
+   ],
+   "reading_interval_days": 90,
+   "readings": [
+    {
+     "hours": 900.0,
+     "id": 1,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 4,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "<TODAY>",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 5,
+     "machine_id": 1,
+     "raw_hours": 124.0,
+     "reading_date": "<TODAY>",
+     "source": "auto"
+    }
+   ],
+   "today": "<TODAY>"
+  },
+  "status": 200,
+  "step": "13-delete-day"
+ },
+ {
+  "body": {
+   "due_machine_ids": [
+    3,
+    2
+   ],
+   "events": [
+    {
+     "event_date": "2026-01-15",
+     "id": 3,
+     "kind": "added",
+     "label": "X1C04",
+     "machine_id": 1,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 1,
+     "kind": "added",
+     "label": "H2D-02",
+     "machine_id": 3,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 2,
+     "kind": "added",
+     "label": "P1S01",
+     "machine_id": 2,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 4,
+     "kind": "calibrated",
+     "label": "2629 h",
+     "machine_id": 1,
+     "source_id": null
+    }
+   ],
+   "machines": [
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 0.0,
+     "current_hours": 0.0,
+     "id": 3,
+     "last_drift_hours": null,
+     "model": "H2D",
+     "name": "H2D-02",
+     "next_service_hours": null,
+     "printer_id": 3,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 50.0,
+     "current_hours": 50.0,
+     "id": 2,
+     "last_drift_hours": null,
+     "model": "P1S",
+     "name": "P1S01",
+     "next_service_hours": null,
+     "printer_id": 2,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": "<TIMESTAMP>",
+     "counter_raw_hours": 124.0,
+     "current_hours": 2629.0,
+     "id": 1,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C04",
+     "next_service_hours": 25.0,
+     "printer_id": 1,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "calibrated"
+    }
+   ],
+   "reading_interval_days": 90,
+   "readings": [
+    {
+     "hours": 900.0,
+     "id": 1,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 4,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "<TODAY>",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 5,
+     "machine_id": 1,
+     "raw_hours": 124.0,
+     "reading_date": "<TODAY>",
+     "source": "auto"
+    }
+   ],
+   "today": "<TODAY>"
+  },
+  "status": 200,
+  "step": "14-delete-day-missing"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "input": null,
+     "loc": [
+      "query",
+      "reading_date"
+     ],
+     "msg": "Field required",
+     "type": "missing"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "15-delete-day-no-param"
+ },
+ {
+  "body": {
+   "machines_created": 2,
+   "readings_written": 4
+  },
+  "status": 200,
+  "step": "16-import"
+ },
+ {
+  "body": {
+   "detail": "Unknown machine key nope"
+  },
+  "status": 422,
+  "step": "17-import-unknown-key"
+ },
+ {
+  "body": {
+   "detail": "Unknown machine 9999"
+  },
+  "status": 422,
+  "step": "18-import-unknown-machine"
+ },
+ {
+  "body": {
+   "detail": "Reading date is in the future"
+  },
+  "status": 422,
+  "step": "19-import-future"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "actual_length": 0,
+      "field_type": "List",
+      "min_length": 1
+     },
+     "input": [],
+     "loc": [
+      "body",
+      "readings"
+     ],
+     "msg": "List should have at least 1 item after validation, not 0",
+     "type": "too_short"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "20-import-empty"
+ },
+ {
+  "body": {
+   "detail": "A machine named X1C old already exists"
+  },
+  "status": 422,
+  "step": "21-import-duplicate-key"
+ },
+ {
+  "body": {
+   "due_machine_ids": [
+    3,
+    2
+   ],
+   "events": [
+    {
+     "event_date": "2025-06-01",
+     "id": 6,
+     "kind": "added",
+     "label": "X1C old",
+     "machine_id": 4,
+     "source_id": null
+    },
+    {
+     "event_date": "2025-12-01",
+     "id": 2,
+     "kind": "added",
+     "label": "P1S01",
+     "machine_id": 2,
+     "source_id": null
+    },
+    {
+     "event_date": "2025-12-01",
+     "id": 5,
+     "kind": "added",
+     "label": "Total",
+     "machine_id": 5,
+     "source_id": null
+    },
+    {
+     "event_date": "2026-01-15",
+     "id": 3,
+     "kind": "added",
+     "label": "X1C04",
+     "machine_id": 1,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 1,
+     "kind": "added",
+     "label": "H2D-02",
+     "machine_id": 3,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 4,
+     "kind": "calibrated",
+     "label": "2629 h",
+     "machine_id": 1,
+     "source_id": null
+    }
+   ],
+   "machines": [
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 0.0,
+     "current_hours": 0.0,
+     "id": 3,
+     "last_drift_hours": null,
+     "model": "H2D",
+     "name": "H2D-02",
+     "next_service_hours": null,
+     "printer_id": 3,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2025-12-01",
+     "calibrated_at": null,
+     "counter_raw_hours": 50.0,
+     "current_hours": 50.0,
+     "id": 2,
+     "last_drift_hours": null,
+     "model": "P1S",
+     "name": "P1S01",
+     "next_service_hours": null,
+     "printer_id": 2,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2025-12-01",
+     "calibrated_at": null,
+     "counter_raw_hours": null,
+     "current_hours": null,
+     "id": 5,
+     "last_drift_hours": null,
+     "model": null,
+     "name": "Total",
+     "next_service_hours": null,
+     "printer_id": null,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": true,
+     "trust": null
+    },
+    {
+     "added_on": "2025-06-01",
+     "calibrated_at": null,
+     "counter_raw_hours": null,
+     "current_hours": null,
+     "id": 4,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C old",
+     "next_service_hours": null,
+     "printer_id": null,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": true,
+     "trust": null
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": "<TIMESTAMP>",
+     "counter_raw_hours": 124.0,
+     "current_hours": 2629.0,
+     "id": 1,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C04",
+     "next_service_hours": 25.0,
+     "printer_id": 1,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "calibrated"
+    }
+   ],
+   "reading_interval_days": 90,
+   "readings": [
+    {
+     "hours": 400.0,
+     "id": 6,
+     "machine_id": 4,
+     "raw_hours": null,
+     "reading_date": "2025-06-01",
+     "source": "manual"
+    },
+    {
+     "hours": 5.0,
+     "id": 8,
+     "machine_id": 2,
+     "raw_hours": null,
+     "reading_date": "2025-12-01",
+     "source": "manual"
+    },
+    {
+     "hours": 420.0,
+     "id": 7,
+     "machine_id": 4,
+     "raw_hours": null,
+     "reading_date": "2025-12-01",
+     "source": "manual"
+    },
+    {
+     "hours": 425.0,
+     "id": 9,
+     "machine_id": 5,
+     "raw_hours": null,
+     "reading_date": "2025-12-01",
+     "source": "manual"
+    },
+    {
+     "hours": 900.0,
+     "id": 1,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 4,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "<TODAY>",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 5,
+     "machine_id": 1,
+     "raw_hours": 124.0,
+     "reading_date": "<TODAY>",
+     "source": "auto"
+    }
+   ],
+   "today": "<TODAY>"
+  },
+  "status": 200,
+  "step": "22-overview-after-import"
+ },
+ {
+  "body": {
+   "added_on": "2025-06-01",
+   "calibrated_at": null,
+   "counter_raw_hours": null,
+   "current_hours": null,
+   "id": 4,
+   "last_drift_hours": null,
+   "model": "X1C",
+   "name": "X1C ancienne",
+   "next_service_hours": null,
+   "printer_id": null,
+   "purchase_date": "2023-05-04",
+   "purchase_price": 1199.99,
+   "retired": true,
+   "trust": null
+  },
+  "status": 200,
+  "step": "23-patch-machine"
+ },
+ {
+  "body": {
+   "added_on": "2025-06-01",
+   "calibrated_at": null,
+   "counter_raw_hours": null,
+   "current_hours": null,
+   "id": 4,
+   "last_drift_hours": null,
+   "model": "X1C",
+   "name": "X1C ancienne",
+   "next_service_hours": null,
+   "printer_id": null,
+   "purchase_date": null,
+   "purchase_price": null,
+   "retired": true,
+   "trust": null
+  },
+  "status": 200,
+  "step": "24-patch-machine-clear"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "min_length": 1
+     },
+     "input": "",
+     "loc": [
+      "body",
+      "name"
+     ],
+     "msg": "String should have at least 1 character",
+     "type": "string_too_short"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "25-patch-machine-blank-name"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "ge": 0.0
+     },
+     "input": -5,
+     "loc": [
+      "body",
+      "purchase_price"
+     ],
+     "msg": "Input should be greater than or equal to 0",
+     "type": "greater_than_equal"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "26-patch-machine-negative-price"
+ },
+ {
+  "body": {
+   "detail": "Machine not found"
+  },
+  "status": 404,
+  "step": "27-patch-machine-missing"
+ },
+ {
+  "body": {
+   "detail": "Only retired machines can be changed here"
+  },
+  "status": 409,
+  "step": "28-patch-live-machine"
+ },
+ {
+  "body": {
+   "event_date": "2026-02-02",
+   "id": 7,
+   "kind": "note",
+   "label": "Nozzle changed",
+   "machine_id": 1,
+   "source_id": null
+  },
+  "status": 200,
+  "step": "29-add-note-event"
+ },
+ {
+  "body": {
+   "detail": "Reading date is in the future"
+  },
+  "status": 422,
+  "step": "30-add-note-event-future"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "min_length": 1
+     },
+     "input": "",
+     "loc": [
+      "body",
+      "label"
+     ],
+     "msg": "String should have at least 1 character",
+     "type": "string_too_short"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "31-add-note-event-blank"
+ },
+ {
+  "body": {
+   "detail": "Machine not found"
+  },
+  "status": 404,
+  "step": "32-add-note-event-missing-machine"
+ },
+ {
+  "body": {
+   "event_date": "2025-08-01",
+   "id": 8,
+   "kind": "note",
+   "label": "stored",
+   "machine_id": 4,
+   "source_id": null
+  },
+  "status": 200,
+  "step": "33-add-note-event-retired-machine"
+ },
+ {
+  "body": null,
+  "status": 204,
+  "step": "34-delete-event"
+ },
+ {
+  "body": {
+   "detail": "Event not found"
+  },
+  "status": 404,
+  "step": "35-delete-event-again"
+ },
+ {
+  "body": {
+   "due_machine_ids": [
+    3,
+    2
+   ],
+   "events": [
+    {
+     "event_date": "2025-06-01",
+     "id": 6,
+     "kind": "added",
+     "label": "X1C old",
+     "machine_id": 4,
+     "source_id": null
+    },
+    {
+     "event_date": "2025-08-01",
+     "id": 8,
+     "kind": "note",
+     "label": "stored",
+     "machine_id": 4,
+     "source_id": null
+    },
+    {
+     "event_date": "2025-12-01",
+     "id": 2,
+     "kind": "added",
+     "label": "P1S01",
+     "machine_id": 2,
+     "source_id": null
+    },
+    {
+     "event_date": "2025-12-01",
+     "id": 5,
+     "kind": "added",
+     "label": "Total",
+     "machine_id": 5,
+     "source_id": null
+    },
+    {
+     "event_date": "2026-01-15",
+     "id": 3,
+     "kind": "added",
+     "label": "X1C04",
+     "machine_id": 1,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 1,
+     "kind": "added",
+     "label": "H2D-02",
+     "machine_id": 3,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 4,
+     "kind": "calibrated",
+     "label": "2629 h",
+     "machine_id": 1,
+     "source_id": null
+    }
+   ],
+   "machines": [
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 0.0,
+     "current_hours": 0.0,
+     "id": 3,
+     "last_drift_hours": null,
+     "model": "H2D",
+     "name": "H2D-02",
+     "next_service_hours": null,
+     "printer_id": 3,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2025-12-01",
+     "calibrated_at": null,
+     "counter_raw_hours": 50.0,
+     "current_hours": 50.0,
+     "id": 2,
+     "last_drift_hours": null,
+     "model": "P1S",
+     "name": "P1S01",
+     "next_service_hours": null,
+     "printer_id": 2,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2025-12-01",
+     "calibrated_at": null,
+     "counter_raw_hours": null,
+     "current_hours": null,
+     "id": 5,
+     "last_drift_hours": null,
+     "model": null,
+     "name": "Total",
+     "next_service_hours": null,
+     "printer_id": null,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": true,
+     "trust": null
+    },
+    {
+     "added_on": "2025-06-01",
+     "calibrated_at": null,
+     "counter_raw_hours": null,
+     "current_hours": null,
+     "id": 4,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C ancienne",
+     "next_service_hours": null,
+     "printer_id": null,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": true,
+     "trust": null
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": "<TIMESTAMP>",
+     "counter_raw_hours": 124.0,
+     "current_hours": 2629.0,
+     "id": 1,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C04",
+     "next_service_hours": 25.0,
+     "printer_id": 1,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "calibrated"
+    }
+   ],
+   "reading_interval_days": 30,
+   "readings": [
+    {
+     "hours": 400.0,
+     "id": 6,
+     "machine_id": 4,
+     "raw_hours": null,
+     "reading_date": "2025-06-01",
+     "source": "manual"
+    },
+    {
+     "hours": 5.0,
+     "id": 8,
+     "machine_id": 2,
+     "raw_hours": null,
+     "reading_date": "2025-12-01",
+     "source": "manual"
+    },
+    {
+     "hours": 420.0,
+     "id": 7,
+     "machine_id": 4,
+     "raw_hours": null,
+     "reading_date": "2025-12-01",
+     "source": "manual"
+    },
+    {
+     "hours": 425.0,
+     "id": 9,
+     "machine_id": 5,
+     "raw_hours": null,
+     "reading_date": "2025-12-01",
+     "source": "manual"
+    },
+    {
+     "hours": 900.0,
+     "id": 1,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 4,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "<TODAY>",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 5,
+     "machine_id": 1,
+     "raw_hours": 124.0,
+     "reading_date": "<TODAY>",
+     "source": "auto"
+    }
+   ],
+   "today": "<TODAY>"
+  },
+  "status": 200,
+  "step": "36-settings-interval"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "ge": 7
+     },
+     "input": 6,
+     "loc": [
+      "body",
+      "reading_interval_days"
+     ],
+     "msg": "Input should be greater than or equal to 7",
+     "type": "greater_than_equal"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "37-settings-interval-too-short"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "le": 365
+     },
+     "input": 366,
+     "loc": [
+      "body",
+      "reading_interval_days"
+     ],
+     "msg": "Input should be less than or equal to 365",
+     "type": "less_than_equal"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "38-settings-interval-too-long"
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "input": {},
+     "loc": [
+      "body",
+      "reading_interval_days"
+     ],
+     "msg": "Field required",
+     "type": "missing"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "39-settings-interval-missing"
+ },
+ {
+  "body": {
+   "detail": "Only retired machines can be changed here"
+  },
+  "status": 409,
+  "step": "40-delete-live-machine-refused"
+ },
+ {
+  "body": {
+   "status": "deleted"
+  },
+  "status": 200,
+  "step": "41-delete-retired-machine"
+ },
+ {
+  "body": {
+   "detail": "Machine not found"
+  },
+  "status": 404,
+  "step": "42-delete-machine-again"
+ },
+ {
+  "body": {
+   "detail": "Machine not found"
+  },
+  "status": 404,
+  "step": "43-delete-machine-missing"
+ },
+ {
+  "body": {
+   "due_machine_ids": [
+    3,
+    2
+   ],
+   "events": [
+    {
+     "event_date": "2025-06-01",
+     "id": 6,
+     "kind": "added",
+     "label": "X1C old",
+     "machine_id": 4,
+     "source_id": null
+    },
+    {
+     "event_date": "2025-08-01",
+     "id": 8,
+     "kind": "note",
+     "label": "stored",
+     "machine_id": 4,
+     "source_id": null
+    },
+    {
+     "event_date": "2025-12-01",
+     "id": 2,
+     "kind": "added",
+     "label": "P1S01",
+     "machine_id": 2,
+     "source_id": null
+    },
+    {
+     "event_date": "2026-01-15",
+     "id": 3,
+     "kind": "added",
+     "label": "X1C04",
+     "machine_id": 1,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 1,
+     "kind": "added",
+     "label": "H2D-02",
+     "machine_id": 3,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 4,
+     "kind": "calibrated",
+     "label": "2629 h",
+     "machine_id": 1,
+     "source_id": null
+    }
+   ],
+   "machines": [
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 0.0,
+     "current_hours": 0.0,
+     "id": 3,
+     "last_drift_hours": null,
+     "model": "H2D",
+     "name": "H2D-02",
+     "next_service_hours": null,
+     "printer_id": 3,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2025-12-01",
+     "calibrated_at": null,
+     "counter_raw_hours": 50.0,
+     "current_hours": 50.0,
+     "id": 2,
+     "last_drift_hours": null,
+     "model": "P1S",
+     "name": "P1S01",
+     "next_service_hours": null,
+     "printer_id": 2,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2025-06-01",
+     "calibrated_at": null,
+     "counter_raw_hours": null,
+     "current_hours": null,
+     "id": 4,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C ancienne",
+     "next_service_hours": null,
+     "printer_id": null,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": true,
+     "trust": null
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": "<TIMESTAMP>",
+     "counter_raw_hours": 124.0,
+     "current_hours": 2629.0,
+     "id": 1,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C04",
+     "next_service_hours": 25.0,
+     "printer_id": 1,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "calibrated"
+    }
+   ],
+   "reading_interval_days": 30,
+   "readings": [
+    {
+     "hours": 400.0,
+     "id": 6,
+     "machine_id": 4,
+     "raw_hours": null,
+     "reading_date": "2025-06-01",
+     "source": "manual"
+    },
+    {
+     "hours": 5.0,
+     "id": 8,
+     "machine_id": 2,
+     "raw_hours": null,
+     "reading_date": "2025-12-01",
+     "source": "manual"
+    },
+    {
+     "hours": 420.0,
+     "id": 7,
+     "machine_id": 4,
+     "raw_hours": null,
+     "reading_date": "2025-12-01",
+     "source": "manual"
+    },
+    {
+     "hours": 900.0,
+     "id": 1,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 4,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "<TODAY>",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 5,
+     "machine_id": 1,
+     "raw_hours": 124.0,
+     "reading_date": "<TODAY>",
+     "source": "auto"
+    }
+   ],
+   "today": "<TODAY>"
+  },
+  "status": 200,
+  "step": "44-overview-final"
+ },
+ {
+  "body": {
+   "due_machine_ids": [
+    3,
+    2
+   ],
+   "events": [
+    {
+     "event_date": "2025-06-01",
+     "id": 6,
+     "kind": "added",
+     "label": "X1C old",
+     "machine_id": 4,
+     "source_id": null
+    },
+    {
+     "event_date": "2025-08-01",
+     "id": 8,
+     "kind": "note",
+     "label": "stored",
+     "machine_id": 4,
+     "source_id": null
+    },
+    {
+     "event_date": "2025-12-01",
+     "id": 2,
+     "kind": "added",
+     "label": "P1S01",
+     "machine_id": 2,
+     "source_id": null
+    },
+    {
+     "event_date": "2026-01-15",
+     "id": 3,
+     "kind": "added",
+     "label": "X1C04",
+     "machine_id": 1,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 1,
+     "kind": "added",
+     "label": "H2D-02",
+     "machine_id": 3,
+     "source_id": null
+    },
+    {
+     "event_date": "<TODAY>",
+     "id": 4,
+     "kind": "calibrated",
+     "label": "2629 h",
+     "machine_id": 1,
+     "source_id": null
+    }
+   ],
+   "machines": [
+    {
+     "added_on": "<TODAY>",
+     "calibrated_at": null,
+     "counter_raw_hours": 0.0,
+     "current_hours": 0.0,
+     "id": 3,
+     "last_drift_hours": null,
+     "model": "H2D",
+     "name": "H2D-02",
+     "next_service_hours": null,
+     "printer_id": 3,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2025-12-01",
+     "calibrated_at": null,
+     "counter_raw_hours": 50.0,
+     "current_hours": 50.0,
+     "id": 2,
+     "last_drift_hours": null,
+     "model": "P1S",
+     "name": "P1S01",
+     "next_service_hours": null,
+     "printer_id": 2,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "uncalibrated"
+    },
+    {
+     "added_on": "2025-06-01",
+     "calibrated_at": null,
+     "counter_raw_hours": null,
+     "current_hours": null,
+     "id": 4,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C ancienne",
+     "next_service_hours": null,
+     "printer_id": null,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": true,
+     "trust": null
+    },
+    {
+     "added_on": "2026-01-15",
+     "calibrated_at": "<TIMESTAMP>",
+     "counter_raw_hours": 124.0,
+     "current_hours": 2629.0,
+     "id": 1,
+     "last_drift_hours": null,
+     "model": "X1C",
+     "name": "X1C04",
+     "next_service_hours": 25.0,
+     "printer_id": 1,
+     "purchase_date": null,
+     "purchase_price": null,
+     "retired": false,
+     "trust": "calibrated"
+    }
+   ],
+   "reading_interval_days": 30,
+   "readings": [
+    {
+     "hours": 400.0,
+     "id": 6,
+     "machine_id": 4,
+     "raw_hours": null,
+     "reading_date": "2025-06-01",
+     "source": "manual"
+    },
+    {
+     "hours": 5.0,
+     "id": 8,
+     "machine_id": 2,
+     "raw_hours": null,
+     "reading_date": "2025-12-01",
+     "source": "manual"
+    },
+    {
+     "hours": 420.0,
+     "id": 7,
+     "machine_id": 4,
+     "raw_hours": null,
+     "reading_date": "2025-12-01",
+     "source": "manual"
+    },
+    {
+     "hours": 900.0,
+     "id": 1,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "2026-01-15",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 4,
+     "machine_id": 1,
+     "raw_hours": null,
+     "reading_date": "<TODAY>",
+     "source": "manual"
+    },
+    {
+     "hours": 2629.0,
+     "id": 5,
+     "machine_id": 1,
+     "raw_hours": 124.0,
+     "reading_date": "<TODAY>",
+     "source": "auto"
+    }
+   ],
+   "today": "<TODAY>"
+  },
+  "status": 200,
+  "step": "45-h2d-untouched"
+ }
+]
+
+### stderr:
+
