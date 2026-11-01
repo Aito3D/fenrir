@@ -167,8 +167,7 @@ export function ReadingPass({ machines, readings, colors, isSaving, onSave, onCl
       const p = parsedOf(m);
       if (typeof p !== 'number') return [];
       const c = checkOf(m, p);
-      const flag = kept.has(m.id) ? t('maintenance.hours.pass.kept') : questionText(c, p) ?? '';
-      return [{ m, typed: p, last: c.last, flag }];
+      return [{ m, typed: p, last: c.last, kept: kept.has(m.id), reason: questionText(c, p) }];
     });
     body = (
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 py-6">
@@ -178,13 +177,16 @@ export function ReadingPass({ machines, readings, colors, isSaving, onSave, onCl
         ) : (
           <table className="w-full text-sm text-white">
             <tbody>
-              {rows.map(({ m, typed, last, flag }) => (
+              {rows.map(({ m, typed, last, kept: isKept, reason }) => (
                 <tr key={m.id} data-testid="pass-summary-row" className="border-b border-bambu-dark-tertiary align-top">
                   <td className="py-2 pr-2 font-medium">{m.name}</td>
                   <td className="py-2 pr-2 text-right tabular-nums text-bambu-gray">{last ? fmt(last.hours) : '—'}</td>
                   <td className="py-2 pr-2 text-right tabular-nums">{fmt(typed)}</td>
-                  <td className="py-2 pr-2 text-right tabular-nums text-bambu-gray">{last ? `+${fmt(typed - last.hours)} h` : '—'}</td>
-                  <td className="py-2 text-xs text-amber-400">{flag}</td>
+                  <td className="py-2 pr-2 text-right tabular-nums text-bambu-gray">{last ? `${typed < last.hours ? '−' : '+'}${fmt(Math.abs(typed - last.hours))} h` : '—'}</td>
+                  <td className="py-2 text-xs text-amber-400">
+                    {isKept && <div className="font-medium">{t('maintenance.hours.pass.kept')}</div>}
+                    {reason && <div>{reason}</div>}
+                  </td>
                 </tr>
               ))}
             </tbody>

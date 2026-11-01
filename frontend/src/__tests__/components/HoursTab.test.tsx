@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
@@ -359,7 +360,9 @@ describe('HoursTab', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<HoursTab />);
+    // Same default as App.tsx: an overview fetched under a minute ago is fresh, so only staleTime: 0 forces the refetch.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } });
+    render(<QueryClientProvider client={qc}><HoursTab /></QueryClientProvider>);
     await user.click((await screen.findAllByRole('button', { name: 'Take readings' }))[0]);
     const dialog = await screen.findByTestId('hours-reading-pass');
     // The pass was open across midnight: the server's today has moved on.

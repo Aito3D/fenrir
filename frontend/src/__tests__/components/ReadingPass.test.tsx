@@ -58,7 +58,10 @@ describe('ReadingPass', () => {
     await user.keyboard('{Enter}');
     expect(screen.getByRole('heading', { name: 'H2S02' })).toBeInTheDocument();
     await user.keyboard('{Enter}{Enter}');
-    expect(within(screen.getByTestId('pass-summary-row')).getByText('kept')).toBeInTheDocument();
+    const row = screen.getByTestId('pass-summary-row');
+    expect(within(row).getByText('kept')).toBeInTheDocument();
+    expect(within(row).getByText(/Lower than the 3,803 h read on/)).toBeInTheDocument();
+    expect(within(row).getByText('−103 h')).toBeInTheDocument();
   });
 
   it('questions a jump far from the counter', async () => {

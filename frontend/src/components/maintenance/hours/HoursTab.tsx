@@ -327,7 +327,7 @@ export function HoursTab() {
           onSave={async (entries) => {
             // The pass may have crossed midnight: save under the server's current date.
             try {
-              const fresh = await queryClient.fetchQuery({ queryKey: ['maintenanceHours'], queryFn: api.getPrinterHours });
+              const fresh = await queryClient.fetchQuery({ queryKey: ['maintenanceHours'], queryFn: api.getPrinterHours, staleTime: 0 });
               saveReadings.mutate({ date: fresh.today, entries });
             } catch (e) {
               showToast((e as Error).message, 'error');
