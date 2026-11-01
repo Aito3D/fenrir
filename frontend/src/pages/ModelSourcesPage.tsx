@@ -5,6 +5,8 @@ import { Globe, Library } from 'lucide-react';
 
 import { api } from '../api/client';
 import { ManyfoldTab } from '../components/ManyfoldTab';
+import { MobileTabs } from '../components/mobile/MobileTabs';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { useAuth } from '../contexts/AuthContext';
 import { MakerworldPage } from './MakerworldPage';
 
@@ -20,6 +22,7 @@ export function ModelSourcesPage() {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const isMobile = useIsMobile();
 
   const canViewManyfold = hasPermission('manyfold:view');
   const manyfoldStatus = useQuery({
@@ -39,6 +42,25 @@ export function ModelSourcesPage() {
   // the Manyfold tab's "not connected" note rather than an empty page.
   const active =
     tabs.find((tab) => tab.id === requested)?.id ?? tabs[0]?.id ?? (canViewManyfold ? 'manyfold' : undefined);
+
+  const renderTab = (id: SourceTab | undefined) => (
+    <>
+      {id === 'makerworld' && <MakerworldPage embedded />}
+      {id === 'manyfold' && <ManyfoldTab />}
+    </>
+  );
+
+  if (isMobile && tabs.length > 1 && active) {
+    return (
+      <MobileTabs
+        testId="model-sources-mobile"
+        tabs={tabs}
+        activeTab={active}
+        onTabChange={(id) => setSearchParams({ tab: id }, { replace: true })}
+        renderTab={renderTab}
+      />
+    );
+  }
 
   return (
     <div className="p-4 md:p-8 max-w-screen-2xl">
@@ -71,8 +93,7 @@ export function ModelSourcesPage() {
         </div>
       )}
 
-      {active === 'makerworld' && <MakerworldPage embedded />}
-      {active === 'manyfold' && <ManyfoldTab />}
+      {renderTab(active)}
     </div>
   );
 }

@@ -48,6 +48,8 @@ import { HoursTab } from '../components/maintenance/hours/HoursTab';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
+import { MobileTabs } from '../components/mobile/MobileTabs';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 // Icon mapping for maintenance types
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -1106,6 +1108,7 @@ export function MaintenancePage() {
     const tab = searchParams.get('tab');
     return tab === 'hours' || tab === 'settings' || tab === 'status' ? tab : 'status';
   });
+  const isMobile = useIsMobile();
 
   // Printer cards cascade in one after another when the status tab appears
   const statusListRef = useRef<HTMLDivElement>(null);
@@ -1248,14 +1251,7 @@ export function MaintenancePage() {
   const totalDue = overview?.reduce((sum, p) => sum + p.due_count, 0) || 0;
   const totalWarning = overview?.reduce((sum, p) => sum + p.warning_count, 0) || 0;
 
-  return (
-    <div className="p-4 md:p-8">
-      {/* Header */}
-      <div className="mb-6 animate-rise-lg vt-page-title">
-        <h1 className="max-md:hidden text-2xl font-bold text-white flex items-center gap-3">
-          <Wrench className="w-7 h-7 text-bambu-green" />
-          {t('maintenance.title')}
-        </h1>
+  const subtitle = (
         <p className="text-bambu-gray mt-1">
           {activeTab === 'status' ? (
             <>
@@ -1270,46 +1266,13 @@ export function MaintenancePage() {
             t('maintenance.configureSettings')
           )}
         </p>
-      </div>
+  );
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-bambu-dark-tertiary">
-        <button
-          onClick={() => setActiveTab('status')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'status'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray border-transparent hover:text-white'
-          }`}
-        >
-          {t('maintenance.statusTab')}
-        </button>
-        <button
-          onClick={() => setActiveTab('settings')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'settings'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray border-transparent hover:text-white'
-          }`}
-        >
-          {t('maintenance.settingsTab')}
-        </button>
-        <button
-          onClick={() => setActiveTab('hours')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'hours'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray border-transparent hover:text-white'
-          }`}
-        >
-          {t('maintenance.hours.tab')}
-        </button>
-      </div>
-
-      {/* Tab content */}
-      {activeTab === 'hours' ? (
+  const renderTab = (tab: TabType) => (
+    <>
+      {tab === 'hours' ? (
         <HoursTab />
-      ) : activeTab === 'status' ? (
+      ) : tab === 'status' ? (
         <div ref={statusListRef} className="space-y-6">
           {overview && overview.length > 0 ? (
             [...overview].sort((a, b) => {
@@ -1367,6 +1330,73 @@ export function MaintenancePage() {
           t={t}
         />
       )}
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <MobileTabs
+        testId="maintenance-mobile"
+        tabs={[
+          { id: 'status', label: t('maintenance.statusTab'), icon: Wrench },
+          { id: 'settings', label: t('maintenance.settingsTab'), icon: Settings },
+          { id: 'hours', label: t('maintenance.hours.tab'), icon: Timer },
+        ]}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        toolbar={subtitle}
+        renderTab={renderTab}
+      />
+    );
+  }
+
+  return (
+    <div className="p-4 md:p-8">
+      {/* Header */}
+      <div className="mb-6 animate-rise-lg vt-page-title">
+        <h1 className="max-md:hidden text-2xl font-bold text-white flex items-center gap-3">
+          <Wrench className="w-7 h-7 text-bambu-green" />
+          {t('maintenance.title')}
+        </h1>
+        {subtitle}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 border-b border-bambu-dark-tertiary">
+        <button
+          onClick={() => setActiveTab('status')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'status'
+              ? 'text-bambu-green border-bambu-green'
+              : 'text-bambu-gray border-transparent hover:text-white'
+          }`}
+        >
+          {t('maintenance.statusTab')}
+        </button>
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'settings'
+              ? 'text-bambu-green border-bambu-green'
+              : 'text-bambu-gray border-transparent hover:text-white'
+          }`}
+        >
+          {t('maintenance.settingsTab')}
+        </button>
+        <button
+          onClick={() => setActiveTab('hours')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'hours'
+              ? 'text-bambu-green border-bambu-green'
+              : 'text-bambu-gray border-transparent hover:text-white'
+          }`}
+        >
+          {t('maintenance.hours.tab')}
+        </button>
+      </div>
+
+      {/* Tab content */}
+      {renderTab(activeTab)}
     </div>
   );
 }

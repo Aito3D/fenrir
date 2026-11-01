@@ -77,6 +77,8 @@ import { availableEngines, hasEngineChoice, resolveEngine, type SliceEngineId } 
 import { NumberInput } from '../components/NumberInput';
 import { PrinterSearchPicker } from '../components/PrinterSearchPicker';
 import { UsbCameraDevicePicker } from '../components/UsbCameraDevicePicker';
+import { MobileTabs } from '../components/mobile/MobileTabs';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 const validTabs = ['general', 'plugs', 'sensors', 'notifications', 'queue', 'filament', 'camera', 'network', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup', 'zoho', 'projects'] as const; // Fenrir: + projects
 type TabType = typeof validTabs[number];
@@ -334,6 +336,7 @@ export function SettingsPage() {
     : isLegacyCameraLink ? 'camera'
     : (tabParam && validTabs.includes(tabParam as TabType) ? tabParam as TabType : 'general');
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+  const isMobile = useIsMobile();
   // Only Printer access is deep-linked (?tab=users&sub=printer-access), from the printer card menu
   const [usersSubTab, setUsersSubTab] = useState<UsersSubTab>(
     isLegacyEmailTab ? 'email' : tabParam === 'users' && searchParams.get('sub') === 'printer-access' ? 'printer-access' : 'users'
@@ -1744,18 +1747,8 @@ export function SettingsPage() {
       : []),
   ] as SettingsTabEntry[]).sort((x, y) => x.label.localeCompare(y.label, i18n.language));
 
-  return (
-    <CardDensityProvider density="dense">
-    <div className="p-4 md:p-8">
-      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-rise-lg vt-page-title">
-        <div className="max-md:hidden">
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <SettingsIcon className="w-7 h-7 text-bambu-green" />
-            {t('settings.title')}
-          </h1>
-          <p className="text-bambu-gray mt-1">{t('settings.configureFenrir')}</p>
-        </div>
-        {/* Cross-tab search */}
+  // Cross-tab search; on phones it sits under the tab strip.
+  const search = (
         <div className="relative sm:w-72">
           <Search className="w-4 h-4 text-bambu-gray absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
@@ -1797,29 +1790,11 @@ export function SettingsPage() {
             </div>
           )}
         </div>
-      </div>
+  );
 
-      {/* Tab Navigation + content: horizontal tabs on mobile, vertical rail on lg+ */}
-      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
-      <nav className="flex flex-wrap gap-1 border-b border-bambu-dark-tertiary lg:flex-col lg:flex-nowrap lg:gap-0 lg:border-b-0 lg:border-r lg:w-60 lg:flex-shrink-0 lg:self-start lg:sticky lg:top-4">
-        {[generalTab, ...otherTabs].map(({ tab, icon: Icon, label, extra }) => (
-          <button
-            key={tab}
-            onClick={() => handleTabChange(tab)}
-            className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-              activeTab === tab
-                ? 'text-bambu-green border-bambu-green'
-                : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-            }`}
-          >
-            <Icon className="w-4 h-4 shrink-0" />
-            {label}
-            {extra}
-          </button>
-        ))}
-      </nav>
-      <div className="flex-1 min-w-0">
-      {activeTab === 'general' && (
+  const renderTab = (tab: TabType) => (
+    <>
+      {tab === 'general' && (
       <>
       {/* Sponsor banner — independence callout, or the commercial ask on a
           business-sized fleet (see utils/fleetAudience). */}
@@ -3107,7 +3082,7 @@ export function SettingsPage() {
       )}
 
       {/* Network Tab */}
-      {activeTab === 'network' && localSettings && (
+      {tab === 'network' && localSettings && (
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Left Column - External URL & FTP Retry */}
         <div className="flex-1 lg:max-w-xl space-y-3">
@@ -3658,7 +3633,7 @@ export function SettingsPage() {
       )}
 
       {/* Smart Plugs Tab */}
-      {activeTab === 'plugs' && (
+      {tab === 'plugs' && (
         <div id="card-plugs">
           <div className="flex items-start justify-between mb-6">
             <div>
@@ -3848,7 +3823,7 @@ export function SettingsPage() {
         </div>
       )}
 
-      {activeTab === 'sensors' && (
+      {tab === 'sensors' && (
         <div id="card-sensors">
           <div id="card-ha-sensors">
             <div className="flex items-center justify-between mb-4">
@@ -4100,7 +4075,7 @@ export function SettingsPage() {
       )}
 
       {/* Notifications Tab */}
-      {activeTab === 'notifications' && (
+      {tab === 'notifications' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Left Column: Providers */}
           <div>
@@ -4403,7 +4378,7 @@ export function SettingsPage() {
       )}
 
       {/* API Keys Tab */}
-      {activeTab === 'camera' && (
+      {tab === 'camera' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Everything about cameras in one place: external cameras, the
               long-lived tokens other tools use to reach a stream, and the
@@ -4782,7 +4757,7 @@ export function SettingsPage() {
         </div>
       )}
 
-      {activeTab === 'apikeys' && (
+      {tab === 'apikeys' && (
         <div className={hasPermission('api_keys:read')
           ? 'grid grid-cols-1 lg:grid-cols-2 gap-4'
           : 'grid grid-cols-1 gap-4'}>
@@ -5265,14 +5240,14 @@ export function SettingsPage() {
       )}
 
       {/* Virtual Printer Tab */}
-      {activeTab === 'virtual-printer' && (
+      {tab === 'virtual-printer' && (
         <div id="card-vp">
           <VirtualPrinterList />
         </div>
       )}
 
       {/* SpoolBuddy Tab */}
-      {activeTab === 'spoolbuddy' && (
+      {tab === 'spoolbuddy' && (
         <div id="card-spoolbuddy">
           <SpoolBuddySettings />
         </div>
@@ -5280,7 +5255,7 @@ export function SettingsPage() {
 
       {/* Filament Tab */}
       {/* Queue Tab — sub-tabs: Queue & Dispatch (current content) / Pipelines (#1425) */}
-      {activeTab === 'queue' && (
+      {tab === 'queue' && (
         <div className="space-y-3">
           {/* Sub-tab nav, mirroring the Authentication tab pattern */}
           <div className="flex gap-1 border-b border-bambu-dark-tertiary">
@@ -6464,7 +6439,7 @@ export function SettingsPage() {
         </div>
       )}
 
-      {activeTab === 'filament' && localSettings && (
+      {tab === 'filament' && localSettings && (
         <>
         <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
           {/* Left Column (1/3) - Mode Selector + AMS Thresholds */}
@@ -6958,7 +6933,7 @@ export function SettingsPage() {
       )}
 
       {/* Users Tab */}
-      {activeTab === 'users' && (
+      {tab === 'users' && (
         <div className="space-y-3">
           {/* Sub-tab Navigation */}
           <div className="flex gap-1 border-b border-bambu-dark-tertiary">
@@ -8036,13 +8011,13 @@ export function SettingsPage() {
       )}
 
       {/* Backup Tab */}
-      {activeTab === 'failure-detection' && (
+      {tab === 'failure-detection' && (
         <div id="card-failure-detection">
           <FailureDetectionSettings />
         </div>
       )}
 
-      {activeTab === 'backup' && (
+      {tab === 'backup' && (
         <div id="card-backup">
           <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 rounded-lg flex items-start gap-2">
             <Shield className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" size={16} />
@@ -8052,7 +8027,7 @@ export function SettingsPage() {
         </div>
       )}
 
-      {activeTab === 'zoho' && (
+      {tab === 'zoho' && (
         <div id="card-zoho-tab" className="space-y-3">
           <ZohoSettings />
           <AiSettings />
@@ -8061,7 +8036,7 @@ export function SettingsPage() {
       )}
 
       {/* Fenrir: Projects tab */}
-      {activeTab === 'projects' && (
+      {tab === 'projects' && (
         <div id="card-projects-tab" className="space-y-3">
           <ProjectsSettingsCard />
         </div>
@@ -8225,6 +8200,59 @@ export function SettingsPage() {
           </Card>
         </div>
       )}
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <CardDensityProvider density="dense">
+        <MobileTabs
+          testId="settings-mobile"
+          tabs={[generalTab, ...otherTabs].map(({ tab, icon, label, extra }) => ({ id: tab, icon, label, extra }))}
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          toolbar={search}
+          renderTab={renderTab}
+        />
+      </CardDensityProvider>
+    );
+  }
+
+  return (
+    <CardDensityProvider density="dense">
+    <div className="p-4 md:p-8">
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-rise-lg vt-page-title">
+        <div className="max-md:hidden">
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <SettingsIcon className="w-7 h-7 text-bambu-green" />
+            {t('settings.title')}
+          </h1>
+          <p className="text-bambu-gray mt-1">{t('settings.configureFenrir')}</p>
+        </div>
+        {search}
+      </div>
+
+      {/* Tab Navigation + content: horizontal tabs on mobile, vertical rail on lg+ */}
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+      <nav className="flex flex-wrap gap-1 border-b border-bambu-dark-tertiary lg:flex-col lg:flex-nowrap lg:gap-0 lg:border-b-0 lg:border-r lg:w-60 lg:flex-shrink-0 lg:self-start lg:sticky lg:top-4">
+        {[generalTab, ...otherTabs].map(({ tab, icon: Icon, label, extra }) => (
+          <button
+            key={tab}
+            onClick={() => handleTabChange(tab)}
+            className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+              activeTab === tab
+                ? 'text-bambu-green border-bambu-green'
+                : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+            }`}
+          >
+            <Icon className="w-4 h-4 shrink-0" />
+            {label}
+            {extra}
+          </button>
+        ))}
+      </nav>
+      <div className="flex-1 min-w-0">
+      {renderTab(activeTab)}
       </div>
       </div>
     </div>

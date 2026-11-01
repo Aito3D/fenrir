@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Calculator as CalculatorIcon, RotateCcw } from 'lucide-react';
+import { Calculator as CalculatorIcon, Cylinder, Printer, RotateCcw, Settings, type LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { focusRingCls } from '../components/formStyles';
@@ -43,7 +43,10 @@ import {
 import { buildQuoteSummary } from '../utils/quoteSummary';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { MobileTabs } from '../components/mobile/MobileTabs';
+import { useIsMobile } from '../hooks/useIsMobile';
 
+const TAB_ICONS: Record<PageTab, LucideIcon> = { calculator: CalculatorIcon, filaments: Cylinder, printers: Printer, settings: Settings };
 const TAB_LABEL_KEYS: Record<PageTab, string> = {
   calculator: 'calculator.title',
   filaments: 'calculator.tabFilaments',
@@ -298,6 +301,7 @@ export function CalculatorPage() {
 
   const tabRefs = useRef<Partial<Record<PageTab, HTMLButtonElement | null>>>({});
   const [tabIndicator, setTabIndicator] = useState({ left: 0, width: 0 });
+  const isMobile = useIsMobile();
   useLayoutEffect(() => {
     const el = tabRefs.current[tab];
     if (el) setTabIndicator({ left: el.offsetLeft, width: el.offsetWidth });
@@ -313,17 +317,20 @@ export function CalculatorPage() {
     tabRefs.current[next]?.focus();
   };
 
-  return (
-    <div className="p-4 md:p-8">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4 animate-rise-lg vt-page-title">
-        <div className="max-md:hidden">
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <CalculatorIcon className="w-7 h-7 text-bambu-green" />
-            {t('calculator.title')}
-          </h1>
-          <p className="text-bambu-gray mt-1">{t('calculator.subtitle')}</p>
-        </div>
-        {tab === 'calculator' && (
+  const resetConfirm = showResetConfirm && (
+        <ConfirmModal
+          title={t('calculator.resetConfirmTitle')}
+          message={t('calculator.resetConfirmMessage')}
+          variant="warning"
+          onConfirm={() => {
+            reset();
+            setShowResetConfirm(false);
+          }}
+          onCancel={() => setShowResetConfirm(false)}
+        />
+  );
+
+  const actions = tab === 'calculator' && (
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-sm text-bambu-gray-light select-none">
               <Toggle
@@ -340,61 +347,27 @@ export function CalculatorPage() {
               {t('calculator.reset')}
             </Button>
           </div>
-        )}
-      </div>
+  );
 
-      <div
-        role="tablist"
-        aria-label={t('calculator.title')}
-        onKeyDown={onTablistKeyDown}
-        className="relative flex gap-1 border-b border-bambu-dark-tertiary mb-6"
-      >
-        {PAGE_TABS.map((id) => (
-          <button
-            key={id}
-            id={`calc-tab-${id}`}
-            role="tab"
-            aria-selected={tab === id}
-            tabIndex={tab === id ? 0 : -1}
-            ref={(el) => {
-              tabRefs.current[id] = el;
-            }}
-            onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-[color,transform] duration-100 ease-out motion-safe:active:scale-95 ${focusRingCls} ${
-              tab === id ? 'text-bambu-green' : 'text-bambu-gray hover:text-white'
-            }`}
-          >
-            {t(TAB_LABEL_KEYS[id])}
-          </button>
-        ))}
-        <span
-          aria-hidden="true"
-          // Position/size via transform (translateX + scaleX off a 1px base),
-          // not left/width — keeps the slide on the GPU instead of triggering
-          // layout each tab switch. scaleX of a solid bar is crisp (no edges to
-          // blur); origin-left maps the scale to offsetWidth directly.
-          className="absolute bottom-0 left-0 w-px h-0.5 origin-left bg-bambu-green transition-transform duration-[250ms] ease-(--ease-signature) motion-reduce:transition-none"
-          style={{ transform: `translateX(${tabIndicator.left}px) scaleX(${tabIndicator.width})` }}
-        />
-      </div>
-
-      {tab === 'filaments' && (
+  const renderTab = (id: PageTab) => (
+    <>
+      {id === 'filaments' && (
         <div key="filaments" role="tabpanel" aria-labelledby="calc-tab-filaments" className="animate-calc-tab-in">
           <CalculatorFilamentsPanel selectedFilamentId={filament?.id ?? null} canUpdate={canUpdateCalculator} />
         </div>
       )}
-      {tab === 'printers' && (
+      {id === 'printers' && (
         <div key="printers" role="tabpanel" aria-labelledby="calc-tab-printers" className="animate-calc-tab-in">
           <CalculatorPrintersPanel selectedPrinterId={printer?.id ?? null} canUpdate={canUpdateCalculator} />
         </div>
       )}
-      {tab === 'settings' && (
+      {id === 'settings' && (
         <div key="settings" role="tabpanel" aria-labelledby="calc-tab-settings" className="animate-calc-tab-in">
           <CalculatorSettingsPanel canUpdate={canUpdateCalculator} />
         </div>
       )}
 
-      {tab === 'calculator' && (
+      {id === 'calculator' && (
         <div role="tabpanel" aria-labelledby="calc-tab-calculator">
           {isLoading && (
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(320px,400px)_1fr] gap-6 items-start" aria-hidden="true">
@@ -545,19 +518,76 @@ export function CalculatorPage() {
           )}
         </div>
       )}
+    </>
+  );
 
-      {showResetConfirm && (
-        <ConfirmModal
-          title={t('calculator.resetConfirmTitle')}
-          message={t('calculator.resetConfirmMessage')}
-          variant="warning"
-          onConfirm={() => {
-            reset();
-            setShowResetConfirm(false);
-          }}
-          onCancel={() => setShowResetConfirm(false)}
+  if (isMobile) {
+    return (
+      <>
+        <MobileTabs
+          testId="calculator-mobile"
+          tabs={PAGE_TABS.map((id) => ({ id, label: t(TAB_LABEL_KEYS[id]), icon: TAB_ICONS[id] }))}
+          activeTab={tab}
+          onTabChange={setTab}
+          toolbar={actions || undefined}
+          renderTab={renderTab}
         />
-      )}
+        {resetConfirm}
+      </>
+    );
+  }
+
+  return (
+    <div className="p-4 md:p-8">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4 animate-rise-lg vt-page-title">
+        <div className="max-md:hidden">
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <CalculatorIcon className="w-7 h-7 text-bambu-green" />
+            {t('calculator.title')}
+          </h1>
+          <p className="text-bambu-gray mt-1">{t('calculator.subtitle')}</p>
+        </div>
+        {actions}
+      </div>
+
+      <div
+        role="tablist"
+        aria-label={t('calculator.title')}
+        onKeyDown={onTablistKeyDown}
+        className="relative flex gap-1 border-b border-bambu-dark-tertiary mb-6"
+      >
+        {PAGE_TABS.map((id) => (
+          <button
+            key={id}
+            id={`calc-tab-${id}`}
+            role="tab"
+            aria-selected={tab === id}
+            tabIndex={tab === id ? 0 : -1}
+            ref={(el) => {
+              tabRefs.current[id] = el;
+            }}
+            onClick={() => setTab(id)}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-[color,transform] duration-100 ease-out motion-safe:active:scale-95 ${focusRingCls} ${
+              tab === id ? 'text-bambu-green' : 'text-bambu-gray hover:text-white'
+            }`}
+          >
+            {t(TAB_LABEL_KEYS[id])}
+          </button>
+        ))}
+        <span
+          aria-hidden="true"
+          // Position/size via transform (translateX + scaleX off a 1px base),
+          // not left/width — keeps the slide on the GPU instead of triggering
+          // layout each tab switch. scaleX of a solid bar is crisp (no edges to
+          // blur); origin-left maps the scale to offsetWidth directly.
+          className="absolute bottom-0 left-0 w-px h-0.5 origin-left bg-bambu-green transition-transform duration-[250ms] ease-(--ease-signature) motion-reduce:transition-none"
+          style={{ transform: `translateX(${tabIndicator.left}px) scaleX(${tabIndicator.width})` }}
+        />
+      </div>
+
+      {renderTab(tab)}
+
+      {resetConfirm}
     </div>
   );
 }
