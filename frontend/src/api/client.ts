@@ -4636,6 +4636,14 @@ export interface HourMachine {
   model: string | null;
   retired: boolean;
   current_hours: number | null;
+  trust: 'calibrated' | 'drifting' | 'uncalibrated' | null;
+  last_drift_hours: number | null;
+  calibrated_at: string | null; // ISO datetime
+  counter_raw_hours: number | null;
+  next_service_hours: number | null;
+  purchase_price: number | null;
+  purchase_date: string | null; // YYYY-MM-DD
+  added_on: string | null; // YYYY-MM-DD
 }
 
 export interface HourReading {
@@ -4644,12 +4652,32 @@ export interface HourReading {
   reading_date: string; // YYYY-MM-DD
   hours: number;
   source: 'manual' | 'auto';
+  raw_hours: number | null;
+}
+
+export interface HourEvent {
+  id: number;
+  machine_id: number;
+  event_date: string; // YYYY-MM-DD
+  kind: 'note' | 'maintenance' | 'added' | 'retired' | 'calibrated';
+  label: string;
+  source_id: number | null;
 }
 
 export interface HoursOverview {
   today: string; // the server's date
   machines: HourMachine[];
   readings: HourReading[];
+  events: HourEvent[];
+  reading_interval_days: number;
+  due_machine_ids: number[];
+}
+
+export interface HourMachineUpdate {
+  name?: string;
+  model?: string | null;
+  purchase_price?: number | null;
+  purchase_date?: string | null;
 }
 
 export interface HourImportBody {
@@ -9051,6 +9079,23 @@ export const api = {
     }),
   deleteHourMachine: (machineId: number) =>
     request<{ status: string }>(`/maintenance/hours/machines/${machineId}`, { method: 'DELETE' }),
+  createHourEvent: (machineId: number, body: { event_date: string; label: string }) =>
+    request<HourEvent>(`/maintenance/hours/machines/${machineId}/events`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  deleteHourEvent: (eventId: number) =>
+    request<void>(`/maintenance/hours/events/${eventId}`, { method: 'DELETE' }),
+  updateHourSettings: (body: { reading_interval_days: number }) =>
+    request<HoursOverview>('/maintenance/hours/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  updateHourMachine: (machineId: number, body: HourMachineUpdate) =>
+    request<HourMachine>(`/maintenance/hours/machines/${machineId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
   assignMaintenanceType: (printerId: number, typeId: number) =>
     request<MaintenanceStatus>(`/maintenance/printers/${printerId}/assign/${typeId}`, {
       method: 'POST',

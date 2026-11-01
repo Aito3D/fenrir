@@ -113,13 +113,17 @@ export function fleetTotal(pointsList: HourPoint[][], dates: string[]): number[]
   return dates.map((d) => Math.round(pointsList.reduce((sum, p) => sum + valueAt(p, d), 0) * 10) / 10);
 }
 
-/** Average hours per month over the last `windowDays` (from the first reading if later), never negative. Null below 2 readings. */
+const DAYS_PER_MONTH = 30.44;
+const STALE_DAYS = 90;
+
+/** Average hours per month over the last `windowDays` (from the first reading if later), never negative. Null below 2 readings or when the newest reading is over 90 days old. */
 export function ratePerMonth(points: HourPoint[], today: string, windowDays = 90): number | null {
   if (points.length < 2) return null;
   const end = dayNumber(today);
+  if (end - dayNumber(points[points.length - 1].date) > STALE_DAYS) return null;
   const start = Math.max(end - windowDays, dayNumber(points[0].date));
   if (end - start < 7) return null;
-  return Math.max(0, ((valueAtDay(points, end) - valueAtDay(points, start)) / (end - start)) * 30.44);
+  return Math.max(0, ((valueAtDay(points, end) - valueAtDay(points, start)) / (end - start)) * DAYS_PER_MONTH);
 }
 
 const SPACES = /[\s\u00a0\u202f]/g;
@@ -286,4 +290,145 @@ export function planImport(
     dates: rows.length,
     futureRows: paste.rows.length - rows.length,
   };
+}
+
+const isoOfDay = (day: number) => new Date(day * DAY_MS).toISOString().slice(0, 10);
+
+export interface ReadingCheck {
+  level: 'ok' | 'question';
+  reason: 'ok' | 'noReference' | 'backwards' | 'farFromCounter';
+  last: HourPoint | null;
+  counterDelta: number | null;
+  expected: number | null;
+}
+
+/** The auto reading's raw counter on `date`, or the first one within 7 days after it. */
+function rawAt(auto: HourReading[], date: string): number | null {
+  const day = dayNumber(date);
+  const hit = auto
+    .filter((r) => r.raw_hours != null && dayNumber(r.reading_date) >= day && dayNumber(r.reading_date) - day <= 7)
+    .sort((a, b) => a.reading_date.localeCompare(b.reading_date))[0];
+  return hit ? (hit.raw_hours as number) : null;
+}
+
+/** Sanity-check a typed lifetime-hours reading against the last manual one and how far the printer's own counter has moved since. */
+export function checkReading(
+  machineId: number,
+  typed: number,
+  readings: HourReading[],
+  counterRawNow: number | null,
+): ReadingCheck {
+  const mine = readings.filter((r) => r.machine_id === machineId);
+  const manual = mine.filter((r) => r.source === 'manual').sort((a, b) => a.reading_date.localeCompare(b.reading_date));
+  const newest = manual.length ? manual[manual.length - 1] : null;
+  if (!newest) return { level: 'ok', reason: 'noReference', last: null, counterDelta: null, expected: null };
+  const last: HourPoint = { date: newest.reading_date, hours: newest.hours };
+  const rawThen = rawAt(
+    mine.filter((r) => r.source === 'auto'),
+    last.date,
+  );
+  const counterDelta = rawThen !== null && counterRawNow !== null ? counterRawNow - rawThen : null;
+  const expected = counterDelta === null ? null : last.hours + counterDelta;
+  if (typed < last.hours) return { level: 'question', reason: 'backwards', last, counterDelta, expected };
+  if (counterDelta === null || expected === null) return { level: 'ok', reason: 'noReference', last, counterDelta, expected };
+  const far = Math.abs(typed - expected) > Math.max(24, 0.2 * counterDelta);
+  return { level: far ? 'question' : 'ok', reason: far ? 'farFromCounter' : 'ok', last, counterDelta, expected };
+}
+
+export interface Period {
+  from: string;
+  to: string;
+  days: number;
+  pace: number;
+}
+
+/** Hours per month between each pair of consecutive manual readings (negative clamps to 0). */
+export function periodPaces(manual: HourPoint[]): Period[] {
+  const out: Period[] = [];
+  for (let i = 1; i < manual.length; i++) {
+    const a = manual[i - 1];
+    const b = manual[i];
+    const days = dayNumber(b.date) - dayNumber(a.date);
+    out.push({ from: a.date, to: b.date, days, pace: days > 0 ? Math.max(0, ((b.hours - a.hours) / days) * DAYS_PER_MONTH) : 0 });
+  }
+  return out;
+}
+
+/** 'stopped' when the newest period is 30+ days under 1 h/month; 'slowing' when it fell below half the previous pace. */
+export function behaviourFlag(periods: Period[]): 'slowing' | 'stopped' | null {
+  if (periods.length === 0) return null;
+  const newest = periods[periods.length - 1];
+  if (newest.days >= 30 && newest.pace < 1) return 'stopped';
+  if (periods.length >= 2) {
+    const prev = periods[periods.length - 2];
+    if (prev.pace > 0 && newest.pace < 0.5 * prev.pace) return 'slowing';
+  }
+  return null;
+}
+
+/** Share of a machine's possible hours (24 h a day) it actually runs. */
+export function loadShare(pace: number | null): number | null {
+  return pace === null ? null : pace / (24 * DAYS_PER_MONTH);
+}
+
+/** ISO date the machine reaches `target` hours at `pace` h/month; null without a usable pace or when already past. */
+export function forecastDate(last: HourPoint, pace: number | null, target: number): string | null {
+  if (pace === null || pace <= 0 || target <= last.hours) return null;
+  return isoOfDay(dayNumber(last.date) + Math.round(((target - last.hours) / pace) * DAYS_PER_MONTH));
+}
+
+/** A machine's history re-based to its first reading: day 0 and hours 0 at the start. */
+export function sameAgePoints(points: HourPoint[]): { day: number; hours: number }[] {
+  if (points.length === 0) return [];
+  const d0 = dayNumber(points[0].date);
+  return points.map((p) => ({ day: dayNumber(p.date) - d0, hours: p.hours - points[0].hours }));
+}
+
+const pointsOf = (series: Map<number, MachineSeries>, readings: HourReading[], id: number) =>
+  seriesPoints(series.get(id) ?? machineSeries(readings, id));
+
+export interface FleetFacts {
+  lifetime: number;
+  thisMonth: number;
+  due: number;
+  busiest: { id: number; pace: number } | null;
+}
+
+/** Headline numbers for the fleet strip: lifetime over every machine, this month and busiest over live ones. */
+export function fleetFacts(
+  machines: HourMachine[],
+  series: Map<number, MachineSeries>,
+  readings: HourReading[],
+  today: string,
+  dueIds: number[],
+): FleetFacts {
+  const monthStart = `${today.slice(0, 8)}01`;
+  let lifetime = 0;
+  let thisMonth = 0;
+  let busiest: FleetFacts['busiest'] = null;
+  for (const m of machines) {
+    const pts = pointsOf(series, readings, m.id);
+    lifetime += valueAt(pts, today);
+    if (m.retired) continue;
+    thisMonth += Math.max(0, valueAt(pts, today) - valueAt(pts, monthStart));
+    const pace = ratePerMonth(pts, today);
+    if (pace !== null && (busiest === null || pace > busiest.pace)) busiest = { id: m.id, pace };
+  }
+  return { lifetime, thisMonth, due: dueIds.length, busiest };
+}
+
+/** Newest manual reading across live machines and how many days ago it was. */
+export function gapInfo(
+  machines: HourMachine[],
+  series: Map<number, MachineSeries>,
+  today: string,
+): { lastDate: string | null; days: number } {
+  let lastDate: string | null = null;
+  for (const m of machines) {
+    if (m.retired) continue;
+    const manual = series.get(m.id)?.manual ?? [];
+    const d = manual.length ? manual[manual.length - 1].date : null;
+    if (d !== null && (lastDate === null || d > lastDate)) lastDate = d;
+  }
+  return { lastDate, days: lastDate === null ? 0 : dayNumber(today) - dayNumber(lastDate) };
 }

@@ -22,18 +22,24 @@ vi.mock('recharts', async (orig) => {
 const overview: HoursOverview = {
   today: '2031-02-14',
   machines: [
-    { id: 1, printer_id: 6, name: 'X1C04', model: 'X1C', retired: false, current_hours: 3900 },
-    { id: 2, printer_id: 3, name: 'H2S02', model: 'H2S', retired: false, current_hours: 1200 },
-    { id: 3, printer_id: null, name: 'X1C01', model: 'X1C', retired: true, current_hours: null },
+    { id: 1, printer_id: 6, name: 'X1C04', model: 'X1C', retired: false, current_hours: 3900,
+      trust: 'uncalibrated', last_drift_hours: null, calibrated_at: null, counter_raw_hours: null, next_service_hours: null, purchase_price: null, purchase_date: null, added_on: null },
+    { id: 2, printer_id: 3, name: 'H2S02', model: 'H2S', retired: false, current_hours: 1200,
+      trust: 'uncalibrated', last_drift_hours: null, calibrated_at: null, counter_raw_hours: null, next_service_hours: null, purchase_price: null, purchase_date: null, added_on: null },
+    { id: 3, printer_id: null, name: 'X1C01', model: 'X1C', retired: true, current_hours: null,
+      trust: 'uncalibrated', last_drift_hours: null, calibrated_at: null, counter_raw_hours: null, next_service_hours: null, purchase_price: null, purchase_date: null, added_on: null },
   ],
   readings: [
-    { id: 1, machine_id: 1, reading_date: '2026-01-01', hours: 3297, source: 'manual' },
-    { id: 2, machine_id: 1, reading_date: '2026-04-25', hours: 3803, source: 'manual' },
-    { id: 3, machine_id: 2, reading_date: '2026-04-25', hours: 906, source: 'manual' },
-    { id: 4, machine_id: 3, reading_date: '2026-04-25', hours: 4102, source: 'manual' },
-    { id: 5, machine_id: 1, reading_date: '2031-02-14', hours: 3900, source: 'auto' },
-    { id: 6, machine_id: 2, reading_date: '2031-02-14', hours: 1200, source: 'auto' },
+    { id: 1, machine_id: 1, reading_date: '2026-01-01', hours: 3297, source: 'manual', raw_hours: null },
+    { id: 2, machine_id: 1, reading_date: '2026-04-25', hours: 3803, source: 'manual', raw_hours: null },
+    { id: 3, machine_id: 2, reading_date: '2026-04-25', hours: 906, source: 'manual', raw_hours: null },
+    { id: 4, machine_id: 3, reading_date: '2026-04-25', hours: 4102, source: 'manual', raw_hours: null },
+    { id: 5, machine_id: 1, reading_date: '2031-02-14', hours: 3900, source: 'auto', raw_hours: null },
+    { id: 6, machine_id: 2, reading_date: '2031-02-14', hours: 1200, source: 'auto', raw_hours: null },
   ],
+  events: [],
+  reading_interval_days: 90,
+  due_machine_ids: [],
 };
 
 function serve(data: HoursOverview = overview) {
@@ -91,10 +97,11 @@ describe('HoursTab', () => {
   it('shows the last manual value, not an uncalibrated counter below it', async () => {
     serve({
       ...overview,
-      machines: [{ id: 1, printer_id: 6, name: 'X1C04', model: 'X1C', retired: false, current_hours: 124 }],
+      machines: [{ id: 1, printer_id: 6, name: 'X1C04', model: 'X1C', retired: false, current_hours: 124,
+        trust: 'uncalibrated', last_drift_hours: null, calibrated_at: null, counter_raw_hours: null, next_service_hours: null, purchase_price: null, purchase_date: null, added_on: null }],
       readings: [
-        { id: 2, machine_id: 1, reading_date: '2026-04-25', hours: 3803, source: 'manual' },
-        { id: 5, machine_id: 1, reading_date: '2031-02-14', hours: 124, source: 'auto' },
+        { id: 2, machine_id: 1, reading_date: '2026-04-25', hours: 3803, source: 'manual', raw_hours: null },
+        { id: 5, machine_id: 1, reading_date: '2031-02-14', hours: 124, source: 'auto', raw_hours: null },
       ],
     });
     render(<HoursTab />);
