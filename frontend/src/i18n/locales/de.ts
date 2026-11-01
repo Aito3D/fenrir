@@ -3307,7 +3307,6 @@ export default {
         hint: 'Gib die Gesamtbetriebsstunden jeder Maschine von ihrem Display ein. Graue Werte sind die Fenrir-Zähler; leere Felder werden übersprungen.',
         recalibrateNote: 'Ablesungen mit dem heutigen Datum kalibrieren den Zähler jeder Maschine neu, sodass die Wartungstermine dem Druckerdisplay folgen.',
         backdatedNote: 'Rückdatierte Ablesungen werden nur für den Verlauf gespeichert.',
-        lowerThanPrevious: 'Niedriger als die vorherige Ablesung ({{hours}} h)',
         invalid: 'Keine Zahl',
       },
     },

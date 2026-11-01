@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import type { HourMachine, HourReading } from '../../../api/client';
-import { checkReading, dayNumber, familyOf, parseHoursInput, type ReadingCheck } from '../../../utils/hoursSeries';
+import { checkReading, familyOf, parseHoursInput } from '../../../utils/hoursSeries';
 import { Button } from '../../Button';
+import { readingCheckText } from './readingCheckText';
 
 interface ReadingPassProps {
   machines: HourMachine[];
@@ -24,9 +25,7 @@ export function ReadingPass({ machines, readings, colors, isSaving, onSave, onCl
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const fmt = (v: number) => Math.round(v).toLocaleString(i18n.language);
-  const dayFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' });
-  const fmtDate = (d: string) => dayFmt.format(dayNumber(d) * 86_400_000);
+  const { fmt, fmtDate, questionText, resultLine } = readingCheckText(t, i18n.language);
 
   useEffect(() => {
     if (index < n) inputRef.current?.focus();
@@ -35,15 +34,6 @@ export function ReadingPass({ machines, readings, colors, isSaving, onSave, onCl
 
   const parsedOf = (m: HourMachine) => parseHoursInput(values[m.id] ?? '');
   const checkOf = (m: HourMachine, typed: number) => checkReading(m.id, typed, readings, m.counter_raw_hours);
-
-  /** The amber sentence for a questioned reading, or null when the reading is fine. */
-  const questionText = (c: ReadingCheck, typed: number): string | null => {
-    if (c.level !== 'question' || !c.last) return null;
-    if (c.reason === 'backwards') return t('maintenance.hours.pass.backwards', { hours: fmt(c.last.hours), date: fmtDate(c.last.date) });
-    return t('maintenance.hours.pass.farFromCounter', {
-      typed: fmt(typed - c.last.hours), counted: fmt(c.counterDelta ?? 0), date: fmtDate(c.last.date), expected: fmt(c.expected ?? 0),
-    });
-  };
 
   const setValue = (m: HourMachine, text: string) => {
     setValues((v) => ({ ...v, [m.id]: text }));
@@ -103,16 +93,7 @@ export function ReadingPass({ machines, readings, colors, isSaving, onSave, onCl
 
     let result: { text: string; amber: boolean } | null = null;
     if (invalid) result = { text: t('maintenance.hours.pass.invalid'), amber: true };
-    else if (check && typeof parsed === 'number') {
-      const q = questionText(check, parsed);
-      if (q) result = { text: q, amber: true };
-      else if (check.reason === 'ok' && check.last && check.counterDelta !== null) {
-        result = {
-          text: t('maintenance.hours.pass.okDelta', { typed: fmt(parsed - check.last.hours), counted: fmt(check.counterDelta) }),
-          amber: false,
-        };
-      } else result = { text: t('maintenance.hours.pass.noReference'), amber: false };
-    }
+    else if (check && typeof parsed === 'number') result = resultLine(check, parsed);
 
     body = (
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 py-6">

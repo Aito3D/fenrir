@@ -2234,7 +2234,6 @@ export default {
         hint: 'Voer de totale draaiuren van elke machine in zoals op het scherm staat. Grijze waarden zijn de tellers van Fenrir; lege velden worden overgeslagen.',
         recalibrateNote: 'Metingen met de datum van vandaag kalibreren de teller van elke machine opnieuw, zodat onderhoudstermijnen het printerscherm volgen.',
         backdatedNote: 'Metingen met een eerdere datum worden alleen voor de geschiedenis bewaard.',
-        lowerThanPrevious: 'Lager dan de vorige meting ({{hours}} u)',
         invalid: 'Geen getal',
       },
     },

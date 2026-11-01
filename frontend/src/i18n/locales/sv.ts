@@ -2233,7 +2233,6 @@ export default {
         hint: 'Ange varje maskins totala drifttimmar från dess display. Grå värden är Fenrirs räknare; tomma fält hoppas över.',
         recalibrateNote: 'Avläsningar daterade idag kalibrerar om varje maskins räknare, så att underhållsdatum följer skrivarens display.',
         backdatedNote: 'Bakåtdaterade avläsningar sparas endast för historiken.',
-        lowerThanPrevious: 'Lägre än föregående avläsning ({{hours}} h)',
         invalid: 'Inte ett tal',
       },
     },

@@ -3306,7 +3306,6 @@ export default {
         hint: '請輸入每台機器螢幕上顯示的累計小時數。灰色數值是 Fenrir 的計數器；留空的欄位將被略過。',
         recalibrateNote: '日期為今天的讀數會重新校準每台機器的計數器，讓保養到期日與列印機螢幕一致。',
         backdatedNote: '補登日期的讀數僅保存在歷史記錄中。',
-        lowerThanPrevious: '低於上一次讀數（{{hours}} 小時）',
         invalid: '不是數字',
       },
     },

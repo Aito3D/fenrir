@@ -246,11 +246,68 @@ describe('HoursTab', () => {
     await user.click(await screen.findByRole('button', { name: 'New reading' }));
     const dialog = await screen.findByTestId('hours-reading-form');
     await user.type(within(dialog).getByRole('textbox', { name: 'X1C04' }), '3 700');
-    expect(within(dialog).getByText('Lower than the previous reading (3,803 h)')).toBeInTheDocument();
+    expect(
+      within(dialog).getByText('Lower than the 3,803 h read on 4/25/2026. Lifetime hours never go down.'),
+    ).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
     await waitFor(() =>
       expect(body).toEqual({ reading_date: '2031-02-14', entries: [{ machine_id: 1, hours: 3700 }] }),
     );
+  });
+
+  it('questions a jump far from the counter in the form and still saves it', async () => {
+    serve({
+      ...overview,
+      machines: overview.machines.map((m) => (m.id === 1 ? { ...m, counter_raw_hours: 1612 } : m)),
+      readings: [
+        ...overview.readings,
+        { id: 7, machine_id: 1, reading_date: '2026-04-25', hours: 3803, source: 'auto', raw_hours: 1000 },
+      ],
+    });
+    let body: unknown = null;
+    server.use(
+      http.post('/api/v1/maintenance/hours/readings', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(overview);
+      }),
+    );
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    await user.click(await screen.findByRole('button', { name: 'New reading' }));
+    const dialog = await screen.findByTestId('hours-reading-form');
+    await user.type(within(dialog).getByRole('textbox', { name: 'X1C04' }), '4800');
+    expect(
+      within(dialog).getByText('+997 h typed, but Fenrir counted +612 h since 4/25/2026. Expected about 4,415 h.'),
+    ).toBeInTheDocument();
+    const save = within(dialog).getByRole('button', { name: 'Save' });
+    expect(save).toBeEnabled();
+    await user.click(save);
+    await waitFor(() => expect(body).toEqual({ reading_date: '2031-02-14', entries: [{ machine_id: 1, hours: 4800 }] }));
+  });
+
+  it('only questions going backwards when the form is backdated', async () => {
+    serve({
+      ...overview,
+      machines: overview.machines.map((m) => (m.id === 1 ? { ...m, counter_raw_hours: 1612 } : m)),
+      readings: [
+        ...overview.readings,
+        { id: 7, machine_id: 1, reading_date: '2026-01-01', hours: 3297, source: 'auto', raw_hours: 400 },
+      ],
+    });
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    const log = await screen.findByTestId('hours-reading-log');
+    const row = within(log).getAllByTestId('hours-log-row').find((r) => r.dataset.date === '2026-04-25')!;
+    await user.click(within(row).getByRole('button', { name: 'Edit' }));
+    const dialog = await screen.findByTestId('hours-reading-form');
+    const field = within(dialog).getByRole('textbox', { name: 'X1C04' });
+    await user.clear(field);
+    await user.type(field, '9000');
+    expect(within(dialog).queryByText(/Expected about/)).not.toBeInTheDocument();
+    expect(within(dialog).getAllByText('no counter reference for this period').length).toBeGreaterThan(0);
+    await user.clear(field);
+    await user.type(field, '3000');
+    expect(within(dialog).getByText(/Lifetime hours never go down/)).toBeInTheDocument();
   });
 
   it('edit prefills the date values and clearing a field sends null', async () => {

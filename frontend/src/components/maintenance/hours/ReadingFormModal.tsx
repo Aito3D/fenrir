@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { HourMachine, HourReading } from '../../../api/client';
-import { parseHoursInput } from '../../../utils/hoursSeries';
+import { checkReading, parseHoursInput } from '../../../utils/hoursSeries';
 import { Button } from '../../Button';
+import { readingCheckText } from './readingCheckText';
 
 interface ReadingFormModalProps {
   initialDate: string;
@@ -39,11 +40,6 @@ export function ReadingFormModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const previous = (machineId: number) =>
-    readings
-      .filter((r) => r.machine_id === machineId && r.source === 'manual' && r.reading_date < date)
-      .sort((a, b) => b.reading_date.localeCompare(a.reading_date))[0];
-
   const existing = manualOn(date);
   let invalid = false;
   const entries: { machine_id: number; hours: number | null }[] = [];
@@ -54,7 +50,9 @@ export function ReadingFormModal({
       if (existing.has(m.id)) entries.push({ machine_id: m.id, hours: null });
     } else if (existing.get(m.id) !== parsed) entries.push({ machine_id: m.id, hours: parsed });
   }
-  const fmt = (n: number) => Math.round(n).toLocaleString(i18n.language);
+  const { fmt, resultLine } = readingCheckText(t, i18n.language);
+  // A past date is checked against what was known before it; the live counter only speaks for today.
+  const referenceReadings = date === today ? readings : readings.filter((r) => r.reading_date < date);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-overlay-in" onClick={onClose}>
@@ -87,8 +85,10 @@ export function ReadingFormModal({
           {active.map((m) => {
             const raw = values[m.id] ?? '';
             const parsed = parseHoursInput(raw);
-            const prev = previous(m.id);
-            const lower = typeof parsed === 'number' && prev !== undefined && parsed < prev.hours;
+            const result =
+              typeof parsed === 'number'
+                ? resultLine(checkReading(m.id, parsed, referenceReadings, date === today ? m.counter_raw_hours : null), parsed)
+                : null;
             return (
               <div key={m.id} className="flex flex-col">
                 <label className="flex items-center gap-2 text-sm">
@@ -103,14 +103,12 @@ export function ReadingFormModal({
                     value={raw}
                     placeholder={date === today && m.current_hours != null ? fmt(m.current_hours) : ''}
                     onChange={(e) => setValues((v) => ({ ...v, [m.id]: e.target.value }))}
-                    className={`w-full rounded-lg border bg-bambu-dark px-2 py-1.5 text-right tabular-nums text-white placeholder:text-bambu-gray-dark ${parsed === undefined ? 'border-red-500' : lower ? 'border-amber-500' : 'border-bambu-dark-tertiary'}`}
+                    className={`w-full rounded-lg border bg-bambu-dark px-2 py-1.5 text-right tabular-nums text-white placeholder:text-bambu-gray-dark ${parsed === undefined ? 'border-red-500' : result?.amber ? 'border-amber-500' : 'border-bambu-dark-tertiary'}`}
                   />
                 </label>
                 {parsed === undefined && <span className="pl-24 text-xs text-red-400">{t('maintenance.hours.form.invalid')}</span>}
-                {lower && prev && (
-                  <span className="pl-24 text-xs text-amber-500">
-                    {t('maintenance.hours.form.lowerThanPrevious', { hours: fmt(prev.hours) })}
-                  </span>
+                {result && (
+                  <span className={`pl-24 text-xs ${result.amber ? 'text-amber-500' : 'text-bambu-gray'}`}>{result.text}</span>
                 )}
               </div>
             );

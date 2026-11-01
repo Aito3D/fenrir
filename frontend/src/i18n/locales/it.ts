@@ -3306,7 +3306,6 @@ export default {
         hint: 'Inserisci le ore totali di ogni macchina dal suo schermo. I valori in grigio sono i contatori di Fenrir; i campi vuoti vengono ignorati.',
         recalibrateNote: 'Le letture con la data di oggi ricalibrano il contatore di ogni macchina, così le scadenze di manutenzione seguono lo schermo della stampante.',
         backdatedNote: 'Le letture con data passata vengono salvate solo per lo storico.',
-        lowerThanPrevious: 'Inferiore alla lettura precedente ({{hours}} h)',
         invalid: 'Non è un numero',
       },
     },

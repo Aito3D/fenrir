@@ -3308,7 +3308,6 @@ export default {
         hint: 'Her makinenin ekranında görünen toplam çalışma saatini girin. Gri değerler Fenrir sayaçlarıdır; boş alanlar atlanır.',
         recalibrateNote: 'Bugünün tarihli okumalar her makinenin sayacını yeniden kalibre eder; böylece bakım tarihleri yazıcı ekranını izler.',
         backdatedNote: 'Geriye dönük tarihli okumalar yalnızca geçmiş için saklanır.',
-        lowerThanPrevious: 'Önceki okumadan düşük ({{hours}} sa)',
         invalid: 'Sayı değil',
       },
     },

@@ -3306,7 +3306,6 @@ export default {
         hint: '请输入每台机器屏幕上显示的累计小时数。灰色数值是 Fenrir 的计数器；留空的字段将被跳过。',
         recalibrateNote: '日期为今天的读数会重新校准每台机器的计数器，使保养到期日与打印机屏幕保持一致。',
         backdatedNote: '补录日期的读数仅保存在历史记录中。',
-        lowerThanPrevious: '低于上一次读数（{{hours}} 小时）',
         invalid: '不是数字',
       },
     },

@@ -3331,7 +3331,6 @@ export default {
         hint: "Type each machine's lifetime hours from its screen. Grey values are Fenrir's counters; empty fields are skipped.",
         recalibrateNote: "Readings dated today recalibrate each machine's counter, so maintenance due dates follow the printer screen.",
         backdatedNote: 'Backdated readings are stored for the history only.',
-        lowerThanPrevious: 'Lower than the previous reading ({{hours}} h)',
         invalid: 'Not a number',
       },
     },

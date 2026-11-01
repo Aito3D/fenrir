@@ -3306,7 +3306,6 @@ export default {
         hint: 'Saisissez les heures cumulées affichées sur l’écran de chaque machine. Les valeurs grisées sont les compteurs Fenrir ; les champs vides sont ignorés.',
         recalibrateNote: 'Les relevés datés d’aujourd’hui recalent le compteur de chaque machine : les échéances de maintenance suivent l’écran de l’imprimante.',
         backdatedNote: 'Les relevés antérieurs sont conservés uniquement pour l’historique.',
-        lowerThanPrevious: 'Inférieur au relevé précédent ({{hours}} h)',
         invalid: 'Nombre invalide',
       },
     },

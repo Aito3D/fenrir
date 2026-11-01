@@ -3222,7 +3222,6 @@ export default {
         hint: '각 기기 화면에 표시된 누적 시간을 입력하세요. 회색 값은 Fenrir 카운터이며, 비어 있는 칸은 건너뜁니다.',
         recalibrateNote: '오늘 날짜의 기록은 각 기기의 카운터를 다시 보정하므로 정비 기한이 프린터 화면을 따릅니다.',
         backdatedNote: '과거 날짜의 기록은 이력용으로만 저장됩니다.',
-        lowerThanPrevious: '이전 기록보다 낮습니다({{hours}}시간)',
         invalid: '숫자가 아닙니다',
       },
     },

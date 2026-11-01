@@ -3308,7 +3308,6 @@ export default {
         hint: 'Escribe las horas acumuladas de cada máquina que muestra su pantalla. Los valores en gris son los contadores de Fenrir; los campos vacíos se omiten.',
         recalibrateNote: 'Las lecturas con fecha de hoy recalibran el contador de cada máquina, de modo que los vencimientos de mantenimiento siguen la pantalla de la impresora.',
         backdatedNote: 'Las lecturas con fecha anterior solo se guardan para el historial.',
-        lowerThanPrevious: 'Menor que la lectura anterior ({{hours}} h)',
         invalid: 'No es un número',
       },
     },
