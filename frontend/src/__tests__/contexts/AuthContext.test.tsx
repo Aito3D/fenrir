@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { AuthProvider, useAuth } from '../../contexts/AuthContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
@@ -1593,6 +1593,69 @@ describe('AuthContext', () => {
       expect(result.current.user).toBeNull();
       expect(getAuthToken()).toBeNull();
       expect(localStorage.getItem('auth_token')).toBeNull();
+    });
+  });
+
+  // Boot used to be status → me → route chunk, one round trip after another.
+  // With a stored token, /auth/me starts at once and /auth/status runs beside
+  // it; the status answer still decides what the result means.
+  describe('parallel bootstrap: /auth/me does not wait for /auth/status', () => {
+    beforeEach(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+    });
+
+    it('starts /auth/me without waiting for /auth/status', async () => {
+      setAuthToken('valid-token', 'persistent');
+      let meRequestedAt = 0;
+      let statusRespondedAt = 0;
+      server.use(
+        http.get('/api/v1/auth/status', async () => {
+          await delay(60);
+          statusRespondedAt = performance.now();
+          return HttpResponse.json({ auth_enabled: true, requires_setup: false });
+        }),
+        http.get('/api/v1/auth/me', () => {
+          meRequestedAt = performance.now();
+          return HttpResponse.json({ id: 1, username: 'admin', is_admin: true, permissions: [] });
+        }),
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(meRequestedAt).toBeGreaterThan(0);
+      expect(meRequestedAt).toBeLessThan(statusRespondedAt);
+      expect(result.current.user?.username).toBe('admin');
+    });
+
+    it('logs out on a definitive 401 even when status arrives later', async () => {
+      setAuthToken('stale-token', 'persistent');
+      server.use(
+        http.get('/api/v1/auth/status', async () => {
+          await delay(60);
+          return HttpResponse.json({ auth_enabled: true, requires_setup: false });
+        }),
+        http.get('/api/v1/auth/me', () => HttpResponse.json({ detail: 'Invalid token' }, { status: 401 })),
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.user).toBeNull();
+      expect(result.current.authEnabled).toBe(true);
+      expect(getAuthToken()).toBeNull();
+    });
+
+    it('ignores the early /auth/me result when auth is disabled', async () => {
+      setAuthToken('leftover-token', 'persistent');
+      server.use(
+        http.get('/api/v1/auth/status', async () => {
+          await delay(30);
+          return HttpResponse.json({ auth_enabled: false, requires_setup: false });
+        }),
+        http.get('/api/v1/auth/me', () => HttpResponse.json({ id: 1, username: 'admin', is_admin: true, permissions: [] })),
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.authEnabled).toBe(false);
+      expect(result.current.user).toBeNull();
     });
   });
 });

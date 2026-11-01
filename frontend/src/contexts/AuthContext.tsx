@@ -74,6 +74,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       hasStoredToken = Boolean(getAuthToken());
+      // Boot in parallel: with a stored token, /auth/me starts now and the
+      // status round trip runs beside it instead of in front of it (one less
+      // serial hop before the first page can load). The status answer still
+      // decides what the result means below; a token /auth/me rejects as
+      // invalid is cleared by `request()` either way, and when auth turns out
+      // to be disabled the early answer is simply never read.
+      const earlyMe = hasStoredToken
+        ? api.getCurrentUser().then(
+            (user) => ({ user, error: null as unknown }),
+            (error: unknown) => ({ user: null as UserResponse | null, error }),
+          )
+        : null;
       const status = await api.getAuthStatus();
       if (!mountedRef.current) return null;
       setAuthEnabled(status.auth_enabled);
@@ -95,6 +107,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const maxAttempts = 3;
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
+              if (attempt === 1 && earlyMe) {
+                // The call started before /auth/status; its outcome is this
+                // attempt, success or failure, and failures retry as before.
+                const early = await earlyMe;
+                if (early.user) {
+                  currentUser = early.user;
+                  break;
+                }
+                throw early.error;
+              }
               currentUser = await api.getCurrentUser();
               break;
             } catch (err) {
