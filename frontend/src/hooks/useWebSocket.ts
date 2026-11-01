@@ -393,6 +393,8 @@ export function useWebSocket() {
         if (message.printer_id !== undefined) {
           queryClient.invalidateQueries({ queryKey: ['printerStatus', message.printer_id] });
         }
+        // A queued job just left "pending": the sidebar badge follows.
+        queryClient.invalidateQueries({ queryKey: ['queue'] });
         break;
 
       case 'missing_spool_assignment': {
@@ -429,6 +431,7 @@ export function useWebSocket() {
         // The printer_status websocket messages will naturally update the status
         debouncedInvalidate('archives');
         debouncedInvalidate('archiveStats');
+        queryClient.invalidateQueries({ queryKey: ['queue'] });
         break;
 
       case 'print_confirm_request': {
@@ -680,11 +683,23 @@ export function useWebSocket() {
       // start until printer ack — the "Awaiting printer…" subtitle is
       // derived from upload_progress_pct >= 99.9, not from a separate
       // event).
-      case 'queue_item_uploading':
-      case 'queue_item_upload_progress':
       case 'queue_item_acked':
       case 'queue_item_failed':
+        // Status transitions the scheduler makes; the badge count changes with them.
+        queryClient.invalidateQueries({ queryKey: ['queue'] });
         window.dispatchEvent(new CustomEvent('fenrir:dispatch-toast', { detail: message }));
+        break;
+      case 'queue_item_uploading':
+      case 'queue_item_upload_progress':
+        window.dispatchEvent(new CustomEvent('fenrir:dispatch-toast', { detail: message }));
+        break;
+      // Every queue / pending-upload write route announces itself (services/queue_events.py),
+      // so the sidebar badges no longer need a 5 s poll; Layout keeps a 60 s fallback.
+      case 'queue_changed':
+        queryClient.invalidateQueries({ queryKey: ['queue'] });
+        break;
+      case 'pending_uploads_changed':
+        queryClient.invalidateQueries({ queryKey: ['pending-uploads'] });
         break;
       // Slicer Pipeline runs (#1425 PR C). State transitions on the run
       // refresh both the dashboard list AND the per-pipeline "Last run"

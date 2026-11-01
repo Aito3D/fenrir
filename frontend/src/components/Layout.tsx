@@ -251,8 +251,11 @@ export function Layout() {
   const { data: externalLinks } = useQuery({
     queryKey: ['external-links'],
     queryFn: api.getExternalLinks,
-    // Like the queue badge: apps behind the links report counts.
-    refetchInterval: 30_000,
+    // Like the queue badge: apps behind the links report counts. Five
+    // minutes: these are external apps, and a page is rarely open that long
+    // without a focus change (which refetches) anyway.
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 
   // Fetch smart plugs to check for switchbar items
@@ -269,7 +272,7 @@ export function Layout() {
     queryKey: ['debugLogging'],
     queryFn: supportApi.getDebugLoggingState,
     staleTime: 60 * 1000, // 1 minute
-    refetchInterval: 60 * 1000, // Refresh every minute
+    refetchOnWindowFocus: true, // a debug toggle flips rarely; focus is enough
   });
 
   // Check developer LAN mode warnings
@@ -277,7 +280,7 @@ export function Layout() {
     queryKey: ['developer-mode-warnings'],
     queryFn: api.getDeveloperModeWarnings,
     staleTime: 10 * 1000,
-    refetchInterval: 30 * 1000,
+    refetchInterval: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
   });
 
@@ -285,8 +288,10 @@ export function Layout() {
   const { data: queueItems } = useQuery({
     queryKey: ['queue', 'pending'],
     queryFn: () => api.getQueue(undefined, 'pending'),
-    staleTime: 5 * 1000, // 5 seconds
-    refetchInterval: 5 * 1000, // Refresh every 5 seconds
+    // WebSocket-driven since queue_changed / pending_uploads_changed
+    // (useWebSocket); this interval is only a fallback for a missed socket.
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
     refetchOnWindowFocus: true,
   });
   const pendingQueueCount = queueItems?.length ?? 0;
@@ -295,8 +300,10 @@ export function Layout() {
   const { data: pendingUploadsData } = useQuery({
     queryKey: ['pending-uploads', 'count'],
     queryFn: pendingUploadsApi.getCount,
-    staleTime: 5 * 1000, // 5 seconds
-    refetchInterval: 5 * 1000, // Refresh every 5 seconds
+    // WebSocket-driven since queue_changed / pending_uploads_changed
+    // (useWebSocket); this interval is only a fallback for a missed socket.
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
     refetchOnWindowFocus: true,
   });
   const pendingUploadsCount = pendingUploadsData?.count ?? 0;
