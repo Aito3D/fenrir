@@ -347,7 +347,7 @@ export function CardView({
       // The shell holds the collapsed height while the card floats, so the
       // column's layout does not change. It carries no card styling and no
       // `data-aito-card*` — it is space, nothing else.
-      className={`relative rounded-xl ${cardDrop.className}`}
+      className={`aito-card-shell relative rounded-xl ${cardDrop.className}`}
       style={expanded && shellHeight !== null ? { height: shellHeight } : undefined}
     >
       {cardDrop.overlay}

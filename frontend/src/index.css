@@ -744,12 +744,26 @@ body {
    cameraGridLayout.ts — cards sync their phase to a shared epoch clock via
    negative animation-delay. */
 @keyframes grid-border-blink {
-  0%, 100% { border-color: var(--blink-color, rgb(250 204 21)); }
-  50% { border-color: color-mix(in srgb, var(--blink-color, rgb(250 204 21)) 15%, transparent); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
+/* The tile keeps the dim colour as its own border; a full-colour overlay on
+   top fades in and out (composited), which reads as the same blink without a
+   repaint per frame. `animation-delay: inherit` carries the epoch-sync delay
+   `gridBlinkSyncStyle` writes inline on the tile down to the overlay. */
 .animate-grid-border-blink {
+  border-color: color-mix(in srgb, var(--blink-color, rgb(250 204 21)) 15%, transparent);
+}
+.animate-grid-border-blink::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1px solid var(--blink-color, rgb(250 204 21));
+  pointer-events: none;
   animation: grid-border-blink 2.5s ease-in-out infinite;
+  animation-delay: inherit;
 }
 
 /* Companion text pulse for blinking tiles (FAILED status label) — same
@@ -861,8 +875,8 @@ body {
 }
 
 @keyframes aito-rating-halo {
-  from { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--c) 40%, transparent); }
-  to { opacity: 0; box-shadow: 0 0 0 10px transparent; }
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(1.6); }
 }
 
 @keyframes aito-rating-fade {
@@ -875,6 +889,8 @@ body {
 }
 
 .animate-aito-rating-halo {
+  /* Fixed spread; the expansion is a composited scale (see keyframes). */
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 40%, transparent);
   animation: aito-rating-halo 0.9s ease-out 0.15s both;
 }
 
@@ -2184,10 +2200,16 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
    also has no painted flag chip, so this halo is the primary cue; it is kept
    legible by the persistent coloured border and the always-on glow, which do
    not depend on catching the pulse at its peak. */
-@keyframes flag-halo {
-  0%   { box-shadow: 0 0 0 0 rgb(var(--flag-halo) / .26), 0 0 9px -3px rgb(var(--flag-halo) / .42), var(--card-shadow); }
-  70%  { box-shadow: 0 0 0 4px rgb(var(--flag-halo) / 0), 0 0 9px -3px rgb(var(--flag-halo) / .42), var(--card-shadow); }
-  100% { box-shadow: 0 0 0 0 rgb(var(--flag-halo) / 0),  0 0 9px -3px rgb(var(--flag-halo) / .42), var(--card-shadow); }
+/* COMPOSITED: the pulse is an overlay (`.aito-card-shell::after`, below) with
+   a fixed 4px ring whose opacity and scale animate — the compositor runs that
+   without repainting the card. The old version animated box-shadow on the card
+   itself, which repainted every flagged card on every frame, forever. The
+   static part of the halo (the 9px glow) stays on the card as a plain
+   box-shadow. */
+@keyframes flag-halo-ring {
+  0%   { opacity: 1; transform: scale(0.995); }
+  70%  { opacity: 0; transform: scale(1.012); }
+  100% { opacity: 0; transform: scale(0.995); }
 }
 /* Cascade, both halves — get one without the other and the next repair is wrong:
    1. This rule is UNLAYERED, and unlayered declarations outrank every Tailwind
@@ -2202,15 +2224,14 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
       declarations outright; the reduced-motion glow below is a plain
       declaration and does NOT, so it is the one place that needs the doubled
       class. */
-.animate-flag-halo {
-  /* One animation, two tones, because urgent and SAV are peers and a second
-     copy of these keyframes would be a second place to drift. The hue comes
-     from the tone class below. */
+.animate-flag-halo.animate-flag-halo {
+  /* One overlay, two tones, because urgent and SAV are peers and a second
+     copy of these rules would be a second place to drift. The hue comes
+     from the tone class below. The class is DOUBLED because this is now a
+     plain declaration (see the cascade note above): without it the later
+     `.card-shadow` would erase the glow. */
   border-color: var(--flag-border);
-  /* 3.4s and ease-in-out, not 2.2s ease-out: the old curve snapped outward and
-     came back, which reads as a blink. A longer symmetric cycle is what makes
-     the same gesture read as subtle rather than merely fainter. */
-  animation: flag-halo 3.4s ease-in-out infinite;
+  box-shadow: 0 0 9px -3px rgb(var(--flag-halo) / .42), var(--card-shadow);
 }
 /* Both tones are FIXED semantics and must not shift when the user changes
    accent colour. The border is a step deeper than the halo in each, so the
@@ -2219,6 +2240,28 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
    footer bar, never in the header pill row where these do. */
 .flag-urgent { --flag-halo: 251 191 36; --flag-border: var(--status-warning); }
 .flag-sav    { --flag-halo: 251 113 133; --flag-border: #f43f5e; }
+/* The pulsing ring. It lives on the card's SHELL (CardView's outer div, which
+   holds the collapsed height) rather than on the card, because the card clips
+   overflow and a ring 4px outside its edge would be cut off. `:has()` is
+   Safari 15.4+, inside the support floor. The ring hides while the card
+   floats (`.absolute`, the hover reveal): the shell keeps the collapsed box
+   and the ring would sit under the grown card. 3.4s and ease-in-out, not
+   2.2s ease-out: the old curve snapped outward and came back, which reads as
+   a blink; a longer symmetric cycle reads as breathing. */
+.aito-card-shell:has(> .animate-flag-halo)::after,
+.aito-card-shell:has(> .contact-pending)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 4px rgb(var(--ring) / .26);
+  animation: flag-halo-ring 3.4s ease-in-out infinite;
+}
+.aito-card-shell:has(> .flag-urgent)::after { --ring: 251 191 36; }
+.aito-card-shell:has(> .flag-sav)::after { --ring: 251 113 133; }
+.aito-card-shell:has(> .contact-pending)::after { --ring: 34 211 238; }
+.aito-card-shell:has(> .absolute)::after { animation: none; opacity: 0; }
 /* Pause is the one flag that does NOT ask for attention, so it gets the
    inverse of the halo: the card recedes and keeps only a quiet edge. No
    keyframes here and none are wanted — a pulse is a call to action, and a
@@ -2255,27 +2298,15 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
    It needs the DOUBLED class for the same reason `.animate-flag-halo` does not:
    the running animation outranks the later `.card-shadow`, but the
    reduced-motion fallback below is a plain declaration and does not. */
-.contact-pending {
+.contact-pending.contact-pending {
   --flag-halo: 34 211 238;
   border-color: rgb(34 211 238 / .85);
-  animation: flag-halo 3.4s ease-in-out infinite;
+  box-shadow: 0 0 9px -3px rgb(var(--flag-halo) / .42), var(--card-shadow);
 }
+/* The signal survives for anyone who has asked for less motion — as the
+   static glow the card already carries, without the ring. */
 @media (prefers-reduced-motion: reduce) {
-  .contact-pending.contact-pending {
-    animation: none;
-    box-shadow: 0 0 9px -2px rgb(var(--flag-halo) / .42), var(--card-shadow);
-  }
-}
-/* The signal survives for anyone who has asked for less motion — as a static
-   glow rather than a pulsing one, exactly like .animate-invoiced-pulse above.
-   The class is repeated to outweigh the later `.card-shadow` (see above); the
-   rule stays here, beside the animation it replaces, rather than being exiled
-   below `.card-shadow` where nobody would find it. */
-@media (prefers-reduced-motion: reduce) {
-  .animate-flag-halo.animate-flag-halo {
-    animation: none;
-    box-shadow: 0 0 9px -2px rgb(var(--flag-halo) / .42), var(--card-shadow);
-  }
+  .aito-card-shell::after { animation: none; opacity: 0; }
 }
 
 /* Calculator tables: rows carry a SOLID background so the sticky first
@@ -2833,17 +2864,26 @@ tbody .calc-table-row:hover {
   to { opacity: 1; transform: none; }
 }
 @keyframes code-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(4, 161, 228, 0); }
-  50% { box-shadow: 0 0 0 5px rgba(4, 161, 228, 0.18); }
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+/* The breath is an overlay with a fixed 5px spread fading in and out, so the
+   caret itself is never repainted while it waits. */
+.code-caret::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 5px rgba(4, 161, 228, 0.18);
+  opacity: 0;
+  animation: code-breathe 1800ms ease-in-out 880ms infinite;
 }
 .code-caret {
   position: absolute;
   inset: 0;
   border-radius: var(--code-radius);
   border: 2px solid var(--color-aito-cyan);
-  animation:
-    code-caret-in 240ms var(--ease-signature) 640ms both,
-    code-breathe 1800ms ease-in-out 880ms infinite;
+  animation: code-caret-in 240ms var(--ease-signature) 640ms both;
 }
 
 /* Checking: a ripple runs along the row while the server answers — the
