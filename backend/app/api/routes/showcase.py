@@ -15,7 +15,7 @@ router = APIRouter(prefix="/showcase", tags=["showcase"])
 
 
 @router.get("/stats")
-async def get_stats(response: Response, db: AsyncSession = Depends(get_db)) -> dict:
+async def get_stats(response: Response, db: AsyncSession = Depends(get_db, scope="function")) -> dict:
     response.headers["Cache-Control"] = f"public, max-age={int(showcase_stats.CACHE_TTL)}"
     response.headers["Access-Control-Allow-Origin"] = "*"
     return await showcase_stats.get_cached(db)

@@ -52,7 +52,7 @@ async def compute(db: AsyncSession, now: datetime | None = None) -> dict[str, An
     m = MULTIPLIER
     done = (PrintArchive.deleted_at.is_(None), PrintArchive.status == "completed")
 
-    totals = (
+    n_prints, grams, seconds, layers, first = (
         await db.execute(
             select(
                 func.count(PrintArchive.id),
@@ -63,17 +63,22 @@ async def compute(db: AsyncSession, now: datetime | None = None) -> dict[str, An
             ).where(*done)
         )
     ).one()
-    recent = (
+    n_recent, grams_recent = (
         await db.execute(
             select(func.count(PrintArchive.id), func.coalesce(func.sum(PrintArchive.filament_used_grams), 0.0)).where(
                 *done, PrintArchive.completed_at >= now - timedelta(days=30)
             )
         )
     ).one()
-    orders = await db.scalar(
-        select(func.count(AitoProject.id)).where(AitoProject.status == "active", AitoProject.board_column != "devis")
+    orders = (
+        await db.scalar(
+            select(func.count(AitoProject.id)).where(
+                AitoProject.status == "active", AitoProject.board_column != "devis"
+            )
+        )
+        or 0
     )
-    printers = await db.scalar(select(func.count(Printer.id)).where(Printer.is_active.is_(True)))
+    printers = await db.scalar(select(func.count(Printer.id)).where(Printer.is_active.is_(True))) or 0
 
     # weekly load: hours of any print (failed ones ran the machine too) overlapping the window
     start = now - timedelta(days=LOAD_WINDOW_DAYS)
@@ -88,23 +93,27 @@ async def compute(db: AsyncSession, now: datetime | None = None) -> dict[str, An
             )
         )
     ).all()
-    machine_hours = sum(
-        max(0.0, (min(ended or now, now) - max(started, start)).total_seconds()) / 3600 for started, ended in rows
-    )
+    machine_hours = 0.0
+    for started, ended in rows:
+        if started is not None:
+            machine_hours += max(0.0, (min(ended or now, now) - max(started, start)).total_seconds()) / 3600
     avg = machine_hours / printers / LOAD_WINDOW_DAYS if printers else 0.0
 
-    hours = totals[2] / 3600
+    hours = float(seconds or 0) / 3600
     return {
         "updated_at": now.replace(microsecond=0).isoformat() + "Z",
-        "since": totals[4].date().isoformat() if totals[4] else None,
-        "prints": totals[0] * m,
-        "filament_kg": round(totals[1] / 1000 * m, 1),
+        "since": first.date().isoformat() if first is not None else None,
+        "prints": int(n_prints or 0) * m,
+        "filament_kg": round(float(grams or 0) / 1000 * m, 1),
         "print_hours": round(hours * m),
         "print_days": round(hours * m / 24, 1),
-        "layers": totals[3] * m,
-        "orders": (orders or 0) * m,
-        "printers": (printers or 0) + PRINTERS_OFFSET,
-        "last_30_days": {"prints": recent[0] * m, "filament_kg": round(recent[1] / 1000 * m, 1)},
+        "layers": int(layers or 0) * m,
+        "orders": orders * m,
+        "printers": printers + PRINTERS_OFFSET,
+        "last_30_days": {
+            "prints": int(n_recent or 0) * m,
+            "filament_kg": round(float(grams_recent or 0) / 1000 * m, 1),
+        },
         "load_7d": {
             "machine_hours": round(machine_hours, 1),
             "avg_hours_per_printer_per_day": round(avg, 1),
