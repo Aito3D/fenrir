@@ -12,6 +12,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { focusRingCls } from '../components/formStyles';
 import { NewProjectModal } from '../components/projects/NewProjectModal';
 import { CatalogPane } from '../components/projects/catalog/CatalogPane';
+import { MobileCatalog } from '../components/projects/catalog/mobile/MobileCatalog';
 import { decodeViewerState } from '../components/viewer/viewerLink';
 import { CatalogToolbar } from '../components/projects/catalog/CatalogToolbar';
 import type { CatalogStatus } from '../components/projects/catalog/CatalogToolbar';
@@ -32,6 +33,8 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 const SORT_KEY = 'projects-catalog-sort';
 const COLLAPSED_KEY = 'projects-catalog-collapsed';
 const WIDE = '(min-width: 1024px)';
+/** Below this the phone catalog takes over (spec 2026-11-01-projects-mobile-design). */
+const PHONE = '(max-width: 767px)';
 
 function readStored<T>(key: string, parse: (raw: string) => T, fallback: T): T {
   try {
@@ -49,18 +52,21 @@ function store(key: string, value: string) {
   }
 }
 
-/** True from `lg` up: the pane sits beside the list; below, a row opens the project page. */
-function useWide(): boolean {
-  const [wide, setWide] = useState(() => (typeof window.matchMedia === 'function' ? window.matchMedia(WIDE).matches : true));
+function useMatches(query: string, fallback: boolean): boolean {
+  const [matches, setMatches] = useState(() => (typeof window.matchMedia === 'function' ? window.matchMedia(query).matches : fallback));
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia(WIDE);
-    const onChange = () => setWide(mq.matches);
+    const mq = window.matchMedia(query);
+    const onChange = () => setMatches(mq.matches);
     mq.addEventListener?.('change', onChange);
     return () => mq.removeEventListener?.('change', onChange);
-  }, []);
-  return wide;
+  }, [query]);
+  return matches;
 }
+/** True from `lg` up: the pane sits beside the list; below, a row opens the project page. */
+const useWide = () => useMatches(WIDE, true);
+/** True on a phone: the folder browser (`MobileCatalog`) replaces the page. A wide answer wins. */
+const usePhone = () => useMatches(PHONE, false);
 
 /** /projects — the catalog (design 2026-10-31): one search, folders on the left, the selected
  *  project's printing files on the right. `?q=` and `?project=` live in the URL. */
@@ -87,6 +93,9 @@ export function ProjectListPage() {
   const [newProject, setNewProject] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const wide = useWide();
+  const phone = usePhone() && !wide;
+  // The phone catalog's current folder: in the URL, so the browser's back walks up.
+  const folderParam = params.get('folder') ? Number(params.get('folder')) : null;
 
   const setParam = useCallback(
     (key: string, value: string | null) =>
@@ -195,6 +204,51 @@ export function ProjectListPage() {
       navigate(`/projects/${selectedId}`);
     }
   };
+
+  if (phone) {
+    return (
+      <>
+        <MobileCatalog
+          items={shown}
+          folders={folders}
+          isLoading={isLoading}
+          q={q}
+          onQChange={(next) => setParam('q', next)}
+          filtering={filtering}
+          filters={filters}
+          onToggleChip={toggleChip}
+          onToggleMaterial={toggleMaterial}
+          materials={materials}
+          usedTags={usedTags}
+          tagIds={tagIds}
+          onToggleTag={(id) => setTagIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))}
+          sort={sort}
+          onSortChange={changeSort}
+          status={status}
+          onStatusChange={setStatus}
+          folderId={folderParam !== null && folders.some((f) => f.id === folderParam) ? folderParam : null}
+          onFolderChange={(id) => setParam('folder', id === null ? null : String(id))}
+          canCreate={hasPermission('projects:create')}
+          canUpdate={canUpdate}
+          onOpenProject={(id) => navigate(`/projects/${id}`)}
+          onNewProject={() => setNewProject(true)}
+          onCreateFolder={(name, parentId) => mutations.createFolder.mutateAsync({ name, parent_id: parentId })}
+          onRenameFolder={(id, name) => mutations.updateFolder.mutateAsync({ id, name })}
+          onDeleteFolder={(id) => mutations.deleteFolder.mutate(id)}
+          onMoveFolder={(id, parentId) => mutations.updateFolder.mutate({ id, parent_id: parentId })}
+          hideFab={newProject}
+          searchRef={searchRef}
+        />
+        {newProject && (
+          <NewProjectModal
+            onClose={() => setNewProject(false)}
+            // Inside a folder the new project is filed there, then opened as usual.
+            onCreated={folderParam !== null ? (project) => { mutations.moveProject.mutate({ projectId: project.id, folderId: folderParam }); navigate(`/projects/${project.id}`); } : undefined}
+          />
+        )}
+      </>
+    );
+  }
 
   return (
     <div className="space-y-4 p-4 md:p-6" onKeyDown={onKeyDown}>

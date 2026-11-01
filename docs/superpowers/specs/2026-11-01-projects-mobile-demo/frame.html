@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Projects · phone propositions</title>
+<style>
+  body { margin: 0; padding: 32px 24px 48px; background: #05080c; font: 13px/1.5 Inter, system-ui, sans-serif; color: #93a4b6; }
+  h1 { color: #e9eff6; font-size: 18px; margin: 0 0 4px; }
+  .lead { max-width: 1400px; margin: 0 0 24px; }
+  .row { display: flex; gap: 36px; align-items: flex-start; justify-content: center; flex-wrap: wrap; }
+  .col { width: 390px; }
+  .phone { width: 390px; height: 844px; border: 10px solid #1c232c; border-radius: 44px; overflow: hidden; box-shadow: 0 30px 60px rgba(0,0,0,.5); background: #0c1016; box-sizing: content-box; }
+  iframe, .phone img { width: 390px; height: 844px; border: 0; display: block; }
+  .col h2 { color: #e9eff6; font-size: 15px; margin: 18px 0 6px; }
+  .col h2 b { color: #14b8a6; font-family: ui-monospace, monospace; margin-right: 6px; }
+  .col ul { margin: 0; padding-left: 18px; }
+  .col li { margin: 2px 0; }
+  .col li b { color: #e9eff6; }
+  .shared { max-width: 1400px; margin: 36px auto 0; border: 1px solid #212c37; border-radius: 12px; padding: 16px 20px; background: #141b23; }
+  .shared b { color: #e9eff6; }
+  .shared ul { margin: 8px 0 0; padding-left: 18px; }
+  a { color: #14b8a6; }
+  .cur { opacity: .85; }
+</style>
+</head>
+<body>
+  <h1>Projects on a phone — three propositions</h1>
+  <p class="lead">Each phone runs the same mockup at 390 × 844 on sample data. Search, chips, the ⚙ sheet, folders and the + button work; opening a project shows a toast. Open any one alone with <code>index.html#a</code> / <code>#b</code> / <code>#c</code> — on your phone too, same URL.</p>
+  <div class="row">
+    <div class="col cur">
+      <div class="phone"><img src="current.png" alt="Current page"></div>
+      <h2><b>now</b>Current page</h2>
+      <ul>
+        <li>Title, subtitle, a wide "New project" button, search, two selects and wrapping chips take the top 40 % before the first project.</li>
+        <li>The list scrolls inside a 72 vh box inside a page that also scrolls.</li>
+        <li>Folders are drag-and-drop only; the "New folder" control is 28 px tall.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="phone"><iframe src="index.html#a" title="A"></iframe></div>
+      <h2><b>A</b>One list, folders fold</h2>
+      <ul>
+        <li><b>Same structure as the desktop tree</b>, resized for a thumb: 56 px rows, 44 px thumbnails, folders fold with a chevron, ⋯ on a folder opens a sheet (rename, new inside, move, delete).</li>
+        <li>Search + one filter button; chips on a single scrolling rail.</li>
+        <li>Deep folders indent 16 px a level — fine for two levels, tight beyond.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="phone"><iframe src="index.html#b" title="B"></iframe></div>
+      <h2><b>B</b>Folder browser (drill in)</h2>
+      <ul>
+        <li><b>One folder at a time</b>, like the Files app: subfolders first, then the projects here, big 72 px rows with client and file on their own lines. Back arrow + breadcrumb in the title.</li>
+        <li>Search ignores the folder and shows flat results with their path.</li>
+        <li><b>+ creates where you are</b> (the menu says so). More taps to see everything.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="phone"><iframe src="index.html#c" title="C"></iframe></div>
+      <h2><b>C</b>Visual grid</h2>
+      <ul>
+        <li><b>Two-column cards</b> led by the part thumbnail; code, production flame and recommended file sit on the picture; name, client and printed count below.</li>
+        <li>Folders are tiles on a rail at the top (a 2 × 2 mosaic of their parts); tapping one scopes the grid, a chip undoes it.</li>
+        <li>Best for recognising a part by eye; long names clamp to two lines, fewer rows per screen.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="shared">
+    <b>In every proposition</b>
+    <ul>
+      <li><b>The + button from the Aito board</b>, fixed bottom-right in the safe area: + turns into × and opens a two-row menu, <i>New project</i> / <i>New folder</i>. The header button goes away on phones.</li>
+      <li><b>The page is exactly the screen</b> under the top bar; the header stays, only the list scrolls (same recipe as the Aito phone board — no nested 72 vh box).</li>
+      <li><b>Status and sort move behind one button</b> (a dot shows when they are not the defaults) into a bottom sheet; the three quick chips and the materials stay visible on a rail.</li>
+      <li><b>Touch targets</b> 44 px or more everywhere; no drag-and-drop on phones — folders are managed from their ⋯ sheet, projects from the project page (Move to folder…).</li>
+      <li><b>Tap a row = open the project page</b>, as today below <code>lg</code>.</li>
+    </ul>
+  </div>
+</body>
+</html>

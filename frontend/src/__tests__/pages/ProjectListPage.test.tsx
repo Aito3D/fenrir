@@ -329,6 +329,29 @@ describe('ProjectListPage (catalog)', () => {
     expect(window.location.pathname).toBe('/projects/2');
   });
 
+  it('on a phone the folder browser takes over, with the folder in the URL', async () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => mediaQuery(query === '(max-width: 767px)')));
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-mobile-folder-1');
+    expect(screen.getByTestId('catalog-mobile')).toBeInTheDocument();
+    expect(screen.queryByTestId('catalog-row-1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('catalog-mobile-row-1')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Car' }));
+    expect(window.location.search).toContain('folder=1');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Car');
+    await userEvent.click(screen.getByRole('button', { name: 'Wheel cap' }));
+    expect(window.location.search).toContain('folder=2');
+    expect(screen.getByTestId('catalog-mobile-row-1')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(window.location.search).toContain('folder=1');
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(window.location.search).not.toContain('folder=');
+    await userEvent.click(screen.getByRole('button', { name: 'Car' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Wheel cap' }));
+    await userEvent.click(within(screen.getByTestId('catalog-mobile-row-2')).getByRole('button'));
+    expect(window.location.pathname).toBe('/projects/2');
+  });
+
   it('shows the empty-search message', async () => {
     render(<ProjectListPage />);
     await screen.findByTestId('catalog-row-1');

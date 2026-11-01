@@ -132,7 +132,7 @@ export function Highlight({ text, q }: { text: string; q: string }) {
 /** The row's picture: the thumbnail fades in as it loads instead of popping (a lazily loaded
  *  one arrives while the list is on screen). A cached image is complete before React can
  *  listen for `load`, so the ref reads `complete` as well. */
-function Thumb({ item, className }: { item: ProjectCatalogItem; className: string }) {
+export function Thumb({ item, className }: { item: ProjectCatalogItem; className: string }) {
   const [loaded, setLoaded] = useState(false);
   return (
     <div className={`${className} flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-bambu-dark-tertiary bg-bambu-dark`}>
@@ -170,7 +170,8 @@ function factsLine(item: ProjectCatalogItem, t: (k: string, o?: Record<string, u
   return parts.join(' · ');
 }
 
-function printedCell(item: ProjectCatalogItem) {
+/** The printed count: green once the target is met, a dash when never printed. */
+export function PrintedCell({ item }: { item: ProjectCatalogItem }) {
   if (item.target_count) {
     const done = item.printed_count >= item.target_count;
     return <span className={done ? 'text-bambu-green' : 'text-white'}>{`${item.printed_count}/${item.target_count}`}</span>;
@@ -197,7 +198,7 @@ function ProjectRowBody({ item, q, path }: { item: ProjectCatalogItem; q: string
         )}
         <div className="truncate text-[11px] text-bambu-gray">{factsLine(item, t)}</div>
       </div>
-      <span className="text-xs">{printedCell(item)}</span>
+      <span className="text-xs"><PrintedCell item={item} /></span>
     </>
   );
 }

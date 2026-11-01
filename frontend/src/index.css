@@ -1904,6 +1904,24 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
 .animate-sheet-out {
   animation: sheet-out 0.2s var(--ease-exit) forwards;
 }
+/* Phone catalog: the list slides in from the side you are moving towards. */
+@keyframes drill-in {
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes drill-back {
+  from { opacity: 0; transform: translateX(-28px); }
+  to { opacity: 1; transform: none; }
+}
+.animate-drill-in {
+  animation: drill-in 0.24s var(--ease-signature);
+}
+.animate-drill-back {
+  animation: drill-back 0.24s var(--ease-signature);
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-drill-in, .animate-drill-back { animation: none; }
+}
 /* Mobile anchored menus — a small scale from their anchor corner. */
 @keyframes pop-in {
   from { opacity: 0; transform: translateY(4px) scale(0.97); }

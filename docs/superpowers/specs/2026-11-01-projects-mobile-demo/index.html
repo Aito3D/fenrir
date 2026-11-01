@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Projects · phone</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  bg: '#0c1016', surf: '#141b23', line: '#212c37', ink: '#e9eff6', sub: '#93a4b6', mute: '#6f8496', acc: '#14b8a6',
+} } } };
+</script>
+<style>
+  html { font-size: 14.4px; }
+  body { background: #0c1016; color: #e9eff6; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
+  [data-lucide] { width: 1em; height: 1em; }
+  .thumb img { filter: brightness(1.25) contrast(1.1); }
+  .h1 img { filter: brightness(1.25) contrast(1.1) hue-rotate(160deg); }
+  .h2 img { filter: brightness(1.15) contrast(1.1) hue-rotate(250deg) saturate(.6); }
+  .h3 img { filter: brightness(1.2) contrast(1.1) hue-rotate(40deg) saturate(.8); }
+  .chip[aria-pressed=true] { background: rgba(20,184,166,.18); border-color: #14b8a6; color: #fff; }
+  .seg[aria-pressed=true] { background: #141b23; color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  mark { background: rgba(20,184,166,.35); color: inherit; border-radius: 2px; }
+  .nosb { scrollbar-width: none; } .nosb::-webkit-scrollbar { display: none; }
+  .ease-sig { transition-timing-function: cubic-bezier(.22,1,.36,1); }
+  .fab-glyph { transition: rotate .2s cubic-bezier(.22,1,.36,1); }
+  .fab[aria-expanded=true] .fab-glyph { rotate: 45deg; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+  @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes sheet { from { transform: translateY(100%) } to { transform: none } }
+  @keyframes slide-in { from { opacity: 0; transform: translateX(28px) } to { opacity: 1; transform: none } }
+  @keyframes slide-back { from { opacity: 0; transform: translateX(-28px) } to { opacity: 1; transform: none } }
+  .menu-in { animation: rise .16s cubic-bezier(.22,1,.36,1) both; transform-origin: bottom right; }
+  .fade-in { animation: fade .16s ease-out both; }
+  .sheet-in { animation: sheet .26s cubic-bezier(.22,1,.36,1) both; }
+  .slide-in { animation: slide-in .24s cubic-bezier(.22,1,.36,1) both; }
+  .slide-back { animation: slide-back .24s cubic-bezier(.22,1,.36,1) both; }
+  .row:active { background: rgba(255,255,255,.04); }
+  .chev[data-open=true] { rotate: 90deg; } .chev { transition: rotate .2s cubic-bezier(.22,1,.36,1); }
+  .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .toast { animation: rise .18s cubic-bezier(.22,1,.36,1) both; }
+</style>
+</head>
+<body class="h-[100dvh] overflow-hidden select-none">
+
+<!-- the app shell's top bar, as on the phone -->
+<div class="h-[3.5rem] flex items-center justify-between px-4 border-b border-line bg-[#0e131a]">
+  <i data-lucide="menu" class="text-xl text-ink"></i>
+  <div class="text-lg font-bold tracking-widest">AITO<span class="text-acc">3D</span></div>
+  <i data-lucide="bell" class="text-xl text-sub"></i>
+</div>
+
+<div id="page" class="h-[calc(100dvh-3.5rem)] flex flex-col">
+  <header id="head" class="shrink-0 px-4 pt-3 pb-2 space-y-2 border-b border-line bg-bg"></header>
+  <main id="list" class="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-28"></main>
+</div>
+
+<!-- floating create button: the Aito board's, verbatim -->
+<button id="fab" class="fab fixed right-4 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-30 grid place-items-center w-14 h-14 rounded-2xl bg-acc text-white shadow-lg shadow-acc/30" aria-haspopup="menu" aria-expanded="false" aria-label="Create">
+  <i data-lucide="plus" class="fab-glyph text-2xl"></i>
+</button>
+<div id="overlay"></div>
+<div id="toast" class="pointer-events-none fixed inset-x-4 bottom-[6.5rem] z-40 flex justify-center"></div>
+
+<script>
+const P = (id, code, name, o) => Object.assign({ id, code, name, client: null, order: null, tags: [], printer: 'Bambu Lab X1C', nozzle: '0.4', material: 'PETG', printed: 0, target: null, activity: '', hue: '', files: [] }, o);
+const F = (name, rev, status, o) => Object.assign({ name, rev, status, time: '2h 22m', grams: '99.5 g', plates: 1, sliced: true, printed: 0 }, o);
+const DATA = [
+  P(14, 'P-0014', 'Support pour Starlink', { client: 'Marc T.', order: '#1098', tags: ['starlink','mount'], material: 'ASA', printed: 0, target: 40, activity: '2 h ago', hue: 'h1', files: [F('Starlink_Mount_plate_4', 'R1', 'In progress'), F('Starlink_clip', 'R2', 'Approved')] }),
+  P(13, 'P-0013', 'PS5 Slim Stand', { client: 'Café Moana', order: '#1097', tags: ['stand'], activity: '5 h ago', hue: '', files: [F('ps5proorizontale', 'R1', 'Approved')] }),
+  P(12, 'P-0012', 'LookUp Space Guide n°3', { tags: ['lookup','guide'], material: 'PLA', activity: 'yesterday', hue: 'h2', files: [F('guide_3_v2', 'R2', 'Approved'), F('guide_3_v1', 'R1', 'Obsolete')] }),
+  P(11, 'P-0011', 'Étiquette Ocean Shiver 5×3 cm', { client: 'Ocean Shiver', tags: ['label'], material: 'PLA', activity: '2 days ago', hue: 'h3', files: [] }),
+  P(10, 'P-0010', 'Pièce RC avion', { client: 'Jules R.', material: 'PC', printed: 1, activity: '3 days ago', hue: 'h1', files: [F('aile_support', 'R1', 'Approved', { printed: 1 })] }),
+  P(9, 'P-0009', 'Pièce filetage pied rétroprojecteur', { client: 'Lycée Lapérouse', order: '#1091', material: 'PETG', printed: 1, target: 2, activity: '4 days ago', hue: '', files: [F('pied_filetage_M12', 'R3', 'Approved', { printed: 1 })] }),
+  P(15, 'P-0015', '350Z 60mm WheelCap', { client: 'Nissan Club NC', tags: ['auto','nissan'], material: 'ASA', printed: 4, activity: '6 days ago', hue: 'h3', files: [F('350z_cap_60mm', 'R2', 'Approved', { printed: 4 })] }),
+  P(8, 'P-0008', 'Toyota Wheel Cap', { tags: ['auto'], material: 'ASA', printed: 3, activity: '1 week ago', hue: 'h2', files: [F('wheel_cap_57mm', 'R2', 'Approved', { printed: 3 })] }),
+  P(7, 'P-0007', 'Cache Néiman Talaria', { client: 'Moto Nouméa', tags: ['moto'], material: 'ASA', activity: '1 week ago', hue: 'h3', files: [F('cache_neiman', 'R1', 'In progress', { sliced: false })] }),
+  P(6, 'P-0006', 'Défenses d’éléphant imprimées en 3D', { client: 'Musée de la Ville', material: 'PC', activity: '2 weeks ago', hue: '', files: [F('defense_gauche_x4', 'R1', 'Approved')] }),
+  P(5, 'P-0005', 'Cache barre lumière', { material: 'PETG', activity: '2 weeks ago', hue: 'h1', files: [F('cache_barre', 'R1', 'Approved')] }),
+  P(4, 'P-0004', 'Etiquettes SERTEC', { client: 'SERTEC', order: '#1084', tags: ['label'], material: 'PLA', printed: 3, target: 3, activity: '3 weeks ago', hue: 'h2', files: [F('etiquettes_sertec_x12', 'R1', 'Approved', { printed: 3 })] }),
+  P(3, 'P-0003', 'Scan d’une surface de portière Ford Ranger', { client: 'Garage Pacifique', tags: ['ford','scan'], activity: '1 month ago', hue: 'h3', files: [] }),
+  P(2, 'P-0002', 'Sarbacane', { material: 'PETG', activity: '1 month ago', hue: '', files: [F('sarbacane_tube', 'R1', 'Approved')] }),
+  P(1, 'P-0001', 'Logo F170', { client: 'Ford Nouméa', tags: ['f170','ford','logo'], material: 'PLA', printed: 1, activity: '2 months ago', hue: 'h1', files: [F('logo_f170', 'R1', 'Approved', { printed: 1 })] }),
+];
+const FOLDERS = [
+  { id: 1, name: 'Car', parent: null }, { id: 2, name: 'Wheel cap', parent: 1 }, { id: 3, name: 'Accessories', parent: 1 },
+  { id: 4, name: 'Labels', parent: null }, { id: 5, name: 'Clients', parent: null }, { id: 6, name: 'Café Moana', parent: 5 },
+];
+const FOLDER_OF = { 8: 2, 15: 2, 1: 3, 7: 3, 4: 4, 11: 4, 13: 6, 12: 6 };
+DATA.forEach(p => { p.folder = FOLDER_OF[p.id] ?? null; });
+const folderById = id => FOLDERS.find(f => f.id === id);
+const folderPath = id => { const out = []; let f = folderById(id); while (f) { out.unshift(f.name); f = folderById(f.parent); } return out; };
+const subtreeIds = id => [id, ...FOLDERS.filter(f => f.parent === id).flatMap(f => subtreeIds(f.id))];
+const norm = s => (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const rec = p => p.files.find(f => f.status === 'Approved' && f.sliced) || p.files.find(f => f.sliced) || null;
+const ready = p => !!rec(p);
+const hay = p => norm([p.code, p.name, p.client, p.order, p.tags.join(' '), p.printer, p.material, ...folderPath(p.folder), ...p.files.map(f => f.name)].join(' '));
+
+const V = (location.hash.replace('#', '') || new URLSearchParams(location.search).get('v') || 'a').toLowerCase();
+const state = { q: '', flags: new Set(), mats: new Set(), status: 'Active', sort: 'activity', collapsed: new Set([5]), folder: null, dir: 'in', overlay: null };
+
+function filtered() {
+  const q = norm(state.q).trim().split(/\s+/).filter(Boolean);
+  let out = DATA.filter(p => q.every(t => hay(p).includes(t)));
+  if (state.flags.has('prod')) out = out.filter(p => p.order);
+  if (state.flags.has('ready')) out = out.filter(ready);
+  if (state.flags.has('nofile')) out = out.filter(p => p.files.length === 0);
+  if (state.mats.size) out = out.filter(p => state.mats.has(p.material));
+  const order = { activity: (a, b) => DATA.indexOf(a) - DATA.indexOf(b), code: (a, b) => a.code.localeCompare(b.code), name: (a, b) => a.name.localeCompare(b.name), printed: (a, b) => b.printed - a.printed };
+  return out.sort(order[state.sort]);
+}
+const filtering = () => state.q.trim() || state.flags.size || state.mats.size;
+function hl(text) {
+  const q = state.q.trim(); if (!q) return esc(text);
+  const terms = q.split(/\s+/).filter(Boolean).map(norm);
+  const src = String(text), n = norm(src), marks = new Array(src.length).fill(false);
+  terms.forEach(t => { let i = 0; while ((i = n.indexOf(t, i)) !== -1) { for (let k = i; k < i + t.length; k++) marks[k] = true; i += t.length; } });
+  let out = '', inMark = false;
+  for (let i = 0; i < src.length; i++) { if (marks[i] && !inMark) { out += '<mark>'; inMark = true; } if (!marks[i] && inMark) { out += '</mark>'; inMark = false; } out += esc(src[i]); }
+  return out + (inMark ? '</mark>' : '');
+}
+const facts = p => {
+  const parts = [];
+  if (p.client) parts.push(p.client);
+  if (!p.files.length) parts.push('no file yet');
+  else { parts.push(`${p.files.length} file${p.files.length > 1 ? 's' : ''}`); const r = rec(p); if (r) parts.push(`${r.rev} ${r.name}`); else parts.push('nothing sliced yet'); }
+  if (rec(p)) parts.push(p.material);
+  parts.push(p.activity);
+  return parts.map(hl).join(' · ');
+};
+const printedCell = p => p.target ? `<span class="${p.printed >= p.target ? 'text-acc' : 'text-ink'}">${p.printed}/${p.target}</span>` : p.printed ? `<span class="text-ink">${p.printed}</span>` : `<span class="text-mute/60">—</span>`;
+const thumb = (p, cls) => `<div class="thumb ${p.hue} ${cls} shrink-0 rounded-lg border border-line bg-bg overflow-hidden grid place-items-center">${p.files.length ? `<img src="part.png" alt="" class="w-full h-full object-cover">` : `<i data-lucide="box" class="text-mute/50"></i>`}</div>`;
+const flame = p => p.order ? `<i data-lucide="flame" class="text-amber-300 shrink-0"></i>` : '';
+
+/* ---------- shared header pieces ---------- */
+const filtersActive = () => state.status !== 'Active' || state.sort !== 'activity';
+function searchRow(placeholder = 'Search code, title, client, order #, file…') {
+  return `
+  <div class="flex items-center gap-2">
+    <label class="relative flex-1">
+      <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 text-mute"></i>
+      <input id="q" type="search" autocomplete="off" value="${esc(state.q)}" placeholder="${placeholder}"
+        class="w-full h-10 rounded-lg border border-line bg-surf pl-9 pr-3 text-[15px] placeholder:text-mute focus:outline-none focus:border-acc">
+    </label>
+    <button data-act="sheet" class="relative h-10 w-10 grid place-items-center rounded-lg border border-line bg-surf text-sub active:text-ink" aria-label="Status and sort">
+      <i data-lucide="sliders-horizontal"></i>
+      ${filtersActive() ? '<span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-acc"></span>' : ''}
+    </button>
+  </div>`;
+}
+function chipRail() {
+  const mats = ['PETG', 'PLA', 'ASA', 'PC'];
+  const chip = (attr, on, inner) => `<button ${attr} aria-pressed="${on}" class="chip shrink-0 inline-flex items-center gap-1 h-8 px-3 rounded-full border border-line text-xs text-sub">${inner}</button>`;
+  return `<div class="nosb flex gap-1.5 overflow-x-auto -mx-4 px-4">
+    ${chip('data-f="prod"', state.flags.has('prod'), '<i data-lucide="flame" class="text-amber-300"></i>In production')}
+    ${chip('data-f="ready"', state.flags.has('ready'), '<i data-lucide="check-circle-2" class="text-acc"></i>Ready to print')}
+    ${chip('data-f="nofile"', state.flags.has('nofile'), '<i data-lucide="file-x"></i>No file yet')}
+    <span class="w-px h-5 bg-line self-center shrink-0"></span>
+    ${mats.map(m => chip(`data-m="${m}"`, state.mats.has(m), m)).join('')}
+    <span class="w-px h-5 bg-line self-center shrink-0"></span>
+    ${['#auto', '#label', '#ford'].map(t => chip(`data-t="${t}"`, false, t)).join('')}
+  </div>`;
+}
+function titleRow(title, sub) {
+  return `<div class="flex items-baseline justify-between gap-3">
+    <h1 class="text-xl font-bold truncate">${title}</h1>
+    <span class="text-xs text-sub shrink-0">${sub}</span>
+  </div>`;
+}
+const countsLine = items => `${items.length} · <i data-lucide="flame" class="text-amber-300 inline"></i> ${items.filter(p => p.order).length} · <i data-lucide="check-circle-2" class="text-acc inline"></i> ${items.filter(ready).length}`;
+
+/* ---------- A · one list, folders fold ---------- */
+function renderA(head, list) {
+  const items = filtered();
+  head.innerHTML = titleRow('Projects', countsLine(items)) + searchRow() + chipRail();
+  if (filtering()) { list.innerHTML = items.length ? `<ul class="divide-y divide-line">${items.map(p => projectRow(p, 0, true)).join('')}</ul>` : empty(); return; }
+  const byFolder = id => items.filter(p => p.folder === id);
+  const tree = parent => FOLDERS.filter(f => f.parent === parent);
+  const rows = [];
+  const walk = (parent, depth) => {
+    tree(parent).forEach(f => {
+      const ids = subtreeIds(f.id); const inside = items.filter(p => ids.includes(p.folder));
+      const open = !state.collapsed.has(f.id);
+      rows.push(folderRow(f, depth, open, inside));
+      if (open) { walk(f.id, depth + 1); byFolder(f.id).forEach(p => rows.push(projectRow(p, depth + 1))); }
+    });
+  };
+  walk(null, 0);
+  const loose = byFolder(null);
+  if (loose.length) rows.push(`<li class="px-4 pt-4 pb-1 text-[11px] uppercase tracking-wide text-mute flex items-center gap-2"><i data-lucide="inbox"></i>Not in a folder <span class="normal-case tracking-normal">${loose.length}</span></li>`, ...loose.map(p => projectRow(p, 0)));
+  list.innerHTML = `<ul class="divide-y divide-line">${rows.join('')}</ul>`;
+}
+const indent = d => `padding-left:${16 + d * 16}px`;
+function folderRow(f, depth, open, inside) {
+  const prod = inside.filter(p => p.order).length;
+  return `<li class="row flex items-center gap-2 min-h-[3rem] pr-2 py-1.5" style="${indent(depth)}" data-folder="${f.id}">
+    <i data-lucide="chevron-right" class="chev text-sub shrink-0" data-open="${open}"></i>
+    <i data-lucide="${open ? 'folder-open' : 'folder'}" class="text-amber-200/80 text-base shrink-0"></i>
+    <span class="flex-1 truncate font-medium">${hl(f.name)}</span>
+    <span class="text-[11px] text-sub">${inside.length}</span>
+    ${prod ? `<span class="text-[11px] text-amber-300 flex items-center gap-0.5"><i data-lucide="flame"></i>${prod}</span>` : ''}
+    <button data-foldermenu="${f.id}" class="h-9 w-9 grid place-items-center rounded-lg text-sub active:text-ink" aria-label="Folder actions"><i data-lucide="more-horizontal"></i></button>
+  </li>`;
+}
+function projectRow(p, depth, withPath = false) {
+  const path = withPath ? folderPath(p.folder) : [];
+  return `<li class="row flex items-center gap-3 min-h-[3.5rem] pr-4 py-2" style="${indent(depth)}" data-open-project="${p.id}">
+    ${thumb(p, 'w-11 h-11')}
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-2"><span class="font-mono text-[11px] text-acc">${hl(p.code)}</span><span class="truncate text-[15px] text-ink">${hl(p.name)}</span>${flame(p)}</div>
+      ${path.length ? `<div class="flex items-center gap-1 text-[11px] text-mute"><i data-lucide="folder"></i>${path.map(hl).join(' › ')}</div>` : ''}
+      <div class="truncate text-[11px] text-sub">${facts(p)}</div>
+    </div>
+    <span class="text-xs tabular-nums">${printedCell(p)}</span>
+  </li>`;
+}
+const empty = () => `<p class="px-4 py-12 text-center text-sm text-sub">Nothing matches.</p>`;
+
+/* ---------- B · folder browser (drill in) ---------- */
+function renderB(head, list) {
+  const items = filtered();
+  const here = state.folder; const f = here ? folderById(here) : null;
+  const ids = here ? subtreeIds(here) : null;
+  const inside = here ? items.filter(p => ids.includes(p.folder)) : items;
+  const title = f ? `<button data-act="back" class="-ml-2 h-9 w-9 grid place-items-center rounded-lg text-sub active:text-ink" aria-label="Back"><i data-lucide="chevron-left" class="text-xl"></i></button><span class="truncate">${esc(f.name)}</span>` : 'Projects';
+  const crumbs = f ? `<div class="text-[11px] text-mute truncate -mt-1">${['Projects', ...folderPath(here).slice(0, -1)].join(' › ')}</div>` : '';
+  head.innerHTML = `<div class="flex items-baseline justify-between gap-3"><h1 class="text-xl font-bold truncate flex items-center gap-1">${title}</h1><span class="text-xs text-sub shrink-0">${countsLine(inside)}</span></div>${crumbs}` + searchRow(f ? `Search in ${f.name} and everywhere…` : undefined) + chipRail();
+  if (filtering()) { list.innerHTML = items.length ? `<ul class="divide-y divide-line">${items.map(p => bigRow(p, true)).join('')}</ul>` : empty(); return; }
+  const subs = FOLDERS.filter(x => x.parent === here);
+  const own = items.filter(p => p.folder === here);
+  const parts = [];
+  if (subs.length) parts.push(`<ul class="divide-y divide-line">${subs.map(s => { const sid = subtreeIds(s.id); const inS = items.filter(p => sid.includes(p.folder)); const prod = inS.filter(p => p.order).length; const sample = inS.slice(0, 1)[0];
+    return `<li class="row flex items-center gap-3 min-h-[3.75rem] px-4 py-2" data-drill="${s.id}">
+      <div class="w-11 h-11 shrink-0 rounded-lg bg-amber-300/10 border border-amber-300/20 grid place-items-center text-amber-200/90 text-xl"><i data-lucide="folder"></i></div>
+      <div class="min-w-0 flex-1"><div class="text-[15px] font-medium truncate">${esc(s.name)}</div>
+        <div class="text-[11px] text-sub truncate">${inS.length} project${inS.length === 1 ? '' : 's'}${FOLDERS.some(x => x.parent === s.id) ? ` · ${FOLDERS.filter(x => x.parent === s.id).length} folder${FOLDERS.filter(x => x.parent === s.id).length > 1 ? 's' : ''}` : ''}${prod ? ` · <span class="text-amber-300"><i data-lucide="flame" class="inline"></i> ${prod} in production</span>` : ''}${sample ? ` · ${esc(sample.code)}…` : ''}</div></div>
+      <i data-lucide="chevron-right" class="text-sub shrink-0"></i>
+    </li>`; }).join('')}</ul>`);
+  if (own.length) parts.push(`${subs.length ? `<div class="px-4 pt-4 pb-1 text-[11px] uppercase tracking-wide text-mute">${here ? 'Projects here' : 'Not in a folder'} <span class="normal-case tracking-normal">${own.length}</span></div>` : ''}<ul class="divide-y divide-line">${own.map(p => bigRow(p)).join('')}</ul>`);
+  if (!parts.length) parts.push(`<p class="px-4 py-12 text-center text-sm text-sub">This folder is empty.<br><span class="text-mute">+ creates a project here.</span></p>`);
+  list.innerHTML = `<div class="${state.dir === 'in' ? 'slide-in' : 'slide-back'}">${parts.join('')}</div>`;
+}
+function bigRow(p, withPath = false) {
+  const path = withPath ? folderPath(p.folder) : [];
+  const r = rec(p);
+  return `<li class="row flex items-center gap-3 min-h-[4.5rem] px-4 py-2.5" data-open-project="${p.id}">
+    ${thumb(p, 'w-14 h-14')}
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-2"><span class="font-mono text-[11px] text-acc">${hl(p.code)}</span>${flame(p)}<span class="ml-auto text-xs tabular-nums">${printedCell(p)}</span></div>
+      <div class="truncate text-[15px] text-ink">${hl(p.name)}</div>
+      ${path.length ? `<div class="flex items-center gap-1 text-[11px] text-mute"><i data-lucide="folder"></i>${path.map(hl).join(' › ')}</div>` : ''}
+      <div class="truncate text-[11px] text-sub">${[p.client, p.order].filter(Boolean).map(hl).join(' · ') || '<span class="text-mute">no client</span>'}</div>
+      <div class="truncate text-[11px] text-sub">${!p.files.length ? 'no file yet' : r ? `<span class="text-acc">${r.rev}</span> ${hl(r.name)} · ${p.material}` : 'nothing sliced yet'} · ${p.activity}</div>
+    </div>
+  </li>`;
+}
+
+/* ---------- C · visual grid ---------- */
+function renderC(head, list) {
+  const items = filtered();
+  head.innerHTML = titleRow('Projects', countsLine(items)) + searchRow() + chipRail();
+  const scoped = state.folder ? items.filter(p => subtreeIds(state.folder).includes(p.folder)) : items;
+  const parts = [];
+  if (!filtering()) {
+    const roots = FOLDERS.filter(f => f.parent === (state.folder ?? null));
+    const scope = state.folder ? `<button data-act="unscope" class="chip shrink-0 inline-flex items-center gap-1 h-8 px-3 rounded-full border border-acc bg-acc/15 text-xs text-ink"><i data-lucide="folder"></i>${esc(folderPath(state.folder).join(' › '))}<i data-lucide="x" class="text-sub"></i></button>` : '';
+    if (roots.length || scope) parts.push(`<div class="nosb flex gap-2 overflow-x-auto px-4 pt-3 pb-1">${scope}${roots.map(f => { const ids = subtreeIds(f.id); const inF = items.filter(p => ids.includes(p.folder)); const pics = inF.filter(p => p.files.length).slice(0, 4);
+      return `<button data-scope="${f.id}" class="shrink-0 w-[7.5rem] text-left">
+        <div class="aspect-[4/3] rounded-xl border border-line bg-surf overflow-hidden grid grid-cols-2 gap-px p-px">${[0,1,2,3].map(i => pics[i] ? `<div class="thumb ${pics[i].hue} bg-bg overflow-hidden"><img src="part.png" alt="" class="w-full h-full object-cover"></div>` : '<div class="bg-bg/60"></div>').join('')}</div>
+        <div class="mt-1.5 flex items-center gap-1 text-sm font-medium truncate"><i data-lucide="folder" class="text-amber-200/80"></i>${esc(f.name)}</div>
+        <div class="text-[11px] text-sub">${inF.length} project${inF.length === 1 ? '' : 's'}${inF.some(p => p.order) ? ` · <i data-lucide="flame" class="inline text-amber-300"></i>${inF.filter(p => p.order).length}` : ''}</div>
+      </button>`; }).join('')}</div>`);
+  }
+  const shown = filtering() ? items : scoped;
+  parts.push(shown.length ? `<div class="grid grid-cols-2 gap-3 px-4 pt-3">${shown.map(card).join('')}</div>` : empty());
+  list.innerHTML = parts.join('');
+}
+function card(p) {
+  const r = rec(p);
+  return `<button data-open-project="${p.id}" class="text-left rounded-xl border border-line bg-surf overflow-hidden active:border-acc/60">
+    <div class="relative aspect-square thumb ${p.hue} bg-bg grid place-items-center">${p.files.length ? `<img src="part.png" alt="" class="w-full h-full object-cover">` : `<i data-lucide="box" class="text-3xl text-mute/40"></i>`}
+      <span class="absolute left-2 top-2 rounded bg-bg/80 backdrop-blur px-1.5 py-0.5 font-mono text-[11px] text-acc">${hl(p.code)}</span>
+      ${p.order ? `<span class="absolute right-2 top-2 rounded-full bg-amber-400/20 text-amber-300 p-1"><i data-lucide="flame"></i></span>` : ''}
+      ${!p.files.length ? `<span class="absolute inset-x-2 bottom-2 rounded bg-bg/80 px-1.5 py-0.5 text-[11px] text-sub text-center">no file yet</span>` : r ? `<span class="absolute inset-x-2 bottom-2 rounded bg-bg/80 px-1.5 py-0.5 text-[11px] text-sub truncate"><span class="text-acc">${r.rev}</span> ${hl(r.name)}</span>` : `<span class="absolute inset-x-2 bottom-2 rounded bg-bg/80 px-1.5 py-0.5 text-[11px] text-sub text-center">nothing sliced</span>`}
+    </div>
+    <div class="p-2.5">
+      <div class="clamp2 text-sm leading-snug text-ink">${hl(p.name)}</div>
+      <div class="mt-1 flex items-center justify-between gap-2 text-[11px] text-sub"><span class="truncate">${p.client ? hl(p.client) : `<span class="text-mute">${p.activity}</span>`}</span><span class="tabular-nums shrink-0">${p.target || p.printed ? '<i data-lucide="printer" class="inline mr-0.5"></i>' : ''}${printedCell(p)}</span></div>
+    </div>
+  </button>`;
+}
+
+/* ---------- overlays: create menu, filter sheet, folder menu ---------- */
+function menuHtml(items, caption) {
+  return `<div class="fixed inset-0 z-50"><div data-act="close" class="absolute inset-0 bg-black/30 fade-in"></div>
+    <div role="menu" class="menu-in absolute right-4 bottom-[calc(1.5rem+env(safe-area-inset-bottom)+4rem)] min-w-[13.5rem] rounded-xl border border-line bg-surf p-1.5 shadow-2xl">
+      ${caption ? `<div class="px-3 pt-1.5 pb-2 text-[11px] text-mute border-b border-line mb-1">${caption}</div>` : ''}
+      ${items.map(it => `<button data-toast="${esc(it.toast)}" class="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] text-ink active:bg-line"><i data-lucide="${it.icon}" class="text-sub"></i>${it.label}</button>`).join('')}
+    </div></div>`;
+}
+function sheetHtml() {
+  const seg = (v) => `<button data-status="${v}" aria-pressed="${state.status === v}" class="seg flex-1 h-9 rounded-lg text-sm text-sub">${v}</button>`;
+  const sorts = [['activity', 'Last activity'], ['code', 'Code'], ['name', 'Title'], ['printed', 'Most printed']];
+  return `<div class="fixed inset-0 z-50"><div data-act="close" class="absolute inset-0 bg-black/40 fade-in"></div>
+    <div class="sheet-in absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-line bg-surf pb-[calc(1rem+env(safe-area-inset-bottom))]">
+      <div class="mx-auto mt-2 h-1 w-10 rounded-full bg-line"></div>
+      <div class="px-4 pt-3 pb-1 text-[11px] uppercase tracking-wide text-mute">Status</div>
+      <div class="mx-4 flex gap-1 rounded-xl bg-bg p-1">${['Active', 'Completed', 'Archived', 'All'].map(seg).join('')}</div>
+      <div class="px-4 pt-4 pb-1 text-[11px] uppercase tracking-wide text-mute">Sort</div>
+      <ul class="mx-4 divide-y divide-line rounded-xl border border-line">${sorts.map(([k, l]) => `<li><button data-sort="${k}" class="w-full flex items-center justify-between px-3 py-2.5 text-[15px] ${state.sort === k ? 'text-ink' : 'text-sub'}">${l}${state.sort === k ? '<i data-lucide="check" class="text-acc"></i>' : ''}</button></li>`).join('')}</ul>
+      <button data-act="close" class="mx-4 mt-4 h-11 w-[calc(100%-2rem)] rounded-xl bg-acc text-bg font-medium">Done</button>
+    </div></div>`;
+}
+function folderMenuHtml(id) {
+  const f = folderById(id);
+  return `<div class="fixed inset-0 z-50"><div data-act="close" class="absolute inset-0 bg-black/40 fade-in"></div>
+    <div class="sheet-in absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-line bg-surf p-2 pb-[calc(.5rem+env(safe-area-inset-bottom))]">
+      <div class="px-3 pt-2 pb-2 text-[11px] text-mute flex items-center gap-1"><i data-lucide="folder" class="text-amber-200/80"></i>${esc(folderPath(id).join(' › '))}</div>
+      ${[['pencil', 'Rename', `Rename folder "${f.name}"`], ['folder-plus', 'New folder inside', `New folder inside "${f.name}"`], ['folder-input', 'Move to folder…', `Move "${f.name}" to another folder`]].map(([i, l, t]) => `<button data-toast="${esc(t)}" class="w-full flex items-center gap-3 rounded-lg px-3 py-3 text-[15px] text-ink active:bg-line"><i data-lucide="${i}" class="text-sub"></i>${l}</button>`).join('')}
+      <button data-toast="Delete folder: its projects move up a level" class="w-full flex items-center gap-3 rounded-lg px-3 py-3 text-[15px] text-red-400 active:bg-line border-t border-line mt-1"><i data-lucide="trash-2"></i>Delete folder</button>
+    </div></div>`;
+}
+
+/* ---------- plumbing ---------- */
+const $ = s => document.querySelector(s);
+function render() {
+  const head = $('#head'), list = $('#list');
+  const focused = document.activeElement === $('#q'); const sel = focused ? [$('#q').selectionStart, $('#q').selectionEnd] : null;
+  ({ a: renderA, b: renderB, c: renderC }[V] || renderA)(head, list);
+  const fab = $('#fab'); fab.setAttribute('aria-expanded', state.overlay === 'create');
+  fab.classList.toggle('z-[60]', state.overlay === 'create'); fab.classList.toggle('z-30', state.overlay !== 'create');
+  const here = V === 'b' && state.folder ? `in <b class="text-ink">${esc(folderById(state.folder).name)}</b>` : V === 'c' && state.folder ? `in <b class="text-ink">${esc(folderById(state.folder).name)}</b>` : '';
+  $('#overlay').innerHTML = state.overlay === 'create' ? menuHtml([{ icon: 'plus', label: 'New project', toast: 'New project drawer' + (here ? ` (filed ${here.replace(/<[^>]+>/g, '')})` : '') }, { icon: 'folder-plus', label: 'New folder', toast: 'New folder' + (here ? ` ${here.replace(/<[^>]+>/g, '')}` : '') }], here)
+    : state.overlay === 'sheet' ? sheetHtml() : typeof state.overlay === 'number' ? folderMenuHtml(state.overlay) : '';
+  lucide.createIcons();
+  if (focused) { const q = $('#q'); q.focus({ preventScroll: true }); try { q.setSelectionRange(sel[0], sel[1]); } catch {} }
+}
+function toast(text) {
+  const t = $('#toast'); t.innerHTML = `<div class="toast rounded-lg border border-line bg-surf px-3 py-2 text-xs text-ink shadow-xl">${esc(text)}</div>`;
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.innerHTML = ''; }, 1600);
+}
+document.addEventListener('input', e => { if (e.target.id === 'q') { state.q = e.target.value; render(); } });
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-f],[data-m],[data-t],[data-act],[data-folder],[data-foldermenu],[data-open-project],[data-drill],[data-scope],[data-status],[data-sort],[data-toast],#fab');
+  if (!t) return;
+  if (t.id === 'fab') { state.overlay = state.overlay === 'create' ? null : 'create'; return render(); }
+  if (t.dataset.toast) { state.overlay = null; toast(t.dataset.toast); return render(); }
+  if (t.dataset.f) { state.flags.has(t.dataset.f) ? state.flags.delete(t.dataset.f) : state.flags.add(t.dataset.f); return render(); }
+  if (t.dataset.m) { state.mats.has(t.dataset.m) ? state.mats.delete(t.dataset.m) : state.mats.add(t.dataset.m); return render(); }
+  if (t.dataset.t) { toast(`Tag filter ${t.dataset.t} (demo)`); return; }
+  if (t.dataset.status) { state.status = t.dataset.status; return render(); }
+  if (t.dataset.sort) { state.sort = t.dataset.sort; return render(); }
+  if (t.dataset.act === 'sheet') { state.overlay = 'sheet'; return render(); }
+  if (t.dataset.act === 'close') { state.overlay = null; return render(); }
+  if (t.dataset.act === 'back') { const f = folderById(state.folder); state.folder = f ? f.parent : null; state.dir = 'back'; return render(); }
+  if (t.dataset.act === 'unscope') { state.folder = null; return render(); }
+  if (t.dataset.foldermenu) { state.overlay = Number(t.dataset.foldermenu); return render(); }
+  if (t.dataset.folder) { const id = Number(t.dataset.folder); state.collapsed.has(id) ? state.collapsed.delete(id) : state.collapsed.add(id); return render(); }
+  if (t.dataset.drill) { state.folder = Number(t.dataset.drill); state.dir = 'in'; $('#list').scrollTop = 0; return render(); }
+  if (t.dataset.scope) { state.folder = Number(t.dataset.scope); return render(); }
+  if (t.dataset.openProject) { const p = DATA.find(x => x.id === Number(t.dataset.openProject)); toast(`Opens the project page: ${p.code} ${p.name}`); }
+});
+window.addEventListener('hashchange', () => location.reload());
+render();
+</script>
+</body>
+</html>
