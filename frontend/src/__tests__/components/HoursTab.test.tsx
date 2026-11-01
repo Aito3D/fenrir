@@ -86,8 +86,19 @@ describe('HoursTab', () => {
     expect(row).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('rail rows show a sparkline and no per-month rate', async () => {
+    serve();
+    render(<HoursTab />);
+    const list = await screen.findByTestId('hours-machine-list');
+    const rows = within(list).getAllByTestId('hours-machine-row');
+    expect(rows).toHaveLength(3);
+    for (const row of rows) expect(row.querySelector('svg[data-testid=sparkline]')).not.toBeNull();
+    expect(within(list).queryByText(/h\/month/)).toBeNull();
+    expect(within(list).getByRole('button', { name: 'Open X1C04' })).toBeInTheDocument();
+  });
+
   it('shows the empty state', async () => {
-    serve({ today: '2031-02-14', machines: overview.machines.slice(0, 1), readings: [] });
+    serve({ ...overview, machines: overview.machines.slice(0, 1), readings: [] });
     render(<HoursTab />);
     // once in the chart area, once under the reading log
     expect(await screen.findAllByText('No readings yet. Add one or paste your sheet.')).toHaveLength(2);

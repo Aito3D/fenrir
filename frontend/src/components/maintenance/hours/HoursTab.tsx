@@ -5,12 +5,12 @@ import { ClipboardPaste, Loader2, Plus } from 'lucide-react';
 import { api, type HourMachine } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
-import { machineColors, machineSeries, ratePerMonth, seriesPoints } from '../../../utils/hoursSeries';
+import { machineColors, machineSeries, seriesPoints } from '../../../utils/hoursSeries';
 import { Button } from '../../Button';
 import { Card, CardContent } from '../../Card';
 import { ConfirmModal } from '../../ConfirmModal';
 import { HoursChart, type HoursChartMode } from './HoursChart';
-import { MachineList, type MachineStat } from './MachineList';
+import { MachineList } from './MachineList';
 import { PasteImportModal } from './PasteImportModal';
 import { ReadingFormModal } from './ReadingFormModal';
 import { ReadingLog } from './ReadingLog';
@@ -41,6 +41,8 @@ export function HoursTab() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [confirmDate, setConfirmDate] = useState<string | null>(null);
   const [confirmMachine, setConfirmMachine] = useState<HourMachine | null>(null);
+  const [panelId, setPanelId] = useState<number | null>(null);
+  const [focusId, setFocusId] = useState<number | null>(null);
 
   const machines = useMemo(() => data?.machines ?? [], [data]);
   const series = useMemo(
@@ -48,19 +50,17 @@ export function HoursTab() {
     [machines, data],
   );
   const colors = useMemo(() => machineColors(machines), [machines]);
-  const stats = useMemo(() => {
-    const out = new Map<number, MachineStat>();
+  const values = useMemo(() => {
+    const out = new Map<number, number | null>();
     for (const m of machines) {
-      const pts = seriesPoints(series.get(m.id)!);
-      const lastManual = series.get(m.id)!.manual.at(-1);
+      const mine = series.get(m.id)!;
+      const pts = seriesPoints(mine);
+      const lastManual = mine.manual.at(-1);
       const counterOk = m.current_hours != null && (!lastManual || m.current_hours >= lastManual.hours);
-      out.set(m.id, {
-        hours: counterOk ? m.current_hours : pts.length ? pts[pts.length - 1].hours : null,
-        rate: data ? ratePerMonth(pts, data.today) : null,
-      });
+      out.set(m.id, counterOk ? m.current_hours : pts.length ? pts[pts.length - 1].hours : null);
     }
     return out;
-  }, [machines, series, data]);
+  }, [machines, series]);
 
   const saveReadings = useMutation({
     mutationFn: ({ date, entries }: { date: string; entries: { machine_id: number; hours: number | null }[] }) =>
@@ -115,19 +115,26 @@ export function HoursTab() {
     });
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-[280px_minmax(0,1fr)]">
+    <div
+      className="grid grid-cols-1 gap-4 md:grid-cols-[280px_minmax(0,1fr)]"
+      data-panel-id={panelId ?? undefined}
+      data-focus-id={focusId ?? undefined}
+    >
       <Card className="min-w-0 md:max-h-[640px] md:overflow-auto">
         <CardContent>
           <MachineList
             machines={machines}
             colors={colors}
             hidden={hidden}
-            stats={stats}
+            series={series}
+            values={values}
             canDelete={canDelete}
             onToggle={toggle}
             onShowAll={() => setHidden(new Set())}
             onHideAll={() => setHidden(new Set(machines.map((m) => m.id)))}
             onDeleteRetired={setConfirmMachine}
+            onOpen={(m) => setPanelId(m.id)}
+            onHover={setFocusId}
           />
         </CardContent>
       </Card>

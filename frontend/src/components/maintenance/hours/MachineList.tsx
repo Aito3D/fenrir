@@ -1,27 +1,27 @@
 import { Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { HourMachine } from '../../../api/client';
-import { familyOf } from '../../../utils/hoursSeries';
-
-export interface MachineStat {
-  hours: number | null;
-  rate: number | null;
-}
+import { familyOf, seriesPoints, type MachineSeries } from '../../../utils/hoursSeries';
+import { Sparkline } from './Sparkline';
+import { TrustMark } from './TrustMark';
 
 interface MachineListProps {
   machines: HourMachine[];
   colors: Map<number, string>;
   hidden: Set<number>;
-  stats: Map<number, MachineStat>;
+  series: Map<number, MachineSeries>;
+  values: Map<number, number | null>;
   canDelete: boolean;
   onToggle: (id: number) => void;
   onShowAll: () => void;
   onHideAll: () => void;
   onDeleteRetired: (machine: HourMachine) => void;
+  onOpen: (machine: HourMachine) => void;
+  onHover: (id: number | null) => void;
 }
 
 export function MachineList({
-  machines, colors, hidden, stats, canDelete, onToggle, onShowAll, onHideAll, onDeleteRetired,
+  machines, colors, hidden, series, values, canDelete, onToggle, onShowAll, onHideAll, onDeleteRetired, onOpen, onHover,
 }: MachineListProps) {
   const { t, i18n } = useTranslation();
   const fmt = (n: number) => Math.round(n).toLocaleString(i18n.language);
@@ -56,9 +56,22 @@ export function MachineList({
             </div>
             {g.items.map((m) => {
               const on = !hidden.has(m.id);
-              const stat = stats.get(m.id);
+              const value = values.get(m.id);
+              const color = colors.get(m.id) ?? 'currentColor';
+              const mine = series.get(m.id);
               return (
-                <div key={m.id} className="group flex shrink-0 items-center">
+                <div
+                  key={m.id}
+                  role="group"
+                  aria-label={m.name}
+                  onMouseEnter={() => onHover(m.id)}
+                  onMouseLeave={() => onHover(null)}
+                  onFocus={() => onHover(m.id)}
+                  onBlur={() => onHover(null)}
+                  className="group relative flex shrink-0 items-center"
+                >
+                  {/* The toggle spans the row; the name button and trust mark sit over its invisible name slot
+                      (nested buttons are invalid HTML). */}
                   <button
                     type="button"
                     data-testid="hours-machine-row"
@@ -67,17 +80,27 @@ export function MachineList({
                     onClick={() => onToggle(m.id)}
                     className={`flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-opacity hover:bg-bambu-dark-tertiary ${on ? '' : 'opacity-40'}`}
                   >
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: colors.get(m.id) }} />
-                    <span className="text-white">{m.name}</span>
-                    <span className="ml-auto hidden text-right tabular-nums md:block">
-                      {stat?.hours != null && <span className="text-white">{fmt(stat.hours)} h</span>}
-                      {stat?.rate != null && (
-                        <span className="block text-[0.7rem] text-bambu-gray">
-                          {t('maintenance.hours.perMonth', { hours: fmt(stat.rate) })}
-                        </span>
-                      )}
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
+                    <span aria-hidden="true" className="invisible">{m.name}</span>
+                    <span aria-hidden="true" className="w-3.5 shrink-0" />
+                    <span className="ml-auto hidden md:block">
+                      <Sparkline points={mine ? seriesPoints(mine) : []} color={color} />
+                    </span>
+                    <span className="min-w-12 text-right tabular-nums text-white">
+                      {value != null && `${fmt(value)} h`}
                     </span>
                   </button>
+                  <span className="pointer-events-none absolute inset-y-0 left-7 flex items-center gap-1.5 text-sm">
+                    <button
+                      type="button"
+                      aria-label={t('maintenance.hours.openMachine', { name: m.name })}
+                      onClick={() => onOpen(m)}
+                      className={`pointer-events-auto rounded text-white hover:underline ${on ? '' : 'opacity-40'}`}
+                    >
+                      {m.name}
+                    </button>
+                    <span className="pointer-events-auto"><TrustMark machine={m} size="sm" /></span>
+                  </span>
                   {m.retired && canDelete && (
                     <button
                       type="button"
