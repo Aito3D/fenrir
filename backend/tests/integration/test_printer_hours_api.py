@@ -329,6 +329,38 @@ class TestHoursImport:
         ok = await async_client.post(f"{BASE}/import", json={"readings": [row] * 20000})
         assert ok.json() == {"machines_created": 0, "readings_written": 20000}
 
+    async def test_import_caps_new_machines_at_200(self, async_client: AsyncClient):
+        def body(n):
+            return {
+                "new_machines": [{"key": f"k{i}", "name": f"M{i}"} for i in range(n)],
+                "readings": [{"key": "k0", "reading_date": "2026-01-01", "hours": 1}],
+            }
+
+        assert (await async_client.post(f"{BASE}/import", json=body(201))).status_code == 422
+        assert (await async_client.get(BASE)).json()["machines"] == []
+        ok = await async_client.post(f"{BASE}/import", json=body(200))
+        assert ok.json() == {"machines_created": 200, "readings_written": 1}
+
+    async def test_import_reading_key_capped_at_100_chars(self, async_client: AsyncClient):
+        def body(key):
+            return {
+                "new_machines": [{"key": key[:100], "name": "A"}],
+                "readings": [{"key": key, "reading_date": "2026-01-01", "hours": 1}],
+            }
+
+        assert (await async_client.post(f"{BASE}/import", json=body("k" * 101))).status_code == 422
+        assert (await async_client.post(f"{BASE}/import", json=body("k" * 100))).status_code == 200
+
+    async def test_batch_caps_entries_at_500(self, async_client: AsyncClient):
+        # Distinct unknown ids: at the cap the route's own "Unknown machine" check answers, over it the schema does.
+        def body(n):
+            return {"reading_date": "2026-01-01", "entries": [{"machine_id": 900000 + i, "hours": 1} for i in range(n)]}
+
+        over = await async_client.post(f"{BASE}/readings", json=body(501))
+        assert over.status_code == 422 and isinstance(over.json()["detail"], list)
+        at_cap = await async_client.post(f"{BASE}/readings", json=body(500))
+        assert at_cap.status_code == 422 and at_cap.json()["detail"].startswith("Unknown machine")
+
     @pytest.mark.parametrize(
         "body",
         [

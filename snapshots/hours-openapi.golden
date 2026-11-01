@@ -650,6 +650,7 @@
      "items": {
       "$ref": "#/components/schemas/HourMachineCreate"
      },
+     "maxItems": 200,
      "title": "New Machines",
      "type": "array"
     },
@@ -680,6 +681,7 @@
     "key": {
      "anyOf": [
       {
+       "maxLength": 100,
        "type": "string"
       },
       {
@@ -980,6 +982,7 @@
      "items": {
       "$ref": "#/components/schemas/HourReadingEntry"
      },
+     "maxItems": 500,
      "minItems": 1,
      "title": "Entries",
      "type": "array"
