@@ -93,7 +93,7 @@ export function NotificationsPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto">
-      <div className="flex items-center gap-3 mb-6 animate-rise-lg vt-page-title">
+      <div className="max-md:hidden flex items-center gap-3 mb-6 animate-rise-lg vt-page-title">
         <Bell className="w-7 h-7 text-bambu-green" />
         <h1 className="text-2xl font-bold text-white">{t('notifications.userEmail.title')}</h1>
       </div>

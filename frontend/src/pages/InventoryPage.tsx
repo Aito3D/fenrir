@@ -1620,7 +1620,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           panned sideways. Same pattern the Statistics, Settings and Archives
           headers use, and the filter bar further down this page. */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between animate-rise-lg vt-page-title">
-        <div>
+        <div className="max-md:hidden">
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <Package className="w-7 h-7 text-bambu-green" />
             {t('inventory.title')}

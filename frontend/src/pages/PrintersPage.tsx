@@ -10030,7 +10030,7 @@ export function PrintersPage() {
         <div className="flex items-end justify-between gap-4 animate-rise-lg vt-page-title">
           <div>
             {!fullscreen && (
-              <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+              <h1 className="max-md:hidden text-2xl font-bold text-white flex items-center gap-3">
                 <PrinterIcon className="w-7 h-7 text-bambu-green" />
                 {t('printers.title')}
               </h1>
