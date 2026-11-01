@@ -15,6 +15,7 @@ import { ColorCatalogProvider } from './contexts/ColorCatalogContext';
 import { FullscreenProvider } from './contexts/FullscreenContext';
 import { TrackingErrorBoundary } from './components/aito/trackingShell';
 import { AuthRetrying } from './components/AuthRetrying';
+import { preloadRoute, type RoutePreloadTable } from './utils/routePreload';
 
 // After a redeploy the previous build's hashed chunk files no longer exist,
 // so a lazy route's dynamic import rejects. One forced reload picks up the
@@ -40,19 +41,27 @@ function lazyWithReload(load: () => Promise<{ default: ComponentType }>) {
   );
 }
 
-const PrintersPage = lazyWithReload(() => import('./pages/PrintersPage').then(m => ({ default: m.PrintersPage })));
-const ArchivesPage = lazyWithReload(() => import('./pages/ArchivesPage').then(m => ({ default: m.ArchivesPage })));
-const QueuePage = lazyWithReload(() => import('./pages/QueuePage').then(m => ({ default: m.QueuePage })));
-const StatsPage = lazyWithReload(() => import('./pages/StatsPage').then(m => ({ default: m.StatsPage })));
-const SettingsPage = lazyWithReload(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const loadPrintersPage = () => import('./pages/PrintersPage').then(m => ({ default: m.PrintersPage }));
+const PrintersPage = lazyWithReload(loadPrintersPage);
+const loadArchivesPage = () => import('./pages/ArchivesPage').then(m => ({ default: m.ArchivesPage }));
+const ArchivesPage = lazyWithReload(loadArchivesPage);
+const loadQueuePage = () => import('./pages/QueuePage').then(m => ({ default: m.QueuePage }));
+const QueuePage = lazyWithReload(loadQueuePage);
+const loadStatsPage = () => import('./pages/StatsPage').then(m => ({ default: m.StatsPage }));
+const StatsPage = lazyWithReload(loadStatsPage);
+const loadSettingsPage = () => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage }));
+const SettingsPage = lazyWithReload(loadSettingsPage);
 const ProfilesPage = lazyWithReload(() => import('./pages/ProfilesPage').then(m => ({ default: m.ProfilesPage })));
 const FilamentProfilesPage = lazyWithReload(() => import('./pages/FilamentProfilesPage').then(m => ({ default: m.FilamentProfilesPage })));
 const MaintenancePage = lazyWithReload(() => import('./pages/MaintenancePage').then(m => ({ default: m.MaintenancePage })));
 const FinancePage = lazyWithReload(() => import('./pages/FinancePage').then(m => ({ default: m.FinancePage })));
-const CalculatorPage = lazyWithReload(() => import('./pages/CalculatorPage').then(m => ({ default: m.CalculatorPage })));
+const loadCalculatorPage = () => import('./pages/CalculatorPage').then(m => ({ default: m.CalculatorPage }));
+const CalculatorPage = lazyWithReload(loadCalculatorPage);
 const CalculatorQuotePage = lazyWithReload(() => import('./pages/CalculatorQuotePage').then(m => ({ default: m.CalculatorQuotePage })));
-const ProjectListPage = lazyWithReload(() => import('./pages/ProjectListPage').then(m => ({ default: m.ProjectListPage })));
-const AitoPage = lazyWithReload(() => import('./pages/AitoPage').then(m => ({ default: m.AitoPage })));
+const loadProjectListPage = () => import('./pages/ProjectListPage').then(m => ({ default: m.ProjectListPage }));
+const ProjectListPage = lazyWithReload(loadProjectListPage);
+const loadAitoPage = () => import('./pages/AitoPage').then(m => ({ default: m.AitoPage }));
+const AitoPage = lazyWithReload(loadAitoPage);
 // Design bench for the Done celebration, dev-only in the literal sense: the
 // ternary is what keeps it out of production, not the route guard below.
 // `import.meta.env.DEV` is replaced by `false` at build time, so the whole
@@ -61,13 +70,35 @@ const AitoPage = lazyWithReload(() => import('./pages/AitoPage').then(m => ({ de
 const AitoFxDemoPage = import.meta.env.DEV
   ? lazyWithReload(() => import('./pages/AitoFxDemoPage'))
   : () => null;
-const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage').then(m => ({ default: m.ProjectDetailPage })));
-const FileManagerPage = lazyWithReload(() => import('./pages/FileManagerPage').then(m => ({ default: m.FileManagerPage })));
+const loadProjectDetailPage = () => import('./pages/ProjectDetailPage').then(m => ({ default: m.ProjectDetailPage }));
+const ProjectDetailPage = lazyWithReload(loadProjectDetailPage);
+const loadFileManagerPage = () => import('./pages/FileManagerPage').then(m => ({ default: m.FileManagerPage }));
+const FileManagerPage = lazyWithReload(loadFileManagerPage);
 const LibraryTrashPage = lazyWithReload(() => import('./pages/LibraryTrashPage').then(m => ({ default: m.LibraryTrashPage })));
 const CameraPage = lazyWithReload(() => import('./pages/CameraPage').then(m => ({ default: m.CameraPage })));
 const StreamOverlayPage = lazyWithReload(() => import('./pages/StreamOverlayPage').then(m => ({ default: m.StreamOverlayPage })));
 const ExternalLinkPage = lazyWithReload(() => import('./pages/ExternalLinkPage').then(m => ({ default: m.ExternalLinkPage })));
-const AitoTrackPage = lazyWithReload(() => import('./pages/AitoTrackPage').then(m => ({ default: m.AitoTrackPage })));
+const loadAitoTrackPage = () => import('./pages/AitoTrackPage').then(m => ({ default: m.AitoTrackPage }));
+const AitoTrackPage = lazyWithReload(loadAitoTrackPage);
+
+// The route chunk starts downloading at t=0, beside the auth bootstrap, instead
+// of after it (utils/routePreload.ts). Same loaders as the lazy routes above,
+// so React.lazy finds the import already resolved. Literal paths before the
+// parameterised ones, like the router itself.
+const ROUTE_PRELOADS: RoutePreloadTable = [
+  [/^\/?$/, loadPrintersPage],
+  [/^\/archives(\/|$)/, loadArchivesPage],
+  [/^\/queue(\/|$)/, loadQueuePage],
+  [/^\/stats(\/|$)/, loadStatsPage],
+  [/^\/settings(\/|$)/, loadSettingsPage],
+  [/^\/calculator(\/|$)/, loadCalculatorPage],
+  [/^\/projects\/[^/]+$/, loadProjectDetailPage],
+  [/^\/projects\/?$/, loadProjectListPage],
+  [/^\/aito(\/|$)/, loadAitoPage],
+  [/^\/files\/?$/, loadFileManagerPage],
+  [/^\/(t|track)\/[^/]+$/, loadAitoTrackPage],
+];
+if (typeof window !== 'undefined') preloadRoute(window.location.pathname, ROUTE_PRELOADS);
 const AitoTrackEntryPage = lazyWithReload(() => import('./pages/AitoTrackEntryPage').then(m => ({ default: m.AitoTrackEntryPage })));
 const GroupEditPage = lazyWithReload(() => import('./pages/GroupEditPage').then(m => ({ default: m.GroupEditPage })));
 const PrinterLocationsPage = lazyWithReload(() => import('./pages/PrinterLocationsPage').then(m => ({ default: m.PrinterLocationsPage })));

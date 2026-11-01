@@ -11,6 +11,7 @@ import { useQuery, useQueries } from '@tanstack/react-query';
 import { api, supportApi, pendingUploadsApi, type Permission } from '../api/client';
 import { getIconByName } from './IconPicker';
 import { useIsSidebarCompact } from '../hooks/useIsSidebarCompact';
+import { useAfterFirstPaint } from '../hooks/useAfterFirstPaint';
 import { useColorCatalogVersion } from '../hooks/useColorCatalogVersion';
 import { useUnknownTagPrompt } from '../hooks/useUnknownTagPrompt';
 import { UnknownSpoolModal } from './UnknownSpoolModal';
@@ -239,10 +240,14 @@ export function Layout() {
     enabled: authEnabled,
   });
 
+  // Nothing below first paint needs these; they start once the page has
+  // painted so its own data calls are not queued behind them.
+  const afterFirstPaint = useAfterFirstPaint();
+
   const { data: updateCheck } = useQuery({
     queryKey: ['updateCheck'],
     queryFn: api.checkForUpdates,
-    enabled: uiFlags?.check_updates !== false,
+    enabled: afterFirstPaint && uiFlags?.check_updates !== false,
     staleTime: 60 * 60 * 1000, // 1 hour
     refetchInterval: 60 * 60 * 1000, // Check every hour
   });
@@ -251,6 +256,7 @@ export function Layout() {
   const { data: externalLinks } = useQuery({
     queryKey: ['external-links'],
     queryFn: api.getExternalLinks,
+    enabled: afterFirstPaint,
     // Like the queue badge: apps behind the links report counts. Five
     // minutes: these are external apps, and a page is rarely open that long
     // without a focus change (which refetches) anyway.
@@ -262,6 +268,7 @@ export function Layout() {
   const { data: smartPlugs } = useQuery({
     queryKey: ['smart-plugs'],
     queryFn: api.getSmartPlugs,
+    enabled: afterFirstPaint,
     staleTime: 30 * 1000, // 30 seconds
   });
 
@@ -271,6 +278,7 @@ export function Layout() {
   const { data: debugLoggingState } = useQuery({
     queryKey: ['debugLogging'],
     queryFn: supportApi.getDebugLoggingState,
+    enabled: afterFirstPaint,
     staleTime: 60 * 1000, // 1 minute
     refetchOnWindowFocus: true, // a debug toggle flips rarely; focus is enough
   });
@@ -279,6 +287,7 @@ export function Layout() {
   const { data: devModeWarnings } = useQuery({
     queryKey: ['developer-mode-warnings'],
     queryFn: api.getDeveloperModeWarnings,
+    enabled: afterFirstPaint,
     staleTime: 10 * 1000,
     refetchInterval: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
