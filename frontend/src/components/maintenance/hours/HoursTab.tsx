@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ClipboardPaste, Loader2, Plus } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { ClipboardPaste, ListChecks, Loader2, Plus } from 'lucide-react';
 import { api, type HourMachine } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
-import { dayNumber, fleetFacts, gapInfo, machineColors, machineSeries, ratePerMonth, seriesPoints } from '../../../utils/hoursSeries';
+import { dayNumber, fleetFacts, gapInfo, machineColors, machineSeries, railOrder, ratePerMonth, seriesPoints } from '../../../utils/hoursSeries';
 import { Button } from '../../Button';
 import { Card, CardContent } from '../../Card';
 import { ConfirmModal } from '../../ConfirmModal';
@@ -16,6 +17,7 @@ import { MachineList } from './MachineList';
 import { PasteImportModal } from './PasteImportModal';
 import { ReadingFormModal } from './ReadingFormModal';
 import { ReadingLog } from './ReadingLog';
+import { ReadingPass } from './ReadingPass';
 import { ReadingTimeline } from './ReadingTimeline';
 
 const MODES: HoursChartMode[] = ['cumulative', 'monthly', 'total', 'sameAge'];
@@ -44,6 +46,13 @@ export function HoursTab() {
   const [mode, setMode] = useState<HoursChartMode>('cumulative');
   const [formDate, setFormDate] = useState<string | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
+  const [passOpen, setPassOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const wantsPass = searchParams.get('pass') === '1';
+  const closePass = useCallback(() => {
+    setPassOpen(false);
+    setSearchParams((prev) => { prev.delete('pass'); return prev; }, { replace: true });
+  }, [setSearchParams]);
   const [confirmDate, setConfirmDate] = useState<string | null>(null);
   const [confirmMachine, setConfirmMachine] = useState<HourMachine | null>(null);
   const [panelId, setPanelId] = useState<number | null>(null);
@@ -81,6 +90,13 @@ export function HoursTab() {
     if (e.key === 'Escape') { setFocusId(null); setFocusPinned(false); }
   };
 
+  const passMachines = useMemo(() => railOrder(machines), [machines]);
+  // ?pass=1 opens the pass once the data is there.
+  const loaded = data !== undefined;
+  useEffect(() => {
+    if (loaded && wantsPass) setPassOpen(true);
+  }, [loaded, wantsPass]);
+
   const saveReadings = useMutation({
     mutationFn: ({ date, entries }: { date: string; entries: { machine_id: number; hours: number | null }[] }) =>
       api.saveHourReadings(date, entries),
@@ -89,6 +105,7 @@ export function HoursTab() {
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
       queryClient.invalidateQueries({ queryKey: ['maintenanceSummary'] });
       setFormDate(null);
+      closePass();
       showToast(t('maintenance.hours.saved'));
     },
     onError: (e: Error) => showToast(e.message, 'error'),
@@ -185,8 +202,7 @@ export function HoursTab() {
         </CardContent>
       </Card>
       <div className="flex min-w-0 flex-col gap-4">
-        {/* Task 13 retargets this to the reading pass; until then it opens the New reading form for today. */}
-        <FleetStrip facts={facts} machines={machines} paces={paces} onTakeReadings={() => setFormDate(data.today)} />
+        <FleetStrip facts={facts} machines={machines} paces={paces} onTakeReadings={() => setPassOpen(true)} />
         <Card>
           <CardContent>
             <div tabIndex={0} onKeyDown={clearOnEscape} className="outline-none">
@@ -217,10 +233,16 @@ export function HoursTab() {
                 ))}
               </div>
               {canEdit && (
-                <Button className="ml-auto" size="sm" onClick={() => setFormDate(data.today)}>
-                  <Plus className="h-4 w-4" />
-                  {t('maintenance.hours.newReading')}
-                </Button>
+                <div className="ml-auto flex items-center gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => setPassOpen(true)}>
+                    <ListChecks className="h-4 w-4" />
+                    {t('maintenance.hours.pass.title')}
+                  </Button>
+                  <Button size="sm" onClick={() => setFormDate(data.today)}>
+                    <Plus className="h-4 w-4" />
+                    {t('maintenance.hours.newReading')}
+                  </Button>
+                </div>
               )}
             </div>
             <FocusHeader
@@ -293,6 +315,25 @@ export function HoursTab() {
           isSaving={saveReadings.isPending}
           onSave={(date, entries) => saveReadings.mutate({ date, entries })}
           onClose={() => setFormDate(null)}
+        />
+      )}
+      {passOpen && (
+        <ReadingPass
+          machines={passMachines}
+          readings={data.readings}
+          today={data.today}
+          colors={colors}
+          isSaving={saveReadings.isPending}
+          onSave={async (entries) => {
+            // The pass may have crossed midnight: save under the server's current date.
+            try {
+              const fresh = await queryClient.fetchQuery({ queryKey: ['maintenanceHours'], queryFn: api.getPrinterHours });
+              saveReadings.mutate({ date: fresh.today, entries });
+            } catch (e) {
+              showToast((e as Error).message, 'error');
+            }
+          }}
+          onClose={closePass}
         />
       )}
       {pasteOpen && (

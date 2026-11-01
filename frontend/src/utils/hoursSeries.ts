@@ -208,6 +208,13 @@ export function familyOf(machine: Pick<HourMachine, 'model' | 'name'>): string {
   return (machine.model ?? guessModel(machine.name) ?? '').toUpperCase().replace(/\s.*$/, '') || 'OTHER';
 }
 
+/** Live machines grouped by model family (family names sorted), names sorted within a family: the order of the machine rail. */
+export function railOrder(machines: HourMachine[]): HourMachine[] {
+  const active = machines.filter((m) => !m.retired);
+  const families = [...new Set(active.map(familyOf))].sort();
+  return families.flatMap((f) => active.filter((m) => familyOf(m) === f).sort((a, b) => a.name.localeCompare(b.name)));
+}
+
 /** One stable colour per machine: hue by model family, lightness spread across the family's machines. */
 export function machineColors(machines: HourMachine[]): Map<number, string> {
   const families = new Map<string, HourMachine[]>();

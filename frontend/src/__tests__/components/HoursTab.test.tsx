@@ -348,4 +348,39 @@ describe('HoursTab', () => {
     expect(within(dialog).getByText('Rows dated in the future are skipped: 1')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Import' })).toBeDisabled();
   });
+
+  it('pass saves with the refetched today', async () => {
+    serve();
+    let body: { reading_date?: string } | null = null;
+    server.use(
+      http.post('/api/v1/maintenance/hours/readings', async ({ request }) => {
+        body = (await request.json()) as { reading_date?: string };
+        return HttpResponse.json(overview);
+      }),
+    );
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    await user.click((await screen.findAllByRole('button', { name: 'Take readings' }))[0]);
+    const dialog = await screen.findByTestId('hours-reading-pass');
+    // The pass was open across midnight: the server's today has moved on.
+    serve({ ...overview, today: '2031-02-15' });
+    await user.type(within(dialog).getByRole('textbox', { name: 'H2S02' }), '1300{Enter}{Enter}');
+    await user.click(within(dialog).getByRole('button', { name: 'Save 1 readings' }));
+    await waitFor(() => expect(body).toEqual({ reading_date: '2031-02-15', entries: [{ machine_id: 2, hours: 1300 }] }));
+    await waitFor(() => expect(screen.queryByTestId('hours-reading-pass')).not.toBeInTheDocument());
+  });
+
+  it('?pass=1 opens the pass on load', async () => {
+    serve();
+    window.history.pushState({}, '', '/maintenance?tab=hours&pass=1');
+    try {
+      render(<HoursTab />);
+      expect(await screen.findByTestId('hours-reading-pass')).toBeInTheDocument();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: 'Close' }));
+      await waitFor(() => expect(window.location.search).toBe('?tab=hours'));
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
 });

@@ -1,7 +1,7 @@
 import { Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { HourMachine } from '../../../api/client';
-import { familyOf, seriesPoints, type MachineSeries } from '../../../utils/hoursSeries';
+import { familyOf, railOrder, seriesPoints, type MachineSeries } from '../../../utils/hoursSeries';
 import { Sparkline } from './Sparkline';
 import { TrustMark } from './TrustMark';
 
@@ -30,7 +30,7 @@ export function MachineList({
   const groups: { label: string; items: HourMachine[] }[] = [
     ...families.map((f) => ({
       label: f === 'OTHER' ? '—' : f,
-      items: active.filter((m) => familyOf(m) === f).sort((a, b) => a.name.localeCompare(b.name)),
+      items: railOrder(active).filter((m) => familyOf(m) === f),
     })),
     { label: t('maintenance.hours.retired'), items: machines.filter((m) => m.retired) },
   ].filter((g) => g.items.length > 0);
