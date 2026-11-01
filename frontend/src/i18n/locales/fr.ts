@@ -2659,6 +2659,13 @@ export default {
       timeline: 'Chronologie',
       pipelines: 'Exécutions',
     },
+    mobile: {
+      tabs: 'Onglets',
+      pickTab: "Changer d'onglet",
+      filters: 'Filtres',
+      location: 'Emplacement',
+      view: 'Affichage',
+    },
     layout: {
       flatList: 'Liste',
       byPrinter: 'Par imprimante',

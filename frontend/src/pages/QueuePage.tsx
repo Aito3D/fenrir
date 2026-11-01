@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, type ReactNode } from 'react';
 import { bulkUpdateToast } from '../utils/queueBulkUpdate';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -85,6 +85,8 @@ import { useToast } from '../contexts/ToastContext';
 import { useSliceJobPercent } from '../hooks/useSliceJobPercent';
 import { useAuth } from '../contexts/AuthContext';
 import { QueueStatsBar } from '../components/QueueStatsBar';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { MobileQueue, type QueueTabId, type QueueTabMeta } from '../components/queue/mobile/MobileQueue';
 import { CompactHistoryRow } from '../components/CompactHistoryRow';
 import { ColorSubstitutionNotes } from '../components/ColorSubstitutionNotes';
 import { QueueTimelineView } from '../components/QueueTimelineView';
@@ -1852,7 +1854,7 @@ export function QueuePage() {
     const id = Number(new URLSearchParams(window.location.search).get('batch'));
     return Number.isInteger(id) && id > 0 ? id : null;
   });
-  const [activeTab, setActiveTab] = useState<'queue' | 'batches' | 'history' | 'timeline' | 'pipelines'>(() => {
+  const [activeTab, setActiveTab] = useState<QueueTabId>(() => {
     // URL deep-link wins so the legacy /pipelines/runs redirect lands on the
     // right tab. localStorage holds the per-user last-selected fallback.
     const search = new URLSearchParams(window.location.search);
@@ -1930,6 +1932,7 @@ export function QueuePage() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
+  const isMobile = useIsMobile();
 
   const { data: settings } = useUiSettings();
 
@@ -2762,69 +2765,25 @@ export function QueuePage() {
     return { count, time, weight };
   };
 
-  return (
-    <div className="p-4 md:p-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6 animate-rise-lg vt-page-title">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <ListOrdered className="w-7 h-7 text-bambu-green" />
-            {t('queue.title')}
-          </h1>
-          <p className="text-bambu-gray mt-1">{t('queue.subtitle')}</p>
-        </div>
-      </div>
+  const tabList: QueueTabMeta[] = [
+    { id: 'queue', label: t('queue.tabs.queue'), icon: Clock, count: pendingItems.length + activeItems.length },
+    { id: 'batches', label: t('queue.tabs.batches'), icon: Package, count: activeBatchCount },
+    { id: 'history', label: t('queue.tabs.history'), icon: ListOrdered, count: historyTotal },
+    { id: 'timeline', label: t('queue.tabs.timeline'), icon: GanttChart, count: null },
+    // Slicer Pipelines dashboard (#1425 PR C). Lives here instead of
+    // its own sidebar entry so the Print Queue page is the single
+    // place an operator looks for "what's running / what ran".
+    { id: 'pipelines', label: t('queue.tabs.pipelines'), icon: Workflow, count: null },
+  ];
 
-      {/* Tab strip — Active queue is the main view; History and Timeline
-          live in their own tabs so the queue page stays focused. */}
-      <div className="flex gap-1 border-b border-bambu-dark-tertiary mb-6 overflow-x-auto">
-        {([
-          { id: 'queue' as const, label: t('queue.tabs.queue'), icon: Clock, count: pendingItems.length + activeItems.length },
-          { id: 'batches' as const, label: t('queue.tabs.batches'), icon: Package, count: activeBatchCount },
-          { id: 'history' as const, label: t('queue.tabs.history'), icon: ListOrdered, count: historyTotal },
-          { id: 'timeline' as const, label: t('queue.tabs.timeline'), icon: GanttChart, count: null as number | null },
-          // Slicer Pipelines dashboard (#1425 PR C). Lives here instead of
-          // its own sidebar entry so the Print Queue page is the single
-          // place an operator looks for "what's running / what ran".
-          { id: 'pipelines' as const, label: t('queue.tabs.pipelines'), icon: Workflow, count: null as number | null },
-        ]).map(({ id, label, icon: Icon, count }) => (
-          <button
-            key={id}
-            onClick={() => setActiveTab(id)}
-            className={`btn-press px-4 py-2.5 text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors whitespace-nowrap ${
-              activeTab === id
-                ? 'text-white border-bambu-green font-medium'
-                : 'text-bambu-gray border-transparent hover:text-white'
-            }`}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-            {count !== null && count > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                activeTab === id ? 'bg-bambu-green/20 text-bambu-green' : 'bg-bambu-dark-tertiary text-bambu-gray'
-              }`}>
-                {count}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Summary Stats — about the print queue, not pipelines. */}
-      {activeTab !== 'pipelines' && activeTab !== 'batches' && <QueueStatsBar
-        activeCount={activeItems.length}
-        pendingCount={pendingItems.length}
-        totalTime={totalQueueTime}
-        totalWeight={totalWeight}
-        historyCount={historyTotal}
-        t={t}
-      />}
-
+  // The gate banners (#1818 printer gates, model gates): Queue tab only.
+  const gateBanners = activeTab === 'queue' && hasPermission('queue:update_all' as Permission) && (
+    <>
       {/* #1818: Resume-after-failure banner. One row per printer whose queue
           is gated by a prior failed/aborted print. Visible regardless of
           tab/layout so the user can clear the gate without hunting for
           skipped items. Hidden entirely when no gates are active. */}
-      {activeTab === 'queue' && gateBlockedPrinters.length > 0 && hasPermission('queue:update_all' as Permission) && (
+      {gateBlockedPrinters.length > 0 && (
         <div className="mb-4 space-y-2">
           {gateBlockedPrinters.map(({ printerId, printerName, skippedCount }) => (
             <div
@@ -2857,7 +2816,7 @@ export function QueuePage() {
         </div>
       )}
 
-      {activeTab === 'queue' && gateBlockedModels.length > 0 && hasPermission('queue:update_all' as Permission) && (
+      {gateBlockedModels.length > 0 && (
         <div className="mb-4 space-y-2">
           {gateBlockedModels.map(({ model, waitingCount }) => (
             <div
@@ -2884,138 +2843,18 @@ export function QueuePage() {
           ))}
         </div>
       )}
+    </>
+  );
 
-      {/* Filters — about the print queue items (printer / status / location).
-          The Pipelines tab has its own pipeline + status filters inside the
-          dashboard, so this row is hidden when that tab is active. */}
-      {activeTab !== 'pipelines' && activeTab !== 'batches' && (
-      <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-6">
-        <select
-          className="px-2 sm:px-3 py-2 text-sm sm:text-base bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none min-w-0 flex-1 sm:flex-none"
-          value={filterPrinter === -1 ? 'unassigned' : (filterPrinter || '')}
-          onChange={(e) => {
-            const val = e.target.value;
-            if (val === 'unassigned') setFilterPrinter(-1);
-            else if (val === '') setFilterPrinter(null);
-            else setFilterPrinter(Number(val));
-          }}
-        >
-          <option value="">{t('queue.filter.allPrinters')}</option>
-          <option value="unassigned">{t('queue.filter.unassigned')}</option>
-          {printers?.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-
-        <select
-          className="px-2 sm:px-3 py-2 text-sm sm:text-base bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none min-w-0 flex-1 sm:flex-none"
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-        >
-          <option value="">{t('queue.filter.allStatus')}</option>
-          <option value="pending">{t('queue.status.pending')}</option>
-          <option value="slicing">{t('queue.status.slicing')}</option>
-          <option value="slice_failed">{t('queue.status.slice_failed')}</option>
-          <option value="printing">{t('queue.status.printing')}</option>
-          <option value="completed">{t('queue.status.completed')}</option>
-          <option value="failed">{t('queue.status.failed')}</option>
-          <option value="skipped">{t('queue.status.skipped')}</option>
-          <option value="cancelled">{t('queue.status.cancelled')}</option>
-        </select>
-
-        {uniqueLocations.length > 0 && (
-          <select
-            className="px-2 sm:px-3 py-2 text-sm sm:text-base bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none min-w-0 flex-1 sm:flex-none"
-            value={filterLocation}
-            onChange={(e) => setFilterLocation(e.target.value)}
-          >
-            <option value="">{t('queue.filter.allLocations')}</option>
-            {uniqueLocations.map((loc) => (
-              <option key={loc} value={loc}>{loc}</option>
-            ))}
-          </select>
-        )}
-
-        <div className="hidden sm:block flex-1" />
-
-        {activeTab === 'history' && historyTotal > 0 && (
-          <Button
-            className="w-full sm:w-auto"
-            variant="secondary"
-            size="sm"
-            onClick={() => setShowClearHistoryConfirm(true)}
-            disabled={!hasPermission('queue:delete_all')}
-            title={!hasPermission('queue:delete_all') ? t('queue.permissions.noClearHistory') : undefined}
-          >
-            <Trash2 className="w-4 h-4" />
-            {t('queue.clearHistory')}
-          </Button>
-        )}
-      </div>
-      )}
-
-      {/* Queue-tab controls: layout toggle (Position / Printer) + SJF.
-          Hidden on History/Timeline tabs since they don't apply. */}
-      {activeTab === 'queue' && (
-        <div className="flex flex-wrap items-center gap-3 mb-6">
-          <div className="inline-flex items-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg p-0.5">
-            <button
-              className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors flex items-center gap-1.5 ${
-                activeLayout === 'position' ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'
-              }`}
-              onClick={() => setActiveLayout('position')}
-              title={t('queue.layout.flatList')}
-            >
-              <List className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{t('queue.layout.flatList')}</span>
-            </button>
-            <button
-              className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors flex items-center gap-1.5 ${
-                activeLayout === 'printer' ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'
-              }`}
-              onClick={() => setActiveLayout('printer')}
-              title={t('queue.layout.groupByPrinter')}
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{t('queue.layout.byPrinter')}</span>
-            </button>
-          </div>
-          <button
-            onClick={() => {
-              const newValue = !(settings?.queue_shortest_first ?? false);
-              sjfMutation.mutate(newValue);
-            }}
-            className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg border transition-colors ${
-              settings?.queue_shortest_first
-                ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
-                : 'bg-bambu-dark-secondary border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-gray'
-            }`}
-            title={t('queue.sjf.tooltip', 'Shortest Job First — scheduler prioritizes shorter prints')}
-          >
-            <Snail className="w-4 h-4" />
-            <span className="hidden sm:inline">{t('queue.sjf.label', 'SJF')}</span>
-            <span className={`w-1.5 h-1.5 rounded-full ${settings?.queue_shortest_first ? 'bg-bambu-green' : 'bg-bambu-gray'}`} />
-          </button>
-        </div>
-      )}
-
-      {/* Pipelines tab short-circuits before the queue-empty branch so the
-          dashboard renders even when the regular queue is empty. */}
-      {activeTab === 'pipelines' ? (
-        <PipelineRunsView />
-      ) : activeTab === 'batches' ? (
-        <BatchOrdersView hasPermission={hasPermission} t={t} focusBatchId={focusBatchId} />
-      ) : isLoading || (activeTab === 'history' && historyLoading) ? (
-        <SkeletonGrid count={5} gridClassName="grid-cols-1" cardClassName="h-28" />
-      ) : queue?.length === 0 && !historyLoading && historyTotal === 0 ? (
-        <Card className="p-12 text-center border-dashed">
-          <Calendar className="w-16 h-16 text-bambu-gray mx-auto mb-4 opacity-50" />
-          <h3 className="text-xl font-medium text-white mb-2">{t('queue.empty.title')}</h3>
-          <p className="text-bambu-gray max-w-md mx-auto">
-            {t('queue.empty.description')}
-          </p>
-        </Card>
-      ) : activeTab === 'timeline' ? (
+  // One tab's body — the desktop page and the phone pager share it.
+  const renderTab = (tab: QueueTabId): ReactNode => {
+    if (tab === 'pipelines') return <PipelineRunsView />;
+    if (tab === 'batches') return <BatchOrdersView hasPermission={hasPermission} t={t} focusBatchId={focusBatchId} />;
+    if (isLoading || (tab === 'history' && historyLoading)) {
+      return <SkeletonGrid count={5} gridClassName="grid-cols-1" cardClassName="h-28" />;
+    }
+    if (tab === 'timeline') {
+      return (
         <QueueTimelineView
           queueItems={queue || []}
           printers={printers || []}
@@ -3032,7 +2871,10 @@ export function QueuePage() {
           }}
           t={t}
         />
-      ) : activeTab === 'history' ? (
+      );
+    }
+    if (tab === 'history') {
+      return (
         <HistorySection
           items={historyItems}
           total={historyTotal}
@@ -3051,7 +2893,20 @@ export function QueuePage() {
           canModify={canModify}
           t={t}
         />
-      ) : (
+      );
+    }
+    if (queue?.length === 0 && !historyLoading && historyTotal === 0) {
+      return (
+        <Card className="p-12 text-center border-dashed">
+          <Calendar className="w-16 h-16 text-bambu-gray mx-auto mb-4 opacity-50" />
+          <h3 className="text-xl font-medium text-white mb-2">{t('queue.empty.title')}</h3>
+          <p className="text-bambu-gray max-w-md mx-auto">
+            {t('queue.empty.description')}
+          </p>
+        </Card>
+      );
+    }
+    return (
         <div className="space-y-6 sm:space-y-8">
           {/* Active Prints */}
           {activeItems.length > 0 && (
@@ -3300,8 +3155,12 @@ export function QueuePage() {
             </div>
           )}
         </div>
-      )}
+    );
+  };
 
+  // Dialogs render in both layouts.
+  const modals = (
+    <>
       {/* Edit Modal */}
       {editItem && (
         <PrintModal
@@ -3489,6 +3348,237 @@ export function QueuePage() {
           onCancel={() => setUngroupBatchId(null)}
         />
       )}
+    </>
+  );
+
+  if (isMobile) {
+    const clearHistory =
+      activeTab === 'history' && historyTotal > 0 && hasPermission('queue:delete_all')
+        ? () => setShowClearHistoryConfirm(true)
+        : null;
+    const filters =
+      activeTab === 'pipelines' || activeTab === 'batches'
+        ? null
+        : {
+            printers: printers ?? [],
+            filterPrinter,
+            onFilterPrinter: setFilterPrinter,
+            filterStatus,
+            onFilterStatus: setFilterStatus,
+            locations: uniqueLocations,
+            filterLocation,
+            onFilterLocation: setFilterLocation,
+          };
+    const view =
+      activeTab === 'queue'
+        ? {
+            layout: activeLayout,
+            onLayout: setActiveLayout,
+            sjf: settings?.queue_shortest_first ?? false,
+            onSjf: (value: boolean) => sjfMutation.mutate(value),
+          }
+        : undefined;
+    return (
+      <>
+        <MobileQueue
+          tabs={tabList}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          loading={isLoading}
+          filters={filters}
+          view={view}
+          onClearHistory={clearHistory}
+          renderTab={(tab) => (
+            <>
+              {tab !== 'pipelines' && tab !== 'batches' && (
+                <QueueStatsBar
+                  compact
+                  activeCount={activeItems.length}
+                  pendingCount={pendingItems.length}
+                  totalTime={totalQueueTime}
+                  totalWeight={totalWeight}
+                  historyCount={historyTotal}
+                  t={t}
+                />
+              )}
+              {tab === 'queue' && gateBanners}
+              {renderTab(tab)}
+            </>
+          )}
+        />
+        {modals}
+      </>
+    );
+  }
+
+  return (
+    <div className="p-4 md:p-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6 animate-rise-lg vt-page-title">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <ListOrdered className="w-7 h-7 text-bambu-green" />
+            {t('queue.title')}
+          </h1>
+          <p className="text-bambu-gray mt-1">{t('queue.subtitle')}</p>
+        </div>
+      </div>
+
+      {/* Tab strip — Active queue is the main view; History and Timeline
+          live in their own tabs so the queue page stays focused. */}
+      <div className="flex gap-1 border-b border-bambu-dark-tertiary mb-6 overflow-x-auto">
+        {tabList.map(({ id, label, icon: Icon, count }) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className={`btn-press px-4 py-2.5 text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors whitespace-nowrap ${
+              activeTab === id
+                ? 'text-white border-bambu-green font-medium'
+                : 'text-bambu-gray border-transparent hover:text-white'
+            }`}
+          >
+            <Icon className="w-4 h-4" />
+            {label}
+            {count !== null && count > 0 && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                activeTab === id ? 'bg-bambu-green/20 text-bambu-green' : 'bg-bambu-dark-tertiary text-bambu-gray'
+              }`}>
+                {count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Summary Stats — about the print queue, not pipelines. */}
+      {activeTab !== 'pipelines' && activeTab !== 'batches' && <QueueStatsBar
+        activeCount={activeItems.length}
+        pendingCount={pendingItems.length}
+        totalTime={totalQueueTime}
+        totalWeight={totalWeight}
+        historyCount={historyTotal}
+        t={t}
+      />}
+
+      {gateBanners}
+
+      {/* Filters — about the print queue items (printer / status / location).
+          The Pipelines tab has its own pipeline + status filters inside the
+          dashboard, so this row is hidden when that tab is active. */}
+      {activeTab !== 'pipelines' && activeTab !== 'batches' && (
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-6">
+        <select
+          className="px-2 sm:px-3 py-2 text-sm sm:text-base bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none min-w-0 flex-1 sm:flex-none"
+          value={filterPrinter === -1 ? 'unassigned' : (filterPrinter || '')}
+          onChange={(e) => {
+            const val = e.target.value;
+            if (val === 'unassigned') setFilterPrinter(-1);
+            else if (val === '') setFilterPrinter(null);
+            else setFilterPrinter(Number(val));
+          }}
+        >
+          <option value="">{t('queue.filter.allPrinters')}</option>
+          <option value="unassigned">{t('queue.filter.unassigned')}</option>
+          {printers?.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+
+        <select
+          className="px-2 sm:px-3 py-2 text-sm sm:text-base bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none min-w-0 flex-1 sm:flex-none"
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+        >
+          <option value="">{t('queue.filter.allStatus')}</option>
+          <option value="pending">{t('queue.status.pending')}</option>
+          <option value="slicing">{t('queue.status.slicing')}</option>
+          <option value="slice_failed">{t('queue.status.slice_failed')}</option>
+          <option value="printing">{t('queue.status.printing')}</option>
+          <option value="completed">{t('queue.status.completed')}</option>
+          <option value="failed">{t('queue.status.failed')}</option>
+          <option value="skipped">{t('queue.status.skipped')}</option>
+          <option value="cancelled">{t('queue.status.cancelled')}</option>
+        </select>
+
+        {uniqueLocations.length > 0 && (
+          <select
+            className="px-2 sm:px-3 py-2 text-sm sm:text-base bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none min-w-0 flex-1 sm:flex-none"
+            value={filterLocation}
+            onChange={(e) => setFilterLocation(e.target.value)}
+          >
+            <option value="">{t('queue.filter.allLocations')}</option>
+            {uniqueLocations.map((loc) => (
+              <option key={loc} value={loc}>{loc}</option>
+            ))}
+          </select>
+        )}
+
+        <div className="hidden sm:block flex-1" />
+
+        {activeTab === 'history' && historyTotal > 0 && (
+          <Button
+            className="w-full sm:w-auto"
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowClearHistoryConfirm(true)}
+            disabled={!hasPermission('queue:delete_all')}
+            title={!hasPermission('queue:delete_all') ? t('queue.permissions.noClearHistory') : undefined}
+          >
+            <Trash2 className="w-4 h-4" />
+            {t('queue.clearHistory')}
+          </Button>
+        )}
+      </div>
+      )}
+
+      {/* Queue-tab controls: layout toggle (Position / Printer) + SJF.
+          Hidden on History/Timeline tabs since they don't apply. */}
+      {activeTab === 'queue' && (
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <div className="inline-flex items-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg p-0.5">
+            <button
+              className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors flex items-center gap-1.5 ${
+                activeLayout === 'position' ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'
+              }`}
+              onClick={() => setActiveLayout('position')}
+              title={t('queue.layout.flatList')}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t('queue.layout.flatList')}</span>
+            </button>
+            <button
+              className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors flex items-center gap-1.5 ${
+                activeLayout === 'printer' ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'
+              }`}
+              onClick={() => setActiveLayout('printer')}
+              title={t('queue.layout.groupByPrinter')}
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t('queue.layout.byPrinter')}</span>
+            </button>
+          </div>
+          <button
+            onClick={() => {
+              const newValue = !(settings?.queue_shortest_first ?? false);
+              sjfMutation.mutate(newValue);
+            }}
+            className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg border transition-colors ${
+              settings?.queue_shortest_first
+                ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
+                : 'bg-bambu-dark-secondary border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-gray'
+            }`}
+            title={t('queue.sjf.tooltip', 'Shortest Job First — scheduler prioritizes shorter prints')}
+          >
+            <Snail className="w-4 h-4" />
+            <span className="hidden sm:inline">{t('queue.sjf.label', 'SJF')}</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${settings?.queue_shortest_first ? 'bg-bambu-green' : 'bg-bambu-gray'}`} />
+          </button>
+        </div>
+      )}
+
+      {renderTab(activeTab)}
+
+      {modals}
     </div>
   );
 }

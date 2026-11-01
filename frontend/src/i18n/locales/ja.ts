@@ -2658,6 +2658,13 @@ export default {
       timeline: 'タイムライン',
       pipelines: 'パイプライン',
     },
+    mobile: {
+      tabs: 'タブ',
+      pickTab: 'タブを切り替え',
+      filters: 'フィルター',
+      location: '場所',
+      view: '表示',
+    },
     layout: {
       flatList: 'リスト',
       byPrinter: 'プリンター別',

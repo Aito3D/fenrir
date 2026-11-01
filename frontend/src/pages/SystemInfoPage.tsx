@@ -208,7 +208,7 @@ export function SystemInfoPage() {
           overflow is the same. items-start keeps Refresh at its own width
           while stacked instead of stretching it across the page. */}
       <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between animate-rise-lg vt-page-title">
-        <div>
+        <div className="max-md:hidden">
           <h1 className="text-2xl font-bold text-white">{t('system.title', 'System Information')}</h1>
           <p className="text-bambu-gray mt-1">
             {t('system.subtitle', 'Monitor system resources and database statistics')}

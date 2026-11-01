@@ -316,7 +316,7 @@ export function CalculatorPage() {
   return (
     <div className="p-4 md:p-8">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4 animate-rise-lg vt-page-title">
-        <div>
+        <div className="max-md:hidden">
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <CalculatorIcon className="w-7 h-7 text-bambu-green" />
             {t('calculator.title')}

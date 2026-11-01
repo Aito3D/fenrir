@@ -30,6 +30,7 @@ import { useAnnouncements } from '../hooks/useAnnouncements';
 // dropped both the mount and this import; taking the mount back without it is
 // a TS2304 at build time.
 import { plateCheckFailureText } from '../utils/plateCheck';
+import { pageTitleKey } from '../utils/pageTitle';
 import {
   getHiddenSidebarSystemItemIds,
   getSidebarOrder,
@@ -96,6 +97,7 @@ export function setDefaultView(path: string) {
 export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const topBarTitleKey = pageTitleKey(location.pathname, defaultNavItems);
   const { mode, toggleMode } = useTheme();
   const { t } = useTranslation();
   const isSidebarCompact = useIsSidebarCompact();
@@ -625,6 +627,18 @@ export function Layout() {
               This is the fork's branding and stays — upstream's Fenrir logo
               is deliberately not taken here. */}
           <img src={aito3dLogo} alt="AITO3D" className="ml-3 h-6 w-auto dark:invert dark:hue-rotate-180" />
+          {/* Phone only: the page's own title block hides below md (gaining
+              its height), so the bar names the page. aria-hidden because the
+              page's h1 is still in the DOM for screen readers. */}
+          {topBarTitleKey && (
+            <span
+              data-testid="topbar-page-name"
+              aria-hidden="true"
+              className="md:hidden ml-3 min-w-0 truncate text-[15px] font-semibold text-white"
+            >
+              {t(topBarTitleKey)}
+            </span>
+          )}
           <div className="ml-auto -mr-2">
             <NotificationBell />
           </div>

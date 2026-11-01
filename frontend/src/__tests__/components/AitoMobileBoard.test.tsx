@@ -188,4 +188,84 @@ describe('MobileBoard', () => {
     await user.click(screen.getByRole('button', { name: /Quote/, expanded: false }));
     expect(screen.queryByTestId('aito-mobile-fab')).toBeNull();
   });
+  // A real finger on WebKit: the pager can be left resting between two
+  // pages (nested vertical scrollers defeat the snap, a smooth jump across
+  // several snap points stalls). The board settles itself once the scroll
+  // goes idle and the finger is up.
+  it('settles on the nearest page when a swipe is released between two columns', () => {
+    vi.useFakeTimers();
+    try {
+      render(<MobileBoard {...props()} />);
+      const pager = screen.getByTestId('aito-mobile-pager');
+      fireEvent.touchStart(pager);
+      pager.scrollLeft = WIDTH * 2 + 250; // 2.64 pages: nearer "model" (3)
+      fireEvent.scroll(pager);
+      fireEvent.touchEnd(pager);
+      act(() => { vi.advanceTimersByTime(400); });
+      expect(pager.scrollLeft).toBe(WIDTH * 3);
+      expect(screen.getByTestId('aito-mobile-segment-model')).toHaveAttribute('aria-current', 'true');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never settles under a finger that is still down', () => {
+    vi.useFakeTimers();
+    try {
+      render(<MobileBoard {...props()} />);
+      const pager = screen.getByTestId('aito-mobile-pager');
+      fireEvent.touchStart(pager);
+      pager.scrollLeft = WIDTH * 2 + 250;
+      fireEvent.scroll(pager);
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(pager.scrollLeft).toBe(WIDTH * 2 + 250);
+      fireEvent.touchEnd(pager);
+      act(() => { vi.advanceTimersByTime(400); });
+      expect(pager.scrollLeft).toBe(WIDTH * 3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a strip jump turns snapping off until it has arrived', async () => {
+    const user = userEvent.setup();
+    render(<MobileBoard {...props()} />);
+    const pager = screen.getByTestId('aito-mobile-pager');
+    pager.scrollTo = (() => {}) as typeof pager.scrollTo;
+    await user.click(screen.getByTestId('aito-mobile-segment-finish'));
+    expect(pager.style.scrollSnapType).toBe('none');
+    pager.scrollLeft = WIDTH * 3;
+    fireEvent.scroll(pager);
+    expect(pager.style.scrollSnapType).toBe('none');
+    pager.scrollLeft = WIDTH * 5;
+    fireEvent.scroll(pager);
+    expect(pager.style.scrollSnapType).toBe('');
+  });
+
+  it('a stalled strip jump settles where it stopped and snaps again', () => {
+    vi.useFakeTimers();
+    try {
+      render(<MobileBoard {...props()} />);
+      const pager = screen.getByTestId('aito-mobile-pager');
+      pager.scrollTo = (() => {}) as typeof pager.scrollTo;
+      fireEvent.click(screen.getByTestId('aito-mobile-segment-finish'));
+      // WebKit stops the animation at the first snap point it meets.
+      pager.scrollLeft = WIDTH * 1;
+      fireEvent.scroll(pager);
+      act(() => { vi.advanceTimersByTime(400); });
+      expect(pager.style.scrollSnapType).toBe('');
+      expect(pager.scrollLeft).toBe(WIDTH * 1);
+      expect(screen.getByTestId('aito-mobile-segment-waiting')).toHaveAttribute('aria-current', 'true');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a height-only resize (toolbar, keyboard) leaves the pager where it is', () => {
+    render(<MobileBoard {...props()} />);
+    const pager = screen.getByTestId('aito-mobile-pager');
+    pager.scrollLeft = WIDTH * 2 + 100;
+    act(() => { window.dispatchEvent(new Event('resize')); });
+    expect(pager.scrollLeft).toBe(WIDTH * 2 + 100);
+  });
 });

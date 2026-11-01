@@ -2659,6 +2659,13 @@ export default {
       timeline: '时间线',
       pipelines: '流水线',
     },
+    mobile: {
+      tabs: '标签页',
+      pickTab: '切换标签页',
+      filters: '筛选',
+      location: '位置',
+      view: '视图',
+    },
     layout: {
       flatList: '列表',
       byPrinter: '按打印机',

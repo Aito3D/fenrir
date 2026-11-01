@@ -182,7 +182,7 @@ export function LibraryTrashPage() {
 
       <div className="flex items-start justify-between mb-6 gap-4 flex-wrap animate-rise-lg vt-page-title">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+          <h1 className="max-md:hidden text-2xl font-bold text-gray-900 dark:text-gray-100">
             {t('libraryTrash.title')}
           </h1>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">

@@ -618,6 +618,8 @@ const UK_COGNATES = [
 // are used untranslated by Dutch slicer users. Each entry below was
 // checked individually against the Dutch translation in #2891.
 const NL_COGNATES = [
+  'Filters',  // queue.mobile.filters — same word in Dutch
+  '{{count}} project',  // projectsPdm.catalog.mobile.projects_one — "project" is the Dutch word too
   'Bed',  // partViewer.print.bed — same word in Dutch
   'via {{name}}',  // projectsPdm.reslice.viaPipeline
   'Machines', 'Machines: {{n}}',  // maintenance.hours.* — same word in Dutch

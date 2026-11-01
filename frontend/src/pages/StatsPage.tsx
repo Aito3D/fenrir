@@ -1253,7 +1253,7 @@ export function StatsPage() {
         {/* Same header as the loaded state (minus the action buttons) so the
             page-title view-transition group has a destination during the
             crossfade and the title doesn't pop in after the skeletons. */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 animate-rise-lg vt-page-title">
+        <div className="max-md:hidden flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 animate-rise-lg vt-page-title">
           <div>
             <h1 className="text-2xl font-bold text-white flex items-center gap-3">
               <BarChart3 className="w-7 h-7 text-bambu-green" />
@@ -1419,14 +1419,16 @@ export function StatsPage() {
     <div className="p-4 md:p-8">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 animate-rise-lg vt-page-title">
         <div>
+          {/* Phones hide the title and subtitle, not the row: the refetch
+              spinner beside the title is live information and stays. */}
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <h1 className="max-md:hidden text-2xl font-bold text-white flex items-center gap-3">
               <BarChart3 className="w-7 h-7 text-bambu-green" />
               {t('stats.title')}
             </h1>
             {isRefetching && <Loader2 className="w-5 h-5 text-bambu-green animate-spin" />}
           </div>
-          <p className="text-bambu-gray mt-1">{t('stats.subtitle')}</p>
+          <p className="max-md:hidden text-bambu-gray mt-1">{t('stats.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Reset Layout */}

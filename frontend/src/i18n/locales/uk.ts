@@ -2613,6 +2613,13 @@ export default {
       timeline: "Хронологія",
       pipelines: "Запуски конвеєрів",
     },
+    mobile: {
+      tabs: 'Вкладки',
+      pickTab: 'Змінити вкладку',
+      filters: 'Фільтри',
+      location: 'Розташування',
+      view: 'Вигляд',
+    },
     layout: {
       flatList: "Список",
       byPrinter: "За принтером",

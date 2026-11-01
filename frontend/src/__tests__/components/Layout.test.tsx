@@ -1006,4 +1006,31 @@ describe('Layout', () => {
       });
     });
   });
+  describe('phone top bar page name', () => {
+    const realMatchMedia = window.matchMedia;
+    beforeEach(() => {
+      // The compact bar lives below 1144px; nothing else may match.
+      window.matchMedia = ((query: string) => ({
+        ...realMatchMedia(query),
+        matches: query === '(max-width: 1143px)',
+      })) as typeof window.matchMedia;
+    });
+    afterEach(() => {
+      window.matchMedia = realMatchMedia;
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('names the current page', async () => {
+      window.history.replaceState({}, '', '/queue');
+      render(<Layout />);
+      expect(await screen.findByTestId('topbar-page-name')).toHaveTextContent('Print Queue');
+    });
+
+    it('shows nothing on a route without a page title', async () => {
+      window.history.replaceState({}, '', '/external/3');
+      render(<Layout />);
+      await screen.findByLabelText('Open menu');
+      expect(screen.queryByTestId('topbar-page-name')).not.toBeInTheDocument();
+    });
+  });
 });

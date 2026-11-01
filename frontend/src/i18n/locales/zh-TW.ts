@@ -2659,6 +2659,13 @@ export default {
       timeline: '時間軸',
       pipelines: '管線',
     },
+    mobile: {
+      tabs: '分頁',
+      pickTab: '切換分頁',
+      filters: '篩選',
+      location: '位置',
+      view: '檢視',
+    },
     layout: {
       flatList: '清單',
       byPrinter: '依印表機',

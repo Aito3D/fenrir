@@ -799,4 +799,19 @@ describe('StatsPage', () => {
       expect(screen.queryByText('Name At The Time')).not.toBeInTheDocument();
     });
   });
+  describe('phone title block', () => {
+    it('hides only the title and subtitle, so the refetch spinner beside the title stays', async () => {
+      render(<StatsPage />);
+      // The loading skeleton has its own title block; wait for the loaded page's.
+      const h1 = await waitFor(() => {
+        const heading = screen.getByRole('heading', { level: 1, name: /Statistics/ });
+        expect(heading.className).toContain('max-md:hidden');
+        return heading;
+      });
+      // The class sits on the h1 and the subtitle themselves, never on a
+      // wrapper that would also swallow the live isRefetching spinner.
+      expect(h1.closest('.max-md\\:hidden')).toBe(h1);
+      expect(h1.nextElementSibling?.className ?? '').not.toContain('max-md:hidden');
+    });
+  });
 });

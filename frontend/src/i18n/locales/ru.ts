@@ -2607,6 +2607,13 @@ export default {
       timeline: "Временная шкала",
       pipelines: "Конвейеры",
     },
+    mobile: {
+      tabs: 'Вкладки',
+      pickTab: 'Сменить вкладку',
+      filters: 'Фильтры',
+      location: 'Расположение',
+      view: 'Вид',
+    },
     layout: {
       flatList: "Список",
       byPrinter: "По принтерам",
