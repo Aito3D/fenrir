@@ -1533,7 +1533,6 @@ CREATE TABLE projects (
 1 export function ProjectOrdersCard
 1 export function ProjectPanel
 1 export function ProjectSearchInput
-1 export function ProjectsPage
 1 export function ProjectsSettingsCard
 1 export function ProjectTagChips
 1 export function ProjectTagEditor
@@ -1739,51 +1738,21 @@ export type RevisionStatus
 ## Translation keys the project UI reads (projects.* / projectsPdm.* literals)
 ```regen: { grep -rhoE --include='*.ts' --include='*.tsx' 'projects(Pdm)?\.[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*' frontend/src/pages/ProjectDetailPage.tsx frontend/src/pages/ProjectListPage.tsx frontend/src/pages/ProjectsPage.tsx frontend/src/components/projects; } | sort -u```
 ```
-projects.collapseSubProjects
 projects.color
-projects.completed
 projects.coverImageAlt
 projects.coverImageLabel
 projects.coverImageRemove
 projects.coverImageReplace
 projects.coverImageUpload
 projects.create
-projects.createFirst
-projects.createFirstButton
-projects.deleteConfirm
-projects.deleteProject
 projects.descriptionPlaceholder
-projects.done
 projects.dueDate
 projects.editProject
-projects.expandSubProjects
-projects.export
-projects.exportAll
-projects.failed
-projects.failedParts
-projects.import
-projects.importProject
-projects.inQueue
 projects.namePlaceholder
 projects.newProject
-projects.noCreatePermission
-projects.noDeletePermission
-projects.noEditPermission
-projects.noExportPermission
-projects.noImportPermission
-projects.noPrintsYet
-projects.noProjects
-projects.noProjectsFiltered
-projects.noProjectsFilteredHelp
-projects.openExternalUrl
 projects.parentHint
 projects.parentLabel
 projects.parentNone
-projects.partOf
-projects.parts
-projects.partsPrinted
-projects.plates
-projects.printJobs
 projects.priority
 projects.priorityHigh
 projects.priorityLow
@@ -1792,9 +1761,6 @@ projects.priorityUrgent
 projects.statusActive
 projects.statusArchived
 projects.statusCompleted
-projects.subProjectCount
-projects.subProjectsOf
-projects.subtitle
 projects.tagsLabel
 projects.tagsPlaceholder
 projects.targetParts
@@ -1806,14 +1772,6 @@ projects.targetPlatesPlaceholder
 projects.targetSets
 projects.targetSetsHelp
 projects.targetSetsPlaceholder
-projects.title
-projects.toast.created
-projects.toast.deleted
-projects.toast.exported
-projects.toast.imported
-projects.toast.importFailed
-projects.toast.multipleImported
-projects.toast.updated
 projects.urlInvalid
 projects.urlLabel
 projects.urlPlaceholder
