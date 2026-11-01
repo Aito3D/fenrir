@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { MachinePanel } from '../../components/maintenance/hours/MachinePanel';
@@ -105,5 +105,29 @@ describe('MachinePanel', () => {
     expect(p.onClose).toHaveBeenCalledTimes(1);
     await userEvent.click(screen.getByTestId('hours-panel-backdrop'));
     expect(p.onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('saves a note on the chosen date', async () => {
+    const p = setup();
+    fireEvent.change(screen.getByLabelText('Date', { selector: 'input[max]' }), { target: { value: '2026-04-02' } });
+    await userEvent.type(screen.getByLabelText('Note'), 'nozzle swap');
+    await userEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    expect(p.onAddEvent).toHaveBeenCalledWith(5, { event_date: '2026-04-02', label: 'nozzle swap' });
+  });
+
+  it('saves the purchase date with the price', async () => {
+    const p = setup();
+    await userEvent.type(screen.getByLabelText('Purchase price'), '900');
+    fireEvent.change(screen.getByLabelText('Purchase date'), { target: { value: '2025-12-01' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(p.onSavePurchase).toHaveBeenCalledWith(5, { purchase_price: 900, purchase_date: '2025-12-01' });
+  });
+
+  it('clicking a reading row edits that date', async () => {
+    const p = setup();
+    const rows = screen.getAllByTestId('hours-panel-reading');
+    await userEvent.click(rows[0]);
+    expect(p.onEditDate).toHaveBeenCalledTimes(1);
+    expect(['2026-01-01', '2026-04-25']).toContain(p.onEditDate.mock.calls[0][0]);
   });
 });

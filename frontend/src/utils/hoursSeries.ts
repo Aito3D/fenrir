@@ -24,6 +24,12 @@ export function dayNumber(iso: string): number {
   return Date.UTC(y, m - 1, d) / DAY_MS;
 }
 
+/** Formats an ISO day (YYYY-MM-DD) for `language`, always in UTC so the host timezone never shifts the day. */
+export function isoDayFormatter(language: string, opts: Intl.DateTimeFormatOptions = {}): (iso: string) => string {
+  const fmt = new Intl.DateTimeFormat(language, { ...opts, timeZone: 'UTC' });
+  return (iso) => fmt.format(dayNumber(iso) * DAY_MS);
+}
+
 const byDate = (a: HourPoint, b: HourPoint) => a.date.localeCompare(b.date);
 
 /**

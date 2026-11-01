@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { HourMachine } from '../../../api/client';
 import {
-  behaviourFlag, dayNumber, familyOf, periodPaces, ratePerMonth, seriesPoints, type MachineSeries,
+  behaviourFlag, familyOf, isoDayFormatter, periodPaces, ratePerMonth, seriesPoints, type MachineSeries,
 } from '../../../utils/hoursSeries';
 
 interface FocusHeaderProps {
@@ -32,8 +32,7 @@ export function FocusHeader({ machine, series, color, today, fleetLine, onOpen }
     );
   }
 
-  const dayFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' });
-  const fmt = (iso: string) => dayFmt.format(dayNumber(iso) * 86_400_000);
+  const fmt = isoDayFormatter(i18n.language);
   const prev = series.manual.at(-2);
   const rate = ratePerMonth(seriesPoints(series), today);
   const flag = machine.retired ? null : behaviourFlag(periodPaces(series.manual));

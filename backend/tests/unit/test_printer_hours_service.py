@@ -211,7 +211,7 @@ async def test_same_day_recalibration_keeps_drift_and_one_event(db_session, prin
     p = await printer_factory(name="X1C13", runtime_seconds=3600 * 100, print_hours_offset=3765.0)
     machine = await machine_for_printer(db_session, p.id)
     machine.calibrated_at = datetime(2026, 10, 1)
-    today = datetime.now(timezone.utc).date()
+    today = date.today()  # the local date, as save_readings passes it
     await calibrate_machine(db_session, machine, p, 15130.0, today)
     await db_session.commit()
     first_drift = machine.last_drift_hours
@@ -222,6 +222,53 @@ async def test_same_day_recalibration_keeps_drift_and_one_event(db_session, prin
     assert machine.last_drift_hours == first_drift
     events = (await db_session.execute(select(HourEvent).where(HourEvent.kind == "calibrated"))).scalars().all()
     assert [(e.event_date, e.label) for e in events] == [(today, "1513 h")]
+
+
+@pytest.fixture
+def utc_plus_11(monkeypatch):
+    import time
+
+    monkeypatch.setenv("TZ", "Pacific/Noumea")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+@pytest.mark.asyncio
+async def test_same_local_day_correction_across_a_utc_boundary_is_not_drift(db_session, printer_factory, utc_plus_11):
+    p = await printer_factory(name="X1C15", runtime_seconds=3600 * 100, print_hours_offset=3765.0)
+    machine = await machine_for_printer(db_session, p.id)
+    machine.calibrated_at = datetime(2026, 10, 31, 21, 0)  # 08:00 on 2026-11-01 local, the day before in UTC
+    machine.last_drift_hours = 7.0
+    local_day = date(2026, 11, 1)
+    db_session.add(HourEvent(machine_id=machine.id, kind="calibrated", label="3803 h", event_date=local_day))
+    await db_session.commit()
+
+    await calibrate_machine(db_session, machine, p, 3805.0, local_day)  # the typo fix, 12:00 local
+    await db_session.commit()
+    assert machine.last_drift_hours == 7.0
+    events = (await db_session.execute(select(HourEvent).where(HourEvent.kind == "calibrated"))).scalars().all()
+    assert [(e.event_date, e.label) for e in events] == [(local_day, "3805 h")]
+
+
+@pytest.mark.asyncio
+async def test_next_local_day_recalibration_sharing_a_utc_date_records_drift(
+    db_session, printer_factory, utc_plus_11, monkeypatch
+):
+    from datetime import timezone
+
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 1, 20, 0, tzinfo=timezone.utc)  # 07:00 on 2026-11-02 local
+
+    monkeypatch.setattr(printer_hours, "datetime", _Clock)
+    p = await printer_factory(name="X1C16", runtime_seconds=3600 * 100, print_hours_offset=3765.0)
+    machine = await machine_for_printer(db_session, p.id)
+    machine.calibrated_at = datetime(2026, 11, 1, 1, 0)  # 12:00 on 2026-11-01 local: same UTC date as "now"
+    await calibrate_machine(db_session, machine, p, 3803.0, date(2026, 11, 2))
+    assert machine.last_drift_hours == pytest.approx(62.0)
 
 
 @pytest.mark.asyncio

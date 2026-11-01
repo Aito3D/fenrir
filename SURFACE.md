@@ -289,6 +289,7 @@ if not await _table_has_column(conn, "hour_readings", "raw_hours"):
 1 export function guessModel
 1 export function HoursChart
 1 export function HoursTab
+1 export function isoDayFormatter
 1 export function loadShare
 1 export function machineColors
 1 export function MachineCost

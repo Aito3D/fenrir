@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { HourEvent, HourMachine, HourReading } from '../../../api/client';
 import { useDismissableDialog } from '../../../hooks/useDismissableDialog';
 import {
-  behaviourFlag, dayNumber, familyOf, forecastDate, loadShare, periodPaces, ratePerMonth, seriesPoints, type MachineSeries,
+  behaviourFlag, familyOf, isoDayFormatter, forecastDate, loadShare, periodPaces, ratePerMonth, seriesPoints, type MachineSeries,
 } from '../../../utils/hoursSeries';
 import { Button } from '../../Button';
 import { focusRingCls } from '../../formStyles';
@@ -39,10 +39,8 @@ export function MachinePanel({
     onEscape: (close) => { if (!suspendDismiss) close(); },
   });
   const fmt = (n: number) => Math.round(n).toLocaleString(i18n.language);
-  const fullFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' });
-  const shortFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC', day: 'numeric', month: 'short' });
-  const date = (iso: string) => fullFmt.format(dayNumber(iso) * 86_400_000);
-  const short = (iso: string) => shortFmt.format(dayNumber(iso) * 86_400_000);
+  const date = isoDayFormatter(i18n.language);
+  const short = isoDayFormatter(i18n.language, { day: 'numeric', month: 'short' });
 
   const live = !machine.retired;
   const last = series.manual.at(-1) ?? null;

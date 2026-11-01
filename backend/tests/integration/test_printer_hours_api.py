@@ -629,6 +629,39 @@ class TestHoursPrinterScope:
         left = (await db_session.execute(select(HourReading.machine_id))).scalars().all()
         assert left == [m_out["id"]]
 
+    async def test_overview_shows_only_in_scope_and_retired_machines(self, async_client, printer_factory, limited_to):
+        mine, _, m_in, m_out = await self._two(async_client, printer_factory)
+        today = date.today().isoformat()
+        for m in (m_in, m_out):
+            await async_client.post(f"{BASE}/machines/{m['id']}/events", json={"event_date": today, "label": "n"})
+            await async_client.post(
+                f"{BASE}/readings",
+                json={"reading_date": "2026-01-01", "entries": [{"machine_id": m["id"], "hours": 7}]},
+            )
+        retired = await async_client.post(
+            f"{BASE}/import",
+            json={
+                "new_machines": [{"key": "k", "name": "OLD-ONE"}],
+                "readings": [{"key": "k", "reading_date": "2026-01-01", "hours": 3}],
+            },
+        )
+        assert retired.status_code == 200
+        full = (await async_client.get(BASE)).json()
+        assert {m["id"] for m in full["machines"]} >= {m_in["id"], m_out["id"]}
+        old_id = next(m["id"] for m in full["machines"] if m["name"] == "OLD-ONE")
+        limited_to(mine.id)
+        visible = {m_in["id"], old_id}
+        for body in (
+            (await async_client.get(BASE)).json(),
+            (await async_client.patch(f"{BASE}/settings", json={"reading_interval_days": 7})).json(),
+            (await async_client.delete(f"{BASE}/readings", params={"reading_date": "2030-01-01"})).json(),
+        ):
+            assert {m["id"] for m in body["machines"]} == visible
+            assert {r["machine_id"] for r in body["readings"]} <= visible
+            assert {e["machine_id"] for e in body["events"]} <= visible
+            assert m_out["id"] not in body["due_machine_ids"]
+            assert any(e["machine_id"] == m_in["id"] for e in body["events"])
+
     async def test_notes_and_machine_edits(self, async_client, printer_factory, limited_to):
         mine, _, m_in, m_out = await self._two(async_client, printer_factory)
         note = {"event_date": "2026-01-01", "label": "hello"}

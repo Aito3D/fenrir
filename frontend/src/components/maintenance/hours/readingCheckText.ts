@@ -1,11 +1,10 @@
 import type { TFunction } from 'i18next';
-import { dayNumber, type ReadingCheck } from '../../../utils/hoursSeries';
+import { isoDayFormatter, type ReadingCheck } from '../../../utils/hoursSeries';
 
 /** Sentences for the wrong-number check, shared by the step-by-step pass and the one-page form. */
 export function readingCheckText(t: TFunction, language: string) {
   const fmt = (v: number) => Math.round(v).toLocaleString(language);
-  const dayFmt = new Intl.DateTimeFormat(language, { timeZone: 'UTC' });
-  const fmtDate = (d: string) => dayFmt.format(dayNumber(d) * 86_400_000);
+  const fmtDate = isoDayFormatter(language);
 
   /** The amber sentence for a questioned reading, or null when the reading is fine. */
   const questionText = (c: ReadingCheck, typed: number): string | null => {

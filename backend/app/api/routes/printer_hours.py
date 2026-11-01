@@ -12,7 +12,7 @@ from backend.app.api.routes.settings import set_setting
 from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
-from backend.app.core.printer_scope import PrinterScope
+from backend.app.core.printer_scope import ALL_PRINTERS, PrinterScope
 from backend.app.models.maintenance import HourEvent, HourMachine, HourReading
 from backend.app.models.printer import Printer
 from backend.app.models.user import User
@@ -81,10 +81,13 @@ async def _machine_out(
     )
 
 
-async def _overview(db: AsyncSession, today: date | None = None) -> HoursOverview:
+async def _overview(
+    db: AsyncSession, today: date | None = None, printer_scope: PrinterScope = ALL_PRINTERS
+) -> HoursOverview:
     today = today or date.today()
     machines = await ensure_hour_machines(db)
-    await sync_events(db, machines)
+    await sync_events(db, machines)  # syncs every machine; only the response is scoped
+    machines = [m for m in machines if printer_scope.allows(m.printer_id)]
     rows = (
         await db.execute(select(Printer.id, Printer.runtime_seconds, Printer.print_hours_offset, Printer.created_at))
     ).all()
@@ -99,6 +102,9 @@ async def _overview(db: AsyncSession, today: date | None = None) -> HoursOvervie
         .all()
     )
     events = (await db.execute(select(HourEvent).order_by(HourEvent.event_date, HourEvent.id))).scalars().all()
+    in_scope_ids = {m.id for m in machines}
+    readings = [r for r in readings if r.machine_id in in_scope_ids]
+    events = [e for e in events if e.machine_id in in_scope_ids]
     manual: dict[int, list[HourReading]] = {}
     for r in readings:
         if r.source == SOURCE_MANUAL:
@@ -128,8 +134,9 @@ def _reject_future(reading_date: date, today: date | None = None) -> None:
 async def get_hours(
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
-    return await _overview(db)
+    return await _overview(db, printer_scope=printer_scope)
 
 
 @router.post("/readings", response_model=HoursOverview)
@@ -181,7 +188,7 @@ async def save_readings(
 
     for printer_id, printer_name in recalibrated:
         await notify_maintenance_attention(db, printer_id, printer_name)
-    return await _overview(db, today)
+    return await _overview(db, today, printer_scope)
 
 
 @router.delete("/readings", response_model=HoursOverview)
@@ -198,7 +205,7 @@ async def delete_readings(
         stmt = stmt.where(HourReading.machine_id.in_(select(HourMachine.id).where(in_scope)))
     await db.execute(stmt)
     await db.commit()
-    return await _overview(db)
+    return await _overview(db, printer_scope=printer_scope)
 
 
 @router.post("/import", response_model=HourImportResult)
@@ -298,11 +305,12 @@ async def update_hour_settings(
     body: HourSettingsUpdate,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Set the reading reminder interval and return the refreshed overview."""
     await set_setting(db, "hours_reading_interval_days", str(body.reading_interval_days))
     await db.commit()
-    return await _overview(db, date.today())
+    return await _overview(db, date.today(), printer_scope)
 
 
 @router.patch("/machines/{machine_id}", response_model=HourMachineOut)
@@ -333,7 +341,7 @@ async def update_machine(
     if body.model is not None:
         machine.model = body.model or None
     await db.commit()
-    overview = await _overview(db, date.today())
+    overview = await _overview(db, date.today(), printer_scope)
     return next(m for m in overview.machines if m.id == machine.id)
 
 
