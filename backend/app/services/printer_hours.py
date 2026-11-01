@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 SOURCE_MANUAL = "manual"
 SOURCE_AUTO = "auto"
 
+EVENT_KINDS = ("note", "maintenance", "added", "retired", "calibrated")
+
 
 def current_hours(runtime_seconds: int | None, offset_hours: float | None) -> float:
     """Fenrir's counter: active runtime (RUNNING only, #1521) plus the operator baseline."""

@@ -99,6 +99,12 @@ class HourMachine(Base):
     # mismatch retires this row instead of attaching its history to a new printer.
     serial_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     retired: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Last time the counter was set to a typed value, and by how many hours that
+    # correction moved it (NULL until one was measured).
+    calibrated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_drift_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    purchase_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    purchase_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -113,8 +119,29 @@ class HourReading(Base):
     reading_date: Mapped[date] = mapped_column(Date)
     hours: Mapped[float] = mapped_column(Float)
     source: Mapped[str] = mapped_column(String(10))  # "manual" | "auto"
+    raw_hours: Mapped[float | None] = mapped_column(Float, nullable=True)  # Fenrir's own counter when typed
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class HourEvent(Base):
+    """A dated entry in a machine's log: a note, a maintenance, or a lifecycle mark.
+
+    No ORM relationship to the machine on purpose: SQLite does not enforce the FK
+    cascade, so deleting a machine removes its events explicitly. ``source_id``
+    points at the row the event mirrors (e.g. a maintenance history entry).
+    """
+
+    __tablename__ = "hour_events"
+    __table_args__ = (Index("ix_hour_events_machine", "machine_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    machine_id: Mapped[int] = mapped_column(ForeignKey("hour_machines.id", ondelete="CASCADE"))
+    event_date: Mapped[date] = mapped_column(Date)
+    kind: Mapped[str] = mapped_column(String(20))  # see printer_hours.EVENT_KINDS
+    label: Mapped[str] = mapped_column(String(200))
+    source_id: Mapped[int | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 # Import at end to avoid circular imports

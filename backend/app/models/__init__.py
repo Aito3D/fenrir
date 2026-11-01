@@ -32,6 +32,7 @@ from backend.app.models.location import Location
 from backend.app.models.location_ha_sensor import LocationHASensor
 from backend.app.models.long_lived_token import LongLivedToken
 from backend.app.models.maintenance import (
+    HourEvent,
     HourMachine,
     HourReading,
     MaintenanceHistory,
@@ -98,6 +99,7 @@ __all__ = [
     "SmartPlugEnergySnapshot",
     "MaintenanceType",
     "PrinterMaintenance",
+    "HourEvent",
     "HourMachine",
     "HourReading",
     "MaintenanceHistory",

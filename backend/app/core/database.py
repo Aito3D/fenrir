@@ -6784,6 +6784,7 @@ async def _run_migrations(conn):
     # on fresh installs only — this covers databases whose table predates it.
     await _migrate_location_ha_sensor_unique_binding(conn)
     await _migrate_printer_maintenance_unique(conn)
+    await _migrate_printer_hours_columns(conn)
 
     # Migration: the stock alert templates name the colour and subtype (#2955).
     # The forecast groups by colour, so two colours of one product would
@@ -8474,6 +8475,41 @@ async def _migrate_location_ha_sensor_unique_binding(conn) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_location_ha_sensors_location_entity "
         "ON location_ha_sensors (location_id, entity_id)",
     )
+
+
+async def _migrate_printer_hours_columns(conn) -> None:
+    """Calibration, purchase and raw-counter columns of the Hours tab.
+
+    ``calibrated_at`` is backfilled for machines whose printer already carries an
+    offset (the offset was set by a manual reading): the newest manual reading's
+    date, or today when there is none. ``last_drift_hours`` stays NULL, since no
+    correction was measured before this column existed.
+    """
+    from sqlalchemy import text
+
+    for column, ddl in (
+        ("calibrated_at", "TIMESTAMP"),
+        ("last_drift_hours", "REAL"),
+        ("purchase_price", "REAL"),
+        ("purchase_date", "DATE"),
+    ):
+        if not await _table_has_column(conn, "hour_machines", column):
+            await _safe_execute(conn, f"ALTER TABLE hour_machines ADD COLUMN {column} {ddl}")
+    if not await _table_has_column(conn, "hour_readings", "raw_hours"):
+        await _safe_execute(conn, "ALTER TABLE hour_readings ADD COLUMN raw_hours REAL")
+
+    # SQLite stores dates as text, and CAST(... AS TIMESTAMP) would turn one into the number 2026.
+    newest = "MAX(r.reading_date)" if is_sqlite() else "CAST(MAX(r.reading_date) AS TIMESTAMP)"
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                "UPDATE hour_machines SET calibrated_at = COALESCE("
+                f"(SELECT {newest} FROM hour_readings r "
+                "WHERE r.machine_id = hour_machines.id AND r.source = 'manual'), CURRENT_TIMESTAMP) "
+                "WHERE calibrated_at IS NULL AND printer_id IN "
+                "(SELECT id FROM printers WHERE print_hours_offset > 0)"
+            )
+        )
 
 
 async def _migrate_printer_maintenance_unique(conn) -> None:
