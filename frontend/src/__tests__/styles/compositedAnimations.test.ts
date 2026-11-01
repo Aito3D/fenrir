@@ -28,4 +28,15 @@ describe('card and tile animations stay on the compositor', () => {
     expect(css).not.toMatch(/@keyframes flag-halo\s*\{/);
     expect(css).not.toMatch(/animation:\s*flag-halo\s/);
   });
+
+  // The ring and the caret breath moved onto pseudo-elements; the reduced-motion
+  // rules must follow them with enough specificity to win. `:has()` takes the
+  // specificity of its argument, so `.aito-card-shell::after` (0,1,1) loses to
+  // `.aito-card-shell:has(> .flag-urgent)::after` (0,2,1) whatever the order.
+  it('reduced motion stops the ring and the caret breath with winning selectors', () => {
+    const blocks = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1]);
+    const joined = blocks.join('\n');
+    expect(joined).toMatch(/\.aito-card-shell\.aito-card-shell::after\s*\{[^}]*animation:\s*none/);
+    expect(joined).toMatch(/\.code-caret::after[^{]*\{[^}]*animation:\s*none/);
+  });
 });

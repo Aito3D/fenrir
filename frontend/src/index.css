@@ -2306,7 +2306,10 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
 /* The signal survives for anyone who has asked for less motion — as the
    static glow the card already carries, without the ring. */
 @media (prefers-reduced-motion: reduce) {
-  .aito-card-shell::after { animation: none; opacity: 0; }
+  /* Doubled class: `:has()` takes the specificity of its argument, so the
+     ring rules above are (0,2,1) and a plain `.aito-card-shell::after`
+     (0,1,1) would lose to them whatever the order. */
+  .aito-card-shell.aito-card-shell::after { animation: none; opacity: 0; }
 }
 
 /* Calculator tables: rows carry a SOLID background so the sticky first
@@ -2946,6 +2949,7 @@ tbody .calc-table-row:hover {
   .code-slot,
   .code-glyph,
   .code-caret,
+  .code-caret::after,
   .code-row[data-state='checking'] .code-cell,
   .code-row[data-state='found'] .code-cell,
   .code-row[data-state='found'],
