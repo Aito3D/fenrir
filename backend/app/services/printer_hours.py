@@ -117,7 +117,10 @@ async def ensure_hour_machines(db: AsyncSession) -> list[HourMachine]:
 
 
 async def sync_events(db: AsyncSession, machines: list[HourMachine]) -> None:
-    """Mirror maintenance history into ``hour_events`` and add each machine's ``added`` event. Idempotent; commits."""
+    """Mirror maintenance history into ``hour_events`` and keep each machine's one ``added`` event on ``added_on``.
+
+    Idempotent; never deletes; commits.
+    """
     for machine in machines:
         known = (
             await db.execute(select(HourEvent.kind, HourEvent.source_id).where(HourEvent.machine_id == machine.id))
@@ -141,8 +144,6 @@ async def sync_events(db: AsyncSession, machines: list[HourMachine]) -> None:
                             source_id=history_id,
                         )
                     )
-        if any(kind == "added" for kind, _src in known):
-            continue
         first_manual = (
             await db.execute(
                 select(func.min(HourReading.reading_date)).where(
@@ -157,8 +158,15 @@ async def sync_events(db: AsyncSession, machines: list[HourMachine]) -> None:
             ).scalar_one_or_none()
             printer_created = created.date() if created else None
         joined = added_on(machine, first_manual, printer_created)
-        if joined is not None:
+        if joined is None:
+            continue
+        existing = (
+            await db.execute(select(HourEvent).where(HourEvent.machine_id == machine.id, HourEvent.kind == "added"))
+        ).scalar_one_or_none()
+        if existing is None:
             db.add(HourEvent(machine_id=machine.id, event_date=joined, kind="added", label=machine.name))
+        elif existing.event_date != joined:
+            existing.event_date = joined  # an older reading arrived: the tick follows added_on
     await db.commit()
 
 

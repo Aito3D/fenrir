@@ -337,8 +337,10 @@ class TestHoursOverviewPayload:
         assert m["calibrated_at"] is None
         assert data["reading_interval_days"] == 90
         assert m["id"] in data["due_machine_ids"]
-        # the event was written by the first overview, before the backdated reading existed
-        assert [e["kind"] for e in data["events"] if e["machine_id"] == m["id"]] == ["added"]
+        # the event was first written before the backdated reading existed, then followed added_on
+        assert [(e["kind"], e["event_date"]) for e in data["events"] if e["machine_id"] == m["id"]] == [
+            ("added", m["added_on"])
+        ]
         assert [r["raw_hours"] for r in data["readings"]] == [None]
 
     async def test_overview_next_service_only_when_calibrated(

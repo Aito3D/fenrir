@@ -287,6 +287,26 @@ async def test_sync_events_added_uses_first_reading_when_older_than_printer(db_s
 
 
 @pytest.mark.asyncio
+async def test_sync_events_moves_added_when_an_older_reading_arrives(db_session, printer_factory):
+    p = await printer_factory(name="X1C22")
+    p.created_at = datetime(2026, 3, 9, 12, 0)
+    machines = await ensure_hour_machines(db_session)
+    await sync_events(db_session, machines)
+    [first] = (await db_session.execute(select(HourEvent).where(HourEvent.kind == "added"))).scalars().all()
+    assert first.event_date == date(2026, 3, 9)
+    event_id = first.id
+
+    await upsert_reading(db_session, machines[0].id, date(2024, 7, 19), SOURCE_MANUAL, 120.0)
+    await db_session.commit()
+    await sync_events(db_session, machines)
+    await sync_events(db_session, machines)
+
+    db_session.expire_all()
+    [moved] = (await db_session.execute(select(HourEvent).where(HourEvent.kind == "added"))).scalars().all()
+    assert (moved.id, moved.event_date) == (event_id, date(2024, 7, 19))
+
+
+@pytest.mark.asyncio
 async def test_sync_events_added_for_retired_machine_without_printer(db_session, printer_factory):
     p = await printer_factory(name="X1C22")
     [m] = await ensure_hour_machines(db_session)
