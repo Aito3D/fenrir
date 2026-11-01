@@ -3157,6 +3157,8 @@ export default {
       showNone: 'ни одной',
       retired: 'Выведенные',
       perMonth: '{{hours}} ч/мес.',
+      strip: { lifetime: 'Всего по парку', thisMonth: 'В этом месяце', thisMonthSub: 'работающие машины, с 1-го числа', readingsDue: 'Нужны показания', dueSub: 'нажмите, чтобы снять', allFresh: 'показания всех машин свежие', busiest: 'Самая загруженная машина', takeReadings: 'Снять показания', load: 'Загрузка по машинам', machinesCount: '{{live}} в работе · {{sold}} продано' },
+      noRecentReading: 'нет свежих показаний',
       range: { label: 'Период', '3m': '3 мес.', '12m': '12 мес.', all: 'Всё' },
       chart: { lastReading: 'последнее показание · {{date}}', noReadingsFor: 'нет показаний {{months}} мес.', nextService: 'следующее ТО на {{hours}} ч · около {{date}}', months: 'мес.', sameAgeHint: 'Выберите в списке две-три машины, чтобы сравнить их в одном возрасте.', forecast: 'прогноз при текущем темпе' },
       lastReadingOn: 'последнее показание {{date}}',

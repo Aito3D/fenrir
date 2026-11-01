@@ -2170,6 +2170,8 @@ export default {
       showNone: 'inga',
       retired: 'Avvecklade',
       perMonth: '{{hours}} h/månad',
+      strip: { lifetime: 'Flottan totalt', thisMonth: 'Denna månad', thisMonthSub: 'aktiva maskiner, sedan den 1:a', readingsDue: 'Avläsningar att göra', dueSub: 'tryck för att göra dem', allFresh: 'alla maskiner nyligen avlästa', busiest: 'Mest använda maskin', takeReadings: 'Gör avläsningar', load: 'Belastning per maskin', machinesCount: '{{live}} aktiva · {{sold}} sålda' },
+      noRecentReading: 'ingen färsk avläsning',
       range: { label: 'Intervall', '3m': '3 mån', '12m': '12 mån', all: 'Alla' },
       chart: { lastReading: 'senaste avläsning · {{date}}', noReadingsFor: 'inga avläsningar på {{months}} månader', nextService: 'nästa service vid {{hours}} h · omkring {{date}}', months: 'månader', sameAgeHint: 'Välj två eller tre maskiner i listan för att jämföra dem vid samma ålder.', forecast: 'prognos i nuvarande takt' },
       lastReadingOn: 'senaste avläsning {{date}}',

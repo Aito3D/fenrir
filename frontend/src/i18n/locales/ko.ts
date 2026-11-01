@@ -3159,6 +3159,8 @@ export default {
       showNone: '없음',
       retired: '퇴역',
       perMonth: '{{hours}}시간/월',
+      strip: { lifetime: '전체 누적', thisMonth: '이번 달', thisMonthSub: '가동 중인 장비, 1일부터', readingsDue: '측정 필요', dueSub: '눌러서 측정하기', allFresh: '모든 장비를 최근에 측정함', busiest: '가장 많이 가동된 장비', takeReadings: '측정하기', load: '장비별 가동률', machinesCount: '가동 {{live}} · 매각 {{sold}}' },
+      noRecentReading: '최근 측정 없음',
       range: { label: '기간', '3m': '3개월', '12m': '12개월', all: '전체' },
       chart: { lastReading: '마지막 기록 · {{date}}', noReadingsFor: '{{months}}개월간 기록 없음', nextService: '다음 정비 {{hours}}시간 · {{date}} 무렵', months: '개월', sameAgeHint: '목록에서 두세 대를 선택하면 같은 사용 기간으로 비교할 수 있습니다.', forecast: '현재 속도 기준 예측' },
       lastReadingOn: '마지막 기록 {{date}}',

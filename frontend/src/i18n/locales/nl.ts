@@ -2171,6 +2171,8 @@ export default {
       showNone: 'geen',
       retired: 'Buiten gebruik',
       perMonth: '{{hours}} u/maand',
+      strip: { lifetime: 'Vloot totaal', thisMonth: 'Deze maand', thisMonthSub: 'actieve machines, sinds de 1e', readingsDue: 'Opnames nodig', dueSub: 'tik om ze te doen', allFresh: 'alle machines recent opgenomen', busiest: 'Drukste machine', takeReadings: 'Opnames doen', load: 'Belasting per machine', machinesCount: '{{live}} actief · {{sold}} verkocht' },
+      noRecentReading: 'geen recente opname',
       range: { label: 'Bereik', '3m': '3 mnd', '12m': '12 mnd', all: 'Alles' },
       chart: { lastReading: 'laatste meting · {{date}}', noReadingsFor: 'al {{months}} maanden geen meting', nextService: 'volgend onderhoud bij {{hours}} u · rond {{date}}', months: 'maanden', sameAgeHint: 'Kies twee of drie machines in de lijst om ze op dezelfde leeftijd te vergelijken.', forecast: 'prognose bij het huidige tempo' },
       lastReadingOn: 'laatste meting {{date}}',

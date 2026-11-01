@@ -3268,6 +3268,8 @@ export default {
       showNone: 'none',
       retired: 'Retired',
       perMonth: '{{hours}} h/month',
+      strip: { lifetime: 'Fleet lifetime', thisMonth: 'This month', thisMonthSub: 'live machines, since the 1st', readingsDue: 'Readings due', dueSub: 'tap to take them', allFresh: 'all machines read recently', busiest: 'Busiest machine', takeReadings: 'Take readings', load: 'Load per machine', machinesCount: '{{live}} live · {{sold}} sold' },
+      noRecentReading: 'no recent reading',
       range: { label: 'Range', '3m': '3 m', '12m': '12 m', all: 'All' },
       chart: { lastReading: 'last reading · {{date}}', noReadingsFor: 'no readings for {{months}} months', nextService: 'next service at {{hours}} h · around {{date}}', months: 'months', sameAgeHint: 'Pick two or three machines in the list to compare them at the same age.', forecast: 'forecast at the current pace' },
       lastReadingOn: 'last reading {{date}}',

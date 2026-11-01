@@ -3245,6 +3245,8 @@ export default {
       showNone: 'hiçbiri',
       retired: 'Emekli',
       perMonth: '{{hours}} sa/ay',
+      strip: { lifetime: 'Filo toplamı', thisMonth: 'Bu ay', thisMonthSub: 'aktif makineler, ayın 1\'inden beri', readingsDue: 'Okuma bekleyen', dueSub: 'almak için dokunun', allFresh: 'tüm makineler yakın zamanda okundu', busiest: 'En yoğun makine', takeReadings: 'Okumaları al', load: 'Makine başına yük', machinesCount: '{{live}} aktif · {{sold}} satıldı' },
+      noRecentReading: 'yakın zamanda okuma yok',
       range: { label: 'Aralık', '3m': '3 ay', '12m': '12 ay', all: 'Tümü' },
       chart: { lastReading: 'son okuma · {{date}}', noReadingsFor: '{{months}} aydır okuma yok', nextService: 'sonraki bakım {{hours}} sa · yaklaşık {{date}}', months: 'ay', sameAgeHint: 'Aynı yaşta karşılaştırmak için listeden iki veya üç makine seçin.', forecast: 'mevcut hızda tahmin' },
       lastReadingOn: 'son okuma {{date}}',

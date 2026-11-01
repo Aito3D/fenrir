@@ -56,6 +56,12 @@ describe('HoursTab', () => {
     expect(within(list).getByText('Retired')).toBeInTheDocument();
   });
 
+  it('renders the fleet strip above the chart', async () => {
+    serve();
+    render(<HoursTab />);
+    expect(await screen.findByText('Fleet lifetime')).toBeInTheDocument();
+  });
+
   it('logs manual dates newest first plus one auto row for today', async () => {
     serve();
     render(<HoursTab />);

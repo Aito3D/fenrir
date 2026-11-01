@@ -3243,6 +3243,8 @@ export default {
       showNone: 'なし',
       retired: '引退',
       perMonth: '{{hours}} 時間/月',
+      strip: { lifetime: '全台の累計', thisMonth: '今月', thisMonthSub: '稼働中の台数、1日から', readingsDue: '要読み取り', dueSub: 'タップして読み取る', allFresh: '全台を最近読み取り済み', busiest: '最も稼働した機械', takeReadings: '読み取りを行う', load: '機械ごとの稼働率', machinesCount: '稼働 {{live}} · 売却 {{sold}}' },
+      noRecentReading: '最近の読み取りなし',
       range: { label: '期間', '3m': '3か月', '12m': '12か月', all: 'すべて' },
       chart: { lastReading: '最終読み取り · {{date}}', noReadingsFor: '{{months}}か月間読み取りなし', nextService: '次回整備は {{hours}} 時間 · {{date}} 頃', months: 'か月', sameAgeHint: '一覧から2〜3台を選ぶと、同じ経過期間で比較できます。', forecast: '現在のペースでの予測' },
       lastReadingOn: '最終読み取り {{date}}',

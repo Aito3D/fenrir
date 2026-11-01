@@ -3243,6 +3243,8 @@ export default {
       showNone: '無',
       retired: '已退役',
       perMonth: '{{hours}} 小時/月',
+      strip: { lifetime: '全部設備累計', thisMonth: '本月', thisMonthSub: '在用設備,自 1 日起', readingsDue: '待讀數', dueSub: '點按開始讀數', allFresh: '所有設備近期已讀數', busiest: '最繁忙的設備', takeReadings: '開始讀數', load: '各設備負載', machinesCount: '在用 {{live}} · 已售 {{sold}}' },
+      noRecentReading: '近期無讀數',
       range: { label: '範圍', '3m': '3 個月', '12m': '12 個月', all: '全部' },
       chart: { lastReading: '最近讀數 · {{date}}', noReadingsFor: '已 {{months}} 個月無讀數', nextService: '下次保養於 {{hours}} 小時 · 約 {{date}}', months: '個月', sameAgeHint: '在列表中選擇兩三台機器，即可依相同機齡進行比較。', forecast: '依目前節奏預測' },
       lastReadingOn: '最近讀數 {{date}}',

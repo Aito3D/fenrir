@@ -5,10 +5,11 @@ import { ClipboardPaste, Loader2, Plus } from 'lucide-react';
 import { api, type HourMachine } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
-import { dayNumber, gapInfo, machineColors, machineSeries, seriesPoints } from '../../../utils/hoursSeries';
+import { dayNumber, fleetFacts, gapInfo, machineColors, machineSeries, ratePerMonth, seriesPoints } from '../../../utils/hoursSeries';
 import { Button } from '../../Button';
 import { Card, CardContent } from '../../Card';
 import { ConfirmModal } from '../../ConfirmModal';
+import { FleetStrip } from './FleetStrip';
 import { FocusHeader } from './FocusHeader';
 import { HoursChart, type HoursChartMode, type HoursChartRange } from './HoursChart';
 import { MachineList } from './MachineList';
@@ -119,6 +120,8 @@ export function HoursTab() {
   }
 
   const gap = gapInfo(machines, series, data.today);
+  const facts = fleetFacts(machines, series, data.readings, data.today, data.due_machine_ids);
+  const paces = new Map(machines.map((m) => [m.id, ratePerMonth(seriesPoints(series.get(m.id)!), data.today)]));
   const dayFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' });
   const fleetLine = t('maintenance.hours.fleetLine', {
     machines: machines.length,
@@ -159,6 +162,8 @@ export function HoursTab() {
         </CardContent>
       </Card>
       <div className="flex min-w-0 flex-col gap-4">
+        {/* Task 13 retargets this to the reading pass; until then it opens the New reading form for today. */}
+        <FleetStrip facts={facts} machines={machines} paces={paces} onTakeReadings={() => setFormDate(data.today)} />
         <Card>
           <CardContent>
             <div tabIndex={0} onKeyDown={clearOnEscape} className="outline-none">

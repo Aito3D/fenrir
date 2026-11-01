@@ -3245,6 +3245,8 @@ export default {
       showNone: 'ninguna',
       retired: 'Retiradas',
       perMonth: '{{hours}} h/mes',
+      strip: { lifetime: 'Total de la flota', thisMonth: 'Este mes', thisMonthSub: 'máquinas activas, desde el día 1', readingsDue: 'Lecturas pendientes', dueSub: 'toca para tomarlas', allFresh: 'todas las máquinas leídas recientemente', busiest: 'Máquina más activa', takeReadings: 'Tomar lecturas', load: 'Carga por máquina', machinesCount: '{{live}} activas · {{sold}} vendidas' },
+      noRecentReading: 'sin lectura reciente',
       range: { label: 'Rango', '3m': '3 meses', '12m': '12 meses', all: 'Todo' },
       chart: { lastReading: 'última lectura · {{date}}', noReadingsFor: 'sin lecturas desde hace {{months}} meses', nextService: 'próximo mantenimiento a las {{hours}} h · hacia el {{date}}', months: 'meses', sameAgeHint: 'Elige dos o tres máquinas de la lista para compararlas a la misma edad.', forecast: 'previsión al ritmo actual' },
       lastReadingOn: 'última lectura {{date}}',

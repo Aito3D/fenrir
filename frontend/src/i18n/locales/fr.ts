@@ -3243,6 +3243,8 @@ export default {
       showNone: 'aucune',
       retired: 'Retirées',
       perMonth: '{{hours}} h/mois',
+      strip: { lifetime: 'Cumul du parc', thisMonth: 'Ce mois-ci', thisMonthSub: 'machines actives, depuis le 1er', readingsDue: 'Relevés à faire', dueSub: 'touchez pour les faire', allFresh: 'toutes les machines relevées récemment', busiest: 'Machine la plus sollicitée', takeReadings: 'Faire les relevés', load: 'Charge par machine', machinesCount: '{{live}} actives · {{sold}} vendues' },
+      noRecentReading: 'pas de relevé récent',
       range: { label: 'Période', '3m': '3 mois', '12m': '12 mois', all: 'Tout' },
       chart: { lastReading: 'dernier relevé · {{date}}', noReadingsFor: 'aucun relevé depuis {{months}} mois', nextService: 'prochaine révision à {{hours}} h · vers le {{date}}', months: 'mois', sameAgeHint: 'Choisissez deux ou trois machines dans la liste pour les comparer au même âge.', forecast: 'prévision au rythme actuel' },
       lastReadingOn: 'dernier relevé {{date}}',

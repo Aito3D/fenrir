@@ -3163,6 +3163,8 @@ export default {
       showNone: 'жодної',
       retired: 'Виведені',
       perMonth: '{{hours}} год/міс.',
+      strip: { lifetime: 'Усього по парку', thisMonth: 'Цього місяця', thisMonthSub: 'працюючі машини, з 1-го числа', readingsDue: 'Потрібні покази', dueSub: 'натисніть, щоб зняти', allFresh: 'покази всіх машин свіжі', busiest: 'Найзавантаженіша машина', takeReadings: 'Зняти покази', load: 'Завантаження по машинах', machinesCount: '{{live}} у роботі · {{sold}} продано' },
+      noRecentReading: 'немає свіжих показів',
       range: { label: 'Період', '3m': '3 міс.', '12m': '12 міс.', all: 'Усе' },
       chart: { lastReading: 'останнє показання · {{date}}', noReadingsFor: 'немає показань {{months}} міс.', nextService: 'наступне ТО на {{hours}} год · близько {{date}}', months: 'міс.', sameAgeHint: 'Виберіть у списку дві-три машини, щоб порівняти їх в однаковому віці.', forecast: 'прогноз за поточним темпом' },
       lastReadingOn: 'останнє показання {{date}}',
