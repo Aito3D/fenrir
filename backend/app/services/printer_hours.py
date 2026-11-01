@@ -262,7 +262,7 @@ async def calibrate_machine(
     """
     counter_before = current_hours(printer.runtime_seconds, printer.print_hours_offset)
     first_time = machine.calibrated_at is None
-    same_day = machine.calibrated_at is not None and machine.calibrated_at.date() == today
+    same_day = machine.calibrated_at is not None and machine.calibrated_at.date() == datetime.now(timezone.utc).date()
     recalibrate_printer(printer, total_hours)
     actual = current_hours(printer.runtime_seconds, printer.print_hours_offset)
     machine.calibrated_at = datetime.now(timezone.utc).replace(tzinfo=None)

@@ -225,6 +225,17 @@ async def test_same_day_recalibration_keeps_drift_and_one_event(db_session, prin
 
 
 @pytest.mark.asyncio
+async def test_recalibration_after_a_day_records_drift(db_session, printer_factory):
+    from datetime import timedelta, timezone
+
+    p = await printer_factory(name="X1C14", runtime_seconds=3600 * 100, print_hours_offset=3765.0)
+    machine = await machine_for_printer(db_session, p.id)
+    machine.calibrated_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
+    await calibrate_machine(db_session, machine, p, 3803.0, date.today())
+    assert machine.last_drift_hours == pytest.approx(62.0)
+
+
+@pytest.mark.asyncio
 async def test_calibrate_clamped_offset_records_actual_counter(db_session, printer_factory):
     p = await printer_factory(name="X1C12", runtime_seconds=3600 * 100)
     machine = await machine_for_printer(db_session, p.id)
