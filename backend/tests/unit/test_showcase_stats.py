@@ -108,16 +108,31 @@ async def test_open_print_counts_up_to_now_but_stale_open_rows_are_ignored(db_se
     assert s["load_7d"]["machine_hours"] == pytest.approx(3.0 * svc.LOAD_FACTOR)
 
 
-@pytest.mark.asyncio
-async def test_route_is_public_cached_and_cors_open(async_client, db_session, monkeypatch):
+@pytest.fixture
+def served_from_test_engine(test_engine, monkeypatch):
+    """Point the service's own recompute at the test engine (the route opens no
+    session of its own) and freeze its clock."""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
     svc.reset_cache()
-    await _seed(db_session, datetime(2026, 11, 1, 12, 0, 0))
+    monkeypatch.setattr(
+        svc, "_session_factory", async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    )
     clock = {"t": 1000.0}
     monkeypatch.setattr(svc, "_clock", lambda: clock["t"])
+    yield clock
+    svc.reset_cache()
+
+
+@pytest.mark.asyncio
+async def test_route_is_public_cached_and_cors_open(async_client, db_session, served_from_test_engine):
+    clock = served_from_test_engine
+    await _seed(db_session, datetime(2026, 11, 1, 12, 0, 0))
     r = await async_client.get("/api/v1/showcase/stats")
     assert r.status_code == 200, r.text
     assert r.headers["access-control-allow-origin"] == "*"
     assert r.headers["cache-control"] == "public, max-age=300"
+    assert r.headers["content-type"] == "application/json"
     first = r.json()
     assert first["prints"] == round(3 * svc.MULTIPLIER) + svc.PRINTS_OFFSET
     # a new print inside the TTL is not visible; after the TTL it is
@@ -131,4 +146,68 @@ async def test_route_is_public_cached_and_cors_open(async_client, db_session, mo
     assert (await async_client.get("/api/v1/showcase/stats")).json()["prints"] == round(
         4 * svc.MULTIPLIER
     ) + svc.PRINTS_OFFSET
-    svc.reset_cache()
+
+
+@pytest.mark.asyncio
+async def test_conditional_request_gets_an_empty_304(async_client, db_session, served_from_test_engine):
+    await _seed(db_session, datetime(2026, 11, 1, 12, 0, 0))
+    r = await async_client.get("/api/v1/showcase/stats")
+    etag = r.headers["etag"]
+    assert etag.startswith('"') and len(etag) == 34
+    r2 = await async_client.get("/api/v1/showcase/stats", headers={"If-None-Match": etag})
+    assert r2.status_code == 304
+    assert r2.content == b""
+    assert r2.headers["etag"] == etag
+    assert r2.headers["cache-control"] == "public, max-age=300"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_misses_recompute_once(db_session, served_from_test_engine, monkeypatch):
+    import asyncio
+
+    await _seed(db_session, datetime(2026, 11, 1, 12, 0, 0))
+    calls = 0
+    real = svc.compute
+
+    async def counting(db, now=None):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.05)  # let the other waiters pile up behind the lock
+        return await real(db, now)
+
+    monkeypatch.setattr(svc, "compute", counting)
+    snaps = await asyncio.gather(*(svc.get_cached() for _ in range(20)))
+    assert calls == 1
+    assert len({s.etag for s in snaps}) == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_recompute_keeps_serving_the_last_snapshot(
+    async_client, db_session, served_from_test_engine, monkeypatch
+):
+    clock = served_from_test_engine
+    await _seed(db_session, datetime(2026, 11, 1, 12, 0, 0))
+    good = (await async_client.get("/api/v1/showcase/stats")).json()
+
+    async def boom(db, now=None):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(svc, "compute", boom)
+    clock["t"] += 301
+    r = await async_client.get("/api/v1/showcase/stats")
+    assert r.status_code == 200
+    assert r.json() == good
+    assert "db down" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_no_snapshot_and_a_failure_is_a_bodiless_503(async_client, served_from_test_engine, monkeypatch):
+    async def boom(db, now=None):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(svc, "compute", boom)
+    r = await async_client.get("/api/v1/showcase/stats")
+    assert r.status_code == 503
+    assert r.content == b""
+    assert r.headers["cache-control"] == "no-store"
+    assert r.headers["retry-after"] == "60"

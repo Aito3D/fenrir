@@ -4,19 +4,31 @@ Everything is derived from completed, non-trashed archives, accepted Aito
 projects and active printers. The headline figures are multiplied by
 ``MULTIPLIER`` because the archive only covers the machines Fenrir has
 tracked, not the shop's whole history; the fleet size and the load are
-real. The load window is a week so a weekend never reads as a slump. Results are cached in memory for ``CACHE_TTL`` seconds so a
-storefront with many visitors never recomputes per request.
+real. The load window is a week so a weekend never reads as a slump.
+
+Exposed to the internet, so the serving path is built to cost nothing per
+request: a cache hit touches neither the database nor the connection pool,
+a miss recomputes once under a lock while concurrent callers wait for that
+one result, and a failed recompute keeps serving the last good payload
+instead of leaking an error. The JSON bytes and their ETag are built once
+per recompute so conditional requests answer 304 without re-serialising.
 """
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
+import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.database import async_session
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.archive import PrintArchive
 from backend.app.models.printer import Printer
@@ -37,8 +49,21 @@ LOAD_WINDOW_DAYS = 7
 # An open (completed_at IS NULL) row older than this is a print that never got closed, not a running one.
 _OPEN_PRINT_MAX_AGE = timedelta(days=7)
 
-_cache: tuple[float, dict[str, Any]] | None = None
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    at: float
+    payload: dict[str, Any]
+    body: bytes
+    etag: str
+
+
+_cache: Snapshot | None = None
+_lock = asyncio.Lock()
 _clock = time.monotonic  # module attribute so tests can freeze it without touching the event loop's clock
+_session_factory = async_session  # module attribute so tests can point a recompute at their engine
 
 
 def reset_cache() -> None:
@@ -130,8 +155,27 @@ async def compute(db: AsyncSession, now: datetime | None = None) -> dict[str, An
     }
 
 
-async def get_cached(db: AsyncSession) -> dict[str, Any]:
+def _snapshot(payload: dict[str, Any]) -> Snapshot:
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    return Snapshot(_clock(), payload, body, '"' + hashlib.sha256(body).hexdigest()[:32] + '"')
+
+
+async def get_cached() -> Snapshot:
+    """The current payload, recomputed at most once per ``CACHE_TTL`` and once
+    per expiry however many requests arrive together. Raises only when there
+    is no previous payload to fall back on."""
     global _cache
-    if _cache is None or _clock() - _cache[0] >= CACHE_TTL:
-        _cache = (_clock(), await compute(db))
-    return _cache[1]
+    if _cache is not None and _clock() - _cache.at < CACHE_TTL:
+        return _cache
+    async with _lock:
+        if _cache is not None and _clock() - _cache.at < CACHE_TTL:
+            return _cache  # another waiter already refreshed it
+        try:
+            async with _session_factory() as db:
+                _cache = _snapshot(await compute(db))
+        except Exception:
+            if _cache is None:
+                raise
+            logger.exception("showcase stats recompute failed; serving the previous snapshot")
+            _cache = Snapshot(_clock(), _cache.payload, _cache.body, _cache.etag)  # retry after another TTL
+        return _cache
