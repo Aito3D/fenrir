@@ -1,18 +1,20 @@
 """Unit tests for the printer hours service (Maintenance → Hours tab)."""
 
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from backend.app.models.maintenance import HourMachine, HourReading
+from backend.app.models.maintenance import HourEvent, HourMachine, HourReading
 from backend.app.services import printer_hours
 from backend.app.services.printer_hours import (
     SOURCE_AUTO,
     SOURCE_MANUAL,
+    calibrate_machine,
     current_hours,
     ensure_hour_machines,
+    machine_for_printer,
     recalibrate_printer,
     snapshot_today,
     upsert_reading,
@@ -159,3 +161,60 @@ async def test_scheduler_snapshots_and_survives_errors(monkeypatch):
     await asyncio.sleep(0.1)
     service.stop_scheduler()
     assert len(calls) >= 2  # the first failure did not kill the loop
+
+
+@pytest.mark.asyncio
+async def test_calibrate_first_time_stores_no_drift(db_session, printer_factory):
+    p = await printer_factory(name="X1C10", runtime_seconds=3600 * 100)
+    machine = await machine_for_printer(db_session, p.id)
+    today = date(2026, 11, 1)
+    actual = await calibrate_machine(db_session, machine, p, 3803.0, today)
+    await db_session.commit()
+
+    assert actual == pytest.approx(3803.0)
+    assert machine.calibrated_at is not None
+    assert machine.last_drift_hours is None
+    auto = (await db_session.execute(select(HourReading).where(HourReading.source == SOURCE_AUTO))).scalar_one()
+    assert (auto.reading_date, auto.hours, auto.raw_hours) == (today, 3803.0, pytest.approx(100.0))
+    events = (await db_session.execute(select(HourEvent))).scalars().all()
+    assert [(e.machine_id, e.kind, e.label, e.event_date) for e in events] == [
+        (machine.id, "calibrated", "3803 h", today)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_calibrate_again_stores_drift(db_session, printer_factory):
+    p = await printer_factory(name="X1C11", runtime_seconds=3600 * 100, print_hours_offset=3765.0)
+    machine = await machine_for_printer(db_session, p.id)
+    machine.calibrated_at = datetime(2026, 10, 1)
+    await db_session.commit()
+
+    await calibrate_machine(db_session, machine, p, 3803.0, date(2026, 11, 1))
+    assert machine.last_drift_hours == pytest.approx(62.0)
+    assert p.print_hours_offset == pytest.approx(3703.0)
+
+
+@pytest.mark.asyncio
+async def test_calibrate_clamped_offset_records_actual_counter(db_session, printer_factory):
+    p = await printer_factory(name="X1C12", runtime_seconds=3600 * 100)
+    machine = await machine_for_printer(db_session, p.id)
+    actual = await calibrate_machine(db_session, machine, p, 50.0, date(2026, 11, 1))
+    assert actual == pytest.approx(100.0)
+    assert p.print_hours_offset == 0.0
+
+
+@pytest.mark.asyncio
+async def test_snapshot_writes_raw_hours(db_session, printer_factory):
+    await printer_factory(name="X1C13", runtime_seconds=3600 * 100, print_hours_offset=20.0)
+    await snapshot_today(db_session, date(2026, 11, 1))
+    row = (await db_session.execute(select(HourReading))).scalar_one()
+    assert row.hours == 120.0
+    assert row.raw_hours == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_calibrate_from_status_creates_machine_row(db_session, printer_factory):
+    p = await printer_factory(name="X1C14")
+    assert (await db_session.execute(select(HourMachine))).scalars().all() == []
+    machine = await machine_for_printer(db_session, p.id)
+    assert machine.printer_id == p.id

@@ -1,7 +1,7 @@
 """Maintenance tracking API routes."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -32,7 +32,7 @@ from backend.app.schemas.maintenance import (
     PrinterMaintenanceUpdate,
 )
 from backend.app.services.notification_service import notification_service
-from backend.app.services.printer_hours import current_hours, recalibrate_printer
+from backend.app.services.printer_hours import calibrate_machine, current_hours, machine_for_printer
 from backend.app.utils.printer_models import get_rod_type
 
 logger = logging.getLogger(__name__)
@@ -801,7 +801,9 @@ async def set_printer_hours(
     if not printer:
         raise HTTPException(status_code=404, detail="Printer not found")
 
-    runtime_hours = recalibrate_printer(printer, total_hours)
+    machine = await machine_for_printer(db, printer_id)
+    await calibrate_machine(db, machine, printer, total_hours, date.today())
+    runtime_hours = (printer.runtime_seconds or 0) / 3600.0
     printer_name = printer.name
     await db.commit()
     await notify_maintenance_attention(db, printer_id, printer_name)

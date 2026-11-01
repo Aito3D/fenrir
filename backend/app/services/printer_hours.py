@@ -8,14 +8,14 @@ rule lives in the route, this module provides the pieces.
 
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core import database as _database
-from backend.app.models.maintenance import HourMachine, HourReading
+from backend.app.models.maintenance import HourEvent, HourMachine, HourReading
 from backend.app.models.printer import Printer
 
 logger = logging.getLogger(__name__)
@@ -80,7 +80,12 @@ async def ensure_hour_machines(db: AsyncSession) -> list[HourMachine]:
 
 
 async def upsert_reading(
-    db: AsyncSession, machine_id: int, reading_date: date, source: str, hours: float | None
+    db: AsyncSession,
+    machine_id: int,
+    reading_date: date,
+    source: str,
+    hours: float | None,
+    raw_hours: float | None = None,
 ) -> None:
     """Insert or replace the (machine, date, source) reading; ``hours=None`` deletes it. No commit."""
     result = await db.execute(
@@ -96,9 +101,44 @@ async def upsert_reading(
             await db.delete(existing)
         return
     if existing is None:
-        db.add(HourReading(machine_id=machine_id, reading_date=reading_date, source=source, hours=hours))
+        db.add(
+            HourReading(
+                machine_id=machine_id, reading_date=reading_date, source=source, hours=hours, raw_hours=raw_hours
+            )
+        )
     else:
         existing.hours = hours
+        existing.raw_hours = raw_hours
+
+
+async def machine_for_printer(db: AsyncSession, printer_id: int) -> HourMachine:
+    """The machine row linked to ``printer_id``, creating rows first (commits via ``ensure_hour_machines``)."""
+    for machine in await ensure_hour_machines(db):
+        if machine.printer_id == printer_id:
+            return machine
+    raise ValueError(f"No hour machine for printer {printer_id}")
+
+
+async def calibrate_machine(
+    db: AsyncSession, machine: HourMachine, printer: Printer, total_hours: float, today: date
+) -> float:
+    """Recalibrate ``printer``'s counter to ``total_hours`` and record it on ``machine``.
+
+    Returns the counter's actual value afterwards (the offset clamps at 0). Stamps ``calibrated_at``, stores the
+    drift against the previous counter (``None`` on the first calibration), rewrites today's auto reading and adds a
+    ``calibrated`` event. No commit.
+    """
+    counter_before = current_hours(printer.runtime_seconds, printer.print_hours_offset)
+    first_time = machine.calibrated_at is None
+    recalibrate_printer(printer, total_hours)
+    actual = current_hours(printer.runtime_seconds, printer.print_hours_offset)
+    machine.calibrated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    machine.last_drift_hours = None if first_time else counter_before - total_hours
+    await upsert_reading(
+        db, machine.id, today, SOURCE_AUTO, round(actual, 1), raw_hours=(printer.runtime_seconds or 0) / 3600.0
+    )
+    db.add(HourEvent(machine_id=machine.id, event_date=today, kind="calibrated", label=f"{total_hours:g} h"))
+    return actual
 
 
 async def snapshot_today(db: AsyncSession, today: date | None = None) -> int:
@@ -107,11 +147,19 @@ async def snapshot_today(db: AsyncSession, today: date | None = None) -> int:
     machines = await ensure_hour_machines(db)
     rows = (await db.execute(select(Printer.id, Printer.runtime_seconds, Printer.print_hours_offset))).all()
     hours_by_printer = {pid: current_hours(runtime, offset) for pid, runtime, offset in rows}
+    raw_by_printer = {pid: (runtime or 0) / 3600.0 for pid, runtime, _offset in rows}
     written = 0
     for m in machines:
         if m.retired or m.printer_id not in hours_by_printer:
             continue
-        await upsert_reading(db, m.id, today, SOURCE_AUTO, round(hours_by_printer[m.printer_id], 1))
+        await upsert_reading(
+            db,
+            m.id,
+            today,
+            SOURCE_AUTO,
+            round(hours_by_printer[m.printer_id], 1),
+            raw_hours=raw_by_printer[m.printer_id],
+        )
         written += 1
     await db.commit()
     return written

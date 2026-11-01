@@ -24,11 +24,10 @@ from backend.app.schemas.maintenance import (
     HoursOverview,
 )
 from backend.app.services.printer_hours import (
-    SOURCE_AUTO,
     SOURCE_MANUAL,
+    calibrate_machine,
     current_hours,
     ensure_hour_machines,
-    recalibrate_printer,
     upsert_reading,
 )
 
@@ -120,10 +119,7 @@ async def save_readings(
         printer = await db.get(Printer, m.printer_id)
         if printer is None:  # deleted mid-request: keep the reading, skip the counter
             continue
-        recalibrate_printer(printer, entry.hours)
-        # recalibrate_printer clamps at 0, so record what the counter now actually reads
-        actual = round(current_hours(printer.runtime_seconds, printer.print_hours_offset), 1)
-        await upsert_reading(db, m.id, body.reading_date, SOURCE_AUTO, actual)
+        await calibrate_machine(db, m, printer, entry.hours, today)
         recalibrated.append((printer.id, printer.name))
     await db.commit()
 

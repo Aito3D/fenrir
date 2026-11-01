@@ -4,6 +4,7 @@ from datetime import date, timedelta
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
 from backend.app.models.maintenance import HourMachine
 
@@ -303,3 +304,15 @@ class TestRetiredMachines:
 
     async def test_unknown_machine_404(self, async_client: AsyncClient):
         assert (await async_client.delete(f"{BASE}/machines/99999")).status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_status_set_hours_calibrates_machine(async_client: AsyncClient, printer_factory, db_session):
+    p = await printer_factory(name="X1C20", runtime_seconds=3600 * 100)
+    response = await async_client.patch(f"/api/v1/maintenance/printers/{p.id}/hours?total_hours=3803")
+    assert response.status_code == 200
+    assert response.json()["runtime_hours"] == pytest.approx(100.0)
+    machine = (await db_session.execute(select(HourMachine).where(HourMachine.printer_id == p.id))).scalar_one()
+    await db_session.refresh(machine)
+    assert machine.calibrated_at is not None
