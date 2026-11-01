@@ -7,6 +7,7 @@ import {
   Clock,
   Eye,
   Send,
+  Timer,
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
@@ -53,6 +54,12 @@ export const NOTIFICATION_KINDS: Record<string, NotificationKindMeta> = {
     tone: 'text-amber-400 bg-amber-400/10',
     family: 'printer',
     titleKey: 'printerFailed',
+  },
+  'hours.readings_due': {
+    icon: Timer,
+    tone: 'text-amber-400 bg-amber-400/10',
+    family: 'printer',
+    titleKey: 'hoursReadingsDue',
   },
 };
 

@@ -10522,6 +10522,7 @@ export default {
       printerJobSent: 'Job sent to printer',
       printerFinished: 'Print finished',
       printerFailed: 'Print failed',
+      hoursReadingsDue: 'Machine hours: readings due',
     },
   },
   projectsPdm: {

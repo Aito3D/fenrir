@@ -26,6 +26,12 @@ describe('inboxTarget', () => {
     );
   });
 
+  it('hours target opens the reading pass', () => {
+    expect(
+      inboxTarget(item({ kind: 'hours.readings_due', family: 'printer', target_type: 'hours', target_id: null })),
+    ).toBe('/maintenance?tab=hours&pass=1');
+  });
+
   it('falls back to the family page when the target is gone', () => {
     expect(inboxTarget(item({ target_id: null }))).toBe('/aito');
     expect(inboxTarget(item({ family: 'printer', target_type: 'printer', target_id: null }))).toBe('/printers');

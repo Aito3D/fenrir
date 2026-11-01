@@ -10087,6 +10087,7 @@ export default {
       printerJobSent: '프린터로 작업 전송됨',
       printerFinished: '인쇄 완료',
       printerFailed: '인쇄 실패',
+      hoursReadingsDue: '장비 가동 시간: 판독 필요',
     },
   },
   projectsPdm: {

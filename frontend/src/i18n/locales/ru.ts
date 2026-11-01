@@ -10070,6 +10070,7 @@ export default {
       printerJobSent: 'Задание отправлено на принтер',
       printerFinished: 'Печать завершена',
       printerFailed: 'Ошибка печати',
+      hoursReadingsDue: 'Моточасы: нужны показания',
     },
   },
   projectsPdm: {

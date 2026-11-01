@@ -10490,6 +10490,7 @@ errors: {
       printerJobSent: 'Jobb skickat till skrivaren',
       printerFinished: 'Utskrift klar',
       printerFailed: 'Utskrift misslyckades',
+      hoursReadingsDue: 'Maskintimmar: avläsningar behövs',
     },
   },
   projectsPdm: {

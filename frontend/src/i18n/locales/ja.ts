@@ -10465,6 +10465,7 @@ export default {
       printerJobSent: 'プリンターにジョブを送信しました',
       printerFinished: '印刷が完了しました',
       printerFailed: '印刷に失敗しました',
+      hoursReadingsDue: '稼働時間：読み取りが必要です',
     },
   },
   projectsPdm: {

@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Wrench,
@@ -1100,7 +1101,11 @@ export function MaintenancePage() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
-  const [activeTab, setActiveTab] = useState<TabType>('status');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    const tab = searchParams.get('tab');
+    return tab === 'hours' || tab === 'settings' || tab === 'status' ? tab : 'status';
+  });
 
   // Printer cards cascade in one after another when the status tab appears
   const statusListRef = useRef<HTMLDivElement>(null);

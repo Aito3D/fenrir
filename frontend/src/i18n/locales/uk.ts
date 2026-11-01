@@ -10107,6 +10107,7 @@ export default {
       printerJobSent: 'Завдання надіслано на принтер',
       printerFinished: 'Друк завершено',
       printerFailed: 'Помилка друку',
+      hoursReadingsDue: 'Мотогодини: потрібні показання',
     },
   },
   projectsPdm: {

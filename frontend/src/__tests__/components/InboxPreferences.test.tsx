@@ -20,6 +20,7 @@ const AVAILABLE: InboxKindInfo[] = [
   { kind: 'printer.job_sent', family: 'printer', default_on: false, available: false },
   { kind: 'printer.finished', family: 'printer', default_on: false, available: false },
   { kind: 'printer.failed', family: 'printer', default_on: false, available: false },
+  { kind: 'hours.readings_due', family: 'printer', default_on: false, available: true },
 ];
 const DEFAULTS = ['aito.quote_viewed', 'aito.quote_accepted', 'aito.quote_declined', 'aito.paid'];
 
@@ -106,6 +107,7 @@ describe('InboxPreferences', () => {
     // A kind that is off cannot ring.
     expect(sw('Ring: Promised date passed')).toBeDisabled();
     expect(sw('Print finished')).toBeInTheDocument();
+    expect(sw('Machine hours: readings due')).toBeInTheDocument();
   });
 
   it('printer kinds are tagged coming later, off and disabled', async () => {
@@ -116,7 +118,8 @@ describe('InboxPreferences', () => {
       expect(sw(name)).toHaveAttribute('aria-checked', 'false');
       expect(sw(`Ring: ${name}`)).toBeDisabled();
     }
-    expect(sw('Printers')).toBeDisabled();
+    // The hours kind is live, so the family switch is no longer locked.
+    expect(sw('Printers')).toBeEnabled();
   });
 
   it('a burst of two kind toggles sends one debounced PUT', async () => {

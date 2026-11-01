@@ -10393,6 +10393,7 @@ export default {
       printerJobSent: 'İş yazıcıya gönderildi',
       printerFinished: 'Baskı tamamlandı',
       printerFailed: 'Baskı başarısız',
+      hoursReadingsDue: 'Makine saatleri: okumalar bekliyor',
     },
   },
   projectsPdm: {

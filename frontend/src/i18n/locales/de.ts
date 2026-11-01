@@ -10466,6 +10466,7 @@ export default {
       printerJobSent: 'Auftrag an Drucker gesendet',
       printerFinished: 'Druck abgeschlossen',
       printerFailed: 'Druck fehlgeschlagen',
+      hoursReadingsDue: 'Maschinenstunden: Zählerstände fällig',
     },
   },
   projectsPdm: {

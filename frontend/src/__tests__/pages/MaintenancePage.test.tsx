@@ -2,7 +2,7 @@
  * Tests for the MaintenancePage component.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { render } from '../utils';
 import { MaintenancePage } from '../../pages/MaintenancePage';
@@ -167,5 +167,31 @@ describe('MaintenancePage', () => {
 
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('not only yours'));
     confirm.mockRestore();
+  });
+
+  describe('deep link', () => {
+    afterEach(() => {
+      window.history.pushState({}, '', '/');
+    });
+
+    it('opens on the hours tab from the URL', async () => {
+      server.use(
+        http.get('/api/v1/maintenance/hours', () =>
+          HttpResponse.json({
+            today: '2031-02-14',
+            machines: [],
+            readings: [],
+            events: [],
+            reading_interval_days: 90,
+            due_machine_ids: [],
+          }),
+        ),
+      );
+      window.history.pushState({}, '', '/maintenance?tab=hours');
+      render(<MaintenancePage />);
+
+      expect(await screen.findByText('Fleet lifetime')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Hours' })).toHaveClass('border-bambu-green');
+    });
   });
 });

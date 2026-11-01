@@ -10449,6 +10449,7 @@ export default {
       printerJobSent: '工作已傳送至印表機',
       printerFinished: '列印完成',
       printerFailed: '列印失敗',
+      hoursReadingsDue: '機器時數：需要讀取',
     },
   },
   projectsPdm: {

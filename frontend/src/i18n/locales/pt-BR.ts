@@ -10451,6 +10451,7 @@ export default {
       printerJobSent: 'Trabalho enviado à impressora',
       printerFinished: 'Impressão concluída',
       printerFailed: 'Falha na impressão',
+      hoursReadingsDue: 'Horas de máquina: leituras pendentes',
     },
   },
   projectsPdm: {

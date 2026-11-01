@@ -10490,6 +10490,7 @@ export default {
       printerJobSent: 'Taak naar printer verzonden',
       printerFinished: 'Print voltooid',
       printerFailed: 'Print mislukt',
+      hoursReadingsDue: 'Machine-uren: standen opnemen',
     },
   },
   projectsPdm: {
