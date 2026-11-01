@@ -64,7 +64,27 @@ async def test_kind_mapping():
     assert inbox.inbox_kind_for("task.added") is None
     assert "aito.overdue" in inbox.KINDS and "aito.overdue" not in inbox.DEFAULT_KINDS
     assert "printer.finished" in inbox.KINDS and "printer.finished" not in inbox.DEFAULT_KINDS
-    assert set(inbox.DEFAULT_KINDS) == {"aito.quote_viewed", "aito.quote_accepted", "aito.quote_declined", "aito.paid"}
+    assert set(inbox.DEFAULT_KINDS) == {
+        "aito.quote_viewed",
+        "aito.quote_accepted",
+        "aito.quote_declined",
+        "aito.paid",
+        "hours.readings_due",
+    }
+    assert set(inbox.SOUND_DEFAULT_KINDS) == set(inbox.DEFAULT_KINDS) - {"hours.readings_due"}
+
+
+def test_hours_kind_is_available_and_default_on_without_sound():
+    from backend.app.api.routes.inbox import _available
+
+    spec = inbox.KINDS["hours.readings_due"]
+    assert spec.available and spec.default_on and not spec.sound_default
+    assert "hours.readings_due" in inbox.DEFAULT_KINDS
+    assert "hours.readings_due" not in inbox.SOUND_DEFAULT_KINDS
+    info = {i.kind: i for i in _available()}
+    assert info["hours.readings_due"].available
+    assert not info["printer.finished"].available
+    assert info["aito.paid"].available
 
 
 @pytest.mark.asyncio

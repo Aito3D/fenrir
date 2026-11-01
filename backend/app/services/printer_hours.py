@@ -294,6 +294,62 @@ async def snapshot_today(db: AsyncSession, today: date | None = None) -> int:
     return written
 
 
+READINGS_DUE_KIND = "hours.readings_due"
+_LAST_REMINDER_KEY = "hours_reading_last_reminder"
+
+
+async def remind_if_due(db: AsyncSession, today: date) -> int:
+    """File one inbox notification per opted-in maintainer when readings are due.
+
+    At most once per reading interval (the date lives in the settings table, so a
+    restart does not repeat it). Returns the recipient count.
+    """
+    from backend.app.api.routes.settings import get_setting, set_setting  # route imports this module
+    from backend.app.models.notification_inbox import Notification
+    from backend.app.models.user import User
+    from backend.app.services.inbox import _PENDING_KEY, broadcast_pending, preferences_for
+
+    machines = await ensure_hour_machines(db)
+    readings = list((await db.execute(select(HourReading))).scalars())
+    interval = await reading_interval_days(db)
+    due = due_machine_ids(machines, readings, interval, today)
+    if not due:
+        return 0
+    try:
+        last_reminder = date.fromisoformat(await get_setting(db, _LAST_REMINDER_KEY) or "")
+    except ValueError:
+        last_reminder = None
+    if last_reminder is not None and (today - last_reminder).days < interval:
+        return 0
+
+    manual_dates = [r.reading_date for r in readings if r.source == SOURCE_MANUAL and r.machine_id in due]
+    body = f"{len(due)} machines · {max(manual_dates).isoformat() if manual_dates else '—'}"
+    recipients: list[int] = []
+    for user in (await db.execute(select(User).where(User.is_active.is_(True)))).scalars():
+        if not user.has_permission("maintenance:update"):
+            continue
+        if READINGS_DUE_KIND not in ((await preferences_for(db, user.id)).kinds_json or []):
+            continue
+        db.add(
+            Notification(
+                user_id=user.id,
+                kind=READINGS_DUE_KIND,
+                family="printer",
+                title=READINGS_DUE_KIND,
+                body=body,
+                target_type="hours",
+                target_id=None,
+            )
+        )
+        recipients.append(user.id)
+    await set_setting(db, _LAST_REMINDER_KEY, today.isoformat())
+    if recipients:
+        db.info.setdefault(_PENDING_KEY, set()).update(recipients)
+    await db.commit()
+    await broadcast_pending(db)
+    return len(recipients)
+
+
 class PrinterHoursService:
     """Hourly sweep writing today's auto reading. Hourly, not at midnight, so a restart never loses a day."""
 
@@ -301,6 +357,7 @@ class PrinterHoursService:
         self._scheduler_task: asyncio.Task | None = None
         self._startup_delay = 60
         self._check_interval = 3600
+        self._last_reminder_check: date | None = None
 
     async def start_scheduler(self):
         if self._scheduler_task is not None:
@@ -314,6 +371,18 @@ class PrinterHoursService:
             self._scheduler_task = None
             logger.info("Stopped printer hours snapshot sweeper")
 
+    async def _remind_once_a_day(self):
+        """The readings-due check, at most once per calendar day; a failure never stops the sweep."""
+        today = date.today()
+        if self._last_reminder_check == today:
+            return
+        try:
+            async with _database.async_session() as db:
+                await remind_if_due(db, today)
+            self._last_reminder_check = today
+        except Exception as e:
+            logger.warning("Printer hours reminder failed: %s", e)
+
     async def _scheduler_loop(self):
         delay = self._startup_delay
         while True:
@@ -323,6 +392,7 @@ class PrinterHoursService:
                 async with _database.async_session() as db:
                     written = await snapshot_today(db)
                 logger.debug("Printer hours snapshot: %s machines", written)
+                await self._remind_once_a_day()
             except asyncio.CancelledError:
                 break
             except Exception as e:

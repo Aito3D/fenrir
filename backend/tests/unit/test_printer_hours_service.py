@@ -431,3 +431,70 @@ async def test_reading_interval_days_defaults_and_parses(db_session):
     row.value = "soon"
     await db_session.commit()
     assert await reading_interval_days(db_session) == 90
+
+
+async def _maintainer(db, name="maint", perms=("maintenance:update",)):
+    from backend.app.core.auth import get_password_hash
+    from backend.app.models.group import Group
+    from backend.app.models.user import User
+
+    group = Group(name=f"g-{name}", permissions=list(perms), is_system=False)
+    db.add(group)
+    await db.flush()
+    user = User(username=name, password_hash=get_password_hash("password"), is_active=True)
+    user.groups.append(group)
+    db.add(user)
+    await db.commit()
+    return user
+
+
+@pytest.mark.asyncio
+async def test_remind_if_due_notifies_opted_in_update_users(db_session, printer_factory):
+    from backend.app.models.notification_inbox import Notification, UserInboxPreference
+    from backend.app.services.printer_hours import remind_if_due
+
+    printer = await printer_factory()
+    machine = (await ensure_hour_machines(db_session))[0]
+    await upsert_reading(db_session, machine.id, date(2026, 1, 1), SOURCE_MANUAL, 100.0)
+    await db_session.commit()
+    allowed = await _maintainer(db_session, "allowed")
+    opted_out = await _maintainer(db_session, "optedout")
+    reader = await _maintainer(db_session, "reader", perms=("aito:read",))
+    db_session.add(UserInboxPreference(user_id=opted_out.id, kinds_json=["aito.paid"], sound_kinds_json=[]))
+    await db_session.commit()
+    assert printer.id
+
+    assert await remind_if_due(db_session, date(2026, 6, 1)) == 1
+    rows = (await db_session.execute(select(Notification))).scalars().all()
+    assert [(r.user_id, r.kind, r.family, r.target_type, r.target_id) for r in rows] == [
+        (allowed.id, "hours.readings_due", "printer", "hours", None)
+    ]
+    assert rows[0].body == "1 machines · 2026-01-01"
+    assert reader.id not in {r.user_id for r in rows}
+
+
+@pytest.mark.asyncio
+async def test_no_live_machines_no_notification(db_session):
+    from backend.app.models.notification_inbox import Notification
+    from backend.app.services.printer_hours import remind_if_due
+
+    await _maintainer(db_session, "alone")
+    assert await remind_if_due(db_session, date(2026, 6, 1)) == 0
+    assert (await db_session.execute(select(Notification))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_reminder_once_per_interval_persists_in_settings(db_session, printer_factory):
+    from datetime import timedelta
+
+    from backend.app.services.printer_hours import PrinterHoursService, reading_interval_days, remind_if_due
+
+    await printer_factory()
+    await _maintainer(db_session, "boss")
+    today = date(2026, 6, 1)
+    assert await remind_if_due(db_session, today) == 1
+    assert await remind_if_due(db_session, today) == 0
+    PrinterHoursService()  # a fresh instance holds no state: the setting is the memory
+    assert await remind_if_due(db_session, today) == 0
+    interval = await reading_interval_days(db_session)
+    assert await remind_if_due(db_session, today + timedelta(days=interval + 1)) == 1

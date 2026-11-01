@@ -159,7 +159,7 @@ async def test_preferences_roundtrip_and_validation(async_client, db_session, in
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["kinds"] == inbox.DEFAULT_KINDS
-    assert body["sound_kinds"] == inbox.DEFAULT_KINDS
+    assert body["sound_kinds"] == inbox.SOUND_DEFAULT_KINDS
     assert body["auto_watch"] is True
     available = {a["kind"]: a for a in body["available"]}
     assert list(available) == list(inbox.KINDS)

@@ -58,21 +58,27 @@ class InboxKind:
     family: str
     default_on: bool
     events: tuple[str, ...]  # Aito event kinds that produce it
+    available: bool = True  # shown as selectable in Settings
+    sound_default: bool = True  # rings by default when the kind is on by default
 
 
 # Title keys are resolved by the FRONTEND (`inbox.kind.*`); the row stores the
 # kind and a body built from the card so the inbox reads without a join.
 KINDS: dict[str, InboxKind] = {
-    "aito.quote_viewed": InboxKind("aito", True, ("quote.viewed",)),
-    "aito.quote_accepted": InboxKind("aito", True, ("quote.accepted",)),
-    "aito.quote_declined": InboxKind("aito", True, ("quote.declined",)),
-    "aito.paid": InboxKind("aito", True, ("payment_link.paid", "payment.terminal.paid", "payment.manual.recorded")),
-    "aito.overdue": InboxKind("aito", False, ("project.due.overdue",)),
-    "printer.job_sent": InboxKind("printer", False, ()),
-    "printer.finished": InboxKind("printer", False, ()),
-    "printer.failed": InboxKind("printer", False, ()),
+    "aito.quote_viewed": InboxKind("aito", True, ("quote.viewed",), available=True),
+    "aito.quote_accepted": InboxKind("aito", True, ("quote.accepted",), available=True),
+    "aito.quote_declined": InboxKind("aito", True, ("quote.declined",), available=True),
+    "aito.paid": InboxKind(
+        "aito", True, ("payment_link.paid", "payment.terminal.paid", "payment.manual.recorded"), available=True
+    ),
+    "aito.overdue": InboxKind("aito", False, ("project.due.overdue",), available=True),
+    "printer.job_sent": InboxKind("printer", False, (), available=False),
+    "printer.finished": InboxKind("printer", False, (), available=False),
+    "printer.failed": InboxKind("printer", False, (), available=False),
+    "hours.readings_due": InboxKind("printer", True, (), available=True, sound_default=False),
 }
 DEFAULT_KINDS: list[str] = [k for k, v in KINDS.items() if v.default_on]
+SOUND_DEFAULT_KINDS: list[str] = [k for k, v in KINDS.items() if v.default_on and v.sound_default]
 _BY_EVENT: dict[str, str] = {event: kind for kind, spec in KINDS.items() for event in spec.events}
 
 
@@ -99,7 +105,7 @@ async def preferences_for(db: AsyncSession, user_id: int) -> UserInboxPreference
         row = UserInboxPreference(
             user_id=user_id,
             kinds_json=list(DEFAULT_KINDS),
-            sound_kinds_json=list(DEFAULT_KINDS),
+            sound_kinds_json=list(SOUND_DEFAULT_KINDS),
             auto_watch=True,
         )
     return row

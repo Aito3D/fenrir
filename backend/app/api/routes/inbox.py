@@ -23,7 +23,7 @@ from backend.app.schemas.inbox import (
     InboxPreferencesUpdate,
 )
 from backend.app.services.aito_events import utc_now_naive
-from backend.app.services.inbox import DEFAULT_KINDS, KINDS, preferences_for
+from backend.app.services.inbox import DEFAULT_KINDS, KINDS, SOUND_DEFAULT_KINDS, preferences_for
 
 router = APIRouter(prefix="/inbox", tags=["inbox"])
 _AITO_READ = "aito:read"
@@ -31,7 +31,7 @@ _AITO_READ = "aito:read"
 
 def _available() -> list[InboxKindInfo]:
     return [
-        InboxKindInfo(kind=kind, family=spec.family, default_on=spec.default_on, available=bool(spec.events))
+        InboxKindInfo(kind=kind, family=spec.family, default_on=spec.default_on, available=spec.available)
         for kind, spec in KINDS.items()
     ]
 
@@ -98,7 +98,7 @@ async def get_preferences(
     """The stored row, or the defaults when the user never saved one."""
     if current_user is None:
         return InboxPreferences(
-            kinds=list(DEFAULT_KINDS), sound_kinds=list(DEFAULT_KINDS), auto_watch=True, available=_available()
+            kinds=list(DEFAULT_KINDS), sound_kinds=list(SOUND_DEFAULT_KINDS), auto_watch=True, available=_available()
         )
     return _preferences(await preferences_for(db, current_user.id))
 
