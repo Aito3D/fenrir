@@ -10,18 +10,24 @@ interface FocusHeaderProps {
   color: string;
   today: string;
   fleetLine: string;
+  onOpen?: (id: number) => void;
 }
 
 /** One line above the chart: the fleet summary, or the machine under focus. */
-export function FocusHeader({ machine, series, color, today, fleetLine }: FocusHeaderProps) {
+export function FocusHeader({ machine, series, color, today, fleetLine, onOpen }: FocusHeaderProps) {
   const { t, i18n } = useTranslation();
   const wrap = 'mb-2 flex min-h-[1.75rem] flex-wrap items-center gap-x-3 gap-y-1 text-sm';
   const last = series?.manual.at(-1);
+  const name = (m: HourMachine) => onOpen ? (
+    <button type="button" onClick={() => onOpen(m.id)} className="rounded font-medium text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40">
+      {m.name}
+    </button>
+  ) : <span className="font-medium text-white">{m.name}</span>;
 
   if (!machine || !series || !last) {
     return (
       <div data-testid="hours-focus-header" className={`${wrap} text-bambu-gray`}>
-        {machine ? <span className="font-medium text-white">{machine.name}</span> : fleetLine}
+        {machine ? name(machine) : fleetLine}
       </div>
     );
   }
@@ -35,7 +41,7 @@ export function FocusHeader({ machine, series, color, today, fleetLine }: FocusH
   return (
     <div data-testid="hours-focus-header" className={`${wrap} text-bambu-gray`}>
       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} aria-hidden="true" />
-      <span className="font-medium text-white">{machine.name}</span>
+      {name(machine)}
       <span>{familyOf(machine)}</span>
       <span>{fmt(last.date)}</span>
       <span className="font-medium text-white">{`${Math.round(last.hours).toLocaleString(i18n.language)} h`}</span>

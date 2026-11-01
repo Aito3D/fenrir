@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { ClipboardPaste, ListChecks, Loader2, Plus } from 'lucide-react';
 import { api, type HourMachine } from '../../../api/client';
+import { useCurrency } from '../../../hooks/useCurrency';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
 import { dayNumber, fleetFacts, gapInfo, machineColors, machineSeries, railOrder, ratePerMonth, seriesPoints } from '../../../utils/hoursSeries';
@@ -14,6 +15,7 @@ import { FleetStrip } from './FleetStrip';
 import { FocusHeader } from './FocusHeader';
 import { HoursChart, type HoursChartMode, type HoursChartRange } from './HoursChart';
 import { MachineList } from './MachineList';
+import { MachinePanel } from './MachinePanel';
 import { PasteImportModal } from './PasteImportModal';
 import { ReadingFormModal } from './ReadingFormModal';
 import { ReadingLog } from './ReadingLog';
@@ -55,7 +57,19 @@ export function HoursTab() {
   }, [setSearchParams]);
   const [confirmDate, setConfirmDate] = useState<string | null>(null);
   const [confirmMachine, setConfirmMachine] = useState<HourMachine | null>(null);
-  const [panelId, setPanelId] = useState<number | null>(null);
+  const [panelId, setPanelId] = useState<number | null>(() => {
+    const n = Number(searchParams.get('machine'));
+    return Number.isInteger(n) && n > 0 ? n : null;
+  });
+  // The panel mirrors ?machine= so a machine can be linked to.
+  useEffect(() => {
+    setSearchParams((prev) => {
+      if (panelId) prev.set('machine', String(panelId));
+      else prev.delete('machine');
+      return prev;
+    }, { replace: true });
+  }, [panelId, setSearchParams]);
+  const currency = useCurrency();
   const [focusId, setFocusId] = useState<number | null>(null);
   const [focusPinned, setFocusPinned] = useState(false);
   const [range, setRange] = useState<HoursChartRange>('all');
@@ -118,6 +132,26 @@ export function HoursTab() {
     },
     onError: (e: Error) => showToast(e.message, 'error'),
   });
+  const addEvent = useMutation({
+    mutationFn: ({ machineId, body }: { machineId: number; body: { event_date: string; label: string } }) =>
+      api.createHourEvent(machineId, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['maintenanceHours'] }),
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+  const deleteEvent = useMutation({
+    mutationFn: (id: number) => api.deleteHourEvent(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['maintenanceHours'] }),
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+  const savePurchase = useMutation({
+    mutationFn: ({ machineId, body }: { machineId: number; body: { purchase_price: number | null; purchase_date: string | null } }) =>
+      api.updateHourMachine(machineId, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['maintenanceHours'] });
+      showToast(t('maintenance.hours.cost.saved'));
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
   const importReadings = useMutation({
     mutationFn: api.importHourReadings,
     onSuccess: (result) => {
@@ -146,6 +180,11 @@ export function HoursTab() {
     onSettled: () => setConfirmMachine(null),
   });
 
+  // An unknown ?machine= id (deleted machine, stale link) clears itself.
+  useEffect(() => {
+    if (loaded && panelId !== null && !machines.some((m) => m.id === panelId)) setPanelId(null);
+  }, [loaded, panelId, machines]);
+
   if (isLoading || !data) {
     return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-bambu-green" /></div>;
   }
@@ -159,6 +198,7 @@ export function HoursTab() {
     date: gap.lastDate ? dayFmt.format(dayNumber(gap.lastDate) * 86_400_000) : '—',
   });
   const focused = machines.find((m) => m.id === focusId) ?? null;
+  const panelMachine = machines.find((m) => m.id === panelId) ?? null;
 
   const commitInterval = () => {
     const days = Number(intervalDraft);
@@ -251,6 +291,7 @@ export function HoursTab() {
               color={focused ? colors.get(focused.id) ?? '' : ''}
               today={data.today}
               fleetLine={fleetLine}
+              onOpen={setPanelId}
             />
             <HoursChart
               mode={mode} machines={machines} hidden={hidden} series={series} colors={colors} today={data.today}
@@ -305,6 +346,23 @@ export function HoursTab() {
         </Card>
       </div>
 
+      {panelMachine && (
+        <MachinePanel
+          machine={panelMachine}
+          series={series.get(panelMachine.id)!}
+          readings={data.readings}
+          events={data.events.filter((ev) => ev.machine_id === panelMachine.id)}
+          today={data.today}
+          color={colors.get(panelMachine.id) ?? ''}
+          currency={currency}
+          canEdit={canEdit}
+          onEditDate={setFormDate}
+          onAddEvent={(machineId, body) => addEvent.mutate({ machineId, body })}
+          onDeleteEvent={(id) => deleteEvent.mutate(id)}
+          onSavePurchase={(machineId, body) => savePurchase.mutate({ machineId, body })}
+          onClose={() => setPanelId(null)}
+        />
+      )}
       {formDate !== null && (
         <ReadingFormModal
           initialDate={formDate}

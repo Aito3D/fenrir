@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -48,6 +48,8 @@ function serve(data: HoursOverview = overview) {
 }
 
 describe('HoursTab', () => {
+  afterEach(() => window.history.replaceState(null, '', '/'));
+
   it('lists active machines by family and retired ones last', async () => {
     serve();
     render(<HoursTab />);
@@ -155,6 +157,18 @@ describe('HoursTab', () => {
     expect(document.querySelector('[data-panel-id="1"]')).not.toBeNull();
     await userEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('clicking a rail name opens the panel and mirrors ?machine=', async () => {
+    serve();
+    render(<HoursTab />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Open X1C04' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('heading', { name: 'X1C04' })).toBeInTheDocument();
+    expect(window.location.search).toContain('machine=1');
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(window.location.search).not.toContain('machine=');
   });
 
   it('range segment switches and focus header shows the hovered machine', async () => {
