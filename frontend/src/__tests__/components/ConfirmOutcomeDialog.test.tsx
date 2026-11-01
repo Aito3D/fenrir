@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 /**
  * Tests for the post-print outcome confirmation dialog (#1898).
  */
@@ -147,6 +149,14 @@ describe('ConfirmOutcomeDialog', () => {
     await waitFor(() => {
       expect(onClose).toHaveBeenCalled();
     });
+  });
+
+  it('loads the print modal on demand rather than with the shell', () => {
+    // Layout renders this dialog, so a static import would put PrintModal
+    // (93 KB) into every page's eager preload set.
+    const src = readFileSync(join(__dirname, '../../components/ConfirmOutcomeDialog.tsx'), 'utf8');
+    expect(src).not.toMatch(/^import \{ PrintModal \} from '\.\/PrintModal';/m);
+    expect(src).toMatch(/lazy\(\(\) => import\('\.\/PrintModal'\)/);
   });
 
   it('reject-and-reprint hands off into the print modal after saving', async () => {
