@@ -88,6 +88,7 @@ from backend.app.api.routes import (
     projects_pdm,
     scheduled_dryings,
     settings as settings_routes,
+    showcase,
     slice_jobs,
     slicer_pipelines,
     slicer_presets,
@@ -13096,6 +13097,8 @@ PUBLIC_API_ROUTES = {
     "/api/v1/system/appliance",
     # Overlay branding: the route enforces overlay-scoped token authentication.
     "/api/v1/overlay-branding/logo",
+    # Shop figures for the Shopify storefront: public marketing numbers, cached, no identifying data.
+    "/api/v1/showcase/stats",
 }
 
 # Route prefixes that are public (for routes with dynamic segments)
@@ -13587,6 +13590,7 @@ app.include_router(aito_project_links.router, prefix=app_settings.api_prefix)
 app.include_router(aito_project_links.drop_router, prefix=app_settings.api_prefix)
 app.include_router(aito.router, prefix=app_settings.api_prefix)
 app.include_router(aito_payments.router, prefix=app_settings.api_prefix)
+app.include_router(showcase.router, prefix=app_settings.api_prefix)
 app.include_router(inbox.router, prefix=app_settings.api_prefix)
 app.include_router(zoho.router, prefix=app_settings.api_prefix)
 app.include_router(heimdall.router, prefix=app_settings.api_prefix)

@@ -115,6 +115,9 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         # (see AitoTrackingResponse), and the auth middleware exempts the
         # same "/api/v1/aito/track/" prefix (PUBLIC_API_PREFIXES in main.py).
         ("GET", "/api/v1/aito/track/{token}"),
+        # Shop figures for the Shopify storefront — aggregate marketing numbers only, served from a
+        # 5-minute cache; listed in PUBLIC_API_ROUTES in main.py.
+        ("GET", "/api/v1/showcase/stats"),
         # MakerWorld thumbnail proxy — fetches external URL; no Fenrir data exposed.
         ("GET", "/api/v1/makerworld/thumbnail"),
         # ---- HTTP API: operational + UI-bootstrap (no sensitive data) ----
