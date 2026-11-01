@@ -3156,6 +3156,12 @@ export default {
       showNone: 'ни одной',
       retired: 'Выведенные',
       perMonth: '{{hours}} ч/мес.',
+      range: { label: 'Период', '3m': '3 мес.', '12m': '12 мес.', all: 'Всё' },
+      chart: { lastReading: 'последнее показание · {{date}}', noReadingsFor: 'нет показаний {{months}} мес.' },
+      lastReadingOn: 'последнее показание {{date}}',
+      fleetLine: 'Машин: {{machines}} · последнее показание {{date}}',
+      flag: { slowing: 'замедляется', stopped: 'остановлена' },
+      delta: '+{{hours}} ч с {{date}}',
       openMachine: 'Открыть {{name}}',
       trust: {
         calibrated: 'Откалибровано',

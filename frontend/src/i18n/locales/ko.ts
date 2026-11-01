@@ -3158,6 +3158,12 @@ export default {
       showNone: '없음',
       retired: '퇴역',
       perMonth: '{{hours}}시간/월',
+      range: { label: '기간', '3m': '3개월', '12m': '12개월', all: '전체' },
+      chart: { lastReading: '마지막 기록 · {{date}}', noReadingsFor: '{{months}}개월간 기록 없음' },
+      lastReadingOn: '마지막 기록 {{date}}',
+      fleetLine: '{{machines}}대 · 마지막 기록 {{date}}',
+      flag: { slowing: '느려짐', stopped: '멈춤' },
+      delta: '{{date}} 이후 +{{hours}}시간',
       openMachine: '{{name}} 열기',
       trust: {
         calibrated: '보정됨',

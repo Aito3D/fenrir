@@ -3242,6 +3242,12 @@ export default {
       showNone: 'aucune',
       retired: 'Retirées',
       perMonth: '{{hours}} h/mois',
+      range: { label: 'Période', '3m': '3 mois', '12m': '12 mois', all: 'Tout' },
+      chart: { lastReading: 'dernier relevé · {{date}}', noReadingsFor: 'aucun relevé depuis {{months}} mois' },
+      lastReadingOn: 'dernier relevé {{date}}',
+      fleetLine: '{{machines}} machines · dernier relevé {{date}}',
+      flag: { slowing: 'ralentit', stopped: 'à l’arrêt' },
+      delta: '+{{hours}} h depuis le {{date}}',
       openMachine: 'Ouvrir {{name}}',
       trust: {
         calibrated: 'Étalonné',

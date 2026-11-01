@@ -2170,6 +2170,12 @@ export default {
       showNone: 'geen',
       retired: 'Buiten gebruik',
       perMonth: '{{hours}} u/maand',
+      range: { label: 'Bereik', '3m': '3 mnd', '12m': '12 mnd', all: 'Alles' },
+      chart: { lastReading: 'laatste meting · {{date}}', noReadingsFor: 'al {{months}} maanden geen meting' },
+      lastReadingOn: 'laatste meting {{date}}',
+      fleetLine: '{{machines}} machines · laatste meting {{date}}',
+      flag: { slowing: 'vertraagt', stopped: 'staat stil' },
+      delta: '+{{hours}} u sinds {{date}}',
       openMachine: '{{name}} openen',
       trust: {
         calibrated: 'Gekalibreerd',

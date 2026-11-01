@@ -3244,6 +3244,12 @@ export default {
       showNone: 'hiçbiri',
       retired: 'Emekli',
       perMonth: '{{hours}} sa/ay',
+      range: { label: 'Aralık', '3m': '3 ay', '12m': '12 ay', all: 'Tümü' },
+      chart: { lastReading: 'son okuma · {{date}}', noReadingsFor: '{{months}} aydır okuma yok' },
+      lastReadingOn: 'son okuma {{date}}',
+      fleetLine: '{{machines}} makine · son okuma {{date}}',
+      flag: { slowing: 'yavaşlıyor', stopped: 'durdu' },
+      delta: '{{date}} tarihinden beri +{{hours}} sa',
       openMachine: '{{name}} aç',
       trust: {
         calibrated: 'Kalibre edildi',

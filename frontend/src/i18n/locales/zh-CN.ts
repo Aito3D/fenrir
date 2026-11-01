@@ -3242,6 +3242,12 @@ export default {
       showNone: '无',
       retired: '已退役',
       perMonth: '{{hours}} 小时/月',
+      range: { label: '范围', '3m': '3 个月', '12m': '12 个月', all: '全部' },
+      chart: { lastReading: '最近读数 · {{date}}', noReadingsFor: '已 {{months}} 个月无读数' },
+      lastReadingOn: '最近读数 {{date}}',
+      fleetLine: '{{machines}} 台设备 · 最近读数 {{date}}',
+      flag: { slowing: '减速', stopped: '已停止' },
+      delta: '自 {{date}} 起 +{{hours}} 小时',
       openMachine: '打开 {{name}}',
       trust: {
         calibrated: '已校准',

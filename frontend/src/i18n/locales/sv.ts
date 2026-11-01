@@ -2169,6 +2169,12 @@ export default {
       showNone: 'inga',
       retired: 'Avvecklade',
       perMonth: '{{hours}} h/månad',
+      range: { label: 'Intervall', '3m': '3 mån', '12m': '12 mån', all: 'Alla' },
+      chart: { lastReading: 'senaste avläsning · {{date}}', noReadingsFor: 'inga avläsningar på {{months}} månader' },
+      lastReadingOn: 'senaste avläsning {{date}}',
+      fleetLine: '{{machines}} maskiner · senaste avläsning {{date}}',
+      flag: { slowing: 'saktar ner', stopped: 'står still' },
+      delta: '+{{hours}} h sedan {{date}}',
       openMachine: 'Öppna {{name}}',
       trust: {
         calibrated: 'Kalibrerad',

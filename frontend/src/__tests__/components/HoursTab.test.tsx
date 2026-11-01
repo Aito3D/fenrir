@@ -108,6 +108,21 @@ describe('HoursTab', () => {
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
   });
 
+  it('range segment switches and focus header shows the hovered machine', async () => {
+    serve();
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    const list = await screen.findByTestId('hours-machine-list');
+    const range = screen.getByRole('group', { name: 'Range' });
+    expect(within(range).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(within(range).getByRole('button', { name: '12 m' }));
+    expect(within(range).getByRole('button', { name: '12 m' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(range).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('hours-focus-header')).toHaveTextContent('3 machines');
+    await user.hover(within(list).getAllByTestId('hours-machine-row')[1]);
+    expect(screen.getByTestId('hours-focus-header')).toHaveTextContent('X1C04');
+  });
+
   it('shows the empty state', async () => {
     serve({ ...overview, machines: overview.machines.slice(0, 1), readings: [] });
     render(<HoursTab />);

@@ -1,21 +1,23 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ClipboardPaste, Loader2, Plus } from 'lucide-react';
 import { api, type HourMachine } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
-import { machineColors, machineSeries, seriesPoints } from '../../../utils/hoursSeries';
+import { dayNumber, gapInfo, machineColors, machineSeries, seriesPoints } from '../../../utils/hoursSeries';
 import { Button } from '../../Button';
 import { Card, CardContent } from '../../Card';
 import { ConfirmModal } from '../../ConfirmModal';
-import { HoursChart, type HoursChartMode } from './HoursChart';
+import { FocusHeader } from './FocusHeader';
+import { HoursChart, type HoursChartMode, type HoursChartRange } from './HoursChart';
 import { MachineList } from './MachineList';
 import { PasteImportModal } from './PasteImportModal';
 import { ReadingFormModal } from './ReadingFormModal';
 import { ReadingLog } from './ReadingLog';
 
 const MODES: HoursChartMode[] = ['cumulative', 'monthly', 'total'];
+const RANGES: HoursChartRange[] = ['3m', '12m', 'all'];
 const MODE_KEY: Record<HoursChartMode, string> = {
   cumulative: 'maintenance.hours.modeCumulative',
   monthly: 'maintenance.hours.modeMonthly',
@@ -43,6 +45,8 @@ export function HoursTab() {
   const [confirmMachine, setConfirmMachine] = useState<HourMachine | null>(null);
   const [panelId, setPanelId] = useState<number | null>(null);
   const [focusId, setFocusId] = useState<number | null>(null);
+  const [focusPinned, setFocusPinned] = useState(false);
+  const [range, setRange] = useState<HoursChartRange>('all');
 
   const machines = useMemo(() => data?.machines ?? [], [data]);
   const series = useMemo(
@@ -61,6 +65,13 @@ export function HoursTab() {
     }
     return out;
   }, [machines, series]);
+
+  // Hover moves the focus only while nothing is pinned by a click on a curve.
+  const hoverFocus = useCallback((id: number | null) => { if (!focusPinned) setFocusId(id); }, [focusPinned]);
+  const pinFocus = useCallback((id: number) => { setFocusId(id); setFocusPinned(true); }, []);
+  const clearOnEscape = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') { setFocusId(null); setFocusPinned(false); }
+  };
 
   const saveReadings = useMutation({
     mutationFn: ({ date, entries }: { date: string; entries: { machine_id: number; hours: number | null }[] }) =>
@@ -106,6 +117,14 @@ export function HoursTab() {
     return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-bambu-green" /></div>;
   }
 
+  const gap = gapInfo(machines, series, data.today);
+  const dayFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' });
+  const fleetLine = t('maintenance.hours.fleetLine', {
+    machines: machines.length,
+    date: gap.lastDate ? dayFmt.format(dayNumber(gap.lastDate) * 86_400_000) : '—',
+  });
+  const focused = machines.find((m) => m.id === focusId) ?? null;
+
   const toggle = (id: number) =>
     setHidden((prev) => {
       const next = new Set(prev);
@@ -134,13 +153,14 @@ export function HoursTab() {
             onHideAll={() => setHidden(new Set(machines.map((m) => m.id)))}
             onDeleteRetired={setConfirmMachine}
             onOpen={(m) => setPanelId(m.id)}
-            onHover={setFocusId}
+            onHover={hoverFocus}
           />
         </CardContent>
       </Card>
       <div className="flex min-w-0 flex-col gap-4">
         <Card>
           <CardContent>
+            <div tabIndex={0} onKeyDown={clearOnEscape} className="outline-none">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <div className="inline-flex rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-0.5">
                 {MODES.map((m) => (
@@ -154,6 +174,19 @@ export function HoursTab() {
                   </button>
                 ))}
               </div>
+              <div role="group" aria-label={t('maintenance.hours.range.label')} className="inline-flex rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-0.5">
+                {RANGES.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    aria-pressed={range === r}
+                    onClick={() => setRange(r)}
+                    className={`rounded-md px-3 py-1 text-sm ${range === r ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'}`}
+                  >
+                    {t(`maintenance.hours.range.${r}`)}
+                  </button>
+                ))}
+              </div>
               {canEdit && (
                 <Button className="ml-auto" size="sm" onClick={() => setFormDate(data.today)}>
                   <Plus className="h-4 w-4" />
@@ -161,7 +194,18 @@ export function HoursTab() {
                 </Button>
               )}
             </div>
-            <HoursChart mode={mode} machines={machines} hidden={hidden} series={series} colors={colors} today={data.today} />
+            <FocusHeader
+              machine={focused}
+              series={focused ? series.get(focused.id) ?? null : null}
+              color={focused ? colors.get(focused.id) ?? '' : ''}
+              today={data.today}
+              fleetLine={fleetLine}
+            />
+            <HoursChart
+              mode={mode} machines={machines} hidden={hidden} series={series} colors={colors} today={data.today}
+              range={range} focusId={focusId} onFocus={hoverFocus} onPin={pinFocus} events={data.events} gap={gap}
+            />
+            </div>
           </CardContent>
         </Card>
         <Card>

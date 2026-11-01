@@ -3243,6 +3243,12 @@ export default {
       showNone: 'keine',
       retired: 'Ausgemustert',
       perMonth: '{{hours}} h/Monat',
+      range: { label: 'Zeitraum', '3m': '3 Mon.', '12m': '12 Mon.', all: 'Alle' },
+      chart: { lastReading: 'letzte Ablesung · {{date}}', noReadingsFor: 'seit {{months}} Monaten keine Ablesung' },
+      lastReadingOn: 'letzte Ablesung {{date}}',
+      fleetLine: '{{machines}} Maschinen · letzte Ablesung {{date}}',
+      flag: { slowing: 'verlangsamt', stopped: 'steht still' },
+      delta: '+{{hours}} h seit {{date}}',
       openMachine: '{{name}} öffnen',
       trust: {
         calibrated: 'Kalibriert',

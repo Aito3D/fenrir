@@ -3242,6 +3242,12 @@ export default {
       showNone: 'nessuna',
       retired: 'Dismesse',
       perMonth: '{{hours}} h/mese',
+      range: { label: 'Intervallo', '3m': '3 mesi', '12m': '12 mesi', all: 'Tutto' },
+      chart: { lastReading: 'ultima lettura · {{date}}', noReadingsFor: 'nessuna lettura da {{months}} mesi' },
+      lastReadingOn: 'ultima lettura {{date}}',
+      fleetLine: '{{machines}} macchine · ultima lettura {{date}}',
+      flag: { slowing: 'rallenta', stopped: 'ferma' },
+      delta: '+{{hours}} h dal {{date}}',
       openMachine: 'Apri {{name}}',
       trust: {
         calibrated: 'Calibrato',

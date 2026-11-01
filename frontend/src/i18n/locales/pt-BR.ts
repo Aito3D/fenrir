@@ -3242,6 +3242,12 @@ export default {
       showNone: 'nenhuma',
       retired: 'Aposentadas',
       perMonth: '{{hours}} h/mês',
+      range: { label: 'Período', '3m': '3 meses', '12m': '12 meses', all: 'Tudo' },
+      chart: { lastReading: 'última leitura · {{date}}', noReadingsFor: 'sem leituras há {{months}} meses' },
+      lastReadingOn: 'última leitura {{date}}',
+      fleetLine: '{{machines}} máquinas · última leitura {{date}}',
+      flag: { slowing: 'desacelerando', stopped: 'parada' },
+      delta: '+{{hours}} h desde {{date}}',
       openMachine: 'Abrir {{name}}',
       trust: {
         calibrated: 'Calibrado',

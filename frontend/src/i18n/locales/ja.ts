@@ -3242,6 +3242,12 @@ export default {
       showNone: 'なし',
       retired: '引退',
       perMonth: '{{hours}} 時間/月',
+      range: { label: '期間', '3m': '3か月', '12m': '12か月', all: 'すべて' },
+      chart: { lastReading: '最終読み取り · {{date}}', noReadingsFor: '{{months}}か月間読み取りなし' },
+      lastReadingOn: '最終読み取り {{date}}',
+      fleetLine: '{{machines}} 台 · 最終読み取り {{date}}',
+      flag: { slowing: '減速中', stopped: '停止中' },
+      delta: '{{date}} から +{{hours}} 時間',
       openMachine: '{{name}} を開く',
       trust: {
         calibrated: '校正済み',

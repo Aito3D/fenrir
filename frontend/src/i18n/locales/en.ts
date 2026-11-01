@@ -3267,6 +3267,12 @@ export default {
       showNone: 'none',
       retired: 'Retired',
       perMonth: '{{hours}} h/month',
+      range: { label: 'Range', '3m': '3 m', '12m': '12 m', all: 'All' },
+      chart: { lastReading: 'last reading · {{date}}', noReadingsFor: 'no readings for {{months}} months' },
+      lastReadingOn: 'last reading {{date}}',
+      fleetLine: '{{machines}} machines · last reading {{date}}',
+      flag: { slowing: 'slowing', stopped: 'stopped' },
+      delta: '+{{hours}} h since {{date}}',
       openMachine: 'Open {{name}}',
       trust: {
         calibrated: 'Calibrated',
