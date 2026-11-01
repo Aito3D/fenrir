@@ -226,6 +226,27 @@ describe('HoursTab', () => {
     expect(within(list).queryByText('124 h')).not.toBeInTheDocument();
   });
 
+  it("an uncalibrated counter above the last manual reading is never shown as the machine's hours", async () => {
+    const m = { id: 1, printer_id: 6, name: 'X1C04', model: 'X1C', retired: false, current_hours: 1513,
+      trust: 'uncalibrated' as const, last_drift_hours: null, calibrated_at: null, counter_raw_hours: null, next_service_hours: null, purchase_price: null, purchase_date: null, added_on: null };
+    const readings = [
+      { id: 2, machine_id: 1, reading_date: '2026-04-25', hours: 345, source: 'manual' as const, raw_hours: null },
+      { id: 5, machine_id: 1, reading_date: '2031-02-14', hours: 1513, source: 'auto' as const, raw_hours: null },
+    ];
+    for (const trust of ['uncalibrated', 'drifting'] as const) {
+      serve({ ...overview, machines: [{ ...m, trust }], readings });
+      const { container, unmount } = render(<HoursTab />);
+      const list = await screen.findByTestId('hours-machine-list');
+      expect(within(list).getByText('345 h')).toBeInTheDocument();
+      expect(within(list).queryByText(/1,513/)).not.toBeInTheDocument();
+      // the log may list the raw auto row; the fleet strip must not count it
+      expect(screen.getByText('Fleet lifetime').parentElement).not.toHaveTextContent(/1,513/);
+      expect(screen.getByText('Fleet lifetime').parentElement).toHaveTextContent('345');
+      expect(container.querySelectorAll('path.recharts-line-curve[stroke-dasharray="4 4"]')).toHaveLength(0);
+      unmount();
+    }
+  });
+
   it('deletes a manual date after confirmation', async () => {
     serve();
     let deleted: string | null = null;

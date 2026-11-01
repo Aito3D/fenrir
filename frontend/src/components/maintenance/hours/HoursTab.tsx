@@ -81,7 +81,11 @@ export function HoursTab() {
 
   const machines = useMemo(() => data?.machines ?? [], [data]);
   const series = useMemo(
-    () => new Map(machines.map((m) => [m.id, machineSeries(data?.readings ?? [], m.id)])),
+    () => new Map(machines.map((m) => {
+      const s = machineSeries(data?.readings ?? [], m.id);
+      // Only a calibrated counter is ever shown as the machine's hours.
+      return [m.id, m.trust === 'calibrated' ? s : { ...s, auto: [] }] as const;
+    })),
     [machines, data],
   );
   const colors = useMemo(() => machineColors(machines), [machines]);
@@ -91,7 +95,7 @@ export function HoursTab() {
       const mine = series.get(m.id)!;
       const pts = seriesPoints(mine);
       const lastManual = mine.manual.at(-1);
-      const counterOk = m.current_hours != null && (!lastManual || m.current_hours >= lastManual.hours);
+      const counterOk = m.trust === 'calibrated' && m.current_hours != null && (!lastManual || m.current_hours >= lastManual.hours);
       out.set(m.id, counterOk ? m.current_hours : pts.length ? pts[pts.length - 1].hours : null);
     }
     return out;

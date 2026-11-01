@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { MachinePanel } from '../../components/maintenance/hours/MachinePanel';
 import { machineSeries } from '../../utils/hoursSeries';
+import { formatMoney } from '../../utils/pricing';
 import type { HourEvent, HourMachine, HourReading } from '../../api/client';
 
 const machine: HourMachine = {
@@ -75,7 +76,7 @@ describe('MachinePanel', () => {
 
   it('cost per hour uses the app currency', () => {
     setup({ currency: 'XPF' }, { ...machine, purchase_price: 347000 });
-    const expected = new Intl.NumberFormat('en', { style: 'currency', currency: 'XPF', maximumFractionDigits: 0 }).format(347000 / 1743);
+    const expected = formatMoney(347000 / 1743, 'XPF');
     const norm = (x: string) => x.replace(/\s/g, ' ');
     expect(screen.getByText((_, el) => el?.tagName === 'P' && norm(el.firstChild?.textContent ?? '') === norm(`${expected} per hour`))).toBeInTheDocument();
     expect(screen.getByText(/based on the last reading of/)).toBeInTheDocument();

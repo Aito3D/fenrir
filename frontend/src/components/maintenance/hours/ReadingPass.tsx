@@ -16,7 +16,7 @@ interface ReadingPassProps {
   onClose: () => void;
 }
 
-export function ReadingPass({ machines, readings, colors, isSaving, onSave, onClose }: ReadingPassProps) {
+export function ReadingPass({ machines, readings, today, colors, isSaving, onSave, onClose }: ReadingPassProps) {
   const { t, i18n } = useTranslation();
   const n = machines.length;
   const [index, setIndex] = useState(0);
@@ -33,7 +33,7 @@ export function ReadingPass({ machines, readings, colors, isSaving, onSave, onCl
   }, [index, n]);
 
   const parsedOf = (m: HourMachine) => parseHoursInput(values[m.id] ?? '');
-  const checkOf = (m: HourMachine, typed: number) => checkReading(m.id, typed, readings, m.counter_raw_hours);
+  const checkOf = (m: HourMachine, typed: number) => checkReading(m.id, typed, readings.filter((r) => r.reading_date < today), m.counter_raw_hours);
 
   const setValue = (m: HourMachine, text: string) => {
     setValues((v) => ({ ...v, [m.id]: text }));
@@ -83,7 +83,10 @@ export function ReadingPass({ machines, readings, colors, isSaving, onSave, onCl
 
     const go = () => {
       if (invalid) return;
-      if (needsKeep) setKept((k) => new Set(k).add(m.id));
+      if (needsKeep) {
+        setKept((k) => new Set(k).add(m.id));
+        return;
+      }
       setIndex(index + 1);
     };
     const skip = () => {

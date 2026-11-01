@@ -262,14 +262,33 @@ async def calibrate_machine(
     """
     counter_before = current_hours(printer.runtime_seconds, printer.print_hours_offset)
     first_time = machine.calibrated_at is None
+    same_day = machine.calibrated_at is not None and machine.calibrated_at.date() == today
     recalibrate_printer(printer, total_hours)
     actual = current_hours(printer.runtime_seconds, printer.print_hours_offset)
     machine.calibrated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    machine.last_drift_hours = None if first_time else counter_before - total_hours
+    if not same_day:  # correcting today's value is not drift
+        machine.last_drift_hours = None if first_time else counter_before - total_hours
     await upsert_reading(
         db, machine.id, today, SOURCE_AUTO, round(actual, 1), raw_hours=(printer.runtime_seconds or 0) / 3600.0
     )
-    db.add(HourEvent(machine_id=machine.id, event_date=today, kind="calibrated", label=f"{total_hours:g} h"))
+    label = f"{total_hours:g} h"
+    todays = (
+        (
+            await db.execute(
+                select(HourEvent).where(
+                    HourEvent.machine_id == machine.id, HourEvent.kind == "calibrated", HourEvent.event_date == today
+                )
+            )
+        )
+        .scalars()
+        .first()
+        if same_day
+        else None
+    )
+    if todays:
+        todays.label = label
+    else:
+        db.add(HourEvent(machine_id=machine.id, event_date=today, kind="calibrated", label=label))
     return actual
 
 
@@ -298,6 +317,26 @@ async def snapshot_today(db: AsyncSession, today: date | None = None) -> int:
 
 
 READINGS_DUE_KIND = "hours.readings_due"
+_BACKFILL_KEY = "hours_reminder_kind_backfilled"
+
+
+async def backfill_reminder_kind(db: AsyncSession) -> int:
+    """Once: add the on-by-default reminder kind to inbox preferences saved before it existed."""
+    from backend.app.api.routes.settings import get_setting, set_setting  # route imports this module
+    from backend.app.models.notification_inbox import UserInboxPreference
+
+    if await get_setting(db, _BACKFILL_KEY) == "1":
+        return 0
+    count = 0
+    for pref in (await db.execute(select(UserInboxPreference))).scalars():
+        if READINGS_DUE_KIND not in (pref.kinds_json or []):
+            pref.kinds_json = [*(pref.kinds_json or []), READINGS_DUE_KIND]  # new list: JSON column change tracking
+            count += 1
+    await set_setting(db, _BACKFILL_KEY, "1")
+    await db.commit()
+    return count
+
+
 _LAST_REMINDER_KEY = "hours_reading_last_reminder"
 
 
@@ -388,6 +427,11 @@ class PrinterHoursService:
 
     async def _scheduler_loop(self):
         delay = self._startup_delay
+        try:
+            async with _database.async_session() as db:
+                await backfill_reminder_kind(db)
+        except Exception as e:
+            logger.warning("Printer hours reminder backfill failed: %s", e)
         while True:
             try:
                 await asyncio.sleep(delay)

@@ -255,8 +255,7 @@ export function HoursChart({ mode, machines, hidden, series, colors, today, rang
           const s = series.get(m.id)!;
           const color = colors.get(m.id);
           const lastManual = s.manual[s.manual.length - 1];
-          const showTail = m.trust === 'calibrated' || m.trust === 'drifting';
-          const auto = showTail && s.auto.length ? [...(lastManual ? [lastManual] : []), ...s.auto].map(toXY) : [];
+          const auto = s.auto.length ? [...(lastManual ? [lastManual] : []), ...s.auto].map(toXY) : [];
           const fade = focusId !== null && focusId !== m.id ? 0.2 : 1;
           const width = focusId === m.id ? 3 : 2;
           const hover = { onMouseEnter: () => onFocus(m.id), onMouseLeave: () => onFocus(null), onClick: () => onPin?.(m.id) };

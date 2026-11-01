@@ -453,3 +453,42 @@ class TestHoursNotesAndSettings:
         assert (await async_client.delete(f"{BASE}/machines/{m['id']}")).status_code == 200
         remaining = (await db_session.execute(select(HourEvent).where(HourEvent.machine_id == m["id"]))).scalars().all()
         assert remaining == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_both_calibration_routes_produce_the_same_state(async_client: AsyncClient, printer_factory, db_session):
+    from backend.app.models.maintenance import HourEvent, HourReading
+
+    a = await printer_factory(name="X1C30", runtime_seconds=3600 * 100, print_hours_offset=50.0)
+    b = await printer_factory(name="X1C31", runtime_seconds=3600 * 100, print_hours_offset=50.0)
+    ma = await _machine_for(async_client, "X1C30")
+    today = date.today().isoformat()
+    r = await async_client.post(
+        f"{BASE}/readings", json={"reading_date": today, "entries": [{"machine_id": ma["id"], "hours": 2629}]}
+    )
+    assert r.status_code == 200
+    assert (await async_client.patch(f"/api/v1/maintenance/printers/{b.id}/hours?total_hours=2629")).status_code == 200
+
+    states = []
+    for p in (a, b):
+        m = (await db_session.execute(select(HourMachine).where(HourMachine.printer_id == p.id))).scalar_one()
+        await db_session.refresh(m)
+        auto = (
+            await db_session.execute(
+                select(HourReading).where(HourReading.machine_id == m.id, HourReading.source == "auto")
+            )
+        ).scalar_one()
+        events = (
+            (
+                await db_session.execute(
+                    select(HourEvent).where(HourEvent.machine_id == m.id, HourEvent.kind == "calibrated")
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert m.calibrated_at is not None
+        assert len(events) == 1
+        states.append((m.last_drift_hours, str(auto.reading_date), auto.hours, auto.raw_hours))
+    assert states[0] == states[1]

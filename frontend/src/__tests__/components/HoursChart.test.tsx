@@ -46,11 +46,11 @@ function setup(over: Partial<ComponentProps<typeof HoursChart>> = {}) {
 }
 
 describe('HoursChart', () => {
-  it('hides the auto tail for an uncalibrated machine', () => {
-    const a = setup({ machines: [machine(1, 'uncalibrated')] });
+  it('draws the dashed tail only for the auto points the series carries', () => {
+    const a = setup({ series: new Map([[1, { ...seriesFor(), auto: [] }]]) });
     expect(a.container.querySelectorAll('path.recharts-line-curve[stroke-dasharray="4 4"]')).toHaveLength(0);
     a.unmount();
-    const b = setup({ machines: [machine(1, 'calibrated')] });
+    const b = setup();
     expect(b.container.querySelectorAll('path.recharts-line-curve[stroke-dasharray="4 4"]')).toHaveLength(1);
   });
 

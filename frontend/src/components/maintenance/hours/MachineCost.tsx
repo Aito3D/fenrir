@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { HourMachine } from '../../../api/client';
+import { formatMoney } from '../../../utils/pricing';
 import { dayNumber } from '../../../utils/hoursSeries';
 import { Button } from '../../Button';
 import { inputCls } from '../../formStyles';
@@ -26,7 +27,7 @@ export function MachineCost({ machine, lifetime, currency, canEdit, onSave }: Ma
   const hours = lifetime?.hours ?? 0;
   const shownPrice = machine.purchase_price;
   const amount = shownPrice != null && hours > 0
-    ? new Intl.NumberFormat(i18n.language, { style: 'currency', currency, maximumFractionDigits: 0 }).format(shownPrice / hours)
+    ? formatMoney(shownPrice / hours, currency)
     : null;
 
   return (

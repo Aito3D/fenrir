@@ -205,6 +205,26 @@ async def test_calibrate_again_stores_drift(db_session, printer_factory):
 
 
 @pytest.mark.asyncio
+async def test_same_day_recalibration_keeps_drift_and_one_event(db_session, printer_factory):
+    from datetime import timezone
+
+    p = await printer_factory(name="X1C13", runtime_seconds=3600 * 100, print_hours_offset=3765.0)
+    machine = await machine_for_printer(db_session, p.id)
+    machine.calibrated_at = datetime(2026, 10, 1)
+    today = datetime.now(timezone.utc).date()
+    await calibrate_machine(db_session, machine, p, 15130.0, today)
+    await db_session.commit()
+    first_drift = machine.last_drift_hours
+    assert first_drift == pytest.approx(3865.0 - 15130.0)
+
+    await calibrate_machine(db_session, machine, p, 1513.0, today)
+    await db_session.commit()
+    assert machine.last_drift_hours == first_drift
+    events = (await db_session.execute(select(HourEvent).where(HourEvent.kind == "calibrated"))).scalars().all()
+    assert [(e.event_date, e.label) for e in events] == [(today, "1513 h")]
+
+
+@pytest.mark.asyncio
 async def test_calibrate_clamped_offset_records_actual_counter(db_session, printer_factory):
     p = await printer_factory(name="X1C12", runtime_seconds=3600 * 100)
     machine = await machine_for_printer(db_session, p.id)
@@ -498,3 +518,27 @@ async def test_reminder_once_per_interval_persists_in_settings(db_session, print
     assert await remind_if_due(db_session, today) == 0
     interval = await reading_interval_days(db_session)
     assert await remind_if_due(db_session, today + timedelta(days=interval + 1)) == 1
+
+
+@pytest.mark.asyncio
+async def test_backfill_reminder_kind_adds_once(db_session):
+    from backend.app.models.notification_inbox import UserInboxPreference
+    from backend.app.services.printer_hours import backfill_reminder_kind
+
+    a = await _maintainer(db_session, "bfa")
+    b = await _maintainer(db_session, "bfb")
+    db_session.add(UserInboxPreference(user_id=a.id, kinds_json=["aito.paid"], sound_kinds_json=["aito.paid"]))
+    db_session.add(UserInboxPreference(user_id=b.id, kinds_json=["hours.readings_due"], sound_kinds_json=[]))
+    await db_session.commit()
+
+    assert await backfill_reminder_kind(db_session) == 1
+    prefs = {p.user_id: p for p in (await db_session.execute(select(UserInboxPreference))).scalars()}
+    assert prefs[a.id].kinds_json == ["aito.paid", "hours.readings_due"]
+    assert prefs[a.id].sound_kinds_json == ["aito.paid"]
+    assert prefs[b.id].kinds_json == ["hours.readings_due"]
+
+    prefs[a.id].kinds_json = ["aito.paid"]  # the user later opts out
+    await db_session.commit()
+    assert await backfill_reminder_kind(db_session) == 0
+    await db_session.refresh(prefs[a.id])
+    assert prefs[a.id].kinds_json == ["aito.paid"]

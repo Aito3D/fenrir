@@ -18,6 +18,7 @@ const readings: HourReading[] = [
   { id: 1, machine_id: 1, reading_date: '2026-04-25', hours: 3803, source: 'manual', raw_hours: null },
   { id: 2, machine_id: 1, reading_date: '2026-04-25', hours: 3803, source: 'auto', raw_hours: 500 },
   { id: 3, machine_id: 2, reading_date: '2026-04-25', hours: 906, source: 'manual', raw_hours: null },
+  { id: 4, machine_id: 1, reading_date: '2031-02-14', hours: 4100, source: 'manual', raw_hours: null },
 ];
 
 function setup() {
@@ -55,6 +56,9 @@ describe('ReadingPass', () => {
     await user.type(screen.getByRole('textbox', { name: 'X1C04' }), '3700');
     expect(screen.getByText(/Lower than the 3,803 h read on/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Keep anyway' })).toBeInTheDocument();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('heading', { name: 'X1C04' })).toBeInTheDocument();
+    expect(screen.getByText(/Lower than the 3,803 h read on/)).toBeInTheDocument();
     await user.keyboard('{Enter}');
     expect(screen.getByRole('heading', { name: 'H2S02' })).toBeInTheDocument();
     await user.keyboard('{Enter}{Enter}');
