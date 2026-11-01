@@ -436,7 +436,7 @@ function ArchiveCard({
   return (
     <Card
       data-archive-id={archive.id}
-      className={`relative flex flex-col group ${isSelected ? 'ring-2 ring-bambu-green' : ''} ${selectionMode ? 'cursor-pointer' : ''}`}
+      className={`relative h-full flex flex-col group @container ${isSelected ? 'ring-2 ring-bambu-green' : ''} ${selectionMode ? 'cursor-pointer' : ''}`}
       style={isHighlighted ? { outline: '4px solid #facc15', outlineOffset: '2px' } : undefined}
       onContextMenu={handleContextMenu}
       onClick={selectionMode ? () => onSelect(archive.id) : undefined}
@@ -831,8 +831,12 @@ function ArchiveCard({
           )}
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-2 text-xs mb-4 min-h-[48px]">
+        {/* Stats: two columns once the CARD (not the viewport) is wide enough
+            for the longest cell; a narrow card -- 4 columns on a 1440px desktop,
+            or a phone in portrait -- stacks them so no value overflows its
+            neighbour or breaks mid-figure. The threshold was measured against
+            the widest cell ("315 layers · 0.2mm", "1553 FCFP"), not computed. */}
+        <div className="grid grid-cols-1 @[18.5rem]:grid-cols-2 gap-2 text-xs mb-4 min-h-[48px]">
           {(archive.print_time_seconds || archive.actual_time_seconds) && (
             <div className="flex items-center gap-1.5 text-bambu-gray" title={
               archive.time_accuracy
@@ -869,7 +873,7 @@ function ArchiveCard({
           {priceEstimate ? (
             // Calculator-configured: show the calculator's machine cost and
             // energy line for this print instead of the stored archive costs.
-            <div className="flex items-center gap-3 text-bambu-gray">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-bambu-gray">
               <div className="flex items-center gap-1.5" title={t('calculator.machineCost')}>
                 <Coins className="w-3 h-3" />
                 {formatMoney(priceEstimate.machineCost, currencyCode)}
@@ -888,7 +892,7 @@ function ArchiveCard({
             </div>
           ) : (
             (archive.cost != null || archive.energy_cost != null || archive.wear_cost != null) && (
-              <div className="flex items-center gap-3 text-bambu-gray">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-bambu-gray">
                 {archive.cost != null && (
                   // A running print's cost is an estimate until completion re-prices it (#3261).
                   // A run that did not finish leaves one full print's figure; its
@@ -950,11 +954,11 @@ function ArchiveCard({
             </div>
           )}
           {(archive.layer_height || archive.total_layers) && (
-            <div className="flex items-center gap-1.5 text-bambu-gray">
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-bambu-gray">
               <Layers className="w-3 h-3" />
-              {archive.total_layers && <span>{archive.total_layers === 1 ? t('archives.card.layer', { count: archive.total_layers }) : t('archives.card.layers', { count: archive.total_layers })}</span>}
+              {archive.total_layers && <span className="whitespace-nowrap">{archive.total_layers === 1 ? t('archives.card.layer', { count: archive.total_layers }) : t('archives.card.layers', { count: archive.total_layers })}</span>}
               {archive.total_layers && archive.layer_height && <span className="text-bambu-gray/50">·</span>}
-              {archive.layer_height && <span>{archive.layer_height}mm</span>}
+              {archive.layer_height && <span className="whitespace-nowrap">{archive.layer_height}mm</span>}
             </div>
           )}
           {archive.object_count != null && archive.object_count > 0 && (
@@ -970,7 +974,7 @@ function ArchiveCard({
             </div>
           )}
           {archive.filament_type && (
-            <div className="flex items-center gap-1.5 col-span-2">
+            <div className="flex items-center gap-1.5 col-span-full">
               <span className="text-bambu-gray text-xs">{archive.filament_type}</span>
               {archive.filament_color && (
                 <div className="flex items-center gap-0.5 flex-wrap">
@@ -1055,7 +1059,7 @@ function ArchiveCard({
                 title={!archive.file_path ? t('archives.card.noFileForReprint') : !hasPermission('queue:create') ? t('archives.permission.noAddToQueue') : !canModify('archives', 'reprint', archive.created_by_id) ? t('archives.card.noPermissionReprint') : undefined}
               >
                 <Printer className="w-3 h-3 flex-shrink-0" />
-                <span className="hidden xl:inline truncate">{t('common.print')}</span>
+                <span className="truncate">{t('common.print')}</span>
               </Button>
               <Button
                 variant="secondary"
@@ -1098,7 +1102,7 @@ function ArchiveCard({
               ) : (
                 <ExternalLink className="w-3 h-3 flex-shrink-0" />
               )}
-              <span className="hidden xl:inline truncate">{t('archives.card.slice')}</span>
+              <span className="truncate">{t('archives.card.slice')}</span>
             </Button>
           )}
           <Button
@@ -3334,8 +3338,8 @@ export function ArchivesPage() {
       {isLoading ? (
         <SkeletonGrid
           count={8}
-          gridClassName="grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-          cardClassName="h-52"
+          gridClassName="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
+          cardClassName="h-80"
         />
       ) : filteredArchives?.length === 0 && viewMode !== 'log' ? (
         // Fork's skeleton kept for the loading state; upstream's `viewMode`
@@ -3371,7 +3375,12 @@ export function ArchivesPage() {
         </Card>
       ) : viewMode === 'grid' ? (
         <>
-          {/* stagger-parents + animate-rise-lg reveals the cards one after another
+          {/* Every card fills its grid cell (h-full on the Card) so a row's cards
+              share one height whatever their stats count; the flex-1 spacer in
+              the card then pins the date row and actions to the bottom edge.
+              Four columns wait for 2xl (not xl): with the sidebar open, xl
+              gives four 200px cards, too narrow for the action row and stats.
+              stagger-parents + animate-rise-lg reveals the cards one after another
               (left-to-right, top-to-bottom) on first paint and for cards that
               newly enter; each card's details then cascade via the stagger-nested
               block inside ArchiveCard. useFlipReorder (above) slides persisting
@@ -3380,7 +3389,7 @@ export function ArchivesPage() {
               positions. */}
           <div
             ref={archiveGridRef}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 stagger-parents"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6 stagger-parents"
           >
             {paginatedArchives?.map((archive) => (
               <div key={archive.id} data-flip-key={archive.id} className="animate-rise-lg">
