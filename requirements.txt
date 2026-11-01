@@ -11,6 +11,8 @@
 # Hold to 0.135.x (which has all features we use, including SSE)
 # until upstream removes the dep or explains the rationale.
 fastapi>=0.109.0,<0.136.0
+# Brotli for the frontend bundle (/assets); gzip stays the fallback.
+brotli>=1.1.0
 uvicorn[standard]>=0.27.0
 # Direct import (go2rtc MSE relay client), not just uvicorn's WS server.
 # 13.0 is the floor for the websockets.asyncio.client API.

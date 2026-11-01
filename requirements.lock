@@ -28,6 +28,7 @@ asyncssh==2.24.1
 attrs==26.1.0
     # via aiohttp
 bcrypt==5.0.0
+brotli==1.1.0
     # via passlib
 certifi==2026.10.19
     # via
