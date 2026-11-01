@@ -37,7 +37,7 @@ from backend.app.utils.local_time import utcnow_naive
 MULTIPLIER = 1.5  # shortcut: fixed, upgrade to a setting when the shop wants to tune it
 # Shop history from before Fenrir, added after the multiplier. Same shortcut as MULTIPLIER.
 SINCE = "2024-06-01"
-PRINTS_OFFSET = 10_000
+PRINTS_OFFSET = 20_000
 FILAMENT_KG_OFFSET = 1_000.0
 ORDERS_OFFSET = 1_000
 PRINT_HOURS_OFFSET = 50_000
