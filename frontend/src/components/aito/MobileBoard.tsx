@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Archive, BarChart3, FileInput, Plus, Trash2 } from 'lucide-react';
 import type { AitoProject } from '../../api/client';
@@ -9,7 +9,7 @@ import { MobileColumnSheet } from './MobileColumnSheet';
 import { ActionMenu } from './ActionMenu';
 import { summariseColumn } from '../../utils/aitoMobileBoard';
 import { useMobileColumn } from '../../hooks/useMobileColumn';
-import { prefersReducedMotion } from '../../utils/motion';
+import { useSnapPager } from '../../hooks/useSnapPager';
 
 export interface MobileBoardProps {
   columns: { column: ColumnMeta; projects: AitoProject[] }[];
@@ -61,7 +61,7 @@ export function MobileBoard({
   const ids = useMemo(() => columns.map(({ column }) => column.id), [columns]);
   const [current, setCurrent] = useMobileColumn(ids);
   const [overlay, setOverlay] = useState<Overlay>(null);
-  const pagerRef = useRef<HTMLDivElement>(null);
+  const { pagerRef, jump, handlers: pagerHandlers } = useSnapPager(ids.length, current, setCurrent);
   const pickerRef = useRef<HTMLButtonElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
   const fabRef = useRef<HTMLButtonElement>(null);
@@ -70,57 +70,6 @@ export function MobileBoard({
     () => columns.map(({ column, projects }) => summariseColumn(column, projects, now)),
     [columns, now],
   );
-
-  const scrollToPage = useCallback((index: number, smooth: boolean) => {
-    const pager = pagerRef.current;
-    if (!pager) return;
-    const left = index * pager.clientWidth;
-    if (smooth && !prefersReducedMotion() && typeof pager.scrollTo === 'function') {
-      pager.scrollTo({ left, behavior: 'smooth' });
-    } else {
-      pager.scrollLeft = left;
-    }
-  }, []);
-
-  // Land on the remembered column before the first paint.
-  useLayoutEffect(() => {
-    scrollToPage(current, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount only: afterwards the scroll position IS the source of truth
-  }, []);
-
-  // scrollLeft is in px: after a rotation or resize, put the current column
-  // back in view instead of landing between two.
-  const currentRef = useRef(current);
-  useEffect(() => {
-    currentRef.current = current;
-  }, [current]);
-  useEffect(() => {
-    const onResize = () => scrollToPage(currentRef.current, false);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [scrollToPage]);
-
-  // A smooth jump (strip tap) scrolls THROUGH every page in between; without
-  // this the header would flick through each of their names on the way.
-  // Cleared on arrival, or the moment a finger takes over the scroll.
-  const jumpTargetRef = useRef<number | null>(null);
-
-  const onScroll = () => {
-    const pager = pagerRef.current;
-    if (!pager || pager.clientWidth === 0) return;
-    const index = Math.round(pager.scrollLeft / pager.clientWidth);
-    if (jumpTargetRef.current !== null) {
-      if (index === jumpTargetRef.current) jumpTargetRef.current = null;
-      return;
-    }
-    if (index !== current) setCurrent(index);
-  };
-
-  const jump = (index: number, smooth: boolean) => {
-    jumpTargetRef.current = smooth ? index : null;
-    setCurrent(index);
-    scrollToPage(index, smooth);
-  };
 
   const closeOverlay = (returnTo: HTMLElement | null) => {
     setOverlay(null);
@@ -151,10 +100,7 @@ export function MobileBoard({
           ref={pagerRef}
           data-testid="aito-mobile-pager"
           aria-busy={pending || undefined}
-          onScroll={onScroll}
-          onPointerDown={() => {
-            jumpTargetRef.current = null;
-          }}
+          {...pagerHandlers}
           className={`h-full flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory overscroll-x-contain scrollbar-hide transition-opacity duration-300 ${
             pending ? 'opacity-40' : ''
           }`}
