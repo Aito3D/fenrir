@@ -1,7 +1,10 @@
 """Public shop figures for the Shopify storefront (routes/showcase.py).
 
-Everything is derived from completed, non-trashed archives, accepted Aito
-projects and active printers. The headline figures are multiplied by
+Prints, print hours and filament come from the print log (one row per
+print event, every status), the same source as the Statistics page, so they
+survive archive deletion and show the same numbers. Layers and the weekly
+load come from non-trashed archives; orders from accepted Aito projects; the
+fleet from active printers. The headline figures are multiplied by
 ``MULTIPLIER`` because the archive only covers the machines Fenrir has
 tracked, not the shop's whole history; the fleet size and the load are
 real. The load window is a week so a weekend never reads as a slump.
@@ -31,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.database import async_session
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.archive import PrintArchive
+from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.printer import Printer
 from backend.app.utils.local_time import utcnow_naive
 
@@ -83,25 +87,29 @@ def load_level(avg_hours_per_printer: float) -> str:
 async def compute(db: AsyncSession, now: datetime | None = None) -> dict[str, Any]:
     now = now or utcnow_naive()
     m = MULTIPLIER
-    done = (PrintArchive.deleted_at.is_(None), PrintArchive.status == "completed")
-
-    n_prints, grams, seconds, layers = (
-        await db.execute(
-            select(
-                func.count(PrintArchive.id),
-                func.coalesce(func.sum(PrintArchive.filament_used_grams), 0.0),
-                func.coalesce(func.sum(PrintArchive.print_time_seconds), 0),
-                func.coalesce(func.sum(PrintArchive.total_layers), 0),
-            ).where(*done)
-        )
-    ).one()
+    totals = select(func.count(PrintLogEntry.id), func.coalesce(func.sum(PrintLogEntry.filament_used_grams), 0.0))
+    n_prints, grams = (await db.execute(totals)).one()
     n_recent, grams_recent = (
-        await db.execute(
-            select(func.count(PrintArchive.id), func.coalesce(func.sum(PrintArchive.filament_used_grams), 0.0)).where(
-                *done, PrintArchive.completed_at >= now - timedelta(days=30)
+        await db.execute(totals.where(PrintLogEntry.created_at >= now - timedelta(days=30)))
+    ).one()
+    # Same rule as routes/archives.py get_archive_stats: a stored duration wins (0 included, a
+    # reconciled abort); only rows without one fall back to started -> completed.
+    seconds = 0
+    for duration, started, ended in (
+        await db.execute(select(PrintLogEntry.duration_seconds, PrintLogEntry.started_at, PrintLogEntry.completed_at))
+    ).all():
+        if duration is not None:
+            seconds += duration
+        elif started and ended and (elapsed := (ended - started).total_seconds()) > 0:
+            seconds += int(elapsed)
+    layers = (
+        await db.scalar(
+            select(func.coalesce(func.sum(PrintArchive.total_layers), 0)).where(
+                PrintArchive.deleted_at.is_(None), PrintArchive.status == "completed"
             )
         )
-    ).one()
+        or 0
+    )
     orders = (
         await db.scalar(
             select(func.count(AitoProject.id)).where(

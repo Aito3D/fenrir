@@ -6,6 +6,7 @@ import pytest
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.archive import PrintArchive
+from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.printer import Printer
 from backend.app.services import showcase_stats as svc
 
@@ -24,6 +25,20 @@ def _archive(status="completed", hours=1.0, grams=100.0, layers=50, started=None
         started_at=started,
         completed_at=ended,
         deleted_at=datetime(2026, 1, 1) if deleted else None,
+    )
+
+
+def _log(status="completed", hours=1.0, grams=100.0, started=None, ended=None, at=None, duration=True):
+    """A print-log row: what the Statistics page (and now the showcase) counts."""
+    return PrintLogEntry(
+        printer_id=1,
+        print_name="p",
+        status=status,
+        started_at=started,
+        completed_at=ended,
+        duration_seconds=int(hours * 3600) if duration else None,
+        filament_used_grams=grams,
+        created_at=at or ended or datetime(2026, 1, 1),
     )
 
 
@@ -48,6 +63,25 @@ async def _seed(db_session, now):
     )
     db_session.add_all(
         [
+            # the print log behind the archives above (the trashed one was purged with its stats);
+            # every status counts, like the Statistics page
+            _log(hours=10, grams=300, ended=now - timedelta(days=39)),
+            _log(hours=2, grams=100, ended=now - timedelta(hours=18)),
+            _log(status="failed", hours=6, grams=50, ended=now),
+            # a legacy row without a stored duration: started -> completed is used instead
+            _log(
+                hours=4,
+                grams=10,
+                started=now - timedelta(days=8, hours=4),
+                ended=now - timedelta(days=8),
+                duration=False,
+            ),
+            # an archive deleted long ago: its log row still counts
+            _log(hours=1, grams=20, ended=now - timedelta(days=400)),
+        ]
+    )
+    db_session.add_all(
+        [
             AitoProject(description="quote", board_column="devis", client_name="A"),
             AitoProject(description="order", board_column="print", client_name="B"),
             AitoProject(description="delivered", board_column="done", client_name="C"),
@@ -58,21 +92,22 @@ async def _seed(db_session, now):
 
 
 @pytest.mark.asyncio
-async def test_compute_counts_only_completed_prints_and_applies_the_multiplier(db_session):
+async def test_compute_counts_the_print_log_like_the_statistics_page_and_applies_the_multiplier(db_session):
     now = datetime(2026, 11, 1, 12, 0, 0)
     await _seed(db_session, now)
     s = await svc.compute(db_session, now=now)
     m = svc.MULTIPLIER
     assert m == 1.5
-    assert s["prints"] == round(3 * m) + svc.PRINTS_OFFSET
-    assert s["filament_kg"] == round(0.41 * m + svc.FILAMENT_KG_OFFSET, 1)  # 410 g, rounded to one decimal
-    assert s["print_hours"] == round(16 * m) + svc.PRINT_HOURS_OFFSET
-    assert s["print_days"] == round((16 * m + svc.PRINT_HOURS_OFFSET) / 24, 1)
-    assert s["layers"] == round(170 * m) + svc.LAYERS_OFFSET
+    # 5 log rows (failed and archive-less ones included), 23 h, 480 g
+    assert s["prints"] == round(5 * m) + svc.PRINTS_OFFSET
+    assert s["filament_kg"] == round(0.48 * m + svc.FILAMENT_KG_OFFSET, 1)
+    assert s["print_hours"] == round(23 * m) + svc.PRINT_HOURS_OFFSET
+    assert s["print_days"] == round((23 * m + svc.PRINT_HOURS_OFFSET) / 24, 1)
+    assert s["layers"] == round(170 * m) + svc.LAYERS_OFFSET  # completed, non-trashed archives
     assert s["orders"] == round(2 * m) + svc.ORDERS_OFFSET
     assert s["printers"] == 2 + svc.PRINTERS_OFFSET  # never multiplied, only offset
     assert s["since"] == svc.SINCE
-    assert s["last_30_days"] == {"prints": round(2 * m), "filament_kg": round(0.11 * m, 1)}  # 2 prints, 110 g
+    assert s["last_30_days"] == {"prints": round(3 * m), "filament_kg": round(0.16 * m, 1)}  # 3 rows, 160 g
 
 
 @pytest.mark.asyncio
@@ -134,17 +169,17 @@ async def test_route_is_public_cached_and_cors_open(async_client, db_session, se
     assert r.headers["cache-control"] == "public, max-age=300"
     assert r.headers["content-type"] == "application/json"
     first = r.json()
-    assert first["prints"] == round(3 * svc.MULTIPLIER) + svc.PRINTS_OFFSET
+    assert first["prints"] == round(5 * svc.MULTIPLIER) + svc.PRINTS_OFFSET
     # a new print inside the TTL is not visible; after the TTL it is
-    db_session.add(_archive(started=datetime(2026, 11, 1), ended=datetime(2026, 11, 1, 1)))
+    db_session.add(_log(ended=datetime(2026, 11, 1, 1)))
     await db_session.commit()
     clock["t"] += 299
     assert (await async_client.get("/api/v1/showcase/stats")).json()["prints"] == round(
-        3 * svc.MULTIPLIER
+        5 * svc.MULTIPLIER
     ) + svc.PRINTS_OFFSET
     clock["t"] += 2
     assert (await async_client.get("/api/v1/showcase/stats")).json()["prints"] == round(
-        4 * svc.MULTIPLIER
+        6 * svc.MULTIPLIER
     ) + svc.PRINTS_OFFSET
 
 
