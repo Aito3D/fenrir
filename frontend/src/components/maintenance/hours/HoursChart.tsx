@@ -43,6 +43,15 @@ function xDomain(range: HoursChartRange, today: string, extendDays = 0): [number
   return [range === 'all' ? 'dataMin' : end - RANGE_DAYS[range] * DAY_MS, range === 'all' ? end + extendDays * DAY_MS : end];
 }
 
+/** Round y axis for the lifetime chart: `[0, top]` plus its ticks, so ticks drawn on the curves can share the exact scale. */
+function niceAxis(max: number): { top: number; ticks: number[] } {
+  const raw = Math.max(max, 1) / 5;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = ([1, 2, 2.5, 5, 10].find((m) => m * mag >= raw) ?? 10) * mag;
+  const count = Math.ceil(Math.max(max, 1) / step);
+  return { top: count * step, ticks: Array.from({ length: count + 1 }, (_, i) => i * step) };
+}
+
 const DAYS_PER_MONTH = 30.44;
 const FORECAST_DAYS = 365;
 
@@ -220,13 +229,22 @@ export function HoursChart({ mode, machines, hidden, series, colors, today, rang
     ? forecastDate(focusPoints[focusPoints.length - 1], paces.get(focused!.id) ?? null, service)
     : null;
 
+  const yMax = Math.max(
+    0, service ?? 0,
+    ...visible.flatMap((m) => [
+      ...seriesPoints(series.get(m.id)!).map((p) => p.hours),
+      ...(forecasts.get(m.id) ?? []).map((p) => p.y),
+    ]),
+  );
+  const yAxis = niceAxis(yMax);
+
   return (
     <ResponsiveContainer width="100%" height={380}>
       <LineChart margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <GapHatch />
         <CartesianGrid stroke={GRID} vertical={false} />
         <XAxis dataKey="x" type="number" scale="time" domain={xDomain(range, today, anyForecast ? FORECAST_DAYS : 0)} allowDataOverflow allowDuplicatedCategory={false} tickFormatter={(v: number) => monthFmt.format(v)} tick={AXIS} />
-        <YAxis tickFormatter={(v: number) => `${num(v)} h`} tick={AXIS} width={64} />
+        <YAxis domain={[0, yAxis.top]} ticks={yAxis.ticks} allowDataOverflow tickFormatter={(v: number) => `${num(v)} h`} tick={AXIS} width={64} />
         <Tooltip
           labelFormatter={(v) => dayFmt.format(Number(v))}
           formatter={(v, name) => [`${num(Number(v))} h`, name]}

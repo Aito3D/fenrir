@@ -133,4 +133,18 @@ describe('HoursChart', () => {
     expect(ticks[0].querySelector('title')?.textContent).toBe('Belt changed');
     expect(ticks[1].getAttribute('data-kind')).toBe('maintenance');
   });
+
+  it('ticks sit on their curve', () => {
+    const machines = [machine(1, 'calibrated')];
+    const series = new Map<number, MachineSeries>([
+      [1, { manual: [{ date: '2026-01-01', hours: 100 }, { date: '2026-04-01', hours: 2873 }], auto: [] }],
+    ]);
+    const events: HourEvent[] = [{ id: 1, machine_id: 1, event_date: '2026-04-01', kind: 'note', label: 'On the reading', source_id: null }];
+    const { container } = setup({ machines, series, events });
+    const rect = container.querySelector('.hours-event-tick rect')!;
+    const middle = Number(rect.getAttribute('y')) + Number(rect.getAttribute('height')) / 2;
+    const dots = container.querySelectorAll('.recharts-line-dot');
+    const cy = Number(dots[dots.length - 1].getAttribute('cy'));
+    expect(Math.abs(middle - cy)).toBeLessThan(1);
+  });
 });
