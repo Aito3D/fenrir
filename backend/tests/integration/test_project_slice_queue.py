@@ -1218,6 +1218,81 @@ async def test_removing_the_source_of_an_unsliced_revision(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_a_slice_whose_source_is_removed_mid_run_never_lands_the_removed_sources_gcode(
+    async_client: AsyncClient, db_session, sidecar, roots
+):
+    """T-552 / T-525 (user-approved 2026-11-01): partA is removed while its slice runs. The job does not
+    land partA's G-code: it slices the revision's current source (partB), and partB's waiting item prints that."""
+    rev, part_a, part_b = await _legacy_two_source_revision(async_client, db_session)
+    sidecar.block = True
+    started = await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")
+    assert started.status_code == 202, started.text
+    job_id = started.json()["job_id"]
+    await asyncio.wait_for(sidecar.entered.wait(), timeout=10)
+
+    removed = await async_client.delete(f"/api/v1/projects/revisions/{rev['id']}/files/{part_a}")
+    assert removed.status_code == 204, removed.text
+    waiting = await _queue(async_client, part_b)
+    assert (waiting["status"], waiting["library_file_id"], waiting["slice_job_id"]) == ("slicing", part_b, job_id)
+
+    sidecar.release.set()
+    await _wait_job(job_id)
+
+    revision = await _revision(db_session, rev["id"])
+    assert revision.slice_status == "sliced"
+    derived = list(
+        (await db_session.execute(select(LibraryFile).where(LibraryFile.derived_slice.is_(True)))).scalars().all()
+    )
+    assert [row.filename for row in derived] == ["partB.gcode.3mf"]
+    slice_id = derived[0].id
+    assert revision.sliced_file_id == slice_id
+    folder = to_absolute_path(derived[0].file_path).parent
+    assert sorted(p.name for p in folder.iterdir()) == ["partB.3mf", "partB.gcode.3mf"]
+    item = await _item(db_session, waiting["id"])
+    assert (item.status, item.library_file_id) == ("pending", slice_id)
+    assert len(sidecar.slice_requests) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_slice_whose_only_source_is_removed_mid_run_fails_and_stores_nothing(
+    async_client: AsyncClient, db_session, sidecar
+):
+    """T-552 / T-525: with no source left, the slice ends ``failed`` (source missing), with no G-code stored.
+    The revision keeps a file that is not a project (a revision keeps at least one file)."""
+    rev = await _upload(async_client, "partA.3mf")
+    source = await db_session.get(LibraryFile, rev["files"][0]["id"])
+    notes_rel = str(Path(source.file_path).with_name("notes.txt"))
+    to_absolute_path(notes_rel).write_text("not a project")
+    db_session.add(
+        LibraryFile(filename="notes.txt", file_path=notes_rel, file_size=13, file_type="txt", revision_id=rev["id"])
+    )
+    await db_session.commit()
+    folder = to_absolute_path(source.file_path).parent
+    sidecar.block = True
+    started = await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")
+    assert started.status_code == 202, started.text
+    await asyncio.wait_for(sidecar.entered.wait(), timeout=10)
+
+    removed = await async_client.delete(f"/api/v1/projects/revisions/{rev['id']}/files/{rev['files'][0]['id']}")
+    assert removed.status_code == 204, removed.text
+    sidecar.release.set()
+    await _wait_job(started.json()["job_id"])
+
+    revision = await _revision(db_session, rev["id"])
+    assert (revision.slice_status, revision.slice_error, revision.sliced_file_id) == (
+        "failed",
+        project_slice.SOURCE_MISSING,
+        None,
+    )
+    derived = (await db_session.execute(select(LibraryFile).where(LibraryFile.derived_slice.is_(True)))).first()
+    assert derived is None
+    assert sorted(p.name for p in folder.iterdir()) == ["notes.txt"]
+    assert len(sidecar.slice_requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_removing_the_source_with_its_slice_file_missing_on_disk(async_client: AsyncClient, db_session, sidecar):
     rev, part_a, part_b, derived_id, derived_path = await _sliced_two_source_revision(async_client, db_session)
     derived_path.unlink()
