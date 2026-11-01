@@ -16,7 +16,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, NamedTuple
+from typing import Literal, NamedTuple, overload
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse as FastAPIFileResponse
@@ -6503,6 +6503,10 @@ def _guarded_read_path(file: LibraryFile) -> Path | None:
     return path
 
 
+@overload
+def _by_id_read_path(file: LibraryFile) -> Path: ...
+@overload
+def _by_id_read_path(file: LibraryFile, *, refused_as_missing: Literal[True]) -> Path | None: ...
 def _by_id_read_path(file: LibraryFile, *, refused_as_missing: bool = False) -> Path | None:
     """Fenrir: where a by-id library route outside ``_guarded_read_path`` reads ``file`` from.
 
