@@ -297,7 +297,8 @@ describe('ProjectFilesPanel actions', () => {
     expect(within(fileRow).getByText('3.0 MB')).toBeInTheDocument();
     await userEvent.click(within(fileRow).getByRole('button', { name: 'Preview' }));
     // The part viewer opens on the revision (model + toolpath), titled by the item.
-    expect(screen.getByTestId('model-viewer-modal')).toHaveTextContent('Gabarit#revision#70');
+    // Lazy chunk boundary: the viewer renders a tick after the click.
+    expect(await screen.findByTestId('model-viewer-modal')).toHaveTextContent('Gabarit#revision#70');
     await userEvent.click(screen.getByRole('button', { name: 'close viewer' }));
     expect(screen.queryByTestId('model-viewer-modal')).not.toBeInTheDocument();
     expect(mutations()).toEqual([]);
