@@ -1469,7 +1469,8 @@ describe('FileManagerPage', () => {
       const before = defaultsReads;
       await user.click(button);
       await waitFor(() => expect(defaultsReads).toBeGreaterThan(before));
-      expect(await screen.findByText('Prices updated with the current calculator settings')).toBeInTheDocument();
+      // The toast waits for four refetches, which a loaded full-suite run can stretch past the default second.
+      expect(await screen.findByText('Prices updated with the current calculator settings', {}, { timeout: 5000 })).toBeInTheDocument();
     });
 
     it('shows Generate Thumbnails button', async () => {
@@ -2558,7 +2559,7 @@ describe('FileManagerPage', () => {
       await waitFor(() => expect(window.location.pathname).toBe('/calculator'));
       const params = new URLSearchParams(window.location.search);
       expect(params.get('weight')).toBe('12.3');
-      expect(params.get('time')).toBe('1.00');
+      expect(params.get('time')).toBe('1.0000');
       expect(params.get('quantity')).toBe('1');
       // A library file's duration is always a slicer estimate, so the
       // calculator's time-accuracy correction must apply.

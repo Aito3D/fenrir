@@ -12,6 +12,7 @@ import {
   type NamedCalculatorPrinter,
 } from '../../utils/archivePricing';
 import { computePricing, type PricingDefaults } from '../../utils/pricing';
+import { buildPricingInputs, DEFAULT_STATE, splitDecimalHours } from '../../hooks/useCalculatorState';
 
 const filaments: NamedCalculatorFilament[] = [
   { id: 1, name: 'PLA basique', cost_per_kg: 3731, sale_price_per_kg: 5597, difficulty_pct: 150 },
@@ -60,6 +61,7 @@ const defaults: PricingDefaults = {
   tax_pct: 13,
   default_difficulty_pct: 150,
   stuff_markup_pct: 20,
+  base_fee_flat: 200,
 };
 
 const archive: ArchivePricingSource = {
@@ -212,7 +214,7 @@ describe('estimateArchiveSalePrice', () => {
     const matchedPrinter = matchCalculatorPrinter([], printers)!.printer;
     const r = computePricing(
       { ...zeroInputsForArchive, weight_g: est.weightG, printing_time_h: est.timeH, quantity: 1 },
-      matchedFilament, matchedPrinter, { ...defaults, base_fee_flat: 0 },
+      matchedFilament, matchedPrinter, defaults,
     );
     expect(est.totalTtc).toBeCloseTo(r.total_ttc, 6);
     expect(r.qty_factor).toBe(1);
@@ -288,7 +290,7 @@ describe('estimateArchiveSalePrice', () => {
         post_removal_min: 0, post_support_min: 0, post_additional_min: 0, post_fulfillment_min: 0,
         stuff_amount: 0, stuff_markup_pct: 0,
       },
-      matchedFilament, matchedPrinter, { ...defaults, base_fee_flat: 0 },
+      matchedFilament, matchedPrinter, defaults,
     );
     expect(est.unitCost).toBeCloseTo(r.total_cost, 6);
     expect(est.sizeMargin).toBeCloseTo(r.size_margin, 6);
@@ -595,6 +597,49 @@ describe('matchCalculatorFilament vendor edge cases', () => {
       ['H2S'],
     );
     expect(url).toContain('filamentId=1');
+  });
+});
+
+describe('the card and the calculator agree', () => {
+  // A real library file: 229.46 g, 24158 s (6h 42m 38s), sliced for the H2S.
+  const file: ArchivePricingSource = { filament_used_grams: 229.46, print_time_seconds: 24158, actual_time_seconds: null, filament_type: 'PLA' };
+  const calcConfig = { filaments, printers, defaults };
+
+  it('prices the job with the base fee, as the calculator does', () => {
+    const withFee = estimateArchiveSalePrice(file, filaments, printers, defaults)!;
+    const without = estimateArchiveSalePrice(file, filaments, printers, { ...defaults, base_fee_flat: 0 })!;
+    expect(withFee.totalTtc).toBeGreaterThan(without.totalTtc);
+    // The fee joins the cost subtotal, so the ads rate is taken on it too.
+    expect(withFee.unitCost - without.unitCost).toBeCloseTo(200 * (1 + defaults.ads_rate_pct / 100), 6);
+  });
+
+  it('rounds the weight to 0.1 g and the time to the minute: the precision of the calculator fields', () => {
+    const est = estimateArchiveSalePrice(file, filaments, printers, defaults)!;
+    expect(est.weightG).toBe(229.5);
+    expect(est.timeH).toBeCloseTo(403 / 60, 9);
+    // A print shorter than half a minute still counts as a minute, not nothing.
+    expect(estimateArchiveSalePrice({ ...file, print_time_seconds: 20 }, filaments, printers, defaults)!.timeH).toBeCloseTo(1 / 60, 9);
+  });
+
+  it('"Open in calculator" lands on the total the card showed', () => {
+    const est = estimateArchiveSalePrice(file, filaments, printers, defaults, ['H2S'])!;
+    const url = calculatorPrefillUrl(file, calcConfig, ['H2S']);
+    const params = new URL(`http://x${url}`).searchParams;
+    // The way useCalculatorState reads the prefill, with no labour and no overrides persisted.
+    const state = {
+      ...DEFAULT_STATE,
+      weight: params.get('weight')!,
+      ...splitDecimalHours(Number(params.get('time'))),
+      quantity: params.get('quantity')!,
+      filamentId: Number(params.get('filamentId')),
+      printerId: Number(params.get('printerId')),
+    };
+    const inputs = buildPricingInputs(state, defaults);
+    expect(inputs.weight_g).toBe(est.weightG);
+    expect(inputs.printing_time_h).toBeCloseTo(est.timeH, 9);
+    const filament = filaments.find((f) => f.id === state.filamentId)!;
+    const printer = printers.find((p) => p.id === state.printerId)!;
+    expect(computePricing(inputs, filament, printer, defaults).total_ttc).toBeCloseTo(est.totalTtc, 6);
   });
 });
 

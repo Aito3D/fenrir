@@ -7984,7 +7984,7 @@ export default {
       copyLink: "このビューへのリンクをコピー", linkCopied: "リンクをコピーしました", hideDetails: "詳細を隠す (I)", showDetails: "詳細を表示 (I)", cleanView: "操作なしの表示 (C)", isoView: "等角ビュー",
     },
     section: { title: "断面", bottom: "下", top: "上" },
-    toolpath: { colour: "色", byFeature: "種類別", byFilament: "フィラメント別", play: "レイヤーを再生", layerInfo: "レイヤー {{n}} · z {{z}} mm · 約 {{time}} / {{total}}", layerInfoNoTime: "レイヤー {{n}} · z {{z}} mm", layerClock: "今開始した場合 {{clock}}" },
+    toolpath: { colour: "色", byFeature: "種類別", byFilament: "フィラメント別", bySpeed: "速度別", byFlow: "流量別", play: "レイヤーを再生", layerInfo: "レイヤー {{n}} · z {{z}} mm · 約 {{time}} / {{total}}", layerInfoNoTime: "レイヤー {{n}} · z {{z}} mm", layerClock: "今開始した場合 {{clock}}" },
     rail: {
       part: "部品", checks: "チェック", print: "印刷", files: "ファイル", notSlicedShort: "未スライス", noObjects: "このファイルにオブジェクトはありません",
       notes: "メモ", deleteNote: "このメモを削除",

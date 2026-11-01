@@ -7970,7 +7970,7 @@ export default {
       copyLink: "Copia un link a questa vista", linkCopied: "Link copiato", hideDetails: "Nascondi i dettagli (I)", showDetails: "Mostra i dettagli (I)", cleanView: "Vista pulita, senza comandi (C)", isoView: "Vista isometrica",
     },
     section: { title: "Sezione", bottom: "basso", top: "alto" },
-    toolpath: { colour: "Colore", byFeature: "per funzione", byFilament: "per filamento", play: "Scorri i layer", layerInfo: "Strato {{n}} · z {{z}} mm · circa {{time}} su {{total}}", layerInfoNoTime: "Strato {{n}} · z {{z}} mm", layerClock: "{{clock}} se avviato ora" },
+    toolpath: { colour: "Colore", byFeature: "per funzione", byFilament: "per filamento", bySpeed: "per velocità", byFlow: "per flusso", play: "Scorri i layer", layerInfo: "Strato {{n}} · z {{z}} mm · circa {{time}} su {{total}}", layerInfoNoTime: "Strato {{n}} · z {{z}} mm", layerClock: "{{clock}} se avviato ora" },
     rail: {
       part: "Pezzo", checks: "Verifiche", print: "Stampa", files: "File", notSlicedShort: "non slicato", noObjects: "Nessun oggetto in questo file",
       notes: "Note", deleteNote: "Elimina questa nota",

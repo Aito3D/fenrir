@@ -244,10 +244,20 @@ export function estimateFilamentCost(
   return filamentLineCost(weightG, matched.filament, defaults);
 }
 
-/** Suggested sale price for an archived print: the calculator's machine-cost
- *  pricing (total TTC) with all labor inputs at zero, treating the whole job
- *  as one unit since filament_used_grams covers the entire job. Returns null
- *  when the archive or the calculator configuration lacks the required data. */
+/** The job as the calculator's fields hold it: grams to one decimal and the time to
+ *  the minute (a print shorter than half a minute still counts as one). The card's
+ *  estimate and the prefill URL both go through here, so "Open in calculator" lands
+ *  on the number the card showed. */
+export function calculatorJobInputs(source: ArchivePricingSource): { weightG: number; timeH: number } {
+  const seconds = source.actual_time_seconds || source.print_time_seconds || 0;
+  const minutes = seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : 0;
+  return { weightG: Math.round((source.filament_used_grams ?? 0) * 10) / 10, timeH: minutes / 60 };
+}
+
+/** Suggested sale price for a print: what the calculator would say for the same
+ *  job with all labor inputs at zero, treating the whole job as one unit since
+ *  filament_used_grams covers the entire job. Returns null when the archive or
+ *  the calculator configuration lacks the required data. */
 export function estimateArchiveSalePrice(
   archive: ArchivePricingSource,
   filaments: NamedCalculatorFilament[],
@@ -256,8 +266,7 @@ export function estimateArchiveSalePrice(
   printerHints: Array<string | null | undefined> = [],
 ): ArchivePriceEstimate | null {
   if (!defaults || printers.length === 0) return null;
-  const weightG = archive.filament_used_grams ?? 0;
-  const timeH = (archive.actual_time_seconds || archive.print_time_seconds || 0) / 3600;
+  const { weightG, timeH } = calculatorJobInputs(archive);
   if (weightG <= 0 || timeH <= 0) return null;
 
   const matched = matchCalculatorFilament(archive.filament_type, filaments, archive.filament_vendor);
@@ -284,9 +293,7 @@ export function estimateArchiveSalePrice(
     },
     matched.filament,
     printer,
-    // Archive estimates are machine-cost pricing — the per-job base fee
-    // (quotation time) doesn't belong in an after-the-fact suggestion.
-    { ...defaults, base_fee_flat: 0 },
+    defaults,
   );
 
   return {
@@ -327,10 +334,11 @@ export function calculatorPrefillUrl(
   calcConfig: CalcConfig | null,
   printerHints: Array<string | null | undefined> = [],
 ): string {
-  const timeH = (source.actual_time_seconds || source.print_time_seconds || 0) / 3600;
+  const { weightG, timeH } = calculatorJobInputs(source);
   const params = new URLSearchParams({
-    weight: (source.filament_used_grams ?? 0).toFixed(1),
-    time: timeH.toFixed(2),
+    weight: weightG.toFixed(1),
+    // Four decimals keep the minute exact once the calculator splits it into fields.
+    time: timeH.toFixed(4),
     quantity: '1',
     // Slicer estimates can be corrected by the calculator's time-accuracy
     // chip; measured durations need no correction.

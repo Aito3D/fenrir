@@ -6694,7 +6694,7 @@ errors: {
       copyLink: "Kopiera en länk till denna vy", linkCopied: "Länk kopierad", hideDetails: "Dölj detaljerna (I)", showDetails: "Visa detaljerna (I)", cleanView: "Ren vy utan reglage (C)", isoView: "Isometrisk vy",
     },
     section: { title: "Snitt", bottom: "botten", top: "topp" },
-    toolpath: { colour: "Färg", byFeature: "efter funktion", byFilament: "efter filament", play: "Spela upp lagren", layerInfo: "Lager {{n}} · z {{z}} mm · cirka {{time}} av {{total}}", layerInfoNoTime: "Lager {{n}} · z {{z}} mm", layerClock: "{{clock}} om start nu" },
+    toolpath: { colour: "Färg", byFeature: "efter funktion", byFilament: "efter filament", bySpeed: "efter hastighet", byFlow: "efter flöde", play: "Spela upp lagren", layerInfo: "Lager {{n}} · z {{z}} mm · cirka {{time}} av {{total}}", layerInfoNoTime: "Lager {{n}} · z {{z}} mm", layerClock: "{{clock}} om start nu" },
     rail: {
       part: "Del", checks: "Kontroller", print: "Utskrift", files: "Filer", notSlicedShort: "inte slicad", noObjects: "Inget objekt i denna fil",
       notes: "Anteckningar", deleteNote: "Ta bort denna anteckning",

@@ -102,7 +102,18 @@ export interface ToolpathLayer {
   widths: number[];
   /** Remaining print time at the end of the layer, from the slicer's `M73 R` marks; null without them. */
   remainingSec: number | null;
+  /** Per record, the move's speed in mm/s (0 for a travel). */
+  speeds: number[];
+  /** Per record, the volumetric flow in mm³/s (0 for a travel). */
+  flows: number[];
 }
+
+/** The continuous quantities a toolpath can be coloured by. */
+export type ToolpathMetric = 'speed' | 'flow';
+/** Steps in a metric's colour ramp, matching the renderer's 11-colour heat map. */
+export const METRIC_STEPS = 11;
+/** Nozzle feed when the file does not say: 1.75 mm filament. */
+const DEFAULT_FILAMENT_DIAMETER = 1.75;
 
 export interface ParsedToolpath {
   layers: ToolpathLayer[];
@@ -128,6 +139,8 @@ class PathBuffer {
   private data = new Float32Array(1024 * RECORD_STRIDE);
   private count = 0;
   readonly widths: number[] = [];
+  readonly speeds: number[] = [];
+  readonly flows: number[] = [];
 
   push(
     x0: number, y0: number, z0: number,
@@ -135,6 +148,8 @@ class PathBuffer {
     x1: number, y1: number, z1: number,
     width: number,
     tool: number,
+    speed = 0,
+    flow = 0,
   ): void {
     if ((this.count + 1) * RECORD_STRIDE > this.data.length) {
       const grown = new Float32Array(this.data.length * 2);
@@ -155,6 +170,8 @@ class PathBuffer {
     this.data[o + 7] = tool;
     this.count += 1;
     this.widths.push(width);
+    this.speeds.push(speed);
+    this.flows.push(flow);
   }
 
   get length(): number {
@@ -211,6 +228,9 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
   // file's widths range from a 0.09 gap fill to a 1.0 purge line, and taking
   // the max made the fallback wildly too fat.
   const widthTally = new Map<number, number>();
+  // Feed rate in mm/min, as F leaves it: it persists until the next F.
+  let feed = 0;
+  let filamentArea = Math.PI * (DEFAULT_FILAMENT_DIAMETER / 2) ** 2;
   let segmentCount = 0;
   let travelCount = 0;
 
@@ -239,7 +259,7 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
 
   const flushLayer = () => {
     if (current.length === 0) return;
-    layers.push({ z: currentZ, paths: current.toFloat32Array(), widths: current.widths, remainingSec });
+    layers.push({ z: currentZ, paths: current.toFloat32Array(), widths: current.widths, remainingSec, speeds: current.speeds, flows: current.flows });
     current = new PathBuffer();
     layerHasExtrusion = false;
     if (pendingZ !== null) {
@@ -250,9 +270,11 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
 
   /**
    * Record one straight run from the current position, updating bounds. Shared
-   * by linear moves and by each chord an arc is flattened into.
+   * by linear moves and by each chord an arc is flattened into. `ePerMm` is the
+   * filament fed per millimetre of travel over the whole move, so an arc's
+   * chords all carry the same flow.
    */
-  const emit = (nx: number, ny: number, nz: number, extruding: boolean) => {
+  const emit = (nx: number, ny: number, nz: number, extruding: boolean, ePerMm = 0) => {
     if (extruding) {
       if (!sawLayerMarker && layerHasExtrusion && nz !== currentZ) flushLayer();
       if (!layerHasExtrusion) {
@@ -267,7 +289,8 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
         return;
       }
 
-      current.push(x, y, z, feature, nx, ny, nz, width, tool);
+      const speed = feed / 60;
+      current.push(x, y, z, feature, nx, ny, nz, width, tool, speed, ePerMm * filamentArea * speed);
       segmentCount += 1;
       if (nx < minX) minX = nx;
       if (ny < minY) minY = ny;
@@ -304,6 +327,10 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
 
       if (key === 'FEATURE' || key === 'TYPE') {
         feature = FEATURE_BY_COMMENT[value.toLowerCase()] ?? ToolpathType.wall;
+      } else if (key.startsWith('FILAMENT_DIAMETER')) {
+        // Header line "; filament_diameter = 1.75" (Bambu lists one per slot: take the first).
+        const parsed = Number.parseFloat(key.slice(key.indexOf('=') + 1));
+        if (Number.isFinite(parsed) && parsed > 0) filamentArea = Math.PI * (parsed / 2) ** 2;
       } else if (key === 'LINE_WIDTH' || key === 'WIDTH') {
         const parsed = Number.parseFloat(value);
         if (Number.isFinite(parsed) && parsed > 0) {
@@ -360,6 +387,8 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
     const ny = readAxis(line, 'Y') ?? y;
     const nz = readAxis(line, 'Z') ?? z;
     const rawE = readAxis(line, 'E');
+    const rawF = readAxis(line, 'F');
+    if (rawF !== undefined && rawF > 0) feed = rawF;
 
     let extruded = 0;
     if (rawE !== undefined) {
@@ -404,6 +433,8 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
         const maxStep = 2 * Math.acos(Math.max(-1, Math.min(1, 1 - ARC_TOLERANCE_MM / radius)));
         const steps = Math.max(1, Math.min(ARC_MAX_CHORDS, Math.ceil(Math.abs(sweep) / Math.max(maxStep, 1e-3))));
 
+        const arcLength = Math.hypot(Math.abs(sweep) * radius, nz - z);
+        const ePerMm = extruding && arcLength > 0 ? extruded / arcLength : 0;
         for (let step = 1; step <= steps; step += 1) {
           const fraction = step / steps;
           const angle = startAngle + sweep * fraction;
@@ -412,6 +443,7 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
             cy + radius * Math.sin(angle),
             z + (nz - z) * fraction,
             extruding,
+            ePerMm,
           );
         }
         continue;
@@ -420,7 +452,10 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
       // move rather than dropping the geometry.
     }
 
-    if (nx !== x || ny !== y || nz !== z) emit(nx, ny, nz, extruding);
+    if (nx !== x || ny !== y || nz !== z) {
+      const length = Math.hypot(nx - x, ny - y, nz - z);
+      emit(nx, ny, nz, extruding, extruding && length > 0 ? extruded / length : 0);
+    }
   }
 
   flushLayer();
@@ -480,11 +515,54 @@ export function filterLayersByType(layers: ToolpathLayer[], hidden: ReadonlySet<
         layer.paths[i + 4], layer.paths[i + 5], layer.paths[i + 6],
         layer.widths[i / RECORD_STRIDE] ?? 0,
         layer.paths[i + 7],
+        layer.speeds[i / RECORD_STRIDE] ?? 0,
+        layer.flows[i / RECORD_STRIDE] ?? 0,
       );
     }
     // A layer emptied by the filter is still a layer: dropping it would
     // renumber every layer above it and make the range slider lie.
-    out.push({ ...layer, paths: kept.toFloat32Array(), widths: kept.widths });
+    out.push({ ...layer, paths: kept.toFloat32Array(), widths: kept.widths, speeds: kept.speeds, flows: kept.flows });
   }
   return out;
+}
+
+/** Lowest and highest value of a metric over the extruding records, or null when there are none. */
+export function metricRange(layers: ToolpathLayer[], metric: ToolpathMetric): { min: number; max: number } | null {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const layer of layers) {
+    const values = metric === 'speed' ? layer.speeds : layer.flows;
+    for (let i = 0; i < values.length; i += 1) {
+      if (layer.paths[i * RECORD_STRIDE + 3] === ToolpathType.travel) continue;
+      const v = values[i];
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+  }
+  return min <= max ? { min, max } : null;
+}
+
+/** The legend's values, highest first, one per colour step. */
+export function metricSteps(range: { min: number; max: number }, steps = METRIC_STEPS): number[] {
+  return Array.from({ length: steps }, (_, i) => range.max - ((range.max - range.min) * i) / (steps - 1));
+}
+
+/**
+ * Re-key a parsed toolpath so each record's *type* is its colour step for a
+ * metric (1..METRIC_STEPS; 0 stays a travel), the same trick as
+ * `layersByFilament`: the renderer colours by type, so no second mesh format
+ * is needed. A flat range puts everything on the first step.
+ */
+export function layersByMetric(layers: ToolpathLayer[], metric: ToolpathMetric, range: { min: number; max: number }, steps = METRIC_STEPS): ToolpathLayer[] {
+  const span = range.max - range.min;
+  return layers.map((layer) => {
+    const paths = layer.paths.slice();
+    const values = metric === 'speed' ? layer.speeds : layer.flows;
+    for (let i = 0; i < paths.length; i += RECORD_STRIDE) {
+      if (paths[i + 3] === ToolpathType.travel) continue;
+      const share = span > 0 ? (values[i / RECORD_STRIDE] - range.min) / span : 0;
+      paths[i + 3] = 1 + Math.round(Math.min(1, Math.max(0, share)) * (steps - 1));
+    }
+    return { ...layer, paths };
+  });
 }

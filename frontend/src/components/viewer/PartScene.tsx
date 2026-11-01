@@ -10,14 +10,15 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { getAuthToken } from '../../api/client';
 import { buildStepGroup, createGeometryFromMesh, disposeGroup, parse3MF, parseStepInWorker } from '../../lib/meshLoaders';
 import type { Parsed3MFData } from '../../lib/meshLoaders';
-import { filterLayersByType, layersByFilament, parseGcodeToolpath } from '../../lib/gcodeToolpath';
-import type { ParsedToolpath } from '../../lib/gcodeToolpath';
-import { buildSegmentData, computeColors, makeToolpath } from '../../lib/vendor/toolpathRenderer.js';
+import { filterLayersByType, layersByFilament, layersByMetric, metricRange, parseGcodeToolpath } from '../../lib/gcodeToolpath';
+import type { ParsedToolpath, ToolpathMetric } from '../../lib/gcodeToolpath';
+import { DEFAULT_RANGES_COLORS, buildSegmentData, computeColors, makeToolpath } from '../../lib/vendor/toolpathRenderer.js';
 import { clearThinWalls, measureThinWalls, overhangShare } from './partAnalysis';
 import type { GcodeWorkerRequest, GcodeWorkerResponse } from '../../workers/gcodeParse.worker';
 import type { RenderPrefs, SceneView, VisualStyle } from './viewerLink';
 import type { ToolpathHandle } from '../../lib/vendor/toolpathRenderer.js';
 import type { BuildVolume } from './printerBeds';
+import { createSourceStatus } from './sourceStatus';
 
 /**
  * The part viewer's one WebGL scene, shared by the Model and Toolpath tabs so the camera, the
@@ -56,7 +57,13 @@ export interface ToolpathStats {
   remainingPerLayer: Array<number | null>;
   /** Extruding segments per layer: the fallback weight when the file carries no progress marks. */
   segmentsPerLayer: number[];
+  /** Extremes of the extruding moves' speed (mm/s) and volumetric flow (mm³/s) over the whole file; null without extrusion. */
+  speedRange: { min: number; max: number } | null;
+  flowRange: { min: number; max: number } | null;
 }
+
+/** How the toolpath is coloured: by feature, by filament, or on a heat ramp of a metric. */
+export type ToolpathColorMode = 'feature' | 'filament' | ToolpathMetric;
 
 export interface AnalysisState {
   overhang: { on: boolean; deg: number };
@@ -95,7 +102,7 @@ export interface PartSceneProps {
   objectNames: string[];
   layerRange: [number, number];
   hiddenFeatures: ReadonlySet<number>;
-  colorMode: 'feature' | 'filament';
+  colorMode: ToolpathColorMode;
   hoverIndex: number | null;
   isolatedIndex: number | null;
   tool: 'none' | 'measure' | 'pin';
@@ -384,6 +391,8 @@ export const PartScene = forwardRef<PartSceneHandle, PartSceneProps>(function Pa
   // Latest callbacks, read from effects and the frame loop without re-running them.
   const cb = useRef(props);
   cb.current = props;
+  // Loading status per source; the overlay follows the tab on screen (see sourceStatus.ts).
+  const statusBook = useRef(createSourceStatus<ViewerStatus>({ loading: false, error: null }, (status) => cb.current.onStatus(status), () => cb.current.tab));
 
   // Everything three.js lives in refs: a React render per frame would be pointless work.
   const st = useRef<{
@@ -870,13 +879,13 @@ export const PartScene = forwardRef<PartSceneHandle, PartSceneProps>(function Pa
       rebuildModel();
       return;
     }
-    cb.current.onStatus({ loading: true, error: null, stage: 'download', progress: null });
+    statusBook.current.set('model', { loading: true, error: null, stage: 'download', progress: null });
     const type = model.fileType.toLowerCase();
     const load = async () => {
       const bytes = await fetchBytes(model.url, (share) => {
-        if (generation === modelGeneration.current) cb.current.onStatus({ loading: true, error: null, stage: 'download', progress: share });
+        if (generation === modelGeneration.current) statusBook.current.set('model', { loading: true, error: null, stage: 'download', progress: share });
       });
-      if (generation === modelGeneration.current) cb.current.onStatus({ loading: true, error: null, stage: 'prepare', progress: 1 });
+      if (generation === modelGeneration.current) statusBook.current.set('model', { loading: true, error: null, stage: 'prepare', progress: 1 });
       await new Promise((r) => setTimeout(r, 0)); // let the overlay paint before the parse blocks
       const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
       if (type === 'stl') {
@@ -901,12 +910,12 @@ export const PartScene = forwardRef<PartSceneHandle, PartSceneProps>(function Pa
         if (generation !== modelGeneration.current) return;
         parsedModel.current = parsed;
         rebuildModel();
-        cb.current.onStatus({ loading: false, error: null });
+        statusBook.current.set('model', { loading: false, error: null });
       })
       .catch((err: Error) => {
         if (generation !== modelGeneration.current) return;
         const code = err.message === 'noMeshes' ? 'noMeshes' : err.message === 'unsupported' ? 'unsupported' : 'load';
-        cb.current.onStatus({ loading: false, error: code });
+        statusBook.current.set('model', { loading: false, error: code });
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the plate and colours rebuild below without a refetch
   }, [model?.url, model?.fileType]);
@@ -1037,11 +1046,12 @@ export const PartScene = forwardRef<PartSceneHandle, PartSceneProps>(function Pa
     rebuildToolpath();
     if (!toolpath) {
       cb.current.onToolpathStats(null);
+      statusBook.current.set('toolpath', { loading: false, error: null });
       return;
     }
     const url = selectedPlateId != null ? `${toolpath.url}${toolpath.url.includes('?') ? '&' : '?'}plate=${selectedPlateId}` : toolpath.url;
     const report = (status: ViewerStatus) => {
-      if (cb.current.tab === 'toolpath' && generation === toolpathGeneration.current) cb.current.onStatus(status);
+      if (generation === toolpathGeneration.current) statusBook.current.set('toolpath', status);
     };
     report({ loading: true, error: null, stage: 'download', progress: null });
     fetchBytes(url, (share) => report({ loading: true, error: null, stage: 'download', progress: share }))
@@ -1056,12 +1066,12 @@ export const PartScene = forwardRef<PartSceneHandle, PartSceneProps>(function Pa
         report({ loading: true, error: null, stage: 'prepare', progress: 1 });
         parsedToolpath.current = parsed;
         rebuildToolpath();
-        if (tab === 'toolpath') cb.current.onStatus({ loading: false, error: null });
+        report({ loading: false, error: null });
       })
       .catch(() => {
         if (generation !== toolpathGeneration.current) return;
         cb.current.onToolpathStats(null);
-        if (tab === 'toolpath') cb.current.onStatus({ loading: false, error: 'load' });
+        report({ loading: false, error: 'load' });
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the feature filter rebuilds below without a refetch
   }, [toolpath?.url, selectedPlateId]);
@@ -1080,8 +1090,14 @@ export const PartScene = forwardRef<PartSceneHandle, PartSceneProps>(function Pa
     }
     const parsed = parsedToolpath.current;
     if (!parsed || parsed.layers.length === 0) return;
-    const keyed = colorMode === 'filament' ? layersByFilament(parsed.layers) : parsed.layers;
-    const data = buildSegmentData(filterLayersByType(keyed, hiddenFeatures), parsed.defaultWidth);
+    // A metric view hides by *feature* first and re-keys the survivors to colour steps; the
+    // filament view re-keys first (its legend hides by filament index).
+    const metric = colorMode === 'speed' || colorMode === 'flow' ? colorMode : null;
+    const metricSpan = metric ? metricRange(parsed.layers, metric) : null;
+    const keyed = metric
+      ? layersByMetric(filterLayersByType(parsed.layers, hiddenFeatures), metric, metricSpan ?? { min: 0, max: 0 })
+      : filterLayersByType(colorMode === 'filament' ? layersByFilament(parsed.layers) : parsed.layers, hiddenFeatures);
+    const data = buildSegmentData(keyed, parsed.defaultWidth);
     const handle = makeToolpath(THREE, data);
     const group = new THREE.Group();
     group.rotation.x = -Math.PI / 2;
@@ -1103,6 +1119,8 @@ export const PartScene = forwardRef<PartSceneHandle, PartSceneProps>(function Pa
       zPerLayer: parsed.layers.map((l) => l.z),
       remainingPerLayer: parsed.layers.map((l) => l.remainingSec),
       segmentsPerLayer: parsed.layers.map((l) => l.paths.length / 8),
+      speedRange: metricRange(parsed.layers, 'speed'),
+      flowRange: metricRange(parsed.layers, 'flow'),
     });
     if (tab === 'toolpath' && frameToolpathNext.current) frameView(s.viewDir);
     frameToolpathNext.current = false;
@@ -1125,6 +1143,12 @@ export const PartScene = forwardRef<PartSceneHandle, PartSceneProps>(function Pa
         const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
         colors[v * 4] = Number.parseInt(full.slice(0, 6), 16) || 0x00ae42;
       }
+      s.toolpathHandle.setColors(colors);
+    } else if (colorMode === 'speed' || colorMode === 'flow') {
+      // Type slot = 1-based colour step (layersByMetric); the ramp is the renderer's own.
+      const ramp = DEFAULT_RANGES_COLORS.map(([r, g, b]) => (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255));
+      const colors = new Float32Array(meta.nV * 4);
+      for (let v = 0; v < meta.nV; v += 1) colors[v * 4] = ramp[Math.min(ramp.length - 1, Math.max(0, meta.vType[v] - 1))];
       s.toolpathHandle.setColors(colors);
     } else {
       const data = buildSegmentData(filterLayersByType(parsedToolpath.current?.layers ?? [], hiddenFeatures), parsedToolpath.current?.defaultWidth ?? 0.4);
@@ -1156,6 +1180,7 @@ export const PartScene = forwardRef<PartSceneHandle, PartSceneProps>(function Pa
     s.pinDots.visible = tab === 'model';
     if (s.measureLine) s.measureLine.visible = tab === 'model';
     if (s.toolpathGroup) s.toolpathGroup.visible = tab === 'toolpath';
+    statusBook.current.show(tab);
     frameView(s.viewDir);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 
-import { parseGcodeToolpath, layersByFilament, filterLayersByType, ToolpathType } from '../../lib/gcodeToolpath';
+import { parseGcodeToolpath, layersByFilament, layersByMetric, filterLayersByType, metricRange, metricSteps, METRIC_STEPS, ToolpathType } from '../../lib/gcodeToolpath';
 // @ts-expect-error -- vendored build output; typed by its sibling .d.ts, which
 // vitest's resolver does not pick up for a bare .js import.
 import { buildSegmentData, makeToolpath, TYPE_COLOR } from '../../lib/vendor/toolpathRenderer.js';
@@ -463,5 +463,94 @@ G1 X40 Y10 E0.5
   it('returns the input untouched when nothing is hidden', () => {
     const parsed = parseGcodeToolpath(GCODE);
     expect(filterLayersByType(parsed.layers, new Set())).toBe(parsed.layers);
+  });
+});
+
+describe('speed and flow per segment', () => {
+  // 1.75 mm filament: a section of 2.405 mm². Speeds are F/60.
+  const AREA = Math.PI * 0.875 * 0.875;
+  const FLOW_GCODE = `
+; filament_diameter = 1.75
+M83
+G1 Z0.2 F600
+;TYPE:Outer wall
+G1 X0 Y0 F1200
+G1 X10 Y0 E0.5
+G1 X10 Y10 E0.25 F3000
+G1 X20 Y20 F9000
+G1 X30 Y20 E1.0
+`;
+  const parsed = parseGcodeToolpath(FLOW_GCODE);
+  const layer = parsed.layers[0];
+  const types = Array.from({ length: layer.paths.length / 8 }, (_, i) => layer.paths[i * 8 + 3]);
+
+  it('keeps one speed and one flow per record, zero for travels', () => {
+    expect(layer.speeds.length).toBe(layer.paths.length / 8);
+    expect(layer.flows.length).toBe(layer.paths.length / 8);
+    types.forEach((type, i) => {
+      if (type === ToolpathType.travel) {
+        expect(layer.speeds[i]).toBe(0);
+        expect(layer.flows[i]).toBe(0);
+      }
+    });
+  });
+
+  it('reads the speed from F (mm/min → mm/s), which persists across moves', () => {
+    const extruding = types.map((type, i) => (type === ToolpathType.travel ? null : layer.speeds[i])).filter((v) => v !== null);
+    expect(extruding).toEqual([20, 50, 150]);
+  });
+
+  it('derives volumetric flow from the extruded length, the filament section and the speed', () => {
+    const flows = types.map((type, i) => (type === ToolpathType.travel ? null : layer.flows[i])).filter((v) => v !== null);
+    // 0.5 mm of filament over 10 mm at 20 mm/s → 0.05 × A × 20.
+    expect(flows[0]).toBeCloseTo(0.05 * AREA * 20, 5);
+    expect(flows[1]).toBeCloseTo(0.025 * AREA * 50, 5);
+    expect(flows[2]).toBeCloseTo(0.1 * AREA * 150, 5);
+  });
+
+  it('reads the filament diameter from the header', () => {
+    const thick = parseGcodeToolpath(FLOW_GCODE.replace('1.75', '2.85'));
+    const first = thick.layers[0].flows.find((f) => f > 0);
+    expect(first).toBeCloseTo(0.05 * Math.PI * 1.425 * 1.425 * 20, 5);
+  });
+
+  it('spreads an arc\'s extrusion evenly over its chords', () => {
+    const arc = parseGcodeToolpath(`
+M83
+G1 X10 Y0 Z0.2 F1200
+G2 X-10 Y0 I-10 J0 E2
+`);
+    const l = arc.layers[0];
+    const chords = l.flows.filter((f) => f > 0);
+    expect(chords.length).toBeGreaterThan(1);
+    expect(Math.max(...chords) - Math.min(...chords)).toBeLessThan(1e-6);
+    // Half a circle of radius 10 is 31.4 mm long: 2 mm of filament spread over it at 20 mm/s.
+    expect(chords[0]).toBeCloseTo((2 / (Math.PI * 10)) * AREA * 20, 4);
+  });
+
+  it('ranges and steps over the extruding records only', () => {
+    expect(metricRange(parsed.layers, 'speed')).toEqual({ min: 20, max: 150 });
+    const steps = metricSteps({ min: 20, max: 150 });
+    expect(steps.length).toBe(METRIC_STEPS);
+    expect(steps[0]).toBe(150);
+    expect(steps[steps.length - 1]).toBe(20);
+    expect(metricRange([], 'speed')).toBeNull();
+  });
+
+  it('re-keys records to their bucket (1-based, so 0 stays a travel)', () => {
+    const keyed = layersByMetric(parsed.layers, 'speed', { min: 20, max: 150 });
+    const buckets = Array.from({ length: keyed[0].paths.length / 8 }, (_, i) => keyed[0].paths[i * 8 + 3]);
+    const extruding = buckets.filter((b, i) => types[i] !== ToolpathType.travel);
+    expect(extruding[0]).toBe(1);
+    expect(extruding[2]).toBe(METRIC_STEPS);
+    expect(buckets.filter((b, i) => types[i] === ToolpathType.travel).every((b) => b === 0)).toBe(true);
+    // A flat range puts everything in the first bucket rather than dividing by zero.
+    expect(layersByMetric(parsed.layers, 'speed', { min: 20, max: 20 })[0].paths[8 * 1 + 3]).toBe(1);
+  });
+
+  it('filtering keeps each record paired with its speed and flow', () => {
+    const kept = filterLayersByType(parsed.layers, new Set([ToolpathType.travel]))[0];
+    expect(kept.speeds).toEqual([20, 50, 150]);
+    expect(kept.flows.every((f) => f > 0)).toBe(true);
   });
 });

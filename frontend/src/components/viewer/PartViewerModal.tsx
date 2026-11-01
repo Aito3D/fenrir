@@ -14,8 +14,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { useCalcConfig } from '../../hooks/useCalcConfig';
 import { usePreviewFullscreen } from '../../hooks/usePreviewFullscreen';
 import { useUiSettings } from '../../hooks/useUiSettings';
-import { ToolpathType } from '../../lib/gcodeToolpath';
-import { TYPE_COLOR } from '../../lib/vendor/toolpathRenderer.js';
+import { ToolpathType, metricSteps } from '../../lib/gcodeToolpath';
+import { DEFAULT_RANGES_COLORS, TYPE_COLOR } from '../../lib/vendor/toolpathRenderer.js';
 import type { ArchivePlatesResponse, LibraryFilePlatesResponse, PlateMetadata } from '../../types/plates';
 import { estimateArchiveSalePrice } from '../../utils/archivePricing';
 import { isApiSliceableFileType, isSliceableFileType, openInSlicer, resolveDesktopSlicer } from '../../utils/slicer';
@@ -28,7 +28,7 @@ import { focusRingCls } from '../formStyles';
 import { chipBase, isSourceFilename, printProfileLine, STATUS_CHIP_CLS, STATUS_LABEL_KEYS } from '../projects/files/filesUi';
 import { LayerRange } from './LayerRange';
 import { PartScene, type ViewerStatus } from './PartScene';
-import type { AnalysisResult, AnalysisState, PartBounds, PartObject, PartSceneHandle, Pin, SectionState, ToolpathStats } from './PartScene';
+import type { AnalysisResult, AnalysisState, PartBounds, PartObject, PartSceneHandle, Pin, SectionState, ToolpathColorMode, ToolpathStats } from './PartScene';
 import { ViewCube } from './ViewCube';
 import { ViewerRail } from './ViewerRail';
 import type { RailPrint } from './ViewerRail';
@@ -81,6 +81,13 @@ const LEGEND: Array<{ type: number; key: string }> = [
   { type: ToolpathType.primeTower, key: 'primeTower' },
 ];
 const cssColor = (rgb: number[] | undefined) => (rgb ? `rgb(${rgb.map((c) => Math.round(c * 255)).join(',')})` : '#888');
+/** The speed / flow legend: one row per colour step, highest value first, on the renderer's ramp. */
+function metricLegend(range: { min: number; max: number } | null, unit: string): Array<{ value: string; color: string }> {
+  if (!range) return [];
+  const steps = metricSteps(range);
+  const digits = unit === 'mm/s' ? 0 : 1;
+  return steps.map((value, i) => ({ value: `${value.toFixed(digits)} ${unit}`, color: cssColor(DEFAULT_RANGES_COLORS[steps.length - 1 - i]) }));
+}
 const VIEWS: Record<string, [number, number, number]> = { iso: [1, 0.85, 1], top: [0, 1, 0], front: [0, 0, 1], right: [1, 0, 0] };
 const STYLES: VisualStyle[] = ['shaded', 'edges', 'hiddenEdges', 'wireframe', 'polygons'];
 const OVERHANG_DEGS = [30, 45, 60];
@@ -191,7 +198,7 @@ export function PartViewerModal({ subject, title, onClose, onPrint, onOpenInSlic
   const [toolpathStats, setToolpathStats] = useState<ToolpathStats | null>(null);
   const [layerRange, setLayerRange] = useState<[number, number]>([0, 0]);
   const [hiddenFeatures, setHiddenFeatures] = useState<ReadonlySet<number>>(new Set(initialState?.hidden ?? []));
-  const [colorMode, setColorMode] = useState<'feature' | 'filament'>('feature');
+  const [colorMode, setColorMode] = useState<ToolpathColorMode>('feature');
   const [playing, setPlaying] = useState(false);
   const [measure, setMeasure] = useState<number | null>(null);
   // Pins live on the revision (projects only); elsewhere there is nothing to pin to.
@@ -658,10 +665,14 @@ export function PartViewerModal({ subject, title, onClose, onPrint, onOpenInSlic
                   <div className="absolute bottom-16 left-4 space-y-1 rounded-xl border border-white/10 bg-bambu-dark/80 px-3 py-2 text-[11px] text-bambu-gray backdrop-blur-sm" data-testid="toolpath-legend">
                     <div className="mb-1 flex items-center gap-3">
                       <span className="font-medium text-white">{t('partViewer.toolpath.colour')}</span>
-                      <button type="button" onClick={() => setColorMode((m) => (m === 'feature' ? 'filament' : 'feature'))}
-                        className={`${chipBase} text-[11px] text-bambu-gray hover:text-white ${focusRingCls}`}>
-                        {colorMode === 'feature' ? t('partViewer.toolpath.byFeature') : t('partViewer.toolpath.byFilament')}
-                      </button>
+                      <select value={colorMode} onChange={(e) => setColorMode(e.target.value as ToolpathColorMode)} aria-label={t('partViewer.toolpath.colour')}
+                        data-testid="toolpath-colour-mode"
+                        className={`rounded-md border border-bambu-dark-tertiary bg-bambu-dark px-1.5 py-0.5 text-[11px] text-bambu-gray-light ${focusRingCls}`}>
+                        <option value="feature">{t('partViewer.toolpath.byFeature')}</option>
+                        <option value="filament">{t('partViewer.toolpath.byFilament')}</option>
+                        <option value="speed">{t('partViewer.toolpath.bySpeed')}</option>
+                        <option value="flow">{t('partViewer.toolpath.byFlow')}</option>
+                      </select>
                     </div>
                     {colorMode === 'feature' ? LEGEND.filter((l) => (toolpathStats.typeShares[l.type] ?? 0) > 0).map((l) => (
                       <label key={l.type} className="flex cursor-pointer items-center gap-2">
@@ -670,9 +681,14 @@ export function PartViewerModal({ subject, title, onClose, onPrint, onOpenInSlic
                         <i className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: cssColor(TYPE_COLOR[l.type]) }} />
                         {t(`gcodeViewer.feature.${l.key}`)}
                       </label>
-                    )) : railPrint.filaments.map((f) => (
+                    )) : colorMode === 'filament' ? railPrint.filaments.map((f) => (
                       <div key={f.slot} className="flex items-center gap-2"><i className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: f.color }} />{`A${f.slot} · ${f.type}`}</div>
-                    ))}
+                    )) : (
+                      // Speed / flow: the ramp's steps, hottest first, as the slicer's own legend reads.
+                      metricLegend(colorMode === 'speed' ? toolpathStats.speedRange : toolpathStats.flowRange, colorMode === 'speed' ? 'mm/s' : 'mm³/s').map(({ value, color }) => (
+                        <div key={value} className="flex items-center gap-2 tabular-nums"><i className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />{value}</div>
+                      ))
+                    )}
                     {layerInfo && <div className="mt-1 border-t border-bambu-dark-tertiary pt-1 text-white">{layerInfo}{layerClock && <span className="text-bambu-gray">{` · ${layerClock}`}</span>}</div>}
                   </div>
                 </>

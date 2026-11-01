@@ -7947,7 +7947,7 @@ export default {
       copyLink: "Bu görünüme bağlantı kopyala", linkCopied: "Bağlantı kopyalandı", hideDetails: "Ayrıntıları gizle (I)", showDetails: "Ayrıntıları göster (I)", cleanView: "Denetimsiz temiz görünüm (C)", isoView: "İzometrik görünüm",
     },
     section: { title: "Kesit", bottom: "alt", top: "üst" },
-    toolpath: { colour: "Renk", byFeature: "özelliğe göre", byFilament: "filamente göre", play: "Katmanları oynat", layerInfo: "Katman {{n}} · z {{z}} mm · yaklaşık {{time}} / {{total}}", layerInfoNoTime: "Katman {{n}} · z {{z}} mm", layerClock: "şimdi başlarsa {{clock}}" },
+    toolpath: { colour: "Renk", byFeature: "özelliğe göre", byFilament: "filamente göre", bySpeed: "hıza göre", byFlow: "akışa göre", play: "Katmanları oynat", layerInfo: "Katman {{n}} · z {{z}} mm · yaklaşık {{time}} / {{total}}", layerInfoNoTime: "Katman {{n}} · z {{z}} mm", layerClock: "şimdi başlarsa {{clock}}" },
     rail: {
       part: "Parça", checks: "Kontroller", print: "Baskı", files: "Dosyalar", notSlicedShort: "dilimlenmemiş", noObjects: "Bu dosyada nesne yok",
       notes: "Notlar", deleteNote: "Bu notu sil",

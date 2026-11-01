@@ -7970,7 +7970,7 @@ export default {
       copyLink: "複製此檢視的連結", linkCopied: "連結已複製", hideDetails: "隱藏詳細資訊 (I)", showDetails: "顯示詳細資訊 (I)", cleanView: "無控制項的純淨檢視 (C)", isoView: "等軸檢視",
     },
     section: { title: "剖面", bottom: "底", top: "頂" },
-    toolpath: { colour: "顏色", byFeature: "依類型", byFilament: "依線材", play: "播放層", layerInfo: "第 {{n}} 層 · z {{z}} mm · 約 {{time}} / {{total}}", layerInfoNoTime: "第 {{n}} 層 · z {{z}} mm", layerClock: "若現在開始，{{clock}}" },
+    toolpath: { colour: "顏色", byFeature: "依類型", byFilament: "依線材", bySpeed: "依速度", byFlow: "依流量", play: "播放層", layerInfo: "第 {{n}} 層 · z {{z}} mm · 約 {{time}} / {{total}}", layerInfoNoTime: "第 {{n}} 層 · z {{z}} mm", layerClock: "若現在開始，{{clock}}" },
     rail: {
       part: "零件", checks: "檢查", print: "列印", files: "檔案", notSlicedShort: "未切片", noObjects: "此檔案中沒有物件",
       notes: "備註", deleteNote: "刪除此備註",

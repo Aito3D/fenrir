@@ -7707,7 +7707,7 @@ export default {
       copyLink: "Скопировать ссылку на этот вид", linkCopied: "Ссылка скопирована", hideDetails: "Скрыть подробности (I)", showDetails: "Показать подробности (I)", cleanView: "Чистый вид без элементов управления (C)", isoView: "Изометрия",
     },
     section: { title: "Сечение", bottom: "низ", top: "верх" },
-    toolpath: { colour: "Цвет", byFeature: "по типу", byFilament: "по филаменту", play: "Проиграть слои", layerInfo: "Слой {{n}} · z {{z}} мм · около {{time}} из {{total}}", layerInfoNoTime: "Слой {{n}} · z {{z}} мм", layerClock: "{{clock}}, если начать сейчас" },
+    toolpath: { colour: "Цвет", byFeature: "по типу", byFilament: "по филаменту", bySpeed: "по скорости", byFlow: "по потоку", play: "Проиграть слои", layerInfo: "Слой {{n}} · z {{z}} мм · около {{time}} из {{total}}", layerInfoNoTime: "Слой {{n}} · z {{z}} мм", layerClock: "{{clock}}, если начать сейчас" },
     rail: {
       part: "Деталь", checks: "Проверки", print: "Печать", files: "Файлы", notSlicedShort: "не нарезано", noObjects: "В этом файле нет объектов",
       notes: "Заметки", deleteNote: "Удалить эту заметку",

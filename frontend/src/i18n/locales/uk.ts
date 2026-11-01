@@ -7736,7 +7736,7 @@ export default {
       copyLink: "Скопіювати посилання на цей вид", linkCopied: "Посилання скопійовано", hideDetails: "Сховати подробиці (I)", showDetails: "Показати подробиці (I)", cleanView: "Чистий вид без елементів керування (C)", isoView: "Ізометрія",
     },
     section: { title: "Переріз", bottom: "низ", top: "верх" },
-    toolpath: { colour: "Колір", byFeature: "за типом", byFilament: "за філаментом", play: "Відтворити шари", layerInfo: "Шар {{n}} · z {{z}} мм · близько {{time}} з {{total}}", layerInfoNoTime: "Шар {{n}} · z {{z}} мм", layerClock: "{{clock}}, якщо почати зараз" },
+    toolpath: { colour: "Колір", byFeature: "за типом", byFilament: "за філаментом", bySpeed: "за швидкістю", byFlow: "за потоком", play: "Відтворити шари", layerInfo: "Шар {{n}} · z {{z}} мм · близько {{time}} з {{total}}", layerInfoNoTime: "Шар {{n}} · z {{z}} мм", layerClock: "{{clock}}, якщо почати зараз" },
     rail: {
       part: "Деталь", checks: "Перевірки", print: "Друк", files: "Файли", notSlicedShort: "не нарізано", noObjects: "У цьому файлі немає об’єктів",
       notes: "Нотатки", deleteNote: "Видалити цю нотатку",

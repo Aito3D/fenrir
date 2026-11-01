@@ -8040,7 +8040,7 @@ export default {
       copyLink: "Copy a link to this view", linkCopied: "Link copied", hideDetails: "Hide the details (I)", showDetails: "Show the details (I)", cleanView: "Clean view, no controls (C)", isoView: "Isometric view",
     },
     section: { title: "Section", bottom: "bottom", top: "top" },
-    toolpath: { colour: "Colour", byFeature: "by feature", byFilament: "by filament", play: "Play the layers", layerInfo: "Layer {{n}} · z {{z}} mm · about {{time}} of {{total}}", layerInfoNoTime: "Layer {{n}} · z {{z}} mm", layerClock: "{{clock}} if started now" },
+    toolpath: { colour: "Colour", byFeature: "by feature", byFilament: "by filament", bySpeed: "by speed", byFlow: "by flow", play: "Play the layers", layerInfo: "Layer {{n}} · z {{z}} mm · about {{time}} of {{total}}", layerInfoNoTime: "Layer {{n}} · z {{z}} mm", layerClock: "{{clock}} if started now" },
     rail: {
       part: "Part", checks: "Checks", print: "Print", files: "Files", notSlicedShort: "not sliced", noObjects: "No object in this file",
       notes: "Notes", deleteNote: "Delete this note",

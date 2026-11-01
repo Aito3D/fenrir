@@ -6696,7 +6696,7 @@ export default {
       copyLink: "Link naar deze weergave kopiëren", linkCopied: "Link gekopieerd", hideDetails: "Details verbergen (I)", showDetails: "Details tonen (I)", cleanView: "Schone weergave zonder knoppen (C)", isoView: "Isometrische weergave",
     },
     section: { title: "Doorsnede", bottom: "onder", top: "boven" },
-    toolpath: { colour: "Kleur", byFeature: "per functie", byFilament: "per filament", play: "Lagen afspelen", layerInfo: "Laag {{n}} · z {{z}} mm · ongeveer {{time}} van {{total}}", layerInfoNoTime: "Laag {{n}} · z {{z}} mm", layerClock: "{{clock}} bij start nu" },
+    toolpath: { colour: "Kleur", byFeature: "per functie", byFilament: "per filament", bySpeed: "per snelheid", byFlow: "per debiet", play: "Lagen afspelen", layerInfo: "Laag {{n}} · z {{z}} mm · ongeveer {{time}} van {{total}}", layerInfoNoTime: "Laag {{n}} · z {{z}} mm", layerClock: "{{clock}} bij start nu" },
     rail: {
       part: "Onderdeel", checks: "Controles", print: "Afdruk", files: "Bestanden", notSlicedShort: "niet gesliced", noObjects: "Geen object in dit bestand",
       notes: "Notities", deleteNote: "Deze notitie verwijderen",

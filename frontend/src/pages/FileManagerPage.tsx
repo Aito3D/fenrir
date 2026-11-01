@@ -2841,9 +2841,9 @@ export function FileManagerPage() {
   // preview does nothing.
   const openPreview = useCallback((file: LibraryFileListItem) => {
     if (!hasPermission('library:read')) return;
-    if (isSlicedLibraryFile(file)) {
-      navigate(`/gcode-viewer?library_file=${file.id}`);
-    } else if (file.file_type === '3mf' || file.file_type === 'stl' || isStepType(file.file_type)) {
+    // A sliced file opens in the same part viewer as the project cards use: its Model
+    // tab from the embedded mesh, its Toolpath tab from the G-code.
+    if (isSlicedLibraryFile(file) || file.file_type === '3mf' || file.file_type === 'stl' || isStepType(file.file_type)) {
       setViewerFile(file);
     } else if (file.file_type === 'pdf') {
       setPdfPreviewFile(file);
@@ -2852,7 +2852,7 @@ export function FileManagerPage() {
     } else if (isPreviewableImageType(file.file_type)) {
       setImagePreviewFile(file);
     }
-  }, [hasPermission, navigate]);
+  }, [hasPermission]);
 
   // Handlers
   const handleFileSelect = useCallback((id: number) => {

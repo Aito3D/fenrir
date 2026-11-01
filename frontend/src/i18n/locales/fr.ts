@@ -7971,7 +7971,7 @@ export default {
       copyLink: "Copier un lien vers cette vue", linkCopied: "Lien copié", hideDetails: "Masquer les détails (I)", showDetails: "Afficher les détails (I)", cleanView: "Vue épurée, sans commandes (C)", isoView: "Vue isométrique",
     },
     section: { title: "Coupe", bottom: "bas", top: "haut" },
-    toolpath: { colour: "Couleur", byFeature: "par fonction", byFilament: "par filament", play: "Dérouler les couches", layerInfo: "Couche {{n}} · z {{z}} mm · environ {{time}} sur {{total}}", layerInfoNoTime: "Couche {{n}} · z {{z}} mm", layerClock: "{{clock}} si lancé maintenant" },
+    toolpath: { colour: "Couleur", byFeature: "par fonction", byFilament: "par filament", bySpeed: "par vitesse", byFlow: "par débit", play: "Dérouler les couches", layerInfo: "Couche {{n}} · z {{z}} mm · environ {{time}} sur {{total}}", layerInfoNoTime: "Couche {{n}} · z {{z}} mm", layerClock: "{{clock}} si lancé maintenant" },
     rail: {
       part: "Pièce", checks: "Vérifications", print: "Impression", files: "Fichiers", notSlicedShort: "non tranché", noObjects: "Aucun objet dans ce fichier",
       notes: "Notes", deleteNote: "Supprimer cette note",

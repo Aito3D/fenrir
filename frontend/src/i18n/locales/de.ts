@@ -7983,7 +7983,7 @@ export default {
       copyLink: "Link zu dieser Ansicht kopieren", linkCopied: "Link kopiert", hideDetails: "Details ausblenden (I)", showDetails: "Details einblenden (I)", cleanView: "Reine Ansicht ohne Bedienelemente (C)", isoView: "Isometrische Ansicht",
     },
     section: { title: "Schnitt", bottom: "unten", top: "oben" },
-    toolpath: { colour: "Farbe", byFeature: "nach Funktion", byFilament: "nach Filament", play: "Schichten abspielen", layerInfo: "Schicht {{n}} · z {{z}} mm · etwa {{time}} von {{total}}", layerInfoNoTime: "Schicht {{n}} · z {{z}} mm", layerClock: "{{clock}} bei Start jetzt" },
+    toolpath: { colour: "Farbe", byFeature: "nach Funktion", byFilament: "nach Filament", bySpeed: "nach Geschwindigkeit", byFlow: "nach Fluss", play: "Schichten abspielen", layerInfo: "Schicht {{n}} · z {{z}} mm · etwa {{time}} von {{total}}", layerInfoNoTime: "Schicht {{n}} · z {{z}} mm", layerClock: "{{clock}} bei Start jetzt" },
     rail: {
       part: "Teil", checks: "Prüfungen", print: "Druck", files: "Dateien", notSlicedShort: "nicht gesliced", noObjects: "Kein Objekt in dieser Datei",
       notes: "Notizen", deleteNote: "Diese Notiz löschen",

@@ -7970,7 +7970,7 @@ export default {
       copyLink: "复制此视图的链接", linkCopied: "链接已复制", hideDetails: "隐藏详情 (I)", showDetails: "显示详情 (I)", cleanView: "无控件的纯净视图 (C)", isoView: "等轴视图",
     },
     section: { title: "剖切", bottom: "底", top: "顶" },
-    toolpath: { colour: "颜色", byFeature: "按类型", byFilament: "按耗材", play: "播放层", layerInfo: "第 {{n}} 层 · z {{z}} mm · 约 {{time}} / {{total}}", layerInfoNoTime: "第 {{n}} 层 · z {{z}} mm", layerClock: "若现在开始，{{clock}}" },
+    toolpath: { colour: "颜色", byFeature: "按类型", byFilament: "按耗材", bySpeed: "按速度", byFlow: "按流量", play: "播放层", layerInfo: "第 {{n}} 层 · z {{z}} mm · 约 {{time}} / {{total}}", layerInfoNoTime: "第 {{n}} 层 · z {{z}} mm", layerClock: "若现在开始，{{clock}}" },
     rail: {
       part: "零件", checks: "检查", print: "打印", files: "文件", notSlicedShort: "未切片", noObjects: "此文件中没有对象",
       notes: "备注", deleteNote: "删除此备注",

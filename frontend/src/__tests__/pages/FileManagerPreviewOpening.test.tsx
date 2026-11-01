@@ -135,14 +135,15 @@ describe('FileManagerPage preview opening', () => {
       expect(await screen.findByTestId('model-viewer-modal')).toHaveTextContent('bracket.stl');
     });
 
-    it('sends a sliced file to the gcode viewer route', async () => {
+    it('opens the same part viewer for a sliced file, as the project card does', async () => {
       const user = userEvent.setup();
       render(<FileManagerPage />);
       await screen.findByText('benchy.gcode.3mf');
 
       await user.dblClick(card('benchy.gcode.3mf'));
 
-      expect(mockNavigate).toHaveBeenCalledWith('/gcode-viewer?library_file=1');
+      expect(await screen.findByTestId('model-viewer-modal')).toHaveTextContent('benchy.gcode.3mf');
+      expect(mockNavigate).not.toHaveBeenCalled();
     });
 
     it('does nothing for a file with no preview', async () => {

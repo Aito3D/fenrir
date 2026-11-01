@@ -7716,7 +7716,7 @@ export default {
       copyLink: "이 보기 링크 복사", linkCopied: "링크 복사됨", hideDetails: "세부 정보 숨기기 (I)", showDetails: "세부 정보 표시 (I)", cleanView: "컨트롤 없는 보기 (C)", isoView: "등각 보기",
     },
     section: { title: "단면", bottom: "아래", top: "위" },
-    toolpath: { colour: "색상", byFeature: "기능별", byFilament: "필라멘트별", play: "레이어 재생", layerInfo: "레이어 {{n}} · z {{z}} mm · 약 {{time}} / {{total}}", layerInfoNoTime: "레이어 {{n}} · z {{z}} mm", layerClock: "지금 시작하면 {{clock}}" },
+    toolpath: { colour: "색상", byFeature: "기능별", byFilament: "필라멘트별", bySpeed: "속도별", byFlow: "유량별", play: "레이어 재생", layerInfo: "레이어 {{n}} · z {{z}} mm · 약 {{time}} / {{total}}", layerInfoNoTime: "레이어 {{n}} · z {{z}} mm", layerClock: "지금 시작하면 {{clock}}" },
     rail: {
       part: "부품", checks: "점검", print: "출력", files: "파일", notSlicedShort: "슬라이스 안 됨", noObjects: "이 파일에 오브젝트가 없습니다",
       notes: "메모", deleteNote: "이 메모 삭제",
