@@ -2659,6 +2659,13 @@ export default {
       timeline: 'Linea temporale',
       pipelines: 'Pipeline',
     },
+    mobile: {
+      tabs: 'Schede',
+      pickTab: 'Cambia scheda',
+      filters: 'Filtri',
+      location: 'Posizione',
+      view: 'Vista',
+    },
     layout: {
       flatList: 'Elenco',
       byPrinter: 'Per stampante',

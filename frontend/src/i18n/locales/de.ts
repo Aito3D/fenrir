@@ -2659,6 +2659,13 @@ export default {
       timeline: 'Zeitachse',
       pipelines: 'Druckabläufe',
     },
+    mobile: {
+      tabs: 'Reiter',
+      pickTab: 'Reiter wechseln',
+      filters: 'Filter',
+      location: 'Standort',
+      view: 'Ansicht',
+    },
     layout: {
       flatList: 'Liste',
       byPrinter: 'Nach Drucker',

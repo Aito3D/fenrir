@@ -1578,6 +1578,13 @@ export default {
       timeline: 'Tidslinje',
       pipelines: 'Pipelines',
     },
+    mobile: {
+      tabs: 'Flikar',
+      pickTab: 'Byt flik',
+      filters: 'Filter',
+      location: 'Plats',
+      view: 'Vy',
+    },
     // Layout toggle on the Queue tab — distinct from the sort dropdown
     // (those control order; these control whether items render as one flat
     // list or grouped under per-printer section headers).

@@ -2659,6 +2659,13 @@ export default {
       timeline: 'Zaman çizelgesi',
       pipelines: 'Pipeline\'lar',
     },
+    mobile: {
+      tabs: 'Sekmeler',
+      pickTab: 'Sekme değiştir',
+      filters: 'Filtreler',
+      location: 'Konum',
+      view: 'Görünüm',
+    },
     layout: {
       flatList: 'Liste',
       byPrinter: 'Yazıcıya göre',

@@ -1578,6 +1578,13 @@ export default {
       timeline: 'Tijdlijn',
       pipelines: 'Pipelines',
     },
+    mobile: {
+      tabs: 'Tabbladen',
+      pickTab: 'Tabblad wisselen',
+      filters: 'Filters',
+      location: 'Locatie',
+      view: 'Weergave',
+    },
     // Layout toggle on the Queue tab — distinct from the sort dropdown
     // (those control order; these control whether items render as one flat
     // list or grouped under per-printer section headers).

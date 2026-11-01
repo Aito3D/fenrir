@@ -2676,6 +2676,13 @@ export default {
       timeline: 'Timeline',
       pipelines: 'Pipelines',
     },
+    mobile: {
+      tabs: 'Tabs',
+      pickTab: 'Switch tab',
+      filters: 'Filters',
+      location: 'Location',
+      view: 'View',
+    },
     // Layout toggle on the Queue tab — distinct from the sort dropdown
     // (those control order; these control whether items render as one flat
     // list or grouped under per-printer section headers).

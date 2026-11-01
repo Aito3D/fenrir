@@ -2588,6 +2588,13 @@ export default {
       timeline: '타임라인',
       pipelines: '파이프라인',
     },
+    mobile: {
+      tabs: '탭',
+      pickTab: '탭 전환',
+      filters: '필터',
+      location: '위치',
+      view: '보기',
+    },
     layout: {
       flatList: '목록',
       byPrinter: '프린터별',
