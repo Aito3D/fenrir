@@ -2359,6 +2359,58 @@ describe('QueuePage', () => {
       ).toBeInTheDocument();
     });
   });
+
+  describe('phone layout', () => {
+    const realMatchMedia = window.matchMedia;
+    beforeEach(() => {
+      window.matchMedia = ((query: string) => ({
+        ...realMatchMedia(query),
+        matches: query === '(max-width: 767px)',
+      })) as typeof window.matchMedia;
+      // jsdom does no layout: the pager computes pages from clientWidth.
+      Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 390 });
+    });
+    afterEach(() => {
+      window.matchMedia = realMatchMedia;
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
+      window.history.replaceState({}, '', '/queue');
+    });
+
+    it('renders the pager instead of the desktop header and shows the queue', async () => {
+      render(<QueuePage />);
+      expect(await screen.findByTestId('queue-mobile')).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+      expect(await screen.findByText('Test Print 1')).toBeInTheDocument();
+      expect(screen.getByTestId('queue-stats-compact')).toBeInTheDocument();
+    });
+
+    it('opens on the tab the URL names', async () => {
+      window.history.replaceState({}, '', '/queue?tab=history');
+      render(<QueuePage />);
+      await screen.findByTestId('queue-mobile');
+      expect(screen.getByRole('button', { name: /^History.*Switch tab/ })).toBeInTheDocument();
+      expect(await screen.findByText('Completed Print')).toBeInTheDocument();
+    });
+
+    it('applies a printer filter from the sheet', async () => {
+      // The printer filter is the server's: the page refetches with it.
+      const searches: string[] = [];
+      server.use(
+        http.get('/api/v1/queue/', ({ request }) => {
+          searches.push(new URL(request.url).search);
+          return HttpResponse.json(mockQueueItems);
+        }),
+      );
+      const user = userEvent.setup();
+      render(<QueuePage />);
+      await screen.findByText('Test Print 1');
+      await user.click(screen.getByRole('button', { name: 'Filters' }));
+      await user.click(screen.getByRole('button', { name: 'Unassigned' }));
+      await waitFor(() => expect(searches.some((q) => /printer(_id)?=-1/.test(q))).toBe(true));
+      expect(screen.getByTestId('queue-mobile-filter-dot')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Unassigned', pressed: true })).toBeInTheDocument();
+    });
+  });
 });
 
 describe('QueuePage: jobs held by failed prints on every printer of their model', () => {
@@ -2393,3 +2445,4 @@ describe('QueuePage: jobs held by failed prints on every printer of their model'
     await waitFor(() => expect(resumed).toBe('X1C'));
   });
 });
+
