@@ -2149,6 +2149,7 @@ export default {
       modeCumulative: 'Cumulatieve uren',
       modeMonthly: 'Uren / maand',
       modeTotal: 'Totaal vloot',
+      modeSameAge: 'Zelfde leeftijd',
       newReading: 'Nieuwe meting',
       pasteFromSheet: 'Plakken uit spreadsheet',
       paste: {
@@ -2171,7 +2172,7 @@ export default {
       retired: 'Buiten gebruik',
       perMonth: '{{hours}} u/maand',
       range: { label: 'Bereik', '3m': '3 mnd', '12m': '12 mnd', all: 'Alles' },
-      chart: { lastReading: 'laatste meting · {{date}}', noReadingsFor: 'al {{months}} maanden geen meting' },
+      chart: { lastReading: 'laatste meting · {{date}}', noReadingsFor: 'al {{months}} maanden geen meting', nextService: 'volgend onderhoud bij {{hours}} u · rond {{date}}', months: 'maanden', sameAgeHint: 'Kies twee of drie machines in de lijst om ze op dezelfde leeftijd te vergelijken.', forecast: 'prognose bij het huidige tempo' },
       lastReadingOn: 'laatste meting {{date}}',
       fleetLine: '{{machines}} machines · laatste meting {{date}}',
       flag: { slowing: 'vertraagt', stopped: 'staat stil' },

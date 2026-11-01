@@ -3221,6 +3221,7 @@ export default {
       modeCumulative: '累計工時',
       modeMonthly: '工時 / 月',
       modeTotal: '全部機器合計',
+      modeSameAge: '相同機齡',
       newReading: '新讀數',
       pasteFromSheet: '從試算表貼上',
       paste: {
@@ -3243,7 +3244,7 @@ export default {
       retired: '已退役',
       perMonth: '{{hours}} 小時/月',
       range: { label: '範圍', '3m': '3 個月', '12m': '12 個月', all: '全部' },
-      chart: { lastReading: '最近讀數 · {{date}}', noReadingsFor: '已 {{months}} 個月無讀數' },
+      chart: { lastReading: '最近讀數 · {{date}}', noReadingsFor: '已 {{months}} 個月無讀數', nextService: '下次保養於 {{hours}} 小時 · 約 {{date}}', months: '個月', sameAgeHint: '在列表中選擇兩三台機器，即可依相同機齡進行比較。', forecast: '依目前節奏預測' },
       lastReadingOn: '最近讀數 {{date}}',
       fleetLine: '{{machines}} 台設備 · 最近讀數 {{date}}',
       flag: { slowing: '減速', stopped: '已停止' },

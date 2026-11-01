@@ -3223,6 +3223,7 @@ export default {
       modeCumulative: 'Kümülatif saat',
       modeMonthly: 'Saat / ay',
       modeTotal: 'Filo toplamı',
+      modeSameAge: 'Aynı yaş',
       newReading: 'Yeni okuma',
       pasteFromSheet: 'Tablodan yapıştır',
       paste: {
@@ -3245,7 +3246,7 @@ export default {
       retired: 'Emekli',
       perMonth: '{{hours}} sa/ay',
       range: { label: 'Aralık', '3m': '3 ay', '12m': '12 ay', all: 'Tümü' },
-      chart: { lastReading: 'son okuma · {{date}}', noReadingsFor: '{{months}} aydır okuma yok' },
+      chart: { lastReading: 'son okuma · {{date}}', noReadingsFor: '{{months}} aydır okuma yok', nextService: 'sonraki bakım {{hours}} sa · yaklaşık {{date}}', months: 'ay', sameAgeHint: 'Aynı yaşta karşılaştırmak için listeden iki veya üç makine seçin.', forecast: 'mevcut hızda tahmin' },
       lastReadingOn: 'son okuma {{date}}',
       fleetLine: '{{machines}} makine · son okuma {{date}}',
       flag: { slowing: 'yavaşlıyor', stopped: 'durdu' },

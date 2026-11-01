@@ -3221,6 +3221,7 @@ export default {
       modeCumulative: 'Heures cumulées',
       modeMonthly: 'Heures / mois',
       modeTotal: 'Total du parc',
+      modeSameAge: 'Même âge',
       newReading: 'Nouveau relevé',
       pasteFromSheet: 'Coller depuis le tableur',
       paste: {
@@ -3243,7 +3244,7 @@ export default {
       retired: 'Retirées',
       perMonth: '{{hours}} h/mois',
       range: { label: 'Période', '3m': '3 mois', '12m': '12 mois', all: 'Tout' },
-      chart: { lastReading: 'dernier relevé · {{date}}', noReadingsFor: 'aucun relevé depuis {{months}} mois' },
+      chart: { lastReading: 'dernier relevé · {{date}}', noReadingsFor: 'aucun relevé depuis {{months}} mois', nextService: 'prochaine révision à {{hours}} h · vers le {{date}}', months: 'mois', sameAgeHint: 'Choisissez deux ou trois machines dans la liste pour les comparer au même âge.', forecast: 'prévision au rythme actuel' },
       lastReadingOn: 'dernier relevé {{date}}',
       fleetLine: '{{machines}} machines · dernier relevé {{date}}',
       flag: { slowing: 'ralentit', stopped: 'à l’arrêt' },

@@ -3137,6 +3137,7 @@ export default {
       modeCumulative: '누적 시간',
       modeMonthly: '시간 / 월',
       modeTotal: '전체 합계',
+      modeSameAge: '같은 사용 기간',
       newReading: '새 기록',
       pasteFromSheet: '시트에서 붙여넣기',
       paste: {
@@ -3159,7 +3160,7 @@ export default {
       retired: '퇴역',
       perMonth: '{{hours}}시간/월',
       range: { label: '기간', '3m': '3개월', '12m': '12개월', all: '전체' },
-      chart: { lastReading: '마지막 기록 · {{date}}', noReadingsFor: '{{months}}개월간 기록 없음' },
+      chart: { lastReading: '마지막 기록 · {{date}}', noReadingsFor: '{{months}}개월간 기록 없음', nextService: '다음 정비 {{hours}}시간 · {{date}} 무렵', months: '개월', sameAgeHint: '목록에서 두세 대를 선택하면 같은 사용 기간으로 비교할 수 있습니다.', forecast: '현재 속도 기준 예측' },
       lastReadingOn: '마지막 기록 {{date}}',
       fleetLine: '{{machines}}대 · 마지막 기록 {{date}}',
       flag: { slowing: '느려짐', stopped: '멈춤' },

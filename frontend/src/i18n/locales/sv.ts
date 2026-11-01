@@ -2148,6 +2148,7 @@ export default {
       modeCumulative: 'Ackumulerade timmar',
       modeMonthly: 'Timmar / månad',
       modeTotal: 'Total för flottan',
+      modeSameAge: 'Samma ålder',
       newReading: 'Ny avläsning',
       pasteFromSheet: 'Klistra in från kalkylblad',
       paste: {
@@ -2170,7 +2171,7 @@ export default {
       retired: 'Avvecklade',
       perMonth: '{{hours}} h/månad',
       range: { label: 'Intervall', '3m': '3 mån', '12m': '12 mån', all: 'Alla' },
-      chart: { lastReading: 'senaste avläsning · {{date}}', noReadingsFor: 'inga avläsningar på {{months}} månader' },
+      chart: { lastReading: 'senaste avläsning · {{date}}', noReadingsFor: 'inga avläsningar på {{months}} månader', nextService: 'nästa service vid {{hours}} h · omkring {{date}}', months: 'månader', sameAgeHint: 'Välj två eller tre maskiner i listan för att jämföra dem vid samma ålder.', forecast: 'prognos i nuvarande takt' },
       lastReadingOn: 'senaste avläsning {{date}}',
       fleetLine: '{{machines}} maskiner · senaste avläsning {{date}}',
       flag: { slowing: 'saktar ner', stopped: 'står still' },

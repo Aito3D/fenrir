@@ -16,12 +16,13 @@ import { PasteImportModal } from './PasteImportModal';
 import { ReadingFormModal } from './ReadingFormModal';
 import { ReadingLog } from './ReadingLog';
 
-const MODES: HoursChartMode[] = ['cumulative', 'monthly', 'total'];
+const MODES: HoursChartMode[] = ['cumulative', 'monthly', 'total', 'sameAge'];
 const RANGES: HoursChartRange[] = ['3m', '12m', 'all'];
 const MODE_KEY: Record<HoursChartMode, string> = {
   cumulative: 'maintenance.hours.modeCumulative',
   monthly: 'maintenance.hours.modeMonthly',
   total: 'maintenance.hours.modeTotal',
+  sameAge: 'maintenance.hours.modeSameAge',
 };
 
 export function HoursTab() {

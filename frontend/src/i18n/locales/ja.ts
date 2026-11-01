@@ -3221,6 +3221,7 @@ export default {
       modeCumulative: '累計時間',
       modeMonthly: '時間 / 月',
       modeTotal: '全体合計',
+      modeSameAge: '同じ年数',
       newReading: '新しい記録',
       pasteFromSheet: 'シートから貼り付け',
       paste: {
@@ -3243,7 +3244,7 @@ export default {
       retired: '引退',
       perMonth: '{{hours}} 時間/月',
       range: { label: '期間', '3m': '3か月', '12m': '12か月', all: 'すべて' },
-      chart: { lastReading: '最終読み取り · {{date}}', noReadingsFor: '{{months}}か月間読み取りなし' },
+      chart: { lastReading: '最終読み取り · {{date}}', noReadingsFor: '{{months}}か月間読み取りなし', nextService: '次回整備は {{hours}} 時間 · {{date}} 頃', months: 'か月', sameAgeHint: '一覧から2〜3台を選ぶと、同じ経過期間で比較できます。', forecast: '現在のペースでの予測' },
       lastReadingOn: '最終読み取り {{date}}',
       fleetLine: '{{machines}} 台 · 最終読み取り {{date}}',
       flag: { slowing: '減速中', stopped: '停止中' },

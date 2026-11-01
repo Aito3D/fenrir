@@ -3221,6 +3221,7 @@ export default {
       modeCumulative: '累计工时',
       modeMonthly: '工时 / 月',
       modeTotal: '全部机器合计',
+      modeSameAge: '相同机龄',
       newReading: '新读数',
       pasteFromSheet: '从表格粘贴',
       paste: {
@@ -3243,7 +3244,7 @@ export default {
       retired: '已退役',
       perMonth: '{{hours}} 小时/月',
       range: { label: '范围', '3m': '3 个月', '12m': '12 个月', all: '全部' },
-      chart: { lastReading: '最近读数 · {{date}}', noReadingsFor: '已 {{months}} 个月无读数' },
+      chart: { lastReading: '最近读数 · {{date}}', noReadingsFor: '已 {{months}} 个月无读数', nextService: '下次保养于 {{hours}} 小时 · 约 {{date}}', months: '个月', sameAgeHint: '在列表中选择两三台机器，即可按相同机龄进行比较。', forecast: '按当前节奏预测' },
       lastReadingOn: '最近读数 {{date}}',
       fleetLine: '{{machines}} 台设备 · 最近读数 {{date}}',
       flag: { slowing: '减速', stopped: '已停止' },

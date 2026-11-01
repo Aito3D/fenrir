@@ -3135,6 +3135,7 @@ export default {
       modeCumulative: 'Накопленные часы',
       modeMonthly: 'Часы / месяц',
       modeTotal: 'Итого по парку',
+      modeSameAge: 'Одинаковый возраст',
       newReading: 'Новое показание',
       pasteFromSheet: 'Вставить из таблицы',
       paste: {
@@ -3157,7 +3158,7 @@ export default {
       retired: 'Выведенные',
       perMonth: '{{hours}} ч/мес.',
       range: { label: 'Период', '3m': '3 мес.', '12m': '12 мес.', all: 'Всё' },
-      chart: { lastReading: 'последнее показание · {{date}}', noReadingsFor: 'нет показаний {{months}} мес.' },
+      chart: { lastReading: 'последнее показание · {{date}}', noReadingsFor: 'нет показаний {{months}} мес.', nextService: 'следующее ТО на {{hours}} ч · около {{date}}', months: 'мес.', sameAgeHint: 'Выберите в списке две-три машины, чтобы сравнить их в одном возрасте.', forecast: 'прогноз при текущем темпе' },
       lastReadingOn: 'последнее показание {{date}}',
       fleetLine: 'Машин: {{machines}} · последнее показание {{date}}',
       flag: { slowing: 'замедляется', stopped: 'остановлена' },

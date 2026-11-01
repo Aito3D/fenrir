@@ -3246,6 +3246,7 @@ export default {
       modeCumulative: 'Cumulative hours',
       modeMonthly: 'Hours / month',
       modeTotal: 'Fleet total',
+      modeSameAge: 'Same age',
       newReading: 'New reading',
       pasteFromSheet: 'Paste from sheet',
       paste: {
@@ -3268,7 +3269,7 @@ export default {
       retired: 'Retired',
       perMonth: '{{hours}} h/month',
       range: { label: 'Range', '3m': '3 m', '12m': '12 m', all: 'All' },
-      chart: { lastReading: 'last reading · {{date}}', noReadingsFor: 'no readings for {{months}} months' },
+      chart: { lastReading: 'last reading · {{date}}', noReadingsFor: 'no readings for {{months}} months', nextService: 'next service at {{hours}} h · around {{date}}', months: 'months', sameAgeHint: 'Pick two or three machines in the list to compare them at the same age.', forecast: 'forecast at the current pace' },
       lastReadingOn: 'last reading {{date}}',
       fleetLine: '{{machines}} machines · last reading {{date}}',
       flag: { slowing: 'slowing', stopped: 'stopped' },

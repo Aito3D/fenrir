@@ -3141,6 +3141,7 @@ export default {
       modeCumulative: 'Накопичені години',
       modeMonthly: 'Години / місяць',
       modeTotal: 'Разом по парку',
+      modeSameAge: 'Однаковий вік',
       newReading: 'Нове показання',
       pasteFromSheet: 'Вставити з таблиці',
       paste: {
@@ -3163,7 +3164,7 @@ export default {
       retired: 'Виведені',
       perMonth: '{{hours}} год/міс.',
       range: { label: 'Період', '3m': '3 міс.', '12m': '12 міс.', all: 'Усе' },
-      chart: { lastReading: 'останнє показання · {{date}}', noReadingsFor: 'немає показань {{months}} міс.' },
+      chart: { lastReading: 'останнє показання · {{date}}', noReadingsFor: 'немає показань {{months}} міс.', nextService: 'наступне ТО на {{hours}} год · близько {{date}}', months: 'міс.', sameAgeHint: 'Виберіть у списку дві-три машини, щоб порівняти їх в однаковому віці.', forecast: 'прогноз за поточним темпом' },
       lastReadingOn: 'останнє показання {{date}}',
       fleetLine: 'Машин: {{machines}} · останнє показання {{date}}',
       flag: { slowing: 'сповільнюється', stopped: 'зупинена' },

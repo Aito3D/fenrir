@@ -3222,6 +3222,7 @@ export default {
       modeCumulative: 'Kumulierte Stunden',
       modeMonthly: 'Stunden / Monat',
       modeTotal: 'Gesamtflotte',
+      modeSameAge: 'Gleiches Alter',
       newReading: 'Neue Ablesung',
       pasteFromSheet: 'Aus Tabelle einfügen',
       paste: {
@@ -3244,7 +3245,7 @@ export default {
       retired: 'Ausgemustert',
       perMonth: '{{hours}} h/Monat',
       range: { label: 'Zeitraum', '3m': '3 Mon.', '12m': '12 Mon.', all: 'Alle' },
-      chart: { lastReading: 'letzte Ablesung · {{date}}', noReadingsFor: 'seit {{months}} Monaten keine Ablesung' },
+      chart: { lastReading: 'letzte Ablesung · {{date}}', noReadingsFor: 'seit {{months}} Monaten keine Ablesung', nextService: 'nächste Wartung bei {{hours}} h · etwa {{date}}', months: 'Monate', sameAgeHint: 'Wähle in der Liste zwei oder drei Maschinen, um sie im gleichen Alter zu vergleichen.', forecast: 'Prognose bei aktuellem Tempo' },
       lastReadingOn: 'letzte Ablesung {{date}}',
       fleetLine: '{{machines}} Maschinen · letzte Ablesung {{date}}',
       flag: { slowing: 'verlangsamt', stopped: 'steht still' },

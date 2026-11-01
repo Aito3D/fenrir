@@ -3221,6 +3221,7 @@ export default {
       modeCumulative: 'Ore cumulative',
       modeMonthly: 'Ore / mese',
       modeTotal: 'Totale del parco',
+      modeSameAge: 'Stessa età',
       newReading: 'Nuova lettura',
       pasteFromSheet: 'Incolla dal foglio',
       paste: {
@@ -3243,7 +3244,7 @@ export default {
       retired: 'Dismesse',
       perMonth: '{{hours}} h/mese',
       range: { label: 'Intervallo', '3m': '3 mesi', '12m': '12 mesi', all: 'Tutto' },
-      chart: { lastReading: 'ultima lettura · {{date}}', noReadingsFor: 'nessuna lettura da {{months}} mesi' },
+      chart: { lastReading: 'ultima lettura · {{date}}', noReadingsFor: 'nessuna lettura da {{months}} mesi', nextService: 'prossima manutenzione a {{hours}} h · intorno al {{date}}', months: 'mesi', sameAgeHint: 'Scegli due o tre macchine nell\'elenco per confrontarle alla stessa età.', forecast: 'previsione al ritmo attuale' },
       lastReadingOn: 'ultima lettura {{date}}',
       fleetLine: '{{machines}} macchine · ultima lettura {{date}}',
       flag: { slowing: 'rallenta', stopped: 'ferma' },

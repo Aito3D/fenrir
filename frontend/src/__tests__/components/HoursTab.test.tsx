@@ -73,6 +73,9 @@ describe('HoursTab', () => {
     expect(await screen.findByText('The current month is still in progress.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Fleet total' }));
     expect(screen.queryByText('The current month is still in progress.')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Same age' }));
+    expect(screen.getByRole('button', { name: 'Same age' })).toBeInTheDocument();
+    expect(document.querySelector('.hours-forecast')).toBeNull();
   });
 
   it('toggles a machine off and back on', async () => {
