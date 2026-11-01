@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Building2, CreditCard, Eye, GripVertical, Lock, User } from 'lucide-react';
 import { DueDateBadge } from './DueDateBadge';
@@ -100,7 +100,13 @@ const FLAG_LABEL_KEY: Record<AitoFlag, string> = {
  *  (mark-sent, mark-done, restore, hold-to-delete) opt out by stopping
  *  propagation, so their own clicks never reach the region handler. Phone,
  *  email and delete live in the detail panel, not here. */
-export function CardView({
+/** Memoised: the board re-renders on every WebSocket invalidation, keystroke
+ *  in the search box and presence update, and React Query's structural
+ *  sharing keeps an unchanged `project` referentially equal, so an unchanged
+ *  card has nothing to render. `BoardColumn` keeps its callbacks, the
+ *  `actions` element and `dragHandleProps` stable for the same reason — an
+ *  inline lambda or a fresh element there would defeat this. */
+export const CardView = memo(function CardView({
   project,
   overlay = false,
   onExpand,
@@ -659,4 +665,4 @@ export function CardView({
       </div>
     </div>
   );
-}
+});
