@@ -601,7 +601,21 @@ def check_source_within_caps(model_bytes: bytes) -> None:
         return
 
 
+class _SourceChanged(Exception):
+    """The revision's source ``.3mf`` is no longer the file the slice was made from (it was removed meanwhile)."""
+
+
 async def _slice_revision(db: AsyncSession, revision_id: int, *, user_id: int | None, job_id: int) -> dict[str, Any]:
+    """Slice the revision's source and store the result; a source removed while slicing is sliced again from
+    the revision's current source (none left: ``SOURCE_MISSING``), so its G-code never lands."""
+    while True:
+        try:
+            return await _slice_source(db, revision_id, user_id=user_id, job_id=job_id)
+        except _SourceChanged:
+            logger.info("The source of project revision %s changed while slicing; slicing it again", revision_id)
+
+
+async def _slice_source(db: AsyncSession, revision_id: int, *, user_id: int | None, job_id: int) -> dict[str, Any]:
     from backend.app.api.routes.library import resolve_slicer_api_url
     from backend.app.services.slicer_api import SlicerApiService, get_stall_timeout_seconds
     from backend.app.utils.threemf_tools import sanitize_project_settings_sentinels
@@ -653,6 +667,7 @@ async def _slice_revision(db: AsyncSession, revision_id: int, *, user_id: int | 
         result.content,
         metadata,
         slice_dispatch.owner_now(job_id, user_id),
+        source.id,
     )
 
 
@@ -672,13 +687,20 @@ def _parsed_facts(path: Path) -> dict[str, Any]:
 
 
 async def _store(
-    db: AsyncSession, revision_id: int, filename: str, content: bytes, metadata: dict, user_id: int | None
+    db: AsyncSession,
+    revision_id: int,
+    filename: str,
+    content: bytes,
+    metadata: dict,
+    user_id: int | None,
+    source_id: int | None = None,
 ) -> dict[str, Any]:
     """Write the slice into the revision folder and point the revision at it. Commits.
 
     Under the item lock, like every write into an item folder, so a rename, delete or fork
     never runs under it. A revision deleted while slicing (or during this step) gets
-    nothing: no row, no file, ``{}``."""
+    nothing: no row, no file, ``{}``. Given ``source_id`` (the file sliced), a revision whose
+    source is no longer that file gets nothing either and ``_SourceChanged`` is raised."""
 
     def already_sliced(revision: ProjectRevision) -> bool:
         return revision.slice_status == SLICE_SLICED  # someone else's slice already landed
@@ -692,7 +714,10 @@ async def _store(
         row.file_metadata = {**parsed, **metadata}
         # The source id and the waiting items' print times and filament types are read from
         # the files now, before the flush takes the write lock.
-        return await _read_outcome_facts(db, revision_id, row)
+        facts = await _read_outcome_facts(db, revision_id, row)
+        if source_id is not None and await facts.source_id(db, revision_id) != source_id:
+            raise _SourceChanged  # the commit guard removes the written file and rolls back
+        return facts
 
     async def land(revision: ProjectRevision, row: LibraryFile, facts: _OutcomeFacts) -> dict[str, Any]:
         revision.sliced_file_id = row.id
