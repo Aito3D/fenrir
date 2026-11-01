@@ -303,9 +303,12 @@ def classify_file_type(filename: str, file_path: Path | str | None = None) -> st
     return file_type
 
 
-# A day, per client: the Projects and File Manager lists render one thumbnail
-# per row and used to refetch all of them on every visit because the route
-# sent no Cache-Control. Private because the URL carries the media token.
+# Private, a day: the Projects and File Manager lists render one thumbnail
+# per row and used to refetch all of them on every navigation because the
+# route sent no Cache-Control. The URL carries the media token, which rotates
+# per boot and every 50 minutes, so in practice the cache lives as long as
+# the token does: no refetch while navigating within a session. The ETag
+# lets a client that does revalidate get a 304.
 THUMBNAIL_CACHE_CONTROL = "private, max-age=86400"
 
 

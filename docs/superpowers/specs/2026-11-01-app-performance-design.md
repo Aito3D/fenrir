@@ -246,8 +246,11 @@ Lighter to use: the two 5 s sidebar polls are gone (WebSocket events +
 60 s fallback), card halos and tile blinks animate on the compositor, an
 unrelated board re-render no longer re-renders every card (241 → 1
 component renders per tick for 20 cards in the measurement test), library
-thumbnails are cached per client for a day, and `/assets` ships brotli
-(11% smaller than gzip) to clients that accept it.
+thumbnails are cached per client for as long as their media token lives
+(the token is in the URL and rotates per boot and every 50 minutes, so the
+day-long `max-age` is really "no refetch while navigating within a
+session"; the ETag/304 path is correct but rarely reached), and `/assets`
+ships brotli (11% smaller than gzip) to clients that accept it.
 
 Not changed: the Lighthouse accessibility findings (contrast, catalog
 `listbox` children, `user-scalable=no`), the 790 KB Settings chunk and the
