@@ -68,7 +68,7 @@ async def test_compute_counts_only_completed_prints_and_applies_the_multiplier(d
     assert s["filament_kg"] == round(0.41 * m + svc.FILAMENT_KG_OFFSET, 1)  # 410 g, rounded to one decimal
     assert s["print_hours"] == round(16 * m) + svc.PRINT_HOURS_OFFSET
     assert s["print_days"] == round((16 * m + svc.PRINT_HOURS_OFFSET) / 24, 1)
-    assert s["layers"] == round(170 * m)
+    assert s["layers"] == round(170 * m) + svc.LAYERS_OFFSET
     assert s["orders"] == round(2 * m) + svc.ORDERS_OFFSET
     assert s["printers"] == 2 + svc.PRINTERS_OFFSET  # never multiplied, only offset
     assert s["since"] == svc.SINCE

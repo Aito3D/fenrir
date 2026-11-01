@@ -29,6 +29,7 @@ PRINTS_OFFSET = 10_000
 FILAMENT_KG_OFFSET = 1_000.0
 ORDERS_OFFSET = 1_000
 PRINT_HOURS_OFFSET = 50_000
+LAYERS_OFFSET = 3_200_000
 LOAD_FACTOR = 2  # the tracked fleet under-reports the shop's real machine hours
 PRINTERS_OFFSET = 3  # machines not connected to Fenrir; the load still divides by the real fleet
 CACHE_TTL = 300.0
@@ -114,7 +115,7 @@ async def compute(db: AsyncSession, now: datetime | None = None) -> dict[str, An
         "filament_kg": round(float(grams or 0) / 1000 * m + FILAMENT_KG_OFFSET, 1),
         "print_hours": round(hours),
         "print_days": round(hours / 24, 1),
-        "layers": round(int(layers or 0) * m),
+        "layers": round(int(layers or 0) * m) + LAYERS_OFFSET,
         "orders": round(orders * m) + ORDERS_OFFSET,
         "printers": printers + PRINTERS_OFFSET,
         "last_30_days": {
