@@ -9,6 +9,7 @@ rule lives in the route, this module provides the pieces.
 import asyncio
 import logging
 from datetime import date, datetime, timezone
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -41,7 +42,9 @@ def current_hours(runtime_seconds: int | None, offset_hours: float | None) -> fl
     return (runtime_seconds or 0) / 3600.0 + (offset_hours or 0.0)
 
 
-def trust_state(machine: HourMachine, last_manual_hours: float | None) -> tuple[str | None, float | None]:
+def trust_state(
+    machine: HourMachine, last_manual_hours: float | None
+) -> tuple[Literal["calibrated", "drifting", "uncalibrated"] | None, float | None]:
     """How far to trust the machine's counter: ``(state, last_drift_hours)``; ``(None, None)`` when retired."""
     if machine.retired:
         return None, None

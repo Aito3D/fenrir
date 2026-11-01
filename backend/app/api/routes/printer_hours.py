@@ -57,7 +57,7 @@ async def _machine_out(
     runtime, offset, created = printer or (0, 0.0, None)
     trust, drift = trust_state(m, manual[-1].hours if manual else None)
     next_service = None
-    if live and trust in ("calibrated", "drifting"):
+    if live and m.printer_id is not None and trust in ("calibrated", "drifting"):
         try:
             next_service = await next_service_hours(db, m.printer_id)
         except HTTPException:  # printer deleted since ensure_hour_machines
@@ -105,7 +105,12 @@ async def _overview(db: AsyncSession, today: date | None = None) -> HoursOvervie
     interval = await reading_interval_days(db)
     return HoursOverview(
         today=today,
-        machines=[await _machine_out(db, m, printers.get(m.printer_id), manual.get(m.id, [])) for m in machines],
+        machines=[
+            await _machine_out(
+                db, m, printers.get(m.printer_id) if m.printer_id is not None else None, manual.get(m.id, [])
+            )
+            for m in machines
+        ],
         readings=[HourReadingOut.model_validate(r) for r in readings],
         events=[HourEventOut.model_validate(e) for e in events],
         reading_interval_days=interval,
