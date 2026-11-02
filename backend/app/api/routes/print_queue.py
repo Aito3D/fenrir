@@ -86,6 +86,7 @@ from backend.app.utils.printer_models import (
 from backend.app.utils.threemf_tools import (
     extract_plate_metadata_from_3mf,
     extract_print_time_from_3mf,
+    is_unsliced_3mf,
 )
 
 logger = logging.getLogger(__name__)
@@ -678,6 +679,29 @@ def saved_slicer_ams_mapping(archive: PrintArchive | None, printer_id: int | Non
     return None
 
 
+def unsliced_file_message(filename: str) -> str:
+    return f"{filename} isn't sliced yet. Slice it first, then print the sliced file."
+
+
+def ensure_sliced(file_path: Path | None, filename: str) -> None:
+    """Refuse a 3MF that holds no G-code, whatever its name says (#3435).
+
+    A project saved from Studio as ``Foo.gcode.3mf`` without slicing was taken
+    for a printable file. With a cost centre it was refused for the missing
+    estimate -- "Estimated cost is required for cost center prints", which
+    says nothing about the cause -- and without one it went to the printer.
+    """
+    if file_path is not None and file_path.name.lower().endswith(".3mf") and is_unsliced_3mf(file_path):
+        raise HTTPException(400, unsliced_file_message(filename))
+
+
+def library_file_disk_path(library_file: LibraryFile) -> Path:
+    """Where a library file is on disk: rows store it relative to base_dir,
+    older ones absolute."""
+    lib_path = Path(library_file.file_path)
+    return lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+
+
 def printed_plate_of_multi_plate_file(file_path: Path | None) -> int | None:
     """The plate a dispatch of *file_path* prints when no plate is named, for
     a file with more than one sliced plate; None otherwise.
@@ -1104,6 +1128,8 @@ async def _resolve_queue_variants(
             library_file = sliced_file
             spec.library_file_id = sliced_file.id
 
+        ensure_sliced(library_file_disk_path(library_file), library_file.filename)
+
         model = resolve_variant_model(library_file, spec.target_model)
         if not model:
             raise HTTPException(
@@ -1374,8 +1400,13 @@ async def add_to_queue(
     if archive:
         file_path = settings.base_dir / archive.file_path
     elif library_file:
-        lib_path = Path(library_file.file_path)
-        file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+        file_path = library_file_disk_path(library_file)
+    # Fenrir: an item waiting on its revision's slice holds the unsliced source on purpose;
+    # the slice replaces it before any dispatch (services/project_slice.py).
+    if library_file is not None and slice_wait_revision_id is None:
+        ensure_sliced(file_path, library_file.filename)
+    elif archive is not None:
+        ensure_sliced(file_path, archive.filename)
     plate_id = data.plate_id or printed_plate_of_multi_plate_file(file_path)
     if target_model_norm:
         if file_path and file_path.exists():

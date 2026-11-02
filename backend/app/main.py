@@ -57,6 +57,7 @@ from backend.app.api.routes import (
     inbox,
     inventory,
     kprofiles,
+    label_templates,
     labels,
     library,
     library_tags,
@@ -73,6 +74,7 @@ from backend.app.api.routes import (
     notification_templates,
     notifications,
     obico,
+    octoeverywhere,
     orca_cloud,
     overlay_branding,
     pending_uploads,
@@ -160,6 +162,7 @@ from backend.app.services.notification_service import notification_service
 from backend.app.services.notify_live_activities import notify_live_activities
 from backend.app.services.notify_widgets import notify_widgets
 from backend.app.services.obico_detection import obico_detection_service
+from backend.app.services.octoeverywhere_detection import octoeverywhere_detection_service
 from backend.app.services.plug_energy import get_plug_energy as _get_plug_energy
 from backend.app.services.print_cost_estimate import plate_scoped_run_estimate as _plate_scoped_run_estimate
 from backend.app.services.print_scheduler import scheduler as print_scheduler
@@ -1503,6 +1506,7 @@ async def forget_printer(printer_id: int) -> None:
     layer_timelapse.cancel_session(printer_id)
     usage_tracker.forget_printer(printer_id)
     obico_detection_service.forget_printer(printer_id)
+    octoeverywhere_detection_service.forget_printer(printer_id)
     bambu_ftp.clear_3mf_cache(printer_id)
     await camera.forget_printer(printer_id)
     printers.clear_cover_cache(printer_id)
@@ -7056,6 +7060,8 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
         list(data.keys()),
     )
 
+    octoeverywhere_detection_service.reset_printer(printer_id)
+
     if not catch_up:
         await _print_start_housekeeping(printer_id, data, logger)
 
@@ -9637,6 +9643,8 @@ async def _close_out_print(printer_id: int, data: dict):
         logger.info("[TIMING] %s: %.3fs elapsed", section, elapsed)
 
     logger.info("[CALLBACK] on_print_complete started for printer %s", printer_id)
+
+    octoeverywhere_detection_service.reset_printer(printer_id)
 
     # A kill-switch stop sends its provider notification immediately. Keep the
     # task so the later notification path can await it and avoid a duplicate;
@@ -12848,6 +12856,7 @@ async def lifespan(app: FastAPI):
     # Start the local backup scheduler
     await local_backup_service.start_scheduler()
     await obico_detection_service.start()
+    await octoeverywhere_detection_service.start()
 
     # Start the library trash sweeper (#1008)
     await library_trash_service.start_scheduler()
@@ -12961,6 +12970,7 @@ async def lifespan(app: FastAPI):
     archive_purge_service.stop_scheduler()
     printer_hours_service.stop_scheduler()
     obico_detection_service.stop()
+    octoeverywhere_detection_service.stop()
     stop_ams_history_recording()
     stop_printer_sensor_history_recording()
     stop_runtime_tracking()
@@ -13706,6 +13716,7 @@ app.include_router(filament_profiles.router, prefix=app_settings.api_prefix)
 app.include_router(finance.router, prefix=app_settings.api_prefix)
 app.include_router(inventory.router, prefix=app_settings.api_prefix)
 app.include_router(labels.router, prefix=app_settings.api_prefix)
+app.include_router(label_templates.router, prefix=app_settings.api_prefix)
 app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
 app.include_router(overlay_branding.router, prefix=app_settings.api_prefix)
 app.include_router(cloud.router, prefix=app_settings.api_prefix)
@@ -13765,6 +13776,7 @@ app.include_router(bulk.router, prefix=app_settings.api_prefix)
 app.include_router(github_backup.router, prefix=app_settings.api_prefix)
 app.include_router(local_backup.router, prefix=app_settings.api_prefix)
 app.include_router(obico.router, prefix=app_settings.api_prefix)
+app.include_router(octoeverywhere.router, prefix=app_settings.api_prefix)
 app.include_router(metrics.router, prefix=app_settings.api_prefix)
 app.include_router(virtual_printers.router, prefix=app_settings.api_prefix)
 app.include_router(spoolbuddy.router, prefix=app_settings.api_prefix)

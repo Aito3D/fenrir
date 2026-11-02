@@ -126,7 +126,7 @@ function isAlwaysAllowedIdentical(value) {
   if (/^\d{4,}$/.test(value)) return true;              // digit-only example token, e.g. phone placeholder
   if (/^ON,\s+true,\s+1$/.test(value)) return true;     // literal example "ON, true, 1"
   // Brand / technical names that ship verbatim everywhere.
-  if (/^(Fenrir|Aito|Zoho|Zoho Books|SpoolBuddy|Bambu Lab|Bambu Studio|Bambu Studio 2\.6\+|Bambu Studio sidecar URL|OrcaSlicer|OrcaSlicer sidecar URL|MakerWorld|Manyfold|Spoolman|\(Spoolman\)|Spoolman URL|Tailscale|GitHub|GitLab|Gitea|Forgejo|Discord|MQTT|FTP|HTTPS?|JSON|YAML|RTSP|TLS|SSL|CSRF|OIDC|SSO|SSO \/ OIDC|LDAP|TOTP|2FA|MFA|API|AMS|CRC|SHA256|SHA-256|kWh|MB|GB|KB|RGBA?|HSL|RGB|UTC|ISO|UI|HTTP|HTTP Method|H2D|H2D Pro|X1C|X1E|P1S|P1P|A1|A1 Mini|H2C|N3F|N3S|PETG|PLA|ABS|PA|TPU|PEI|PA-CF|PVA|HIPS|ASA|PC|PETG-HF|G\.code|G-code|gcode|cm³|°C|°F|GCODE|SOURCE|ntfy|Notify!|Pushover|Bark|Gotify|Telegram|Webhook|Webhook URL|Home Assistant|Home Assistant URL|CallMeBot\/WhatsApp|Fenrir URL|Cool Plate|FFmpeg \(MJPEG\)|go2rtc \(WebRTC\)|Cool Plate SuperTack|Engineering Plate|High Temp Plate|Smooth PEI Plate|Smooth PEI Plate \/ High Temp Plate|Textured PEI Plate|Ext-L|Ext-R|ISO \(YYYY-MM-DD\)|Messenger|Instagram|WhatsApp|TikTok|Fiverr)$/.test(value)) return true;
+  if (/^(Fenrir|Aito|Obico|OctoEverywhere|Zoho|Zoho Books|SpoolBuddy|Bambu Lab|Bambu Studio|Bambu Studio 2\.6\+|Bambu Studio sidecar URL|OrcaSlicer|OrcaSlicer sidecar URL|MakerWorld|Manyfold|Spoolman|\(Spoolman\)|Spoolman URL|Tailscale|GitHub|GitLab|Gitea|Forgejo|Discord|MQTT|FTP|HTTPS?|JSON|YAML|RTSP|TLS|SSL|CSRF|OIDC|SSO|SSO \/ OIDC|LDAP|TOTP|2FA|MFA|API|AMS|CRC|SHA256|SHA-256|kWh|MB|GB|KB|RGBA?|HSL|RGB|UTC|ISO|UI|HTTP|HTTP Method|H2D|H2D Pro|X1C|X1E|P1S|P1P|A1|A1 Mini|H2C|N3F|N3S|PETG|PLA|ABS|PA|TPU|PEI|PA-CF|PVA|HIPS|ASA|PC|PETG-HF|G\.code|G-code|gcode|cm³|°C|°F|GCODE|SOURCE|ntfy|Notify!|Pushover|Bark|Gotify|Telegram|Webhook|Webhook URL|Home Assistant|Home Assistant URL|CallMeBot\/WhatsApp|Fenrir URL|Cool Plate|FFmpeg \(MJPEG\)|go2rtc \(WebRTC\)|Cool Plate SuperTack|Engineering Plate|High Temp Plate|Smooth PEI Plate|Smooth PEI Plate \/ High Temp Plate|Textured PEI Plate|Ext-L|Ext-R|ISO \(YYYY-MM-DD\)|Messenger|Instagram|WhatsApp|TikTok|Fiverr)$/.test(value)) return true;
   return false;
 }
 
@@ -148,6 +148,7 @@ const DE_COGNATES = [
   'Details',  // aito.panelTabDetails — "Details" is the German word too
   'Bank',  // aito.track.paymentMethods.bank — "Bank" is the German word too
   'Cyan',  // settings.accentCyan — the colour is spelled "Cyan" in German too
+  'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'Apps',  // notifications badge for messages from connected apps — same word
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the DE term too
   'Auto',  // calibrationMode_auto — German UI uses the loanword (matches BambuStudio DE)
@@ -210,6 +211,7 @@ const FR_COGNATES = [
   'terminal',  // aito.payment.channelTerminal — same word, lowercase channel form
   'Cyan',  // settings.accentCyan — « cyan » is the French name of the colour
   'Minimum',  // calculator.floorGroup — same spelling/meaning in French
+  'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'Apps',  // notifications badge for messages from connected apps — same word
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
@@ -278,6 +280,7 @@ const FR_COGNATES = [
 // Italian cognates.
 const IT_COGNATES = [
   'in {{folder}}', 'Auto ({{resolved}})',  // real words/terms in this locale
+  'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the IT term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
@@ -353,6 +356,7 @@ const PT_BR_COGNATES = [
   'manual',  // maintenance.hours.manual — same word in this locale
   '{{hours}} h ≈ {{days}} d',  // aito.backlogShort — hour/day unit abbreviations are the same in this locale
   'Manual',  // aito.priceManual — same word in Portuguese
+  'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'Apps',  // notifications badge for messages from connected apps — same word
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the PT-BR term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
@@ -442,6 +446,7 @@ const ZH_TW_COGNATES = [
 // Korean: script difference means almost nothing is identical.
 // Allow loanwords/acronyms, format strings, and proper nouns that stay verbatim.
 const KO_COGNATES = [
+  'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'OK', 'Bambu', 'N/A',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   '({{count}}/8)', '(25%, 50%, 75%)',
@@ -474,6 +479,7 @@ const ES_COGNATES = [
   '{{hours}} h ≈ {{days}} d',  // aito.backlogShort — hour/day unit abbreviations are the same in this locale
   'Manual',  // aito.priceManual — same word in Spanish (adjetivo « manual »)
   'Auto', 'Auto ({{resolved}})',  // real words/terms in this locale
+  'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'Apps',  // notifications badge for messages from connected apps — same word
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the ES term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
@@ -514,6 +520,7 @@ const SV_COGNATES = [
   'Revision',  // queue.timeline.card.revision — same word in Swedish (en revision)
   'via {{name}}',  // projectsPdm.reslice.viaPipeline
   '{{hours}} h ≈ {{days}} d',  // aito.backlogShort — hour/day unit abbreviations are the same in this locale
+  'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'MakerWorld: {{designer}}',
   'email',
   '{{printer}}: {{error}}',
@@ -542,6 +549,7 @@ const SV_COGNATES = [
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim
 // from English (loanwords + acronyms + format strings). Curated, not a shortcut.
 const TR_COGNATES = [
+  'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the TR term too
   'Filament', 'Firmware', 'Disk', 'Hex', 'Test', 'Port', 'Model', 'Metal',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
@@ -633,6 +641,8 @@ const NL_COGNATES = [
   '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
   'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
   '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
+  '{{page}} · {{width}} × {{height}} mm · {{capacity}} labels ({{cols}} × {{rows}})',  // #3296 custom sheet summary — "labels" is the Dutch word too
+  'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
   'Project:',  // archive page label
   'Apps',  // notifications badge for messages from connected apps — same word
   '1 printer', '{{n}} printers',
@@ -712,6 +722,7 @@ const PL_COGNATES = [
   '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
   'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
   '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
+  'A4 (210 × 297 mm)', 'Letter',  // paper formats, as Polish names them
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {
