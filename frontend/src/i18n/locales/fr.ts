@@ -7188,6 +7188,7 @@ export default {
     slotEmpty: 'Vide',
     slotUnconfigured: '?',
     emptySlotReset: 'Aucune bobine assignée',
+    assignedNotConfigured: 'Assignée dans Fenrir, pas encore configurée sur l\'imprimante. L\'imprimante prend le réglage dès que l\'emplacement est libre, après l\'impression.',
     unknown: 'Inconnu',
     humidity: 'Humidité',
     temperature: 'Température',

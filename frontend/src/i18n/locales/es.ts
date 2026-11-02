@@ -7208,6 +7208,7 @@ export default {
     slotEmpty: 'Vacía',
     slotUnconfigured: '?',
     emptySlotReset: 'No hay filamento asignado',
+    assignedNotConfigured: 'Asignado en Fenrir, aún sin configurar en la impresora. La impresora acepta el ajuste cuando la ranura queda libre, después de la impresión.',
     unknown: 'Desconocido',
     humidity: 'Humedad',
     temperature: 'Temperatura',

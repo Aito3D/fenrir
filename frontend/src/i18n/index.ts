@@ -17,6 +17,7 @@ export const LOCALE_LOADERS: Record<string, () => Promise<{ default: object }>> 
   fr: () => import('./locales/fr'),
   ja: () => import('./locales/ja'),
   it: () => import('./locales/it'),
+  pl: () => import('./locales/pl'),
   ko: () => import('./locales/ko'),
   'pt-BR': () => import('./locales/pt-BR'),
   'zh-CN': () => import('./locales/zh-CN'),
@@ -68,7 +69,7 @@ export const localeBackend: BackendModule = {
   },
 };
 
-const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'nl', 'pt-BR', 'ru', 'sv', 'tr', 'uk', 'zh-CN', 'zh-TW'];
+const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'nl', 'pl', 'pt-BR', 'ru', 'sv', 'tr', 'uk', 'zh-CN', 'zh-TW'];
 const APPLIANCE_CONSUMED_KEY = 'fenrir_appliance_locale_consumed';
 
 /** Settles once the language in use has loaded (or failed to). */
@@ -149,6 +150,7 @@ export const availableLanguages = [
   { code: 'it', name: 'Italian', nativeName: 'Italiano' },
   { code: 'ko', name: 'Korean', nativeName: '한국어' },
   { code: 'nl', name: 'Dutch', nativeName: 'Nederlands' },
+  { code: 'pl', name: 'Polish', nativeName: 'Polski' },
   { code: 'pt-BR', name: 'Portuguese (Brazil)', nativeName: 'Português (Brasil)' },
   { code: 'zh-CN', name: 'Chinese (Simplified)', nativeName: '简体中文' },
   { code: 'zh-TW', name: 'Chinese (Traditional)', nativeName: '繁體中文' },

@@ -5952,6 +5952,7 @@ errors: {
     slotEmpty: 'Tomt',
     slotUnconfigured: '?',
     emptySlotReset: 'Inget filament tilldelat',
+    assignedNotConfigured: 'Tilldelat i Fenrir, inte inställt på skrivaren än. Skrivaren tar emot inställningen när facket är ledigt, efter utskriften.',
     unknown: 'Okänd',
     humidity: 'Luftfuktighet',
     temperature: 'Temperatur',
