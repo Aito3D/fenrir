@@ -3283,7 +3283,6 @@ export default {
         added: 'aggiunta il {{date}}',
         lifetimeOn: 'il {{date}}',
         pace: 'Ritmo',
-        period: 'Periodo',
         readings: 'Letture',
         rawOnDate: 'contatore',
         events: 'Eventi',
@@ -3307,7 +3306,6 @@ export default {
         noRevenue: 'Il ricavo per macchina non viene tracciato.',
       },
       trust: {
-        calibrated: 'Calibrato',
         drifting: 'Il contatore era sfasato di {{hours}} h all\'ultima lettura',
         uncalibrated: 'Contatore non calibrato',
         notCalibratedHelp: 'Fenrir conta da 0. Salva una lettura con la data di oggi per calibrarlo.',

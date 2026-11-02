@@ -3283,7 +3283,6 @@ export default {
         added: 'adicionada em {{date}}',
         lifetimeOn: 'em {{date}}',
         pace: 'Ritmo',
-        period: 'Período',
         readings: 'Leituras',
         rawOnDate: 'contador',
         events: 'Eventos',
@@ -3307,7 +3306,6 @@ export default {
         noRevenue: 'A receita por máquina não é rastreada.',
       },
       trust: {
-        calibrated: 'Calibrado',
         drifting: 'O contador estava {{hours}} h fora na última leitura',
         uncalibrated: 'Contador não calibrado',
         notCalibratedHelp: 'O Fenrir conta a partir de 0. Salve uma leitura com a data de hoje para calibrá-lo.',

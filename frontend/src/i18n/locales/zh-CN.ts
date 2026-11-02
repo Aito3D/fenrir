@@ -3283,7 +3283,6 @@ export default {
         added: '添加于 {{date}}',
         lifetimeOn: '截至 {{date}}',
         pace: '节奏',
-        period: '时段',
         readings: '读数',
         rawOnDate: '计数器',
         events: '事件',
@@ -3307,7 +3306,6 @@ export default {
         noRevenue: '不记录每台机器的收入。',
       },
       trust: {
-        calibrated: '已校准',
         drifting: '上次读数时计数器偏差 {{hours}} 小时',
         uncalibrated: '计数器未校准',
         notCalibratedHelp: 'Fenrir 从 0 开始计数。保存一条今天日期的读数即可校准。',

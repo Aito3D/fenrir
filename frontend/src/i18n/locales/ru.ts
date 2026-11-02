@@ -3197,7 +3197,6 @@ export default {
         added: 'добавлен {{date}}',
         lifetimeOn: 'на {{date}}',
         pace: 'Темп',
-        period: 'Период',
         readings: 'Показания',
         rawOnDate: 'счётчик',
         events: 'События',
@@ -3221,7 +3220,6 @@ export default {
         noRevenue: 'Выручка по станкам не учитывается.',
       },
       trust: {
-        calibrated: 'Откалибровано',
         drifting: 'Счётчик расходился на {{hours}} ч при последнем замере',
         uncalibrated: 'Счётчик не откалиброван',
         notCalibratedHelp: 'Fenrir считает с 0. Сохраните замер с сегодняшней датой, чтобы откалибровать счётчик.',

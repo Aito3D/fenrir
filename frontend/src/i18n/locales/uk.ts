@@ -3203,7 +3203,6 @@ export default {
         added: 'додано {{date}}',
         lifetimeOn: 'на {{date}}',
         pace: 'Темп',
-        period: 'Період',
         readings: 'Показання',
         rawOnDate: 'лічильник',
         events: 'Події',
@@ -3227,7 +3226,6 @@ export default {
         noRevenue: 'Дохід по верстатах не відстежується.',
       },
       trust: {
-        calibrated: 'Відкалібровано',
         drifting: 'Лічильник розходився на {{hours}} год під час останнього зняття',
         uncalibrated: 'Лічильник не відкалібровано',
         notCalibratedHelp: 'Fenrir рахує від 0. Збережіть показник із сьогоднішньою датою, щоб відкалібрувати лічильник.',

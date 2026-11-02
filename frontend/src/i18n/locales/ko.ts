@@ -3199,7 +3199,6 @@ export default {
         added: '{{date}}에 추가됨',
         lifetimeOn: '{{date}} 기준',
         pace: '속도',
-        period: '기간',
         readings: '측정값',
         rawOnDate: '카운터',
         events: '이벤트',
@@ -3223,7 +3222,6 @@ export default {
         noRevenue: '장비별 수익은 추적되지 않습니다.',
       },
       trust: {
-        calibrated: '보정됨',
         drifting: '마지막 기록 때 카운터가 {{hours}}시간 어긋나 있었습니다',
         uncalibrated: '카운터 미보정',
         notCalibratedHelp: 'Fenrir는 0부터 셉니다. 오늘 날짜의 기록을 하나 저장하면 보정됩니다.',

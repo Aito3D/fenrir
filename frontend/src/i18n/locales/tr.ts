@@ -3285,7 +3285,6 @@ export default {
         added: '{{date}} tarihinde eklendi',
         lifetimeOn: '{{date}} tarihinde',
         pace: 'Tempo',
-        period: 'Dönem',
         readings: 'Okumalar',
         rawOnDate: 'sayaç',
         events: 'Olaylar',
@@ -3309,7 +3308,6 @@ export default {
         noRevenue: 'Makine başına gelir izlenmiyor.',
       },
       trust: {
-        calibrated: 'Kalibre edildi',
         drifting: 'Sayaç son okumada {{hours}} sa sapmıştı',
         uncalibrated: 'Sayaç kalibre edilmedi',
         notCalibratedHelp: 'Fenrir 0\'dan sayar. Kalibre etmek için bugünün tarihli bir okuma kaydedin.',

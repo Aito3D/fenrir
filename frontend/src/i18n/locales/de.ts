@@ -3284,7 +3284,6 @@ export default {
         added: 'hinzugefügt {{date}}',
         lifetimeOn: 'am {{date}}',
         pace: 'Tempo',
-        period: 'Zeitraum',
         readings: 'Messwerte',
         rawOnDate: 'Zähler',
         events: 'Ereignisse',
@@ -3308,7 +3307,6 @@ export default {
         noRevenue: 'Der Umsatz pro Maschine wird nicht erfasst.',
       },
       trust: {
-        calibrated: 'Kalibriert',
         drifting: 'Zähler lag beim letzten Eintrag {{hours}} h daneben',
         uncalibrated: 'Zähler nicht kalibriert',
         notCalibratedHelp: 'Fenrir zählt ab 0. Speichere einen Eintrag mit dem heutigen Datum, um ihn zu kalibrieren.',

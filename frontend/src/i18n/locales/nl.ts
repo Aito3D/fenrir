@@ -2211,7 +2211,6 @@ export default {
         added: 'toegevoegd op {{date}}',
         lifetimeOn: 'op {{date}}',
         pace: 'Tempo',
-        period: 'Periode',
         readings: 'Standen',
         rawOnDate: 'teller',
         events: 'Gebeurtenissen',
@@ -2235,7 +2234,6 @@ export default {
         noRevenue: 'Omzet per machine wordt niet bijgehouden.',
       },
       trust: {
-        calibrated: 'Gekalibreerd',
         drifting: 'Teller week {{hours}} u af bij de laatste meting',
         uncalibrated: 'Teller niet gekalibreerd',
         notCalibratedHelp: 'Fenrir telt vanaf 0. Sla een meting met de datum van vandaag op om te kalibreren.',

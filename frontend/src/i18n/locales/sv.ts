@@ -2210,7 +2210,6 @@ export default {
         added: 'tillagd {{date}}',
         lifetimeOn: 'den {{date}}',
         pace: 'Takt',
-        period: 'Tidsperiod',
         readings: 'Avläsningar',
         rawOnDate: 'räknare',
         events: 'Händelser',
@@ -2234,7 +2233,6 @@ export default {
         noRevenue: 'Intäkter per maskin spåras inte.',
       },
       trust: {
-        calibrated: 'Kalibrerad',
         drifting: 'Räknaren låg {{hours}} h fel vid senaste avläsningen',
         uncalibrated: 'Räknaren är inte kalibrerad',
         notCalibratedHelp: 'Fenrir räknar från 0. Spara en avläsning med dagens datum för att kalibrera den.',

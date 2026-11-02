@@ -3308,7 +3308,6 @@ export default {
         added: 'added {{date}}',
         lifetimeOn: 'on {{date}}',
         pace: 'Pace',
-        period: 'Period',
         readings: 'Readings',
         rawOnDate: 'counter',
         events: 'Events',
@@ -3332,7 +3331,6 @@ export default {
         noRevenue: 'Revenue per machine is not tracked.',
       },
       trust: {
-        calibrated: 'Calibrated',
         drifting: 'Counter was {{hours}} h off at the last reading',
         uncalibrated: 'Counter not calibrated',
         notCalibratedHelp: 'Fenrir counts from 0. Save one reading dated today to calibrate it.',

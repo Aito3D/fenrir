@@ -3285,7 +3285,6 @@ export default {
         added: 'añadida el {{date}}',
         lifetimeOn: 'el {{date}}',
         pace: 'Ritmo',
-        period: 'Periodo',
         readings: 'Lecturas',
         rawOnDate: 'contador',
         events: 'Eventos',
@@ -3309,7 +3308,6 @@ export default {
         noRevenue: 'El ingreso por máquina no se registra.',
       },
       trust: {
-        calibrated: 'Calibrado',
         drifting: 'El contador se desviaba {{hours}} h en la última lectura',
         uncalibrated: 'Contador sin calibrar',
         notCalibratedHelp: 'Fenrir cuenta desde 0. Guarda una lectura con la fecha de hoy para calibrarlo.',

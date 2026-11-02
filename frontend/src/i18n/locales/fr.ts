@@ -3283,7 +3283,6 @@ export default {
         added: 'ajoutée le {{date}}',
         lifetimeOn: 'le {{date}}',
         pace: 'Rythme',
-        period: 'Période',
         readings: 'Relevés',
         rawOnDate: 'compteur',
         events: 'Événements',
@@ -3307,7 +3306,6 @@ export default {
         noRevenue: 'Le revenu par machine n\'est pas suivi.',
       },
       trust: {
-        calibrated: 'Étalonné',
         drifting: 'Le compteur avait {{hours}} h d\'écart à la dernière lecture',
         uncalibrated: 'Compteur non étalonné',
         notCalibratedHelp: 'Fenrir compte à partir de 0. Enregistrez un relevé daté d\'aujourd\'hui pour l\'étalonner.',

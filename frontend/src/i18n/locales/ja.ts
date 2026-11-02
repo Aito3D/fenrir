@@ -3283,7 +3283,6 @@ export default {
         added: '{{date}} に追加',
         lifetimeOn: '{{date}} 時点',
         pace: 'ペース',
-        period: '期間',
         readings: '読み取り',
         rawOnDate: 'カウンター',
         events: 'イベント',
@@ -3307,7 +3306,6 @@ export default {
         noRevenue: '機械ごとの収益は記録されていません。',
       },
       trust: {
-        calibrated: '校正済み',
         drifting: '前回の記録時にカウンターが {{hours}} 時間ずれていました',
         uncalibrated: 'カウンター未校正',
         notCalibratedHelp: 'Fenrir は 0 から数えます。今日の日付で記録を 1 件保存すると校正されます。',
