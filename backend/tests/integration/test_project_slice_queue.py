@@ -1167,8 +1167,12 @@ async def test_removing_the_source_unslices_the_revision_and_the_next_print_wait
     assert not derived_path.exists()  # moved to the project trash, not deleted
     assert any(name.endswith(".gcode.3mf") for name in _trash_names(roots))
 
+    # Held until the waiting state is read: the mock slicer answers at once, and on a fast
+    # runner the slice landed before the queue call returned (CI 41534549663).
+    sidecar.block = True
     waiting = await _queue(async_client, part_b)
     assert (waiting["status"], waiting["library_file_id"]) == ("slicing", part_b)
+    sidecar.release.set()
     await _wait_job((await _revision(db_session, rev["id"])).slice_job_id)
     revision = await _revision(db_session, rev["id"])
     assert revision.slice_status == "sliced"
