@@ -9,10 +9,11 @@ from httpx import AsyncClient
 from sqlalchemy import update
 
 from backend.app.models.aito_project import AitoProject
+from backend.app.models.library import LibraryFile, LibraryTag
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectRevision
 from backend.tests.integration.test_project_slice import roots  # noqa: F401  # projects root under tmp_path
-from backend.tests.project_fixtures import make_order, make_task, threemf_bytes
+from backend.tests.project_fixtures import make_order, make_project, make_task, threemf_bytes
 
 API = "/api/v1/projects"
 
@@ -194,3 +195,95 @@ async def test_catalog_flags_truncation_past_the_limit(async_client: AsyncClient
     assert "Charlie" in {i["name"] for i in res["items"]}  # newest kept, oldest cut
     res = (await async_client.get(f"{API}/catalog", params={"q": "charlie"})).json()
     assert (len(res["items"]), res["truncated"]) == (1, False)
+
+
+async def _ids(client: AsyncClient, **params) -> set[int]:
+    return {i["id"] for i in await _catalog(client, **params)}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_catalog_tag_filter_any_vs_all(async_client: AsyncClient, db_session):
+    shared, extra = LibraryTag(name="Auto", name_key="auto"), LibraryTag(name="Jante", name_key="jante")
+    db_session.add_all([shared, extra])
+    await db_session.commit()
+    both = (await async_client.post(f"{API}/", json={"name": "Cap", "tag_ids": [shared.id, extra.id]})).json()
+    one = (await async_client.post(f"{API}/", json={"name": "Clip", "tag_ids": [shared.id]})).json()
+    untagged = await _project(async_client, "Stand")
+
+    assert await _ids(async_client, tag_ids=[shared.id]) == {both["id"], one["id"]}
+    assert await _ids(async_client, tag_ids=[shared.id, extra.id], tag_mode="any") == {both["id"], one["id"]}
+    assert await _ids(async_client, tag_ids=[shared.id, extra.id], tag_mode="all") == {both["id"]}
+    assert untagged["id"] in await _ids(async_client)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_catalog_status_filter_keeps_only_that_status(async_client: AsyncClient, db_session):
+    active = await _project(async_client, "Active one")
+    archived = await _project(async_client, "Archived one")
+    await db_session.execute(update(Project).where(Project.id == archived["id"]).values(status="archived"))
+    await db_session.commit()
+
+    assert await _ids(async_client, status="active") == {active["id"]}
+    assert await _ids(async_client, status="archived") == {archived["id"]}
+    assert await _ids(async_client, status="all") == {active["id"], archived["id"]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_catalog_leaves_templates_out(async_client: AsyncClient, db_session):
+    template = await make_project(db_session, "Gabarit support", is_template=True, commit=True)
+    normal = await _project(async_client, "Support réel")
+
+    assert await _ids(async_client) == {normal["id"]}
+    assert template.id not in await _ids(async_client, q="gabarit")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_catalog_search_treats_percent_and_underscore_literally(async_client: AsyncClient):
+    percent = await _project(async_client, "Infill 100% cube")
+    underscore = await _project(async_client, "Part a_b")
+    # would match "100%" / "a_b" if % and _ were wildcards
+    await _project(async_client, "Infill 1000 cube")
+    await _project(async_client, "Part axb")
+
+    assert await _ids(async_client, q="100%") == {percent["id"]}
+    assert await _ids(async_client, q="a_b") == {underscore["id"]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_catalog_search_skips_trashed_files(async_client: AsyncClient, db_session):
+    project = await _project(async_client, "Support caméra")
+    revision = await _item_with_file(async_client, project["id"], "Support", "unique_trashed_name.3mf")
+    assert await _ids(async_client, q="unique_trashed_name") == {project["id"]}
+    files_before = {i["id"]: i for i in await _catalog(async_client)}[project["id"]]["files_count"]
+
+    await db_session.execute(
+        update(LibraryFile)
+        .where(LibraryFile.revision_id == revision["id"])
+        .values(deleted_at=datetime.now(timezone.utc).replace(tzinfo=None))
+    )
+    await db_session.commit()
+
+    assert await _ids(async_client, q="unique_trashed_name") == set()
+    # files_count counts Impression items (an item without any file still counts), so trashing
+    # the item's only file leaves it unchanged.
+    assert files_before == 1
+    assert {i["id"]: i for i in await _catalog(async_client)}[project["id"]]["files_count"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_catalog_ignores_a_deleted_order(async_client: AsyncClient, db_session):
+    # auth off: the caller may read Aito orders, so only the deleted status hides this one
+    project = await _project(async_client, "Support caméra")
+    order = await make_order(db_session, status="deleted", commit=True)
+    await make_task(db_session, order, linked_project_id=project["id"], commit=True)
+
+    row = {i["id"]: i for i in await _catalog(async_client)}[project["id"]]
+    assert (row["client_names"], row["open_orders"]) == ([], [])
+    assert await _ids(async_client, q="acme") == set()
+    assert await _ids(async_client, q=f"#{order.id}") == set()

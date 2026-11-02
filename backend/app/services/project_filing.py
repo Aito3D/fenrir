@@ -437,21 +437,26 @@ async def _store_group(
 ) -> tuple[Project, _StoredGroup | None]:
     """Store one group as a revision (committed). None when nothing was stored: every file
     skipped, or the group failed (``copy_failed`` / ``conflict`` / ``error``, rolled back).
-    Returns the project too, re-read if a commit or rollback replaced it.
+    Returns the project too, re-read if a commit or rollback replaced it. An item this call
+    created is deleted again when the group stores nothing (it would stay empty).
 
     ``project_id`` is ``project.id`` read before any commit or rollback could expire ``project``."""
     section, key, name, candidates = group.section, group.key, group.name, group.candidates
     pending = candidates  # what a failure below reports as skipped
+    created_item_id: int | None = None  # the item this call created, if any
     try:
         if target_item_id is not None:
             item = await project_files.fresh_item(db, target_item_id)
         else:
-            item, project = await find_or_create_item(db, project, section, key, name, user_id)
+            item, project, created = await _find_or_create_item(db, project, section, key, name, user_id)
+            created_item_id = item.id if created else None
         item_id_now, item_name = item.id, item.name
         rows = await _fresh_rows(db, [c.file_id for c in candidates])
         sources, stored = _group_sources(result, candidates, rows)
         pending = stored
         if not sources:
+            if created_item_id is not None:
+                project = await _discard_created_item(db, project, project_id, created_item_id)
             return project, None
         revision = await project_files.add_revision_from_sources(db, project, item, sources, note=None, user_id=user_id)
     except Exception as exc:
@@ -461,8 +466,23 @@ async def _store_group(
         # so the caller must still see them in the result.
         if isinstance(exc, project_files.ProjectFilesError) and exc.status_code != 409:
             raise
-        return await _skip_failed_group(db, result, project_id, name, pending, exc), None
+        project = await _skip_failed_group(db, result, project_id, name, pending, exc)
+        if created_item_id is not None:
+            project = await _discard_created_item(db, project, project_id, created_item_id)
+        return project, None
     return project, _StoredGroup(item_id_now, item_name, revision, stored, sources)
+
+
+async def _discard_created_item(db: AsyncSession, project: Project, project_id: int, item_id: int) -> Project:
+    """Delete the empty item a group that stored nothing created; never raises (the group's skips
+    are already reported). Returns the project, re-read if a failed removal rolled it back."""
+    try:
+        await project_files._discard_empty_item(db, project_id, item_id)
+        return project
+    except Exception:
+        logger.warning("Could not remove the empty item %s left by a failed move", item_id, exc_info=True)
+        await rollback_quietly(db, logger, logging.WARNING, "Rollback after removing item %s failed", item_id)
+        return await db.get(Project, project_id) or project
 
 
 async def _skip_failed_group(

@@ -652,8 +652,8 @@ async def test_a_group_with_nothing_left_creates_no_revision(db_session, root, m
     assert result.moved == [] and result.copied == []
     assert [s["code"] for s in result.skipped] == ["conflict"]
     assert (await db_session.execute(select(ProjectRevision))).scalars().all() == []
-    # The (empty) item was found-or-created and committed before the rows were checked.
-    assert [i.name for i in (await db_session.execute(select(ProjectItem))).scalars()] == ["solo"]
+    # T-530 (user-approved 2026-11-02): the item this move created holds nothing, so it is deleted again.
+    assert (await db_session.execute(select(ProjectItem))).scalars().all() == []
 
 
 @pytest.mark.asyncio
@@ -822,7 +822,7 @@ async def test_an_unexpected_error_before_the_revision_rolls_the_session_back(db
     last = await _managed(db_session, "gamma.gcode", b"G")
     ids = [first.id, last.id]
     await db_session.commit()
-    real_find = project_filing.find_or_create_item
+    real_find = project_filing._find_or_create_item
 
     async def broken_find(db, project, section, key, name, user_id):
         if name == "alpha":
@@ -830,7 +830,7 @@ async def test_an_unexpected_error_before_the_revision_rolls_the_session_back(db
             raise RuntimeError("boom")
         return await real_find(db, project, section, key, name, user_id)
 
-    monkeypatch.setattr(project_filing, "find_or_create_item", broken_find)
+    monkeypatch.setattr(project_filing, "_find_or_create_item", broken_find)
     result = await _move(db_session, project, [first, last])
 
     assert result.skipped == [{"file_id": ids[0], "code": "error", "reason": "unexpected error while moving the file"}]
@@ -902,6 +902,111 @@ async def test_old_bytes_that_cannot_be_removed_only_log(db_session, root, monke
     assert [m["file_id"] for m in result.moved] == [row_id]
     assert old.exists()
     assert "couldn't remove the old file" in caplog.text
+
+
+# --- T-530: a group that stores nothing leaves no new empty item ----------------------------------
+
+
+def _all_copies_fail(monkeypatch):
+    def broken(src, dest):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(project_files, "_copy_hashing", broken)
+
+
+def _every_row_changed(monkeypatch):
+    real_fresh_rows = project_filing._fresh_rows
+
+    async def changed(db, file_ids):
+        await real_fresh_rows(db, file_ids)
+        return {}  # every row reads as gone: a conflict skip
+
+    monkeypatch.setattr(project_filing, "_fresh_rows", changed)
+
+
+async def _item_rows(db, project_id: int) -> list[tuple[int, str, int]]:
+    rows = await db.execute(
+        select(ProjectItem.id, ProjectItem.name, ProjectItem.last_revision_number)
+        .where(ProjectItem.project_id == project_id)
+        .order_by(ProjectItem.id)
+        .execution_options(populate_existing=True)
+    )
+    return [tuple(r) for r in rows]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("break_group", "code"), [(_all_copies_fail, "copy_failed"), (_every_row_changed, "conflict")])
+async def test_a_group_storing_nothing_deletes_the_item_it_created(db_session, root, monkeypatch, break_group, code):
+    project = await _project(db_session)
+    project_id = project.id
+    row = await _managed(db_session, "solo.gcode", b"S")
+    row_id, path = row.id, row.file_path
+    await db_session.commit()
+    break_group(monkeypatch)
+
+    result = await _move(db_session, project, [row])
+
+    assert result.moved == [] and result.copied == []
+    assert [(s["file_id"], s["code"]) for s in result.skipped] == [(row_id, code)]
+    assert await _item_rows(db_session, project_id) == []
+    assert not [p for p in root.rglob("*") if p.is_file()]
+    fresh = await _fresh(db_session, row_id)
+    assert (fresh.file_path, fresh.revision_id) == (path, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("break_group", "code"), [(_all_copies_fail, "copy_failed"), (_every_row_changed, "conflict")])
+async def test_a_group_storing_nothing_keeps_an_existing_item(db_session, root, monkeypatch, break_group, code):
+    project = await _project(db_session)
+    project_id = project.id
+    first = await _managed(db_session, "solo.gcode", b"S1")
+    await db_session.commit()
+    await _move(db_session, project, [first])
+    [(item_id, _, _)] = await _item_rows(db_session, project_id)
+    project = await db_session.get(Project, project_id)
+    empty = await create_item(db_session, project, section="impression", name="vide", user_id=None)
+    await db_session.commit()
+    empty_id = empty.id
+    second = await _managed(db_session, "solo.gcode", b"S2")
+    third = await _managed(db_session, "vide.gcode", b"V")
+    ids = [second.id, third.id]
+    await db_session.commit()
+    break_group(monkeypatch)
+
+    result = await _move(db_session, project, [second, third])
+
+    assert sorted((s["file_id"], s["code"]) for s in result.skipped) == [(i, code) for i in ids]
+    # both items existed before the move: neither is deleted, the empty one included
+    assert await _item_rows(db_session, project_id) == [(item_id, "solo", 1), (empty_id, "vide", 0)]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_removal_of_the_created_item_only_logs_and_goes_on(db_session, root, monkeypatch, caplog):
+    project = await _project(db_session)
+    project_id = project.id
+    first = await _managed(db_session, "alpha.gcode", b"A")
+    last = await _managed(db_session, "gamma.gcode", b"G")
+    ids = [first.id, last.id]
+    await db_session.commit()
+    real_add = project_files.add_revision_from_sources
+
+    async def failing_add(db, project, item, sources, **kwargs):
+        if item.name == "alpha":
+            raise OSError("disk full")
+        return await real_add(db, project, item, sources, **kwargs)
+
+    async def removal_fails(db, project_id, item_id):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(project_files, "add_revision_from_sources", failing_add)
+    monkeypatch.setattr(project_files, "_discard_empty_item", removal_fails)
+    with caplog.at_level("WARNING", logger="backend.app.services.project_filing"):
+        result = await _move(db_session, project, [first, last])
+
+    assert result.skipped == [{"file_id": ids[0], "code": "copy_failed", "reason": "could not copy the file"}]
+    assert [m["file_id"] for m in result.moved] == [ids[1]]
+    assert "Could not remove the empty item" in caplog.text
+    assert [name for _, name, _ in await _item_rows(db_session, project_id)] == ["alpha", "gamma"]
 
 
 # --- T-010: find_or_create_item race recovery --------------------------------------------------

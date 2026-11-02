@@ -713,8 +713,8 @@ async def test_auto_file_copy_failure_leaves_the_library_file_where_it_was(
     async_client: AsyncClient, db_session, monkeypatch, caplog
 ):
     """A copy error while storing the revision: None, the file keeps its row, path and bytes,
-    and the project gets no revision. Pinned: the item created for the group (committed
-    before the copy) stays behind, empty."""
+    and the project gets no revision. T-530 (user-approved 2026-11-02): the item created for
+    the group (committed before the copy) is deleted again, so no empty item stays behind."""
     project = await _project(async_client)
     filename = f"{project['code']}_support.3mf"
     data = _3mf("keep")
@@ -735,7 +735,7 @@ async def test_auto_file_copy_failure_leaves_the_library_file_where_it_was(
     fresh = await _fresh_row(db_session, row_id)
     assert (fresh.file_path, fresh.revision_id, fresh.project_id) == (path_before, None, None)
     assert (settings.base_dir / path_before).read_bytes() == data
-    assert await _project_tree(db_session, project["id"]) == (["support"], 0)
+    assert await _project_tree(db_session, project["id"]) == ([], 0)
     assert list(project_storage.projects_root().rglob("*.3mf")) == []
 
 
