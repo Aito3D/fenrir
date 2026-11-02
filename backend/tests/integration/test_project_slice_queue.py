@@ -1345,3 +1345,41 @@ async def test_a_failed_source_removal_puts_the_slice_back(
 
 def _raise_os_error(*_args, **_kwargs):
     raise OSError("move back failed")
+
+
+def _sliced_with_filaments() -> bytes:
+    """A slice whose plate 1 consumes slot 1 only: what the print dialog must be offered."""
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            zipfile.ZipInfo("Metadata/slice_info.config", date_time=(1980, 1, 1, 0, 0, 0)),
+            '<config><plate><metadata key="index" value="1"/>'
+            '<filament id="1" type="PETG" color="#000000" used_g="12.5" used_m="4.1"/></plate></config>',
+        )
+    return buf.getvalue()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_filament_requirements_of_a_sliced_source_come_from_its_slice(
+    async_client: AsyncClient, db_session, sidecar
+):
+    """The print dialog of a project revision reads the slice it will print. Read from the
+    unsliced source it ran a preview slice per plate (a minute on the shop's server), and
+    offered no filament choice until it ended."""
+    rev = await _upload(async_client)
+    source_id = rev["files"][0]["id"]
+    await _slice_now(async_client, rev["id"])
+    sliced = await db_session.get(LibraryFile, (await _revision(db_session, rev["id"])).sliced_file_id)
+    Path(to_absolute_path(sliced.file_path)).write_bytes(_sliced_with_filaments())
+
+    response = await async_client.get(f"/api/v1/library/files/{source_id}/filament-requirements?plate_id=1")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["file_id"] == source_id
+    assert [(f["slot_id"], f["type"], f["used_grams"]) for f in body["filaments"]] == [(1, "PETG", 12.5)]
+    assert len(sidecar.slice_requests) == 1  # the revision's own slice; no preview slice

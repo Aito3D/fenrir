@@ -4559,6 +4559,23 @@ async def get_library_file_filament_requirements(
     if not lib_file.filename.lower().endswith(".3mf"):
         return {"file_id": file_id, "filename": lib_file.filename, "plate_id": plate_id, "filaments": []}
 
+    # Fenrir: a project revision prints its source's server slice, so its print dialog reads
+    # the filaments from that slice. Reading the source instead means a preview slice per
+    # plate (a minute on the shop's server), and the dialog offers no filament choice until
+    # it ends. The slice modal (full_slots) still wants the source's own slot list.
+    if not full_slots:
+        from backend.app.services import project_slice
+
+        if project_slice.is_unsliced_project_source(lib_file):
+            try:
+                sliced = await project_slice.sliced_file_of(db, lib_file)
+            except HTTPException:
+                sliced = None  # a legacy revision's other .3mf: read the file itself, as before
+            if sliced is not None:
+                sliced_path = _by_id_read_path(sliced)
+                if sliced_path.exists():
+                    file_path = sliced_path
+
     filaments = []
 
     try:
