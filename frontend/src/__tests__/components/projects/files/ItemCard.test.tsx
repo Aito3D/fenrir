@@ -534,14 +534,23 @@ describe('ItemCard permission gating', () => {
   });
 
   it('a failed revision without a source file offers no Upload sliced file even with projects:update', () => {
-    granted = new Set(['projects:read', 'projects:update']);
+    granted = new Set(['projects:read', 'projects:update', 'queue:update_all']);
     render(<Harness value={failed({ files: [] })} />);
     expect(within(card()).queryByRole('button', { name: 'Upload sliced file' })).not.toBeInTheDocument();
     expect(within(card()).queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
   });
 
-  it('with projects:update both buttons appear and the menu offers Rename and Fork', async () => {
-    granted = new Set(['projects:read', 'projects:update']);
+  it('without queue:update_all (T-521) a failed slice offers Retry but no Upload sliced file, on the card or in the menu', async () => {
+    granted = new Set(['projects:read', 'projects:update', 'queue:update_own', 'queue:create']);
+    render(<Harness value={failed()} />);
+    expect(within(card()).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(within(card()).queryByRole('button', { name: 'Upload sliced file' })).not.toBeInTheDocument();
+    await userEvent.click(within(card()).getByRole('button', { name: 'More actions' }));
+    expect(screen.queryByRole('button', { name: 'Upload sliced file' })).not.toBeInTheDocument();
+  });
+
+  it('with projects:update and queue:update_all both buttons appear and the menu offers Rename and Fork', async () => {
+    granted = new Set(['projects:read', 'projects:update', 'queue:update_all']);
     render(<Harness value={failed()} />);
     expect(within(card()).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
     expect(within(card()).getByRole('button', { name: 'Upload sliced file' })).toBeInTheDocument();

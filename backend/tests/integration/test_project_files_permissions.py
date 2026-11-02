@@ -76,7 +76,7 @@ _ROUTES = [
         "POST",
         "/projects/revisions/987654/sliced-file",
         {"files": {"file": ("support.gcode.3mf", b"PK", "application/octet-stream")}},
-        [(P.PROJECTS_UPDATE,)],
+        [(P.PROJECTS_UPDATE,), (P.QUEUE_UPDATE_ALL,)],
     ),
     # project_files.py: library_router
     (
@@ -230,7 +230,7 @@ _KEY_MATRIX = {
     "GET /projects/legacy-migration/status": (None, _NO_KEY),
     "POST /projects/items/987654/revisions": (404, _MANAGE),
     "POST /projects/revisions/987654/files": (400, _MANAGE),  # refused for every revision: one .3mf each
-    "POST /projects/revisions/987654/sliced-file": (404, _MANAGE),
+    "POST /projects/revisions/987654/sliced-file": (404, _EVERY),  # also needs queue:update_all (can_queue)
     "GET /library/files/987654/project-suggestions": (404, _READ),
     "GET /projects/search": (200, _READ),
     "GET /projects/tags": (200, _READ),
@@ -418,3 +418,24 @@ async def test_route_refuses_an_anonymous_caller(async_client: AsyncClient, auth
     response = await _send(async_client, method, path, kwargs, {})
     assert response.status_code == 401, response.text
     assert response.json()["detail"] == "Authentication required"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_upload_sliced_file_needs_queue_update_all_even_with_the_other_queue_permissions(
+    async_client: AsyncClient, headers_for
+):
+    """T-521: the upload releases every queue item waiting on the revision, other users' too, so
+    projects:update with only one's own queue rights is refused before the body is read."""
+    headers = await headers_for(
+        {P.PROJECTS_UPDATE, P.QUEUE_CREATE, P.QUEUE_UPDATE_OWN, P.LIBRARY_UPLOAD, P.QUEUE_START_UNREVIEWED}
+    )
+    response = await _send(
+        async_client,
+        "POST",
+        "/projects/revisions/987654/sliced-file",
+        {"files": {"file": ("support.gcode.3mf", b"PK", "application/octet-stream")}},
+        headers,
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Missing required permissions: queue:update_all"

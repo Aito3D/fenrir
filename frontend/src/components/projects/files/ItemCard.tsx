@@ -275,7 +275,8 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
   const metaTitle = [metaFull, layers ? t(layers === 1 ? 'archives.card.layer' : 'archives.card.layers', { count: layers }) : null,
     objects ? t(objects === 1 ? 'archives.card.object' : 'archives.card.objects', { count: objects }) : null].filter(Boolean).join(' · ');
   const canSlice = canUpdate && !!source && (slice.state === 'none' || slice.state === 'failed');
-  const canUploadSliced = canUpdate && !!source && slice.state === 'failed';
+  // POST /revisions/{id}/sliced-file also needs queue:update_all: it releases everyone's waiting items.
+  const canUploadSliced = canUpdate && hasPermission('queue:update_all') && !!source && slice.state === 'failed';
   // Printed how many times: the File Manager's counter on the file Print sends (or the shown
   // file), or the revision's printed quantity from its archives — whichever knows more.
   const printed = Math.max(shown?.print_count ?? 0, printFile?.print_count ?? 0, display?.print_count ?? 0, timed?.print_count ?? 0);

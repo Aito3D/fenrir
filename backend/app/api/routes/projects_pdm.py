@@ -17,7 +17,11 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.aito import _check_ai_rate_limit
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_any_permission_if_auth_enabled
+from backend.app.core.auth import (
+    RequirePermissionIfAuthEnabled,
+    probe_permissions_if_auth_enabled,
+    require_any_permission_if_auth_enabled,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
@@ -243,11 +247,14 @@ async def project_catalog_list(
     status: str | None = None,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),
 ):
     """The Projects catalog: every matching project with the facts its row and pane show, newest
     activity first. The search also covers folders, clients, order numbers, item and file names."""
     return ProjectCatalogResponse(
-        items=await project_catalog.catalog(db, q=q, status=status, tag_ids=tag_ids, tag_mode=tag_mode)
+        items=await project_catalog.catalog(
+            db, q=q, status=status, tag_ids=tag_ids, tag_mode=tag_mode, can_read_aito=can_read_aito
+        )
     )
 
 

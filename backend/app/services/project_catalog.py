@@ -10,6 +10,7 @@ revision file names, with case-insensitive LIKE on both dialects.
 
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Literal
@@ -38,6 +39,10 @@ from backend.app.services.project_tags import project_tag_refs
 CATALOG_LIMIT = 500
 PRINTING_SECTION = "impression"
 FOLDER_NAME_MAX = 255
+
+# Serialises folder moves so the cycle check and the write see no other move in between. One
+# process serves the app; shortcut: a second worker process would need a DB-level lock instead.
+_FOLDER_TREE_LOCK = asyncio.Lock()
 
 # An Aito order still in the shop's hands: not deleted, card not in Done (spec §12.2.3).
 _OPEN_ORDER = and_(AitoProject.status != "deleted", AitoProject.board_column != "done")
@@ -148,13 +153,17 @@ async def update_folder(
     cannot be moved into itself or below itself (409)."""
     if name is not None:
         folder.name = _clean_name(name)
-    if parent_given:
-        if parent_id is not None:
-            await get_folder(db, parent_id)
-            if parent_id in subtree_ids(await all_folders(db), folder.id):
-                raise ProjectCatalogError(409, "A folder cannot be moved into itself")
-        folder.parent_id = parent_id
-    await db.commit()
+    if parent_given and parent_id is not None:
+        await get_folder(db, parent_id)
+    async with _FOLDER_TREE_LOCK:
+        if parent_given:
+            if parent_id is not None:
+                # populate_existing: the tree as committed now, not as this session first loaded it.
+                fresh = await db.execute(select(ProjectFolder).execution_options(populate_existing=True))
+                if parent_id in subtree_ids(list(fresh.scalars()), folder.id):
+                    raise ProjectCatalogError(409, "A folder cannot be moved into itself")
+            folder.parent_id = parent_id
+        await db.commit()
     await db.refresh(folder)
     return folder
 
@@ -215,8 +224,9 @@ async def _in_production_ids(db: AsyncSession, project_ids: list[int]) -> set[in
     return {project_id for (project_id,) in rows if project_id is not None}
 
 
-def _search_conditions(term: str, folders: list[ProjectFolder]) -> list[Any]:
-    """OR-ed conditions for one search term across every searched field."""
+def _search_conditions(term: str, folders: list[ProjectFolder], can_read_aito: bool = True) -> list[Any]:
+    """OR-ed conditions for one search term across every searched field (linked Aito orders'
+    client name and number only for callers holding aito:read)."""
     tagged = (
         select(ProjectTag.project_id)
         .join(LibraryTag, LibraryTag.id == ProjectTag.tag_id)
@@ -226,15 +236,6 @@ def _search_conditions(term: str, folders: list[ProjectFolder]) -> list[Any]:
     for folder in folders:
         if term.lower() in folder.name.lower():
             matching_folder_ids |= subtree_ids(folders, folder.id)
-    order_clauses = [_text_match(AitoProject.client_name, term)]
-    number = _order_number(term)
-    if number is not None:
-        order_clauses.append(AitoProject.id == number)
-    ordered = (
-        select(AitoTask.linked_project_id)
-        .join(AitoProject, AitoProject.id == AitoTask.project_id)
-        .where(AitoProject.status != "deleted", or_(*order_clauses))
-    )
     items = select(ProjectItem.project_id).where(_text_match(ProjectItem.name, term))
     files = (
         select(ProjectItem.project_id)
@@ -247,10 +248,20 @@ def _search_conditions(term: str, folders: list[ProjectFolder]) -> list[Any]:
         _text_match(Project.name, term),
         _text_match(Project.description, term),
         Project.id.in_(tagged),
-        Project.id.in_(ordered),
         Project.id.in_(items),
         Project.id.in_(files),
     ]
+    if can_read_aito:
+        order_clauses = [_text_match(AitoProject.client_name, term)]
+        number = _order_number(term)
+        if number is not None:
+            order_clauses.append(AitoProject.id == number)
+        ordered = (
+            select(AitoTask.linked_project_id)
+            .join(AitoProject, AitoProject.id == AitoTask.project_id)
+            .where(AitoProject.status != "deleted", or_(*order_clauses))
+        )
+        conditions.append(Project.id.in_(ordered))
     if matching_folder_ids:
         conditions.append(Project.folder_id.in_(matching_folder_ids))
     return conditions
@@ -302,13 +313,16 @@ async def catalog(
     status: str | None,
     tag_ids: list[int],
     tag_mode: Literal["any", "all"],
+    can_read_aito: bool = True,
 ) -> list[ProjectCatalogItem]:
+    """Without ``can_read_aito`` the linked Aito orders stay hidden: ``client_names`` and
+    ``open_orders`` are empty and the search skips client names and order numbers."""
     folders = await all_folders(db)
     conditions: list[Any] = [Project.is_template.is_(False)]
     if status and status != "all":
         conditions.append(Project.status == status)
     for term in (q or "").split():
-        conditions.append(or_(*_search_conditions(term, folders)))
+        conditions.append(or_(*_search_conditions(term, folders, can_read_aito)))
     wanted = sorted(set(tag_ids))
     if wanted:
         tagged = select(ProjectTag.project_id).where(ProjectTag.tag_id.in_(wanted))
@@ -336,11 +350,15 @@ async def catalog(
     clients: dict[int, list[str]] = defaultdict(list)
     open_orders: dict[int, list[CatalogOpenOrder]] = defaultdict(list)
     seen_orders: set[tuple[int, int]] = set()
-    order_rows = await db.execute(
-        select(AitoTask.linked_project_id, AitoProject.id, AitoProject.client_name, AitoProject.board_column)
-        .join(AitoProject, AitoProject.id == AitoTask.project_id)
-        .where(AitoTask.linked_project_id.in_(ids), AitoProject.status != "deleted")
-        .order_by(AitoProject.created_at.desc(), AitoProject.id.desc())
+    order_rows = (
+        await db.execute(
+            select(AitoTask.linked_project_id, AitoProject.id, AitoProject.client_name, AitoProject.board_column)
+            .join(AitoProject, AitoProject.id == AitoTask.project_id)
+            .where(AitoTask.linked_project_id.in_(ids), AitoProject.status != "deleted")
+            .order_by(AitoProject.created_at.desc(), AitoProject.id.desc())
+        )
+        if can_read_aito
+        else []
     )
     for project_id, order_id, client_name, board_column in order_rows:
         if project_id is None or (project_id, order_id) in seen_orders:

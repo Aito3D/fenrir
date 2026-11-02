@@ -438,6 +438,8 @@ async def upload_sliced_file(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+    # Every queue item waiting on the revision, whoever queued it, is released onto this G-code.
+    _queue: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_ALL),
 ):
     """Hand-slice fallback (design 2026-10-30): the sliced plate file (.gcode.3mf) Bambu Studio exported
     from the revision's project, for a revision whose server slice failed. Checked for plate G-code and

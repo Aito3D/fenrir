@@ -14,6 +14,7 @@
 3 RequirePermissionIfAuthEnabled(Permission.PROJECTS_DELETE)
 19 RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ)
 29 RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE)
+1 RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_ALL)
 2 RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE)
 
 ### stderr:
