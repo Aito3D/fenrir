@@ -41,10 +41,10 @@ from backend.app.utils.local_time import utcnow_naive
 MULTIPLIER = 1.5  # shortcut: fixed, upgrade to a setting when the shop wants to tune it
 # Shop history from before Fenrir, added after the multiplier. Same shortcut as MULTIPLIER.
 SINCE = "2024-06-01"
-PRINTS_OFFSET = 20_000
-FILAMENT_KG_OFFSET = 1_000.0
-ORDERS_OFFSET = 1_000
-PRINT_HOURS_OFFSET = 54_000
+PRINTS_OFFSET = 13_000
+FILAMENT_KG_OFFSET = 1_050.0
+ORDERS_OFFSET = 1_700
+PRINT_HOURS_OFFSET = 40_000
 LAYERS_OFFSET = 3_200_000
 LOAD_FACTOR = 2  # the tracked fleet under-reports the shop's real machine hours
 PRINTERS_OFFSET = 3  # machines not connected to Fenrir; the load still divides by the real fleet
@@ -119,6 +119,8 @@ async def compute(db: AsyncSession, now: datetime | None = None) -> dict[str, An
         or 0
     )
     printers = await db.scalar(select(func.count(Printer.id)).where(Printer.is_active.is_(True))) or 0
+    # Shown: every machine linked to Fenrir, switched off or not. The load divides by the active ones.
+    linked_printers = await db.scalar(select(func.count(Printer.id))) or 0
 
     # weekly load: hours of any print (failed ones ran the machine too) overlapping the window
     start = now - timedelta(days=LOAD_WINDOW_DAYS)
@@ -150,7 +152,7 @@ async def compute(db: AsyncSession, now: datetime | None = None) -> dict[str, An
         "print_days": round(hours / 24, 1),
         "layers": round(int(layers or 0) * m) + LAYERS_OFFSET,
         "orders": round(orders * m) + ORDERS_OFFSET,
-        "printers": printers + PRINTERS_OFFSET,
+        "printers": linked_printers + PRINTERS_OFFSET,
         "last_30_days": {
             "prints": round(int(n_recent or 0) * m),
             "filament_kg": round(float(grams_recent or 0) / 1000 * m, 1),

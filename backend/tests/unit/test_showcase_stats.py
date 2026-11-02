@@ -105,7 +105,7 @@ async def test_compute_counts_the_print_log_like_the_statistics_page_and_applies
     assert s["print_days"] == round((23 * m + svc.PRINT_HOURS_OFFSET) / 24, 1)
     assert s["layers"] == round(170 * m) + svc.LAYERS_OFFSET  # completed, non-trashed archives
     assert s["orders"] == round(2 * m) + svc.ORDERS_OFFSET
-    assert s["printers"] == 2 + svc.PRINTERS_OFFSET  # never multiplied, only offset
+    assert s["printers"] == 3 + svc.PRINTERS_OFFSET  # every linked printer, inactive included; never multiplied
     assert s["since"] == svc.SINCE
     assert s["last_30_days"] == {"prints": round(3 * m), "filament_kg": round(0.16 * m, 1)}  # 3 rows, 160 g
 
