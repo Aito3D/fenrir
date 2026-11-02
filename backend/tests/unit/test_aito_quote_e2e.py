@@ -163,9 +163,10 @@ async def test_project_created_through_the_api_produces_the_exact_wire_line_item
     assert body["customer_id"] == "C1"
     assert body["reference_number"] == f"AITO-{project_id}"
     assert body["is_inclusive_tax"] is True
-    # The full array, not a sample: canonical service order, header on every
-    # task line, default catalogue ids, the impression rate/qty/discount split.
+    # The full array, not a sample: the task's header row first, canonical
+    # service order, default catalogue ids, the impression rate/qty/discount split.
     assert body["line_items"] == [
+        {"line_item_category": "header", "name": "Hélice bâbord", "item_order": 1},
         {
             "item_id": "66407000006501192",
             "tax_id": "66407000009281008",
@@ -173,8 +174,7 @@ async def test_project_created_through_the_api_produces_the_exact_wire_line_item
             "rate": 3500,
             "quantity": 1,
             "description": "Info: Numérisation de la pièce.\n*Fichier non cédé*",
-            "header_name": "Hélice bâbord",
-            "item_order": 1,
+            "item_order": 2,
         },
         {
             "item_id": "66407000006485001",
@@ -183,8 +183,7 @@ async def test_project_created_through_the_api_produces_the_exact_wire_line_item
             "rate": 8000,
             "quantity": 1,
             "description": "*Fichier non cédé*",
-            "header_name": "Hélice bâbord",
-            "item_order": 2,
+            "item_order": 3,
         },
         {
             "item_id": "66407000006485012",
@@ -193,9 +192,8 @@ async def test_project_created_through_the_api_produces_the_exact_wire_line_item
             "rate": 4000,
             "quantity": 3,
             "description": "Poids: 210 gr\nTemps: 13h\nCouleur: Noir",
-            "header_name": "Hélice bâbord",
             "discount": "10%",
-            "item_order": 3,
+            "item_order": 4,
         },
         {
             "item_id": "66407000006884825",
@@ -204,8 +202,7 @@ async def test_project_created_through_the_api_produces_the_exact_wire_line_item
             "rate": 4000,
             "quantity": 1,
             "description": "Info: Reprise du moyeu.",
-            "header_name": "Hélice bâbord",
-            "item_order": 4,
+            "item_order": 5,
         },
     ]
 
@@ -259,7 +256,7 @@ async def test_shipping_attached_through_the_api_reaches_the_wire_then_a_detach_
         "rate": 3200,
         "quantity": 1,
         "description": "Nom: Moana TEMARII\nTéléphone: +689-87112233\nÎle: Rangiroa",
-        "item_order": 2,
+        "item_order": 3,
     }
     assert "header_name" not in shipping_line
 

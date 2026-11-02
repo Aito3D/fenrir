@@ -382,15 +382,15 @@ def parse_lines(
     """Split an estimate's line items into recognised services, skipped rows,
     and (at most one) recognised shipment.
 
-    Headers mark task boundaries two ways. The format Books actually stores
-    (quote DEV26-2506) has NO header row: each grouped line carries
-    ``header_name`` plus a Books-generated ``header_id``, so a line whose
-    header differs from the previous recognised line's opens a group —
-    ``header_id`` first, because two headers may share a name (two same-titled
-    tasks). A standalone `line_item_category == "header"` row — the shape this
-    app's export used to emit — is still honoured as a boundary marker: it is
-    dropped from the output and flagged onto the next recognised line rather
-    than being reported to the user as an unimportable line.
+    Headers mark task boundaries two ways. Since the end of October 2026
+    Books stores a header as its own ``line_item_category == "header"`` row
+    whose ``name`` is the title (quote DEV26-2944): it opens a group on the
+    next recognised line and gives it its title, and is never reported to
+    the user as an unimportable line. Before that (quote DEV26-2506) each
+    grouped line carried ``header_name`` plus a Books-generated
+    ``header_id``, so a line whose header differs from the previous
+    recognised line's opens a group — ``header_id`` first, because two
+    headers may share a name (two same-titled tasks).
 
     When ``shipping_ids`` resolves to an empty map (a cold catalogue cache —
     see ``zoho.get_catalogue``), a shipping line is not recognised as ours by
@@ -406,6 +406,7 @@ def parse_lines(
     skipped: list[dict] = []
     shipping: ParsedShipping | None = None
     pending_boundary = False
+    pending_title: str | None = None
     previous_header = None
     # Built once, not per line item: same content `parse_shipping_line` would
     # rebuild on every call, and the same set every "is this ours?" check
@@ -415,6 +416,7 @@ def parse_lines(
     for line in sorted(estimate.get("line_items") or [], key=lambda item: item.get("item_order") or 0):
         if line.get("line_item_category") == "header":
             pending_boundary = True
+            pending_title = (line.get("name") or "").strip() or None
             continue
         shipment = _shipping_line_for_map(line, shipping_id_map)
         if shipment is not None:
@@ -442,12 +444,13 @@ def parse_lines(
                 amount=amount,
                 quantity=float(line.get("quantity") or 0),
                 starts_group=pending_boundary or (header is not None and header != previous_header),
-                header_title=(line.get("header_name") or "").strip() or None,
+                header_title=(line.get("header_name") or "").strip() or pending_title,
                 discount_pct=_discount_pct(line),
                 precision=precision,
             )
         )
         pending_boundary = False
+        pending_title = None
         previous_header = header
     return recognised, skipped, shipping
 

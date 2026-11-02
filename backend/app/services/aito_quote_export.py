@@ -418,7 +418,7 @@ def build_line_items(
 
     Then, when ``shipping`` is given, the project's air-freight line: it comes
     right after the tasks and before any preserved foreign lines, carries no
-    ``header_name`` (the shipment belongs to no task, so no header should
+    header row (the shipment belongs to no task, so no header should
     claim it), and its description is ``build_shipping_description(shipping)``.
 
     Then every foreign line, echoed as a bare ``line_item_id``, which Books
@@ -457,18 +457,21 @@ def build_line_items(
     freshly-built shipping line above already represents it and echoing the
     old one too would leave the quote with two.
 
-    A header is ``header_name`` stamped on every one of the task's item lines
-    — that is how Books itself stores one (reference: quote DEV26-2506, where
-    each grouped line carries ``header_name`` plus a Books-generated
-    ``header_id``). It is NOT a standalone ``line_item_category: "header"``
-    row: Books accepts that shape but stores it as a broken, priceless ITEM
-    line on the PDF — the bug this replaced. Known limit: Books matches
-    headers by name, so two same-titled tasks render under one shared header.
+    A header is its own row, ``{"line_item_category": "header", "name":
+    <task title>}``, right before the task's item lines. Books moved to that
+    shape at the end of October 2026: it now stores and returns every
+    header as such a row (quote DEV26-2944), and refuses an item line that
+    carries ``header_name`` ("L'en-tête doit être envoyé en tant que poste"),
+    which is how it stored them before (quote DEV26-2506). Header rows have
+    no ``line_item_id`` and no identity, so the echo pass below never keeps
+    one: they are rebuilt from the tasks on every push.
     """
     lines: list[dict] = []
     emitted = [(t, s) for t, s in ((t, enabled_services(t)) for t in tasks) if s]
     for task_row, services in emitted:
         header = task_row.title.strip()[:_TITLE_MAX] if (task_row.title or "").strip() else None
+        if header:
+            lines.append({"line_item_category": "header", "name": header})
         for service in services:
             rate, quantity = rate_quantity(task_row, service)
             # "10%" not "10.00%": Books accepts either and echoes back the
@@ -484,7 +487,6 @@ def build_line_items(
                     "rate": rate,
                     "quantity": quantity,
                     "description": build_description(service, task_row),
-                    **({"header_name": header} if header else {}),
                     **({"discount": discount} if discount else {}),
                 }
             )
@@ -497,9 +499,7 @@ def build_line_items(
                 "rate": shipping.price,
                 "quantity": 1,
                 "description": build_shipping_description(shipping),
-                # No header_name on purpose: the shipment belongs to no task,
-                # and a header would file it under whichever task title
-                # happened to precede it.
+                # No header row of its own: the shipment belongs to no task.
             }
         )
     shipping_ids = frozenset(catalogue.shipping.values())

@@ -280,6 +280,7 @@ async def test_a_task_added_in_the_panel_reaches_the_quote_after_the_card_closes
 
     put = next(entry for entry in seen if entry[0] == "PUT")
     assert put[2]["line_items"] == [
+        {"line_item_category": "header", "name": "Moyeu", "item_order": 1},
         {
             "item_id": "66407000006501192",
             "tax_id": "66407000009281008",
@@ -287,9 +288,9 @@ async def test_a_task_added_in_the_panel_reaches_the_quote_after_the_card_closes
             "rate": 3500,
             "quantity": 1,
             "description": "*Fichier non cédé*",
-            "header_name": "Moyeu",
-            "item_order": 1,
+            "item_order": 2,
         },
+        {"line_item_category": "header", "name": "Bague de serrage", "item_order": 3},
         {
             "item_id": "66407000006884825",
             "tax_id": "66407000009281008",
@@ -297,8 +298,7 @@ async def test_a_task_added_in_the_panel_reaches_the_quote_after_the_card_closes
             "rate": 6000,
             "quantity": 1,
             "description": "",
-            "header_name": "Bague de serrage",
-            "item_order": 2,
+            "item_order": 4,
         },
     ]
 
@@ -395,7 +395,8 @@ async def test_a_forced_attempt_pushes_once_the_quote_reads_tax_inclusive(async_
     assert await run_sync_once(db_session, pending_only=True) == 1
 
     put = next(entry for entry in seen if entry[0] == "PUT")
-    assert [line.get("header_name") for line in put[2]["line_items"]] == ["Moyeu"]
+    headers = [line["name"] for line in put[2]["line_items"] if line.get("line_item_category") == "header"]
+    assert headers == ["Moyeu"]
     await db_session.refresh(project)
     assert project.quote_sync_state == "idle"
     assert project.quote_sync_error is None
