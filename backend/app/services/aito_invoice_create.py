@@ -54,7 +54,8 @@ logger = logging.getLogger(__name__)
 # typed in Books), which would otherwise arrive nameless. A header is its
 # own `line_item_category: "header"` row on estimates and invoices alike
 # (see aito_quote_export.build_line_items), copied as that row alone so the
-# invoice PDF keeps the same per-task grouping the quote had.
+# invoice PDF keeps the same per-task grouping the quote had. Books returns
+# its title as `name` but only stores one sent as `description`.
 _LINE_FIELDS = ("item_id", "name", "description", "rate", "quantity", "unit", "tax_id", "item_order")
 
 
@@ -121,8 +122,8 @@ class RetainerApplication:
 def build_line_items(estimate_lines: list[dict]) -> list[dict]:
     """The estimate's lines, reduced to what an invoice create accepts.
 
-    A header row is copied as ``{"line_item_category": "header", "name"}``
-    plus its ``item_order``: sent with the zero rate and quantity Books echoes on it, it would
+    A header row is copied as ``{"line_item_category": "header",
+    "description"}`` (its title) plus its ``item_order``: sent with the zero rate and quantity Books echoes on it, it would
     be an item. ``header_name`` is never sent — Books echoes it empty on every
     line and refuses a filled one since it moved headers to their own rows.
 
@@ -136,7 +137,11 @@ def build_line_items(estimate_lines: list[dict]) -> list[dict]:
     lines: list[dict] = []
     for source in estimate_lines:
         if source.get("line_item_category") == "header":
-            header = {"line_item_category": "header", "name": source.get("name") or ""}
+            # Books returns the title as `name`; a header sent with only `name` is dropped.
+            header = {
+                "line_item_category": "header",
+                "description": source.get("name") or source.get("description") or "",
+            }
             if source.get("item_order") not in (None, ""):
                 header["item_order"] = source["item_order"]  # its place among the lines
             lines.append(header)

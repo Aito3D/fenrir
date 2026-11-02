@@ -178,7 +178,7 @@ def test_single_task_gets_a_header_too():
     # quote carries one — otherwise a single-task quote names its job nowhere.
     lines = build_line_items([task(title="Helice grise", scan_cost=5000)], [], CATALOGUE)
     assert len(lines) == 2
-    assert lines[0] == {"line_item_category": "header", "name": "Helice grise", "item_order": 1}
+    assert lines[0] == {"line_item_category": "header", "description": "Helice grise", "item_order": 1}
     assert lines[1]["item_id"] == "ITEM_SCAN"
     assert lines[1]["rate"] == 5000
     assert lines[1]["item_order"] == 2
@@ -200,7 +200,7 @@ def test_a_line_carries_the_catalogue_defaults():
 
 def test_multiple_tasks_get_headers_named_after_them():
     """Since the end of October 2026 Books stores a header as its own
-    ``{"line_item_category": "header", "name": ...}`` row (quote DEV26-2944)
+    ``{"line_item_category": "header", "description": ...}`` row (quote DEV26-2944)
     and refuses ``header_name`` on an item line ("L'en-tête doit être envoyé
     en tant que poste"), which every quote push failed on."""
     lines = build_line_items(
@@ -208,7 +208,10 @@ def test_multiple_tasks_get_headers_named_after_them():
         [],
         CATALOGUE,
     )
-    assert [(line.get("line_item_category"), line.get("name")) for line in lines] == [
+    assert [
+        (line.get("line_item_category"), line.get("description") if line.get("line_item_category") else None)
+        for line in lines
+    ] == [
         ("header", "Premiere"),
         (None, None),
         (None, None),
@@ -268,7 +271,7 @@ def test_a_task_with_no_service_produces_nothing_not_even_a_header():
     lines = build_line_items([task(title="Vide"), task(title="Reelle", scan_cost=1)], [], CATALOGUE)
     assert len(lines) == 2
     # The serviceless task contributes nothing at all; the survivor keeps its own.
-    assert lines[0] == {"line_item_category": "header", "name": "Reelle", "item_order": 1}
+    assert lines[0] == {"line_item_category": "header", "description": "Reelle", "item_order": 1}
     assert lines[1]["item_id"] == "ITEM_SCAN"
 
 

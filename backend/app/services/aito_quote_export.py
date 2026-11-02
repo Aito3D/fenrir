@@ -457,12 +457,14 @@ def build_line_items(
     freshly-built shipping line above already represents it and echoing the
     old one too would leave the quote with two.
 
-    A header is its own row, ``{"line_item_category": "header", "name":
-    <task title>}``, right before the task's item lines. Books moved to that
-    shape at the end of October 2026: it now stores and returns every
-    header as such a row (quote DEV26-2944), and refuses an item line that
-    carries ``header_name`` ("L'en-tête doit être envoyé en tant que poste"),
-    which is how it stored them before (quote DEV26-2506). Header rows have
+    A header is its own row, ``{"line_item_category": "header",
+    "description": <task title>}``, right before the task's item lines. Books
+    moved to that shape at the end of October 2026: it stores and returns
+    every header as such a row (quote DEV26-2944, title under ``name`` on the
+    way back), and refuses ``header_name`` anywhere ("L'en-tête doit être
+    envoyé en tant que poste"), which is how it stored them before (quote
+    DEV26-2506). The title goes in ``description``: a header row sent with
+    only ``name`` is accepted and silently dropped (probed live on DEV26-2960). Header rows have
     no ``line_item_id`` and no identity, so the echo pass below never keeps
     one: they are rebuilt from the tasks on every push.
     """
@@ -471,7 +473,7 @@ def build_line_items(
     for task_row, services in emitted:
         header = task_row.title.strip()[:_TITLE_MAX] if (task_row.title or "").strip() else None
         if header:
-            lines.append({"line_item_category": "header", "name": header})
+            lines.append({"line_item_category": "header", "description": header})
         for service in services:
             rate, quantity = rate_quantity(task_row, service)
             # "10%" not "10.00%": Books accepts either and echoes back the

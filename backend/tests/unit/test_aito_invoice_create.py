@@ -1049,7 +1049,8 @@ async def test_the_preview_refuses_where_the_create_would(async_client, db_sessi
 def test_a_header_row_is_copied_as_a_header_and_keeps_its_place():
     """Books stores a header as its own row with a zero rate and quantity 1
     (quote DEV26-2944). Copied with those, it would be an item line on the
-    invoice; it goes over as the header row alone, in its place."""
+    invoice; it goes over as the header row alone, in its place, titled from
+    ``description`` because Books drops a header row sent with only ``name``."""
     lines = build_line_items(
         [
             {
@@ -1075,5 +1076,5 @@ def test_a_header_row_is_copied_as_a_header_and_keeps_its_place():
         ]
     )
 
-    assert lines[0] == {"line_item_category": "header", "name": "Bague entretoise", "item_order": 1}
+    assert lines[0] == {"line_item_category": "header", "description": "Bague entretoise", "item_order": 1}
     assert lines[1] == {"item_id": "it-imp", "name": "Impression3D", "rate": 1500, "quantity": 1, "item_order": 2}

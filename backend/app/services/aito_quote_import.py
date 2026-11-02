@@ -416,7 +416,7 @@ def parse_lines(
     for line in sorted(estimate.get("line_items") or [], key=lambda item: item.get("item_order") or 0):
         if line.get("line_item_category") == "header":
             pending_boundary = True
-            pending_title = (line.get("name") or "").strip() or None
+            pending_title = (line.get("name") or line.get("description") or "").strip() or None
             continue
         shipment = _shipping_line_for_map(line, shipping_id_map)
         if shipment is not None:

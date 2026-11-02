@@ -166,7 +166,7 @@ async def test_project_created_through_the_api_produces_the_exact_wire_line_item
     # The full array, not a sample: the task's header row first, canonical
     # service order, default catalogue ids, the impression rate/qty/discount split.
     assert body["line_items"] == [
-        {"line_item_category": "header", "name": "Hélice bâbord", "item_order": 1},
+        {"line_item_category": "header", "description": "Hélice bâbord", "item_order": 1},
         {
             "item_id": "66407000006501192",
             "tax_id": "66407000009281008",
