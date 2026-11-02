@@ -633,6 +633,7 @@ const NL_COGNATES = [
   '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
   'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
   '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
+  'Project:',  // archive page label
   'Apps',  // notifications badge for messages from connected apps — same word
   '1 printer', '{{n}} printers',
   '1 week', '(25%, 50%, 75%)', 'Accent', 'AMS Filament Backup',

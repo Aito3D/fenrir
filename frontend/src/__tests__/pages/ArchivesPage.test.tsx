@@ -2,7 +2,7 @@
  * Tests for the ArchivesPage component.
  */
 
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
@@ -137,6 +137,20 @@ describe('ArchivesPage', () => {
       await waitFor(() => {
         expect(screen.getByText('1h 0m')).toBeInTheDocument();
       }, { timeout: 5000 });
+    });
+
+    it("compares the latest print with its plate's estimate", async () => {
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([
+            { ...mockArchives[1], run_count: 2, actual_time_seconds: 2000, time_estimate_seconds: 1800, time_accuracy: 90 },
+          ])
+        )
+      );
+      render(<ArchivesPage />);
+
+      const time = (await screen.findByText('-10%')).parentElement!;
+      expect(time.getAttribute('title')).toContain('Estimated: 30m');
     });
 
     it('shows printer name', async () => {
@@ -602,12 +616,49 @@ describe('ArchivesPage', () => {
     });
   });
 
+  // Archive redesign P4: a card opens its archive's page; the controls on it
+  // do what they say and leave the page where it is.
+  describe('opening an archive', () => {
+    beforeEach(() => {
+      window.localStorage.removeItem('archiveCollection');
+      window.history.pushState({}, '', '/archives');
+      server.use(http.get('/api/v1/archives/', () => HttpResponse.json(mockArchives)));
+    });
+
+    it('opens the archive page from a click on its card', async () => {
+      render(<ArchivesPage />);
+      fireEvent.click(await screen.findByText('#2'));
+
+      await waitFor(() => expect(window.location.pathname).toBe('/archives/2'));
+    });
+
+    it('leaves the page alone for a click on a control in the card', async () => {
+      render(<ArchivesPage />);
+      await screen.findByText('#2');
+      fireEvent.click(screen.getAllByTitle(/favorites/i)[0]);
+
+      expect(window.location.pathname).toBe('/archives');
+    });
+
+    it('leaves the page alone for a click in a dialog the card opened', async () => {
+      render(<ArchivesPage />);
+      await screen.findByText('#2');
+      // The card's own Edit button; its dialog renders inside the card.
+      const card = screen.getByText('#2').closest('[data-archive-id]') as HTMLElement;
+      fireEvent.click(within(card).getByTitle('Edit'));
+      fireEvent.click(await screen.findByText('Edit Archive'));
+
+      expect(window.location.pathname).toBe('/archives');
+    });
+  });
+
   describe('Not Printed / Printed collections', () => {
     const mixedStatusArchives = [
       { ...mockArchives[0], id: 100, print_name: 'NeverPrinted', status: 'archived', started_at: null, completed_at: null },
       { ...mockArchives[0], id: 101, print_name: 'WasPrinted', status: 'completed' },
       { ...mockArchives[0], id: 102, print_name: 'WasFailed', status: 'failed' },
       { ...mockArchives[0], id: 103, print_name: 'WasCancelled', status: 'cancelled' },
+      { ...mockArchives[0], id: 104, print_name: 'FailedBefore', status: 'completed', run_count: 2, failed_run_count: 1 },
     ];
 
     beforeEach(() => {
@@ -641,7 +692,7 @@ describe('ArchivesPage', () => {
         http.get('/api/v1/archives/', () =>
           HttpResponse.json([
             ...mixedStatusArchives,
-            { ...mockArchives[0], id: 104, print_name: 'NowPrinting', status: 'printing', completed_at: null },
+            { ...mockArchives[0], id: 105, print_name: 'NowPrinting', status: 'printing', completed_at: null },
           ])
         )
       );
@@ -677,6 +728,20 @@ describe('ArchivesPage', () => {
         expect(screen.getByText('WasFailed')).toBeInTheDocument();
         expect(screen.getByText('WasCancelled')).toBeInTheDocument();
       }, { timeout: 5000 });
+    });
+
+    // Archive redesign P4: an archive is a file printed maybe several times.
+    it('"Failed Prints" finds archives one print of which failed, not only the latest', async () => {
+      render(<ArchivesPage />);
+      await screen.findByText('FailedBefore');
+
+      fireEvent.change(screen.getByDisplayValue('All Archives'), { target: { value: 'failed' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('WasFailed')).toBeInTheDocument();
+        expect(screen.getByText('FailedBefore')).toBeInTheDocument();
+        expect(screen.queryByText('WasPrinted')).not.toBeInTheDocument();
+      });
     });
   });
 
@@ -1049,21 +1114,39 @@ describe('ArchivesPage', () => {
 
       expect(openSpy).toHaveBeenCalledWith('https://printables.com/model/12345', '_blank');
     });
+
   });
 
   // Archive redesign P2: merging changes and removes whole archives, so the
   // button is there only for those the merge API lets through.
-  describe('merge duplicates button', () => {
-    // jsdom has no scrolling, and following an archive link scrolls to its
-    // card, later than the test that followed it may run.
-    const scrollIntoView = Element.prototype.scrollIntoView;
-    beforeAll(() => {
-      Element.prototype.scrollIntoView = vi.fn();
-    });
-    afterAll(() => {
-      Element.prototype.scrollIntoView = scrollIntoView;
-    });
+  // Archive redesign P3: the Failed collection shows failed and aborted
+  // prints, and its export has both.
+  it('exports what the Failed collection shows', async () => {
+    let exported: string | null = null;
+    server.use(
+      http.get('*/api/v1/archives/export', ({ request }) => {
+        exported = new URL(request.url).searchParams.get('status');
+        return new HttpResponse('ID\n', { headers: { 'Content-Type': 'text/csv' } });
+      }),
+    );
+    const createObjectURL = URL.createObjectURL;
+    const revokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = () => 'blob:export';
+    URL.revokeObjectURL = () => {};
+    try {
+      render(<ArchivesPage />);
+      fireEvent.change(await screen.findByDisplayValue('All Archives'), { target: { value: 'failed' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+      fireEvent.click(await screen.findByText('Export as CSV'));
 
+      await waitFor(() => expect(exported).toBe('failed,aborted'));
+    } finally {
+      URL.createObjectURL = createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL;
+    }
+  });
+
+  describe('merge duplicates button', () => {
     const signInWith = (permissions: string[]) => {
       setAuthToken('merge-token', 'session');
       server.use(

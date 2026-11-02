@@ -433,6 +433,10 @@ export function useWebSocket() {
         debouncedInvalidate('archives');
         debouncedInvalidate('archiveStats');
         debouncedInvalidate('queue');
+        // A print ended: the archive page's prints and the calendar's.
+        debouncedInvalidate('archive');
+        debouncedInvalidate('archive-runs');
+        debouncedInvalidate('calendar-runs');
         break;
 
       case 'print_confirm_request': {
@@ -468,6 +472,10 @@ export function useWebSocket() {
         if (typeof archiveId === 'number') bumpArchiveThumbnail(archiveId);
         debouncedInvalidate('archives');
         if (message.type === 'archive_created') debouncedInvalidate('archiveStats');
+        if (message.type === 'archive_updated') {
+          debouncedInvalidate('archive');
+          debouncedInvalidate('archive-runs');
+        }
         break;
       }
 

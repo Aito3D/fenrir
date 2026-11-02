@@ -1687,6 +1687,37 @@ def _get_start_plate_id(printer_id: int, archive_id: int | None) -> int | None:
     return _print_plate_ids.get((printer_id, archive_id))
 
 
+def _run_print_time_seconds(archive, printer_id: int) -> int | None:
+    """The slicer's time for the plate this print prints, for its start
+    notification (#3375): ``archive.print_time_seconds`` adds every plate of
+    the file up (#1593). The plate is the dispatch's, else the archive's. The
+    whole file's time when its plates are not known; None for a plate not
+    known of several, and the notification takes the printer's remaining
+    time."""
+    from backend.app.services.print_cost_estimate import run_estimate
+
+    plate_id = _print_plate_ids.get((printer_id, archive.id), archive.plate_id)
+    estimate = run_estimate(archive, plate_id)
+    return estimate.seconds if estimate is not None else None
+
+
+_plate_estimates_task: asyncio.Task | None = None
+
+
+async def _fill_plate_estimates() -> None:
+    from backend.app.services.print_cost_estimate import fill_plate_estimates
+
+    try:
+        filled = await fill_plate_estimates(async_session)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logging.getLogger(__name__).warning("[ARCHIVE] Reading plate estimates failed: %s", exc)
+        return
+    if filled:
+        logging.getLogger(__name__).info("[ARCHIVE] Read the plate estimates of %d archive(s)", filled)
+
+
 def _partial_progress_scale(progress: int | float | None) -> float:
     """Clamp ``progress / 100`` into [0.0, 1.0] for partial-print scaling.
 
@@ -5375,7 +5406,7 @@ async def _promote_expected_archive(
                 # register_expected_print (handles library-file-based queue items where
                 # the freshly-created archive has no created_by_id yet), taken above.
                 archive_data = {
-                    "print_time_seconds": archive.print_time_seconds,
+                    "print_time_seconds": _run_print_time_seconds(archive, printer_id),
                     "created_by_id": archive.created_by_id or fallback_creator,
                 }
                 await _send_print_start_notification(printer_id, data, archive_data, logger)
@@ -5522,7 +5553,7 @@ async def _resume_existing_archive(
                 await _record_energy_start(existing_archive, printer_id, db, context="subtask-resume")
             if not notification_sent:
                 archive_data = {
-                    "print_time_seconds": existing_archive.print_time_seconds,
+                    "print_time_seconds": _run_print_time_seconds(existing_archive, printer_id),
                     "created_by_id": existing_archive.created_by_id,
                 }
                 await _send_print_start_notification(printer_id, data, archive_data, logger)
@@ -5616,7 +5647,7 @@ async def _resume_existing_archive(
             # Send notification with archive data (existing archive)
             if not notification_sent:
                 archive_data = {
-                    "print_time_seconds": existing_archive.print_time_seconds,
+                    "print_time_seconds": _run_print_time_seconds(existing_archive, printer_id),
                     "created_by_id": existing_archive.created_by_id,
                 }
                 await _send_print_start_notification(printer_id, data, archive_data, logger)
@@ -6339,7 +6370,7 @@ async def _archive_downloaded_print(
             # Send notification with archive data (new archive created)
             if not notification_sent:
                 archive_data = {
-                    "print_time_seconds": archive.print_time_seconds,
+                    "print_time_seconds": _run_print_time_seconds(archive, printer_id),
                     "created_by_id": archive.created_by_id,
                 }
                 await _send_print_start_notification(printer_id, data, archive_data, logger)
@@ -12373,6 +12404,12 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logging.warning("[SLICE] Recovering queue items waiting for a slice failed: %s", exc)
 
+    # Each plate's estimate of archives made before they were kept (#3375),
+    # read from their 3MFs in the background: the readers use the whole
+    # file's figures until then.
+    global _plate_estimates_task
+    _plate_estimates_task = asyncio.create_task(_fill_plate_estimates())
+
     # Register an app-scoped httpx client for Bambu Cloud services so
     # per-request BambuCloudService instances reuse the same connection pool
     # (important for routes like /cloud/filament-info that chain many
@@ -12895,6 +12932,8 @@ async def lifespan(app: FastAPI):
 
     stop_expected_prints_cleanup()
     stop_auth_cleanup()
+    if _plate_estimates_task is not None and not _plate_estimates_task.done():
+        _plate_estimates_task.cancel()
     from backend.app.services import announcements as announcements_service
 
     announcements_service.stop()
@@ -13749,8 +13788,10 @@ async def health_check():
 # GET + HEAD on the three PWA bootstrap routes (#1460). Scanners and a plain
 # `curl -I` use HEAD; FastAPI's @app.get only registers GET, so HEAD answers
 # with 405 Method Not Allowed and shows up as a "broken manifest" red herring
-# in deployment debugging.
-@app.api_route("/manifest.json", methods=["GET", "HEAD"])
+# in deployment debugging. One decorator per method, not api_route(methods=
+# [...]): api_route gives both methods the same OpenAPI operation id.
+@app.get("/manifest.json")
+@app.head("/manifest.json")
 async def serve_manifest():
     """Serve PWA manifest."""
     manifest_file = app_settings.static_dir / "manifest.json"
@@ -13759,7 +13800,8 @@ async def serve_manifest():
     return {"error": "Manifest not found"}
 
 
-@app.api_route("/sw.js", methods=["GET", "HEAD"])
+@app.get("/sw.js")
+@app.head("/sw.js")
 async def serve_service_worker():
     """Serve service worker."""
     sw_file = app_settings.static_dir / "sw.js"
@@ -13772,7 +13814,8 @@ async def serve_service_worker():
     return {"error": "Service worker not found"}
 
 
-@app.api_route("/sw-register.js", methods=["GET", "HEAD"])
+@app.get("/sw-register.js")
+@app.head("/sw-register.js")
 async def serve_sw_register():
     """Serve the service-worker registration bootstrap script.
 

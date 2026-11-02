@@ -147,6 +147,13 @@ window.scrollTo = vi.fn();
   });
 }
 
+// jsdom has no scrolling: a page that scrolls to an element on a timer (an
+// archive link scrolls to its card) would throw after the test that caused it
+// has ended. Tests that check the scroll stub it themselves.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 // Mock localStorage with both spy capability and state persistence
 const localStorageData: Record<string, string> = {};
 const localStorageMock = {
