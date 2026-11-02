@@ -1,122 +1,155 @@
-# Refactor campaign 30 — final report
+# Refactor-loop campaign H1 — Maintenance > Hours page
 
-Scope: Projects-as-PDM (seventh pass, seeded from campaign 29 leads). Branch `auto-refactor-loop`,
-BASE `refactor-base` = 6845b971d (upstream merge 7fba95bc2). Started 2026-10-26, exited 2026-10-31.
+Branch `auto-refactor-loop-hours`, worktree `../bambuddy-refactor-hours`, based on UPSTREAM `851c46088`.
+BASE = tag `refactor-base-hours` (setup commit `177dae4dd`). Run 2026-11-01 to 2026-11-02, concurrently with
+campaign 31 (Projects pages) in `../bambuddy-refactor`, hence the `-hours` branch/tag names.
 
-**Exit reason: MAX_ITER** (12 of 12 iterations, round 1 of 3; no resurvey ran).
-Parameters: MAX_ITER 12, MAX_ROUNDS 3, BATCH 3, TRIAGE none, MODE auto, COMMIT_STYLE grouped, MERGE_CADENCE at-exit.
+## Outcome
 
-## Result
+- **Why it ended:** the plan was exhausted after round 3, which is MAX_ROUNDS (3); iteration 8 was also MAX_ITER (8).
+  Not converged: all three survey rounds filed workable tasks.
+- **Iterations:** 8, all verified PASS by the blind verifier (iterations 5 and 8 on a second attempt).
+- **Commits:** 9 on the branch (setup + one squashed commit per iteration) plus this report. Tags `loopH-1` … `loopH-8`.
+- **Tasks:** 20 filed into the plan, 19 DONE, 1 BLOCKED (T-053), 0 OPEN, 0 WONTFIX-AUTO. 33 findings triaged.
+- **Diff since BASE:** 47 files, +1257 / −188 lines; 866 of the added lines are tests (7 test files).
 
-| | Start (BASE) | Exit (loop-12) |
+| Gate | At BASE | At exit |
 |---|---|---|
-| Backend scoped coverage (statements) | 4587/4660 = 98.43% | 4668/4725 = 98.79% |
-| Frontend scoped coverage (statements) | 1708/1889 = 90.41% | 1685/1861 = 90.54% |
-| Backend tests | 23702 passed | 23742 passed, 10 skipped |
-| Golden probes | 11/11 | 11/11 (pdm-i18n re-recorded under T-473) |
-| basedpyright lock mode | 0 errors | 0 errors (one stale baseline entry removed with T-497) |
+| Backend scoped statements (routes + service) | 425/436 = 97.48% | 491/495 = 99.19% |
+| Frontend scoped statements (hours components + hoursSeries.ts) | 899/985 = 91.26% | 904/985 = 91.77% |
+| Golden probes | 11/11 | 11/11 |
+| Backend suite | 25026 passed, 1 known-broken | 25057 passed, 1 known-broken |
 
-Tasks: 53 total — **36 DONE**, 16 OPEN, 1 WONTFIX-AUTO, 0 BLOCKED.
-Every iteration passed the blind verifier on its first verdict (iteration 3 first came back incomplete because the
-Mac slept on battery; the same verifier then finished with a PASS).
+Known-broken before → after:
+- `test_json_gzip_middleware::test_already_encoded_json_is_not_recompressed`: failing → failing (out of scope; fixed on
+  another branch, `4fc5e3d6f`).
+- `test_printer_hours_migrations::test_migration_backfills_calibrated_at_from_offset`: clock-dependent at BASE (fails
+  whenever local and UTC dates differ) → unchanged. Found by verifier 5. Triaged as T-051.
 
-## Iterations
+SURFACE.md changed only through approved entries: two `hour_events` unique indexes, the `hour_machines.retired_printer_id`
+column and its migrations, the `NON_FK_ID_REFERENCES` line, `MAINTENANCE_DELETE` 2→3 / `MAINTENANCE_UPDATE` 6→5, the
+exports `DAY_MS` and `isoDayFormatter`, and the helper `retire_machine_of_printer`.
 
-| Tag | Tasks | Summary |
-|---|---|---|
-| loop-1 | T-479, T-481, T-482 | Re-slice size cap, source removal resets the slice, undo cleans files first |
-| loop-2 | T-483, T-484, T-488 | Failed-slice write retried, refused drops leave no empty item, slice-start guard tests |
-| loop-3 | T-489, T-490, T-491 | Tests for startup slice recovery, the move-to-project gate and card slice states |
-| loop-4 | T-492, T-497, T-498 (+T-495) | Sub-project row tests, dead add-files chain removed, legacy ItemRow read-only |
-| loop-5 | T-459, T-460 | Orphan-sweep startup tests, project files service tests split by operation |
-| loop-6 | T-462, T-463, T-464 | List grid tests, reslice unmount tests, slice store undo cleans first |
-| loop-7 | T-465, T-466, T-467 | Shared quiet rollback, merged error branches, one source-file name |
-| loop-8 | T-468, T-469, T-470 | One library path helper, public store_derived_file, slice-status constants |
-| loop-9 | T-471, T-472, T-473 | Slice-wait constant in main.py, print_queue wrappers inlined, unused addFiles key removed |
-| loop-10 | T-474, T-475, T-476 | Shared file-type badge tone, format and timeline edge-case tests |
-| loop-11 | T-477, T-478, T-480 | Reslice test patches only its own sleep, queue routes hide aito_task_id, generic legacy-migration reasons |
-| loop-12 | T-485, T-486, T-487 | A slice failing at once returns its job; missing source files are reported as missing |
+## User-approved behavior changes (all recorded in BASELINE-CHANGELOG.md)
 
-## By source
+- **T-005** Hours write routes honour the caller's printer scope (422/404 for out-of-scope machines).
+- **T-006** The Hours overview shows a restricted user only in-scope and retired machines with their readings/events.
+- **T-007** Deleting a note needs `maintenance:delete`; follow-up: the note delete button follows `canDelete`.
+- **T-017** `hour_events` gets partial unique indexes; a migration deletes existing duplicates (keeps the lowest id);
+  `sync_events` treats a duplicate insert as already done.
+- **T-018** Calibration's "same day" check uses the server's local date.
+- **T-001 / T-002** Shared `isoDayFormatter` and `DAY_MS` exports (rendering unchanged).
+- **T-020** The sheet import uses one query; more than 20000 readings → 422.
+- **T-008** Caps: 500 entries per reading batch, 200 new machines per import, 100-char import keys.
+- **T-024** Retired machines keep their last printer's scope (`retired_printer_id`); follow-ups: counted for the SQLite
+  id seed, and `delete_printer` retires the machine first so it holds on PostgreSQL (a hunk in upstream `printers.py`).
+- **T-037** A sheet import that collides with a concurrent write is retried once.
+- **T-038** A concurrent insert of the same reading ends last-writer-wins instead of a 500 (approved after the fact;
+  verifier 5 caught it). T-052 later reimplemented it as a dialect upsert inside the caller's transaction.
+- **T-039** Reading-pass Save is disabled from the click through the save.
+- **T-025** A restricted user colliding with a hidden machine's name gets "This machine name is not available".
+- **T-026** Changing the fleet-wide reading interval needs unrestricted printer access (backend only, see follow-ups).
+- **T-027** Two unused `maintenance.hours.*` keys removed from all 15 locales.
+- **T-046** An import naming two new machines alike → 422 "Duplicate machine name".
+- **Probe fix (2026-11-02):** `tools/probe_hours_api.py` pins its printers' `created_at` to local noon; the golden was
+  time-of-day flaky at BASE.
 
-| Source | DONE | OPEN | Other |
-|---|---|---|---|
-| survey (c29 carry-over) | 18 | 0 | 1 WONTFIX-AUTO |
-| audit-security | 3 | 0 | |
-| audit-robustness | 7 | 0 | |
-| audit-tests | 6 | 3 | |
-| audit-cleanliness | 2 | 13 | |
+Behavior-preserving tasks: T-012 (recalibration branch tests), T-052 (upsert joins the caller's transaction).
 
-## User-approved behavior changes (all in BASELINE-CHANGELOG.md)
+## What each survey round found
 
-Approved 2026-10-26 in the round-1 approval sweep: T-478, T-479, T-480, T-481, T-484, T-485, T-486, T-487, T-504;
-T-497 for the unobservable part only.
+- **Round 1:** 23 findings. 10 filed (9 behavior changes, all approved, plus T-012), 13 triaged.
+- **Round 2:** 17 findings. 5 behavior changes (all approved), 2 promoted from triage at the user's request
+  (T-038, T-039), 12 triaged.
+- **Round 3:** 13 findings. T-052 (P1, a flaw in T-038's savepoint on SQLite), T-046 and T-053 (both approved),
+  10 triaged.
 
-- **T-479** — POST /projects/revisions/{id}/reslice answers 413 when the source is over the slicing caps.
-- **T-481** — removing a revision's source .3mf resets its slice. Consequences accepted 2026-10-28: the old slice
-  row is hard-deleted and the file goes to the project _trash.
-- **T-484** — a refused drop deletes the empty item it created. Consequences accepted 2026-10-29: this applies to any
-  add_revision failure in a drop.
-- **T-478** — PATCH /queue/{id}, POST /queue/{id}/start and GET /queue/history hide aito_task_id from callers without
-  aito:read. Minimal version: bulk.py and _enrich_response untouched.
-- **T-480** — legacy-migration failures[].error shows generic reasons. LegacyMigrationError messages kept verbatim.
-- **T-485** — a slice that fails within milliseconds answers 202 with its job id and status 'failed'.
-- **T-486 / T-487** — missing source files read "The revision's source .3mf is missing". Consequences accepted
-  2026-10-31: the symlink-escape refusal, a missing non-source legacy .3mf, and a no-project retry use the same text.
-- **T-473** (approved 2026-10-31) — fork key projectsPdm.files.addFiles removed from 15 locales; pdm-i18n re-recorded.
-  The 6 other unused keys are upstream-owned and were left alone.
-- **SURFACE re-baselines** — T-497 (add_files_to_revision removed, allowed 2026-10-30); a standing approval
-  (2026-10-30) for additive internal-helper exports (T-479 check_source_within_caps, T-469 store_derived_file,
-  T-474 fileTypeBadgeTone); extended 2026-10-31 to occurrence-count-only lines (T-468 settings.base_dir 3 -> 2).
+## Findings by auditor (plan.py stats; promoted triage items count under their auditor)
 
-**Changes with no changelog entry:** T-482, T-464 (undo deletes files before rollback) and T-483 (_mark_failed
-retries 3 times, 0.5 s / 1.0 s backoff; its exception is logged only after the last attempt). They only differ when
-a database write or rollback fails. Every verifier judged them non-observable. Add an entry if you want them on record.
+| Auditor | Filed into the plan | DONE | BLOCKED | WONTFIX-AUTO | Triaged (campaign-wide) |
+|---|---|---|---|---|---|
+| audit-security | 8 | 8 | 0 | 0 | 0 |
+| audit-robustness | 8 | 7 | 1 | 0 | 7 (2 later promoted) |
+| audit-cleanliness | 3 | 3 | 0 | 0 | 10 |
+| audit-tests | 1 | 1 | 0 | 0 | 18 |
 
-## Left over
+TRIAGE.md (copied to `plans/refactor-campaign-hours-h1/`) holds all 33 remaining triaged findings with full evidence;
+promote one with `python tools/plan.py promote <id> --iteration N` (the flag is required).
 
-**OPEN (16, all P3):**
-- Tests: T-493 (move-to-project tests patch process-wide Path methods), T-494 (blank-title test uses a fixed 100 ms
-  sleep), T-496 (DeliveriesPicker cancel/backdrop untested).
-- Cleanliness: T-499, T-500, T-501, T-502, T-503, **T-504 (already user-approved)**, T-505, T-506, T-507, T-508, T-509,
-  T-510, T-511.
+## Left for humans
 
-**WONTFIX-AUTO:** T-461. The confirm dialog it targeted was removed, so the task is obsolete.
+- **T-053 BLOCKED:** database-level unique machine names. Printer names are not unique and `_sync_machines` copies them
+  onto machines, so a unique index would make every Hours request fail once two printers share a name or a new printer
+  reuses a retired machine's name. Needs a design choice: a partial index on unlinked machines, disambiguated linked
+  names, or unique printer names.
+- **Follow-up (T-026 UI half):** hide the interval control for printer-restricted users. The frontend has no scope
+  signal; it needs a flag on the current-user response (auth code, out of scope). Today such a user sees the control
+  and gets the 403 as a toast.
+- **Follow-up (T-024):** machines retired before this change, and machines whose printer is deleted by any path other
+  than `delete_printer`, have no `retired_printer_id` and stay visible to all users.
+- **PostgreSQL test harness:** `test_printer_hours_migrations.py` tests that drive a SQLite engine fail when
+  `TEST_POSTGRES_URL` is set (3 at BASE, plus the new `test_retired_printer_column_is_added_once_without_backfill`).
+  CI does not run that suite; `test_backend.sh --full` does.
 
-The full records are in PLAN.md, copied to plans/refactor-campaign30/.
+## Triaged findings (titles; full evidence in TRIAGE.md)
 
-## Leads for the next campaign (unverified unless stated)
+P2:
+- T-009 `PrinterHoursService._remind_once_a_day` has no test (same-day short-circuit and failure swallow)
+- T-010 Scheduler loop test relies on a wall-clock sleep race and never exercises the reminder or stop path
+- T-011 Hours API tests compare against the real `date.today()`; the midnight-crossing flake is unmitigated
+- T-013 `_migrate_printer_hours_columns` PostgreSQL branch has no test
+- T-014 HoursTab save-pass midnight refetch path, error toast and delete-confirm modals under-tested
+- T-015 Nine Hours components have no dedicated test file
+- T-019 `_migrate_printer_hours_columns()` backfill re-runs on every startup and marks newly uncalibrated machines calibrated
+- T-031 The concurrent `sync_events` test can pass without the unique indexes or the IntegrityError handler
+- T-032 `_migrate_hour_events_unique` and `_insert_event` are only tested on SQLite
+- T-047 Retired-machine scoping is untested on set-readings and on add/delete note
+- T-048 The import retry test simulates the collision, so it cannot show the retry reconciles with the concurrent row
 
-- **project_slice._start race (REPRODUCED).** Two concurrent slice starts can enqueue 2 jobs, or the loser gets None.
-  Since T-485, a loser that reads the old slice_job_id after the winner's job failed answers 202 'failed' with that
-  old id.
-- **Aito task id redaction gaps.** Upstream GET /bulk/printer-queues calls _enrich_response unredacted. The
-  add_to_queue response can carry an aito_task_id read from the file (trace.aito_task_id). Making the redaction a
-  required parameter of _enrich_response would close both. This touches upstream code and needs approval.
-- **project_slice._store** should check the slice came from the current source. A job that read the old source's
-  bytes can still land the removed source's G-code (see T-481).
-- **library_trash.py:109** lists every soft-deleted row with no `revision_id IS NULL` filter, so project revision rows show.
-- **project_filing.** The move/import and auto-file callers may leave empty items when the copy fails (sibling of
-  T-484). _skip_failed_group uses an inline literal that could share a constant.
-- **FileManagerPage.tsx:3674.** The bulk "Move to project…" gate ignores file ownership.
-- **format.ts formatFilament(999.6).** It renders "1000g", not "1.00kg". This is pinned as the current behavior.
-- **_error_status_and_message.** It still round-trips through HTTPException in _run_slice.
-- **Stale RevisionSliceStarted docstring.** It still says "slicing, or sliced"; it can now be 'failed'. The
-  pdm-pydantic-schemas golden pins it.
-- **T-486 no-project retry.** It could answer NO_PROJECT_TO_SLICE instead of "missing". The missing-file text names
-  "source" even for non-source legacy files.
-- **print_cost_estimate._source_path (outside PDM scope, from c29 T-425).** A queued print whose file became a symlink
-  out of the data folder errors on every scheduler pass and stays pending.
-- **Dead code with baselined basedpyright errors.** Deleting such code needs the same baseline edit; lock mode fails
-  on the stale entry.
+P3:
+- T-003 Rounded hours number formatter is copy-pasted in 4 files
+- T-004 Eight `useMutation` hooks repeat the same onError toast and invalidation boilerplate
+- T-016 HoursChart range/mode switching branches partly uncovered
+- T-021 `save_readings()` can return an error after its readings and recalibration are already committed
+- T-022 MachineEvents clears the typed note before the create request succeeds
+- T-023 `ensure_hour_machines()` IntegrityError retry expires objects the caller loaded beforehand
+- T-028 `import_readings` re-implements `upsert_reading`'s find-or-create logic inline
+- T-029 HoursChart builds its own UTC formatters instead of using `isoDayFormatter`
+- T-030 `save_readings` repeats the `_scoped_machine` scope check inline
+- T-033 `test_batch_caps_entries_at_500` asserts the route's own 422 at the cap
+- T-034 `test_import_batch_semantics` asserts the count of SELECT statements
+- T-035 `machine_for_printer` ValueError branch and the `remind_if_due` empty-recipient branch are uncovered
+- T-036 ReadingTimeline lines 16-17 and branch coverage of 72% are not exercised
+- T-040 Sweep and reminder failures are logged without a traceback
+- T-041 The retired-machine scope rule is encoded twice (Python helper and SQL coalesce)
+- T-042 `_retire` docstring omits `retired_printer_id`
+- T-043 Three different IntegrityError race-handling idioms
+- T-044 Redundant `list()` copy in `update_machine`
+- T-045 `_stage_import` mixes validation, machine creation and reading upsert
+- T-049 `import_readings` and `update_settings` read `date.today()` directly; new tests inherit that clock dependence
+- T-050 The one-save-per-click test can pass before a second POST arrives
+- T-051 The known-broken `calibrated_at` backfill test is clock-dependent
 
-Older carried leads are in plans/refactor-campaign30/c30-leads.md.
+## Verifier verdicts
 
-## Merge
+| Run | Verdict | Backend | Frontend | Note |
+|---|---|---|---|---|
+| loopH-1 | PASS | 446/450 | 899/985 | T-005, T-012, T-017 |
+| loopH-2 | PASS | 446/450 | 895/978 | T-006, T-018, T-001 |
+| loopH-3 | PASS | 461/465 | 895/976 | T-020, T-007, T-002 |
+| loopH-4 | PASS | 461/465 | 895/976 | T-008 |
+| loopH-5 #1 | FAIL | 480/484 | 895/976 | T-024 missed `NON_FK_ID_REFERENCES`; T-038 unsanctioned |
+| loopH-5 #2 | PASS | 480/484 | 895/976 | after the fix, the approval and the probe fix |
+| loopH-6 | PASS | 485/489 | 904/985 | T-039, T-025, T-026 |
+| loopH-7 | PASS | 485/489 | 904/985 | T-027 |
+| loopH-8 #1 | FAIL | 486/490 | 904/985 | T-024 fails on PostgreSQL (ON DELETE SET NULL) |
+| loopH-8 #2 | PASS | 491/495 | 904/985 | delete_printer retires the machine first; Hours tests run on PostgreSQL |
 
-Not merged. To land:
+## Lessons
 
-    git merge auto-refactor-loop
-    git worktree remove --force ../bambuddy-refactor
-
-`static/` was not rebuilt on the branch. Rebuild after merging, because T-473, T-474 and T-498 touch the frontend.
+- A fix that turns a 500 under a race into success is a behavior change for this loop; gate it up front.
+- On SQLite (pysqlite default mode) a savepoint opened after a commit with only SELECTs autocommits on release; use
+  `INSERT … ON CONFLICT DO UPDATE` for upserts.
+- Run the touched backend test files with `TEST_POSTGRES_URL` every iteration; the upgrade check alone missed T-024's gap.
+- A new id column without a foreign key must be added to `NON_FK_ID_REFERENCES`.
+- Only one coverage producer at a time per worktree.
