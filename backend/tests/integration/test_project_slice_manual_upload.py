@@ -10,13 +10,18 @@ from __future__ import annotations
 
 import io
 import json
+import tempfile
 import zipfile
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 
+from backend.app.core.config import settings
 from backend.app.models.library import LibraryFile
+from backend.app.models.project_item import ProjectRevision
+from backend.app.services import project_slice
+from backend.app.services.project_slice import MANUAL_NO_SOURCE
 from backend.tests.integration.test_project_slice import (  # noqa: F401  # fixtures
     _wait_job,
     roots,
@@ -201,3 +206,81 @@ async def test_only_a_failed_revision_takes_an_upload(async_client: AsyncClient,
 
     missing = await _post_sliced(async_client, 999_999, sliced_3mf())
     assert missing.status_code == 404
+
+
+@pytest.fixture
+def temp_dir(tmp_path, monkeypatch):
+    """The upload's scratch files go to ``tmp_path`` so a leftover ``fenrir-sliced-*`` is visible."""
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(scratch))
+    return scratch
+
+
+def _leftovers(scratch) -> list[str]:
+    return [p.name for p in scratch.glob("fenrir-sliced-*")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_oversize_upload_is_413_and_leaves_no_temp_file(
+    async_client: AsyncClient, db_session, sidecar, temp_dir, monkeypatch
+):
+    rev = await _failed_revision(async_client, sidecar)
+    monkeypatch.setattr(settings, "library_max_upload_bytes", 10)
+
+    res = await _post_sliced(async_client, rev["id"], sliced_3mf())
+
+    assert res.status_code == 413, res.text
+    assert (await _revision(db_session, rev["id"])).slice_status == "failed"
+    assert _leftovers(temp_dir) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_unpacked_size_over_the_cap_is_refused(
+    async_client: AsyncClient, db_session, sidecar, temp_dir, monkeypatch
+):
+    rev = await _failed_revision(async_client, sidecar)
+    monkeypatch.setattr(settings, "library_max_zip_extract_bytes", 10)
+
+    res = await _post_sliced(async_client, rev["id"], sliced_3mf())
+
+    assert res.status_code == 413, res.text
+    assert (await _revision(db_session, rev["id"])).slice_status == "failed"
+    assert _leftovers(temp_dir) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_revision_without_source_row_is_refused(async_client: AsyncClient, db_session, sidecar, temp_dir):
+    rev = await _failed_revision(async_client, sidecar)
+    await db_session.execute(delete(LibraryFile).where(LibraryFile.id == rev["files"][0]["id"]))
+    await db_session.commit()
+
+    res = await _post_sliced(async_client, rev["id"], sliced_3mf())
+
+    assert res.status_code == 400, res.text
+    assert res.json()["detail"] == MANUAL_NO_SOURCE
+    assert _leftovers(temp_dir) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_retry_that_landed_first_refuses_the_upload(
+    async_client: AsyncClient, db_session, sidecar, temp_dir, monkeypatch
+):
+    rev = await _failed_revision(async_client, sidecar)
+
+    async def lost_claim(db, revision_id, *_args, **_kwargs):
+        await db.execute(update(ProjectRevision).where(ProjectRevision.id == revision_id).values(slice_status="sliced"))
+        await db.commit()
+        return None
+
+    monkeypatch.setattr(project_slice, "_store", lost_claim)
+
+    res = await _post_sliced(async_client, rev["id"], sliced_3mf())
+
+    assert res.status_code == 409, res.text
+    assert res.json()["detail"]["code"] == "not_failed"
+    assert _leftovers(temp_dir) == []

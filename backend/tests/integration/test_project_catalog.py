@@ -287,3 +287,59 @@ async def test_catalog_ignores_a_deleted_order(async_client: AsyncClient, db_ses
     assert (row["client_names"], row["open_orders"]) == ([], [])
     assert await _ids(async_client, q="acme") == set()
     assert await _ids(async_client, q=f"#{order.id}") == set()
+
+
+async def _folders_by_id(client: AsyncClient) -> dict[int, dict]:
+    return {f["id"]: f for f in (await client.get(f"{API}/folders")).json()["folders"]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_three_level_cycle_is_refused_and_nothing_persists(async_client: AsyncClient):
+    a = await _folder(async_client, "A")
+    b = await _folder(async_client, "B", a["id"])
+    c = await _folder(async_client, "C", b["id"])
+
+    res = await async_client.patch(f"{API}/folders/{a['id']}", json={"name": "Renamed", "parent_id": c["id"]})
+
+    assert res.status_code == 409
+    folders = await _folders_by_id(async_client)
+    assert folders[a["id"]]["parent_id"] is None
+    assert folders[a["id"]]["name"] == "A"  # the 409 leaves the rename uncommitted
+    assert folders[b["id"]]["parent_id"] == a["id"] and folders[c["id"]]["parent_id"] == b["id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_template_project_cannot_be_filed_into_a_folder(async_client: AsyncClient, db_session):
+    template = await make_project(db_session, "Gabarit", is_template=True, commit=True)
+    folder = await _folder(async_client, "Car")
+
+    res = await async_client.patch(f"{API}/{template.id}/folder", json={"folder_id": folder["id"]})
+
+    assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_deleting_a_root_folder_sends_children_and_projects_to_the_root(async_client: AsyncClient):
+    a = await _folder(async_client, "A")
+    b = await _folder(async_client, "B", a["id"])
+    p = await _project(async_client, "Part")
+    assert (await async_client.patch(f"{API}/{p['id']}/folder", json={"folder_id": a["id"]})).status_code == 200
+
+    assert (await async_client.delete(f"{API}/folders/{a['id']}")).status_code in (200, 204)
+
+    assert (await _folders_by_id(async_client))[b["id"]]["parent_id"] is None
+    items = {i["id"]: i for i in await _catalog(async_client)}
+    assert items[p["id"]]["folder_id"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_unknown_folder_is_404_on_patch_and_delete(async_client: AsyncClient):
+    patched = await async_client.patch(f"{API}/folders/999999", json={"name": "x"})
+    deleted = await async_client.delete(f"{API}/folders/999999")
+
+    assert (patched.status_code, patched.json()["detail"]) == (404, "Folder not found")
+    assert (deleted.status_code, deleted.json()["detail"]) == (404, "Folder not found")
