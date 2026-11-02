@@ -249,6 +249,9 @@ async def _stage_import(db: AsyncSession, body: HourImportBody, printer_scope: P
     keys = [nm.key for nm in body.new_machines]
     if len(set(keys)) != len(keys):
         raise HTTPException(status_code=422, detail="Duplicate machine key")
+    names = [nm.name.strip().casefold() for nm in body.new_machines]
+    if len(set(names)) != len(names):
+        raise HTTPException(status_code=422, detail="Duplicate machine name")
     existing = await ensure_hour_machines(db)
     existing_ids = {m.id for m in existing if printer_scope.allows(_scope_printer_id(m))}
     for nm in body.new_machines:

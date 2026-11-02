@@ -76,6 +76,7 @@ from backend.app.services.print_storage import (
 )
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_file_cache import printer_file_cache
+from backend.app.services.printer_hours import retire_machine_of_printer
 from backend.app.services.printer_manager import (
     ams_units_to_dicts,
     display_temperatures,
@@ -560,6 +561,9 @@ async def delete_printer(
     # another printer's (measured). Not earlier: retiring a Notify provider
     # above commits, which ends a lock; nothing commits from here on.
     await db.execute(select(Printer.id).where(Printer.id == printer_id).with_for_update())
+
+    # Retire its hour machine while the link exists (PostgreSQL's ON DELETE SET NULL would drop it first)
+    await retire_machine_of_printer(db, printer_id)
 
     if delete_archives:
         # Delete all archives for this printer

@@ -51,6 +51,7 @@ async def machine_for_printer(db: AsyncSession, printer_id: int)
 async def next_service_hours(db: AsyncSession, printer_id: int)
 async def reading_interval_days(db: AsyncSession)
 async def remind_if_due(db: AsyncSession, today: date)
+async def retire_machine_of_printer(db: AsyncSession, printer_id: int)
 async def save_readings(
 async def snapshot_today(db: AsyncSession, today: date | None = None)
 async def sync_events(db: AsyncSession, machines: list[HourMachine])

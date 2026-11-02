@@ -441,6 +441,17 @@ class TestHoursImport:
         }
         assert (await async_client.post(f"{BASE}/import", json=body)).status_code == 422
 
+    async def test_import_rejects_two_new_machines_with_one_name(self, async_client: AsyncClient):
+        """T-046: one name under two keys (case and spaces aside) is refused instead of creating two twins."""
+        body = {
+            "new_machines": [{"key": "a", "name": "X1C07"}, {"key": "b", "name": " x1c07 "}],
+            "readings": [{"key": "a", "reading_date": "2026-01-01", "hours": 1}],
+        }
+        response = await async_client.post(f"{BASE}/import", json=body)
+        assert response.status_code == 422
+        assert response.json()["detail"] == "Duplicate machine name"
+        assert (await async_client.get(BASE)).json()["machines"] == []
+
 
 @pytest.mark.asyncio
 @pytest.mark.integration
@@ -845,13 +856,14 @@ class TestHoursPrinterScope:
                 "readings": [{"key": "k", "reading_date": "2026-01-01", "hours": 3}],
             },
         )
-        await db_session.delete(mine)
-        await db_session.delete(other)
-        await db_session.commit()
+        mine_id = mine.id
+        # Through the route: on PostgreSQL ON DELETE SET NULL would unlink a raw delete before the sync sees it.
+        for printer_id in (mine.id, other.id):
+            assert (await async_client.delete(f"/api/v1/printers/{printer_id}")).status_code == 200
         full = (await async_client.get(BASE)).json()
         assert all(m["retired"] for m in full["machines"])
         old_id = next(m["id"] for m in full["machines"] if m["name"] == "OLD-ONE")
-        limited_to(mine.id)
+        limited_to(mine_id)
         body = (await async_client.get(BASE)).json()
         assert {m["id"] for m in body["machines"]} == {m_in["id"], old_id}
         assert {r["machine_id"] for r in body["readings"]} == {m_in["id"], old_id}
@@ -870,6 +882,23 @@ class TestHoursPrinterScope:
         assert sorted((mid, str(d)) for mid, d in left) == sorted(
             [(m_out["id"], "2026-01-01"), (m_in["id"], "2026-01-02"), (old_id, "2026-01-02")]
         )
+
+    async def test_deleting_a_printer_retires_its_machine_once(self, async_client, printer_factory, db_session):
+        """T-024 follow-up: delete_printer records the machine's last printer, with one 'retired' event."""
+        from backend.app.models.maintenance import HourEvent
+
+        printer = await printer_factory(name="GOING", runtime_seconds=3600 * 10)
+        printer_id = printer.id
+        machine = await _machine_for(async_client, "GOING")
+        assert (await async_client.delete(f"/api/v1/printers/{printer_id}")).status_code == 200
+        for _ in range(2):  # the next syncs find it retired and unlinked: nothing more to do
+            body = (await async_client.get(BASE)).json()
+        out = next(m for m in body["machines"] if m["id"] == machine["id"])
+        assert out["retired"] is True
+        row = (await db_session.execute(select(HourMachine).where(HourMachine.id == machine["id"]))).scalar_one()
+        assert (row.printer_id, row.retired_printer_id, row.retired) == (None, printer_id, True)
+        kinds = (await db_session.execute(select(HourEvent.kind).where(HourEvent.machine_id == machine["id"]))).all()
+        assert [k for (k,) in kinds].count("retired") == 1
 
     async def test_only_unrestricted_callers_change_the_interval(self, async_client, printer_factory, limited_to):
         """T-026: the reading interval is fleet-wide, so a printer-scoped caller gets 403 and the setting stays."""

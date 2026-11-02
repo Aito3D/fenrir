@@ -76,6 +76,23 @@ async def test_ensure_retires_machine_of_deleted_printer(db_session, printer_fac
 
 
 @pytest.mark.asyncio
+async def test_retire_machine_of_printer_matches_the_sync(db_session, printer_factory):
+    """delete_printer's helper retires like the sync does, and the sync adds nothing after it."""
+    p = await printer_factory(name="H2S03", model="H2S")
+    [m] = await ensure_hour_machines(db_session)
+    await printer_hours.retire_machine_of_printer(db_session, p.id + 1000)  # no machine: nothing happens
+    assert (m.printer_id, m.retired) == (p.id, False)
+    await printer_hours.retire_machine_of_printer(db_session, p.id)
+    assert (m.printer_id, m.retired_printer_id, m.retired) == (None, p.id, True)
+    await db_session.delete(p)
+    await db_session.commit()
+    [m] = await ensure_hour_machines(db_session)
+    assert (m.printer_id, m.retired_printer_id, m.retired) == (None, p.id, True)
+    kinds = (await db_session.execute(select(HourEvent.kind).where(HourEvent.machine_id == m.id))).scalars().all()
+    assert kinds.count("retired") == 1
+
+
+@pytest.mark.asyncio
 async def test_ensure_retires_on_serial_mismatch_instead_of_hijacking(db_session, printer_factory):
     """SQLite may hand a deleted printer's id to the next printer; the serial guards the link."""
     p = await printer_factory(name="Old", serial_number="SERIAL-OLD")
@@ -553,6 +570,33 @@ async def test_upsert_reading_survives_a_concurrent_insert_of_the_same_row(tmp_p
             assert [(r.machine_id, r.reading_date, r.source, r.hours, r.raw_hours) for r in rows] == [
                 (machine_id, today, SOURCE_AUTO, 123.4, 110.0)
             ]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_upsert_reading_rolls_back_with_the_callers_transaction(tmp_path):
+    """After a commit and a plain SELECT, a new reading still belongs to the caller's transaction (no lone commit)."""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from backend.app.core.database import Base, load_all_models
+
+    load_all_models()
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'atomic.db'}", connect_args={"timeout": 30})
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with maker() as db:
+            m = HourMachine(name="ATOMIC", model="X1C")
+            db.add(m)
+            await db.commit()
+            await db.execute(select(HourMachine))
+            await upsert_reading(db, m.id, date(2026, 11, 1), SOURCE_MANUAL, 321.0)
+            await db.rollback()
+
+        async with maker() as check:
+            assert (await check.execute(select(HourReading))).scalars().all() == []
     finally:
         await engine.dispose()
 

@@ -13,6 +13,8 @@ from datetime import date, datetime, timezone
 from typing import Literal
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -80,6 +82,17 @@ def _retire(db: AsyncSession, machine: HourMachine) -> None:
     machine.retired = True
     machine.calibrated_at = None
     machine.last_drift_hours = None
+
+
+async def retire_machine_of_printer(db: AsyncSession, printer_id: int) -> None:
+    """Retire the machine linked to ``printer_id`` (if any) before the printer row goes; no commit.
+
+    ``hour_machines.printer_id`` is ON DELETE SET NULL, so on PostgreSQL the sync would never see the old id.
+    """
+    machine = (await db.execute(select(HourMachine).where(HourMachine.printer_id == printer_id))).scalar_one_or_none()
+    if machine is not None:
+        _retire(db, machine)
+        await db.flush()
 
 
 async def _sync_machines(db: AsyncSession) -> None:
@@ -246,22 +259,18 @@ async def upsert_reading(
             await db.delete(existing)
         return
     if existing is None:
-        try:
-            async with db.begin_nested():
-                db.add(
-                    HourReading(
-                        machine_id=machine_id,
-                        reading_date=reading_date,
-                        source=source,
-                        hours=hours,
-                        raw_hours=raw_hours,
-                    )
-                )
-                await db.flush()
-            return
-        except IntegrityError:
-            # A concurrent writer (hourly snapshot vs. save_readings) inserted the same row first; overwrite it.
-            existing = (await db.execute(query)).scalar_one()
+        # One INSERT .. ON CONFLICT in the caller's transaction (a SQLite savepoint here would commit on its own);
+        # a concurrent writer (hourly snapshot vs. save_readings) that inserted the row first is overwritten.
+        insert = pg_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
+        await db.execute(
+            insert(HourReading)
+            .values(machine_id=machine_id, reading_date=reading_date, source=source, hours=hours, raw_hours=raw_hours)
+            .on_conflict_do_update(
+                index_elements=["machine_id", "reading_date", "source"],
+                set_={"hours": hours, "raw_hours": raw_hours, "updated_at": func.now()},
+            )
+        )
+        return
     existing.hours = hours
     existing.raw_hours = raw_hours
 
