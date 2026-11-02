@@ -74,6 +74,8 @@ def _retire(db: AsyncSession, machine: HourMachine) -> None:
     """Unlink and retire ``machine``, logging a ``retired`` event the first time and dropping its trust state."""
     if not machine.retired:
         db.add(HourEvent(machine_id=machine.id, event_date=date.today(), kind="retired", label=machine.name))
+    if machine.printer_id is not None:
+        machine.retired_printer_id = machine.printer_id
     machine.printer_id = None
     machine.retired = True
     machine.calibrated_at = None
@@ -233,27 +235,35 @@ async def upsert_reading(
     raw_hours: float | None = None,
 ) -> None:
     """Insert or replace the (machine, date, source) reading; ``hours=None`` deletes it. No commit."""
-    result = await db.execute(
-        select(HourReading).where(
-            HourReading.machine_id == machine_id,
-            HourReading.reading_date == reading_date,
-            HourReading.source == source,
-        )
+    query = select(HourReading).where(
+        HourReading.machine_id == machine_id,
+        HourReading.reading_date == reading_date,
+        HourReading.source == source,
     )
-    existing = result.scalar_one_or_none()
+    existing = (await db.execute(query)).scalar_one_or_none()
     if hours is None:
         if existing is not None:
             await db.delete(existing)
         return
     if existing is None:
-        db.add(
-            HourReading(
-                machine_id=machine_id, reading_date=reading_date, source=source, hours=hours, raw_hours=raw_hours
-            )
-        )
-    else:
-        existing.hours = hours
-        existing.raw_hours = raw_hours
+        try:
+            async with db.begin_nested():
+                db.add(
+                    HourReading(
+                        machine_id=machine_id,
+                        reading_date=reading_date,
+                        source=source,
+                        hours=hours,
+                        raw_hours=raw_hours,
+                    )
+                )
+                await db.flush()
+            return
+        except IntegrityError:
+            # A concurrent writer (hourly snapshot vs. save_readings) inserted the same row first; overwrite it.
+            existing = (await db.execute(query)).scalar_one()
+    existing.hours = hours
+    existing.raw_hours = raw_hours
 
 
 async def machine_for_printer(db: AsyncSession, printer_id: int) -> HourMachine:

@@ -70,6 +70,9 @@ async def test_ensure_retires_machine_of_deleted_printer(db_session, printer_fac
 
     machines = await ensure_hour_machines(db_session)
     assert [(x.id, x.printer_id, x.retired) for x in machines] == [(m.id, None, True)]
+    assert machines[0].retired_printer_id == p.id  # keeps the last printer's scope (T-024)
+    await ensure_hour_machines(db_session)  # re-retiring an unlinked machine keeps it
+    assert machines[0].retired_printer_id == p.id
 
 
 @pytest.mark.asyncio
@@ -85,6 +88,7 @@ async def test_ensure_retires_on_serial_mismatch_instead_of_hijacking(db_session
     by_name = {m.name: m for m in machines}
     assert by_name["Old"].id == old.id and by_name["Old"].retired and by_name["Old"].printer_id is None
     assert by_name["New"].printer_id == p.id and not by_name["New"].retired
+    assert by_name["Old"].retired_printer_id == p.id and by_name["New"].retired_printer_id is None
 
 
 @pytest.mark.asyncio
@@ -501,6 +505,54 @@ async def test_concurrent_sync_events_write_each_event_once(tmp_path):
 
         async with maker() as check:
             assert await _kinds(check) == ["added", "maintenance"]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_upsert_reading_survives_a_concurrent_insert_of_the_same_row(tmp_path):
+    """The hourly snapshot inserting today's auto row between our SELECT and INSERT: ours overwrites, no error."""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from backend.app.core.database import Base, load_all_models
+
+    load_all_models()
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'upsert.db'}", connect_args={"timeout": 30})
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with maker() as setup:
+            m = HourMachine(name="RACE", model="X1C")
+            setup.add(m)
+            await setup.commit()
+            machine_id = m.id
+        today = date(2026, 11, 1)
+
+        async with maker() as db:
+            original_execute = db.execute
+            raced = False
+
+            async def execute_then_race(*args, **kwargs):
+                nonlocal raced
+                result = await original_execute(*args, **kwargs)
+                if not raced:
+                    raced = True
+                    async with maker() as other:
+                        await upsert_reading(other, machine_id, today, SOURCE_AUTO, 100.0, raw_hours=90.0)
+                        await other.commit()
+                return result
+
+            db.execute = execute_then_race
+            await upsert_reading(db, machine_id, today, SOURCE_AUTO, 123.4, raw_hours=110.0)
+            await db.commit()
+            assert raced
+
+        async with maker() as check:
+            rows = (await check.execute(select(HourReading))).scalars().all()
+            assert [(r.machine_id, r.reading_date, r.source, r.hours, r.raw_hours) for r in rows] == [
+                (machine_id, today, SOURCE_AUTO, 123.4, 110.0)
+            ]
     finally:
         await engine.dispose()
 

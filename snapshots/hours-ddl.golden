@@ -21,6 +21,7 @@ CREATE TABLE hour_machines (
 	model VARCHAR(50), 
 	serial_number VARCHAR(50), 
 	retired BOOLEAN NOT NULL, 
+	retired_printer_id INTEGER, 
 	calibrated_at DATETIME, 
 	last_drift_hours FLOAT, 
 	purchase_price FLOAT, 

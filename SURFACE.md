@@ -205,6 +205,7 @@ CREATE TABLE hour_machines (
 	model VARCHAR(50), 
 	serial_number VARCHAR(50), 
 	retired BOOLEAN NOT NULL, 
+	retired_printer_id INTEGER, 
 	calibrated_at DATETIME, 
 	last_drift_hours FLOAT, 
 	purchase_price FLOAT, 
@@ -251,6 +252,7 @@ CREATE INDEX ix_hour_readings_machine_id ON hour_readings (machine_id);
 ## Migration touching the feature (core/database.py)
 ```regen: grep -nE "_migrate_printer_hours_columns|hour_machines|hour_readings|hour_events" backend/app/core/database.py | sed "s/^[0-9]*://; s/^[[:space:]]*//" | sort -u```
 ```
+"""hour_machines.retired_printer_id: the last printer of a retired machine, scoping its history.
 """Partial unique indexes on hour_events: one 'added' per machine, one mirror per maintenance entry.
 "CREATE UNIQUE INDEX IF NOT EXISTS uq_hour_events_added ON hour_events (machine_id) WHERE kind = 'added'",
 "CREATE UNIQUE INDEX IF NOT EXISTS uq_hour_events_maintenance "
@@ -261,13 +263,18 @@ CREATE INDEX ix_hour_readings_machine_id ON hour_readings (machine_id);
 "SELECT MIN(id) FROM hour_events WHERE kind = 'maintenance' GROUP BY machine_id, source_id)"
 "UPDATE hour_machines SET calibrated_at = COALESCE("
 "WHERE r.machine_id = hour_machines.id AND r.source = 'manual'), CURRENT_TIMESTAMP) "
+("hour_machines", "retired_printer_id"),  # Fenrir
 async def _migrate_hour_events_unique(conn) -> None:
+async def _migrate_hour_machines_retired_printer(conn) -> None:
 async def _migrate_printer_hours_columns(conn) -> None:
 await _migrate_hour_events_unique(conn)
+await _migrate_hour_machines_retired_printer(conn)
 await _migrate_printer_hours_columns(conn)
+await _safe_execute(conn, "ALTER TABLE hour_machines ADD COLUMN retired_printer_id INTEGER")
 await _safe_execute(conn, "ALTER TABLE hour_readings ADD COLUMN raw_hours REAL")
 await _safe_execute(conn, f"ALTER TABLE hour_machines ADD COLUMN {column} {ddl}")
 f"(SELECT {newest} FROM hour_readings r "
+if not await _table_has_column(conn, "hour_machines", "retired_printer_id"):
 if not await _table_has_column(conn, "hour_machines", column):
 if not await _table_has_column(conn, "hour_readings", "raw_hours"):
 ```

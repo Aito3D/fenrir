@@ -358,6 +358,7 @@ NON_FK_ID_REFERENCES: dict[str, tuple[tuple[str, str], ...]] = {
         ("notification_live_activities", "printer_id"),
         ("notification_lock_screen_widgets", "printer_id"),
         ("aito_tasks", "impression_printer_id"),  # Fenrir
+        ("hour_machines", "retired_printer_id"),  # Fenrir
     ),
     "api_keys": (("auth_ephemeral_tokens", "api_key_id"),),
     # A merged archive's id keeps finding the archive it went into after its
@@ -6786,6 +6787,7 @@ async def _run_migrations(conn):
     await _migrate_printer_maintenance_unique(conn)
     await _migrate_printer_hours_columns(conn)
     await _migrate_hour_events_unique(conn)
+    await _migrate_hour_machines_retired_printer(conn)
 
     # Migration: the stock alert templates name the colour and subtype (#2955).
     # The forecast groups by colour, so two colours of one product would
@@ -8545,6 +8547,15 @@ async def _migrate_hour_events_unique(conn) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_hour_events_maintenance "
         "ON hour_events (machine_id, source_id) WHERE kind = 'maintenance'",
     )
+
+
+async def _migrate_hour_machines_retired_printer(conn) -> None:
+    """hour_machines.retired_printer_id: the last printer of a retired machine, scoping its history.
+
+    No backfill: machines retired before this column already lost their printer id.
+    """
+    if not await _table_has_column(conn, "hour_machines", "retired_printer_id"):
+        await _safe_execute(conn, "ALTER TABLE hour_machines ADD COLUMN retired_printer_id INTEGER")
 
 
 async def _migrate_printer_maintenance_unique(conn) -> None:

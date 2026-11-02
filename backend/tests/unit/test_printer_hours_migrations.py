@@ -8,7 +8,11 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from backend.app.core.database import _migrate_hour_events_unique, _migrate_printer_hours_columns
+from backend.app.core.database import (
+    _migrate_hour_events_unique,
+    _migrate_hour_machines_retired_printer,
+    _migrate_printer_hours_columns,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -129,3 +133,13 @@ async def test_hour_events_unique_index_rejects_a_second_added(engine):
     async with engine.begin() as conn:
         count = (await conn.execute(text("SELECT COUNT(*) FROM hour_events"))).scalar()
     assert count == 7
+
+
+async def test_retired_printer_column_is_added_once_without_backfill(engine):
+    async with engine.begin() as conn:
+        await _seed(conn)
+        await _migrate_hour_machines_retired_printer(conn)
+    async with engine.begin() as conn:
+        await _migrate_hour_machines_retired_printer(conn)  # idempotent
+        rows = (await conn.execute(text("SELECT id, retired_printer_id FROM hour_machines ORDER BY id"))).all()
+    assert [tuple(r) for r in rows] == [(1, None), (2, None), (3, None)]

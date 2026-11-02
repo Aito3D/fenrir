@@ -22,7 +22,7 @@ import asyncio
 import json
 import re
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from unittest.mock import patch
 
 sys.path.insert(0, ".")
@@ -63,11 +63,14 @@ async def main() -> None:
         out.append(entry)
         return entry["body"]
 
+    # Noon local today: the DB default (CURRENT_TIMESTAMP, UTC) would date the 'added' event tomorrow on
+    # evenings west of UTC, while the scrub below only knows the local date.
+    seeded_at = datetime.combine(date.today(), time(12))
     async with sm() as s:
         for i, (name, model, runtime, offset) in enumerate(
             (("X1C04", "X1C", 3600 * 124, 10.0), ("P1S01", "P1S", 3600 * 50, 0.0), ("H2D-02", "H2D", 0, 0.0)), 1
         ):
-            s.add(Printer(name=name, model=model, serial_number=f"00M09A{i:09d}", ip_address=f"192.168.1.{100 + i}", access_code="12345678", is_active=True, auto_archive=True, runtime_seconds=runtime, print_hours_offset=offset))
+            s.add(Printer(name=name, model=model, serial_number=f"00M09A{i:09d}", ip_address=f"192.168.1.{100 + i}", access_code="12345678", is_active=True, auto_archive=True, runtime_seconds=runtime, print_hours_offset=offset, created_at=seeded_at))
         await s.commit()
 
     today = date.today()
