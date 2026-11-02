@@ -10,10 +10,12 @@ import { openInSlicer, resolveDesktopSlicer } from '../../../utils/slicer';
 import { useResliceJobs } from '../reslice/useResliceJobs';
 import { failureMessage } from '../failureMessage';
 import { projectKeys } from '../projectQueries';
+import { catalogKeys } from '../catalog/useProjectCatalog';
 import { useAcceptsSource } from '../aito/dropFiles';
 import { refusalMessage } from './filesUi';
 
-/** Every file-panel mutation: run, invalidate the project tree, toast on failure. */
+/** Every file-panel mutation: run, invalidate the project tree (and the catalog row beside it),
+ *  toast on failure. */
 export function useFileActions(projectId: number) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -48,6 +50,11 @@ export function useFileActions(projectId: number) {
     }
   };
 
+  const refresh = async () => {
+    void queryClient.invalidateQueries({ queryKey: catalogKeys.all() });
+    await queryClient.invalidateQueries({ queryKey: projectKeys.tree(projectId) });
+  };
+
   const warn = (warnings: DuplicateWarning[]) =>
     warnings.forEach((w) =>
       showToast(t('projectsPdm.files.duplicateWarning', { filename: w.filename, revision: w.same_as }), 'info'),
@@ -61,7 +68,7 @@ export function useFileActions(projectId: number) {
       showToast(mapped ?? failureMessage(t, failKey, e), 'error');
       return undefined;
     } finally {
-      await queryClient.invalidateQueries({ queryKey: projectKeys.tree(projectId) });
+      await refresh();
     }
   };
 
@@ -111,7 +118,7 @@ export function useFileActions(projectId: number) {
       try {
         return await api.uploadProjectSlicedFile(revisionId, file);
       } finally {
-        await queryClient.invalidateQueries({ queryKey: projectKeys.tree(projectId) });
+        await refresh();
       }
     },
     /** The File Manager's desktop handoff (FileManagerPage `handleOpenInSlicer`): a short-lived

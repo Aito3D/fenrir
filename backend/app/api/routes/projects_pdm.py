@@ -251,11 +251,10 @@ async def project_catalog_list(
 ):
     """The Projects catalog: every matching project with the facts its row and pane show, newest
     activity first. The search also covers folders, clients, order numbers, item and file names."""
-    return ProjectCatalogResponse(
-        items=await project_catalog.catalog(
-            db, q=q, status=status, tag_ids=tag_ids, tag_mode=tag_mode, can_read_aito=can_read_aito
-        )
+    items, truncated = await project_catalog.catalog(
+        db, q=q, status=status, tag_ids=tag_ids, tag_mode=tag_mode, can_read_aito=can_read_aito
     )
+    return ProjectCatalogResponse(items=items, truncated=truncated)
 
 
 @router.get("/tags", response_model=list[ProjectTagCount])

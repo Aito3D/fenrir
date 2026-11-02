@@ -448,6 +448,7 @@ class ProjectCatalogItem(BaseModel):
 
 class ProjectCatalogResponse(BaseModel):
     items: list[ProjectCatalogItem]
+    truncated: bool = False  # more projects matched than CATALOG_LIMIT rows listed
 
 
 class ProjectTagCount(BaseModel):

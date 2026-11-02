@@ -314,8 +314,10 @@ async def catalog(
     tag_ids: list[int],
     tag_mode: Literal["any", "all"],
     can_read_aito: bool = True,
-) -> list[ProjectCatalogItem]:
-    """Without ``can_read_aito`` the linked Aito orders stay hidden: ``client_names`` and
+) -> tuple[list[ProjectCatalogItem], bool]:
+    """The matching rows (at most ``CATALOG_LIMIT``) and whether more projects matched.
+
+    Without ``can_read_aito`` the linked Aito orders stay hidden: ``client_names`` and
     ``open_orders`` are empty and the search skips client names and order numbers."""
     folders = await all_folders(db)
     conditions: list[Any] = [Project.is_template.is_(False)]
@@ -337,13 +339,15 @@ async def catalog(
                 select(Project)
                 .where(*conditions)
                 .order_by(Project.updated_at.desc(), Project.id.desc())
-                .limit(CATALOG_LIMIT)
+                .limit(CATALOG_LIMIT + 1)  # the extra row only tells whether the list is truncated
             )
         ).scalars()
     )
+    truncated = len(projects) > CATALOG_LIMIT
+    projects = projects[:CATALOG_LIMIT]
     ids = [p.id for p in projects]
     if not ids:
-        return []
+        return [], False
     tags = await project_tag_refs(db, ids)
 
     # Linked Aito orders: every non-deleted one gives a client name; the open ones a badge.
@@ -482,4 +486,4 @@ async def catalog(
             )
         )
     out.sort(key=lambda item: (item.last_activity, item.id), reverse=True)
-    return out
+    return out, truncated

@@ -687,7 +687,8 @@ print(json.dumps(out, indent=1, sort_keys=True))" 2>/dev/null```
   "thumbnail_file_id": "int | None"
  },
  "ProjectCatalogResponse": {
-  "items": "list[backend.app.schemas.project.ProjectCatalogItem]"
+  "items": "list[backend.app.schemas.project.ProjectCatalogItem]",
+  "truncated": "<class 'bool'>"
  },
  "ProjectChildPreview": {
   "color": "str | None",

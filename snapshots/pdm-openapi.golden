@@ -12655,6 +12655,11 @@
      },
      "title": "Items",
      "type": "array"
+    },
+    "truncated": {
+     "default": false,
+     "title": "Truncated",
+     "type": "boolean"
     }
    },
    "required": [

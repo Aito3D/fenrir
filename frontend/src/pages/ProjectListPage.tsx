@@ -113,7 +113,8 @@ export function ProjectListPage() {
 
   const { data: tags = [] } = useQuery({ queryKey: projectKeys.projectTags(), queryFn: api.getProjectTags });
   const usedTags = tags.filter((tag) => tag.project_count > 0);
-  const { data: items = [], isLoading } = useProjectCatalog({ q: debounced, status, tagIds });
+  const { data: catalog, isLoading } = useProjectCatalog({ q: debounced, status, tagIds });
+  const items = useMemo(() => catalog?.items ?? [], [catalog]);
   const { data: folders = [] } = useProjectFolders();
   const mutations = useCatalogMutations();
 
@@ -128,11 +129,33 @@ export function ProjectListPage() {
   const selected = shown.find((item) => item.id === selectedId) ?? null;
 
   // On a wide screen a selection is always shown: the first visible project when none (or a
-  // vanished one) is in the URL.
+  // vanished one) is in the URL. A selection inside a closed folder (a copied link) stays and
+  // opens its folders, once per selected project so the user can still close them afterwards.
+  const openedFor = useRef<number | null>(null);
   useEffect(() => {
-    if (!wide || ordered.length === 0 || isLoading) return;
-    if (selectedId === null || !ordered.some((item) => item.id === selectedId)) setParam('project', String(ordered[0].id));
-  }, [wide, ordered, selectedId, isLoading, setParam]);
+    if (!wide || isLoading) return;
+    const target = selectedId === null ? undefined : shown.find((item) => item.id === selectedId);
+    if (!target) {
+      if (ordered.length > 0) setParam('project', String(ordered[0].id));
+      return;
+    }
+    if (filtering || openedFor.current === target.id) return;
+    const byId = new Map(folders.map((f) => [f.id, f]));
+    if (target.folder_id !== null && !byId.has(target.folder_id)) return; // folders not loaded yet
+    openedFor.current = target.id;
+    const closed: number[] = [];
+    for (let id = target.folder_id, n = 0; id !== null && n <= folders.length; n++) {
+      if (collapsed.has(id)) closed.push(id);
+      id = byId.get(id)?.parent_id ?? null;
+    }
+    if (closed.length === 0) return;
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      closed.forEach((id) => next.delete(id));
+      store(COLLAPSED_KEY, JSON.stringify([...next]));
+      return next;
+    });
+  }, [wide, ordered, shown, folders, collapsed, filtering, selectedId, isLoading, setParam]);
 
   const select = (id: number) => {
     if (wide) setParam('project', String(id));
@@ -256,7 +279,8 @@ export function ProjectListPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">{t('projectsPdm.title')}</h1>
           <p className="text-sm text-bambu-gray">
-            {t('projectsPdm.catalog.summary', { shown: shown.length, total: items.length })}
+            {/* A truncated list reads "500 of 500+": more projects matched than the server lists. */}
+            {t('projectsPdm.catalog.summary', { shown: shown.length, total: catalog?.truncated ? `${items.length}+` : items.length })}
             {' · '}
             {t('projectsPdm.catalog.inProduction')}: {items.filter((i) => i.open_orders.length > 0).length}
             {' · '}

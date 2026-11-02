@@ -9778,7 +9778,7 @@ export const api = {
     p.tagIds?.forEach((id) => params.append('tag_ids', String(id)));
     if (p.tagMode) params.set('tag_mode', p.tagMode);
     const query = params.toString();
-    return request<{ items: ProjectCatalogItem[] }>(`/projects/catalog${query ? `?${query}` : ''}`);
+    return request<{ items: ProjectCatalogItem[]; truncated: boolean }>(`/projects/catalog${query ? `?${query}` : ''}`);
   },
   getProjectFolders: () => request<{ folders: ProjectFolder[] }>('/projects/folders'),
   createProjectFolder: (body: { name: string; parent_id: number | null }) =>

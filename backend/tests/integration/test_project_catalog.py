@@ -175,3 +175,22 @@ async def test_catalog_search_reaches_every_field(async_client: AsyncClient, db_
     assert await ids("sarbacane") == {other["id"]}
     assert await ids("nothing-like-this") == set()
     assert {i["id"] for i in await _catalog(async_client, status="archived")} == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_catalog_flags_truncation_past_the_limit(async_client: AsyncClient, monkeypatch):
+    from backend.app.services import project_catalog
+
+    monkeypatch.setattr(project_catalog, "CATALOG_LIMIT", 2)
+    for name in ("Alpha", "Bravo"):
+        await _project(async_client, name)
+    res = (await async_client.get(f"{API}/catalog")).json()
+    assert (len(res["items"]), res["truncated"]) == (2, False)  # exactly at the limit: complete
+
+    await _project(async_client, "Charlie")
+    res = (await async_client.get(f"{API}/catalog")).json()
+    assert (len(res["items"]), res["truncated"]) == (2, True)
+    assert "Charlie" in {i["name"] for i in res["items"]}  # newest kept, oldest cut
+    res = (await async_client.get(f"{API}/catalog", params={"q": "charlie"})).json()
+    assert (len(res["items"]), res["truncated"]) == (1, False)

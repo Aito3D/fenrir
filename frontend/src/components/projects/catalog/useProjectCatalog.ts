@@ -12,13 +12,13 @@ export const catalogKeys = {
   folders: () => ['project-folders'] as const,
 };
 
-/** The catalog list for the search parameters; the previous list stays while a new one loads. */
+/** The catalog list for the search parameters (`truncated` when more projects matched than the
+ *  server lists); the previous list stays while a new one loads. */
 export function useProjectCatalog(params: ProjectCatalogParams) {
   return useQuery({
     queryKey: catalogKeys.catalog(params),
     queryFn: () => api.getProjectCatalog(params),
     placeholderData: keepPreviousData,
-    select: (data) => data.items,
   });
 }
 

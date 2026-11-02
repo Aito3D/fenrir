@@ -9,6 +9,7 @@ import { render } from '../utils';
 import { server } from '../mocks/server';
 import { ProjectListPage } from '../../pages/ProjectListPage';
 import type { ProjectCatalogItem, ProjectFolder } from '../../api/client';
+import { file, item as treeItem, projectTree, rev } from '../fixtures/projectTree';
 
 // null = real AuthProvider (auth disabled: every permission granted).
 let granted: Set<string> | null = null;
@@ -16,6 +17,10 @@ vi.mock('../../contexts/AuthContext', async (importOriginal) => {
   const { withGrantedPermissions } = await import('../fixtures/authPermissions');
   return withGrantedPermissions(await importOriginal<typeof import('../../contexts/AuthContext')>(), () => granted);
 });
+
+vi.mock('../../components/viewer/PartViewerModal', () => ({
+  PartViewerModal: ({ title }: { title: string }) => <div data-testid="part-viewer">{title}</div>,
+}));
 
 const folder = (id: number, name: string, parent_id: number | null = null, project_count = 0, in_production_count = 0): ProjectFolder =>
   ({ id, name, parent_id, project_count, in_production_count });
@@ -434,6 +439,69 @@ describe('ProjectListPage (catalog)', () => {
     expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['At the top', 'Labels']);
     await userEvent.selectOptions(select, '3');
     await waitFor(() => expect(calls).toEqual(['rename:1:{"parent_id":3}']));
+  });
+
+  it('the header says when the server listed fewer projects than matched', async () => {
+    server.use(http.get('/api/v1/projects/catalog', () => HttpResponse.json({ items: ITEMS, truncated: true })));
+    render(<ProjectListPage />);
+    expect(await screen.findByText('5 of 5+ projects', { exact: false })).toBeInTheDocument();
+  });
+
+  it('a complete list reads as complete', async () => {
+    server.use(http.get('/api/v1/projects/catalog', () => HttpResponse.json({ items: ITEMS, truncated: false })));
+    render(<ProjectListPage />);
+    expect(await screen.findByText('5 of 5 projects', { exact: false })).toBeInTheDocument();
+    expect(screen.queryByText('5+', { exact: false })).not.toBeInTheDocument();
+  });
+
+  it('a link to a project inside a closed folder keeps it selected and opens the folder (T-527)', async () => {
+    localStorage.setItem('projects-catalog-collapsed', JSON.stringify([1]));
+    window.history.replaceState({}, '', '/projects?project=3');
+    render(<ProjectListPage />);
+    expect(await screen.findByTestId('catalog-row-3')).toBeInTheDocument();
+    expect(within(await screen.findByTestId('catalog-pane')).getByRole('heading', { name: 'Logo F170' })).toBeInTheDocument();
+    expect(window.location.search).toBe('?project=3');
+    expect(JSON.parse(localStorage.getItem('projects-catalog-collapsed') ?? '[]')).toEqual([]);
+  });
+
+  it('opens every closed ancestor of a linked project, and only those', async () => {
+    localStorage.setItem('projects-catalog-collapsed', JSON.stringify([1, 2, 3]));
+    window.history.replaceState({}, '', '/projects?project=2');
+    render(<ProjectListPage />);
+    expect(await screen.findByTestId('catalog-row-2')).toBeInTheDocument();
+    expect(screen.getByTestId('catalog-row-1')).toBeInTheDocument();
+    expect(window.location.search).toBe('?project=2');
+    expect(JSON.parse(localStorage.getItem('projects-catalog-collapsed') ?? '[]')).toEqual([3]);
+  });
+
+  it('a link to a project that matches nothing still falls back to the first visible project', async () => {
+    localStorage.setItem('projects-catalog-collapsed', JSON.stringify([1]));
+    window.history.replaceState({}, '', '/projects?project=99');
+    render(<ProjectListPage />);
+    await waitFor(() => expect(window.location.search).toBe('?project=4'));
+    expect(JSON.parse(localStorage.getItem('projects-catalog-collapsed') ?? '[]')).toEqual([1]);
+  });
+
+  it("closing the selected project's folder keeps the selection and the folder stays closed", async () => {
+    window.history.replaceState({}, '', '/projects?project=3');
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-3');
+    await userEvent.click(within(screen.getByTestId('catalog-folder-1')).getByRole('button', { name: /Car/ }));
+    expect(screen.queryByTestId('catalog-row-3')).not.toBeInTheDocument();
+    expect(window.location.search).toBe('?project=3');
+    expect(within(screen.getByTestId('catalog-pane')).getByRole('heading', { name: 'Logo F170' })).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('projects-catalog-collapsed') ?? '[]')).toEqual([1]);
+  });
+
+  it("a copied viewer link into a closed folder opens that project's file", async () => {
+    server.use(http.get('/api/v1/projects/3/tree', () =>
+      HttpResponse.json(projectTree({ impression: [treeItem(77, 'impression', 'Logo plate', [rev({ id: 7, files: [file(70, 'logo.3mf')] })])] }, { project_id: 3 })),
+    ));
+    localStorage.setItem('projects-catalog-collapsed', JSON.stringify([1]));
+    window.history.replaceState({}, '', '/projects?project=3&file=77&tab=toolpath');
+    render(<ProjectListPage />);
+    expect(await screen.findByTestId('part-viewer')).toBeInTheDocument();
+    expect(new URLSearchParams(window.location.search).get('project')).toBe('3');
   });
 
   it('renders folders nested three levels deep', async () => {

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { ViewerLinkState } from '../../viewer/viewerLink';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -13,6 +14,7 @@ import type { FileActions } from './useFileActions';
 import { ENABLED_SECTIONS, SECTION_LABEL_KEYS, SECTION_ORDER, isSectionEnabled } from './filesUi';
 import { useDerivedOptions } from './useDerivedOptions';
 import { useProjectTree } from '../projectQueries';
+import { catalogKeys } from '../catalog/useProjectCatalog';
 
 /** `placeholder` shows until the tree is loaded (the catalog pane's skeleton); nothing by default. */
 export function ProjectFilesPanel({
@@ -31,6 +33,14 @@ export function ProjectFilesPanel({
   // While a revision slices, the tree is polled so its card turns Sliced / Slice failed by itself.
   const { data: tree } = useProjectTree(projectId, { refetchInterval: (query) => (anySlicing(query.state.data) ? 3000 : false) });
   const derivedOptions = useDerivedOptions(projectId);
+  // A slice landing (or failing) changes the catalog row's recommended file and counts too.
+  const queryClient = useQueryClient();
+  const slicing = anySlicing(tree);
+  const wasSlicing = useRef(slicing);
+  useEffect(() => {
+    if (wasSlicing.current && !slicing) void queryClient.invalidateQueries({ queryKey: catalogKeys.all() });
+    wasSlicing.current = slicing;
+  }, [slicing, queryClient]);
 
   if (!tree) return placeholder;
   const bySection = new Map(tree.sections.map((s) => [s.section, s.items]));
