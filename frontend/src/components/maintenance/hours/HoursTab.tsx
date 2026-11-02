@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -49,6 +49,9 @@ export function HoursTab() {
   const [formDate, setFormDate] = useState<string | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [passOpen, setPassOpen] = useState(false);
+  // One pass save at a time: the ref blocks a same-tick double click, the state disables the button.
+  const passSavingRef = useRef(false);
+  const [passSaving, setPassSaving] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const wantsPass = searchParams.get('pass') === '1';
   const closePass = useCallback(() => {
@@ -387,14 +390,21 @@ export function HoursTab() {
           readings={data.readings}
           today={data.today}
           colors={colors}
-          isSaving={saveReadings.isPending}
+          isSaving={saveReadings.isPending || passSaving}
           onSave={async (entries) => {
-            // The pass may have crossed midnight: save under the server's current date.
+            if (passSavingRef.current) return;
+            passSavingRef.current = true;
+            setPassSaving(true);
             try {
+              // The pass may have crossed midnight: save under the server's current date.
               const fresh = await queryClient.fetchQuery({ queryKey: ['maintenanceHours'], queryFn: api.getPrinterHours, staleTime: 0 });
-              saveReadings.mutate({ date: fresh.today, entries });
+              // The mutation's onError already toasts a failed save.
+              await saveReadings.mutateAsync({ date: fresh.today, entries }).catch(() => undefined);
             } catch (e) {
               showToast((e as Error).message, 'error');
+            } finally {
+              passSavingRef.current = false;
+              setPassSaving(false);
             }
           }}
           onClose={closePass}

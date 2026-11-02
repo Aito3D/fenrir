@@ -88,6 +88,15 @@ def _scope_printer_id(m: HourMachine) -> int | None:
     return m.printer_id if m.printer_id is not None else m.retired_printer_id
 
 
+def _reject_taken_name(name: str, others: list[HourMachine], printer_scope: PrinterScope) -> None:
+    """Names are unique fleet-wide; a clash only with machines outside the caller's scope must not confirm the name."""
+    clashes = [m for m in others if m.name.casefold() == name.strip().casefold()]
+    if any(printer_scope.allows(_scope_printer_id(m)) for m in clashes):
+        raise HTTPException(status_code=422, detail=f"A machine named {name} already exists")
+    if clashes:
+        raise HTTPException(status_code=422, detail="This machine name is not available")
+
+
 async def _overview(
     db: AsyncSession, today: date | None = None, printer_scope: PrinterScope = ALL_PRINTERS
 ) -> HoursOverview:
@@ -242,10 +251,8 @@ async def _stage_import(db: AsyncSession, body: HourImportBody, printer_scope: P
         raise HTTPException(status_code=422, detail="Duplicate machine key")
     existing = await ensure_hour_machines(db)
     existing_ids = {m.id for m in existing if printer_scope.allows(_scope_printer_id(m))}
-    existing_names = {m.name.casefold() for m in existing}
     for nm in body.new_machines:
-        if nm.name.strip().casefold() in existing_names:
-            raise HTTPException(status_code=422, detail=f"A machine named {nm.name} already exists")
+        _reject_taken_name(nm.name, existing, printer_scope)
     for r in body.readings:
         if (r.machine_id is None) == (r.key is None):
             raise HTTPException(status_code=422, detail="Each reading needs exactly one of machine_id or key")
@@ -347,6 +354,8 @@ async def update_hour_settings(
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Set the reading reminder interval and return the refreshed overview."""
+    if not printer_scope.is_unrestricted:  # the interval is fleet-wide
+        raise HTTPException(status_code=403, detail="Changing the reading interval needs access to every printer")
     await set_setting(db, "hours_reading_interval_days", str(body.reading_interval_days))
     await db.commit()
     return await _overview(db, date.today(), printer_scope)
@@ -373,9 +382,8 @@ async def update_machine(
     if "purchase_date" in changes:
         machine.purchase_date = body.purchase_date
     if body.name is not None:
-        others = (await db.execute(select(HourMachine.name).where(HourMachine.id != machine_id))).scalars()
-        if body.name.strip().casefold() in {n.casefold() for n in others}:
-            raise HTTPException(status_code=422, detail=f"A machine named {body.name} already exists")
+        others = (await db.execute(select(HourMachine).where(HourMachine.id != machine_id))).scalars().all()
+        _reject_taken_name(body.name, list(others), printer_scope)
         machine.name = body.name.strip()
     if body.model is not None:
         machine.model = body.model or None

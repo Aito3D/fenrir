@@ -818,7 +818,6 @@ class TestHoursPrinterScope:
         visible = {m_in["id"], old_id}
         for body in (
             (await async_client.get(BASE)).json(),
-            (await async_client.patch(f"{BASE}/settings", json={"reading_interval_days": 7})).json(),
             (await async_client.delete(f"{BASE}/readings", params={"reading_date": "2030-01-01"})).json(),
         ):
             assert {m["id"] for m in body["machines"]} == visible
@@ -871,6 +870,44 @@ class TestHoursPrinterScope:
         assert sorted((mid, str(d)) for mid, d in left) == sorted(
             [(m_out["id"], "2026-01-01"), (m_in["id"], "2026-01-02"), (old_id, "2026-01-02")]
         )
+
+    async def test_only_unrestricted_callers_change_the_interval(self, async_client, printer_factory, limited_to):
+        """T-026: the reading interval is fleet-wide, so a printer-scoped caller gets 403 and the setting stays."""
+        mine, *_ = await self._two(async_client, printer_factory)
+        assert (await async_client.patch(f"{BASE}/settings", json={"reading_interval_days": 30})).status_code == 200
+        limited_to(mine.id)
+        response = await async_client.patch(f"{BASE}/settings", json={"reading_interval_days": 7})
+        assert (response.status_code, response.json()["detail"]) == (
+            403,
+            "Changing the reading interval needs access to every printer",
+        )
+        assert (await async_client.get(BASE)).json()["reading_interval_days"] == 30
+
+    async def test_name_collisions_with_hidden_machines_answer_generically(
+        self, async_client, printer_factory, limited_to
+    ):
+        """T-025: a clash with an out-of-scope machine does not confirm its name; in-scope clashes stay specific."""
+        mine, *_ = await self._two(async_client, printer_factory)
+        await async_client.post(
+            f"{BASE}/import",
+            json={
+                "new_machines": [{"key": "k", "name": "OLD-ONE"}],
+                "readings": [{"key": "k", "reading_date": "2026-01-01", "hours": 3}],
+            },
+        )
+        old_id = (await _machine_for(async_client, "OLD-ONE"))["id"]
+        limited_to(mine.id)
+        hidden, known = (422, "This machine name is not available"), (422, "A machine named scope-in already exists")
+        for name, expected in (("scope-out", hidden), ("scope-in", known)):
+            new = {
+                "new_machines": [{"key": "n", "name": name}],
+                "readings": [{"key": "n", "reading_date": "2026-01-01", "hours": 3}],
+            }
+            response = await async_client.post(f"{BASE}/import", json=new)
+            assert (response.status_code, response.json()["detail"]) == expected
+            response = await async_client.patch(f"{BASE}/machines/{old_id}", json={"name": name})
+            assert (response.status_code, response.json()["detail"]) == expected
+        assert (await async_client.patch(f"{BASE}/machines/{old_id}", json={"name": "free"})).status_code == 200
 
     async def test_notes_and_machine_edits(self, async_client, printer_factory, limited_to):
         mine, _, m_in, m_out = await self._two(async_client, printer_factory)
