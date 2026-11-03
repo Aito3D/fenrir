@@ -16,6 +16,13 @@ import { server } from '../mocks/server';
 
 const navigateMock = vi.fn();
 
+// null = real AuthProvider (auth disabled: every permission granted).
+let granted: Set<string> | null = null;
+vi.mock('../../contexts/AuthContext', async (importOriginal) => {
+  const { withGrantedPermissions } = await import('../fixtures/authPermissions');
+  return withGrantedPermissions(await importOriginal<typeof import('../../contexts/AuthContext')>(), () => granted);
+});
+
 // The export test stubs these with defineProperty, which vi.restoreAllMocks() does not undo.
 const originalUrlDescriptors = {
   createObjectURL: Object.getOwnPropertyDescriptor(URL, 'createObjectURL'),
@@ -82,6 +89,7 @@ function useProject(project: Record<string, unknown>) {
 
 describe('ProjectDetailPage actions and states', () => {
   beforeEach(() => {
+    granted = null;
     navigateMock.mockClear();
     server.use(
       http.get('/api/v1/projects/:id/tree', () => HttpResponse.json({ project_id: 1, code: null, sections: [] })),
@@ -534,6 +542,79 @@ describe('ProjectDetailPage actions and states', () => {
 
       await screen.findByText('Notes');
       expect(screen.queryByRole('button', { name: /Save as Template/ })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('permission gating', () => {
+    function countWrites() {
+      const writes: string[] = [];
+      const record = ({ request }: { request: Request }) => {
+        writes.push(`${request.method} ${new URL(request.url).pathname}`);
+        return HttpResponse.json(baseProject);
+      };
+      server.use(
+        http.patch('/api/v1/projects/:id', record),
+        http.put('/api/v1/projects/:id', record),
+        http.post('/api/v1/projects/:id/create-template', record)
+      );
+      return writes;
+    }
+
+    it('read-only: notes and header edit are disabled with their reason, and clicking them sends nothing', async () => {
+      granted = new Set(['projects:read']);
+      const writes = countWrites();
+      const user = userEvent.setup();
+      render(<ProjectDetailPage />);
+
+      await screen.findByText(/No notes yet/);
+      const notesEdit = within(screen.getByRole('region', { name: 'Notes' })).getByRole('button', { name: 'Edit' });
+      expect(notesEdit).toBeDisabled();
+      expect(notesEdit).toHaveAttribute('title', 'You do not have permission to edit notes');
+      const headerEdit = screen.getByTitle('You do not have permission to edit projects');
+      expect(headerEdit).toBeDisabled();
+      expect(headerEdit).toHaveTextContent('Edit');
+
+      await user.click(notesEdit);
+      await user.click(headerEdit);
+      expect(screen.getByText(/No notes yet/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+      expect(writes).toEqual([]);
+    });
+
+    it('update without create: save-as-template is disabled with its reason and posts nothing', async () => {
+      granted = new Set(['projects:read', 'projects:update']);
+      const writes = countWrites();
+      const user = userEvent.setup();
+      render(<ProjectDetailPage />);
+
+      const template = await screen.findByRole('button', { name: /Save as Template/ });
+      expect(template).toBeDisabled();
+      expect(template).toHaveAttribute('title', 'You do not have permission to create templates');
+      expect(screen.getByTitle('Export project')).toBeEnabled();
+      await user.click(template);
+      expect(screen.queryByText('Template created')).not.toBeInTheDocument();
+      expect(writes).toEqual([]);
+    });
+
+    it('without projects:read: export is disabled with its reason and requests nothing', async () => {
+      granted = new Set(['projects:update', 'projects:create']);
+      let exported = 0;
+      server.use(
+        http.get('/api/v1/projects/:id/export', () => {
+          exported += 1;
+          return new HttpResponse('zipbytes');
+        })
+      );
+      const user = userEvent.setup();
+      render(<ProjectDetailPage />);
+
+      const exportButton = await screen.findByRole('button', { name: /Export/ });
+      expect(exportButton).toBeDisabled();
+      expect(exportButton).toHaveAttribute('title', 'You do not have permission to export projects');
+      await user.click(exportButton);
+      expect(screen.queryByText('Project exported')).not.toBeInTheDocument();
+      expect(exported).toBe(0);
     });
   });
 
