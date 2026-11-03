@@ -563,6 +563,13 @@ describe('CameraGridCard', () => {
       expect(screen.queryByText('Offline')).not.toBeInTheDocument();
     });
 
+    it('shows a maintenance printer as Maintenance, never Offline', () => {
+      const { container } = render(<CameraGridCard {...baseProps({ connected: false, maintenance: true })} />);
+      expect(screen.getAllByText('Maintenance').length).toBeGreaterThan(0);
+      expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+      expect(container.innerHTML).toContain('!border-amber-400/50');
+    });
+
     it('shows the paused badge only while paused', () => {
       const { rerender } = render(<CameraGridCard {...baseProps({ state: 'PAUSE' })} />);
       expect(screen.getAllByText(/paused/i).length).toBeGreaterThan(0);

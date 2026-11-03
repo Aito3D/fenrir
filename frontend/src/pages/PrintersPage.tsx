@@ -9776,6 +9776,7 @@ export function PrintersPage() {
         name: printer.name,
         model: printer.model,
         connected: status?.connected ?? false,
+        maintenance: printer.is_active === false,
         state: status?.state ?? null,
         progress: status?.progress ?? 0,
         remainingTime: status?.remaining_time ?? null,
