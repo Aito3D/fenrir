@@ -1353,3 +1353,14 @@ describe('paid-online badge', () => {
     expect(screen.queryByTestId('aito-card-paid-online')).not.toBeInTheDocument();
   });
 });
+
+describe('quote-expired badge', () => {
+  it('shows only for an expired quote on an unfinished card', () => {
+    const { rerender } = render(<CardView project={{ ...project, column: 'waiting', quote_status: 'expired' }} />);
+    expect(screen.getByTestId('aito-card-quote-expired')).toHaveAttribute('title', 'Quote expired');
+    rerender(<CardView project={{ ...project, column: 'waiting', quote_status: 'sent' }} />);
+    expect(screen.queryByTestId('aito-card-quote-expired')).not.toBeInTheDocument();
+    rerender(<CardView project={{ ...project, column: 'done', quote_status: 'expired' }} />);
+    expect(screen.queryByTestId('aito-card-quote-expired')).not.toBeInTheDocument();
+  });
+});

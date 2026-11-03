@@ -20,6 +20,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'quote.unaccepted': 'aito.history.quoteUnaccepted',
   'quote.declined': 'aito.history.quoteDeclined',
   'quote.expired': 'aito.history.quoteExpired',
+  'quote.extended': 'aito.history.quoteExtended',
   'stage.changed': 'aito.history.stageChanged',
   'project.trashed': 'aito.history.projectTrashed',
   'project.force_synced': 'aito.history.projectForceSynced',

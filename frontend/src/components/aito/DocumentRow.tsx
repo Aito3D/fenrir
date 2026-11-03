@@ -39,7 +39,8 @@ export function DocumentRow({
   label: string;
   number: string;
   numberTitle?: string;
-  status?: { text: string; toneClass: string } | null;
+  /** `action` renders right after the status text (e.g. extend an expired quote). */
+  status?: { text: string; toneClass: string; action?: ReactNode } | null;
   amount?: string | null;
   booksUrl?: string | null;
   booksLabel: string;
@@ -60,6 +61,7 @@ export function DocumentRow({
       <div className="col-span-2 flex items-center justify-between gap-2 text-xs">
         <span className="min-w-0 truncate" title={lineTwo || undefined}>
           {status && <span className={status.toneClass}>{status.text}</span>}
+          {status?.action}
           {amount && (
             <span className="text-bambu-gray">
               {status ? ' · ' : ''}

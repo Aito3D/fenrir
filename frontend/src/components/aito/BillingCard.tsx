@@ -1,6 +1,11 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AitoProject } from '../../api/client';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { RefreshCw } from 'lucide-react';
+import { api, type AitoProject } from '../../api/client';
+import { useToast } from '../../contexts/ToastContext';
+import { settleProject } from './settleProject';
+import { DOC_ICON_BUTTON_CLS } from './linkActionHelpers';
 import { InvoiceCard } from './InvoiceCard';
 import { PanelCard } from './PanelCard';
 import { DocumentRow } from './DocumentRow';
@@ -86,6 +91,18 @@ export function BillingCard({
   // confirmation is there on the very render the push lands.
   const [pendingSeenFor, setPendingSeenFor] = useState<number | null>(syncPending ? project.id : null);
   if (syncPending && pendingSeenFor !== project.id) setPendingSeenFor(project.id);
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  // Books first, so no optimistic write: the card stays Expired until Books
+  // has taken the new date.
+  const extend = useMutation({
+    mutationFn: () => api.extendAitoQuote(project.id),
+    onSuccess: (row) => {
+      settleProject(queryClient, project.id, row);
+      showToast(t('aito.quoteExtended'), 'success');
+    },
+    onError: () => showToast(t('aito.saveFailed'), 'error'),
+  });
   const justSynced = pendingSeenFor === project.id && project.quote_sync_state === 'idle';
   // A managed card whose quote Zoho has not created yet.
   const creatingQuote = !project.quote_number && syncPending;
@@ -120,6 +137,19 @@ export function BillingCard({
                 ? {
                     text: quoteStatusText(t, project.quote_status),
                     toneClass: QUOTE_STATUS_TEXT_TONE_CLASSES[quoteStatusTone(project.quote_status)],
+                    action:
+                      canUpdate && project.quote_status === 'expired' ? (
+                        <button
+                          type="button"
+                          onClick={() => extend.mutate()}
+                          disabled={extend.isPending}
+                          aria-label={t('aito.extendQuote')}
+                          title={t('aito.extendQuote')}
+                          className={`${DOC_ICON_BUTTON_CLS} ml-1 -my-1 align-middle`}
+                        >
+                          <RefreshCw className={`w-3 h-3 ${extend.isPending ? 'animate-spin' : ''}`} aria-hidden="true" />
+                        </button>
+                      ) : undefined,
                   }
                 : null
             }

@@ -8,7 +8,7 @@ import os
 import re
 import time
 from collections.abc import Awaitable, Callable, Iterable, Sequence
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Literal
 
@@ -5569,6 +5569,58 @@ async def set_quote_status(
         request_immediate_sync()
     zoho_synced = await push_quote_status(db, project, payload.status)
     return AitoQuoteStatusResponse(project=project_response, zoho_synced=zoho_synced)
+
+
+QUOTE_EXTENSION_DAYS = 15
+
+
+@router.post("/{project_id}/quote-extend", response_model=AitoProjectResponse)
+async def extend_quote_expiry(
+    project_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Give an expired quote QUOTE_EXTENSION_DAYS more days, counted from today.
+
+    Books FIRST, the opposite of set_quote_status: 'expired' is Books' own
+    verdict on the estimate's expiry_date, so a local-only change would be
+    undone by the next poll. Books recomputes the status from the new date
+    and its reply is adopted as-is ('sent' when the body omits it); the
+    payment link the expiry killed is re-minted by the woken reconciler.
+    """
+    project = await _get_active_project_or_404(db, project_id)
+    if project.quote_status != "expired" or not project.quote_id:
+        raise HTTPException(status_code=409, detail="Only an expired Zoho quote can be extended")
+    expiry = (date.today() + timedelta(days=QUOTE_EXTENSION_DAYS)).isoformat()
+    try:
+        estimate = await zoho_service.update_estimate_fields(db, project.quote_id, {"expiry_date": expiry})
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito quote extension failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    project.quote_expiry_date = estimate.get("expiry_date") or expiry
+    adopt_quote_status(project, estimate.get("status") or "sent")
+    project.quote_status_block = None
+    project.quote_status_remote = None
+    project.quote_status_confirmed = True
+    actor = _actor(current_user)
+    summary = await _summary_for(db, project.id)
+    await _apply_rules(db, project, summary, actor=actor)
+    await record(
+        db,
+        project.id,
+        "quote.extended",
+        actor_class="user",
+        actor_name=actor,
+        subject_type="project",
+        subject_id=project.id,
+        detail={"expiry_date": project.quote_expiry_date},
+    )
+    await db.commit()
+    await broadcast_pending(db)
+    await _broadcast_changed("quote-extend", project.id, actor)
+    request_immediate_sync()
+    await db.refresh(project)
+    return await _project_response(db, project, summary)
 
 
 @router.post("/{project_id}/restore", response_model=AitoProjectResponse)

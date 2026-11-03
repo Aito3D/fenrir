@@ -78,6 +78,10 @@ KINDS: dict[str, str] = {
     "quote.unaccepted": "story",
     "quote.declined": "story",
     "quote.expired": "story",
+    # The shop gave an expired quote more time (POST /{id}/quote-extend);
+    # detail = {expiry_date}. Story: it reopens a quote the timeline had
+    # already closed.
+    "quote.extended": "story",
     "stage.changed": "story",
     "project.trashed": "story",
     "project.restored": "story",

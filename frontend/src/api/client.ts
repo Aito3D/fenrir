@@ -9586,6 +9586,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  /** Give an expired quote 15 more days from today (written to Books first). */
+  extendAitoQuote: (id: number) => request<AitoProject>(`/aito/${id}/quote-extend`, { method: 'POST' }),
   /** What Books would send if this quote were emailed now — preview only.
    *  The POST re-reads it server-side rather than trusting anything sent
    *  back, so this is safe to treat as display data. */

@@ -107,6 +107,7 @@ WRITE_ROUTES = [
     ("send_pickup_sms", "post", f"/api/v1/aito/{_MISSING_ID}/pickup-sms", {"message": "hello"}),
     ("sync_project_now", "post", f"/api/v1/aito/{_MISSING_ID}/sync", None),
     ("set_quote_status", "post", f"/api/v1/aito/{_MISSING_ID}/quote-status", {"status": "sent"}),
+    ("extend_quote_expiry", "post", f"/api/v1/aito/{_MISSING_ID}/quote-extend", None),
     ("restore_project", "post", f"/api/v1/aito/{_MISSING_ID}/restore", None),
     ("delete_project", "delete", f"/api/v1/aito/{_MISSING_ID}", None),
     ("merge_project", "post", f"/api/v1/aito/{_MISSING_ID}/merge", {"source_project_id": 1}),
@@ -157,8 +158,8 @@ WRITE_ROUTES = [
     ("drop_task_files", "post", f"/api/v1/aito/tasks/{_MISSING_ID}/files", None),
 ]
 
-assert len(WRITE_ROUTES) == 42, (
-    "WRITE_ROUTES must cover exactly the 42 gated write routes aito.py and aito_payments.py declare"
+assert len(WRITE_ROUTES) == 43, (
+    "WRITE_ROUTES must cover exactly the 43 gated write routes aito.py and aito_payments.py declare"
 )
 
 
@@ -229,7 +230,7 @@ def test_every_aito_route_declares_a_permission_gate_or_is_the_public_tracking_r
     fails HERE, instead of silently escaping both this sweep and the
     hand-maintained WRITE_ROUTES parametrization below (T-037)."""
     aito_routes = _aito_routes()
-    assert len(aito_routes) == 67, (
+    assert len(aito_routes) == 68, (
         "aito.py + aito_payments.py grew or shrank a route — update this count, "
         "WRITE_ROUTES, and _READ_ONLY_ROUTE_NAMES/_PUBLIC_ROUTE_NAMES together"
     )

@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Building2, CreditCard, Eye, GripVertical, Lock, User } from 'lucide-react';
+import { AlertTriangle, Building2, CreditCard, Eye, FileClock, GripVertical, Lock, User } from 'lucide-react';
 import { DueDateBadge } from './DueDateBadge';
 import { TaskMiniRows, TaskStepsSummary } from './TaskMiniRows';
 import type { AitoFlag, AitoProject } from '../../api/client';
@@ -455,6 +455,17 @@ export const CardView = memo(function CardView({
           {/* Money already in: a paid online link. Pending is deliberately
               silent — the board must not get noisier for something the
               client has not done yet. */}
+          {/* Expired quote: amber like its Billing-card tone; dropped once the card is finished. */}
+          {project.quote_status === 'expired' && !isFinished(project.column) && (
+            <span
+              data-testid="aito-card-quote-expired"
+              title={t('aito.quoteExpired')}
+              className="flex-none inline-flex items-center rounded-full bg-amber-400/15 p-1 text-amber-400"
+            >
+              <FileClock className="w-3 h-3" aria-hidden="true" />
+              <span className="sr-only">{t('aito.quoteExpired')}</span>
+            </span>
+          )}
           {project.payment_link?.state === 'paid' && (
             <span
               data-testid="aito-card-paid-online"
