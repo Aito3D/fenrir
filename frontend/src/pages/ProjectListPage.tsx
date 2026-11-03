@@ -29,6 +29,7 @@ import {
 import type { CatalogChip, CatalogFilters, CatalogSort } from '../components/projects/catalog/catalogRules';
 import { useCatalogMutations, useProjectCatalog, useProjectFolders } from '../components/projects/catalog/useProjectCatalog';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 
 const SORT_KEY = 'projects-catalog-sort';
 const COLLAPSED_KEY = 'projects-catalog-collapsed';
@@ -52,21 +53,13 @@ function store(key: string, value: string) {
   }
 }
 
-function useMatches(query: string, fallback: boolean): boolean {
-  const [matches, setMatches] = useState(() => (typeof window.matchMedia === 'function' ? window.matchMedia(query).matches : fallback));
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia(query);
-    const onChange = () => setMatches(mq.matches);
-    mq.addEventListener?.('change', onChange);
-    return () => mq.removeEventListener?.('change', onChange);
-  }, [query]);
-  return matches;
-}
+/** The live answer on the first render (not `useMediaQuery`'s `false`/`innerWidth` guess), `fallback` without matchMedia. */
+const liveMatch = (query: string, fallback: boolean) => () =>
+  typeof window.matchMedia === 'function' ? window.matchMedia(query).matches : fallback;
 /** True from `lg` up: the pane sits beside the list; below, a row opens the project page. */
-const useWide = () => useMatches(WIDE, true);
+const useWide = () => useMediaQuery(WIDE, liveMatch(WIDE, true));
 /** True on a phone: the folder browser (`MobileCatalog`) replaces the page. A wide answer wins. */
-const usePhone = () => useMatches(PHONE, false);
+const usePhone = () => useMediaQuery(PHONE, liveMatch(PHONE, false));
 
 /** /projects — the catalog (design 2026-10-31): one search, folders on the left, the selected
  *  project's printing files on the right. `?q=` and `?project=` live in the URL. */

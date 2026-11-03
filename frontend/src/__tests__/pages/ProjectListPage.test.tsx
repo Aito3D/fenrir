@@ -365,6 +365,34 @@ describe('ProjectListPage (catalog)', () => {
     expect(window.location.pathname).toBe('/projects/2');
   });
 
+  it('on a phone the folder sheet renames, moves and deletes through the server, and the search reaches the URL', async () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => mediaQuery(query === '(max-width: 767px)')));
+    render(<ProjectListPage />);
+    const menu = async () =>
+      userEvent.click(within(await screen.findByTestId('catalog-mobile-folder-3')).getByRole('button', { name: 'Folder actions' }));
+    await menu();
+    let sheet = screen.getByTestId('catalog-folder-sheet');
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Rename' }));
+    const input = within(sheet).getByRole('textbox', { name: 'Folder name' });
+    await userEvent.clear(input);
+    await userEvent.type(input, 'Stickers');
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Rename' }));
+    await waitFor(() => expect(calls).toEqual(['rename:3:{"name":"Stickers"}']));
+    await waitFor(() => expect(screen.queryByTestId('catalog-folder-sheet')).not.toBeInTheDocument());
+    await menu();
+    sheet = screen.getByTestId('catalog-folder-sheet');
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Move to folder…' }));
+    await userEvent.selectOptions(within(sheet).getByRole('combobox', { name: 'Move to folder…' }), '1');
+    await waitFor(() => expect(calls).toContain('rename:3:{"parent_id":1}'));
+    await waitFor(() => expect(screen.queryByTestId('catalog-folder-sheet')).not.toBeInTheDocument());
+    await menu();
+    sheet = screen.getByTestId('catalog-folder-sheet');
+    await userEvent.click(within(sheet).getByRole('button', { name: /Delete folder/ }));
+    await waitFor(() => expect(calls).toContain('delete:3'));
+    await userEvent.type(screen.getByRole('searchbox', { name: /^Search code, title/ }), 'cap');
+    await waitFor(() => expect(window.location.search).toContain('q=cap'));
+  });
+
   it('shows the empty-search message', async () => {
     render(<ProjectListPage />);
     await screen.findByTestId('catalog-row-1');

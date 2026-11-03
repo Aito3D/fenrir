@@ -306,20 +306,14 @@ def _recommended_out(revision: ProjectRevision, item: ProjectItem, grams_time: t
     )
 
 
-async def catalog(
-    db: AsyncSession,
-    *,
+def _catalog_conditions(
+    folders: list[ProjectFolder],
     q: str | None,
     status: str | None,
     tag_ids: list[int],
     tag_mode: Literal["any", "all"],
-    can_read_aito: bool = True,
-) -> tuple[list[ProjectCatalogItem], bool]:
-    """The matching rows (at most ``CATALOG_LIMIT``) and whether more projects matched.
-
-    Without ``can_read_aito`` the linked Aito orders stay hidden: ``client_names`` and
-    ``open_orders`` are empty and the search skips client names and order numbers."""
-    folders = await all_folders(db)
+    can_read_aito: bool,
+) -> list[Any]:
     conditions: list[Any] = [Project.is_template.is_(False)]
     if status and status != "all":
         conditions.append(Project.status == status)
@@ -333,24 +327,13 @@ async def catalog(
                 func.count(func.distinct(ProjectTag.tag_id)) == len(wanted)
             )
         conditions.append(Project.id.in_(tagged))
-    projects = list(
-        (
-            await db.execute(
-                select(Project)
-                .where(*conditions)
-                .order_by(Project.updated_at.desc(), Project.id.desc())
-                .limit(CATALOG_LIMIT + 1)  # the extra row only tells whether the list is truncated
-            )
-        ).scalars()
-    )
-    truncated = len(projects) > CATALOG_LIMIT
-    projects = projects[:CATALOG_LIMIT]
-    ids = [p.id for p in projects]
-    if not ids:
-        return [], False
-    tags = await project_tag_refs(db, ids)
+    return conditions
 
-    # Linked Aito orders: every non-deleted one gives a client name; the open ones a badge.
+
+async def _order_facts(
+    db: AsyncSession, ids: list[int], can_read_aito: bool
+) -> tuple[dict[int, list[str]], dict[int, list[CatalogOpenOrder]]]:
+    """Linked Aito orders: every non-deleted one gives a client name; the open ones a badge."""
     clients: dict[int, list[str]] = defaultdict(list)
     open_orders: dict[int, list[CatalogOpenOrder]] = defaultdict(list)
     seen_orders: set[tuple[int, int]] = set()
@@ -372,8 +355,13 @@ async def catalog(
             clients[project_id].append(client_name)
         if board_column != "done":
             open_orders[project_id].append(CatalogOpenOrder(order_id=order_id, client_name=client_name))
+    return clients, open_orders
 
-    # Impression items and their revisions.
+
+async def _printing_items(
+    db: AsyncSession, ids: list[int]
+) -> tuple[dict[int, list[tuple[ProjectRevision, ProjectItem]]], dict[int, set[int]]]:
+    """Impression items and their revisions."""
     revision_rows = await db.execute(
         select(ProjectRevision, ProjectItem)
         .join(ProjectItem, ProjectItem.id == ProjectRevision.item_id)
@@ -391,11 +379,14 @@ async def catalog(
         )
     ):
         item_ids[project_id].add(item_id)
+    return revisions, item_ids
 
-    recommended = {pid: _recommended(revisions[pid]) for pid in ids}
-    rec_revision_ids = [pair[0].id for pair in recommended.values() if pair is not None]
-    # The recommended revision's facts and thumbnail come from its files (the sliced one for time
-    # and grams, the source for the thumbnail).
+
+async def _revision_file_facts(
+    db: AsyncSession, rec_revision_ids: list[int]
+) -> tuple[dict[int, tuple[int | None, float | None]], dict[int, int]]:
+    """The recommended revision's facts and thumbnail come from its files (the sliced one for time
+    and grams, the source for the thumbnail)."""
     facts: dict[int, tuple[int | None, float | None]] = {}
     thumb: dict[int, int] = {}
     if rec_revision_ids:
@@ -415,12 +406,11 @@ async def catalog(
                 )
             if f.thumbnail_path and f.revision_id is not None and f.revision_id not in thumb:
                 thumb[f.revision_id] = f.id
-    # A thumbnail for projects whose recommended revision has none: any revision file with one.
-    missing_thumb: list[int] = []
-    for pid in ids:
-        pair = recommended[pid]
-        if pair is None or pair[0].id not in thumb:
-            missing_thumb.append(pid)
+    return facts, thumb
+
+
+async def _fallback_thumbnails(db: AsyncSession, missing_thumb: list[int]) -> dict[int, int]:
+    """A thumbnail for projects whose recommended revision has none: any revision file with one."""
     fallback_thumb: dict[int, int] = {}
     if missing_thumb:
         rows = await db.execute(
@@ -437,8 +427,11 @@ async def catalog(
         for project_id, file_id in rows:
             if project_id is not None:
                 fallback_thumb.setdefault(project_id, file_id)
+    return fallback_thumb
 
-    # Printed runs and the latest archive per project.
+
+async def _printed(db: AsyncSession, ids: list[int]) -> tuple[dict[int, int], dict[int, datetime]]:
+    """Printed runs and the latest archive per project."""
     printed: dict[int, int] = {}
     last_archive: dict[int, datetime] = {}
     for project_id, runs, latest in await db.execute(
@@ -452,6 +445,52 @@ async def catalog(
         printed[project_id] = int(runs or 0)
         if latest is not None:
             last_archive[project_id] = latest
+    return printed, last_archive
+
+
+async def catalog(
+    db: AsyncSession,
+    *,
+    q: str | None,
+    status: str | None,
+    tag_ids: list[int],
+    tag_mode: Literal["any", "all"],
+    can_read_aito: bool = True,
+) -> tuple[list[ProjectCatalogItem], bool]:
+    """The matching rows (at most ``CATALOG_LIMIT``) and whether more projects matched.
+
+    Without ``can_read_aito`` the linked Aito orders stay hidden: ``client_names`` and
+    ``open_orders`` are empty and the search skips client names and order numbers."""
+    folders = await all_folders(db)
+    conditions = _catalog_conditions(folders, q, status, tag_ids, tag_mode, can_read_aito)
+    projects = list(
+        (
+            await db.execute(
+                select(Project)
+                .where(*conditions)
+                .order_by(Project.updated_at.desc(), Project.id.desc())
+                .limit(CATALOG_LIMIT + 1)  # the extra row only tells whether the list is truncated
+            )
+        ).scalars()
+    )
+    truncated = len(projects) > CATALOG_LIMIT
+    projects = projects[:CATALOG_LIMIT]
+    ids = [p.id for p in projects]
+    if not ids:
+        return [], False
+    tags = await project_tag_refs(db, ids)
+    clients, open_orders = await _order_facts(db, ids, can_read_aito)
+    revisions, item_ids = await _printing_items(db, ids)
+    recommended = {pid: _recommended(revisions[pid]) for pid in ids}
+    rec_revision_ids = [pair[0].id for pair in recommended.values() if pair is not None]
+    facts, thumb = await _revision_file_facts(db, rec_revision_ids)
+    missing_thumb: list[int] = []
+    for pid in ids:
+        pair = recommended[pid]
+        if pair is None or pair[0].id not in thumb:
+            missing_thumb.append(pid)
+    fallback_thumb = await _fallback_thumbnails(db, missing_thumb)
+    printed, last_archive = await _printed(db, ids)
 
     out = []
     for p in projects:

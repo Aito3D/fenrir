@@ -1484,6 +1484,7 @@ CREATE TABLE projects (
 1 export function CatalogToolbar
 1 export function CatalogTree
 1 export function Chevron
+1 export function CodeMark
 1 export function CollapsibleHeader
 1 export function DeliveriesPicker
 1 export function descendantIds
@@ -1498,6 +1499,7 @@ CREATE TABLE projects (
 1 export function formatFilament
 1 export function groupTimeline
 1 export function Highlight
+1 export function InProductionFlame
 1 export function isPrintableFile
 1 export function isPrintableFilename
 1 export function isSectionEnabled

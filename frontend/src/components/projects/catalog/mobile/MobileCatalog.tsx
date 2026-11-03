@@ -8,7 +8,7 @@ import { formatRelativeTime } from '../../../../utils/date';
 import type { CatalogStatus } from '../CatalogToolbar';
 import type { CatalogChip, CatalogFilters, CatalogSort } from '../catalogRules';
 import { CHIPS, descendantIds, folderPath } from '../catalogRules';
-import { Highlight, PrintedCell, Thumb } from '../CatalogTree';
+import { CodeMark, Highlight, InProductionFlame, PrintedCell, Thumb } from '../CatalogRowParts';
 import { FilterSheet, FolderSheet, NewFolderSheet } from './sheets';
 
 export interface MobileCatalogProps {
@@ -256,8 +256,8 @@ function ProjectRow({ item, q, path, onOpen }: { item: ProjectCatalogItem; q: st
         <Thumb item={item} className="h-14 w-14" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            {item.code && <span className="font-mono text-[11px] text-bambu-green"><Highlight text={item.code} q={q} /></span>}
-            {item.open_orders.length > 0 && <Flame className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-label={t('projectsPdm.catalog.inProduction')} />}
+            <CodeMark item={item} q={q} />
+            <InProductionFlame item={item} />
             <span className="ml-auto text-xs tabular-nums"><PrintedCell item={item} /></span>
           </div>
           <div className="truncate text-[15px] text-white"><Highlight text={item.name} q={q} /></div>
