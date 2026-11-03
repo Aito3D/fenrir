@@ -166,6 +166,13 @@ describe('searchProjects — fields', () => {
     expect(searchProjects([p], '41')).toEqual([]);
   });
 
+  it('finds a card by a linked project code', () => {
+    const p = card({ id: 41, quote_number: null, description: 'x', client_name: null });
+    for (const q of ['P-0042', 'p42', '42', '#42']) expect(matchesSearch(p, q, ['P-0042'])).toBe(true);
+    expect(matchesSearch(p, 'p43', ['P-0042'])).toBe(false);
+    expect(matchesSearch(p, 'p42')).toBe(false);
+  });
+
   it('finds contact person, social handle and salesperson', () => {
     const p = card({ client_contact_name: 'Hina Lee', client_social_handle: '@hinalee', quote_salesperson: 'Marc' });
     expect(top([p], 'hina')!.field).toBe('contact');

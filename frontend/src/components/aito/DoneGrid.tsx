@@ -19,6 +19,7 @@ import {
 } from '../../utils/aitoDoneArchive';
 import { isPlaceholder } from '../../utils/aitoOptimistic';
 import { matchesSearch } from '../../utils/aitoSearch';
+import { useProjectCodes } from '../projects/aito/useProjectCodes';
 import { restoreButtonCls, restoreHoldDurationMs } from './restoreButton';
 import type { AitoProject } from '../../api/client';
 
@@ -111,7 +112,11 @@ export function DoneGrid({
 }) {
   const { t } = useTranslation();
 
-  const searched = useMemo(() => projects.filter((project) => matchesSearch(project, query)), [projects, query]);
+  const projectCodes = useProjectCodes();
+  const searched = useMemo(
+    () => projects.filter((project) => matchesSearch(project, query, projectCodes[String(project.id)])),
+    [projects, query, projectCodes],
+  );
   const counts = useMemo(() => doneFilterCounts(searched), [searched]);
   const visible = useMemo(
     () => sortDone(searched.filter((project) => doneFilterMatches(project, filter)), sort),
