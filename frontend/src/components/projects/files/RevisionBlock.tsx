@@ -5,7 +5,7 @@ import { api } from '../../../api/client';
 import type { ProjectFileOut, ProjectItemOut, ProjectRevisionOut, RevisionStatus } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { HoldButton } from '../../aito/HoldButton';
-import { PartViewerModal } from '../../viewer/PartViewerModal';
+import { PartViewerModal } from '../../viewer/LazyPartViewerModal';
 import { inputCls, focusRingCls } from '../../formStyles';
 import { formatFileSize } from '../../../utils/file';
 import type { FileActions } from './useFileActions';

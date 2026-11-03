@@ -27,6 +27,11 @@ CATALOGUE = Catalogue(
 )
 
 
+def build_items(*args, **kwargs) -> list[dict]:
+    """``build_line_items`` without its header rows, for tests about the item lines."""
+    return [line for line in build_line_items(*args, **kwargs) if line.get("line_item_category") != "header"]
+
+
 def _task(**overrides) -> ExportTask:
     fields = {
         "title": "Piece",
@@ -116,7 +121,7 @@ def test_vente_line_imports_as_usinage_and_exports_on_the_usinage_item():
     assert task["usinage_cost"] == 12000
     assert task["title"] == "Support moteur"
 
-    exported = build_line_items([_task(title=task["title"], usinage_cost=task["usinage_cost"])], [], CATALOGUE)
+    exported = build_items([_task(title=task["title"], usinage_cost=task["usinage_cost"])], [], CATALOGUE)
     assert len(exported) == 1
     assert exported[0]["item_id"] == "ITEM-USI"
     assert exported[0]["rate"] == 12000
@@ -164,7 +169,7 @@ def test_halfway_rates_use_bankers_rounding():
 
 
 def _impression_line(task: ExportTask) -> dict:
-    (line,) = build_line_items([task], [], CATALOGUE)
+    (line,) = build_items([task], [], CATALOGUE)
     return line
 
 
@@ -187,7 +192,7 @@ def test_a_services_discount_does_not_leak_onto_another_line():
     the same task. (All four services can carry a discount now; this pins
     isolation between them, not that discounts are impression-only.)"""
     task = _task(scan_cost=500, impression_cost=100, impression_discount_pct=10.0)
-    lines = build_line_items([task], [], CATALOGUE)
+    lines = build_items([task], [], CATALOGUE)
     by_item = {line["item_id"]: line for line in lines}
     assert "discount" not in by_item["ITEM-SCAN"]
     assert by_item["ITEM-IMP"]["discount"] == "10%"
@@ -226,7 +231,7 @@ def test_attaching_a_shipment_deletes_even_an_unrecognised_island_line():
         phone="+689-87112233",
         price=4500,
     )
-    lines = build_line_items([_task(scan_cost=100)], existing, CATALOGUE, shipping)
+    lines = build_items([_task(scan_cost=100)], existing, CATALOGUE, shipping)
     assert [line.get("item_id") for line in lines] == ["ITEM-SCAN", "ITEM-SHIP-M"]
     assert all(line.get("line_item_id") != "OLD-SHIP" for line in lines)
 
@@ -238,5 +243,5 @@ def test_lines_with_missing_item_order_sort_as_zero_and_renumber():
     ]
     lines = build_line_items([_task(scan_cost=100)], existing, CATALOGUE)
     # The order-less line sorts first among the echoes; every line renumbers 1..N.
-    assert [line.get("line_item_id") for line in lines] == [None, "F1", "F2"]
-    assert [line["item_order"] for line in lines] == [1, 2, 3]
+    assert [line.get("line_item_id") for line in lines] == [None, None, "F1", "F2"]  # header row, task line
+    assert [line["item_order"] for line in lines] == [1, 2, 3, 4]

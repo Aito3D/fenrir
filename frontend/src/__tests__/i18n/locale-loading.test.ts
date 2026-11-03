@@ -1,10 +1,11 @@
 /**
  * Only English is bundled; the other languages load when used (#3175).
  */
-import { describe, it, expect, afterEach } from 'vitest';
-import i18n, { localeBackend } from '../../i18n';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import i18n, { localeBackend, LOCALE_LOADERS } from '../../i18n';
 import en from '../../i18n/locales/en';
 import de from '../../i18n/locales/de';
+import fr from '../../i18n/locales/fr';
 
 function read(language: string) {
   return new Promise<{ error: unknown; data: unknown }>((resolve) => {
@@ -58,5 +59,57 @@ describe('locale loading', () => {
     await i18n.changeLanguage('de-AT');
 
     expect(i18n.t('nav.printers')).toBe(de.nav.printers);
+  });
+});
+
+// English used to ship inside the entry chunk as the synchronous fallback,
+// so a French user downloaded both string tables (~300 KB gzipped). Every
+// locale, English included, now loads on demand, and there is no fallback
+// language: the parity gate (`check:i18n`) guarantees every key exists in
+// every locale, which is what makes that safe.
+describe('English is a locale like the others', () => {
+  it('is loaded through the backend, not bundled', async () => {
+    const { error, data } = await read('en');
+    expect(error).toBeNull();
+    expect(data).toEqual(en);
+  });
+
+  it('has no fallback language', () => {
+    expect(i18n.options.fallbackLng).toBe(false);
+  });
+
+  it('renders keys from the loaded locale without an English bundle', async () => {
+    await i18n.changeLanguage('fr');
+    i18n.removeResourceBundle('en', 'translation');
+    expect(i18n.hasResourceBundle('en', 'translation')).toBe(false);
+    expect(i18n.t('nav.printers')).toBe(fr.nav.printers);
+    expect(i18n.t('aito.urgent')).toBe(fr.aito.urgent);
+  });
+});
+
+describe('when a locale chunk cannot be loaded', () => {
+  it('hands i18next the English bundle instead of an error', async () => {
+    const real = LOCALE_LOADERS.fr;
+    let calls = 0;
+    LOCALE_LOADERS.fr = () => {
+      calls += 1;
+      return Promise.reject(new Error('network'));
+    };
+    // The redeploy recovery (lazyPage.ts) asks /health and reloads once; here
+    // the server answers and a reload already happened within its window, so
+    // the fallback path is what runs.
+    vi.stubGlobal('fetch', vi.fn(async () => ({ status: 200 })));
+    window.sessionStorage.setItem('fenrir_chunk_reload_at', String(Date.now()));
+    try {
+      const { error, data } = await read('fr');
+      expect(error).toBeNull();
+      expect(data).toEqual(en);
+      // One retry before giving up on the chosen language.
+      expect(calls).toBe(2);
+    } finally {
+      LOCALE_LOADERS.fr = real;
+      vi.unstubAllGlobals();
+      window.sessionStorage.removeItem('fenrir_chunk_reload_at');
+    }
   });
 });

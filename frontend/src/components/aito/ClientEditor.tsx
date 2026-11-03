@@ -208,7 +208,11 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
   // Tracks whether the operator has typed into phone/email THIS session —
   // switching the contact person re-prefills a field only while it is still
   // untouched, so a correction typed here survives a later person switch.
-  const [edited, setEdited] = useState({ phone: false, email: false });
+  // A ref, not state: the one-shot person swap below runs as a passive
+  // effect, and under load React can flush it AFTER a keystroke that landed
+  // in between — a state snapshot from the render that scheduled the effect
+  // would then say "untouched" and clobber what was just typed.
+  const editedRef = useRef({ phone: false, email: false });
   const [error, setError] = useState<string | null>(null);
   // The version this edit is BASED ON, captured once on open — see
   // useProjectPatchMutation's doc for why it is not re-read at save time.
@@ -266,7 +270,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
   // a correction typed here must survive a later switch, the same rule the
   // Zoho-vs-snapshot prefill above follows for the initial load.
   const selectPerson = (person: ZohoContactPerson) => {
-    setDraft((prev) => (prev ? applyPersonToDraft(prev, person, edited) : prev));
+    setDraft((prev) => (prev ? applyPersonToDraft(prev, person, editedRef.current) : prev));
   };
 
   // The initial prefill (draftFromProject/draftFromContact) can only borrow
@@ -291,8 +295,8 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
     // nowhere, well after the operator may have already started typing.
     personPrefilledRef.current = project.client_id;
     if (!match) return;
-    setDraft((prev) => (prev ? applyPersonToDraft(prev, match, edited) : prev));
-  }, [draft, personsQuery.isSuccess, personsQuery.data, project.client_id, edited]);
+    setDraft((prev) => (prev ? applyPersonToDraft(prev, match, editedRef.current) : prev));
+  }, [draft, personsQuery.isSuccess, personsQuery.data, project.client_id]);
 
   // Escape closes the sheet, not the panel behind it: the panel's own
   // window-level Escape listener (useDismissableDialog) would otherwise fire
@@ -502,7 +506,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
           onBlur={() => setBlurred((b) => ({ ...b, phone: true }))}
           onChange={(next, changed) => {
             update({ countryCode: next.countryCode, nationalNumber: next.nationalNumber });
-            setEdited((v) => ({ ...v, phone: true }));
+            editedRef.current = { ...editedRef.current, phone: true };
             if (changed === 'countryCode') setBlurred((b) => ({ ...b, phone: true }));
           }}
         />
@@ -520,7 +524,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
           value={draft.email}
           onChange={(e) => {
             update({ email: e.target.value });
-            setEdited((v) => ({ ...v, email: true }));
+            editedRef.current = { ...editedRef.current, email: true };
           }}
           onBlur={() => setBlurred((b) => ({ ...b, email: true }))}
           placeholder={t('aito.emailPlaceholder')}

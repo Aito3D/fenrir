@@ -213,7 +213,7 @@ async def test_a_second_push_on_the_same_session_carries_the_edited_task_not_the
     assert await run_sync_once(db_session, pending_only=True) == 1
 
     put = next(body for method, _path, body in seen if method == "PUT" and "line_items" in (body or {}))
-    assert [line["rate"] for line in put["line_items"]] == [7300]
+    assert [line["rate"] for line in put["line_items"] if line.get("line_item_category") != "header"] == [7300]
 
 
 @pytest.mark.asyncio

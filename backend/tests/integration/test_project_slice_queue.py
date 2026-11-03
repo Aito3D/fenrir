@@ -1167,8 +1167,12 @@ async def test_removing_the_source_unslices_the_revision_and_the_next_print_wait
     assert not derived_path.exists()  # moved to the project trash, not deleted
     assert any(name.endswith(".gcode.3mf") for name in _trash_names(roots))
 
+    # Held until the waiting state is read: the mock slicer answers at once, and on a fast
+    # runner the slice landed before the queue call returned (CI 41534549663).
+    sidecar.block = True
     waiting = await _queue(async_client, part_b)
     assert (waiting["status"], waiting["library_file_id"]) == ("slicing", part_b)
+    sidecar.release.set()
     await _wait_job((await _revision(db_session, rev["id"])).slice_job_id)
     revision = await _revision(db_session, rev["id"])
     assert revision.slice_status == "sliced"
@@ -1214,6 +1218,81 @@ async def test_removing_the_source_of_an_unsliced_revision(
     revision = await _revision(db_session, rev["id"])
     assert (revision.slice_status, revision.slice_error) == expected
     assert revision.sliced_file_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_slice_whose_source_is_removed_mid_run_never_lands_the_removed_sources_gcode(
+    async_client: AsyncClient, db_session, sidecar, roots
+):
+    """T-552 / T-525 (user-approved 2026-11-01): partA is removed while its slice runs. The job does not
+    land partA's G-code: it slices the revision's current source (partB), and partB's waiting item prints that."""
+    rev, part_a, part_b = await _legacy_two_source_revision(async_client, db_session)
+    sidecar.block = True
+    started = await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")
+    assert started.status_code == 202, started.text
+    job_id = started.json()["job_id"]
+    await asyncio.wait_for(sidecar.entered.wait(), timeout=10)
+
+    removed = await async_client.delete(f"/api/v1/projects/revisions/{rev['id']}/files/{part_a}")
+    assert removed.status_code == 204, removed.text
+    waiting = await _queue(async_client, part_b)
+    assert (waiting["status"], waiting["library_file_id"], waiting["slice_job_id"]) == ("slicing", part_b, job_id)
+
+    sidecar.release.set()
+    await _wait_job(job_id)
+
+    revision = await _revision(db_session, rev["id"])
+    assert revision.slice_status == "sliced"
+    derived = list(
+        (await db_session.execute(select(LibraryFile).where(LibraryFile.derived_slice.is_(True)))).scalars().all()
+    )
+    assert [row.filename for row in derived] == ["partB.gcode.3mf"]
+    slice_id = derived[0].id
+    assert revision.sliced_file_id == slice_id
+    folder = to_absolute_path(derived[0].file_path).parent
+    assert sorted(p.name for p in folder.iterdir()) == ["partB.3mf", "partB.gcode.3mf"]
+    item = await _item(db_session, waiting["id"])
+    assert (item.status, item.library_file_id) == ("pending", slice_id)
+    assert len(sidecar.slice_requests) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_slice_whose_only_source_is_removed_mid_run_fails_and_stores_nothing(
+    async_client: AsyncClient, db_session, sidecar
+):
+    """T-552 / T-525: with no source left, the slice ends ``failed`` (source missing), with no G-code stored.
+    The revision keeps a file that is not a project (a revision keeps at least one file)."""
+    rev = await _upload(async_client, "partA.3mf")
+    source = await db_session.get(LibraryFile, rev["files"][0]["id"])
+    notes_rel = str(Path(source.file_path).with_name("notes.txt"))
+    to_absolute_path(notes_rel).write_text("not a project")
+    db_session.add(
+        LibraryFile(filename="notes.txt", file_path=notes_rel, file_size=13, file_type="txt", revision_id=rev["id"])
+    )
+    await db_session.commit()
+    folder = to_absolute_path(source.file_path).parent
+    sidecar.block = True
+    started = await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")
+    assert started.status_code == 202, started.text
+    await asyncio.wait_for(sidecar.entered.wait(), timeout=10)
+
+    removed = await async_client.delete(f"/api/v1/projects/revisions/{rev['id']}/files/{rev['files'][0]['id']}")
+    assert removed.status_code == 204, removed.text
+    sidecar.release.set()
+    await _wait_job(started.json()["job_id"])
+
+    revision = await _revision(db_session, rev["id"])
+    assert (revision.slice_status, revision.slice_error, revision.sliced_file_id) == (
+        "failed",
+        project_slice.SOURCE_MISSING,
+        None,
+    )
+    derived = (await db_session.execute(select(LibraryFile).where(LibraryFile.derived_slice.is_(True)))).first()
+    assert derived is None
+    assert sorted(p.name for p in folder.iterdir()) == ["notes.txt"]
+    assert len(sidecar.slice_requests) == 1
 
 
 @pytest.mark.asyncio
@@ -1270,3 +1349,41 @@ async def test_a_failed_source_removal_puts_the_slice_back(
 
 def _raise_os_error(*_args, **_kwargs):
     raise OSError("move back failed")
+
+
+def _sliced_with_filaments() -> bytes:
+    """A slice whose plate 1 consumes slot 1 only: what the print dialog must be offered."""
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            zipfile.ZipInfo("Metadata/slice_info.config", date_time=(1980, 1, 1, 0, 0, 0)),
+            '<config><plate><metadata key="index" value="1"/>'
+            '<filament id="1" type="PETG" color="#000000" used_g="12.5" used_m="4.1"/></plate></config>',
+        )
+    return buf.getvalue()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_filament_requirements_of_a_sliced_source_come_from_its_slice(
+    async_client: AsyncClient, db_session, sidecar
+):
+    """The print dialog of a project revision reads the slice it will print. Read from the
+    unsliced source it ran a preview slice per plate (a minute on the shop's server), and
+    offered no filament choice until it ended."""
+    rev = await _upload(async_client)
+    source_id = rev["files"][0]["id"]
+    await _slice_now(async_client, rev["id"])
+    sliced = await db_session.get(LibraryFile, (await _revision(db_session, rev["id"])).sliced_file_id)
+    Path(to_absolute_path(sliced.file_path)).write_bytes(_sliced_with_filaments())
+
+    response = await async_client.get(f"/api/v1/library/files/{source_id}/filament-requirements?plate_id=1")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["file_id"] == source_id
+    assert [(f["slot_id"], f["type"], f["used_grams"]) for f in body["filaments"]] == [(1, "PETG", 12.5)]
+    assert len(sidecar.slice_requests) == 1  # the revision's own slice; no preview slice

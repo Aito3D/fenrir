@@ -35,7 +35,7 @@ import { RichTextEditor } from '../components/RichTextEditor';
 import { PrintModal } from '../components/PrintModal';
 
 // Project edit modal (reused from ProjectsPage)
-import { ProjectModal } from './ProjectsPage';
+import { ProjectModal } from '../components/projects/ProjectModal';
 import { getCurrencySymbol } from '../utils/currency';
 import { isSlicedLibraryFile } from '../utils/libraryFiles';
 import { useUiSettings } from '../hooks/useUiSettings';

@@ -216,9 +216,9 @@ export function CalculatorPrintersPanel({
           <CountBadge visible={visible.length} total={printers.length} />
         </h2>
         {!editing && canUpdate && (
-          <Button size="sm" onClick={() => setEditing('new')}>
+          <Button size="sm" className="max-md:w-11 max-md:px-0" onClick={() => setEditing('new')} aria-label={t('calculator.addPrinter')}>
             <Plus className="w-4 h-4" />
-            {t('calculator.addPrinter')}
+            <span className="max-md:hidden">{t('calculator.addPrinter')}</span>
           </Button>
         )}
       </CardHeader>

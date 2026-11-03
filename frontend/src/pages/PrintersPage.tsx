@@ -175,7 +175,7 @@ import { useFlipReorder } from '../hooks/useFlipReorder';
 import { MQTTDebugModal } from '../components/MQTTDebugModal';
 import { HMSErrorModal, filterKnownHMSErrors, isSevereHMSError } from '../components/HMSErrorModal';
 import { AiDetectionModal } from '../components/AiDetectionModal';
-import { aiDetectionClass, type AiDetection } from '../utils/aiDetection';
+import { aiDetectionClass, OCTOEVERYWHERE_USAGE_LIMIT, type AiDetection } from '../utils/aiDetection';
 import { PrinterQueueWidget } from '../components/PrinterQueueWidget';
 import { PrinterHASensorRow } from '../components/PrinterHASensorRow';
 import { AMSHistoryModal } from '../components/AMSHistoryModal';
@@ -205,6 +205,25 @@ import { NumberInput } from '../components/NumberInput';
 import { getCurrencySymbol } from '../utils/currency';
 import { useUiSettings } from '../hooks/useUiSettings';
 import { isSlicedLibraryFile, mayBeSlicedFileName } from '../utils/libraryFiles';
+
+/** The spool Fenrir has assigned to a slot the printer reports loaded but
+ *  blank: typically one swapped in mid-print after a runout, which the printer
+ *  takes no configuration for until the print is over (#3434). The card shows
+ *  it, in the spool's colour, instead of a bare "?". */
+function pendingSlotSpool(
+  emptyKind: 'physical' | 'reset' | null,
+  spool: { brand?: string | null; material?: string | null; subtype?: string | null; color_name?: string | null; rgba?: string | null } | null | undefined,
+  onUnassign: (() => void) | undefined,
+): { label: string; colorHex: string | null; material: string; onUnassign?: () => void } | null {
+  if (emptyKind !== 'reset' || !spool) return null;
+  const name = [spool.brand, spool.material, spool.subtype].filter(Boolean).join(' ');
+  return {
+    label: spool.color_name ? `${name} (${spool.color_name})` : name,
+    colorHex: spool.rgba ?? null,
+    material: spool.material ?? '',
+    onUnassign,
+  };
+}
 
 // The status filter's options, and the only values it may hold. One list so a
 // saved filter cannot be validated against a set the dropdown has since moved
@@ -2082,6 +2101,7 @@ function PrinterCard({
   cardSize = 2,
   amsThresholds,
   spoolmanEnabled = false,
+  spoolmanModeOn = false,
   linkedSpools,
   spoolmanUrl,
   onGetAssignment,
@@ -2108,6 +2128,7 @@ function PrinterCard({
   aiDetectionEnabled = false,
   aiDetection,
   aiLastError = null,
+  aiLastErrorCode = null,
 }: {
   printer: Printer;
   hideIfDisconnected?: boolean;
@@ -2121,6 +2142,8 @@ function PrinterCard({
     tempFair: number;
   };
   spoolmanEnabled?: boolean;
+  /** Spoolman mode is on, connected or not: the built-in slot rows don't apply (#3430). */
+  spoolmanModeOn?: boolean;
   linkedSpools?: Record<string, LinkedSpoolInfo>;
   spoolmanUrl?: string | null;
   onGetAssignment?: (printerId: number, amsId: number, trayId: number) => SpoolAssignment | undefined;
@@ -2148,6 +2171,7 @@ function PrinterCard({
   aiDetectionEnabled?: boolean;
   aiDetection?: AiDetection;
   aiLastError?: string | null;
+  aiLastErrorCode?: string | null;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -4108,15 +4132,24 @@ function PrinterCard({
                 const title =
                   cls === 'error'
                     ? t('printers.aiDetection.tooltipError', {
-                        reason: aiDetection?.error ?? t('printers.aiDetection.error'),
+                        reason: hasPermission('settings:read')
+                          ? aiDetection?.error_code === OCTOEVERYWHERE_USAGE_LIMIT
+                            ? t('octoeverywhere.limitReached')
+                            : aiDetection?.error ?? t('printers.aiDetection.error')
+                          : t('printers.aiDetection.error'),
                       })
                     : cls === 'unknown'
                       ? t('printers.aiDetection.tooltipUnknown')
                       : aiDetection
-                        ? t('printers.aiDetection.tooltip', {
-                            status: t(`printers.aiDetection.${cls}`),
-                            score: aiDetection.score.toFixed(3),
-                          })
+                        ? 'print_quality' in aiDetection
+                          ? t('octoeverywhere.tooltipQuality', {
+                              status: t(`printers.aiDetection.${cls}`),
+                              quality: aiDetection.print_quality ?? '—',
+                            })
+                          : t('printers.aiDetection.tooltip', {
+                              status: t(`printers.aiDetection.${cls}`),
+                              score: aiDetection.score.toFixed(3),
+                            })
                         : t('printers.aiDetection.tooltipIdle');
                 const Icon = cls === 'error' ? EyeOff : ScanEye;
                 return (
@@ -5636,10 +5669,19 @@ function PrinterCard({
                                 const activePrintSlotLabel = activePrintSlotIdx >= 0
                                   ? `P${activePrintSlotIdx + 1}`
                                   : null;
+                                const pending = isEmpty
+                                  ? pendingSlotSpool(
+                                      emptyKind,
+                                      spoolmanEnabled ? slotSpoolForFill : inventoryAssignment?.spool,
+                                      spoolmanEnabled
+                                        ? (slotSpoolForFill ? () => onUnassignSpoolmanSpool?.(slotSpoolForFill.id) : undefined)
+                                        : (inventoryAssignment ? () => onUnassignSpool?.(printer.id, ams.id, slotIdx) : undefined),
+                                    )
+                                  : null;
                                 // Slot visual content (goes inside hover card)
                                 const slotVisual = (
                                   <div
-                                    className={`relative w-full bg-bambu-dark-secondary rounded-lg p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${
+                                    className={`relative w-full bg-bambu-dark-secondary rounded-lg p-1 text-center ${isEmpty && !pending ? 'opacity-50' : ''} ${
                                       isExpectedSlot
                                         ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-bambu-dark animate-pulse'
                                         : isRanOutSlot
@@ -5673,10 +5715,11 @@ function PrinterCard({
                                       trayType={tray?.tray_type}
                                       isEmpty={isEmpty}
                                       emptyKind={emptyKind}
+                                      pendingColor={pending?.colorHex}
                                       slotNumber={slotIdx + 1}
                                     />
                                     <div className="text-[length:var(--pc-t9,9px)] text-white font-bold truncate">
-                                      {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
+                                      {tray?.tray_type || pending?.material || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                                     </div>
                                     <KValueLine k={filamentData ? tray?.k : null} reserve={anySlotHasKValue} />
                                     {/* Fill bar */}
@@ -5761,6 +5804,9 @@ function PrinterCard({
                                               isAssigned: !!slotAssignment || isBambuLabSpool(tray),
                                             };
                                           }
+                                          // Spoolman mode with Spoolman down: neither table may be offered
+                                          // here, and an assign would write a built-in row (#3430).
+                                          if (spoolmanModeOn) return undefined;
                                           const assignment = onGetAssignment?.(printer.id, ams.id, slotIdx);
                                           return {
                                             assignedSpool: assignment?.spool ? {
@@ -5811,6 +5857,7 @@ function PrinterCard({
                                     ) : (
                                       <EmptySlotHoverCard
                                         kind={emptyKind ?? undefined}
+                                        assigned={pending ?? undefined}
                                         actions={renderAmsSlotActions({
                                           amsId: ams.id,
                                           slotId: slotIdx,
@@ -5927,10 +5974,19 @@ function PrinterCard({
                         const htActivePrintSlotLabel = htActivePrintSlotIdx >= 0
                           ? `P${htActivePrintSlotIdx + 1}`
                           : null;
+                        const pending = isEmpty
+                          ? pendingSlotSpool(
+                              emptyKind,
+                              spoolmanEnabled ? htSlotSpoolForFill : htInventoryAssignment?.spool,
+                              spoolmanEnabled
+                                ? (htSlotSpoolForFill ? () => onUnassignSpoolmanSpool?.(htSlotSpoolForFill.id) : undefined)
+                                : (htInventoryAssignment ? () => onUnassignSpool?.(printer.id, ams.id, htSlotId) : undefined),
+                            )
+                          : null;
                         // Slot visual content (goes inside hover card)
                         const slotVisual = (
                           <div
-                            className={`relative w-full bg-bambu-dark-secondary rounded-lg p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${
+                            className={`relative w-full bg-bambu-dark-secondary rounded-lg p-1 text-center ${isEmpty && !pending ? 'opacity-50' : ''} ${
                               isExpectedSlot
                                 ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-bambu-dark animate-pulse'
                                 : isRanOutSlot
@@ -5964,10 +6020,11 @@ function PrinterCard({
                               trayType={tray?.tray_type}
                               isEmpty={isEmpty}
                               emptyKind={emptyKind}
+                              pendingColor={pending?.colorHex}
                               slotNumber={1}
                             />
                             <div className="text-[length:var(--pc-t9,9px)] text-white font-bold truncate">
-                              {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
+                              {tray?.tray_type || pending?.material || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                             </div>
                             <KValueLine k={filamentData ? tray?.k : null} reserve={anySlotHasKValue} />
                             {/* Fill bar */}
@@ -6164,6 +6221,9 @@ function PrinterCard({
                                           isAssigned: !!slotAssignment || isBambuLabSpool(tray),
                                         };
                                       }
+                                      // Spoolman mode with Spoolman down: neither table may be offered
+                                      // here, and an assign would write a built-in row (#3430).
+                                      if (spoolmanModeOn) return undefined;
                                       const assignment = onGetAssignment?.(printer.id, ams.id, htSlotId);
                                       return {
                                         assignedSpool: assignment?.spool ? {
@@ -6214,6 +6274,7 @@ function PrinterCard({
                                 ) : (
                                   <EmptySlotHoverCard
                                     kind={emptyKind ?? undefined}
+                                    assigned={pending ?? undefined}
                                     actions={renderAmsSlotActions({
                                       amsId: ams.id,
                                       slotId: htSlotId,
@@ -6356,8 +6417,17 @@ function PrinterCard({
 
                               const isEmpty = !extTray.tray_type;
                               const emptyKind = getEmptySlotKind(extTray);
+                              const pending = isEmpty
+                                ? pendingSlotSpool(
+                                    emptyKind,
+                                    spoolmanEnabled ? extSlotSpoolForFill : extInventoryAssignment?.spool,
+                                    spoolmanEnabled
+                                      ? (extSlotSpoolForFill ? () => onUnassignSpoolmanSpool?.(extSlotSpoolForFill.id) : undefined)
+                                      : (extInventoryAssignment ? () => onUnassignSpool?.(printer.id, 255, slotTrayId) : undefined),
+                                  )
+                                : null;
                               const extSlotContent = (
-                                <div className={`w-full bg-bambu-dark-secondary rounded-lg p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isExtActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}>
+                                <div className={`w-full bg-bambu-dark-secondary rounded-lg p-1 text-center ${isEmpty && !pending ? 'opacity-50' : ''} ${isExtActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}>
                                   {/* Color circle: L/R inside on dual-nozzle external (replaces
                                       the separate Ext-L/Ext-R caption that made the row taller than
                                       regular AMS slots), 1-based slot number on single-nozzle. */}
@@ -6366,10 +6436,11 @@ function PrinterCard({
                                     trayType={extTray.tray_type}
                                     isEmpty={isEmpty}
                                     emptyKind={emptyKind}
+                                    pendingColor={pending?.colorHex}
                                     slotNumber={isDualNozzle ? (extTrayId === 254 ? 'L' : 'R') : slotTrayId + 1}
                                   />
-                                  <div className={`text-[length:var(--pc-t9,9px)] font-bold truncate ${isEmpty ? 'text-white/40' : 'text-white'}`}>
-                                    {extTray.tray_type || t('ams.slotEmpty')}
+                                  <div className={`text-[length:var(--pc-t9,9px)] font-bold truncate ${isEmpty && !pending ? 'text-white/40' : 'text-white'}`}>
+                                    {extTray.tray_type || pending?.material || t('ams.slotEmpty')}
                                   </div>
                                   <KValueLine k={isEmpty ? null : extTray.k} reserve={anySlotHasKValue} />
                                   <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
@@ -6443,6 +6514,9 @@ function PrinterCard({
                                             isAssigned: !!slotAssignment || isBambuLabSpool(extTray),
                                           };
                                         }
+                                        // Spoolman mode with Spoolman down: neither table may be offered
+                                        // here, and an assign would write a built-in row (#3430).
+                                        if (spoolmanModeOn) return undefined;
                                         const assignment = onGetAssignment?.(printer.id, 255, slotTrayId);
                                         return {
                                           assignedSpool: assignment?.spool ? {
@@ -6493,6 +6567,7 @@ function PrinterCard({
                                   ) : (
                                     <EmptySlotHoverCard
                                       kind={emptyKind ?? undefined}
+                                      assigned={pending ?? undefined}
                                       actions={renderAmsSlotActions({
                                         amsId: 255,
                                         slotId: slotTrayId,
@@ -7220,6 +7295,7 @@ function PrinterCard({
           printerName={printer.name}
           detection={aiDetection}
           lastError={aiLastError}
+          lastErrorCode={aiLastErrorCode}
           onClose={() => setShowAiModal(false)}
         />
       )}
@@ -9133,13 +9209,21 @@ export function PrintersPage() {
     queryFn: api.getObicoPrinterStatus,
     refetchInterval: 10000,
   });
+  const { data: octoEverywherePrinterStatus } = useQuery({
+    queryKey: ['octoeverywhere-printer-status'],
+    queryFn: api.getOctoEverywherePrinterStatus,
+    // Discover whether detection is enabled once, then poll only while active.
+    // Settings changes invalidate this query; stale data also refreshes on mount/focus.
+    refetchInterval: (query) => query.state.data?.enabled ? 10000 : false,
+  });
+  const aiPrinterStatus = octoEverywherePrinterStatus?.enabled ? octoEverywherePrinterStatus : obicoPrinterStatus;
   // Badge visibility: detection enabled AND this printer in the monitored set
   // (monitored_printers null = all). Live per-print state is passed separately.
   const isAiMonitored = useCallback(
     (printerId: number) =>
-      obicoPrinterStatus?.enabled === true &&
-      (obicoPrinterStatus.monitored_printers === null || obicoPrinterStatus.monitored_printers.includes(printerId)),
-    [obicoPrinterStatus],
+      aiPrinterStatus?.enabled === true &&
+      (aiPrinterStatus.monitored_printers === null || aiPrinterStatus.monitored_printers.includes(printerId)),
+    [aiPrinterStatus],
   );
 
   // Fetch Spoolman status to enable link spool feature
@@ -9202,8 +9286,12 @@ export function PrintersPage() {
     onError: (error: Error) => showToast(error.message || t('spoolman.unlinkFailed'), 'error'),
   });
 
-  // Helper to find assignment for a specific slot
+  // Helper to find assignment for a specific slot. Built-in rows only count in
+  // built-in mode: kept through a switch to Spoolman (#2812), they would
+  // otherwise supply a slot's fill level there (#3430). Off whenever Spoolman
+  // is enabled, connected or not.
   const getAssignment = (printerId: number, amsId: number | string, trayId: number | string): SpoolAssignment | undefined => {
+    if (spoolmanStatus?.enabled) return undefined;
     return spoolAssignments?.find(
       (a) => a.printer_id === printerId && a.ams_id === Number(amsId) && a.tray_id === Number(trayId)
     );
@@ -10228,6 +10316,7 @@ export function PrintersPage() {
                     tempFair: Number(settings.ams_temp_fair) || 35,
                   } : undefined}
                   spoolmanEnabled={spoolmanEnabled}
+                  spoolmanModeOn={!!spoolmanStatus?.enabled}
                   linkedSpools={linkedSpools}
                   spoolmanUrl={spoolmanStatus?.url}
                   onGetAssignment={getAssignment}
@@ -10252,8 +10341,9 @@ export function PrintersPage() {
                   onToggleSelect={toggleSelect}
                   onOpenCompactCard={openCompactCard}
                   aiDetectionEnabled={isAiMonitored(printer.id)}
-                  aiDetection={obicoPrinterStatus?.enabled ? obicoPrinterStatus.per_printer[String(printer.id)] : undefined}
-                  aiLastError={obicoPrinterStatus?.last_error ?? null}
+                  aiDetection={aiPrinterStatus?.enabled ? aiPrinterStatus.per_printer[String(printer.id)] : undefined}
+                  aiLastError={aiPrinterStatus?.last_error ?? null}
+                  aiLastErrorCode={octoEverywherePrinterStatus?.enabled ? octoEverywherePrinterStatus.last_error_code : null}
                 />
               </div>
             );

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -296,5 +298,13 @@ describe('ShippingLabelButton', () => {
     fireEvent.load(iframe as unknown as HTMLIFrameElement);
 
     await waitFor(() => expect(clickedDownload).toBe('etiquette-FA-26-0001.html'));
+  });
+
+  it('loads the label module only when a label is printed', () => {
+    // react-dom/server and the QR renderer (61 KB gzipped) belong to the
+    // click, not to the board: a static import inlines them into AitoPage.
+    const src = readFileSync(join(__dirname, '../../components/aito/ShippingLabelButton.tsx'), 'utf8');
+    expect(src).not.toMatch(/^import .* from '\.\.\/\.\.\/utils\/shippingLabel';/m);
+    expect(src).toMatch(/await import\('\.\.\/\.\.\/utils\/shippingLabel'\)/);
   });
 });

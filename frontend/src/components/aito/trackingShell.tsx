@@ -5,7 +5,7 @@ import aito3dLogo from '../../assets/aito3d_logo.png';
 import { SHOP_MAIL_HREF, SHOP_TEL_HREF } from '../../utils/aitoShop';
 import { BRAND, CARD, FOCUS, PAGE, PRESS, delayAt } from '../../utils/trackingShell';
 import { TRACK_MOTION } from '../../utils/aitoTracking';
-import { AITO3D_SENDER } from '../../utils/shippingLabel';
+import { AITO3D_SENDER } from '../../utils/aitoSender';
 import type { PanelTrigger } from './TrackingPayment';
 
 /** The rendered pieces the public tracking pages share: the logo, the

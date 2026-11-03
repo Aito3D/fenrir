@@ -15,6 +15,7 @@ from starlette.routing import Route
 from backend.app.core.json_gzip import JsonGZipMiddleware
 
 BIG = {"rows": ["x" * 50] * 100}  # ~5 KB of JSON
+PRE_ENCODED = b"already" * 300  # over the 1 KB minimum: only the Content-Encoding check keeps it as is
 
 
 def _app() -> Starlette:
@@ -35,7 +36,7 @@ def _app() -> Starlette:
         return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
     async def pre_encoded(_request):
-        return Response(b"already", media_type="application/json", headers={"Content-Encoding": "br"})
+        return Response(PRE_ENCODED, media_type="application/json", headers={"Content-Encoding": "br"})
 
     app = Starlette(
         routes=[
@@ -95,8 +96,16 @@ async def test_streamed_multipart_is_untouched():
 
 @pytest.mark.asyncio
 async def test_already_encoded_json_is_not_recompressed():
-    response = await _request("GET", "/pre-encoded")
+    # Raw bytes, not response.content: httpx would brotli-decode the fake body (and fail) whenever a
+    # brotli module is installed.
+    transport = httpx.ASGITransport(app=_app())
+    async with (
+        httpx.AsyncClient(transport=transport, base_url="http://test") as client,
+        client.stream("GET", "/pre-encoded", headers={"Accept-Encoding": "gzip"}) as response,
+    ):
+        raw = b"".join([chunk async for chunk in response.aiter_raw()])
     assert response.headers["content-encoding"] == "br"
+    assert raw == PRE_ENCODED  # passed through byte for byte, not gzipped
 
 
 @pytest.mark.asyncio

@@ -115,6 +115,9 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         # (see AitoTrackingResponse), and the auth middleware exempts the
         # same "/api/v1/aito/track/" prefix (PUBLIC_API_PREFIXES in main.py).
         ("GET", "/api/v1/aito/track/{token}"),
+        # Shop figures for the Shopify storefront — aggregate marketing numbers only, served from a
+        # 5-minute cache; listed in PUBLIC_API_ROUTES in main.py.
+        ("GET", "/api/v1/showcase/stats"),
         # MakerWorld thumbnail proxy — fetches external URL; no Fenrir data exposed.
         ("GET", "/api/v1/makerworld/thumbnail"),
         # ---- HTTP API: operational + UI-bootstrap (no sensitive data) ----
@@ -146,6 +149,10 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/manifest.json"),
         ("GET", "/sw-register.js"),
         ("GET", "/sw.js"),
+        # HEAD twins of the three PWA files (#1460), one route per method
+        ("HEAD", "/manifest.json"),
+        ("HEAD", "/sw-register.js"),
+        ("HEAD", "/sw.js"),
         # SPA catch-all — serves index.html for client-side routing. No backend data path.
         ("GET", "/{full_path:path}"),
         # ---- WebSocket routes ----

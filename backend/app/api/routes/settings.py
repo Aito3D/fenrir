@@ -41,7 +41,7 @@ DEFAULT_SETTINGS = AppSettings()
 
 # Sensitive credential fields blanked for API-key callers. Everyone else sees
 # them as the placeholder (write-only secrets, see services/secret_fields).
-_SENSITIVE_FIELDS_FOR_API_KEY = tuple(SETTINGS_SECRETS)
+_SENSITIVE_FIELDS_FOR_API_KEY = (*SETTINGS_SECRETS, "octoeverywhere_api_key")
 
 
 async def get_setting(db: AsyncSession, key: str) -> str | None:
@@ -226,6 +226,8 @@ _BOOL_SETTING_KEYS = frozenset(
         "local_login_enabled",
         "preheat_enabled",
         "queue_keep_bed_warm",
+        "obico_enabled",
+        "octoeverywhere_enabled",
         # Fork keys
         "camera_gpu_accel",
         "drying_no_auto_stop",
@@ -247,7 +249,9 @@ _FLOAT_SETTING_KEYS = frozenset(
 
 # String settings limited to a fixed set of values, which a stored "None"
 # would break when the settings response is built.
-_ENUM_SETTING_KEYS = frozenset({"energy_price_source"})
+_ENUM_SETTING_KEYS = frozenset(
+    {"energy_price_source", "obico_sensitivity", "obico_action", "octoeverywhere_confidence", "octoeverywhere_action"}
+)
 
 _INT_SETTING_KEYS = frozenset(
     {
@@ -278,6 +282,8 @@ _INT_SETTING_KEYS = frozenset(
         "aito_followup_link_days",
         "aito_deposit_pct",
         "pause_warning_minutes",
+        "obico_poll_interval",
+        "octoeverywhere_poll_interval",
     }
 )
 
@@ -346,6 +352,10 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False, m
     # The Heimdall API token is the whole credential — write-only, like the above.
     settings_dict["heimdall_api_token"] = ""
 
+    # The saved key is write-only, including for authenticated administrators.
+    settings_dict["octoeverywhere_api_key_configured"] = bool(settings_dict["octoeverywhere_api_key"].strip())
+    settings_dict["octoeverywhere_api_key"] = ""
+
     if is_api_key:
         for field in _SENSITIVE_FIELDS_FOR_API_KEY:
             if field in settings_dict:
@@ -403,8 +413,13 @@ async def update_settings(
     except SecretConfigError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
-    # An explicit null for a boolean or numeric setting has no meaning -- these
-    # are not clearable -- and would be stored as the literal "None".
+    # Omitted/null preserves the saved key; an explicit empty string removes it.
+    if update_data.get("octoeverywhere_api_key") is None:
+        update_data.pop("octoeverywhere_api_key", None)
+
+    # These typed settings are not clearable: null would be stored as "None".
+    # Check before normalizing provider flags so enabling one cannot hide a
+    # null submitted for the other.
     null_keys = sorted(
         key
         for key, value in update_data.items()
@@ -412,6 +427,14 @@ async def update_settings(
     )
     if null_keys:
         raise HTTPException(status_code=422, detail=f"These settings cannot be null: {', '.join(null_keys)}")
+
+    # Only one failure detection provider may control a print at a time.
+    if update_data.get("obico_enabled") and update_data.get("octoeverywhere_enabled"):
+        raise HTTPException(status_code=400, detail="Enable only one AI failure detection provider at a time.")
+    if update_data.get("octoeverywhere_enabled"):
+        update_data["obico_enabled"] = False
+    elif update_data.get("obico_enabled"):
+        update_data["octoeverywhere_enabled"] = False
 
     # Settings that decide who can sign in are admin-only, like the user routes.
     # Only a real change counts: the settings page sends every field on each
@@ -433,15 +456,17 @@ async def update_settings(
     # printer created (the validator has already checked it is a list of ints).
     # Only ids not stored yet are checked: the page sends the whole list, and an
     # id already there must not block every save.
-    if update_data.get("obico_enabled_printers"):
+    for key in ("obico_enabled_printers", "octoeverywhere_enabled_printers"):
+        if not update_data.get(key):
+            continue
         from backend.app.core.printer_scope import ensure_printers_exist
 
         try:
-            stored = json.loads(await get_setting(db, "obico_enabled_printers") or "[]")
+            stored_printers = json.loads(await get_setting(db, key) or "[]")
         except ValueError:
-            stored = []
-        stored = set(stored) if isinstance(stored, list) else set()
-        added = [i for i in json.loads(update_data["obico_enabled_printers"]) if i not in stored]
+            stored_printers = []
+        stored_printers = set(stored_printers) if isinstance(stored_printers, list) else set()
+        added = [i for i in json.loads(update_data[key]) if i not in stored_printers]
         await ensure_printers_exist(db, added)
 
     # Safety refusals on disabling local login (#1589). Two failure modes
@@ -518,6 +543,15 @@ async def update_settings(
         from backend.app.services import zoho_filaments
 
         zoho_filaments.reset_cache()
+
+    if update_data.get("obico_enabled") is False:
+        from backend.app.services.obico_detection import obico_detection_service
+
+        await obico_detection_service.refresh_settings()
+    if any(key.startswith("octoeverywhere_") for key in update_data):
+        from backend.app.services.octoeverywhere_detection import octoeverywhere_detection_service
+
+        await octoeverywhere_detection_service.refresh_settings()
 
     if {"camera_light_mode", "camera_light_delay"} & set(update_data.keys()):
         camera_light.invalidate_settings()

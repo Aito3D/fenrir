@@ -1133,6 +1133,66 @@ describe('useWebSocket hook', () => {
    * throttled timer from a prompt one, which is exactly why the original tests
    * kept passing while the reporter's tab stayed frozen.
    */
+  // The sidebar badges (pending queue, uploads to review) used to poll every
+  // 5 s on every page. The backend now announces queue and upload writes, and
+  // the scheduler's own queue_item_* events mark status transitions; each of
+  // them refreshes the cached counts here, so the poll is only a fallback.
+  describe('queue change events', () => {
+    async function openSocket() {
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
+      await vi.advanceTimersByTimeAsync(0);
+      const ws = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        ws.open();
+      });
+      return { ws, invalidateSpy };
+    }
+
+    it.each(['queue_changed', 'queue_item_acked', 'queue_item_failed', 'print_start', 'print_complete'])(
+      'refreshes the queue on %s',
+      async (type) => {
+        vi.useFakeTimers();
+        const { ws, invalidateSpy } = await openSocket();
+        act(() => {
+          ws.simulateMessage({ type, printer_id: 1, queue_item_id: 7, data: {} });
+        });
+        await act(async () => {
+          vi.advanceTimersByTime(4000);
+        });
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['queue'] });
+        vi.useRealTimers();
+      },
+    );
+
+    it('coalesces a burst of scheduler events into one queue refetch', async () => {
+      // A batch dispatch acks N items in a row; N back-to-back invalidations
+      // would cancel and restart the queue page's refetch N times.
+      vi.useFakeTimers();
+      const { ws, invalidateSpy } = await openSocket();
+      act(() => {
+        for (let i = 0; i < 5; i++) ws.simulateMessage({ type: 'queue_item_acked', queue_item_id: i, data: {} });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(4000);
+      });
+      const queueCalls = invalidateSpy.mock.calls.filter(([arg]) => JSON.stringify((arg as { queryKey: unknown }).queryKey) === '["queue"]');
+      expect(queueCalls).toHaveLength(1);
+      vi.useRealTimers();
+    });
+
+    it('refreshes the pending uploads on pending_uploads_changed', async () => {
+      vi.useFakeTimers();
+      const { ws, invalidateSpy } = await openSocket();
+      act(() => {
+        ws.simulateMessage({ type: 'pending_uploads_changed' });
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['pending-uploads'] });
+      vi.useRealTimers();
+    });
+  });
+
   describe('hidden tab (#2754)', () => {
     let rafSpy: ReturnType<typeof vi.fn>;
 

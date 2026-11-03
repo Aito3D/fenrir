@@ -184,8 +184,10 @@ describe('PrinterLocationsPage', () => {
 });
 
 describe('printer locations strings', () => {
-  it('keeps printers.dropToQueue, which the printer card still uses', () => {
+  it('keeps printers.dropToQueue, which the printer card still uses', async () => {
     expect(i18n.t('printers.dropToQueue', { lng: 'en' })).toBe('Drop to queue');
+    // Locales load on demand and there is no English fallback: load ru, then check it.
+    await i18n.loadLanguages('ru');
     expect(i18n.t('printers.dropToQueue', { lng: 'ru' })).not.toBe('printers.dropToQueue');
   });
 });

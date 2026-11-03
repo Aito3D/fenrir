@@ -861,6 +861,7 @@ class VirtualPrinterInstance:
 
         try:
             from backend.app.models.pending_upload import PendingUpload
+            from backend.app.services.queue_events import notify_pending_uploads_changed
 
             async with self._session_factory() as db:
                 pending = PendingUpload(
@@ -875,6 +876,7 @@ class VirtualPrinterInstance:
                 db.add(pending)
                 await db.commit()
                 logger.info("[VP %s] Queued: %s - %s", self.name, pending.id, file_path.name)
+            await notify_pending_uploads_changed()
         except Exception as e:
             logger.error("Error queueing file: %s", e)
             # Queue insert failed — drop the temp file so it doesn't

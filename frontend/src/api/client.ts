@@ -945,6 +945,7 @@ export interface Archive {
   print_time_seconds: number | null;
   actual_time_seconds: number | null;  // Computed from started_at/completed_at
   time_accuracy: number | null;  // Percentage: 100 = perfect, >100 = faster than estimated
+  time_estimate_seconds?: number | null;  // The latest print's plate estimate, what time_accuracy compares with
   filament_used_grams: number | null;
   filament_type: string | null;
   filament_color: string | null;
@@ -1038,6 +1039,18 @@ export interface PrintLogEntry {
   energy_cost: number | null;
   wear_cost: number | null;  // Printer wear (#694)
   failure_reason: string | null;
+  user_verdict?: 'good' | 'reject' | null;
+  user_verdict_source?: string | null;
+  confirm_requested?: boolean | null;
+  duration_unmeasured?: boolean | null;
+  quantity?: number | null;
+  // This print's own (archive redesign): note, finish photos, video.
+  notes?: string | null;
+  photos?: string[] | null;
+  timelapse_path?: string | null;
+  // The slicer's estimate for the plate it printed; in an archive's runs list.
+  estimate_seconds?: number | null;
+  estimate_grams?: number | null;
   thumbnail_path: string | null;
   created_by_id: number | null;
   created_by_username: string | null;
@@ -1047,6 +1060,8 @@ export interface PrintLogEntry {
 export interface PrintLogResponse {
   items: PrintLogEntry[];
   total: number;
+  // The print log only: archives of its prints that were deleted.
+  deleted_archive_ids?: number[];
 }
 
 export interface ArchiveStats {
@@ -1757,6 +1772,13 @@ export interface AppSettings {
   obico_action: 'notify' | 'pause' | 'pause_and_off';
   obico_poll_interval: number;
   obico_enabled_printers: string;
+  octoeverywhere_enabled: boolean;
+  octoeverywhere_api_key: string;
+  octoeverywhere_api_key_configured: boolean;
+  octoeverywhere_confidence: OctoEverywhereConfidence;
+  octoeverywhere_action: 'notify' | 'pause' | 'pause_and_off';
+  octoeverywhere_enabled_printers: string;
+  octoeverywhere_poll_interval: number;
   // Inventory forecasting global lead time
   forecast_global_lead_time_days: number;
   // Zoho Books integration
@@ -1793,7 +1815,7 @@ export interface AppSettings {
   location_sensor_alert_defaults: string;
 }
 
-export type AppSettingsUpdate = Partial<AppSettings>;
+export type AppSettingsUpdate = Partial<Omit<AppSettings, 'octoeverywhere_api_key_configured'>>;
 
 // Settings as a page sees them: everything from GET /settings for a user who
 // may read it, otherwise the subset /settings/ui-preferences and
@@ -3846,6 +3868,54 @@ export interface ObicoTestConnection {
   auth_ok: boolean | null;
 }
 
+// How sure Gadget must be before suggesting a warning or pause (API levels 1-5).
+export type OctoEverywhereConfidence = 'lowest' | 'low' | 'medium' | 'high' | 'highest';
+
+export interface OctoEverywhereDetection {
+  class: 'safe' | 'warning' | 'failure' | 'error' | 'unknown';
+  print_quality: number | null;
+  frame_count: number;
+  error?: string | null;
+  error_code: string | null;
+}
+
+export interface OctoEverywhereDetectionEvent {
+  timestamp: string;
+  printer_id: number;
+  class: OctoEverywhereDetection['class'];
+  print_quality: number | null;
+}
+
+export interface OctoEverywhereStatus {
+  enabled: boolean;
+  api_key_configured: boolean;
+  confidence: OctoEverywhereConfidence;
+  action: 'notify' | 'pause' | 'pause_and_off';
+  poll_interval: number;
+  is_running: boolean;
+  last_error: string | null;
+  last_error_code: string | null;
+  per_printer: Record<string, OctoEverywhereDetection>;
+  history: OctoEverywhereDetectionEvent[];
+  notifications: { configured: boolean; uncovered_printers: number[] };
+}
+
+export interface OctoEverywherePrinterStatus {
+  enabled: boolean;
+  // null = all printers are monitored
+  monitored_printers: number[] | null;
+  per_printer: Record<string, OctoEverywhereDetection>;
+  last_error: string | null;
+  last_error_code: string | null;
+}
+
+export interface OctoEverywhereTestConnection {
+  ok: boolean;
+  status_code: number | null;
+  error: string | null;
+  error_code: string | null;
+}
+
 export interface GitHubTestConnectionResponse {
   success: boolean;
   message: string;
@@ -4090,9 +4160,37 @@ export const DEFAULT_SPOOL_LABEL_FIELDS: SpoolLabelField[] = [
   'spool_id',
 ];
 
+// A sheet of identical labels in a grid, in millimetres (#3296). Mirror of
+// backend.app.schemas.label_template.SheetLayoutSpec.
+export type LabelPageSize = 'a4' | 'letter';
+export interface LabelSheetLayout {
+  page: LabelPageSize;
+  label_w_mm: number;
+  label_h_mm: number;
+  cols: number;
+  rows: number;
+  top_mm: number;
+  left_mm: number;
+  col_gap_mm: number;
+  row_gap_mm: number;
+}
+
+// A custom sheet saved under a name, shared by everyone on the install.
+export interface SavedLabelTemplate {
+  id: number;
+  name: string;
+  layout: LabelSheetLayout;
+  created_at: string;
+  updated_at: string;
+}
+
+// A built-in template, or "custom" with the sheet itself in ``layout``.
+export type SpoolLabelRequestTemplate = SpoolLabelTemplate | 'custom';
+
 export interface PrintSpoolLabelsRequest {
   spool_ids: number[];
-  template: SpoolLabelTemplate;
+  template: SpoolLabelRequestTemplate;
+  layout?: LabelSheetLayout;
   monochrome: boolean;
   starting_position: number;
   fields?: SpoolLabelField[];
@@ -4102,7 +4200,8 @@ export interface PrintSpoolLabelsRequest {
 
 export interface PreviewSpoolLabelRequest {
   spool_id: number;
-  template: SpoolLabelTemplate;
+  template: SpoolLabelRequestTemplate;
+  layout?: LabelSheetLayout;
   monochrome: boolean;
   fields: SpoolLabelField[];
 }
@@ -7148,6 +7247,16 @@ export const api = {
   getArchive: (id: number, runId?: number | null) =>
     request<Archive>(`/archives/${id}${runId != null ? `?run_id=${runId}` : ''}`),
   getArchiveRuns: (id: number) => request<PrintLogResponse>(`/archives/${id}/runs`),
+  // The prints of the archives the caller sees that ended between two days
+  // (archive redesign P4: the calendar), in id order.
+  getArchivePrints: (params: { dateFrom: string; dateTo: string; printerId?: number; limit?: number; offset?: number }) => {
+    const search = new URLSearchParams({ date_from: params.dateFrom, date_to: params.dateTo });
+    if (params.printerId) search.set('printer_id', String(params.printerId));
+    if (params.limit) search.set('limit', String(params.limit));
+    if (params.offset) search.set('offset', String(params.offset));
+    addDayZone(search);
+    return request<PrintLogResponse>(`/archives/prints?${search}`);
+  },
   /**
    * Pre-flight for the delete-confirm modal (#1734). Returns the number of
    * related queue items that will be removed along with the archive AND how
@@ -7392,6 +7501,8 @@ export const api = {
   },
   getArchiveGcode: (id: number) => `${API_BASE}/archives/${id}/gcode`,
   getArchiveTimelapse: (id: number) => withMediaToken(`${API_BASE}/archives/${id}/timelapse?v=${Date.now()}`),
+  getArchiveRunTimelapse: (id: number, runId: number) =>
+    withMediaToken(`${API_BASE}/archives/${id}/runs/${runId}/timelapse?v=${Date.now()}`),
   downloadArchiveTimelapse: async (id: number, filename: string): Promise<void> => {
     const prepared = await request<{ token: string; filename: string }>(
       `/archives/${id}/media-download-token`,
@@ -7792,7 +7903,7 @@ export const api = {
   // archive to reach through and this is the only path to classify them.
   updatePrintLogEntry: (
     id: number,
-    body: { failure_reason?: string | null; status?: string },
+    body: { failure_reason?: string | null; status?: string; notes?: string | null },
   ) =>
     request<PrintLogEntry>(`/print-log/${id}`, {
       method: 'PATCH',
@@ -8765,6 +8876,12 @@ export const api = {
     postForBlob('/inventory/labels/preview', data, signal),
   previewSpoolmanSpoolLabel: (data: PreviewSpoolLabelRequest, signal?: AbortSignal): Promise<Blob> =>
     postForBlob('/spoolman/labels/preview', data, signal),
+  getLabelTemplates: () => request<SavedLabelTemplate[]>('/label-templates'),
+  createLabelTemplate: (data: { name: string; layout: LabelSheetLayout }) =>
+    request<SavedLabelTemplate>('/label-templates', { method: 'POST', body: JSON.stringify(data) }),
+  updateLabelTemplate: (id: number, data: { name: string; layout: LabelSheetLayout }) =>
+    request<SavedLabelTemplate>(`/label-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteLabelTemplate: (id: number) => request<void>(`/label-templates/${id}`, { method: 'DELETE' }),
   getSpoolCatalog: () =>
     request<SpoolCatalogEntry[]>('/inventory/catalog'),
   addCatalogEntry: (data: { name: string; weight: number }) =>
@@ -10544,6 +10661,20 @@ export const api = {
     request<ObicoTestConnection>('/obico/test-connection', {
       method: 'POST',
       body: JSON.stringify(token === undefined ? { url } : { url, token }),
+    }),
+
+  // OctoEverywhere AI failure detection
+  getOctoEverywhereStatus: () =>
+    request<OctoEverywhereStatus>('/octoeverywhere/status'),
+
+  getOctoEverywherePrinterStatus: () =>
+    request<OctoEverywherePrinterStatus>('/octoeverywhere/printer-status'),
+
+  // An omitted key uses the saved key; an explicit empty key is rejected.
+  testOctoEverywhereConnection: (apiKey?: string, confidence?: OctoEverywhereConfidence) =>
+    request<OctoEverywhereTestConnection>('/octoeverywhere/test-connection', {
+      method: 'POST',
+      body: JSON.stringify({ api_key: apiKey, confidence }),
     }),
 
   // Slicer API — slice in the background. Both endpoints return 202 + a

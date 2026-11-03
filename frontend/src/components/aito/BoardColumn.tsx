@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -13,13 +13,13 @@ import { isPlaceholder } from '../../utils/aitoOptimistic';
 
 function SortableCard({
   project,
-  onExpand,
+  onExpandCard,
   transitionConfig,
   animateIn,
   dragDisabled,
 }: {
   project: AitoProject;
-  onExpand: () => void;
+  onExpandCard: (id: number) => void;
   transitionConfig: { duration: number; easing: string } | null;
   animateIn: boolean;
   dragDisabled?: boolean;
@@ -69,6 +69,15 @@ function SortableCard({
   // never inherits it.
   const reverting = useIsReverting(project.id);
 
+  // Stable for CardView's memo (see there): a fresh closure, element or
+  // object on every column render would make every card render again.
+  const onExpand = useCallback(() => onExpandCard(project.id), [onExpandCard, project.id]);
+  const actions = useMemo(() => <BoardCardActions project={project} cardRef={cardRef} />, [project]);
+  const dragHandleProps = useMemo(
+    () => (dragLocked ? undefined : { ...attributes, ...listeners }),
+    [dragLocked, attributes, listeners],
+  );
+
   return (
     <div
       ref={setCardRef}
@@ -85,13 +94,13 @@ function SortableCard({
         project={project}
         placeholder={placeholder}
         onExpand={onExpand}
-        actions={<BoardCardActions project={project} cardRef={cardRef} />}
+        actions={actions}
         dragHandleRef={setActivatorNodeRef}
         // Undefined, not disabled: CardView already renders an inert grip on
         // this path — it is how the DragOverlay clone renders — so a filtered
         // card becomes undraggable with no new markup and no dead button in
         // the tab order.
-        dragHandleProps={dragLocked ? undefined : { ...attributes, ...listeners }}
+        dragHandleProps={dragHandleProps}
       />
     </div>
   );
@@ -194,7 +203,7 @@ export function BoardColumn({
             <SortableCard
               key={project.id}
               project={project}
-              onExpand={() => onExpandCard(project.id)}
+              onExpandCard={onExpandCard}
               transitionConfig={transitionConfig}
               animateIn={shouldAnimateIn(project.id)}
               dragDisabled={dragDisabled}

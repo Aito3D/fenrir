@@ -53,6 +53,7 @@ from backend.app.models.print_batch import PrintBatch
 from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
 from backend.app.models.project import Project
 from backend.app.models.project_item import REVISION_STATUSES, SECTIONS, SLICE_SLICING, ProjectItem, ProjectRevision
+from backend.app.models.project_pin import ProjectRevisionPin
 from backend.app.models.user import User
 from backend.app.schemas.project_files import (
     DuplicateWarning,
@@ -1339,6 +1340,11 @@ async def _clear_links_to(db: AsyncSession, revision_ids: list[int]) -> None:
     )
 
 
+async def _delete_pins(db: AsyncSession, revision_ids: list[int]) -> None:
+    # SQLite runs without foreign keys: a freed revision id would hand its pins to the next revision
+    await db.execute(delete(ProjectRevisionPin).where(ProjectRevisionPin.revision_id.in_(revision_ids)))
+
+
 async def delete_revision(db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision) -> None:
     async with _item_lock(item.id):
         item = await fresh_item(db, item.id)
@@ -1362,6 +1368,7 @@ async def _delete_revision_locked(
             raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
         file_ids = await _delete_file_rows(db, revision_ids=[revision.id])
         await _clear_links_to(db, [revision.id])
+        await _delete_pins(db, [revision.id])
         await db.delete(revision)
         await db.flush()
         if await _deleted_revision_is_used(db, revision.id, file_ids):
@@ -1499,6 +1506,7 @@ async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectI
             for revision_id in revision_ids:
                 deleted_file_ids[revision_id] = await _delete_file_rows(db, revision_ids=[revision_id])
             await _clear_links_to(db, revision_ids)
+            await _delete_pins(db, revision_ids)
             await db.execute(delete(ProjectRevision).where(ProjectRevision.id.in_(revision_ids)))
         await db.delete(item)
         await db.flush()

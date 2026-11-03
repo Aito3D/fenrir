@@ -14,7 +14,7 @@ import { PhotoGalleryModal } from '../PhotoGalleryModal';
 import { ProjectPageModal } from '../ProjectPageModal';
 import { TimelapseViewer } from '../TimelapseViewer';
 import { ArchiveMediaDownloadModal } from '../ArchiveMediaDownloadModal';
-import { PartViewerModal } from '../viewer/PartViewerModal';
+import { PartViewerModal } from '../viewer/LazyPartViewerModal';
 import type { ArchiveActions, ArchiveTFunction } from './useArchiveActions';
 
 /**

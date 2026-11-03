@@ -73,3 +73,26 @@ async def test_pins_leave_with_their_revision(async_client: AsyncClient, roots):
     assert up.status_code == 201, up.text
     assert (await async_client.delete(f"/api/v1/projects/revisions/{rev['id']}")).status_code == 204
     assert (await async_client.get(url)).status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_reused_revision_id_does_not_inherit_deleted_pins(async_client: AsyncClient, roots):  # noqa: F811
+    for delete_whole_item in (False, True):
+        item_id, rev = await _upload(async_client)
+        url = f"/api/v1/projects/revisions/{rev['id']}/pins"
+        assert (await async_client.post(url, json={"x": 1, "y": 2, "z": 3, "text": "stale"})).status_code == 201
+        target = f"/api/v1/projects/items/{item_id}" if delete_whole_item else f"/api/v1/projects/revisions/{rev['id']}"
+        assert (await async_client.delete(target)).status_code == 204
+        # the newest id is free again; wherever the next revision lands, no deleted note follows it
+        if delete_whole_item:
+            _, again = await _upload(async_client)
+        else:
+            up = await async_client.post(
+                f"/api/v1/projects/items/{item_id}/revisions",
+                files=[("files", ("support.3mf", threemf_bytes(), "application/octet-stream"))],
+            )
+            assert up.status_code == 201, up.text
+            again = up.json()["revision"]
+        assert again["id"] == rev["id"]
+        assert (await async_client.get(f"/api/v1/projects/revisions/{again['id']}/pins")).json() == []

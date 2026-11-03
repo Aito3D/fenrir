@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowUpRight, ChevronRight, ExternalLink, Instagram, Mail, Navigation, Phone } from 'lucide-react';
-import { AITO3D_SENDER } from '../../utils/shippingLabel';
+import { AITO3D_SENDER } from '../../utils/aitoSender';
 import { SHOP_DIRECTIONS_URL, SHOP_MAIL_HREF, SHOP_SOCIAL_URL, SHOP_TEL_HREF, SHOP_WEBSITE_URL, shopMapEmbedUrl } from '../../utils/aitoShop';
 import { FOCUS, PRESS } from '../../utils/trackingShell';
 import { PanelReveal, TrackingPanel } from './TrackingPanel';

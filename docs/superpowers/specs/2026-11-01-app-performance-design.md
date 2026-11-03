@@ -223,3 +223,35 @@ d. Icon chunks: group the lucide one-icon modules into a single shared chunk
    narrower rule and is guarded by the test, but it is your call.
 4. Badge polling: WebSocket-driven with a 60 s fallback (my proposal), or just
    lengthen the polls to 30 s and refetch on focus (smaller change)?
+
+## 6. Results (2026-11-01, branch `perf-lighter-app`)
+
+Measured in headless Chrome with iPhone emulation, 4× CPU throttle, simulated
+LTE (40 ms RTT, 10 Mbps), cold cache, logged in, French locale. Old = the
+build on `main` served by the dev backend on :8000; new = this branch served
+by a sandboxed uvicorn on :8034. Two runs each; both shown.
+
+| Page | Build | Requests | Transfer | JS | First paint | LCP | DOMContentLoaded |
+|---|---|---|---|---|---|---|---|
+| /aito | old | 152 | 1,166 KB | 971 KB | 1.06 / 1.45 s | 1.65 / 2.05 s | 0.83 / 1.21 s |
+| /aito | new | 97 | 882 KB | 699 KB | 0.94 / 1.24 s | 1.34 / 1.61 s | 0.41 / 0.70 s |
+| /projects | old | 150 | 1,261 KB | 1,032 KB | 1.49 / 1.33 s | 2.21 / 2.04 s | 1.26 / 1.09 s |
+| /projects | new | 90 | 644 KB | 467 KB | 1.09 / 1.08 s | 1.55 / 1.55 s | 0.68 / 0.68 s |
+
+Eager preload set (what every page loads before the router reads the URL):
+67 files / 491 KB gzipped → 29 files / 269 KB gzipped, guarded by
+`frontend/scripts/check-preload-budget.mjs` in `npm run build`.
+
+Lighter to use: the two 5 s sidebar polls are gone (WebSocket events +
+60 s fallback), card halos and tile blinks animate on the compositor, an
+unrelated board re-render no longer re-renders every card (241 → 1
+component renders per tick for 20 cards in the measurement test), library
+thumbnails are cached per client for as long as their media token lives
+(the token is in the URL and rotates per boot and every 50 minutes, so the
+day-long `max-age` is really "no refetch while navigating within a
+session"; the ETag/304 path is correct but rarely reached), and `/assets`
+ships brotli (11% smaller than gzip) to clients that accept it.
+
+Not changed: the Lighthouse accessibility findings (contrast, catalog
+`listbox` children, `user-scalable=no`), the 790 KB Settings chunk and the
+517 KB-source Printers page.

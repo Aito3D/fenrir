@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 
+import brotli
 import pytest
 from httpx import ASGITransport, AsyncClient
 from starlette.applications import Starlette
@@ -15,6 +16,7 @@ from backend.app.core.static_assets import (
     REVALIDATE_CACHE_CONTROL,
     AssetStaticFiles,
     accepts_gzip,
+    preferred_encoding,
 )
 
 BUNDLE = b"export const answer = 42;\n" * 400  # ~10 KB, compresses well
@@ -31,9 +33,9 @@ def assets_dir(tmp_path):
     (root / "logo-AbCdEfGh.png").write_bytes(b"\x89PNG" + b"\x00" * 4000)
     (root / "pdfjs" / "cmaps" / "Adobe-Japan1-UCS2.bcmap").write_bytes(b"\x00" * 4000)
     (root / "pdfjs" / "wasm.json").write_bytes(b'{"a": 1}' * 400)
-    static_assets._gzip_cache.clear()
+    static_assets._compressed_cache.clear()
     yield root
-    static_assets._gzip_cache.clear()
+    static_assets._compressed_cache.clear()
 
 
 @pytest.fixture
@@ -55,7 +57,7 @@ async def _get(client: AsyncClient, path: str, **headers: str):
 class TestCompression:
     @pytest.mark.asyncio
     async def test_bundle_is_gzipped_when_accepted(self, client):
-        response, raw = await _get(client, f"/assets/{BUNDLE_NAME}", **{"Accept-Encoding": "gzip, deflate, br"})
+        response, raw = await _get(client, f"/assets/{BUNDLE_NAME}", **{"Accept-Encoding": "gzip, deflate"})
 
         assert response.status_code == 200
         assert response.headers["content-encoding"] == "gzip"
@@ -76,8 +78,12 @@ class TestCompression:
 
     @pytest.mark.asyncio
     async def test_gzip_q0_is_a_refusal(self, client):
+        # gzip refused; "*" still allows brotli, so the refusal of gzip is honoured by serving br.
         response, raw = await _get(client, f"/assets/{BUNDLE_NAME}", **{"Accept-Encoding": "gzip;q=0, *"})
+        assert response.headers["content-encoding"] == "br"
 
+        # Both refused: identity.
+        response, raw = await _get(client, f"/assets/{BUNDLE_NAME}", **{"Accept-Encoding": "gzip;q=0, br;q=0"})
         assert "content-encoding" not in response.headers
         assert raw == BUNDLE
 
@@ -131,8 +137,10 @@ class TestCompression:
     @pytest.mark.asyncio
     async def test_compressed_body_is_reused(self, client, monkeypatch):
         calls = []
-        real = static_assets._gzip_file
-        monkeypatch.setattr(static_assets, "_gzip_file", lambda path: calls.append(path) or real(path))
+        real = static_assets._compress_file
+        monkeypatch.setattr(
+            static_assets, "_compress_file", lambda path, encoding: calls.append(path) or real(path, encoding)
+        )
 
         for _ in range(3):
             response, raw = await _get(client, f"/assets/{BUNDLE_NAME}", **{"Accept-Encoding": "gzip"})
@@ -205,3 +213,76 @@ class TestCacheControl:
 )
 def test_accepts_gzip(header, expected):
     assert accepts_gzip(header) is expected
+
+
+class TestBrotli:
+    """Brotli when the client lists it: ~11% less than gzip on the JS chunks at
+    quality 9, compressed once per file per process like gzip."""
+
+    @pytest.mark.asyncio
+    async def test_bundle_is_brotli_when_both_accepted(self, client):
+        response, raw = await _get(client, f"/assets/{BUNDLE_NAME}", **{"Accept-Encoding": "gzip, deflate, br"})
+
+        assert response.status_code == 200
+        assert response.headers["content-encoding"] == "br"
+        assert response.headers["vary"] == "Accept-Encoding"
+        assert int(response.headers["content-length"]) == len(raw) < len(BUNDLE)
+        assert brotli.decompress(raw) == BUNDLE
+        assert "accept-ranges" not in response.headers
+
+    @pytest.mark.asyncio
+    async def test_br_refused_falls_back_to_gzip(self, client):
+        response, raw = await _get(client, f"/assets/{BUNDLE_NAME}", **{"Accept-Encoding": "br;q=0, gzip"})
+
+        assert response.headers["content-encoding"] == "gzip"
+        assert gzip.decompress(raw) == BUNDLE
+
+    @pytest.mark.asyncio
+    async def test_brotli_etag_is_its_own_and_revalidates(self, client):
+        zipped, _ = await _get(client, f"/assets/{BUNDLE_NAME}", **{"Accept-Encoding": "gzip"})
+        brotlied, _ = await _get(client, f"/assets/{BUNDLE_NAME}", **{"Accept-Encoding": "br"})
+
+        assert brotlied.headers["etag"].endswith('-br"')
+        assert brotlied.headers["etag"] != zipped.headers["etag"]
+
+        again, raw = await _get(
+            client,
+            f"/assets/{BUNDLE_NAME}",
+            **{"Accept-Encoding": "br", "If-None-Match": brotlied.headers["etag"]},
+        )
+        assert again.status_code == 304
+        assert raw == b""
+        assert again.headers["etag"] == brotlied.headers["etag"]
+        assert again.headers["cache-control"] == IMMUTABLE_CACHE_CONTROL
+
+    @pytest.mark.asyncio
+    async def test_gzip_etag_does_not_validate_a_brotli_request(self, client):
+        zipped, _ = await _get(client, f"/assets/{BUNDLE_NAME}", **{"Accept-Encoding": "gzip"})
+        response, raw = await _get(
+            client,
+            f"/assets/{BUNDLE_NAME}",
+            **{"Accept-Encoding": "br", "If-None-Match": zipped.headers["etag"]},
+        )
+        assert response.status_code == 200
+        assert response.headers["content-encoding"] == "br"
+        assert brotli.decompress(raw) == BUNDLE
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        ("gzip, deflate, br", "br"),
+        ("br", "br"),
+        ("gzip", "gzip"),
+        ("gzip, deflate", "gzip"),
+        ("br;q=0, gzip", "gzip"),
+        ("gzip;q=0, br", "br"),
+        ("gzip;q=0.9, br;q=0.5", "gzip"),
+        ("*", "br"),
+        ("identity", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_preferred_encoding(header, expected):
+    assert preferred_encoding(header) == expected

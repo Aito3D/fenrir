@@ -57,6 +57,7 @@ from backend.app.api.routes import (
     inbox,
     inventory,
     kprofiles,
+    label_templates,
     labels,
     library,
     library_tags,
@@ -73,6 +74,7 @@ from backend.app.api.routes import (
     notification_templates,
     notifications,
     obico,
+    octoeverywhere,
     orca_cloud,
     overlay_branding,
     pending_uploads,
@@ -88,6 +90,7 @@ from backend.app.api.routes import (
     projects_pdm,
     scheduled_dryings,
     settings as settings_routes,
+    showcase,
     slice_jobs,
     slicer_pipelines,
     slicer_presets,
@@ -159,6 +162,7 @@ from backend.app.services.notification_service import notification_service
 from backend.app.services.notify_live_activities import notify_live_activities
 from backend.app.services.notify_widgets import notify_widgets
 from backend.app.services.obico_detection import obico_detection_service
+from backend.app.services.octoeverywhere_detection import octoeverywhere_detection_service
 from backend.app.services.plug_energy import get_plug_energy as _get_plug_energy
 from backend.app.services.print_cost_estimate import plate_scoped_run_estimate as _plate_scoped_run_estimate
 from backend.app.services.print_scheduler import scheduler as print_scheduler
@@ -1502,6 +1506,7 @@ async def forget_printer(printer_id: int) -> None:
     layer_timelapse.cancel_session(printer_id)
     usage_tracker.forget_printer(printer_id)
     obico_detection_service.forget_printer(printer_id)
+    octoeverywhere_detection_service.forget_printer(printer_id)
     bambu_ftp.clear_3mf_cache(printer_id)
     await camera.forget_printer(printer_id)
     printers.clear_cover_cache(printer_id)
@@ -1684,6 +1689,37 @@ def _get_start_plate_id(printer_id: int, archive_id: int | None) -> int | None:
     if archive_id is None:
         return None
     return _print_plate_ids.get((printer_id, archive_id))
+
+
+def _run_print_time_seconds(archive, printer_id: int) -> int | None:
+    """The slicer's time for the plate this print prints, for its start
+    notification (#3375): ``archive.print_time_seconds`` adds every plate of
+    the file up (#1593). The plate is the dispatch's, else the archive's. The
+    whole file's time when its plates are not known; None for a plate not
+    known of several, and the notification takes the printer's remaining
+    time."""
+    from backend.app.services.print_cost_estimate import run_estimate
+
+    plate_id = _print_plate_ids.get((printer_id, archive.id), archive.plate_id)
+    estimate = run_estimate(archive, plate_id)
+    return estimate.seconds if estimate is not None else None
+
+
+_plate_estimates_task: asyncio.Task | None = None
+
+
+async def _fill_plate_estimates() -> None:
+    from backend.app.services.print_cost_estimate import fill_plate_estimates
+
+    try:
+        filled = await fill_plate_estimates(async_session)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logging.getLogger(__name__).warning("[ARCHIVE] Reading plate estimates failed: %s", exc)
+        return
+    if filled:
+        logging.getLogger(__name__).info("[ARCHIVE] Read the plate estimates of %d archive(s)", filled)
 
 
 def _partial_progress_scale(progress: int | float | None) -> float:
@@ -2734,6 +2770,28 @@ async def on_fts_inlet_change(printer_id: int, ams_id: int, inlet: str):
         logger.warning("[Printer %s] Could not re-apply K-profiles after inlet move: %s", printer_id, e)
 
 
+def _slot_feeds_print(printer_id: int, ams_id: int, tray_id: int) -> bool:
+    """Is this slot the one feeding the printer right now?
+
+    ``tray_now`` names one slot for the whole printer, so on a dual-nozzle
+    machine each extruder's own fed slot is asked as well. Only meaningful
+    while a print runs; the caller checks that.
+    """
+    status = printer_manager.get_status(printer_id)
+    if status is None:
+        return False
+    if ams_id == 255:
+        global_id = 254 + tray_id
+    elif ams_id >= 128:
+        global_id = ams_id
+    else:
+        global_id = ams_id * 4 + tray_id
+    if getattr(status, "tray_now", None) == global_id:
+        return True
+    slots = getattr(status, "extruder_slots", None) or {}
+    return any(slot.has_filament and slot.holds(ams_id, tray_id) for slot in slots.values())
+
+
 async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_now: bool) -> None:
     """Unlink built-in inventory assignments whose slot no longer holds their spool.
 
@@ -2900,6 +2958,25 @@ async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_no
                     loaded = spool_present(current_tray) is True or (
                         cur_state == 11 or (cur_state not in (9, 10) and cur_type.strip())
                     )
+                    # Not into the slot feeding a running print: the printer refuses
+                    # the setting for it (``ams_filament_setting refused``), and a
+                    # spool swapped in after a runout sat through one refused send
+                    # per AMS change. Held, it fires on the first change once the
+                    # print is over (#3434).
+                    if (
+                        not fp_type.strip()
+                        and loaded
+                        and assignment.spool
+                        and printing_now
+                        and _slot_feeds_print(printer_id, assignment.ams_id, assignment.tray_id)
+                    ):
+                        logger.debug(
+                            "Pre-config held for spool %d AMS%d-T%d: the slot is feeding the print",
+                            assignment.spool_id,
+                            assignment.ams_id,
+                            assignment.tray_id,
+                        )
+                        continue
                     if not fp_type.strip() and loaded and assignment.spool:
                         # The fingerprint ends this replay. Not recorded when nothing
                         # could be sent (no MQTT client while the printer reconnects),
@@ -3275,6 +3352,10 @@ async def on_ams_change(printer_id: int, ams_data: list):
 
     await _unlink_stale_assignments(printer_id, ams_data, printing_now)
 
+    # Spools whose tag this pass assigned to a slot; their other slots are
+    # released below, once this printer's lock is let go (#3427).
+    rfid_assigned: list[tuple[int, tuple[int, int, int]]] = []
+
     # Auto-manage inventory spools from AMS tray data (skip if Spoolman manages AMS).
     # Serialised per-printer via services/ams_assignment_lock: MQTT bursts can deliver
     # two AMS pushes ~30 ms apart, and without the lock both callbacks read
@@ -3387,6 +3468,10 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         if is_bambu_tag(tag_uid, tray_uuid, tray_info_idx):
                             # BL spool with RFID tag: auto-match → inventory match → auto-create
                             spool = await get_spool_by_tag(db, tag_uid, tray_uuid)
+                            # Only a spool already known by this tag is proven to be
+                            # here; a material/colour match or a new spool is not
+                            # grounds to take it out of other slots (#3427).
+                            known_by_tag = spool is not None
                             if not spool and await tag_belongs_to_archived_spool(db, tag_uid, tray_uuid):
                                 # An archived spool still in the AMS: the slot
                                 # stays free rather than adopting its tag.
@@ -3427,6 +3512,8 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 tray_info_idx=tray_info_idx,
                             )
                             await db.commit()
+                            if known_by_tag:
+                                rfid_assigned.append((spool.id, (printer_id, ams_id, tray_id)))
                             await ws_manager.broadcast(
                                 {
                                     "type": "spool_auto_assigned",
@@ -3464,6 +3551,15 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         # ghost spools with empty tags on every confirm.
     except Exception as e:
         logger.warning("RFID spool auto-assign failed: %s", e, exc_info=True)
+
+    if rfid_assigned:
+        from backend.app.services.spool_relocation import INTERNAL, release_other_slots
+
+        for spool_id, slot in rfid_assigned:
+            try:
+                await release_other_slots(INTERNAL, spool_id, slot)
+            except Exception as e:
+                logger.warning("Releasing spool %s from its other slots failed: %s", spool_id, e, exc_info=True)
 
     try:
         async with async_session() as db:
@@ -5374,7 +5470,7 @@ async def _promote_expected_archive(
                 # register_expected_print (handles library-file-based queue items where
                 # the freshly-created archive has no created_by_id yet), taken above.
                 archive_data = {
-                    "print_time_seconds": archive.print_time_seconds,
+                    "print_time_seconds": _run_print_time_seconds(archive, printer_id),
                     "created_by_id": archive.created_by_id or fallback_creator,
                 }
                 await _send_print_start_notification(printer_id, data, archive_data, logger)
@@ -5521,7 +5617,7 @@ async def _resume_existing_archive(
                 await _record_energy_start(existing_archive, printer_id, db, context="subtask-resume")
             if not notification_sent:
                 archive_data = {
-                    "print_time_seconds": existing_archive.print_time_seconds,
+                    "print_time_seconds": _run_print_time_seconds(existing_archive, printer_id),
                     "created_by_id": existing_archive.created_by_id,
                 }
                 await _send_print_start_notification(printer_id, data, archive_data, logger)
@@ -5615,7 +5711,7 @@ async def _resume_existing_archive(
             # Send notification with archive data (existing archive)
             if not notification_sent:
                 archive_data = {
-                    "print_time_seconds": existing_archive.print_time_seconds,
+                    "print_time_seconds": _run_print_time_seconds(existing_archive, printer_id),
                     "created_by_id": existing_archive.created_by_id,
                 }
                 await _send_print_start_notification(printer_id, data, archive_data, logger)
@@ -6338,7 +6434,7 @@ async def _archive_downloaded_print(
             # Send notification with archive data (new archive created)
             if not notification_sent:
                 archive_data = {
-                    "print_time_seconds": archive.print_time_seconds,
+                    "print_time_seconds": _run_print_time_seconds(archive, printer_id),
                     "created_by_id": archive.created_by_id,
                 }
                 await _send_print_start_notification(printer_id, data, archive_data, logger)
@@ -6963,6 +7059,8 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
         catch_up,
         list(data.keys()),
     )
+
+    octoeverywhere_detection_service.reset_printer(printer_id)
 
     if not catch_up:
         await _print_start_housekeeping(printer_id, data, logger)
@@ -9545,6 +9643,8 @@ async def _close_out_print(printer_id: int, data: dict):
         logger.info("[TIMING] %s: %.3fs elapsed", section, elapsed)
 
     logger.info("[CALLBACK] on_print_complete started for printer %s", printer_id)
+
+    octoeverywhere_detection_service.reset_printer(printer_id)
 
     # A kill-switch stop sends its provider notification immediately. Keep the
     # task so the later notification path can await it and avoid a duplicate;
@@ -12372,6 +12472,12 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logging.warning("[SLICE] Recovering queue items waiting for a slice failed: %s", exc)
 
+    # Each plate's estimate of archives made before they were kept (#3375),
+    # read from their 3MFs in the background: the readers use the whole
+    # file's figures until then.
+    global _plate_estimates_task
+    _plate_estimates_task = asyncio.create_task(_fill_plate_estimates())
+
     # Register an app-scoped httpx client for Bambu Cloud services so
     # per-request BambuCloudService instances reuse the same connection pool
     # (important for routes like /cloud/filament-info that chain many
@@ -12750,6 +12856,7 @@ async def lifespan(app: FastAPI):
     # Start the local backup scheduler
     await local_backup_service.start_scheduler()
     await obico_detection_service.start()
+    await octoeverywhere_detection_service.start()
 
     # Start the library trash sweeper (#1008)
     await library_trash_service.start_scheduler()
@@ -12863,6 +12970,7 @@ async def lifespan(app: FastAPI):
     archive_purge_service.stop_scheduler()
     printer_hours_service.stop_scheduler()
     obico_detection_service.stop()
+    octoeverywhere_detection_service.stop()
     stop_ams_history_recording()
     stop_printer_sensor_history_recording()
     stop_runtime_tracking()
@@ -12894,6 +13002,8 @@ async def lifespan(app: FastAPI):
 
     stop_expected_prints_cleanup()
     stop_auth_cleanup()
+    if _plate_estimates_task is not None and not _plate_estimates_task.done():
+        _plate_estimates_task.cancel()
     from backend.app.services import announcements as announcements_service
 
     announcements_service.stop()
@@ -13096,6 +13206,8 @@ PUBLIC_API_ROUTES = {
     "/api/v1/system/appliance",
     # Overlay branding: the route enforces overlay-scoped token authentication.
     "/api/v1/overlay-branding/logo",
+    # Shop figures for the Shopify storefront: public marketing numbers, cached, no identifying data.
+    "/api/v1/showcase/stats",
 }
 
 # Route prefixes that are public (for routes with dynamic segments)
@@ -13587,6 +13699,7 @@ app.include_router(aito_project_links.router, prefix=app_settings.api_prefix)
 app.include_router(aito_project_links.drop_router, prefix=app_settings.api_prefix)
 app.include_router(aito.router, prefix=app_settings.api_prefix)
 app.include_router(aito_payments.router, prefix=app_settings.api_prefix)
+app.include_router(showcase.router, prefix=app_settings.api_prefix)
 app.include_router(inbox.router, prefix=app_settings.api_prefix)
 app.include_router(zoho.router, prefix=app_settings.api_prefix)
 app.include_router(heimdall.router, prefix=app_settings.api_prefix)
@@ -13603,6 +13716,7 @@ app.include_router(filament_profiles.router, prefix=app_settings.api_prefix)
 app.include_router(finance.router, prefix=app_settings.api_prefix)
 app.include_router(inventory.router, prefix=app_settings.api_prefix)
 app.include_router(labels.router, prefix=app_settings.api_prefix)
+app.include_router(label_templates.router, prefix=app_settings.api_prefix)
 app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
 app.include_router(overlay_branding.router, prefix=app_settings.api_prefix)
 app.include_router(cloud.router, prefix=app_settings.api_prefix)
@@ -13662,6 +13776,7 @@ app.include_router(bulk.router, prefix=app_settings.api_prefix)
 app.include_router(github_backup.router, prefix=app_settings.api_prefix)
 app.include_router(local_backup.router, prefix=app_settings.api_prefix)
 app.include_router(obico.router, prefix=app_settings.api_prefix)
+app.include_router(octoeverywhere.router, prefix=app_settings.api_prefix)
 app.include_router(metrics.router, prefix=app_settings.api_prefix)
 app.include_router(virtual_printers.router, prefix=app_settings.api_prefix)
 app.include_router(spoolbuddy.router, prefix=app_settings.api_prefix)
@@ -13745,8 +13860,10 @@ async def health_check():
 # GET + HEAD on the three PWA bootstrap routes (#1460). Scanners and a plain
 # `curl -I` use HEAD; FastAPI's @app.get only registers GET, so HEAD answers
 # with 405 Method Not Allowed and shows up as a "broken manifest" red herring
-# in deployment debugging.
-@app.api_route("/manifest.json", methods=["GET", "HEAD"])
+# in deployment debugging. One decorator per method, not api_route(methods=
+# [...]): api_route gives both methods the same OpenAPI operation id.
+@app.get("/manifest.json")
+@app.head("/manifest.json")
 async def serve_manifest():
     """Serve PWA manifest."""
     manifest_file = app_settings.static_dir / "manifest.json"
@@ -13755,7 +13872,8 @@ async def serve_manifest():
     return {"error": "Manifest not found"}
 
 
-@app.api_route("/sw.js", methods=["GET", "HEAD"])
+@app.get("/sw.js")
+@app.head("/sw.js")
 async def serve_service_worker():
     """Serve service worker."""
     sw_file = app_settings.static_dir / "sw.js"
@@ -13768,7 +13886,8 @@ async def serve_service_worker():
     return {"error": "Service worker not found"}
 
 
-@app.api_route("/sw-register.js", methods=["GET", "HEAD"])
+@app.get("/sw-register.js")
+@app.head("/sw-register.js")
 async def serve_sw_register():
     """Serve the service-worker registration bootstrap script.
 

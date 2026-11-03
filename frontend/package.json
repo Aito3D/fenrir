@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && npm run check:baseline",
+    "build": "vite build && npm run check:baseline && npm run check:preload",
     "typecheck": "tsc -b",
     "lint": "eslint . --concurrency auto --cache --cache-location node_modules/.cache/eslint/",
     "preview": "vite preview",
@@ -15,7 +15,8 @@
     "test:ui": "vitest --ui",
     "check:i18n": "node scripts/check-i18n-parity.mjs",
     "check:knip": "knip",
-    "check:baseline": "node scripts/check-browser-baseline.mjs"
+    "check:baseline": "node scripts/check-browser-baseline.mjs",
+    "check:preload": "node scripts/check-preload-budget.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
