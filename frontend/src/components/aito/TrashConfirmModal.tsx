@@ -20,22 +20,25 @@ export function TrashConfirmModal({ onTrash, onCancel }: { onTrash: () => void; 
       variant="danger"
       // Opened over the panel, which closes on Escape too.
       isolateEscape
+      stacked
+      cancelVariant="ghost"
       onConfirm={onTrash}
       onCancel={onCancel}
       confirmControl={
         // HoldButton's outer wrapper is a bare `relative` div; the strut
-        // stretches it into the modal's flex-1 slot beside Cancel.
-        <div className="flex flex-1 [&>div]:flex [&>div]:flex-1">
+        // stretches it to the stacked footer's full width.
+        <div className="flex [&>div]:flex [&>div]:flex-1">
           <HoldButton
             onHold={() => onTrash()}
             durationMs={1000}
             label={label}
             hint={t('aito.holdToDelete')}
             progress="bar"
-            barClassName="bg-white/25"
+            barClassName="bg-red-500"
             radiusClassName="rounded-lg"
             pressEffect="none"
-            className="w-full justify-center px-4 py-2 min-h-[44px] md:min-h-0 text-sm font-medium text-white bg-red-500 hover:bg-red-600 focus-visible:ring-red-400/60"
+            // Red outline that fills solid red while held; the label turns white over the fill.
+            className="w-full justify-center px-4 min-h-[44px] text-sm font-medium whitespace-nowrap text-red-300 data-[holding]:text-white border-[1.5px] border-red-500/60 bg-transparent hover:bg-red-500/10 focus-visible:ring-red-400/60"
           >
             <Trash2 className="relative h-4 w-4" aria-hidden="true" />
             <span className="relative">{label}</span>

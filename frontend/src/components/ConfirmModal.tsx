@@ -32,6 +32,8 @@ interface ConfirmModalProps {
   // that also closes on a window-level Escape (Aito's detail panel): without
   // it, one press closes both. Wherever focus is — a confirm takes none.
   isolateEscape?: boolean;
+  /** Full-width buttons stacked, confirm on top — for a confirm label too long to share a row. */
+  stacked?: boolean;
   // Optional extra content rendered between the message and the buttons —
   // used for opt-in checkboxes (e.g. the "Also remove from statistics"
   // toggle in the archive delete confirmation, #1343).
@@ -54,6 +56,7 @@ export function ConfirmModal({
   confirmDisabled = false,
   confirmControl,
   isolateEscape = false,
+  stacked = false,
   children,
   onConfirm,
   onCancel,
@@ -112,11 +115,11 @@ export function ConfirmModal({
               {children && <div className="mt-4">{children}</div>}
             </div>
           </div>
-          <div className="flex gap-3 mt-6">
+          <div className={stacked ? 'flex flex-col-reverse gap-2 mt-6' : 'flex gap-3 mt-6'}>
             <Button
               variant={cancelVariant ?? 'secondary'}
               onClick={onCancel}
-              className="flex-1"
+              className={stacked ? 'w-full' : 'flex-1'}
               disabled={isLoading}
             >
               {resolvedCancelText}
