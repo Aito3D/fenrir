@@ -2250,7 +2250,6 @@ export default {
         added: 'dodano {{date}}',
         lifetimeOn: 'na dzień {{date}}',
         pace: 'Tempo',
-        period: 'Okres',
         readings: 'Odczyty',
         rawOnDate: 'licznik',
         events: 'Zdarzenia',
@@ -2274,7 +2273,6 @@ export default {
         noRevenue: 'Przychód na maszynę nie jest śledzony.',
       },
       trust: {
-        calibrated: 'Skalibrowany',
         drifting: 'Licznik odbiegał o {{hours}} h przy ostatnim odczycie',
         uncalibrated: 'Licznik nieskalibrowany',
         notCalibratedHelp: 'Fenrir liczy od 0. Zapisz jeden odczyt z dzisiejszą datą, aby go skalibrować.',
