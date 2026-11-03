@@ -284,3 +284,19 @@ async def test_a_retry_that_landed_first_refuses_the_upload(
     assert res.status_code == 409, res.text
     assert res.json()["detail"]["code"] == "not_failed"
     assert _leftovers(temp_dir) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_the_service_refuses_an_upload_for_a_revision_that_does_not_exist(db_session):
+    """The route answers an unknown revision itself; the service's own guard is a 404 too."""
+    from fastapi import UploadFile
+
+    from backend.app.services.project_files import ProjectFilesError
+
+    upload = UploadFile(file=io.BytesIO(b"x"), filename="part.gcode.3mf")
+
+    with pytest.raises(ProjectFilesError) as refused:
+        await project_slice.store_uploaded_slice(db_session, 987654, upload, user_id=None)
+
+    assert (refused.value.status_code, refused.value.detail) == (404, "Revision not found")

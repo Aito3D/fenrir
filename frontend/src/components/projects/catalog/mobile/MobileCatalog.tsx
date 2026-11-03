@@ -1,13 +1,13 @@
 import { useRef, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, ChevronLeft, ChevronRight, FileX, Flame, Folder, FolderPlus, MoreHorizontal, Plus, Search, SlidersHorizontal } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Flame, Folder, FolderPlus, MoreHorizontal, Plus, Search, SlidersHorizontal } from 'lucide-react';
 import type { ProjectCatalogItem, ProjectFolder, ProjectTagCount } from '../../../../api/client';
 import { ActionMenu } from '../../../aito/ActionMenu';
 import { focusRingCls, inputCls } from '../../../formStyles';
 import { formatRelativeTime } from '../../../../utils/date';
 import type { CatalogStatus } from '../CatalogToolbar';
 import type { CatalogChip, CatalogFilters, CatalogSort } from '../catalogRules';
-import { descendantIds, folderPath } from '../catalogRules';
+import { CHIPS, descendantIds, folderPath } from '../catalogRules';
 import { Highlight, PrintedCell, Thumb } from '../CatalogTree';
 import { FilterSheet, FolderSheet, NewFolderSheet } from './sheets';
 
@@ -49,11 +49,6 @@ export interface MobileCatalogProps {
 
 type Overlay = { kind: 'create' } | { kind: 'filters' } | { kind: 'folder'; id: number } | { kind: 'newFolder'; parentId: number | null } | null;
 
-const CHIPS: { id: CatalogChip; key: string; Icon: typeof Flame; cls: string }[] = [
-  { id: 'production', key: 'projectsPdm.catalog.inProduction', Icon: Flame, cls: 'text-amber-300' },
-  { id: 'ready', key: 'projectsPdm.catalog.readyToPrint', Icon: CheckCircle2, cls: 'text-bambu-green' },
-  { id: 'nofile', key: 'projectsPdm.catalog.noFile', Icon: FileX, cls: '' },
-];
 const chipCls = (on: boolean) =>
   `btn-press inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 text-xs ${
     on ? 'border-bambu-green bg-bambu-green/15 text-white' : 'border-bambu-dark-tertiary text-bambu-gray'

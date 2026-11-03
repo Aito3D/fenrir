@@ -1,7 +1,8 @@
+import { CheckCircle2, FileX, Flame } from 'lucide-react';
 import type { ProjectCatalogItem, ProjectFolder } from '../../../api/client';
 
 /** Pure rules of the Projects catalog (design 2026-10-31): quick filters, sort, the folder tree
- *  and search highlighting. No React, no API. */
+ *  and search highlighting. No API; nothing renders here (the chips only name their lucide icon). */
 
 export type CatalogChip = 'production' | 'ready' | 'nofile';
 export type CatalogSort = 'activity' | 'code' | 'name' | 'printed';
@@ -12,6 +13,20 @@ export interface CatalogFilters {
 }
 
 export const EMPTY_FILTERS: CatalogFilters = { chips: new Set(), materials: new Set() };
+
+/** The sort options and the quick-filter chips, shared by the desktop toolbar and the phone catalog. */
+export const SORTS: CatalogSort[] = ['activity', 'code', 'name', 'printed'];
+export const SORT_KEYS: Record<CatalogSort, string> = {
+  activity: 'projectsPdm.catalog.sortActivity',
+  code: 'projectsPdm.catalog.sortCode',
+  name: 'projectsPdm.catalog.sortName',
+  printed: 'projectsPdm.catalog.sortPrinted',
+};
+export const CHIPS: { id: CatalogChip; key: string; Icon: typeof Flame; cls: string }[] = [
+  { id: 'production', key: 'projectsPdm.catalog.inProduction', Icon: Flame, cls: 'text-amber-300' },
+  { id: 'ready', key: 'projectsPdm.catalog.readyToPrint', Icon: CheckCircle2, cls: 'text-bambu-green' },
+  { id: 'nofile', key: 'projectsPdm.catalog.noFile', Icon: FileX, cls: '' },
+];
 
 export const isInProduction = (item: ProjectCatalogItem): boolean => item.open_orders.length > 0;
 export const isReady = (item: ProjectCatalogItem): boolean => item.recommended !== null;

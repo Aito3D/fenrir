@@ -1446,6 +1446,7 @@ CREATE TABLE projects (
 1 export const CATALOG_STATUSES
 1 export const catalogKeys
 1 export const chipBase
+1 export const CHIPS
 1 export const DIALOG_CARD_CLS
 1 export const DIALOG_CLOSING_CARD_CLS
 1 export const DIALOG_CLOSING_OVERLAY_CLS
@@ -1466,6 +1467,8 @@ CREATE TABLE projects (
 1 export const SECTION_LABEL_KEYS
 1 export const SECTION_ORDER
 1 export const SLICED_ACCEPT
+1 export const SORT_KEYS
+1 export const SORTS
 1 export const STATUS_CHIP_CLS
 1 export const STATUS_LABEL_KEYS
 1 export const stopDrag

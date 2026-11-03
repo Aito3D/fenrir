@@ -1038,11 +1038,6 @@ async def test_three_concurrent_starts_enqueue_one_job(async_client: AsyncClient
     assert len(sidecar.slice_requests) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="T-551 bug: the losing start's finally discards the revision from _starting while the winner "
-    "is still in flight, so the third start re-claims it as interrupted and enqueues a second job",
-)
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_a_start_after_a_lost_claim_while_the_winner_enqueues_enqueues_nothing(
@@ -1050,7 +1045,8 @@ async def test_a_start_after_a_lost_claim_while_the_winner_enqueues_enqueues_not
 ):
     """Two starts race, the loser returns while the winner is still blocked before its job id write,
     then a third start arrives: the row is ``slicing`` with no job id, and the winner's start is
-    still in flight, so the third start must not re-claim it as an interrupted slice."""
+    still in flight, so the third start must not re-claim it as an interrupted slice. Guards T-580:
+    only the claim's winner holds ``_starting``, so the loser leaving does not clear it."""
     _no_auto_slice(monkeypatch)
     _project, _item, rev = await _upload(async_client)
     before = set(slice_dispatch._jobs)
@@ -1075,6 +1071,72 @@ async def test_a_start_after_a_lost_claim_while_the_winner_enqueues_enqueues_not
     assert len(jobs) == 1, f"one revision, {len(jobs)} slice jobs; starts returned {results}"
     assert calls == [rev["id"]]
     assert project_slice._starting == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_two_concurrent_resumes_of_an_interrupted_slice_enqueue_one_job(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    """Two starts read an interrupted revision (``slicing``, job gone) at once and both re-claim it
+    (a resume claim does not exclude another): the one claiming second finds the first in
+    ``_starting`` and leaves it that slice (T-580)."""
+    _no_auto_slice(monkeypatch)
+    _project, _item, rev = await _upload(async_client)
+    before = set(slice_dispatch._jobs)
+    await _strand_slicing(db_session, rev["id"], job_id=4242)  # a job id slice_dispatch does not know
+    _gate_first_source_reads(monkeypatch, 2)
+    entered, release, calls = _gate_enqueue(monkeypatch)
+
+    racers = {asyncio.create_task(_start_in_own_session(rev["id"])) for _ in range(2)}
+    await asyncio.wait_for(entered.wait(), timeout=10)
+    done, pending = await asyncio.wait(racers, timeout=10, return_when=asyncio.FIRST_COMPLETED)
+    assert len(done) == 1 and len(pending) == 1  # the second claimer is back, the first is held in enqueue
+    assert done.pop().result() == 4242  # the stored (dead) job id: the first has not written its own yet
+    release.set()
+    results = await asyncio.wait_for(asyncio.gather(*racers), timeout=10)
+
+    jobs = _project_revision_jobs(rev["id"], before)
+    for job_id in jobs:  # finish on the mock sidecar before any assertion can end the test
+        await _wait_job(job_id)
+    assert len(jobs) == 1 and calls == [rev["id"]]
+    assert set(results) == {4242, jobs[0]}
+    assert project_slice._starting == set()
+    assert len(sidecar.slice_requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_resume_whose_revision_was_re_enqueued_since_its_read_enqueues_nothing(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    """A start reads an interrupted revision, and another start re-claims and enqueues it in full
+    before this one claims: the stored job id is no longer the one it read, so its claim fails and
+    it returns the other start's job (T-580)."""
+    _no_auto_slice(monkeypatch)
+    _project, _item, rev = await _upload(async_client)
+    before = set(slice_dispatch._jobs)
+    await _strand_slicing(db_session, rev["id"], job_id=4242)
+    real_source_file = project_slice.source_file_of
+    other: list[int | None] = []
+
+    async def source_then_another_start(db, revision_id):
+        source = await real_source_file(db, revision_id)
+        if not other:
+            other.append(None)
+            other[0] = await _start_in_own_session(revision_id)
+        return source
+
+    monkeypatch.setattr(project_slice, "source_file_of", source_then_another_start)
+
+    result = await project_slice.start_revision_slice(db_session, rev["id"], user_id=None)
+
+    jobs = _project_revision_jobs(rev["id"], before)
+    for job_id in jobs:
+        await _wait_job(job_id)
+    assert len(jobs) == 1 and other == [jobs[0]] and result == jobs[0]
+    assert project_slice._starting == set()
+    assert len(sidecar.slice_requests) == 1
 
 
 def test_slice_slot_gives_each_event_loop_its_own_semaphore(monkeypatch):

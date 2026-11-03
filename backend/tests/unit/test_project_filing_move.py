@@ -171,6 +171,13 @@ async def test_new_item_name_creates_one_item_for_all(db_session, root):
     assert await _revisions(db_session, project.id) == [("impression", "Kit complet", 1, ["a.gcode", "b.gcode"])]
 
 
+def _leftover_dirs(root: Path) -> list[str]:
+    """Every path left under the projects root, relative; asserts none of them is a file."""
+    paths = sorted(root.rglob("*"))
+    assert not [p for p in paths if not p.is_dir()]
+    return [p.relative_to(root).as_posix() for p in paths]
+
+
 @pytest.mark.asyncio
 async def test_failure_on_second_copy_changes_nothing(db_session, root, monkeypatch):
     project = await _project(db_session)
@@ -209,6 +216,42 @@ async def test_failure_on_second_copy_changes_nothing(db_session, root, monkeypa
     assert (await db_session.execute(select(ProjectRevision))).scalars().all() == []
     leftovers = [p for p in root.rglob("*") if p.is_file()]
     assert leftovers == []
+    # the item the failing group created is gone too, with its folder (the project and section folders stay)
+    assert (await db_session.execute(select(ProjectItem))).scalars().all() == []
+    assert _leftover_dirs(root) == ["P-0001_support-camera", "P-0001_support-camera/Impression"]
+
+
+@pytest.mark.asyncio
+async def test_failure_copying_a_new_revision_of_an_existing_item_changes_nothing(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    project_id = project.id
+    await _move(db_session, project, [await _managed(db_session, "part.3mf", threemf_bytes())])
+    revisions_before = await _revisions(db_session, project_id)
+    items_before = await _item_rows(db_session, project_id)
+    tree_before = sorted(root.rglob("*"))
+    assert revisions_before == [("impression", "part", 1, ["part.3mf"])]
+    project = await db_session.get(Project, project_id)
+    files = [await _managed(db_session, "part.3mf", threemf_bytes()), await _managed(db_session, "part.gcode", b"G")]
+    ids = [f.id for f in files]
+    await db_session.commit()
+
+    real_copy = project_files._copy_hashing
+    calls = {"n": 0}
+
+    def flaky(src, dest):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("disk full")
+        return real_copy(src, dest)
+
+    monkeypatch.setattr(project_files, "_copy_hashing", flaky)
+
+    result = await _move(db_session, project, files)
+
+    assert sorted((s["file_id"], s["code"]) for s in result.skipped) == sorted((i, "copy_failed") for i in ids)
+    assert await _revisions(db_session, project_id) == revisions_before
+    assert await _item_rows(db_session, project_id) == items_before
+    assert sorted(root.rglob("*")) == tree_before
 
 
 @pytest.mark.asyncio
@@ -1294,6 +1337,8 @@ async def test_an_external_leaf_swapped_for_a_symlink_after_the_check_is_refused
     assert result.copied == []
     assert [(s["file_id"], s["code"]) for s in result.skipped] == [(row_id, "copy_failed")]
     assert await _revisions(db_session, project.id) == []
+    assert (await db_session.execute(select(ProjectItem))).scalars().all() == []
+    assert _leftover_dirs(root) == ["P-0001_support-camera", "P-0001_support-camera/Impression"]
 
 
 # T-365: external folders are network mounts; a slow or hung one must not freeze the event loop.

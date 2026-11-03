@@ -5,16 +5,9 @@ import type { ProjectFolder } from '../../../../api/client';
 import { focusRingCls, inputCls } from '../../../formStyles';
 import { CATALOG_STATUSES, type CatalogStatus } from '../CatalogToolbar';
 import type { CatalogSort } from '../catalogRules';
-import { descendantIds, folderPath } from '../catalogRules';
+import { SORTS, SORT_KEYS, descendantIds, folderPath } from '../catalogRules';
 import { Sheet } from './Sheet';
 
-const SORTS: CatalogSort[] = ['activity', 'code', 'name', 'printed'];
-const SORT_KEYS: Record<CatalogSort, string> = {
-  activity: 'projectsPdm.catalog.sortActivity',
-  code: 'projectsPdm.catalog.sortCode',
-  name: 'projectsPdm.catalog.sortName',
-  printed: 'projectsPdm.catalog.sortPrinted',
-};
 const sectionCls = 'px-1 pt-3 pb-1 text-[11px] uppercase tracking-wide text-bambu-gray';
 const rowCls = `btn-press flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-[15px] text-white active:bg-bambu-dark-tertiary ${focusRingCls}`;
 

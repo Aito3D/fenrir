@@ -1,24 +1,12 @@
 import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, FileX, Flame, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import type { ProjectTagCount } from '../../../api/client';
 import { focusRingCls, inputCls } from '../../formStyles';
-import type { CatalogChip, CatalogFilters, CatalogSort } from './catalogRules';
+import { CHIPS, SORTS, SORT_KEYS, type CatalogChip, type CatalogFilters, type CatalogSort } from './catalogRules';
 
 export const CATALOG_STATUSES = ['active', 'completed', 'archived', 'all'] as const;
 export type CatalogStatus = (typeof CATALOG_STATUSES)[number];
-const SORTS: CatalogSort[] = ['activity', 'code', 'name', 'printed'];
-const SORT_KEYS: Record<CatalogSort, string> = {
-  activity: 'projectsPdm.catalog.sortActivity',
-  code: 'projectsPdm.catalog.sortCode',
-  name: 'projectsPdm.catalog.sortName',
-  printed: 'projectsPdm.catalog.sortPrinted',
-};
-const CHIPS: { id: CatalogChip; key: string; Icon: typeof Flame; cls: string }[] = [
-  { id: 'production', key: 'projectsPdm.catalog.inProduction', Icon: Flame, cls: 'text-amber-300' },
-  { id: 'ready', key: 'projectsPdm.catalog.readyToPrint', Icon: CheckCircle2, cls: 'text-bambu-green' },
-  { id: 'nofile', key: 'projectsPdm.catalog.noFile', Icon: FileX, cls: '' },
-];
 
 const chipCls = (on: boolean) =>
   `btn-press inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs ${

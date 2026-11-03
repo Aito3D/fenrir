@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import or_, select, update
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core import database
@@ -112,17 +112,18 @@ async def sliced_file_of(db: AsyncSession, library_file: LibraryFile) -> Library
     ).scalar_one_or_none()
 
 
-# Revisions a start in this process is claiming or enqueuing (between its claim and its job id write).
+# Revisions a start in this process has claimed and is enqueuing (between its claim and its job id write).
 _starting: set[int] = set()
 
 
-async def _claim(db: AsyncSession, revision_id: int, *, resume: bool) -> bool:
+async def _claim(db: AsyncSession, revision_id: int, *, resume: bool, job_id: int | None) -> bool:
     """Mark the revision ``slicing`` unless another slice holds it; True when this call claimed it.
 
     A plain start claims a revision that was never sliced or failed; a resume re-claims
-    one left ``slicing`` by a restart (its in-memory job is gone)."""
+    one left ``slicing`` by a restart (its in-memory job is gone) and still holding ``job_id``
+    (a start that enqueued since has replaced it)."""
     claimable = (
-        ProjectRevision.slice_status == SLICE_SLICING
+        and_(ProjectRevision.slice_status == SLICE_SLICING, ProjectRevision.slice_job_id.is_not_distinct_from(job_id))
         if resume
         else or_(ProjectRevision.slice_status.is_(None), ProjectRevision.slice_status == SLICE_FAILED)
     )
@@ -158,44 +159,48 @@ async def _start(db: AsyncSession, revision_id: int, *, user_id: int | None, res
         if revision_id in _starting or _job_is_live(revision.slice_job_id):
             return revision.slice_job_id
         resume = True
-    _starting.add(revision_id)
-    try:
-        return await _start_claimed(db, revision_id, user_id=user_id, resume=resume)
-    finally:
-        _starting.discard(revision_id)
+    return await _start_claimed(db, revision_id, user_id=user_id, resume=resume, seen_job_id=revision.slice_job_id)
 
 
-async def _start_claimed(db: AsyncSession, revision_id: int, *, user_id: int | None, resume: bool) -> int | None:
+async def _start_claimed(
+    db: AsyncSession, revision_id: int, *, user_id: int | None, resume: bool, seen_job_id: int | None
+) -> int | None:
     source = await source_file_of(db, revision_id)
     if source is None:
         return None
     source_name = source.filename
-    if not await _claim(db, revision_id, resume=resume):
-        # another start won the race between the read above and the claim
+    # Another start won the race between the read above and the claim; a resume claim does not
+    # exclude a resume of the same revision already past its claim, so that one wins too.
+    if not await _claim(db, revision_id, resume=resume, job_id=seen_job_id) or (resume and revision_id in _starting):
         current = await db.get(ProjectRevision, revision_id, populate_existing=True)
         return current.slice_job_id if current is not None else None
 
     async def run(job_id: int) -> dict[str, Any]:
         return await _run_slice(revision_id, user_id=user_id, job_id=job_id)
 
+    # Only the claim's winner holds _starting (no await since the claim): a loser leaving never clears it.
+    _starting.add(revision_id)
     try:
-        job = await slice_dispatch.enqueue(
-            kind="project_revision", source_id=revision_id, source_name=source_name, owner_id=user_id, run=run
+        try:
+            job = await slice_dispatch.enqueue(
+                kind="project_revision", source_id=revision_id, source_name=source_name, owner_id=user_id, run=run
+            )
+        except Exception:
+            # The revision card and the queue items show a generic reason: the raw error can carry server paths.
+            logger.warning("Could not start the slice of project revision %s", revision_id, exc_info=True)
+            await _mark_failed(db, revision_id, COULD_NOT_START_SLICE)  # not "slicing" with no job
+            raise
+        # Only this column: the job may already be writing its outcome to the same row.
+        await db.execute(
+            update(ProjectRevision)
+            .where(ProjectRevision.id == revision_id)
+            .values(slice_job_id=job.id)
+            .execution_options(synchronize_session="fetch")
         )
-    except Exception:
-        # The revision card and the queue items show a generic reason: the raw error can carry server paths.
-        logger.warning("Could not start the slice of project revision %s", revision_id, exc_info=True)
-        await _mark_failed(db, revision_id, COULD_NOT_START_SLICE)  # not "slicing" with no job
-        raise
-    # Only this column: the job may already be writing its outcome to the same row.
-    await db.execute(
-        update(ProjectRevision)
-        .where(ProjectRevision.id == revision_id)
-        .values(slice_job_id=job.id)
-        .execution_options(synchronize_session="fetch")
-    )
-    await db.commit()
-    return job.id
+        await db.commit()
+        return job.id
+    finally:
+        _starting.discard(revision_id)
 
 
 async def start_revision_slice(db: AsyncSession, revision_id: int, *, user_id: int | None) -> int | None:
