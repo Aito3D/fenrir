@@ -3476,12 +3476,11 @@ describe('ProjectDetailPanel record card tracking row', () => {
     show();
     const row = screen.getByTestId('record-tracking');
     expect(within(row).getByRole('button', { name: /copy tracking link/i })).toBeInTheDocument();
-    expect(within(row).getByRole('button', { name: /new tracking link/i })).toBeInTheDocument();
     // Exactly one of each in the whole panel: the header rendered these twice
     // — once per branch of the finished/live slot — and moving them left both
     // copies behind at first.
     expect(screen.getAllByRole('button', { name: /copy tracking link/i })).toHaveLength(1);
-    expect(screen.getAllByRole('button', { name: /new tracking link/i })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /open tracking link/i })).toHaveLength(1);
   });
 
   it('is present on a finished project too, where the link is most useful', () => {

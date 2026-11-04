@@ -234,7 +234,7 @@ def test_wanted_link_shapes():
     assert wanted_link(p, pct=0, today=TODAY) == Wanted("DEV-1", 10000, "2026-09-20")
     assert wanted_link(p, pct=30, today=TODAY) == Wanted("DEV-1", 3000, "2026-09-20")
     p.quote_expiry_date = None
-    assert wanted_link(p, pct=0, today=TODAY) == Wanted("DEV-1", 10000, "2026-10-12")  # one calendar month
+    assert wanted_link(p, pct=0, today=TODAY) == Wanted("DEV-1", 10000, "2026-10-12")  # QUOTE_VALIDITY, 30 days
     for field, value in [
         ("status", "deleted"),
         ("quote_status", "declined"),
@@ -1729,7 +1729,7 @@ async def test_create_invoice_link_reserves_posts_and_records(db_session, fake):
     creates = [c for c in fake.calls if c[0] == "create"]
     assert len(creates) == 1
     _, key, reference, amount, days = creates[0]
-    assert reference == "FA-26-0001" and amount == 23000 and days == 30  # one calendar month
+    assert reference == "FA-26-0001" and amount == 23000 and days == 30  # QUOTE_VALIDITY, 30 days
     assert row.document_kind == "invoice" and row.url == "https://osb/pay/L1" and row.expires_on == "2026-10-23"
     kinds = await _kinds(db_session, p.id)
     assert "payment_link.created" in kinds

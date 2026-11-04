@@ -75,3 +75,26 @@ async def test_extend_keeps_the_card_expired_when_books_refuses(async_client, mo
     assert r.status_code == 502
     board = (await async_client.get("/api/v1/aito/")).json()
     assert next(p for p in board if p["id"] == pid)["quote_status"] == "expired"
+
+
+@pytest.mark.asyncio
+async def test_extend_reconciles_the_payment_link_right_away(async_client, monkeypatch):
+    """The expiry cancelled the link; the extension must mint its replacement
+    in the same request, forced past any backoff, for this card only."""
+    from backend.app.api.routes import aito as aito_routes
+
+    async def update(db, estimate_id, fields):
+        return {"estimate_id": estimate_id, "status": "sent", **fields}
+
+    reconciled = []
+
+    async def fake_reconcile(db, **kwargs):
+        reconciled.append(kwargs)
+        return 1
+
+    monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
+    monkeypatch.setattr(aito_routes, "reconcile_payment_links", fake_reconcile)
+    pid = await _expired(async_client)
+
+    assert (await async_client.post(f"/api/v1/aito/{pid}/quote-extend")).status_code == 200
+    assert reconciled == [{"only_project_id": pid, "force": True}]

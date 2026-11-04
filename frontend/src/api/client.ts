@@ -5188,8 +5188,6 @@ export interface AitoTrackingBalance {
 
 export interface AitoTrackingLink {
   tracking_url: string | null;
-  /** Regenerate only: whether the Zoho quote's notes took the new link. */
-  quote_notes?: 'updated' | 'failed' | null;
 }
 
 export type AitoPaymentLinkState = 'pending' | 'paid' | 'failed' | 'cancelled' | 'expired';
@@ -5418,8 +5416,7 @@ export interface AitoProject {
   document_numbers: string[];
   /** Whether this card has a public tracking link configured. The token
    *  itself is minted by the Copy-link route, the pickup-SMS draft, or the
-   *  quote sync — not only by `regenerateAitoTrackingToken` — but it is
-   *  never embedded here; fetch it from `GET /aito/{id}/tracking-link`.
+   *  quote sync, and never changes by hand; it is never embedded here; fetch it from `GET /aito/{id}/tracking-link`.
    *  `tracking_configured` reflects whether `external_url` (the operator's
    *  public origin setting) is set, so the UI can render "not yet
    *  configured" without round-tripping the link itself. */
@@ -9764,7 +9761,6 @@ export const api = {
   getAitoTrackingLink: (id: number) => request<AitoTrackingLink>(`/aito/${id}/tracking-link`),
   /** Mints (or re-mints) the project's tracking token, invalidating any
    *  previous link. */
-  regenerateAitoTrackingToken: (id: number) => request<AitoTrackingLink>(`/aito/${id}/tracking-token`, { method: 'POST' }),
   /** Record — or take back — the fact that the client has been told the job is
    *  ready. Sends a bool, never a timestamp: WHEN is the server's fact to
    *  stamp, and a browser clock that is wrong would otherwise skew both the

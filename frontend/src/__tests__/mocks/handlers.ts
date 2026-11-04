@@ -742,5 +742,4 @@ export const handlers = [
   http.get('/api/v1/aito/:id/project-links', ({ params }) => HttpResponse.json({ order_id: Number(params.id), tasks: [] })),
   http.get('/api/v1/aito/project-codes', () => HttpResponse.json({})),
   http.get('/api/v1/aito/:id/tracking-link', () => HttpResponse.json({ tracking_url: null })),
-  http.post('/api/v1/aito/:id/tracking-token', () => HttpResponse.json({ tracking_url: null })),
 ];

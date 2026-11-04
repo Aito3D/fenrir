@@ -1,5 +1,5 @@
 /**
- * `TrackingLinkControl` — Copy / Regenerate for the card's public tracking
+ * `TrackingLinkControl` — Open / Copy for the card's public tracking
  * link, mounted in `ProjectDetailPanel`'s contact row.
  *
  * The hold-completion incantation (fake timers + `userEvent.pointer`) is
@@ -63,13 +63,6 @@ afterEach(() => {
   }
 });
 
-/** Holds a button through HoldButton's confirm delay under fake timers,
- *  copied from AitoQuoteStatusActions.test.tsx's `holdButton` helper. */
-async function holdButton(button: HTMLElement) {
-  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-  await user.pointer({ keys: '[MouseLeft>]', target: button });
-  vi.advanceTimersByTime(600);
-}
 
 describe('TrackingLinkControl', () => {
   it('copies the link from the link endpoint', async () => {
@@ -125,36 +118,7 @@ describe('TrackingLinkControl', () => {
     expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/settings?tab=network');
   });
 
-  it('regenerates on a completed hold and toasts', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const calls: string[] = [];
-    server.use(
-      http.post('/api/v1/aito/7/tracking-token', () => {
-        calls.push('regen');
-        return HttpResponse.json({ tracking_url: 'https://x.pf/t/new' });
-      }),
-    );
-    render(<TrackingLinkControl project={project} />);
 
-    await holdButton(screen.getByRole('button', { name: /new tracking link/i }));
-
-    await waitFor(() => expect(calls).toEqual(['regen']));
-    expect(await screen.findByText(/new tracking link/i)).toBeInTheDocument();
-    vi.useRealTimers();
-  });
-
-  it('warns when the quote could not take the new link', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    server.use(
-      http.post('/api/v1/aito/7/tracking-token', () =>
-        HttpResponse.json({ tracking_url: 'https://x.pf/t/new', quote_notes: 'failed' }),
-      ),
-    );
-    render(<TrackingLinkControl project={project} />);
-    await holdButton(screen.getByRole('button', { name: /new tracking link/i }));
-    expect(await screen.findByText(/quote could not be updated/i)).toBeInTheDocument();
-    vi.useRealTimers();
-  });
 
   it('toasts an error and does not copy when the link endpoint fails', async () => {
     server.use(http.get('/api/v1/aito/7/tracking-link', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
@@ -197,22 +161,4 @@ describe('TrackingLinkControl', () => {
     document.execCommand = originalExecCommand;
   });
 
-  it('toasts an error and does not regenerate when the token endpoint fails on a completed hold', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const calls: string[] = [];
-    server.use(
-      http.post('/api/v1/aito/7/tracking-token', () => {
-        calls.push('regen');
-        return HttpResponse.json({ detail: 'boom' }, { status: 500 });
-      }),
-    );
-    render(<TrackingLinkControl project={project} />);
-
-    await holdButton(screen.getByRole('button', { name: /new tracking link/i }));
-
-    await waitFor(() => expect(calls).toEqual(['regen']));
-    expect(await screen.findByText(/error loading data/i)).toBeInTheDocument();
-    expect(screen.queryByText(/new tracking link/i)).not.toBeInTheDocument();
-    vi.useRealTimers();
-  });
 });
