@@ -35,6 +35,7 @@ from backend.app.schemas.project import (
 )
 from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.project_tags import project_tag_refs
+from backend.app.utils.sql_like import escape_like
 
 CATALOG_LIMIT = 500
 PRINTING_SECTION = "impression"
@@ -191,8 +192,7 @@ async def move_project(db: AsyncSession, project: Project, folder_id: int | None
 
 
 def _like(raw: str) -> str:
-    escaped = raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"
+    return f"%{escape_like(raw)}%"
 
 
 def _text_match(column, raw: str):

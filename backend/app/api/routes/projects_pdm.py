@@ -54,25 +54,10 @@ from backend.app.services.openrouter import (
     suggest_project_tag_names,
 )
 from backend.app.services.project_tags import project_tag_refs, rank_tag_suggestions, tag_name_key
-from backend.app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
-
-
-def _like(value: str) -> str:
-    return f"%{escape_like(value)}%"
-
-
-def _text_match(column, raw: str):
-    """Case-insensitive contains. Two patterns because SQLite's ``lower()`` only
-    folds ASCII: the lowered one covers "fpv" vs "FPV", the raw one covers an
-    accented capital typed as stored ("Électronique")."""
-    return or_(
-        func.lower(func.coalesce(column, "")).like(_like(raw.lower()), escape="\\"),
-        func.coalesce(column, "").like(_like(raw), escape="\\"),
-    )
 
 
 @contextmanager
@@ -104,13 +89,13 @@ async def search_projects(
         tagged_like = (
             select(ProjectTag.project_id)
             .join(LibraryTag, LibraryTag.id == ProjectTag.tag_id)
-            .where(_text_match(LibraryTag.name, term))
+            .where(project_catalog._text_match(LibraryTag.name, term))
         )
         conditions.append(
             or_(
-                _text_match(Project.code, term),
-                _text_match(Project.name, term),
-                _text_match(Project.description, term),
+                project_catalog._text_match(Project.code, term),
+                project_catalog._text_match(Project.name, term),
+                project_catalog._text_match(Project.description, term),
                 Project.id.in_(tagged_like),
             )
         )
