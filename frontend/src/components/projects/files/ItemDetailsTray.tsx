@@ -1,10 +1,10 @@
 import type { DragEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pencil, Trash2, X } from 'lucide-react';
+import { Pencil, X } from 'lucide-react';
 import type { ProjectItemOut, ProjectRevisionOut } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
-import { HoldButton } from '../../aito/HoldButton';
 import { focusRingCls } from '../../formStyles';
+import { DeleteItemButton } from './DeleteItemButton';
 import { RevisionBlock } from './RevisionBlock';
 import type { FileActions } from './useFileActions';
 import { useDerivedOptions } from './useDerivedOptions';
@@ -55,16 +55,7 @@ export function ItemDetailsTray({ item, revision, actions, dropHandlers, renameF
             </button>
           )}
           {canDelete && (
-            <HoldButton
-              onHold={() => void actions.deleteItem(item.id)}
-              durationMs={1000}
-              label={t('projectsPdm.files.deleteItem')}
-              hint={t('aito.holdToDelete')}
-              progress="perimeter"
-              className="h-11 w-11 justify-center text-bambu-gray hover:bg-red-400/10 hover:text-red-400 focus-visible:ring-red-400/40 data-[holding=true]:text-red-400 md:h-8 md:w-8"
-            >
-              <Trash2 className="relative h-4 w-4" />
-            </HoldButton>
+            <DeleteItemButton onDelete={() => void actions.deleteItem(item.id)} />
           )}
           <button type="button" className={iconBtn} aria-label={t('common.close')} title={t('common.close')} onClick={onClose}>
             <X className="h-4 w-4" />

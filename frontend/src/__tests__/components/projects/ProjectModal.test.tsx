@@ -3,11 +3,12 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../../utils';
 import { ProjectModal } from '../../../components/projects/ProjectModal';
 import { eligibleParents } from '../../../utils/projectTree';
+import { api } from '../../../api/client';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../mocks/server';
 
@@ -170,46 +171,31 @@ describe('ProjectModal', () => {
         />,
       );
 
-    const tagsInput = () => screen.getByPlaceholderText('projects.tagsPlaceholder') as HTMLInputElement;
     const dueDateInput = () => document.querySelector('input[type="date"]') as HTMLInputElement;
     const prioritySelect = () =>
       Array.from(document.querySelectorAll('select')).find((s) =>
         s.querySelector('option[value="urgent"]'),
       ) as HTMLSelectElement;
 
-    it('prefills tags, due date and priority from a list item', () => {
+    // Rewritten from the legacy-mode tests deleted with the `pdm` prop (T-571):
+    // the tags half went with the tags field, the due date / priority half is live.
+    it('prefills due date and priority from a list item', () => {
       renderModal(() => {});
 
-      expect(tagsInput().value).toBe('prototype,client-work');
       expect(dueDateInput().value).toBe('2026-08-01');
       expect(prioritySelect().value).toBe('high');
     });
 
-    it('does not downgrade a stored priority when saving an untouched field', async () => {
+    it('keeps a stored priority when saving an untouched field', async () => {
       const user = userEvent.setup();
       const onSave = vi.fn();
       renderModal(onSave);
 
       await user.click(screen.getByRole('button', { name: 'common.save' }));
 
-      // Before the fix the dialog fell back to its 'normal' default and sent
-      // that, silently demoting a high/urgent project edited from the list.
-      expect(onSave).toHaveBeenCalledWith(
-        expect.objectContaining({ priority: 'high', tags: 'prototype,client-work' }),
-      );
-    });
-
-    it('sends null when an existing tag list is cleared', async () => {
-      const user = userEvent.setup();
-      const onSave = vi.fn();
-      renderModal(onSave);
-
-      await user.clear(tagsInput());
-      await user.click(screen.getByRole('button', { name: 'common.save' }));
-
-      // undefined would drop the key from the PATCH body and the backend would
-      // keep the old tags — the field has to be cleared explicitly.
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ tags: null }));
+      // Falling back to the 'normal' default would silently demote a
+      // high/urgent project edited from the list.
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ priority: 'high', due_date: '2026-08-01' }));
     });
   });
 
@@ -279,39 +265,11 @@ describe('ProjectModal', () => {
         expect(eligibleParents(projects, 1)).toEqual([]);
       });
     });
-
-    it('sends 0 to clear a parent, because null would read as omitted', async () => {
-      const user = userEvent.setup();
-      const onSave = vi.fn();
-      server.use(http.get('/api/v1/projects/', () => HttpResponse.json([listItem({ id: 9, name: 'Other' })])));
-
-      render(
-        <ProjectModal
-          project={listItem({ id: 1, parent_id: 9 })}
-          onClose={() => {}}
-          onSave={onSave as never}
-          isLoading={false}
-          currencySymbol="EUR"
-          t={((k: string) => k) as never}
-        />,
-      );
-
-      const parentSelect = () =>
-        Array.from(document.querySelectorAll('select')).find((s) =>
-          s.querySelector('option[value=""]'),
-        ) as HTMLSelectElement;
-      await waitFor(() => expect(parentSelect().value).toBe('9'));
-
-      await user.selectOptions(parentSelect(), '');
-      await user.click(screen.getByRole('button', { name: 'common.save' }));
-
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ parent_id: 0 }));
-    });
   });
 
   describe('PDM header editor (pdm mode)', () => {
     /**
-     * The project detail page opens ProjectModal with `pdm`: its header owns the
+     * The project detail page opens ProjectModal for a PDM project: its header owns the
      * tags and a PDM project has no parent, so the modal must neither show those
      * fields nor send them, or saving would wipe the header's tag list.
      */
@@ -334,7 +292,7 @@ describe('ProjectModal', () => {
       cover_image_filename: null,
     };
 
-    const renderModal = (onSave: (data: unknown) => void, pdm?: boolean) =>
+    const renderModal = (onSave: (data: unknown) => void) =>
       render(
         <ProjectModal
           project={pdmProject as never}
@@ -343,24 +301,26 @@ describe('ProjectModal', () => {
           isLoading={false}
           currencySymbol="€"
           t={((k: string) => k) as never}
-          pdm={pdm}
         />,
       );
 
-    it('hides the parent picker and the tags field', () => {
-      renderModal(() => {}, true);
+    it('hides the parent picker and the tags field, and fetches no project list for it', () => {
+      const getProjects = vi.spyOn(api, 'getProjects');
+      renderModal(() => {});
 
+      expect(getProjects).not.toHaveBeenCalled();
       expect(screen.getByText('common.name')).toBeInTheDocument();
       expect(screen.queryByText('projects.parentLabel')).not.toBeInTheDocument();
       expect(screen.queryByText('projects.parentNone')).not.toBeInTheDocument();
       expect(screen.queryByText('projects.tagsLabel')).not.toBeInTheDocument();
       expect(screen.queryByPlaceholderText('projects.tagsPlaceholder')).not.toBeInTheDocument();
+      getProjects.mockRestore();
     });
 
     it('saves neither tags nor parent_id, even when the project has both', async () => {
       const user = userEvent.setup();
       const onSave = vi.fn();
-      renderModal(onSave, true);
+      renderModal(onSave);
 
       await user.click(screen.getByRole('button', { name: 'common.save' }));
 
@@ -371,19 +331,68 @@ describe('ProjectModal', () => {
       expect(payload).not.toHaveProperty('parent_id');
     });
 
-    it('still shows and sends tags and parent_id for the same project without pdm', async () => {
+    it('uploads, then removes, a cover image for the edited project', async () => {
+      const user = userEvent.setup();
+      const upload = vi.spyOn(api, 'uploadProjectCoverImage').mockResolvedValue({ filename: 'cover.png' } as never);
+      const remove = vi.spyOn(api, 'deleteProjectCoverImage').mockResolvedValue(undefined as never);
+      const { container } = renderModal(() => {});
+
+      expect(screen.queryByText('projects.coverImageRemove')).not.toBeInTheDocument();
+      const file = new File(['x'], 'c.png', { type: 'image/png' });
+      await user.upload(container.querySelector('input[type="file"]') as HTMLInputElement, file);
+
+      expect(upload).toHaveBeenCalledWith(12, file);
+      expect(await screen.findByText('projects.coverImageReplace')).toBeInTheDocument();
+      expect((container.querySelector('input[type="file"]') as HTMLInputElement).value).toBe('');
+
+      await user.click(screen.getByText('projects.coverImageRemove'));
+      expect(remove).toHaveBeenCalledWith(12);
+      expect(await screen.findByText('projects.coverImageUpload')).toBeInTheDocument();
+      expect(screen.queryByText('projects.coverImageRemove')).not.toBeInTheDocument();
+      upload.mockRestore();
+      remove.mockRestore();
+    });
+
+    it('keeps the cover when an upload fails', async () => {
+      const user = userEvent.setup();
+      const upload = vi.spyOn(api, 'uploadProjectCoverImage').mockRejectedValue(new Error('boom'));
+      const { container } = renderModal(() => {});
+
+      await user.upload(
+        container.querySelector('input[type="file"]') as HTMLInputElement,
+        new File(['x'], 'c.png', { type: 'image/png' }),
+      );
+
+      expect(upload).toHaveBeenCalledTimes(1);
+      expect(await screen.findByText('projects.coverImageUpload')).toBeInTheDocument();
+      expect(screen.queryByText('projects.coverImageRemove')).not.toBeInTheDocument();
+      upload.mockRestore();
+    });
+
+    it('refuses a URL without an http(s) prefix until it is fixed, then saves the edited fields', async () => {
       const user = userEvent.setup();
       const onSave = vi.fn();
-      renderModal(onSave);
+      const { container } = renderModal(onSave);
+      const nameInput = container.querySelector('input[type="text"]') as HTMLInputElement;
+      const urlInput = container.querySelector('input[type="url"]') as HTMLInputElement;
 
-      expect(screen.getByText('projects.parentLabel')).toBeInTheDocument();
-      expect(screen.getByText('projects.tagsLabel')).toBeInTheDocument();
+      await user.clear(nameInput);
+      await user.type(nameInput, 'Renamed');
+      await user.type(container.querySelector('textarea') as HTMLTextAreaElement, 'New description');
+      await user.type(urlInput, 'ftp://x');
       await user.click(screen.getByRole('button', { name: 'common.save' }));
 
-      expect(onSave).toHaveBeenCalledTimes(1);
-      const payload = onSave.mock.calls[0][0];
-      expect(payload).toHaveProperty('tags', 'support,camera');
-      expect(payload).toHaveProperty('parent_id', 9);
+      expect(onSave).not.toHaveBeenCalled();
+      expect(screen.getByText('projects.urlInvalid')).toBeInTheDocument();
+
+      await user.clear(urlInput);
+      expect(screen.queryByText('projects.urlInvalid')).not.toBeInTheDocument();
+      await user.type(urlInput, 'https://example.com');
+      await user.click(screen.getByRole('button', { name: 'common.save' }));
+
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Renamed', description: 'New description', url: 'https://example.com' }),
+      );
     });
   });
 });

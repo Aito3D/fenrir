@@ -1,10 +1,9 @@
 import { useState, useRef } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Loader2, Upload, Image as ImageIcon, X } from 'lucide-react';
 import { api } from '../../api/client';
 import type { ProjectListItem, ProjectCreate, ProjectUpdate } from '../../api/client';
 import { Button } from '../Button';
-import { eligibleParents } from '../../utils/projectTree';
 
 const PROJECT_COLORS = [
   '#ef4444', // red
@@ -27,11 +26,11 @@ interface ProjectModalProps {
   isLoading: boolean;
   currencySymbol: string;
   t: TFunction;
-  // Fenrir projects as a PDM: header owns tags, no sub-projects.
-  pdm?: boolean;
 }
 
-export function ProjectModal({ project, onClose, onSave, isLoading, currencySymbol, t, pdm = false }: ProjectModalProps) {
+// Fenrir projects as a PDM: the header owns tags and there are no sub-projects,
+// so the dialog has neither a tags field nor a parent picker.
+export function ProjectModal({ project, onClose, onSave, isLoading, currencySymbol, t }: ProjectModalProps) {
   const [name, setName] = useState(project?.name || '');
   const [description, setDescription] = useState(project?.description || '');
   const [color, setColor] = useState(project?.color || PROJECT_COLORS[0]);
@@ -39,23 +38,13 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
   const [targetPartsCount, setTargetPartsCount] = useState(project?.target_parts_count?.toString() || '');
   const [targetSets, setTargetSets] = useState(project?.target_sets?.toString() || '');
   const [status, setStatus] = useState(project?.status || 'active');
-  const [tags, setTags] = useState(project?.tags || '');
   const [dueDate, setDueDate] = useState(project?.due_date?.split('T')[0] || '');
   const [priority, setPriority] = useState(project?.priority || 'normal');
   const [budget, setBudget] = useState(project?.budget?.toString() || '');
   const [url, setUrl] = useState(project?.url || '');
   const [urlError, setUrlError] = useState<string | null>(null);
-  const [parentId, setParentId] = useState<number | null>(project?.parent_id ?? null);
   const queryClient = useQueryClient();
 
-  // Unfiltered on purpose: a completed or archived project is still a legal
-  // parent, and the picker offering fewer options than the list does would be
-  // hard to explain.
-  const { data: allProjects } = useQuery({
-    queryKey: ['projects', undefined],
-    queryFn: () => api.getProjects(),
-  });
-  const parentOptions = eligibleParents(allProjects || [], project?.id);
   const [coverImageFilename, setCoverImageFilename] = useState(project?.cover_image_filename || null);
   const coverFileInputRef = useRef<HTMLInputElement>(null);
   const [coverUploading, setCoverUploading] = useState(false);
@@ -111,16 +100,12 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
       target_sets: project ? (targetSets ? parseInt(targetSets, 10) : null) : (targetSets ? parseInt(targetSets, 10) : undefined),
       // Null clears the stored value on edit; undefined omits the key on create.
       // Sending undefined on edit would make an emptied field un-clearable.
-      ...(!pdm && { tags: project ? (tags.trim() || null) : (tags.trim() || undefined) }),
       due_date: project ? (dueDate || null) : (dueDate || undefined),
       priority,
       budget: budget.trim() ? parseFloat(budget) : null,
       // Pydantic accepts null to clear the URL; an empty string would fail the
       // http(s) prefix validator.
       url: project ? (trimmedUrl || null) : (trimmedUrl || undefined),
-      // The API reads 0 as "remove the parent" — null would be indistinguishable
-      // from the field having been omitted (#1264).
-      ...(!pdm && { parent_id: project ? (parentId ?? 0) : (parentId ?? undefined) }),
       ...(project && { status }),
     });
   };
@@ -183,28 +168,6 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
             />
             {urlError && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{urlError}</p>}
           </div>
-
-          {/* #1264: Nest this project under another one */}
-          {!pdm && (
-            <div>
-              <label className="block text-sm font-medium text-white mb-1">
-                {t('projects.parentLabel')}
-              </label>
-              <select
-                value={parentId ?? ''}
-                onChange={(e) => setParentId(e.target.value ? parseInt(e.target.value, 10) : null)}
-                className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white focus:outline-none focus:border-bambu-green"
-              >
-                <option value="">{t('projects.parentNone')}</option>
-                {parentOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-bambu-gray mt-1">{t('projects.parentHint')}</p>
-            </div>
-          )}
 
           {/* #1155: Cover image — only available when editing an existing project,
               since uploading needs a project_id. New projects can add it after save. */}
@@ -328,22 +291,6 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
             />
             <p className="text-xs text-bambu-gray mt-1">{t('projects.targetSetsHelp')}</p>
           </div>
-
-          {/* Tags */}
-          {!pdm && (
-            <div>
-              <label className="block text-sm font-medium text-white mb-1">
-                {t('projects.tagsLabel')}
-              </label>
-              <input
-                type="text"
-                value={tags}
-                onChange={(e) => setTags(e.target.value)}
-                className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                placeholder={t('projects.tagsPlaceholder')}
-              />
-            </div>
-          )}
 
           {/* Due Date and Priority in a row */}
           <div className="grid grid-cols-2 gap-4">

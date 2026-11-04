@@ -1486,6 +1486,7 @@ CREATE TABLE projects (
 1 export function Chevron
 1 export function CodeMark
 1 export function CollapsibleHeader
+1 export function DeleteItemButton
 1 export function DeliveriesPicker
 1 export function descendantIds
 1 export function DialogShell
@@ -1756,9 +1757,6 @@ projects.dueDate
 projects.editProject
 projects.namePlaceholder
 projects.newProject
-projects.parentHint
-projects.parentLabel
-projects.parentNone
 projects.priority
 projects.priorityHigh
 projects.priorityLow
@@ -1767,8 +1765,6 @@ projects.priorityUrgent
 projects.statusActive
 projects.statusArchived
 projects.statusCompleted
-projects.tagsLabel
-projects.tagsPlaceholder
 projects.targetParts
 projects.targetPartsHelp
 projects.targetPartsPlaceholder

@@ -550,7 +550,6 @@ export function ProjectDetailPage() {
       {/* Edit Modal */}
       {showEditModal && (
         <ProjectModal
-          pdm
           t={t}
           currencySymbol={currency}
           project={{
@@ -561,8 +560,7 @@ export function ProjectDetailPage() {
             failed_count: stats?.failed_prints || 0,
             queue_count: stats?.queued_prints || 0,
             progress_percent: stats?.progress_percent || null,
-            // Required by ProjectListItem, but nothing in the dialog reads it —
-            // the parent picker works off the project list it fetches itself.
+            // Required by ProjectListItem, but nothing in the dialog reads it.
             // Guarded like every other read of `children` on this page (#1264).
             child_count: project.children?.length ?? 0,
             archives: [],
