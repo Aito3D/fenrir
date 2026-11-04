@@ -87,5 +87,12 @@ export function useCatalogMutations() {
       );
     },
   });
-  return { createFolder, updateFolder, deleteFolder, moveProject };
+  const deleteProject = useMutation({
+    mutationFn: async (id: number) => {
+      const ok = await run(() => api.deleteProject(id), 'projectsPdm.catalog.deleteFailed');
+      if (ok) showToast(t('projectsPdm.catalog.projectDeleted'), 'success');
+      return ok;
+    },
+  });
+  return { createFolder, updateFolder, deleteFolder, moveProject, deleteProject };
 }

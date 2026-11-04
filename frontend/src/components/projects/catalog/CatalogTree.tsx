@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent, MouseEvent as ReactMouseEvent, ReactNode, TouchEvent as ReactTouchEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import {
   DndContext,
   DragOverlay,
@@ -23,7 +24,7 @@ import type {
   TouchSensorOptions,
   UniqueIdentifier,
 } from '@dnd-kit/core';
-import { ChevronRight, Flame, Folder, FolderInput, FolderOpen, FolderPlus, Inbox, MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import { ArrowRight, ChevronRight, Flame, Folder, FolderInput, FolderOpen, FolderPlus, Inbox, MoreVertical, Pencil, Trash2 } from 'lucide-react';
 import type { ProjectCatalogItem, ProjectFolder } from '../../../api/client';
 import { ContextMenu } from '../../ContextMenu';
 import { Tooltip } from '../../Tooltip';
@@ -53,6 +54,8 @@ export interface CatalogTreeProps {
   onDeleteFolder: (folderId: number) => void;
   /** Files a folder under another (null = top level); nesting has no depth limit. */
   onMoveFolder: (folderId: number, parentId: number | null) => void;
+  /** Set when the user may delete projects: each project row gets a ⋯ menu with a hold-to-delete entry. */
+  onDeleteProject?: (projectId: number) => void;
   /** The inline "new folder" row: its parent while open, undefined while closed. */
   creating: { parentId: number | null } | null;
   onCreatingChange: (next: { parentId: number | null } | null) => void;
@@ -202,10 +205,13 @@ function ProjectRow({
   selected,
   landed,
   onSelect,
+  onOpenMenu,
   canDrag,
   tinted,
   revealSlot,
 }: RowCommon & {
+  /** Opens the row's ⋯ menu; absent, the row has none. */
+  onOpenMenu?: (item: ProjectCatalogItem, anchor: HTMLButtonElement) => void;
   node: Extract<TreeNode, { kind: 'project' }>;
   q: string;
   filtering: boolean;
@@ -214,6 +220,7 @@ function ProjectRow({
   landed: boolean;
   onSelect: (projectId: number) => void;
 }) {
+  const { t } = useTranslation();
   const { item, depth } = node;
   const id = dragId({ kind: 'project', id: item.id });
   const { setNodeRef: setDragRef, listeners, isDragging } = useDraggable({ id, disabled: !canDrag });
@@ -239,6 +246,16 @@ function ProjectRow({
         style={indent(depth)}
       >
         <ProjectRowBody item={item} q={q} path={path} />
+        {onOpenMenu && (
+          <button type="button" aria-label={t('projectsPdm.catalog.projectActions')} aria-haspopup="menu"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenMenu(item, e.currentTarget);
+            }}
+            className={`-mr-1 rounded p-1 text-bambu-gray opacity-60 transition-opacity duration-100 hover:bg-bambu-dark-tertiary hover:text-white hover:opacity-100 focus-visible:opacity-100 ${focusRingCls}`}>
+            <MoreVertical className="h-4 w-4" />
+          </button>
+        )}
       </div>
     </li>
   );
@@ -403,14 +420,15 @@ function dropGeometry(nodes: readonly TreeNode[]) {
 
 export function CatalogTree(props: CatalogTreeProps) {
   const { t } = useTranslation();
-  const { nodes, folders, q, filtering, selectedId, canUpdate, creating, revealed } = props;
+  const { nodes, folders, q, filtering, selectedId, canUpdate, creating, revealed, onDeleteProject } = props;
   const reducedMotion = useReducedMotion();
   const [drag, setDrag] = useState<DragState | null>(null);
   const [receiving, setReceiving] = useState<{ key: GroupKey; nonce: number } | null>(null);
   const [landed, setLanded] = useState<{ key: string; nonce: number } | null>(null);
   const [movingFolder, setMovingFolder] = useState<number | null>(null);
   const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null);
-  const [menu, setMenu] = useState<{ folder: ProjectFolder; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ items: ContextMenuItem[]; x: number; y: number } | null>(null);
+  const navigate = useNavigate();
   const menuAnchor = useRef<HTMLButtonElement>(null);
   // Filing by drag needs the tree: a search result's folder is not on screen to drop on.
   const canDrag = canUpdate && !filtering;
@@ -636,6 +654,12 @@ export function CatalogTree(props: CatalogTreeProps) {
     { label: t('projectsPdm.catalog.deleteFolder'), icon: <Trash2 className="h-4 w-4" />, danger: true, title: t('projectsPdm.catalog.deleteFolderHint'), onClick: () => props.onDeleteFolder(folder.id) },
   ];
 
+  const projectMenuItems = (item: ProjectCatalogItem, onDelete: (projectId: number) => void): ContextMenuItem[] => [
+    { label: t('projectsPdm.catalog.openProject'), icon: <ArrowRight className="h-4 w-4" />, onClick: () => navigate(`/projects/${item.id}`) },
+    { label: '', divider: true, onClick: () => {} },
+    { label: t('projectsPdm.catalog.deleteProject'), icon: <Trash2 className="h-4 w-4" />, hold: true, title: t('aito.holdToDelete'), onClick: () => onDelete(item.id) },
+  ];
+
   // The rows a click just unfolded: everything under that folder until the tree comes back
   // up to its level (or reaches the unfiled head), in list order.
   const revealSlots = useMemo(() => {
@@ -716,7 +740,7 @@ export function CatalogTree(props: CatalogTreeProps) {
                   onOpenMenu={(folder, anchor) => {
                     const r = anchor.getBoundingClientRect();
                     menuAnchor.current = anchor;
-                    setMenu({ folder, x: r.right, y: r.bottom });
+                    setMenu({ items: folderMenuItems(folder), x: r.right, y: r.bottom });
                   }}
                   canUpdate={canUpdate}
                   canDrag={canDrag}
@@ -737,6 +761,11 @@ export function CatalogTree(props: CatalogTreeProps) {
               selected={node.item.id === selectedId}
               landed={landed?.key === key}
               onSelect={props.onSelect}
+              onOpenMenu={onDeleteProject && ((item, anchor) => {
+                const r = anchor.getBoundingClientRect();
+                menuAnchor.current = anchor;
+                setMenu({ items: projectMenuItems(item, onDeleteProject), x: r.right, y: r.bottom });
+              })}
               canDrag={canDrag}
               tinted={tintedRows.has(key)}
               revealSlot={revealSlots.get(key) ?? -1}
@@ -749,7 +778,7 @@ export function CatalogTree(props: CatalogTreeProps) {
         document.body,
       )}
       {menu && createPortal(
-        <ContextMenu x={menu.x} y={menu.y} items={folderMenuItems(menu.folder)} onClose={() => setMenu(null)} anchorRef={menuAnchor} />,
+        <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} anchorRef={menuAnchor} />,
         document.body,
       )}
     </DndContext>

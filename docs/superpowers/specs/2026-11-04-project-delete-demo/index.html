@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Delete Demo</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  bg: '#0c1016', surf: '#141b23', line: '#212c37', ink: '#e9eff6', sub: '#93a4b6', mute: '#6f8496', acc: '#14b8a6',
+} } } };
+</script>
+<style>
+  html { font-size: 14.4px; }
+  body { background: #0c1016; color: #e9eff6; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  [data-lucide] { width: 1em; height: 1em; }
+  .thumb img { filter: brightness(1.25) contrast(1.1); }
+  .tab[aria-selected=true] { background: #14b8a6; color: #0c1016; }
+  .row[aria-selected=true] { background: rgba(20,184,166,.10); box-shadow: inset 3px 0 0 #14b8a6; }
+  /* hold progress: perimeter trace (A), bar fill (B, C) */
+  .hold { position: relative; overflow: hidden; touch-action: none; user-select: none; }
+  .hold .trace { position: absolute; inset: 0; pointer-events: none; }
+  .hold .trace rect { fill: none; stroke: #f87171; stroke-width: 2; stroke-dasharray: 100; stroke-dashoffset: 100; transition: stroke-dashoffset .2s ease-out; }
+  .hold.holding .trace rect { stroke-dashoffset: 0; transition: stroke-dashoffset 1s linear; }
+  .hold .bar { position: absolute; inset: 0; transform: scaleX(0); transform-origin: left; background: rgba(248,113,113,.28); transition: transform .2s ease-out; pointer-events: none; }
+  .hold.holding .bar { transform: scaleX(1); transition: transform 1s linear; }
+  .hold > .lbl { position: relative; }
+  @media (prefers-reduced-motion: reduce) { .hold.holding .bar, .hold.holding .trace rect { transition-duration: .2s; } }
+  .pop { transform-origin: top right; animation: pop .14s cubic-bezier(.2,.8,.2,1); }
+  @keyframes pop { from { opacity: 0; transform: scale(.96) translateY(-4px); } }
+  .gone { animation: gone .28s ease-in forwards; }
+  @keyframes gone { to { opacity: 0; height: 0; padding: 0; margin: 0; } }
+</style>
+</head>
+<body class="min-h-screen">
+<div class="mx-auto max-w-[1280px] p-6 space-y-5">
+  <header class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-semibold">Delete a project: three propositions</h1>
+      <p class="text-sm text-sub mt-1">Hold the red button 1 s to delete. Release early and nothing happens. The toggle shows the case where deletion is blocked.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <label class="flex items-center gap-2 text-xs text-sub"><input id="locked" type="checkbox" class="accent-teal-500"> Linked to a live Aito order</label>
+      <button id="reset" class="rounded-lg border border-line px-2.5 py-1.5 text-xs text-sub hover:text-ink">Reset demo</button>
+    </div>
+  </header>
+  <nav class="inline-flex gap-1 rounded-lg border border-line bg-surf p-1 text-sm" role="tablist">
+    <button class="tab rounded-md px-3 py-1.5" data-v="a" role="tab">A · Header icon</button>
+    <button class="tab rounded-md px-3 py-1.5" data-v="b" role="tab">B · Row ⋯ menu</button>
+    <button class="tab rounded-md px-3 py-1.5" data-v="c" role="tab">C · Summary popover</button>
+  </nav>
+  <p id="note" class="text-sm text-sub max-w-3xl"></p>
+
+  <div class="grid grid-cols-[minmax(0,420px)_1fr] gap-4">
+    <!-- tree -->
+    <section class="rounded-xl border border-line bg-surf">
+      <div class="flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wide text-mute border-b border-line">Projects <span class="normal-case">Not in a folder</span></div>
+      <ul id="tree" class="text-sm"></ul>
+    </section>
+    <!-- pane -->
+    <section id="pane" class="rounded-xl border border-line bg-surf p-4 min-h-[420px]"></section>
+  </div>
+</div>
+<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 hidden rounded-lg border border-line bg-surf px-4 py-2.5 text-sm shadow-xl"></div>
+
+<script>
+const NOTES = {
+  a: 'A: a trash icon next to "Open project". Hold 1 s: a red outline traces round the button, then the project goes. One click target, nothing else on screen. Closest to the hold buttons on Aito cards.',
+  b: 'B: no new button in the pane. The tree row\'s ⋯ (today a dash) opens a menu whose last entry is "Hold to delete". Keeps the pane clean, deletes a project without selecting it first.',
+  c: 'C: the trash icon opens a small card listing what goes (files, revisions, size) and what stays (print history, Aito orders), then an outlined hold button. Most explicit; one extra click. Same pattern as the Aito trash confirm.',
+};
+const SEED = [
+  { id: 23, code: 'P-0023', name: 'Clip deck', sub: '1 file · R1 Cplips · PA-CF', items: 1, revs: 1, size: '67.3 KB', printed: 0 },
+  { id: 22, code: 'P-0022', name: 'Padel', sub: 'Florent BRUN · 1 file · R1 padel · PETG', items: 1, revs: 3, size: '1.2 MB', printed: 4 },
+  { id: 21, code: 'P-0021', name: 'Tetiaroa Society D-RTK', sub: '1 file · R1 D-RTK · PC', items: 1, revs: 1, size: '412 KB', printed: 0 },
+  { id: 17, code: 'P-0017', name: 'Polype', sub: '1 file · R5 polypbase_v4 (2) · PLA', items: 1, revs: 5, size: '2.8 MB', printed: 16 },
+];
+let projects, sel, v = location.hash.slice(1) || 'a', menuFor = null, popOpen = false;
+const $ = (s) => document.querySelector(s);
+const locked = () => $('#locked').checked;
+const LOCK_MSG = 'Linked to Aito order #197 (open). Unlink the task first.';
+
+function reset() { projects = SEED.map((p) => ({ ...p })); sel = 23; menuFor = null; popOpen = false; render(); }
+
+function holdBtn({ cls, inner, trace, onDone, disabled }) {
+  return `<button data-hold="${onDone}" ${disabled ? `disabled title="${LOCK_MSG}"` : ''} class="hold ${cls}">${trace ? '<svg class="trace" preserveAspectRatio="none" viewBox="0 0 100 100"><rect x="1" y="1" width="98" height="98" rx="12" pathLength="100" vector-effect="non-scaling-stroke"/></svg>' : '<span class="bar"></span>'}<span class="lbl flex items-center gap-1.5">${inner}</span></button>`;
+}
+
+function render() {
+  document.querySelectorAll('.tab').forEach((b) => b.setAttribute('aria-selected', b.dataset.v === v));
+  $('#note').textContent = NOTES[v];
+  $('#tree').innerHTML = projects.map((p) => `
+    <li data-row="${p.id}" class="row relative flex items-center gap-3 px-3 py-2.5 border-b border-line/60 cursor-pointer hover:bg-line/40" aria-selected="${p.id === sel}">
+      <div class="thumb h-9 w-9 shrink-0 overflow-hidden rounded-md border border-line bg-bg"><img src="part.png" class="h-full w-full object-cover" alt=""></div>
+      <div class="min-w-0 flex-1"><div><span class="font-mono text-acc text-xs">${p.code}</span> <span class="ml-1">${p.name}</span></div><div class="truncate text-xs text-mute">${p.sub}</div></div>
+      ${v === 'b' ? `<button data-menu="${p.id}" aria-label="More" class="rounded p-1 text-mute hover:text-ink hover:bg-line"><i data-lucide="more-vertical"></i></button>` : `<span class="text-mute">${p.printed || '—'}</span>`}
+      ${v === 'b' && menuFor === p.id ? `
+        <div class="pop absolute right-2 top-10 z-20 w-56 rounded-lg border border-line bg-[#10161d] p-1 shadow-2xl text-sm" data-stop>
+          <button class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sub hover:bg-line hover:text-ink"><i data-lucide="pencil"></i>Rename</button>
+          <button class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sub hover:bg-line hover:text-ink"><i data-lucide="folder-input"></i>Move to folder…</button>
+          <button class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sub hover:bg-line hover:text-ink"><i data-lucide="external-link"></i>Open project</button>
+          <div class="my-1 border-t border-line"></div>
+          ${holdBtn({ cls: 'w-full rounded px-2 py-1.5 text-left text-red-400 hover:bg-red-500/10 disabled:opacity-40 disabled:hover:bg-transparent', inner: `<i data-lucide="trash-2"></i>${locked() ? 'Linked to an open order' : 'Hold to delete'}`, onDone: p.id, disabled: locked() })}
+        </div>` : ''}
+    </li>`).join('');
+  const p = projects.find((x) => x.id === sel);
+  $('#pane').innerHTML = p ? pane(p) : '<div class="grid h-[380px] place-items-center text-sub text-sm">Select a project</div>';
+  lucide.createIcons();
+}
+
+function pane(p) {
+  const trashA = holdBtn({ cls: 'rounded-md border border-line p-2 text-sub hover:text-red-400 hover:border-red-500/40 disabled:opacity-40 disabled:hover:text-sub disabled:hover:border-line', inner: '<i data-lucide="trash-2"></i>', trace: true, onDone: p.id, disabled: locked() });
+  const trashC = `<button id="openPop" ${locked() ? `disabled title="${LOCK_MSG}"` : ''} aria-label="Delete project" class="rounded-md border border-line p-2 text-sub hover:text-red-400 hover:border-red-500/40 disabled:opacity-40 disabled:hover:text-sub disabled:hover:border-line ${popOpen ? 'text-red-400 border-red-500/40' : ''}"><i data-lucide="trash-2"></i></button>`;
+  return `
+  <div class="flex items-start gap-3 border-b border-line pb-4">
+    <div class="thumb h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-line bg-bg"><img src="part.png" class="h-full w-full object-cover" alt=""></div>
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-2"><span class="rounded border border-acc/40 bg-acc/10 px-1.5 py-0.5 font-mono text-[11px] text-acc">${p.code}</span><span class="text-lg font-semibold">${p.name}</span></div>
+      <div class="mt-1 text-xs text-sub">${p.printed ? `Printed ${p.printed}×` : 'Never printed'} · 2m ago</div>
+    </div>
+    <div class="relative flex shrink-0 items-center gap-2">
+      ${v === 'a' ? `<span class="group relative">${trashA}<span class="pointer-events-none absolute right-0 top-full mt-1 whitespace-nowrap rounded bg-black/80 px-2 py-1 text-[11px] text-ink opacity-0 group-hover:opacity-100">${locked() ? LOCK_MSG : 'Hold to delete project'}</span></span>` : ''}
+      ${v === 'c' ? trashC : ''}
+      <a class="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs text-sub hover:text-ink">Open project <i data-lucide="arrow-right"></i></a>
+      ${v === 'c' && popOpen ? `
+        <div class="pop absolute right-0 top-11 z-20 w-80 rounded-xl border border-line bg-[#10161d] p-4 shadow-2xl" data-stop>
+          <div class="flex items-center gap-2 font-medium"><i data-lucide="trash-2" class="text-red-400"></i>Delete ${p.code} ${p.name}?</div>
+          <ul class="mt-3 space-y-1.5 text-xs">
+            <li class="flex items-center gap-2 text-red-300"><i data-lucide="x"></i>${p.items} item, ${p.revs} revision${p.revs > 1 ? 's' : ''} · ${p.size} of files</li>
+            <li class="flex items-center gap-2 text-sub"><i data-lucide="check"></i>Print history kept (${p.printed} print${p.printed === 1 ? '' : 's'})</li>
+            <li class="flex items-center gap-2 text-sub"><i data-lucide="check"></i>Aito orders and quotes untouched</li>
+          </ul>
+          <div class="mt-4 flex items-center justify-end gap-2">
+            <button id="closePop" class="rounded-lg px-3 py-1.5 text-xs text-sub hover:text-ink">Cancel</button>
+            ${holdBtn({ cls: 'rounded-lg border border-red-500/60 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-500/10', inner: '<i data-lucide="trash-2"></i>Hold to delete', onDone: p.id })}
+          </div>
+        </div>` : ''}
+    </div>
+  </div>
+  <div class="mt-4 rounded-xl border border-line">
+    <div class="flex items-center justify-between px-3 py-2 text-sm">Printing <span class="text-xs text-acc">+ New item</span></div>
+    <div class="grid grid-cols-3 gap-4 px-3 pb-3">
+      <div class="overflow-hidden rounded-lg border border-line"><div class="thumb aspect-square bg-bg"><img src="part.png" class="h-full w-full object-cover" alt=""></div><div class="p-3 text-xs text-sub"><div class="text-sm text-ink">${p.sub.split('· R1 ')[1]?.split(' ·')[0] || 'Part'}</div>3h 41m · 62.1 g</div></div>
+      <div class="grid place-items-center rounded-lg border border-dashed border-line text-xs text-mute">Drop a .3mf or click</div>
+    </div>
+  </div>`;
+}
+
+function del(id) {
+  const p = projects.find((x) => x.id === id);
+  const row = document.querySelector(`[data-row="${id}"]`);
+  row?.classList.add('gone');
+  setTimeout(() => {
+    const i = projects.findIndex((x) => x.id === id);
+    projects.splice(i, 1);
+    sel = projects[Math.min(i, projects.length - 1)]?.id ?? null; // select the neighbour, like the tree's ↑↓
+    menuFor = null; popOpen = false; render();
+    const t = $('#toast'); t.innerHTML = `<span class="text-red-300">Deleted</span> ${p.code} ${p.name}`; t.classList.remove('hidden');
+    clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), 2500);
+  }, 280);
+}
+
+// hold: 1 s press, release or leave cancels
+let timer = null;
+document.addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('[data-hold]'); if (!b || b.disabled) return;
+  e.preventDefault(); b.classList.add('holding');
+  timer = setTimeout(() => { b.classList.remove('holding'); del(+b.dataset.hold); }, 1000);
+});
+const cancel = () => { clearTimeout(timer); document.querySelectorAll('.holding').forEach((x) => x.classList.remove('holding')); };
+document.addEventListener('pointerup', cancel);
+document.addEventListener('pointercancel', cancel);
+document.addEventListener('pointerout', (e) => { if (e.target.closest?.('[data-hold]') && !e.target.closest('[data-hold]').contains(e.relatedTarget)) cancel(); });
+
+document.addEventListener('click', (e) => {
+  const tab = e.target.closest('.tab'); if (tab) { v = tab.dataset.v; location.hash = v; menuFor = null; popOpen = false; return render(); }
+  const m = e.target.closest('[data-menu]'); if (m) { menuFor = menuFor === +m.dataset.menu ? null : +m.dataset.menu; return render(); }
+  if (e.target.closest('#openPop')) { popOpen = !popOpen; return render(); }
+  if (e.target.closest('#closePop')) { popOpen = false; return render(); }
+  if (e.target.closest('[data-stop]')) return;
+  const r = e.target.closest('[data-row]'); if (r) { sel = +r.dataset.row; menuFor = null; popOpen = false; return render(); }
+  if (menuFor || popOpen) { menuFor = null; popOpen = false; render(); }
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && (menuFor || popOpen)) { menuFor = null; popOpen = false; render(); } });
+$('#locked').addEventListener('change', render);
+$('#reset').addEventListener('click', reset);
+reset();
+</script>
+</body>
+</html>

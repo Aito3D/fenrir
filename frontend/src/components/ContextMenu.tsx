@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useLayoutEffect } from 'react';
 import { ChevronRight, Search } from 'lucide-react';
+import { HoldButton } from './aito/HoldButton';
 
 export interface ContextMenuItem {
   label: string;
@@ -13,6 +14,8 @@ export interface ContextMenuItem {
   // submenu items that filters by label (case-insensitive).
   submenuSearchPlaceholder?: string;
   title?: string;
+  /** Fires `onClick` only after a 1 s press (a destructive entry); `title` is the hold hint. */
+  hold?: boolean;
 }
 
 interface ContextMenuProps {
@@ -265,6 +268,25 @@ export function ContextMenu({ x, y, items, onClose, anchorRef }: ContextMenuProp
             onMouseEnter={(e) => hasSubmenu && handleMouseEnterSubmenu(index, e.currentTarget)}
             onMouseLeave={() => hasSubmenu && handleMouseLeaveSubmenu()}
           >
+            {item.hold ? (
+              <HoldButton
+                onHold={() => {
+                  item.onClick();
+                  onClose();
+                }}
+                durationMs={1000}
+                label={item.label}
+                hint={item.title ?? item.label}
+                disabled={item.disabled}
+                progress="bar"
+                pressEffect="none"
+                radiusClassName="rounded-none"
+                className={`w-full justify-start gap-2 px-3 py-2 text-sm ${item.disabled ? 'text-bambu-gray cursor-not-allowed' : 'text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-400/10'}`}
+              >
+                {item.icon && <span className="relative w-4 h-4 flex-shrink-0 flex items-center justify-center">{item.icon}</span>}
+                <span className="relative flex-1 text-left">{item.label}</span>
+              </HoldButton>
+            ) : (
             <button
               onMouseEnter={(e) => hasSubmenu && handleMouseEnterSubmenu(index, e.currentTarget.parentElement!)}
               onClick={() => {
@@ -290,6 +312,7 @@ export function ContextMenu({ x, y, items, onClose, anchorRef }: ContextMenuProp
               <span className="flex-1">{item.label}</span>
               {hasSubmenu && <ChevronRight className="w-4 h-4 text-bambu-gray" />}
             </button>
+            )}
             {/* Submenu */}
             {hasSubmenu && activeSubmenu === index && (
               <SubmenuPanel

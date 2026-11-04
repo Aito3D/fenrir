@@ -343,6 +343,7 @@ export function ProjectListPage() {
                 onRenameFolder={(id, name) => mutations.updateFolder.mutateAsync({ id, name })}
                 onDeleteFolder={(id) => mutations.deleteFolder.mutate(id)}
                 onMoveFolder={(id, parentId) => mutations.updateFolder.mutate({ id, parent_id: parentId })}
+                onDeleteProject={hasPermission('projects:delete') ? (id) => mutations.deleteProject.mutate(id) : undefined}
                 creating={creating}
                 onCreatingChange={setCreating}
               />

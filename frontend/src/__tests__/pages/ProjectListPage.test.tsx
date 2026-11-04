@@ -8,6 +8,7 @@ import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
 import { ProjectListPage } from '../../pages/ProjectListPage';
+import { holdToConfirm } from '../holdHelpers';
 import type { ProjectCatalogItem, ProjectFolder } from '../../api/client';
 import { file, item as treeItem, projectTree, rev } from '../fixtures/projectTree';
 
@@ -226,7 +227,7 @@ describe('ProjectListPage (catalog)', () => {
   it('a project row carries no move button: filing is by drag', async () => {
     render(<ProjectListPage />);
     await screen.findByTestId('catalog-row-4');
-    expect(within(screen.getByTestId('catalog-row-4')).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('catalog-row-4')).queryByRole('button', { name: /move/i })).not.toBeInTheDocument();
   });
 
   it('files a project by dropping it on a folder, and unfiles it on "Not in a folder"', async () => {
@@ -331,6 +332,34 @@ describe('ProjectListPage (catalog)', () => {
     await userEvent.click(within(screen.getByTestId('catalog-folder-3')).getByRole('button', { name: 'Folder actions' }));
     await userEvent.click(await screen.findByText('Delete folder'));
     await waitFor(() => expect(calls).toContain('delete:3'));
+  });
+
+  it('a project row menu deletes the project only after a hold', async () => {
+    server.use(
+      http.delete('/api/v1/projects/:id', ({ params }) => {
+        calls.push(`delete-project:${params.id}`);
+        return HttpResponse.json({ message: 'Project deleted' });
+      }),
+    );
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-1');
+    await waitFor(() => expect(window.location.search).toBe('?project=1'));
+    const openMenu = () => userEvent.click(within(screen.getByTestId('catalog-row-1')).getByRole('button', { name: 'Project actions' }));
+    await openMenu();
+    expect(window.location.search).toBe('?project=1'); // the ⋯ press does not select the row
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete project' }));
+    expect(calls).not.toContain('delete-project:1'); // a click is not a hold
+    await openMenu();
+    await holdToConfirm(await screen.findByRole('button', { name: 'Delete project' }));
+    await waitFor(() => expect(calls).toContain('delete-project:1'));
+    expect(await screen.findByText('Project deleted')).toBeInTheDocument();
+  });
+
+  it('a user who may not delete projects gets no row menu', async () => {
+    granted = new Set(['projects:read', 'projects:update']);
+    render(<ProjectListPage />);
+    await screen.findByTestId('catalog-row-1');
+    expect(screen.queryByRole('button', { name: 'Project actions' })).not.toBeInTheDocument();
   });
 
   it('on a narrow screen a row opens the project page instead of a pane', async () => {

@@ -44,7 +44,7 @@ from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem, PrintQueueVariant
 from backend.app.models.project import PROJECT_PRIORITIES, PROJECT_STATUSES, Project
 from backend.app.models.project_bom import ProjectBOMItem
-from backend.app.models.project_item import (  # Fenrir: PDM items block project deletion; revisions label archives
+from backend.app.models.project_item import (  # Fenrir: PDM items go with their project; revisions label archives
     ProjectItem,
     ProjectRevision,
 )
@@ -67,6 +67,7 @@ from backend.app.schemas.project import (
     ProjectUpdate,
     TimelineEvent,
 )
+from backend.app.services import project_files as project_files_svc  # Fenrir: a project delete takes its items
 from backend.app.services.library_folder_access import load_folder_index, visible_folder_ids
 from backend.app.services.project_files import revision_label
 from backend.app.services.project_tags import (
@@ -987,12 +988,40 @@ async def update_project(
     )
 
 
+_LINKED_DETAIL = "This project is linked to Aito tasks; unlink them first"
+_USED_DETAIL = "A file of this project was printed or delivered; the project cannot be deleted"
+
+
 async def _refuse_if_in_use(db: AsyncSession, project_id: int, live_link) -> None:
     """409 when the project still owns PDM items, then when a live Aito task links it."""
     if (await db.execute(select(ProjectItem.id).where(ProjectItem.project_id == project_id).limit(1))).first():
         raise HTTPException(status_code=409, detail="This project has files; delete or move its items first")
     if (await db.execute(live_link.limit(1))).first():
-        raise HTTPException(status_code=409, detail="This project is linked to Aito tasks; unlink them first")
+        raise HTTPException(status_code=409, detail=_LINKED_DETAIL)
+
+
+async def _delete_project_items(db: AsyncSession, project: Project) -> None:
+    """Delete every PDM item of the project (rows, files to the trash), each committing on its own.
+
+    Every revision is checked for a print or delivery first, so a used file refuses
+    the project before any item goes. shortcut: an item used between that check and
+    its own delete is refused alone, after earlier items were deleted; a retry finishes."""
+    items = (await db.execute(select(ProjectItem).where(ProjectItem.project_id == project.id))).scalars().all()
+    if not items:
+        return
+    revision_ids = (
+        (await db.execute(select(ProjectRevision.id).where(ProjectRevision.item_id.in_([i.id for i in items]))))
+        .scalars()
+        .all()
+    )
+    for revision_id in revision_ids:
+        if await project_files_svc.revision_is_used(db, revision_id):
+            raise HTTPException(status_code=409, detail=_USED_DETAIL)
+    for item in items:
+        try:
+            await project_files_svc.delete_item(db, project, item)
+        except project_files_svc.ProjectFilesError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.delete("/{project_id}")
@@ -1008,15 +1037,21 @@ async def delete_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Fenrir: a project that owns PDM items keeps them (and their files) until
-    # they are deleted or moved — nothing would clean their rows or folders up.
-    # And a project linked from Aito tasks of a live order is still in use
+    # Fenrir: a project linked from Aito tasks of a live order is still in use
     # (PDM §8). A trashed order's tasks cannot be unlinked (their routes 404),
     # so they don't block; their links are cleared so the id is never reused.
     live_orders = select(AitoProject.id).where(AitoProject.status != "deleted")
     live_link = select(AitoTask.id).where(
         AitoTask.linked_project_id == project_id, AitoTask.project_id.in_(live_orders)
     )
+    if (await db.execute(live_link.limit(1))).first():
+        raise HTTPException(status_code=409, detail=_LINKED_DETAIL)
+    # Its PDM items go with it, files to the trash, through the same delete as
+    # the item route; a printed or delivered file refuses the whole project.
+    await _delete_project_items(db, project)
+    project = await db.get(Project, project_id, populate_existing=True)  # item deletes committed
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
     await _refuse_if_in_use(db, project_id, live_link)
     # Only links the check above let through are cleared: tasks outside a live
     # order. With no concurrent writer that is every link left (the check just

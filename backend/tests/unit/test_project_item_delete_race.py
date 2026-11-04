@@ -665,3 +665,31 @@ async def test_link_task_on_a_task_gone_meanwhile_is_a_404_and_stores_nothing(
         assert (await db.execute(select(func.count()).select_from(AitoEvent))).scalar_one() == 0
         linked = (await db.execute(select(AitoTask.linked_project_id).where(AitoTask.id == task_id))).all()
     assert linked == ([] if make_gone is _delete_task else [(previous_id,)])
+
+
+@pytest.mark.asyncio
+async def test_delete_project_takes_its_items_and_trashes_their_files(sessions, root):
+    project_id, item_id, revision_id, _, storage_dir = await _item_with_a_revision(sessions)
+    async with sessions() as db:
+        assert await projects_routes.delete_project(project_id, db=db, _=None) == {"message": "Project deleted"}
+        await db.commit()
+    assert await _counts(sessions, project_id) == (0, 0)
+    assert await _item_state(sessions, item_id, revision_id) == (0, 0, 0)
+    trashed = (root / storage_dir / "_trash").rglob("a.step")
+    assert [p.read_bytes() for p in trashed] == [b"data"]
+
+
+@pytest.mark.asyncio
+async def test_delete_project_with_a_delivered_file_deletes_nothing(sessions, root):
+    project_id, item_id, revision_id, _, storage_dir = await _item_with_a_revision(sessions)
+    async with sessions() as db:
+        db.add(AitoTaskDelivery(task_id=4242, revision_id=revision_id))
+        await db.commit()
+    async with sessions() as db:
+        with pytest.raises(HTTPException) as caught:
+            await projects_routes.delete_project(project_id, db=db, _=None)
+        await db.rollback()
+    assert (caught.value.status_code, caught.value.detail) == (409, projects_routes._USED_DETAIL)
+    assert await _counts(sessions, project_id) == (1, 1)
+    assert await _item_state(sessions, item_id, revision_id) == (1, 1, 1)
+    assert (root / storage_dir / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
