@@ -473,20 +473,32 @@ export function CalculatorFilamentsPanel({
         {!editing && canUpdate && (
           <div className="flex items-center gap-2">
             {zohoConfigured && (
-              <Button size="sm" variant="secondary" onClick={runSync} disabled={syncProgress !== null}>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="max-md:px-3.5"
+                onClick={runSync}
+                disabled={syncProgress !== null}
+                // Only while idle: the running count is visible text and stays the button's name.
+                aria-label={syncProgress === null ? t('calculator.syncZohoPrices') : undefined}
+              >
                 {syncProgress !== null ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <RefreshCw className="w-4 h-4" />
                 )}
-                {syncProgress !== null
-                  ? t('calculator.syncProgress', { done: syncProgress.done, total: syncProgress.total })
-                  : t('calculator.syncZohoPrices')}
+                {/* Phone: icon only while idle; the progress count stays visible */}
+                <span className={syncProgress === null ? 'max-md:hidden' : ''}>
+                  {syncProgress !== null
+                    ? t('calculator.syncProgress', { done: syncProgress.done, total: syncProgress.total })
+                    : t('calculator.syncZohoPrices')}
+                </span>
               </Button>
             )}
-            <Button size="sm" onClick={() => setEditing('new')}>
+            {/* Phone: icon only; the label stays the accessible name */}
+            <Button size="sm" className="max-md:w-11 max-md:px-0" onClick={() => setEditing('new')} aria-label={t('calculator.addFilament')}>
               <Plus className="w-4 h-4" />
-              {t('calculator.addFilament')}
+              <span className="max-md:hidden">{t('calculator.addFilament')}</span>
             </Button>
           </div>
         )}

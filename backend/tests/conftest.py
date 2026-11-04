@@ -685,6 +685,7 @@ async def async_client(test_engine, db_session) -> AsyncGenerator[AsyncClient, N
         # send failure; without this patch that cleanup silently hits the real
         # DB engine instead of the test DB (T-054).
         patch("backend.app.api.routes.auth.async_session", test_async_session),
+        patch("backend.app.services.octoeverywhere_detection.async_session", test_async_session),
         patch("backend.app.main.init_printer_connections", mock_init_printer_connections),
     ):
         # Seed default groups for tests that need them

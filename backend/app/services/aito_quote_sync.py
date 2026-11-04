@@ -54,7 +54,7 @@ from backend.app.services.aito_board_rules import AWAY_STATUSES
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_events import contact_mark_kind, record, utc_now_naive
 from backend.app.services.aito_invoice_sweep import _same_reference, sweep_inbox, sweep_invoices
-from backend.app.services.aito_payment_links import add_one_month, deposit_pct, required_amount
+from backend.app.services.aito_payment_links import QUOTE_VALIDITY, deposit_pct, required_amount
 from backend.app.services.aito_quote_export import (
     SERVICES,
     SERVICES_WITH_QUANTITY,
@@ -103,8 +103,8 @@ async def notes_with_tracking(db: AsyncSession, project: AitoProject, existing: 
     ``ensure_tracking_token`` for a card that has none, and that mint only
     flushes — it does not commit, so the caller's session stayed in a write
     transaction across the HTTP call that followed (T-024), the same failure
-    mode ``regenerate_tracking_token`` already documents and fixes by
-    committing before it talks to Books. So: when the mint here actually
+    mode the old ``regenerate_tracking_token`` route fixed by committing
+    before it talked to Books. So: when the mint here actually
     produced a NEW token for this card, commit it right now, before
     returning control to the caller's Books call — the same ordering. A card
     that already had a token mints nothing and gets no extra commit, so its
@@ -2872,13 +2872,13 @@ _DEFAULT_INTERVAL_SECONDS = 300
 
 
 def expiry_for(quote_date: str | None) -> str:
-    """The estimate's expiry_date: one calendar month after the quote date
-    (`add_one_month`), ISO YYYY-MM-DD. Today when the quote has no date yet
+    """The estimate's expiry_date: QUOTE_VALIDITY (30 days) after the quote
+    date, ISO YYYY-MM-DD. Today when the quote has no date yet
     (a create, whose date Books assigns as today anyway)."""
     from datetime import date
 
     start = date.fromisoformat(quote_date) if quote_date else date.today()
-    return add_one_month(start).isoformat()
+    return (start + QUOTE_VALIDITY).isoformat()
 
 
 def _paid_retainer_total(estimate: dict) -> float:

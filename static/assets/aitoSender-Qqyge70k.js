@@ -1,0 +1,1 @@
+var e={name:`Aito3D`,addressLines:[`20 Route de l'eau Royale`,`Arue – Tahiti`,`Polynésie française`],phone:`(+689) 89 25 32 10`,email:`contact@aito3d.fr`,reviewUrl:`https://g.page/r/CVL6WajJzwuGEBM/review`,website:`aito3d.fr`,socialHandle:`@aito3d`};export{e as t};

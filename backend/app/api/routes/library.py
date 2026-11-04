@@ -16,7 +16,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, NamedTuple
+from typing import Literal, NamedTuple, overload
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse as FastAPIFileResponse
@@ -27,7 +27,11 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
 from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
-from backend.app.api.routes.print_queue import _extract_filament_types_from_3mf, printed_plate_of_multi_plate_file
+from backend.app.api.routes.print_queue import (
+    _extract_filament_types_from_3mf,
+    printed_plate_of_multi_plate_file,
+    unsliced_file_message,
+)
 from backend.app.core.auth import (
     ApiKeyActor,
     QueueReviewRequired,
@@ -140,6 +144,7 @@ from backend.app.utils.threemf_tools import (
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
+    is_unsliced_3mf,
     sanitize_project_settings_sentinels,
     select_plate_gcode_name,
     supports_enabled_in_config,
@@ -289,18 +294,44 @@ def classify_file_type(filename: str, file_path: Path | str | None = None) -> st
     rather than on its name (#2993). The name is not evidence: a plate exported
     from Studio or a print dispatched through the cloud reaches the archive as
     ``Foo.3mf``, G-code and all, and downloading that and re-importing it used
-    to land a fully printable file in the library as a source-only project. The
-    file is not opened when the name already settles it, so the common case
-    still costs nothing.
+    to land a fully printable file in the library as a source-only project.
+    A ``.gcode.3mf`` is checked as well, and one holding no G-code is a ``3mf``
+    (#3435). Only the zip's file list is read, so it stays cheap.
     """
     lower = filename.lower()
     if lower.endswith(".gcode.3mf"):
+        # The other way round as well (#3435): Studio saves an unsliced
+        # project under whatever name it is given, and one called
+        # ``Foo.gcode.3mf`` was offered Print, then refused at the queue.
+        if file_path is not None and is_unsliced_3mf(file_path):
+            return "3mf"
         return "gcode.3mf"
     ext = os.path.splitext(lower)[1]
     file_type = ext[1:] if ext else "unknown"
     if file_type == "3mf" and file_path is not None and carries_gcode(file_path):
         return "gcode.3mf"
     return file_type
+
+
+# Private, a day: the Projects and File Manager lists render one thumbnail
+# per row and used to refetch all of them on every navigation because the
+# route sent no Cache-Control. The URL carries the media token, which rotates
+# per boot and every 50 minutes, so in practice the cache lives as long as
+# the token does: no refetch while navigating within a session. The ETag
+# lets a client that does revalidate get a 304.
+THUMBNAIL_CACHE_CONTROL = "private, max-age=86400"
+
+
+def _thumbnail_etag(path: Path, suffix: str = "") -> str:
+    """Strong validator from the file's mtime and size; stable until the thumbnail is rewritten."""
+    stat = path.stat()
+    return f'"{stat.st_mtime_ns:x}-{stat.st_size:x}{suffix}"'
+
+
+def _not_modified(request: Request, etag: str) -> bool:
+    """True when the client already holds this exact thumbnail."""
+    sent = request.headers.get("if-none-match")
+    return bool(sent) and etag in [t.strip().removeprefix("W/") for t in sent.split(",")]
 
 
 def get_library_thumbnails_dir() -> Path:
@@ -3954,8 +3985,10 @@ async def add_files_to_queue(
             errors.append(AddToQueueError(file_id=file_id, filename="(not found)", error="File not found"))
             continue
 
-        # Validate file is sliced
-        if not is_sliced_file(lib_file.filename):
+        # A 3MF is judged by its content below, once it is known to be there;
+        # anything else by its name, as before.
+        lower_name = lib_file.filename.lower()
+        if not lower_name.endswith(".3mf") and not is_sliced_file(lib_file.filename):
             errors.append(
                 AddToQueueError(
                     file_id=file_id,
@@ -3972,6 +4005,27 @@ async def add_files_to_queue(
             if file_path is None or not file_path.exists():
                 errors.append(
                     AddToQueueError(file_id=file_id, filename=lib_file.filename, error="File not found on disk")
+                )
+                continue
+
+            # Sliced is what the file holds, not what it is called (#3435): a
+            # project saved as "Foo.gcode.3mf" holds no G-code, and a sliced
+            # plate exported as "Foo.3mf" does (#2993).
+            if lower_name.endswith(".3mf") and is_unsliced_3mf(file_path):
+                errors.append(
+                    AddToQueueError(
+                        file_id=file_id, filename=lib_file.filename, error=unsliced_file_message(lib_file.filename)
+                    )
+                )
+                continue
+            # A zip that cannot be read has said nothing; its name decides, as before.
+            if lower_name.endswith(".3mf") and not carries_gcode(file_path) and not is_sliced_file(lib_file.filename):
+                errors.append(
+                    AddToQueueError(
+                        file_id=file_id,
+                        filename=lib_file.filename,
+                        error="Not a sliced file. Only .gcode or .gcode.3mf files can be printed.",
+                    )
                 )
                 continue
 
@@ -4389,6 +4443,7 @@ async def get_library_file_plates(
 async def get_library_file_plate_thumbnail(
     file_id: int,
     plate_index: int,
+    request: Request,
     db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
@@ -4411,12 +4466,16 @@ async def get_library_file_plate_thumbnail(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
+    etag = _thumbnail_etag(file_path, f"-p{plate_index}")
+    cache_headers = {"Cache-Control": THUMBNAIL_CACHE_CONTROL, "ETag": etag}
+    if _not_modified(request, etag):
+        return Response(status_code=304, headers=cache_headers)
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
             thumb_path = f"Metadata/plate_{plate_index}.png"
             if thumb_path in zf.namelist():
                 data = zf.read(thumb_path)
-                return Response(content=data, media_type="image/png")
+                return Response(content=data, media_type="image/png", headers=cache_headers)
     except Exception:
         pass  # Archive unreadable or thumbnail missing; fall through to 404
 
@@ -4532,6 +4591,23 @@ async def get_library_file_filament_requirements(
     # Only 3MF files have parseable filament info
     if not lib_file.filename.lower().endswith(".3mf"):
         return {"file_id": file_id, "filename": lib_file.filename, "plate_id": plate_id, "filaments": []}
+
+    # Fenrir: a project revision prints its source's server slice, so its print dialog reads
+    # the filaments from that slice. Reading the source instead means a preview slice per
+    # plate (a minute on the shop's server), and the dialog offers no filament choice until
+    # it ends. The slice modal (full_slots) still wants the source's own slot list.
+    if not full_slots:
+        from backend.app.services import project_slice
+
+        if project_slice.is_unsliced_project_source(lib_file):
+            try:
+                sliced = await project_slice.sliced_file_of(db, lib_file)
+            except HTTPException:
+                sliced = None  # a legacy revision's other .3mf: read the file itself, as before
+            if sliced is not None:
+                sliced_path = _by_id_read_path(sliced)
+                if sliced_path.exists():
+                    file_path = sliced_path
 
     filaments = []
 
@@ -5906,6 +5982,9 @@ async def slice_and_persist_as_archive(
         extra_data=metadata,
         created_by_id=current_user_id,
     )
+    from backend.app.services.print_cost_estimate import refresh_plate_estimates
+
+    refresh_plate_estimates(new_archive)
     db.add(new_archive)
     await db.commit()
     await db.refresh(new_archive)
@@ -6477,6 +6556,10 @@ def _guarded_read_path(file: LibraryFile) -> Path | None:
     return path
 
 
+@overload
+def _by_id_read_path(file: LibraryFile) -> Path: ...
+@overload
+def _by_id_read_path(file: LibraryFile, *, refused_as_missing: Literal[True]) -> Path | None: ...
 def _by_id_read_path(file: LibraryFile, *, refused_as_missing: bool = False) -> Path | None:
     """Fenrir: where a by-id library route outside ``_guarded_read_path`` reads ``file`` from.
 
@@ -6590,6 +6673,7 @@ async def download_library_file_for_slicer(
 @router.get("/files/{file_id}/thumbnail")
 async def get_thumbnail(
     file_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
@@ -6624,7 +6708,11 @@ async def get_thumbnail(
     }
     media_type = media_types.get(thumb_ext, "image/png")
 
-    return FastAPIFileResponse(str(abs_thumb_path), media_type=media_type)
+    etag = _thumbnail_etag(abs_thumb_path)
+    cache_headers = {"Cache-Control": THUMBNAIL_CACHE_CONTROL, "ETag": etag}
+    if _not_modified(request, etag):
+        return Response(status_code=304, headers=cache_headers)
+    return FastAPIFileResponse(str(abs_thumb_path), media_type=media_type, headers=cache_headers)
 
 
 @router.post("/files/{file_id}/preview-thumbnail", response_model=ClientThumbnailResponse)

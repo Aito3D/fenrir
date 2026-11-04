@@ -8,7 +8,7 @@ import os
 import re
 import time
 from collections.abc import Awaitable, Callable, Iterable, Sequence
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Literal
 
@@ -125,7 +125,6 @@ from backend.app.services.aito_quote_rating import read_client_quote_rating
 from backend.app.services.aito_quote_status import adopt_quote_status, apply_quote_decision, push_quote_status
 from backend.app.services.aito_quote_sync import (
     _bump_requeue_marker,
-    notes_with_tracking,
     request_debounced_sync,
     request_immediate_sync,
 )
@@ -153,7 +152,6 @@ from backend.app.services.aito_tracking import (
     compute_tracking,
     external_url as tracking_external_url,
     mint_unique_token,
-    tracking_url,
     with_tracking_sms,
 )
 from backend.app.services.inbox import (
@@ -4976,57 +4974,6 @@ async def get_tracking_link(
     return AitoTrackingLinkResponse(tracking_url=url)
 
 
-@router.post("/{project_id}/tracking-token", response_model=AitoTrackingLinkResponse)
-async def regenerate_tracking_token(
-    project_id: int,
-    response: Response,
-    db: AsyncSession = Depends(get_db, scope="function"),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
-):
-    """Kill a leaked link: a new token, the old one 404s at once. The event
-    carries no token — the log is readable by every aito:read holder, and
-    since T-015 board responses do not carry the link either: the URL is
-    served only by the two AITO_UPDATE routes here, both no-store.
-
-    The new token is committed BEFORE Books is contacted. Two reasons: the
-    leaked link must die whatever Books does next, and the row must not sit
-    dirty across the HTTP round trips — the first settings read inside the
-    Zoho client would autoflush it and hold SQLite's write lock for up to
-    two request timeouts, longer than the busy timeout, so unrelated writers
-    (MQTT status, the sync worker) failed with "database is locked".
-
-    The old link is printed on the quote too, so the estimate's notes are
-    rewritten here and now rather than at the next line sync, which may be
-    days away. Books being unreachable never blocks the local change, but
-    the response says so, and the next sync rewrites the notes anyway
-    (notes_with_tracking sees the stale block)."""
-    response.headers["Cache-Control"] = "no-store"
-    project = await _get_active_project_or_404(db, project_id)
-    project.tracking_token = await mint_unique_token(db)
-    await db.commit()
-    quote_notes: str | None = None
-    if project.quote_id:
-        try:
-            estimate = await zoho_service.get_estimate(db, project.quote_id)
-            notes = await notes_with_tracking(db, project, estimate.get("notes"))
-            if notes:
-                await zoho_service.update_estimate_notes(db, project.quote_id, notes)
-                quote_notes = "updated"
-        except Exception:  # noqa: BLE001 — logged and reported, never fatal
-            logger.warning("tracking notes not rewritten on estimate %s", project.quote_id, exc_info=True)
-            quote_notes = "failed"
-    await record(
-        db,
-        project.id,
-        "tracking.regenerated",
-        actor_class="user",
-        actor_name=_actor(current_user),
-        detail={"quote_notes": quote_notes} if quote_notes else {},
-    )
-    await db.commit()
-    return AitoTrackingLinkResponse(tracking_url=await tracking_url(db, project), quote_notes=quote_notes)
-
-
 async def _own_watch(db: AsyncSession, project_id: int, user_id: int) -> AitoWatch | None:
     return (
         await db.execute(select(AitoWatch).where(AitoWatch.user_id == user_id, AitoWatch.project_id == project_id))
@@ -5569,6 +5516,62 @@ async def set_quote_status(
         request_immediate_sync()
     zoho_synced = await push_quote_status(db, project, payload.status)
     return AitoQuoteStatusResponse(project=project_response, zoho_synced=zoho_synced)
+
+
+QUOTE_EXTENSION_DAYS = 15
+
+
+@router.post("/{project_id}/quote-extend", response_model=AitoProjectResponse)
+async def extend_quote_expiry(
+    project_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Give an expired quote QUOTE_EXTENSION_DAYS more days, counted from today.
+
+    Books FIRST, the opposite of set_quote_status: 'expired' is Books' own
+    verdict on the estimate's expiry_date, so a local-only change would be
+    undone by the next poll. Books recomputes the status from the new date
+    and its reply is adopted as-is ('sent' when the body omits it); the
+    payment link the expiry killed is re-minted before the response.
+    """
+    project = await _get_active_project_or_404(db, project_id)
+    if project.quote_status != "expired" or not project.quote_id:
+        raise HTTPException(status_code=409, detail="Only an expired Zoho quote can be extended")
+    expiry = (date.today() + timedelta(days=QUOTE_EXTENSION_DAYS)).isoformat()
+    try:
+        estimate = await zoho_service.update_estimate_fields(db, project.quote_id, {"expiry_date": expiry})
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito quote extension failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    project.quote_expiry_date = estimate.get("expiry_date") or expiry
+    adopt_quote_status(project, estimate.get("status") or "sent")
+    project.quote_status_block = None
+    project.quote_status_remote = None
+    project.quote_status_confirmed = True
+    actor = _actor(current_user)
+    summary = await _summary_for(db, project.id)
+    await _apply_rules(db, project, summary, actor=actor)
+    await record(
+        db,
+        project.id,
+        "quote.extended",
+        actor_class="user",
+        actor_name=actor,
+        subject_type="project",
+        subject_id=project.id,
+        detail={"expiry_date": project.quote_expiry_date},
+    )
+    await db.commit()
+    await broadcast_pending(db)
+    await _broadcast_changed("quote-extend", project.id, actor)
+    request_immediate_sync()
+    # The expiry cancelled the payment link; mint its replacement now (it
+    # lives until the new expiry_date) rather than at the loop's next pass.
+    # Never raises on a Heimdall failure: the row carries it to the panel.
+    await reconcile_payment_links(db, only_project_id=project.id, force=True)
+    await db.refresh(project)
+    return await _project_response(db, project, summary)
 
 
 @router.post("/{project_id}/restore", response_model=AitoProjectResponse)

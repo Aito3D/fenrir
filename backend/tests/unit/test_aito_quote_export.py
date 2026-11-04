@@ -17,6 +17,11 @@ from backend.app.services.aito_quote_export import (
 from backend.app.services.aito_quote_import import parse_time_min, parse_weight_g
 
 
+def build_items(*args, **kwargs) -> list[dict]:
+    """``build_line_items`` without its header rows, for tests about the item lines."""
+    return [line for line in build_line_items(*args, **kwargs) if line.get("line_item_category") != "header"]
+
+
 def task(**overrides) -> ExportTask:
     """An ExportTask with everything off, overridden per test."""
     base = {
@@ -172,20 +177,21 @@ def test_single_task_gets_a_header_too():
     # The title lives ONLY in the header now, so even the only task on the
     # quote carries one — otherwise a single-task quote names its job nowhere.
     lines = build_line_items([task(title="Helice grise", scan_cost=5000)], [], CATALOGUE)
-    assert len(lines) == 1
-    assert lines[0]["header_name"] == "Helice grise"
-    assert lines[0]["item_id"] == "ITEM_SCAN"
-    assert lines[0]["rate"] == 5000
-    assert lines[0]["item_order"] == 1
+    assert len(lines) == 2
+    assert lines[0] == {"line_item_category": "header", "description": "Helice grise", "item_order": 1}
+    assert lines[1]["item_id"] == "ITEM_SCAN"
+    assert lines[1]["rate"] == 5000
+    assert lines[1]["item_order"] == 2
 
 
 def test_blank_title_emits_no_header():
     lines = build_line_items([task(title="   ", scan_cost=5000)], [], CATALOGUE)
+    assert [line.get("line_item_category") for line in lines] == [None]
     assert "header_name" not in lines[0]
 
 
 def test_a_line_carries_the_catalogue_defaults():
-    lines = build_line_items([task(scan_cost=5000)], [], CATALOGUE)
+    lines = build_items([task(scan_cost=5000)], [], CATALOGUE)
     assert [line.get("line_item_category") for line in lines] == [None]
     assert lines[0]["quantity"] == 1
     assert lines[0]["tax_id"] == "TAX"
@@ -193,22 +199,31 @@ def test_a_line_carries_the_catalogue_defaults():
 
 
 def test_multiple_tasks_get_headers_named_after_them():
-    """Books has no standalone header ROW: a header is ``header_name`` stamped
-    on the item lines it groups (reference: quote DEV26-2506). A separate
-    ``{"line_item_category": "header"}`` entry is stored by Books as a broken
-    item line instead — the bug this test pins down."""
+    """Since the end of October 2026 Books stores a header as its own
+    ``{"line_item_category": "header", "description": ...}`` row (quote DEV26-2944)
+    and refuses ``header_name`` on an item line ("L'en-tête doit être envoyé
+    en tant que poste"), which every quote push failed on."""
     lines = build_line_items(
         [task(title="Premiere", scan_cost=1000, impression_cost=500), task(title="Deuxieme", usinage_cost=2000)],
         [],
         CATALOGUE,
     )
-    assert all(line.get("line_item_category") != "header" for line in lines)
-    assert [line.get("header_name") for line in lines] == ["Premiere", "Premiere", "Deuxieme"]
-    assert [line["item_order"] for line in lines] == [1, 2, 3]
+    assert [
+        (line.get("line_item_category"), line.get("description") if line.get("line_item_category") else None)
+        for line in lines
+    ] == [
+        ("header", "Premiere"),
+        (None, None),
+        (None, None),
+        ("header", "Deuxieme"),
+        (None, None),
+    ]
+    assert all("header_name" not in line for line in lines)
+    assert [line["item_order"] for line in lines] == [1, 2, 3, 4, 5]
 
 
 def test_services_are_emitted_in_canonical_order():
-    lines = build_line_items(
+    lines = build_items(
         [task(usinage_cost=4, impression_cost=3, modelisation_cost=2, scan_cost=1)],
         [],
         CATALOGUE,
@@ -217,13 +232,13 @@ def test_services_are_emitted_in_canonical_order():
 
 
 def test_zero_cost_is_a_line_but_none_is_not():
-    lines = build_line_items([task(scan_cost=0, modelisation_cost=None)], [], CATALOGUE)
+    lines = build_items([task(scan_cost=0, modelisation_cost=None)], [], CATALOGUE)
     assert len(lines) == 1
     assert lines[0]["rate"] == 0
 
 
 def test_each_service_line_carries_only_its_own_description():
-    lines = build_line_items(
+    lines = build_items(
         [task(scan_description="A scanner", impression_description="A imprimer", scan_cost=1, impression_cost=2)],
         [],
         CATALOGUE,
@@ -245,19 +260,19 @@ def test_foreign_lines_are_preserved_by_id_after_the_aito_block():
         {"line_item_id": "L3", "line_item_category": "header", "name": "old header", "item_order": 3},
         {"line_item_id": "L4", "sku": "L3DIMP", "name": "Decoupe laser", "item_order": 4},
     ]
-    lines = build_line_items([task(scan_cost=1000)], existing, CATALOGUE)
+    lines = build_items([task(scan_cost=1000)], existing, CATALOGUE)
     assert lines[-2:] == [
-        {"line_item_id": "L2", "item_order": 2},
-        {"line_item_id": "L4", "item_order": 3},
+        {"line_item_id": "L2", "item_order": 3},
+        {"line_item_id": "L4", "item_order": 4},
     ]
 
 
 def test_a_task_with_no_service_produces_nothing_not_even_a_header():
     lines = build_line_items([task(title="Vide"), task(title="Reelle", scan_cost=1)], [], CATALOGUE)
-    assert len(lines) == 1
+    assert len(lines) == 2
     # The serviceless task contributes nothing at all; the survivor keeps its own.
-    assert lines[0]["header_name"] == "Reelle"
-    assert lines[0]["item_id"] == "ITEM_SCAN"
+    assert lines[0] == {"line_item_category": "header", "description": "Reelle", "item_order": 1}
+    assert lines[1]["item_id"] == "ITEM_SCAN"
 
 
 def test_catalogue_override_to_a_non_matching_sku_does_not_duplicate_our_own_line():
@@ -280,7 +295,7 @@ def test_catalogue_override_to_a_non_matching_sku_does_not_duplicate_our_own_lin
     existing = [
         {"line_item_id": "L1", "item_id": "ITEM_IMP_CUSTOM", "sku": "CUSTOM-NOT-A-KNOWN-PREFIX", "item_order": 1},
     ]
-    lines = build_line_items([task(impression_cost=1000, impression_quantity=1)], existing, catalogue)
+    lines = build_items([task(impression_cost=1000, impression_quantity=1)], existing, catalogue)
     impression_lines = [line for line in lines if line.get("item_id") == "ITEM_IMP_CUSTOM"]
     assert len(impression_lines) == 1
     # The survivor must be the freshly-built line (no line_item_id), not the
@@ -325,7 +340,7 @@ def test_impression_discount_is_written_as_a_percent_string():
     where 10% sits on each line as `discount: "10.00%"`), so the impression
     line carries the task's discount in that same form. Only the impression
     line: the discount is a printing-service concept."""
-    lines = build_line_items(
+    lines = build_items(
         [task(scan_cost=500, impression_cost=1000, impression_discount_pct=10)],
         [],
         CATALOGUE,
@@ -338,7 +353,7 @@ def test_impression_discount_is_written_as_a_percent_string():
 def test_no_discount_emits_no_discount_key():
     """An absent discount must not even write `discount: "0%"` — Books would
     display a pointless 0% column on the PDF."""
-    lines = build_line_items([task(impression_cost=1000)], [], CATALOGUE)
+    lines = build_items([task(impression_cost=1000)], [], CATALOGUE)
     assert "discount" not in lines[0]
 
 
@@ -557,7 +572,7 @@ def test_an_imported_discounted_labour_line_re_exports_at_the_same_price():
         ],
     }
     imported = build_preview(estimate, None, "https://x")["tasks"][0]
-    lines = build_line_items(
+    lines = build_items(
         [
             task(
                 title=imported["title"],
@@ -646,32 +661,32 @@ def test_shipping_ids_are_ours_not_foreign():
 
 
 def test_shipping_line_comes_after_the_tasks_and_carries_no_header():
-    lines = build_line_items([task(scan_cost=5000)], [], SHIPPING_CATALOGUE, shipping=SHIPPING)
+    lines = build_items([task(scan_cost=5000)], [], SHIPPING_CATALOGUE, shipping=SHIPPING)
     assert [line["item_id"] for line in lines] == ["S", "SHIP-TU"]
     ship = lines[-1]
     assert "header_name" not in ship, "the shipping line belongs to no task"
     assert ship["rate"] == 3200.0
     assert ship["quantity"] == 1
     assert ship["tax_id"] == "T"
-    assert ship["item_order"] == 2
+    assert ship["item_order"] == 3  # after the task's header row and its line
 
 
 def test_shipping_line_description_is_built_by_build_shipping_description():
     # The builder and the emitted line are covered separately above but never
     # joined, so a wiring mistake between them (e.g. hand-rolling the string
     # instead of calling the builder) would otherwise pass unnoticed.
-    lines = build_line_items([task(scan_cost=5000)], [], SHIPPING_CATALOGUE, shipping=SHIPPING)
+    lines = build_items([task(scan_cost=5000)], [], SHIPPING_CATALOGUE, shipping=SHIPPING)
     assert lines[-1]["description"] == build_shipping_description(SHIPPING)
 
 
 def test_shipping_line_precedes_preserved_foreign_lines():
     existing = [{"line_item_id": "F1", "sku": "RETAIL", "item_order": 1}]
-    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE, shipping=SHIPPING)
+    lines = build_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE, shipping=SHIPPING)
     assert [line.get("item_id") or line["line_item_id"] for line in lines] == ["S", "SHIP-TU", "F1"]
 
 
 def test_no_shipping_emits_no_shipping_line():
-    lines = build_line_items([task(scan_cost=5000)], [], SHIPPING_CATALOGUE)
+    lines = build_items([task(scan_cost=5000)], [], SHIPPING_CATALOGUE)
     assert [line["item_id"] for line in lines] == ["S"]
 
 
@@ -679,8 +694,8 @@ def test_an_unowned_shipping_line_is_echoed_rather_than_deleted():
     # The project carries no shipping, but the quote already has a shipping
     # line — imported, or typed by hand in Books. Omitting it would DELETE it.
     existing = [{"line_item_id": "L9", "item_id": "SHIP-TU", "item_order": 5}]
-    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
-    assert lines[-1] == {"line_item_id": "L9", "item_order": 2}
+    lines = build_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
+    assert lines[-1] == {"line_item_id": "L9", "item_order": 3}
 
 
 def test_detaching_a_shipment_drops_a_recognised_island_line():
@@ -697,7 +712,7 @@ def test_detaching_a_shipment_drops_a_recognised_island_line():
             "description": "Nom: Jean-Pierre DUPONT\nTéléphone: +689-89645864\nÎle: Rangiroa",
         }
     ]
-    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
+    lines = build_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
     assert [line["item_id"] for line in lines] == ["S"]
     assert "L9" not in [line.get("line_item_id") for line in lines]
 
@@ -715,14 +730,14 @@ def test_detaching_a_shipment_still_echoes_an_unrecognised_island_line():
             "description": "Nom: Jean DUPONT\nÎle: Atlantide",
         }
     ]
-    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
-    assert lines[-1] == {"line_item_id": "L9", "item_order": 2}
+    lines = build_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
+    assert lines[-1] == {"line_item_id": "L9", "item_order": 3}
 
 
 def test_the_projects_own_shipping_replaces_any_existing_shipping_line():
     # One project, one shipping line — never two.
     existing = [{"line_item_id": "L9", "item_id": "SHIP-TU", "item_order": 5}]
-    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE, shipping=SHIPPING)
+    lines = build_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE, shipping=SHIPPING)
     assert [line.get("item_id") or line["line_item_id"] for line in lines] == ["S", "SHIP-TU"]
 
 
@@ -733,8 +748,8 @@ def test_a_labour_line_is_echoed_when_no_task_prices_labour():
     omitting it here would silently DELETE a real charge from a customer's
     estimate. No task prices labour -> echo it."""
     existing = [{"line_item_id": "L7", "item_id": "MO", "sku": "PM-CM-D", "item_order": 5}]
-    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
-    assert lines[-1] == {"line_item_id": "L7", "item_order": 2}
+    lines = build_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
+    assert lines[-1] == {"line_item_id": "L7", "item_order": 3}
 
 
 def test_a_labour_line_is_echoed_by_its_sku_when_the_item_id_is_not_ours():
@@ -742,8 +757,8 @@ def test_a_labour_line_is_echoed_by_its_sku_when_the_item_id_is_not_ours():
     hand-typed line may point at a different Books item that still carries a
     PM-CM SKU. The SKU alone is enough to recognise it."""
     existing = [{"line_item_id": "L7", "item_id": "66407000001604625", "sku": "PM-CM-VENTE", "item_order": 5}]
-    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
-    assert lines[-1] == {"line_item_id": "L7", "item_order": 2}
+    lines = build_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
+    assert lines[-1] == {"line_item_id": "L7", "item_order": 3}
 
 
 def test_the_projects_own_labour_replaces_any_existing_labour_line():
@@ -752,7 +767,7 @@ def test_the_projects_own_labour_replaces_any_existing_labour_line():
     never two."""
     existing = [{"line_item_id": "L7", "item_id": "MO", "sku": "PM-CM-D", "item_order": 5}]
     priced = task(maindoeuvre_cost=4000.0, maindoeuvre_description="Pose et réglage sur site")
-    lines = build_line_items([priced], existing, SHIPPING_CATALOGUE)
+    lines = build_items([priced], existing, SHIPPING_CATALOGUE)
     assert [line.get("item_id") or line["line_item_id"] for line in lines] == ["MO"]
     assert "line_item_id" not in lines[0]
 
@@ -763,7 +778,7 @@ def test_a_labour_step_quoted_free_still_counts_as_priced_labour():
     own 0 XPF one and leave the quote with two labour lines."""
     existing = [{"line_item_id": "L7", "item_id": "MO", "sku": "PM-CM-D", "item_order": 5}]
     free = task(maindoeuvre_cost=0.0, maindoeuvre_description="Geste commercial")
-    lines = build_line_items([free], existing, SHIPPING_CATALOGUE)
+    lines = build_items([free], existing, SHIPPING_CATALOGUE)
     assert [line.get("item_id") or line["line_item_id"] for line in lines] == ["MO"]
 
 
@@ -811,18 +826,18 @@ def test_discount_of_reads_each_service_independently():
 
 def test_build_line_items_emits_quantity_and_discount_on_a_machining_line():
     t = task(title="Support", usinage_cost=36000.0, usinage_quantity=3, usinage_discount_pct=10.0)
-    lines = build_line_items([t], [], CATALOGUE)
+    lines = build_items([t], [], CATALOGUE)
     usinage = next(line for line in lines if line["item_id"] == CATALOGUE.usinage_item_id)
     assert usinage["rate"] == 12000
     assert usinage["quantity"] == 3
     assert usinage["discount"] == "10%"
-    assert usinage["header_name"] == "Support"
+    assert "header_name" not in usinage  # Books refuses it; the title is the header row's
 
 
 def test_build_line_items_omits_a_zero_discount():
     """A literal '0%' would put a pointless discount column on the PDF."""
     t = task(usinage_cost=1000.0, usinage_discount_pct=None)
-    lines = build_line_items([t], [], CATALOGUE)
+    lines = build_items([t], [], CATALOGUE)
     usinage = next(line for line in lines if line["item_id"] == CATALOGUE.usinage_item_id)
     assert "discount" not in usinage
 
@@ -835,7 +850,7 @@ def test_build_line_items_still_emits_printing_the_same_way():
         impression_discount_pct=10.0,
         material="PETG",
     )
-    lines = build_line_items([t], [], CATALOGUE)
+    lines = build_items([t], [], CATALOGUE)
     impression = next(line for line in lines if line["item_id"] == CATALOGUE.impression_item_id)
     assert impression["rate"] == 500
     assert impression["quantity"] == 3
@@ -844,13 +859,13 @@ def test_build_line_items_still_emits_printing_the_same_way():
 
 def test_labour_line_is_one_unit_at_the_full_cost():
     t = task(title="Pose", maindoeuvre_cost=4000.0, maindoeuvre_description="Pose et réglage sur site")
-    lines = build_line_items([t], [], CATALOGUE)
+    lines = build_items([t], [], CATALOGUE)
     line = next(item for item in lines if item.get("item_id") == CATALOGUE.maindoeuvre_item_id)
     assert line["rate"] == 4000
     assert line["quantity"] == 1
     assert line["description"] == "Info: Pose et réglage sur site"
     assert "discount" not in line
-    assert line["header_name"] == "Pose"
+    assert "header_name" not in line  # Books refuses it; the title is the header row's
 
 
 def test_labour_carries_no_fichier_non_cede_boilerplate():

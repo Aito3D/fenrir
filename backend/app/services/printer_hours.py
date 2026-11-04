@@ -7,11 +7,14 @@ rule lives in the route, this module provides the pieces.
 """
 
 import asyncio
+import contextlib
 import logging
 from datetime import date, datetime, timezone
 from typing import Literal
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -73,10 +76,23 @@ def _retire(db: AsyncSession, machine: HourMachine) -> None:
     """Unlink and retire ``machine``, logging a ``retired`` event the first time and dropping its trust state."""
     if not machine.retired:
         db.add(HourEvent(machine_id=machine.id, event_date=date.today(), kind="retired", label=machine.name))
+    if machine.printer_id is not None:
+        machine.retired_printer_id = machine.printer_id
     machine.printer_id = None
     machine.retired = True
     machine.calibrated_at = None
     machine.last_drift_hours = None
+
+
+async def retire_machine_of_printer(db: AsyncSession, printer_id: int) -> None:
+    """Retire the machine linked to ``printer_id`` (if any) before the printer row goes; no commit.
+
+    ``hour_machines.printer_id`` is ON DELETE SET NULL, so on PostgreSQL the sync would never see the old id.
+    """
+    machine = (await db.execute(select(HourMachine).where(HourMachine.printer_id == printer_id))).scalar_one_or_none()
+    if machine is not None:
+        _retire(db, machine)
+        await db.flush()
 
 
 async def _sync_machines(db: AsyncSession) -> None:
@@ -119,55 +135,67 @@ async def ensure_hour_machines(db: AsyncSession) -> list[HourMachine]:
     return list(result.scalars().all())
 
 
+async def _insert_event(db: AsyncSession, event: HourEvent) -> None:
+    """Insert one event in a savepoint; a unique-index hit means a concurrent overview already wrote it."""
+    with contextlib.suppress(IntegrityError):
+        async with db.begin_nested():
+            db.add(event)
+
+
 async def sync_events(db: AsyncSession, machines: list[HourMachine]) -> None:
     """Mirror maintenance history into ``hour_events`` and keep each machine's one ``added`` event on ``added_on``.
 
     Idempotent; never deletes; commits.
     """
     for machine in machines:
+        # Plain values: a rolled-back savepoint in _insert_event may expire ORM rows.
+        machine_id, printer_id, name = machine.id, machine.printer_id, machine.name
         known = (
-            await db.execute(select(HourEvent.kind, HourEvent.source_id).where(HourEvent.machine_id == machine.id))
+            await db.execute(select(HourEvent.kind, HourEvent.source_id).where(HourEvent.machine_id == machine_id))
         ).all()
         seen_sources = {src for kind, src in known if kind == "maintenance"}
-        if machine.printer_id is not None:
+        if printer_id is not None:
             rows = await db.execute(
                 select(MaintenanceHistory.id, MaintenanceHistory.performed_at, MaintenanceType.name)
                 .join(PrinterMaintenance, PrinterMaintenance.id == MaintenanceHistory.printer_maintenance_id)
                 .join(MaintenanceType, MaintenanceType.id == PrinterMaintenance.maintenance_type_id)
-                .where(PrinterMaintenance.printer_id == machine.printer_id)
+                .where(PrinterMaintenance.printer_id == printer_id)
             )
             for history_id, performed_at, type_name in rows.all():
                 if history_id not in seen_sources:
-                    db.add(
+                    await _insert_event(
+                        db,
                         HourEvent(
-                            machine_id=machine.id,
+                            machine_id=machine_id,
                             event_date=performed_at.date(),
                             kind="maintenance",
                             label=type_name,
                             source_id=history_id,
-                        )
+                        ),
                     )
         first_manual = (
             await db.execute(
                 select(func.min(HourReading.reading_date)).where(
-                    HourReading.machine_id == machine.id, HourReading.source == SOURCE_MANUAL
+                    HourReading.machine_id == machine_id, HourReading.source == SOURCE_MANUAL
                 )
             )
         ).scalar_one_or_none()
         printer_created = None
-        if machine.printer_id is not None:
+        if printer_id is not None:
             created = (
-                await db.execute(select(Printer.created_at).where(Printer.id == machine.printer_id))
+                await db.execute(select(Printer.created_at).where(Printer.id == printer_id))
             ).scalar_one_or_none()
             printer_created = created.date() if created else None
         joined = added_on(machine, first_manual, printer_created)
         if joined is None:
             continue
         existing = (
-            await db.execute(select(HourEvent).where(HourEvent.machine_id == machine.id, HourEvent.kind == "added"))
-        ).scalar_one_or_none()
+            (await db.execute(select(HourEvent).where(HourEvent.machine_id == machine_id, HourEvent.kind == "added")))
+            .scalars()
+            .first()
+        )
         if existing is None:
-            db.add(HourEvent(machine_id=machine.id, event_date=joined, kind="added", label=machine.name))
+            await _insert_event(db, HourEvent(machine_id=machine_id, event_date=joined, kind="added", label=name))
         elif existing.event_date != joined:
             existing.event_date = joined  # an older reading arrived: the tick follows added_on
     await db.commit()
@@ -220,27 +248,31 @@ async def upsert_reading(
     raw_hours: float | None = None,
 ) -> None:
     """Insert or replace the (machine, date, source) reading; ``hours=None`` deletes it. No commit."""
-    result = await db.execute(
-        select(HourReading).where(
-            HourReading.machine_id == machine_id,
-            HourReading.reading_date == reading_date,
-            HourReading.source == source,
-        )
+    query = select(HourReading).where(
+        HourReading.machine_id == machine_id,
+        HourReading.reading_date == reading_date,
+        HourReading.source == source,
     )
-    existing = result.scalar_one_or_none()
+    existing = (await db.execute(query)).scalar_one_or_none()
     if hours is None:
         if existing is not None:
             await db.delete(existing)
         return
     if existing is None:
-        db.add(
-            HourReading(
-                machine_id=machine_id, reading_date=reading_date, source=source, hours=hours, raw_hours=raw_hours
+        # One INSERT .. ON CONFLICT in the caller's transaction (a SQLite savepoint here would commit on its own);
+        # a concurrent writer (hourly snapshot vs. save_readings) that inserted the row first is overwritten.
+        insert = pg_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
+        await db.execute(
+            insert(HourReading)
+            .values(machine_id=machine_id, reading_date=reading_date, source=source, hours=hours, raw_hours=raw_hours)
+            .on_conflict_do_update(
+                index_elements=["machine_id", "reading_date", "source"],
+                set_={"hours": hours, "raw_hours": raw_hours, "updated_at": func.now()},
             )
         )
-    else:
-        existing.hours = hours
-        existing.raw_hours = raw_hours
+        return
+    existing.hours = hours
+    existing.raw_hours = raw_hours
 
 
 async def machine_for_printer(db: AsyncSession, printer_id: int) -> HourMachine:
@@ -262,7 +294,11 @@ async def calibrate_machine(
     """
     counter_before = current_hours(printer.runtime_seconds, printer.print_hours_offset)
     first_time = machine.calibrated_at is None
-    same_day = machine.calibrated_at is not None and machine.calibrated_at.date() == datetime.now(timezone.utc).date()
+    # calibrated_at is naive UTC; ``today`` (the reading and event date) is the server's local date, so compare in local
+    same_day = (
+        machine.calibrated_at is not None
+        and machine.calibrated_at.replace(tzinfo=timezone.utc).astimezone().date() == today
+    )
     recalibrate_printer(printer, total_hours)
     actual = current_hours(printer.runtime_seconds, printer.print_hours_offset)
     machine.calibrated_at = datetime.now(timezone.utc).replace(tzinfo=None)

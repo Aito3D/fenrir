@@ -733,6 +733,41 @@ def test_header_name_wins_the_title_and_info_becomes_the_service_description():
     assert tasks[0]["scan_description"] == "Scanner la pièce"
 
 
+def test_a_header_row_titles_the_task_after_it():
+    """The shape Books stores since the end of October 2026 (quote DEV26-2944):
+    each header is its own row named after the task, and the item lines carry
+    an empty ``header_name``. The row's name must become the task title, or a
+    re-imported quote loses every title."""
+    estimate = _estimate(
+        [
+            {
+                "line_item_category": "header",
+                "item_id": "",
+                "header_name": "",
+                "header_id": "",
+                "name": "Capot refroidisseur",
+                "rate": 0,
+                "quantity": 1,
+            },
+            _line("P3DSCAN", 3500, description="*Fichier non cédé*", header_name=""),
+            _line("P3DMOD", 4500, description="*Fichier non cédé*", header_name=""),
+            {
+                "line_item_category": "header",
+                "item_id": "",
+                "header_name": "",
+                "header_id": "",
+                "name": "Hélice",
+                "rate": 0,
+                "quantity": 1,
+            },
+            _line("P3DMOD", 4500, description="*Fichier non cédé*", header_name=""),
+        ]
+    )
+    preview = build_preview(estimate, None, "https://x")
+    assert [task["title"] for task in preview["tasks"]] == ["Capot refroidisseur", "Hélice"]
+    assert preview["skipped_lines"] == []
+
+
 def test_legacy_headerless_quote_still_titles_from_info():
     # Old-format quote: no header, Info: carries the title (the pre-rework
     # export wrote it that way). The fallback must keep these importable.

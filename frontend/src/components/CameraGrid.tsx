@@ -34,6 +34,8 @@ export interface GridPrinter {
   name: string;
   model: string | null;
   connected: boolean;
+  /** Out of service (`is_active === false`): shown as Maintenance, not Offline. */
+  maintenance?: boolean;
   state: string | null;
   progress: number;
   remainingTime: number | null;
@@ -477,6 +479,7 @@ export function CameraGrid({
             printerId: p.id,
             printerName: p.name,
             connected: p.connected,
+            maintenance: p.maintenance,
             state: p.state,
             progress: p.progress,
             remainingTime: p.remainingTime,

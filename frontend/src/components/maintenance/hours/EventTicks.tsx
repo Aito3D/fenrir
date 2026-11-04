@@ -1,8 +1,7 @@
 import { usePlotArea, useXAxisDomain, useYAxisDomain } from 'recharts';
 import type { HourEvent, HourMachine } from '../../../api/client';
-import { dayNumber, seriesPoints, valueAt, type MachineSeries } from '../../../utils/hoursSeries';
+import { DAY_MS, dayNumber, seriesPoints, valueAt, type MachineSeries } from '../../../utils/hoursSeries';
 
-const DAY_MS = 86_400_000;
 const TICK_H = 10;
 
 interface EventTicksProps {

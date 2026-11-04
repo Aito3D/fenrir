@@ -1,4 +1,4 @@
-import { AITO3D_SENDER } from './shippingLabel';
+import { AITO3D_SENDER } from './aitoSender';
 
 /** The shop as a place, for the tracking page's "Nous trouver" panel. Every
  *  link is derived from `AITO3D_SENDER`, so the address, phone and handle

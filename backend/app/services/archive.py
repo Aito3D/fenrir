@@ -1294,6 +1294,18 @@ def _list_extra_data_expr():
     return type_coerce(expr, JSON)
 
 
+def printed_on_clause(printer_id: int):
+    """Archives printed on ``printer_id``, as a WHERE clause: the archive's
+    own printer (its latest print's) or any print's, a print running now
+    included (archive redesign P4)."""
+    from backend.app.models.print_log import PrintLogEntry
+
+    # The table, not the entity: the ORM hides open runs from every read.
+    runs = PrintLogEntry.__table__
+    printed_on = select(runs.c.archive_id).where(runs.c.archive_id.is_not(None), runs.c.printer_id == printer_id)
+    return or_(PrintArchive.printer_id == printer_id, PrintArchive.id.in_(printed_on))
+
+
 class ArchiveService:
     """Service for archiving print jobs."""
 
@@ -1754,6 +1766,9 @@ class ArchiveService:
                     existing.plate_id = plate_id
                 if library_file_id is not None:
                     existing.library_file_id = library_file_id
+                from backend.app.services.print_cost_estimate import refresh_plate_estimates
+
+                refresh_plate_estimates(existing)
                 await self.db.commit()
                 await self.db.refresh(existing)
                 return existing
@@ -1805,6 +1820,9 @@ class ArchiveService:
                 content_verified=content_verified,
                 plate_id=plate_id,
             )
+            from backend.app.services.print_cost_estimate import refresh_plate_estimates
+
+            refresh_plate_estimates(archive)
 
             self.db.add(archive)
             committing = True
@@ -1910,7 +1928,13 @@ class ArchiveService:
             )
 
         if printer_id:
-            query = query.where(PrintArchive.printer_id == printer_id)
+            # Printed on it: the archive's own printer (its latest print's) or
+            # any print's, a print running now included (archive redesign). A
+            # printer outside the caller's scope finds nothing: its prints are
+            # not theirs to see.
+            if printer_scope is not None and not printer_scope.allows(printer_id):
+                return []
+            query = query.where(printed_on_clause(printer_id))
 
         if project_id:
             query = query.where(PrintArchive.project_id == project_id)

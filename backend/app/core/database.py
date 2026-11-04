@@ -358,6 +358,7 @@ NON_FK_ID_REFERENCES: dict[str, tuple[tuple[str, str], ...]] = {
         ("notification_live_activities", "printer_id"),
         ("notification_lock_screen_widgets", "printer_id"),
         ("aito_tasks", "impression_printer_id"),  # Fenrir
+        ("hour_machines", "retired_printer_id"),  # Fenrir
     ),
     "api_keys": (("auth_ephemeral_tokens", "api_key_id"),),
     # A merged archive's id keeps finding the archive it went into after its
@@ -645,6 +646,7 @@ async def init_db():
         github_backup,
         group,
         kprofile_note,
+        label_template,
         library,
         local_preset,
         location,
@@ -1375,6 +1377,72 @@ async def _reclassify_sliced_3mf_library_files(conn) -> None:
         if reclassified:
             logger.info(
                 "[#2993] Re-typed %d library file(s) from source 3MF to sliced -- they carry G-code",
+                reclassified,
+            )
+
+        # Marked done even when nothing matched, so the scan never repeats.
+        await conn.execute(
+            text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
+            {"k": flag, "v": "true"},
+        )
+
+
+async def _reclassify_unsliced_gcode_3mf_library_files(conn) -> None:
+    """Re-type library rows named ``.gcode.3mf`` that hold no G-code (#3435).
+
+    The reverse of #2993's pass: ``file_type`` trusted a ``.gcode.3mf`` name,
+    and Studio saves an unsliced project under whatever name it is given. Such
+    a file was offered Print and then refused at the queue, with a cost centre
+    as "Estimated cost is required for cost center prints". The forward fix
+    classifies on content; this pass reaches the rows already stored.
+
+    One-shot and local files only, for the same reasons as #2993's pass. Only
+    a zip that opens and holds no G-code is re-typed: a missing file is left
+    as it is.
+    """
+    from pathlib import Path
+
+    from sqlalchemy import text
+
+    from backend.app.utils.threemf_tools import is_unsliced_3mf
+
+    flag = "_backfill_3435_unsliced_gcode_3mf_type_done"
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+
+        rows = (
+            await conn.execute(
+                text(
+                    "SELECT id, file_path FROM library_files "
+                    "WHERE file_type = 'gcode.3mf' AND deleted_at IS NULL "
+                    "AND file_path IS NOT NULL AND file_path <> '' "
+                    "AND (is_external IS NULL OR is_external = :false_val)"
+                ),
+                {"false_val": False},
+            )
+        ).fetchall()
+
+        reclassified = 0
+        for row in rows:
+            path = Path(row.file_path)
+            if not path.is_absolute():
+                path = settings.base_dir / row.file_path
+            if not is_unsliced_3mf(path):
+                continue
+            await conn.execute(
+                text("UPDATE library_files SET file_type = '3mf' WHERE id = :id"),
+                {"id": row.id},
+            )
+            reclassified += 1
+
+        if reclassified:
+            logger.info(
+                "[#3435] Re-typed %d library file(s) named .gcode.3mf to source 3MF -- they hold no G-code",
                 reclassified,
             )
 
@@ -4346,15 +4414,23 @@ async def _run_migrations(conn):
     # family was split between two values depending on how it was ingested.
     # Going forward `classify_file_type()` is canonical; this backfill flips
     # existing legacy `3mf` rows whose filename ends in `.gcode.3mf` to the
-    # canonical compound name. Idempotent (post-update rows no longer match
-    # `file_type = '3mf'`) and dialect-neutral (`LOWER` + `LIKE` work the
+    # canonical compound name. Dialect-neutral (`LOWER` + `LIKE` work the
     # same under SQLite and Postgres).
-    await conn.execute(
-        text(
-            "UPDATE library_files SET file_type = 'gcode.3mf' "
-            "WHERE file_type = '3mf' AND LOWER(filename) LIKE '%.gcode.3mf'"
+    #
+    # One-shot since #3435: a `.gcode.3mf` holding no G-code is now a `3mf`
+    # on purpose (an unsliced project under that name), and re-running this
+    # on every boot turned those rows back into printable files.
+    _flag_1600 = "_backfill_1600_gcode_3mf_type_done"
+    if not (
+        await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": _flag_1600})
+    ).scalar_one_or_none():
+        await conn.execute(
+            text(
+                "UPDATE library_files SET file_type = 'gcode.3mf' "
+                "WHERE file_type = '3mf' AND LOWER(filename) LIKE '%.gcode.3mf'"
+            )
         )
-    )
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": _flag_1600, "v": "true"})
 
     # Migration: Add per-user Bambu Cloud credential columns
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_token VARCHAR(500)")
@@ -5935,6 +6011,7 @@ async def _run_migrations(conn):
     # named `Foo.3mf` filed as a source-only project (#2993). Re-reads the zip
     # already on disk. One-shot, internal rows only; see the function.
     await _reclassify_sliced_3mf_library_files(conn)
+    await _reclassify_unsliced_gcode_3mf_library_files(conn)
 
     # Migration: Add controls_printer_power to smart_plugs (#2629). Marks
     # whether a plug actually feeds the printer's own power — only then may an
@@ -6785,6 +6862,8 @@ async def _run_migrations(conn):
     await _migrate_location_ha_sensor_unique_binding(conn)
     await _migrate_printer_maintenance_unique(conn)
     await _migrate_printer_hours_columns(conn)
+    await _migrate_hour_events_unique(conn)
+    await _migrate_hour_machines_retired_printer(conn)
 
     # Migration: the stock alert templates name the colour and subtype (#2955).
     # The forecast groups by colour, so two colours of one product would
@@ -6803,6 +6882,10 @@ async def _run_migrations(conn):
     # A plain UPDATE guarded on the old text, so an edited template is left
     # alone (a {password} in it renders as nothing).
     await _migrate_welcome_template_without_password(conn)
+
+    # Migration: use the same AI detection template for either provider (#3236).
+    # Seeding only inserts missing templates; preserve any customized wording.
+    await _migrate_ai_failure_detection_template(conn)
 
     # Migration: supplier master list + spool assignments (#2988).
     # create_all() covers fresh installs; this covers upgrades.
@@ -7160,6 +7243,11 @@ async def _run_migrations(conn):
         conn,
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_print_log_entries_confirm_token ON print_log_entries (confirm_token)",
     )
+
+    # Migration: each plate's estimate on the archive (#3375). Nullable, no
+    # default; filled from the archived 3MF after startup
+    # (``print_cost_estimate.fill_plate_estimates``).
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN plate_estimates JSON")
 
     await _migrate_auth_datetimes_to_timestamp(conn)
     await _migrate_add_missing_set_null_fks(conn)
@@ -8449,6 +8537,23 @@ async def _migrate_welcome_template_without_password(conn) -> None:
     )
 
 
+async def _migrate_ai_failure_detection_template(conn) -> None:
+    """Replace the legacy confidence-only AI body while preserving custom text."""
+    from sqlalchemy import text
+
+    from backend.app.models.notification_template import DEFAULT_TEMPLATES
+
+    default = next(t for t in DEFAULT_TEMPLATES if t["event_type"] == "ai_failure_detection")
+    await conn.execute(
+        text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
+        {
+            "new": default["body_template"],
+            "et": "ai_failure_detection",
+            "old": "{printer}: {task_name}\nConfidence: {confidence}\nAction taken: {action}",
+        },
+    )
+
+
 async def _migrate_location_ha_sensor_unique_binding(conn) -> None:
     """Unique index on location_ha_sensors (location_id, entity_id) (#2824).
 
@@ -8510,6 +8615,49 @@ async def _migrate_printer_hours_columns(conn) -> None:
                 "(SELECT id FROM printers WHERE print_hours_offset > 0)"
             )
         )
+
+
+async def _migrate_hour_events_unique(conn) -> None:
+    """Partial unique indexes on hour_events: one 'added' per machine, one mirror per maintenance entry.
+
+    sync_events inserts both after a read with no constraint, so two concurrent
+    overviews could each insert one. Same names and shape as the Indexes in the
+    model. Duplicates are removed first (the lowest id is kept), since CREATE
+    UNIQUE INDEX refuses to build over them.
+    """
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                "DELETE FROM hour_events WHERE kind = 'added' AND id NOT IN ("
+                "SELECT MIN(id) FROM hour_events WHERE kind = 'added' GROUP BY machine_id)"
+            )
+        )
+        await conn.execute(
+            text(
+                "DELETE FROM hour_events WHERE kind = 'maintenance' AND source_id IS NOT NULL AND id NOT IN ("
+                "SELECT MIN(id) FROM hour_events WHERE kind = 'maintenance' GROUP BY machine_id, source_id)"
+            )
+        )
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_hour_events_added ON hour_events (machine_id) WHERE kind = 'added'",
+    )
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_hour_events_maintenance "
+        "ON hour_events (machine_id, source_id) WHERE kind = 'maintenance'",
+    )
+
+
+async def _migrate_hour_machines_retired_printer(conn) -> None:
+    """hour_machines.retired_printer_id: the last printer of a retired machine, scoping its history.
+
+    No backfill: machines retired before this column already lost their printer id.
+    """
+    if not await _table_has_column(conn, "hour_machines", "retired_printer_id"):
+        await _safe_execute(conn, "ALTER TABLE hour_machines ADD COLUMN retired_printer_id INTEGER")
 
 
 async def _migrate_printer_maintenance_unique(conn) -> None:

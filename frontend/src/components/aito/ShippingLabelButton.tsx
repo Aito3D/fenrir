@@ -2,7 +2,6 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, Printer } from 'lucide-react';
 import { api, type AitoProject } from '../../api/client';
-import { buildShippingLabelHtml, shippingLabelFor } from '../../utils/shippingLabel';
 import { usePrintBlob } from './usePrintBlob';
 import { useAitoInvoice } from './useAitoInvoice';
 import aito3dLogo from '../../assets/aito3d_logo.png';
@@ -56,7 +55,10 @@ export function ShippingLabelButton({ project }: { project: AitoProject }) {
   if (!hasLabel) return null;
 
   const printLabel = () =>
-    print(() => {
+    print(async () => {
+      // The label module renders with react-dom/server and draws a QR code:
+      // 61 KB gzipped that belong to this click, not to the board's chunk.
+      const { buildShippingLabelHtml, shippingLabelFor } = await import('../../utils/shippingLabel');
       const label = shippingLabelFor(project, servicesQuery.data?.services ?? [], reference);
       // Cannot be null past the render gate above; the throw lands on the
       // hook's failure toast rather than a silent no-op if that ever drifts.

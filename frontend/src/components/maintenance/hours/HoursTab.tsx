@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -7,7 +7,7 @@ import { api, type HourMachine } from '../../../api/client';
 import { useCurrency } from '../../../hooks/useCurrency';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
-import { dayNumber, fleetFacts, gapInfo, machineColors, machineSeries, railOrder, ratePerMonth, seriesPoints } from '../../../utils/hoursSeries';
+import { fleetFacts, gapInfo, isoDayFormatter, machineColors, machineSeries, railOrder, ratePerMonth, seriesPoints } from '../../../utils/hoursSeries';
 import { Button } from '../../Button';
 import { Card, CardContent } from '../../Card';
 import { ConfirmModal } from '../../ConfirmModal';
@@ -49,6 +49,9 @@ export function HoursTab() {
   const [formDate, setFormDate] = useState<string | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [passOpen, setPassOpen] = useState(false);
+  // One pass save at a time: the ref blocks a same-tick double click, the state disables the button.
+  const passSavingRef = useRef(false);
+  const [passSaving, setPassSaving] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const wantsPass = searchParams.get('pass') === '1';
   const closePass = useCallback(() => {
@@ -196,10 +199,10 @@ export function HoursTab() {
   const gap = gapInfo(machines, series, data.today);
   const facts = fleetFacts(machines, series, data.readings, data.today, data.due_machine_ids);
   const paces = new Map(machines.map((m) => [m.id, ratePerMonth(seriesPoints(series.get(m.id)!), data.today)]));
-  const dayFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' });
+  const dayFmt = isoDayFormatter(i18n.language);
   const fleetLine = t('maintenance.hours.fleetLine', {
     machines: machines.length,
-    date: gap.lastDate ? dayFmt.format(dayNumber(gap.lastDate) * 86_400_000) : '—',
+    date: gap.lastDate ? dayFmt(gap.lastDate) : '—',
   });
   const focused = machines.find((m) => m.id === focusId) ?? null;
   const panelMachine = machines.find((m) => m.id === panelId) ?? null;
@@ -360,6 +363,7 @@ export function HoursTab() {
           color={colors.get(panelMachine.id) ?? ''}
           currency={currency}
           canEdit={canEdit}
+          canDelete={canDelete}
           onEditDate={setFormDate}
           onAddEvent={(machineId, body) => addEvent.mutate({ machineId, body })}
           onDeleteEvent={(id) => deleteEvent.mutate(id)}
@@ -386,14 +390,21 @@ export function HoursTab() {
           readings={data.readings}
           today={data.today}
           colors={colors}
-          isSaving={saveReadings.isPending}
+          isSaving={saveReadings.isPending || passSaving}
           onSave={async (entries) => {
-            // The pass may have crossed midnight: save under the server's current date.
+            if (passSavingRef.current) return;
+            passSavingRef.current = true;
+            setPassSaving(true);
             try {
+              // The pass may have crossed midnight: save under the server's current date.
               const fresh = await queryClient.fetchQuery({ queryKey: ['maintenanceHours'], queryFn: api.getPrinterHours, staleTime: 0 });
-              saveReadings.mutate({ date: fresh.today, entries });
+              // The mutation's onError already toasts a failed save.
+              await saveReadings.mutateAsync({ date: fresh.today, entries }).catch(() => undefined);
             } catch (e) {
               showToast((e as Error).message, 'error');
+            } finally {
+              passSavingRef.current = false;
+              setPassSaving(false);
             }
           }}
           onClose={closePass}
@@ -413,7 +424,7 @@ export function HoursTab() {
         <ConfirmModal
           title={t('maintenance.hours.deleteTitle')}
           message={t('maintenance.hours.deleteMessage', {
-            date: new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' }).format(new Date(`${confirmDate}T00:00:00Z`)),
+            date: isoDayFormatter(i18n.language)(confirmDate),
           })}
           confirmText={t('common.delete')}
           variant="danger"

@@ -4,14 +4,16 @@ import logging
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.maintenance import notify_maintenance_attention
 from backend.app.api.routes.settings import set_setting
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import ALL_PRINTERS, PrinterScope
 from backend.app.models.maintenance import HourEvent, HourMachine, HourReading
 from backend.app.models.printer import Printer
 from backend.app.models.user import User
@@ -19,6 +21,7 @@ from backend.app.schemas.maintenance import (
     HourEventCreate,
     HourEventOut,
     HourImportBody,
+    HourImportReading,
     HourImportResult,
     HourMachineOut,
     HourMachineUpdate,
@@ -80,10 +83,27 @@ async def _machine_out(
     )
 
 
-async def _overview(db: AsyncSession, today: date | None = None) -> HoursOverview:
+def _scope_printer_id(m: HourMachine) -> int | None:
+    """The printer whose scope covers ``m``: its own, else the one it retired from (None = visible to all)."""
+    return m.printer_id if m.printer_id is not None else m.retired_printer_id
+
+
+def _reject_taken_name(name: str, others: list[HourMachine], printer_scope: PrinterScope) -> None:
+    """Names are unique fleet-wide; a clash only with machines outside the caller's scope must not confirm the name."""
+    clashes = [m for m in others if m.name.casefold() == name.strip().casefold()]
+    if any(printer_scope.allows(_scope_printer_id(m)) for m in clashes):
+        raise HTTPException(status_code=422, detail=f"A machine named {name} already exists")
+    if clashes:
+        raise HTTPException(status_code=422, detail="This machine name is not available")
+
+
+async def _overview(
+    db: AsyncSession, today: date | None = None, printer_scope: PrinterScope = ALL_PRINTERS
+) -> HoursOverview:
     today = today or date.today()
     machines = await ensure_hour_machines(db)
-    await sync_events(db, machines)
+    await sync_events(db, machines)  # syncs every machine; only the response is scoped
+    machines = [m for m in machines if printer_scope.allows(_scope_printer_id(m))]
     rows = (
         await db.execute(select(Printer.id, Printer.runtime_seconds, Printer.print_hours_offset, Printer.created_at))
     ).all()
@@ -98,6 +118,9 @@ async def _overview(db: AsyncSession, today: date | None = None) -> HoursOvervie
         .all()
     )
     events = (await db.execute(select(HourEvent).order_by(HourEvent.event_date, HourEvent.id))).scalars().all()
+    in_scope_ids = {m.id for m in machines}
+    readings = [r for r in readings if r.machine_id in in_scope_ids]
+    events = [e for e in events if e.machine_id in in_scope_ids]
     manual: dict[int, list[HourReading]] = {}
     for r in readings:
         if r.source == SOURCE_MANUAL:
@@ -127,8 +150,9 @@ def _reject_future(reading_date: date, today: date | None = None) -> None:
 async def get_hours(
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
-    return await _overview(db)
+    return await _overview(db, printer_scope=printer_scope)
 
 
 @router.post("/readings", response_model=HoursOverview)
@@ -136,6 +160,7 @@ async def save_readings(
     body: HourReadingBatch,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Upsert one date's manual readings. Readings dated today recalibrate their printer's counter."""
     today = date.today()
@@ -147,7 +172,7 @@ async def save_readings(
     machines = {m.id: m for m in (await db.execute(select(HourMachine).where(HourMachine.id.in_(ids)))).scalars()}
     for machine_id in ids:
         m = machines.get(machine_id)
-        if m is None:
+        if m is None or not printer_scope.allows(_scope_printer_id(m)):
             raise HTTPException(status_code=422, detail=f"Unknown machine {machine_id}")
         if m.retired:
             raise HTTPException(status_code=422, detail=f"{m.name} is retired; correct its history by pasting")
@@ -179,7 +204,7 @@ async def save_readings(
 
     for printer_id, printer_name in recalibrated:
         await notify_maintenance_attention(db, printer_id, printer_name)
-    return await _overview(db, today)
+    return await _overview(db, today, printer_scope)
 
 
 @router.delete("/readings", response_model=HoursOverview)
@@ -187,13 +212,16 @@ async def delete_readings(
     reading_date: date,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Delete every manual reading on a date; Fenrir's auto snapshots stay."""
-    await db.execute(
-        delete(HourReading).where(HourReading.reading_date == reading_date, HourReading.source == SOURCE_MANUAL)
-    )
+    stmt = delete(HourReading).where(HourReading.reading_date == reading_date, HourReading.source == SOURCE_MANUAL)
+    in_scope = printer_scope.where(func.coalesce(HourMachine.printer_id, HourMachine.retired_printer_id))
+    if in_scope is not None:  # restricted caller: only machines of their printers (and never-linked ones)
+        stmt = stmt.where(HourReading.machine_id.in_(select(HourMachine.id).where(in_scope)))
+    await db.execute(stmt)
     await db.commit()
-    return await _overview(db)
+    return await _overview(db, printer_scope=printer_scope)
 
 
 @router.post("/import", response_model=HourImportResult)
@@ -201,18 +229,33 @@ async def import_readings(
     body: HourImportBody,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Bulk upsert manual readings from a pasted sheet, creating retired machines. Never recalibrates."""
     today = date.today()
+    created = await _stage_import(db, body, printer_scope, today)
+    try:
+        await db.commit()
+    except IntegrityError:
+        # A concurrent save or import wrote one of these readings first: redo the import once against its rows.
+        await db.rollback()
+        created = await _stage_import(db, body, printer_scope, today)
+        await db.commit()
+    return HourImportResult(machines_created=created, readings_written=len(body.readings))
+
+
+async def _stage_import(db: AsyncSession, body: HourImportBody, printer_scope: PrinterScope, today: date) -> int:
+    """Validate the sheet and stage its machines and readings (no commit); returns the machines created."""
     keys = [nm.key for nm in body.new_machines]
     if len(set(keys)) != len(keys):
         raise HTTPException(status_code=422, detail="Duplicate machine key")
+    names = [nm.name.strip().casefold() for nm in body.new_machines]
+    if len(set(names)) != len(names):
+        raise HTTPException(status_code=422, detail="Duplicate machine name")
     existing = await ensure_hour_machines(db)
-    existing_ids = {m.id for m in existing}
-    existing_names = {m.name.casefold() for m in existing}
+    existing_ids = {m.id for m in existing if printer_scope.allows(_scope_printer_id(m))}
     for nm in body.new_machines:
-        if nm.name.strip().casefold() in existing_names:
-            raise HTTPException(status_code=422, detail=f"A machine named {nm.name} already exists")
+        _reject_taken_name(nm.name, existing, printer_scope)
     for r in body.readings:
         if (r.machine_id is None) == (r.key is None):
             raise HTTPException(status_code=422, detail="Each reading needs exactly one of machine_id or key")
@@ -228,15 +271,40 @@ async def import_readings(
         db.add(machine)
         created[nm.key] = machine
     await db.flush()
+    rows: list[tuple[int, HourImportReading]] = []
     for r in body.readings:
         machine_id = r.machine_id if r.machine_id is not None else created[r.key].id
-        await upsert_reading(db, machine_id, r.reading_date, SOURCE_MANUAL, r.hours)
-    await db.commit()
-    return HourImportResult(machines_created=len(created), readings_written=len(body.readings))
+        rows.append((machine_id, r))
+    # one SELECT for the whole sheet (a date range, filtered by the dict) instead of one per cell
+    dates = [r.reading_date for _, r in rows]
+    result = await db.execute(
+        select(HourReading).where(
+            HourReading.source == SOURCE_MANUAL,
+            HourReading.machine_id.in_({machine_id for machine_id, _ in rows}),
+            HourReading.reading_date.between(min(dates), max(dates)),
+        )
+    )
+    by_key = {(h.machine_id, h.reading_date): h for h in result.scalars()}
+    for machine_id, r in rows:
+        reading = by_key.get((machine_id, r.reading_date))
+        if reading is None:  # later rows for the same (machine, date) reuse it, so the last one wins
+            by_key[(machine_id, r.reading_date)] = reading = HourReading(
+                machine_id=machine_id, reading_date=r.reading_date, source=SOURCE_MANUAL, hours=r.hours
+            )
+            db.add(reading)
+        reading.hours = r.hours
+        reading.raw_hours = None
+    return len(created)
 
 
-async def _retired_machine(db: AsyncSession, machine_id: int) -> HourMachine:
+async def _scoped_machine(db: AsyncSession, machine_id: int, printer_scope: PrinterScope) -> HourMachine | None:
+    """The machine, or None when missing or on a printer outside the caller's scope."""
     machine = await db.get(HourMachine, machine_id)
+    return machine if machine is not None and printer_scope.allows(_scope_printer_id(machine)) else None
+
+
+async def _retired_machine(db: AsyncSession, machine_id: int, printer_scope: PrinterScope) -> HourMachine:
+    machine = await _scoped_machine(db, machine_id, printer_scope)
     if machine is None:
         raise HTTPException(status_code=404, detail="Machine not found")
     if not machine.retired:
@@ -250,10 +318,11 @@ async def add_note_event(
     body: HourEventCreate,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Add a free-text note to a machine's timeline."""
     await ensure_hour_machines(db)
-    if await db.get(HourMachine, machine_id) is None:
+    if await _scoped_machine(db, machine_id, printer_scope) is None:
         raise HTTPException(status_code=404, detail="Machine not found")
     _reject_future(body.event_date)
     event = HourEvent(machine_id=machine_id, event_date=body.event_date, kind="note", label=body.label.strip())
@@ -267,11 +336,12 @@ async def add_note_event(
 async def delete_note_event(
     event_id: int,
     db: AsyncSession = Depends(get_db, scope="function"),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Delete a note; mirrored events (maintenance, calibration, ...) are not deletable."""
     event = await db.get(HourEvent, event_id)
-    if event is None:
+    if event is None or await _scoped_machine(db, event.machine_id, printer_scope) is None:
         raise HTTPException(status_code=404, detail="Event not found")
     if event.kind != "note":
         raise HTTPException(status_code=409, detail="Only notes can be deleted")
@@ -284,11 +354,14 @@ async def update_hour_settings(
     body: HourSettingsUpdate,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Set the reading reminder interval and return the refreshed overview."""
+    if not printer_scope.is_unrestricted:  # the interval is fleet-wide
+        raise HTTPException(status_code=403, detail="Changing the reading interval needs access to every printer")
     await set_setting(db, "hours_reading_interval_days", str(body.reading_interval_days))
     await db.commit()
-    return await _overview(db, date.today())
+    return await _overview(db, date.today(), printer_scope)
 
 
 @router.patch("/machines/{machine_id}", response_model=HourMachineOut)
@@ -297,13 +370,14 @@ async def update_machine(
     body: HourMachineUpdate,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     await ensure_hour_machines(db)
     changes = body.model_fields_set
     if changes & {"name", "model"}:
-        machine = await _retired_machine(db, machine_id)
+        machine = await _retired_machine(db, machine_id, printer_scope)
     else:
-        machine = await db.get(HourMachine, machine_id)
+        machine = await _scoped_machine(db, machine_id, printer_scope)
         if machine is None:
             raise HTTPException(status_code=404, detail="Machine not found")
     if "purchase_price" in changes:
@@ -311,14 +385,13 @@ async def update_machine(
     if "purchase_date" in changes:
         machine.purchase_date = body.purchase_date
     if body.name is not None:
-        others = (await db.execute(select(HourMachine.name).where(HourMachine.id != machine_id))).scalars()
-        if body.name.strip().casefold() in {n.casefold() for n in others}:
-            raise HTTPException(status_code=422, detail=f"A machine named {body.name} already exists")
+        others = (await db.execute(select(HourMachine).where(HourMachine.id != machine_id))).scalars().all()
+        _reject_taken_name(body.name, list(others), printer_scope)
         machine.name = body.name.strip()
     if body.model is not None:
         machine.model = body.model or None
     await db.commit()
-    overview = await _overview(db, date.today())
+    overview = await _overview(db, date.today(), printer_scope)
     return next(m for m in overview.machines if m.id == machine.id)
 
 
@@ -327,9 +400,10 @@ async def delete_machine(
     machine_id: int,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     await ensure_hour_machines(db)
-    machine = await _retired_machine(db, machine_id)
+    machine = await _retired_machine(db, machine_id, printer_scope)
     # SQLite does not enforce the FK cascade; remove the history explicitly.
     await db.execute(delete(HourReading).where(HourReading.machine_id == machine.id))
     await db.execute(delete(HourEvent).where(HourEvent.machine_id == machine.id))

@@ -363,3 +363,22 @@ describe('BillingCard deposit block once invoiced', () => {
     expect(screen.getByText('Deposit due')).toBeInTheDocument();
   });
 });
+
+describe('BillingCard expired quote', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('offers a refresh icon that extends the quote, and only while expired', async () => {
+    const extended = project({ quote_status: 'sent', quote_expiry_date: '2026-11-17' });
+    const spy = vi.spyOn(api, 'extendAitoQuote').mockResolvedValue(extended);
+    renderCard(project({ quote_status: 'expired' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Extend the quote by 15 days' }));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(12));
+  });
+
+  it('hides the icon on a quote that is not expired and for read-only users', () => {
+    renderCard(project({ quote_status: 'sent' }));
+    expect(screen.queryByRole('button', { name: 'Extend the quote by 15 days' })).not.toBeInTheDocument();
+    renderCard(project({ quote_status: 'expired' }), { canUpdate: false });
+    expect(screen.queryByRole('button', { name: 'Extend the quote by 15 days' })).not.toBeInTheDocument();
+  });
+});

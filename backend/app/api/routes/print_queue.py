@@ -76,6 +76,7 @@ from backend.app.services.print_cost_estimate import estimate_queue_source_cost
 # Fenrir: production traceability (projects as a PDM, phase 4).
 from backend.app.services.project_print_trace import PrintTraceError, record_queued, resolve_print_context
 from backend.app.services.queue_announcements import announce_queue_jobs_added
+from backend.app.services.queue_events import notify_queue_changed
 from backend.app.services.queue_item_printer import PRINTER_RESOLVED_DEFAULTS, drop_printer_resolved
 from backend.app.services.queue_position import lock_queue_positions, max_queue_position
 from backend.app.services.queue_trace_summary import attach_trace_summaries
@@ -85,6 +86,7 @@ from backend.app.utils.printer_models import (
 from backend.app.utils.threemf_tools import (
     extract_plate_metadata_from_3mf,
     extract_print_time_from_3mf,
+    is_unsliced_3mf,
 )
 
 logger = logging.getLogger(__name__)
@@ -677,6 +679,29 @@ def saved_slicer_ams_mapping(archive: PrintArchive | None, printer_id: int | Non
     return None
 
 
+def unsliced_file_message(filename: str) -> str:
+    return f"{filename} isn't sliced yet. Slice it first, then print the sliced file."
+
+
+def ensure_sliced(file_path: Path | None, filename: str) -> None:
+    """Refuse a 3MF that holds no G-code, whatever its name says (#3435).
+
+    A project saved from Studio as ``Foo.gcode.3mf`` without slicing was taken
+    for a printable file. With a cost centre it was refused for the missing
+    estimate -- "Estimated cost is required for cost center prints", which
+    says nothing about the cause -- and without one it went to the printer.
+    """
+    if file_path is not None and file_path.name.lower().endswith(".3mf") and is_unsliced_3mf(file_path):
+        raise HTTPException(400, unsliced_file_message(filename))
+
+
+def library_file_disk_path(library_file: LibraryFile) -> Path:
+    """Where a library file is on disk: rows store it relative to base_dir,
+    older ones absolute."""
+    lib_path = Path(library_file.file_path)
+    return lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+
+
 def printed_plate_of_multi_plate_file(file_path: Path | None) -> int | None:
     """The plate a dispatch of *file_path* prints when no plate is named, for
     a file with more than one sliced plate; None otherwise.
@@ -1037,6 +1062,7 @@ async def clear_queue_history(
             kept += 1
         await db.flush()
     await db.commit()
+    await notify_queue_changed()
     await _refresh_batches_after_delete(db, deleted_batch_ids)
     _notify_dispatch_cancelled(item_ids)
 
@@ -1101,6 +1127,8 @@ async def _resolve_queue_variants(
                 )
             library_file = sliced_file
             spec.library_file_id = sliced_file.id
+
+        ensure_sliced(library_file_disk_path(library_file), library_file.filename)
 
         model = resolve_variant_model(library_file, spec.target_model)
         if not model:
@@ -1372,8 +1400,13 @@ async def add_to_queue(
     if archive:
         file_path = settings.base_dir / archive.file_path
     elif library_file:
-        lib_path = Path(library_file.file_path)
-        file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+        file_path = library_file_disk_path(library_file)
+    # Fenrir: an item waiting on its revision's slice holds the unsliced source on purpose;
+    # the slice replaces it before any dispatch (services/project_slice.py).
+    if library_file is not None and slice_wait_revision_id is None:
+        ensure_sliced(file_path, library_file.filename)
+    elif archive is not None:
+        ensure_sliced(file_path, archive.filename)
     plate_id = data.plate_id or printed_plate_of_multi_plate_file(file_path)
     if target_model_norm:
         if file_path and file_path.exists():
@@ -1486,20 +1519,10 @@ async def add_to_queue(
         start_position = await max_queue_position(db) + 1
 
     # Resolve print_time_seconds for SJF scheduling (cache on item at creation)
-    cached_print_time = None
-    if archive:
-        cached_print_time = archive.print_time_seconds
-        if data.plate_id:
-            archive_path = settings.base_dir / archive.file_path
-            if archive_path.exists():
-                plate_time = _extract_print_time_from_3mf(archive_path, data.plate_id)
-                if plate_time is not None:
-                    cached_print_time = plate_time
-    elif library_file:
-        # A source still slicing has no plate estimate yet; the slice sets it.
-        cached_print_time = _project_slice().library_file_print_time(
-            library_file, data.plate_id if slice_wait_revision_id is None else None
-        )
+    # A source still slicing has no plate estimate yet; the slice sets it.
+    cached_print_time = _cached_print_time(
+        archive, library_file, data.plate_id if archive or slice_wait_revision_id is None else None
+    )
 
     # Validate project exists before insert so a bogus ID yields 404, not an FK-constraint 500
     if data.project_id is not None:
@@ -1642,6 +1665,7 @@ async def add_to_queue(
             item.print_time_seconds = min(estimates) if estimates else None
 
     await db.commit()
+    await notify_queue_changed()
     # Read now: a slice start that fails below rolls back and expires them.
     item_ids = [i.id for i in items]
 
@@ -1809,6 +1833,7 @@ async def bulk_update_queue_items(
         updated_count += 1
 
     await db.commit()
+    await notify_queue_changed()
 
     logger.info("Bulk updated %s queue items, skipped %s", updated_count, skipped_count)
     return PrintQueueBulkUpdateResponse(
@@ -2016,6 +2041,7 @@ async def create_batch(
         batch.quantity = max(assigned, 1)
 
     await db.commit()
+    await notify_queue_changed()
     await db.refresh(batch)
 
     logger.info("Created batch %s '%s' with %s assigned items", batch.id, batch.name, assigned)
@@ -2089,6 +2115,7 @@ async def update_batch(
     # running order can complete it.
     await refresh_batch_status(db, batch)
     await db.commit()
+    await notify_queue_changed()
     await db.refresh(batch)
 
     logger.info("Updated batch %s", batch.id)
@@ -2183,6 +2210,7 @@ async def dispatch_batch(
     # Read before the settle: a settle that fails rolls back and expires them.
     created_ids = [item.id for item in created]
     await db.commit()
+    await notify_queue_changed()
     if waiting_file_ids:
         revision_ids = (
             (await db.execute(select(LibraryFile.revision_id).where(LibraryFile.id.in_(waiting_file_ids))))
@@ -2238,6 +2266,7 @@ async def ungroup_batch(
         await db.delete(batch)
 
     await db.commit()
+    await notify_queue_changed()
 
     logger.info("Ungrouped batch %s (%s items)", batch_id, ungrouped)
     return PrintBatchUngroupResponse(
@@ -2375,6 +2404,7 @@ async def cancel_batch(
 
     batch.status = "cancelled"
     await db.commit()
+    await notify_queue_changed()
 
     # Same as the single-item path: a dispatch already preheating for one of
     # these cannot see the status change on its own (#2727).
@@ -2684,6 +2714,15 @@ async def update_queue_item(
         exclude_queue_item_id=item.id,
     )
 
+    # Another plate takes another time: shortest-job-first orders by it (#3375).
+    # An item with alternatives keeps theirs, the shortest (create).
+    if "plate_id" in update_data and update_data["plate_id"] != item.plate_id and not item.variants:
+        update_data["print_time_seconds"] = _cached_print_time(
+            await db.get(PrintArchive, item.archive_id) if item.archive_id else None,
+            await db.get(LibraryFile, item.library_file_id) if item.library_file_id else None,
+            update_data["plate_id"],
+        )
+
     # Re-check the dispatch claim right before mutating (#2615). Several awaited
     # validations ran since the guard above, and a scheduler worker may have
     # claimed the row in that gap. A fresh read (item isn't dirty yet, so no
@@ -2698,10 +2737,30 @@ async def update_queue_item(
         setattr(item, field, value)
 
     await db.commit()
+    await notify_queue_changed()
     await db.refresh(item, ["archive", "printer", "library_file", "created_by", "batch"])
 
     logger.info("Updated queue item %s", item_id)
     return _hide_aito_task(_enrich_response(item), can_read_aito)
+
+
+def _cached_print_time(
+    archive: PrintArchive | None, library_file: LibraryFile | None, plate_id: int | None
+) -> int | None:
+    """The slicer's time for the plate a queue item prints, cached on it for
+    shortest-job-first: the plate's own from the 3MF, else the whole file's."""
+    cached_print_time = None
+    if archive:
+        cached_print_time = archive.print_time_seconds
+        if plate_id:
+            archive_path = settings.base_dir / archive.file_path
+            if archive_path.exists():
+                plate_time = _extract_print_time_from_3mf(archive_path, plate_id)
+                if plate_time is not None:
+                    cached_print_time = plate_time
+    elif library_file:
+        cached_print_time = _project_slice().library_file_print_time(library_file, plate_id)
+    return cached_print_time
 
 
 async def _remove_queue_item(db: AsyncSession, item: PrintQueueItem) -> bool:
@@ -2794,6 +2853,7 @@ async def delete_queue_item(
     batch_id = item.batch_id
     keep_as_cancelled = not await _remove_queue_item(db, item)
     await db.commit()
+    await notify_queue_changed()
     if not keep_as_cancelled:
         await _refresh_batches_after_delete(db, [batch_id])
     _notify_dispatch_cancelled([item_id])
@@ -2826,6 +2886,7 @@ async def reorder_queue(
             item.position = reorder_item.position
 
     await db.commit()
+    await notify_queue_changed()
     logger.info("Reordered %s queue items", len(data.items))
     return {"message": f"Reordered {len(data.items)} items"}
 
@@ -2878,6 +2939,7 @@ async def resume_queue_after_failure(
         skipped_item.completed_at = None
 
     await db.commit()
+    await notify_queue_changed()
 
     logger.info(
         "Resume after failure on printer %s: acknowledged %d failure(s), restored %d skipped item(s)",
@@ -2918,6 +2980,7 @@ async def resume_model_queue_after_failure(
             failed_item.gate_acknowledged = True
             acknowledged += 1
         await db.commit()
+        await notify_queue_changed()
 
     logger.info(
         "Resume after failure for model %s: acknowledged %d failure(s) on %d printer(s)",
@@ -2966,6 +3029,7 @@ async def cancel_queue_item(
         status="released",
     )
     await db.commit()
+    await notify_queue_changed()
     await refresh_batches_after([item.id])
 
     # Stop an in-flight preheat for this item: the dispatch coroutine is
@@ -3023,6 +3087,7 @@ async def retry_queue_item_slice(
         rearm = rearm.where(scope_clause)
     await db.execute(rearm.values(status="slicing", error_message=None).execution_options(synchronize_session="fetch"))
     await db.commit()
+    await notify_queue_changed()
     await _start_slice_for_waiting_items(db, revision_id, actor)
 
     item = (
@@ -3158,6 +3223,7 @@ async def stop_queue_item(
         await release_budget_reservation(db, source_type="print_queue", source_id=item.id, status="released")
 
     await db.commit()
+    await notify_queue_changed()
     await refresh_batches_after([item.id])
     if closed_archive_id is not None:
         await ws_manager.send_archive_updated({"id": closed_archive_id, "status": "cancelled"})
@@ -3324,6 +3390,7 @@ async def start_queue_item(
     if user is not None and item.created_by_id is None:
         item.created_by_id = user.id
     await db.commit()
+    await notify_queue_changed()
     await db.refresh(item, ["archive", "printer", "library_file", "created_by", "batch"])
 
     logger.info(

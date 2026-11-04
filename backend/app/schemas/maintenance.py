@@ -194,7 +194,7 @@ class HourReadingEntry(BaseModel):
 
 class HourReadingBatch(BaseModel):
     reading_date: date
-    entries: list[HourReadingEntry] = Field(..., min_length=1)
+    entries: list[HourReadingEntry] = Field(..., min_length=1, max_length=500)
 
 
 class HourMachineCreate(BaseModel):
@@ -205,14 +205,14 @@ class HourMachineCreate(BaseModel):
 
 class HourImportReading(BaseModel):
     machine_id: int | None = None
-    key: str | None = None
+    key: str | None = Field(default=None, max_length=100)
     reading_date: date
     hours: float = Field(..., ge=0, le=MAX_HOURS)
 
 
 class HourImportBody(BaseModel):
-    new_machines: list[HourMachineCreate] = Field(default_factory=list)
-    readings: list[HourImportReading] = Field(..., min_length=1)
+    new_machines: list[HourMachineCreate] = Field(default_factory=list, max_length=200)
+    readings: list[HourImportReading] = Field(..., min_length=1, max_length=20000)
 
 
 class HourImportResult(BaseModel):

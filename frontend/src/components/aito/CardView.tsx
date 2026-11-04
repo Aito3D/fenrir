@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Building2, CreditCard, Eye, GripVertical, Lock, User } from 'lucide-react';
+import { AlertTriangle, Building2, CreditCard, Eye, FileClock, GripVertical, Lock, User } from 'lucide-react';
 import { DueDateBadge } from './DueDateBadge';
 import { TaskMiniRows, TaskStepsSummary } from './TaskMiniRows';
 import type { AitoFlag, AitoProject } from '../../api/client';
@@ -100,7 +100,13 @@ const FLAG_LABEL_KEY: Record<AitoFlag, string> = {
  *  (mark-sent, mark-done, restore, hold-to-delete) opt out by stopping
  *  propagation, so their own clicks never reach the region handler. Phone,
  *  email and delete live in the detail panel, not here. */
-export function CardView({
+/** Memoised: the board re-renders on every WebSocket invalidation, keystroke
+ *  in the search box and presence update, and React Query's structural
+ *  sharing keeps an unchanged `project` referentially equal, so an unchanged
+ *  card has nothing to render. `BoardColumn` keeps its callbacks, the
+ *  `actions` element and `dragHandleProps` stable for the same reason — an
+ *  inline lambda or a fresh element there would defeat this. */
+export const CardView = memo(function CardView({
   project,
   overlay = false,
   onExpand,
@@ -347,7 +353,7 @@ export function CardView({
       // The shell holds the collapsed height while the card floats, so the
       // column's layout does not change. It carries no card styling and no
       // `data-aito-card*` — it is space, nothing else.
-      className={`relative rounded-xl ${cardDrop.className}`}
+      className={`aito-card-shell relative rounded-xl ${cardDrop.className}`}
       style={expanded && shellHeight !== null ? { height: shellHeight } : undefined}
     >
       {cardDrop.overlay}
@@ -449,6 +455,17 @@ export function CardView({
           {/* Money already in: a paid online link. Pending is deliberately
               silent — the board must not get noisier for something the
               client has not done yet. */}
+          {/* Expired quote: amber like its Billing-card tone; dropped once the card is finished. */}
+          {project.quote_status === 'expired' && !isFinished(project.column) && (
+            <span
+              data-testid="aito-card-quote-expired"
+              title={t('aito.quoteExpired')}
+              className="flex-none inline-flex items-center rounded-full bg-amber-400/15 p-1 text-amber-400"
+            >
+              <FileClock className="w-3 h-3" aria-hidden="true" />
+              <span className="sr-only">{t('aito.quoteExpired')}</span>
+            </span>
+          )}
           {project.payment_link?.state === 'paid' && (
             <span
               data-testid="aito-card-paid-online"
@@ -659,4 +676,4 @@ export function CardView({
       </div>
     </div>
   );
-}
+});

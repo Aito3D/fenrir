@@ -5,25 +5,7 @@ import type { AitoProject, AitoShippingService } from '../api/client';
 import { formatPhoneDisplay } from './clientDraft';
 import { islandLabel } from './shippingDraft';
 
-/** The shop, as printed in the label's sender block.
- *
- *  A constant rather than a setting: this is the fork's single-tenant
- *  deployment — the logo is hardcoded the same way in `Layout.tsx` — and a
- *  shop address changes about as often as the logo does. One place to edit,
- *  no settings row to migrate, nothing that can be blank on a fresh install.
- */
-export const AITO3D_SENDER = {
-  name: 'Aito3D',
-  addressLines: ["20 Route de l'eau Royale", 'Arue – Tahiti', 'Polynésie française'],
-  phone: '(+689) 89 25 32 10',
-  email: 'contact@aito3d.fr',
-  /** Google Business Profile → "Get more reviews". Printed on the review
-   *  card as text and as a QR code. */
-  reviewUrl: 'https://g.page/r/CVL6WajJzwuGEBM/review',
-  website: 'aito3d.fr',
-  /** One handle for Facebook, Instagram and TikTok alike. */
-  socialHandle: '@aito3d',
-} as const;
+import { AITO3D_SENDER } from './aitoSender';
 
 /** Everything the printed label says, already resolved to display strings.
  *

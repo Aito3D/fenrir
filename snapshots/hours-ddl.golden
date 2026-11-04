@@ -1,0 +1,50 @@
+### exit: 0
+### stdout:
+CREATE TABLE hour_events (
+	id INTEGER NOT NULL, 
+	machine_id INTEGER NOT NULL, 
+	event_date DATE NOT NULL, 
+	kind VARCHAR(20) NOT NULL, 
+	label VARCHAR(200) NOT NULL, 
+	source_id INTEGER, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(machine_id) REFERENCES hour_machines (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_hour_events_machine ON hour_events (machine_id);
+CREATE UNIQUE INDEX uq_hour_events_added ON hour_events (machine_id) WHERE kind = 'added';
+CREATE UNIQUE INDEX uq_hour_events_maintenance ON hour_events (machine_id, source_id) WHERE kind = 'maintenance';
+CREATE TABLE hour_machines (
+	id INTEGER NOT NULL, 
+	printer_id INTEGER, 
+	name VARCHAR(100) NOT NULL, 
+	model VARCHAR(50), 
+	serial_number VARCHAR(50), 
+	retired BOOLEAN NOT NULL, 
+	retired_printer_id INTEGER, 
+	calibrated_at DATETIME, 
+	last_drift_hours FLOAT, 
+	purchase_price FLOAT, 
+	purchase_date DATE, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (printer_id), 
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE SET NULL
+);
+CREATE TABLE hour_readings (
+	id INTEGER NOT NULL, 
+	machine_id INTEGER NOT NULL, 
+	reading_date DATE NOT NULL, 
+	hours FLOAT NOT NULL, 
+	source VARCHAR(10) NOT NULL, 
+	raw_hours FLOAT, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_hour_reading UNIQUE (machine_id, reading_date, source), 
+	FOREIGN KEY(machine_id) REFERENCES hour_machines (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_hour_readings_machine_id ON hour_readings (machine_id);
+
+### stderr:
+

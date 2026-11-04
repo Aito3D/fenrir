@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { MapPin } from 'lucide-react';
 import { AITO3D_BANK, AITO3D_TRANSFER_APPS } from '../../utils/aitoBankDetails';
 import { copyTextToClipboard } from '../../utils/clipboard';
-import { AITO3D_SENDER } from '../../utils/shippingLabel';
+import { AITO3D_SENDER } from '../../utils/aitoSender';
 import { FOCUS } from '../../utils/trackingShell';
 
 const COPIED_HOLD_MS = 1600;

@@ -1,4 +1,4 @@
-import { lazy, type ComponentType } from 'react';
+import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 
 /**
  * Pages load as separate files when first opened (#3175).
@@ -63,14 +63,17 @@ export async function recoverFromMissingChunk(): Promise<boolean> {
 
 /** A page component that loads on first render.
  *  `name` picks the export, since most pages are named exports. */
+/** The props of the named export, so a lazy modal keeps its real prop types. */
+type PropsOf<T> = T extends ComponentType<infer P> ? P : Record<string, never>;
+
 export function lazyPage<M extends Record<string, unknown>, K extends keyof M>(
   load: () => Promise<M>,
   name: K,
-) {
+): LazyExoticComponent<ComponentType<PropsOf<M[K]>>> {
   return lazy(async () => {
     try {
       const module = await load();
-      return { default: module[name] as ComponentType };
+      return { default: module[name] as ComponentType<PropsOf<M[K]>> };
     } catch (error) {
       // The loading spinner stays up while the server is away and the page
       // reloads; only a reload that did not help reaches the error screen.

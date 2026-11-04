@@ -34,6 +34,6 @@
     <!-- Service Worker Registration (skip on SpoolBuddy kiosk).
          Kept as an external file so the CSP `script-src 'self'` covers it
          without needing 'unsafe-inline' or per-build hashes. -->
-    <script src="/sw-register.js"></script>
+    <script src="/sw-register.js" defer></script>
   </body>
 </html>

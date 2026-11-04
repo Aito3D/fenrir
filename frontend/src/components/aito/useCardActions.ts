@@ -16,8 +16,7 @@ import { usePrintBlob } from './usePrintBlob';
  *  the token on first call, so it is an update (`AITO_UPDATE` server-side) and
  *  is fetched only when a row is chosen — the menu itself costs nothing. The
  *  answer is cached under `['aito-tracking-link', id]` so a second copy needs
- *  no round trip (the clipboard wants the write close to the click); a
- *  regenerate drops that entry (TrackingLinkControl). A card whose shop has no
+ *  no round trip (the clipboard wants the write close to the click). A card whose shop has no
  *  `external_url`, or a viewer who may not edit, goes without the link rather
  *  than asking for one the server would refuse; a failed fetch does too —
  *  the rest of the text is still worth having. */

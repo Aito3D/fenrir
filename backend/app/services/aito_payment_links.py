@@ -6,7 +6,6 @@ This module starts with the money rule; the reconcile loop follows.
 """
 
 import asyncio
-import calendar
 import logging
 import math
 import time
@@ -129,13 +128,9 @@ class Wanted:
     expires_on: str
 
 
-def add_one_month(d: date) -> date:
-    """Same day next calendar month, clamped to that month's last day:
-    Oct 21 -> Nov 21, Jan 31 -> Feb 28 (Feb 29 in a leap year), Dec 15 ->
-    Jan 15. The validity of every quote Aito writes to Books, and of a
-    payment link minted before the quote carries its own expiry."""
-    year, month = (d.year + 1, 1) if d.month == 12 else (d.year, d.month + 1)
-    return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
+# How long a quote Aito writes to Books stays valid, and the life of a
+# payment link minted before the quote carries its own expiry.
+QUOTE_VALIDITY = timedelta(days=30)
 
 
 def wanted_link(project: AitoProject, *, pct: int, today: date) -> Wanted | None:
@@ -152,7 +147,7 @@ def wanted_link(project: AitoProject, *, pct: int, today: date) -> Wanted | None
     amount = outstanding_amount(required, project.retainer_paid_total)
     if amount <= 0:
         return None
-    expires_on = project.quote_expiry_date or add_one_month(today).isoformat()
+    expires_on = project.quote_expiry_date or (today + QUOTE_VALIDITY).isoformat()
     return Wanted(reference=project.quote_number, amount=amount, expires_on=expires_on)
 
 
@@ -1265,7 +1260,7 @@ async def create_invoice_link(
             idempotency_key=await _next_key(db, project_id),
             reference=document.number,
             amount=int(amount),
-            expires_on=add_one_month(today).isoformat(),
+            expires_on=(today + QUOTE_VALIDITY).isoformat(),
             created_at=now,
             document_kind="invoice",
             document_number=document.number,

@@ -9,7 +9,7 @@ async def test_defaults(async_client):
     assert body["heimdall_base_url"] == ""
     assert body["heimdall_api_token"] == ""
     assert body["aito_deposit_pct"] == 0
-    assert "aito_quote_validity_days" not in body  # retired: quotes expire one calendar month out
+    assert "aito_quote_validity_days" not in body  # retired: quotes expire 30 days out (QUOTE_VALIDITY)
     assert body["aito_followup_link_days"] == 3
 
 

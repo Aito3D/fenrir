@@ -14,6 +14,7 @@ from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from html import escape as html_escape
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -48,7 +49,7 @@ from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate, ProjectPageUpdate
 from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
-from backend.app.services.archive import ArchiveService
+from backend.app.services.archive import ArchiveService, printed_on_clause
 from backend.app.services.archive_scope import (
     ScopedView,
     ensure_whole_archive_in_scope,
@@ -63,7 +64,11 @@ from backend.app.services.print_confirmation import (
     is_one_tap_request,
     is_unattended_fetch,
 )
-from backend.app.services.print_cost_estimate import default_cost_per_kg as _default_cost_per_kg, price_one_print
+from backend.app.services.print_cost_estimate import (
+    default_cost_per_kg as _default_cost_per_kg,
+    price_one_print,
+    run_estimate,
+)
 from backend.app.services.print_log import owns_media, runs_with_timelapse
 from backend.app.services.print_storage import (
     REASON_FTP_TRANSFER_FAILED,
@@ -395,58 +400,74 @@ def _apply_run_user_filter(conditions: list, created_by_id: int | None):
             conditions.append(PrintLogEntry.created_by_id == created_by_id)
 
 
+def _event_estimate_seconds(row) -> int | None:
+    """The slicer's time for the plate one print event printed (#3375)."""
+    estimate = run_estimate(
+        SimpleNamespace(
+            plate_estimates=row.plate_estimates,
+            print_time_seconds=row.print_time_seconds,
+            filament_used_grams=row.file_grams,
+        ),
+        row.plate_id,
+    )
+    return estimate.seconds if estimate is not None else None
+
+
 def compute_time_accuracy(archive: PrintArchive, run_aggregate: dict | None = None) -> dict:
-    """Compute actual print time and accuracy for an archive.
+    """The time accuracy of the archive's latest print: how its time compares
+    with the slicer's estimate for the plate it printed (#3375).
 
-    Returns dict with actual_time_seconds and time_accuracy.
-    time_accuracy = (estimated / actual) * 100
-    - 100% = perfect estimate
-    - >100% = print was faster than estimated
-    - <100% = print took longer than estimated
+    Returns ``actual_time_seconds``, ``time_estimate_seconds`` and
+    ``time_accuracy`` = estimated / actual * 100 (100 % = exact, above 100 %
+    = faster than estimated). The latest print is the run aggregate's; an
+    archive printed before runs were logged is its own one print.
 
-    When ``run_aggregate`` indicates the archive has more than one logged
-    run (multi-plate file printed plate-by-plate, or reprints), both
-    fields are suppressed: ``archive.started_at / completed_at`` reflect
-    the LATEST run only, while ``archive.print_time_seconds`` is the
-    whole-file estimate (post-#1593 the parser sums across plates), so
-    comparing the two describes different scopes. The card-rendering
-    frontend falls through to ``archive.print_time_seconds`` for the
-    time display and hides the badge when ``time_accuracy`` is null —
-    that's the desired "show estimate, no badge" presentation for
-    multi-run archives (#1608). Single-run archives keep the original
-    badge behaviour verbatim.
+    Measured against that plate's estimate, not the file's, whose figures
+    add every plate up (#1593). Where the file's plates are not known (not
+    read yet, not sliced, file gone) the file's figures stand for the print:
+    then an archive printed more than once shows no badge, as before (#1608),
+    since its plates may differ. A print whose times were not measured (#3310)
+    or that did not complete shows none either.
     """
-    result: dict[str, int | float | None] = {"actual_time_seconds": None, "time_accuracy": None}
+    result: dict[str, int | float | None] = {
+        "actual_time_seconds": None,
+        "time_estimate_seconds": None,
+        "time_accuracy": None,
+    }
+    latest = (run_aggregate or {}).get("latest_run")
+    if latest is not None:
+        plate_id, status, unmeasured = latest.plate_id, latest.status, latest.duration_unmeasured
+        started_at, completed_at, duration = latest.started_at, latest.completed_at, latest.duration_seconds
+    else:
+        plate_id, status, unmeasured = archive.plate_id, archive.status, False
+        started_at, completed_at, duration = archive.started_at, archive.completed_at, None
+    actual_seconds = None
+    if status == "completed" and not unmeasured:
+        actual_seconds = duration
+        if not actual_seconds and started_at and completed_at:
+            actual_seconds = int((completed_at - started_at).total_seconds())
+        if actual_seconds is not None and actual_seconds <= 0:
+            actual_seconds = None
 
-    # Multi-run archives: the per-run actual (started_at..completed_at on
-    # the archive row) is incommensurable with the whole-file estimate.
-    # Both fields are cleared so the card shows estimate + no badge.
-    if run_aggregate and (run_aggregate.get("run_count") or 0) > 1:
+    estimate = run_estimate(archive, plate_id)
+    if estimate is not None and not estimate.per_plate and ((run_aggregate or {}).get("run_count") or 0) > 1:
+        estimate = None
+    # A measured print shows its time; without an estimate of its own, no badge.
+    result["actual_time_seconds"] = actual_seconds
+    if estimate is None:
         return result
-    # A run whose times were not measured (#3310): its end is the slicer's
-    # estimate or the reconnect. The card shows the estimate and no badge,
-    # as for multi-run archives.
-    if run_aggregate and run_aggregate.get("unmeasured_run_count"):
-        return result
-
-    if archive.started_at and archive.completed_at and archive.status == "completed":
-        actual_seconds = int((archive.completed_at - archive.started_at).total_seconds())
-        if actual_seconds > 0:
-            result["actual_time_seconds"] = actual_seconds
-
-            if archive.print_time_seconds and archive.print_time_seconds > 0:
-                # Calculate accuracy as percentage
-                accuracy = (archive.print_time_seconds / actual_seconds) * 100
-                # Sanity check: skip unreasonable values (e.g., manually changed status)
-                # Valid range: 5% to 500% (print took 20x longer to 5x faster than estimated)
-                if 5 <= accuracy <= 500:
-                    result["time_accuracy"] = round(accuracy, 1)
-
+    result["time_estimate_seconds"] = estimate.seconds
+    if actual_seconds and estimate.seconds and estimate.seconds > 0:
+        accuracy = (estimate.seconds / actual_seconds) * 100
+        # Sanity check: skip unreasonable values (e.g., manually changed status)
+        # Valid range: 5% to 500% (print took 20x longer to 5x faster than estimated)
+        if 5 <= accuracy <= 500:
+            result["time_accuracy"] = round(accuracy, 1)
     return result
 
 
 async def _load_run_aggregates(
-    db: AsyncSession, archive_ids: list[int], printer_scope: PrinterScope | None = None
+    db: AsyncSession, archive_ids: list[int], printer_scope: PrinterScope | None = None, printer_id: int | None = None
 ) -> dict[int, dict]:
     """Batch-load per-archive run aggregates from PrintLogEntry.
 
@@ -455,7 +476,9 @@ async def _load_run_aggregates(
     absent from the map; callers should treat that as zero/none.
 
     With ``printer_scope``, only the runs on its printers count: a caller
-    limited to some printers sees only their prints (archive redesign).
+    limited to some printers sees only their prints (archive redesign). With
+    ``printer_id`` (the list's printer filter) the counts are of the prints
+    on that printer; ``latest_run_id`` stays the archive's latest.
     """
     from backend.app.models.print_log import PrintLogEntry
 
@@ -468,7 +491,7 @@ async def _load_run_aggregates(
             func.max(PrintLogEntry.started_at).label("last_run_at"),
             func.coalesce(func.sum(PrintLogEntry.filament_used_grams), 0).label("total_filament"),
             func.sum(case((PrintLogEntry.status == "completed", 1), else_=0)).label("successful"),
-            func.sum(case((PrintLogEntry.status == "failed", 1), else_=0)).label("failed"),
+            func.sum(case((PrintLogEntry.status.in_(("failed", "aborted")), 1), else_=0)).label("failed"),
             func.sum(case((PrintLogEntry.duration_unmeasured.is_(True), 1), else_=0)).label("estimated"),
         )
         .where(
@@ -478,6 +501,7 @@ async def _load_run_aggregates(
                 if printer_scope is not None and (clause := printer_scope.where(PrintLogEntry.printer_id)) is not None
                 else []
             ),
+            *([PrintLogEntry.printer_id == printer_id] if printer_id is not None else []),
         )
         .group_by(PrintLogEntry.archive_id)
     )
@@ -498,6 +522,12 @@ async def _load_run_aggregates(
         select(
             PrintLogEntry.archive_id,
             PrintLogEntry.id,
+            PrintLogEntry.status,
+            PrintLogEntry.plate_id,
+            PrintLogEntry.started_at,
+            PrintLogEntry.completed_at,
+            PrintLogEntry.duration_seconds,
+            PrintLogEntry.duration_unmeasured,
             func.row_number()
             .over(
                 partition_by=PrintLogEntry.archive_id,
@@ -508,11 +538,12 @@ async def _load_run_aggregates(
         .where(PrintLogEntry.archive_id.in_(archive_ids), *([scope] if scope is not None else []))
         .subquery()
     )
-    latest = await db.execute(
-        select(ranked.c.archive_id, ranked.c.id).where(ranked.c.rn == 1).execution_options(**{INCLUDE_OPEN_RUNS: True})
-    )
-    for archive_id, run_id in latest.all():
-        aggregates.setdefault(archive_id, {})["latest_run_id"] = run_id
+    latest = await db.execute(select(ranked).where(ranked.c.rn == 1).execution_options(**{INCLUDE_OPEN_RUNS: True}))
+    for row in latest.all():
+        aggregate = aggregates.setdefault(row.archive_id, {})
+        aggregate["latest_run_id"] = row.id
+        # What its time accuracy is measured from (#3375).
+        aggregate["latest_run"] = row
     return aggregates
 
 
@@ -595,6 +626,8 @@ def _with_run_outcome(data: dict, run: PrintLogEntry) -> dict:
         data["timelapse_path"] = run.timelapse_path
     if run.photos is not None:
         data["photos"] = run.photos or None
+    # The time accuracy is the latest print's (#3375), maybe another one.
+    data["actual_time_seconds"] = data["time_estimate_seconds"] = data["time_accuracy"] = None
     return data
 
 
@@ -611,7 +644,7 @@ def _scoped(data: dict, view: ScopedView | None) -> dict:
     # first prints, maybe on a printer outside the scope: the badge reads as
     # for any archive printed more than once, and the figures are the shown
     # print's own.
-    data["actual_time_seconds"] = data["time_accuracy"] = None
+    data["actual_time_seconds"] = data["time_estimate_seconds"] = data["time_accuracy"] = None
     for name in ("energy_kwh", "energy_cost", "wear_cost"):
         data[name] = getattr(view.shown, name) if view.shown is not None else None
     if view.hidden_timelapse is not None and data["timelapse_path"] == view.hidden_timelapse:
@@ -695,10 +728,7 @@ def archive_to_response(
         "created_by_username": archive.created_by.username if archive.created_by else None,
     }
 
-    # Add computed time accuracy fields. ``run_aggregate`` lets
-    # ``compute_time_accuracy`` suppress the badge for multi-run archives
-    # where the per-run actual / whole-file estimate scopes don't match
-    # (#1608).
+    # The time accuracy of the latest print, from ``run_aggregate`` (#3375).
     accuracy_data = compute_time_accuracy(archive, run_aggregate)
     data.update(accuracy_data)
 
@@ -821,7 +851,7 @@ async def list_archives(
             for sequence, (archive_id, _) in enumerate(group):
                 duplicate_meta_by_archive_id.setdefault(archive_id, (sequence, original_id, duplicate_count))
 
-    run_aggregates = await _load_run_aggregates(db, [a.id for a in archives], printer_scope)
+    run_aggregates = await _load_run_aggregates(db, [a.id for a in archives], printer_scope, printer_id)
     views = await scoped_views(db, archives, printer_scope)
     # The folder badge, batched: each card used to fetch it on mount (one
     # request per archive). Same permission as the endpoint the cards called.
@@ -1211,7 +1241,10 @@ async def list_archives_slim(
         select(
             PrintLogEntry.printer_id,
             PrintLogEntry.print_name,
+            PrintLogEntry.plate_id,
             PrintArchive.print_time_seconds,
+            PrintArchive.filament_used_grams.label("file_grams"),
+            PrintArchive.plate_estimates,
             PrintLogEntry.started_at,
             PrintLogEntry.completed_at,
             PrintLogEntry.duration_seconds,
@@ -1238,7 +1271,8 @@ async def list_archives_slim(
         {
             "printer_id": r.printer_id,
             "print_name": r.print_name,
-            "print_time_seconds": r.print_time_seconds,
+            # The estimate for the plate it printed (#3375), not the file's.
+            "print_time_seconds": _event_estimate_seconds(r),
             "actual_time_seconds": (
                 # Measured elapsed time for every status (#1390): failed /
                 # cancelled prints still ran for some duration, and Quick
@@ -1275,6 +1309,57 @@ async def list_archives_slim(
     ]
 
 
+@router.get("/prints", response_model=PrintLogResponse)
+async def list_archive_prints(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    tz: str | None = Query(
+        None, max_length=64, description="IANA zone the dates are calendar days in; the server's when omitted"
+    ),
+    printer_id: int | None = None,
+    limit: int = Query(default=500, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """The prints of the archives the caller sees that ended in a date range
+    (archive redesign P4): the archives calendar. Visibility as the archive
+    list: archives they own (or all, with read-all), and of those only the
+    prints on their printers. Ordered by id, so a print logged while the
+    pages are read lands on the last one instead of shifting the others.
+    """
+    user, can_read_all = auth_result
+    if printer_id is not None and not printer_scope.allows(printer_id):
+        return PrintLogResponse(items=[], total=0)
+    zone = day_zone(tz)
+    ended = func.coalesce(PrintLogEntry.completed_at, PrintLogEntry.created_at)
+    visible = select(PrintArchive.id).where(
+        PrintArchive.deleted_at.is_(None), *_visible_archive_clauses(user, can_read_all, printer_scope)
+    )
+    conditions = [
+        PrintLogEntry.archive_id.in_(visible),
+        ended >= local_date_start(date_from, zone),
+        ended <= local_date_end(date_to, zone),
+    ]
+    if (clause := printer_scope.where(PrintLogEntry.printer_id)) is not None:
+        conditions.append(clause)
+    if printer_id is not None:
+        conditions.append(PrintLogEntry.printer_id == printer_id)
+    total = await db.scalar(select(func.count(PrintLogEntry.id)).where(*conditions)) or 0
+    rows = await db.scalars(
+        select(PrintLogEntry).where(*conditions).order_by(PrintLogEntry.id).offset(offset).limit(limit)
+    )
+    from backend.app.schemas.print_log import PrintLogEntrySchema
+
+    return PrintLogResponse(items=[PrintLogEntrySchema.model_validate(r) for r in rows.all()], total=total)
+
+
 @router.get("/search", response_model=list[ArchiveResponse])
 async def search_archives(
     q: str = Query(..., min_length=2, description="Search query"),
@@ -1305,6 +1390,9 @@ async def search_archives(
     user, can_read_all = auth_result
     own_only = user is not None and not can_read_all
     search_term = q.strip()
+    # A printer outside the caller's scope finds nothing, as in the list.
+    if printer_id is not None and not printer_scope.allows(printer_id):
+        return []
 
     # Build dialect-specific full-text search query
     if is_sqlite():
@@ -1359,7 +1447,7 @@ async def search_archives(
         )
 
         if printer_id:
-            query = query.where(PrintArchive.printer_id == printer_id)
+            query = query.where(printed_on_clause(printer_id))
         if project_id:
             query = query.where(PrintArchive.project_id == project_id)
         if status:
@@ -1374,7 +1462,7 @@ async def search_archives(
         archives = result.scalars().all()
         # Load run aggregates so multi-run archives' time/accuracy badge is
         # suppressed consistently with the main list endpoint (#1608).
-        run_aggregates = await _load_run_aggregates(db, [a.id for a in archives], printer_scope)
+        run_aggregates = await _load_run_aggregates(db, [a.id for a in archives], printer_scope, printer_id)
         views = await scoped_views(db, archives, printer_scope)
         return [
             _scoped(
@@ -1400,7 +1488,7 @@ async def search_archives(
 
     # Apply additional filters
     if printer_id:
-        query = query.where(PrintArchive.printer_id == printer_id)
+        query = query.where(printed_on_clause(printer_id))
     if project_id:
         query = query.where(PrintArchive.project_id == project_id)
     if status:
@@ -1415,7 +1503,7 @@ async def search_archives(
 
     # Load run aggregates so multi-run archives' time/accuracy badge is
     # suppressed consistently with the main list endpoint (#1608).
-    run_aggregates = await _load_run_aggregates(db, [a.id for a in paginated], printer_scope)
+    run_aggregates = await _load_run_aggregates(db, [a.id for a in paginated], printer_scope, printer_id)
     views = await scoped_views(db, paginated, printer_scope)
     return [
         _scoped(
@@ -1623,7 +1711,9 @@ async def export_archives(
     # Parse fields
     field_list = None
     if fields:
-        field_list = [f.strip() for f in fields.split(",")]
+        field_list = [f.strip() for f in fields.split(",") if f.strip()]
+        if unknown := ExportService.unknown_fields(field_list):
+            raise HTTPException(400, f"Unknown export fields: {', '.join(unknown)}")
 
     # Parse dates
     date_from_dt = None
@@ -1876,39 +1966,35 @@ async def get_archive_stats(
             PrintLogEntry.started_at,
             PrintLogEntry.completed_at,
             PrintLogEntry.printer_id,
+            PrintLogEntry.plate_id,
             PrintArchive.print_time_seconds,
+            PrintArchive.filament_used_grams,
+            PrintArchive.plate_estimates,
         )
         .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
         .where(
             PrintLogEntry.status == "completed",
-            PrintArchive.print_time_seconds.isnot(None),
             # A run whose times were not measured is no sample (#3310).
             PrintLogEntry.duration_unmeasured.is_not(True),
             *base_conditions,
         )
     )
-    # Accuracy is meaningful only when the estimate roughly describes the
-    # work the run actually performed. Two shapes produce wildly-off ratios
-    # that are pure noise:
-    #   - multi-plate ``.gcode.3mf`` printed plate-by-plate: each run's
-    #     actual is one plate, the archive's estimate is the sum across
-    #     plates (post-#1593 parser fix), so the ratio is roughly N×100%
-    #     for an N-plate file. Pre-fix this shape was also broken, just
-    #     less dramatically — the estimate was plate-1-only so the ratio
-    #     was meaningless rather than N×.
-    #   - manual interventions / purge waste blowing the actual far past
-    #     the estimate.
-    # Clamp to the [50%, 200%] band so the printer-level average reflects
-    # real slicer-vs-reality drift, not multi-plate accounting or one-off
-    # outliers. Single-plate archives — the case the metric is actually
-    # designed for — stay fully included.
+    # Each run against the estimate of the plate it printed (#3375): the
+    # archive's adds every plate up (#1593). Where the file's plates are not
+    # known, the file's estimate, which for a multi-plate file printed plate
+    # by plate is about N x 100 %. Clamped to [50 %, 200 %] so the average
+    # reflects slicer-vs-reality drift, not those or one-off outliers
+    # (manual interventions, purge waste).
     _ACCURACY_BAND_LO = 50.0
     _ACCURACY_BAND_HI = 200.0
     average_accuracy = None
     accuracy_by_printer: dict[str, float] = {}
     accuracies: list[float] = []
     printer_accuracies: dict[str, list[float]] = {}
-    for duration_seconds, started_at, completed_at, run_printer_id, estimate_seconds in accuracy_rows.all():
+    for row in accuracy_rows.all():
+        duration_seconds, started_at, completed_at, run_printer_id = row[:4]
+        estimate = run_estimate(row, row.plate_id)
+        estimate_seconds = estimate.seconds if estimate is not None else None
         actual_seconds = duration_seconds
         if not actual_seconds and started_at and completed_at:
             elapsed = (completed_at - started_at).total_seconds()
@@ -2377,7 +2463,7 @@ async def list_archive_runs(
     from backend.app.schemas.print_log import PrintLogEntrySchema
 
     user, can_read_all = auth_result
-    await _ensure_archive_visible(await db.get(PrintArchive, archive_id), user, can_read_all, printer_scope)
+    archive = await _ensure_archive_visible(await db.get(PrintArchive, archive_id), user, can_read_all, printer_scope)
 
     # Only the prints on the caller's printers (#1727), as the print log.
     scope_clause = printer_scope.where(PrintLogEntry.printer_id)
@@ -2388,7 +2474,64 @@ async def list_archive_runs(
     )
     entries = list(rows.scalars().all())
     items = [PrintLogEntrySchema.model_validate(e, from_attributes=True) for e in entries]
+    # A print's photos as the archive's photo route serves them: one removed
+    # from the archive is gone, whatever a run still lists. A print's own list
+    # stays a list, also when empty: null is a print logged before prints kept
+    # their own, which shares the archive's.
+    archive_photos = set(archive.photos or [])
+    for item in items:
+        if item.photos is not None:
+            item.photos = [p for p in item.photos if p in archive_photos]
+        # What the slicer gave the plate it printed (#3375); the file's
+        # figures only for its one print when its plates are not known.
+        estimate = run_estimate(archive, item.plate_id)
+        if estimate is not None and (estimate.per_plate or len(items) == 1):
+            item.estimate_seconds, item.estimate_grams = estimate.seconds, estimate.grams
     return PrintLogResponse(items=items, total=len(items))
+
+
+@router.get("/{archive_id}/runs/{run_id}/timelapse")
+async def get_run_timelapse(
+    archive_id: int,
+    run_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
+        require_media_token_ownership(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
+    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+):
+    """One print's timelapse video (archive redesign): plates of one archive
+    each keep their own, while the archive's timelapse route serves only the
+    latest print's. 404 for a print on a printer outside the caller's scope.
+    """
+    from backend.app.models.print_log import PrintLogEntry
+
+    user, can_read_all = auth_result
+    archive = await _ensure_archive_visible(await db.get(PrintArchive, archive_id), user, can_read_all, printer_scope)
+    run = await db.get(PrintLogEntry, run_id)
+    if run is None or run.archive_id != archive.id or not printer_scope.allows(run.printer_id):
+        raise HTTPException(404, "Run not found")
+    if not run.timelapse_path:
+        raise HTTPException(404, "Timelapse not found")
+
+    base = settings.base_dir.resolve()
+    timelapse_path = (settings.base_dir / run.timelapse_path).resolve()
+    if not timelapse_path.is_relative_to(base) or not timelapse_path.is_file():
+        raise HTTPException(404, "Timelapse file not found")
+
+    mtime = int(timelapse_path.stat().st_mtime)
+    suffix = timelapse_path.suffix.lower()
+    media_type = {".mp4": "video/mp4", ".avi": "video/x-msvideo", ".mkv": "video/x-matroska"}.get(suffix, "video/mp4")
+    ext = suffix if suffix in (".mp4", ".avi", ".mkv") else ".mp4"
+    return FileResponse(
+        path=timelapse_path,
+        media_type=media_type,
+        filename=f"{archive.print_name or 'timelapse'}{ext}",
+        headers={"Cache-Control": "no-cache, must-revalidate", "ETag": f'"{mtime}"'},
+    )
 
 
 @router.get("/{archive_id}/similar")

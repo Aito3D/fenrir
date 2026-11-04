@@ -541,7 +541,7 @@ async def test_public_never_leaks_client_or_money(async_client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_link_route_mints_and_regenerate_replaces(async_client, db_session):
+async def test_link_route_mints_once_and_keeps_the_token(async_client, db_session):
     await _set_external_url(db_session, "https://aito.example")
     pid = await _create(async_client)
     first_resp = await async_client.get(f"/api/v1/aito/{pid}/tracking-link")
@@ -552,16 +552,9 @@ async def test_link_route_mints_and_regenerate_replaces(async_client, db_session
     old_token = first.rsplit("/", 1)[1]
     assert (await async_client.get(TRACK + old_token)).status_code == 200
 
-    second_resp = await async_client.post(f"/api/v1/aito/{pid}/tracking-token")
-    second = second_resp.json()["tracking_url"]
-    assert second_resp.headers["cache-control"] == "no-store"
-    assert second != first
-    assert (await async_client.get(TRACK + old_token)).status_code == 404
-    assert (await async_client.get(TRACK + second.rsplit("/", 1)[1])).status_code == 200
-    events = (await async_client.get(f"/api/v1/aito/{pid}/events")).json()
-    kinds = [e["kind"] for e in events["events"]]
-    assert "tracking.regenerated" in kinds
-    assert old_token not in (await async_client.get(f"/api/v1/aito/{pid}/events")).text
+    # A card's link never changes by hand: the regenerate route is gone.
+    assert (await async_client.post(f"/api/v1/aito/{pid}/tracking-token")).status_code in (404, 405)
+    assert (await async_client.get(TRACK + old_token)).status_code == 200
 
 
 @pytest.mark.asyncio
@@ -588,7 +581,6 @@ def test_permissions():
     from backend.app.main import app
 
     assert _declared_permissions("get_tracking_link") == ["aito:update"]
-    assert _declared_permissions("regenerate_tracking_token") == ["aito:update"]
     route = next(r for r in app.routes if getattr(r, "name", "") == "get_tracking")
     assert all(d.name != "current_user" for d in route.dependant.dependencies)
 
@@ -961,72 +953,6 @@ async def test_public_route_collapsed_proxy_opt_in_collapses_regardless_of_peer(
             assert r.status_code == 404
 
 
-@pytest.mark.asyncio
-async def test_regenerate_rewrites_the_quote_notes_with_the_new_link(async_client, db_session, monkeypatch):
-    from backend.app.services.zoho import zoho_service
-
-    await _set_external_url(db_session, "https://aito.example")
-    pid = await _create(async_client)
-    old = await _token(async_client, db_session, pid)
-    await _set(db_session, pid, quote_id="E1")
-    remote = {
-        "notes": f"Signature du client\n\nSuivi et paiement de votre projet : https://aito.example/t/{old}\nCode de suivi : {old}"
-    }
-    written = []
-
-    async def fake_get_estimate(db, estimate_id):
-        return {"estimate_id": estimate_id, **remote}
-
-    async def fake_update_estimate_notes(db, estimate_id, notes):
-        written.append((estimate_id, notes))
-        return {}
-
-    monkeypatch.setattr(zoho_service, "get_estimate", fake_get_estimate)
-    monkeypatch.setattr(zoho_service, "update_estimate_notes", fake_update_estimate_notes)
-
-    body = (await async_client.post(f"/api/v1/aito/{pid}/tracking-token")).json()
-    new = body["tracking_url"].rsplit("/", 1)[1]
-    assert new != old and body["quote_notes"] == "updated"
-    assert written == [
-        (
-            "E1",
-            f"Signature du client\n\nSuivi et paiement de votre projet : https://aito.example/t/{new}\nCode de suivi : {new}",
-        )
-    ]
-    # "detail" depth: the regenerate is filed there (services/aito_events.py), below the story.
-    events = (await async_client.get(f"/api/v1/aito/{pid}/events?depth=detail")).json()["events"]
-    regen = next(e for e in events if e["kind"] == "tracking.regenerated")
-    assert regen["detail"] == {"quote_notes": "updated"}
-
-
-@pytest.mark.asyncio
-async def test_regenerate_still_replaces_the_token_when_books_is_away(async_client, db_session, monkeypatch):
-    from backend.app.services.zoho import zoho_service
-
-    await _set_external_url(db_session, "https://aito.example")
-    pid = await _create(async_client)
-    old = await _token(async_client, db_session, pid)
-    await _set(db_session, pid, quote_id="E1")
-
-    async def failing_get_estimate(db, estimate_id):
-        raise RuntimeError("Books is away")
-
-    monkeypatch.setattr(zoho_service, "get_estimate", failing_get_estimate)
-    body = (await async_client.post(f"/api/v1/aito/{pid}/tracking-token")).json()
-    assert body["quote_notes"] == "failed"
-    assert body["tracking_url"].rsplit("/", 1)[1] != old
-    # The old link is dead regardless.
-    assert (await async_client.get(TRACK + old)).status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_regenerate_without_a_quote_reports_no_notes(async_client, db_session):
-    await _set_external_url(db_session, "https://aito.example")
-    pid = await _create(async_client)
-    body = (await async_client.post(f"/api/v1/aito/{pid}/tracking-token")).json()
-    assert body["quote_notes"] is None
-
-
 # ── Review follow-ups (2026-09-08 security review) ───────────────────────────
 
 
@@ -1396,35 +1322,3 @@ def test_track_rate_net_key(host, expected):
     from backend.app.api.routes import aito as aito_routes
 
     assert aito_routes._track_rate_net_key(host) == expected
-
-
-@pytest.mark.asyncio
-async def test_regenerate_commits_the_new_token_before_talking_to_books(async_client, db_session, monkeypatch):
-    """The new token is committed BEFORE the estimate is fetched. Otherwise
-    the dirty row autoflushed on the first settings read inside the Zoho
-    client and SQLite's write lock was held across two HTTP round trips —
-    longer than the busy timeout when Books is slow, so unrelated writers
-    (MQTT status, the sync worker) failed with "database is locked"."""
-    from backend.app.services.zoho import zoho_service
-
-    await _set_external_url(db_session, "https://aito.example")
-    pid = await _create(async_client)
-    old = await _token(async_client, db_session, pid)
-    await _set(db_session, pid, quote_id="E1")
-    seen: dict[str, str | None] = {}
-
-    async def fake_get_estimate(db, estimate_id):
-        # A different session sees only what is committed.
-        seen["token"] = (
-            await db_session.execute(select(AitoProject.tracking_token).where(AitoProject.id == pid))
-        ).scalar_one()
-        return {"estimate_id": estimate_id, "notes": ""}
-
-    async def fake_update_estimate_notes(db, estimate_id, notes):
-        return {}
-
-    monkeypatch.setattr(zoho_service, "get_estimate", fake_get_estimate)
-    monkeypatch.setattr(zoho_service, "update_estimate_notes", fake_update_estimate_notes)
-    body = (await async_client.post(f"/api/v1/aito/{pid}/tracking-token")).json()
-    new = body["tracking_url"].rsplit("/", 1)[1]
-    assert new != old and seen["token"] == new

@@ -45,10 +45,12 @@ export const GRID_BLINK_PERIOD_MS = 2500;
  */
 export function gridCardHighlightClass(opts: {
   connected: boolean;
+  maintenance?: boolean;
   state: string | null;
   plateCleared: boolean;
   hasQueuedJobs: boolean;
 }): string {
+  if (opts.maintenance) return '!border-amber-400/50';
   if (!opts.connected) return '!border-transparent';
   if (opts.state === 'RUNNING') {
     return '!border-bambu-green !shadow-[0_0_10px_1px_color-mix(in_srgb,var(--accent)_35%,transparent)]';

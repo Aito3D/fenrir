@@ -2,7 +2,20 @@
 
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -99,6 +112,10 @@ class HourMachine(Base):
     # mismatch retires this row instead of attaching its history to a new printer.
     serial_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     retired: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The printer this machine was linked to when it retired (no FK: that printer
+    # is usually gone). It keeps retired history in that printer's scope; NULL on
+    # import-created machines and ones retired before the column existed.
+    retired_printer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Last time the counter was set to a typed value, and by how many hours that
     # correction moved it (NULL until one was measured).
     calibrated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -133,7 +150,26 @@ class HourEvent(Base):
     """
 
     __tablename__ = "hour_events"
-    __table_args__ = (Index("ix_hour_events_machine", "machine_id"),)
+    __table_args__ = (
+        Index("ix_hour_events_machine", "machine_id"),
+        # One 'added' mark per machine and one mirror per maintenance entry; same names/shape as
+        # _migrate_hour_events_unique, so fresh and upgraded databases match.
+        Index(
+            "uq_hour_events_added",
+            "machine_id",
+            unique=True,
+            sqlite_where=text("kind = 'added'"),
+            postgresql_where=text("kind = 'added'"),
+        ),
+        Index(
+            "uq_hour_events_maintenance",
+            "machine_id",
+            "source_id",
+            unique=True,
+            sqlite_where=text("kind = 'maintenance'"),
+            postgresql_where=text("kind = 'maintenance'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     machine_id: Mapped[int] = mapped_column(ForeignKey("hour_machines.id", ondelete="CASCADE"))

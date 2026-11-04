@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Signal,
   WifiOff,
+  Wrench,
   AlertTriangle,
   AlertCircle,
   Layers,
@@ -30,6 +31,7 @@ import { SPOTLIGHT_SPAN_CLASS, GRID_STREAM_MAX_PRINTERS, gridBlinkSyncStyle, gri
 /** State label color, keyed by the same stateKey used for the i18n label. */
 const STATE_COLORS = {
   offline: 'text-bambu-gray/60',
+  maintenance: 'text-amber-400',
   printing: 'text-bambu-green',
   paused: 'text-yellow-400',
   failed: 'text-red-400',
@@ -81,6 +83,7 @@ export interface GridCardBaseProps {
   printerId: number;
   printerName: string;
   connected: boolean;
+  maintenance?: boolean;
   state: string | null;
   progress: number;
   remainingTime: number | null;
@@ -144,6 +147,7 @@ export const CameraGridCard = memo(function CameraGridCard({
   printerId,
   printerName,
   connected,
+  maintenance = false,
   state,
   progress,
   remainingTime,
@@ -206,7 +210,7 @@ export const CameraGridCard = memo(function CameraGridCard({
   // Only a tile that can expand has a competing double-click handler.
   const canExpand = connected && !!onExpand;
 
-  const stateKey = !connected ? 'offline' : (state && STATE_KEYS[state]) || 'idle';
+  const stateKey = maintenance ? 'maintenance' : !connected ? 'offline' : (state && STATE_KEYS[state]) || 'idle';
   const stateColor = STATE_COLORS[stateKey];
   const isRunning = state === 'RUNNING';
   const isPaused = state === 'PAUSE';
@@ -222,6 +226,7 @@ export const CameraGridCard = memo(function CameraGridCard({
   // pickup ready, failed); blink phase synced across all cards via epoch clock
   const highlightClass = gridCardHighlightClass({
     connected,
+    maintenance,
     state,
     plateCleared,
     hasQueuedJobs: hasQueuedJobs ?? false,
@@ -340,7 +345,13 @@ export const CameraGridCard = memo(function CameraGridCard({
             )}
           </div>
         )}
-        {!connected && (
+        {!connected && maintenance && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 animate-grid-fade-in">
+            <Wrench className="w-7 h-7 text-amber-400" />
+            <span className={`${textXs} text-amber-400`}>{t('printers.maintenance.pillLabel')}</span>
+          </div>
+        )}
+        {!connected && !maintenance && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 animate-grid-fade-in">
             <WifiOff className="w-6 h-6 text-bambu-gray/40" />
             <span className={`${textXs} text-bambu-gray/40`}>{t('printers.status.offline')}</span>
@@ -437,7 +448,7 @@ export const CameraGridCard = memo(function CameraGridCard({
                 </div>
               )
             ) : (
-              <span className={`${textXs} font-medium drop-shadow-sm uppercase ${stateColor} ${state === 'FAILED' ? 'animate-grid-opacity-blink' : ''}`} style={state === 'FAILED' ? blinkSyncStyle : undefined}>{t(`printers.status.${stateKey}`)}</span>
+              <span className={`${textXs} font-medium drop-shadow-sm uppercase ${stateColor} ${state === 'FAILED' ? 'animate-grid-opacity-blink' : ''}`} style={state === 'FAILED' ? blinkSyncStyle : undefined}>{stateKey === 'maintenance' ? t('printers.maintenance.pillLabel') : t(`printers.status.${stateKey}`)}</span>
             )}
           </div>
         </div>

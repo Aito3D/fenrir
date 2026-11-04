@@ -42,6 +42,8 @@ basedpyright==1.40.2
     # via -r requirements-typecheck.txt
 bcrypt==5.0.0
     # via -r requirements.lock
+brotli==1.2.1
+    # via -r requirements.lock
 certifi==2026.10.19
     # via
     #   -r requirements.lock

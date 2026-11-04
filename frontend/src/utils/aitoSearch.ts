@@ -6,7 +6,7 @@ import {
 
 export type MatchKind = 'phone' | 'email' | 'number' | 'name' | 'text' | 'task';
 export type SearchField =
-  | 'clientPhone' | 'shippingPhone' | 'email' | 'quote' | 'document' | 'lta' | 'cardId'
+  | 'clientPhone' | 'shippingPhone' | 'email' | 'quote' | 'document' | 'lta' | 'cardId' | 'projectCode'
   | 'client' | 'contact' | 'recipient' | 'social' | 'salesperson' | 'description' | 'task';
 export type SearchLocation = 'board' | 'done' | 'trash';
 export interface Excerpt {
@@ -99,13 +99,15 @@ function indexed(project: AitoProject): IndexedField[] {
   ];
   const fields = entries
     .filter((entry): entry is [MatchKind, SearchField, string] => typeof entry[2] === 'string' && entry[2].trim() !== '')
-    .map(([kind, field, raw]) => {
-      const { text, map } = foldWithMap(raw);
-      const key = kind === 'phone' ? phoneDigits(raw) : kind === 'number' ? alnum(raw) : '';
-      return { kind, field, raw, folded: text, map, key, words: kind === 'name' ? wordsOf(text) : [] };
-    });
+    .map(([kind, field, raw]) => toField(kind, field, raw));
   index.set(project, fields);
   return fields;
+}
+
+function toField(kind: MatchKind, field: SearchField, raw: string): IndexedField {
+  const { text, map } = foldWithMap(raw);
+  const key = kind === 'phone' ? phoneDigits(raw) : kind === 'number' ? alnum(raw) : '';
+  return { kind, field, raw, folded: text, map, key, words: kind === 'name' ? wordsOf(text) : [] };
 }
 
 const PREFIXES: { prefix: string; keep: boolean; allow: (f: IndexedField) => boolean }[] = [
@@ -259,8 +261,12 @@ export function locationOf(project: AitoProject): SearchLocation {
   return project.column === 'done' ? 'done' : 'board';
 }
 
-function score(project: AitoProject, terms: Term[]): SearchHit | null {
-  const fields = indexed(project);
+function score(project: AitoProject, terms: Term[], projectCodes: string[] = []): SearchHit | null {
+  // Linked PDM project codes (P-0042) come from their own query, so they are
+  // not cached with the card's fields.
+  const fields = projectCodes.length
+    ? [...indexed(project), ...projectCodes.map((code) => toField('number', 'projectCode', code))]
+    : indexed(project);
   let total = 0;
   let best: { field: IndexedField; match: Match } | null = null;
   for (const term of terms) {
@@ -305,9 +311,9 @@ export function searchProjects(projects: AitoProject[], query: string): SearchHi
 
 /** The board filter. Same scoring as `searchProjects`, so the board and the
  *  dropdown can never disagree; an empty query matches everything. */
-export function matchesSearch(project: AitoProject, query: string): boolean {
+export function matchesSearch(project: AitoProject, query: string, projectCodes?: string[]): boolean {
   const terms = parse(query);
-  return terms.length === 0 || score(project, terms) !== null;
+  return terms.length === 0 || score(project, terms, projectCodes) !== null;
 }
 
 /** Search-filtered projects, most recently updated first — the shared body

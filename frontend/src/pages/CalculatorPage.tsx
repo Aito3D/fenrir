@@ -349,6 +349,31 @@ export function CalculatorPage() {
           </div>
   );
 
+  // Phone header, right of the tab name: Easy mode as a pill, Reset as an icon.
+  const mobileActions = tab === 'calculator' && (
+    <>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={state.easyMode}
+        onClick={() => set({ easyMode: !state.easyMode })}
+        className={`h-8 rounded-full px-3 text-xs font-semibold transition-colors ${
+          state.easyMode ? 'bg-bambu-green/15 text-bambu-green' : 'bg-bambu-dark-tertiary text-bambu-gray-light'
+        }`}
+      >
+        {t('calculator.easyMode')}
+      </button>
+      <button
+        type="button"
+        onClick={() => setShowResetConfirm(true)}
+        aria-label={t('calculator.reset')}
+        className="grid h-9 w-9 place-items-center rounded-lg text-bambu-gray-light active:bg-bambu-dark-secondary"
+      >
+        <RotateCcw className="h-[18px] w-[18px]" aria-hidden="true" />
+      </button>
+    </>
+  );
+
   const renderTab = (id: PageTab) => (
     <>
       {id === 'filaments' && (
@@ -529,7 +554,7 @@ export function CalculatorPage() {
           tabs={PAGE_TABS.map((id) => ({ id, label: t(TAB_LABEL_KEYS[id]), icon: TAB_ICONS[id] }))}
           activeTab={tab}
           onTabChange={setTab}
-          toolbar={actions || undefined}
+          headerRight={mobileActions || undefined}
           renderTab={renderTab}
         />
         {resetConfirm}

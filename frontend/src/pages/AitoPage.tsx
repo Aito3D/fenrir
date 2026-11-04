@@ -26,6 +26,7 @@ import type { ClientDraft } from '../utils/clientDraft';
 import type { TaskDraft } from '../utils/taskDraft';
 import type { ShippingDraft } from '../utils/shippingDraft';
 import { matchesSearch } from '../utils/aitoSearch';
+import { useProjectCodes } from '../components/projects/aito/useProjectCodes';
 import { FollowupStrip } from '../components/aito/FollowupStrip';
 import { followups, type FollowupKey } from '../utils/aitoFollowups';
 import { localDateKey } from '../utils/date';
@@ -409,16 +410,18 @@ export function AitoPage() {
   //
   // The six columns the board RENDERS, not COLUMN_IDS — which still carries
   // `done`. The archive is behind the Show Done button, not on the board.
+  const projectCodes = useProjectCodes();
   const visible = (project: AitoProject) =>
-    (followupIds === null || followupIds.has(project.id)) && matchesSearch(project, search);
+    (followupIds === null || followupIds.has(project.id)) &&
+    matchesSearch(project, search, projectCodes[String(project.id)]);
   const visibleColumns = useMemo(
     () =>
       COLUMNS.map((column) => ({
         column,
         projects: board[column.id].filter(visible),
       })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `visible` is rebuilt each render; its real deps are `search` and `followupIds`, both listed
-    [board, search, followupIds],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `visible` is rebuilt each render; its real deps are `search`, `followupIds` and `projectCodes`, all listed
+    [board, search, followupIds, projectCodes],
   );
   const visibleCount = visibleColumns.reduce((sum, { projects }) => sum + projects.length, 0);
 
@@ -443,8 +446,8 @@ export function AitoPage() {
   // the intent — please do not "fix" it.
   const doneCount = useMemo(
     () => board.done.filter(visible).length,
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `visible` is rebuilt each render; its real deps are `search` and `followupIds`, both listed
-    [board, search, followupIds],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `visible` is rebuilt each render; its real deps are `search`, `followupIds` and `projectCodes`, all listed
+    [board, search, followupIds, projectCodes],
   );
   const inProduction = ACTIVE_COLUMN_IDS.reduce((sum, id) => sum + board[id].length, 0);
 

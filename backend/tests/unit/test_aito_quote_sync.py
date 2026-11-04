@@ -211,7 +211,9 @@ async def test_pending_project_without_a_quote_gets_one_created(db_session):
     assert post[2]["customer_id"] == "C1"
     assert post[2]["reference_number"] == f"AITO-{project.id}"
     assert post[2]["is_inclusive_tax"] is True
-    assert len(post[2]["line_items"]) == 1
+    # The task's header row, then its one line: Books refuses ``header_name`` on an item line.
+    assert [line.get("line_item_category") for line in post[2]["line_items"]] == ["header", None]
+    assert all("header_name" not in line for line in post[2]["line_items"])
 
 
 @pytest.mark.asyncio
@@ -910,7 +912,7 @@ async def test_update_preserves_foreign_lines_and_refreshes_status(db_session):
 
     put = next(entry for entry in seen if entry[0] == "PUT")
     assert set(put[2]) == {"line_items"}  # partial PUT: nothing else is sent
-    assert put[2]["line_items"][-1] == {"line_item_id": "FOREIGN", "item_order": 2}
+    assert put[2]["line_items"][-1] == {"line_item_id": "FOREIGN", "item_order": 3}  # header row, task line, then it
 
 
 @pytest.mark.asyncio
@@ -6508,7 +6510,7 @@ async def test_create_with_a_priced_task_and_shipping_still_pushes_normally(db_s
     assert project.quote_id == "E1"
 
     post = next(entry for entry in seen if entry[0] == "POST" and entry[1].endswith("/estimates"))
-    assert len(post[2]["line_items"]) == 2  # one task line, plus the shipping line
+    assert len(post[2]["line_items"]) == 3  # the task's header row and line, plus the shipping line
 
 
 @pytest.mark.asyncio

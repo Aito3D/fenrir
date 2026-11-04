@@ -215,6 +215,32 @@ async def test_hours_write_routes_enforce_update_and_delete_permissions(async_cl
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_delete_note_event_needs_maintenance_delete(async_client: AsyncClient, db_session):
+    from backend.app.core.auth import create_access_token, get_password_hash
+    from backend.app.models.group import Group
+    from backend.app.models.settings import Settings
+    from backend.app.models.user import User
+
+    db_session.add(Settings(key="auth_enabled", value="true"))
+    updater = Group(name="hours-updaters", permissions=["maintenance:read", "maintenance:update"], is_system=False)
+    deleter = Group(name="hours-deleters", permissions=["maintenance:read", "maintenance:delete"], is_system=False)
+    db_session.add_all([updater, deleter])
+    await db_session.flush()
+    headers = {}
+    for name, group in (("updater", updater), ("deleter", deleter)):
+        user = User(username=name, password_hash=get_password_hash("password"), is_active=True)
+        user.groups.append(group)
+        db_session.add(user)
+        headers[name] = {"Authorization": f"Bearer {create_access_token(data={'sub': name})}"}
+    await db_session.commit()
+
+    assert (await async_client.delete(f"{BASE}/events/999999", headers=headers["updater"])).status_code == 403
+    # Permission passes for the deleter; the missing event is then a 404, not a 403.
+    assert (await async_client.delete(f"{BASE}/events/999999", headers=headers["deleter"])).status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 class TestHoursImport:
     async def test_import_creates_retired_machines_and_never_recalibrates(
         self, async_client: AsyncClient, printer_factory, db_session
@@ -241,6 +267,61 @@ class TestHoursImport:
         await db_session.refresh(p)
         assert p.print_hours_offset == 0.0  # imports never recalibrate, even for today's date
 
+    @staticmethod
+    def _collide_on_import_commit(monkeypatch, times: int) -> list[int]:
+        """Make the import's commit (the one carrying new readings) raise IntegrityError ``times`` times."""
+        from sqlalchemy.exc import IntegrityError
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from backend.app.models.maintenance import HourReading
+
+        real_commit = AsyncSession.commit
+        raised: list[int] = []
+
+        async def commit(self):
+            if len(raised) < times and any(isinstance(o, HourReading) for o in self.sync_session.new):
+                raised.append(1)
+                raise IntegrityError("INSERT INTO hour_readings", {}, Exception("UNIQUE constraint failed"))
+            await real_commit(self)
+
+        monkeypatch.setattr(AsyncSession, "commit", commit)
+        return raised
+
+    async def test_import_retries_once_after_a_concurrent_write(
+        self, async_client: AsyncClient, printer_factory, monkeypatch
+    ):
+        await printer_factory(name="H2S05")
+        m = await _machine_for(async_client, "H2S05")
+        raised = self._collide_on_import_commit(monkeypatch, times=1)
+        body = {
+            "new_machines": [{"key": "X1C09", "name": "X1C09", "model": "X1C"}],
+            "readings": [
+                {"key": "X1C09", "reading_date": "2026-01-01", "hours": 100},
+                {"machine_id": m["id"], "reading_date": "2026-01-01", "hours": 861},
+            ],
+        }
+        response = await async_client.post(f"{BASE}/import", json=body)
+        assert raised == [1]
+        assert response.status_code == 200
+        assert response.json() == {"machines_created": 1, "readings_written": 2}
+        monkeypatch.undo()
+        data = (await async_client.get(BASE)).json()
+        [retired] = [x for x in data["machines"] if x["name"] == "X1C09"]  # the rolled-back attempt left no twin
+        assert sorted((r["machine_id"], r["hours"]) for r in data["readings"] if r["source"] == "manual") == sorted(
+            [(retired["id"], 100.0), (m["id"], 861.0)]
+        )
+
+    async def test_import_second_collision_still_raises(self, async_client: AsyncClient, printer_factory, monkeypatch):
+        from sqlalchemy.exc import IntegrityError
+
+        await printer_factory(name="H2S06")
+        m = await _machine_for(async_client, "H2S06")
+        raised = self._collide_on_import_commit(monkeypatch, times=2)
+        row = {"machine_id": m["id"], "reading_date": "2026-01-01", "hours": 861}
+        with pytest.raises(IntegrityError):
+            await async_client.post(f"{BASE}/import", json={"readings": [row]})
+        assert raised == [1, 1]
+
     async def test_import_replaces_existing_dates(self, async_client: AsyncClient, printer_factory):
         await printer_factory(name="H2S01")
         m = await _machine_for(async_client, "H2S01")
@@ -250,6 +331,90 @@ class TestHoursImport:
         await async_client.post(f"{BASE}/import", json={"readings": [row]})
         data = (await async_client.get(BASE)).json()
         assert [r["hours"] for r in data["readings"]] == [862.0]
+
+    async def test_import_batch_semantics(self, async_client: AsyncClient, printer_factory, db_session):
+        from sqlalchemy import event
+
+        from backend.app.models.maintenance import HourReading
+
+        await printer_factory(name="H2S02")
+        m = await _machine_for(async_client, "H2S02")
+        day = date(2026, 1, 1)
+        manual = HourReading(machine_id=m["id"], reading_date=day, source="manual", hours=10, raw_hours=9)
+        auto = HourReading(machine_id=m["id"], reading_date=day, source="auto", hours=11, raw_hours=8)
+        db_session.add_all([manual, auto])
+        await db_session.commit()
+        manual_id, auto_id = manual.id, auto.id
+        selects: list[str] = []
+
+        def count(_conn, _cursor, statement, *_args):
+            if statement.lstrip().upper().startswith("SELECT") and "FROM hour_readings" in statement:
+                selects.append(statement)
+
+        engine = db_session.bind.sync_engine
+        event.listen(engine, "before_cursor_execute", count)
+        try:
+            rows = [
+                {"machine_id": m["id"], "reading_date": "2026-01-01", "hours": 20},
+                {"machine_id": m["id"], "reading_date": "2026-01-02", "hours": 30},
+                {"machine_id": m["id"], "reading_date": "2026-01-02", "hours": 31},
+                {"machine_id": m["id"], "reading_date": "2026-01-01", "hours": 21},
+            ]
+            response = await async_client.post(f"{BASE}/import", json={"readings": rows})
+        finally:
+            event.remove(engine, "before_cursor_execute", count)
+        assert response.json() == {"machines_created": 0, "readings_written": 4}
+        assert len(selects) == 1  # one lookup for the whole sheet, not one per cell
+        db_session.expire_all()
+        got = (await db_session.execute(select(HourReading).order_by(HourReading.id))).scalars().all()
+        state = [(r.id, str(r.reading_date), r.source, r.hours, r.raw_hours) for r in got]
+        assert state[:2] == [
+            (manual_id, "2026-01-01", "manual", 21.0, None),
+            (auto_id, "2026-01-01", "auto", 11.0, 8.0),
+        ]
+        assert [s[1:] for s in state[2:]] == [("2026-01-02", "manual", 31.0, None)]  # duplicates: last wins
+
+    async def test_import_caps_readings_at_20000(self, async_client: AsyncClient, printer_factory):
+        await printer_factory(name="H2S03")
+        m = await _machine_for(async_client, "H2S03")
+        row = {"machine_id": m["id"], "reading_date": "2026-01-01", "hours": 1}
+        over = await async_client.post(f"{BASE}/import", json={"readings": [row] * 20001})
+        assert over.status_code == 422
+        assert (await async_client.get(BASE)).json()["readings"] == []
+        ok = await async_client.post(f"{BASE}/import", json={"readings": [row] * 20000})
+        assert ok.json() == {"machines_created": 0, "readings_written": 20000}
+
+    async def test_import_caps_new_machines_at_200(self, async_client: AsyncClient):
+        def body(n):
+            return {
+                "new_machines": [{"key": f"k{i}", "name": f"M{i}"} for i in range(n)],
+                "readings": [{"key": "k0", "reading_date": "2026-01-01", "hours": 1}],
+            }
+
+        assert (await async_client.post(f"{BASE}/import", json=body(201))).status_code == 422
+        assert (await async_client.get(BASE)).json()["machines"] == []
+        ok = await async_client.post(f"{BASE}/import", json=body(200))
+        assert ok.json() == {"machines_created": 200, "readings_written": 1}
+
+    async def test_import_reading_key_capped_at_100_chars(self, async_client: AsyncClient):
+        def body(key):
+            return {
+                "new_machines": [{"key": key[:100], "name": "A"}],
+                "readings": [{"key": key, "reading_date": "2026-01-01", "hours": 1}],
+            }
+
+        assert (await async_client.post(f"{BASE}/import", json=body("k" * 101))).status_code == 422
+        assert (await async_client.post(f"{BASE}/import", json=body("k" * 100))).status_code == 200
+
+    async def test_batch_caps_entries_at_500(self, async_client: AsyncClient):
+        # Distinct unknown ids: at the cap the route's own "Unknown machine" check answers, over it the schema does.
+        def body(n):
+            return {"reading_date": "2026-01-01", "entries": [{"machine_id": 900000 + i, "hours": 1} for i in range(n)]}
+
+        over = await async_client.post(f"{BASE}/readings", json=body(501))
+        assert over.status_code == 422 and isinstance(over.json()["detail"], list)
+        at_cap = await async_client.post(f"{BASE}/readings", json=body(500))
+        assert at_cap.status_code == 422 and at_cap.json()["detail"].startswith("Unknown machine")
 
     @pytest.mark.parametrize(
         "body",
@@ -275,6 +440,17 @@ class TestHoursImport:
             "readings": [{"key": "k", "reading_date": "2026-01-01", "hours": 1}],
         }
         assert (await async_client.post(f"{BASE}/import", json=body)).status_code == 422
+
+    async def test_import_rejects_two_new_machines_with_one_name(self, async_client: AsyncClient):
+        """T-046: one name under two keys (case and spaces aside) is refused instead of creating two twins."""
+        body = {
+            "new_machines": [{"key": "a", "name": "X1C07"}, {"key": "b", "name": " x1c07 "}],
+            "readings": [{"key": "a", "reading_date": "2026-01-01", "hours": 1}],
+        }
+        response = await async_client.post(f"{BASE}/import", json=body)
+        assert response.status_code == 422
+        assert response.json()["detail"] == "Duplicate machine name"
+        assert (await async_client.get(BASE)).json()["machines"] == []
 
 
 @pytest.mark.asyncio
@@ -437,6 +613,73 @@ class TestHoursNotesAndSettings:
         assert (await async_client.patch(f"{BASE}/machines/{m['id']}", json={"purchase_price": -1})).status_code == 422
         assert (await async_client.patch(f"{BASE}/machines/{m['id']}", json={"name": "Renamed"})).status_code == 409
 
+    async def test_update_machine_unknown_404_and_duplicate_name_422(self, async_client: AsyncClient, db_session):
+        a = HourMachine(name="Alpha", model="H2C", retired=True)
+        db_session.add_all([a, HourMachine(name="Beta", model="H2C", retired=True)])
+        await db_session.commit()
+        assert (await async_client.patch(f"{BASE}/machines/99999", json={"purchase_price": 1})).status_code == 404
+        assert (await async_client.patch(f"{BASE}/machines/99999", json={"name": "Z"})).status_code == 404
+        response = await async_client.patch(f"{BASE}/machines/{a.id}", json={"name": " BETA "})
+        assert response.status_code == 422
+        assert "already exists" in response.json()["detail"]
+        response = await async_client.patch(f"{BASE}/machines/{a.id}", json={"model": "X1C"})
+        assert response.status_code == 200
+        assert response.json()["model"] == "X1C"
+
+    async def test_note_on_unknown_machine_404(self, async_client: AsyncClient):
+        response = await async_client.post(
+            f"{BASE}/machines/99999/events", json={"event_date": "2026-01-01", "label": "hello"}
+        )
+        assert response.status_code == 404
+
+    async def test_today_reading_skips_recalibration_when_printer_vanishes(
+        self, async_client: AsyncClient, printer_factory, db_session, monkeypatch
+    ):
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from backend.app.models.printer import Printer
+
+        p = await printer_factory(name="X1C31", runtime_seconds=3600 * 100)
+        m = await _machine_for(async_client, "X1C31")
+        real_get = AsyncSession.get
+
+        async def get_without_printer(self, entity, *args, **kwargs):
+            return None if entity is Printer else await real_get(self, entity, *args, **kwargs)
+
+        monkeypatch.setattr(AsyncSession, "get", get_without_printer)
+        response = await async_client.post(
+            f"{BASE}/readings",
+            json={"reading_date": date.today().isoformat(), "entries": [{"machine_id": m["id"], "hours": 500}]},
+        )
+        assert response.status_code == 200
+        assert [(r["source"], r["hours"]) for r in response.json()["readings"]] == [("manual", 500.0)]
+        monkeypatch.undo()
+        await db_session.refresh(p)
+        assert p.print_hours_offset == 0.0
+
+    async def test_overview_survives_printer_deleted_under_next_service(
+        self, async_client: AsyncClient, printer_factory, monkeypatch
+    ):
+        from fastapi import HTTPException
+
+        from backend.app.api.routes import printer_hours as route
+
+        async def gone(_db, _printer_id):
+            raise HTTPException(status_code=404, detail="Printer not found")
+
+        monkeypatch.setattr(route, "next_service_hours", gone)
+        await printer_factory(name="X1C32", runtime_seconds=3600 * 10)
+        m = await _machine_for(async_client, "X1C32")
+        await async_client.post(
+            f"{BASE}/readings",
+            json={"reading_date": date.today().isoformat(), "entries": [{"machine_id": m["id"], "hours": 3000}]},
+        )
+        response = await async_client.get(BASE)
+        assert response.status_code == 200
+        machine = next(x for x in response.json()["machines"] if x["name"] == "X1C32")
+        assert machine["trust"] in ("calibrated", "drifting")
+        assert machine["next_service_hours"] is None
+
     async def test_delete_machine_removes_its_events(self, async_client: AsyncClient, db_session):
         from backend.app.models.maintenance import HourEvent
 
@@ -492,3 +735,218 @@ async def test_both_calibration_routes_produce_the_same_state(async_client: Asyn
         assert len(events) == 1
         states.append((m.last_drift_hours, str(auto.reading_date), auto.hours, auto.raw_hours))
     assert states[0] == states[1]
+
+
+@pytest.fixture
+def limited_to():
+    """Run the request as a caller limited to some printers (#1727)."""
+    from backend.app.core.auth import get_printer_scope_if_auth_enabled
+    from backend.app.core.printer_scope import PrinterScope
+    from backend.app.main import app
+
+    def _limit(*printer_ids):
+        app.dependency_overrides[get_printer_scope_if_auth_enabled] = lambda: PrinterScope(frozenset(printer_ids))
+
+    yield _limit
+    app.dependency_overrides.pop(get_printer_scope_if_auth_enabled, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestHoursPrinterScope:
+    """Write routes treat a machine on a printer outside the caller's scope as unknown (T-005)."""
+
+    async def _two(self, async_client, printer_factory):
+        mine = await printer_factory(name="SCOPE-IN", runtime_seconds=3600 * 100)
+        other = await printer_factory(name="SCOPE-OUT", runtime_seconds=3600 * 100)
+        return mine, other, await _machine_for(async_client, "SCOPE-IN"), await _machine_for(async_client, "SCOPE-OUT")
+
+    async def test_save_readings(self, async_client, printer_factory, db_session, limited_to):
+        mine, other, m_in, m_out = await self._two(async_client, printer_factory)
+        limited_to(mine.id)
+        today = date.today().isoformat()
+        response = await async_client.post(
+            f"{BASE}/readings", json={"reading_date": today, "entries": [{"machine_id": m_out["id"], "hours": 500}]}
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == f"Unknown machine {m_out['id']}"
+        await db_session.refresh(other)
+        assert other.print_hours_offset == 0.0
+        ok = await async_client.post(
+            f"{BASE}/readings", json={"reading_date": today, "entries": [{"machine_id": m_in["id"], "hours": 500}]}
+        )
+        assert ok.status_code == 200
+        await db_session.refresh(mine)
+        assert mine.print_hours_offset == 400.0
+
+    async def test_import_readings(self, async_client, printer_factory, limited_to):
+        mine, _, m_in, m_out = await self._two(async_client, printer_factory)
+        limited_to(mine.id)
+        row = {"reading_date": "2026-01-01", "hours": 10}
+        out = await async_client.post(f"{BASE}/import", json={"readings": [{"machine_id": m_out["id"], **row}]})
+        assert (out.status_code, out.json()["detail"]) == (422, f"Unknown machine {m_out['id']}")
+        ok = await async_client.post(f"{BASE}/import", json={"readings": [{"machine_id": m_in["id"], **row}]})
+        assert ok.status_code == 200
+
+    async def test_delete_readings_only_touches_in_scope_machines(
+        self, async_client, printer_factory, db_session, limited_to
+    ):
+        from backend.app.models.maintenance import HourReading
+
+        mine, _, m_in, m_out = await self._two(async_client, printer_factory)
+        for m in (m_in, m_out):
+            await async_client.post(
+                f"{BASE}/readings",
+                json={"reading_date": "2026-01-01", "entries": [{"machine_id": m["id"], "hours": 7}]},
+            )
+        limited_to(mine.id)
+        response = await async_client.delete(f"{BASE}/readings", params={"reading_date": "2026-01-01"})
+        assert response.status_code == 200
+        left = (await db_session.execute(select(HourReading.machine_id))).scalars().all()
+        assert left == [m_out["id"]]
+
+    async def test_overview_shows_only_in_scope_and_retired_machines(self, async_client, printer_factory, limited_to):
+        mine, _, m_in, m_out = await self._two(async_client, printer_factory)
+        today = date.today().isoformat()
+        for m in (m_in, m_out):
+            await async_client.post(f"{BASE}/machines/{m['id']}/events", json={"event_date": today, "label": "n"})
+            await async_client.post(
+                f"{BASE}/readings",
+                json={"reading_date": "2026-01-01", "entries": [{"machine_id": m["id"], "hours": 7}]},
+            )
+        retired = await async_client.post(
+            f"{BASE}/import",
+            json={
+                "new_machines": [{"key": "k", "name": "OLD-ONE"}],
+                "readings": [{"key": "k", "reading_date": "2026-01-01", "hours": 3}],
+            },
+        )
+        assert retired.status_code == 200
+        full = (await async_client.get(BASE)).json()
+        assert {m["id"] for m in full["machines"]} >= {m_in["id"], m_out["id"]}
+        old_id = next(m["id"] for m in full["machines"] if m["name"] == "OLD-ONE")
+        limited_to(mine.id)
+        visible = {m_in["id"], old_id}
+        for body in (
+            (await async_client.get(BASE)).json(),
+            (await async_client.delete(f"{BASE}/readings", params={"reading_date": "2030-01-01"})).json(),
+        ):
+            assert {m["id"] for m in body["machines"]} == visible
+            assert {r["machine_id"] for r in body["readings"]} <= visible
+            assert {e["machine_id"] for e in body["events"]} <= visible
+            assert m_out["id"] not in body["due_machine_ids"]
+            assert any(e["machine_id"] == m_in["id"] for e in body["events"])
+
+    async def test_retired_machines_keep_their_last_printers_scope(
+        self, async_client, printer_factory, db_session, limited_to
+    ):
+        """T-024: a retired machine stays in its last printer's scope; never-linked imports stay visible to all."""
+        from backend.app.models.maintenance import HourReading
+
+        mine, other, m_in, m_out = await self._two(async_client, printer_factory)
+        for m in (m_in, m_out):
+            await async_client.post(
+                f"{BASE}/readings",
+                json={"reading_date": "2026-01-01", "entries": [{"machine_id": m["id"], "hours": 7}]},
+            )
+        await async_client.post(
+            f"{BASE}/import",
+            json={
+                "new_machines": [{"key": "k", "name": "OLD-ONE"}],
+                "readings": [{"key": "k", "reading_date": "2026-01-01", "hours": 3}],
+            },
+        )
+        mine_id = mine.id
+        # Through the route: on PostgreSQL ON DELETE SET NULL would unlink a raw delete before the sync sees it.
+        for printer_id in (mine.id, other.id):
+            assert (await async_client.delete(f"/api/v1/printers/{printer_id}")).status_code == 200
+        full = (await async_client.get(BASE)).json()
+        assert all(m["retired"] for m in full["machines"])
+        old_id = next(m["id"] for m in full["machines"] if m["name"] == "OLD-ONE")
+        limited_to(mine_id)
+        body = (await async_client.get(BASE)).json()
+        assert {m["id"] for m in body["machines"]} == {m_in["id"], old_id}
+        assert {r["machine_id"] for r in body["readings"]} == {m_in["id"], old_id}
+        assert (await async_client.patch(f"{BASE}/machines/{m_out['id']}", json={"name": "x"})).status_code == 404
+        assert (await async_client.delete(f"{BASE}/machines/{m_out['id']}")).status_code == 404
+        row = {"reading_date": "2026-01-02", "hours": 10}
+        out = await async_client.post(f"{BASE}/import", json={"readings": [{"machine_id": m_out["id"], **row}]})
+        assert (out.status_code, out.json()["detail"]) == (422, f"Unknown machine {m_out['id']}")
+        for machine_id in (m_in["id"], old_id):
+            ok = await async_client.post(f"{BASE}/import", json={"readings": [{"machine_id": machine_id, **row}]})
+            assert ok.status_code == 200
+        assert (await async_client.patch(f"{BASE}/machines/{m_in['id']}", json={"name": "y"})).status_code == 200
+        response = await async_client.delete(f"{BASE}/readings", params={"reading_date": "2026-01-01"})
+        assert response.status_code == 200
+        left = (await db_session.execute(select(HourReading.machine_id, HourReading.reading_date))).all()
+        assert sorted((mid, str(d)) for mid, d in left) == sorted(
+            [(m_out["id"], "2026-01-01"), (m_in["id"], "2026-01-02"), (old_id, "2026-01-02")]
+        )
+
+    async def test_deleting_a_printer_retires_its_machine_once(self, async_client, printer_factory, db_session):
+        """T-024 follow-up: delete_printer records the machine's last printer, with one 'retired' event."""
+        from backend.app.models.maintenance import HourEvent
+
+        printer = await printer_factory(name="GOING", runtime_seconds=3600 * 10)
+        printer_id = printer.id
+        machine = await _machine_for(async_client, "GOING")
+        assert (await async_client.delete(f"/api/v1/printers/{printer_id}")).status_code == 200
+        for _ in range(2):  # the next syncs find it retired and unlinked: nothing more to do
+            body = (await async_client.get(BASE)).json()
+        out = next(m for m in body["machines"] if m["id"] == machine["id"])
+        assert out["retired"] is True
+        row = (await db_session.execute(select(HourMachine).where(HourMachine.id == machine["id"]))).scalar_one()
+        assert (row.printer_id, row.retired_printer_id, row.retired) == (None, printer_id, True)
+        kinds = (await db_session.execute(select(HourEvent.kind).where(HourEvent.machine_id == machine["id"]))).all()
+        assert [k for (k,) in kinds].count("retired") == 1
+
+    async def test_only_unrestricted_callers_change_the_interval(self, async_client, printer_factory, limited_to):
+        """T-026: the reading interval is fleet-wide, so a printer-scoped caller gets 403 and the setting stays."""
+        mine, *_ = await self._two(async_client, printer_factory)
+        assert (await async_client.patch(f"{BASE}/settings", json={"reading_interval_days": 30})).status_code == 200
+        limited_to(mine.id)
+        response = await async_client.patch(f"{BASE}/settings", json={"reading_interval_days": 7})
+        assert (response.status_code, response.json()["detail"]) == (
+            403,
+            "Changing the reading interval needs access to every printer",
+        )
+        assert (await async_client.get(BASE)).json()["reading_interval_days"] == 30
+
+    async def test_name_collisions_with_hidden_machines_answer_generically(
+        self, async_client, printer_factory, limited_to
+    ):
+        """T-025: a clash with an out-of-scope machine does not confirm its name; in-scope clashes stay specific."""
+        mine, *_ = await self._two(async_client, printer_factory)
+        await async_client.post(
+            f"{BASE}/import",
+            json={
+                "new_machines": [{"key": "k", "name": "OLD-ONE"}],
+                "readings": [{"key": "k", "reading_date": "2026-01-01", "hours": 3}],
+            },
+        )
+        old_id = (await _machine_for(async_client, "OLD-ONE"))["id"]
+        limited_to(mine.id)
+        hidden, known = (422, "This machine name is not available"), (422, "A machine named scope-in already exists")
+        for name, expected in (("scope-out", hidden), ("scope-in", known)):
+            new = {
+                "new_machines": [{"key": "n", "name": name}],
+                "readings": [{"key": "n", "reading_date": "2026-01-01", "hours": 3}],
+            }
+            response = await async_client.post(f"{BASE}/import", json=new)
+            assert (response.status_code, response.json()["detail"]) == expected
+            response = await async_client.patch(f"{BASE}/machines/{old_id}", json={"name": name})
+            assert (response.status_code, response.json()["detail"]) == expected
+        assert (await async_client.patch(f"{BASE}/machines/{old_id}", json={"name": "free"})).status_code == 200
+
+    async def test_notes_and_machine_edits(self, async_client, printer_factory, limited_to):
+        mine, _, m_in, m_out = await self._two(async_client, printer_factory)
+        note = {"event_date": "2026-01-01", "label": "hello"}
+        event_id = (await async_client.post(f"{BASE}/machines/{m_out['id']}/events", json=note)).json()["id"]
+        limited_to(mine.id)
+        assert (await async_client.post(f"{BASE}/machines/{m_out['id']}/events", json=note)).status_code == 404
+        assert (await async_client.delete(f"{BASE}/events/{event_id}")).status_code == 404
+        patch = {"purchase_price": 1.0}
+        assert (await async_client.patch(f"{BASE}/machines/{m_out['id']}", json=patch)).status_code == 404
+        assert (await async_client.delete(f"{BASE}/machines/{m_out['id']}")).status_code == 404
+        assert (await async_client.post(f"{BASE}/machines/{m_in['id']}/events", json=note)).status_code == 200
+        assert (await async_client.patch(f"{BASE}/machines/{m_in['id']}", json=patch)).status_code == 200

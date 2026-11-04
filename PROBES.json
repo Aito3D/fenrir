@@ -1,13 +1,79 @@
 [
- {"id": "pdm-openapi", "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_pdm_openapi.py 2>/dev/null", "timeout": 300, "scrub": [], "files": []},
- {"id": "pdm-ddl", "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import backend.app.main; from sqlalchemy.schema import CreateTable, CreateIndex; from sqlalchemy.dialects import sqlite; from backend.app.core.database import Base; [print(str(CreateTable(t).compile(dialect=sqlite.dialect())).strip() + ';') or [print(str(CreateIndex(i).compile(dialect=sqlite.dialect())).strip() + ';') for i in sorted(t.indexes, key=lambda i: i.name or '')] for n, t in sorted(Base.metadata.tables.items()) if n.startswith('project') or n in ('aito_task_deliveries', 'aito_tasks', 'print_queue', 'library_files', 'archives')]\" 2>/dev/null", "timeout": 300, "scrub": [], "files": []},
- {"id": "pdm-migrations-index", "cmd": "grep -inE '^\\s*#\\s*Migration:.*(project|revision|deliver|storage_dir|linked_project|P-0|pdm)' backend/app/core/database.py | sed 's/^[0-9]*:[[:space:]]*//'", "timeout": 30, "scrub": [], "files": []},
- {"id": "pdm-route-perms", "cmd": "grep -hoE 'RequirePermissionIfAuthEnabled\\([^)]*\\)|require_ownership_permission\\([^)]*\\)|require_any_permission_if_auth_enabled\\([^)]*\\)|content_length_capped_route\\([^)]*\\)' backend/app/api/routes/projects_pdm.py backend/app/api/routes/project_files.py backend/app/api/routes/aito_project_links.py backend/app/api/routes/projects.py | sort | uniq -c | sed 's/^ *//'", "timeout": 30, "scrub": [], "files": []},
- {"id": "pdm-pydantic-schemas", "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import json, inspect; from pydantic import BaseModel; import backend.app.schemas.project as a, backend.app.schemas.project_files as b, backend.app.schemas.aito_project_links as c; out = {}; [out.update({n: k.model_json_schema() for n, k in sorted(vars(m).items()) if inspect.isclass(k) and issubclass(k, BaseModel) and k.__module__ == m.__name__}) for m in (a, b, c)]; print(json.dumps(out, sort_keys=True, indent=1, default=str))\" 2>/dev/null", "timeout": 300, "scrub": [], "files": []},
- {"id": "pdm-rules", "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_pdm_rules.py 2>/dev/null", "timeout": 300, "scrub": ["-\\d{14}", "tmp[a-z0-9_]{8}"], "files": []},
- {"id": "pdm-http", "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_pdm_api.py 2>/dev/null", "timeout": 600, "scrub": ["\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+(Z|\\+00:00)?", "-\\d{14}"], "files": []},
- {"id": "pdm-frontend-pure", "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_pdm_frontend_entry.ts --format cjs --file /tmp/fenrir-refactor-probe/pdmFrontend.cjs >/dev/null 2>&1 && TZ=UTC node tools/probe_pdm_frontend.cjs", "timeout": 300, "scrub": [], "files": []},
- {"id": "pdm-i18n", "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_pdm_i18n_entry.ts --format cjs --file /tmp/fenrir-refactor-probe/pdmI18n.cjs >/dev/null 2>&1 && node tools/probe_pdm_i18n.cjs", "timeout": 300, "scrub": [], "files": []},
- {"id": "fe-router-projects", "cmd": "grep -oE 'path=\"[^\"]*\"|<Route|element=\\{<[A-Za-z0-9_]+' frontend/src/App.tsx | sed 's/element={</element=/' | nl -ba | grep -iE 'project|<Route' | grep -iB1 'project' | grep -v '^--$'", "timeout": 30, "scrub": [], "files": []},
- {"id": "app-permissions-projects", "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import json; from backend.app.core import permissions as p; from backend.app.core import auth as a; projects = sorted(x for x in p.ALL_PERMISSIONS if x.startswith(('projects:', 'aito:', 'library:'))); cats = {k: sorted(str(x) for x in v) for k, v in sorted(p.PERMISSION_CATEGORIES.items()) if any(str(x).startswith('projects:') for x in v)}; print(json.dumps({'perms': projects, 'categories': cats, 'default_groups': {g: sorted(str(x) for x in perms if str(x).startswith('projects:')) for g, perms in sorted((k, v.get('permissions', v) if isinstance(v, dict) else v) for k, v in p.DEFAULT_GROUPS.items())}}, indent=1, default=str))\" 2>/dev/null", "timeout": 120, "scrub": [], "files": []}
+ {
+  "id": "hours-openapi",
+  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_hours_openapi.py 2>/dev/null",
+  "timeout": 300,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "hours-ddl",
+  "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import backend.app.main; from sqlalchemy.schema import CreateTable, CreateIndex; from sqlalchemy.dialects import sqlite; from backend.app.core.database import Base; [print(str(CreateTable(t).compile(dialect=sqlite.dialect())).strip() + ';') or [print(str(CreateIndex(i).compile(dialect=sqlite.dialect())).strip() + ';') for i in sorted(t.indexes, key=lambda i: i.name or '')] for n, t in sorted(Base.metadata.tables.items()) if n.startswith('hour_')]\" 2>/dev/null",
+  "timeout": 300,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "hours-migration",
+  "cmd": "sed -n '/^async def _migrate_printer_hours_columns/,/^async def /p' backend/app/core/database.py | sed '$d'; grep -nE '_migrate_printer_hours_columns\\(conn\\)' backend/app/core/database.py | sed 's/^[0-9]*://; s/^[[:space:]]*//'",
+  "timeout": 30,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "hours-route-perms",
+  "cmd": "grep -hoE 'RequirePermissionIfAuthEnabled\\([^)]*\\)|require_ownership_permission\\([^)]*\\)|require_any_permission_if_auth_enabled\\([^)]*\\)|@router\\.[a-z]+\\([^)]*\\)' backend/app/api/routes/printer_hours.py | sort | uniq -c | sed 's/^ *//'",
+  "timeout": 30,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "hours-pydantic-schemas",
+  "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import json, inspect; from pydantic import BaseModel; import backend.app.schemas.maintenance as m; out = {n: k.model_json_schema() for n, k in sorted(vars(m).items()) if inspect.isclass(k) and issubclass(k, BaseModel) and k.__module__ == m.__name__ and n.startswith(('Hour', 'Hours'))}; print(json.dumps(out, sort_keys=True, indent=1, default=str))\" 2>/dev/null",
+  "timeout": 300,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "hours-rules",
+  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_hours_rules.py 2>/dev/null",
+  "timeout": 300,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "hours-http",
+  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_hours_api.py 2>/dev/null",
+  "timeout": 600,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "hours-frontend-pure",
+  "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_hours_frontend_entry.ts --format cjs --file /tmp/fenrir-refactor-probe/hoursFrontend.cjs >/dev/null 2>&1 && TZ=UTC node tools/probe_hours_frontend.cjs",
+  "timeout": 300,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "hours-i18n",
+  "cmd": "mkdir -p /tmp/fenrir-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_hours_i18n_entry.ts --format cjs --file /tmp/fenrir-refactor-probe/hoursI18n.cjs >/dev/null 2>&1 && node tools/probe_hours_i18n.cjs",
+  "timeout": 300,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "hours-api-client",
+  "cmd": "sed -n '/^export interface HourMachine {/,/^\\/\\/ External Links/p' frontend/src/api/client.ts | grep -vE '^// External Links'; awk '/^  (setPrinterHours|getPrinterHours|saveHourReadings|deleteHourReadings|importHourReadings|deleteHourMachine|createHourEvent|deleteHourEvent|updateHourSettings|updateHourMachine)[A-Za-z]*:/{p=1} p{print} p && (/^    }\\),?$/ || (/^  [a-zA-Z]+: .*\\),$/ && !/\\{$/)){p=0}' frontend/src/api/client.ts",
+  "timeout": 30,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "hours-tab-wiring",
+  "cmd": "grep -nE 'HoursTab|hours' frontend/src/pages/MaintenancePage.tsx | grep -iE 'HoursTab|tab' | sed 's/^[0-9]*://; s/^[[:space:]]*//'; grep -oE 'maintenance\\.hours\\.(title|tab)[a-zA-Z.]*' frontend/src/pages/MaintenancePage.tsx | sort -u",
+  "timeout": 30,
+  "scrub": [],
+  "files": []
+ }
 ]

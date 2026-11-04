@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
@@ -505,6 +505,42 @@ describe('HoursTab', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Save 1 readings' }));
     await waitFor(() => expect(body).toEqual({ reading_date: '2031-02-15', entries: [{ machine_id: 2, hours: 1300 }] }));
     await waitFor(() => expect(screen.queryByTestId('hours-reading-pass')).not.toBeInTheDocument());
+  });
+
+  it('pass save sends one save per click and stays disabled until it finishes', async () => {
+    serve();
+    let posts = 0;
+    server.use(
+      http.post('/api/v1/maintenance/hours/readings', () => {
+        posts += 1;
+        // A failed save keeps the pass open, so the button can be seen re-enabling.
+        return HttpResponse.json({ detail: 'nope' }, { status: 500 });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    await user.click((await screen.findAllByRole('button', { name: 'Take readings' }))[0]);
+    const dialog = await screen.findByTestId('hours-reading-pass');
+    // Hold the pre-save overview refetch.
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    server.use(
+      http.get('/api/v1/maintenance/hours', async () => {
+        await held;
+        return HttpResponse.json(overview);
+      }),
+    );
+    await user.type(within(dialog).getByRole('textbox', { name: 'H2S02' }), '1300{Enter}{Enter}');
+    const save = within(dialog).getByRole('button', { name: 'Save 1 readings' });
+    // Same-tick double click: the second must be ignored before any re-render.
+    fireEvent.click(save);
+    fireEvent.click(save);
+    await waitFor(() => expect(save).toBeDisabled());
+    expect(posts).toBe(0);
+    release();
+    await waitFor(() => expect(posts).toBe(1));
+    await waitFor(() => expect(save).toBeEnabled());
+    expect(posts).toBe(1);
   });
 
   it('?pass=1 opens the pass on load', async () => {

@@ -16,12 +16,18 @@ export interface MachineSeries {
   auto: HourPoint[];
 }
 
-const DAY_MS = 86_400_000;
+export const DAY_MS = 86_400_000;
 const pad = (n: number) => String(n).padStart(2, '0');
 
 export function dayNumber(iso: string): number {
   const [y, m, d] = iso.split('-').map(Number);
   return Date.UTC(y, m - 1, d) / DAY_MS;
+}
+
+/** Formats an ISO day (YYYY-MM-DD) for `language`, always in UTC so the host timezone never shifts the day. */
+export function isoDayFormatter(language: string, opts: Intl.DateTimeFormatOptions = {}): (iso: string) => string {
+  const fmt = new Intl.DateTimeFormat(language, { ...opts, timeZone: 'UTC' });
+  return (iso) => fmt.format(dayNumber(iso) * DAY_MS);
 }
 
 const byDate = (a: HourPoint, b: HourPoint) => a.date.localeCompare(b.date);

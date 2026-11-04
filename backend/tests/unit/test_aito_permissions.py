@@ -107,6 +107,7 @@ WRITE_ROUTES = [
     ("send_pickup_sms", "post", f"/api/v1/aito/{_MISSING_ID}/pickup-sms", {"message": "hello"}),
     ("sync_project_now", "post", f"/api/v1/aito/{_MISSING_ID}/sync", None),
     ("set_quote_status", "post", f"/api/v1/aito/{_MISSING_ID}/quote-status", {"status": "sent"}),
+    ("extend_quote_expiry", "post", f"/api/v1/aito/{_MISSING_ID}/quote-extend", None),
     ("restore_project", "post", f"/api/v1/aito/{_MISSING_ID}/restore", None),
     ("delete_project", "delete", f"/api/v1/aito/{_MISSING_ID}", None),
     ("merge_project", "post", f"/api/v1/aito/{_MISSING_ID}/merge", {"source_project_id": 1}),
@@ -118,7 +119,6 @@ WRITE_ROUTES = [
     ),
     ("transfer_client", "put", f"/api/v1/aito/{_MISSING_ID}/transfer-client", {"client_id": "z9", "client_name": "X"}),
     ("get_tracking_link", "get", f"/api/v1/aito/{_MISSING_ID}/tracking-link", None),
-    ("regenerate_tracking_token", "post", f"/api/v1/aito/{_MISSING_ID}/tracking-token", None),
     ("set_watch", "put", f"/api/v1/aito/{_MISSING_ID}/watch", {"kinds": []}),
     ("refresh_payment_link", "post", f"/api/v1/aito/{_MISSING_ID}/payment-link/refresh", None),
     (

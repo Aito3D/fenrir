@@ -51,10 +51,11 @@ logger = logging.getLogger(__name__)
 # ignored or bind the new line to the estimate's row — neither is wanted.
 #
 # `name` earns its place for the lines that have no `item_id` (ad-hoc lines
-# typed in Books), which would otherwise arrive nameless. `header_name` is
-# how Books stores a line-item header on both estimates and invoices (see
-# aito_quote_export.build_line_items), so the invoice PDF keeps the same
-# per-task grouping the quote had.
+# typed in Books), which would otherwise arrive nameless. A header is its
+# own `line_item_category: "header"` row on estimates and invoices alike
+# (see aito_quote_export.build_line_items), copied as that row alone so the
+# invoice PDF keeps the same per-task grouping the quote had. Books returns
+# its title as `name` but only stores one sent as `description`.
 _LINE_FIELDS = ("item_id", "name", "description", "rate", "quantity", "unit", "tax_id", "item_order")
 
 
@@ -121,19 +122,31 @@ class RetainerApplication:
 def build_line_items(estimate_lines: list[dict]) -> list[dict]:
     """The estimate's lines, reduced to what an invoice create accepts.
 
+    A header row is copied as ``{"line_item_category": "header",
+    "description"}`` (its title) plus its ``item_order``: sent with the zero rate and quantity Books echoes on it, it would
+    be an item. ``header_name`` is never sent — Books echoes it empty on every
+    line and refuses a filled one since it moved headers to their own rows.
+
     Optional fields are omitted rather than sent empty: Books echoes
-    ``header_name: ""`` and ``discount: 0`` on every ordinary line, and
-    sending those back would put an empty header and a pointless discount
-    column on the invoice PDF. ``discount`` is copied VERBATIM because Books
+    ``discount: 0`` on every ordinary line, and sending it back would put a
+    pointless discount column on the invoice PDF. ``discount`` is copied VERBATIM because Books
     echoes the long form it accepts (``"10.00%"`` for a ``"10%"`` push — see
     ``aito_quote_export.build_line_items``); re-deriving it as a bare number
     would be read as an amount, not a percent.
     """
     lines: list[dict] = []
     for source in estimate_lines:
+        if source.get("line_item_category") == "header":
+            # Books returns the title as `name`; a header sent with only `name` is dropped.
+            header = {
+                "line_item_category": "header",
+                "description": source.get("name") or source.get("description") or "",
+            }
+            if source.get("item_order") not in (None, ""):
+                header["item_order"] = source["item_order"]  # its place among the lines
+            lines.append(header)
+            continue
         line = {key: source[key] for key in _LINE_FIELDS if source.get(key) not in (None, "")}
-        if source.get("header_name"):
-            line["header_name"] = source["header_name"]
         if source.get("discount"):
             line["discount"] = source["discount"]
         lines.append(line)

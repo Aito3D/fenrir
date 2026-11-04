@@ -1,0 +1,784 @@
+### exit: 0
+### stdout:
+{
+ "dayNumber": {
+  "1970-01-01": 0,
+  "1970-01-02": 1,
+  "2000-02-29": 11016,
+  "2026-05-12": 20585,
+  "2026-12-31": 20818
+ },
+ "machineSeries": {
+  "1": {
+   "manual": [
+    {
+     "date": "2026-01-15",
+     "hours": 900
+    },
+    {
+     "date": "2026-03-01",
+     "hours": 1000
+    },
+    {
+     "date": "2026-04-20",
+     "hours": 1100
+    }
+   ],
+   "auto": [
+    {
+     "date": "2026-04-22",
+     "hours": 1104
+    },
+    {
+     "date": "2026-05-01",
+     "hours": 1130
+    }
+   ]
+  },
+  "2": {
+   "manual": [
+    {
+     "date": "2026-02-01",
+     "hours": 10
+    },
+    {
+     "date": "2026-02-02",
+     "hours": 10
+    }
+   ],
+   "auto": []
+  },
+  "3": {
+   "manual": [
+    {
+     "date": "2025-06-01",
+     "hours": 400
+    },
+    {
+     "date": "2025-12-01",
+     "hours": 420
+    }
+   ],
+   "auto": []
+  },
+  "4": {
+   "manual": [
+    {
+     "date": "2026-04-01",
+     "hours": 100
+    },
+    {
+     "date": "2026-04-30",
+     "hours": 95
+    }
+   ],
+   "auto": []
+  },
+  "5": {
+   "manual": [],
+   "auto": []
+  },
+  "6": {
+   "manual": [
+    {
+     "date": "2026-04-29",
+     "hours": 5
+    }
+   ],
+   "auto": []
+  }
+ },
+ "seriesPoints": {
+  "1": [
+   {
+    "date": "2026-01-15",
+    "hours": 900
+   },
+   {
+    "date": "2026-03-01",
+    "hours": 1000
+   },
+   {
+    "date": "2026-04-20",
+    "hours": 1100
+   },
+   {
+    "date": "2026-04-22",
+    "hours": 1104
+   },
+   {
+    "date": "2026-05-01",
+    "hours": 1130
+   }
+  ],
+  "2": [
+   {
+    "date": "2026-02-01",
+    "hours": 10
+   },
+   {
+    "date": "2026-02-02",
+    "hours": 10
+   }
+  ],
+  "3": [
+   {
+    "date": "2025-06-01",
+    "hours": 400
+   },
+   {
+    "date": "2025-12-01",
+    "hours": 420
+   }
+  ],
+  "4": [
+   {
+    "date": "2026-04-01",
+    "hours": 100
+   },
+   {
+    "date": "2026-04-30",
+    "hours": 95
+   }
+  ],
+  "5": [],
+  "6": [
+   {
+    "date": "2026-04-29",
+    "hours": 5
+   }
+  ]
+ },
+ "valueAt": {
+  "2025-12-31": 0,
+  "2026-01-15": 900,
+  "2026-02-07": 951.1111111111111,
+  "2026-03-01": 1000,
+  "2026-04-21": 1102,
+  "2026-05-01": 1130,
+  "2026-06-01": 1130
+ },
+ "valueAtEmpty": 0,
+ "valueAtSingle": 7,
+ "monthStarts": {
+  "same": [
+   "2026-05-01"
+  ],
+  "span": [
+   "2025-11-01",
+   "2025-12-01",
+   "2026-01-01",
+   "2026-02-01"
+  ],
+  "inverted": []
+ },
+ "monthlyHours": {
+  "1": [
+   0,
+   37.8,
+   62.2,
+   62,
+   68,
+   0
+  ],
+  "2": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "3": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "4": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "6": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ]
+ },
+ "fleetTotal": [
+  420,
+  1367.8,
+  1617.6,
+  1655
+ ],
+ "ratePerMonth": {
+  "m1": 57.49777777777778,
+  "m1_window30": 46.674666666666674,
+  "m1_shortWindow": null,
+  "m2_twoDays": null,
+  "m3_stale": null,
+  "m4_reset": 0,
+  "single": null
+ },
+ "parseHoursCell": {
+  "\"\"": null,
+  "\"  \"": null,
+  "\"0\"": null,
+  "\"0,0\"": null,
+  "\"12\"": 12,
+  "\"12.5\"": 12.5,
+  "\"12,5\"": 12.5,
+  "\"1,234\"": 1234,
+  "\"1,234.5\"": null,
+  "\"1 234\"": 1234,
+  "\"1 234,5\"": 1234.5,
+  "\"1,23,4\"": null,
+  "\"-3\"": null,
+  "\"abc\"": null,
+  "\"3h\"": null,
+  "\"1.2.3\"": null,
+  "\"007\"": 7,
+  "\"1,000,000\"": 1000000
+ },
+ "parseHoursInput": {
+  "\"\"": null,
+  "\"  \"": null,
+  "\"0\"": 0,
+  "\"0,0\"": 0,
+  "\"12\"": 12,
+  "\"12.5\"": 12.5,
+  "\"12,5\"": 12.5,
+  "\"1,234\"": 1234,
+  "\"1,234.5\"": "__undefined__",
+  "\"1 234\"": 1234,
+  "\"1 234,5\"": 1234.5,
+  "\"1,23,4\"": "__undefined__",
+  "\"-3\"": "__undefined__",
+  "\"abc\"": "__undefined__",
+  "\"3h\"": "__undefined__",
+  "\"1.2.3\"": "__undefined__",
+  "\"007\"": 7,
+  "\"1,000,000\"": 1000000
+ },
+ "parseDateCell": {
+  "\"2026-05-12\"": "2026-05-12",
+  "\" 2026-05-12 \"": "2026-05-12",
+  "\"12/05/2026\"": "2026-05-12",
+  "\"1/5/2026\"": "2026-05-01",
+  "\"31/02/2026\"": null,
+  "\"2026-02-30\"": null,
+  "\"2026-13-01\"": null,
+  "\"05/12/26\"": null,
+  "\"2026/05/12\"": null,
+  "\"\"": null,
+  "\"today\"": null,
+  "\"29/02/2024\"": "2024-02-29",
+  "\"29/02/2023\"": null
+ },
+ "parseSheetPaste": {
+  "paste": {
+   "headers": [
+    "X1C04",
+    "x1c01",
+    "H2D-07",
+    "Total"
+   ],
+   "rows": [
+    {
+     "date": "2026-01-15",
+     "values": [
+      900,
+      null,
+      null,
+      900
+     ]
+    },
+    {
+     "date": "2026-03-01",
+     "values": [
+      1000,
+      10,
+      null,
+      1010
+     ]
+    },
+    {
+     "date": "2026-04-20",
+     "values": [
+      1100,
+      12.5,
+      null,
+      1112.5
+     ]
+    },
+    {
+     "date": "2026-06-01",
+     "values": [
+      1200,
+      20,
+      40,
+      1260
+     ]
+    }
+   ],
+   "skipped": 1
+  },
+  "empty": {
+   "headers": [],
+   "rows": [],
+   "skipped": 0
+  },
+  "blankLines": {
+   "headers": [],
+   "rows": [],
+   "skipped": 0
+  },
+  "headerOnly": {
+   "headers": [
+    "A",
+    "B"
+   ],
+   "rows": [],
+   "skipped": 0
+  }
+ },
+ "planImport": {
+  "defaults": {
+   "columns": [
+    {
+     "header": "X1C04",
+     "action": "match",
+     "machineId": 1,
+     "model": "X1C"
+    },
+    {
+     "header": "x1c01",
+     "action": "match",
+     "machineId": 2,
+     "model": "X1C"
+    },
+    {
+     "header": "H2D-07",
+     "action": "create",
+     "machineId": null,
+     "model": "H2D"
+    },
+    {
+     "header": "Total",
+     "action": "ignore",
+     "machineId": null,
+     "model": null
+    }
+   ],
+   "body": {
+    "new_machines": [
+     {
+      "key": "H2D-07",
+      "name": "H2D-07",
+      "model": "H2D"
+     }
+    ],
+    "readings": [
+     {
+      "machine_id": 1,
+      "reading_date": "2026-01-15",
+      "hours": 900
+     },
+     {
+      "machine_id": 1,
+      "reading_date": "2026-03-01",
+      "hours": 1000
+     },
+     {
+      "machine_id": 2,
+      "reading_date": "2026-03-01",
+      "hours": 10
+     },
+     {
+      "machine_id": 1,
+      "reading_date": "2026-04-20",
+      "hours": 1100
+     },
+     {
+      "machine_id": 2,
+      "reading_date": "2026-04-20",
+      "hours": 12.5
+     }
+    ]
+   },
+   "dates": 3,
+   "futureRows": 1
+  },
+  "choices": {
+   "columns": [
+    {
+     "header": "X1C04",
+     "action": "match",
+     "machineId": 1,
+     "model": "X1C"
+    },
+    {
+     "header": "x1c01",
+     "action": "match",
+     "machineId": 2,
+     "model": "X1C"
+    },
+    {
+     "header": "H2D-07",
+     "action": "ignore",
+     "machineId": null,
+     "model": "H2D"
+    },
+    {
+     "header": "Total",
+     "action": "create",
+     "machineId": null,
+     "model": null
+    }
+   ],
+   "body": {
+    "new_machines": [
+     {
+      "key": "Total",
+      "name": "Total",
+      "model": null
+     }
+    ],
+    "readings": [
+     {
+      "machine_id": 1,
+      "reading_date": "2026-01-15",
+      "hours": 900
+     },
+     {
+      "key": "Total",
+      "reading_date": "2026-01-15",
+      "hours": 900
+     },
+     {
+      "machine_id": 1,
+      "reading_date": "2026-03-01",
+      "hours": 1000
+     },
+     {
+      "machine_id": 2,
+      "reading_date": "2026-03-01",
+      "hours": 10
+     },
+     {
+      "key": "Total",
+      "reading_date": "2026-03-01",
+      "hours": 1010
+     },
+     {
+      "machine_id": 1,
+      "reading_date": "2026-04-20",
+      "hours": 1100
+     },
+     {
+      "machine_id": 2,
+      "reading_date": "2026-04-20",
+      "hours": 12.5
+     },
+     {
+      "key": "Total",
+      "reading_date": "2026-04-20",
+      "hours": 1112.5
+     }
+    ]
+   },
+   "dates": 3,
+   "futureRows": 1
+  },
+  "dupHeaders": {
+   "columns": [
+    {
+     "header": "A1",
+     "action": "create",
+     "machineId": null,
+     "model": "A1"
+    }
+   ],
+   "body": {
+    "new_machines": [
+     {
+      "key": "A1",
+      "name": "A1",
+      "model": "A1"
+     }
+    ],
+    "readings": [
+     {
+      "key": "A1",
+      "reading_date": "2026-01-01",
+      "hours": 1
+     }
+    ]
+   },
+   "dates": 1,
+   "futureRows": 0
+  }
+ },
+ "guessModel": {
+  "\"X1C04\"": "X1C",
+  "\" p1s-2\"": "P1S",
+  "\"H2D\"": "H2D",
+  "\"h2c lab\"": "H2C",
+  "\"A1 mini\"": "A1",
+  "\"A1\"": "A1",
+  "\"P2S\"": "P2S",
+  "\"Prusa\"": null,
+  "\"\"": null,
+  "\"X1E7\"": "X1E",
+  "\"x1c\"": "X1C"
+ },
+ "familyOf": [
+  [
+   "X1C04",
+   "X1C"
+  ],
+  [
+   "X1C01",
+   "X1C"
+  ],
+  [
+   "P1S old",
+   "P1S"
+  ],
+  [
+   "h2d-02",
+   "H2D"
+  ],
+  [
+   "Mystery",
+   "UNKNOWN"
+  ],
+  [
+   "X1C02",
+   "X1C"
+  ]
+ ],
+ "familyOfEdge": [
+  "X1",
+  "OTHER",
+  "OTHER"
+ ],
+ "railOrder": [
+  4,
+  5,
+  2,
+  6,
+  1
+ ],
+ "machineColors": {
+  "1": "hsl(212 75% 72%)",
+  "2": "hsl(212 75% 40%)",
+  "3": "hsl(190 75% 55%)",
+  "4": "hsl(275 75% 55%)",
+  "5": "hsl(0 0% 55%)",
+  "6": "hsl(212 75% 56%)"
+ },
+ "checkReading": {
+  "noManual": {
+   "level": "ok",
+   "reason": "noReference",
+   "last": null,
+   "counterDelta": null,
+   "expected": null
+  },
+  "backwards": {
+   "level": "question",
+   "reason": "backwards",
+   "last": {
+    "date": "2026-04-20",
+    "hours": 1100
+   },
+   "counterDelta": 36,
+   "expected": 1136
+  },
+  "okWithCounter": {
+   "level": "ok",
+   "reason": "ok",
+   "last": {
+    "date": "2026-04-20",
+    "hours": 1100
+   },
+   "counterDelta": 36,
+   "expected": 1136
+  },
+  "far": {
+   "level": "question",
+   "reason": "farFromCounter",
+   "last": {
+    "date": "2026-04-20",
+    "hours": 1100
+   },
+   "counterDelta": 36,
+   "expected": 1136
+  },
+  "noCounterNow": {
+   "level": "ok",
+   "reason": "noReference",
+   "last": {
+    "date": "2026-04-20",
+    "hours": 1100
+   },
+   "counterDelta": null,
+   "expected": null
+  },
+  "noRawThen": {
+   "level": "ok",
+   "reason": "noReference",
+   "last": {
+    "date": "2026-02-02",
+    "hours": 10
+   },
+   "counterDelta": null,
+   "expected": null
+  },
+  "exactEdge": {
+   "level": "ok",
+   "reason": "ok",
+   "last": {
+    "date": "2026-04-20",
+    "hours": 1100
+   },
+   "counterDelta": 36,
+   "expected": 1136
+  }
+ },
+ "periodPaces": {
+  "m1": [
+   {
+    "from": "2026-01-15",
+    "to": "2026-03-01",
+    "days": 45,
+    "pace": 67.64444444444445
+   },
+   {
+    "from": "2026-03-01",
+    "to": "2026-04-20",
+    "days": 50,
+    "pace": 60.88
+   }
+  ],
+  "m4": [
+   {
+    "from": "2026-04-01",
+    "to": "2026-04-30",
+    "days": 29,
+    "pace": 0
+   }
+  ],
+  "sameDay": [
+   {
+    "from": "2026-01-01",
+    "to": "2026-01-01",
+    "days": 0,
+    "pace": 0
+   }
+  ],
+  "single": []
+ },
+ "behaviourFlag": {
+  "m1": null,
+  "none": null,
+  "stopped": "stopped",
+  "slowing": "slowing",
+  "steady": null,
+  "shortStop": null
+ },
+ "loadShare": [
+  null,
+  0,
+  0.13688129653964082,
+  0.9999999999999999
+ ],
+ "forecastDate": {
+  "ok": "2026-11-09",
+  "past": null,
+  "noPace": null,
+  "zeroPace": null,
+  "yearWrap": "2027-02-18"
+ },
+ "sameAgePoints": {
+  "m1": [
+   {
+    "day": 0,
+    "hours": 0
+   },
+   {
+    "day": 45,
+    "hours": 100
+   },
+   {
+    "day": 95,
+    "hours": 200
+   },
+   {
+    "day": 97,
+    "hours": 204
+   },
+   {
+    "day": 106,
+    "hours": 230
+   }
+  ],
+  "empty": []
+ },
+ "fleetFacts": {
+  "all": {
+   "lifetime": 1660,
+   "thisMonth": 0,
+   "due": 2,
+   "busiest": {
+    "id": 1,
+    "pace": 57.49777777777778
+   }
+  },
+  "noSeriesMap": {
+   "lifetime": 1660,
+   "thisMonth": 0,
+   "due": 0,
+   "busiest": {
+    "id": 1,
+    "pace": 57.49777777777778
+   }
+  },
+  "monthStartDay": {
+   "lifetime": 1660,
+   "thisMonth": 0,
+   "due": 0,
+   "busiest": {
+    "id": 1,
+    "pace": 65.76543209876544
+   }
+  }
+ },
+ "gapInfo": {
+  "all": {
+   "lastDate": "2026-04-30",
+   "days": 12
+  },
+  "none": {
+   "lastDate": null,
+   "days": 0
+  },
+  "empty": {
+   "lastDate": null,
+   "days": 0
+  }
+ }
+}
+
+### stderr:
+

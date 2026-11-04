@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { HourMachine } from '../../../api/client';
 import { formatMoney } from '../../../utils/pricing';
-import { dayNumber } from '../../../utils/hoursSeries';
+import { isoDayFormatter } from '../../../utils/hoursSeries';
 import { Button } from '../../Button';
 import { inputCls } from '../../formStyles';
 
@@ -20,7 +20,7 @@ export function MachineCost({ machine, lifetime, currency, canEdit, onSave }: Ma
   const { t, i18n } = useTranslation();
   const [price, setPrice] = useState(machine.purchase_price != null ? String(machine.purchase_price) : '');
   const [date, setDate] = useState(machine.purchase_date ?? '');
-  const dayFmt = new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' });
+  const dayFmt = isoDayFormatter(i18n.language);
 
   const priceNum = price.trim() === '' ? null : Number(price);
   const valid = priceNum === null || (Number.isFinite(priceNum) && priceNum >= 0);
@@ -65,7 +65,7 @@ export function MachineCost({ machine, lifetime, currency, canEdit, onSave }: Ma
           {t('maintenance.hours.cost.perHour', { amount })}
           {machine.trust === 'uncalibrated' && lifetime && (
             <span className="ml-2 text-xs text-bambu-gray">
-              {t('maintenance.hours.cost.basedOn', { date: dayFmt.format(dayNumber(lifetime.date) * 86_400_000) })}
+              {t('maintenance.hours.cost.basedOn', { date: dayFmt(lifetime.date) })}
             </span>
           )}
         </p>

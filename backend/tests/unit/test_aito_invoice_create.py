@@ -234,14 +234,15 @@ def test_line_items_drop_books_own_read_only_fields():
 
 
 def test_line_items_omit_empty_headers_and_zero_discounts():
-    """Books echoes `header_name: ""` and `discount: 0` on every ordinary
-    line. Sending those back puts an empty header and a pointless discount
-    column on the invoice PDF."""
+    """Books echoes `header_name` and `discount: 0` on every ordinary line.
+    `header_name` is never sent back — Books refuses a filled one since it
+    moved headers to their own rows — and a zero discount would put a
+    pointless discount column on the invoice PDF."""
     lines = build_line_items(ESTIMATE["line_items"])
 
     assert "header_name" not in lines[0]
     assert "discount" not in lines[0]
-    assert lines[1]["header_name"] == "Bague entretoise"
+    assert "header_name" not in lines[1]
     # Verbatim, not re-derived: a bare number would be read as an amount.
     assert lines[1]["discount"] == "10.00%"
 
@@ -1043,3 +1044,37 @@ async def test_the_preview_refuses_where_the_create_would(async_client, db_sessi
     project_id = await _project(db_session, board_column="print")
 
     assert (await async_client.get(f"/api/v1/aito/{project_id}/invoice-preview")).status_code == 409
+
+
+def test_a_header_row_is_copied_as_a_header_and_keeps_its_place():
+    """Books stores a header as its own row with a zero rate and quantity 1
+    (quote DEV26-2944). Copied with those, it would be an item line on the
+    invoice; it goes over as the header row alone, in its place, titled from
+    ``description`` because Books drops a header row sent with only ``name``."""
+    lines = build_line_items(
+        [
+            {
+                "item_id": "",
+                "line_item_category": "header",
+                "header_name": "",
+                "header_id": "",
+                "name": "Bague entretoise",
+                "rate": 0,
+                "quantity": 1,
+                "item_order": 1,
+            },
+            {
+                "line_item_id": "li-2",
+                "item_id": "it-imp",
+                "line_item_category": "line_item",
+                "header_name": "",
+                "name": "Impression3D",
+                "rate": 1500,
+                "quantity": 1,
+                "item_order": 2,
+            },
+        ]
+    )
+
+    assert lines[0] == {"line_item_category": "header", "description": "Bague entretoise", "item_order": 1}
+    assert lines[1] == {"item_id": "it-imp", "name": "Impression3D", "rate": 1500, "quantity": 1, "item_order": 2}
