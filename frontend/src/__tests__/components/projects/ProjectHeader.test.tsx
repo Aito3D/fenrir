@@ -184,10 +184,13 @@ describe('ProjectHeader', () => {
     await userEvent.type(titleField, '   ');
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     fireEvent.submit(titleField.closest('form')!);
-    // Let any (wrongly) started mutation reach msw before counting.
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(patchCount).toBe(0);
     expect(screen.getByRole('textbox', { name: 'Title' })).toBeInTheDocument();
+    // Positive control: a valid submit sends exactly one PATCH, so a (wrongly)
+    // started blank-title PATCH would show up as a blank name or a count of 2.
+    await userEvent.type(titleField, 'Renamed');
+    fireEvent.submit(titleField.closest('form')!);
+    await waitFor(() => expect(patched).toMatchObject({ name: 'Renamed' }));
+    expect(patchCount).toBe(1);
   });
 });
 

@@ -38,6 +38,7 @@ export function useCatalogMutations() {
   const queryClient = useQueryClient();
   const settle = () => {
     queryClient.invalidateQueries({ queryKey: catalogKeys.folders() });
+    queryClient.invalidateQueries({ queryKey: projectKeys.allLinkedFolders() });
     queryClient.invalidateQueries({ queryKey: catalogKeys.all() });
     queryClient.invalidateQueries({ queryKey: projectKeys.projectsSearch() });
   };
@@ -63,7 +64,11 @@ export function useCatalogMutations() {
       run(() => api.updateProjectFolder(v.id, { name: v.name, parent_id: v.parent_id }), folderFail),
     onMutate: async (v) => {
       if (v.parent_id === undefined) return;
-      await queryClient.cancelQueries({ queryKey: catalogKeys.folders() });
+      // The linked-folders family shared the folders key until T-573; it is still cancelled here.
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: catalogKeys.folders() }),
+        queryClient.cancelQueries({ queryKey: projectKeys.allLinkedFolders() }),
+      ]);
       queryClient.setQueryData<{ folders: ProjectFolder[] }>(catalogKeys.folders(), (old) =>
         old && { ...old, folders: old.folders.map((f) => (f.id === v.id ? { ...f, parent_id: v.parent_id ?? null } : f)) },
       );

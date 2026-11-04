@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import { delay, http, HttpResponse } from 'msw';
 import { server } from '../../../mocks/server';
 import { useCatalogMutations, useProjectCatalog, useProjectFolders } from '../../../../components/projects/catalog/useProjectCatalog';
+import { useProjectLinkedFiles } from '../../../../components/projects/detail/useProjectLinkedFiles';
 
 const showToast = vi.hoisted(() => vi.fn());
 vi.mock('../../../../contexts/ToastContext', () => ({ useToast: () => ({ showToast }) }));
@@ -98,5 +99,45 @@ describe('folder mutations the server refuses', () => {
     expect(ok).toBe(false);
     expect(showToast).toHaveBeenCalledWith('Could not save the folder change: A folder cannot be moved into itself', 'error');
     await waitFor(() => expect(result.current.folders.data?.find((f) => f.id === 2)?.parent_id).toBeNull());
+  });
+});
+
+// T-573: the linked File Manager folders (detail page) shared the ['project-folders'] key with the
+// folder tree until they got their own; every catalog folder mutation still refetches both.
+describe('catalog mutations and the linked File Manager folders', () => {
+  it('a settle refetches the folder tree and the linked folders, and a folder move cancels both', async () => {
+    showToast.mockClear();
+    const hits = serve();
+    let linked = 0;
+    server.use(
+      http.get('/api/v1/library/folders/by-project/7', () => {
+        linked += 1;
+        return HttpResponse.json([]);
+      }),
+      http.get('/api/v1/library/files', () => HttpResponse.json([])),
+      http.get('/api/v1/projects/7/file-progress', () => HttpResponse.json([])),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result } = renderHook(
+      () => ({ m: useCatalogMutations(), folders: useProjectFolders(), files: useProjectLinkedFiles(7) }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.files.linkedFolders).toEqual([]));
+    await waitFor(() => expect(hits.folders).toBe(1));
+    expect(linked).toBe(1);
+
+    await act(async () => {
+      await result.current.m.createFolder.mutateAsync({ name: 'Car', parent_id: null });
+    });
+    await waitFor(() => expect(hits.folders).toBe(2));
+    await waitFor(() => expect(linked).toBe(2));
+
+    const cancel = vi.spyOn(client, 'cancelQueries');
+    await act(async () => {
+      await result.current.m.updateFolder.mutateAsync({ id: 2, parent_id: 1 });
+    });
+    expect(cancel.mock.calls.map(([f]) => f?.queryKey)).toEqual([['project-folders'], ['project-linked-folders']]);
+    await waitFor(() => expect(linked).toBe(3));
   });
 });

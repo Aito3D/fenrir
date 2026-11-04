@@ -61,11 +61,13 @@ describe('projectKeys', () => {
     expect(projectKeys.allProjectLinks()).toHaveLength(1);
     expect(projectKeys.projectCodes()).toEqual(['aito-project-codes']);
     expect(projectKeys.projectCodes()).toHaveLength(1);
+    expect(projectKeys.linkedFolders(7)).toEqual(['project-linked-folders', 7]);
+    expect(projectKeys.allLinkedFolders()).toEqual(['project-linked-folders']);
   });
 });
 
 describe('useInvalidateProjects', () => {
-  it('invalidates the list, search, tag catalogue, catalog and folders, in that order, without a project id', () => {
+  it('invalidates the list, search, tag catalogue, catalog, catalog folders and linked folders, in that order, without a project id', () => {
     const { client, wrapper } = setup();
     const spy = vi.spyOn(client, 'invalidateQueries');
     const { result } = renderHook(() => useInvalidateProjects(), { wrapper });
@@ -76,6 +78,7 @@ describe('useInvalidateProjects', () => {
       [{ queryKey: ['project-tags'] }],
       [{ queryKey: ['project-catalog'] }],
       [{ queryKey: ['project-folders'] }],
+      [{ queryKey: ['project-linked-folders'] }],
     ]);
   });
 
@@ -91,12 +94,13 @@ describe('useInvalidateProjects', () => {
       [{ queryKey: ['project-tags'] }],
       [{ queryKey: ['project-catalog'] }],
       [{ queryKey: ['project-folders'] }],
+      [{ queryKey: ['project-linked-folders'] }],
     ]);
   });
 
   it('marks cached project queries stale under exactly those keys', () => {
     const { client, wrapper } = setup();
-    for (const key of [['project', 7], ['project', 8], ['projects'], ['projects-search', 'x'], ['project-tags'], ['project-tree', 7]]) {
+    for (const key of [['project', 7], ['project', 8], ['projects'], ['projects-search', 'x'], ['project-tags'], ['project-tree', 7], ['project-catalog', 'q'], ['project-folders'], ['project-linked-folders', 7]]) {
       client.setQueryData(key, 'cached');
     }
     const { result } = renderHook(() => useInvalidateProjects(), { wrapper });
@@ -106,7 +110,15 @@ describe('useInvalidateProjects', () => {
       .findAll()
       .filter((q) => q.state.isInvalidated)
       .map((q) => q.queryKey);
-    expect(stale).toEqual([['project', 7], ['projects'], ['projects-search', 'x'], ['project-tags']]);
+    expect(stale).toEqual([
+      ['project', 7],
+      ['projects'],
+      ['projects-search', 'x'],
+      ['project-tags'],
+      ['project-catalog', 'q'],
+      ['project-folders'],
+      ['project-linked-folders', 7],
+    ]);
   });
 });
 

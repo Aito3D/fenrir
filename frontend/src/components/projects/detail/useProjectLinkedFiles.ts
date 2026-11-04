@@ -2,13 +2,14 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../api/client';
 import type { LibraryFileListItem } from '../../../api/client';
+import { projectKeys } from '../projectQueries';
 
 /** The project's linked File Manager folders, their files and the per-file
  *  completed-run counts (#1897). The page reads them for the complete-sets
  *  target and the details rail, and hands them to the linked-folders panel. */
 export function useProjectLinkedFiles(projectId: number) {
   const { data: linkedFolders } = useQuery({
-    queryKey: ['project-folders', projectId],
+    queryKey: projectKeys.linkedFolders(projectId),
     queryFn: () => api.getLibraryFoldersByProject(projectId),
     enabled: projectId > 0,
   });

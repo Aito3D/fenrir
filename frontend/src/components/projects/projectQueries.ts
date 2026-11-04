@@ -4,6 +4,7 @@ import type { UseQueryOptions } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import type { ProjectOrdersResponse, ProjectTreeResponse } from '../../api/client';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { catalogKeys } from './catalog/useProjectCatalog';
 
 /** The project query keys shared by every read and invalidation of the files tree
  *  and the linked orders. `projectId` is undefined while a picker has no project yet
@@ -21,6 +22,9 @@ export const projectKeys = {
   allProjectLinks: () => ['aito-project-links'] as const,
   /** The project codes of every Aito order (the board's code chips). */
   projectCodes: () => ['aito-project-codes'] as const,
+  /** One project's linked File Manager folders (useProjectLinkedFiles); `allLinkedFolders` is every project's. */
+  linkedFolders: (projectId: number) => ['project-linked-folders', projectId] as const,
+  allLinkedFolders: () => ['project-linked-folders'] as const,
 };
 
 type ExtraOptions<T> = Omit<UseQueryOptions<T>, 'queryKey' | 'queryFn'>;
@@ -61,8 +65,9 @@ export function useInvalidateProjects() {
     queryClient.invalidateQueries({ queryKey: projectKeys.projects() });
     queryClient.invalidateQueries({ queryKey: projectKeys.projectsSearch() });
     queryClient.invalidateQueries({ queryKey: projectKeys.projectTags() });
-    queryClient.invalidateQueries({ queryKey: ['project-catalog'] }); // the catalog page (useProjectCatalog)
-    queryClient.invalidateQueries({ queryKey: ['project-folders'] });
+    queryClient.invalidateQueries({ queryKey: catalogKeys.all() }); // the catalog page (useProjectCatalog)
+    queryClient.invalidateQueries({ queryKey: catalogKeys.folders() });
+    queryClient.invalidateQueries({ queryKey: projectKeys.allLinkedFolders() });
   };
 }
 

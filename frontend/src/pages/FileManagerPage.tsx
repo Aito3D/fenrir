@@ -104,6 +104,8 @@ import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/sl
 import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFiles';
 // Fenrir: File Manager → project bridge (projects PDM phase 5)
 import { MoveToProjectModal } from '../components/projects/filing/MoveToProjectModal';
+import { catalogKeys } from '../components/projects/catalog/useProjectCatalog';
+import { projectKeys } from '../components/projects/projectQueries';
 import { isPrintableFilename } from '../components/projects/files/filesUi';
 import { useUiSettings } from '../hooks/useUiSettings';
 import { PrintFacts } from '../components/PrintFacts';
@@ -2689,7 +2691,8 @@ export function FileManagerPage() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       // Invalidate project/archive folder queries so other pages see the update
-      queryClient.invalidateQueries({ queryKey: ['project-folders'] });
+      queryClient.invalidateQueries({ queryKey: catalogKeys.folders() });
+      queryClient.invalidateQueries({ queryKey: projectKeys.allLinkedFolders() });
       queryClient.invalidateQueries({ queryKey: ['archive-folders'] });
       // Archive rows carry their linked folder (the card's folder badge).
       queryClient.invalidateQueries({ queryKey: ['archives'] });
@@ -2709,7 +2712,8 @@ export function FileManagerPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       queryClient.invalidateQueries({ queryKey: ['library-files'] });
-      queryClient.invalidateQueries({ queryKey: ['project-folders'] });
+      queryClient.invalidateQueries({ queryKey: catalogKeys.folders() });
+      queryClient.invalidateQueries({ queryKey: projectKeys.allLinkedFolders() });
       queryClient.invalidateQueries({ queryKey: ['archive-folders'] });
       setMoveFolder(null);
       showToast(t('fileManager.toast.folderMoved'), 'success');
@@ -2779,7 +2783,8 @@ export function FileManagerPage() {
     mutationFn: ({ id, shared }: { id: number; shared: boolean }) => api.updateLibraryFolder(id, { shared }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
-      queryClient.invalidateQueries({ queryKey: ['project-folders'] });
+      queryClient.invalidateQueries({ queryKey: catalogKeys.folders() });
+      queryClient.invalidateQueries({ queryKey: projectKeys.allLinkedFolders() });
       queryClient.invalidateQueries({ queryKey: ['archive-folders'] });
       showToast(variables.shared ? t('fileManager.toast.folderShared') : t('fileManager.toast.folderUnshared'), 'success');
     },
