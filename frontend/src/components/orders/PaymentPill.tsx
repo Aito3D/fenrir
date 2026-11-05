@@ -10,8 +10,12 @@ export function PaymentPill({ state, pct, overdue, fill }: { state: OrderPayStat
   const meta = PAY_META[state];
   const Icon = overdue ? CircleAlert : meta.icon;
   const label = state === 'partial' && pct !== undefined ? t('orders.pay.pct', { pct }) : t(meta.label);
+  // The fixed-width row pill has no room for the suffix: it goes in the title and the accessible name.
+  const full = overdue ? `${label} · ${t('orders.pay.overdue')}` : label;
   return (
     <span
+      title={fill && overdue ? full : undefined}
+      aria-label={fill && overdue ? full : undefined}
       className={`relative items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full px-2.5 py-1 text-xs ${fill ? 'flex w-full' : 'inline-flex'} ${TONE[meta.tone].soft} ${overdue ? TONE.danger.text : TONE[meta.tone].text}`}
     >
       {fill && state === 'partial' && pct !== undefined && (
@@ -20,7 +24,7 @@ export function PaymentPill({ state, pct, overdue, fill }: { state: OrderPayStat
       <Icon aria-hidden="true" className="relative h-3.5 w-3.5 shrink-0" />
       <span className="relative">
         {label}
-        {overdue && <> · {t('orders.pay.overdue')}</>}
+        {overdue && !fill && <> · {t('orders.pay.overdue')}</>}
       </span>
     </span>
   );

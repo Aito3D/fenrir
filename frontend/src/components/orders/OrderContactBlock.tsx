@@ -3,31 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Check, Copy, Mail, MailX, Phone, PhoneOff, Smartphone, UserRound } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { OrderContact } from '../../api/client';
+import { copyTextToClipboard } from '../../utils/clipboard';
 import { Card } from '../Card';
-
-// Same two-step as the rest of the app: the async API on a secure origin, a hidden textarea elsewhere.
-const copyText = async (text: string): Promise<boolean> => {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // fall through to the textarea
-  }
-  const box = document.createElement('textarea');
-  box.value = text;
-  box.style.cssText = 'position:fixed;opacity:0';
-  document.body.appendChild(box);
-  box.select();
-  try {
-    return document.execCommand('copy');
-  } catch {
-    return false;
-  } finally {
-    document.body.removeChild(box);
-  }
-};
 
 /** The contact person on the order: phone and email as links, each with a copy button. */
 export function OrderContactBlock({
@@ -46,7 +23,7 @@ export function OrderContactBlock({
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   const copy = async (value: string) => {
-    if (!(await copyText(value))) return;
+    if (!(await copyTextToClipboard(value))) return;
     setCopied(value);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setCopied(null), 2000);

@@ -7,6 +7,7 @@ import { render } from '../../utils';
 import { OrderPaymentBlock } from '../../../components/orders/OrderPaymentBlock';
 import { OrderContactBlock } from '../../../components/orders/OrderContactBlock';
 import { OrderRefChips } from '../../../components/orders/OrderRefChips';
+import { PaymentPill } from '../../../components/orders/PaymentPill';
 
 const pay = (o: Partial<OrderPayment> = {}): OrderPayment => ({
   state: 'partial', pct: 40, paid: 250000, invoice_paid: 250000, advance: 0, due: 180000, overdue: 0, rest: 182000, left: 362000,
@@ -126,5 +127,25 @@ describe('OrderRefChips', () => {
     const bare = render(<OrderRefChips row={panelRow({ reference: 'DEV26-2671' })} />);
     const chip = within(bare.container).getByText((_, el) => el?.textContent === 'Quote · DEV26-2671' && el.tagName === 'SPAN' && el.className.includes('rounded-full'));
     expect(chip.closest('a')).toBeNull();
+  });
+});
+
+describe('PaymentPill', () => {
+  it('the row pill keeps its label short and puts overdue in the title and accessible name', () => {
+    const { container } = render(<PaymentPill state="partial" pct={40} overdue fill />);
+    const pill = screen.getByLabelText('40% paid · overdue');
+    expect(pill).toHaveAttribute('title', '40% paid · overdue');
+    expect(pill).toHaveTextContent(/^40% paid$/);
+    expect((container.querySelector('[aria-hidden="true"].absolute') as HTMLElement).style.width).toBe('40%');
+  });
+
+  it('the block pill shows the overdue suffix', () => {
+    render(<PaymentPill state="partial" pct={40} overdue />);
+    expect(screen.getByText('40% paid · overdue')).toBeInTheDocument();
+  });
+
+  it('a paid row pill reads exactly Paid', () => {
+    const { container } = render(<PaymentPill state="paid" pct={100} fill />);
+    expect(container).toHaveTextContent(/^Paid$/);
   });
 });
