@@ -220,3 +220,24 @@ async def test_a_duplicate_import_is_a_409_before_any_books_call(async_client, d
     assert books["calls"] == []
     assert [p["description"] for p in await _board(async_client)] == ["Existing"]
     assert not wake.is_set()
+
+
+async def test_a_hand_made_card_drops_a_posted_quote_snapshot(async_client, books):
+    """T-581: no quote_id means no Books snapshot; posted figures never reach the payment-link pass."""
+    r = await async_client.post(
+        "/api/v1/aito/",
+        json={
+            "description": "Hand made",
+            "client_id": "z1",
+            "client_name": "ACME",
+            "client_phone": "+689-87123456",
+            "quote_number": "FORGED-1",
+            "quote_total": 1.0,
+            "quote_date": "2020-01-01",
+            "quote_url": "https://evil.example/pay",
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert (body["quote_number"], body["quote_total"], body["quote_date"], body["quote_url"]) == (None,) * 4
+    assert books["calls"] == []

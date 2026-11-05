@@ -137,6 +137,7 @@ async def test_racing_writers_only_the_loser_gets_409(async_client, monkeypatch)
         row = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
         row.description = "Operator B's edit"
         await db.commit()
+        await db.refresh(row, ["version"])
         assert row.version == 1
         return {"tuamotu": ShippingItem(item_id="SHIP-TU", name="Livraison Avion Tuamotu", rate=3200.0)}
 

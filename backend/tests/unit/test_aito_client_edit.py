@@ -718,6 +718,7 @@ async def test_a_write_during_the_books_round_trip_never_moves_the_version_backw
                 card = await other.get(AitoProject, project_id)
                 card.description = "Support GoPro v2"
                 await other.commit()
+                await other.refresh(card, ["version"])
                 peer["version"] = card.version
             return books_name
 

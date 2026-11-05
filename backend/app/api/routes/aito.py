@@ -1648,12 +1648,16 @@ async def _with_books_quote_snapshot(db: AsyncSession, payload: AitoProjectCreat
     through the same schema rules (unknown statuses degrade to None, https
     quote_url, bounds) the posted ones did.
 
-    A hand-made card (no quote_id) is returned untouched, without a Books
-    call. Books unreachable, throttling, or not knowing the quote refuses the
+    A hand-made card (no quote_id) makes no Books call and has any posted
+    quote_number/quote_date/quote_total/quote_url dropped (T-581): its snapshot
+    only ever comes from the sync worker's own create, since the payment-link
+    pass mints from those fields. Books unreachable, throttling, or not knowing the quote refuses the
     create: an import whose figures cannot be confirmed is not stored.
     """
     if payload.quote_id is None:
-        return payload
+        return payload.model_copy(
+            update={"quote_number": None, "quote_date": None, "quote_total": None, "quote_url": None}
+        )
     try:
         estimate = await zoho_service.get_estimate(db, payload.quote_id)
         quote_url = await zoho_service.books_app_url(db, payload.quote_id)
@@ -4776,6 +4780,7 @@ async def edit_project_client(
         # Only when nobody else wrote in the meantime (T-053): otherwise the
         # listener's bump stands, so the version stays monotonic.
         await db.flush()
+        await db.refresh(project, ["version"])
         if pin_to_claim and project.version != claimed_version:
             project.version = claimed_version
     await db.commit()

@@ -1364,3 +1364,21 @@ describe('quote-expired badge', () => {
     expect(screen.queryByTestId('aito-card-quote-expired')).not.toBeInTheDocument();
   });
 });
+
+describe('CardView — the wall clock moves under a memoised card', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('refreshes the due badge on the minute tick although the project object is unchanged', () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(new Date(2026, 8, 19, 23, 59, 30));
+    const fixed = { ...project, due_date: '2026-09-20' };
+    render(<CardView project={fixed} onExpand={vi.fn()} />);
+    expect(screen.getByTestId('aito-card-due')).toHaveTextContent('tomorrow');
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByTestId('aito-card-due')).not.toHaveTextContent('tomorrow');
+  });
+});

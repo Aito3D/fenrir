@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Building2, CreditCard, Eye, FileClock, GripVertical, Lock, User } from 'lucide-react';
 import { DueDateBadge } from './DueDateBadge';
@@ -100,6 +100,35 @@ const FLAG_LABEL_KEY: Record<AitoFlag, string> = {
  *  (mark-sent, mark-done, restore, hold-to-delete) opt out by stopping
  *  propagation, so their own clicks never reach the region handler. Phone,
  *  email and delete live in the detail panel, not here. */
+// One shared minute tick (and a wake on tab visibility) for every mounted card.
+// The memo below would otherwise freeze the due badge, age label and heat
+// colour, which are computed from the wall clock during render.
+let clockTick = 0;
+const clockListeners = new Set<() => void>();
+const bumpClock = () => {
+  clockTick += 1;
+  clockListeners.forEach((listener) => listener());
+};
+const onClockVisibility = () => {
+  if (document.visibilityState === 'visible') bumpClock();
+};
+let clockTimer: ReturnType<typeof setInterval> | undefined;
+function subscribeClock(listener: () => void) {
+  if (clockListeners.size === 0) {
+    clockTimer = setInterval(bumpClock, 60_000);
+    document.addEventListener('visibilitychange', onClockVisibility);
+  }
+  clockListeners.add(listener);
+  return () => {
+    clockListeners.delete(listener);
+    if (clockListeners.size === 0) {
+      clearInterval(clockTimer);
+      document.removeEventListener('visibilitychange', onClockVisibility);
+    }
+  };
+}
+const getClockTick = () => clockTick;
+
 /** Memoised: the board re-renders on every WebSocket invalidation, keystroke
  *  in the search box and presence update, and React Query's structural
  *  sharing keeps an unchanged `project` referentially equal, so an unchanged
@@ -118,6 +147,7 @@ export const CardView = memo(function CardView({
   compact = false,
 }: CardViewProps) {
   const { t, i18n } = useTranslation();
+  useSyncExternalStore(subscribeClock, getClockTick);
   // Normalised once, because a server older than this bundle sends no
   // `task_steps` at all and the type cannot know that. The field is required by
   // the current API contract, but the contract only binds a server that has

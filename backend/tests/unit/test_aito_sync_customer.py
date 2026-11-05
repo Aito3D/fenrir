@@ -96,6 +96,7 @@ async def test_the_same_customer_is_a_no_op_with_no_contact_read(db_session):
     """The common case costs nothing: no contact call, and no version bump
     that would 409 an operator mid-edit on the panel."""
     project = await _idle_quoted_project(db_session)
+    await db_session.refresh(project, ["version"])
     version_before = project.version
     seen: list = []
     zoho_service.transport = httpx.MockTransport(
