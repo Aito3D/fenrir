@@ -240,6 +240,23 @@ function isOwnClick(e: React.MouseEvent<Element>): boolean {
 
 // formatDate imported from '../utils/date' - handles UTC conversion
 
+// Its videos: the archive's timelapse_path is its latest print's only, the
+// others are on their prints, which the archive window plays.
+function videoCount(archive: Archive): number {
+  return Math.max(archive.timelapse_count ?? 0, archive.timelapse_path ? 1 : 0);
+}
+
+// One video plays in place; more, or one only an earlier print has, open the
+// archive window, where each print's plays.
+function useArchiveVideos(archive: Archive, navigate: (to: string) => void, play: () => void) {
+  const videos = videoCount(archive);
+  const openTimelapse = () => {
+    if (videos > 1 || !archive.timelapse_path) navigate(`/archives/${archive.id}`);
+    else play();
+  };
+  return { videos, openTimelapse };
+}
+
 // Ended without finishing: the archive's grams and cost stay one full print of
 // the file (COST-3), not what this run used.
 const UNFINISHED_STATUSES = new Set(['failed', 'aborted', 'cancelled', 'stopped']);
@@ -311,7 +328,7 @@ function ArchiveCard({
     handleContextMenu,
   } = actions;
   const navigate = useNavigate();
-
+  const { videos, openTimelapse } = useArchiveVideos(archive, navigate, () => setShowTimelapse(true));
   // Name of the printer this archive's saved slicer AMS mapping was resolved
   // against, or undefined when there is none. Undefined also when the printer
   // has since been deleted — a mapping whose printer is gone can never be
@@ -365,6 +382,8 @@ function ArchiveCard({
     printerName,
     isSelected,
     onSelect,
+    videos,
+    openTimelapse,
   });
 
   const contextMenuItems: ContextMenuItem[] = [
@@ -713,22 +732,28 @@ function ArchiveCard({
           <Layers className="w-4 h-4 text-white" />
         </button>
         {/* Timelapse badge */}
-        {archive.timelapse_path && (
+        {videos > 0 && (
           <button
             className="absolute bottom-2 right-12 p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors"
             onClick={(e) => {
               e.stopPropagation();
-              setShowTimelapse(true);
+              openTimelapse();
             }}
-            title={t('archives.card.viewTimelapse')}
+            title={videos > 1 ? t('archives.card.viewTimelapses', { count: videos }) : t('archives.card.viewTimelapse')}
+            data-testid="archive-card-timelapse"
           >
             <Film className="w-4 h-4 text-bambu-green" />
+            {videos > 1 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-bambu-green rounded-full text-[10px] text-white flex items-center justify-center">
+                {videos}
+              </span>
+            )}
           </button>
         )}
         {/* Photos badge */}
         {archive.photos && archive.photos.length > 0 && (
           <button
-            className={`absolute bottom-2 ${archive.timelapse_path ? 'right-[5.5rem]' : 'right-12'} p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors`}
+            className={`absolute bottom-2 ${videos > 0 ? 'right-[5.5rem]' : 'right-12'} p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors`}
             onClick={(e) => {
               e.stopPropagation();
               setShowPhotos(true);
@@ -1280,6 +1305,7 @@ function ArchiveListRow({
     setShowConfirmOutcome,
     setShowDeleteConfirm,
     setShowEdit,
+    setShowTimelapse,
     setShowPrinterMedia,
     showTimelapseSelect,
     setShowTimelapseSelect,
@@ -1297,6 +1323,7 @@ function ArchiveListRow({
     handleContextMenu,
   } = actions;
   const navigate = useNavigate();
+  const { videos, openTimelapse } = useArchiveVideos(archive, navigate, () => setShowTimelapse(true));
 
   // 3D Preview: the part viewer, with its own plate card, model and toolpath tabs.
   const openGcodeViewer = async () => setViewerOpen(true);
@@ -1312,6 +1339,8 @@ function ArchiveListRow({
     printerName,
     isSelected,
     onSelect,
+    videos,
+    openTimelapse,
   });
 
   const contextMenuItems: ContextMenuItem[] = [
@@ -1486,8 +1515,8 @@ function ArchiveListRow({
                 +{archive.duplicate_count}
               </span>
             )}
-            {archive.timelapse_path && (
-              <span title={t('archives.list.hasTimelapse')}>
+            {videos > 0 && (
+              <span title={videos > 1 ? t('archives.card.viewTimelapses', { count: videos }) : t('archives.list.hasTimelapse')}>
                 <Film className="w-3.5 h-3.5 text-bambu-green flex-shrink-0" />
               </span>
             )}

@@ -45,6 +45,10 @@ export interface ArchiveMenuParams {
   printerName: string;
   isSelected: boolean;
   onSelect: (id: number) => void;
+  /** How many prints of this archive have a video (upstream's useArchiveVideos). */
+  videos: number;
+  /** Plays the one video in place, or opens the archive window when there are several. */
+  openTimelapse: () => void;
 }
 
 /**
@@ -65,6 +69,8 @@ export function buildArchiveMenuSections({
   printerName,
   isSelected,
   onSelect,
+  videos,
+  openTimelapse,
 }: ArchiveMenuParams): { head: ContextMenuItem[]; body: ContextMenuItem[]; tail: ContextMenuItem[] } {
   const {
     hasPermission,
@@ -76,7 +82,6 @@ export function buildArchiveMenuSections({
     setShowSliceModal,
     setShowRunPipeline,
     setShowConfirmOutcome,
-    setShowTimelapse,
     timelapseScanMutation,
     timelapseInputRef,
     setShowDeleteTimelapseConfirm,
@@ -188,8 +193,8 @@ export function buildArchiveMenuSections({
     {
       label: t('archives.menu.viewTimelapse'),
       icon: <Film className="w-4 h-4" />,
-      onClick: () => setShowTimelapse(true),
-      disabled: !archive.timelapse_path,
+      onClick: openTimelapse,
+      disabled: videos === 0,
     },
   ];
 
