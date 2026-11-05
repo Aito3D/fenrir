@@ -26,6 +26,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent } from '@testing-library/react';
 import { render } from '../utils';
 import { TrackingPanel } from '../../components/aito/TrackingPanel';
+import { useTrackingPanel } from '../../hooks/useTrackingPanel';
 
 // jsdom here has no global `PointerEvent` — `fireEvent.pointerDown` falls
 // back to the plain `Event` constructor, which silently drops `clientY`/
@@ -300,5 +301,38 @@ describe('useSheetDrag (TrackingPanel bottom-sheet drag)', () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(panel.style.transform).toBe('');
+  });
+});
+
+describe('useTrackingPanel show() on an already-open panel', () => {
+  function Harness() {
+    const { open, show, close, titleRef } = useTrackingPanel();
+    return (
+      <div>
+        <button onClick={(e) => show('pay', e.currentTarget)}>opener</button>
+        <button onClick={close}>closer</button>
+        {open === 'pay' && (
+          <h2 tabIndex={-1} ref={titleRef('pay')} data-testid="pay-title">
+            Payer
+          </h2>
+        )}
+        <input aria-label="elsewhere" />
+      </div>
+    );
+  }
+
+  it('re-focuses the title with the panel still open, and leaves no pending focus behind', () => {
+    const { getByText, getByTestId, getByLabelText } = render(<Harness />);
+    const opener = getByText('opener');
+    fireEvent.click(opener);
+    expect(getByTestId('pay-title')).toHaveFocus();
+
+    getByLabelText('elsewhere').focus();
+    fireEvent.click(opener);
+    expect(getByTestId('pay-title')).toHaveFocus();
+
+    // pending was cleared: closing later returns focus to the trigger, once.
+    fireEvent.click(getByText('closer'));
+    expect(opener).toHaveFocus();
   });
 });

@@ -5,7 +5,7 @@ import { screen, render as rtlRender, waitFor, fireEvent, act } from '@testing-l
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse, delay } from 'msw';
 import { server } from '../mocks/server';
-import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AitoTrackEntryPage } from '../../pages/AitoTrackEntryPage';
 import { normalizeCode } from '../../utils/trackingCode';
@@ -48,6 +48,10 @@ const FIXTURE: AitoTracking = {
   due_date: '2026-09-20', shipping: null, done_at: null,
   invoice: null, payment: null, reference: 'EST-000142', updated_at: '2026-09-03T21:05:00', accepted: false,
 };
+
+function NavigateAway() {
+  return <Link to="/away">leave</Link>;
+}
 
 function Landed() {
   const { token } = useParams();
@@ -208,6 +212,18 @@ describe('AitoTrackEntryPage', () => {
     const caret = row().querySelector('.code-caret-wrap') as HTMLElement;
     expect(caret).toHaveAttribute('data-index', '2');
     expect(caret.style.transform).toContain('calc(2 *');
+  });
+
+  it('pins the caret back to the end when a selection change lands mid-code', async () => {
+    renderEntry();
+    await screen.findByRole('heading', { name: 'Suivre ma commande' });
+    await userEvent.type(input(), 'k7f');
+    const el = input();
+    el.setSelectionRange(0, 1);
+    // React's onSelect rides on key/mouse-up and selectionchange, not the raw select event.
+    fireEvent.keyUp(el);
+    expect(el.selectionStart).toBe(3);
+    expect(el.selectionEnd).toBe(3);
   });
 
   it('checks the code on the sixth character, seeds the cache and opens the page', async () => {
@@ -459,6 +475,50 @@ describe('AitoTrackEntryPage', () => {
       setReadyOverride(null);
       i18n.options.fallbackLng = false;
       i18n.addResourceBundle('fr', 'translation', frBundle, true, true);
+    }
+  });
+
+  // T-042: a check still out when the client leaves /t must not pull them back
+  // to /t/<code> when the answer finally lands.
+  it('aborts the in-flight check on unmount and never redirects after the client has left', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const held = mockTrackHeld();
+      const signals: (AbortSignal | undefined)[] = [];
+      const real = api.getAitoTracking;
+      vi.spyOn(api, 'getAitoTracking').mockImplementation((token: string, signal?: AbortSignal) => {
+        signals.push(signal);
+        return real(token, signal);
+      });
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      rtlRender(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/t']}>
+            <Routes>
+              <Route path="/t" element={<AitoTrackEntryPage />} />
+              <Route path="/t/:token" element={<Landed />} />
+              <Route path="/away" element={<p>elsewhere</p>} />
+            </Routes>
+            <NavigateAway />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await screen.findByRole('heading', { name: 'Suivre ma commande' });
+      await user.type(input(), 'k7f3xq');
+      await waitFor(() => expect(held.seen).toEqual(['K7F3XQ']));
+      expect(signals[0]?.aborted).toBe(false);
+
+      await user.click(screen.getByRole('link', { name: 'leave' }));
+      expect(await screen.findByText('elsewhere')).toBeInTheDocument();
+      expect(signals[0]?.aborted).toBe(true);
+
+      held.release('K7F3XQ', 200);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(screen.getByText('elsewhere')).toBeInTheDocument();
+      expect(screen.queryByText(/landed on/)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
     }
   });
 

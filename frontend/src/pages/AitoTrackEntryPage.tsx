@@ -85,9 +85,14 @@ export function AitoTrackEntryPage() {
   // may speak.
   const sequence = useRef(0);
   const leaveTimer = useRef<number | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
   useEffect(
     () => () => {
       if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current);
+      // A client who left /t must not be pulled back by a late answer: abort the
+      // in-flight check and retire its sequence number so it stays silent.
+      sequence.current++;
+      controllerRef.current?.abort();
     },
     [],
   );
@@ -101,6 +106,7 @@ export function AitoTrackEntryPage() {
     setState('checking');
     setFailure(null);
     const controller = new AbortController();
+    controllerRef.current = controller;
     const timeout = window.setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
     try {
       const data = await api.getAitoTracking(value, controller.signal);
