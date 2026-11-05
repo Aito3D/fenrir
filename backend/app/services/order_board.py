@@ -9,7 +9,8 @@ Two things go beyond "oldest first":
 
 * Units already in a package but not delivered are reserved for their order
   before the walk starts. They are physically in a box, yet Books still counts
-  them in stock on hand, so an older order would otherwise claim them.
+  them in stock on hand, so an older order would otherwise claim them. A boxed
+  unit is never short, even when Books shows no stock for it.
 * Units invoiced but not shipped have already left stock on hand (Books lowers
   stock when the invoice is created), so they count as ready and take nothing.
 """
@@ -108,10 +109,13 @@ def _allocate(line: dict, stock: dict[str, float], incoming: dict[str, float], n
         line["state"] = "shipped"
     else:
         item_id = line["item_id"]
-        reserved = line["_reserved"]
-        line["stock_available"] = _r(stock.get(item_id, 0.0) + reserved)
-        from_stock = reserved + _take(stock, item_id, line["remaining"] - line["invoiced"] - reserved)
-        line["covered"] = _r(line["invoiced"] + from_stock)
+        line["stock_available"] = _r(stock.get(item_id, 0.0) + line["_reserved"])
+        # Invoiced units have left stock on hand; boxed units exist because the
+        # box does, whatever Books says the shelf holds (pass 1 already took
+        # from the pool what it could for them). Neither can be short. The two
+        # overlap: an invoiced unit is taken to be a boxed one first.
+        set_aside = max(line["invoiced"], line["packed_waiting"])
+        line["covered"] = _r(set_aside + _take(stock, item_id, line["remaining"] - set_aside))
         line["shortfall"] = _r(line["remaining"] - line["covered"])
         if line["shortfall"] <= 0:
             line["state"] = "ready"

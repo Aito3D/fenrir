@@ -337,3 +337,32 @@ def test_missing_zoho_fields_do_not_raise():
     (row,) = compute_board([order], [{"purchaseorder_number": "PO-1", "status": "open"}], {"A": {}}, TODAY)
     assert (row["customer"], row["total"], row["currency"], row["packages"]) == ("", None, "", [])
     assert (only_line(row)["sku"], only_line(row)["name"], only_line(row)["state"]) == ("", "", "to_order")
+
+
+def test_boxed_units_are_covered_even_when_books_shows_no_stock():
+    """Seen on real data: a package exists, so the goods exist, yet Books'
+    stock on hand is 0 (e.g. the supplier bill is not entered yet). A boxed
+    line must not read "To order"."""
+    (row,) = compute_board([so("SO-1", "2026-01-03", [line("A", 3, packed=3)])], [], {"A": item(0)}, TODAY)
+    single = only_line(row)
+    assert (single["state"], single["covered"], single["shortfall"]) == ("ready", 3, 0)
+    assert row["status"] == "to_ship"
+
+
+def test_only_the_unboxed_part_of_a_line_can_be_short():
+    (row,) = compute_board([so("SO-1", "2026-01-03", [line("A", 5, packed=3)])], [], {"A": item(0)}, TODAY)
+    single = only_line(row)
+    assert (single["state"], single["covered"], single["shortfall"]) == ("to_order", 3, 2)
+    assert row["units"]["ready"] == 3 and row["units"]["to_order"] == 2
+
+
+def test_boxed_units_without_stock_take_nothing_from_a_later_delivery():
+    """The box is already filled: it must not also eat the incoming units."""
+    rows = compute_board(
+        [so("SO-1", "2026-01-03", [line("A", 2, packed=2)]), so("SO-2", "2026-01-04", [line("A", 2)])],
+        [po("PO-1", [("A", 2, 0, 0, 0)])],
+        {"A": item(0)},
+        TODAY,
+    )
+    assert only_line(rows[0])["state"] == "ready"
+    assert (only_line(rows[1])["state"], only_line(rows[1])["covered_by_po"]) == ("backorder", 2)
