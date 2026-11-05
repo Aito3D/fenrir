@@ -389,6 +389,16 @@ describe('OrderBoardPage', () => {
     expect(await screen.findByText('SO-00412')).toBeInTheDocument();
   });
 
+  it('the Finished view lists the newest order first whatever order the server answers in', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    serveFinished([fin(1, { date: '2026-03-01' }), fin(2, { date: '2026-09-15' }), fin(3, { date: '2026-06-10' })]);
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /^Finished/ }));
+    await screen.findByText('SO-F001');
+    expect(screen.getAllByTestId('order-number').map(n => n.textContent)).toEqual(['SO-F002', 'SO-F003', 'SO-F001']);
+  });
+
   it('a finished row shows the Zoho flag until opened, then the percentage', async () => {
     const user = userEvent.setup();
     serve(board());
