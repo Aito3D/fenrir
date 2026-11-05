@@ -7,7 +7,7 @@
   "type": "<class 'str'>"
  },
  "app_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-aito')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
@@ -17,7 +17,7 @@
   "type": "<class 'str'>"
  },
  "archive_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/archive')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-aito/archive')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
@@ -42,12 +42,12 @@
   "type": "<class 'str'>"
  },
  "base_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-aito')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
  "database_url": {
-  "default": "'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor/bambuddy.db'",
+  "default": "'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor-aito/bambuddy.db'",
   "required": false,
   "type": "<class 'str'>"
  },
@@ -55,6 +55,11 @@
   "default": "None",
   "required": false,
   "type": "int | None"
+ },
+ "db_pool_pre_ping": {
+  "default": "None",
+  "required": false,
+  "type": "bool | None"
  },
  "db_pool_recycle": {
   "default": "None",
@@ -97,7 +102,7 @@
   "type": "<class 'int'>"
  },
  "log_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/logs')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-aito/logs')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
@@ -117,7 +122,7 @@
   "type": "<class 'bool'>"
  },
  "plate_calibration_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/data/plate_calibration')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-aito/data/plate_calibration')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  },
@@ -127,7 +132,7 @@
   "type": "<class 'str'>"
  },
  "static_dir": {
-  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor/static')",
+  "default": "PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-aito/static')",
   "required": false,
   "type": "<class 'pathlib._local.Path'>"
  }

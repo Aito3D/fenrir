@@ -107,19 +107,12 @@ for name, kw in WANTED_CASES:
             {
                 "case": name,
                 "pct": pct,
-                "wanted": wrow(wanted_link(project(**kw), pct=pct, validity_days=15, today=TODAY)),
+                "wanted": wrow(wanted_link(project(**kw), pct=pct, today=TODAY)),
             }
         )
 out["03-wanted-link"] = rows
 
-# validity_days feeds the fallback expiry only.
-out["03b-wanted-link-validity-days"] = [
-    {
-        "validity_days": d,
-        "wanted": wrow(wanted_link(project(), pct=0, validity_days=d, today=TODAY)),
-    }
-    for d in (0, 1, 7, 15, 30, 365, 400, -5)
-]
+# (c32 setup: wanted_link lost its validity_days parameter when quotes moved to a fixed expiry; section dropped.)
 
 # --- 4. expires_in_days: date -> Heimdall's 1..365 day count ---------------
 out["04-expires-in-days"] = [

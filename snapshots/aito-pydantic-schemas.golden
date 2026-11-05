@@ -1,6 +1,34 @@
 ### exit: 0
 ### stdout:
 {
+ "AitoApplyDepositRequest": {
+  "properties": {
+   "amount": {
+    "exclusiveMinimum": 0,
+    "title": "Amount",
+    "type": "number"
+   },
+   "invoice_id": {
+    "maxLength": 64,
+    "minLength": 1,
+    "title": "Invoice Id",
+    "type": "string"
+   },
+   "retainer_id": {
+    "maxLength": 64,
+    "minLength": 1,
+    "title": "Retainer Id",
+    "type": "string"
+   }
+  },
+  "required": [
+   "invoice_id",
+   "retainer_id",
+   "amount"
+  ],
+  "title": "AitoApplyDepositRequest",
+  "type": "object"
+ },
  "AitoClientEdit": {
   "description": "Body of PUT /aito/{id}/client \u2014 edit the attached Zoho contact.\n\nWhich name fields apply is decided by the CARD (`client_is_company`), not\nthe body: a company card takes `company_name`, a person card takes\n`first_name` + `last_name`. The route enforces that split because the\nschema cannot see the card. Every name/phone/email field is a full value,\nnever a patch \u2014 the editor always shows all of them, so \"absent\" has no\nmeaning there.\n\nThe social pair (inherited) is the one exception: it is CARD-ONLY \u2014 Books\nhas no field for it \u2014 and it is written only when the body mentions it,\nwith the same pair rule `AitoProjectUpdate` applies. The contact sheet\nalways sends it; a caller that only knows the Books fields may leave it\nout and the card's own handle stays as it was.\n\nPhone/email accept the same shapes `AitoProjectUpdate` does \u2014 Books stores\nhuman-typed numbers too \u2014 and an empty string clears the value. Whether\nthe card stays reachable afterwards (phone, email or the social handle\nas it will be after this edit) is the route's check, against the merged\nrow.",
   "properties": {
@@ -1079,6 +1107,77 @@
   "title": "AitoClientHistorySocial",
   "type": "object"
  },
+ "AitoClientQuoteRatingResponse": {
+  "description": "How readily a customer accepts a quote, for the new-card drawer \u2014 see\ndocs/superpowers/specs/2026-10-21-aito-quote-rating-design.md.\n\nCounts rather than a sentence, as for the payment rating. ``declined``\nand ``expired`` are both a \"no\" in the score; they are sent apart so the\ntooltip can say how many were simply never answered. ``score`` is the\nsmoothed acceptance rate (0..1), None while nothing is decided.\n``unavailable`` and ``stale`` mean what they mean on the payment rating.",
+  "properties": {
+   "accepted_count": {
+    "default": 0,
+    "title": "Accepted Count",
+    "type": "integer"
+   },
+   "computed_at": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Computed At"
+   },
+   "declined_count": {
+    "default": 0,
+    "title": "Declined Count",
+    "type": "integer"
+   },
+   "expired_count": {
+    "default": 0,
+    "title": "Expired Count",
+    "type": "integer"
+   },
+   "pending_count": {
+    "default": 0,
+    "title": "Pending Count",
+    "type": "integer"
+   },
+   "score": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Score"
+   },
+   "stale": {
+    "title": "Stale",
+    "type": "boolean"
+   },
+   "tier": {
+    "enum": [
+     "good",
+     "medium",
+     "bad",
+     "new",
+     "unavailable"
+    ],
+    "title": "Tier",
+    "type": "string"
+   }
+  },
+  "required": [
+   "tier",
+   "computed_at",
+   "stale"
+  ],
+  "title": "AitoClientQuoteRatingResponse",
+  "type": "object"
+ },
  "AitoClientRatingResponse": {
   "description": "A customer's payment rating for the drawer and the panel masthead \u2014\nsee docs/superpowers/specs/2026-09-22-aito-client-rating-design.md.\n\nStructured fields rather than a sentence, so the frontend phrases the\ntooltip in the viewer's language. ``unavailable`` is a response-only\ntier: Books could not be read and nothing was cached, so the pill stays\nhidden. ``stale`` means the figures come from the cache because Books\ncould not be read just now.",
   "properties": {
@@ -1298,6 +1397,34 @@
    "contacted"
   ],
   "title": "AitoContactedUpdate",
+  "type": "object"
+ },
+ "AitoDepositCredit": {
+  "properties": {
+   "applicable": {
+    "title": "Applicable",
+    "type": "number"
+   },
+   "id": {
+    "title": "Id",
+    "type": "string"
+   },
+   "number": {
+    "title": "Number",
+    "type": "string"
+   },
+   "total": {
+    "title": "Total",
+    "type": "number"
+   }
+  },
+  "required": [
+   "id",
+   "number",
+   "applicable",
+   "total"
+  ],
+  "title": "AitoDepositCredit",
   "type": "object"
  },
  "AitoDueDateUpdate": {
@@ -1634,6 +1761,96 @@
   "title": "AitoFlagUpdate",
   "type": "object"
  },
+ "AitoForceSyncReport": {
+  "$defs": {
+   "AitoForceSyncStep": {
+    "properties": {
+     "detail": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Detail",
+      "type": "object"
+     },
+     "key": {
+      "enum": [
+       "quote",
+       "credit",
+       "invoice",
+       "payment_links"
+      ],
+      "title": "Key",
+      "type": "string"
+     },
+     "outcome": {
+      "enum": [
+       "in_sync",
+       "fixed",
+       "failed",
+       "skipped"
+      ],
+      "title": "Outcome",
+      "type": "string"
+     }
+    },
+    "required": [
+     "key",
+     "outcome"
+    ],
+    "title": "AitoForceSyncStep",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "steps": {
+    "items": {
+     "$ref": "#/$defs/AitoForceSyncStep"
+    },
+    "title": "Steps",
+    "type": "array"
+   }
+  },
+  "required": [
+   "steps"
+  ],
+  "title": "AitoForceSyncReport",
+  "type": "object"
+ },
+ "AitoForceSyncStep": {
+  "properties": {
+   "detail": {
+    "additionalProperties": true,
+    "default": {},
+    "title": "Detail",
+    "type": "object"
+   },
+   "key": {
+    "enum": [
+     "quote",
+     "credit",
+     "invoice",
+     "payment_links"
+    ],
+    "title": "Key",
+    "type": "string"
+   },
+   "outcome": {
+    "enum": [
+     "in_sync",
+     "fixed",
+     "failed",
+     "skipped"
+    ],
+    "title": "Outcome",
+    "type": "string"
+   }
+  },
+  "required": [
+   "key",
+   "outcome"
+  ],
+  "title": "AitoForceSyncStep",
+  "type": "object"
+ },
  "AitoInvoiceCreatedResponse": {
   "$defs": {
    "AitoRetainerApplied": {
@@ -1725,6 +1942,120 @@
    "retainers"
   ],
   "title": "AitoInvoiceCreatedResponse",
+  "type": "object"
+ },
+ "AitoInvoiceDepositsInvoice": {
+  "properties": {
+   "balance": {
+    "title": "Balance",
+    "type": "number"
+   },
+   "currency_code": {
+    "title": "Currency Code",
+    "type": "string"
+   },
+   "id": {
+    "title": "Id",
+    "type": "string"
+   },
+   "number": {
+    "title": "Number",
+    "type": "string"
+   }
+  },
+  "required": [
+   "id",
+   "number",
+   "balance",
+   "currency_code"
+  ],
+  "title": "AitoInvoiceDepositsInvoice",
+  "type": "object"
+ },
+ "AitoInvoiceDepositsResponse": {
+  "$defs": {
+   "AitoDepositCredit": {
+    "properties": {
+     "applicable": {
+      "title": "Applicable",
+      "type": "number"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "number": {
+      "title": "Number",
+      "type": "string"
+     },
+     "total": {
+      "title": "Total",
+      "type": "number"
+     }
+    },
+    "required": [
+     "id",
+     "number",
+     "applicable",
+     "total"
+    ],
+    "title": "AitoDepositCredit",
+    "type": "object"
+   },
+   "AitoInvoiceDepositsInvoice": {
+    "properties": {
+     "balance": {
+      "title": "Balance",
+      "type": "number"
+     },
+     "currency_code": {
+      "title": "Currency Code",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "number": {
+      "title": "Number",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "number",
+     "balance",
+     "currency_code"
+    ],
+    "title": "AitoInvoiceDepositsInvoice",
+    "type": "object"
+   }
+  },
+  "description": "This quote's own unspent deposits and the invoice they could go on.\n`invoice` is null when the card has no open invoice to pay.",
+  "properties": {
+   "deposits": {
+    "items": {
+     "$ref": "#/$defs/AitoDepositCredit"
+    },
+    "title": "Deposits",
+    "type": "array"
+   },
+   "invoice": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/AitoInvoiceDepositsInvoice"
+     },
+     {
+      "type": "null"
+     }
+    ]
+   }
+  },
+  "required": [
+   "invoice",
+   "deposits"
+  ],
+  "title": "AitoInvoiceDepositsResponse",
   "type": "object"
  },
  "AitoInvoiceEmailContent": {
@@ -3378,6 +3709,25 @@
     "title": "Description",
     "type": "string"
    },
+   "document_numbers": {
+    "items": {
+     "type": "string"
+    },
+    "title": "Document Numbers",
+    "type": "array"
+   },
+   "done_at": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Done At"
+   },
    "due_date": {
     "anyOf": [
      {
@@ -3668,6 +4018,10 @@
     ],
     "title": "Retainer Paid Total"
    },
+   "search_text": {
+    "title": "Search Text",
+    "type": "string"
+   },
    "shipping_first_name": {
     "anyOf": [
      {
@@ -3860,6 +4214,7 @@
    "quote_invoiced",
    "flag",
    "client_contacted_at",
+   "done_at",
    "due_date",
    "tracking_configured",
    "quote_sync_error",
@@ -3882,6 +4237,8 @@
    "shipping_price",
    "shipping_lta",
    "shipping_service_name",
+   "search_text",
+   "document_numbers",
    "version",
    "created_at",
    "updated_at"
@@ -4468,6 +4825,25 @@
       "title": "Description",
       "type": "string"
      },
+     "document_numbers": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Document Numbers",
+      "type": "array"
+     },
+     "done_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Done At"
+     },
      "due_date": {
       "anyOf": [
        {
@@ -4758,6 +5134,10 @@
       ],
       "title": "Retainer Paid Total"
      },
+     "search_text": {
+      "title": "Search Text",
+      "type": "string"
+     },
      "shipping_first_name": {
       "anyOf": [
        {
@@ -4950,6 +5330,7 @@
      "quote_invoiced",
      "flag",
      "client_contacted_at",
+     "done_at",
      "due_date",
      "tracking_configured",
      "quote_sync_error",
@@ -4972,6 +5353,8 @@
      "shipping_price",
      "shipping_lta",
      "shipping_service_name",
+     "search_text",
+     "document_numbers",
      "version",
      "created_at",
      "updated_at"
@@ -5396,6 +5779,25 @@
       "title": "Description",
       "type": "string"
      },
+     "document_numbers": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Document Numbers",
+      "type": "array"
+     },
+     "done_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Done At"
+     },
      "due_date": {
       "anyOf": [
        {
@@ -5686,6 +6088,10 @@
       ],
       "title": "Retainer Paid Total"
      },
+     "search_text": {
+      "title": "Search Text",
+      "type": "string"
+     },
      "shipping_first_name": {
       "anyOf": [
        {
@@ -5878,6 +6284,7 @@
      "quote_invoiced",
      "flag",
      "client_contacted_at",
+     "done_at",
      "due_date",
      "tracking_configured",
      "quote_sync_error",
@@ -5900,6 +6307,8 @@
      "shipping_price",
      "shipping_lta",
      "shipping_service_name",
+     "search_text",
+     "document_numbers",
      "version",
      "created_at",
      "updated_at"
@@ -9707,6 +10116,25 @@
       "title": "Description",
       "type": "string"
      },
+     "document_numbers": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Document Numbers",
+      "type": "array"
+     },
+     "done_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Done At"
+     },
      "due_date": {
       "anyOf": [
        {
@@ -9997,6 +10425,10 @@
       ],
       "title": "Retainer Paid Total"
      },
+     "search_text": {
+      "title": "Search Text",
+      "type": "string"
+     },
      "shipping_first_name": {
       "anyOf": [
        {
@@ -10189,6 +10621,7 @@
      "quote_invoiced",
      "flag",
      "client_contacted_at",
+     "done_at",
      "due_date",
      "tracking_configured",
      "quote_sync_error",
@@ -10211,6 +10644,8 @@
      "shipping_price",
      "shipping_lta",
      "shipping_service_name",
+     "search_text",
+     "document_numbers",
      "version",
      "created_at",
      "updated_at"
@@ -10882,24 +11317,42 @@
   "title": "AitoTerminalPaymentView",
   "type": "object"
  },
+ "AitoTrackingBalance": {
+  "description": "What is owed on the document the page shows (2026-10-13): the quote's\nonline link while it is unpaid, or the open invoice. Whole currency\nunits \u2014 the shop bills in XPF, which has no minor unit. `paid_pct` is\nrounded down (never overstates what was paid), at least 1 once anything\nis paid and at most 99 while anything is owed.",
+  "properties": {
+   "currency": {
+    "title": "Currency",
+    "type": "string"
+   },
+   "due": {
+    "title": "Due",
+    "type": "integer"
+   },
+   "paid": {
+    "title": "Paid",
+    "type": "integer"
+   },
+   "paid_pct": {
+    "title": "Paid Pct",
+    "type": "integer"
+   },
+   "total": {
+    "title": "Total",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "currency",
+   "total",
+   "paid",
+   "due",
+   "paid_pct"
+  ],
+  "title": "AitoTrackingBalance",
+  "type": "object"
+ },
  "AitoTrackingLinkResponse": {
   "properties": {
-   "quote_notes": {
-    "anyOf": [
-     {
-      "enum": [
-       "updated",
-       "failed"
-      ],
-      "type": "string"
-     },
-     {
-      "type": "null"
-     }
-    ],
-    "default": null,
-    "title": "Quote Notes"
-   },
    "tracking_url": {
     "anyOf": [
      {
@@ -10955,6 +11408,40 @@
  },
  "AitoTrackingResponse": {
   "$defs": {
+   "AitoTrackingBalance": {
+    "description": "What is owed on the document the page shows (2026-10-13): the quote's\nonline link while it is unpaid, or the open invoice. Whole currency\nunits \u2014 the shop bills in XPF, which has no minor unit. `paid_pct` is\nrounded down (never overstates what was paid), at least 1 once anything\nis paid and at most 99 while anything is owed.",
+    "properties": {
+     "currency": {
+      "title": "Currency",
+      "type": "string"
+     },
+     "due": {
+      "title": "Due",
+      "type": "integer"
+     },
+     "paid": {
+      "title": "Paid",
+      "type": "integer"
+     },
+     "paid_pct": {
+      "title": "Paid Pct",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "currency",
+     "total",
+     "paid",
+     "due",
+     "paid_pct"
+    ],
+    "title": "AitoTrackingBalance",
+    "type": "object"
+   },
    "AitoTrackingPayment": {
     "description": "The online payment link as the client sees it: a state and, while\nunpaid, the page to pay on. `deposit` says whether the link was for a\ndeposit share rather than the whole quote \u2014 the page's wording differs.",
     "properties": {
@@ -11051,6 +11538,17 @@
    "accepted": {
     "title": "Accepted",
     "type": "boolean"
+   },
+   "balance": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/AitoTrackingBalance"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null
    },
    "column": {
     "enum": [

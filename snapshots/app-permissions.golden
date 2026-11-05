@@ -6,7 +6,6 @@
   "aito:delete",
   "aito:read",
   "aito:update",
-  "ams_history:delete",
   "ams_history:read",
   "api_keys:create",
   "api_keys:delete",
@@ -74,6 +73,8 @@
   "maintenance:update",
   "makerworld:import",
   "makerworld:view",
+  "manyfold:import",
+  "manyfold:view",
   "notification_templates:read",
   "notification_templates:update",
   "notifications:create",
@@ -82,10 +83,11 @@
   "notifications:update",
   "notifications:user_email",
   "orca_cloud:auth",
+  "orders:read",
+  "orders:update",
   "pipelines:read",
   "pipelines:run",
   "pipelines:write",
-  "printer_sensor_history:delete",
   "printer_sensor_history:read",
   "printers:ams_rfid",
   "printers:clear_plate",
@@ -106,6 +108,7 @@
   "queue:read_all",
   "queue:read_own",
   "queue:reorder",
+  "queue:start_unreviewed",
   "queue:update_all",
   "queue:update_own",
   "settings:backup",
@@ -229,6 +232,10 @@
    "makerworld:import",
    "makerworld:view"
   ],
+  "Manyfold": [
+   "manyfold:import",
+   "manyfold:view"
+  ],
   "Notifications": [
    "notification_templates:read",
    "notification_templates:update",
@@ -237,6 +244,10 @@
    "notifications:read",
    "notifications:update",
    "notifications:user_email"
+  ],
+  "Orders": [
+   "orders:read",
+   "orders:update"
   ],
   "Printers": [
    "printers:ams_rfid",
@@ -262,6 +273,7 @@
    "queue:read_all",
    "queue:read_own",
    "queue:reorder",
+   "queue:start_unreviewed",
    "queue:update_all",
    "queue:update_own"
   ],
@@ -284,9 +296,7 @@
    "smart_plugs:update"
   ],
   "Stats & History": [
-   "ams_history:delete",
    "ams_history:read",
-   "printer_sensor_history:delete",
    "printer_sensor_history:read",
    "stats:filter_by_user",
    "stats:read"
@@ -342,6 +352,7 @@
     "queue:delete_own",
     "queue:delete_all",
     "queue:reorder",
+    "queue:start_unreviewed",
     "library:read",
     "library:read_own",
     "library:read_all",
@@ -395,9 +406,7 @@
     "firmware:read",
     "firmware:update",
     "ams_history:read",
-    "ams_history:delete",
     "printer_sensor_history:read",
-    "printer_sensor_history:delete",
     "stats:read",
     "stats:filter_by_user",
     "cost_centers:read_own",
@@ -415,6 +424,8 @@
     "orca_cloud:auth",
     "makerworld:view",
     "makerworld:import",
+    "manyfold:view",
+    "manyfold:import",
     "api_keys:read",
     "api_keys:create",
     "api_keys:update",
@@ -437,6 +448,8 @@
     "aito:create",
     "aito:update",
     "aito:delete",
+    "orders:read",
+    "orders:update",
     "websocket:connect"
    ]
   },
@@ -462,12 +475,15 @@
     "queue:update_own",
     "queue:delete_own",
     "queue:reorder",
+    "queue:start_unreviewed",
     "library:read_own",
     "library:upload",
     "library:update_own",
     "library:delete_own",
     "makerworld:view",
     "makerworld:import",
+    "manyfold:view",
+    "manyfold:import",
     "orca_cloud:auth",
     "projects:read",
     "projects:create",
@@ -477,6 +493,8 @@
     "aito:create",
     "aito:update",
     "aito:delete",
+    "orders:read",
+    "orders:update",
     "filaments:read",
     "filaments:create",
     "filaments:update",
@@ -558,7 +576,8 @@
     "pipelines:read",
     "calculator:read",
     "websocket:connect",
-    "makerworld:view"
+    "makerworld:view",
+    "manyfold:view"
    ]
   }
  }

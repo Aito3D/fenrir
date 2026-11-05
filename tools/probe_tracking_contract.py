@@ -26,7 +26,6 @@ from backend.app.main import app  # noqa: E402
 OPERATIONS = [
     ("/api/v1/aito/track/{token}", "get"),
     ("/api/v1/aito/{project_id}/tracking-link", "get"),
-    ("/api/v1/aito/{project_id}/tracking-token", "post"),
 ]
 
 
