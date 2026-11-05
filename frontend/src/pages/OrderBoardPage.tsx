@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ArrowDown, ArrowUp, Box, Loader2, PackageCheck, Plug, PowerOff, RefreshCw, Search, SearchX } from 'lucide-react';
+import { AlertTriangle, Box, Loader2, PackageCheck, Plug, PowerOff, RefreshCw, Search, SearchX } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
 import type { OrderBoardResponse } from '../api/client';
@@ -230,7 +230,6 @@ export function OrderBoardPage() {
           <span className="px-2 text-bambu-gray">{t('orders.sort.label')}</span>
           {SORTS.map(key => {
             const active = sort.key === key;
-            const Arrow = sort.flipped ? ArrowUp : ArrowDown;
             return (
               <button
                 key={key}
@@ -240,7 +239,7 @@ export function OrderBoardPage() {
                 className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 ${active ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'}`}
               >
                 {t(`orders.sort.${key}`)}
-                {active && <Arrow aria-hidden="true" className="h-3 w-3" />}
+                {active && <span>{sort.flipped ? '↑' : '↓'}</span>}
               </button>
             );
           })}

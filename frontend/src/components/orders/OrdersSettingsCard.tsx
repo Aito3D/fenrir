@@ -16,7 +16,7 @@ const BOARD_KEY = ['order-board'] as const;
 const INTERVALS = [5, 15, 60];
 const MAX_AGE_LIMIT = 3650;
 const inputCls =
-  'rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-3 py-2 text-sm text-white focus:border-bambu-green focus:outline-none';
+  'rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-3 py-2 text-sm text-white focus:border-bambu-green focus:outline-none disabled:opacity-60';
 
 /** Settings → Orders. Its own endpoints, gated on orders:update, because
  *  Operators hold settings:read only and must still be able to tune the board. */
@@ -65,6 +65,10 @@ function OrdersSettingsBody() {
     );
   }
 
+  // Each save sends the whole object built from the last saved values, so a
+  // second change made before the first answer would undo it. Lock until then.
+  const busy = save.isPending;
+
   const commitDays = () => {
     const days = Number(daysDraft);
     const valid = daysDraft !== null && daysDraft.trim() !== '' && Number.isInteger(days) && days >= 0 && days <= MAX_AGE_LIMIT;
@@ -96,6 +100,7 @@ function OrdersSettingsBody() {
             <Toggle
               checked={settings.sync_enabled}
               onChange={sync_enabled => save.mutate({ ...settings, sync_enabled })}
+              disabled={busy}
               aria-label={t('orders.settings.syncEnabled')}
             />
           </div>
@@ -110,6 +115,7 @@ function OrdersSettingsBody() {
               id={ids.interval}
               value={settings.sync_minutes}
               onChange={e => save.mutate({ ...settings, sync_minutes: Number(e.target.value) })}
+              disabled={busy}
               className={inputCls}
             >
               {INTERVALS.map(minutes => (
@@ -158,6 +164,7 @@ function OrdersSettingsBody() {
                 value={daysDraft ?? String(settings.max_age_days)}
                 onChange={e => setDaysDraft(e.target.value)}
                 onBlur={commitDays}
+                disabled={busy}
                 onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
                 className={`${inputCls} w-24 text-right tabular-nums`}
               />
@@ -177,6 +184,7 @@ function OrdersSettingsBody() {
                     type="button"
                     aria-label={t('orders.settings.removeBrand', { brand })}
                     onClick={() => save.mutate({ ...settings, core_brands: settings.core_brands.filter(b => b !== brand) })}
+                    disabled={busy}
                     className="rounded-full p-0.5 text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white"
                   >
                     <X aria-hidden="true" className="h-3 w-3" />
@@ -190,6 +198,7 @@ function OrdersSettingsBody() {
                 maxLength={60}
                 onChange={e => setBrandDraft(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && addBrand()}
+                disabled={busy}
                 placeholder={t('orders.settings.addBrand')}
                 aria-label={t('orders.settings.addBrand')}
                 className="w-40 rounded-full border border-dashed border-bambu-dark-tertiary bg-transparent px-3 py-1 text-xs text-white placeholder:text-bambu-gray focus:border-bambu-green focus:outline-none"

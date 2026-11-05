@@ -47,6 +47,9 @@ _PO_FIELDS = ("last_modified_time", "status", "billed_status", "received_status"
 _pass_lock = asyncio.Lock()
 # time.monotonic() before which Books asked us not to call again (429).
 _rate_limited_until = 0.0
+# Set to cut the loop's sleep short (settings saved). Created by the loop
+# itself, so it belongs to the loop's event loop.
+_wake: asyncio.Event | None = None
 
 
 @dataclass
@@ -93,6 +96,10 @@ async def save_settings(db: AsyncSession, settings: OrderBoardSettings) -> None:
     await set_setting(db, "order_board_core_brands", json.dumps(settings.core_brands))
     await recompute(db)
     await db.commit()
+    # Sync switched on, or the age limit raised: run a pass now rather than
+    # leave the page loading until the interval ends.
+    if _wake is not None:
+        _wake.set()
 
 
 async def _find_state(db: AsyncSession) -> OrderBoardDoc | None:
@@ -255,13 +262,16 @@ async def _sync(db: AsyncSession) -> None:
 
 
 async def run_pass(db: AsyncSession) -> bool:
-    """One bounded sync pass. False when another pass is already running.
+    """One bounded sync pass. False when nothing ran: another pass is already
+    running, or Books asked us to back off and that window is still open.
 
     A Zoho failure ends the pass, is recorded for the page to show, and leaves
     the stored board as it was.
     """
     global _rate_limited_until
-    if _pass_lock.locked():
+    # During a 429 back-off even a Refresh click sends nothing: the Kanban
+    # shares this budget and freezes while Books is throttling.
+    if _pass_lock.locked() or time.monotonic() < _rate_limited_until:
         return False
     async with _pass_lock:
         try:
@@ -277,25 +287,37 @@ async def run_pass(db: AsyncSession) -> bool:
     return True
 
 
+async def _iteration(db: AsyncSession) -> float:
+    """One loop turn: a pass when allowed. Returns the seconds until the next."""
+    settings = await load_settings(db)
+    if not (settings.sync_enabled and await zoho_service.is_configured(db)):
+        # Look again soon: Zoho may be connected from another settings card.
+        return float(PENDING_PAUSE_SECONDS)
+    await run_pass(db)
+    return float(PENDING_PAUSE_SECONDS) if await _pending_count(db) else settings.sync_minutes * 60.0
+
+
 async def run_loop() -> None:
     """Run passes forever. Cancellation is the only way out.
 
     Every iteration takes its own session and swallows its own errors: one bad
-    pass must not end syncing until the next restart.
+    pass must not end syncing until the next restart. The sleep between turns
+    ends early when settings are saved.
     """
+    global _wake
+    _wake = asyncio.Event()
     while True:
         delay = float(PENDING_PAUSE_SECONDS)
         try:
             async with async_session() as db:
-                settings = await load_settings(db)
-                delay = settings.sync_minutes * 60.0
-                if settings.sync_enabled and await zoho_service.is_configured(db):
-                    await run_pass(db)
-                    if await _pending_count(db):
-                        delay = float(PENDING_PAUSE_SECONDS)
+                delay = await _iteration(db)
         except Exception:
             logger.exception("Order board sync loop iteration failed")
-        await asyncio.sleep(max(delay, _rate_limited_until - time.monotonic()))
+        try:
+            await asyncio.wait_for(_wake.wait(), timeout=max(delay, _rate_limited_until - time.monotonic()))
+        except TimeoutError:
+            pass
+        _wake.clear()
 
 
 def start_order_board_sync() -> None:

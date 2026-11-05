@@ -121,6 +121,14 @@ class FakeZoho:
         return self.meter
 
 
+@pytest.fixture(autouse=True)
+def no_back_off_left_over():
+    """The 429 back-off window is module state; one test must not hand it to the next."""
+    sync._rate_limited_until = 0.0
+    yield
+    sync._rate_limited_until = 0.0
+
+
 @pytest.fixture
 def zoho(monkeypatch):
     fake = FakeZoho()
@@ -378,3 +386,115 @@ async def test_reading_the_board_writes_nothing(db_session, zoho):
 async def test_saving_settings_before_the_first_load_creates_no_state_row(db_session, zoho):
     await sync.save_settings(db_session, sync.OrderBoardSettings(True, 15, 365, ["eSUN"]))
     assert await _state_rows(db_session) == 0
+
+
+# --- the loop: when the next pass runs ---
+
+
+@pytest.fixture
+def passes(monkeypatch):
+    calls = []
+
+    async def fake_pass(db):
+        calls.append(db)
+        return True
+
+    monkeypatch.setattr(sync, "run_pass", fake_pass)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_iteration_skips_the_pass_and_rechecks_soon_when_sync_is_off(db_session, zoho, passes):
+    await sync.save_settings(db_session, sync.OrderBoardSettings(False, 60, 365, []))
+    assert await sync._iteration(db_session) == sync.PENDING_PAUSE_SECONDS  # not a whole hour
+    assert passes == []
+
+
+@pytest.mark.asyncio
+async def test_iteration_rechecks_soon_when_zoho_is_not_connected(db_session, zoho, passes):
+    zoho.configured = False
+    assert await sync._iteration(db_session) == sync.PENDING_PAUSE_SECONDS
+    assert passes == []
+
+
+@pytest.mark.asyncio
+async def test_iteration_waits_the_interval_once_caught_up(db_session, zoho, passes):
+    await sync.save_settings(db_session, sync.OrderBoardSettings(True, 5, 365, []))
+    assert await sync._iteration(db_session) == 5 * 60
+    assert len(passes) == 1
+
+
+@pytest.mark.asyncio
+async def test_iteration_comes_back_in_a_minute_while_documents_are_pending(db_session, zoho):
+    zoho.add(*(order(n) for n in range(25)))
+    assert await sync._iteration(db_session) == sync.PENDING_PAUSE_SECONDS
+
+
+class _NoSession:
+    async def __aenter__(self):
+        return None
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+@pytest.mark.asyncio
+async def test_saving_settings_wakes_the_loop_instead_of_waiting_out_the_interval(db_session, zoho, monkeypatch):
+    """Turning sync on, or raising the age limit, must not show a loading page
+    for up to an hour while nothing runs."""
+    turns = []
+
+    async def fake_iteration(db):
+        turns.append(1)
+        return 3600.0
+
+    monkeypatch.setattr(sync, "_iteration", fake_iteration)
+    monkeypatch.setattr(sync, "async_session", _NoSession)
+    loop_task = asyncio.create_task(sync.run_loop())
+    try:
+        await asyncio.sleep(0.05)
+        assert len(turns) == 1
+        await sync.save_settings(db_session, sync.OrderBoardSettings(True, 15, 365, []))
+        await asyncio.sleep(0.05)
+        assert len(turns) == 2
+    finally:
+        loop_task.cancel()
+        await asyncio.gather(loop_task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_a_loop_turn_that_raises_does_not_end_the_loop(monkeypatch):
+    turns = []
+
+    async def failing_iteration(db):
+        turns.append(1)
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(sync, "_iteration", failing_iteration)
+    monkeypatch.setattr(sync, "async_session", _NoSession)
+    monkeypatch.setattr(sync, "PENDING_PAUSE_SECONDS", 0.01)
+    loop_task = asyncio.create_task(sync.run_loop())
+    try:
+        await asyncio.sleep(0.1)
+        assert len(turns) >= 2
+    finally:
+        loop_task.cancel()
+        await asyncio.gather(loop_task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_refresh_during_a_zoho_back_off_sends_nothing(db_session, zoho):
+    """Books said "not now" (429). A Refresh click must not send another call:
+    the Kanban shares that budget and freezes while Books is throttling."""
+    from backend.app.services.zoho import ZohoRateLimited
+
+    zoho.add(order(1))
+    zoho.fail = ZohoRateLimited("rate limited", retry_after=120)
+    await sync.run_pass(db_session)
+    zoho.fail = None
+    before = sum(zoho.calls.values())
+    assert await sync.run_pass(db_session) is False
+    assert sum(zoho.calls.values()) == before
+    sync._rate_limited_until = 0.0  # the window has passed
+    assert await sync.run_pass(db_session) is True
+    assert sum(zoho.calls.values()) > before

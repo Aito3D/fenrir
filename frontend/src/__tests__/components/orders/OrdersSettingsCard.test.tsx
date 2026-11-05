@@ -141,6 +141,28 @@ describe('OrdersSettingsCard', () => {
     await waitFor(() => expect(puts).toEqual([{ ...SAVED, core_brands: ['Bambu Lab'] }]));
   });
 
+  it('locks the controls while a save is in flight, so a second change cannot undo the first', async () => {
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    setup();
+    server.use(
+      http.put('/api/v1/order-board/settings', async ({ request }) => {
+        const body = await request.json();
+        await new Promise<void>(resolve => { release = resolve; });
+        return HttpResponse.json(body);
+      }),
+    );
+    render(<OrdersSettingsCard />);
+    await user.click(await screen.findByRole('switch', { name: 'Keep the order board in sync' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Check Zoho every' })).toBeDisabled());
+    expect(screen.getByRole('switch', { name: 'Keep the order board in sync' })).toBeDisabled();
+    expect(screen.getByRole('spinbutton', { name: 'Ignore orders older than' })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'Add a brand' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove Polymaker' })).toBeDisabled();
+    release();
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Check Zoho every' })).toBeEnabled());
+  });
+
   it('Sync now asks the server for one pass', async () => {
     const user = userEvent.setup();
     const { refreshes } = setup();

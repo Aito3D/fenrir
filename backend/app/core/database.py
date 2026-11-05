@@ -9597,15 +9597,18 @@ async def seed_default_groups():
                 grp.permissions = perms
         await session.commit()
 
-        # Backfill the order board permissions. Administrators is handled by
-        # the ALL_PERMISSIONS sync above; Operators get both, as on a fresh
-        # install; Viewers and custom groups get neither.
-        grp = (await session.execute(select(Group).where(Group.name == "Operators"))).scalar_one_or_none()
-        if grp is not None and grp.permissions is not None:
-            missing = [p for p in ("orders:read", "orders:update") if p not in grp.permissions]
-            if missing:
-                grp.permissions = [*grp.permissions, *missing]
-                logger.info("Added %s to Operators group (backfill)", ", ".join(missing))
+        # Backfill the order board permissions, once. Administrators is
+        # handled by the ALL_PERMISSIONS sync above; Operators get both, as on
+        # a fresh install; Viewers and custom groups get neither. Once only:
+        # board rows carry customer names and order values, so an admin who
+        # takes them away from Operators must not get them back on a restart.
+        if await _backfill_due("_backfill_orders_permissions_done", "orders:read"):
+            grp = (await session.execute(select(Group).where(Group.name == "Operators"))).scalar_one_or_none()
+            if grp is not None and grp.permissions is not None:
+                missing = [p for p in ("orders:read", "orders:update") if p not in grp.permissions]
+                if missing:
+                    grp.permissions = [*grp.permissions, *missing]
+                    logger.info("Added %s to Operators group (backfill)", ", ".join(missing))
         await session.commit()
 
         # queue:start_unreviewed (#1620): jobs of users without it wait for

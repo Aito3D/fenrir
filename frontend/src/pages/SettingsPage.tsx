@@ -8054,7 +8054,6 @@ export function SettingsPage() {
         </div>
       )}
 
-      {/* Fenrir: Projects tab */}
       {/* Fenrir: Orders tab */}
       {tab === 'orders' && (
         <div id="card-orders-tab" className="space-y-3">
@@ -8062,6 +8061,7 @@ export function SettingsPage() {
         </div>
       )}
 
+      {/* Fenrir: Projects tab */}
       {tab === 'projects' && (
         <div id="card-projects-tab" className="space-y-3">
           <ProjectsSettingsCard />
