@@ -17,7 +17,7 @@ const AGE = {
 const ROW_GRID =
   'grid items-center gap-x-3 gap-y-1.5 grid-cols-[minmax(0,1fr)_auto_1.25rem] ' +
   "[grid-template-areas:'num_status_chev'_'cust_value_chev'_'bar_bar_bar'] " +
-  'lg:[grid-template-areas:none] lg:grid-cols-[6.5rem_minmax(0,1fr)_3.5rem_minmax(8rem,14rem)_auto_7.5rem_1.25rem]';
+  'lg:[grid-template-areas:none] lg:grid-cols-[6.5rem_minmax(0,1fr)_3.5rem_minmax(11rem,16rem)_auto_7.5rem_1.25rem]';
 
 /** One order: the collapsed row is the button that opens its lines. */
 export function OrderCard({ row, open, onToggle }: { row: OrderBoardRow; open: boolean; onToggle: () => void }) {
@@ -55,7 +55,7 @@ export function OrderCard({ row, open, onToggle }: { row: OrderBoardRow; open: b
             <span className={TONE.warning.bar} style={width(units.backordered)} />
             <span className={TONE.danger.bar} style={width(units.to_order)} />
           </span>
-          <span className="mt-1 flex justify-between gap-2 text-[11px] text-bambu-gray">
+          <span className="mt-1 flex justify-between gap-2 whitespace-nowrap text-[11px] text-bambu-gray">
             <span>
               {t('orders.shipped', { shipped: formatQty(units.shipped), total: formatQty(units.total) })}
               {row.packed > 0 && <> · {t('orders.packed', { n: formatQty(row.packed) })}</>}
