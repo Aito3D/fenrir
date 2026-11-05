@@ -1,5 +1,16 @@
 ### exit: 0
 ### stdout:
+CREATE TABLE aito_client_quote_ratings (
+	customer_id VARCHAR(50) NOT NULL, 
+	tier VARCHAR(10) NOT NULL, 
+	accepted_count INTEGER NOT NULL, 
+	declined_count INTEGER NOT NULL, 
+	expired_count INTEGER NOT NULL, 
+	pending_count INTEGER NOT NULL, 
+	score FLOAT, 
+	computed_at DATETIME NOT NULL, 
+	PRIMARY KEY (customer_id)
+);
 CREATE TABLE aito_client_ratings (
 	customer_id VARCHAR(50) NOT NULL, 
 	tier VARCHAR(10) NOT NULL, 
@@ -88,14 +99,17 @@ CREATE TABLE aito_projects (
 	quote_invoiced BOOLEAN DEFAULT '0' NOT NULL, 
 	invoice_status VARCHAR(30), 
 	invoice_balance FLOAT, 
+	invoice_total FLOAT, 
 	invoice_due_date VARCHAR(10), 
 	invoice_checked_at DATETIME, 
+	document_numbers TEXT, 
 	quote_expiry_date VARCHAR(10), 
 	retainer_paid_total FLOAT, 
 	customer_credit_total FLOAT, 
 	flag VARCHAR(16), 
 	due_date VARCHAR(10), 
 	client_contacted_at DATETIME, 
+	done_at DATETIME, 
 	quote_sync_error TEXT, 
 	quote_sync_failures INTEGER DEFAULT '0' NOT NULL, 
 	quote_synced_at VARCHAR(30), 
@@ -118,9 +132,18 @@ CREATE TABLE aito_projects (
 	PRIMARY KEY (id), 
 	UNIQUE (tracking_token)
 );
+CREATE TABLE aito_task_deliveries (
+	task_id INTEGER NOT NULL, 
+	revision_id INTEGER NOT NULL, 
+	created_by_id INTEGER, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (task_id, revision_id), 
+	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL
+);
 CREATE TABLE aito_tasks (
 	id INTEGER NOT NULL, 
 	project_id INTEGER NOT NULL, 
+	linked_project_id INTEGER, 
 	position INTEGER NOT NULL, 
 	title VARCHAR(200), 
 	scan_cost FLOAT, 
@@ -218,8 +241,29 @@ CREATE TABLE ams_sensor_history (
 	PRIMARY KEY (id), 
 	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE
 );
-CREATE TABLE api_keys (
+CREATE TABLE announcement_reads (
 	id INTEGER NOT NULL, 
+	announcement_id INTEGER NOT NULL, 
+	user_id INTEGER, 
+	read_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_announcement_reads_user UNIQUE (announcement_id, user_id), 
+	FOREIGN KEY(announcement_id) REFERENCES announcements (id) ON DELETE CASCADE, 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+CREATE TABLE announcements (
+	id INTEGER NOT NULL, 
+	public_id VARCHAR(64) NOT NULL, 
+	level VARCHAR(16) NOT NULL, 
+	texts TEXT NOT NULL, 
+	link_url VARCHAR(500), 
+	published_at DATETIME, 
+	expires_at DATETIME, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id)
+);
+CREATE TABLE api_keys (
+	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, 
 	name VARCHAR(100) NOT NULL, 
 	key_hash VARCHAR(255) NOT NULL, 
 	key_prefix VARCHAR(20) NOT NULL, 
@@ -227,21 +271,27 @@ CREATE TABLE api_keys (
 	can_queue BOOLEAN NOT NULL, 
 	can_control_printer BOOLEAN NOT NULL, 
 	can_read_status BOOLEAN NOT NULL, 
-	can_manage_library BOOLEAN NOT NULL, 
-	can_manage_inventory BOOLEAN NOT NULL, 
-	can_manage_maintenance BOOLEAN NOT NULL, 
-	can_manage_archives BOOLEAN NOT NULL, 
-	can_manage_projects BOOLEAN NOT NULL, 
-	can_access_cloud BOOLEAN NOT NULL, 
-	can_update_energy_cost BOOLEAN NOT NULL, 
-	can_send_notifications BOOLEAN NOT NULL, 
+	can_manage_library BOOLEAN DEFAULT 1 NOT NULL, 
+	can_manage_inventory BOOLEAN DEFAULT 1 NOT NULL, 
+	can_manage_maintenance BOOLEAN DEFAULT 1 NOT NULL, 
+	can_manage_archives BOOLEAN DEFAULT 1 NOT NULL, 
+	can_manage_projects BOOLEAN DEFAULT 1 NOT NULL, 
+	can_access_cloud BOOLEAN DEFAULT 0 NOT NULL, 
+	can_update_energy_cost BOOLEAN DEFAULT 0 NOT NULL, 
+	can_send_notifications BOOLEAN DEFAULT 0 NOT NULL, 
 	printer_ids JSON, 
 	enabled BOOLEAN NOT NULL, 
 	last_used DATETIME, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	expires_at DATETIME, 
-	PRIMARY KEY (id), 
 	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+CREATE TABLE archive_aliases (
+	merged_archive_id INTEGER NOT NULL, 
+	archive_id INTEGER NOT NULL, 
+	merged_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (merged_archive_id), 
+	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE CASCADE
 );
 CREATE TABLE auth_ephemeral_tokens (
 	id INTEGER NOT NULL, 
@@ -249,6 +299,7 @@ CREATE TABLE auth_ephemeral_tokens (
 	token_type VARCHAR(20) NOT NULL, 
 	username VARCHAR(150), 
 	provider_id INTEGER, 
+	api_key_id INTEGER, 
 	nonce VARCHAR(128), 
 	code_verifier VARCHAR(128), 
 	challenge_id VARCHAR(128), 
@@ -403,6 +454,13 @@ CREATE TABLE cost_centers (
 	PRIMARY KEY (id), 
 	FOREIGN KEY(owner_user_id) REFERENCES users (id) ON DELETE SET NULL
 );
+CREATE TABLE external_link_badges (
+	link_id INTEGER NOT NULL, 
+	count INTEGER NOT NULL, 
+	updated_at DATETIME NOT NULL, 
+	PRIMARY KEY (link_id), 
+	FOREIGN KEY(link_id) REFERENCES external_links (id) ON DELETE CASCADE
+);
 CREATE TABLE external_links (
 	id INTEGER NOT NULL, 
 	name VARCHAR(50) NOT NULL, 
@@ -439,6 +497,47 @@ CREATE TABLE filament_presets (
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id)
 );
+CREATE TABLE filament_profile_default (
+	id INTEGER NOT NULL, 
+	match_key VARCHAR(320) NOT NULL, 
+	brand VARCHAR(100) NOT NULL, 
+	material VARCHAR(50) NOT NULL, 
+	subtype VARCHAR(50) NOT NULL, 
+	color_name VARCHAR(100) NOT NULL, 
+	slicer_filament VARCHAR(128), 
+	slicer_filament_name VARCHAR(255), 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (match_key)
+);
+CREATE TABLE filament_profile_default_k_profile (
+	id INTEGER NOT NULL, 
+	profile_default_id INTEGER NOT NULL, 
+	printer_id INTEGER NOT NULL, 
+	extruder INTEGER NOT NULL, 
+	nozzle_diameter VARCHAR(10) NOT NULL, 
+	nozzle_type VARCHAR(50), 
+	k_value FLOAT NOT NULL, 
+	name VARCHAR(100), 
+	cali_idx INTEGER, 
+	setting_id VARCHAR(50), 
+	PRIMARY KEY (id), 
+	UNIQUE (profile_default_id, printer_id, extruder, nozzle_diameter), 
+	FOREIGN KEY(profile_default_id) REFERENCES filament_profile_default (id) ON DELETE CASCADE, 
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE
+);
+CREATE TABLE filament_profile_default_preset (
+	id INTEGER NOT NULL, 
+	profile_default_id INTEGER NOT NULL, 
+	printer_model VARCHAR(50) NOT NULL, 
+	nozzle_diameter VARCHAR(10) NOT NULL, 
+	slicer_filament VARCHAR(128), 
+	slicer_filament_name VARCHAR(255), 
+	PRIMARY KEY (id), 
+	UNIQUE (profile_default_id, printer_model, nozzle_diameter), 
+	FOREIGN KEY(profile_default_id) REFERENCES filament_profile_default (id) ON DELETE CASCADE
+);
 CREATE TABLE filaments (
 	id INTEGER NOT NULL, 
 	name VARCHAR(100) NOT NULL, 
@@ -472,8 +571,8 @@ CREATE TABLE github_backup_config (
 	repository_url VARCHAR(500) NOT NULL, 
 	access_token TEXT NOT NULL, 
 	branch VARCHAR(100) NOT NULL, 
-	provider VARCHAR(30) NOT NULL, 
-	allow_insecure_http BOOLEAN NOT NULL, 
+	provider VARCHAR(30) DEFAULT 'github' NOT NULL, 
+	allow_insecure_http BOOLEAN DEFAULT 0 NOT NULL, 
 	schedule_enabled BOOLEAN NOT NULL, 
 	schedule_type VARCHAR(20) NOT NULL, 
 	schedule_cron VARCHAR(100), 
@@ -505,15 +604,70 @@ CREATE TABLE github_backup_logs (
 	PRIMARY KEY (id), 
 	FOREIGN KEY(config_id) REFERENCES github_backup_config (id) ON DELETE CASCADE
 );
+CREATE TABLE group_locations (
+	group_id INTEGER NOT NULL, 
+	location VARCHAR(100) NOT NULL, 
+	PRIMARY KEY (group_id, location), 
+	FOREIGN KEY(group_id) REFERENCES groups (id) ON DELETE CASCADE
+);
+CREATE TABLE group_printers (
+	group_id INTEGER NOT NULL, 
+	printer_id INTEGER NOT NULL, 
+	PRIMARY KEY (group_id, printer_id), 
+	FOREIGN KEY(group_id) REFERENCES groups (id) ON DELETE CASCADE, 
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE
+);
 CREATE TABLE groups (
 	id INTEGER NOT NULL, 
 	name VARCHAR(100) NOT NULL, 
 	description VARCHAR(500), 
 	permissions JSON NOT NULL, 
 	is_system BOOLEAN NOT NULL, 
+	restrict_printers BOOLEAN DEFAULT '0' NOT NULL, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id)
+);
+CREATE TABLE hour_events (
+	id INTEGER NOT NULL, 
+	machine_id INTEGER NOT NULL, 
+	event_date DATE NOT NULL, 
+	kind VARCHAR(20) NOT NULL, 
+	label VARCHAR(200) NOT NULL, 
+	source_id INTEGER, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(machine_id) REFERENCES hour_machines (id) ON DELETE CASCADE
+);
+CREATE TABLE hour_machines (
+	id INTEGER NOT NULL, 
+	printer_id INTEGER, 
+	name VARCHAR(100) NOT NULL, 
+	model VARCHAR(50), 
+	serial_number VARCHAR(50), 
+	retired BOOLEAN NOT NULL, 
+	retired_printer_id INTEGER, 
+	calibrated_at DATETIME, 
+	last_drift_hours FLOAT, 
+	purchase_price FLOAT, 
+	purchase_date DATE, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (printer_id), 
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE SET NULL
+);
+CREATE TABLE hour_readings (
+	id INTEGER NOT NULL, 
+	machine_id INTEGER NOT NULL, 
+	reading_date DATE NOT NULL, 
+	hours FLOAT NOT NULL, 
+	source VARCHAR(10) NOT NULL, 
+	raw_hours FLOAT, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_hour_reading UNIQUE (machine_id, reading_date, source), 
+	FOREIGN KEY(machine_id) REFERENCES hour_machines (id) ON DELETE CASCADE
 );
 CREATE TABLE kprofile_notes (
 	id INTEGER NOT NULL, 
@@ -524,6 +678,23 @@ CREATE TABLE kprofile_notes (
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE
+);
+CREATE TABLE label_templates (
+	id INTEGER NOT NULL, 
+	name VARCHAR(100) NOT NULL, 
+	name_key VARCHAR(300) NOT NULL, 
+	page VARCHAR(10) NOT NULL, 
+	label_w_mm FLOAT NOT NULL, 
+	label_h_mm FLOAT NOT NULL, 
+	cols INTEGER NOT NULL, 
+	rows INTEGER NOT NULL, 
+	top_mm FLOAT NOT NULL, 
+	left_mm FLOAT NOT NULL, 
+	col_gap_mm FLOAT NOT NULL, 
+	row_gap_mm FLOAT NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id)
 );
 CREATE TABLE library_file_tags (
 	file_id INTEGER NOT NULL, 
@@ -556,6 +727,8 @@ CREATE TABLE library_files (
 	variant_position INTEGER DEFAULT '0' NOT NULL, 
 	variant_target_model VARCHAR(50), 
 	created_by_id INTEGER, 
+	revision_id INTEGER, 
+	derived_slice BOOLEAN DEFAULT 0 NOT NULL, 
 	deleted_at DATETIME, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
@@ -564,7 +737,8 @@ CREATE TABLE library_files (
 	FOREIGN KEY(folder_id) REFERENCES library_folders (id) ON DELETE CASCADE, 
 	FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE SET NULL, 
 	FOREIGN KEY(variant_group_id) REFERENCES file_variant_groups (id) ON DELETE SET NULL, 
-	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL
+	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL, 
+	FOREIGN KEY(revision_id) REFERENCES project_revisions (id) ON DELETE SET NULL
 );
 CREATE TABLE library_folders (
 	id INTEGER NOT NULL, 
@@ -574,6 +748,8 @@ CREATE TABLE library_folders (
 	external_readonly BOOLEAN NOT NULL, 
 	external_show_hidden BOOLEAN NOT NULL, 
 	external_path VARCHAR(500), 
+	created_by_id INTEGER, 
+	shared BOOLEAN DEFAULT '0' NOT NULL, 
 	project_id INTEGER, 
 	archive_id INTEGER, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
@@ -581,6 +757,7 @@ CREATE TABLE library_folders (
 	fs_modified_at DATETIME, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(parent_id) REFERENCES library_folders (id) ON DELETE CASCADE, 
+	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL, 
 	FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE SET NULL, 
 	CONSTRAINT fk_library_folders_archive_id FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE SET NULL
 );
@@ -646,7 +823,7 @@ CREATE TABLE locations (
 	UNIQUE (name)
 );
 CREATE TABLE long_lived_tokens (
-	id INTEGER NOT NULL, 
+	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, 
 	user_id INTEGER NOT NULL, 
 	name VARCHAR(100) NOT NULL, 
 	lookup_prefix VARCHAR(8) NOT NULL, 
@@ -656,7 +833,6 @@ CREATE TABLE long_lived_tokens (
 	last_used_at DATETIME, 
 	revoked_at DATETIME, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
-	PRIMARY KEY (id), 
 	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 CREATE TABLE maintenance_history (
@@ -694,6 +870,45 @@ CREATE TABLE notification_digest_queue (
 	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE, 
 	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE SET NULL
 );
+CREATE TABLE notification_live_activities (
+	id INTEGER NOT NULL, 
+	provider_id INTEGER NOT NULL, 
+	printer_id INTEGER NOT NULL, 
+	print_key VARCHAR(200) NOT NULL, 
+	job_key VARCHAR(160), 
+	print_name VARCHAR(255) NOT NULL, 
+	eta_seconds INTEGER, 
+	eta_deadline DATETIME, 
+	credential_key VARCHAR(64) NOT NULL, 
+	activity_id VARCHAR(16), 
+	state VARCHAR(20) NOT NULL, 
+	end_reason VARCHAR(40), 
+	failures INTEGER NOT NULL, 
+	content TEXT NOT NULL, 
+	expires_at DATETIME, 
+	next_attempt_at DATETIME, 
+	last_sent_at DATETIME, 
+	created_at DATETIME NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (provider_id, printer_id, print_key), 
+	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE
+);
+CREATE TABLE notification_lock_screen_widgets (
+	id INTEGER NOT NULL, 
+	provider_id INTEGER NOT NULL, 
+	printer_id INTEGER NOT NULL, 
+	credential_key VARCHAR(64) NOT NULL, 
+	widget_id VARCHAR(16), 
+	state VARCHAR(20) NOT NULL, 
+	content TEXT NOT NULL, 
+	failures INTEGER NOT NULL, 
+	next_attempt_at DATETIME, 
+	last_sent_at DATETIME, 
+	created_at DATETIME NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (provider_id, printer_id), 
+	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE
+);
 CREATE TABLE notification_logs (
 	id INTEGER NOT NULL, 
 	provider_id INTEGER NOT NULL, 
@@ -715,35 +930,37 @@ CREATE TABLE notification_providers (
 	provider_type VARCHAR(50) NOT NULL, 
 	enabled BOOLEAN, 
 	config TEXT NOT NULL, 
+	attach_photo BOOLEAN DEFAULT 1, 
 	on_print_start BOOLEAN, 
 	on_print_complete BOOLEAN, 
 	on_print_failed BOOLEAN, 
 	on_print_stopped BOOLEAN, 
 	on_print_progress BOOLEAN, 
 	on_print_missing_spool_assignment BOOLEAN, 
-	on_billing_charge_failed BOOLEAN, 
+	on_billing_charge_failed BOOLEAN DEFAULT 1, 
 	on_aito_payment_received BOOLEAN, 
 	on_printer_offline BOOLEAN, 
 	on_printer_error BOOLEAN, 
-	on_ai_failure_detection BOOLEAN, 
+	on_ai_failure_detection BOOLEAN DEFAULT 0, 
 	on_filament_low BOOLEAN, 
 	on_maintenance_due BOOLEAN, 
 	on_ams_humidity_high BOOLEAN, 
 	on_ams_temperature_high BOOLEAN, 
-	on_ams_drying_suspended BOOLEAN, 
+	on_ams_drying_suspended BOOLEAN DEFAULT 1, 
 	on_ams_ht_humidity_high BOOLEAN, 
 	on_ams_ht_temperature_high BOOLEAN, 
-	on_ha_sensor_alert BOOLEAN, 
-	on_location_ha_sensor_alert BOOLEAN, 
+	on_ha_sensor_alert BOOLEAN DEFAULT 0, 
+	on_location_ha_sensor_alert BOOLEAN DEFAULT 0, 
 	on_plate_not_empty BOOLEAN, 
-	on_plate_clear_required BOOLEAN, 
-	on_print_confirm_request BOOLEAN, 
-	telegram_verdict_mode VARCHAR(16), 
+	on_plate_clear_required BOOLEAN DEFAULT 0, 
+	on_print_confirm_request BOOLEAN DEFAULT 1, 
+	telegram_verdict_mode VARCHAR(16) DEFAULT 'buttons', 
 	on_bed_cooled BOOLEAN, 
 	on_first_layer_complete BOOLEAN, 
-	on_app_message BOOLEAN, 
-	on_stock_reorder_alert BOOLEAN, 
-	on_stock_break_alert BOOLEAN, 
+	on_print_pause_upcoming BOOLEAN DEFAULT 0, 
+	on_app_message BOOLEAN DEFAULT 0, 
+	on_stock_reorder_alert BOOLEAN DEFAULT 0, 
+	on_stock_break_alert BOOLEAN DEFAULT 0, 
 	on_queue_job_added BOOLEAN, 
 	on_queue_job_assigned BOOLEAN, 
 	on_queue_job_started BOOLEAN, 
@@ -763,7 +980,7 @@ CREATE TABLE notification_providers (
 	created_at DATETIME, 
 	updated_at DATETIME, 
 	PRIMARY KEY (id), 
-	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE SET NULL
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE
 );
 CREATE TABLE notification_templates (
 	id INTEGER NOT NULL, 
@@ -801,8 +1018,8 @@ CREATE TABLE oidc_providers (
 	is_enabled BOOLEAN NOT NULL, 
 	auto_create_users BOOLEAN NOT NULL, 
 	auto_link_existing_accounts BOOLEAN NOT NULL, 
-	email_claim VARCHAR(64) NOT NULL, 
-	require_email_verified BOOLEAN NOT NULL, 
+	email_claim VARCHAR(64) DEFAULT 'email' NOT NULL, 
+	require_email_verified BOOLEAN DEFAULT 1 NOT NULL, 
 	default_group_id INTEGER, 
 	group_claim VARCHAR(64) DEFAULT 'groups' NOT NULL, 
 	group_mapping JSON DEFAULT '{}' NOT NULL, 
@@ -827,6 +1044,16 @@ CREATE TABLE orca_base_profiles (
 	setting TEXT NOT NULL, 
 	fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id)
+);
+CREATE TABLE order_board_docs (
+	id INTEGER NOT NULL, 
+	kind VARCHAR(20) NOT NULL, 
+	zoho_id VARCHAR(64) NOT NULL, 
+	header JSON NOT NULL, 
+	detail JSON, 
+	pending BOOLEAN NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_order_board_docs_kind_zoho_id UNIQUE (kind, zoho_id)
 );
 CREATE TABLE pending_uploads (
 	id INTEGER NOT NULL, 
@@ -886,10 +1113,12 @@ CREATE TABLE pipeline_runs (
 	FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE SET NULL
 );
 CREATE TABLE print_archives (
-	id INTEGER NOT NULL, 
+	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, 
 	printer_id INTEGER, 
 	project_id INTEGER, 
 	library_file_id INTEGER, 
+	revision_id INTEGER, 
+	aito_task_id INTEGER, 
 	cost_center_id INTEGER, 
 	filename VARCHAR(255) NOT NULL, 
 	file_path VARCHAR(500) NOT NULL, 
@@ -898,8 +1127,10 @@ CREATE TABLE print_archives (
 	content_verified BOOLEAN, 
 	thumbnail_path VARCHAR(500), 
 	timelapse_path VARCHAR(500), 
+	timelapse_plate_id INTEGER, 
 	fenrir_forced_timelapse BOOLEAN DEFAULT '0' NOT NULL, 
 	timelapse_baseline JSON, 
+	timelapse_baseline_unread BOOLEAN DEFAULT 0 NOT NULL, 
 	source_3mf_path VARCHAR(500), 
 	f3d_path VARCHAR(500), 
 	print_name VARCHAR(255), 
@@ -921,12 +1152,13 @@ CREATE TABLE print_archives (
 	subtask_id VARCHAR(64), 
 	billing_run_id VARCHAR(36), 
 	plate_id INTEGER, 
+	plate_estimates JSON, 
 	extra_data JSON, 
 	makerworld_url VARCHAR(500), 
 	designer VARCHAR(255), 
 	external_url VARCHAR(500), 
 	is_favorite BOOLEAN NOT NULL, 
-	wallet_charge_skipped BOOLEAN NOT NULL, 
+	wallet_charge_skipped BOOLEAN DEFAULT 0 NOT NULL, 
 	tags TEXT, 
 	notes TEXT, 
 	cost FLOAT, 
@@ -941,11 +1173,14 @@ CREATE TABLE print_archives (
 	confirm_token_used_at DATETIME, 
 	energy_kwh FLOAT, 
 	energy_cost FLOAT, 
+	wear_cost FLOAT, 
 	energy_start_kwh FLOAT, 
+	energy_start_at DATETIME, 
+	energy_start_plug_id INTEGER, 
+	energy_start_price FLOAT, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	deleted_at DATETIME, 
 	created_by_id INTEGER, 
-	PRIMARY KEY (id), 
 	FOREIGN KEY(printer_id) REFERENCES printers (id), 
 	FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE SET NULL, 
 	FOREIGN KEY(library_file_id) REFERENCES library_files (id) ON DELETE SET NULL, 
@@ -989,6 +1224,7 @@ CREATE TABLE print_log_entries (
 	archive_id INTEGER, 
 	queue_item_id INTEGER, 
 	print_name VARCHAR(255), 
+	plate_id INTEGER, 
 	printer_name VARCHAR(255), 
 	printer_id INTEGER, 
 	status VARCHAR(20) NOT NULL, 
@@ -1001,12 +1237,35 @@ CREATE TABLE print_log_entries (
 	cost FLOAT, 
 	energy_kwh FLOAT, 
 	energy_cost FLOAT, 
+	wear_cost FLOAT, 
+	duration_unmeasured BOOLEAN, 
 	failure_reason VARCHAR(100), 
 	user_verdict VARCHAR(10), 
 	thumbnail_path VARCHAR(500), 
 	created_by_id INTEGER, 
 	created_by_username VARCHAR(100), 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	subtask_id VARCHAR(64), 
+	billing_run_id VARCHAR(36), 
+	cost_center_id INTEGER, 
+	wallet_charge_skipped BOOLEAN, 
+	energy_start_kwh FLOAT, 
+	energy_start_at DATETIME, 
+	energy_start_plug_id INTEGER, 
+	energy_start_price FLOAT, 
+	user_verdict_source VARCHAR(16), 
+	user_verdict_at DATETIME, 
+	confirm_requested BOOLEAN, 
+	confirm_token VARCHAR(64), 
+	confirm_token_used_at DATETIME, 
+	photos JSON, 
+	timelapse_path VARCHAR(500), 
+	timelapse_baseline JSON, 
+	timelapse_baseline_unread BOOLEAN, 
+	bambuddy_forced_timelapse BOOLEAN, 
+	notes TEXT, 
+	quantity INTEGER, 
+	ended_offline BOOLEAN, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE SET NULL, 
 	FOREIGN KEY(queue_item_id) REFERENCES print_queue (id) ON DELETE SET NULL, 
@@ -1026,6 +1285,8 @@ CREATE TABLE print_queue (
 	billing_run_id VARCHAR(36), 
 	project_id INTEGER, 
 	batch_id INTEGER, 
+	revision_id INTEGER, 
+	aito_task_id INTEGER, 
 	position INTEGER NOT NULL, 
 	scheduled_time DATETIME, 
 	manual_start BOOLEAN NOT NULL, 
@@ -1041,22 +1302,23 @@ CREATE TABLE print_queue (
 	nozzle_mapping TEXT, 
 	nozzles_info TEXT, 
 	nozzle_rack_choice TEXT, 
-	cleanup_library_after_dispatch BOOLEAN NOT NULL, 
-	bed_levelling VARCHAR(8) NOT NULL, 
-	flow_cali VARCHAR(8) NOT NULL, 
+	color_substitutions TEXT, 
+	cleanup_library_after_dispatch BOOLEAN DEFAULT 0 NOT NULL, 
+	bed_levelling VARCHAR(8) DEFAULT 'auto' NOT NULL, 
+	flow_cali VARCHAR(8) DEFAULT 'auto' NOT NULL, 
 	vibration_cali BOOLEAN NOT NULL, 
 	layer_inspect BOOLEAN NOT NULL, 
 	timelapse BOOLEAN NOT NULL, 
 	use_ams BOOLEAN NOT NULL, 
-	nozzle_offset_cali VARCHAR(8) NOT NULL, 
+	nozzle_offset_cali VARCHAR(8) DEFAULT 'auto' NOT NULL, 
 	confirm_outcome BOOLEAN DEFAULT '0' NOT NULL, 
-	preheat_override VARCHAR(10) NOT NULL, 
+	preheat_override VARCHAR(10) DEFAULT 'inherit' NOT NULL, 
 	preheat_chamber_target_override INTEGER, 
 	status VARCHAR(20) NOT NULL, 
 	dispatching_at DATETIME, 
-	gate_acknowledged BOOLEAN NOT NULL, 
-	filament_short BOOLEAN NOT NULL, 
-	skip_filament_check BOOLEAN NOT NULL, 
+	gate_acknowledged BOOLEAN DEFAULT 0 NOT NULL, 
+	filament_short BOOLEAN DEFAULT 0 NOT NULL, 
+	skip_filament_check BOOLEAN DEFAULT 0 NOT NULL, 
 	started_at DATETIME, 
 	completed_at DATETIME, 
 	error_message TEXT, 
@@ -1113,6 +1375,16 @@ CREATE TABLE printer_ha_sensors (
 	PRIMARY KEY (id), 
 	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE
 );
+CREATE TABLE printer_locations (
+	id INTEGER NOT NULL, 
+	name VARCHAR(100) NOT NULL, 
+	icon VARCHAR(50), 
+	color VARCHAR(7), 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (name)
+);
 CREATE TABLE printer_maintenance (
 	id INTEGER NOT NULL, 
 	printer_id INTEGER NOT NULL, 
@@ -1139,7 +1411,7 @@ CREATE TABLE printer_sensor_history (
 	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE
 );
 CREATE TABLE printers (
-	id INTEGER NOT NULL, 
+	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, 
 	name VARCHAR(100) NOT NULL, 
 	serial_number VARCHAR(50) NOT NULL, 
 	ip_address VARCHAR(253) NOT NULL, 
@@ -1150,6 +1422,7 @@ CREATE TABLE printers (
 	is_active BOOLEAN NOT NULL, 
 	auto_archive BOOLEAN NOT NULL, 
 	print_hours_offset FLOAT NOT NULL, 
+	wear_cost_per_hour FLOAT, 
 	runtime_seconds INTEGER NOT NULL, 
 	last_runtime_update DATETIME, 
 	external_camera_url VARCHAR(500), 
@@ -1157,6 +1430,7 @@ CREATE TABLE printers (
 	external_camera_enabled BOOLEAN NOT NULL, 
 	external_camera_snapshot_url VARCHAR(500), 
 	camera_rotation INTEGER NOT NULL, 
+	camera_light_auto BOOLEAN DEFAULT 0 NOT NULL, 
 	plate_detection_enabled BOOLEAN NOT NULL, 
 	plate_detection_roi_x FLOAT, 
 	plate_detection_roi_y FLOAT, 
@@ -1165,7 +1439,6 @@ CREATE TABLE printers (
 	awaiting_plate_clear BOOLEAN NOT NULL, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
-	PRIMARY KEY (id), 
 	UNIQUE (serial_number)
 );
 CREATE TABLE project_bom_items (
@@ -1186,9 +1459,89 @@ CREATE TABLE project_bom_items (
 	FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE CASCADE, 
 	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE SET NULL
 );
+CREATE TABLE project_folders (
+	id INTEGER NOT NULL, 
+	name VARCHAR(255) NOT NULL, 
+	parent_id INTEGER, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(parent_id) REFERENCES project_folders (id) ON DELETE CASCADE
+);
+CREATE TABLE project_items (
+	id INTEGER NOT NULL, 
+	project_id INTEGER NOT NULL, 
+	section VARCHAR(16) NOT NULL, 
+	name VARCHAR(255) NOT NULL, 
+	name_key VARCHAR(255) NOT NULL, 
+	last_revision_number INTEGER DEFAULT '0' NOT NULL, 
+	forked_from_revision_id INTEGER, 
+	position INTEGER DEFAULT '0' NOT NULL, 
+	created_by_id INTEGER, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_project_items_section_name UNIQUE (project_id, section, name_key), 
+	FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE CASCADE, 
+	CONSTRAINT fk_project_items_forked_from FOREIGN KEY(forked_from_revision_id) REFERENCES project_revisions (id) ON DELETE SET NULL, 
+	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL
+);
+CREATE TABLE project_revision_pins (
+	id INTEGER NOT NULL, 
+	revision_id INTEGER NOT NULL, 
+	x FLOAT NOT NULL, 
+	y FLOAT NOT NULL, 
+	z FLOAT NOT NULL, 
+	text VARCHAR(500) NOT NULL, 
+	created_by_id INTEGER, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(revision_id) REFERENCES project_revisions (id) ON DELETE CASCADE, 
+	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL
+);
+CREATE TABLE project_revisions (
+	id INTEGER NOT NULL, 
+	item_id INTEGER NOT NULL, 
+	number INTEGER NOT NULL, 
+	status VARCHAR(16) DEFAULT 'wip' NOT NULL, 
+	note TEXT, 
+	derived_from_id INTEGER, 
+	config_snapshot JSON, 
+	config_hash VARCHAR(64), 
+	slicer_name VARCHAR(64), 
+	slicer_version VARCHAR(64), 
+	print_profile JSON, 
+	pipeline_id INTEGER, 
+	pipeline_name VARCHAR(200), 
+	slice_status VARCHAR(16), 
+	slice_error TEXT, 
+	slice_job_id INTEGER, 
+	sliced_file_id INTEGER, 
+	status_changed_by_id INTEGER, 
+	status_changed_at DATETIME, 
+	created_by_id INTEGER, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_project_revisions_item_number UNIQUE (item_id, number), 
+	FOREIGN KEY(item_id) REFERENCES project_items (id) ON DELETE CASCADE, 
+	FOREIGN KEY(derived_from_id) REFERENCES project_revisions (id) ON DELETE SET NULL, 
+	CONSTRAINT fk_project_revisions_sliced_file FOREIGN KEY(sliced_file_id) REFERENCES library_files (id) ON DELETE SET NULL, 
+	FOREIGN KEY(status_changed_by_id) REFERENCES users (id) ON DELETE SET NULL, 
+	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL
+);
+CREATE TABLE project_tags (
+	project_id INTEGER NOT NULL, 
+	tag_id INTEGER NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (project_id, tag_id), 
+	FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE CASCADE, 
+	FOREIGN KEY(tag_id) REFERENCES library_tags (id) ON DELETE CASCADE
+);
 CREATE TABLE projects (
 	id INTEGER NOT NULL, 
 	name VARCHAR(255) NOT NULL, 
+	code VARCHAR(16), 
+	storage_dir VARCHAR(255), 
+	legacy_migrated_at DATETIME, 
 	description TEXT, 
 	color VARCHAR(20), 
 	status VARCHAR(20) NOT NULL, 
@@ -1206,10 +1559,12 @@ CREATE TABLE projects (
 	is_template BOOLEAN NOT NULL, 
 	template_source_id INTEGER, 
 	parent_id INTEGER, 
+	folder_id INTEGER, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id), 
-	FOREIGN KEY(parent_id) REFERENCES projects (id)
+	FOREIGN KEY(parent_id) REFERENCES projects (id), 
+	FOREIGN KEY(folder_id) REFERENCES project_folders (id) ON DELETE SET NULL
 );
 CREATE TABLE scheduled_dryings (
 	id INTEGER NOT NULL, 
@@ -1270,6 +1625,7 @@ CREATE TABLE slot_preset_mappings (
 	preset_id VARCHAR(100) NOT NULL, 
 	preset_name VARCHAR(200) NOT NULL, 
 	preset_source VARCHAR(20) NOT NULL, 
+	tray_info_idx VARCHAR(32), 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id), 
@@ -1281,6 +1637,9 @@ CREATE TABLE smart_plug_energy_snapshots (
 	plug_id INTEGER NOT NULL, 
 	recorded_at DATETIME NOT NULL, 
 	lifetime_kwh FLOAT NOT NULL, 
+	price_per_kwh FLOAT, 
+	kwh_to_date FLOAT, 
+	cost_to_date FLOAT, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(plug_id) REFERENCES smart_plugs (id) ON DELETE CASCADE
 );
@@ -1351,7 +1710,7 @@ CREATE TABLE smart_plugs (
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id), 
-	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE SET NULL
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE
 );
 CREATE TABLE sponsor_toast_state (
 	id INTEGER NOT NULL, 
@@ -1366,7 +1725,7 @@ CREATE TABLE sponsor_toast_state (
 	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 CREATE TABLE spool (
-	id INTEGER NOT NULL, 
+	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, 
 	material VARCHAR(50) NOT NULL, 
 	subtype VARCHAR(50), 
 	color_name VARCHAR(100), 
@@ -1378,7 +1737,7 @@ CREATE TABLE spool (
 	core_weight INTEGER NOT NULL, 
 	core_weight_catalog_id INTEGER, 
 	weight_used FLOAT NOT NULL, 
-	weight_used_baseline FLOAT NOT NULL, 
+	weight_used_baseline FLOAT DEFAULT '0' NOT NULL, 
 	weight_locked BOOLEAN NOT NULL, 
 	last_scale_weight INTEGER, 
 	last_weighed_at DATETIME, 
@@ -1395,6 +1754,9 @@ CREATE TABLE spool (
 	storage_location VARCHAR(255), 
 	location_id INTEGER, 
 	last_used DATETIME, 
+	last_dried_at DATETIME, 
+	last_dried_temp INTEGER, 
+	last_dried_hours FLOAT, 
 	encode_time DATETIME, 
 	tag_uid VARCHAR(32), 
 	tray_uuid VARCHAR(32), 
@@ -1403,7 +1765,6 @@ CREATE TABLE spool (
 	archived_at DATETIME, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
-	PRIMARY KEY (id), 
 	FOREIGN KEY(location_id) REFERENCES locations (id)
 );
 CREATE TABLE spool_assignment (
@@ -1471,7 +1832,8 @@ CREATE TABLE spool_suppliers (
 );
 CREATE TABLE spool_usage_history (
 	id INTEGER NOT NULL, 
-	spool_id INTEGER NOT NULL, 
+	spool_id INTEGER, 
+	spoolman_spool_id INTEGER, 
 	printer_id INTEGER, 
 	print_name VARCHAR(500), 
 	archive_id INTEGER, 
@@ -1481,9 +1843,9 @@ CREATE TABLE spool_usage_history (
 	cost FLOAT, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id), 
-	FOREIGN KEY(spool_id) REFERENCES spool (id) ON DELETE CASCADE, 
+	FOREIGN KEY(spool_id) REFERENCES spool (id) ON DELETE SET NULL, 
 	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE SET NULL, 
-	FOREIGN KEY(archive_id) REFERENCES print_archives (id)
+	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE SET NULL
 );
 CREATE TABLE spoolbuddy_devices (
 	id INTEGER NOT NULL, 
@@ -1671,7 +2033,7 @@ CREATE TABLE user_wallets (
 	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 CREATE TABLE users (
-	id INTEGER NOT NULL, 
+	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, 
 	username VARCHAR(100) NOT NULL, 
 	email VARCHAR(255), 
 	password_hash VARCHAR(255), 
@@ -1692,8 +2054,7 @@ CREATE TABLE users (
 	orca_cloud_user_id VARCHAR(64), 
 	orca_cloud_pending_verifier VARCHAR(64), 
 	orca_cloud_pending_state VARCHAR(32), 
-	orca_cloud_pending_at DATETIME, 
-	PRIMARY KEY (id)
+	orca_cloud_pending_at DATETIME
 );
 CREATE TABLE virtual_printers (
 	id INTEGER NOT NULL, 
@@ -1719,7 +2080,7 @@ CREATE TABLE virtual_printers (
 );
 CREATE TABLE wallet_transactions (
 	id INTEGER NOT NULL, 
-	user_id INTEGER NOT NULL, 
+	user_id INTEGER, 
 	cost_center_id INTEGER, 
 	transaction_type VARCHAR(40) NOT NULL, 
 	amount NUMERIC(14, 2) NOT NULL, 
@@ -1733,7 +2094,7 @@ CREATE TABLE wallet_transactions (
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id), 
 	CONSTRAINT ck_wallet_transactions_transaction_type CHECK (transaction_type IN ('print_charge', 'deposit', 'withdraw', 'manual_adjustment')), 
-	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE SET NULL, 
 	FOREIGN KEY(cost_center_id) REFERENCES cost_centers (id) ON DELETE SET NULL, 
 	FOREIGN KEY(created_by_user_id) REFERENCES users (id) ON DELETE SET NULL, 
 	FOREIGN KEY(print_archive_id) REFERENCES print_archives (id) ON DELETE SET NULL, 

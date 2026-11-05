@@ -1,5 +1,5 @@
 #!/bin/bash
-# Campaign-19 coverage gate: runs the FULL suites, but measures coverage over
+# Campaign T1 (tracking, after campaign 19) coverage gate: runs the FULL suites, but measures coverage over
 # the campaign SCOPE only (the client tracking feature).
 # Run from repo root: bash tools/coverage_tracking.sh [frontend|backend|both]
 #
@@ -22,6 +22,7 @@ FE_FILES=(
   frontend/src/pages/AitoTrackPage.tsx
   frontend/src/pages/AitoTrackEntryPage.tsx
   frontend/src/components/aito/TrackCollapse.tsx
+  frontend/src/components/aito/TrackingBalance.tsx
   frontend/src/components/aito/TrackingCodeInput.tsx
   frontend/src/components/aito/TrackingInvoice.tsx
   frontend/src/components/aito/TrackingLanguageSelect.tsx

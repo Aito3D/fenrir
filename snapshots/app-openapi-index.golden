@@ -28,20 +28,6 @@
    },
    "security": true
   },
-  "DELETE /api/v1/ams-history/{printer_id}": {
-   "operationId": "delete_old_history_api_v1_ams_history__printer_id__delete",
-   "params": [
-    "header:X-API-Key",
-    "path:printer_id!",
-    "query:days"
-   ],
-   "requestBody": {},
-   "responses": {
-    "200": null,
-    "422": "HTTPValidationError"
-   },
-   "security": true
-  },
   "DELETE /api/v1/api-keys/{key_id}": {
    "operationId": "delete_api_key_api_v1_api_keys__key_id__delete",
    "params": [
@@ -124,6 +110,19 @@
   },
   "DELETE /api/v1/archives/{archive_id}/timelapse": {
    "operationId": "delete_timelapse_api_v1_archives__archive_id__timelapse_delete",
+   "params": [
+    "header:X-API-Key",
+    "path:archive_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/archives/{archive_id}/timelapse/job": {
+   "operationId": "cancel_timelapse_job_api_v1_archives__archive_id__timelapse_job_delete",
    "params": [
     "header:X-API-Key",
     "path:archive_id!"
@@ -464,6 +463,19 @@
    },
    "security": true
   },
+  "DELETE /api/v1/inventory/profile-defaults/{default_id}": {
+   "operationId": "delete_profile_default_api_v1_inventory_profile_defaults__default_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:default_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "DELETE /api/v1/inventory/shopping-list": {
    "operationId": "clear_shopping_list_api_v1_inventory_shopping_list_delete",
    "params": [
@@ -524,6 +536,19 @@
    "requestBody": {},
    "responses": {
     "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/label-templates/{template_id}": {
+   "operationId": "delete_label_template_api_v1_label_templates__template_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:template_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "204": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -672,6 +697,45 @@
    },
    "security": true
   },
+  "DELETE /api/v1/maintenance/hours/events/{event_id}": {
+   "operationId": "delete_note_event_api_v1_maintenance_hours_events__event_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:event_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "204": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/maintenance/hours/machines/{machine_id}": {
+   "operationId": "delete_machine_api_v1_maintenance_hours_machines__machine_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:machine_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/maintenance/hours/readings": {
+   "operationId": "delete_readings_api_v1_maintenance_hours_readings_delete",
+   "params": [
+    "header:X-API-Key",
+    "query:reading_date!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "HoursOverview",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "DELETE /api/v1/maintenance/items/{item_id}": {
    "operationId": "remove_maintenance_item_api_v1_maintenance_items__item_id__delete",
    "params": [
@@ -694,6 +758,18 @@
    "requestBody": {},
    "responses": {
     "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/manyfold/config": {
+   "operationId": "delete_config_api_v1_manyfold_config_delete",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "204": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -774,20 +850,6 @@
    },
    "security": true
   },
-  "DELETE /api/v1/printer-sensor-history/{printer_id}": {
-   "operationId": "delete_old_history_api_v1_printer_sensor_history__printer_id__delete",
-   "params": [
-    "header:X-API-Key",
-    "path:printer_id!",
-    "query:days"
-   ],
-   "requestBody": {},
-   "responses": {
-    "200": null,
-    "422": "HTTPValidationError"
-   },
-   "security": true
-  },
   "DELETE /api/v1/printers/{printer_id}": {
    "operationId": "delete_printer_api_v1_printers__printer_id__delete",
    "params": [
@@ -809,20 +871,6 @@
     "path:ams_id!",
     "path:printer_id!",
     "query:ams_serial"
-   ],
-   "requestBody": {},
-   "responses": {
-    "200": null,
-    "422": "HTTPValidationError"
-   },
-   "security": true
-  },
-  "DELETE /api/v1/printers/{printer_id}/camera/plate-detection/calibrate": {
-   "operationId": "delete_plate_calibration_api_v1_printers__printer_id__camera_plate_detection_calibrate_delete",
-   "params": [
-    "header:X-API-Key",
-    "path:printer_id!",
-    "query:plate_type"
    ],
    "requestBody": {},
    "responses": {
@@ -930,24 +978,76 @@
    },
    "security": true
   },
-  "DELETE /api/v1/projects/{project_id}": {
-   "operationId": "delete_project_api_v1_projects__project_id__delete",
+  "DELETE /api/v1/projects/folders/{folder_id}": {
+   "operationId": "delete_project_folder_api_v1_projects_folders__folder_id__delete",
    "params": [
     "header:X-API-Key",
-    "path:project_id!"
+    "path:folder_id!"
    ],
    "requestBody": {},
    "responses": {
-    "200": null,
+    "204": null,
     "422": "HTTPValidationError"
    },
    "security": true
   },
-  "DELETE /api/v1/projects/{project_id}/attachments/{filename}": {
-   "operationId": "delete_attachment_api_v1_projects__project_id__attachments__filename__delete",
+  "DELETE /api/v1/projects/items/{item_id}": {
+   "operationId": "delete_item_api_v1_projects_items__item_id__delete",
    "params": [
     "header:X-API-Key",
-    "path:filename!",
+    "path:item_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "204": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/projects/revisions/pins/{pin_id}": {
+   "operationId": "delete_revision_pin_api_v1_projects_revisions_pins__pin_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:pin_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "204": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/projects/revisions/{revision_id}": {
+   "operationId": "delete_revision_api_v1_projects_revisions__revision_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:revision_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "204": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/projects/revisions/{revision_id}/files/{file_id}": {
+   "operationId": "remove_file_api_v1_projects_revisions__revision_id__files__file_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:file_id!",
+    "path:revision_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "204": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/projects/{project_id}": {
+   "operationId": "delete_project_api_v1_projects__project_id__delete",
+   "params": [
+    "header:X-API-Key",
     "path:project_id!"
    ],
    "requestBody": {},
@@ -1023,6 +1123,18 @@
    },
    "security": true
   },
+  "DELETE /api/v1/settings/overlay-logo": {
+   "operationId": "delete_logo_api_v1_settings_overlay_logo_delete",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "DELETE /api/v1/slicer-pipelines/{pipeline_id}": {
    "operationId": "delete_pipeline_api_v1_slicer_pipelines__pipeline_id__delete",
    "params": [
@@ -1077,6 +1189,19 @@
   },
   "DELETE /api/v1/spoolman/inventory/spools/{spool_id}": {
    "operationId": "delete_spool_api_v1_spoolman_inventory_spools__spool_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:spool_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/spoolman/inventory/spools/{spool_id}/usage": {
+   "operationId": "clear_spoolman_spool_usage_history_api_v1_spoolman_inventory_spools__spool_id__usage_delete",
    "params": [
     "header:X-API-Key",
     "path:spool_id!"
@@ -1162,6 +1287,20 @@
    },
    "security": true
   },
+  "GET /api/v1/aito/clients/{client_id}/quote-rating": {
+   "operationId": "get_client_quote_rating_api_v1_aito_clients__client_id__quote_rating_get",
+   "params": [
+    "header:X-API-Key",
+    "path:client_id!",
+    "query:refresh"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoClientQuoteRatingResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/aito/clients/{client_id}/rating": {
    "operationId": "get_client_rating_api_v1_aito_clients__client_id__rating_get",
    "params": [
@@ -1172,6 +1311,18 @@
    "requestBody": {},
    "responses": {
     "200": "AitoClientRatingResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/aito/project-codes": {
+   "operationId": "get_project_codes_api_v1_aito_project_codes_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -1203,6 +1354,19 @@
    },
    "security": true
   },
+  "GET /api/v1/aito/tasks/{task_id}/project-suggestions": {
+   "operationId": "get_project_suggestions_api_v1_aito_tasks__task_id__project_suggestions_get",
+   "params": [
+    "header:X-API-Key",
+    "path:task_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[ProjectSuggestion]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/aito/track/{token}": {
    "operationId": "get_tracking_api_v1_aito_track__token__get",
    "params": [
@@ -1223,6 +1387,19 @@
    "requestBody": {},
    "responses": {
     "200": "[AitoProjectResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/aito/{order_id}/project-links": {
+   "operationId": "get_project_links_api_v1_aito__order_id__project_links_get",
+   "params": [
+    "header:X-API-Key",
+    "path:order_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "OrderProjectLinks",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -1253,6 +1430,19 @@
    "requestBody": {},
    "responses": {
     "200": "anyOf(AitoInvoiceResponse,null)",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/aito/{project_id}/invoice-deposits": {
+   "operationId": "get_invoice_deposits_api_v1_aito__project_id__invoice_deposits_get",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoInvoiceDepositsResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -1433,6 +1623,18 @@
    },
    "security": true
   },
+  "GET /api/v1/announcements": {
+   "operationId": "list_announcements_api_v1_announcements_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/api-keys/": {
    "operationId": "list_api_keys_api_v1_api_keys__get",
    "params": [
@@ -1467,7 +1669,8 @@
     "query:limit",
     "query:offset",
     "query:printer_id",
-    "query:project_id"
+    "query:project_id",
+    "query:tz"
    ],
    "requestBody": {},
    "responses": {
@@ -1486,6 +1689,7 @@
     "query:days",
     "query:printer_id",
     "query:project_id",
+    "query:tz",
     "query:tz_offset_minutes"
    ],
    "requestBody": {},
@@ -1532,7 +1736,44 @@
     "query:printer_id",
     "query:project_id",
     "query:search",
-    "query:status"
+    "query:status",
+    "query:tz"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/archives/last-per-printer": {
+   "operationId": "list_last_archive_per_printer_api_v1_archives_last_per_printer_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[ArchiveResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/archives/merge-count": {
+   "operationId": "count_archive_merge_groups_api_v1_archives_merge_count_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/archives/merge-preview": {
+   "operationId": "preview_archive_merge_api_v1_archives_merge_preview_get",
+   "params": [
+    "header:X-API-Key"
    ],
    "requestBody": {},
    "responses": {
@@ -1549,6 +1790,24 @@
    "requestBody": {},
    "responses": {
     "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/archives/prints": {
+   "operationId": "list_archive_prints_api_v1_archives_prints_get",
+   "params": [
+    "header:X-API-Key",
+    "query:date_from!",
+    "query:date_to!",
+    "query:limit",
+    "query:offset",
+    "query:printer_id",
+    "query:tz"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "PrintLogResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -1606,6 +1865,7 @@
     "query:date_to",
     "query:limit",
     "query:offset",
+    "query:tz",
     "query:tz_offset_minutes"
    ],
    "requestBody": {},
@@ -1622,6 +1882,7 @@
     "query:created_by_id",
     "query:date_from",
     "query:date_to",
+    "query:tz",
     "query:tz_offset_minutes"
    ],
    "requestBody": {},
@@ -1667,7 +1928,8 @@
    "operationId": "get_archive_api_v1_archives__archive_id__get",
    "params": [
     "header:X-API-Key",
-    "path:archive_id!"
+    "path:archive_id!",
+    "query:run_id"
    ],
    "requestBody": {},
    "responses": {
@@ -1940,6 +2202,21 @@
    },
    "security": true
   },
+  "GET /api/v1/archives/{archive_id}/runs/{run_id}/timelapse": {
+   "operationId": "get_run_timelapse_api_v1_archives__archive_id__runs__run_id__timelapse_get",
+   "params": [
+    "header:X-API-Key",
+    "path:archive_id!",
+    "path:run_id!",
+    "query:token"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/archives/{archive_id}/similar": {
    "operationId": "find_similar_archives_api_v1_archives__archive_id__similar_get",
    "params": [
@@ -2025,6 +2302,19 @@
   },
   "GET /api/v1/archives/{archive_id}/timelapse/info": {
    "operationId": "get_timelapse_info_api_v1_archives__archive_id__timelapse_info_get",
+   "params": [
+    "header:X-API-Key",
+    "path:archive_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/archives/{archive_id}/timelapse/job": {
+   "operationId": "get_timelapse_job_api_v1_archives__archive_id__timelapse_job_get",
    "params": [
     "header:X-API-Key",
     "path:archive_id!"
@@ -2226,6 +2516,111 @@
    "requestBody": {},
    "responses": {
     "200": "[object]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/bulk/ams-labels": {
+   "operationId": "get_ams_labels_bulk_api_v1_bulk_ams_labels_get",
+   "params": [
+    "header:X-API-Key",
+    "query:ids!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/bulk/archive-folders": {
+   "operationId": "get_folders_by_archives_api_v1_bulk_archive_folders_get",
+   "params": [
+    "header:X-API-Key",
+    "query:ids!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/bulk/card-plugs": {
+   "operationId": "get_smart_plugs_by_printers_api_v1_bulk_card_plugs_get",
+   "params": [
+    "header:X-API-Key",
+    "query:ids!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/bulk/firmware-updates": {
+   "operationId": "check_printers_firmware_api_v1_bulk_firmware_updates_get",
+   "params": [
+    "header:X-API-Key",
+    "query:ids!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[backend__app__api__routes__firmware__FirmwareUpdateInfo]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/bulk/ha-sensor-readings": {
+   "operationId": "get_sensor_readings_by_printers_api_v1_bulk_ha_sensor_readings_get",
+   "params": [
+    "header:X-API-Key",
+    "query:ids!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/bulk/printer-queues": {
+   "operationId": "list_queue_by_printers_api_v1_bulk_printer_queues_get",
+   "params": [
+    "header:X-API-Key",
+    "query:ids!",
+    "query:status"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/bulk/printer-statuses": {
+   "operationId": "get_printer_statuses_api_v1_bulk_printer_statuses_get",
+   "params": [
+    "header:X-API-Key",
+    "query:ids!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[PrinterStatus]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/bulk/slot-presets": {
+   "operationId": "get_slot_presets_bulk_api_v1_bulk_slot_presets_get",
+   "params": [
+    "header:X-API-Key",
+    "query:ids!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -3094,6 +3489,34 @@
    },
    "security": true
   },
+  "GET /api/v1/inventory/profile-defaults": {
+   "operationId": "list_profile_defaults_api_v1_inventory_profile_defaults_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[FilamentProfileDefaultResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/inventory/profile-defaults/resolve": {
+   "operationId": "resolve_profile_default_api_v1_inventory_profile_defaults_resolve_get",
+   "params": [
+    "header:X-API-Key",
+    "query:brand",
+    "query:color_name",
+    "query:material!",
+    "query:subtype"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "anyOf(ResolvedProfileDefault,null)",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/inventory/shopping-list": {
    "operationId": "get_shopping_list_api_v1_inventory_shopping_list_get",
    "params": [
@@ -3216,7 +3639,8 @@
    "params": [
     "header:X-API-Key",
     "query:date_from",
-    "query:date_to"
+    "query:date_to",
+    "query:tz"
    ],
    "requestBody": {},
    "responses": {
@@ -3230,7 +3654,8 @@
    "params": [
     "header:X-API-Key",
     "query:date_from",
-    "query:date_to"
+    "query:date_to",
+    "query:tz"
    ],
    "requestBody": {},
    "responses": {
@@ -3256,11 +3681,24 @@
    "params": [
     "header:X-API-Key",
     "query:limit",
-    "query:printer_id"
+    "query:printer_id",
+    "query:spoolman"
    ],
    "requestBody": {},
    "responses": {
     "200": "[SpoolUsageHistoryResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/label-templates": {
+   "operationId": "list_label_templates_api_v1_label_templates_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[LabelTemplateResponse]",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -3457,6 +3895,20 @@
    "requestBody": {},
    "responses": {
     "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/library/files/{file_id}/project-suggestions": {
+   "operationId": "library_file_project_suggestions_api_v1_library_files__file_id__project_suggestions_get",
+   "params": [
+    "header:X-API-Key",
+    "path:file_id!",
+    "query:limit"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[ProjectSuggestionForFile]",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -3792,6 +4244,18 @@
    },
    "security": true
   },
+  "GET /api/v1/maintenance/hours": {
+   "operationId": "get_hours_api_v1_maintenance_hours_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "HoursOverview",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/maintenance/items/{item_id}/history": {
    "operationId": "get_maintenance_history_api_v1_maintenance_items__item_id__history_get",
    "params": [
@@ -3890,6 +4354,70 @@
     "422": "HTTPValidationError"
    },
    "security": false
+  },
+  "GET /api/v1/manyfold/config": {
+   "operationId": "get_config_api_v1_manyfold_config_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "ManyfoldConfigResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/manyfold/models": {
+   "operationId": "list_models_api_v1_manyfold_models_get",
+   "params": [
+    "header:X-API-Key",
+    "query:page",
+    "query:q"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "ManyfoldModelList",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/manyfold/models/{model_id}": {
+   "operationId": "get_model_api_v1_manyfold_models__model_id__get",
+   "params": [
+    "header:X-API-Key",
+    "path:model_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "ManyfoldModel",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/manyfold/models/{model_id}/preview": {
+   "operationId": "get_preview_api_v1_manyfold_models__model_id__preview_get",
+   "params": [
+    "header:X-API-Key",
+    "path:model_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/manyfold/status": {
+   "operationId": "get_status_api_v1_manyfold_status_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "ManyfoldStatus",
+    "422": "HTTPValidationError"
+   },
+   "security": true
   },
   "GET /api/v1/metrics": {
    "operationId": "get_metrics_api_v1_metrics_get",
@@ -4007,6 +4535,18 @@
    },
    "security": true
   },
+  "GET /api/v1/notifications/photos/{filename}": {
+   "operationId": "get_notification_photo_api_v1_notifications_photos__filename__get",
+   "params": [
+    "path:filename!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": false
+  },
   "GET /api/v1/notifications/{provider_id}": {
    "operationId": "get_notification_provider_api_v1_notifications__provider_id__get",
    "params": [
@@ -4056,6 +4596,30 @@
    },
    "security": true
   },
+  "GET /api/v1/octoeverywhere/printer-status": {
+   "operationId": "get_printer_status_api_v1_octoeverywhere_printer_status_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/octoeverywhere/status": {
+   "operationId": "get_status_api_v1_octoeverywhere_status_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/orca-cloud/profiles": {
    "operationId": "list_profiles_api_v1_orca_cloud_profiles_get",
    "params": [
@@ -4092,6 +4656,42 @@
     "422": "HTTPValidationError"
    },
    "security": true
+  },
+  "GET /api/v1/order-board": {
+   "operationId": "get_order_board_api_v1_order_board_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/order-board/settings": {
+   "operationId": "get_order_board_settings_api_v1_order_board_settings_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "OrderBoardSettingsBody",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/overlay-branding/logo": {
+   "operationId": "get_stream_logo_api_v1_overlay_branding_logo_get",
+   "params": [
+    "query:token"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": false
   },
   "GET /api/v1/pending-uploads/": {
    "operationId": "list_pending_uploads_api_v1_pending_uploads__get",
@@ -4193,6 +4793,18 @@
    "requestBody": {},
    "responses": {
     "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/printer-locations/": {
+   "operationId": "list_printer_locations_api_v1_printer_locations__get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[PrinterLocationResponse]",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -4407,7 +5019,8 @@
     "query:fps",
     "query:quality",
     "query:scale",
-    "query:token"
+    "query:token",
+    "query:viewer"
    ],
    "requestBody": {},
    "responses": {
@@ -4650,19 +5263,6 @@
    },
    "security": true
   },
-  "GET /api/v1/printers/{printer_id}/runtime-debug": {
-   "operationId": "get_runtime_debug_api_v1_printers__printer_id__runtime_debug_get",
-   "params": [
-    "header:X-API-Key",
-    "path:printer_id!"
-   ],
-   "requestBody": {},
-   "responses": {
-    "200": null,
-    "422": "HTTPValidationError"
-   },
-   "security": true
-  },
   "GET /api/v1/printers/{printer_id}/slot-presets": {
    "operationId": "get_slot_presets_api_v1_printers__printer_id__slot_presets_get",
    "params": [
@@ -4758,6 +5358,103 @@
    },
    "security": true
   },
+  "GET /api/v1/projects/catalog": {
+   "operationId": "project_catalog_list_api_v1_projects_catalog_get",
+   "params": [
+    "header:X-API-Key",
+    "query:q",
+    "query:status",
+    "query:tag_ids",
+    "query:tag_mode"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "ProjectCatalogResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/projects/folders": {
+   "operationId": "list_project_folders_api_v1_projects_folders_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "ProjectFoldersResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/projects/legacy-migration/status": {
+   "operationId": "get_legacy_migration_status_api_v1_projects_legacy_migration_status_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "LegacyMigrationStatus",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/projects/revisions/{revision_id}/download": {
+   "operationId": "download_revision_api_v1_projects_revisions__revision_id__download_get",
+   "params": [
+    "header:X-API-Key",
+    "path:revision_id!",
+    "query:file_id"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/projects/revisions/{revision_id}/pins": {
+   "operationId": "list_revision_pins_api_v1_projects_revisions__revision_id__pins_get",
+   "params": [
+    "header:X-API-Key",
+    "path:revision_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[RevisionPinOut]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/projects/search": {
+   "operationId": "search_projects_api_v1_projects_search_get",
+   "params": [
+    "header:X-API-Key",
+    "query:limit",
+    "query:offset",
+    "query:q",
+    "query:status",
+    "query:tag_ids",
+    "query:tag_mode"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "ProjectSearchResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/projects/tags": {
+   "operationId": "list_project_tags_api_v1_projects_tags_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[ProjectTagCount]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/projects/templates": {
    "operationId": "list_templates_api_v1_projects_templates_get",
    "params": [
@@ -4790,20 +5487,6 @@
     "path:project_id!",
     "query:limit",
     "query:offset"
-   ],
-   "requestBody": {},
-   "responses": {
-    "200": null,
-    "422": "HTTPValidationError"
-   },
-   "security": true
-  },
-  "GET /api/v1/projects/{project_id}/attachments/{filename}": {
-   "operationId": "download_attachment_api_v1_projects__project_id__attachments__filename__get",
-   "params": [
-    "header:X-API-Key",
-    "path:filename!",
-    "path:project_id!"
    ],
    "requestBody": {},
    "responses": {
@@ -4866,6 +5549,19 @@
    },
    "security": true
   },
+  "GET /api/v1/projects/{project_id}/orders": {
+   "operationId": "get_project_orders_api_v1_projects__project_id__orders_get",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "ProjectOrdersResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/projects/{project_id}/queue": {
    "operationId": "list_project_queue_api_v1_projects__project_id__queue_get",
    "params": [
@@ -4889,6 +5585,19 @@
    "requestBody": {},
    "responses": {
     "200": "[TimelineEvent]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/projects/{project_id}/tree": {
+   "operationId": "get_tree_api_v1_projects__project_id__tree_get",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "ProjectTreeResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -4932,6 +5641,25 @@
    "requestBody": {},
    "responses": {
     "200": "PrintBatchResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/queue/history": {
+   "operationId": "list_queue_history_api_v1_queue_history_get",
+   "params": [
+    "header:X-API-Key",
+    "query:limit",
+    "query:location",
+    "query:offset",
+    "query:printer_id",
+    "query:reverse",
+    "query:sort_by",
+    "query:status"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "PrintQueueHistoryResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -5055,6 +5783,18 @@
    },
    "security": true
   },
+  "GET /api/v1/settings/overlay-logo": {
+   "operationId": "get_logo_api_v1_settings_overlay_logo_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/settings/spoolman": {
    "operationId": "get_spoolman_settings_api_v1_settings_spoolman_get",
    "params": [
@@ -5112,6 +5852,15 @@
    },
    "security": true
   },
+  "GET /api/v1/showcase/stats": {
+   "operationId": "get_stats_api_v1_showcase_stats_get",
+   "params": [],
+   "requestBody": {},
+   "responses": {
+    "200": null
+   },
+   "security": false
+  },
   "GET /api/v1/slice-jobs/{job_id}": {
    "operationId": "get_slice_job_api_v1_slice_jobs__job_id__get",
    "params": [
@@ -5160,6 +5909,18 @@
    "requestBody": {},
    "responses": {
     "200": "PipelineRunListResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/slicer/loaded-spools": {
+   "operationId": "list_loaded_spools_api_v1_slicer_loaded_spools_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "LoadedSpoolsResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -5221,7 +5982,7 @@
    ],
    "requestBody": {},
    "responses": {
-    "200": "[SmartPlugResponse]",
+    "200": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -5234,7 +5995,7 @@
    ],
    "requestBody": {},
    "responses": {
-    "200": "anyOf(SmartPlugResponse,null)",
+    "200": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -5325,7 +6086,7 @@
    ],
    "requestBody": {},
    "responses": {
-    "200": "SmartPlugResponse",
+    "200": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -5545,6 +6306,20 @@
    "requestBody": {},
    "responses": {
     "200": "[object]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/spoolman/inventory/spools/{spool_id}/usage": {
+   "operationId": "get_spoolman_spool_usage_history_api_v1_spoolman_inventory_spools__spool_id__usage_get",
+   "params": [
+    "header:X-API-Key",
+    "path:spool_id!",
+    "query:limit"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[SpoolUsageHistoryResponse]",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -6019,7 +6794,7 @@
    "security": false
   },
   "HEAD /manifest.json": {
-   "operationId": "serve_manifest_manifest_json_get",
+   "operationId": "serve_manifest_manifest_json_head",
    "params": [],
    "requestBody": {},
    "responses": {
@@ -6028,7 +6803,7 @@
    "security": false
   },
   "HEAD /sw-register.js": {
-   "operationId": "serve_sw_register_sw_register_js_get",
+   "operationId": "serve_sw_register_sw_register_js_head",
    "params": [],
    "requestBody": {},
    "responses": {
@@ -6037,7 +6812,7 @@
    "security": false
   },
   "HEAD /sw.js": {
-   "operationId": "serve_service_worker_sw_js_get",
+   "operationId": "serve_service_worker_sw_js_head",
    "params": [],
    "requestBody": {},
    "responses": {
@@ -6187,7 +6962,7 @@
     "path:archive_id!"
    ],
    "requestBody": {
-    "application/json": "object"
+    "application/json": "ProjectPageUpdate"
    },
    "responses": {
     "200": null,
@@ -6508,6 +7283,35 @@
    },
    "security": true
   },
+  "PATCH /api/v1/maintenance/hours/machines/{machine_id}": {
+   "operationId": "update_machine_api_v1_maintenance_hours_machines__machine_id__patch",
+   "params": [
+    "header:X-API-Key",
+    "path:machine_id!"
+   ],
+   "requestBody": {
+    "application/json": "HourMachineUpdate"
+   },
+   "responses": {
+    "200": "HourMachineOut",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PATCH /api/v1/maintenance/hours/settings": {
+   "operationId": "update_hour_settings_api_v1_maintenance_hours_settings_patch",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "HourSettingsUpdate"
+   },
+   "responses": {
+    "200": "HoursOverview",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PATCH /api/v1/maintenance/items/{item_id}": {
    "operationId": "update_printer_maintenance_api_v1_maintenance_items__item_id__patch",
    "params": [
@@ -6582,6 +7386,20 @@
    },
    "security": true
   },
+  "PATCH /api/v1/printer-locations/": {
+   "operationId": "update_printer_location_api_v1_printer_locations__patch",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "PrinterLocationUpdate"
+   },
+   "responses": {
+    "200": "PrinterLocationResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PATCH /api/v1/printers/{printer_id}": {
    "operationId": "update_printer_api_v1_printers__printer_id__patch",
    "params": [
@@ -6593,6 +7411,51 @@
    },
    "responses": {
     "200": "PrinterResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PATCH /api/v1/projects/folders/{folder_id}": {
+   "operationId": "update_project_folder_api_v1_projects_folders__folder_id__patch",
+   "params": [
+    "header:X-API-Key",
+    "path:folder_id!"
+   ],
+   "requestBody": {
+    "application/json": "ProjectFolderUpdate"
+   },
+   "responses": {
+    "200": "ProjectFolderOut",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PATCH /api/v1/projects/items/{item_id}": {
+   "operationId": "rename_item_api_v1_projects_items__item_id__patch",
+   "params": [
+    "header:X-API-Key",
+    "path:item_id!"
+   ],
+   "requestBody": {
+    "application/json": "ProjectItemRename"
+   },
+   "responses": {
+    "200": "ProjectItemOut",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PATCH /api/v1/projects/revisions/{revision_id}": {
+   "operationId": "update_revision_api_v1_projects_revisions__revision_id__patch",
+   "params": [
+    "header:X-API-Key",
+    "path:revision_id!"
+   ],
+   "requestBody": {
+    "application/json": "ProjectRevisionUpdate"
+   },
+   "responses": {
+    "200": "ProjectRevisionOut",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -6624,6 +7487,21 @@
    },
    "responses": {
     "200": "BOMItemResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PATCH /api/v1/projects/{project_id}/folder": {
+   "operationId": "move_project_to_folder_api_v1_projects__project_id__folder_patch",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "ProjectFolderMove"
+   },
+   "responses": {
+    "200": "ProjectFolderMoveOut",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -6710,7 +7588,7 @@
     "application/json": "SmartPlugUpdate"
    },
    "responses": {
-    "200": "SmartPlugResponse",
+    "200": "SmartPlugResponseWithSecret",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -6861,6 +7739,36 @@
    },
    "security": true
   },
+  "POST /api/v1/aito/tasks/{task_id}/files": {
+   "operationId": "drop_task_files_api_v1_aito_tasks__task_id__files_post",
+   "params": [
+    "header:X-API-Key",
+    "path:task_id!"
+   ],
+   "requestBody": {
+    "multipart/form-data": "Body_drop_task_files_api_v1_aito_tasks__task_id__files_post"
+   },
+   "responses": {
+    "201": "DropFilesResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/aito/tasks/{task_id}/project": {
+   "operationId": "post_task_project_api_v1_aito_tasks__task_id__project_post",
+   "params": [
+    "header:X-API-Key",
+    "path:task_id!"
+   ],
+   "requestBody": {
+    "application/json": "TaskCreateProjectRequest"
+   },
+   "responses": {
+    "201": "TaskProjectLink",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/aito/{project_id}/events": {
    "operationId": "add_note_api_v1_aito__project_id__events_post",
    "params": [
@@ -6876,6 +7784,19 @@
    },
    "security": true
   },
+  "POST /api/v1/aito/{project_id}/force-sync": {
+   "operationId": "force_sync_project_api_v1_aito__project_id__force_sync_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoForceSyncReport",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/aito/{project_id}/invoice": {
    "operationId": "create_invoice_api_v1_aito__project_id__invoice_post",
    "params": [
@@ -6885,6 +7806,21 @@
    "requestBody": {},
    "responses": {
     "200": "AitoInvoiceCreatedResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/aito/{project_id}/invoice-deposits/apply": {
+   "operationId": "apply_invoice_deposit_api_v1_aito__project_id__invoice_deposits_apply_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "AitoApplyDepositRequest"
+   },
+   "responses": {
+    "200": "AitoInvoiceResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -7019,6 +7955,19 @@
    },
    "security": true
   },
+  "POST /api/v1/aito/{project_id}/quote-extend": {
+   "operationId": "extend_quote_expiry_api_v1_aito__project_id__quote_extend_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoProjectResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/aito/{project_id}/quote-status": {
    "operationId": "set_quote_status_api_v1_aito__project_id__quote_status_post",
    "params": [
@@ -7120,15 +8069,15 @@
    },
    "security": true
   },
-  "POST /api/v1/aito/{project_id}/tracking-token": {
-   "operationId": "regenerate_tracking_token_api_v1_aito__project_id__tracking_token_post",
+  "POST /api/v1/announcements/{public_id}/read": {
+   "operationId": "mark_announcement_read_api_v1_announcements__public_id__read_post",
    "params": [
     "header:X-API-Key",
-    "path:project_id!"
+    "path:public_id!"
    ],
    "requestBody": {},
    "responses": {
-    "200": "AitoTrackingLinkResponse",
+    "204": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -7172,6 +8121,20 @@
    },
    "security": false
   },
+  "POST /api/v1/archives/merge": {
+   "operationId": "merge_archives_api_v1_archives_merge_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "ArchiveMergeRequest"
+   },
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/archives/purge": {
    "operationId": "execute_archive_purge_api_v1_archives_purge_post",
    "params": [
@@ -7188,18 +8151,6 @@
   },
   "POST /api/v1/archives/recalculate-costs": {
    "operationId": "recalculate_all_costs_api_v1_archives_recalculate_costs_post",
-   "params": [
-    "header:X-API-Key"
-   ],
-   "requestBody": {},
-   "responses": {
-    "200": null,
-    "422": "HTTPValidationError"
-   },
-   "security": true
-  },
-  "POST /api/v1/archives/rescan-all": {
-   "operationId": "rescan_all_archives_api_v1_archives_rescan_all_post",
    "params": [
     "header:X-API-Key"
    ],
@@ -7339,19 +8290,6 @@
    },
    "security": true
   },
-  "POST /api/v1/archives/{archive_id}/rescan": {
-   "operationId": "rescan_archive_api_v1_archives__archive_id__rescan_post",
-   "params": [
-    "header:X-API-Key",
-    "path:archive_id!"
-   ],
-   "requestBody": {},
-   "responses": {
-    "200": "ArchiveResponse",
-    "422": "HTTPValidationError"
-   },
-   "security": true
-  },
   "POST /api/v1/archives/{archive_id}/slice": {
    "operationId": "slice_archive_api_v1_archives__archive_id__slice_post",
    "params": [
@@ -7418,7 +8356,7 @@
     "multipart/form-data": "Body_process_timelapse_api_v1_archives__archive_id__timelapse_process_post"
    },
    "responses": {
-    "200": null,
+    "202": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -7640,7 +8578,9 @@
    "params": [
     "header:X-API-Key"
    ],
-   "requestBody": {},
+   "requestBody": {
+    "application/json": "anyOf(LDAPTestRequest,null)"
+   },
    "responses": {
     "200": null,
     "422": "HTTPValidationError"
@@ -8352,12 +9292,11 @@
   "POST /api/v1/github-backup/test": {
    "operationId": "test_connection_api_v1_github_backup_test_post",
    "params": [
-    "header:X-API-Key",
-    "query:provider",
-    "query:repo_url!",
-    "query:token!"
+    "header:X-API-Key"
    ],
-   "requestBody": {},
+   "requestBody": {
+    "application/json": "GitHubTestConnectionRequest"
+   },
    "responses": {
     "200": "GitHubTestConnectionResponse",
     "422": "HTTPValidationError"
@@ -8620,6 +9559,19 @@
    },
    "security": true
   },
+  "POST /api/v1/inventory/profile-defaults/{default_id}/apply": {
+   "operationId": "apply_profile_default_api_v1_inventory_profile_defaults__default_id__apply_post",
+   "params": [
+    "header:X-API-Key",
+    "path:default_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "ProfileDefaultApplyResult",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/inventory/shopping-list": {
    "operationId": "add_to_shopping_list_api_v1_inventory_shopping_list_post",
    "params": [
@@ -8840,6 +9792,20 @@
    },
    "security": true
   },
+  "POST /api/v1/label-templates": {
+   "operationId": "create_label_template_api_v1_label_templates_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "LabelTemplateIn"
+   },
+   "responses": {
+    "201": "LabelTemplateResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/library/bulk-delete": {
    "operationId": "bulk_delete_api_v1_library_bulk_delete_post",
    "params": [
@@ -8910,6 +9876,20 @@
    },
    "responses": {
     "200": "CheckDuplicatesResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/library/files/combine": {
+   "operationId": "combine_files_api_v1_library_files_combine_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "CombineFilesRequest"
+   },
+   "responses": {
+    "200": "FileUploadResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -9290,6 +10270,49 @@
    },
    "security": true
   },
+  "POST /api/v1/maintenance/hours/import": {
+   "operationId": "import_readings_api_v1_maintenance_hours_import_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "HourImportBody"
+   },
+   "responses": {
+    "200": "HourImportResult",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/maintenance/hours/machines/{machine_id}/events": {
+   "operationId": "add_note_event_api_v1_maintenance_hours_machines__machine_id__events_post",
+   "params": [
+    "header:X-API-Key",
+    "path:machine_id!"
+   ],
+   "requestBody": {
+    "application/json": "HourEventCreate"
+   },
+   "responses": {
+    "200": "HourEventOut",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/maintenance/hours/readings": {
+   "operationId": "save_readings_api_v1_maintenance_hours_readings_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "HourReadingBatch"
+   },
+   "responses": {
+    "200": "HoursOverview",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/maintenance/items/{item_id}/perform": {
    "operationId": "perform_maintenance_api_v1_maintenance_items__item_id__perform_post",
    "params": [
@@ -9369,6 +10392,34 @@
    },
    "responses": {
     "200": "MakerWorldResolvedModel",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/manyfold/config/test": {
+   "operationId": "test_config_api_v1_manyfold_config_test_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "ManyfoldTestRequest"
+   },
+   "responses": {
+    "200": "ManyfoldTestResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/manyfold/import": {
+   "operationId": "import_file_api_v1_manyfold_import_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "ManyfoldImportRequest"
+   },
+   "responses": {
+    "200": "ManyfoldImportResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -9473,7 +10524,21 @@
     "header:X-API-Key"
    ],
    "requestBody": {
-    "application/json": "TestConnectionRequest"
+    "application/json": "backend__app__api__routes__obico__TestConnectionRequest"
+   },
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/octoeverywhere/test-connection": {
+   "operationId": "test_connection_api_v1_octoeverywhere_test_connection_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "backend__app__api__routes__octoeverywhere__TestConnectionRequest"
    },
    "responses": {
     "200": null,
@@ -9513,6 +10578,18 @@
    "requestBody": {},
    "responses": {
     "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/order-board/refresh": {
+   "operationId": "refresh_order_board_api_v1_order_board_refresh_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -9582,6 +10659,48 @@
    },
    "security": true
   },
+  "POST /api/v1/printer-locations/": {
+   "operationId": "create_printer_location_api_v1_printer_locations__post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "PrinterLocationCreate"
+   },
+   "responses": {
+    "201": "PrinterLocationResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/printer-locations/assign": {
+   "operationId": "assign_printer_location_api_v1_printer_locations_assign_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "PrinterLocationAssign"
+   },
+   "responses": {
+    "200": "PrinterLocationAssignResult",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/printer-locations/delete": {
+   "operationId": "delete_printer_locations_api_v1_printer_locations_delete_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "PrinterLocationDelete"
+   },
+   "responses": {
+    "200": "PrinterLocationDeleteResult",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/printers/": {
    "operationId": "create_printer_api_v1_printers__post",
    "params": [
@@ -9618,21 +10737,6 @@
    },
    "responses": {
     "200": "PrinterDiagnosticResult",
-    "422": "HTTPValidationError"
-   },
-   "security": true
-  },
-  "POST /api/v1/printers/test": {
-   "operationId": "test_printer_connection_api_v1_printers_test_post",
-   "params": [
-    "header:X-API-Key",
-    "query:access_code!",
-    "query:ip_address!",
-    "query:serial_number!"
-   ],
-   "requestBody": {},
-   "responses": {
-    "200": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -9773,10 +10877,12 @@
    "operationId": "test_external_camera_api_v1_printers__printer_id__camera_external_test_post",
    "params": [
     "header:X-API-Key",
-    "path:printer_id!"
+    "path:printer_id!",
+    "query:camera_type",
+    "query:url"
    ],
    "requestBody": {
-    "application/json": "ExternalCameraTestRequest"
+    "application/json": "anyOf(ExternalCameraTestRequest,null)"
    },
    "responses": {
     "200": null,
@@ -9803,7 +10909,8 @@
    "operationId": "stop_camera_stream_api_v1_printers__printer_id__camera_stop_post",
    "params": [
     "header:X-API-Key",
-    "path:printer_id!"
+    "path:printer_id!",
+    "query:viewer"
    ],
    "requestBody": {},
    "responses": {
@@ -9856,19 +10963,6 @@
   },
   "POST /api/v1/printers/{printer_id}/connect": {
    "operationId": "connect_printer_api_v1_printers__printer_id__connect_post",
-   "params": [
-    "header:X-API-Key",
-    "path:printer_id!"
-   ],
-   "requestBody": {},
-   "responses": {
-    "200": null,
-    "422": "HTTPValidationError"
-   },
-   "security": true
-  },
-  "POST /api/v1/printers/{printer_id}/debug/simulate-print-complete": {
-   "operationId": "debug_simulate_print_complete_api_v1_printers__printer_id__debug_simulate_print_complete_post",
    "params": [
     "header:X-API-Key",
     "path:printer_id!"
@@ -10208,6 +11302,7 @@
     "query:nozzle_diameter",
     "query:nozzle_temp_max!",
     "query:nozzle_temp_min!",
+    "query:orca_profile_id",
     "query:setting_id",
     "query:tray_color!",
     "query:tray_info_idx!",
@@ -10293,6 +11388,48 @@
    },
    "security": true
   },
+  "POST /api/v1/projects/ai/reformulate": {
+   "operationId": "reformulate_text_api_v1_projects_ai_reformulate_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "ProjectReformulateRequest"
+   },
+   "responses": {
+    "200": "ProjectReformulateResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/projects/ai/suggest-tags": {
+   "operationId": "suggest_tags_api_v1_projects_ai_suggest_tags_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "ProjectSuggestTagsRequest"
+   },
+   "responses": {
+    "200": "ProjectSuggestTagsResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/projects/folders": {
+   "operationId": "create_project_folder_api_v1_projects_folders_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "ProjectFolderCreate"
+   },
+   "responses": {
+    "201": "ProjectFolderOut",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/projects/from-template/{template_id}": {
    "operationId": "create_project_from_template_api_v1_projects_from_template__template_id__post",
    "params": [
@@ -10335,6 +11472,121 @@
    },
    "security": true
   },
+  "POST /api/v1/projects/items/{item_id}/fork": {
+   "operationId": "fork_item_api_v1_projects_items__item_id__fork_post",
+   "params": [
+    "header:X-API-Key",
+    "path:item_id!"
+   ],
+   "requestBody": {
+    "application/json": "ProjectItemFork"
+   },
+   "responses": {
+    "201": "ProjectItemOut",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/projects/items/{item_id}/revisions": {
+   "operationId": "upload_revision_api_v1_projects_items__item_id__revisions_post",
+   "params": [
+    "header:X-API-Key",
+    "path:item_id!"
+   ],
+   "requestBody": {
+    "multipart/form-data": "Body_upload_revision_api_v1_projects_items__item_id__revisions_post"
+   },
+   "responses": {
+    "201": "RevisionUploadResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/projects/legacy-migration/start": {
+   "operationId": "start_legacy_migration_api_v1_projects_legacy_migration_start_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "202": "LegacyMigrationStatus",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/projects/revisions/{revision_id}/files": {
+   "operationId": "add_files_api_v1_projects_revisions__revision_id__files_post",
+   "params": [
+    "header:X-API-Key",
+    "path:revision_id!"
+   ],
+   "requestBody": {
+    "multipart/form-data": "Body_add_files_api_v1_projects_revisions__revision_id__files_post"
+   },
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/projects/revisions/{revision_id}/pins": {
+   "operationId": "create_revision_pin_api_v1_projects_revisions__revision_id__pins_post",
+   "params": [
+    "header:X-API-Key",
+    "path:revision_id!"
+   ],
+   "requestBody": {
+    "application/json": "RevisionPinCreate"
+   },
+   "responses": {
+    "201": "RevisionPinOut",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/projects/revisions/{revision_id}/reslice": {
+   "operationId": "reslice_revision_api_v1_projects_revisions__revision_id__reslice_post",
+   "params": [
+    "header:X-API-Key",
+    "path:revision_id!"
+   ],
+   "requestBody": {
+    "application/json": "ResliceBody"
+   },
+   "responses": {
+    "202": "ResliceStarted",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/projects/revisions/{revision_id}/slice": {
+   "operationId": "slice_revision_api_v1_projects_revisions__revision_id__slice_post",
+   "params": [
+    "header:X-API-Key",
+    "path:revision_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "202": "RevisionSliceStarted",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/projects/revisions/{revision_id}/sliced-file": {
+   "operationId": "upload_sliced_file_api_v1_projects_revisions__revision_id__sliced_file_post",
+   "params": [
+    "header:X-API-Key",
+    "path:revision_id!"
+   ],
+   "requestBody": {
+    "multipart/form-data": "Body_upload_sliced_file_api_v1_projects_revisions__revision_id__sliced_file_post"
+   },
+   "responses": {
+    "200": "ProjectRevisionOut",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/projects/{project_id}/add-archives": {
    "operationId": "add_archives_to_project_api_v1_projects__project_id__add_archives_post",
    "params": [
@@ -10358,21 +11610,6 @@
    ],
    "requestBody": {
     "application/json": "BatchAddQueueItems"
-   },
-   "responses": {
-    "200": null,
-    "422": "HTTPValidationError"
-   },
-   "security": true
-  },
-  "POST /api/v1/projects/{project_id}/attachments": {
-   "operationId": "upload_attachment_api_v1_projects__project_id__attachments_post",
-   "params": [
-    "header:X-API-Key",
-    "path:project_id!"
-   ],
-   "requestBody": {
-    "multipart/form-data": "Body_upload_attachment_api_v1_projects__project_id__attachments_post"
    },
    "responses": {
     "200": null,
@@ -10419,6 +11656,36 @@
    "requestBody": {},
    "responses": {
     "200": "ProjectResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/projects/{project_id}/import-library-files": {
+   "operationId": "import_library_files_api_v1_projects__project_id__import_library_files_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "ImportLibraryFilesRequest"
+   },
+   "responses": {
+    "200": "ImportLibraryFilesResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/projects/{project_id}/items": {
+   "operationId": "create_item_api_v1_projects__project_id__items_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "ProjectItemCreate"
+   },
+   "responses": {
+    "201": "ProjectItemOut",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -10494,6 +11761,34 @@
    },
    "security": true
   },
+  "POST /api/v1/queue/history/clear": {
+   "operationId": "clear_queue_history_api_v1_queue_history_clear_post",
+   "params": [
+    "header:X-API-Key",
+    "query:location",
+    "query:printer_id",
+    "query:status"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "PrintQueueHistoryClearResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/queue/model/{model}/resume": {
+   "operationId": "resume_model_queue_after_failure_api_v1_queue_model__model__resume_post",
+   "params": [
+    "header:X-API-Key",
+    "path:model!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/queue/printer/{printer_id}/resume": {
    "operationId": "resume_queue_after_failure_api_v1_queue_printer__printer_id__resume_post",
    "params": [
@@ -10530,6 +11825,19 @@
    "requestBody": {},
    "responses": {
     "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/queue/{item_id}/retry-slice": {
+   "operationId": "retry_queue_item_slice_api_v1_queue__item_id__retry_slice_post",
+   "params": [
+    "header:X-API-Key",
+    "path:item_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "PrintQueueItemResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -10585,6 +11893,20 @@
    },
    "responses": {
     "200": "AppSettings",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/settings/overlay-logo": {
+   "operationId": "upload_logo_api_v1_settings_overlay_logo_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "multipart/form-data": "Body_upload_logo_api_v1_settings_overlay_logo_post"
+   },
+   "responses": {
+    "200": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -10668,7 +11990,7 @@
     "application/json": "SmartPlugCreate"
    },
    "responses": {
-    "200": "SmartPlugResponse",
+    "200": "SmartPlugResponseWithSecret",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -10915,21 +12237,6 @@
    },
    "security": true
   },
-  "POST /api/v1/spoolbuddy/devices/{device_id}/update-status": {
-   "operationId": "report_update_status_api_v1_spoolbuddy_devices__device_id__update_status_post",
-   "params": [
-    "header:X-API-Key",
-    "path:device_id!"
-   ],
-   "requestBody": {
-    "application/json": "UpdateStatusRequest"
-   },
-   "responses": {
-    "200": null,
-    "422": "HTTPValidationError"
-   },
-   "security": true
-  },
   "POST /api/v1/spoolbuddy/diagnostics/{device_id}/result": {
    "operationId": "report_diagnostic_result_api_v1_spoolbuddy_diagnostics__device_id__result_post",
    "params": [
@@ -11063,6 +12370,19 @@
    "requestBody": {},
    "responses": {
     "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/spoolman/inventory/profile-defaults/{default_id}/apply": {
+   "operationId": "apply_profile_default_to_spoolman_spools_api_v1_spoolman_inventory_profile_defaults__default_id__apply_post",
+   "params": [
+    "header:X-API-Key",
+    "path:default_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -11226,6 +12546,19 @@
    "requestBody": {},
    "responses": {
     "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/spoolman/inventory/tags/migrate": {
+   "operationId": "migrate_tags_to_native_api_v1_spoolman_inventory_tags_migrate_post",
+   "params": [
+    "header:X-API-Key",
+    "query:dry_run"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -11491,6 +12824,36 @@
    },
    "security": true
   },
+  "PUT /api/v1/aito/tasks/{task_id}/deliveries": {
+   "operationId": "put_task_deliveries_api_v1_aito_tasks__task_id__deliveries_put",
+   "params": [
+    "header:X-API-Key",
+    "path:task_id!"
+   ],
+   "requestBody": {
+    "application/json": "TaskDeliveriesRequest"
+   },
+   "responses": {
+    "200": "TaskProjectLink",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PUT /api/v1/aito/tasks/{task_id}/project": {
+   "operationId": "put_task_project_api_v1_aito_tasks__task_id__project_put",
+   "params": [
+    "header:X-API-Key",
+    "path:task_id!"
+   ],
+   "requestBody": {
+    "application/json": "TaskLinkRequest"
+   },
+   "responses": {
+    "200": "TaskProjectLink",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PUT /api/v1/aito/{project_id}/client": {
    "operationId": "edit_project_client_api_v1_aito__project_id__client_put",
    "params": [
@@ -11593,6 +12956,20 @@
    },
    "security": true
   },
+  "PUT /api/v1/external-links/badge": {
+   "operationId": "set_badge_api_v1_external_links_badge_put",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "ExternalLinkBadgeSet"
+   },
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PUT /api/v1/external-links/reorder": {
    "operationId": "reorder_external_links_api_v1_external_links_reorder_put",
    "params": [
@@ -11651,6 +13028,20 @@
    },
    "security": true
   },
+  "PUT /api/v1/inventory/profile-defaults": {
+   "operationId": "save_profile_default_api_v1_inventory_profile_defaults_put",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "FilamentProfileDefaultWrite"
+   },
+   "responses": {
+    "200": "FilamentProfileDefaultResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PUT /api/v1/inventory/spools/{spool_id}/filament-presets": {
    "operationId": "replace_filament_presets_api_v1_inventory_spools__spool_id__filament_presets_put",
    "params": [
@@ -11692,6 +13083,21 @@
    },
    "responses": {
     "200": "[SpoolSupplierResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PUT /api/v1/label-templates/{template_id}": {
+   "operationId": "replace_label_template_api_v1_label_templates__template_id__put",
+   "params": [
+    "header:X-API-Key",
+    "path:template_id!"
+   ],
+   "requestBody": {
+    "application/json": "LabelTemplateIn"
+   },
+   "responses": {
+    "200": "LabelTemplateResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -11755,6 +13161,20 @@
    },
    "security": true
   },
+  "PUT /api/v1/manyfold/config": {
+   "operationId": "update_config_api_v1_manyfold_config_put",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "ManyfoldConfigUpdate"
+   },
+   "responses": {
+    "200": "ManyfoldConfigResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PUT /api/v1/notification-templates/{template_id}": {
    "operationId": "update_template_api_v1_notification_templates__template_id__put",
    "params": [
@@ -11766,6 +13186,20 @@
    },
    "responses": {
     "200": "NotificationTemplateResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PUT /api/v1/order-board/settings": {
+   "operationId": "update_order_board_settings_api_v1_order_board_settings_put",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "OrderBoardSettingsBody"
+   },
+   "responses": {
+    "200": "OrderBoardSettingsBody",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -11826,7 +13260,8 @@
     "path:tray_id!",
     "query:preset_id!",
     "query:preset_name!",
-    "query:preset_source"
+    "query:preset_source",
+    "query:tray_info_idx"
    ],
    "requestBody": {},
    "responses": {
@@ -12258,6 +13693,18 @@
    },
    "required": []
   },
+  "AitoApplyDepositRequest": {
+   "properties": {
+    "amount": "number",
+    "invoice_id": "string",
+    "retainer_id": "string"
+   },
+   "required": [
+    "amount",
+    "invoice_id",
+    "retainer_id"
+   ]
+  },
   "AitoClientEdit": {
    "properties": {
     "client_contact_name": "anyOf(string,null)",
@@ -12318,6 +13765,23 @@
     "network"
    ]
   },
+  "AitoClientQuoteRatingResponse": {
+   "properties": {
+    "accepted_count": "integer",
+    "computed_at": "anyOf(string,null)",
+    "declined_count": "integer",
+    "expired_count": "integer",
+    "pending_count": "integer",
+    "score": "anyOf(number,null)",
+    "stale": "boolean",
+    "tier": "string"
+   },
+   "required": [
+    "computed_at",
+    "stale",
+    "tier"
+   ]
+  },
   "AitoClientRatingResponse": {
    "properties": {
     "computed_at": "anyOf(string,null)",
@@ -12359,6 +13823,20 @@
    },
    "required": [
     "contacted"
+   ]
+  },
+  "AitoDepositCredit": {
+   "properties": {
+    "applicable": "number",
+    "id": "string",
+    "number": "string",
+    "total": "number"
+   },
+   "required": [
+    "applicable",
+    "id",
+    "number",
+    "total"
    ]
   },
   "AitoDueDateUpdate": {
@@ -12417,6 +13895,25 @@
     "flag"
    ]
   },
+  "AitoForceSyncReport": {
+   "properties": {
+    "steps": "[AitoForceSyncStep]"
+   },
+   "required": [
+    "steps"
+   ]
+  },
+  "AitoForceSyncStep": {
+   "properties": {
+    "detail": "object",
+    "key": "string",
+    "outcome": "string"
+   },
+   "required": [
+    "key",
+    "outcome"
+   ]
+  },
   "AitoInvoiceCreatedResponse": {
    "properties": {
     "balance": "number",
@@ -12443,6 +13940,30 @@
     "status",
     "total",
     "url"
+   ]
+  },
+  "AitoInvoiceDepositsInvoice": {
+   "properties": {
+    "balance": "number",
+    "currency_code": "string",
+    "id": "string",
+    "number": "string"
+   },
+   "required": [
+    "balance",
+    "currency_code",
+    "id",
+    "number"
+   ]
+  },
+  "AitoInvoiceDepositsResponse": {
+   "properties": {
+    "deposits": "[AitoDepositCredit]",
+    "invoice": "anyOf(AitoInvoiceDepositsInvoice,null)"
+   },
+   "required": [
+    "deposits",
+    "invoice"
    ]
   },
   "AitoInvoiceEmailContent": {
@@ -12687,6 +14208,8 @@
     "created_by": "anyOf(string,null)",
     "customer_credit_total": "anyOf(number,null)",
     "description": "string",
+    "document_numbers": "[string]",
+    "done_at": "anyOf(string,null)",
     "due_date": "anyOf(string,null)",
     "flag": "anyOf(string,null)",
     "id": "integer",
@@ -12715,6 +14238,7 @@
     "quote_total": "anyOf(number,null)",
     "quote_url": "anyOf(string,null)",
     "retainer_paid_total": "anyOf(number,null)",
+    "search_text": "string",
     "shipping_first_name": "anyOf(string,null)",
     "shipping_island": "anyOf(string,null)",
     "shipping_last_name": "anyOf(string,null)",
@@ -12752,6 +14276,8 @@
     "created_by",
     "customer_credit_total",
     "description",
+    "document_numbers",
+    "done_at",
     "due_date",
     "flag",
     "id",
@@ -12780,6 +14306,7 @@
     "quote_total",
     "quote_url",
     "retainer_paid_total",
+    "search_text",
     "shipping_first_name",
     "shipping_island",
     "shipping_last_name",
@@ -13512,9 +15039,24 @@
     "sync_error"
    ]
   },
+  "AitoTrackingBalance": {
+   "properties": {
+    "currency": "string",
+    "due": "integer",
+    "paid": "integer",
+    "paid_pct": "integer",
+    "total": "integer"
+   },
+   "required": [
+    "currency",
+    "due",
+    "paid",
+    "paid_pct",
+    "total"
+   ]
+  },
   "AitoTrackingLinkResponse": {
    "properties": {
-    "quote_notes": "anyOf(string,null)",
     "tracking_url": "anyOf(string,null)"
    },
    "required": [
@@ -13536,6 +15078,7 @@
   "AitoTrackingResponse": {
    "properties": {
     "accepted": "boolean",
+    "balance": "anyOf(AitoTrackingBalance,null)",
     "column": "string",
     "done_at": "anyOf(string,null)",
     "due_date": "anyOf(string,null)",
@@ -13647,7 +15190,6 @@
     "aito_payment_mode_card": "string",
     "aito_payment_mode_cash": "string",
     "aito_payment_mode_cheque": "string",
-    "aito_quote_validity_days": "integer",
     "ambient_drying_enabled": "boolean",
     "ambient_drying_sustained_minutes": "integer",
     "ams_history_retention_days": "integer",
@@ -13657,6 +15199,8 @@
     "ams_temp_alarm": "anyOf(number,null)",
     "ams_temp_fair": "number",
     "ams_temp_good": "number",
+    "announcements_all_users": "boolean",
+    "announcements_enabled": "boolean",
     "auto_add_unknown_rfid": "boolean",
     "auto_archive": "boolean",
     "bambu_studio_api_url": "string",
@@ -13665,6 +15209,8 @@
     "billing_enabled": "boolean",
     "camera_engine": "string",
     "camera_gpu_accel": "boolean",
+    "camera_light_delay": "number",
+    "camera_light_mode": "string",
     "camera_quality": "string",
     "camera_view_mode": "string",
     "capture_finish_photo": "boolean",
@@ -13693,9 +15239,12 @@
     "drying_no_auto_stop": "boolean",
     "drying_presets": "string",
     "energy_cost_per_kwh": "number",
+    "energy_price_ha_entity": "string",
+    "energy_price_source": "string",
     "energy_tracking_mode": "string",
     "external_url": "string",
     "fan_speed_presets": "string",
+    "fenrir_internal_url": "string",
     "finance_budget_reset_day": "integer",
     "finance_budget_reset_timezone": "string",
     "finish_photo_restore_plate": "boolean",
@@ -13725,7 +15274,6 @@
     "ldap_security": "string",
     "ldap_server_url": "string",
     "ldap_user_filter": "string",
-    "library_archive_mode": "string",
     "library_disk_warning_gb": "number",
     "light_accent": "string",
     "light_background": "string",
@@ -13755,10 +15303,18 @@
     "obico_ml_url": "string",
     "obico_poll_interval": "integer",
     "obico_sensitivity": "string",
+    "octoeverywhere_action": "string",
+    "octoeverywhere_api_key": "string",
+    "octoeverywhere_api_key_configured": "boolean",
+    "octoeverywhere_confidence": "string",
+    "octoeverywhere_enabled": "boolean",
+    "octoeverywhere_enabled_printers": "string",
+    "octoeverywhere_poll_interval": "integer",
     "open_in_slicer": "anyOf(string,null)",
     "openrouter_api_key": "string",
     "openrouter_model": "string",
     "orcaslicer_api_url": "string",
+    "pause_warning_minutes": "integer",
     "per_printer_mapping_expanded": "boolean",
     "pipeline_max_copies": "integer",
     "prefer_lowest_filament": "boolean",
@@ -13770,6 +15326,7 @@
     "print_drying_enabled": "boolean",
     "printer_kill_switch_enabled": "boolean",
     "printer_sensor_history_retention_days": "integer",
+    "projects_auto_file_by_code": "boolean",
     "prometheus_enabled": "boolean",
     "prometheus_token": "string",
     "pushcut_sms_url": "string",
@@ -13795,10 +15352,7 @@
     "time_format": "string",
     "use_slicer_api": "boolean",
     "user_notifications_enabled": "boolean",
-    "virtual_printer_access_code": "string",
     "virtual_printer_archive_name_source": "string",
-    "virtual_printer_enabled": "boolean",
-    "virtual_printer_mode": "string",
     "zoho_accounts_url": "string",
     "zoho_base_url": "string",
     "zoho_client_id": "string",
@@ -13819,7 +15373,6 @@
     "aito_payment_mode_card": "anyOf(string,null)",
     "aito_payment_mode_cash": "anyOf(string,null)",
     "aito_payment_mode_cheque": "anyOf(string,null)",
-    "aito_quote_validity_days": "anyOf(integer,null)",
     "ambient_drying_enabled": "anyOf(boolean,null)",
     "ambient_drying_sustained_minutes": "anyOf(integer,null)",
     "ams_history_retention_days": "anyOf(integer,null)",
@@ -13829,6 +15382,8 @@
     "ams_temp_alarm": "anyOf(number,null)",
     "ams_temp_fair": "anyOf(number,null)",
     "ams_temp_good": "anyOf(number,null)",
+    "announcements_all_users": "anyOf(boolean,null)",
+    "announcements_enabled": "anyOf(boolean,null)",
     "auto_add_unknown_rfid": "anyOf(boolean,null)",
     "auto_archive": "anyOf(boolean,null)",
     "bambu_studio_api_url": "anyOf(string,null)",
@@ -13837,6 +15392,8 @@
     "billing_enabled": "anyOf(boolean,null)",
     "camera_engine": "anyOf(string,null)",
     "camera_gpu_accel": "anyOf(boolean,null)",
+    "camera_light_delay": "anyOf(number,null)",
+    "camera_light_mode": "anyOf(string,null)",
     "camera_quality": "anyOf(string,null)",
     "camera_view_mode": "anyOf(string,null)",
     "capture_finish_photo": "anyOf(boolean,null)",
@@ -13865,9 +15422,12 @@
     "drying_no_auto_stop": "anyOf(boolean,null)",
     "drying_presets": "anyOf(string,null)",
     "energy_cost_per_kwh": "anyOf(number,null)",
+    "energy_price_ha_entity": "anyOf(string,null)",
+    "energy_price_source": "anyOf(string,null)",
     "energy_tracking_mode": "anyOf(string,null)",
     "external_url": "anyOf(string,null)",
     "fan_speed_presets": "anyOf(string,null)",
+    "fenrir_internal_url": "anyOf(string,null)",
     "finance_budget_reset_day": "anyOf(integer,null)",
     "finance_budget_reset_timezone": "anyOf(string,null)",
     "finish_photo_restore_plate": "anyOf(boolean,null)",
@@ -13894,7 +15454,6 @@
     "ldap_security": "anyOf(string,null)",
     "ldap_server_url": "anyOf(string,null)",
     "ldap_user_filter": "anyOf(string,null)",
-    "library_archive_mode": "anyOf(string,null)",
     "library_disk_warning_gb": "anyOf(number,null)",
     "light_accent": "anyOf(string,null)",
     "light_background": "anyOf(string,null)",
@@ -13924,10 +15483,17 @@
     "obico_ml_url": "anyOf(string,null)",
     "obico_poll_interval": "anyOf(integer,null)",
     "obico_sensitivity": "anyOf(string,null)",
+    "octoeverywhere_action": "anyOf(string,null)",
+    "octoeverywhere_api_key": "anyOf(string,null)",
+    "octoeverywhere_confidence": "anyOf(string,null)",
+    "octoeverywhere_enabled": "anyOf(boolean,null)",
+    "octoeverywhere_enabled_printers": "anyOf(string,null)",
+    "octoeverywhere_poll_interval": "anyOf(integer,null)",
     "open_in_slicer": "anyOf(string,null)",
     "openrouter_api_key": "anyOf(string,null)",
     "openrouter_model": "anyOf(string,null)",
     "orcaslicer_api_url": "anyOf(string,null)",
+    "pause_warning_minutes": "anyOf(integer,null)",
     "per_printer_mapping_expanded": "anyOf(boolean,null)",
     "pipeline_max_copies": "anyOf(integer,null)",
     "prefer_lowest_filament": "anyOf(boolean,null)",
@@ -13939,6 +15505,7 @@
     "print_drying_enabled": "anyOf(boolean,null)",
     "printer_kill_switch_enabled": "anyOf(boolean,null)",
     "printer_sensor_history_retention_days": "anyOf(integer,null)",
+    "projects_auto_file_by_code": "anyOf(boolean,null)",
     "prometheus_enabled": "anyOf(boolean,null)",
     "prometheus_token": "anyOf(string,null)",
     "pushcut_sms_url": "anyOf(string,null)",
@@ -13964,10 +15531,7 @@
     "time_format": "anyOf(string,null)",
     "use_slicer_api": "anyOf(boolean,null)",
     "user_notifications_enabled": "anyOf(boolean,null)",
-    "virtual_printer_access_code": "anyOf(string,null)",
     "virtual_printer_archive_name_source": "anyOf(string,null)",
-    "virtual_printer_enabled": "anyOf(boolean,null)",
-    "virtual_printer_mode": "anyOf(string,null)",
     "zoho_accounts_url": "anyOf(string,null)",
     "zoho_base_url": "anyOf(string,null)",
     "zoho_client_id": "anyOf(string,null)",
@@ -13991,6 +15555,14 @@
     "id",
     "match_type",
     "print_name"
+   ]
+  },
+  "ArchiveMergeRequest": {
+   "properties": {
+    "survivor_ids": "[integer]"
+   },
+   "required": [
+    "survivor_ids"
    ]
   },
   "ArchivePreview": {
@@ -14091,7 +15663,9 @@
     "id": "integer",
     "is_favorite": "boolean",
     "last_run_at": "anyOf(string,null)",
+    "latest_run_id": "anyOf(integer,null)",
     "layer_height": "anyOf(number,null)",
+    "linked_folder": "anyOf(object,null)",
     "makerworld_url": "anyOf(string,null)",
     "notes": "anyOf(string,null)",
     "nozzle_diameter": "anyOf(number,null)",
@@ -14107,6 +15681,7 @@
     "project_name": "anyOf(string,null)",
     "quantity": "integer",
     "run_count": "integer",
+    "run_id": "anyOf(integer,null)",
     "sliced_for_model": "anyOf(string,null)",
     "source_3mf_path": "anyOf(string,null)",
     "started_at": "anyOf(string,null)",
@@ -14115,12 +15690,14 @@
     "tags": "anyOf(string,null)",
     "thumbnail_path": "anyOf(string,null)",
     "time_accuracy": "anyOf(number,null)",
+    "time_estimate_seconds": "anyOf(integer,null)",
     "timelapse_path": "anyOf(string,null)",
     "total_filament_actual_grams": "anyOf(number,null)",
     "total_layers": "anyOf(integer,null)",
     "user_verdict": "anyOf(string,null)",
     "user_verdict_at": "anyOf(string,null)",
-    "user_verdict_source": "anyOf(string,null)"
+    "user_verdict_source": "anyOf(string,null)",
+    "wear_cost": "anyOf(number,null)"
    },
    "required": [
     "bed_temperature",
@@ -14172,7 +15749,8 @@
     "printer_id": "anyOf(integer,null)",
     "quantity": "integer",
     "started_at": "anyOf(string,null)",
-    "status": "string"
+    "status": "string",
+    "wear_cost": "anyOf(number,null)"
    },
    "required": [
     "completed_at",
@@ -14204,7 +15782,8 @@
     "total_energy_kwh": "number",
     "total_filament_grams": "number",
     "total_print_time_hours": "number",
-    "total_prints": "integer"
+    "total_prints": "integer",
+    "total_wear_cost": "number"
    },
    "required": [
     "failed_prints",
@@ -14229,6 +15808,7 @@
     "printer_id": "anyOf(integer,null)",
     "project_id": "anyOf(integer,null)",
     "quantity": "anyOf(integer,null)",
+    "run_id": "anyOf(integer,null)",
     "status": "anyOf(string,null)",
     "tags": "anyOf(string,null)",
     "user_verdict": "anyOf(string,null)",
@@ -14479,6 +16059,22 @@
     "success"
    ]
   },
+  "Body_add_files_api_v1_projects_revisions__revision_id__files_post": {
+   "properties": {
+    "files": "[string]"
+   },
+   "required": [
+    "files"
+   ]
+  },
+  "Body_drop_task_files_api_v1_aito_tasks__task_id__files_post": {
+   "properties": {
+    "files": "[string]"
+   },
+   "required": [
+    "files"
+   ]
+  },
   "Body_extract_zip_file_api_v1_library_files_extract_zip_post": {
    "properties": {
     "file": "string"
@@ -14514,6 +16110,7 @@
   "Body_process_timelapse_api_v1_archives__archive_id__timelapse_process_post": {
    "properties": {
     "audio": "string",
+    "audio_volume": "number",
     "output_filename": "string",
     "save_mode": "string",
     "speed": "number",
@@ -14552,14 +16149,6 @@
    },
    "required": [
     "files"
-   ]
-  },
-  "Body_upload_attachment_api_v1_projects__project_id__attachments_post": {
-   "properties": {
-    "file": "string"
-   },
-   "required": [
-    "file"
    ]
   },
   "Body_upload_f3d_api_v1_archives__archive_id__f3d_post": {
@@ -14602,6 +16191,14 @@
     "file"
    ]
   },
+  "Body_upload_logo_api_v1_settings_overlay_logo_post": {
+   "properties": {
+    "file": "string"
+   },
+   "required": [
+    "file"
+   ]
+  },
   "Body_upload_photo_api_v1_archives__archive_id__photos_post": {
    "properties": {
     "file": "string"
@@ -14619,6 +16216,24 @@
    ]
   },
   "Body_upload_project_cover_image_api_v1_projects__project_id__cover_image_post": {
+   "properties": {
+    "file": "string"
+   },
+   "required": [
+    "file"
+   ]
+  },
+  "Body_upload_revision_api_v1_projects_items__item_id__revisions_post": {
+   "properties": {
+    "derived_from_id": "anyOf(integer,null)",
+    "files": "[string]",
+    "note": "anyOf(string,null)"
+   },
+   "required": [
+    "files"
+   ]
+  },
+  "Body_upload_sliced_file_api_v1_projects_revisions__revision_id__sliced_file_post": {
    "properties": {
     "file": "string"
    },
@@ -14995,6 +16610,42 @@
     "weight"
    ]
   },
+  "CatalogOpenOrder": {
+   "properties": {
+    "client_name": "anyOf(string,null)",
+    "order_id": "integer"
+   },
+   "required": [
+    "client_name",
+    "order_id"
+   ]
+  },
+  "CatalogRecommended": {
+   "properties": {
+    "filament_types": "[string]",
+    "filament_used_grams": "anyOf(number,null)",
+    "item_id": "integer",
+    "item_name": "string",
+    "nozzle_diameter": "anyOf(string,null)",
+    "number": "integer",
+    "print_time_seconds": "anyOf(integer,null)",
+    "printer_model": "anyOf(string,null)",
+    "revision_id": "integer",
+    "status": "string"
+   },
+   "required": [
+    "filament_types",
+    "filament_used_grams",
+    "item_id",
+    "item_name",
+    "nozzle_diameter",
+    "number",
+    "print_time_seconds",
+    "printer_model",
+    "revision_id",
+    "status"
+   ]
+  },
   "ChangePasswordRequest": {
    "properties": {
     "current_password": "string",
@@ -15176,6 +16827,42 @@
    },
    "required": [
     "found"
+   ]
+  },
+  "ColorSubstitution": {
+   "properties": {
+    "got": "string",
+    "slot_id": "integer",
+    "tray": "integer",
+    "type": "string",
+    "wanted": "string"
+   },
+   "required": [
+    "got",
+    "slot_id",
+    "tray",
+    "type",
+    "wanted"
+   ]
+  },
+  "CombineFilesRequest": {
+   "properties": {
+    "filename": "string",
+    "folder_id": "anyOf(integer,null)",
+    "items": "[CombineItem]"
+   },
+   "required": [
+    "filename",
+    "items"
+   ]
+  },
+  "CombineItem": {
+   "properties": {
+    "copies": "integer",
+    "file_id": "integer"
+   },
+   "required": [
+    "file_id"
    ]
   },
   "ConnectAuthorizeInfo": {
@@ -15620,6 +17307,46 @@
     "brightness"
    ]
   },
+  "DropFilesError": {
+   "properties": {
+    "detail": "string",
+    "filenames": "[string]",
+    "status_code": "integer"
+   },
+   "required": [
+    "detail",
+    "filenames",
+    "status_code"
+   ]
+  },
+  "DropFilesResponse": {
+   "properties": {
+    "code": "anyOf(string,null)",
+    "errors": "[DropFilesError]",
+    "project_id": "integer",
+    "results": "[DroppedFileResult]"
+   },
+   "required": [
+    "project_id",
+    "results"
+   ]
+  },
+  "DroppedFileResult": {
+   "properties": {
+    "filename": "string",
+    "item_id": "integer",
+    "item_name": "string",
+    "revision_number": "integer",
+    "section": "string"
+   },
+   "required": [
+    "filename",
+    "item_id",
+    "item_name",
+    "revision_number",
+    "section"
+   ]
+  },
   "DuplicateCheckItem": {
    "properties": {
     "filename": "string",
@@ -15632,6 +17359,16 @@
     "folder_id",
     "folder_name",
     "id"
+   ]
+  },
+  "DuplicateWarning": {
+   "properties": {
+    "filename": "string",
+    "same_as": "string"
+   },
+   "required": [
+    "filename",
+    "same_as"
    ]
   },
   "ElectricityPriceUpdate": {
@@ -15775,6 +17512,7 @@
    "properties": {
     "event_name": "string",
     "event_type": "string",
+    "supports_photo": "boolean",
     "variables": "[string]"
    },
    "required": [
@@ -15806,6 +17544,16 @@
     "name"
    ]
   },
+  "ExternalLinkBadgeSet": {
+   "properties": {
+    "count": "integer",
+    "url": "string"
+   },
+   "required": [
+    "count",
+    "url"
+   ]
+  },
   "ExternalLinkCreate": {
    "properties": {
     "icon": "string",
@@ -15828,6 +17576,7 @@
   },
   "ExternalLinkResponse": {
    "properties": {
+    "badge_count": "anyOf(integer,null)",
     "created_at": "string",
     "custom_icon": "anyOf(string,null)",
     "icon": "string",
@@ -16017,6 +17766,40 @@
     "unchanged"
    ]
   },
+  "FilamentProfileDefaultResponse": {
+   "properties": {
+    "brand": "string",
+    "color_name": "string",
+    "id": "integer",
+    "k_profiles": "[SpoolKProfileBase]",
+    "material": "string",
+    "presets": "[SpoolFilamentPresetBase]",
+    "slicer_filament": "anyOf(string,null)",
+    "slicer_filament_name": "anyOf(string,null)",
+    "subtype": "string",
+    "updated_at": "string"
+   },
+   "required": [
+    "id",
+    "material",
+    "updated_at"
+   ]
+  },
+  "FilamentProfileDefaultWrite": {
+   "properties": {
+    "brand": "string",
+    "color_name": "string",
+    "k_profiles": "[SpoolKProfileBase]",
+    "material": "string",
+    "presets": "[SpoolFilamentPresetBase]",
+    "slicer_filament": "anyOf(string,null)",
+    "slicer_filament_name": "anyOf(string,null)",
+    "subtype": "string"
+   },
+   "required": [
+    "material"
+   ]
+  },
   "FilamentResponse": {
    "properties": {
     "bed_temp_max": "anyOf(integer,null)",
@@ -16168,8 +17951,10 @@
     "created_by_username": "anyOf(string,null)",
     "duplicate_count": "integer",
     "external_url": "anyOf(string,null)",
+    "filament_color": "anyOf(string,null)",
     "filament_type": "anyOf(string,null)",
     "filament_used_grams": "anyOf(number,null)",
+    "filament_vendor": "anyOf(string,null)",
     "file_size": "integer",
     "file_type": "string",
     "filename": "string",
@@ -16178,6 +17963,9 @@
     "has_notes": "boolean",
     "id": "integer",
     "is_external": "boolean",
+    "layer_height": "anyOf(number,null)",
+    "nozzle_diameter": "anyOf(number,null)",
+    "object_count": "anyOf(integer,null)",
     "photo_count": "integer",
     "print_count": "integer",
     "print_name": "anyOf(string,null)",
@@ -16185,6 +17973,7 @@
     "sliced_for_model": "anyOf(string,null)",
     "tags": "[TagSummary]",
     "thumbnail_path": "anyOf(string,null)",
+    "total_layers": "anyOf(integer,null)",
     "variant_count": "integer",
     "variant_group_id": "anyOf(integer,null)"
    },
@@ -16216,8 +18005,10 @@
     "duplicate_count": "integer",
     "duplicates": "anyOf([FileDuplicate],null)",
     "external_url": "anyOf(string,null)",
+    "filament_color": "anyOf(string,null)",
     "filament_type": "anyOf(string,null)",
     "filament_used_grams": "anyOf(number,null)",
+    "filament_vendor": "anyOf(string,null)",
     "file_hash": "anyOf(string,null)",
     "file_path": "string",
     "file_size": "integer",
@@ -16228,8 +18019,11 @@
     "id": "integer",
     "is_external": "boolean",
     "last_printed_at": "anyOf(string,null)",
+    "layer_height": "anyOf(number,null)",
     "metadata": "anyOf(object,null)",
     "notes": "anyOf(string,null)",
+    "nozzle_diameter": "anyOf(number,null)",
+    "object_count": "anyOf(integer,null)",
     "photos": "[string]",
     "print_count": "integer",
     "print_name": "anyOf(string,null)",
@@ -16239,6 +18033,7 @@
     "sliced_for_model": "anyOf(string,null)",
     "source_url": "anyOf(string,null)",
     "thumbnail_path": "anyOf(string,null)",
+    "total_layers": "anyOf(integer,null)",
     "updated_at": "string"
    },
    "required": [
@@ -16274,6 +18069,7 @@
     "duplicate_of": "anyOf(integer,null)",
     "file_size": "integer",
     "file_type": "string",
+    "filed_to_project": "anyOf(FiledToProject,null)",
     "filename": "string",
     "id": "integer",
     "metadata": "anyOf(object,null)",
@@ -16285,6 +18081,41 @@
     "filename",
     "id",
     "thumbnail_path"
+   ]
+  },
+  "FiledFileOut": {
+   "properties": {
+    "file_id": "integer",
+    "filename": "string",
+    "item_id": "integer",
+    "item_name": "string",
+    "revision_id": "integer",
+    "revision_number": "integer",
+    "section": "string",
+    "source_file_id": "anyOf(integer,null)"
+   },
+   "required": [
+    "file_id",
+    "filename",
+    "item_id",
+    "item_name",
+    "revision_id",
+    "revision_number",
+    "section"
+   ]
+  },
+  "FiledToProject": {
+   "properties": {
+    "code": "string",
+    "item_name": "string",
+    "project_id": "integer",
+    "revision_number": "integer"
+   },
+   "required": [
+    "code",
+    "item_name",
+    "project_id",
+    "revision_number"
    ]
   },
   "FirmwareUploadPrepareResponse": {
@@ -16358,7 +18189,11 @@
    "properties": {
     "archive_id": "anyOf(integer,null)",
     "archive_name": "anyOf(string,null)",
+    "can_delete": "boolean",
+    "can_rename": "boolean",
+    "can_write": "boolean",
     "created_at": "string",
+    "created_by_id": "anyOf(integer,null)",
     "external_path": "anyOf(string,null)",
     "external_readonly": "boolean",
     "external_show_hidden": "boolean",
@@ -16370,6 +18205,7 @@
     "parent_id": "anyOf(integer,null)",
     "project_id": "anyOf(integer,null)",
     "project_name": "anyOf(string,null)",
+    "shared": "boolean",
     "updated_at": "string"
    },
    "required": [
@@ -16384,7 +18220,11 @@
    "properties": {
     "archive_id": "anyOf(integer,null)",
     "archive_name": "anyOf(string,null)",
+    "can_delete": "boolean",
+    "can_rename": "boolean",
+    "can_write": "boolean",
     "children": "[FolderTreeItem]",
+    "created_by_id": "anyOf(integer,null)",
     "external_path": "anyOf(string,null)",
     "external_readonly": "boolean",
     "file_count": "integer",
@@ -16394,7 +18234,8 @@
     "name": "string",
     "parent_id": "anyOf(integer,null)",
     "project_id": "anyOf(integer,null)",
-    "project_name": "anyOf(string,null)"
+    "project_name": "anyOf(string,null)",
+    "shared": "boolean"
    },
    "required": [
     "id",
@@ -16407,7 +18248,8 @@
     "archive_id": "anyOf(integer,null)",
     "name": "anyOf(string,null)",
     "parent_id": "anyOf(integer,null)",
-    "project_id": "anyOf(integer,null)"
+    "project_id": "anyOf(integer,null)",
+    "shared": "anyOf(boolean,null)"
    },
    "required": []
   },
@@ -16680,6 +18522,17 @@
     "success"
    ]
   },
+  "GitHubTestConnectionRequest": {
+   "properties": {
+    "provider": "backend__app__schemas__github_backup__ProviderType",
+    "repo_url": "string",
+    "token": "string"
+   },
+   "required": [
+    "repo_url",
+    "token"
+   ]
+  },
   "GitHubTestConnectionResponse": {
    "properties": {
     "is_private": "anyOf(boolean,null)",
@@ -16706,8 +18559,11 @@
   "GroupCreate": {
    "properties": {
     "description": "anyOf(string,null)",
+    "locations": "[string]",
     "name": "string",
-    "permissions": "[string]"
+    "permissions": "[string]",
+    "printer_ids": "[integer]",
+    "restrict_printers": "boolean"
    },
    "required": [
     "name"
@@ -16719,8 +18575,11 @@
     "description": "anyOf(string,null)",
     "id": "integer",
     "is_system": "boolean",
+    "locations": "[string]",
     "name": "string",
     "permissions": "[string]",
+    "printer_ids": "[integer]",
+    "restrict_printers": "boolean",
     "updated_at": "string",
     "user_count": "integer",
     "users": "[UserBrief]"
@@ -16741,8 +18600,11 @@
     "description": "anyOf(string,null)",
     "id": "integer",
     "is_system": "boolean",
+    "locations": "[string]",
     "name": "string",
     "permissions": "[string]",
+    "printer_ids": "[integer]",
+    "restrict_printers": "boolean",
     "updated_at": "string",
     "user_count": "integer"
    },
@@ -16759,8 +18621,11 @@
   "GroupUpdate": {
    "properties": {
     "description": "anyOf(string,null)",
+    "locations": "anyOf([string],null)",
     "name": "anyOf(string,null)",
-    "permissions": "anyOf([string],null)"
+    "permissions": "anyOf([string],null)",
+    "printer_ids": "anyOf([integer],null)",
+    "restrict_printers": "anyOf(boolean,null)"
    },
    "required": []
   },
@@ -16933,6 +18798,191 @@
    "required": [
     "action",
     "print_error"
+   ]
+  },
+  "HourEventCreate": {
+   "properties": {
+    "event_date": "string",
+    "label": "string"
+   },
+   "required": [
+    "event_date",
+    "label"
+   ]
+  },
+  "HourEventOut": {
+   "properties": {
+    "event_date": "string",
+    "id": "integer",
+    "kind": "string",
+    "label": "string",
+    "machine_id": "integer",
+    "source_id": "anyOf(integer,null)"
+   },
+   "required": [
+    "event_date",
+    "id",
+    "kind",
+    "label",
+    "machine_id"
+   ]
+  },
+  "HourImportBody": {
+   "properties": {
+    "new_machines": "[HourMachineCreate]",
+    "readings": "[HourImportReading]"
+   },
+   "required": [
+    "readings"
+   ]
+  },
+  "HourImportReading": {
+   "properties": {
+    "hours": "number",
+    "key": "anyOf(string,null)",
+    "machine_id": "anyOf(integer,null)",
+    "reading_date": "string"
+   },
+   "required": [
+    "hours",
+    "reading_date"
+   ]
+  },
+  "HourImportResult": {
+   "properties": {
+    "machines_created": "integer",
+    "readings_written": "integer"
+   },
+   "required": [
+    "machines_created",
+    "readings_written"
+   ]
+  },
+  "HourMachineCreate": {
+   "properties": {
+    "key": "string",
+    "model": "anyOf(string,null)",
+    "name": "string"
+   },
+   "required": [
+    "key",
+    "name"
+   ]
+  },
+  "HourMachineOut": {
+   "properties": {
+    "added_on": "anyOf(string,null)",
+    "calibrated_at": "anyOf(string,null)",
+    "counter_raw_hours": "anyOf(number,null)",
+    "current_hours": "anyOf(number,null)",
+    "id": "integer",
+    "last_drift_hours": "anyOf(number,null)",
+    "model": "anyOf(string,null)",
+    "name": "string",
+    "next_service_hours": "anyOf(number,null)",
+    "printer_id": "anyOf(integer,null)",
+    "purchase_date": "anyOf(string,null)",
+    "purchase_price": "anyOf(number,null)",
+    "retired": "boolean",
+    "trust": "anyOf(string,null)"
+   },
+   "required": [
+    "current_hours",
+    "id",
+    "model",
+    "name",
+    "printer_id",
+    "retired"
+   ]
+  },
+  "HourMachineUpdate": {
+   "properties": {
+    "model": "anyOf(string,null)",
+    "name": "anyOf(string,null)",
+    "purchase_date": "anyOf(string,null)",
+    "purchase_price": "anyOf(number,null)"
+   },
+   "required": []
+  },
+  "HourReadingBatch": {
+   "properties": {
+    "entries": "[HourReadingEntry]",
+    "reading_date": "string"
+   },
+   "required": [
+    "entries",
+    "reading_date"
+   ]
+  },
+  "HourReadingEntry": {
+   "properties": {
+    "hours": "anyOf(number,null)",
+    "machine_id": "integer"
+   },
+   "required": [
+    "machine_id"
+   ]
+  },
+  "HourReadingOut": {
+   "properties": {
+    "hours": "number",
+    "id": "integer",
+    "machine_id": "integer",
+    "raw_hours": "anyOf(number,null)",
+    "reading_date": "string",
+    "source": "string"
+   },
+   "required": [
+    "hours",
+    "id",
+    "machine_id",
+    "reading_date",
+    "source"
+   ]
+  },
+  "HourSettingsUpdate": {
+   "properties": {
+    "reading_interval_days": "integer"
+   },
+   "required": [
+    "reading_interval_days"
+   ]
+  },
+  "HoursOverview": {
+   "properties": {
+    "due_machine_ids": "[integer]",
+    "events": "[HourEventOut]",
+    "machines": "[HourMachineOut]",
+    "reading_interval_days": "integer",
+    "readings": "[HourReadingOut]",
+    "today": "string"
+   },
+   "required": [
+    "machines",
+    "readings",
+    "today"
+   ]
+  },
+  "ImportLibraryFilesRequest": {
+   "properties": {
+    "file_ids": "[integer]",
+    "item_id": "anyOf(integer,null)",
+    "new_item_name": "anyOf(string,null)"
+   },
+   "required": [
+    "file_ids"
+   ]
+  },
+  "ImportLibraryFilesResponse": {
+   "properties": {
+    "copied": "[FiledFileOut]",
+    "moved": "[FiledFileOut]",
+    "skipped": "[SkippedFileOut]"
+   },
+   "required": [
+    "copied",
+    "moved",
+    "skipped"
    ]
   },
   "ImportPreview": {
@@ -17189,12 +19239,24 @@
     "username"
    ]
   },
+  "LDAPTestRequest": {
+   "properties": {
+    "ldap_bind_dn": "anyOf(string,null)",
+    "ldap_bind_password": "anyOf(string,null)",
+    "ldap_search_base": "anyOf(string,null)",
+    "ldap_security": "anyOf(string,null)",
+    "ldap_server_url": "anyOf(string,null)",
+    "ldap_user_filter": "anyOf(string,null)"
+   },
+   "required": []
+  },
   "LabelPreviewRequest": {
    "properties": {
     "fields": "anyOf([string],null)",
+    "layout": "anyOf(SheetLayoutSpec,null)",
     "monochrome": "boolean",
     "spool_id": "integer",
-    "template": "string"
+    "template": "anyOf(string,string)"
    },
    "required": [
     "spool_id",
@@ -17206,14 +19268,41 @@
     "dpi": "integer",
     "fields": "anyOf([string],null)",
     "format": "string",
+    "layout": "anyOf(SheetLayoutSpec,null)",
     "monochrome": "boolean",
     "spool_ids": "[integer]",
     "starting_position": "integer",
-    "template": "string"
+    "template": "anyOf(string,string)"
    },
    "required": [
     "spool_ids",
     "template"
+   ]
+  },
+  "LabelTemplateIn": {
+   "properties": {
+    "layout": "SheetLayoutSpec",
+    "name": "string"
+   },
+   "required": [
+    "layout",
+    "name"
+   ]
+  },
+  "LabelTemplateResponse": {
+   "properties": {
+    "created_at": "string",
+    "id": "integer",
+    "layout": "SheetLayoutResponse",
+    "name": "string",
+    "updated_at": "string"
+   },
+   "required": [
+    "created_at",
+    "id",
+    "layout",
+    "name",
+    "updated_at"
    ]
   },
   "LatestFirmwareInfo": {
@@ -17227,6 +19316,57 @@
     "download_url",
     "model_key",
     "version"
+   ]
+  },
+  "LegacyMigrationCurrent": {
+   "properties": {
+    "code": "anyOf(string,null)",
+    "project_id": "integer"
+   },
+   "required": [
+    "project_id"
+   ]
+  },
+  "LegacyMigrationFailure": {
+   "properties": {
+    "code": "anyOf(string,null)",
+    "error": "string",
+    "project_id": "integer"
+   },
+   "required": [
+    "error",
+    "project_id"
+   ]
+  },
+  "LegacyMigrationLastRun": {
+   "properties": {
+    "files_copied": "integer",
+    "files_moved": "integer",
+    "finished_at": "string",
+    "projects": "integer"
+   },
+   "required": [
+    "files_copied",
+    "files_moved",
+    "finished_at",
+    "projects"
+   ]
+  },
+  "LegacyMigrationStatus": {
+   "properties": {
+    "current": "anyOf(LegacyMigrationCurrent,null)",
+    "done": "integer",
+    "failures": "[LegacyMigrationFailure]",
+    "last_run": "anyOf(LegacyMigrationLastRun,null)",
+    "pending": "integer",
+    "running": "boolean",
+    "total": "integer"
+   },
+   "required": [
+    "done",
+    "pending",
+    "running",
+    "total"
    ]
   },
   "LinkSpoolRequest": {
@@ -17256,6 +19396,80 @@
    "required": [
     "name"
    ]
+  },
+  "LinkedProjectRef": {
+   "properties": {
+    "code": "anyOf(string,null)",
+    "id": "integer",
+    "name": "string"
+   },
+   "required": [
+    "code",
+    "id",
+    "name"
+   ]
+  },
+  "LoadedSpoolPreset": {
+   "properties": {
+    "preset_id": "string",
+    "preset_name": "string",
+    "preset_source": "string",
+    "tray_info_idx": "anyOf(string,null)"
+   },
+   "required": [
+    "preset_id",
+    "preset_name",
+    "preset_source"
+   ]
+  },
+  "LoadedSpoolPrinter": {
+   "properties": {
+    "ams": "[LoadedSpoolUnit]",
+    "external": "[LoadedSpoolTray]",
+    "external_holders": "integer",
+    "id": "integer",
+    "model": "anyOf(string,null)",
+    "name": "string"
+   },
+   "required": [
+    "id",
+    "name"
+   ]
+  },
+  "LoadedSpoolTray": {
+   "properties": {
+    "ams_id": "integer",
+    "exists": "anyOf(boolean,null)",
+    "saved_preset": "anyOf(LoadedSpoolPreset,null)",
+    "state": "anyOf(integer,null)",
+    "tray_color": "anyOf(string,null)",
+    "tray_id": "integer",
+    "tray_info_idx": "anyOf(string,null)",
+    "tray_sub_brands": "anyOf(string,null)",
+    "tray_type": "anyOf(string,null)"
+   },
+   "required": [
+    "ams_id",
+    "tray_id"
+   ]
+  },
+  "LoadedSpoolUnit": {
+   "properties": {
+    "id": "integer",
+    "is_ams_ht": "boolean",
+    "trays": "[LoadedSpoolTray]"
+   },
+   "required": [
+    "id",
+    "is_ams_ht",
+    "trays"
+   ]
+  },
+  "LoadedSpoolsResponse": {
+   "properties": {
+    "printers": "[LoadedSpoolPrinter]"
+   },
+   "required": []
   },
   "LocalPresetCreate": {
    "properties": {
@@ -17728,6 +19942,159 @@
     "user_id"
    ]
   },
+  "ManyfoldConfigResponse": {
+   "properties": {
+    "client_id": "string",
+    "configured": "boolean",
+    "has_client_secret": "boolean",
+    "url": "string"
+   },
+   "required": [
+    "client_id",
+    "configured",
+    "has_client_secret",
+    "url"
+   ]
+  },
+  "ManyfoldConfigUpdate": {
+   "properties": {
+    "client_id": "string",
+    "client_secret": "anyOf(string,null)",
+    "url": "string"
+   },
+   "required": [
+    "client_id",
+    "url"
+   ]
+  },
+  "ManyfoldFile": {
+   "properties": {
+    "id": "string",
+    "importable": "boolean",
+    "library_file": "anyOf(ManyfoldLibraryRef,null)",
+    "mime": "string",
+    "name": "string"
+   },
+   "required": [
+    "id",
+    "importable",
+    "mime",
+    "name"
+   ]
+  },
+  "ManyfoldImportRequest": {
+   "properties": {
+    "file_id": "string",
+    "folder_id": "anyOf(integer,null)",
+    "model_id": "string"
+   },
+   "required": [
+    "file_id",
+    "model_id"
+   ]
+  },
+  "ManyfoldImportResponse": {
+   "properties": {
+    "filename": "string",
+    "folder_id": "anyOf(integer,null)",
+    "library_file_id": "integer",
+    "was_existing": "boolean"
+   },
+   "required": [
+    "filename",
+    "folder_id",
+    "library_file_id",
+    "was_existing"
+   ]
+  },
+  "ManyfoldLibraryRef": {
+   "properties": {
+    "filename": "string",
+    "folder_id": "anyOf(integer,null)",
+    "id": "integer"
+   },
+   "required": [
+    "filename",
+    "folder_id",
+    "id"
+   ]
+  },
+  "ManyfoldModel": {
+   "properties": {
+    "caption": "anyOf(string,null)",
+    "description": "anyOf(string,null)",
+    "files": "[ManyfoldFile]",
+    "has_preview": "boolean",
+    "id": "string",
+    "license": "anyOf(string,null)",
+    "name": "string",
+    "tags": "[string]",
+    "url": "string"
+   },
+   "required": [
+    "files",
+    "has_preview",
+    "id",
+    "name",
+    "tags",
+    "url"
+   ]
+  },
+  "ManyfoldModelList": {
+   "properties": {
+    "has_next": "boolean",
+    "has_previous": "boolean",
+    "models": "[ManyfoldModelSummary]",
+    "page": "integer",
+    "total": "integer"
+   },
+   "required": [
+    "has_next",
+    "has_previous",
+    "models",
+    "page",
+    "total"
+   ]
+  },
+  "ManyfoldModelSummary": {
+   "properties": {
+    "id": "string",
+    "name": "string"
+   },
+   "required": [
+    "id",
+    "name"
+   ]
+  },
+  "ManyfoldStatus": {
+   "properties": {
+    "configured": "boolean",
+    "url": "string"
+   },
+   "required": [
+    "configured",
+    "url"
+   ]
+  },
+  "ManyfoldTestRequest": {
+   "properties": {
+    "client_id": "string",
+    "client_secret": "anyOf(string,null)",
+    "url": "string"
+   },
+   "required": [
+    "client_id",
+    "url"
+   ]
+  },
+  "ManyfoldTestResponse": {
+   "properties": {
+    "model_count": "integer"
+   },
+   "required": [
+    "model_count"
+   ]
+  },
   "MaterialNumberStats": {
    "properties": {
     "consumed_g": "number",
@@ -17742,6 +20109,15 @@
     "material_number",
     "remaining_g",
     "spool_count"
+   ]
+  },
+  "NextPause": {
+   "properties": {
+    "layer": "integer",
+    "minutes": "anyOf(integer,null)"
+   },
+   "required": [
+    "layer"
    ]
   },
   "NormalizedFilament": {
@@ -17819,6 +20195,7 @@
   },
   "NotificationProviderCreate": {
    "properties": {
+    "attach_photo": "boolean",
     "config": "object",
     "daily_digest_enabled": "boolean",
     "daily_digest_time": "anyOf(string,null)",
@@ -17845,6 +20222,7 @@
     "on_print_confirm_request": "boolean",
     "on_print_failed": "boolean",
     "on_print_missing_spool_assignment": "boolean",
+    "on_print_pause_upcoming": "boolean",
     "on_print_progress": "boolean",
     "on_print_start": "boolean",
     "on_print_stopped": "boolean",
@@ -17874,6 +20252,7 @@
   },
   "NotificationProviderResponse": {
    "properties": {
+    "attach_photo": "boolean",
     "config": "object",
     "created_at": "string",
     "daily_digest_enabled": "boolean",
@@ -17905,6 +20284,7 @@
     "on_print_confirm_request": "boolean",
     "on_print_failed": "boolean",
     "on_print_missing_spool_assignment": "boolean",
+    "on_print_pause_upcoming": "boolean",
     "on_print_progress": "boolean",
     "on_print_start": "boolean",
     "on_print_stopped": "boolean",
@@ -17938,6 +20318,7 @@
   },
   "NotificationProviderUpdate": {
    "properties": {
+    "attach_photo": "anyOf(boolean,null)",
     "config": "anyOf(object,null)",
     "daily_digest_enabled": "anyOf(boolean,null)",
     "daily_digest_time": "anyOf(string,null)",
@@ -17964,6 +20345,7 @@
     "on_print_confirm_request": "anyOf(boolean,null)",
     "on_print_failed": "anyOf(boolean,null)",
     "on_print_missing_spool_assignment": "anyOf(boolean,null)",
+    "on_print_pause_upcoming": "anyOf(boolean,null)",
     "on_print_progress": "anyOf(boolean,null)",
     "on_print_start": "anyOf(boolean,null)",
     "on_print_stopped": "anyOf(boolean,null)",
@@ -18018,7 +20400,9 @@
   },
   "NotificationTestRequest": {
    "properties": {
+    "attach_photo": "boolean",
     "config": "object",
+    "provider_id": "anyOf(integer,null)",
     "provider_type": "backend__app__schemas__notification__ProviderType"
    },
    "required": [
@@ -18254,6 +20638,30 @@
     "name",
     "setting_id",
     "type"
+   ]
+  },
+  "OrderBoardSettingsBody": {
+   "properties": {
+    "core_brands": "[string]",
+    "max_age_days": "integer",
+    "sync_enabled": "boolean",
+    "sync_minutes": "integer"
+   },
+   "required": [
+    "core_brands",
+    "max_age_days",
+    "sync_enabled",
+    "sync_minutes"
+   ]
+  },
+  "OrderProjectLinks": {
+   "properties": {
+    "order_id": "integer",
+    "tasks": "[TaskProjectLink]"
+   },
+   "required": [
+    "order_id",
+    "tasks"
    ]
   },
   "PendingUploadResponse": {
@@ -18571,25 +20979,36 @@
    "properties": {
     "archive_id": "anyOf(integer,null)",
     "completed_at": "anyOf(string,null)",
+    "confirm_requested": "anyOf(boolean,null)",
     "cost": "anyOf(number,null)",
     "created_at": "string",
     "created_by_id": "anyOf(integer,null)",
     "created_by_username": "anyOf(string,null)",
     "duration_seconds": "anyOf(integer,null)",
+    "duration_unmeasured": "anyOf(boolean,null)",
     "energy_cost": "anyOf(number,null)",
     "energy_kwh": "anyOf(number,null)",
+    "estimate_grams": "anyOf(number,null)",
+    "estimate_seconds": "anyOf(integer,null)",
     "failure_reason": "anyOf(string,null)",
     "filament_color": "anyOf(string,null)",
     "filament_type": "anyOf(string,null)",
     "filament_used_grams": "anyOf(number,null)",
     "id": "integer",
+    "notes": "anyOf(string,null)",
+    "photos": "anyOf([string],null)",
+    "plate_id": "anyOf(integer,null)",
     "print_name": "anyOf(string,null)",
     "printer_id": "anyOf(integer,null)",
     "printer_name": "anyOf(string,null)",
+    "quantity": "anyOf(integer,null)",
     "started_at": "anyOf(string,null)",
     "status": "string",
     "thumbnail_path": "anyOf(string,null)",
-    "user_verdict": "anyOf(string,null)"
+    "timelapse_path": "anyOf(string,null)",
+    "user_verdict": "anyOf(string,null)",
+    "user_verdict_source": "anyOf(string,null)",
+    "wear_cost": "anyOf(number,null)"
    },
    "required": [
     "created_at",
@@ -18600,12 +21019,14 @@
   "PrintLogEntryUpdate": {
    "properties": {
     "failure_reason": "anyOf(string,null)",
+    "notes": "anyOf(string,null)",
     "status": "anyOf(string,null)"
    },
    "required": []
   },
   "PrintLogResponse": {
    "properties": {
+    "deleted_archive_ids": "[integer]",
     "items": "[PrintLogEntrySchema]",
     "total": "integer"
    },
@@ -18672,8 +21093,31 @@
     "updated_count"
    ]
   },
+  "PrintQueueHistoryClearResponse": {
+   "properties": {
+    "cleared": "integer",
+    "kept": "integer"
+   },
+   "required": [
+    "cleared",
+    "kept"
+   ]
+  },
+  "PrintQueueHistoryResponse": {
+   "properties": {
+    "items": "[PrintQueueItemResponse]",
+    "locations": "[string]",
+    "total": "integer"
+   },
+   "required": [
+    "items",
+    "locations",
+    "total"
+   ]
+  },
   "PrintQueueItemCreate": {
    "properties": {
+    "aito_task_id": "anyOf(integer,null)",
     "ams_mapping": "anyOf([integer],null)",
     "archive_id": "anyOf(integer,null)",
     "auto_off_after": "boolean",
@@ -18714,6 +21158,12 @@
   },
   "PrintQueueItemResponse": {
    "properties": {
+    "aito_board_column": "anyOf(string,null)",
+    "aito_client_name": "anyOf(string,null)",
+    "aito_due_date": "anyOf(string,null)",
+    "aito_quantity": "anyOf(integer,null)",
+    "aito_task_id": "anyOf(integer,null)",
+    "aito_task_title": "anyOf(string,null)",
     "ams_mapping": "anyOf([integer],null)",
     "archive_deleted": "boolean",
     "archive_has_slicer_ams_mapping": "boolean",
@@ -18727,6 +21177,7 @@
     "bed_type": "anyOf(string,null)",
     "been_jumped": "boolean",
     "cleanup_library_after_dispatch": "boolean",
+    "color_substitutions": "anyOf([ColorSubstitution],null)",
     "completed_at": "anyOf(string,null)",
     "confirm_outcome": "boolean",
     "cost_center_id": "anyOf(integer,null)",
@@ -18760,10 +21211,17 @@
     "print_time_seconds": "anyOf(integer,null)",
     "printer_id": "anyOf(integer,null)",
     "printer_name": "anyOf(string,null)",
+    "project_code": "anyOf(string,null)",
+    "project_name": "anyOf(string,null)",
     "require_previous_success": "boolean",
     "required_filament_types": "anyOf([string],null)",
+    "revision_id": "anyOf(integer,null)",
+    "revision_item_name": "anyOf(string,null)",
+    "revision_number": "anyOf(integer,null)",
+    "revision_status": "anyOf(string,null)",
     "scheduled_time": "anyOf(string,null)",
     "skip_filament_check": "boolean",
+    "slice_job_id": "anyOf(integer,null)",
     "sliced_for_model": "anyOf(string,null)",
     "started_at": "anyOf(string,null)",
     "status": "string",
@@ -18815,6 +21273,7 @@
     "printer_id": "anyOf(integer,null)",
     "require_previous_success": "anyOf(boolean,null)",
     "scheduled_time": "anyOf(string,null)",
+    "skip_filament_check": "anyOf(boolean,null)",
     "target_location": "anyOf(string,null)",
     "target_model": "anyOf(string,null)",
     "timelapse": "anyOf(boolean,null)",
@@ -18841,10 +21300,21 @@
     "position"
    ]
   },
+  "PrinterCardPlugs": {
+   "properties": {
+    "plug": "anyOf(SmartPlugResponse,null)",
+    "scripts": "[SmartPlugResponse]"
+   },
+   "required": [
+    "plug",
+    "scripts"
+   ]
+  },
   "PrinterCreate": {
    "properties": {
     "access_code": "string",
     "auto_archive": "boolean",
+    "camera_light_auto": "boolean",
     "camera_rotation": "integer",
     "external_camera_enabled": "boolean",
     "external_camera_snapshot_url": "anyOf(string,null)",
@@ -18988,6 +21458,74 @@
    },
    "required": []
   },
+  "PrinterLocationAssign": {
+   "properties": {
+    "location": "anyOf(string,null)",
+    "printer_ids": "[integer]"
+   },
+   "required": [
+    "printer_ids"
+   ]
+  },
+  "PrinterLocationAssignResult": {
+   "properties": {
+    "moved": "integer"
+   },
+   "required": [
+    "moved"
+   ]
+  },
+  "PrinterLocationCreate": {
+   "properties": {
+    "color": "anyOf(string,null)",
+    "icon": "anyOf(string,null)",
+    "name": "string"
+   },
+   "required": [
+    "name"
+   ]
+  },
+  "PrinterLocationDelete": {
+   "properties": {
+    "names": "[string]"
+   },
+   "required": [
+    "names"
+   ]
+  },
+  "PrinterLocationDeleteResult": {
+   "properties": {
+    "deleted": "integer",
+    "printers_ungrouped": "integer"
+   },
+   "required": [
+    "deleted",
+    "printers_ungrouped"
+   ]
+  },
+  "PrinterLocationResponse": {
+   "properties": {
+    "color": "anyOf(string,null)",
+    "icon": "anyOf(string,null)",
+    "id": "anyOf(integer,null)",
+    "name": "string",
+    "printer_count": "integer"
+   },
+   "required": [
+    "name"
+   ]
+  },
+  "PrinterLocationUpdate": {
+   "properties": {
+    "color": "anyOf(string,null)",
+    "icon": "anyOf(string,null)",
+    "name": "string",
+    "new_name": "anyOf(string,null)"
+   },
+   "required": [
+    "name"
+   ]
+  },
   "PrinterMaintenanceOverview": {
    "properties": {
     "due_count": "integer",
@@ -19045,6 +21583,7 @@
   "PrinterResponse": {
    "properties": {
     "auto_archive": "boolean",
+    "camera_light_auto": "boolean",
     "camera_rotation": "integer",
     "created_at": "string",
     "external_camera_enabled": "boolean",
@@ -19064,7 +21603,8 @@
     "serial_number": "string",
     "supports_nozzle_flow_type": "boolean",
     "supports_rtsp": "boolean",
-    "updated_at": "string"
+    "updated_at": "string",
+    "wear_cost_per_hour": "anyOf(number,null)"
    },
    "required": [
     "created_at",
@@ -19114,6 +21654,7 @@
     "drying_screen_only": "boolean",
     "exhaust_fan_present": "boolean",
     "expected_tray": "anyOf(integer,null)",
+    "external_storage_warning": "anyOf(string,null)",
     "extruder_slots": "object",
     "fila_switch": "anyOf(FilaSwitchResponse,null)",
     "firmware_version": "anyOf(string,null)",
@@ -19127,6 +21668,7 @@
     "left_aux_fan_speed": "anyOf(integer,null)",
     "mc_print_sub_stage": "integer",
     "name": "string",
+    "next_pause": "anyOf(NextPause,null)",
     "nozzle_rack": "[NozzleRackSlot]",
     "nozzles": "[NozzleInfoResponse]",
     "previous_tray": "anyOf(integer,null)",
@@ -19148,6 +21690,7 @@
     "temperatures": "anyOf(object,null)",
     "timelapse": "boolean",
     "total_layers": "anyOf(integer,null)",
+    "tray_change_log": "[[integer]]",
     "tray_now": "integer",
     "vt_tray": "[AMSTray]",
     "wifi_signal": "anyOf(integer,null)",
@@ -19190,6 +21733,7 @@
    "properties": {
     "access_code": "anyOf(string,null)",
     "auto_archive": "anyOf(boolean,null)",
+    "camera_light_auto": "anyOf(boolean,null)",
     "camera_rotation": "anyOf(integer,null)",
     "external_camera_enabled": "anyOf(boolean,null)",
     "external_camera_snapshot_url": "anyOf(string,null)",
@@ -19202,9 +21746,65 @@
     "name": "anyOf(string,null)",
     "plate_detection_enabled": "anyOf(boolean,null)",
     "plate_detection_roi": "anyOf(PlateDetectionROI,null)",
-    "print_hours_offset": "anyOf(number,null)"
+    "print_hours_offset": "anyOf(number,null)",
+    "wear_cost_per_hour": "anyOf(number,null)"
    },
    "required": []
+  },
+  "ProfileDefaultApplyResult": {
+   "properties": {
+    "updated": "integer"
+   },
+   "required": [
+    "updated"
+   ]
+  },
+  "ProjectCatalogItem": {
+   "properties": {
+    "client_names": "[string]",
+    "code": "anyOf(string,null)",
+    "description": "anyOf(string,null)",
+    "files_count": "integer",
+    "folder_id": "anyOf(integer,null)",
+    "has_unsliced_only": "boolean",
+    "id": "integer",
+    "last_activity": "string",
+    "name": "string",
+    "open_orders": "[CatalogOpenOrder]",
+    "printed_count": "integer",
+    "recommended": "anyOf(CatalogRecommended,null)",
+    "status": "string",
+    "tags": "[ProjectTagRef]",
+    "target_count": "anyOf(integer,null)",
+    "thumbnail_file_id": "anyOf(integer,null)"
+   },
+   "required": [
+    "client_names",
+    "code",
+    "description",
+    "files_count",
+    "folder_id",
+    "has_unsliced_only",
+    "id",
+    "last_activity",
+    "name",
+    "open_orders",
+    "printed_count",
+    "recommended",
+    "status",
+    "tags",
+    "target_count",
+    "thumbnail_file_id"
+   ]
+  },
+  "ProjectCatalogResponse": {
+   "properties": {
+    "items": "[ProjectCatalogItem]",
+    "truncated": "boolean"
+   },
+   "required": [
+    "items"
+   ]
   },
   "ProjectChildPreview": {
    "properties": {
@@ -19234,9 +21834,11 @@
     "description": "anyOf(string,null)",
     "due_date": "anyOf(string,null)",
     "name": "string",
+    "new_tag_names": "anyOf([string],null)",
     "notes": "anyOf(string,null)",
     "parent_id": "anyOf(integer,null)",
     "priority": "string",
+    "tag_ids": "anyOf([integer],null)",
     "tags": "anyOf(string,null)",
     "target_count": "anyOf(integer,null)",
     "target_parts_count": "anyOf(integer,null)",
@@ -19247,6 +21849,38 @@
     "name"
    ]
   },
+  "ProjectFileOut": {
+   "properties": {
+    "created_at": "string",
+    "filament_color": "anyOf(string,null)",
+    "filament_type": "anyOf(string,null)",
+    "filament_used_grams": "anyOf(number,null)",
+    "filament_vendor": "anyOf(string,null)",
+    "file_hash": "anyOf(string,null)",
+    "file_size": "integer",
+    "file_type": "string",
+    "filename": "string",
+    "has_thumbnail": "boolean",
+    "id": "integer",
+    "layer_height": "anyOf(number,null)",
+    "nozzle_diameter": "anyOf(number,null)",
+    "object_count": "anyOf(integer,null)",
+    "print_count": "integer",
+    "print_time_seconds": "anyOf(integer,null)",
+    "sliced_for_model": "anyOf(string,null)",
+    "tag_ids": "[integer]",
+    "total_layers": "anyOf(integer,null)"
+   },
+   "required": [
+    "created_at",
+    "file_hash",
+    "file_size",
+    "file_type",
+    "filename",
+    "has_thumbnail",
+    "id"
+   ]
+  },
   "ProjectFileProgress": {
    "properties": {
     "completed_count": "integer",
@@ -19255,6 +21889,62 @@
    "required": [
     "completed_count",
     "file_id"
+   ]
+  },
+  "ProjectFolderCreate": {
+   "properties": {
+    "name": "string",
+    "parent_id": "anyOf(integer,null)"
+   },
+   "required": [
+    "name"
+   ]
+  },
+  "ProjectFolderMove": {
+   "properties": {
+    "folder_id": "anyOf(integer,null)"
+   },
+   "required": []
+  },
+  "ProjectFolderMoveOut": {
+   "properties": {
+    "folder_id": "anyOf(integer,null)",
+    "id": "integer"
+   },
+   "required": [
+    "folder_id",
+    "id"
+   ]
+  },
+  "ProjectFolderOut": {
+   "properties": {
+    "id": "integer",
+    "in_production_count": "integer",
+    "name": "string",
+    "parent_id": "anyOf(integer,null)",
+    "project_count": "integer"
+   },
+   "required": [
+    "id",
+    "in_production_count",
+    "name",
+    "parent_id",
+    "project_count"
+   ]
+  },
+  "ProjectFolderUpdate": {
+   "properties": {
+    "name": "anyOf(string,null)",
+    "parent_id": "anyOf(integer,null)"
+   },
+   "required": []
+  },
+  "ProjectFoldersResponse": {
+   "properties": {
+    "folders": "[ProjectFolderOut]"
+   },
+   "required": [
+    "folders"
    ]
   },
   "ProjectImport": {
@@ -19278,12 +21968,59 @@
     "name"
    ]
   },
+  "ProjectItemCreate": {
+   "properties": {
+    "name": "string",
+    "section": "string"
+   },
+   "required": [
+    "name",
+    "section"
+   ]
+  },
+  "ProjectItemFork": {
+   "properties": {
+    "name": "string",
+    "revision_id": "integer"
+   },
+   "required": [
+    "name",
+    "revision_id"
+   ]
+  },
+  "ProjectItemOut": {
+   "properties": {
+    "forked_from": "anyOf(RevisionRef,null)",
+    "id": "integer",
+    "name": "string",
+    "name_key": "string",
+    "revisions": "[ProjectRevisionOut]",
+    "section": "string"
+   },
+   "required": [
+    "forked_from",
+    "id",
+    "name",
+    "name_key",
+    "revisions",
+    "section"
+   ]
+  },
+  "ProjectItemRename": {
+   "properties": {
+    "name": "string"
+   },
+   "required": [
+    "name"
+   ]
+  },
   "ProjectListResponse": {
    "properties": {
     "archive_count": "integer",
     "archives": "[ArchivePreview]",
     "budget": "anyOf(number,null)",
     "child_count": "integer",
+    "code": "anyOf(string,null)",
     "color": "anyOf(string,null)",
     "completed_count": "integer",
     "cover_image_filename": "anyOf(string,null)",
@@ -19315,11 +22052,74 @@
     "target_count"
    ]
   },
+  "ProjectOrderTask": {
+   "properties": {
+    "board_column": "string",
+    "client_name": "anyOf(string,null)",
+    "created_at": "anyOf(string,null)",
+    "deliveries": "[RevisionRef]",
+    "order_description": "string",
+    "order_id": "integer",
+    "task_id": "integer",
+    "task_title": "anyOf(string,null)"
+   },
+   "required": [
+    "board_column",
+    "client_name",
+    "created_at",
+    "deliveries",
+    "order_description",
+    "order_id",
+    "task_id",
+    "task_title"
+   ]
+  },
+  "ProjectOrdersResponse": {
+   "properties": {
+    "orders": "[ProjectOrderTask]"
+   },
+   "required": [
+    "orders"
+   ]
+  },
+  "ProjectPageUpdate": {
+   "properties": {
+    "copyright": "anyOf(string,null)",
+    "description": "anyOf(string,null)",
+    "designer": "anyOf(string,null)",
+    "license": "anyOf(string,null)",
+    "profile_description": "anyOf(string,null)",
+    "profile_title": "anyOf(string,null)",
+    "title": "anyOf(string,null)"
+   },
+   "required": []
+  },
+  "ProjectReformulateRequest": {
+   "properties": {
+    "field": "string",
+    "text": "string"
+   },
+   "required": [
+    "field",
+    "text"
+   ]
+  },
+  "ProjectReformulateResponse": {
+   "properties": {
+    "model": "string",
+    "text": "string"
+   },
+   "required": [
+    "model",
+    "text"
+   ]
+  },
   "ProjectResponse": {
    "properties": {
     "attachments": "anyOf([None],null)",
     "budget": "anyOf(number,null)",
     "children": "[ProjectChildPreview]",
+    "code": "anyOf(string,null)",
     "color": "anyOf(string,null)",
     "cover_image_filename": "anyOf(string,null)",
     "created_at": "string",
@@ -19336,6 +22136,7 @@
     "rollup_stats": "anyOf(ProjectStats,null)",
     "stats": "anyOf(ProjectStats,null)",
     "status": "string",
+    "tag_list": "[ProjectTagRef]",
     "tags": "anyOf(string,null)",
     "target_count": "anyOf(integer,null)",
     "target_parts_count": "anyOf(integer,null)",
@@ -19353,6 +22154,104 @@
     "status",
     "target_count",
     "updated_at"
+   ]
+  },
+  "ProjectRevisionOut": {
+   "properties": {
+    "created_at": "string",
+    "created_by": "anyOf(string,null)",
+    "derived_from": "anyOf(RevisionRef,null)",
+    "files": "[ProjectFileOut]",
+    "has_snapshot": "boolean",
+    "id": "integer",
+    "note": "anyOf(string,null)",
+    "number": "integer",
+    "outdated_by": "anyOf(RevisionRef,null)",
+    "pipeline_name": "anyOf(string,null)",
+    "print_count": "integer",
+    "print_profile": "anyOf(object,null)",
+    "slice_error": "anyOf(string,null)",
+    "slice_job_id": "anyOf(integer,null)",
+    "slice_status": "anyOf(string,null)",
+    "sliced_file": "anyOf(ProjectFileOut,null)",
+    "slicer_name": "anyOf(string,null)",
+    "slicer_version": "anyOf(string,null)",
+    "status": "string",
+    "status_changed_at": "anyOf(string,null)",
+    "used": "boolean"
+   },
+   "required": [
+    "created_at",
+    "created_by",
+    "derived_from",
+    "files",
+    "has_snapshot",
+    "id",
+    "note",
+    "number",
+    "outdated_by",
+    "print_profile",
+    "slicer_name",
+    "slicer_version",
+    "status",
+    "status_changed_at",
+    "used"
+   ]
+  },
+  "ProjectRevisionUpdate": {
+   "properties": {
+    "derived_from_id": "anyOf(integer,null)",
+    "note": "anyOf(string,null)",
+    "status": "anyOf(string,null)"
+   },
+   "required": []
+  },
+  "ProjectSearchItem": {
+   "properties": {
+    "archive_count": "integer",
+    "code": "anyOf(string,null)",
+    "color": "anyOf(string,null)",
+    "cover_image_filename": "anyOf(string,null)",
+    "created_at": "string",
+    "description": "anyOf(string,null)",
+    "id": "integer",
+    "name": "string",
+    "status": "string",
+    "tags": "[ProjectTagRef]",
+    "updated_at": "string"
+   },
+   "required": [
+    "archive_count",
+    "code",
+    "color",
+    "cover_image_filename",
+    "created_at",
+    "description",
+    "id",
+    "name",
+    "status",
+    "tags",
+    "updated_at"
+   ]
+  },
+  "ProjectSearchResponse": {
+   "properties": {
+    "items": "[ProjectSearchItem]",
+    "total": "integer"
+   },
+   "required": [
+    "items",
+    "total"
+   ]
+  },
+  "ProjectSectionOut": {
+   "properties": {
+    "items": "[ProjectItemOut]",
+    "section": "string"
+   },
+   "required": [
+    "items",
+    "section"
    ]
   },
   "ProjectStats": {
@@ -19374,9 +22273,106 @@
     "total_energy_kwh": "number",
     "total_filament_grams": "number",
     "total_items": "integer",
-    "total_print_time_hours": "number"
+    "total_print_time_hours": "number",
+    "total_wear_cost": "number"
    },
    "required": []
+  },
+  "ProjectSuggestTagsRequest": {
+   "properties": {
+    "description": "anyOf(string,null)",
+    "exclude_tag_ids": "[integer]",
+    "title": "string"
+   },
+   "required": [
+    "title"
+   ]
+  },
+  "ProjectSuggestTagsResponse": {
+   "properties": {
+    "model": "string",
+    "suggestions": "[ProjectTagSuggestion]"
+   },
+   "required": [
+    "model",
+    "suggestions"
+   ]
+  },
+  "ProjectSuggestion": {
+   "properties": {
+    "code": "anyOf(string,null)",
+    "id": "integer",
+    "name": "string",
+    "reason": "string"
+   },
+   "required": [
+    "code",
+    "id",
+    "name",
+    "reason"
+   ]
+  },
+  "ProjectSuggestionForFile": {
+   "properties": {
+    "code": "anyOf(string,null)",
+    "item_id": "anyOf(integer,null)",
+    "item_name": "anyOf(string,null)",
+    "name": "string",
+    "project_id": "integer",
+    "reason": "string",
+    "score": "number"
+   },
+   "required": [
+    "code",
+    "name",
+    "project_id",
+    "reason",
+    "score"
+   ]
+  },
+  "ProjectTagCount": {
+   "properties": {
+    "id": "integer",
+    "name": "string",
+    "project_count": "integer"
+   },
+   "required": [
+    "id",
+    "name",
+    "project_count"
+   ]
+  },
+  "ProjectTagRef": {
+   "properties": {
+    "id": "integer",
+    "name": "string"
+   },
+   "required": [
+    "id",
+    "name"
+   ]
+  },
+  "ProjectTagSuggestion": {
+   "properties": {
+    "name": "string",
+    "tag_id": "anyOf(integer,null)"
+   },
+   "required": [
+    "name",
+    "tag_id"
+   ]
+  },
+  "ProjectTreeResponse": {
+   "properties": {
+    "code": "anyOf(string,null)",
+    "project_id": "integer",
+    "sections": "[ProjectSectionOut]"
+   },
+   "required": [
+    "code",
+    "project_id",
+    "sections"
+   ]
   },
   "ProjectUpdate": {
    "properties": {
@@ -19385,10 +22381,12 @@
     "description": "anyOf(string,null)",
     "due_date": "anyOf(string,null)",
     "name": "anyOf(string,null)",
+    "new_tag_names": "anyOf([string],null)",
     "notes": "anyOf(string,null)",
     "parent_id": "anyOf(integer,null)",
     "priority": "anyOf(string,null)",
     "status": "anyOf(string,null)",
+    "tag_ids": "anyOf([integer],null)",
     "tags": "anyOf(string,null)",
     "target_count": "anyOf(integer,null)",
     "target_parts_count": "anyOf(integer,null)",
@@ -19514,6 +22512,7 @@
    "properties": {
     "headers": "anyOf(string,null)",
     "method": "string",
+    "plug_id": "anyOf(integer,null)",
     "url": "string"
    },
    "required": [
@@ -19545,9 +22544,113 @@
     "message"
    ]
   },
+  "ResliceBody": {
+   "properties": {
+    "file_id": "integer",
+    "pipeline_id": "integer"
+   },
+   "required": [
+    "file_id",
+    "pipeline_id"
+   ]
+  },
+  "ResliceStarted": {
+   "properties": {
+    "job_id": "integer",
+    "status": "string",
+    "status_url": "string"
+   },
+   "required": [
+    "job_id",
+    "status",
+    "status_url"
+   ]
+  },
+  "ResolvedProfileDefault": {
+   "properties": {
+    "default_ids": "[integer]",
+    "k_profiles": "[SpoolKProfileBase]",
+    "presets": "[SpoolFilamentPresetBase]",
+    "slicer_filament": "anyOf(string,null)",
+    "slicer_filament_name": "anyOf(string,null)"
+   },
+   "required": []
+  },
   "RestoreCategory": {
    "properties": {},
    "required": []
+  },
+  "RevisionPinCreate": {
+   "properties": {
+    "text": "string",
+    "x": "number",
+    "y": "number",
+    "z": "number"
+   },
+   "required": [
+    "text",
+    "x",
+    "y",
+    "z"
+   ]
+  },
+  "RevisionPinOut": {
+   "properties": {
+    "created_at": "string",
+    "created_by": "anyOf(string,null)",
+    "id": "integer",
+    "text": "string",
+    "x": "number",
+    "y": "number",
+    "z": "number"
+   },
+   "required": [
+    "created_at",
+    "created_by",
+    "id",
+    "text",
+    "x",
+    "y",
+    "z"
+   ]
+  },
+  "RevisionRef": {
+   "properties": {
+    "id": "integer",
+    "item_id": "integer",
+    "item_name": "string",
+    "number": "integer",
+    "section": "string",
+    "status": "string"
+   },
+   "required": [
+    "id",
+    "item_id",
+    "item_name",
+    "number",
+    "section",
+    "status"
+   ]
+  },
+  "RevisionSliceStarted": {
+   "properties": {
+    "job_id": "anyOf(integer,null)",
+    "slice_status": "string"
+   },
+   "required": [
+    "job_id",
+    "slice_status"
+   ]
+  },
+  "RevisionUploadResponse": {
+   "properties": {
+    "revision": "ProjectRevisionOut",
+    "warnings": "[DuplicateWarning]"
+   },
+   "required": [
+    "revision",
+    "warnings"
+   ]
   },
   "SMTPSettings": {
    "properties": {
@@ -19648,6 +22751,20 @@
     "waiting_reason"
    ]
   },
+  "SectionRevisionSummary": {
+   "properties": {
+    "item_id": "integer",
+    "item_name": "string",
+    "number": "integer",
+    "status": "string"
+   },
+   "required": [
+    "item_id",
+    "item_name",
+    "number",
+    "status"
+   ]
+  },
   "SetCalibrationFactorRequest": {
    "properties": {
     "known_weight_grams": "number",
@@ -19684,6 +22801,52 @@
    },
    "required": [
     "auth_enabled"
+   ]
+  },
+  "SheetLayoutResponse": {
+   "properties": {
+    "col_gap_mm": "number",
+    "cols": "integer",
+    "label_h_mm": "number",
+    "label_w_mm": "number",
+    "left_mm": "number",
+    "page": "string",
+    "row_gap_mm": "number",
+    "rows": "integer",
+    "top_mm": "number"
+   },
+   "required": [
+    "col_gap_mm",
+    "cols",
+    "label_h_mm",
+    "label_w_mm",
+    "left_mm",
+    "page",
+    "row_gap_mm",
+    "rows",
+    "top_mm"
+   ]
+  },
+  "SheetLayoutSpec": {
+   "properties": {
+    "col_gap_mm": "number",
+    "cols": "integer",
+    "label_h_mm": "number",
+    "label_w_mm": "number",
+    "left_mm": "number",
+    "page": "string",
+    "row_gap_mm": "number",
+    "rows": "integer",
+    "top_mm": "number"
+   },
+   "required": [
+    "cols",
+    "label_h_mm",
+    "label_w_mm",
+    "left_mm",
+    "page",
+    "rows",
+    "top_mm"
    ]
   },
   "ShoppingListItemCreate": {
@@ -19731,6 +22894,18 @@
    },
    "required": [
     "status"
+   ]
+  },
+  "SkippedFileOut": {
+   "properties": {
+    "code": "string",
+    "file_id": "integer",
+    "reason": "string"
+   },
+   "required": [
+    "code",
+    "file_id",
+    "reason"
    ]
   },
   "SkippedSpool": {
@@ -19833,6 +23008,7 @@
   },
   "SlicerSetting": {
    "properties": {
+    "filament_id": "anyOf(string,null)",
     "is_custom": "boolean",
     "name": "string",
     "setting_id": "string",
@@ -20044,6 +23220,79 @@
     "updated_at"
    ]
   },
+  "SmartPlugResponseWithSecret": {
+   "properties": {
+    "auto_off": "boolean",
+    "auto_off_after_drying": "boolean",
+    "auto_off_executed": "boolean",
+    "auto_off_persistent": "boolean",
+    "auto_on": "boolean",
+    "controls_printer_power": "boolean",
+    "created_at": "string",
+    "enabled": "boolean",
+    "ha_energy_today_entity": "anyOf(string,null)",
+    "ha_energy_total_entity": "anyOf(string,null)",
+    "ha_entity_id": "anyOf(string,null)",
+    "ha_power_entity": "anyOf(string,null)",
+    "id": "integer",
+    "ip_address": "anyOf(string,null)",
+    "last_checked": "anyOf(string,null)",
+    "last_state": "anyOf(string,null)",
+    "mqtt_energy_multiplier": "number",
+    "mqtt_energy_path": "anyOf(string,null)",
+    "mqtt_energy_topic": "anyOf(string,null)",
+    "mqtt_multiplier": "number",
+    "mqtt_power_multiplier": "number",
+    "mqtt_power_path": "anyOf(string,null)",
+    "mqtt_power_topic": "anyOf(string,null)",
+    "mqtt_state_on_value": "anyOf(string,null)",
+    "mqtt_state_path": "anyOf(string,null)",
+    "mqtt_state_topic": "anyOf(string,null)",
+    "mqtt_topic": "anyOf(string,null)",
+    "name": "string",
+    "off_delay_after_drying_minutes": "integer",
+    "off_delay_minutes": "integer",
+    "off_delay_mode": "string",
+    "off_temp_threshold": "integer",
+    "password": "anyOf(string,null)",
+    "plug_type": "string",
+    "power_alert_enabled": "boolean",
+    "power_alert_high": "anyOf(number,null)",
+    "power_alert_last_triggered": "anyOf(string,null)",
+    "power_alert_low": "anyOf(number,null)",
+    "printer_id": "anyOf(integer,null)",
+    "rest_energy_multiplier": "number",
+    "rest_energy_path": "anyOf(string,null)",
+    "rest_energy_total_multiplier": "number",
+    "rest_energy_total_path": "anyOf(string,null)",
+    "rest_energy_url": "anyOf(string,null)",
+    "rest_headers": "anyOf(string,null)",
+    "rest_method": "anyOf(string,null)",
+    "rest_off_body": "anyOf(string,null)",
+    "rest_off_url": "anyOf(string,null)",
+    "rest_on_body": "anyOf(string,null)",
+    "rest_on_url": "anyOf(string,null)",
+    "rest_power_multiplier": "number",
+    "rest_power_path": "anyOf(string,null)",
+    "rest_power_url": "anyOf(string,null)",
+    "rest_status_on_value": "anyOf(string,null)",
+    "rest_status_path": "anyOf(string,null)",
+    "rest_status_url": "anyOf(string,null)",
+    "schedule_enabled": "boolean",
+    "schedule_off_time": "anyOf(string,null)",
+    "schedule_on_time": "anyOf(string,null)",
+    "show_in_switchbar": "boolean",
+    "show_on_printer_card": "boolean",
+    "updated_at": "string",
+    "username": "anyOf(string,null)"
+   },
+   "required": [
+    "created_at",
+    "id",
+    "name",
+    "updated_at"
+   ]
+  },
   "SmartPlugStatus": {
    "properties": {
     "device_name": "anyOf(string,null)",
@@ -20057,6 +23306,7 @@
    "properties": {
     "ip_address": "string",
     "password": "anyOf(string,null)",
+    "plug_id": "anyOf(integer,null)",
     "username": "anyOf(string,null)"
    },
    "required": [
@@ -20147,6 +23397,7 @@
   "SpoolAssignmentCreate": {
    "properties": {
     "ams_id": "integer",
+    "move": "boolean",
     "printer_id": "integer",
     "spool_id": "integer",
     "tray_id": "integer"
@@ -20339,6 +23590,9 @@
     "id": "integer",
     "k_profiles": "[SpoolKProfileResponse]",
     "label_weight": "integer",
+    "last_dried_at": "anyOf(string,null)",
+    "last_dried_hours": "anyOf(number,null)",
+    "last_dried_temp": "anyOf(integer,null)",
     "last_scale_weight": "anyOf(integer,null)",
     "last_used": "anyOf(string,null)",
     "last_weighed_at": "anyOf(string,null)",
@@ -20373,6 +23627,7 @@
   "SpoolSlotAssignmentRequest": {
    "properties": {
     "ams_id": "integer",
+    "move": "boolean",
     "printer_id": "integer",
     "spoolman_spool_id": "integer",
     "tray_id": "integer"
@@ -20429,6 +23684,7 @@
     "effect_type": "anyOf(string,null)",
     "extra_colors": "anyOf(string,null)",
     "label_weight": "anyOf(integer,null)",
+    "last_dried_at": "anyOf(string,null)",
     "location_id": "anyOf(integer,null)",
     "low_stock_threshold_pct": "anyOf(integer,null)",
     "material": "anyOf(string,null)",
@@ -20457,7 +23713,8 @@
     "percent_used": "integer",
     "print_name": "anyOf(string,null)",
     "printer_id": "anyOf(integer,null)",
-    "spool_id": "integer",
+    "spool_id": "anyOf(integer,null)",
+    "spoolman_spool_id": "anyOf(integer,null)",
     "status": "string",
     "weight_used": "number"
    },
@@ -20465,7 +23722,6 @@
     "created_at",
     "id",
     "percent_used",
-    "spool_id",
     "status",
     "weight_used"
    ]
@@ -20540,6 +23796,7 @@
     "core_weight": "anyOf(integer,null)",
     "cost_per_kg": "anyOf(number,null)",
     "label_weight": "anyOf(integer,null)",
+    "last_dried_at": "anyOf(string,null)",
     "location_id": "anyOf(integer,null)",
     "material": "anyOf(string,null)",
     "note": "anyOf(string,null)",
@@ -20576,6 +23833,7 @@
    "properties": {
     "connected": "boolean",
     "enabled": "boolean",
+    "native_tags": "boolean",
     "url": "anyOf(string,null)"
    },
    "required": [
@@ -20885,6 +24143,52 @@
     "tailscale_ips"
    ]
   },
+  "TaskCreateProjectRequest": {
+   "properties": {
+    "description": "anyOf(string,null)",
+    "name": "string",
+    "new_tag_names": "anyOf([string],null)",
+    "tag_ids": "anyOf([integer],null)"
+   },
+   "required": [
+    "name"
+   ]
+  },
+  "TaskDeliveriesRequest": {
+   "properties": {
+    "revision_ids": "[integer]"
+   },
+   "required": [
+    "revision_ids"
+   ]
+  },
+  "TaskLinkRequest": {
+   "properties": {
+    "project_id": "anyOf(integer,null)"
+   },
+   "required": [
+    "project_id"
+   ]
+  },
+  "TaskProjectLink": {
+   "properties": {
+    "deliveries": "[integer]",
+    "printed": "integer",
+    "project": "anyOf(LinkedProjectRef,null)",
+    "queued": "integer",
+    "rejected": "integer",
+    "sections": "object",
+    "target": "anyOf(integer,null)",
+    "task_id": "integer",
+    "task_title": "anyOf(string,null)"
+   },
+   "required": [
+    "deliveries",
+    "project",
+    "sections",
+    "task_id"
+   ]
+  },
   "TasmotaScanRequest": {
    "properties": {
     "from_ip": "anyOf(string,null)",
@@ -20927,17 +24231,9 @@
     "title"
    ]
   },
-  "TestConnectionRequest": {
-   "properties": {
-    "token": "anyOf(string,null)",
-    "url": "string"
-   },
-   "required": [
-    "url"
-   ]
-  },
   "TestSMTPRequest": {
    "properties": {
+    "smtp": "anyOf(SMTPSettings,null)",
     "test_recipient": "string"
    },
    "required": [
@@ -21086,6 +24382,7 @@
     "filament_colour": "anyOf(string,null)",
     "filament_type": "anyOf(string,null)",
     "id": "string",
+    "inherits": "anyOf(string,null)",
     "name": "string",
     "source": "string"
    },
@@ -21110,7 +24407,8 @@
     "local": "UnifiedPresetsBySlot",
     "orca_cloud": "UnifiedPresetsBySlot",
     "orca_cloud_status": "string",
-    "standard": "UnifiedPresetsBySlot"
+    "standard": "UnifiedPresetsBySlot",
+    "stock_aliases": "object"
    },
    "required": []
   },
@@ -21142,15 +24440,6 @@
    "required": [
     "spool_id",
     "weight_grams"
-   ]
-  },
-  "UpdateStatusRequest": {
-   "properties": {
-    "message": "anyOf(string,null)",
-    "status": "string"
-   },
-   "required": [
-    "status"
    ]
   },
   "UserBrief": {
@@ -21424,7 +24713,7 @@
     "print_queue_id": "anyOf(integer,null)",
     "print_run_id": "anyOf(string,null)",
     "transaction_type": "string",
-    "user_id": "integer"
+    "user_id": "anyOf(integer,null)"
    },
    "required": [
     "amount",
@@ -21772,6 +25061,22 @@
    "properties": {
     "updates": "[backend__app__api__routes__firmware__FirmwareUpdateInfo]",
     "updates_available": "integer"
+   },
+   "required": []
+  },
+  "backend__app__api__routes__obico__TestConnectionRequest": {
+   "properties": {
+    "token": "anyOf(string,null)",
+    "url": "string"
+   },
+   "required": [
+    "url"
+   ]
+  },
+  "backend__app__api__routes__octoeverywhere__TestConnectionRequest": {
+   "properties": {
+    "api_key": "anyOf(string,null)",
+    "confidence": "anyOf(string,null)"
    },
    "required": []
   },
