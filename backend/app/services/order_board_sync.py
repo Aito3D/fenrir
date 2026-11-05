@@ -95,10 +95,17 @@ async def save_settings(db: AsyncSession, settings: OrderBoardSettings) -> None:
     await db.commit()
 
 
-async def _state(db: AsyncSession) -> OrderBoardDoc:
-    state = (
+async def _find_state(db: AsyncSession) -> OrderBoardDoc | None:
+    return (
         await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "state", OrderBoardDoc.zoho_id == "board"))
     ).scalar_one_or_none()
+
+
+async def _state(db: AsyncSession) -> OrderBoardDoc:
+    """The state row, created on first use. Only a sync pass may call this:
+    passes run one at a time, so the row cannot be inserted twice. Reads and
+    settings saves go through ``_find_state`` and never create it."""
+    state = await _find_state(db)
     if state is None:
         state = OrderBoardDoc(kind="state", zoho_id="board", header={}, detail={})
         db.add(state)
@@ -113,7 +120,8 @@ async def _pending_count(db: AsyncSession) -> int:
 
 async def read_board(db: AsyncSession) -> dict:
     """The stored board and the sync status: one local read, no Zoho call."""
-    state = (await _state(db)).detail or {}
+    row = await _find_state(db)
+    state = (row.detail if row else None) or {}
     return {
         "rows": state.get("rows") or [],
         "computed_at": state.get("computed_at"),
@@ -136,9 +144,11 @@ async def recompute(db: AsyncSession) -> None:
     Does nothing until the first complete load: a board built from half the
     documents, or against no stock, would read as fact and be wrong.
     """
-    state = await _state(db)
-    current = state.detail or {}
-    if not current.get("stock_loaded_at") or (not current.get("computed_at") and await _pending_count(db)):
+    state = await _find_state(db)
+    current = (state.detail if state else None) or {}
+    if state is None or not current.get("stock_loaded_at"):
+        return
+    if not current.get("computed_at") and await _pending_count(db):
         return
     settings = await load_settings(db)
     docs = (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind != "state"))).scalars().all()

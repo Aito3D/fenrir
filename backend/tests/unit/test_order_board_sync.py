@@ -358,3 +358,23 @@ async def test_items_are_requested_by_id(db_session, monkeypatch):
 
     monkeypatch.setattr(ZohoService, "_request", fake_request)
     assert len(await zoho_service.list_items_by_ids(db_session, ["1", "2"])) == 2
+
+
+async def _state_rows(db) -> int:
+    return len((await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "state"))).scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_reading_the_board_writes_nothing(db_session, zoho):
+    """The page polls this every few seconds, and two first reads can arrive
+    together: a read that inserted the state row could collide with itself."""
+    await sync.read_board(db_session)
+    assert not db_session.new and not db_session.dirty
+    await db_session.commit()
+    assert await _state_rows(db_session) == 0
+
+
+@pytest.mark.asyncio
+async def test_saving_settings_before_the_first_load_creates_no_state_row(db_session, zoho):
+    await sync.save_settings(db_session, sync.OrderBoardSettings(True, 15, 365, ["eSUN"]))
+    assert await _state_rows(db_session) == 0
