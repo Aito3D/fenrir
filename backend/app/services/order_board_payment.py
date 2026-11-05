@@ -28,7 +28,7 @@ def _text(value) -> str:
 
 def _overdue(invoice: dict, today: date) -> bool:
     try:
-        return date.fromisoformat(invoice.get("due_date")) < today
+        return date.fromisoformat(invoice.get("due_date") or "") < today
     except (TypeError, ValueError):
         return False
 
@@ -87,7 +87,7 @@ def board_payments(orders: list[dict], today: date) -> dict[str, dict | None]:
         payment = order_payment(order, today, pools[customer][1] if customer else 0.0)
         if customer and payment:
             pools[customer] = (pools[customer][0], pools[customer][1] - payment["advance"])
-        result[order.get("salesorder_id")] = payment
+        result[order.get("salesorder_id") or ""] = payment
     return result
 
 

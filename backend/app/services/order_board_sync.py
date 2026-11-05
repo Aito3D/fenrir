@@ -242,7 +242,7 @@ async def read_finished(db: AsyncSession) -> dict:
             "total": d.header.get("total"),
             "currency": d.header.get("currency_code"),
             "reference": d.header.get("reference_number") or "",
-            "paid_flag": _PAID_FLAGS.get(d.header.get("paid_status")),
+            "paid_flag": _PAID_FLAGS.get(d.header.get("paid_status") or ""),
             "payment": order_payment(d.detail, today) if d.detail and not _is_stale(d) else None,
             "zoho_url": f"{base}{d.zoho_id}" if base else None,
         }
@@ -363,7 +363,7 @@ async def _sync(db: AsyncSession) -> None:
     since = (state.detail or {}).get("payments_since")
     paid = await zoho_service.list_customer_payments_modified_since(db, since) if since else None
     everyone = paid is None or paid.truncated
-    customers = set() if everyone else {p.get("customer_id") for p in paid}
+    customers = set() if paid is None or everyone else {p.get("customer_id") for p in paid}
     for doc in stored.values():
         if doc.kind != "salesorder" or not (everyone or doc.header.get("customer_id") in customers):
             continue
