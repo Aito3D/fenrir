@@ -31,7 +31,8 @@ def _r(value: float) -> float:
     return round(value, 6)
 
 
-def _age_days(day: str, today: date) -> int:
+def age_days(day: str, today: date) -> int:
+    """Whole days from an ISO day to today, never negative; 0 when unparseable."""
     try:
         return max(0, (today - date.fromisoformat(day)).days)
     except (TypeError, ValueError):
@@ -168,7 +169,7 @@ def compute_board(
 
     kept: list[tuple[dict, int, list[dict]]] = []
     for order in sorted(orders, key=lambda o: (o.get("date") or "", o.get("salesorder_number") or "")):
-        age = _age_days(order.get("date") or "", today)
+        age = age_days(order.get("date") or "", today)
         if order.get("status") in _SKIPPED_STATUSES or (max_age_days > 0 and age > max_age_days):
             continue
         kept.append((order, age, [_line(raw, items) for raw in order.get("line_items") or []]))

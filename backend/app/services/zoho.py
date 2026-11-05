@@ -944,6 +944,48 @@ class ZohoService:
         )
         return body.get("items") or [], bool((body.get("page_context") or {}).get("has_more_page"))
 
+    # --- Order Board: read-only listings of sales orders, purchase orders and stock ---
+
+    async def _list_all(self, db: AsyncSession, path: str, key: str) -> list[dict]:
+        """Every row of a Books listing, 200 per page."""
+        rows: list[dict] = []
+        # shortcut: stops at 50 pages (10,000 documents), raise it if the org outgrows that
+        for page in range(1, 51):
+            body = await self._request(db, "GET", path, params={"page": page, "per_page": 200})
+            rows += body.get(key) or []
+            if not (body.get("page_context") or {}).get("has_more_page"):
+                break
+        return rows
+
+    async def list_salesorders(self, db: AsyncSession) -> list[dict]:
+        """Every sales order's list row (no line items)."""
+        return await self._list_all(db, "/salesorders", "salesorders")
+
+    async def list_purchaseorders(self, db: AsyncSession) -> list[dict]:
+        """Every purchase order's list row (no line items)."""
+        return await self._list_all(db, "/purchaseorders", "purchaseorders")
+
+    async def get_salesorder(self, db: AsyncSession, salesorder_id: str) -> dict:
+        """One sales order as Books states it: line items and packages included."""
+        return (await self._request(db, "GET", f"/salesorders/{_seg(salesorder_id)}")).get("salesorder", {})
+
+    async def get_purchaseorder(self, db: AsyncSession, purchaseorder_id: str) -> dict:
+        """One purchase order as Books states it, line items included."""
+        return (await self._request(db, "GET", f"/purchaseorders/{_seg(purchaseorder_id)}")).get("purchaseorder", {})
+
+    async def list_items_by_ids(self, db: AsyncSession, item_ids: list[str]) -> list[dict]:
+        """The Books items with these ids (stock on hand, brand, track_inventory).
+
+        ``/items`` rather than ``/itemdetails``: the latter omits ``brand`` and
+        ``track_inventory``. The caller batches; ids travel in the query string.
+        """
+        body = await self._request(db, "GET", "/items", params={"item_ids": ",".join(item_ids), "per_page": 200})
+        return body.get("items") or []
+
+    async def books_salesorder_url_base(self, db: AsyncSession) -> str:
+        """Prefix of a sales order's deep link in the Books web app; append the id."""
+        return f"{await self._books_app_base(db)}#/salesorders/"
+
     async def get_shipping_catalogue(self, db: AsyncSession, *, refresh: bool = True) -> dict[str, ShippingItem]:
         """The 5 "Livraison Avion" items, resolved from Books and cached.
 

@@ -660,6 +660,7 @@ async def init_db():
         notification_template,
         oidc_provider,
         orca_base_cache,
+        order_board_doc,
         pending_upload,
         pipeline_run,
         print_batch,

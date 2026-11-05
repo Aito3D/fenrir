@@ -12953,6 +12953,11 @@ async def lifespan(app: FastAPI):
 
     start_aito_quote_sync()
 
+    # Start the Order Board's read-only Zoho Books sync (sales orders, purchase orders, stock)
+    from backend.app.services.order_board_sync import start_order_board_sync
+
+    start_order_board_sync()
+
     yield
 
     # Shutdown
