@@ -58,6 +58,11 @@ def so(n, total, *, customer="c1", invoices=(), credit=0.0, fetched="2026-01-19T
         (so(1, 1000, invoices=[inv(999, 0)]), {"state": "partial", "pct": 99}),  # floor, never rounds to 100
         (so(1, 20500, invoices=[inv(44939, 0)]), {"state": "paid", "pct": 100, "invoice_paid": 20500, "rest": 0}),
         (
+            so(1, 20500, invoices=[inv(44939, 20000)]),
+            {"state": "partial", "invoice_paid": 500, "due": 20000, "left": 20000, "rest": 0, "pct": 2},
+        ),
+        (so(1, 1000, invoices=[inv(5000, 5000)]), {"state": "unpaid", "invoice_paid": 0, "paid": 0, "left": 1000}),
+        (
             so(1, 1000, invoices=[inv(1000, 0, status="void"), inv(1000, 1000, status="draft", n=2)]),
             {"state": "unpaid", "due": 0, "invoices": []},
         ),

@@ -819,3 +819,24 @@ async def test_a_stale_mark_set_while_the_fetch_was_in_flight_survives_it(db_ses
     await sync.read_finished_order(db_session, "so1")
     assert zoho.calls["detail"] == calls + 2
     assert "_stale" not in (await _doc(db_session, "so1")).detail
+
+
+@pytest.mark.asyncio
+async def test_a_new_order_fetched_by_a_failed_pass_is_not_finished(db_session, zoho, monkeypatch):
+    await _synced(db_session, zoho, order(1))
+    zoho.add(order(2))
+    real_items = zoho.list_items_by_ids
+
+    async def boom(db, item_ids):
+        raise ZohoUpstreamError("stock boom")
+
+    monkeypatch.setattr(zoho_service, "list_items_by_ids", boom)
+    await sync.run_pass(db_session)  # fetches and commits so2's detail, then fails before recompute
+    assert (await _doc(db_session, "so2")).detail is not None
+    assert (await sync.read_finished(db_session))["rows"] == []
+    with pytest.raises(sync.OrderNotFinished):
+        await sync.read_finished_order(db_session, "so2")
+    monkeypatch.setattr(zoho_service, "list_items_by_ids", real_items)
+    await sync.run_pass(db_session)
+    assert {r["id"] for r in (await sync.read_board(db_session))["rows"]} == {"so1", "so2"}
+    assert (await sync.read_finished(db_session))["rows"] == []

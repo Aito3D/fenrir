@@ -205,7 +205,8 @@ async def _finished_docs(db: AsyncSession) -> list[OrderBoardDoc]:
     state = await _find_state(db)
     current = (state.detail if state else None) or {}
     # shortcut: before the first computed board nothing is "off the board" yet, so only list-row shipping counts
-    on_board = {r["id"] for r in current.get("rows") or []} if current.get("computed_at") else None
+    computed_at: str = current.get("computed_at") or ""
+    on_board = {r["id"] for r in current.get("rows") or []} if computed_at else None
     settings = await load_settings(db)
     docs = (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "salesorder"))).scalars().all()
     return [
@@ -216,6 +217,8 @@ async def _finished_docs(db: AsyncSession) -> list[OrderBoardDoc]:
             on_board is not None
             and d.detail is not None
             and d.zoho_id not in on_board
+            # fetched after the board was computed (a pass that failed before recompute): not shipped, just new
+            and (d.detail.get("_fetched_at") or "~") <= computed_at
             and _is_candidate(d.kind, d.header, settings)
         )
     ]

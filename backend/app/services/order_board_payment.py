@@ -40,10 +40,11 @@ def order_payment(order: dict, today: date, credit: float = 0.0) -> dict | None:
         return None
     invoices = [i for i in order.get("invoices") or [] if i.get("status") not in _IGNORED_INVOICE_STATUSES]
     invoiced = sum(_num(i.get("total")) for i in invoices)
-    invoice_paid = min(total, sum(_num(i.get("total")) - _num(i.get("balance")) for i in invoices))
     overdue_invoices = [i for i in invoices if _overdue(i, today)]
     overdue = sum(_num(i.get("balance")) for i in overdue_invoices)
     due = sum(_num(i.get("balance")) for i in invoices if i not in overdue_invoices)
+    settled = sum(_num(i.get("total")) - _num(i.get("balance")) for i in invoices)
+    invoice_paid = max(0.0, min(total - due - overdue, settled))
     advance = min(_num(credit), max(0.0, total - invoice_paid - due - overdue))
     paid = min(total, invoice_paid + advance)
     next_due = min((i["due_date"] for i in invoices if _num(i.get("balance")) > 0 and i.get("due_date")), default=None)
