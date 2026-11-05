@@ -2,19 +2,26 @@
 process.env.TZ = 'Pacific/Tahiti';
 
 import { describe, expect, it } from 'vitest';
-import type { OrderBoardLine, OrderBoardResponse, OrderBoardRow } from '../../../api/client';
+import type { FinishedOrderRow, OrderBoardLine, OrderBoardResponse, OrderBoardRow, OrderPayment } from '../../../api/client';
 import {
   ageTone,
   byBrand,
+  byFinishedPayment,
+  byPayment,
   bySearch,
   byStatus,
+  countByPayment,
   countByStatus,
+  finishedPayState,
   foldText,
   formatQty,
   isBoardReady,
+  otherOpenOrders,
+  paidPct,
   panelGroups,
   parseDay,
   pollMs,
+  searchFinished,
   sortRows,
   totalValue,
 } from '../../../components/orders/orderBoard';
@@ -29,7 +36,8 @@ const row = (o: Partial<OrderBoardRow> = {}): OrderBoardRow => ({
   id: 'so1', number: 'SO-00001', customer: 'Atelier Moana', date: '2026-10-02', total: 100, currency: 'XPF',
   status: 'to_ship', age_days: 5, is_core: true, ready_ratio: 1, packed: 0,
   units: { total: 1, shipped: 0, ready: 1, backordered: 0, to_order: 0 }, packages: [], lines: [line()],
-  zoho_url: null, ...o,
+  zoho_url: null, customer_id: '', payment: null, contact: null,
+  facts: { channel: '', reference: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null }, ...o,
 });
 
 const board = (o: Partial<OrderBoardResponse> = {}, sync: Partial<OrderBoardResponse['sync']> = {}): OrderBoardResponse => ({
@@ -177,5 +185,70 @@ describe('panelGroups', () => {
   it('keeps a half-packed line in both To prepare and Packed', () => {
     const groups = panelGroups(row({ lines: [line({ quantity: 5, remaining: 5, packed_waiting: 2 })] }));
     expect(groups.map(g => [g.id, g.lines[0].qty, g.lines[0].ofQty])).toEqual([['todo', 3, 5], ['packed', 2, 5]]);
+  });
+});
+
+const pay = (o: Partial<OrderPayment> = {}): OrderPayment => ({
+  state: 'unpaid', pct: 0, paid: 0, invoice_paid: 0, advance: 0, due: 0, overdue: 0, rest: 0, left: 0, next_due: null,
+  invoices: [], ...o,
+});
+
+const payRows = [
+  row({ id: 'a', payment: pay({ state: 'unpaid' }) }),
+  row({ id: 'b', payment: pay({ state: 'partial', overdue: 50 }) }),
+  row({ id: 'c', payment: pay({ state: 'paid' }) }),
+  row({ id: 'd', payment: null }),
+];
+const ids = (rs: { id: string }[]) => rs.map(r => r.id);
+
+describe('payment', () => {
+  it('filters by state, and overdue by amount', () => {
+    expect(ids(byPayment(payRows, 'partial'))).toEqual(['b']);
+    expect(ids(byPayment(payRows, 'overdue'))).toEqual(['b']);
+  });
+  it('a row with no payment matches only "all"', () => {
+    expect(ids(byPayment(payRows, 'all'))).toContain('d');
+    for (const f of ['unpaid', 'partial', 'paid', 'overdue'] as const) expect(ids(byPayment(payRows, f))).not.toContain('d');
+  });
+  it('counts every chip', () => {
+    expect(countByPayment(payRows)).toEqual({ all: 4, unpaid: 1, partial: 1, paid: 1, overdue: 1 });
+  });
+  it('paid share is floored and null without totals', () => {
+    expect(paidPct([row({ total: 1000, payment: pay({ paid: 999 }) })])).toBe(99);
+    expect(paidPct([])).toBeNull();
+  });
+  it('other open orders: same customer, not itself, never by an empty id', () => {
+    const rs = [row({ id: '1', customer_id: 'C' }), row({ id: '2', customer_id: 'C' }), row({ id: '3', customer_id: 'X' }), row({ id: '4' }), row({ id: '5' })];
+    expect(ids(otherOpenOrders(rs, rs[0]))).toEqual(['2']);
+    expect(otherOpenOrders(rs, rs[3])).toEqual([]);
+  });
+  it('search finds a reference', () => {
+    const rs = [row({ id: '1', facts: { ...row().facts, reference: 'PO-77' } }), row({ id: '2' })];
+    expect(ids(bySearch(rs, 'po-77'))).toEqual(['1']);
+  });
+});
+
+const fin = (o: Partial<FinishedOrderRow> = {}): FinishedOrderRow => ({
+  id: 'f1', number: 'SO-00009', customer: 'Lycée Taaone', date: '2026-09-01', total: 100, currency: 'XPF',
+  reference: 'REF-Été', paid_flag: null, payment: null, zoho_url: null, ...o,
+});
+
+describe('finished', () => {
+  it('uses the computed state when there is one, else the Zoho flag', () => {
+    expect(finishedPayState(fin({ paid_flag: 'paid', payment: pay({ state: 'partial' }) }))).toBe('partial');
+    expect(finishedPayState(fin({ paid_flag: 'paid' }))).toBe('paid');
+    expect(finishedPayState(fin())).toBeNull();
+  });
+  it('searches number, customer and reference, ignoring accents', () => {
+    const rs = [fin(), fin({ id: 'f2', number: 'SO-1', customer: 'Other', reference: '' })];
+    expect(ids(searchFinished(rs, 'LYCEE'))).toEqual(['f1']);
+    expect(ids(searchFinished(rs, 'ete'))).toEqual(['f1']);
+    expect(ids(searchFinished(rs, 'so-1'))).toEqual(['f2']);
+  });
+  it('the overdue filter keeps only rows with a computed payment', () => {
+    const rs = [fin({ id: 'x', payment: pay({ overdue: 5 }) }), fin({ id: 'y', paid_flag: 'partial' }), fin({ id: 'z', payment: pay() })];
+    expect(ids(byFinishedPayment(rs, 'overdue'))).toEqual(['x']);
+    expect(ids(byFinishedPayment(rs, 'partial'))).toEqual(['y']);
+    expect(ids(byFinishedPayment(rs, 'all'))).toEqual(['x', 'y', 'z']);
   });
 });

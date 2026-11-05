@@ -48,7 +48,8 @@ const line = (o: Partial<OrderBoardLine> = {}): OrderBoardLine => ({
 
 const row = (o: Partial<OrderBoardRow> = {}): OrderBoardRow => ({
   id: 'so1', number: 'SO-00412', customer: 'Lycée de Taravao', date: '2026-09-12', total: 13600, currency: 'XPF',
-  status: 'to_ship', age_days: 54, is_core: true, ready_ratio: 1, packed: 0,
+  status: 'to_ship', age_days: 54, is_core: true, ready_ratio: 1, packed: 0, customer_id: '', payment: null, contact: null,
+  facts: { channel: '', reference: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null },
   units: { total: 1, shipped: 0, ready: 1, backordered: 0, to_order: 0 }, packages: [], lines: [line()],
   zoho_url: 'https://books.example/app/1#/salesorders/so1', ...o,
 });

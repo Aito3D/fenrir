@@ -1,8 +1,8 @@
 // How each order status and tone looks. One place, so tiles, chips, badges and
 // the progress bar cannot drift apart. Light and dark pairs as elsewhere in the app.
-import { PackageCheck, PackageOpen, ShoppingCart, Truck } from 'lucide-react';
+import { CircleCheck, CircleDashed, CircleDotDashed, PackageCheck, PackageOpen, ShoppingCart, Truck } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { OrderStatus } from '../../api/client';
+import type { OrderPayState, OrderStatus } from '../../api/client';
 
 export type Tone = 'success' | 'info' | 'warning' | 'danger' | 'neutral';
 
@@ -21,4 +21,10 @@ export const STATUS_META: Record<OrderStatus, { tone: Tone; icon: LucideIcon; la
   partial: { tone: 'info', icon: PackageOpen, label: 'orders.status.partial', hint: 'orders.hint.partial' },
   incoming: { tone: 'warning', icon: Truck, label: 'orders.status.incoming', hint: 'orders.hint.incoming' },
   to_order: { tone: 'danger', icon: ShoppingCart, label: 'orders.status.toOrder', hint: 'orders.hint.toOrder' },
+};
+
+export const PAY_META: Record<OrderPayState, { tone: Tone; icon: LucideIcon; label: string }> = {
+  unpaid: { tone: 'neutral', icon: CircleDashed, label: 'orders.pay.unpaid' },
+  partial: { tone: 'neutral', icon: CircleDotDashed, label: 'orders.pay.partial' },
+  paid: { tone: 'success', icon: CircleCheck, label: 'orders.pay.paid' },
 };

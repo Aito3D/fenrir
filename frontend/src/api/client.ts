@@ -5074,6 +5074,12 @@ export interface OrderBoardLine {
   po_numbers: string[];
 }
 
+export type OrderPayState = 'unpaid' | 'partial' | 'paid';
+export interface OrderInvoice { id: string; number: string; date: string; due_date: string; total: number; balance: number; url: string | null }
+export interface OrderPayment { state: OrderPayState; pct: number; paid: number; invoice_paid: number; advance: number; due: number; overdue: number; rest: number; left: number; next_due: string | null; invoices: OrderInvoice[] }
+export interface OrderContact { name: string; email: string; phone: string; mobile: string }
+export interface OrderFacts { channel: string; reference: string; delivery_method: string; payment_terms: string; shopify_url: string | null; quote_url: string | null }
+
 export interface OrderBoardRow {
   id: string;
   number: string;
@@ -5091,7 +5097,16 @@ export interface OrderBoardRow {
   packages: { number: string; status: string; date: string }[];
   lines: OrderBoardLine[];
   zoho_url: string | null;
+  customer_id: string;
+  payment: OrderPayment | null;
+  contact: OrderContact | null;
+  facts: OrderFacts;
 }
+
+/** What the opened panel needs: a board row, or a finished order fetched on demand. */
+export type OrderPanelRow = Omit<OrderBoardRow, 'status'>;
+export type FinishedOrderDetail = OrderPanelRow & { status: 'finished' };
+export interface FinishedOrderRow { id: string; number: string; customer: string; date: string; total: number | null; currency: string; reference: string; paid_flag: OrderPayState | null; payment: OrderPayment | null; zoho_url: string | null }
 
 export interface OrderBoardResponse {
   rows: OrderBoardRow[];
@@ -9803,6 +9818,8 @@ export const api = {
   // Order Board: one local read; refresh runs one bounded Zoho sync pass.
   getOrderBoard: () => request<OrderBoardResponse>('/order-board'),
   refreshOrderBoard: () => request<OrderBoardResponse>('/order-board/refresh', { method: 'POST' }),
+  getFinishedOrders: () => request<{ rows: FinishedOrderRow[] }>('/order-board/finished'),
+  getFinishedOrder: (id: string) => request<FinishedOrderDetail>(`/order-board/finished/${encodeURIComponent(id)}`),
   getOrderBoardSettings: () => request<OrderBoardSettings>('/order-board/settings'),
   updateOrderBoardSettings: (body: OrderBoardSettings) =>
     request<OrderBoardSettings>('/order-board/settings', { method: 'PUT', body: JSON.stringify(body) }),

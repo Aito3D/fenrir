@@ -4,9 +4,18 @@
 //   tiles and total value  -> byBrand only
 //   chip counts            -> byBrand + bySearch
 //   the list               -> byBrand + bySearch + byStatus
-import type { OrderBoardLine, OrderBoardResponse, OrderBoardRow, OrderStatus } from '../../api/client';
+import type {
+  FinishedOrderRow,
+  OrderBoardLine,
+  OrderBoardResponse,
+  OrderBoardRow,
+  OrderPanelRow,
+  OrderPayState,
+  OrderStatus,
+} from '../../api/client';
 
 export type StatusFilter = 'all' | OrderStatus;
+export type PayFilter = 'all' | OrderPayState | 'overdue';
 export type SortKey = 'age' | 'value' | 'customer' | 'ready';
 
 /** Lower-case with accents stripped, so "LYCEE" finds "Lycée". */
@@ -20,7 +29,7 @@ export const bySearch = (rows: OrderBoardRow[], query: string): OrderBoardRow[] 
   const q = foldText(query).trim();
   if (!q) return rows;
   return rows.filter(r =>
-    [r.number, r.customer, ...r.lines.flatMap(l => [l.name, l.sku])].some(text => foldText(text).includes(q)),
+    [r.number, r.customer, r.facts.reference, ...r.lines.flatMap(l => [l.name, l.sku])].some(text => foldText(text).includes(q)),
   );
 };
 
@@ -32,6 +41,39 @@ export const countByStatus = (rows: OrderBoardRow[]): Record<StatusFilter, numbe
   for (const r of rows) counts[r.status] += 1;
   return counts;
 };
+
+const PAY_FILTERS: PayFilter[] = ['all', 'unpaid', 'partial', 'paid', 'overdue'];
+
+const matchesPayment = (p: { state: OrderPayState; overdue: number } | null, filter: PayFilter): boolean =>
+  filter === 'all' || (!!p && (filter === 'overdue' ? p.overdue > 0 : p.state === filter));
+
+export const byPayment = (rows: OrderBoardRow[], filter: PayFilter): OrderBoardRow[] =>
+  rows.filter(r => matchesPayment(r.payment, filter));
+
+export const countByPayment = (rows: OrderBoardRow[]): Record<PayFilter, number> =>
+  Object.fromEntries(PAY_FILTERS.map(f => [f, byPayment(rows, f).length])) as Record<PayFilter, number>;
+
+/** Floored, so 100 only ever means fully paid. */
+export const paidPct = (rows: OrderBoardRow[]): number | null => {
+  const withPay = rows.filter(r => r.payment);
+  const total = withPay.reduce((n, r) => n + (r.total ?? 0), 0);
+  if (total <= 0) return null;
+  return Math.floor((withPay.reduce((n, r) => n + (r.payment?.paid ?? 0), 0) / total) * 100);
+};
+
+export const otherOpenOrders = (rows: OrderBoardRow[], row: OrderBoardRow): OrderBoardRow[] =>
+  row.customer_id ? rows.filter(r => r.customer_id === row.customer_id && r.id !== row.id) : [];
+
+export const finishedPayState = (row: FinishedOrderRow): OrderPayState | null => row.payment?.state ?? row.paid_flag;
+
+export const searchFinished = (rows: FinishedOrderRow[], query: string): FinishedOrderRow[] => {
+  const q = foldText(query).trim();
+  if (!q) return rows;
+  return rows.filter(r => [r.number, r.customer, r.reference].some(text => foldText(text).includes(q)));
+};
+
+export const byFinishedPayment = (rows: FinishedOrderRow[], filter: PayFilter): FinishedOrderRow[] =>
+  rows.filter(r => (filter === 'overdue' || filter === 'all' ? matchesPayment(r.payment, filter) : finishedPayState(r) === filter));
 
 export const totalValue = (rows: OrderBoardRow[]): number => rows.reduce((sum, r) => sum + (r.total ?? 0), 0);
 
@@ -82,7 +124,7 @@ const LIVE = new Set<OrderBoardLine['state']>(['ready', 'backorder', 'to_order']
 
 /** The expanded panel's groups, empty ones left out. A partly shipped or
  *  partly packed line appears in more than one group, each with its share. */
-export const panelGroups = (row: OrderBoardRow): PanelGroup[] => {
+export const panelGroups = (row: OrderPanelRow): PanelGroup[] => {
   const entry = (line: OrderBoardLine, qty: number) => ({ line, qty, ofQty: qty === line.quantity ? null : line.quantity });
   const live = row.lines.filter(l => LIVE.has(l.state));
   const groups: PanelGroup[] = [
