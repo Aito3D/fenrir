@@ -58,7 +58,7 @@ export const paidPct = (rows: OrderBoardRow[]): number | null => {
   const withPay = rows.filter(r => r.payment);
   const total = withPay.reduce((n, r) => n + (r.total ?? 0), 0);
   if (total <= 0) return null;
-  return Math.floor((withPay.reduce((n, r) => n + (r.payment?.paid ?? 0), 0) / total) * 100);
+  return Math.floor((withPay.reduce((n, r) => n + (r.payment?.paid ?? 0), 0) * 100) / total);
 };
 
 export const otherOpenOrders = (rows: OrderBoardRow[], row: OrderBoardRow): OrderBoardRow[] =>

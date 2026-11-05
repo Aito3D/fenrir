@@ -217,6 +217,12 @@ describe('payment', () => {
     expect(paidPct([row({ total: 1000, payment: pay({ paid: 999 }) })])).toBe(99);
     expect(paidPct([])).toBeNull();
   });
+  it('paid share has no floating-point drift', () => {
+    const of100 = (paid: number) => [row({ total: 100, payment: pay({ paid }) })];
+    expect(paidPct(of100(29))).toBe(29);
+    expect(paidPct(of100(57))).toBe(57);
+    expect(paidPct(of100(100))).toBe(100);
+  });
   it('other open orders: same customer, not itself, never by an empty id', () => {
     const rs = [row({ id: '1', customer_id: 'C' }), row({ id: '2', customer_id: 'C' }), row({ id: '3', customer_id: 'X' }), row({ id: '4' }), row({ id: '5' })];
     expect(ids(otherOpenOrders(rs, rs[0]))).toEqual(['2']);
