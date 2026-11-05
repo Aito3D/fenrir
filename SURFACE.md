@@ -36,7 +36,6 @@ async def log_view(db: AsyncSession, project_id: int, now: datetime) -> None:
 async def mint_unique_token(db: AsyncSession) -> str:
 async def payment_state(db: AsyncSession, project: AitoProject) -> AitoTrackingPayment | None:
 async def purge_tracking_views(db: AsyncSession, older_than: timedelta = timedelta(days=400)) -> int:
-async def tracking_url(db: AsyncSession, project: AitoProject) -> str | None:
 def invoice_state(status: str | None) -> str | None:
 def is_expired(column: str, finished_at: datetime | None, last_active: datetime, now: datetime) -> bool:
 def mint_token() -> str:
@@ -231,6 +230,7 @@ export function TrackingPaymentMethods
 export function TrackingRail
 export function TrackingShopPanel
 export function trackingStage
+export function TrackingUnpaidCard
 export function trackStages
 export function updatedAt
 export function useI18nSettleDeadline

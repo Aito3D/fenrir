@@ -9,8 +9,6 @@
       "persisted": true,
       "stable": true
     },
-    "_url_set": "https://aito3d.example/t/<TOKEN>",
-    "_url_unset": null,
     "_view_log": {
       "1": 2,
       "3": 1

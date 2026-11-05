@@ -813,6 +813,56 @@ describe('AitoTrackPage — online payment', () => {
     expect(screen.getByTestId('track-payment-block')).toBe(block);
   });
 
+  // jsdom lays nothing out: offsetHeight is 0, so the tween's `to === from`
+  // guard returns early. Fake heights: the old block is 100px, the remount 40px.
+  async function flipWithHeights(token: string) {
+    let payment: AitoTracking['payment'] = { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false };
+    server.use(http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ ...FIXTURE, column: 'devis', accepted: true, payment })));
+    const { queryClient } = renderAt(token);
+    await screen.findByTestId('track-payment');
+    const old = screen.getByTestId('track-payment-block');
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this === old ? 100 : 40;
+    });
+    payment = { state: 'paid', url: 'https://secure.osb.pf/pay/abc', deposit: false };
+    await queryClient.refetchQueries({ queryKey: ['aito-track', token] });
+    await waitFor(() => expect(screen.getByTestId('track-payment')).toHaveAttribute('data-state', 'paid'));
+    return screen.getByTestId('track-payment-block');
+  }
+
+  describe('height tween', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('pins the old height while the flip tweens and clears only on the wrapper\'s own height transitionend', async () => {
+      const block = await flipWithHeights('tween');
+      // Re-read: the effect set 100px then 40px; the final inline height is the new one.
+      expect(block.style.overflow).toBe('hidden');
+      expect(block.style.height).toBe('40px');
+      // A child's colour transition bubbling up must not cut the tween short.
+      fireEvent(block, new Event('transitionend'));
+      const colour = Object.assign(new Event('transitionend', { bubbles: true }), { propertyName: 'color' });
+      fireEvent(block, colour);
+      expect(block.style.overflow).toBe('hidden');
+      expect(block.style.height).toBe('40px');
+      const child = block.firstElementChild as HTMLElement;
+      fireEvent(child, Object.assign(new Event('transitionend', { bubbles: true }), { propertyName: 'height' }));
+      expect(block.style.height).toBe('40px');
+      fireEvent(block, Object.assign(new Event('transitionend'), { propertyName: 'height' }));
+      expect(block.style.height).toBe('');
+      expect(block.style.overflow).toBe('');
+    });
+
+    it('does not tween under prefers-reduced-motion', async () => {
+      const mm = vi.spyOn(window, 'matchMedia').mockImplementation(
+        (q: string) => ({ matches: true, media: q, addEventListener: vi.fn(), removeEventListener: vi.fn() }) as unknown as MediaQueryList,
+      );
+      const block = await flipWithHeights('tween-reduced');
+      expect(block.style.overflow).toBe('');
+      expect(block.style.height).toBe('');
+      mm.mockRestore();
+    });
+  });
+
   it('an invoice flipping to paid pops the paid row\'s dot too', async () => {
     let invoice: AitoTracking['invoice'] = 'unpaid';
     server.use(http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ ...FIXTURE, column: 'finish', invoice })));

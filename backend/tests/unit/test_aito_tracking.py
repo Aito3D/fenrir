@@ -18,7 +18,6 @@ from backend.app.services.aito_tracking import (
     mint_unique_token,
     normalize_token,
     purge_tracking_views,
-    tracking_url,
     tracking_url_for,
 )
 from backend.tests.unit.test_aito_contacted import _declared_permissions
@@ -168,16 +167,14 @@ async def test_mint_unique_token_gives_up_after_ten_collisions(async_client, db_
 
 
 @pytest.mark.asyncio
-async def test_tracking_url_follows_external_url_without_minting(async_client, db_session):
+async def test_build_tracking_url_follows_external_url_and_keeps_token(async_client, db_session):
     pid = await _create(async_client)
     project = await _project(db_session, pid)
-    assert await tracking_url(db_session, project) is None
-    assert project.tracking_token is None  # a read never mints
+    assert await build_tracking_url(db_session, project) is None  # no external_url yet
+    assert project.tracking_token is not None  # the token is kept for when the setting is filled
     await _set_external_url(db_session, "https://aito.example/")
-    assert await tracking_url(db_session, project) is None  # still no token
     url = await build_tracking_url(db_session, project)
     assert url == f"https://aito.example/t/{project.tracking_token}"
-    assert await tracking_url(db_session, project) == url
 
 
 @pytest.mark.asyncio

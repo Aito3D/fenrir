@@ -203,11 +203,6 @@ async def ensure_tracking_token(db: AsyncSession, project: AitoProject) -> str:
     return won_token
 
 
-async def tracking_url(db: AsyncSession, project: AitoProject) -> str | None:
-    """Read-only: None until both the setting and the token exist."""
-    return tracking_url_for(await external_url(db), project.tracking_token)
-
-
 async def build_tracking_url(db: AsyncSession, project: AitoProject) -> str | None:
     """The write path: mints the token, then builds. None only while
     `external_url` is empty — the token is kept so the link appears the

@@ -241,10 +241,8 @@ async def _lookups(deposit_pct: str | None) -> dict:
             "persisted": (await session.execute(select(AitoProject.tracking_token).where(AitoProject.id == 1))).scalar_one() == first,
         }
         # URL building through the setting, before and after it is set.
-        out["_url_unset"] = await svc.tracking_url(session, project)
         session.add(Settings(key="external_url", value="https://aito3d.example/ "))
         await session.commit()
-        out["_url_set"] = (await svc.tracking_url(session, project)).replace(first, "<TOKEN>")
         out["_build_url_set"] = (await svc.build_tracking_url(session, project)).replace(first, "<TOKEN>")
     await engine.dispose()
     return out
