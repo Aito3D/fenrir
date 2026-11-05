@@ -3,6 +3,7 @@
 import subprocess
 import sys
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -151,4 +152,5 @@ def test_facts_and_links():
 
 def test_module_imports_without_order_board():  # order_board will import this module; no cycle allowed
     code = "import sys, backend.app.services.order_board_payment; assert 'backend.app.services.order_board' not in sys.modules"
-    subprocess.run([sys.executable, "-c", code], check=True)
+    # From the repo root, wherever pytest was started: CI and test_backend.sh run it inside backend/.
+    subprocess.run([sys.executable, "-c", code], check=True, cwd=Path(__file__).resolve().parents[3])
