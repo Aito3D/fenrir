@@ -17,19 +17,24 @@ async def tokens(db_session):
 
     db_session.add(Settings(key="auth_enabled", value="true"))
     password_hash = get_password_hash("password")
-    out = {}
-    for name, perms in (
-        ("none", []),
-        ("read", [Permission.ORDERS_READ.value]),
-        ("both", [Permission.ORDERS_READ.value, Permission.ORDERS_UPDATE.value]),
-    ):
+    principals = {
+        "none": [],
+        "read": [Permission.ORDERS_READ.value],
+        "both": [Permission.ORDERS_READ.value, Permission.ORDERS_UPDATE.value],
+    }
+    for name, perms in principals.items():
         group = Group(name=f"orders-{name}", permissions=perms, is_system=False)
         user = User(username=f"orders-{name}", password_hash=password_hash, is_active=True)
         user.groups.append(group)
         db_session.add_all([group, user])
-        out[name] = {"Authorization": f"Bearer {create_access_token(data={'sub': user.username})}"}
     await db_session.commit()
-    return out
+    # Minted AFTER the commit: a token issued before its user's
+    # password_changed_at is rejected as stale (401), and that stamp is set
+    # when the row is saved. Minting first failed whenever a second ticked
+    # over in between, which a loaded full-suite run made likely.
+    return {
+        name: {"Authorization": f"Bearer {create_access_token(data={'sub': f'orders-{name}'})}"} for name in principals
+    }
 
 
 SETTINGS = {"sync_enabled": True, "sync_minutes": 15, "max_age_days": 365, "core_brands": ["eSUN"]}
