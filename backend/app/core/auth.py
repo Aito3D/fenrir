@@ -339,6 +339,10 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         # it via API key, so it stays user-token only rather than riding
         # along on the can_read_status default-on scope.
         Permission.AITO_READ,
+        # Order board — rows carry customer names and order values, the same
+        # reason as AITO_READ; refresh/settings are a UI workflow.
+        Permission.ORDERS_READ,
+        Permission.ORDERS_UPDATE,
         # CALCULATOR_READ (T-014) — the calculator routes expose the shop's
         # cost base (filament cost/margin, labor rate, markup curve, measured
         # failure rates, energy tariff). Like AITO_READ, no kiosk or

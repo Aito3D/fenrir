@@ -212,6 +212,10 @@ class Permission(StrEnum):
     AITO_UPDATE = "aito:update"  # move cards between columns + edit card content
     AITO_DELETE = "aito:delete"  # soft-delete cards
 
+    # Order board (open sales orders against stock, read-only towards Zoho)
+    ORDERS_READ = "orders:read"
+    ORDERS_UPDATE = "orders:update"  # run a sync pass + edit the Orders settings tab
+
     # WebSocket connection
     WEBSOCKET_CONNECT = "websocket:connect"
 
@@ -398,6 +402,10 @@ PERMISSION_CATEGORIES = {
         Permission.AITO_UPDATE,
         Permission.AITO_DELETE,
     ],
+    "Orders": [
+        Permission.ORDERS_READ,
+        Permission.ORDERS_UPDATE,
+    ],
     "WebSocket": [
         Permission.WEBSOCKET_CONNECT,
     ],
@@ -467,6 +475,9 @@ DEFAULT_GROUPS = {
             Permission.AITO_CREATE.value,
             Permission.AITO_UPDATE.value,
             Permission.AITO_DELETE.value,
+            # Order board - full access
+            Permission.ORDERS_READ.value,
+            Permission.ORDERS_UPDATE.value,
             # Filaments - full access
             Permission.FILAMENTS_READ.value,
             Permission.FILAMENTS_CREATE.value,

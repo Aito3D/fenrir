@@ -9596,6 +9596,17 @@ async def seed_default_groups():
                 grp.permissions = perms
         await session.commit()
 
+        # Backfill the order board permissions. Administrators is handled by
+        # the ALL_PERMISSIONS sync above; Operators get both, as on a fresh
+        # install; Viewers and custom groups get neither.
+        grp = (await session.execute(select(Group).where(Group.name == "Operators"))).scalar_one_or_none()
+        if grp is not None and grp.permissions is not None:
+            missing = [p for p in ("orders:read", "orders:update") if p not in grp.permissions]
+            if missing:
+                grp.permissions = [*grp.permissions, *missing]
+                logger.info("Added %s to Operators group (backfill)", ", ".join(missing))
+        await session.commit()
+
         # queue:start_unreviewed (#1620): jobs of users without it wait for
         # someone to start them. Granted once to every group that could queue,
         # start or run jobs before it existed, so nothing changes on upgrade. Once

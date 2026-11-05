@@ -6018,6 +6018,7 @@ export type Permission =
   | 'pipelines:read' | 'pipelines:write' | 'pipelines:run'
   | 'calculator:read' | 'calculator:update'
   | 'aito:read' | 'aito:create' | 'aito:update' | 'aito:delete'
+  | 'orders:read' | 'orders:update'
   | 'websocket:connect';
 
 // Group types
