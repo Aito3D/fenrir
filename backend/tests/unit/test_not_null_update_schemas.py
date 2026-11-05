@@ -60,6 +60,7 @@ NOT_A_ROW_UPDATE = {
         "plate-detection reference labels live in a JSON file, not a row"
     ),
     "FilamentProfileDefaultWrite": "replaces a default as a whole; its validator reads a null key field as empty",
+    "OrderBoardSettingsBody": "Fenrir: stored as settings, every field required",
 }
 
 

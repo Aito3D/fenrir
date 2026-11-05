@@ -76,6 +76,7 @@ from backend.app.api.routes import (
     obico,
     octoeverywhere,
     orca_cloud,
+    order_board,
     overlay_branding,
     pending_uploads,
     pipeline_runs,
@@ -13708,6 +13709,7 @@ app.include_router(showcase.router, prefix=app_settings.api_prefix)
 app.include_router(inbox.router, prefix=app_settings.api_prefix)
 app.include_router(zoho.router, prefix=app_settings.api_prefix)
 app.include_router(heimdall.router, prefix=app_settings.api_prefix)
+app.include_router(order_board.router, prefix=app_settings.api_prefix)
 app.include_router(users.router, prefix=app_settings.api_prefix)
 app.include_router(groups.router, prefix=app_settings.api_prefix)
 app.include_router(
