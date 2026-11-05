@@ -8,6 +8,7 @@ import { OrderPaymentBlock } from '../../../components/orders/OrderPaymentBlock'
 import { OrderContactBlock } from '../../../components/orders/OrderContactBlock';
 import { OrderRefChips } from '../../../components/orders/OrderRefChips';
 import { PaymentPill } from '../../../components/orders/PaymentPill';
+import { OrderLinesPanel } from '../../../components/orders/OrderLinesPanel';
 
 const pay = (o: Partial<OrderPayment> = {}): OrderPayment => ({
   state: 'partial', pct: 40, paid: 250000, invoice_paid: 250000, advance: 0, due: 180000, overdue: 0, rest: 182000, left: 362000,
@@ -147,5 +148,44 @@ describe('PaymentPill', () => {
   it('a paid row pill reads exactly Paid', () => {
     const { container } = render(<PaymentPill state="paid" pct={100} fill />);
     expect(container).toHaveTextContent(/^Paid$/);
+  });
+});
+
+describe('PaymentPill row colours', () => {
+  it('a partial row pill label is not muted, and an overdue one keeps a white label with a red ring', () => {
+    render(<PaymentPill state="partial" pct={40} fill />);
+    expect(screen.getByText('40% paid').className).not.toContain('text-bambu-gray');
+    expect(screen.getByText('40% paid').parentElement!.className).toContain('text-white');
+  });
+
+  it('overdue partial: red ring, label not red; overdue unpaid keeps red text', () => {
+    const { container } = render(
+      <>
+        <PaymentPill state="partial" pct={40} overdue fill />
+        <PaymentPill state="unpaid" overdue fill />
+      </>,
+    );
+    const [partial, unpaid] = Array.from(container.children) as HTMLElement[];
+    expect(partial.className).toContain('ring-red-500/60');
+    expect(partial.className).not.toContain('text-red');
+    expect(unpaid.className).toContain('text-red-700');
+    expect(unpaid.className).not.toContain('ring-red');
+  });
+});
+
+describe('OrderLinesPanel layout', () => {
+  it('the lines scroll in a focusable named region and the side column does not stick', () => {
+    const row = {
+      id: 'so1', number: 'SO-1', customer: 'X', date: '2026-09-12', total: 1, currency: 'XPF', age_days: 1, is_core: true,
+      ready_ratio: 1, packed: 0, customer_id: '', payment: pay(), contact: contact(),
+      facts: { channel: '', reference: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null },
+      units: { total: 0, shipped: 0, ready: 0, backordered: 0, to_order: 0 }, packages: [], lines: [], zoho_url: null,
+    } as unknown as OrderPanelRow;
+    render(<OrderLinesPanel row={row} />);
+    const region = screen.getByRole('region', { name: 'Product' });
+    expect(region).toHaveAttribute('tabindex', '0');
+    expect(region.className).toContain('lg:overflow-y-auto');
+    const side = screen.getByText('Teva Marchand').closest('.space-y-3') as HTMLElement;
+    expect(side.className).not.toContain('sticky');
   });
 });

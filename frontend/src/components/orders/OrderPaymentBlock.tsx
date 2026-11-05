@@ -76,15 +76,15 @@ export function OrderPaymentBlock({ payment: p, currency }: { payment: OrderPaym
           <div className="py-1 text-bambu-gray">{t('orders.pay.noInvoice')}</div>
         ) : (
           p.invoices.map(i => (
-            <div key={i.id} className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-3 whitespace-nowrap py-1">
+            <div key={i.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1 sm:grid sm:grid-cols-[auto_auto_minmax(0,1fr)_auto] sm:whitespace-nowrap">
               {i.url ? (
                 <a href={i.url} target="_blank" rel="noopener noreferrer" className="font-mono text-bambu-green hover:underline">{i.number}</a>
               ) : (
                 <span className="font-mono text-white">{i.number}</span>
               )}
               <span className="text-bambu-gray">{shortDay(i.date)}</span>
-              <span className="truncate">{invoiceState(i)}</span>
-              <span className="text-right tabular-nums text-white">{money(i.total)}</span>
+              <span className="order-last basis-full sm:order-none sm:basis-auto sm:truncate">{invoiceState(i)}</span>
+              <span className="ml-auto text-right tabular-nums text-white sm:ml-0">{money(i.total)}</span>
             </div>
           ))
         )}

@@ -61,9 +61,14 @@ export function OrderLinesPanel({
     <div className="grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_27rem]">
       <div className="order-last min-w-0 lg:order-none">
       <OrderRefChips row={row} />
-      <div className="overflow-x-auto">
+      <div
+        role="region"
+        tabIndex={0}
+        aria-label={t('orders.col.product')}
+        className="overflow-x-auto overscroll-contain lg:max-h-[70vh] lg:overflow-y-auto"
+      >
         <table className="w-full min-w-[35rem] text-sm">
-          <thead className="text-left text-[11px] uppercase tracking-wide text-bambu-gray">
+          <thead className="bg-bambu-dark text-left lg:sticky lg:top-0 lg:z-10 text-[11px] uppercase tracking-wide text-bambu-gray">
             <tr>
               <th className="py-1.5 font-medium">{t('orders.col.product')}</th>
               <th className="text-right font-medium">{t('orders.col.qty')}</th>
@@ -142,7 +147,7 @@ export function OrderLinesPanel({
         </table>
       </div>
       </div>
-      <div className="space-y-3 lg:sticky lg:top-4 lg:self-start">
+      <div className="space-y-3 lg:self-start">
         <OrderContactBlock contact={row.contact} orderNumber={row.number} others={others} onGoto={onGoto} />
         {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} />}
       </div>
