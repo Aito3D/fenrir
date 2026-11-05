@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order Board Demo</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  bg: '#0c1016', surf: '#141b23', surf2: '#1a232d', line: '#212c37', ink: '#e9eff6', sub: '#93a4b6', mute: '#6f8496', acc: '#14b8a6',
+} } } };
+</script>
+<style>
+  html { font-size: 14.4px; }
+  body { background: #0c1016; color: #e9eff6; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  [data-lucide] { width: 1em; height: 1em; }
+  .tab[aria-selected=true], .seg[aria-pressed=true] { background: #14b8a6; color: #0c1016; }
+  .sk { background: linear-gradient(90deg, #1a232d 25%, #243140 37%, #1a232d 63%); background-size: 400% 100%; animation: sk 1.4s ease infinite; border-radius: 6px; }
+  @keyframes sk { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+  .spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
+  .row-grid { display: grid; align-items: center; gap: 12px; grid-template-columns: 96px minmax(0,1fr) 56px minmax(150px,220px) 96px 110px 18px; }
+  @media (max-width: 860px) {
+    .row-grid { grid-template-columns: minmax(0,1fr) auto 18px; grid-template-areas: "num status chev" "cust value chev" "bar bar bar"; row-gap: 6px; }
+    .row-grid > .c-num { grid-area: num; } .row-grid > .c-cust { grid-area: cust; } .row-grid > .c-age { display: none; }
+    .row-grid > .c-bar { grid-area: bar; } .row-grid > .c-status { grid-area: status; justify-self: end; }
+    .row-grid > .c-value { grid-area: value; } .row-grid > .c-chev { grid-area: chev; }
+  }
+  .panel { animation: open .16s ease-out; } @keyframes open { from { opacity: 0; transform: translateY(-3px); } }
+  @media (prefers-reduced-motion: reduce) { .sk, .panel { animation: none; } }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- demo controls: not part of the app -->
+<div class="border-b border-line bg-surf2/60">
+  <div class="mx-auto max-w-[1400px] px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+    <div class="text-sm"><span class="font-semibold">Order Board</span> <span class="text-sub">· proposition, fake data, real allocation logic</span></div>
+    <nav class="inline-flex gap-1 rounded-lg border border-line bg-surf p-1 text-xs" role="tablist">
+      <button class="tab rounded-md px-3 py-1.5" data-view="board" role="tab">Page</button>
+      <button class="tab rounded-md px-3 py-1.5" data-view="settings" role="tab">Settings tab</button>
+      <button class="tab rounded-md px-3 py-1.5" data-view="notes" role="tab">What differs from the brief</button>
+    </nav>
+    <div id="stateCtl" class="inline-flex items-center gap-1 rounded-lg border border-line bg-surf p-1 text-xs">
+      <span class="px-2 text-mute">Sync state</span>
+      <button class="seg rounded-md px-2.5 py-1.5" data-state="live">Up to date</button>
+      <button class="seg rounded-md px-2.5 py-1.5" data-state="syncing">Syncing</button>
+      <button class="seg rounded-md px-2.5 py-1.5" data-state="cold">Cold start</button>
+      <button class="seg rounded-md px-2.5 py-1.5" data-state="failed">Last sync failed</button>
+      <button class="seg rounded-md px-2.5 py-1.5" data-state="empty">No orders</button>
+    </div>
+    <div id="varCtl" class="inline-flex items-center gap-1 rounded-lg border border-line bg-surf p-1 text-xs">
+      <span class="px-2 text-mute">Shipped lines</span>
+      <button class="seg rounded-md px-2.5 py-1.5" data-variant="a">A · Dimmed in place</button>
+      <button class="seg rounded-md px-2.5 py-1.5" data-variant="b">B · Separate groups</button>
+      <button class="seg rounded-md px-2.5 py-1.5" data-variant="c">C · Split rows</button>
+    </div>
+  </div>
+</div>
+
+<div class="mx-auto max-w-[1400px] flex">
+  <!-- sidebar excerpt -->
+  <aside class="hidden lg:block w-52 shrink-0 border-r border-line min-h-[calc(100vh-56px)] p-3 text-sm">
+    <div class="px-2 pb-3 text-[11px] uppercase tracking-wide text-mute">Sidebar</div>
+    <ul id="nav" class="space-y-0.5"></ul>
+  </aside>
+
+  <main class="min-w-0 flex-1 p-4 sm:p-6">
+    <!-- ───────── page ───────── -->
+    <section id="v-board" class="space-y-5">
+      <header class="flex flex-wrap items-center justify-between gap-3">
+        <h1 class="text-2xl font-bold">Orders</h1>
+        <div class="flex items-center gap-3">
+          <div id="syncLabel" class="text-sm text-sub"></div>
+          <button id="refresh" class="inline-flex items-center gap-2 rounded-lg border border-line bg-surf px-3 py-2 text-sm hover:bg-surf2"><i data-lucide="refresh-cw"></i> Refresh</button>
+        </div>
+      </header>
+      <div id="failNote" class="hidden rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex items-start gap-2">
+        <i data-lucide="triangle-alert" class="mt-0.5 shrink-0"></i>
+        <span>Last sync failed: Zoho rate limit reached. Showing data from 5 Nov 2026, 09:12.</span>
+      </div>
+      <div id="tiles" class="grid grid-cols-2 md:grid-cols-5 gap-3"></div>
+      <div class="flex flex-wrap items-center gap-2">
+        <label class="relative grow basis-64 max-w-md">
+          <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 text-mute"></i>
+          <input id="q" type="search" placeholder="Order number, customer, product, SKU…" class="w-full rounded-lg border border-line bg-surf pl-9 pr-3 py-2 text-sm placeholder:text-mute focus:outline-none focus:border-acc">
+        </label>
+        <button id="brand" aria-pressed="true" class="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"></button>
+        <div id="chips" class="flex flex-wrap items-center gap-1.5"></div>
+        <div id="sorts" class="ml-auto inline-flex items-center gap-1 rounded-lg border border-line bg-surf p-1 text-xs"></div>
+      </div>
+      <div id="list" class="space-y-2"></div>
+    </section>
+
+    <!-- ───────── settings tab ───────── -->
+    <section id="v-settings" class="hidden space-y-5 max-w-3xl">
+      <header><h1 class="text-2xl font-bold">Settings</h1></header>
+      <nav class="flex flex-wrap gap-1 border-b border-line text-sm">
+        <span class="px-3 py-2 text-sub">General</span><span class="px-3 py-2 text-sub">Network</span><span class="px-3 py-2 text-sub">Queue</span>
+        <span class="px-3 py-2 text-sub">Zoho</span>
+        <span class="px-3 py-2 border-b-2 border-acc text-ink font-medium">Orders <span class="ml-1 rounded bg-acc/20 px-1.5 py-0.5 text-[10px] text-acc">new</span></span>
+        <span class="px-3 py-2 text-sub">Projects</span>
+      </nav>
+
+      <div class="rounded-xl border border-line bg-surf">
+        <div class="border-b border-line px-4 py-3 font-semibold">Zoho sync</div>
+        <div class="p-4 space-y-4 text-sm">
+          <div class="flex items-center justify-between gap-4">
+            <div><div>Keep the order board in sync</div><div class="text-sub text-xs mt-0.5">Reads sales orders, open purchase orders and stock from Zoho Books. Never writes.</div></div>
+            <span class="inline-flex h-6 w-11 items-center rounded-full bg-acc p-0.5"><span class="h-5 w-5 translate-x-5 rounded-full bg-white"></span></span>
+          </div>
+          <div class="flex items-center justify-between gap-4">
+            <div><div>Check Zoho every</div><div class="text-sub text-xs mt-0.5">Each pass reads changed documents only, 20 at most.</div></div>
+            <select class="rounded-lg border border-line bg-bg px-3 py-2"><option>5 minutes</option><option selected>15 minutes</option><option>1 hour</option></select>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-bg px-3 py-2.5">
+            <div class="text-sub text-xs"><span class="text-emerald-400">●</span> Last sync 5 Nov 2026, 09:42 · 31 orders · 15 purchase orders · 143 items</div>
+            <div class="flex gap-2">
+              <button class="rounded-lg border border-line px-3 py-1.5 text-xs hover:bg-surf2">Sync now</button>
+              <button class="rounded-lg border border-line px-3 py-1.5 text-xs text-sub hover:bg-surf2">Reload everything</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-line bg-surf">
+        <div class="border-b border-line px-4 py-3 font-semibold">What the board shows</div>
+        <div class="p-4 space-y-4 text-sm">
+          <div class="flex items-center justify-between gap-4">
+            <div><div>Ignore orders older than</div><div class="text-sub text-xs mt-0.5">Books holds 37 unshipped orders dated 2020 to 2025. Without a limit they sit on the board forever. 0 keeps every order.</div></div>
+            <label class="inline-flex items-center gap-2"><input type="number" min="0" value="365" class="w-24 rounded-lg border border-line bg-bg px-3 py-2 text-right tabular-nums"> <span class="text-sub">days</span></label>
+          </div>
+          <div>
+            <div>Core brands</div>
+            <div class="text-sub text-xs mt-0.5">The "3D only" switch keeps orders with at least one line from these brands.</div>
+            <div id="brandChips" class="mt-2 flex flex-wrap gap-1.5"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── notes ───────── -->
+    <section id="v-notes" class="hidden max-w-3xl space-y-4 text-sm">
+      <h1 class="text-2xl font-bold">What differs from the brief</h1>
+      <p class="text-sub">The brief assumes the app already stores orders, purchase orders and stock. It does not. Everything else maps well, because Zoho Books here is the same kind of source the brief describes.</p>
+      <div id="notes" class="space-y-3"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+// ───────── fake data (today = 5 Nov 2026) ─────────
+const TODAY = new Date('2026-11-05');
+const CORE = ['Bambu Lab', 'eSUN', 'SUNLU', 'Polymaker', 'Inslogic', 'Magigoo'];
+const ITEMS = {
+  A: { name: 'Bambu Lab PLA Basic Noir 1 kg', sku: 'BL-PLA-BK-1K', brand: 'Bambu Lab', stock: 5 },
+  B: { name: 'eSUN PETG Blanc 1 kg', sku: 'ES-PETG-WH-1K', brand: 'eSUN', stock: 20 },
+  C: { name: 'Bambu Lab A1 mini', sku: 'BL-A1M', brand: 'Bambu Lab', stock: 0 },
+  D: { name: 'Bambu Lab AMS Lite', sku: 'BL-AMS-LITE', brand: 'Bambu Lab', stock: 2 },
+  E: { name: 'Marlow Excel Racing 5 mm (mètre)', sku: 'MA-EXR-5', brand: 'Marlow', stock: 0 },
+  F: { name: 'Hobie safran Getaway', sku: 'HO-GW-RUD', brand: 'Hobie', stock: 1 },
+  G: { name: 'Polymaker PolyLite ASA Gris 1 kg', sku: 'PM-ASA-GY-1K', brand: 'Polymaker', stock: 3 },
+};
+const POS = [
+  { number: 'PO-0012', lines: [{ item: 'A', qty: 4, received: 0, cancelled: 0 }] },
+  { number: 'PO-0014', lines: [{ item: 'E', qty: 100, received: 0, cancelled: 0 }] },
+  { number: 'PO-0015', lines: [{ item: 'D', qty: 6, received: 2, cancelled: 0 }] },
+];
+const L = (item, qty, o = {}) => ({ item, name: ITEMS[item].name, sku: ITEMS[item].sku, tracked: true, qty, shipped: 0, packed: 0, cancelled: 0, invoiced: 0, ...o });
+const SVC = (name) => ({ item: null, name, sku: '', tracked: false, qty: 1, shipped: 0, cancelled: 0, invoiced: 0 });
+const ORDERS = [
+  { number: 'SO-00412', customer: 'Lycée Polyvalent de Taravao', date: '2026-09-12', total: 13600, lines: [L('A', 4), SVC('Livraison Avion 0-2 kg')] },
+  { number: 'SO-00418', customer: 'Atelier Moana', date: '2026-10-02', total: 24750, lines: [L('A', 3), L('B', 5)] },
+  { number: 'SO-00421', customer: 'Tahiti Nautic Center', date: '2026-10-09', total: 61200, lines: [L('E', 60), L('F', 1)] },
+  { number: 'SO-00425', customer: 'Fare Print', date: '2026-10-20', total: 58900, lines: [L('A', 5), L('C', 1)] },
+  { number: 'SO-00427', customer: 'Heiva Design', date: '2026-10-22', total: 71400,
+    lines: [L('D', 6, { shipped: 2, packed: 2 }), L('B', 4, { shipped: 4, packed: 4 }), L('G', 2, { packed: 2 }), SVC('Livraison Avion 2-5 kg')],
+    packages: [{ number: 'PKG-00031', status: 'delivered', date: '2026-10-28', units: 6 }, { number: 'PKG-00034', status: 'not_shipped', date: '2026-11-04', units: 2 }] },
+  { number: 'SO-00430', customer: 'M. Teriitahi', date: '2026-10-28', total: 3400, lines: [L('A', 1)] },
+  { number: 'SO-00433', customer: 'Collège de Paea', date: '2026-11-02', total: null, lines: [L('G', 3, { invoiced: 3 }), L('B', 2)] },
+  { number: 'SO-00434', customer: 'Voilerie du Port', date: '2026-11-03', total: 38000, lines: [L('E', 40)] },
+  { number: 'SO-00435', customer: 'Mana Robotics', date: '2026-11-04', total: 47300, lines: [L('B', 10), L('D', 1), L('C', 1, { cancelled: 1 })] },
+  { number: 'SO-00436', customer: 'Tiare Maker Lab', date: '2026-11-04', total: 9800, lines: [L('D', 1)] },
+];
+
+// ───────── the brief's allocation, oldest order first ─────────
+function computeBoard(orders, pos, items, today) {
+  const stock = {}, incoming = {}, poNums = {};
+  for (const [id, it] of Object.entries(items)) stock[id] = Math.max(0, it.stock);
+  for (const po of pos) for (const l of po.lines) {
+    const n = Math.max(0, l.qty - l.received - l.cancelled);
+    if (!n) continue;
+    incoming[l.item] = (incoming[l.item] || 0) + n;
+    (poNums[l.item] ||= []).push(po.number);
+  }
+  const sorted = [...orders].sort((a, b) => a.date.localeCompare(b.date) || a.number.localeCompare(b.number));
+  const rows = [];
+  for (const o of sorted) {
+    const u = { total: 0, shipped: 0, ready: 0, backordered: 0, toOrder: 0 };
+    const lines = o.lines.map(l => {
+      const remaining = Math.max(0, l.qty - l.shipped - l.cancelled);
+      const invoiced = Math.min(remaining, Math.max(0, l.invoiced - l.shipped));
+      const out = { ...l, remaining, invoicedWaiting: invoiced, packedWaiting: Math.max(0, Math.min(remaining, l.packed - l.shipped)), stockAvailable: null, covered: 0, shortfall: 0, coveredByPo: 0, pos: [] };
+      if (!l.tracked || !l.item) return { ...out, state: 'service' };
+      u.total += l.qty - l.cancelled; u.shipped += l.shipped;
+      if (l.qty - l.cancelled === 0) return { ...out, state: 'cancelled' };
+      if (remaining === 0) return { ...out, state: 'shipped' };
+      out.stockAvailable = stock[l.item] || 0;
+      const fromStock = Math.min(remaining - invoiced, stock[l.item] || 0);
+      stock[l.item] = (stock[l.item] || 0) - fromStock;
+      out.covered = invoiced + fromStock; out.shortfall = remaining - out.covered;
+      if (out.shortfall === 0) { u.ready += remaining; return { ...out, state: 'ready' }; }
+      const fromPo = Math.min(out.shortfall, incoming[l.item] || 0);
+      incoming[l.item] = (incoming[l.item] || 0) - fromPo;
+      out.coveredByPo = fromPo; if (fromPo > 0) out.pos = poNums[l.item] || [];
+      u.ready += out.covered;
+      if (fromPo === out.shortfall) { u.backordered += out.shortfall; return { ...out, state: 'backorder' }; }
+      u.toOrder += out.shortfall; return { ...out, state: 'toorder' };
+    });
+    const live = lines.filter(l => !['shipped', 'cancelled', 'service'].includes(l.state));
+    if (!live.length) continue;
+    const ready = live.filter(l => l.state === 'ready').length;
+    const status = ready === live.length ? 'toship' : ready ? 'partial' : live.some(l => l.state === 'toorder') ? 'toorder' : 'incoming';
+    const owed = u.ready + u.backordered + u.toOrder;
+    rows.push({ ...o, lines, status, units: u, readyRatio: owed ? u.ready / owed : 1,
+      ageDays: Math.max(0, Math.floor((today - new Date(o.date)) / 864e5)),
+      core: lines.some(l => l.item && CORE.some(b => b.toLowerCase() === (items[l.item].brand || '').toLowerCase())) });
+  }
+  return rows;
+}
+const ROWS = computeBoard(ORDERS, POS, ITEMS, TODAY);
+
+// ───────── view state ─────────
+const S = { view: 'board', state: 'live', q: '', brand: true, status: 'all', sort: 'age', dir: 1, variant: 'b', open: new Set(['SO-00427']) };
+const STATUS = {
+  toship:   { label: 'To ship',  hint: 'everything in stock',        tone: 'emerald', icon: 'package-check' },
+  partial:  { label: 'Partial',  hint: 'partly shippable',           tone: 'sky',     icon: 'package-open' },
+  incoming: { label: 'Incoming', hint: 'shortfall covered by a PO',  tone: 'amber',   icon: 'truck' },
+  toorder:  { label: 'To order', hint: 'shortfall with no open PO',  tone: 'red',     icon: 'shopping-cart' },
+};
+const TONE = {
+  emerald: { text: 'text-emerald-400', bg: 'bg-emerald-500/15', bar: 'bg-emerald-500', ring: 'ring-emerald-500/60', edge: 'border-l-emerald-500' },
+  sky:     { text: 'text-sky-400',     bg: 'bg-sky-500/15',     bar: 'bg-sky-500',     ring: 'ring-sky-500/60',     edge: 'border-l-sky-500' },
+  amber:   { text: 'text-amber-400',   bg: 'bg-amber-500/15',   bar: 'bg-amber-500',   ring: 'ring-amber-500/60',   edge: 'border-l-amber-500' },
+  red:     { text: 'text-red-400',     bg: 'bg-red-500/15',     bar: 'bg-red-500',     ring: 'ring-red-500/60',     edge: 'border-l-red-500' },
+  slate:   { text: 'text-sub',         bg: 'bg-slate-500/15',   bar: 'bg-slate-500',   ring: 'ring-acc/60',         edge: 'border-l-acc' },
+};
+const fold = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const money = n => n == null ? '–' : new Intl.NumberFormat('fr-FR').format(n) + ' XPF';
+const day = d => new Date(d + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const matches = (r, q) => !q || [r.number, r.customer, ...r.lines.flatMap(l => [l.name, l.sku])].some(v => fold(v).includes(fold(q)));
+
+function render() {
+  const ready = S.state !== 'cold';
+  const all = S.state === 'empty' || !ready ? [] : ROWS;
+  const byBrand = all.filter(r => !S.brand || r.core);            // tiles: brand toggle only
+  const bySearch = byBrand.filter(r => matches(r, S.q));          // chips: + search
+  const shown = bySearch.filter(r => S.status === 'all' || r.status === S.status); // list: + status
+  const key = { age: r => -r.ageDays, value: r => -(r.total || 0), customer: r => r.customer, ready: r => -r.readyRatio }[S.sort];
+  shown.sort((a, b) => (S.sort === 'customer' ? key(a).localeCompare(key(b), 'fr') : key(a) - key(b)) * S.dir);
+
+  // header
+  const sl = document.getElementById('syncLabel');
+  sl.innerHTML = S.state === 'syncing' ? '<span class="inline-flex items-center gap-2"><i data-lucide="loader-circle" class="spin"></i> Syncing · 12 remaining</span>'
+    : S.state === 'cold' ? '<span class="inline-flex items-center gap-2"><i data-lucide="loader-circle" class="spin"></i> Syncing · 54 remaining</span>'
+    : S.state === 'failed' ? 'Updated 5 Nov 2026, 09:12' : 'Updated 5 Nov 2026, 09:42';
+  document.getElementById('failNote').classList.toggle('hidden', S.state !== 'failed');
+
+  // tiles
+  const tile = (id, label, n, hint, tone) => `<button data-status="${id}" class="text-left rounded-xl border border-line border-l-4 ${TONE[tone].edge} bg-surf px-4 py-3 hover:bg-surf2 ${S.status === id ? 'ring-2 ' + TONE[tone].ring : ''}">
+    <div class="text-xs text-sub">${label}</div>
+    ${ready ? `<div class="mt-1 text-2xl font-bold ${id === 'all' ? '' : TONE[tone].text}">${n}</div>` : '<div class="sk mt-2 h-7 w-12"></div>'}
+    <div class="mt-0.5 text-xs text-mute truncate">${ready ? hint : '&nbsp;'}</div></button>`;
+  document.getElementById('tiles').innerHTML = Object.entries(STATUS).map(([id, s]) => tile(id, s.label, byBrand.filter(r => r.status === id).length, s.hint, s.tone)).join('')
+    + tile('all', 'In progress', byBrand.length, money(byBrand.reduce((t, r) => t + (r.total || 0), 0)), 'slate');
+
+  // toolbar
+  const hidden = all.length - byBrand.length, b = document.getElementById('brand');
+  b.setAttribute('aria-pressed', S.brand);
+  b.className = 'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ' + (S.brand ? 'border-acc/50 bg-acc/10 text-acc' : 'border-line bg-surf text-sub');
+  b.innerHTML = `<i data-lucide="box"></i> 3D only${S.brand && hidden ? ` <span class="text-mute text-xs">+${hidden} hidden</span>` : ''}`;
+  document.getElementById('chips').innerHTML = [['all', 'All'], ...Object.entries(STATUS).map(([id, s]) => [id, s.label])].map(([id, label]) =>
+    `<button data-status="${id}" class="rounded-full border px-3 py-1.5 text-xs ${S.status === id ? 'border-acc bg-acc/15 text-ink' : 'border-line bg-surf text-sub hover:text-ink'}">${label} <span class="text-mute">${id === 'all' ? bySearch.length : bySearch.filter(r => r.status === id).length}</span></button>`).join('');
+  document.getElementById('sorts').innerHTML = '<span class="px-2 text-mute">Sort</span>' + [['age', 'Age'], ['value', 'Value'], ['customer', 'Customer'], ['ready', '% ready']].map(([id, label]) =>
+    `<button data-sort="${id}" class="rounded-md px-2.5 py-1.5 ${S.sort === id ? 'bg-surf2 text-ink' : 'text-sub hover:text-ink'}">${label}${S.sort === id ? (S.dir === 1 ? ' ↓' : ' ↑') : ''}</button>`).join('');
+
+  // list
+  const list = document.getElementById('list');
+  const note = (icon, title, sub = '') => `<div class="rounded-xl border border-dashed border-line px-6 py-12 text-center"><i data-lucide="${icon}" class="mx-auto text-3xl text-mute"></i><div class="mt-3 font-medium">${title}</div><div class="mt-1 text-sm text-sub">${sub}</div></div>`;
+  if (!ready) list.innerHTML = '<div class="text-sm text-sub flex items-center gap-2"><i data-lucide="loader-circle" class="spin"></i> First sync in progress, 54 documents remaining</div>'
+      + Array.from({ length: 6 }, () => '<div class="rounded-xl border border-line bg-surf px-4 py-3"><div class="row-grid"><div class="sk h-4 c-num"></div><div class="sk h-4 w-2/3 c-cust"></div><div class="sk h-4 c-age"></div><div class="sk h-3 c-bar"></div><div class="sk h-5 c-status"></div><div class="sk h-4 c-value"></div><div class="c-chev"></div></div></div>').join('');
+  else if (!all.length) list.innerHTML = note('package-check', 'No open orders.', 'Every customer order has shipped.');
+  else if (!byBrand.length && !S.q && S.status === 'all') list.innerHTML = note('box', 'No open 3D orders.', 'Turn off "3D only" to see the other orders.');
+  else if (!shown.length) list.innerHTML = note('search-x', 'No results.');
+  else list.innerHTML = shown.map(card).join('');
+  lucide.createIcons();
+}
+
+function card(r) {
+  const s = STATUS[r.status], t = TONE[s.tone], u = r.units, open = S.open.has(r.number);
+  const pct = n => u.total ? (n / u.total * 100) + '%' : '0%';
+  const age = r.ageDays > 45 ? 'bg-red-500/15 text-red-400' : r.ageDays > 20 ? 'bg-amber-500/15 text-amber-400' : 'bg-slate-500/15 text-sub';
+  return `<div class="rounded-xl border border-line bg-surf overflow-hidden">
+    <button data-open="${r.number}" aria-expanded="${open}" class="w-full text-left px-4 py-3 hover:bg-surf2 row-grid">
+      <span class="c-num font-mono text-sm font-semibold">${r.number}</span>
+      <span class="c-cust min-w-0"><span class="block truncate">${r.customer}</span><span class="block text-xs text-mute">${day(r.date)}</span></span>
+      <span class="c-age justify-self-start rounded-md px-2 py-0.5 text-xs ${age}">${r.ageDays} d</span>
+      <span class="c-bar">
+        <span class="flex h-2 overflow-hidden rounded-full bg-bg">
+          <span class="bg-slate-500" style="width:${pct(u.shipped)}"></span><span class="bg-emerald-500" style="width:${pct(u.ready)}"></span>
+          <span class="bg-amber-500" style="width:${pct(u.backordered)}"></span><span class="bg-red-500" style="width:${pct(u.toOrder)}"></span>
+        </span>
+        <span class="mt-1 flex justify-between text-[11px] text-mute"><span>${u.shipped}/${u.total} shipped${packedUnits(r) ? ' · ' + packedUnits(r) + ' packed' : ''}</span><span>${Math.round(r.readyRatio * 100)} % ready</span></span>
+      </span>
+      <span class="c-status inline-flex items-center gap-1.5 justify-self-start rounded-full px-2.5 py-1 text-xs ${t.bg} ${t.text}"><i data-lucide="${s.icon}"></i>${s.label}</span>
+      <span class="c-value text-right text-sm tabular-nums ${r.total == null ? 'text-mute' : ''}">${money(r.total)}</span>
+      <i data-lucide="chevron-down" class="c-chev text-mute transition-transform ${open ? 'rotate-180' : ''}"></i>
+    </button>
+    ${open ? `<div class="panel border-t border-line bg-bg/40 px-4 py-3">
+      <div class="overflow-x-auto"><table class="w-full min-w-[560px] text-sm">
+        <thead class="text-left text-[11px] uppercase tracking-wide text-mute"><tr><th class="py-1.5 font-medium">Product</th><th class="font-medium text-right">Qty</th><th class="font-medium text-right">Available</th><th class="font-medium text-right">Short</th><th class="pl-4 font-medium">State</th></tr></thead>
+        ${{ a: bodyA, b: bodyB, c: bodyC }[S.variant](r)}
+      </table></div>
+      <div class="mt-3 flex flex-wrap gap-4 text-xs"><a href="#" class="inline-flex items-center gap-1.5 text-acc hover:underline"><i data-lucide="external-link"></i> Open in Zoho Books</a></div>
+    </div>` : ''}
+  </div>`;
+}
+
+const ST = { ready: ['Ready', 'text-emerald-400'], backorder: ['Backorder', 'text-amber-400'], toorder: ['To order', 'text-red-400'], shipped: ['Shipped', 'text-sub'], cancelled: ['Cancelled', 'text-sub'], service: ['Service', 'text-sub'] };
+const DONE = ['shipped', 'cancelled', 'service'];
+const packedUnits = r => r.lines.reduce((n, l) => n + l.packedWaiting, 0);
+const shippedTag = '<span class="inline-flex items-center gap-1 text-sub"><i data-lucide="check"></i>Shipped</span>';
+const packedTag = '<span class="inline-flex items-center gap-1 text-sky-400"><i data-lucide="package"></i>Packed</span>';
+const stateHtml = l => `<span class="${ST[l.state][1]}">${ST[l.state][0]}</span>${l.coveredByPo ? ` <span class="text-xs text-mute">${l.pos.join(', ')} · +${l.coveredByPo}</span>` : ''}`;
+const pkgChips = (r, shipped) => (r.packages || []).filter(p => (p.status !== 'not_shipped') === shipped).map(p =>
+  `<span class="rounded-full border border-line bg-bg/40 px-2 py-0.5 text-[10px] normal-case tracking-normal ${shipped ? 'text-sub' : 'text-sky-400'}">${p.number} · ${shipped ? 'delivered' : 'packed'} ${day(p.date).replace(/ \d{4}$/, '')}</span>`).join('');
+// one table row; `sub` renders an indented continuation of the line above
+function tr({ l, qty, of, avail, short, state, dim, sub, rail = '', first }) {
+  const isShort = short && (l.state === 'backorder' || l.state === 'toorder');
+  return `<tr class="${first ? '' : 'border-t border-line/60'} ${dim ? 'opacity-50' : ''}">
+    <td class="py-2 pr-3 ${rail ? 'border-l-2 pl-4 ' + rail : ''}">${sub ? `<div class="pl-5 text-xs text-mute">↳ ${sub}</div>` : `<div>${l.name}</div><div class="text-xs text-mute font-mono">${l.sku}</div>`}</td>
+    <td class="text-right tabular-nums whitespace-nowrap">${qty}${of ? ` <span class="text-xs text-mute">of ${of}</span>` : ''}</td>
+    <td class="text-right tabular-nums ${avail && l.state === 'ready' ? 'text-emerald-400' : ''}">${avail && l.stockAvailable != null ? l.stockAvailable : '–'}</td>
+    <td class="text-right tabular-nums ${isShort ? ST[l.state][1] : 'text-mute'}">${isShort ? '−' + l.shortfall : '–'}</td>
+    <td class="pl-4 whitespace-nowrap">${state}</td>
+  </tr>`;
+}
+const GROUP = {
+  todo:    { label: 'To prepare',                icon: 'clipboard-list', text: 'text-ink',     band: 'bg-acc/10',     rail: 'border-acc/60' },
+  packed:  { label: 'Packed, awaiting delivery', icon: 'package',        text: 'text-sky-400', band: 'bg-sky-500/10', rail: 'border-sky-500/60' },
+  shipped: { label: 'Shipped',                   icon: 'check-check',    text: 'text-sub',     band: 'bg-slate-500/10', rail: 'border-slate-500/40' },
+  other:   { label: 'Other lines',               icon: 'receipt-text',   text: 'text-sub',     band: 'bg-slate-500/10', rail: 'border-slate-500/40' },
+};
+const head = (g, units, chips = '') => `<tr><td colspan="5" class="pt-3 pb-1"><div class="flex flex-wrap items-center gap-2 rounded-md ${GROUP[g].band} px-3 py-1.5 text-xs">
+  <i data-lucide="${GROUP[g].icon}" class="${GROUP[g].text}"></i><span class="font-semibold uppercase tracking-wide ${GROUP[g].text}">${GROUP[g].label}</span>
+  ${units == null ? '' : `<span class="rounded-full bg-bg/60 px-2 py-0.5 text-[11px] text-sub tabular-nums">${units} unit${units > 1 ? 's' : ''}</span>`}${chips}</div></td></tr>`;
+const group = (g, units, chips, ls, row, dim) => ls.length ? `<tbody class="${dim ? 'opacity-60' : ''}">${head(g, units, chips)}${ls.map((l, i) => tr({ l, rail: GROUP[g].rail, first: i === 0, ...row(l) })).join('')}</tbody>` : '';
+const invoicedTag = l => l.invoicedWaiting ? ' <span class="ml-1 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] text-sky-400">invoiced</span>' : '';
+
+// A · the brief as written: one row per line, finished lines dimmed where they are
+function bodyA(r) {
+  return '<tbody>' + r.lines.map(l => tr({ l, avail: true, short: true, dim: DONE.includes(l.state),
+    qty: (l.shipped ? l.shipped + '/' + l.qty : l.qty) + invoicedTag(l) + (l.packedWaiting ? ` <span class="ml-1 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] text-sky-400">${l.packedWaiting} packed</span>` : ''),
+    state: l.state === 'shipped' ? shippedTag : stateHtml(l) })).join('') + '</tbody>' + foot(r);
+}
+// B · what is left to do on top, what is already boxed or gone below
+function bodyB(r) {
+  const live = r.lines.filter(l => !DONE.includes(l.state));
+  const todo = live.filter(l => l.remaining - l.packedWaiting > 0), packed = live.filter(l => l.packedWaiting > 0);
+  const shipped = r.lines.filter(l => l.shipped > 0), other = r.lines.filter(l => l.state === 'service' || l.state === 'cancelled');
+  const sum = (ls, f) => ls.reduce((n, l) => n + f(l), 0);
+  return group('todo', sum(todo, l => l.remaining - l.packedWaiting), '', todo, l => ({ qty: (l.remaining - l.packedWaiting) + invoicedTag(l), of: l.remaining - l.packedWaiting < l.qty ? l.qty : 0, avail: true, short: true, state: stateHtml(l) }))
+    + group('packed', sum(packed, l => l.packedWaiting), pkgChips(r, false), packed, l => ({ qty: l.packedWaiting, of: l.packedWaiting < l.qty ? l.qty : 0, state: packedTag }))
+    + group('shipped', sum(shipped, l => l.shipped), pkgChips(r, true), shipped, l => ({ qty: l.shipped, of: l.shipped < l.qty ? l.qty : 0, state: shippedTag }), true)
+    + group('other', null, '', other, l => ({ qty: l.qty, state: stateHtml(l) }), true);
+}
+// C · Zoho's line order kept; a partly shipped line splits into its live part and greyed continuations
+function bodyC(r) {
+  return '<tbody>' + r.lines.map(l => {
+    if (DONE.includes(l.state)) return tr({ l, qty: l.qty, dim: true, state: l.state === 'shipped' ? shippedTag : stateHtml(l) });
+    const todo = l.remaining - l.packedWaiting, rows = [];
+    if (todo > 0) rows.push(tr({ l, qty: todo + invoicedTag(l), of: todo < l.qty ? l.qty : 0, avail: true, short: true, state: stateHtml(l) }));
+    if (l.packedWaiting) rows.push(tr({ l, qty: l.packedWaiting, of: todo > 0 ? 0 : (l.packedWaiting < l.qty ? l.qty : 0), state: packedTag, sub: todo > 0 ? 'packed, awaiting delivery' : '' }));
+    if (l.shipped) rows.push(tr({ l, qty: l.shipped, state: shippedTag, dim: true, sub: 'already shipped' }));
+    return rows.join('');
+  }).join('') + '</tbody>' + foot(r);
+}
+const foot = r => (r.packages || []).length ? `<tfoot><tr><td colspan="5" class="pt-3 text-[11px] uppercase tracking-wide text-mute">Packages <span class="inline-flex gap-2 ml-2">${pkgChips(r, false)}${pkgChips(r, true)}</span></td></tr></tfoot>` : '';
+
+// ───────── static bits ─────────
+document.getElementById('nav').innerHTML = [['printer', 'Printers'], ['disc-3', 'Inventory'], ['archive', 'Archives'], ['list-ordered', 'Queue'], ['folder-kanban', 'Projects'], ['kanban', 'Aito'], ['package-check', 'Orders', 1], ['folder-open', 'Files'], ['calculator', 'Calculator'], ['bar-chart-3', 'Stats'], ['settings', 'Settings']]
+  .map(([i, l, on]) => `<li class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 ${on ? 'bg-acc/15 text-acc font-medium' : 'text-sub'}"><i data-lucide="${i}"></i>${l}${on ? '<span class="ml-auto rounded bg-acc/20 px-1.5 py-0.5 text-[10px]">new</span>' : ''}</li>`).join('');
+document.getElementById('brandChips').innerHTML = CORE.map(b => `<span class="inline-flex items-center gap-1.5 rounded-full border border-line bg-bg px-3 py-1 text-xs">${b} <i data-lucide="x" class="text-mute"></i></span>`).join('')
+  + '<span class="inline-flex items-center gap-1.5 rounded-full border border-dashed border-line px-3 py-1 text-xs text-sub"><i data-lucide="plus"></i> Add a brand</span>';
+document.getElementById('notes').innerHTML = [
+  ['The data is not stored here yet', 'The app only reads estimates, invoices and contacts from Zoho Books. I add a read-only sync for sales orders, open purchase orders and stock, stored locally. The stored Zoho token already has access to all three. Size today: 206 sales orders, 68 with unshipped units, 15 open purchase orders, 3 000+ items.'],
+  ['Stock is loaded only for items on open orders', 'Loading the whole catalogue costs 16+ calls per pass. The board only needs the items on live lines, so the sync fetches those. Zoho rate limits have frozen the Kanban before, so each pass is capped at 20 documents.'],
+  ['"Arrived" on a purchase order', 'Books records both billed and received quantities per line. I count the larger of the two as arrived, so a PO received before its bill does not show as still incoming.'],
+  ['Invoiced units count as set aside', 'Same behaviour as your other app: this Zoho org lowers stock when the invoice is created. Kept as the brief describes.'],
+  ['Old orders', '37 of the 68 unshipped orders are dated 2020 to 2025, most of them invoiced and never marked shipped. Orders older than a number of days set in Settings (365 by default) stay off the board and take no stock.'],
+  ['Core brands live in Settings', 'The brief asks for a constant. Since you asked for a settings tab, the list is editable there, starting with your six brands. Books items carry a brand field, so the classification works as described.'],
+  ['Partly shipped orders', 'Books records packed, shipped and delivered units per line, plus the order\'s packages with number, status and date. Three ways to show them are in the mockup. I recommend B: what is left to prepare on top, then boxes waiting for delivery, then what has gone, greyed. Books does not say which line went into which package without one more call per package, so package numbers sit on the group, not on each line.'],
+  ['Packed but not delivered', '16 orders in Books have units in a package with no delivery yet. Those units are still counted in stock on hand. Proposition: they show as Packed, and they are reserved before the oldest-first hand-out, so an older order cannot claim goods that are already in another order\'s box.'],
+  ['No Back Orders page', 'This app has no purchasing page, so the "View in Back Orders" link is left out. "Open in Zoho Books" stays.'],
+  ['Access', 'Two new permissions. "View orders" opens the page. "Manage orders" covers Refresh and the Orders settings tab. Administrators and Operators get both, on new installs and on upgrade. Viewers and API keys get neither.'],
+].map(([t, d]) => `<div class="rounded-xl border border-line bg-surf px-4 py-3"><div class="font-medium">${t}</div><div class="mt-1 text-sub">${d}</div></div>`).join('');
+
+// ───────── events ─────────
+function show() {
+  for (const v of ['board', 'settings', 'notes']) document.getElementById('v-' + v).classList.toggle('hidden', S.view !== v);
+  document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', b.dataset.view === S.view));
+  document.querySelectorAll('.seg').forEach(b => b.setAttribute('aria-pressed', b.dataset.state ? b.dataset.state === S.state : b.dataset.variant === S.variant));
+  document.getElementById('varCtl').classList.toggle('invisible', S.view !== 'board');
+  document.getElementById('stateCtl').classList.toggle('invisible', S.view !== 'board');
+  render();
+}
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-view],[data-state],[data-variant],[data-status],[data-sort],[data-open],#brand');
+  if (!el) return;
+  if (el.dataset.view) S.view = el.dataset.view;
+  else if (el.dataset.state) S.state = el.dataset.state;
+  else if (el.dataset.variant) S.variant = el.dataset.variant;
+  else if (el.dataset.status) S.status = S.status === el.dataset.status ? 'all' : el.dataset.status;
+  else if (el.dataset.sort) { if (S.sort === el.dataset.sort) S.dir = -S.dir; else { S.sort = el.dataset.sort; S.dir = 1; } }
+  else if (el.dataset.open) { S.open.has(el.dataset.open) ? S.open.delete(el.dataset.open) : S.open.add(el.dataset.open); }
+  else if (el.id === 'brand') S.brand = !S.brand;
+  show();
+});
+document.getElementById('q').addEventListener('input', e => { S.q = e.target.value; render(); });
+show();
+</script>
+</body>
+</html>
