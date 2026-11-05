@@ -17,7 +17,7 @@ def days_ago(n: int) -> str:
     return (date.today() - timedelta(days=n)).isoformat()
 
 
-def order(n: int, *, age=5, status="open", qty=1, shipped=0, packed=0, item="A") -> dict:
+def order(n: int, *, age=5, status="open", qty=1, shipped=0, packed=0, item="A", invoices=(), estimate_id="") -> dict:
     """A sales-order detail document; the fake derives its list header from it."""
     return {
         "salesorder_id": f"so{n}",
@@ -27,6 +27,8 @@ def order(n: int, *, age=5, status="open", qty=1, shipped=0, packed=0, item="A")
         "status": status,
         "total": 1000.0,
         "currency_code": "XPF",
+        "invoices": list(invoices),
+        "estimate_id": estimate_id,
         "quantity": qty,
         "quantity_shipped": shipped,
         "quantity_packed": packed,
@@ -114,6 +116,12 @@ class FakeZoho:
     async def books_salesorder_url_base(self, db):
         return "https://books.example/app/1#/salesorders/"
 
+    async def books_invoice_url(self, db, invoice_id):
+        return "https://books.example/app/1#/invoices/" + invoice_id
+
+    async def books_app_url(self, db, estimate_id):
+        return "https://books.example/app/1#/quotes/" + estimate_id
+
     async def is_configured(self, db):
         return self.configured
 
@@ -139,6 +147,8 @@ def zoho(monkeypatch):
         "get_purchaseorder",
         "list_items_by_ids",
         "books_salesorder_url_base",
+        "books_invoice_url",
+        "books_app_url",
         "is_configured",
         "calls_in_last_minute",
     ):
@@ -510,3 +520,15 @@ async def test_the_loop_leaves_a_low_daily_budget_to_the_kanban(db_session, zoho
     monkeypatch.setattr(zoho_service, "daily_remaining", sync.DAILY_BUDGET_FLOOR)
     await sync._iteration(db_session)
     assert len(passes) == 1
+
+
+@pytest.mark.asyncio
+async def test_rows_get_their_links(db_session, zoho):
+    invoice = {"invoice_id": "i1", "invoice_number": "INV-1", "total": 400.0, "balance": 400.0, "status": "sent"}
+    zoho.add(order(1, invoices=[invoice], estimate_id="e1"), order(2))
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    rows = {r["id"]: r for r in (await sync.read_board(db_session))["rows"]}
+    assert rows["so1"]["payment"]["invoices"][0]["url"].endswith("#/invoices/i1")
+    assert rows["so1"]["facts"]["quote_url"].endswith("#/quotes/e1")
+    assert rows["so2"]["facts"]["quote_url"] is None

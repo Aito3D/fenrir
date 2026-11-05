@@ -7,7 +7,7 @@ from itertools import count
 
 import pytest
 
-from backend.app.services.order_board import compute_board
+from backend.app.services.order_board import compute_board, order_row
 
 TODAY = date(2026, 1, 20)
 _ids = count(1)
@@ -27,8 +27,11 @@ def line(item_id, qty, *, shipped=0, packed=0, cancelled=0, invoiced=0, sku="SKU
     }
 
 
-def so(number, day, lines, *, status="open", total=100.0):
+def so(number, day, lines, *, status="open", total=100.0, customer_id="", credit=0.0, invoices=()):
     return {
+        "customer_id": customer_id,
+        "contact": {"unused_customer_credits": credit},
+        "invoices": list(invoices),
         "salesorder_id": f"id-{number}",
         "salesorder_number": number,
         "customer_name": f"Customer {number}",
@@ -366,3 +369,21 @@ def test_boxed_units_without_stock_take_nothing_from_a_later_delivery():
     )
     assert only_line(rows[0])["state"] == "ready"
     assert (only_line(rows[1])["state"], only_line(rows[1])["covered_by_po"]) == ("backorder", 2)
+
+
+def test_rows_carry_payment_contact_and_facts():
+    row = compute_board([so("SO-1", "2026-01-10", [line("A", 1)], total=1000.0)], [], {"A": item(5)}, TODAY)[0]
+    assert row["payment"]["state"] == "unpaid" and row["contact"] is None
+    assert row["facts"]["reference"] == "" and row["customer_id"] == ""
+
+
+def test_an_order_past_the_age_limit_takes_no_credit():
+    old = so("SO-OLD", "2025-11-21", [line("A", 1)], total=1000.0, customer_id="c1", credit=1000)
+    new = so("SO-NEW", "2026-01-15", [line("A", 1)], total=1000.0, customer_id="c1", credit=1000)
+    rows = compute_board([old, new], [], {"A": item(5)}, TODAY, max_age_days=30)
+    assert [r["number"] for r in rows] == ["SO-NEW"] and rows[0]["payment"]["advance"] == 1000
+
+
+def test_order_row_for_a_finished_order():
+    row = order_row(so("SO-9", "2026-01-02", [line("A", 2, shipped=2)], total=500.0), {}, TODAY)
+    assert row["status"] == "finished" and only_line(row)["state"] == "shipped" and row["payment"]["advance"] == 0

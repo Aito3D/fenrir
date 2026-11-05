@@ -18,6 +18,8 @@ Two things go beyond "oldest first":
 from collections.abc import Sequence
 from datetime import date
 
+from backend.app.services.order_board_payment import board_payments, order_contact, order_facts, order_payment
+
 _SKIPPED_STATUSES = ("draft", "void")
 _OPEN_PO_STATUSES = ("open", "partially_billed")
 _LIVE_STATES = ("ready", "backorder", "to_order")
@@ -152,6 +154,52 @@ def _units(lines: list[dict]) -> dict[str, float]:
     }
 
 
+def _row(order: dict, age: int, lines: list[dict], status: str, items: dict[str, dict], core: set[str]) -> dict:
+    """One board row; ``payment`` is filled in by the caller (it depends on the other orders)."""
+    units = _units(lines)
+    owed = units["ready"] + units["backordered"] + units["to_order"]
+    brands = ((items.get(line["item_id"]) or {}).get("brand") or "" for line in lines if line["state"] != "service")
+    total = order.get("total")
+    live = [line for line in lines if line["state"] in _LIVE_STATES]
+    return {
+        "id": order.get("salesorder_id") or "",
+        "number": order.get("salesorder_number") or "",
+        "customer": order.get("customer_name") or "",
+        "customer_id": order.get("customer_id") or "",
+        "date": order.get("date") or "",
+        "total": None if total is None else float(total),
+        "currency": order.get("currency_code") or "",
+        "status": status,
+        "age_days": age,
+        "is_core": any(brand.casefold() in core for brand in brands if brand),
+        "ready_ratio": units["ready"] / owed if owed else 1.0,
+        "packed": _r(sum(line["packed_waiting"] for line in live)),
+        "units": units,
+        "packages": [
+            {
+                "number": p.get("package_number") or "",
+                "status": p.get("status") or "",
+                "date": p.get("date") or "",
+            }
+            for p in order.get("packages") or []
+        ],
+        "lines": [{k: v for k, v in line.items() if not k.startswith("_")} for line in lines],
+        "payment": None,
+        "contact": order_contact(order),
+        "facts": order_facts(order),
+    }
+
+
+def order_row(order: dict, items: dict[str, dict], today: date) -> dict:
+    """The row for one order outside the allocation (a finished order): no stock, no incoming goods."""
+    lines = [_line(raw, items) for raw in order.get("line_items") or []]
+    for line in lines:
+        _allocate(line, {}, {}, {})
+    row = _row(order, age_days(order.get("date") or "", today), lines, "finished", items, set())
+    row["payment"] = order_payment(order, today)
+    return row
+
+
 def compute_board(
     orders: list[dict],
     purchase_orders: list[dict],
@@ -184,40 +232,17 @@ def compute_board(
             if line["_tracked"] and line["remaining"] > 0:
                 line["_reserved"] = _take(stock, line["item_id"], line["packed_waiting"] - line["invoiced"])
 
-    rows = []
+    rows: list[dict] = []
+    row_orders: list[dict] = []
     for order, age, lines in kept:
         for line in lines:
             _allocate(line, stock, incoming, numbers)
         live = [line for line in lines if line["state"] in _LIVE_STATES]
         if not live:
             continue  # finished: everything shipped, cancelled or a service
-        units = _units(lines)
-        owed = units["ready"] + units["backordered"] + units["to_order"]
-        brands = ((items.get(line["item_id"]) or {}).get("brand") or "" for line in lines if line["state"] != "service")
-        total = order.get("total")
-        rows.append(
-            {
-                "id": order.get("salesorder_id") or "",
-                "number": order.get("salesorder_number") or "",
-                "customer": order.get("customer_name") or "",
-                "date": order.get("date") or "",
-                "total": None if total is None else float(total),
-                "currency": order.get("currency_code") or "",
-                "status": _status(live),
-                "age_days": age,
-                "is_core": any(brand.casefold() in core for brand in brands if brand),
-                "ready_ratio": units["ready"] / owed if owed else 1.0,
-                "packed": _r(sum(line["packed_waiting"] for line in live)),
-                "units": units,
-                "packages": [
-                    {
-                        "number": p.get("package_number") or "",
-                        "status": p.get("status") or "",
-                        "date": p.get("date") or "",
-                    }
-                    for p in order.get("packages") or []
-                ],
-                "lines": [{k: v for k, v in line.items() if not k.startswith("_")} for line in lines],
-            }
-        )
+        rows.append(_row(order, age, lines, _status(live), items, core))
+        row_orders.append(order)
+    payments = board_payments(row_orders, today)
+    for row in rows:
+        row["payment"] = payments[row["id"]]
     return rows

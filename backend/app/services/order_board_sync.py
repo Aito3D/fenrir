@@ -149,6 +149,22 @@ async def read_board(db: AsyncSession) -> dict:
     }
 
 
+async def _add_links(db: AsyncSession, rows: list[dict]) -> None:
+    """Books deep links on the rows; all None when Zoho is not configured. One lookup per call, not per row."""
+    try:
+        order_base = await zoho_service.books_salesorder_url_base(db)
+        invoice_base = await zoho_service.books_invoice_url(db, "")
+        quote_base = await zoho_service.books_app_url(db, "")
+    except ZohoNotConfiguredError:
+        order_base = invoice_base = quote_base = None
+    for row in rows:
+        row["zoho_url"] = f"{order_base}{row['id']}" if order_base else None
+        for invoice in (row.get("payment") or {}).get("invoices", []):
+            invoice["url"] = f"{invoice_base}{invoice['id']}" if invoice_base and invoice["id"] else None
+        facts = row["facts"]
+        facts["quote_url"] = f"{quote_base}{facts['estimate_id']}" if quote_base and facts["estimate_id"] else None
+
+
 async def recompute(db: AsyncSession) -> None:
     """Rebuild the board from the local copy.
 
@@ -171,12 +187,7 @@ async def recompute(db: AsyncSession) -> None:
         max_age_days=settings.max_age_days,
         core_brands=settings.core_brands,
     )
-    try:
-        url_base = await zoho_service.books_salesorder_url_base(db)
-    except ZohoNotConfiguredError:
-        url_base = None
-    for row in rows:
-        row["zoho_url"] = f"{url_base}{row['id']}" if url_base else None
+    await _add_links(db, rows)
     state.detail = {**current, "rows": rows, "computed_at": _now()}
 
 
