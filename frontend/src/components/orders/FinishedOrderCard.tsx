@@ -16,7 +16,7 @@ import { ROW_GRID, TONE } from './orderStatus';
 export function FinishedOrderCard({ row, open, onToggle }: { row: FinishedOrderRow; open: boolean; onToggle: () => void }) {
   const { t } = useTranslation();
   const detail = useQuery({
-    queryKey: ['order-board', 'finished', row.id],
+    queryKey: ['order-board-finished-order', row.id],
     queryFn: () => api.getFinishedOrder(row.id),
     enabled: open,
     staleTime: 60_000,

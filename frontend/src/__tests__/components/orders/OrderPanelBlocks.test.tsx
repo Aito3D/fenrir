@@ -58,6 +58,14 @@ describe('OrderPaymentBlock', () => {
     expect(screen.getByText('No invoice yet for this order.')).toBeInTheDocument();
   });
 
+  it('an invoice with a balance but no due date reads as awaiting payment, never Invalid Date', () => {
+    render(<OrderPaymentBlock payment={pay({ due: 1000, invoices: [{ id: 'i3', number: 'FAC-0003', date: '2026-11-01', due_date: '', total: 1000, balance: 1000, url: null }] })} currency="XPF" />);
+    expect(screen.getAllByText('Invoiced, awaiting payment').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Overdue \d+ d/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Due /)).not.toBeInTheDocument();
+  });
+
   it('counts overdue days from the due date', () => {
     const due = new Date();
     due.setDate(due.getDate() - 5);
@@ -132,11 +140,14 @@ describe('OrderRefChips', () => {
 });
 
 describe('PaymentPill', () => {
-  it('the row pill keeps its label short and puts overdue in the title and accessible name', () => {
+  it('the row pill keeps its label short; overdue is hidden text, the title and the full text content', () => {
     const { container } = render(<PaymentPill state="partial" pct={40} overdue fill />);
-    const pill = screen.getByLabelText('40% paid · overdue');
+    const pill = container.firstElementChild as HTMLElement;
     expect(pill).toHaveAttribute('title', '40% paid · overdue');
-    expect(pill).toHaveTextContent(/^40% paid$/);
+    expect(pill).not.toHaveAttribute('aria-label');
+    expect(pill.textContent).toBe('40% paid · overdue');
+    expect(screen.getByText('40% paid')).toBeInTheDocument();
+    expect(screen.getByText(/· overdue/)).toHaveClass('sr-only');
     expect((container.querySelector('[aria-hidden="true"].absolute') as HTMLElement).style.width).toBe('40%');
   });
 

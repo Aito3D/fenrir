@@ -82,7 +82,7 @@ export function OrderBoardPage() {
     mutationFn: api.refreshOrderBoard,
     onSuccess: fresh => {
       queryClient.setQueryData(BOARD_KEY, fresh);
-      void queryClient.invalidateQueries({ queryKey: FINISHED_KEY });
+      void queryClient.invalidateQueries({ queryKey: FINISHED_KEY, exact: true });
     },
     onError: () => showToast(t('orders.refreshFailed'), 'error'),
   });
@@ -388,7 +388,7 @@ export function OrderBoardPage() {
           className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-bambu-dark-tertiary px-4 py-3 text-sm text-bambu-gray hover:text-white"
         >
           <Archive aria-hidden="true" className="h-4 w-4" />
-          {t('orders.finished.match', { count: finishedHint })} · <span className="text-bambu-green">{t('orders.finished.show')}</span>
+          {t('orders.finished.match', { n: finishedHint })} · <span className="text-bambu-green">{t('orders.finished.show')}</span>
         </button>
       )}
     </div>

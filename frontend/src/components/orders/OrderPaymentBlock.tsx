@@ -29,6 +29,7 @@ export function OrderPaymentBlock({ payment: p, currency }: { payment: OrderPaym
   const invoiceState = (i: OrderInvoice) => {
     const part = i.balance < i.total ? ` · ${t('orders.pay.invLeft', { amount: money(i.balance) })}` : '';
     if (i.balance <= 0) return <span className={TONE.success.text}>{t('orders.pay.paid')}</span>;
+    if (!/^\d{4}-\d{2}-\d{2}/.test(i.due_date ?? '')) return <span className={TONE.warning.text}>{t('orders.pay.legendDue')}{part}</span>;
     const late = daysPastDue(i.due_date);
     return late > 0 ? (
       <span className={TONE.danger.text}>{t('orders.pay.invOverdue', { n: late })}{part}</span>

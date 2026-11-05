@@ -431,6 +431,31 @@ describe('OrderBoardPage', () => {
     expect(screen.getByText('Left to pay')).toBeInTheDocument();
   });
 
+  it('Refresh reloads the finished list but not the finished orders already opened', async () => {
+    const user = userEvent.setup();
+    let lists = 0;
+    let details = 0;
+    serve(board());
+    serveFinished([fin(1)]);
+    server.use(
+      http.get('/api/v1/order-board/finished', () => { lists += 1; return HttpResponse.json({ rows: [fin(1)] }); }),
+      http.get('/api/v1/order-board/finished/:id', () => {
+        details += 1;
+        return HttpResponse.json({ ...row({ id: 'f1', number: 'SO-F001' }), status: 'finished' });
+      }),
+      http.post('/api/v1/order-board/refresh', () => HttpResponse.json(board())),
+    );
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /^Finished/ }));
+    await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
+    await screen.findByRole('table');
+    expect(details).toBe(1);
+    const listsBefore = lists;
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(lists).toBe(listsBefore + 1));
+    expect(details).toBe(1);
+  });
+
   it('a finished order that cannot load offers Retry', async () => {
     const user = userEvent.setup();
     let fail = true;
@@ -453,7 +478,7 @@ describe('OrderBoardPage', () => {
     render(<OrderBoardPage />);
     await screen.findByText('SO-00412');
     await user.type(screen.getByPlaceholderText('Order number, customer, product, SKU…'), 'atelier');
-    await user.click(await screen.findByRole('button', { name: /2 finished orders match/ }));
+    await user.click(await screen.findByRole('button', { name: /Finished orders matching: 2/ }));
     expect(await screen.findByText('SO-F001')).toBeInTheDocument();
     expect(screen.getByText('SO-F002')).toBeInTheDocument();
   });
@@ -465,7 +490,7 @@ describe('OrderBoardPage', () => {
     render(<OrderBoardPage />);
     await screen.findByText('SO-00412');
     await user.type(screen.getByPlaceholderText('Order number, customer, product, SKU…'), 'zorglub');
-    expect(await screen.findByRole('button', { name: /1 finished order matches/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Finished orders matching: 1/ })).toBeInTheDocument();
     expect(screen.queryByText('No results.')).not.toBeInTheDocument();
   });
 
