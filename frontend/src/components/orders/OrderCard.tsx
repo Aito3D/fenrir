@@ -6,19 +6,13 @@ import { Card } from '../Card';
 import { ageTone, formatQty, parseDay } from './orderBoard';
 import { OrderLinesPanel } from './OrderLinesPanel';
 import { PaymentPill } from './PaymentPill';
-import { STATUS_META, TONE } from './orderStatus';
+import { ROW_GRID, STATUS_META, TONE } from './orderStatus';
 
 const AGE = {
   neutral: 'bg-bambu-dark-tertiary/60 text-bambu-gray',
   warning: `${TONE.warning.soft} ${TONE.warning.text}`,
   danger: `${TONE.danger.soft} ${TONE.danger.text}`,
 };
-
-// Below lg the row stacks: number and status, then customer and value, then the bar.
-const ROW_GRID =
-  'grid items-center gap-x-3 gap-y-1.5 grid-cols-[minmax(0,1fr)_auto_1.25rem] ' +
-  "[grid-template-areas:'num_status_chev'_'cust_value_chev'_'bar_bar_bar'_'pay_pay_pay'] " +
-  'lg:[grid-template-areas:none] lg:grid-cols-[6.5rem_minmax(0,1fr)_3.5rem_minmax(11rem,16rem)_auto_9.5rem_7.5rem_1.25rem]';
 
 /** One order: the collapsed row is the button that opens its lines. */
 export function OrderCard({
