@@ -792,3 +792,30 @@ async def test_opening_an_open_or_unknown_order_is_not_found(db_session, zoho):
     for missing in ("so1", "nope"):
         with pytest.raises(sync.OrderNotFinished):
             await sync.read_finished_order(db_session, missing)
+
+
+@pytest.mark.asyncio
+async def test_a_stale_mark_set_while_the_fetch_was_in_flight_survives_it(db_session, zoho, monkeypatch):
+    """Simulated with the same session (the in-memory test database has one connection): the fake
+    marks the stored detail stale while the Zoho call is running, as a concurrent pass would."""
+    await _synced(db_session, zoho, order(1, age=10, shipped=1))
+    await sync.read_finished_order(db_session, "so1")
+    zoho.orders["so1"] = {**order(1, age=10, shipped=1), "last_modified_time": "2026-11-04T08:00:00-1000"}
+    await sync.run_pass(db_session)  # the stored copy is now out of date: the next open fetches
+    real = zoho.get_salesorder
+
+    async def marked_meanwhile(db, salesorder_id):
+        doc = await _doc(db, salesorder_id)
+        doc.detail = {**doc.detail, "_stale": True}
+        await db.commit()
+        return await real(db, salesorder_id)
+
+    monkeypatch.setattr(zoho_service, "get_salesorder", marked_meanwhile)
+    calls = zoho.calls["detail"]
+    row = await sync.read_finished_order(db_session, "so1")
+    assert row["status"] == "finished"
+    assert (await _doc(db_session, "so1")).detail["_stale"] is True
+    monkeypatch.setattr(zoho_service, "get_salesorder", real)
+    await sync.read_finished_order(db_session, "so1")
+    assert zoho.calls["detail"] == calls + 2
+    assert "_stale" not in (await _doc(db_session, "so1")).detail

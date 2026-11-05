@@ -194,6 +194,11 @@ def _is_stale(doc: OrderBoardDoc) -> bool:
     return bool(detail.get("_stale")) or any(doc.header.get(f) != detail.get(f) for f in _FRESHNESS_FIELDS)
 
 
+def _snapshot(doc: OrderBoardDoc) -> tuple | None:
+    detail = doc.detail
+    return None if detail is None else (detail.get("_fetched_at"), bool(detail.get("_stale")))
+
+
 async def _finished_docs(db: AsyncSession) -> list[OrderBoardDoc]:
     """Sales orders that count as finished, judged from stored rows only. A candidate with a stored
     detail that the stored board does not show has shipped since the board was computed."""
@@ -255,12 +260,16 @@ async def read_finished_order(db: AsyncSession, salesorder_id: str) -> dict:
     if doc.detail is None or _is_stale(doc):
         if time.monotonic() < _rate_limited_until or zoho_service.calls_in_last_minute() >= CALL_CEILING:
             raise ZohoBusy(salesorder_id)
+        before = _snapshot(doc)
         try:
             fetched = await zoho_service.get_salesorder(db, salesorder_id)
         except ZohoRateLimited as e:
             _rate_limited_until = time.monotonic() + (e.retry_after or PENDING_PAUSE_SECONDS)
             raise ZohoBusy(salesorder_id) from e
-        doc.detail = {**fetched, "_fetched_at": _now()}
+        # No pass lock here (a pass can run long): if a pass wrote this row meanwhile, its mark or newer detail
+        # must not be lost, so the fetched copy goes in marked stale and the next open fetches again.
+        await db.refresh(doc)
+        doc.detail = {**fetched, "_fetched_at": _now(), **({"_stale": True} if _snapshot(doc) != before else {})}
         doc.pending = False
         await db.commit()
     rows = [order_row(doc.detail, {}, date.today())]
