@@ -5048,6 +5048,74 @@ export interface AitoStatsRework { moves: number; cards: number; share: number |
 export interface AitoStatsService { service: string; tasks: number; revenue: number }
 export interface AitoStatsClients { new: number; returning: number; new_total: number; returning_total: number }
 export interface AitoStatsIsland { island: string | null; count: number; shipping_total: number }
+// --- Order Board (routes/order_board.py; rows come from services/order_board.py) ---
+export type OrderStatus = 'to_ship' | 'partial' | 'incoming' | 'to_order';
+export type OrderLineState = 'ready' | 'backorder' | 'to_order' | 'shipped' | 'cancelled' | 'service';
+
+export interface OrderBoardLine {
+  id: string;
+  item_id: string | null;
+  name: string;
+  sku: string;
+  state: OrderLineState;
+  quantity: number;
+  shipped: number;
+  cancelled: number;
+  remaining: number;
+  /** Invoiced but not shipped: already out of stock on hand, so counted as ready. */
+  invoiced: number;
+  /** In a package with no delivery yet. */
+  packed_waiting: number;
+  /** What the shelf held for this line after older orders; null for a service line. */
+  stock_available: number | null;
+  covered: number;
+  shortfall: number;
+  covered_by_po: number;
+  po_numbers: string[];
+}
+
+export interface OrderBoardRow {
+  id: string;
+  number: string;
+  customer: string;
+  /** Calendar day, YYYY-MM-DD. */
+  date: string;
+  total: number | null;
+  currency: string;
+  status: OrderStatus;
+  age_days: number;
+  is_core: boolean;
+  ready_ratio: number;
+  packed: number;
+  units: { total: number; shipped: number; ready: number; backordered: number; to_order: number };
+  packages: { number: string; status: string; date: string }[];
+  lines: OrderBoardLine[];
+  zoho_url: string | null;
+}
+
+export interface OrderBoardResponse {
+  rows: OrderBoardRow[];
+  computed_at: string | null;
+  stock_loaded_at: string | null;
+  sync: {
+    enabled: boolean;
+    configured: boolean;
+    running: boolean;
+    pending: number;
+    last_error: string | null;
+    last_error_at: string | null;
+    last_success_at: string | null;
+  };
+}
+
+export interface OrderBoardSettings {
+  sync_enabled: boolean;
+  sync_minutes: number;
+  /** 0 keeps every order. */
+  max_age_days: number;
+  core_brands: string[];
+}
+
 export interface AitoStats {
   board: { column: AitoColumnId; count: number; total: number }[];
   conversion: { sent: AitoStatsBucket; accepted: AitoStatsBucket; declined: AitoStatsBucket; acceptance_rate: number | null };
@@ -9732,6 +9800,12 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ due_date: dueDate }),
     }),
+  // Order Board: one local read; refresh runs one bounded Zoho sync pass.
+  getOrderBoard: () => request<OrderBoardResponse>('/order-board'),
+  refreshOrderBoard: () => request<OrderBoardResponse>('/order-board/refresh', { method: 'POST' }),
+  getOrderBoardSettings: () => request<OrderBoardSettings>('/order-board/settings'),
+  updateOrderBoardSettings: (body: OrderBoardSettings) =>
+    request<OrderBoardSettings>('/order-board/settings', { method: 'PUT', body: JSON.stringify(body) }),
   /** The Stats page's pipeline widget — see routes/aito.py:get_aito_stats. */
   getAitoStats: (options?: { dateFrom?: string; dateTo?: string }) => {
     const params = new URLSearchParams();
