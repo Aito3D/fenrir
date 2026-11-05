@@ -52,6 +52,7 @@ CREATE TABLE aito_payment_links (
 	reference VARCHAR(64) NOT NULL, 
 	document_kind VARCHAR(10) DEFAULT 'quote' NOT NULL, 
 	document_number VARCHAR(64), 
+	deposit BOOLEAN, 
 	amount INTEGER NOT NULL, 
 	currency VARCHAR(3) DEFAULT 'XPF' NOT NULL, 
 	expires_on VARCHAR(10) NOT NULL, 

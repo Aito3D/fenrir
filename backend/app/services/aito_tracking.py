@@ -276,9 +276,9 @@ async def payment_state(db: AsyncSession, project: AitoProject) -> AitoTrackingP
     if row is None:
         return None
     paid = row.status == "paid"
-    return AitoTrackingPayment(
-        state="paid" if paid else "unpaid", url=None if paid else row.url, deposit=(await deposit_pct(db)) > 0
-    )
+    # The kind of link minted, not today's setting; legacy rows (NULL) fall back to the setting.
+    deposit = row.deposit if row.deposit is not None else (await deposit_pct(db)) > 0
+    return AitoTrackingPayment(state="paid" if paid else "unpaid", url=None if paid else row.url, deposit=deposit)
 
 
 async def _shown_link(db: AsyncSession, project: AitoProject) -> AitoPaymentLink | None:

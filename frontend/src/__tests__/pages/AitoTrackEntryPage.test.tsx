@@ -438,4 +438,28 @@ describe('AitoTrackEntryPage', () => {
       setReadyOverride(null);
     }
   });
+  // T-039: English is lazy now, so a locale that stalls past the deadline
+  // used to leave raw 'aito.track.*' keys. Simulate the stall by dropping the
+  // loaded fr bundle; English must stand in, and a bundle arriving later wins.
+  it('renders English, not raw keys, when the locale stalls past the deadline', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const frBundle = i18n.getResourceBundle('fr', 'translation');
+    try {
+      i18n.removeResourceBundle('fr', 'translation');
+      setReadyOverride(false);
+      renderEntry();
+      await vi.advanceTimersByTimeAsync(10_001);
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Track my order' })).toBeInTheDocument());
+      expect(document.body.textContent).not.toContain('aito.track.');
+      // The stalled locale landing afterwards still wins over the English stand-in.
+      i18n.addResourceBundle('fr', 'translation', frBundle, true, false);
+      expect(i18n.t('aito.track.enterTitle')).toBe('Suivre ma commande');
+    } finally {
+      vi.useRealTimers();
+      setReadyOverride(null);
+      i18n.options.fallbackLng = false;
+      i18n.addResourceBundle('fr', 'translation', frBundle, true, true);
+    }
+  });
+
 });

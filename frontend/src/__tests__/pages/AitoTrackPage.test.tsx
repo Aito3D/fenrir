@@ -1061,4 +1061,29 @@ describe('AitoTrackPage — amounts owed (2026-10-13)', () => {
     expect(await screen.findByTestId('track-payment')).toHaveAttribute('data-state', 'paid');
     expect(screen.queryByTestId('track-balance')).not.toBeInTheDocument();
   });
+  // T-039: English is lazy now, so a locale that stalls past the deadline
+  // used to leave raw 'aito.track.*' keys. Simulate the stall by dropping the
+  // loaded fr bundle; English must stand in, and a bundle arriving later wins.
+  it('renders English, not raw keys, when the locale stalls past the deadline', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const frBundle = i18n.getResourceBundle('fr', 'translation');
+    try {
+      i18n.removeResourceBundle('fr', 'translation');
+      setReadyOverride(false);
+      mockTrack(FIXTURE);
+      renderAt('stalled-en');
+      await vi.advanceTimersByTimeAsync(10_001);
+      await waitFor(() => expect(screen.getByTestId('track-content')).toBeInTheDocument());
+      expect(document.body.textContent).not.toContain('aito.track.');
+      // The stalled locale landing afterwards still wins over the English stand-in.
+      i18n.addResourceBundle('fr', 'translation', frBundle, true, false);
+      expect(i18n.t('aito.track.status.workingTitle')).toBe('En fabrication');
+    } finally {
+      vi.useRealTimers();
+      setReadyOverride(null);
+      i18n.options.fallbackLng = false;
+      i18n.addResourceBundle('fr', 'translation', frBundle, true, true);
+    }
+  });
+
 });

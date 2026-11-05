@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { availableLanguages } from '../i18n';
+import i18next from 'i18next';
+import { availableLanguages, LOCALE_LOADERS } from '../i18n';
 import { trackingDefaultLanguage } from '../utils/aitoTracking';
+import { I18N_SETTLE_TIMEOUT_MS } from '../utils/trackingShell';
 
 const SUPPORTED = availableLanguages.map((l) => l.code);
 
@@ -30,4 +32,35 @@ export function useTrackingLanguage() {
     document.title = t('aito.track.pageTitle');
   }, [lng, t]);
   return { t, lng, ready };
+}
+
+/** The tracking pages' locale deadline, shared by both: true once
+ *  I18N_SETTLE_TIMEOUT_MS has passed (a one-way latch) and, if the active
+ *  language's bundle still has not arrived, English is in place. English is
+ *  not bundled in the entry any more, so without this the page would render
+ *  raw `aito.track.*` keys. English goes in as the fallback language
+ *  (not into the active one), so a stalled locale that lands later wins. */
+export function useI18nSettleDeadline(): boolean {
+  const [timedOut, setTimedOut] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        if (!i18next.languages?.some((l) => i18next.hasResourceBundle(l, 'translation'))) {
+          try {
+            i18next.addResourceBundle('en', 'translation', (await LOCALE_LOADERS.en()).default, true, false);
+            i18next.options.fallbackLng = ['en'];
+          } catch {
+            /* English failed too: settle anyway, nothing else to show */
+          }
+        }
+        if (!cancelled) setTimedOut(true);
+      })();
+    }, I18N_SETTLE_TIMEOUT_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
+  return timedOut;
 }

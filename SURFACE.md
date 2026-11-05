@@ -233,6 +233,7 @@ export function TrackingShopPanel
 export function trackingStage
 export function trackStages
 export function updatedAt
+export function useI18nSettleDeadline
 export function useTrackingLanguage
 export function useTrackingPanel
 export interface PanelTrigger

@@ -1322,3 +1322,20 @@ def test_track_rate_net_key(host, expected):
     from backend.app.api.routes import aito as aito_routes
 
     assert aito_routes._track_rate_net_key(host) == expected
+
+
+def test_ipv4_mapped_clients_share_the_plain_ipv4_bucket_and_its_own_24(track_rate_clock):
+    """T-037: ::ffff:a.b.c.d keys like a.b.c.d, so mapped visitors on different
+    /24s no longer fold into one ::/48 network bucket."""
+    from types import SimpleNamespace
+
+    from backend.app.api.routes import aito as aito_routes
+
+    def req(host):
+        return SimpleNamespace(client=SimpleNamespace(host=host), headers={})
+
+    assert aito_routes._track_rate_limited(req("::ffff:203.0.113.9"))[0] == "203.0.113.9"
+    assert aito_routes._track_rate_limited(req("203.0.113.9"))[0] == "203.0.113.9"
+    aito_routes._track_rate_limited(req("::ffff:198.51.100.7"))
+    assert set(aito_routes._track_rate_net_calls) == {"203.0.113.0/24", "198.51.100.0/24"}
+    assert len(aito_routes._track_rate_net_calls["203.0.113.0/24"]) == 2

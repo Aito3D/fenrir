@@ -1535,7 +1535,9 @@ def _track_rate_limited(request: Request) -> tuple[str, float] | None:
     now = time.monotonic()
     host = _get_client_ip(request)
     try:
-        ipaddress.ip_address(host)
+        addr = ipaddress.ip_address(host)
+        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+            host = str(addr.ipv4_mapped)  # T-037: a mapped client keys like its plain IPv4 address and /24
     except ValueError:
         host = "__no_ip__"  # no real peer, or unparseable — one shared, cappable bucket (T-012)
     net = _track_rate_net_key(host)
