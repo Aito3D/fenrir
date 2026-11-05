@@ -30,7 +30,8 @@ from backend.app.core.database import async_session
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services.aito_poll_watermark import format_books_time
-from backend.app.services.order_board import age_days, compute_board
+from backend.app.services.order_board import age_days, compute_board, order_row
+from backend.app.services.order_board_payment import order_payment
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,14 @@ _rate_limited_until = 0.0
 # Set to cut the loop's sleep short (settings saved). Created by the loop
 # itself, so it belongs to the loop's event loop.
 _wake: asyncio.Event | None = None
+
+
+class OrderNotFinished(Exception):
+    """The order is unknown, or not a finished one."""
+
+
+class ZohoBusy(Exception):
+    """Books is throttling us, or the shared call budget is spent: try again shortly."""
 
 
 @dataclass
@@ -173,6 +182,90 @@ async def _add_links(db: AsyncSession, rows: list[dict]) -> None:
             invoice["url"] = f"{invoice_base}{invoice['id']}" if invoice_base and invoice["id"] else None
         facts = row["facts"]
         facts["quote_url"] = f"{quote_base}{facts['estimate_id']}" if quote_base and facts["estimate_id"] else None
+
+
+_PAID_FLAGS = {"paid": "paid", "partially_paid": "partial", "unpaid": "unpaid"}
+# Header fields that, once they differ from the stored detail's, say the detail is out of date.
+_FRESHNESS_FIELDS = ("last_modified_time", "paid_status", "invoiced_status")
+
+
+def _is_stale(doc: OrderBoardDoc) -> bool:
+    detail = doc.detail or {}
+    return bool(detail.get("_stale")) or any(doc.header.get(f) != detail.get(f) for f in _FRESHNESS_FIELDS)
+
+
+async def _finished_docs(db: AsyncSession) -> list[OrderBoardDoc]:
+    """Sales orders that count as finished, judged from stored rows only. A candidate with a stored
+    detail that the stored board does not show has shipped since the board was computed."""
+    state = await _find_state(db)
+    current = (state.detail if state else None) or {}
+    # shortcut: before the first computed board nothing is "off the board" yet, so only list-row shipping counts
+    on_board = {r["id"] for r in current.get("rows") or []} if current.get("computed_at") else None
+    settings = await load_settings(db)
+    docs = (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "salesorder"))).scalars().all()
+    return [
+        d
+        for d in docs
+        if _is_finished(d.header)
+        or (
+            on_board is not None
+            and d.detail is not None
+            and d.zoho_id not in on_board
+            and _is_candidate(d.kind, d.header, settings)
+        )
+    ]
+
+
+async def read_finished(db: AsyncSession) -> dict:
+    """Finished orders, newest first, from stored list rows: no Zoho call."""
+    try:
+        base = await zoho_service.books_salesorder_url_base(db)
+    except ZohoNotConfiguredError:
+        base = None
+    today = date.today()
+    docs = sorted(
+        await _finished_docs(db),
+        key=lambda d: (d.header.get("date") or "", d.header.get("salesorder_number") or ""),
+        reverse=True,
+    )
+    rows = [
+        {
+            "id": d.zoho_id,
+            "number": d.header.get("salesorder_number"),
+            "customer": d.header.get("customer_name"),
+            "date": d.header.get("date"),
+            "total": d.header.get("total"),
+            "currency": d.header.get("currency_code"),
+            "reference": d.header.get("reference_number") or "",
+            "paid_flag": _PAID_FLAGS.get(d.header.get("paid_status")),
+            "payment": order_payment(d.detail, today) if d.detail and not _is_stale(d) else None,
+            "zoho_url": f"{base}{d.zoho_id}" if base else None,
+        }
+        for d in docs
+    ]
+    return {"rows": rows}
+
+
+async def read_finished_order(db: AsyncSession, salesorder_id: str) -> dict:
+    """One finished order in full. Fetched from Zoho only when no current copy is stored; then kept."""
+    global _rate_limited_until
+    doc = next((d for d in await _finished_docs(db) if d.zoho_id == salesorder_id), None)
+    if doc is None:
+        raise OrderNotFinished(salesorder_id)
+    if doc.detail is None or _is_stale(doc):
+        if time.monotonic() < _rate_limited_until or zoho_service.calls_in_last_minute() >= CALL_CEILING:
+            raise ZohoBusy(salesorder_id)
+        try:
+            fetched = await zoho_service.get_salesorder(db, salesorder_id)
+        except ZohoRateLimited as e:
+            _rate_limited_until = time.monotonic() + (e.retry_after or PENDING_PAUSE_SECONDS)
+            raise ZohoBusy(salesorder_id) from e
+        doc.detail = {**fetched, "_fetched_at": _now()}
+        doc.pending = False
+        await db.commit()
+    rows = [order_row(doc.detail, {}, date.today())]
+    await _add_links(db, rows)
+    return rows[0]
 
 
 async def recompute(db: AsyncSession) -> None:

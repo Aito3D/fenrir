@@ -124,3 +124,42 @@ async def test_settings_defaults(async_client, tokens):
         "max_age_days": 365,
         "core_brands": ["Bambu Lab", "eSUN", "SUNLU", "Polymaker", "Inslogic", "Magigoo"],
     }
+
+
+@pytest.mark.asyncio
+async def test_finished_routes_need_orders_read(async_client, tokens):
+    for url in ("/api/v1/order-board/finished", "/api/v1/order-board/finished/so1"):
+        assert (await async_client.get(url, headers=tokens["none"])).status_code == 403
+    r = await async_client.get("/api/v1/order-board/finished", headers=tokens["read"])
+    assert r.status_code == 200 and r.json() == {"rows": []}
+    # Allowed through, then unknown: 404, not 403.
+    assert (await async_client.get("/api/v1/order-board/finished/so1", headers=tokens["read"])).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_finished_detail_maps_busy_to_503_and_unknown_to_404(async_client, tokens, monkeypatch):
+    from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError
+
+    url = "/api/v1/order-board/finished/so1"
+    outcomes = {
+        order_board_sync.OrderNotFinished: (404, None),
+        order_board_sync.ZohoBusy: (503, "Zoho is busy, try again shortly."),
+        ZohoNotConfiguredError: (503, "Zoho Books is not connected."),
+        ZohoUpstreamError: (502, None),
+    }
+    for exc, (status, detail) in outcomes.items():
+
+        async def fake(db, salesorder_id, exc=exc):
+            raise exc("x")
+
+        monkeypatch.setattr(order_board_sync, "read_finished_order", fake)
+        r = await async_client.get(url, headers=tokens["read"])
+        assert r.status_code == status, exc
+        if detail:
+            assert r.json()["detail"] == detail
+
+    async def fine(db, salesorder_id):
+        return {"id": salesorder_id}
+
+    monkeypatch.setattr(order_board_sync, "read_finished_order", fine)
+    assert (await async_client.get(url, headers=tokens["read"])).json() == {"id": "so1"}

@@ -6,10 +6,11 @@ endpoints, not the general settings API, because Operators hold
 ``settings:read`` only and must still be able to tune the board.
 """
 
+import logging
 from dataclasses import asdict
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +19,9 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
 from backend.app.services import order_board_sync
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/order-board", tags=["order-board"])
 
 
@@ -47,6 +50,35 @@ async def get_order_board(
 ) -> dict:
     """The stored board, when it was computed, and the sync status."""
     return await order_board_sync.read_board(db)
+
+
+@router.get("/finished")
+async def get_finished_orders(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+) -> dict:
+    """Shipped orders, newest first, from the stored list rows (no Zoho call)."""
+    return await order_board_sync.read_finished(db)
+
+
+@router.get("/finished/{salesorder_id}")
+async def get_finished_order(
+    salesorder_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+) -> dict:
+    """One shipped order in full; fetched from Zoho the first time it is opened, then kept."""
+    try:
+        return await order_board_sync.read_finished_order(db, salesorder_id)
+    except order_board_sync.OrderNotFinished:
+        raise HTTPException(status_code=404, detail="Finished order not found.") from None
+    except order_board_sync.ZohoBusy:
+        raise HTTPException(status_code=503, detail="Zoho is busy, try again shortly.") from None
+    except ZohoNotConfiguredError:
+        raise HTTPException(status_code=503, detail="Zoho Books is not connected.") from None
+    except ZohoUpstreamError as e:
+        logger.warning("Finished order fetch failed: %s", e)
+        raise HTTPException(status_code=502, detail="Zoho Books did not answer.") from None
 
 
 @router.post("/refresh")
