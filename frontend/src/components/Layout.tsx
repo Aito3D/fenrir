@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, ListOrdered, BarChart3, Calculator, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, Kanban, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, Droplets, ShieldAlert, Globe, Bell, Receipt, Megaphone, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, ListOrdered, BarChart3, Calculator, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, Kanban, PackageCheck, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, Droplets, ShieldAlert, Globe, Bell, Receipt, Megaphone, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -66,6 +66,7 @@ export const defaultNavItems: NavItem[] = [
   { id: 'queue', to: '/queue', icon: ListOrdered, labelKey: 'nav.queue' },
   { id: 'projects', to: '/projects', icon: FolderKanban, labelKey: 'nav.projects' },
   { id: 'aito', to: '/aito', icon: Kanban, labelKey: 'nav.aito' },
+  { id: 'orders', to: '/orders', icon: PackageCheck, labelKey: 'nav.orders' },
   { id: 'files', to: '/files', icon: FolderOpen, labelKey: 'nav.files' },
   // Id kept from when the page was MakerWorld-only, so saved sidebar orders and hidden items still apply.
   { id: 'makerworld', to: '/model-sources', icon: Globe, labelKey: 'nav.modelSources' },
@@ -386,6 +387,7 @@ export function Layout() {
       makerworld: ['makerworld:view', 'manyfold:view'],
       calculator: 'calculator:read',
       aito: 'aito:read',
+      orders: 'orders:read',
       settings: 'settings:read',
       // The user-email-preferences API requires notifications:user_email, so
       // gate the nav item on the same permission (both default groups —
