@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order payment and contact · mockup</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  bg: '#0c1016', surf: '#141b23', line: '#212c37', ink: '#e9eff6', sub: '#93a4b6', acc: '#14b8a6',
+} } } };
+</script>
+<style>
+  html { font-size: 14.4px; }
+  body { background: #0c1016; color: #e9eff6; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  [data-lucide] { width: 1em; height: 1em; }
+  .seg[aria-pressed=true] { background: #14b8a6; color: #0c1016; }
+  .row-grid { display: grid; align-items: center; column-gap: 12px; row-gap: 6px; }
+  @media (max-width: 899px) {
+    .row-grid { grid-template-columns: minmax(0,1fr) auto 18px !important; grid-template-areas: "num status chev" "cust value chev" "bar bar bar" "pay pay pay"; }
+    .c-num { grid-area: num; } .c-cust { grid-area: cust; } .c-age { display: none; } .c-bar { grid-area: bar; }
+    .c-status { grid-area: status; justify-self: end; } .c-value { grid-area: value; } .c-chev { grid-area: chev; } .c-pay { grid-area: pay; justify-self: start; }
+  }
+  .adv { background: repeating-linear-gradient(135deg, #22c55e 0 3px, rgba(34,197,94,.4) 3px 6px); }
+  .spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
+  .panel { animation: open .16s ease-out; } @keyframes open { from { opacity: 0; transform: translateY(-3px); } }
+  @media (prefers-reduced-motion: reduce) { .panel { animation: none; } }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- demo controls: not part of the app -->
+<div class="sticky top-0 z-10 border-b border-line bg-surf">
+  <div class="mx-auto flex max-w-[1300px] flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
+    <div class="text-sm"><span class="font-semibold">Order payment and contact</span> <span class="text-sub">· mockup, fake data</span></div>
+    <div id="rowCtl" class="inline-flex items-center gap-1 rounded-lg border border-line bg-bg p-1 text-xs">
+      <span class="px-2 text-sub">Payment on the row</span>
+      <button class="seg rounded-md px-2.5 py-1.5" data-row="a">A · Second bar</button>
+      <button class="seg rounded-md px-2.5 py-1.5" data-row="b">B · Under the amount</button>
+      <button class="seg rounded-md px-2.5 py-1.5" data-row="c">C · Filling pill</button>
+    </div>
+    <div id="panelCtl" class="inline-flex items-center gap-1 rounded-lg border border-line bg-bg p-1 text-xs">
+      <span class="px-2 text-sub">In the opened order</span>
+      <button class="seg rounded-md px-2.5 py-1.5" data-panel="top">Above the lines</button>
+      <button class="seg rounded-md px-2.5 py-1.5" data-panel="side">Beside the lines</button>
+    </div>
+    <div class="inline-flex items-center gap-1 rounded-lg border border-line bg-bg p-1 text-xs">
+      <span class="px-2 text-sub">Propositions</span>
+      <button class="seg rounded-md px-2.5 py-1.5" data-ideas="off">Off</button>
+      <button class="seg rounded-md px-2.5 py-1.5" data-ideas="on">On</button>
+    </div>
+  </div>
+</div>
+
+<main class="mx-auto max-w-[1300px] space-y-5 p-4 sm:p-6">
+  <header class="flex flex-wrap items-center justify-between gap-3">
+    <h1 class="flex items-center gap-3 text-2xl font-bold"><i data-lucide="package-check" class="text-acc"></i> Orders</h1>
+    <div class="text-sm text-sub">Updated 5 Nov 2026, 09:42</div>
+  </header>
+
+  <div id="tiles" class="grid grid-cols-2 gap-3 md:grid-cols-5"></div>
+
+  <div class="flex flex-wrap items-center gap-2">
+    <label class="relative max-w-xs grow basis-56">
+      <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 text-sub"></i>
+      <input id="q" type="search" placeholder="Order number, customer, reference…" class="w-full rounded-lg border border-line bg-surf py-2 pl-9 pr-3 text-sm placeholder:text-sub focus:border-acc focus:outline-none">
+    </label>
+    <div id="statusChips" class="flex flex-wrap items-center gap-1.5"></div>
+    <span class="mx-1 hidden h-5 w-px bg-line sm:block"></span>
+    <div id="payChips" class="flex flex-wrap items-center gap-1.5"></div>
+    <span class="rounded bg-acc/20 px-1.5 py-0.5 text-[10px] text-acc">new</span>
+  </div>
+
+  <div id="list" class="space-y-2"></div>
+
+  <details class="rounded-xl border border-line bg-surf px-4 py-3 text-sm">
+    <summary class="cursor-pointer font-medium">Where the numbers come from</summary>
+    <ul class="mt-3 list-disc space-y-1.5 pl-5 text-sub">
+      <li><span class="text-ink">Paid</span> is the sum, over the order's invoices, of invoice total minus invoice balance. Zoho already sends this with each order, so there is no extra call.</li>
+      <li><span class="text-ink">Percentage</span> is paid divided by the order total, rounded down, so 100% only ever means fully paid.</li>
+      <li>The bar has up to three parts: <span class="text-green-400">paid</span>, <span class="text-yellow-400">invoiced and awaiting payment</span> (<span class="text-red-400">red once the due date has passed</span>), and the empty track for what is not invoiced yet.</li>
+      <li>Zoho's own "partially paid" flag only says "partially invoiced" in this shop's data: every invoice on today's open orders is paid. The amounts are more honest than the flag.</li>
+      <li><span class="text-ink">Contact</span> is the contact person Zoho stores on the order (name, email, phone, mobile). It is already in the synced data. About a third of today's open orders have no phone and a few no email, so the block says so instead of hiding.</li>
+      <li><span class="text-ink">Paid in advance</span> (hatched green, Propositions on): in the real data, 20 of 25 open orders that Zoho calls "unpaid" belong to a customer holding unused credit, usually the exact order total or a 50 to 70% deposit. The money is received but waits for the invoice. Zoho stores that credit per customer, not per order, so with several open orders it is handed out oldest order first.</li>
+      <li><span class="text-ink">Finished orders</span>: Zoho's order list is already copied locally for every order, so the list costs nothing. Lines, invoices and contact of a finished order are fetched from Zoho the first time someone opens it, then kept. Until then the row only knows Zoho's paid, partly paid or unpaid flag, so it shows no percentage.</li>
+      <li>Shopify number or quote number, pick-up and payment terms are on the order in Zoho when someone filled them in. Delivery address never is.</li>
+    </ul>
+  </details>
+</main>
+
+<script>
+const TODAY = new Date(2026, 10, 5, 12);
+const day = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d, 12); };
+const short = s => day(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+const daysTo = s => Math.round((day(s) - TODAY) / 864e5);
+const num = n => n.toLocaleString('fr-FR').replace(/[  ]/g, ' ');
+const money = n => num(n) + ' FCFP';
+
+const STATUS = {
+  to_ship: { label: 'Ready to ship', icon: 'package-check', text: 'text-green-400', soft: 'bg-green-500/10', edge: 'border-l-green-500' },
+  partial: { label: 'Partial', icon: 'package-open', text: 'text-blue-400', soft: 'bg-blue-500/10', edge: 'border-l-blue-500' },
+  incoming: { label: 'Incoming', icon: 'truck', text: 'text-yellow-400', soft: 'bg-yellow-400/10', edge: 'border-l-yellow-500' },
+  to_order: { label: 'To order', icon: 'shopping-cart', text: 'text-red-400', soft: 'bg-red-500/20', edge: 'border-l-red-500' },
+};
+const PAY = {
+  unpaid: { label: 'Unpaid', icon: 'circle-dashed', text: 'text-sub', soft: 'bg-white/5' },
+  partial: { label: 'Partially paid', icon: 'circle-dot-dashed', text: 'text-ink', soft: 'bg-white/5' },
+  paid: { label: 'Paid', icon: 'circle-check', text: 'text-green-400', soft: 'bg-green-500/10' },
+};
+const LINE = { ready: ['Ready', 'text-green-400'], backorder: ['Incoming', 'text-yellow-400'], to_order: ['To order', 'text-red-400'], shipped: ['Shipped', 'text-sub'] };
+
+const I = (number, date, due, total, balance, mode) => ({ number, date, due, total, balance, mode });
+const ORDERS = [
+  { number: 'SO-00412', customer: 'Lycée Polyvalent de Taravao', date: '2026-09-12', status: 'to_order', total: 136000,
+    units: { total: 4, shipped: 0, ready: 0, backordered: 0, toOrder: 4 }, invoices: [],
+    lines: [['Bambu Lab A1 mini', 'BL-A1M', 4, 'to_order']] },
+  { number: 'SO-00418', customer: 'Atelier Moana', date: '2026-10-02', status: 'incoming', total: 247500,
+    units: { total: 8, shipped: 0, ready: 5, backordered: 3, toOrder: 0 },
+    invoices: [I('FAC-2026-0398', '2026-10-02', '2026-10-02', 99000, 0, "TPE O'SEA")],
+    lines: [['eSUN PETG Blanc 1 kg', 'ES-PETG-WH-1K', 5, 'ready'], ['Bambu Lab PLA Basic Noir 1 kg', 'BL-PLA-BK-1K', 3, 'backorder']] },
+  { number: 'SO-00421', customer: 'Tahiti Nautic Center', date: '2026-10-09', status: 'partial', total: 612000,
+    units: { total: 12, shipped: 4, ready: 5, backordered: 3, toOrder: 0 },
+    invoices: [I('FAC-2026-0412', '2026-10-12', '2026-10-12', 250000, 0, 'Transfert bancaire'), I('FAC-2026-0431', '2026-10-28', '2026-11-11', 180000, 180000, null)],
+    lines: [['Bambu Lab AMS Lite', 'BL-AMS-LITE', 5, 'ready'], ['Polymaker PolyLite ASA Gris 1 kg', 'PM-ASA-GY-1K', 3, 'backorder'], ['eSUN PETG Blanc 1 kg', 'ES-PETG-WH-1K', 4, 'shipped']] },
+  { number: 'SO-00425', customer: 'Fare Print', date: '2026-10-20', status: 'to_ship', total: 589000,
+    units: { total: 6, shipped: 0, ready: 6, backordered: 0, toOrder: 0 },
+    invoices: [I('FAC-2026-0420', '2026-10-20', '2026-10-20', 589000, 0, 'Paiement en ligne')],
+    lines: [['Bambu Lab PLA Basic Noir 1 kg', 'BL-PLA-BK-1K', 5, 'ready'], ['Bambu Lab AMS Lite', 'BL-AMS-LITE', 1, 'ready']] },
+  { number: 'SO-00427', customer: 'Heiva Design', date: '2026-10-22', status: 'partial', total: 714000,
+    units: { total: 12, shipped: 6, ready: 4, backordered: 2, toOrder: 0 },
+    invoices: [I('FAC-2026-0424', '2026-10-22', '2026-10-27', 300000, 300000, null)],
+    lines: [['Bambu Lab AMS Lite', 'BL-AMS-LITE', 4, 'ready'], ['Polymaker PolyLite ASA Gris 1 kg', 'PM-ASA-GY-1K', 2, 'backorder'], ['eSUN PETG Blanc 1 kg', 'ES-PETG-WH-1K', 6, 'shipped']] },
+  { number: 'SO-00430', customer: 'M. Teriitahi', date: '2026-10-28', status: 'to_ship', total: 34000,
+    units: { total: 1, shipped: 0, ready: 1, backordered: 0, toOrder: 0 }, invoices: [],
+    lines: [['Bambu Lab PLA Basic Noir 1 kg', 'BL-PLA-BK-1K', 1, 'ready']] },
+  { number: 'SO-00433', customer: 'Collège de Paea', date: '2026-11-02', status: 'to_ship', total: 128400,
+    units: { total: 5, shipped: 0, ready: 5, backordered: 0, toOrder: 0 },
+    invoices: [I('FAC-2026-0440', '2026-11-02', '2026-12-02', 128400, 64200, 'Transfert bancaire')],
+    lines: [['Polymaker PolyLite ASA Gris 1 kg', 'PM-ASA-GY-1K', 3, 'ready'], ['eSUN PETG Blanc 1 kg', 'ES-PETG-WH-1K', 2, 'ready']] },
+  { number: 'SO-00435', customer: 'Mana Robotics', date: '2026-11-04', status: 'incoming', total: 473000,
+    units: { total: 28, shipped: 0, ready: 26, backordered: 2, toOrder: 0 },
+    invoices: [I('FAC-2026-0444', '2026-11-04', '2026-11-04', 200000, 0, 'Paiement en ligne'), I('FAC-2026-0445', '2026-11-04', '2026-11-04', 273000, 0, 'Paiement en ligne')],
+    lines: [...['Blanc', 'Noir', 'Gris', 'Rouge', 'Bleu', 'Vert', 'Jaune', 'Orange', 'Violet', 'Rose', 'Beige', 'Cyan', 'Marron'].map((c, i) => [`SUNLU PETG ${c} 1 kg`, `SNL-PTG-${String(i + 1).padStart(2, '0')}`, 2, 'ready']), ['Bambu Lab AMS Lite', 'BL-AMS-LITE', 2, 'backorder']] },
+  { number: 'SO-00436', customer: 'Atelier Moana', date: '2026-11-04', status: 'to_order', total: 98000,
+    units: { total: 1, shipped: 0, ready: 0, backordered: 0, toOrder: 1 }, invoices: [],
+    lines: [['Bambu Lab A1 mini', 'BL-A1M', 1, 'to_order']] },
+];
+
+const CONTACTS = {
+  'SO-00412': { name: 'Intendance', phone: '40 54 71 00', email: 'intendance@lycee-taravao.example' },
+  'SO-00418': { name: 'Moana Tehei', mobile: '87 70 12 34', email: 'moana@atelier-moana.example' },
+  'SO-00421': { name: 'Teva Marchand', phone: '40 50 22 10', mobile: '87 22 45 67', email: 'teva@tahiti-nautic.example' },
+  'SO-00425': { name: 'Hina Faua', mobile: '89 51 20 30', email: 'hina@fareprint.example' },
+  'SO-00427': { name: 'Heiva Tauira', email: 'contact@heiva-design.example' },
+  'SO-00430': { name: 'Manu Teriitahi', mobile: '87 31 00 99' },
+  'SO-00433': { name: 'Gestionnaire', phone: '40 53 31 26', email: 'gestion@college-paea.example' },
+  'SO-00435': { name: 'Rahiti Chung', mobile: '87 78 44 02', email: 'rahiti@mana-robotics.example' },
+};
+CONTACTS['SO-00436'] = CONTACTS['SO-00418'];
+// credit = the customer's unused credit in Zoho that falls to this order (oldest order first)
+const EXTRA = {
+  'SO-00412': { channel: 'Direct', ref: 'DEV26-2604', terms: 'Payable à réception' },
+  'SO-00418': { channel: 'Direct', ref: 'DEV26-2655', credit: 148500, pickup: true },
+  'SO-00421': { channel: 'Direct', ref: 'DEV26-2671', terms: 'A la commande' },
+  'SO-00425': { channel: 'Shopify', ref: '#1038' },
+  'SO-00427': { channel: 'Direct', ref: 'DEV26-2690' },
+  'SO-00430': { channel: 'Shopify', ref: '#1042', credit: 34000, pickup: true },
+  'SO-00433': { channel: 'Direct', ref: 'DEV26-2702', terms: 'Payable à réception', pickup: true },
+  'SO-00435': { channel: 'Shopify', ref: '#1047' },
+  'SO-00436': { channel: 'Direct', ref: 'DEV26-2711', credit: 68600 },
+};
+for (const o of ORDERS) Object.assign(o, EXTRA[o.number], { contact: CONTACTS[o.number] });
+
+const DONE_META = { label: 'Shipped', icon: 'check-check', text: 'text-sub', soft: 'bg-white/5' };
+const D = (number, customer, date, total, qty, invoices, extra) => ({ number, customer, date, total, done: true, status: 'done', age: -daysTo(date),
+  units: { total: qty, shipped: qty, ready: 0, backordered: 0, toOrder: 0 }, invoices, ...extra });
+const DONE = [
+  D('SO-00409', 'Pacific Print Shop', '2026-10-18', 86400, 6, [I('FAC-2026-0416', '2026-10-19', '2026-10-19', 86400, 0, "TPE O'SEA")],
+    { channel: 'Shopify', ref: '#1035', pkg: 'PKG-00029 · delivered 21 Oct', contact: { name: 'Vai Tehau', mobile: '87 29 60 11', email: 'vai@pacific-print.example' }, lines: [['eSUN PETG Blanc 1 kg', 'ES-PETG-WH-1K', 6, 'shipped']] }),
+  D('SO-00402', 'Atelier Moana', '2026-10-05', 52000, 2, [I('FAC-2026-0401', '2026-10-06', '2026-10-06', 52000, 0, 'Paiement en ligne')],
+    { channel: 'Direct', ref: 'DEV26-2640', pickup: true, pkg: 'PKG-00026 · picked up 7 Oct', contact: CONTACTS['SO-00418'], lines: [['Bambu Lab AMS Lite', 'BL-AMS-LITE', 2, 'shipped']] }),
+  D('SO-00397', 'Lycée Polyvalent de Taravao', '2026-09-22', 318000, 9, [I('FAC-2026-0388', '2026-09-24', '2026-10-24', 318000, 159000, 'Transfert bancaire')],
+    { channel: 'Direct', ref: 'DEV26-2598', terms: 'Payable à réception', pkg: 'PKG-00022 · delivered 26 Sep', contact: CONTACTS['SO-00412'], lines: [['Bambu Lab A1 mini', 'BL-A1M', 3, 'shipped'], ['Bambu Lab PLA Basic Noir 1 kg', 'BL-PLA-BK-1K', 6, 'shipped']] }),
+  D('SO-00391', 'Voilerie du Port', '2026-09-03', 44500, 3, [I('FAC-2026-0371', '2026-09-04', '2026-09-04', 44500, 0, "TPE O'SEA")],
+    { channel: 'Direct', ref: 'DEV26-2577', pkg: 'PKG-00019 · delivered 5 Sep', contact: { name: 'Tamatoa Brothers', phone: '40 42 18 05' }, lines: [['Polymaker PolyLite ASA Gris 1 kg', 'PM-ASA-GY-1K', 3, 'shipped']] }),
+  D('SO-00377', 'Tahiti Nautic Center', '2026-08-14', 127000, 4, [I('FAC-2026-0351', '2026-08-16', '2026-09-15', 127000, 127000, null)],
+    { channel: 'Direct', ref: 'DEV26-2541', pkg: 'PKG-00014 · delivered 18 Aug', contact: CONTACTS['SO-00421'], lines: [['Bambu Lab AMS Lite', 'BL-AMS-LITE', 4, 'shipped']] }),
+  D('SO-00352', 'Heiva Design', '2026-07-02', 61000, 2, [I('FAC-2026-0322', '2026-07-03', '2026-07-03', 61000, 0, 'Paiement en ligne')],
+    { channel: 'Shopify', ref: '#1011', pkg: 'PKG-00009 · delivered 6 Jul', contact: CONTACTS['SO-00427'], lines: [['eSUN PETG Blanc 1 kg', 'ES-PETG-WH-1K', 2, 'shipped']] }),
+];
+const LOADING = `<div class="border-t border-line bg-bg/40 px-4 py-4"><div class="flex items-center gap-2 text-xs text-sub"><i data-lucide="loader-circle" class="spin"></i>Loading this order from Zoho…</div>
+  <div class="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_27rem]"><div class="space-y-2"><div class="h-8 animate-pulse rounded bg-line/50"></div><div class="h-8 animate-pulse rounded bg-line/50"></div></div><div class="h-24 animate-pulse rounded-lg bg-line/50"></div></div></div>`;
+
+// The one piece of real logic: what the backend would compute per order.
+function payment(o) {
+  const invPaid = Math.min(o.total, o.invoices.reduce((n, i) => n + i.total - i.balance, 0));
+  const open = o.invoices.filter(i => i.balance > 0);
+  const overdue = open.filter(i => daysTo(i.due) < 0).reduce((n, i) => n + i.balance, 0);
+  const due = open.reduce((n, i) => n + i.balance, 0) - overdue;
+  // Proposition: money already received that sits as customer credit until the next invoice.
+  const advance = ui.ideas ? Math.min(o.credit || 0, Math.max(0, o.total - invPaid - due - overdue)) : 0;
+  const paid = invPaid + advance;
+  const rest = Math.max(0, o.total - paid - due - overdue);
+  const state = paid >= o.total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
+  const next = open.map(i => i.due).sort()[0];
+  return { paid, invPaid, advance, due, overdue, rest, state, pct: Math.floor((paid / o.total) * 100), next, total: o.total, left: o.total - paid };
+}
+for (const o of ORDERS) o.age = -daysTo(o.date);
+
+const ui = { row: 'c', panel: 'side', ideas: true, status: 'all', pay: 'all', q: '', open: new Set(['SO-00421']) };
+const [hr, hp, hi, ho, hs] = location.hash.slice(1).split(',');
+if (hs === 'done') ui.status = 'done';
+for (const o of DONE) if (o.number === ho) o.loaded = true;
+if (hi === 'off') ui.ideas = false;
+if (ho) ui.open = new Set([ho]);
+if ('abc'.includes(hr) && hr) ui.row = hr;
+if (hp === 'top' || hp === 'side') ui.panel = hp;
+
+const pctOf = (n, total) => `width:${(n / total) * 100}%`;
+const payBar = (p, h) => `<span class="flex ${h} overflow-hidden rounded-full bg-bg">
+  <span class="bg-green-500" style="${pctOf(p.invPaid, p.total)}"></span><span class="adv" style="${pctOf(p.advance, p.total)}"></span><span class="bg-yellow-500" style="${pctOf(p.due, p.total)}"></span><span class="bg-red-500" style="${pctOf(p.overdue, p.total)}"></span></span>`;
+// Right-hand caption: the three states the operator asked for.
+const payShort = p => p.state === 'paid' ? 'Paid' : p.state === 'partial' ? `${p.pct}% paid` : 'Unpaid';
+const payTone = p => p.overdue ? 'text-red-400' : PAY[p.state].text;
+// Left-hand caption: what happens next with the money.
+const payNext = p =>
+  p.state === 'paid' ? `${money(p.total)} received`
+  : p.overdue ? `<span class="text-red-400">${money(p.overdue)} overdue ${-daysTo(p.next)} d</span>`
+  : p.due ? `${money(p.due)} due ${short(p.next)}`
+  : p.paid ? `${money(p.rest)} not invoiced` : 'Not invoiced';
+// flagOnly: a finished order in the list, where only Zoho's paid / partly / unpaid flag is known.
+const payPill = (p, fill, flagOnly) => `<span class="relative ${fill ? 'flex w-full' : 'inline-flex'} items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full px-2.5 py-1 text-xs ${PAY[p.state].soft} ${flagOnly ? PAY[p.state].text : payTone(p)}">
+  ${fill && !flagOnly ? `<span class="absolute inset-y-0 left-0 bg-green-500/40" style="width:${p.state === 'paid' ? 0 : p.pct}%"></span>` : ''}
+  <i data-lucide="${p.overdue && !flagOnly ? 'circle-alert' : PAY[p.state].icon}" class="relative"></i><span class="relative">${flagOnly ? PAY[p.state].label : payShort(p) + (p.overdue ? ' · overdue' : '')}</span></span>`;
+
+const COLS = {
+  a: '6.5rem minmax(0,1fr) 3.5rem minmax(13rem,18rem) 8.5rem 7.5rem 1.25rem',
+  b: '6.5rem minmax(0,1fr) 3.5rem minmax(11rem,16rem) 8.5rem 8.5rem 1.25rem',
+  c: '6.5rem minmax(0,1fr) 3.5rem minmax(11rem,16rem) 8.5rem 9.5rem 7.5rem 1.25rem',
+};
+
+function rowHtml(o) {
+  const u = o.units, p = o.pay, s = o.done ? DONE_META : STATUS[o.status], w = n => pctOf(n, u.total);
+  const age = o.age > 45 ? 'bg-red-500/20 text-red-400' : o.age > 20 ? 'bg-yellow-400/10 text-yellow-400' : 'bg-line/60 text-sub';
+  const open = ui.open.has(o.number);
+  return `<div id="row-${o.number}" class="scroll-mt-20 overflow-clip rounded-xl border border-line bg-surf">
+    <button type="button" data-open="${o.number}" aria-expanded="${open}" class="row-grid w-full px-4 py-3 text-left hover:bg-line/30" style="grid-template-columns:${COLS[ui.row]}">
+      <span class="c-num font-mono text-sm font-semibold">${o.number}</span>
+      <span class="c-cust min-w-0"><span class="block truncate">${o.customer}</span><span class="block text-xs text-sub">${day(o.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span></span>
+      ${o.done ? '<span class="c-age"></span>' : `<span class="c-age justify-self-start rounded-md px-2 py-0.5 text-xs ${age}">${o.age} d</span>`}
+      <span class="c-bar">
+        <span class="flex h-2 overflow-hidden rounded-full bg-bg"><span class="bg-neutral-500" style="${w(u.shipped)}"></span><span class="bg-green-500" style="${w(u.ready)}"></span><span class="bg-yellow-500" style="${w(u.backordered)}"></span><span class="bg-red-500" style="${w(u.toOrder)}"></span></span>
+        <span class="mt-1 flex justify-between gap-2 whitespace-nowrap text-[11px] text-sub"><span>Shipped ${u.shipped}/${u.total}</span><span>${o.done ? '' : Math.round((u.ready / (u.total - u.shipped || 1)) * 100) + '% ready'}</span></span>
+        ${ui.row === 'a' ? `<span class="mt-2 block">${payBar(p, 'h-2')}</span>
+        <span class="mt-1 flex justify-between gap-2 whitespace-nowrap text-[11px] text-sub"><span>${payNext(p)}</span><span class="${payTone(p)}">${payShort(p)}</span></span>` : ''}
+      </span>
+      <span class="c-status inline-flex items-center gap-1.5 justify-self-start rounded-full px-2.5 py-1 text-xs ${s.soft} ${s.text}"><i data-lucide="${s.icon}"></i>${s.label}</span>
+      ${ui.row === 'c' ? `<span class="c-pay w-[9.5rem]">${payPill(p, true, o.done && !o.loaded)}</span>` : ''}
+      <span class="c-value text-right text-sm tabular-nums">${money(o.total)}
+        ${ui.row === 'b' ? `<span class="mt-1.5 block">${payBar(p, 'h-1.5')}</span><span class="mt-1 block text-[11px] ${payTone(p)}">${payShort(p)}${p.overdue ? ' · overdue' : ''}</span>` : ''}
+      </span>
+      <i data-lucide="chevron-down" class="c-chev text-sub transition-transform ${open ? 'rotate-180' : ''}"></i>
+    </button>
+    ${open ? (o.done && !o.loaded ? LOADING : panelHtml(o)) : ''}
+  </div>`;
+}
+
+function panelHtml(o) {
+  const p = o.pay, c = o.contact, ideas = ui.ideas;
+  const leg = (dot, label, n) => n > 0 ? `<span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full ${dot}"></span><span class="text-sub">${label}</span><span class="tabular-nums">${money(n)}</span></span>` : '';
+  const invStatus = i => i.balance === 0 ? `<span class="text-green-400">Paid${i.mode ? ` <span class="text-sub">· ${i.mode}</span>` : ''}</span>`
+    : daysTo(i.due) < 0 ? `<span class="text-red-400">Overdue ${-daysTo(i.due)} d${i.balance < i.total ? ' · ' + money(i.balance) + ' left' : ''}</span>`
+    : `<span class="text-yellow-400">Due ${short(i.due)}${i.balance < i.total ? ' · ' + money(i.balance) + ' left' : ''}</span>`;
+  const pay = `<section class="rounded-lg border border-line bg-surf p-3">
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      <i data-lucide="wallet" class="text-sub"></i><span class="font-semibold uppercase tracking-wide">Payment</span>
+      ${payPill(p, false)}
+      <span class="ml-auto tabular-nums text-sub">${ideas
+        ? (p.left ? `Left to pay <span class="font-semibold text-ink">${money(p.left)}</span>` : 'Nothing left to pay')
+        : `<span class="text-ink">${num(p.paid)}</span> of ${money(p.total)}`}</span>
+    </div>
+    <div class="mt-2.5">${payBar(p, 'h-2.5')}</div>
+    <div class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+      ${leg('bg-green-500', p.advance ? 'Paid on invoice' : 'Paid', p.invPaid)}${leg('adv', 'Paid in advance', p.advance)}${leg('bg-yellow-500', 'Invoiced, awaiting payment', p.due)}${leg('bg-red-500', 'Overdue', p.overdue)}${leg('bg-bg ring-1 ring-line', ideas ? 'Still to pay, not invoiced' : 'Not invoiced yet', p.rest)}
+    </div>
+    ${p.advance ? '<div class="mt-1.5 text-[11px] text-sub">Advance: the customer\'s unused credit in Zoho, waiting for the next invoice.</div>' : ''}
+    <div class="mt-3 border-t border-line pt-2 text-xs">
+      ${o.invoices.length ? o.invoices.map(i => `<div class="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-3 whitespace-nowrap py-1">
+        <span class="font-mono text-acc">${i.number}</span><span class="text-sub">${short(i.date)}</span><span class="truncate">${invStatus(i)}</span><span class="text-right tabular-nums">${money(i.total)}</span></div>`).join('')
+      : '<div class="py-1 text-sub">No invoice yet for this order.</div>'}
+    </div>
+  </section>`;
+
+  const copy = text => ideas ? `<button type="button" data-copy="${text}" title="Copy" class="rounded p-1 text-sub hover:bg-line hover:text-ink"><i data-lucide="copy"></i></button>` : '';
+  const link = (icon, href, text) => `<div class="flex items-center gap-2"><i data-lucide="${icon}" class="text-sub"></i><a href="${href}" class="py-0.5 tabular-nums text-acc hover:underline">${text}</a>${copy(text)}</div>`;
+  const others = ideas ? ORDERS.filter(x => x.customer === o.customer && x !== o) : [];
+  const contact = `<section class="rounded-lg border border-line bg-surf p-3 text-xs">
+    <div class="flex items-center gap-2"><i data-lucide="user-round" class="text-sub"></i><span class="font-semibold uppercase tracking-wide">Contact</span></div>
+    ${c ? `<div class="mt-2 text-sm">${c.name}</div>
+      <div class="mt-1 text-sm">
+        ${c.mobile ? link('smartphone', 'tel:' + c.mobile.replace(/ /g, ''), c.mobile) : ''}${c.phone ? link('phone', 'tel:' + c.phone.replace(/ /g, ''), c.phone) : ''}
+        ${c.mobile || c.phone ? '' : '<div class="flex items-center gap-2 py-0.5 text-sub"><i data-lucide="phone-off"></i>No phone in Zoho</div>'}
+        ${c.email ? link('mail', `mailto:${c.email}${ideas ? '?subject=' + encodeURIComponent('Commande ' + o.number) : ''}`, c.email) : '<div class="flex items-center gap-2 py-0.5 text-sub"><i data-lucide="mail-x"></i>No email in Zoho</div>'}
+      </div>` : '<div class="mt-2 text-sub">No contact person on this order in Zoho.</div>'}
+    ${others.length ? `<div class="mt-2 border-t border-line pt-2 text-sub">Also open for this customer: ${others.map(x => `<button type="button" data-goto="${x.number}" class="font-mono text-acc hover:underline">${x.number}</button>`).join(', ')}</div>` : ''}
+  </section>`;
+
+  const fact = (icon, text) => `<span class="inline-flex items-center gap-1.5 rounded-full border border-line bg-surf px-2.5 py-1 text-xs text-sub"><i data-lucide="${icon}"></i>${text}</span>`;
+  // A reference that leads somewhere: the order in Books, and the Shopify order or the quote it came from.
+  const out = (icon, label, value, href, title) => `<a href="${href}" target="_blank" rel="noopener" title="${title} (demo link)" class="inline-flex items-center gap-1.5 rounded-full border border-line bg-surf px-2.5 py-1 text-xs text-sub hover:border-acc/60 hover:text-ink"><i data-lucide="${icon}"></i>${label} · <span class="font-mono text-acc">${value}</span><i data-lucide="external-link" class="opacity-60"></i></a>`;
+  const facts = ideas ? `<div class="mb-2 flex flex-wrap gap-1.5">${out('book-open', 'Zoho Books', o.number, 'https://books.zoho.com/app#/salesorders/demo', 'Open the order in Zoho Books')}${o.channel === 'Shopify'
+      ? out('shopping-bag', 'Shopify', o.ref, 'https://admin.shopify.com/store/demo/orders/demo', 'Open the order in Shopify admin')
+      : out('file-text', 'Quote', o.ref, 'https://books.zoho.com/app#/quotes/demo', 'Open the quote in Zoho Books')}${o.pkg ? fact('package-check', o.pkg) : ''}${o.pickup ? fact('map-pin', 'Pick up at the shop') : ''}${o.terms ? fact('calendar-clock', o.terms) : ''}</div>` : '';
+  const lines = `<div class="min-w-0">${facts}<table class="w-full text-sm"><thead class="text-left text-[11px] uppercase tracking-wide text-sub"><tr><th class="py-1.5 font-medium">Product</th><th class="text-right font-medium">Qty</th><th class="pl-4 font-medium">State</th></tr></thead><tbody>
+    ${o.lines.map(([name, sku, qty, st], i) => `<tr class="${i ? 'border-t border-line/60' : ''} ${st === 'shipped' ? 'opacity-60' : ''}"><td class="py-2 pr-3"><div>${name}</div><div class="font-mono text-xs text-sub">${sku}</div></td><td class="text-right tabular-nums">${qty}</td><td class="pl-4 ${LINE[st][1]}">${LINE[st][0]}</td></tr>`).join('')}
+  </tbody></table></div>`;
+  // Above: payment and contact share one band over the lines. Beside: both stack in a right column,
+  // which (proposition) stays in view while a long order scrolls.
+  return ui.panel === 'side'
+    ? `<div class="panel grid gap-4 border-t border-line bg-bg/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_27rem] lg:items-start">${lines}<div class="space-y-3 ${ideas ? 'lg:sticky lg:top-16' : ''}">${contact}${pay}</div></div>`
+    : `<div class="panel space-y-3 border-t border-line bg-bg/40 px-4 py-3"><div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_19rem]">${pay}${contact}</div>${lines}</div>`;
+}
+
+function chip(group, id, label, n) {
+  const on = ui[group] === id;
+  return `<button type="button" data-${group}="${id}" aria-pressed="${on}" class="rounded-full border px-3 py-1.5 text-xs ${on ? 'border-acc bg-acc/15 text-white' : 'border-line bg-surf text-sub hover:text-white'}">${label} <span class="text-sub">${n}</span></button>`;
+}
+
+function render() {
+  for (const b of document.querySelectorAll('[data-row]')) b.setAttribute('aria-pressed', b.dataset.row === ui.row);
+  for (const b of document.querySelectorAll('[data-panel]')) b.setAttribute('aria-pressed', b.dataset.panel === ui.panel);
+  for (const b of document.querySelectorAll('[data-ideas]')) b.setAttribute('aria-pressed', (b.dataset.ideas === 'on') === ui.ideas);
+  history.replaceState(null, '', `#${ui.row},${ui.panel},${ui.ideas ? 'on' : 'off'}`);
+  for (const o of [...ORDERS, ...DONE]) o.pay = payment(o);
+  const payIs = (o, id) => id === 'all' || (id === 'overdue' ? o.pay.overdue > 0 : o.pay.state === id);
+
+  const fold = t => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const q = fold(ui.q.trim());
+  const match = o => !q || fold(`${o.number} ${o.customer} ${o.ref || ''}`).includes(q);
+  const done = ui.status === 'done';
+  const found = ORDERS.filter(match), foundDone = DONE.filter(match), pool = done ? foundDone : found;
+  const count = (key, id, list = ORDERS) => list.filter(o => (key === 'status' ? o.status === id : payIs(o, id))).length;
+  const collected = ORDERS.reduce((n, o) => n + o.pay.paid, 0), total = ORDERS.reduce((n, o) => n + o.total, 0);
+  document.getElementById('tiles').innerHTML = Object.entries(STATUS).map(([id, s]) =>
+    `<div class="rounded-xl border border-l-4 border-line bg-surf px-4 py-3 ${s.edge}"><div class="text-xs text-sub">${s.label}</div><div class="mt-1 text-2xl font-bold ${s.text}">${count('status', id)}</div></div>`).join('') +
+    `<div class="rounded-xl border border-l-4 border-line border-l-acc bg-surf px-4 py-3"><div class="text-xs text-sub">In progress</div><div class="mt-1 text-2xl font-bold">${ORDERS.length}</div>
+      <div class="mt-0.5 truncate text-xs text-sub">${money(total)} · <span class="text-green-400">${Math.floor((collected / total) * 100)}% paid</span></div></div>`;
+  document.getElementById('statusChips').innerHTML = chip('status', 'all', 'All', found.length) + Object.entries(STATUS).map(([id, s]) => chip('status', id, s.label, count('status', id, found))).join('')
+    + '<span class="mx-1 h-5 w-px bg-line"></span>' + chip('status', 'done', '<i data-lucide="archive" class="mr-0.5 inline-block align-[-2px]"></i> Finished', foundDone.length);
+  document.getElementById('payChips').innerHTML = chip('pay', 'all', 'Any payment', pool.length) + Object.entries(PAY).map(([id, s]) => chip('pay', id, s.label, count('pay', id, pool))).join('')
+    + (ui.ideas && !done && count('pay', 'overdue', found) ? chip('pay', 'overdue', '<span class="text-red-400">Overdue</span>', count('pay', 'overdue', found)) : '');
+
+  const rows = pool.filter(o => (done || ui.status === 'all' || o.status === ui.status) && payIs(o, ui.pay));
+  const hint = !done && q && foundDone.length ? `<button type="button" data-status="done" class="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line px-4 py-3 text-sm text-sub hover:text-white"><i data-lucide="archive"></i>${foundDone.length} finished order${foundDone.length > 1 ? 's' : ''} match “${ui.q.trim()}” · <span class="text-acc">Show</span></button>` : '';
+  document.getElementById('list').innerHTML =
+    (done ? '<div class="flex items-center gap-2 px-1 text-xs text-sub"><i data-lucide="archive"></i>Finished orders: everything has shipped. Newest first. Lines, contact and invoices load from Zoho when you open one.</div>' : '')
+    + (rows.map(rowHtml).join('') || (hint ? '' : '<div class="rounded-xl border border-dashed border-line px-6 py-12 text-center text-sub">No order matches.</div>'))
+    + hint
+    + (done && rows.length ? '<button type="button" class="mx-auto block rounded-lg border border-line bg-surf px-4 py-2 text-xs text-sub hover:text-white">Show older orders</button>' : '');
+  lucide.createIcons();
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const d = b.dataset;
+  if (d.copy) { navigator.clipboard?.writeText(d.copy); b.textContent = '✓'; setTimeout(render, 900); return; }
+  if (d.goto) { ui.status = ui.pay = 'all'; ui.open.add(d.goto); render(); document.getElementById('row-' + d.goto).scrollIntoView({ behavior: 'smooth' }); return; }
+  if (d.ideas) ui.ideas = d.ideas === 'on'; else if (d.row) ui.row = d.row; else if (d.panel) ui.panel = d.panel; else if (d.status) ui.status = d.status; else if (d.pay) ui.pay = d.pay;
+  else if (d.open) {
+    if (!ui.open.delete(d.open)) {
+      ui.open.add(d.open);
+      const o = DONE.find(x => x.number === d.open);
+      if (o && !o.loaded) setTimeout(() => { o.loaded = true; render(); }, 700);
+    }
+  } else return;
+  if (ui.status === 'done' && ui.pay === 'overdue') ui.pay = 'all';
+  render();
+});
+document.getElementById('q').addEventListener('input', e => { ui.q = e.target.value; render(); });
+render();
+</script>
+</body>
+</html>
