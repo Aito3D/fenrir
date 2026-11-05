@@ -1,7 +1,10 @@
 import { useTranslation } from 'react-i18next';
-import { Check, CheckCheck, ClipboardList, ExternalLink, Package, ReceiptText } from 'lucide-react';
+import { Check, CheckCheck, ClipboardList, Package, ReceiptText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { OrderBoardLine, OrderBoardRow } from '../../api/client';
+import type { OrderBoardLine, OrderPanelRow } from '../../api/client';
+import { OrderContactBlock } from './OrderContactBlock';
+import { OrderPaymentBlock } from './OrderPaymentBlock';
+import { OrderRefChips } from './OrderRefChips';
 import { formatQty, panelGroups, parseDay } from './orderBoard';
 import type { PanelGroup } from './orderBoard';
 import { TONE } from './orderStatus';
@@ -28,7 +31,15 @@ const dash = <span className="text-bambu-gray">–</span>;
 /** The expanded order: one table, split into what is left to prepare, what is
  *  boxed and waiting, what has gone, and the lines that never ship. A group
  *  header is a tinted band, so it cannot be mistaken for a product row. */
-export function OrderLinesPanel({ row }: { row: OrderBoardRow }) {
+export function OrderLinesPanel({
+  row,
+  others = [],
+  onGoto,
+}: {
+  row: OrderPanelRow;
+  others?: { id: string; number: string }[];
+  onGoto?: (id: string) => void;
+}) {
   const { t } = useTranslation();
   const shortDay = (day: string) => parseDay(day).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const chips = (group: PanelGroup['id']) =>
@@ -47,7 +58,9 @@ export function OrderLinesPanel({ row }: { row: OrderBoardRow }) {
       ));
 
   return (
-    <div className="border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3">
+    <div className="grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_27rem]">
+      <div className="order-last min-w-0 lg:order-none">
+      <OrderRefChips row={row} />
       <div className="overflow-x-auto">
         <table className="w-full min-w-[35rem] text-sm">
           <thead className="text-left text-[11px] uppercase tracking-wide text-bambu-gray">
@@ -128,17 +141,11 @@ export function OrderLinesPanel({ row }: { row: OrderBoardRow }) {
           })}
         </table>
       </div>
-      {row.zoho_url && (
-        <a
-          href={row.zoho_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-3 inline-flex items-center gap-1.5 text-xs text-bambu-green hover:underline"
-        >
-          <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
-          {t('orders.openInZoho')}
-        </a>
-      )}
+      </div>
+      <div className="space-y-3 lg:sticky lg:top-4 lg:self-start">
+        <OrderContactBlock contact={row.contact} orderNumber={row.number} others={others} onGoto={onGoto} />
+        {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} />}
+      </div>
     </div>
   );
 }

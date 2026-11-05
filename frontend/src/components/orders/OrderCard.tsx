@@ -5,6 +5,7 @@ import { formatMoney } from '../../utils/pricing';
 import { Card } from '../Card';
 import { ageTone, formatQty, parseDay } from './orderBoard';
 import { OrderLinesPanel } from './OrderLinesPanel';
+import { PaymentPill } from './PaymentPill';
 import { STATUS_META, TONE } from './orderStatus';
 
 const AGE = {
@@ -16,11 +17,23 @@ const AGE = {
 // Below lg the row stacks: number and status, then customer and value, then the bar.
 const ROW_GRID =
   'grid items-center gap-x-3 gap-y-1.5 grid-cols-[minmax(0,1fr)_auto_1.25rem] ' +
-  "[grid-template-areas:'num_status_chev'_'cust_value_chev'_'bar_bar_bar'] " +
-  'lg:[grid-template-areas:none] lg:grid-cols-[6.5rem_minmax(0,1fr)_3.5rem_minmax(11rem,16rem)_auto_7.5rem_1.25rem]';
+  "[grid-template-areas:'num_status_chev'_'cust_value_chev'_'bar_bar_bar'_'pay_pay_pay'] " +
+  'lg:[grid-template-areas:none] lg:grid-cols-[6.5rem_minmax(0,1fr)_3.5rem_minmax(11rem,16rem)_auto_9.5rem_7.5rem_1.25rem]';
 
 /** One order: the collapsed row is the button that opens its lines. */
-export function OrderCard({ row, open, onToggle }: { row: OrderBoardRow; open: boolean; onToggle: () => void }) {
+export function OrderCard({
+  row,
+  open,
+  onToggle,
+  others,
+  onGoto,
+}: {
+  row: OrderBoardRow;
+  open: boolean;
+  onToggle: () => void;
+  others?: { id: string; number: string }[];
+  onGoto?: (id: string) => void;
+}) {
   const { t } = useTranslation();
   const meta = STATUS_META[row.status];
   const tone = TONE[meta.tone];
@@ -30,7 +43,7 @@ export function OrderCard({ row, open, onToggle }: { row: OrderBoardRow; open: b
   const age = t('orders.age', { n: row.age_days });
 
   return (
-    <Card className="overflow-hidden">
+    <Card id={`order-${row.id}`} className="overflow-clip">
       <button
         type="button"
         aria-expanded={open}
@@ -69,12 +82,19 @@ export function OrderCard({ row, open, onToggle }: { row: OrderBoardRow; open: b
           <Icon aria-hidden="true" className="h-3.5 w-3.5" />
           {t(meta.label)}
         </span>
+        <span data-testid="order-pay" className="[grid-area:pay] lg:[grid-area:auto]">
+          {row.payment ? (
+            <PaymentPill state={row.payment.state} pct={row.payment.pct} overdue={row.payment.overdue > 0} fill />
+          ) : (
+            <span className="text-sm text-bambu-gray">–</span>
+          )}
+        </span>
         <span data-testid="order-value" className={`text-right text-sm tabular-nums [grid-area:value] lg:[grid-area:auto] ${row.total === null ? 'text-bambu-gray' : 'text-white'}`}>
           {row.total === null ? '–' : formatMoney(row.total, row.currency)}
         </span>
         <ChevronDown aria-hidden="true" className={`h-4 w-4 text-bambu-gray transition-transform [grid-area:chev] lg:[grid-area:auto] ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && <OrderLinesPanel row={row} />}
+      {open && <OrderLinesPanel row={row} others={others} onGoto={onGoto} />}
     </Card>
   );
 }

@@ -7,7 +7,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
-import type { OrderBoardLine, OrderBoardResponse, OrderBoardRow } from '../../api/client';
+import type { OrderPayment, OrderBoardLine, OrderBoardResponse, OrderBoardRow } from '../../api/client';
 
 const mockUseAuth = {
   user: { id: 1, username: 'operator', permissions: [] as string[] },
@@ -205,7 +205,37 @@ describe('OrderBoardPage', () => {
     expect(within(panel).getAllByText('Bambu Lab AMS Lite')).toHaveLength(2);
     expect(within(panel).getByText('PO-0015 · +2')).toBeInTheDocument();
     expect(within(panel).getByText('−2')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open in Zoho Books' })).toHaveAttribute('href', 'https://books.example/app/1#/salesorders/so1');
+    expect(screen.getByRole('link', { name: /Zoho Books · SO-00412/ })).toHaveAttribute('href', 'https://books.example/app/1#/salesorders/so1');
+  });
+
+  it('shows a payment pill per row: Unpaid, 40% paid, Paid, and a dash without a total', async () => {
+    const p = (o: Partial<OrderPayment>): OrderPayment => ({ state: 'unpaid', pct: 0, paid: 0, invoice_paid: 0, advance: 0, due: 0, overdue: 0, rest: 100, left: 100, next_due: null, invoices: [], ...o });
+    serve(board({ rows: [
+      row({ id: 'a', number: 'SO-A', payment: p({}) }),
+      row({ id: 'b', number: 'SO-B', payment: p({ state: 'partial', pct: 40, paid: 40, left: 60 }) }),
+      row({ id: 'c', number: 'SO-C', payment: p({ state: 'paid', pct: 100, paid: 100, left: 0, rest: 0 }) }),
+      row({ id: 'd', number: 'SO-D', total: null, payment: null }),
+    ] }));
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-A');
+    const cell = (n: string) => screen.getByRole('button', { name: new RegExp(n) });
+    expect(cell('SO-A')).toHaveTextContent('Unpaid');
+    expect(cell('SO-B')).toHaveTextContent('40% paid');
+    expect(cell('SO-C')).toHaveTextContent('Paid');
+    expect(within(cell('SO-D')).getByTestId('order-pay')).toHaveTextContent('–');
+  });
+
+  it('an opened order shows contact and payment', async () => {
+    const user = userEvent.setup();
+    serve(board({ rows: [row({
+      contact: { name: 'Intendance', email: '', phone: '40 54 71 00', mobile: '' },
+      payment: { state: 'unpaid', pct: 0, paid: 0, invoice_paid: 0, advance: 0, due: 0, overdue: 0, rest: 13600, left: 13600, next_due: null, invoices: [] },
+    })] }));
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /SO-00412/ }));
+    expect(screen.getByText('Intendance')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '40 54 71 00' })).toHaveAttribute('href', 'tel:40547100');
+    expect(screen.getByText('Left to pay')).toBeInTheDocument();
   });
 
   it('prints a fractional quantity and a dash for an unknown value', async () => {

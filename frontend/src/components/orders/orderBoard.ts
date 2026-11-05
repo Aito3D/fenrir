@@ -136,3 +136,10 @@ export const panelGroups = (row: OrderPanelRow): PanelGroup[] => {
   for (const g of groups) if (g.units !== null) g.units = Math.round(g.lines.reduce((n, l) => n + l.qty, 0) * 100) / 100;
   return groups.filter(g => g.lines.length > 0);
 };
+
+/** Whole days from a YYYY-MM-DD due date to today's local calendar day (negative before it). */
+export const daysPastDue = (dueDay: string): number => {
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  return Math.round((today.getTime() - parseDay(dueDay).getTime()) / 86_400_000);
+};
