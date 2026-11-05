@@ -10,19 +10,42 @@ from sqlalchemy import select
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoService, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import (
+    ModifiedSinceRows,
+    ZohoNotConfiguredError,
+    ZohoService,
+    ZohoUpstreamError,
+    zoho_service,
+)
 
 
 def days_ago(n: int) -> str:
     return (date.today() - timedelta(days=n)).isoformat()
 
 
-def order(n: int, *, age=5, status="open", qty=1, shipped=0, packed=0, item="A", invoices=(), estimate_id="") -> dict:
+def order(
+    n: int,
+    *,
+    age=5,
+    status="open",
+    qty=1,
+    shipped=0,
+    packed=0,
+    item="A",
+    invoices=(),
+    estimate_id="",
+    customer="c1",
+    paid_status="unpaid",
+    invoiced_status="not_invoiced",
+) -> dict:
     """A sales-order detail document; the fake derives its list header from it."""
     return {
         "salesorder_id": f"so{n}",
         "salesorder_number": f"SO-{n:05d}",
         "customer_name": f"Customer {n}",
+        "customer_id": customer,
+        "paid_status": paid_status,
+        "invoiced_status": invoiced_status,
         "date": days_ago(age),
         "status": status,
         "total": 1000.0,
@@ -77,6 +100,10 @@ class FakeZoho:
         self.configured = True
         self.fail: Exception | None = None
         self.slow = False
+        self.payments: list[dict] = []
+        self.payment_since: list[str] = []
+        self.truncated = False
+        self.fail_detail_once = False
 
     def add(self, *docs: dict):
         for doc in docs:
@@ -99,7 +126,17 @@ class FakeZoho:
 
     async def get_salesorder(self, db, salesorder_id):
         self.calls["detail"] += 1
+        if self.fail_detail_once:
+            self.fail_detail_once = False
+            raise ZohoUpstreamError("detail boom")
         return self.orders[salesorder_id]
+
+    async def list_customer_payments_modified_since(self, db, since):
+        self.calls["payments"] += 1
+        self.payment_since.append(since)
+        rows = ModifiedSinceRows(self.payments)
+        rows.truncated = self.truncated
+        return rows
 
     async def get_purchaseorder(self, db, purchaseorder_id):
         self.calls["detail"] += 1
@@ -146,6 +183,7 @@ def zoho(monkeypatch):
         "get_salesorder",
         "get_purchaseorder",
         "list_items_by_ids",
+        "list_customer_payments_modified_since",
         "books_salesorder_url_base",
         "books_invoice_url",
         "books_app_url",
@@ -532,3 +570,114 @@ async def test_rows_get_their_links(db_session, zoho):
     assert rows["so1"]["payment"]["invoices"][0]["url"].endswith("#/invoices/i1")
     assert rows["so1"]["facts"]["quote_url"].endswith("#/quotes/e1")
     assert rows["so2"]["facts"]["quote_url"] is None
+
+
+async def _doc(db, zoho_id):
+    return (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.zoho_id == zoho_id))).scalar_one()
+
+
+PAYMENT_C1 = {"id": "p1", "customer_id": "c1", "last_modified_time": "2026-11-05T09:00:00-1000"}
+
+
+@pytest.mark.asyncio
+async def test_first_pass_polls_nothing_and_later_passes_poll_once(db_session, zoho):
+    zoho.add(order(1))
+    await sync.run_pass(db_session)
+    assert zoho.calls["payments"] == 0
+    await sync.run_pass(db_session)
+    assert zoho.calls["payments"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_customer_payment_refetches_that_customers_open_orders_only(db_session, zoho):
+    zoho.add(order(1, customer="c1"), order(2, customer="c2"))
+    await sync.run_pass(db_session)
+    details = zoho.calls["detail"]
+    zoho.payments = [PAYMENT_C1]
+    await sync.run_pass(db_session)
+    assert zoho.calls["detail"] == details + 1
+
+
+@pytest.mark.asyncio
+async def test_an_upgraded_install_refetches_every_open_order_once(db_session, zoho):
+    zoho.add(order(1), order(2, customer="c2"), order(3, customer="c3"))
+    await sync.run_pass(db_session)
+    state = await sync._find_state(db_session)
+    state.detail = {k: v for k, v in state.detail.items() if k != "payments_since"}
+    await db_session.commit()
+    before = zoho.calls["detail"]
+    await sync.run_pass(db_session)
+    assert zoho.calls["detail"] == before + 3
+    await sync.run_pass(db_session)
+    assert zoho.calls["detail"] == before + 3
+
+
+@pytest.mark.asyncio
+async def test_a_truncated_payment_poll_refetches_every_open_order(db_session, zoho):
+    zoho.add(order(1), order(2, customer="c2"))
+    await sync.run_pass(db_session)
+    before = zoho.calls["detail"]
+    zoho.truncated = True
+    await sync.run_pass(db_session)
+    assert zoho.calls["detail"] == before + 2
+    zoho.truncated = False
+    await sync.run_pass(db_session)
+    assert zoho.calls["detail"] == before + 2
+
+
+@pytest.mark.asyncio
+async def test_a_paid_status_change_alone_refetches(db_session, zoho):
+    zoho.add(order(1))
+    await sync.run_pass(db_session)
+    zoho.orders["so1"]["paid_status"] = "paid"
+    await sync.run_pass(db_session)
+    assert zoho.calls["detail"] == 2
+
+
+@pytest.mark.asyncio
+async def test_every_stored_detail_says_when_it_was_fetched(db_session, zoho):
+    zoho.add(order(1), purchase(1))
+    await sync.run_pass(db_session)
+    assert (await _doc(db_session, "so1")).detail["_fetched_at"]
+    assert (await _doc(db_session, "po1")).detail["_fetched_at"]
+
+
+@pytest.mark.asyncio
+async def test_an_order_that_ships_completely_keeps_its_detail_and_costs_no_stock_read(db_session, zoho):
+    zoho.add(order(1, item="B", qty=2), order(2, item="A"))
+    await sync.run_pass(db_session)
+    zoho.orders["so1"] = order(1, item="B", qty=2, shipped=2)
+    await sync.run_pass(db_session)
+    doc = await _doc(db_session, "so1")
+    assert doc.detail is not None and doc.pending is False
+    assert [r["id"] for r in (await sync.read_board(db_session))["rows"]] == ["so2"]
+    assert "B" not in zoho.item_batches[-1]
+
+
+@pytest.mark.asyncio
+async def test_a_payment_marks_a_finished_orders_detail_stale(db_session, zoho):
+    zoho.add(order(1, qty=2))
+    await sync.run_pass(db_session)
+    zoho.orders["so1"] = order(1, qty=2, shipped=2)
+    await sync.run_pass(db_session)
+    details = zoho.calls["detail"]
+    zoho.payments = [PAYMENT_C1]
+    await sync.run_pass(db_session)
+    doc = await _doc(db_session, "so1")
+    assert doc.detail["_stale"] is True and doc.pending is False
+    assert zoho.calls["detail"] == details
+
+
+@pytest.mark.asyncio
+async def test_a_failed_pass_after_the_poll_does_not_mark_orders_twice(db_session, zoho):
+    zoho.add(order(1))
+    await sync.run_pass(db_session)
+    before = zoho.calls["detail"]
+    zoho.payments = [PAYMENT_C1]
+    zoho.fail_detail_once = True
+    await sync.run_pass(db_session)  # polls, marks, then the fetch fails
+    zoho.payments = []  # Books no longer returns it: the watermark moved past it with the marks
+    await sync.run_pass(db_session)  # the mark survived the failure: refetched once
+    await sync.run_pass(db_session)
+    assert zoho.calls["detail"] == before + 2  # the failed attempt and one refetch
+    assert (await _doc(db_session, "so1")).pending is False

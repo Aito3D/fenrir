@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.database import async_session
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.order_board_doc import OrderBoardDoc
+from backend.app.services.aito_poll_watermark import format_books_time
 from backend.app.services.order_board import age_days, compute_board
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
@@ -45,7 +46,16 @@ DAILY_BUDGET_FLOOR = 5000
 DEFAULT_CORE_BRANDS = ["Bambu Lab", "eSUN", "SUNLU", "Polymaker", "Inslogic", "Magigoo"]
 
 # List-row fields whose change means the stored detail is out of date.
-_SO_FIELDS = ("last_modified_time", "status", "quantity", "quantity_packed", "quantity_shipped", "quantity_invoiced")
+_SO_FIELDS = (
+    "last_modified_time",
+    "status",
+    "quantity",
+    "quantity_packed",
+    "quantity_shipped",
+    "quantity_invoiced",
+    "paid_status",
+    "invoiced_status",
+)
 _PO_FIELDS = ("last_modified_time", "status", "billed_status", "received_status", "quantity_yet_to_receive")
 
 _pass_lock = asyncio.Lock()
@@ -180,7 +190,7 @@ async def recompute(db: AsyncSession) -> None:
     settings = await load_settings(db)
     docs = (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind != "state"))).scalars().all()
     rows = compute_board(
-        [d.detail for d in docs if d.kind == "salesorder" and d.detail],
+        [d.detail for d in docs if d.kind == "salesorder" and d.detail and _is_candidate(d.kind, d.header, settings)],
         [d.detail for d in docs if d.kind == "purchaseorder" and d.detail],
         {d.zoho_id: d.header for d in docs if d.kind == "item"},
         date.today(),
@@ -189,6 +199,12 @@ async def recompute(db: AsyncSession) -> None:
     )
     await _add_links(db, rows)
     state.detail = {**current, "rows": rows, "computed_at": _now()}
+
+
+def _is_finished(header: dict) -> bool:
+    """A sales order that has fully shipped. Its detail is kept for the finished-orders list."""
+    quantity = float(header.get("quantity") or 0)
+    return header.get("status") not in ("draft", "void") and 0 < quantity <= float(header.get("quantity_shipped") or 0)
 
 
 def _is_candidate(kind: str, header: dict, settings: OrderBoardSettings) -> bool:
@@ -203,6 +219,7 @@ def _is_candidate(kind: str, header: dict, settings: OrderBoardSettings) -> bool
 
 
 async def _sync(db: AsyncSession) -> None:
+    started = datetime.now(timezone.utc)
     settings = await load_settings(db)
     listings = (
         ("salesorder", "salesorder_id", _SO_FIELDS, await zoho_service.list_salesorders(db)),
@@ -228,12 +245,31 @@ async def _sync(db: AsyncSession) -> None:
                 db.add(doc)
                 continue
             if not candidate:
-                doc.detail, doc.pending = None, False
+                if not (kind == "salesorder" and _is_finished(header)):
+                    doc.detail = None
+                doc.pending = False
             elif doc.detail is None or any(doc.header.get(f) != header.get(f) for f in fields):
                 doc.pending = True
             doc.header = header
     for key in set(stored) - listed:  # deleted in Zoho
         await db.delete(stored.pop(key))
+    await db.commit()
+
+    # A payment on the customer does not touch the sales order's list row, but
+    # it changes the credit stored in the detail: find those customers.
+    state = await _state(db)
+    since = (state.detail or {}).get("payments_since")
+    paid = await zoho_service.list_customer_payments_modified_since(db, since) if since else None
+    everyone = paid is None or paid.truncated
+    customers = set() if everyone else {p.get("customer_id") for p in paid}
+    for doc in stored.values():
+        if doc.kind != "salesorder" or not (everyone or doc.header.get("customer_id") in customers):
+            continue
+        if _is_candidate("salesorder", doc.header, settings):
+            doc.pending = True
+        elif doc.detail is not None and _is_finished(doc.header):
+            doc.detail = {**doc.detail, "_stale": True}
+    state.detail = {**(state.detail or {}), "payments_since": format_books_time(started)}
     await db.commit()
 
     # Oldest sales orders first: they are served first, so they matter most.
@@ -246,7 +282,7 @@ async def _sync(db: AsyncSession) -> None:
             logger.info("Order board: Zoho call ceiling reached, the remaining details wait for the next pass")
             break
         get = zoho_service.get_salesorder if doc.kind == "salesorder" else zoho_service.get_purchaseorder
-        doc.detail = await get(db, doc.zoho_id)
+        doc.detail = {**await get(db, doc.zoho_id), "_fetched_at": _now()}
         doc.pending = False
         await db.commit()  # a later failure must not lose what was fetched
 
@@ -255,7 +291,7 @@ async def _sync(db: AsyncSession) -> None:
         {
             line["item_id"]
             for d in stored.values()
-            if d.kind == "salesorder" and d.detail
+            if d.kind == "salesorder" and d.detail and _is_candidate(d.kind, d.header, settings)
             for line in d.detail.get("line_items") or []
             if line.get("item_id")
         }
