@@ -1735,6 +1735,47 @@ describe('SettingsPage', () => {
       expect(screen.queryByRole('button', { name: 'Projects' })).toBeNull();
     });
 
+    // Fenrir: Orders tab (order board sync, age limit, core brands), orders:update.
+    it('lists Orders and opens its cards', async () => {
+      server.use(
+        http.get('/api/v1/order-board/settings', () =>
+          HttpResponse.json({ sync_enabled: true, sync_minutes: 15, max_age_days: 365, core_brands: ['eSUN'] })),
+        http.get('/api/v1/order-board', () =>
+          HttpResponse.json({ rows: [], computed_at: null, stock_loaded_at: null,
+            sync: { enabled: true, configured: true, running: false, pending: 0, last_error: null, last_error_at: null, last_success_at: null } })),
+      );
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Orders' })).toBeInTheDocument());
+      const labels = tabLabels().map((label) => label.replace(/\d+$/, ''));
+      expect(labels.slice(1)).toEqual([...labels.slice(1)].sort((a, b) => a.localeCompare(b, 'en')));
+      await user.click(screen.getByRole('button', { name: 'Orders' }));
+      await waitFor(() => expect(document.getElementById('card-orders-sync')).not.toBeNull());
+      expect(document.getElementById('card-orders-shows')).not.toBeNull();
+      expect(window.location.search).toContain('tab=orders');
+    });
+
+    it('hides Orders from a user without orders:update', async () => {
+      signInWith(['settings:read', 'camera:view', 'orders:read']);
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Camera' })).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: 'Orders' })).toBeNull();
+    });
+
+    it('shows Orders to an operator who cannot change other settings', async () => {
+      signInWith(['settings:read', 'camera:view', 'orders:read', 'orders:update']);
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Orders' })).toBeInTheDocument());
+    });
+
+    it('sends an Orders link to General for a user without orders:update', async () => {
+      signInWith(['settings:read', 'camera:view']);
+      window.history.replaceState({}, '', '/?tab=orders');
+      render(<SettingsPage />);
+      await waitFor(() => expect(window.location.search).not.toContain('tab=orders'));
+      expect(document.getElementById('card-orders-tab')).toBeNull();
+    });
+
     it('sends a Projects link to General for a user without settings:update', async () => {
       signInWith(['settings:read', 'camera:view']);
       window.history.replaceState({}, '', '/?tab=projects');
