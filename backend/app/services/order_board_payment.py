@@ -10,9 +10,16 @@ Two facts about what Zoho Books gives us shape this module:
 
 from datetime import date
 
-from backend.app.services.order_board import _num, _r
-
 _IGNORED_INVOICE_STATUSES = ("void", "draft")
+
+
+def _num(value) -> float:
+    return float(value or 0)
+
+
+def _r(value: float) -> float:
+    """Keep float noise out of money values."""
+    return round(value, 6)
 
 
 def _text(value) -> str:

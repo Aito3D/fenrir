@@ -1,5 +1,7 @@
 """Payment, contact and reference facts of the Order Board."""
 
+import subprocess
+import sys
 from datetime import date
 
 import pytest
@@ -140,3 +142,8 @@ def test_facts_and_links():
     assert shop["payment_terms"] == ""
     assert order_facts({"reference_number": "DEV26-2655", "estimate_id": "e1"})["shopify_url"] is None
     assert order_facts({})["reference"] == ""  # missing Zoho fields do not raise
+
+
+def test_module_imports_without_order_board():  # order_board will import this module; no cycle allowed
+    code = "import sys, backend.app.services.order_board_payment; assert 'backend.app.services.order_board' not in sys.modules"
+    subprocess.run([sys.executable, "-c", code], check=True)
