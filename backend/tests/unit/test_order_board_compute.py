@@ -1,0 +1,339 @@
+"""compute_board: stock handed out oldest order first (the Order Board brief),
+plus this app's additions — the purchase-order "arrived" rule, the age limit
+and the reservation of units already in a package."""
+
+from datetime import date
+from itertools import count
+
+import pytest
+
+from backend.app.services.order_board import compute_board
+
+TODAY = date(2026, 1, 20)
+_ids = count(1)
+
+
+def line(item_id, qty, *, shipped=0, packed=0, cancelled=0, invoiced=0, sku="SKU"):
+    return {
+        "line_item_id": f"L{next(_ids)}",
+        "item_id": item_id,
+        "name": f"Item {item_id}",
+        "sku": sku,
+        "quantity": qty,
+        "quantity_shipped": shipped,
+        "quantity_packed": packed,
+        "quantity_cancelled": cancelled,
+        "quantity_invoiced": invoiced,
+    }
+
+
+def so(number, day, lines, *, status="open", total=100.0):
+    return {
+        "salesorder_id": f"id-{number}",
+        "salesorder_number": number,
+        "customer_name": f"Customer {number}",
+        "date": day,
+        "status": status,
+        "total": total,
+        "currency_code": "XPF",
+        "line_items": lines,
+    }
+
+
+def po(number, lines, *, status="open"):
+    """lines: (item_id, quantity, billed, received, cancelled)."""
+    return {
+        "purchaseorder_number": number,
+        "status": status,
+        "line_items": [
+            {"item_id": i, "quantity": q, "quantity_billed": b, "quantity_received": r, "quantity_cancelled": c}
+            for i, q, b, r, c in lines
+        ],
+    }
+
+
+def item(stock, *, brand="", tracked=True):
+    return {"stock_on_hand": stock, "brand": brand, "track_inventory": tracked}
+
+
+def only_line(row):
+    (single,) = row["lines"]
+    return single
+
+
+def test_worked_case_from_the_brief():
+    rows = compute_board(
+        [
+            so("SO-1", "2026-01-03", [line("A", 4)]),
+            so("SO-2", "2026-01-05", [line("A", 3)]),
+            so("SO-3", "2026-01-09", [line("A", 5)]),
+            so("SO-4", "2026-01-10", [line("A", 1)]),
+        ],
+        [po("PO-0012", [("A", 4, 0, 0, 0)])],
+        {"A": item(5)},
+        TODAY,
+    )
+    l1, l2, l3, l4 = (only_line(r) for r in rows)
+    assert (l1["state"], l1["covered"], l1["shortfall"], l1["po_numbers"]) == ("ready", 4, 0, [])
+    assert (l2["state"], l2["covered"], l2["shortfall"], l2["covered_by_po"], l2["po_numbers"]) == (
+        "backorder",
+        1,
+        2,
+        2,
+        ["PO-0012"],
+    )
+    assert (l3["state"], l3["shortfall"], l3["covered_by_po"], l3["po_numbers"]) == ("to_order", 5, 2, ["PO-0012"])
+    assert (l4["state"], l4["covered_by_po"], l4["po_numbers"]) == ("to_order", 0, [])
+    assert [ln["stock_available"] for ln in (l1, l2, l3, l4)] == [5, 1, 0, 0]
+    assert [r["status"] for r in rows] == ["to_ship", "incoming", "to_order", "to_order"]
+    assert rows[1]["units"]["ready"] == 1 and rows[1]["units"]["backordered"] == 2
+    assert rows[1]["ready_ratio"] == pytest.approx(1 / 3)
+
+
+def test_same_date_orders_are_served_by_order_number():
+    orders = [so("SO-B", "2026-01-05", [line("A", 1)]), so("SO-A", "2026-01-05", [line("A", 1)])]
+    rows = compute_board(orders, [], {"A": item(1)}, TODAY)
+    assert [(r["number"], only_line(r)["state"]) for r in rows] == [("SO-A", "ready"), ("SO-B", "to_order")]
+
+
+def test_invoiced_units_are_ready_without_touching_the_pool():
+    rows = compute_board(
+        [so("SO-1", "2026-01-03", [line("A", 3, invoiced=3)]), so("SO-2", "2026-01-04", [line("A", 2)])],
+        [],
+        {"A": item(2)},
+        TODAY,
+    )
+    first, second = (only_line(r) for r in rows)
+    assert (first["state"], first["invoiced"], first["covered"]) == ("ready", 3, 3)
+    assert (second["state"], second["stock_available"]) == ("ready", 2)
+
+
+def test_service_cancelled_and_shipped_lines():
+    no_item = {**line(None, 1), "item_id": None}
+    rows = compute_board(
+        [
+            so(
+                "SO-1",
+                "2026-01-03",
+                [
+                    no_item,
+                    line("SVC", 1),
+                    line("A", 2, cancelled=2),
+                    line("A", 2, shipped=2),
+                    line("A", 1),
+                ],
+            )
+        ],
+        [],
+        {"A": item(1), "SVC": item(0, tracked=False)},
+        TODAY,
+    )
+    (row,) = rows
+    assert [ln["state"] for ln in row["lines"]] == ["service", "service", "cancelled", "shipped", "ready"]
+    assert row["lines"][0]["stock_available"] is None and row["lines"][1]["stock_available"] is None
+    assert row["status"] == "to_ship"
+
+
+@pytest.mark.parametrize(
+    ("stock_a", "stock_b", "incoming_b", "expected"),
+    [
+        (1, 1, 0, "to_ship"),  # every live line ready
+        (1, 0, 0, "partial"),  # some ready, some not
+        (0, 0, 1, "to_order"),  # none ready, one to order (A has no PO)
+        (1, 0, 1, "partial"),
+    ],
+)
+def test_roll_up_branches(stock_a, stock_b, incoming_b, expected):
+    pos = [po("PO-1", [("B", incoming_b, 0, 0, 0)])] if incoming_b else []
+    (row,) = compute_board(
+        [so("SO-1", "2026-01-03", [line("A", 1), line("B", 1)])],
+        pos,
+        {"A": item(stock_a), "B": item(stock_b)},
+        TODAY,
+    )
+    assert row["status"] == expected
+
+
+def test_all_backorder_reads_incoming():
+    (row,) = compute_board(
+        [so("SO-1", "2026-01-03", [line("A", 1), line("B", 2)])],
+        [po("PO-1", [("A", 1, 0, 0, 0), ("B", 2, 0, 0, 0)])],
+        {"A": item(0), "B": item(0)},
+        TODAY,
+    )
+    assert row["status"] == "incoming"
+
+
+def test_finished_order_is_left_out():
+    orders = [so("SO-1", "2026-01-03", [line("A", 2, shipped=2), line("A", 1, cancelled=1), line("SVC", 1)])]
+    assert compute_board(orders, [], {"A": item(9), "SVC": item(0, tracked=False)}, TODAY) == []
+
+
+@pytest.mark.parametrize("status", ["draft", "void"])
+def test_draft_and_void_orders_are_ignored_and_take_no_stock(status):
+    rows = compute_board(
+        [so("SO-1", "2026-01-03", [line("A", 1)], status=status), so("SO-2", "2026-01-04", [line("A", 1)])],
+        [],
+        {"A": item(1)},
+        TODAY,
+    )
+    assert [(r["number"], r["status"]) for r in rows] == [("SO-2", "to_ship")]
+
+
+def test_unit_counts_and_age():
+    (row,) = compute_board(
+        [
+            so(
+                "SO-1",
+                "2026-01-10",
+                [
+                    line("A", 6, shipped=2),  # 4 left: 1 on the shelf, 3 on a PO
+                    line("B", 2),  # ready
+                    line("C", 3),  # nothing anywhere
+                    line("D", 2, cancelled=2),
+                    line("SVC", 1),
+                ],
+            )
+        ],
+        [po("PO-1", [("A", 3, 0, 0, 0)])],
+        {"A": item(1), "B": item(5), "C": item(0), "D": item(5), "SVC": item(0, tracked=False)},
+        TODAY,
+    )
+    assert row["units"] == {"total": 11, "shipped": 2, "ready": 3, "backordered": 3, "to_order": 3}
+    assert row["ready_ratio"] == pytest.approx(3 / 9)
+    assert row["age_days"] == 10
+    assert (row["id"], row["customer"], row["date"], row["total"], row["currency"]) == (
+        "id-SO-1",
+        "Customer SO-1",
+        "2026-01-10",
+        100.0,
+        "XPF",
+    )
+
+
+def test_age_is_never_negative():
+    (row,) = compute_board([so("SO-1", "2026-02-01", [line("A", 1)])], [], {"A": item(1)}, TODAY)
+    assert row["age_days"] == 0
+
+
+def test_negative_stock_counts_as_zero():
+    (row,) = compute_board([so("SO-1", "2026-01-03", [line("A", 1)])], [], {"A": item(-4)}, TODAY)
+    assert (only_line(row)["stock_available"], only_line(row)["state"]) == (0, "to_order")
+
+
+def test_po_arrived_is_the_larger_of_billed_and_received():
+    (row,) = compute_board(
+        [so("SO-1", "2026-01-03", [line("A", 5)])],
+        [
+            po("PO-1", [("A", 10, 2, 6, 1)], status="partially_billed"),  # 10 - 6 - 1 = 3 still to come
+            po("PO-2", [("A", 10, 0, 0, 0)], status="billed"),
+            po("PO-3", [("A", 10, 0, 0, 0)], status="cancelled"),
+        ],
+        {"A": item(0)},
+        TODAY,
+    )
+    single = only_line(row)
+    assert (single["state"], single["covered_by_po"], single["po_numbers"]) == ("to_order", 3, ["PO-1"])
+
+
+def test_po_numbers_list_every_contributing_po_once():
+    (row,) = compute_board(
+        [so("SO-1", "2026-01-03", [line("A", 3)])],
+        [po("PO-1", [("A", 1, 0, 0, 0), ("A", 1, 0, 0, 0)]), po("PO-2", [("A", 1, 0, 0, 0)])],
+        {"A": item(0)},
+        TODAY,
+    )
+    assert (only_line(row)["state"], only_line(row)["po_numbers"]) == ("backorder", ["PO-1", "PO-2"])
+
+
+def test_orders_past_the_age_limit_are_dropped_and_take_no_stock():
+    orders = [so("SO-OLD", "2025-12-01", [line("A", 1)]), so("SO-NEW", "2026-01-15", [line("A", 1)])]
+    items = {"A": item(1)}
+    limited = compute_board(orders, [], items, TODAY, max_age_days=10)
+    assert [(r["number"], r["status"]) for r in limited] == [("SO-NEW", "to_ship")]
+    unlimited = compute_board(orders, [], items, TODAY, max_age_days=0)
+    assert [(r["number"], r["status"]) for r in unlimited] == [("SO-OLD", "to_ship"), ("SO-NEW", "to_order")]
+
+
+def test_packed_units_are_reserved_ahead_of_older_orders():
+    rows = compute_board(
+        [so("SO-1", "2026-01-03", [line("A", 2)]), so("SO-2", "2026-01-05", [line("A", 2, packed=2)])],
+        [],
+        {"A": item(2)},
+        TODAY,
+    )
+    older, newer = (only_line(r) for r in rows)
+    assert (older["state"], older["shortfall"], older["stock_available"]) == ("to_order", 2, 0)
+    assert (newer["state"], newer["packed_waiting"], newer["stock_available"]) == ("ready", 2, 2)
+    assert rows[1]["packed"] == 2
+
+
+def test_packed_and_invoiced_units_are_not_reserved_twice():
+    rows = compute_board(
+        [
+            so("SO-1", "2026-01-03", [line("A", 2, packed=2, invoiced=2)]),
+            so("SO-2", "2026-01-04", [line("A", 5)]),
+        ],
+        [],
+        {"A": item(5)},
+        TODAY,
+    )
+    assert only_line(rows[0])["state"] == "ready"
+    assert (only_line(rows[1])["stock_available"], only_line(rows[1])["state"]) == (5, "ready")
+
+
+def test_packed_waiting_excludes_units_already_shipped():
+    (row,) = compute_board([so("SO-1", "2026-01-03", [line("A", 6, shipped=2, packed=3)])], [], {"A": item(9)}, TODAY)
+    assert (only_line(row)["remaining"], only_line(row)["packed_waiting"]) == (4, 1)
+
+
+def test_packages_are_carried_on_the_row():
+    order = so("SO-1", "2026-01-03", [line("A", 1)])
+    order["packages"] = [{"package_number": "PKG-1", "status": "not_shipped", "date": "2026-01-04", "quantity": 1}]
+    (row,) = compute_board([order], [], {"A": item(1)}, TODAY)
+    assert row["packages"] == [{"number": "PKG-1", "status": "not_shipped", "date": "2026-01-04"}]
+
+
+def test_is_core_matches_brand_case_insensitively():
+    orders = [
+        so("SO-1", "2026-01-03", [line("A", 1)]),
+        so("SO-2", "2026-01-04", [line("B", 1)]),  # no brand
+        so("SO-3", "2026-01-05", [line("GHOST", 1)]),  # not in the catalogue
+        so("SO-4", "2026-01-06", [line("SVC", 1), line("B", 1)]),  # core brand only on a service line
+    ]
+    items = {"A": item(9, brand="bambu lab"), "B": item(9), "SVC": item(0, brand="Bambu Lab", tracked=False)}
+    rows = compute_board(orders, [], items, TODAY, core_brands=["Bambu Lab", "eSUN"])
+    assert [r["is_core"] for r in rows] == [True, False, False, False]
+
+
+def test_an_item_missing_from_the_catalogue_is_tracked_with_no_stock():
+    (row,) = compute_board([so("SO-1", "2026-01-03", [line("GHOST", 1)])], [], {}, TODAY)
+    assert (only_line(row)["state"], only_line(row)["stock_available"]) == ("to_order", 0)
+
+
+def test_fractional_quantities_survive():
+    rows = compute_board(
+        [
+            so("SO-1", "2026-01-03", [line("ROPE", 2.5)]),
+            so("SO-2", "2026-01-04", [line("ROPE", 0.1), line("ROPE", 0.2)]),
+        ],
+        [],
+        {"ROPE": item(4.5)},
+        TODAY,
+    )
+    assert only_line(rows[0])["covered"] == 2.5
+    assert rows[1]["lines"][0]["stock_available"] == 2.0
+    assert rows[1]["units"]["total"] == 0.3  # not 0.30000000000000004
+
+
+def test_missing_zoho_fields_do_not_raise():
+    order = {
+        "salesorder_id": "1",
+        "salesorder_number": "SO-1",
+        "date": "2026-01-03",
+        "status": "open",
+        "line_items": [{"line_item_id": "L", "item_id": "A", "quantity": 1}],
+    }
+    (row,) = compute_board([order], [{"purchaseorder_number": "PO-1", "status": "open"}], {"A": {}}, TODAY)
+    assert (row["customer"], row["total"], row["currency"], row["packages"]) == ("", None, "", [])
+    assert (only_line(row)["sku"], only_line(row)["name"], only_line(row)["state"]) == ("", "", "to_order")
