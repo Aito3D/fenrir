@@ -498,3 +498,15 @@ async def test_refresh_during_a_zoho_back_off_sends_nothing(db_session, zoho):
     sync._rate_limited_until = 0.0  # the window has passed
     assert await sync.run_pass(db_session) is True
     assert sum(zoho.calls.values()) > before
+
+
+@pytest.mark.asyncio
+async def test_the_loop_leaves_a_low_daily_budget_to_the_kanban(db_session, zoho, passes, monkeypatch):
+    """Books also caps calls per day. When little is left, the board's own
+    cadence stops (as the Kanban's change pass does) so quotes still sync."""
+    monkeypatch.setattr(zoho_service, "daily_remaining", sync.DAILY_BUDGET_FLOOR - 1)
+    assert await sync._iteration(db_session) == 15 * 60
+    assert passes == []
+    monkeypatch.setattr(zoho_service, "daily_remaining", sync.DAILY_BUDGET_FLOOR)
+    await sync._iteration(db_session)
+    assert len(passes) == 1

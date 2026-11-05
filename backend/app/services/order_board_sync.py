@@ -38,6 +38,10 @@ MAX_DETAILS_PER_PASS = 20
 CALL_CEILING = 30
 ITEM_BATCH = 50
 PENDING_PAUSE_SECONDS = 60
+# Books also caps calls per day. Below this many left, the loop stops running
+# passes on its own (Refresh still works): the same floor at which the Kanban's
+# change pass gives up its cadence (aito_quote_sync.DAILY_BUDGET_FLOOR).
+DAILY_BUDGET_FLOOR = 5000
 DEFAULT_CORE_BRANDS = ["Bambu Lab", "eSUN", "SUNLU", "Polymaker", "Inslogic", "Magigoo"]
 
 # List-row fields whose change means the stored detail is out of date.
@@ -293,6 +297,9 @@ async def _iteration(db: AsyncSession) -> float:
     if not (settings.sync_enabled and await zoho_service.is_configured(db)):
         # Look again soon: Zoho may be connected from another settings card.
         return float(PENDING_PAUSE_SECONDS)
+    remaining = zoho_service.daily_remaining
+    if remaining is not None and remaining < DAILY_BUDGET_FLOOR:
+        return settings.sync_minutes * 60.0
     await run_pass(db)
     return float(PENDING_PAUSE_SECONDS) if await _pending_count(db) else settings.sync_minutes * 60.0
 
