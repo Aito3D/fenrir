@@ -485,6 +485,7 @@ export default {
     trackingCopy: 'Copia link di tracciamento',
     trackingOpen: 'Apri link di tracciamento',
     trackingCopied: 'Copiato',
+    trackingCopyFailed: 'Impossibile copiare il link di tracciamento',
     trackingNeedsExternalUrl: "Imposta l'URL esterno nelle Impostazioni per attivare i link di tracciamento",
     trackingSettingsLink: 'Impostazioni',
     trackingLabel: 'Link di tracciamento',

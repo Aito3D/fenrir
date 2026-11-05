@@ -5,11 +5,13 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import select, text
 
+from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.settings import Settings
 from backend.app.services.aito_tracking import (
     TOKEN_ALPHABET,
     build_tracking_url,
+    done_at,
     ensure_tracking_token,
     log_view,
     mint_token,
@@ -434,6 +436,32 @@ async def test_public_view_is_logged_once_per_open_deduped_within_5min_and_never
 
 
 @pytest.mark.asyncio
+async def test_view_is_logged_after_the_response_and_a_failing_write_is_swallowed(
+    async_client, db_session, monkeypatch, caplog
+):
+    """T-040: the view write is a background task on its own session, so the
+    page never waits on it (a held write lock) and a failure never reaches it."""
+    from backend.app.services import aito_tracking as svc
+
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    seen = []
+
+    async def spy(session, project_id, now):
+        assert session is not db_session
+        seen.append(project_id)
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(svc, "log_view", spy)
+    with caplog.at_level("WARNING"):
+        resp = await async_client.get(TRACK + token)
+    assert resp.status_code == 200
+    assert seen == [pid]
+    assert "tracking view log failed" in caplog.text
+    assert token not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_purge_tracking_views_drops_only_rows_past_retention(async_client, db_session):
     pid = await _create(async_client)
     old = (datetime.now(timezone.utc) - timedelta(days=401)).replace(tzinfo=None)
@@ -525,6 +553,27 @@ async def test_public_expires_30_days_after_the_latest_move_to_done(async_client
     await _done_event(db_session, stale, 2)
     r = await async_client.get(TRACK + await _token(async_client, db_session, stale))
     assert r.status_code == 200 and r.json()["done_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_done_at_reads_string_encoded_and_mixed_change_lists(async_client, db_session):
+    pid = await _create(async_client, description="done-at")
+    t = datetime(2026, 1, 10, 12, 0, 0)
+
+    def event(at, changes):
+        return AitoEvent(project_id=pid, occurred_at=at, kind="stage.changed", actor_class="user", changes=changes)
+
+    assert await done_at(db_session, pid) is None
+    # A stage.changed without to=done (and one with no changes at all) is skipped.
+    db_session.add(event(t, [{"field": "column", "from": "devis", "to": "finish"}]))
+    db_session.add(event(t + timedelta(hours=1), None))
+    await db_session.commit()
+    assert await done_at(db_session, pid) is None
+    # changes stored as a JSON string: decoded; a non-column change before the move is skipped.
+    mixed = '[{"field": "title", "to": "done"}, {"field": "column", "from": "finish", "to": "done"}]'
+    db_session.add(event(t + timedelta(days=1), mixed))
+    await db_session.commit()
+    assert await done_at(db_session, pid) == t + timedelta(days=1)
 
 
 @pytest.mark.asyncio

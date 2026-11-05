@@ -485,6 +485,7 @@ export default {
     trackingCopy: '复制跟踪链接',
     trackingOpen: '打开跟踪链接',
     trackingCopied: '已复制',
+    trackingCopyFailed: '无法复制跟踪链接',
     trackingNeedsExternalUrl: '请在设置中填写外部 URL 以启用跟踪链接',
     trackingSettingsLink: '设置',
     trackingLabel: '跟踪链接',

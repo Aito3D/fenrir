@@ -9519,6 +9519,7 @@ errors: {
     trackingCopy: 'Kopiera spårningslänk',
     trackingOpen: 'Öppna spårningslänk',
     trackingCopied: 'Kopierad',
+    trackingCopyFailed: 'Det gick inte att kopiera spårningslänken',
     trackingNeedsExternalUrl: 'Ange den externa URL:en i Inställningar för att aktivera spårningslänkar',
     trackingSettingsLink: 'Inställningar',
     trackingLabel: 'Spårningslänk',

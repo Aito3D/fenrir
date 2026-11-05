@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes import auth as auth_routes
 from backend.app.api.routes.auth import _get_client_ip
+from backend.app.core import database as core_database
 from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_any_permission_if_auth_enabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -1596,9 +1597,23 @@ def _track_rate_hit(host: str, stamp: float) -> None:
     _release_miss(_track_rate_net_misses, _track_rate_net_key(host), stamp)
 
 
+async def _log_tracking_view(project_id: int, now: datetime) -> None:
+    """Runs after the response, on its own session: a held write lock must
+    never delay the public page. The log must never break the page it measures."""
+    try:
+        async with core_database.async_session() as session:
+            await tracking_service.log_view(session, project_id, now)
+    except Exception:  # noqa: BLE001
+        logger.warning("tracking view log failed for project %s", project_id, exc_info=True)
+
+
 @router.get("/track/{token}", response_model=AitoTrackingResponse)
 async def get_tracking(
-    token: str, request: Request, response: Response, db: AsyncSession = Depends(get_db, scope="function")
+    token: str,
+    request: Request,
+    response: Response,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> AitoTrackingResponse | JSONResponse:
     """The client's public tracking page. No auth: the token IS the
     credential (a 6-character code, unique-indexed, normalised on lookup
@@ -1627,11 +1642,7 @@ async def get_tracking(
         )
     _track_rate_hit(*admitted)
     project_id, data = found
-    try:
-        await tracking_service.log_view(db, project_id, now)
-    except Exception:  # noqa: BLE001 — the log must never break the page it measures
-        logger.warning("tracking view log failed for project %s", project_id, exc_info=True)
-        await db.rollback()
+    background_tasks.add_task(_log_tracking_view, project_id, now)
     return data
 
 

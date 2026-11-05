@@ -377,6 +377,7 @@ aito.track.updatedToday
 aito.track.updatedYesterday
 aito.trackingCopied
 aito.trackingCopy
+aito.trackingCopyFailed
 aito.trackingNeedsExternalUrl
 aito.trackingOpen
 aito.trackingSettingsLink

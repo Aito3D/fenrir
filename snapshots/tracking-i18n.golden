@@ -2,7 +2,7 @@
 ### stdout:
 {
   "de": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -544,6 +544,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [
@@ -565,7 +569,7 @@
     ]
   },
   "en": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -1107,6 +1111,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [
@@ -1128,7 +1136,7 @@
     ]
   },
   "es": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -1670,6 +1678,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [
@@ -1691,7 +1703,7 @@
     ]
   },
   "fr": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -2233,6 +2245,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [
@@ -2254,7 +2270,7 @@
     ]
   },
   "it": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -2796,6 +2812,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [
@@ -2817,7 +2837,7 @@
     ]
   },
   "ja": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -3359,6 +3379,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [
@@ -3380,7 +3404,7 @@
     ]
   },
   "ko": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -3922,6 +3946,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [
@@ -3943,7 +3971,7 @@
     ]
   },
   "nl": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -4485,6 +4513,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [
@@ -4506,7 +4538,7 @@
     ]
   },
   "ptBR": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -5048,6 +5080,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [
@@ -5069,7 +5105,7 @@
     ]
   },
   "ru": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -5611,6 +5647,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [
@@ -5632,7 +5672,7 @@
     ]
   },
   "tr": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -6174,6 +6214,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [
@@ -6195,7 +6239,7 @@
     ]
   },
   "uk": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -6737,6 +6781,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [
@@ -6758,7 +6806,7 @@
     ]
   },
   "zhCN": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -7300,6 +7348,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [
@@ -7321,7 +7373,7 @@
     ]
   },
   "zhTW": {
-    "count": 129,
+    "count": 130,
     "keys": [
       [
         "track.balance.depositDue",
@@ -7863,6 +7915,10 @@
       ],
       [
         "trackingCopy",
+        []
+      ],
+      [
+        "trackingCopyFailed",
         []
       ],
       [

@@ -485,6 +485,7 @@ export default {
     trackingCopy: '追跡リンクをコピー',
     trackingOpen: '追跡リンクを開く',
     trackingCopied: 'コピーしました',
+    trackingCopyFailed: '追跡リンクをコピーできませんでした',
     trackingNeedsExternalUrl: '追跡リンクを有効にするには、設定で外部 URL を指定してください',
     trackingSettingsLink: '設定',
     trackingLabel: '追跡リンク',

@@ -162,3 +162,99 @@ describe('TrackingLinkControl', () => {
   });
 
 });
+
+describe('TrackingLinkControl in-gesture ClipboardItem write (T-041)', () => {
+  class FakeClipboardItem {
+    constructor(public items: Record<string, Promise<Blob>>) {}
+  }
+  const link = () =>
+    server.use(http.get('/api/v1/aito/7/tracking-link', () => HttpResponse.json({ tracking_url: 'https://x.pf/t/abc' })));
+
+  beforeEach(() => {
+    vi.stubGlobal('ClipboardItem', FakeClipboardItem);
+  });
+
+  it('starts clipboard.write inside the click, before the fetch resolves, with the fetched URL', async () => {
+    link();
+    const write = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { write, writeText: vi.fn() }, configurable: true });
+    render(<TrackingLinkControl project={project} />);
+    const btn = screen.getByRole('button', { name: /copy tracking link/i });
+    btn.click();
+    expect(write).toHaveBeenCalledTimes(1);
+    const item = write.mock.calls[0][0][0] as FakeClipboardItem;
+    const blob = await item.items['text/plain'];
+    const text = await new Promise<string>((res) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result as string);
+      r.readAsText(blob);
+    });
+    expect(text).toBe('https://x.pf/t/abc');
+    expect(await screen.findByTestId('tracking-copied')).toBeInTheDocument();
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  it('falls back to writeText when the item write is refused', async () => {
+    link();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { write: vi.fn().mockRejectedValue(new Error('no')), writeText },
+      configurable: true,
+    });
+    render(<TrackingLinkControl project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: /copy tracking link/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('https://x.pf/t/abc'));
+    expect(await screen.findByTestId('tracking-copied')).toBeInTheDocument();
+  });
+
+  it('shows the clipboard-specific message when both writes are refused', async () => {
+    link();
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { write: vi.fn().mockRejectedValue(new Error('no')), writeText: vi.fn().mockRejectedValue(new Error('no')) },
+      configurable: true,
+    });
+    const original = document.execCommand;
+    document.execCommand = vi.fn().mockReturnValue(false);
+    render(<TrackingLinkControl project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: /copy tracking link/i }));
+    expect(await screen.findByText('Could not copy the tracking link')).toBeInTheDocument();
+    document.execCommand = original;
+  });
+
+  it('refused write when write throws synchronously still falls back', async () => {
+    link();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { write: vi.fn(() => { throw new Error('sync'); }), writeText },
+      configurable: true,
+    });
+    render(<TrackingLinkControl project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: /copy tracking link/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('https://x.pf/t/abc'));
+  });
+
+  it('insecure context keeps the textarea fallback and the old message', async () => {
+    link();
+    vi.stubGlobal('isSecureContext', false);
+    const write = vi.fn();
+    Object.defineProperty(navigator, 'clipboard', { value: { write, writeText: vi.fn() }, configurable: true });
+    const original = document.execCommand;
+    document.execCommand = vi.fn().mockReturnValue(true);
+    render(<TrackingLinkControl project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: /copy tracking link/i }));
+    expect(await screen.findByTestId('tracking-copied')).toBeInTheDocument();
+    expect(write).not.toHaveBeenCalled();
+    expect(document.execCommand).toHaveBeenCalledWith('copy');
+    document.execCommand = original;
+  });
+
+  it('does not write an empty URL to the clipboard', async () => {
+    server.use(http.get('/api/v1/aito/7/tracking-link', () => HttpResponse.json({ tracking_url: null })));
+    const write = vi.fn((items: FakeClipboardItem[]) => items[0].items['text/plain'].then(() => undefined));
+    Object.defineProperty(navigator, 'clipboard', { value: { write, writeText: vi.fn() }, configurable: true });
+    render(<TrackingLinkControl project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: /copy tracking link/i }));
+    expect(await screen.findByText(/error loading data/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('tracking-copied')).not.toBeInTheDocument();
+  });
+});
