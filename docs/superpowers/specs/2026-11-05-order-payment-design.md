@@ -315,3 +315,49 @@ function, so that is a contained change. The user checks this on the first real 
 - Advance is an estimate whenever a customer has several open orders (4 customers today). The
   block says "paid in advance" and explains the source, so it is not read as an invoice payment.
 - The server's calendar day decides "overdue" and age, as on the board today.
+
+## As built (2026-11-05, branch `order-payment`)
+
+Differences from the text above, each found while building or on the first render in a browser:
+
+- **The row pill never shows "· overdue".** The fixed 9.5rem pill cannot fit "40 % payé · en retard"
+  (French needs about 150 px, 137 are available; German and Russian need more). An overdue row
+  reads as a red alert icon, with a red outline on a partly paid pill and red text on an unpaid
+  one; the full wording is in the pill's tooltip and accessible name. The pill inside the payment
+  block keeps the visible suffix. A partly paid pill's label is white on a translucent green fill.
+- **The side column is not sticky; the lines scroll in their own pane.** The app shell's `<main>`
+  is `overflow-auto` and never scrolls (the document does), so `position: sticky` had nothing to
+  stick to. From `lg` up the lines table sits in a pane of at most 70vh with a pinned header, and
+  contact and payment sit beside it. Below `lg` the page scrolls as before.
+- **A finished row has no "Shipped n/n" caption.** The finished list row carries no quantities.
+  The bar is full and neutral and the pill says "Shipped".
+- **"Stored detail and no board row" counts as finished only once a board has been computed.**
+  Before the first compute every candidate with a detail would otherwise look finished.
+- **Opening a finished order while a sync pass writes the same row** keeps the pass's stale mark:
+  the fetch notices the row changed while its Zoho call was in flight and stores its result as
+  stale, so the next open fetches again.
+- **Status codes of the on-demand route:** 503 for the back-off window, the call ceiling, a 429
+  from the fetch itself, and Zoho not connected; 502 for any other Zoho error; 404 for an order
+  that is unknown or not finished.
+- **The Finished chip shows its count only once the finished list has loaded** (it loads in the
+  Finished view or when a search is typed).
+- **Copy buttons use the app's shared clipboard helper**, which also works over plain HTTP.
+
+Not verified, because this build made no Zoho call at all (the page was rendered in a browser
+from a local copy of earlier Zoho data with stubbed requests):
+
+- the Shopify admin link on a real order;
+- that `unused_customer_credits` includes quote deposits (the fallback in "Advance payments" is
+  not built);
+- a finished order fetched from Zoho for real, and the one-off refetch of every open order on the
+  first pass after the update;
+- the "Assumption: Shopify payments" above.
+
+Known limits left as they are:
+
+- Russian, Ukrainian and Polish need plural forms this app does not ship (`_few`, `_many`); the
+  existing `orders.units` key already shows as a raw key for some counts, and the new
+  `orders.finished.match` key shares that.
+- The status pill's column is still `auto`, so progress bars shift by up to 30 px between rows.
+- Smaller points are listed in the build ledger's deferred-minor lines and were triaged by the
+  final review.
