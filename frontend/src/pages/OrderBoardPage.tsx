@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Archive, Box, Loader2, PackageCheck, Plug, PowerOff, RefreshCw, Search, SearchX } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
-import type { FinishedOrderRow, OrderBoardResponse } from '../api/client';
+import type { FinishedOrderRow, OrderBoardResponse, OrderBoardRow } from '../api/client';
 import { Button } from '../components/Button';
 import { Skeleton } from '../components/Skeleton';
 import { FinishedOrderCard } from '../components/orders/FinishedOrderCard';
@@ -170,6 +170,7 @@ export function OrderBoardPage() {
       key={id}
       type="button"
       aria-pressed={!finishedView && status === id}
+      title={id === 'all' ? undefined : t(STATUS_META[id].hint)}
       onClick={() => showOpen(!finishedView && status === id ? 'all' : id)}
       className={`rounded-xl border border-l-4 border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-3 text-left hover:bg-bambu-dark-tertiary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green ${TONE[tone].edge} ${!finishedView && status === id ? 'ring-2 ring-bambu-green/60' : ''}`}
     >
@@ -183,7 +184,12 @@ export function OrderBoardPage() {
     </button>
   );
 
-  const paidShare = paidPct(branded);
+  // Order value and share paid; null when there is no order to add up.
+  const moneyLine = (rows: OrderBoardRow[]): string | null => {
+    if (!rows.length) return null;
+    const share = paidPct(rows);
+    return formatMoney(totalValue(rows), rows[0].currency) + (share === null ? '' : ` · ${t('orders.pay.tile', { pct: share })}`);
+  };
   const finishedHint = view === 'open' && ready && query.trim() !== '' ? finishedFound.length : 0;
 
   let list: ReactNode;
@@ -308,8 +314,8 @@ export function OrderBoardPage() {
       )}
 
       <div data-testid="orders-tiles" className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-5">
-        {STATUSES.map(id => tile(id, t(STATUS_META[id].label), t(STATUS_META[id].hint), STATUS_META[id].tone))}
-        {tile('all', t('orders.status.inProgress'), branded.length ? formatMoney(totalValue(branded), branded[0].currency) + (paidShare === null ? '' : ` · ${t('orders.pay.tile', { pct: paidShare })}`) : '–', 'neutral')}
+        {STATUSES.map(id => tile(id, t(STATUS_META[id].label), (id === 'to_ship' && moneyLine(byStatus(branded, id))) || t(STATUS_META[id].hint), STATUS_META[id].tone))}
+        {tile('all', t('orders.status.inProgress'), moneyLine(branded) ?? '–', 'neutral')}
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">

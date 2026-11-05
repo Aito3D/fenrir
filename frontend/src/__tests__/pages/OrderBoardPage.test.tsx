@@ -122,12 +122,12 @@ describe('OrderBoardPage', () => {
     expect(await screen.findByText('SO-00412')).toBeInTheDocument();
     expect(screen.getByText('SO-00418')).toBeInTheDocument();
     expect(screen.queryByText('SO-00421')).not.toBeInTheDocument(); // not a core brand
-    expect(tile(/^To ship 1 everything in stock/)).toBeInTheDocument();
+    expect(tile(/^To ship 1 13.600/)).toBeInTheDocument();
     expect(tile(/^In progress 2/)).toBeInTheDocument();
 
     await user.type(screen.getByPlaceholderText('Order number, customer, product, SKU…'), 'moana');
     expect(screen.queryByText('SO-00412')).not.toBeInTheDocument();
-    expect(tile(/^To ship 1 everything in stock/)).toBeInTheDocument(); // tiles unchanged
+    expect(tile(/^To ship 1 13.600/)).toBeInTheDocument(); // tiles unchanged
     expect(screen.getByRole('button', { name: 'To ship 0' })).toBeInTheDocument(); // chip follows the search
     expect(screen.getByRole('button', { name: 'Partial 1' })).toBeInTheDocument();
 
@@ -351,6 +351,27 @@ describe('OrderBoardPage', () => {
     render(<OrderBoardPage />);
     await screen.findByText('SO-00412');
     expect(tile(/^In progress 1/)).toHaveTextContent('29% paid');
+  });
+
+  it('the To ship tile adds up its own orders and their share paid, and keeps its meaning as a tooltip', async () => {
+    serve(board({ rows: [
+      row({ id: 'a', status: 'to_ship', total: 100, payment: pay({ state: 'partial', pct: 29, paid: 29 }) }),
+      row({ id: 'b', number: 'SO-B', status: 'to_ship', total: 300, payment: pay({ state: 'paid', pct: 100, paid: 300 }) }),
+      row({ id: 'c', number: 'SO-C', status: 'to_order', total: 5000 }),
+    ] }));
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-B');
+    const toShip = tile(/^To ship 2 400/); // the chip is only "To ship 2"
+    expect(toShip).toHaveTextContent(/400.*82% paid/);
+    expect(toShip).not.toHaveTextContent('5');
+    expect(toShip).toHaveAttribute('title', 'everything in stock');
+  });
+
+  it('an empty To ship tile keeps its plain hint', async () => {
+    serve(board({ rows: [row({ status: 'to_order' })] }));
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    expect(tile(/^To ship 0 everything in stock/)).toBeInTheDocument();
   });
 
   it('"Also open for this customer" lands on the order even when 3D only hid it', async () => {
