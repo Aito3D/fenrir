@@ -213,7 +213,7 @@ async def _set(db_session, pid: int, **cols):
 
 
 async def _done_event(db_session, pid: int, days_ago: float):
-    at = (datetime.now(timezone.utc) - timedelta(days=days_ago)).replace(tzinfo=None).isoformat(sep=" ")
+    at = (datetime.now(timezone.utc) - timedelta(days=days_ago)).replace(tzinfo=None)
     await db_session.execute(
         text(
             "INSERT INTO aito_events (project_id, occurred_at, kind, actor_class, changes) "
@@ -342,7 +342,7 @@ async def test_public_updated_at_is_the_latest_event_else_the_row_timestamp(asyn
             "UPDATE aito_events SET occurred_until = :until "
             "WHERE id = (SELECT id FROM aito_events WHERE project_id = :pid ORDER BY occurred_at DESC LIMIT 1)"
         ),
-        {"until": until.isoformat(sep=" "), "pid": pid},
+        {"until": until, "pid": pid},
     )
     await db_session.commit()
     body = (await async_client.get(TRACK + token)).json()
@@ -465,11 +465,11 @@ async def test_purge_tracking_views_drops_only_rows_past_retention(async_client,
     recent = (datetime.now(timezone.utc) - timedelta(days=399)).replace(tzinfo=None)
     await db_session.execute(
         text("INSERT INTO aito_tracking_views (project_id, viewed_at) VALUES (:pid, :at)"),
-        {"pid": pid, "at": old.isoformat(sep=" ")},
+        {"pid": pid, "at": old},
     )
     await db_session.execute(
         text("INSERT INTO aito_tracking_views (project_id, viewed_at) VALUES (:pid, :at)"),
-        {"pid": pid, "at": recent.isoformat(sep=" ")},
+        {"pid": pid, "at": recent},
     )
     await db_session.commit()
 
@@ -1024,7 +1024,7 @@ async def test_public_404s_once_the_quote_is_declined_or_expired(async_client, d
 async def _age(db_session, pid: int, days: float) -> None:
     """Push every trace of activity on the card `days` into the past — its
     events and its row timestamp — so last_activity reads that old."""
-    at = (datetime.now(timezone.utc) - timedelta(days=days)).replace(tzinfo=None).isoformat(sep=" ")
+    at = (datetime.now(timezone.utc) - timedelta(days=days)).replace(tzinfo=None)
     await db_session.execute(
         text("UPDATE aito_events SET occurred_at = :at, occurred_until = NULL WHERE project_id = :pid"),
         {"pid": pid, "at": at},
