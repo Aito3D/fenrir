@@ -48,6 +48,8 @@ import {
   taskTotal,
 } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
+import { useAitoZohoStatus } from '../../hooks/useAitoZohoStatus';
+import { useAitoShippingServices } from '../../hooks/useAitoShippingServices';
 
 export interface NewProjectDrawerProps {
   onClose: () => void;
@@ -220,20 +222,12 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
 
   const currency = useCurrency();
 
-  const statusQuery = useQuery({
-    queryKey: ['zoho-status', { probe: false }],
-    queryFn: () => api.getZohoStatus(),
-    staleTime: 60_000,
-  });
+  const statusQuery = useAitoZohoStatus();
   // Same query ClientSection runs (identical key), so React Query dedupes
   // this onto its one request — this is only here so the rail receipt, the
   // client-section hint suffix and the checklist can show the island's LABEL
   // without any of them fetching on their own.
-  const shippingServicesQuery = useQuery({
-    queryKey: ['aito-shipping-services'],
-    queryFn: api.getAitoShippingServices,
-    staleTime: 60 * 60_000,
-  });
+  const shippingServicesQuery = useAitoShippingServices();
   const { showToast } = useToast();
   // Same key and options as ClientHistory's own query, so React Query dedupes
   // — the precedent is the Zoho status query this drawer and ClientSection

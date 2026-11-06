@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserRoundPen } from 'lucide-react';
 import { api, ApiError, type AitoProject, type ZohoContact, type ZohoContactPerson } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
@@ -17,6 +17,7 @@ import { AitoDialogShell } from './AitoDialogShell';
 import { AitoDialogFooter } from './AitoDialogFooter';
 import { ClientCombobox } from './ClientCombobox';
 import { ContactPersonPicker } from './ContactPersonPicker';
+import { useAitoZohoStatus } from '../../hooks/useAitoZohoStatus';
 
 /** A beat past .animate-modal-out's 150ms — the margin MergeProjectModal gives. */
 const MODAL_OUT_MS = 170;
@@ -63,11 +64,7 @@ export function TransferClientModal({
   const [noPersonFor, setNoPersonFor] = useState<string | null>(null);
 
   // Same key as the drawer's and the panel's, so this is normally cached.
-  const statusQuery = useQuery({
-    queryKey: ['zoho-status', { probe: false }],
-    queryFn: () => api.getZohoStatus(),
-    staleTime: 60_000,
-  });
+  const statusQuery = useAitoZohoStatus();
   const defaultId = statusQuery.data?.default_contact_id ?? '';
   const defaultName = statusQuery.data?.default_contact_name ?? '';
 

@@ -69,6 +69,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useProjectPatchMutation } from './useProjectPatchMutation';
 import { settleProject } from './settleProject';
+import { useAitoZohoStatus } from '../../hooks/useAitoZohoStatus';
+import { useAitoShippingServices } from '../../hooks/useAitoShippingServices';
 
 /** The right column's tabs, in strip order. Details first: it holds the
  *  reference cards most panels are opened for. */
@@ -372,11 +374,7 @@ function PanelHeader({
   // their cache rather than issuing its own request for a table that rarely
   // changes. Only needed for the LABEL — the pill itself gates on
   // `project.shipping_island` alone, never on this query having resolved.
-  const shippingServicesQuery = useQuery({
-    queryKey: ['aito-shipping-services'],
-    queryFn: api.getAitoShippingServices,
-    staleTime: 60 * 60_000,
-  });
+  const shippingServicesQuery = useAitoShippingServices();
   // Shared with ShippingCard and the create drawer's own rail/checklist — see
   // `islandLabel`'s doc for why the degrade has to be one computation, not
   // three: this pill and the card twelve lines below it used to fall back
@@ -1003,15 +1001,12 @@ export function ProjectDetailPanel({
   // same cached status query. Unknown until the status resolves: no
   // affordance rather than a hold that opens an empty list.
   const [historyOpen, setHistoryOpen] = useState(false);
-  const statusQuery = useQuery({
-    queryKey: ['zoho-status', { probe: false }],
-    queryFn: () => api.getZohoStatus(),
-    staleTime: 60_000,
+  const statusQuery = useAitoZohoStatus(
     // A legacy card with no client id has nothing to look up — same
     // discipline as `useClientRating`, which disables itself for an empty id
     // rather than asking the endpoint about a client that does not exist.
-    enabled: project.client_id !== null,
-  });
+    project.client_id !== null,
+  );
   const defaultContactId = statusQuery.data?.default_contact_id;
   const canShowHistory =
     project.client_id !== null && defaultContactId !== undefined && project.client_id !== defaultContactId;

@@ -10,6 +10,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
+import { http, HttpResponse } from 'msw';
+import { server } from '../mocks/server';
 import { render } from '../utils';
 import { DoneGrid } from '../../components/aito/DoneGrid';
 import { api } from '../../api/client';
@@ -150,6 +152,20 @@ describe('DoneGrid', () => {
       />,
     );
     expect(screen.getByText('Support GoPro')).toBeInTheDocument();
+    expect(screen.queryByText('Boîtier')).not.toBeInTheDocument();
+  });
+
+  it('filters on a linked project code', async () => {
+    server.use(http.get('/api/v1/aito/project-codes', () => HttpResponse.json({ '1': ['P-0042'] })));
+    render(
+      <Grid
+        canUpdate
+        projects={[card({ id: 1, description: 'Support GoPro' }), card({ id: 2, description: 'Boîtier' })]}
+        query="p42"
+        onExpandCard={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText('Support GoPro')).toBeInTheDocument();
     expect(screen.queryByText('Boîtier')).not.toBeInTheDocument();
   });
 

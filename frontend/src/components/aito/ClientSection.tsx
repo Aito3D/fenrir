@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ChevronRight, Plane, RotateCcw } from 'lucide-react';
-import { api } from '../../api/client';
 import type { AitoTask, ZohoContact } from '../../api/client';
 import { ClientCombobox } from './ClientCombobox';
 import { ClientHistory } from './ClientHistory';
@@ -26,6 +24,8 @@ import { emptyShippingDraft } from '../../utils/shippingDraft';
 import type { ShippingDraft } from '../../utils/shippingDraft';
 import { useCurrency } from '../../hooks/useCurrency';
 import { focusRingCls, inputCls, inputErrorCls, labelCls } from '../formStyles';
+import { useAitoZohoStatus } from '../../hooks/useAitoZohoStatus';
+import { useAitoShippingServices } from '../../hooks/useAitoShippingServices';
 
 export interface ClientSectionProps {
   value: ClientDraft;
@@ -64,18 +64,8 @@ export function ClientSection({
 }: ClientSectionProps) {
   const { t } = useTranslation();
   const currency = useCurrency();
-  const statusQuery = useQuery({
-    queryKey: ['zoho-status', { probe: false }],
-    queryFn: () => api.getZohoStatus(),
-    staleTime: 60_000,
-  });
-  const servicesQuery = useQuery({
-    queryKey: ['aito-shipping-services'],
-    queryFn: api.getAitoShippingServices,
-    // The island table is app data and the rates change at most daily. One
-    // request per session is the point of the server-side cache.
-    staleTime: 60 * 60_000,
-  });
+  const statusQuery = useAitoZohoStatus();
+  const servicesQuery = useAitoShippingServices();
   // Empty id for the walk-in default: the hook disables itself, and the
   // backend would answer `new` for it anyway.
   const rating = useClientRating(value.isDefault ? '' : value.id);

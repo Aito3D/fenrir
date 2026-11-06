@@ -25,6 +25,7 @@ import {
   validatePhone,
 } from '../../utils/clientDraft';
 import type { SocialNetwork } from '../../utils/clientDraft';
+import { useAitoZohoStatus } from '../../hooks/useAitoZohoStatus';
 
 export interface ClientEditorProps {
   project: AitoProject;
@@ -175,11 +176,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
   const rootRef = useRef<HTMLFormElement>(null);
   const firstFieldRef = useRef<HTMLInputElement>(null);
 
-  const statusQuery = useQuery({
-    queryKey: ['zoho-status', { probe: false }],
-    queryFn: () => api.getZohoStatus(),
-    staleTime: 60_000,
-  });
+  const statusQuery = useAitoZohoStatus();
   const defaultContactId = statusQuery.data?.default_contact_id;
   // Unknown until the status resolves: nothing is read from Zoho until we
   // know whether this card's contact is the one Books will refuse.

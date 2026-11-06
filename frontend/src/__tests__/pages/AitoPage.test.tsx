@@ -1849,6 +1849,29 @@ describe('AitoPage (backend board)', () => {
     expect(screen.queryByText('Boîtier étanche')).not.toBeInTheDocument();
   });
 
+  it('finds a card by its linked project code, on the board and in the Show-done count', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([
+          makeProject({ id: 1, description: 'Support GoPro', column: 'devis' }),
+          makeProject({ id: 2, description: 'Boîtier étanche', column: 'scan' }),
+          makeProject({ id: 3, description: 'Archive liée', column: 'done', move_lock: null }),
+          makeProject({ id: 4, description: 'Archive autre', column: 'done', move_lock: null }),
+        ]),
+      ),
+      http.get('/api/v1/aito/project-codes', () => HttpResponse.json({ '1': ['P-0042'], '3': ['P-0042'] })),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('Support GoPro');
+    await screen.findByRole('button', { name: /show done \(2\)/i });
+
+    await user.type(screen.getByRole('searchbox'), 'p42');
+    await waitFor(() => expect(screen.queryByText('Boîtier étanche')).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /Support GoPro/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /show done \(1\)/i })).toBeInTheDocument();
+  });
+
   it('matches an unaccented query against accented card text', async () => {
     server.use(
       http.get('*/api/v1/aito/', () =>
