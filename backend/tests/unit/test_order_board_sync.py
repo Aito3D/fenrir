@@ -577,6 +577,27 @@ async def test_rows_get_their_links(db_session, zoho):
     assert rows["so2"]["facts"]["quote_url"] is None
 
 
+@pytest.mark.asyncio
+async def test_rows_have_no_links_when_books_is_not_configured(db_session, zoho, monkeypatch):
+    invoice = {"invoice_id": "i1", "invoice_number": "INV-1", "total": 400.0, "balance": 400.0, "status": "sent"}
+    zoho.add(order(1, invoices=[invoice], estimate_id="e1"), order(2))
+
+    async def not_configured(db):
+        raise ZohoNotConfiguredError("Zoho credentials are not configured")
+
+    # the links are added when the board is computed (and stored), not when it is read
+    monkeypatch.setattr(zoho_service, "books_salesorder_url_base", not_configured)
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    board = await sync.read_board(db_session)
+    rows = {r["id"]: r for r in board["rows"]}
+    assert set(rows) == {"so1", "so2"}
+    assert board["computed_at"] is not None
+    assert all(r["zoho_url"] is None for r in rows.values())
+    assert rows["so1"]["payment"]["invoices"][0]["url"] is None
+    assert all(r["facts"]["quote_url"] is None for r in rows.values())
+
+
 async def _doc(db, zoho_id):
     return (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.zoho_id == zoho_id))).scalar_one()
 
