@@ -9,6 +9,7 @@ import { server } from '../mocks/server';
 import { Link, MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AitoTrackEntryPage } from '../../pages/AitoTrackEntryPage';
+import { resetI18nDeadlineForTests } from '../../hooks/useTrackingLanguage';
 import { normalizeCode } from '../../utils/trackingCode';
 import { api, type AitoTracking } from '../../api/client';
 
@@ -173,6 +174,7 @@ afterAll(() => i18n.changeLanguage('en'));
 afterEach(async () => {
   vi.restoreAllMocks();
   setReadyOverride(null);
+  resetI18nDeadlineForTests();
   await i18n.changeLanguage('fr');
 });
 

@@ -1385,3 +1385,29 @@ def test_ipv4_mapped_clients_share_the_plain_ipv4_bucket_and_its_own_24(track_ra
     aito_routes._track_rate_limited(req("::ffff:198.51.100.7"))
     assert set(aito_routes._track_rate_net_calls) == {"203.0.113.0/24", "198.51.100.0/24"}
     assert len(aito_routes._track_rate_net_calls["203.0.113.0/24"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_public_route_releases_the_reserved_miss_when_the_lookup_raises(
+    async_client, track_rate_clock, monkeypatch
+):
+    """T-059: a lookup that raises (DB drop, cancellation) answered nothing, so its reserved miss is handed back;
+    a real unknown token still keeps its miss."""
+    from backend.app.api.routes import aito as aito_routes
+
+    async def boom(*_args, **_kwargs):
+        raise RuntimeError("database is locked")
+
+    real = aito_routes.compute_tracking
+    monkeypatch.setattr(aito_routes, "compute_tracking", boom)
+    for _ in range(aito_routes._TRACK_RATE_MAX_MISSES_PER_IP + 5):
+        with pytest.raises(RuntimeError):
+            await async_client.get(TRACK + "ZZZZZZ")
+    assert not aito_routes._track_rate_ip_misses
+    assert not aito_routes._track_rate_net_misses
+    assert (
+        sum(len(v) for v in aito_routes._track_rate_ip_calls.values()) == aito_routes._TRACK_RATE_MAX_MISSES_PER_IP + 5
+    )
+    monkeypatch.setattr(aito_routes, "compute_tracking", real)
+    assert (await async_client.get(TRACK + "ZZZZZZ")).status_code == 404
+    assert sum(len(v) for v in aito_routes._track_rate_ip_misses.values()) == 1

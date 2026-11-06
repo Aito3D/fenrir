@@ -1630,7 +1630,13 @@ async def get_tracking(
             headers={"Cache-Control": "no-store", "Retry-After": "60"},
         )
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    found = await compute_tracking(db, token, await _shipping_names(db), await _island_labels(db), now)
+    try:
+        found = await compute_tracking(db, token, await _shipping_names(db), await _island_labels(db), now)
+    except BaseException:
+        # A lookup that raised or was cancelled never answered hit-or-miss, so it is no guess:
+        # hand the reservation back (the CALLS ceilings stay counted) and let the error through.
+        _track_rate_hit(*admitted)
+        raise
     if found is None:
         # The miss reserved at arrival stands.
         # Not `raise HTTPException`: FastAPI's exception handler builds a

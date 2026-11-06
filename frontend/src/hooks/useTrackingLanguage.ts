@@ -34,6 +34,13 @@ export function useTrackingLanguage() {
   return { t, lng, ready };
 }
 
+let deadlinePassed = false;
+/** Test-only: forget the page-session latch. */
+export function resetI18nDeadlineForTests() {
+  deadlinePassed = false;
+}
+const hasActiveBundle = () => !!i18next.languages?.some((l) => i18next.hasResourceBundle(l, 'translation'));
+
 /** The tracking pages' locale deadline, shared by both: true once
  *  I18N_SETTLE_TIMEOUT_MS has passed (a one-way latch) and, if the active
  *  language's bundle still has not arrived, English is loaded on demand.
@@ -43,13 +50,19 @@ export function useTrackingLanguage() {
  *  English gets I18N_ENGLISH_EXTRA_MS to arrive; past that the latch flips
  *  anyway (raw keys) and the page re-renders in English if it lands later. */
 export function useI18nSettleDeadline(): boolean {
-  const [timedOut, setTimedOut] = useState(false);
+  // Starts true once the deadline already passed in this page session, so the
+  // /t -> /t/<code> hop does not re-wait. A fresh visit still waits.
+  const [timedOut, setTimedOutState] = useState(() => deadlinePassed);
+  const setTimedOut = (v: boolean) => {
+    deadlinePassed = true;
+    setTimedOutState(v);
+  };
   const [, setEnglishLanded] = useState(0);
   useEffect(() => {
     let cancelled = false;
     let extra: number | undefined;
     const timer = window.setTimeout(() => {
-      if (i18next.languages?.some((l) => i18next.hasResourceBundle(l, 'translation'))) {
+      if (hasActiveBundle()) {
         setTimedOut(true);
         return;
       }
@@ -59,9 +72,12 @@ export function useI18nSettleDeadline(): boolean {
       void (async () => {
         try {
           const bundle = (await LOCALE_LOADERS.en()).default;
-          if (cancelled) return;
+          // Registered even after unmount: the next tracking page reuses it.
           i18next.addResourceBundle('en', 'translation', bundle, true, false);
           i18next.options.fallbackLng = ['en'];
+          if (cancelled) return;
+          // The title effect's deps do not change when English lands.
+          document.title = i18next.t('aito.track.pageTitle');
           setEnglishLanded((n) => n + 1); // bindI18nStore has no 'added': re-render by hand
         } catch {
           /* English failed too: settle anyway, nothing else to show */

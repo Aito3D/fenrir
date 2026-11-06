@@ -216,6 +216,7 @@ export function Logo
 export function longDate
 export function normalizeCode
 export function PanelReveal
+export function resetI18nDeadlineForTests
 export function statusCopy
 export function TrackCollapse
 export function TrackingBalance

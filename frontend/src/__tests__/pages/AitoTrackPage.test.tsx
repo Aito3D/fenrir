@@ -8,6 +8,9 @@ import { server } from '../mocks/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AitoTrackPage } from '../../pages/AitoTrackPage';
+import { resetI18nDeadlineForTests, useI18nSettleDeadline } from '../../hooks/useTrackingLanguage';
+import { renderHook, act } from '@testing-library/react';
+import { I18N_SETTLE_TIMEOUT_MS } from '../../utils/trackingShell';
 import type { AitoTracking } from '../../api/client';
 
 // `ready` (react-i18next's bundle-loaded flag) is only ever false for a real
@@ -88,7 +91,10 @@ function mockTrack(body: AitoTracking | null) {
 // shop's language, so pin it for the file (jsdom's navigator is en-US).
 beforeAll(() => i18n.changeLanguage('fr'));
 afterAll(() => i18n.changeLanguage('en'));
-afterEach(() => setReadyOverride(null));
+afterEach(() => {
+  setReadyOverride(null);
+  resetI18nDeadlineForTests();
+});
 
 describe('AitoTrackPage', () => {
   const originalTitle = document.title;
@@ -386,6 +392,25 @@ describe('AitoTrackPage', () => {
       expect(screen.getByRole('heading', { level: 2, name: 'En fabrication' })).toBeInTheDocument();
       expect(screen.queryByTestId('track-error')).not.toBeInTheDocument();
       expect(document.querySelector('.bg-aito-line\\/60')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // T-057: a deadline already settled on /t must not restart on /t/<code>.
+  it('shows the order at once when the deadline already settled earlier in the page session', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const entry = renderHook(() => useI18nSettleDeadline());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(I18N_SETTLE_TIMEOUT_MS + 1);
+      });
+      entry.unmount();
+      setReadyOverride(false);
+      mockTrack(FIXTURE);
+      renderAt('after-entry');
+      await vi.advanceTimersByTimeAsync(1_000);
+      await waitFor(() => expect(screen.getByTestId('track-content')).toBeInTheDocument());
     } finally {
       vi.useRealTimers();
     }
