@@ -7,7 +7,7 @@ from itertools import count
 
 import pytest
 
-from backend.app.services.order_board import compute_board, order_row, units_to_invoice
+from backend.app.services.order_board import compute_board, order_row, picked_waiting, units_to_invoice
 
 TODAY = date(2026, 1, 20)
 _ids = count(1)
@@ -433,3 +433,21 @@ def test_an_order_past_the_age_limit_takes_no_credit():
 def test_order_row_for_a_finished_order():
     row = order_row(so("SO-9", "2026-01-02", [line("A", 2, shipped=2)], total=500.0), {}, TODAY)
     assert row["status"] == "finished" and only_line(row)["state"] == "shipped" and row["payment"]["advance"] == 0
+
+
+def test_row_lists_its_picklists_and_the_units_picked_and_not_boxed():
+    order = so("SO-1", "2026-01-03", [line("A", 5, packed=1), line("A", 2)])
+    order["line_items"][0]["quantity_picked"] = 3
+    order["picklists"] = [
+        {"picklist_id": "pl1", "picklist_number": "PL-00001", "status": "completed", "date": "2026-01-10"},
+        {"picklist_id": "pl2", "picklist_number": "PL-00002", "status": "yet_to_start", "date": "2026-01-12"},
+    ]
+    (row,) = compute_board([order], [], {"A": item(9)}, TODAY)
+    assert row["picked"] == 2
+    assert row["picklists"] == [
+        {"id": "pl1", "number": "PL-00001", "status": "completed", "date": "2026-01-10"},
+        {"id": "pl2", "number": "PL-00002", "status": "yet_to_start", "date": "2026-01-12"},
+    ]
+    assert picked_waiting(order) == {order["line_items"][0]["line_item_id"]: 2}
+    (plain,) = compute_board([so("SO-2", "2026-01-03", [line("A", 1, packed=1)])], [], {"A": item(9)}, TODAY)
+    assert (plain["picked"], plain["picklists"]) == (0, [])

@@ -1365,6 +1365,31 @@ class ZohoService:
         """Retainer invoices touched since ``since`` (verified live, same day)."""
         return await self._list_modified_since(db, "/retainerinvoices", "retainerinvoices", "retainerinvoice_id", since)
 
+    async def picklist_prefill(self, db: AsyncSession, salesorder_id: str) -> dict | None:
+        """The picklist Books would draft for a sales order (units already on a picklist are left out);
+        None when it refuses. Read verified 2026-11-06."""
+        try:
+            payload = await self._request(db, "GET", "/picklists/editpage", params={"salesorder_ids": salesorder_id})
+        except ZohoRequestRejected:
+            return None
+        return payload.get("picklist")
+
+    async def get_picklist(self, db: AsyncSession, picklist_id: str) -> dict:
+        """One picklist. Read verified 2026-11-06."""
+        return (await self._request(db, "GET", f"/picklists/{_seg(picklist_id)}")).get("picklist") or {}
+
+    async def create_picklist(self, db: AsyncSession, body: dict) -> dict:
+        """Create a picklist. Body from Zoho's API reference, unverified against a live write."""
+        return (await self._request(db, "POST", "/picklists", json=body)).get("picklist") or {}
+
+    async def update_picklist(self, db: AsyncSession, picklist_id: str, body: dict) -> dict:
+        """Replace a picklist's lines (a line left out is removed). Unverified against a live write."""
+        return (await self._request(db, "PUT", f"/picklists/{_seg(picklist_id)}", json=body)).get("picklist") or {}
+
+    async def complete_picklist(self, db: AsyncSession, picklist_id: str) -> None:
+        """Mark a picklist completed. From Zoho's API reference, unverified against a live write."""
+        await self._request(db, "POST", f"/picklists/{_seg(picklist_id)}/setstatus", params={"status": "completed"})
+
     async def create_package(self, db: AsyncSession, salesorder_id: str, *, date: str, line_items: list[dict]) -> dict:
         """Create a package on a sales order. Body shape unverified against a live write (spec, "Not verified")."""
         payload = await self._request(

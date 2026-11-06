@@ -135,3 +135,16 @@ def test_a_long_short_list_flows_onto_further_pages():
     t = text(pdf)
     assert all(f"Manque{i:03d}" in t for i in range(60))
     assert "Document interne" in t
+
+
+def test_a_picklist_sheet_prints_its_units_and_number_and_what_stays_behind():
+    row = _row(
+        lines=[_line("SKU-A", packable=3.0), _line("SKU-B", "Boîte à clés", packable=2.0, quantity=2.0, remaining=2.0)]
+    )
+    t = text(
+        render_prep_sheet(row, printed_at=NOW, order_url=None, quantities={"SKU-A": 1.0}, picklist_number="PL-00013")
+    )
+    assert "SO-00412 · PL-00013" in t
+    assert "1 article · 1 unité" in t and "unités" not in t
+    assert "Hors de ce prélèvement, reste à livrer" in t and "Pas en stock" not in t
+    assert "Boîte à clés" in t  # left for a later picklist, with the two units of SKU-A not taken

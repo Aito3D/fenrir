@@ -153,6 +153,16 @@ def units_to_invoice(
     return result
 
 
+def picked_waiting(order: dict) -> dict[str, float]:
+    """Units per raw ``line_item_id`` that a picklist counts as picked and no parcel holds yet."""
+    result: dict[str, float] = {}
+    for raw in order.get("line_items") or []:
+        units = _r(_num(raw.get("quantity_picked")) - _num(raw.get("quantity_packed")))
+        if raw.get("line_item_id") and units > 0:
+            result[raw["line_item_id"]] = units
+    return result
+
+
 def _status(live: list[dict]) -> str:
     ready = sum(1 for line in live if line["state"] == "ready")
     if ready == len(live):
@@ -208,6 +218,16 @@ def _row(order: dict, age: int, lines: list[dict], status: str, items: dict[str,
             }
             for p in order.get("packages") or []
         ],
+        "picklists": [
+            {
+                "id": p.get("picklist_id") or "",
+                "number": p.get("picklist_number") or "",
+                "status": p.get("status") or "",
+                "date": p.get("date") or "",
+            }
+            for p in order.get("picklists") or []
+        ],
+        "picked": _r(sum(picked_waiting(order).values())),
         "unbilled_units": _r(
             sum(
                 max(

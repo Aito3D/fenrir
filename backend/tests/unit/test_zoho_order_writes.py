@@ -98,3 +98,31 @@ async def test_invoice_prefill_none_when_books_rejects_and_reraises_others(db_se
     with pytest.raises(ZohoUpstreamError) as err:
         await zoho_service.invoice_prefill(db_session, "so1")
     assert not isinstance(err.value, ZohoRequestRejected)
+
+
+@pytest.mark.asyncio
+async def test_picklist_calls(db_session):
+    seen: list = []
+    await _fake(db_session, seen, body={"picklist": {"picklist_id": "pl1", "status": "yet_to_start"}})
+    assert (await zoho_service.picklist_prefill(db_session, "so1"))["picklist_id"] == "pl1"
+    assert (await zoho_service.get_picklist(db_session, "pl1"))["status"] == "yet_to_start"
+    body = {"date": "2026-01-04", "location_id": "loc1", "line_items": [{"so_line_item_id": "l1"}]}
+    assert (await zoho_service.create_picklist(db_session, body))["picklist_id"] == "pl1"
+    assert (await zoho_service.update_picklist(db_session, "pl1", body))["picklist_id"] == "pl1"
+    await zoho_service.complete_picklist(db_session, "pl1")
+    assert [(m, p.rsplit("/v3", 1)[1]) for m, p, _, _ in seen] == [
+        ("GET", "/picklists/editpage"),
+        ("GET", "/picklists/pl1"),
+        ("POST", "/picklists"),
+        ("PUT", "/picklists/pl1"),
+        ("POST", "/picklists/pl1/setstatus"),
+    ]
+    assert seen[0][2]["salesorder_ids"] == "so1"
+    assert _json(seen[2][3]) == _json(seen[3][3]) == body
+    assert seen[4][2]["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_a_refused_picklist_prefill_is_none(db_session):
+    await _fake(db_session, [], status=400, body={"code": 1, "message": "no"})
+    assert await zoho_service.picklist_prefill(db_session, "so1") is None

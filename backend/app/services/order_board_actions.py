@@ -1,4 +1,4 @@
-"""The Order Board's writes towards Books: print stamp, parcel, hand-over, invoice and credit."""
+"""The Order Board's writes towards Books: print stamp, picklist, parcel, hand-over, invoice and credit."""
 
 import contextlib
 import logging
@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
-from backend.app.services.order_board import units_to_invoice
+from backend.app.services.order_board import picked_waiting, units_to_invoice
 from backend.app.services.zoho import ZohoNotFound, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,8 @@ class OrderBusy(Exception):
 
 
 class OrderActionRefused(Exception):
-    """args[0] is one of "nothing_to_pack", "unknown_line", "too_many", "bad_quantity", "unknown_package"."""
+    """args[0] is one of "nothing_to_pack", "unknown_line", "too_many", "bad_quantity", "unknown_package",
+    "picklist_open", "unknown_picklist", "picklist_shared"."""
 
 
 @contextmanager
@@ -118,38 +119,229 @@ async def _best_effort_refresh(db: AsyncSession, salesorder_id: str, number: str
                 await db.rollback()
 
 
-async def create_parcel(db: AsyncSession, salesorder_id: str, quantities: dict[str, float]) -> str:
-    """Create a package for the given line quantities; returns Books' package number."""
+def _num(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+async def _write(salesorder_id: str, number: str, step: str, call):
+    """One Books write: logged, and fenced so that no sync pass stores a copy fetched while it ran."""
+    logger.info("Order board write: order=%s step=%s", number, step)
+    sync.note_write(salesorder_id)
+    try:
+        return await call
+    except ZohoRateLimited as e:
+        sync.open_rate_limit_window(e)
+        raise
+    finally:
+        sync.note_write(salesorder_id)
+
+
+# --- Picklist, parcel ------------------------------------------------------------------------------------------
+
+
+def _wanted(quantities: Mapping[str, float]) -> dict[str, float]:
+    if any(not math.isfinite(q) or q < 0 for q in quantities.values()):
+        raise OrderActionRefused("bad_quantity")
+    wanted = {line_id: q for line_id, q in quantities.items() if q > 0}
+    if not wanted:
+        raise OrderActionRefused("nothing_to_pack")
+    return wanted
+
+
+def _within(wanted: Mapping[str, float], allowed: Mapping[str, float], known: set[str]) -> None:
+    if any(line_id not in known for line_id in wanted):
+        raise OrderActionRefused("unknown_line")
+    if any(q > allowed.get(line_id, 0.0) + 1e-9 for line_id, q in wanted.items()):
+        raise OrderActionRefused("too_many")
+
+
+def _open_picklists(order: dict) -> list[dict]:
+    return [p for p in order.get("picklists") or [] if p.get("status") != "completed"]
+
+
+async def _stored_order(db: AsyncSession, salesorder_id: str) -> dict:
+    doc = (await db.execute(_stored_query(salesorder_id))).scalar_one_or_none()
+    if doc is None or not doc.detail:
+        raise OrderNotOnBoard(salesorder_id)
+    return doc.detail
+
+
+async def _pickable(db: AsyncSession, salesorder_id: str, row: dict, order: dict) -> tuple[dict, dict[str, float]]:
+    """Books' own picklist draft for the order and, per line, what a new picklist may hold: what Books still
+    offers (units already on a picklist are not), never above what the shelf covers once the units picked and
+    not boxed yet are set aside."""
+    try:
+        prefill = await zoho_service.picklist_prefill(db, salesorder_id) or {}
+    except ZohoRateLimited as e:
+        sync.open_rate_limit_window(e)
+        raise sync.ZohoBusy(salesorder_id) from e
+    shelf = {line["id"]: line["packable"] for line in row["lines"]}
+    held = picked_waiting(order)
+    offered: dict[str, float] = {}
+    for line in prefill.get("line_items") or []:
+        line_id = line.get("so_line_item_id") or ""
+        units = min(_num(line.get("quantity_to_be_picked")), shelf.get(line_id, 0.0) - held.get(line_id, 0.0))
+        if line.get("salesorder_id") == salesorder_id and round(units, 6) > 0:
+            offered[line_id] = round(units, 6)
+    return prefill, offered
+
+
+def _lines(units: Mapping[str, float]) -> list[dict]:
+    return [{"line_id": line_id, "quantity": q} for line_id, q in units.items()]
+
+
+async def picklist_preview(db: AsyncSession, salesorder_id: str) -> dict:
+    """What a new picklist of this order may hold. Reads only."""
+    order = await _stored_order(db, salesorder_id)
+    row = await _row(db, salesorder_id)
+    if _open_picklists(order):
+        raise OrderActionRefused("picklist_open")
+    if sync.zoho_busy():
+        raise sync.ZohoBusy(salesorder_id)
+    return {"lines": _lines((await _pickable(db, salesorder_id, row, order))[1])}
+
+
+async def create_picklist(db: AsyncSession, salesorder_id: str, quantities: dict[str, float]) -> dict:
+    """Create a picklist in Books for the given line quantities; returns its ``id`` and ``number``."""
     with writing(salesorder_id):
-        await confirm_stored_copy(db, salesorder_id)
+        doc = await confirm_stored_copy(db, salesorder_id)
         row = await _row(db, salesorder_id)
-        if any(not math.isfinite(q) or q < 0 for q in quantities.values()):
-            raise OrderActionRefused("bad_quantity")
-        wanted = {line_id: q for line_id, q in quantities.items() if q > 0}
-        if not wanted:
-            raise OrderActionRefused("nothing_to_pack")
-        packable = {line["id"]: line["packable"] for line in row["lines"]}
-        if any(line_id not in packable for line_id in wanted):
-            raise OrderActionRefused("unknown_line")
-        if any(q > packable[line_id] + 1e-9 for line_id, q in wanted.items()):
-            raise OrderActionRefused("too_many")
-        sync.note_write(salesorder_id)
+        number = row.get("number") or ""
+        wanted = _wanted(quantities)
+        # One at a time: what an open picklist holds is not on the stored order, so the shelf could not be shared.
+        if _open_picklists(doc.detail or {}):
+            raise OrderActionRefused("picklist_open")
+        prefill, offered = await _pickable(db, salesorder_id, row, doc.detail or {})
+        _within(wanted, offered, {line["id"] for line in row["lines"]})
+        body = {
+            "date": date.today().isoformat(),
+            "location_id": prefill.get("location_id"),
+            "parent_entity": "salesorder",
+            "group_by": "none",
+            "line_items": [
+                {
+                    "salesorder_id": salesorder_id,
+                    "so_line_item_id": line_id,
+                    "quantity_to_be_picked": q,
+                    "quantity_picked": 0,
+                }
+                for line_id, q in wanted.items()
+            ],
+        }
         try:
-            package = await zoho_service.create_package(
-                db,
-                salesorder_id,
-                date=date.today().isoformat(),
-                line_items=[{"so_line_item_id": line_id, "quantity": q} for line_id, q in wanted.items()],
-            )
-        except BaseException as e:
-            sync.note_write(salesorder_id)
-            if isinstance(e, ZohoUpstreamError):
-                if isinstance(e, ZohoRateLimited):
-                    sync.open_rate_limit_window(e)
-                # A timeout can mean Books did create it: look once, keep the original error.
-                await _best_effort_refresh(db, salesorder_id, row.get("number") or "")
+            picklist = await _write(salesorder_id, number, "picklist", zoho_service.create_picklist(db, body))
+        except ZohoUpstreamError:
+            await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean Books did create it
             raise
-        sync.note_write(salesorder_id)
+        await _best_effort_refresh(db, salesorder_id, number)
+    return {"id": picklist.get("picklist_id") or "", "number": picklist.get("picklist_number") or ""}
+
+
+async def _picklist(db: AsyncSession, order: dict, picklist_id: str) -> dict:
+    """A picklist of this order, as Books has it now."""
+    if not any(p.get("picklist_id") == picklist_id for p in order.get("picklists") or []):
+        raise OrderActionRefused("unknown_picklist")
+    try:
+        return await zoho_service.get_picklist(db, picklist_id)
+    except ZohoNotFound as e:
+        raise OrderActionRefused("unknown_picklist") from e
+    except ZohoRateLimited as e:
+        sync.open_rate_limit_window(e)
+        raise sync.ZohoBusy(picklist_id) from e
+
+
+def _to_box(picklist: dict, salesorder_id: str) -> dict[str, tuple[float, float, str]]:
+    """Per order line of a picklist: the units no parcel holds yet, the units already boxed, and the picklist
+    row id. A completed picklist counts what was picked, an open one what is to be picked."""
+    done = picklist.get("status") == "completed"
+    result: dict[str, tuple[float, float, str]] = {}
+    for line in picklist.get("line_items") or []:
+        if line.get("salesorder_id") != salesorder_id:
+            raise OrderActionRefused("picklist_shared")  # cutting it down here would touch another order
+        boxed = _num(line.get("quantity_packed"))
+        units = round(_num(line.get("quantity_picked" if done else "quantity_to_be_picked")) - boxed, 6)
+        if line.get("so_line_item_id") and line.get("line_item_id"):
+            result[line["so_line_item_id"]] = (max(0.0, units), boxed, line["line_item_id"])
+    return result
+
+
+async def picklist_content(db: AsyncSession, salesorder_id: str, picklist_id: str) -> dict:
+    """What a parcel made from this picklist may hold. Reads only."""
+    order = await _stored_order(db, salesorder_id)
+    if sync.zoho_busy():
+        raise sync.ZohoBusy(salesorder_id)
+    picklist = await _picklist(db, order, picklist_id)
+    return {
+        "id": picklist_id,
+        "number": picklist.get("picklist_number") or "",
+        "status": picklist.get("status") or "",
+        "lines": _lines(
+            {line_id: units for line_id, (units, _, _) in _to_box(picklist, salesorder_id).items() if units > 0}
+        ),
+    }
+
+
+async def create_parcel(db: AsyncSession, salesorder_id: str, picklist_id: str, quantities: dict[str, float]) -> str:
+    """Box what was picked; returns Books' package number.
+
+    The picklist is cut down to the confirmed quantities and completed, then its package is created. A step whose
+    result Books already shows is skipped, so the same request repeated finishes the job.
+    """
+    with writing(salesorder_id):
+        doc = await confirm_stored_copy(db, salesorder_id)
+        row = await _row(db, salesorder_id)
+        number = row.get("number") or ""
+        wanted = _wanted(quantities)
+        picklist = await _picklist(db, doc.detail or {}, picklist_id)
+        on_list = _to_box(picklist, salesorder_id)
+        _within(wanted, {line_id: units for line_id, (units, _, _) in on_list.items()}, set(on_list))
+        try:
+            if picklist.get("status") != "completed":
+                body = {
+                    "date": picklist.get("date") or date.today().isoformat(),
+                    "location_id": picklist.get("location_id"),
+                    "group_by": picklist.get("group_by"),
+                    # Books removes the rows left out: the picklist becomes exactly what was picked.
+                    "line_items": [
+                        {
+                            "line_item_id": on_list[line_id][2],
+                            "quantity_to_be_picked": on_list[line_id][1] + q,
+                            "quantity_picked": on_list[line_id][1] + q,
+                        }
+                        for line_id, q in wanted.items()
+                    ],
+                }
+                updated = await _write(
+                    salesorder_id,
+                    number,
+                    "picklist_picked",
+                    zoho_service.update_picklist(db, picklist_id, {k: v for k, v in body.items() if v}),
+                )
+                if updated.get("status") != "completed":
+                    await _write(
+                        salesorder_id, number, "picklist_completed", zoho_service.complete_picklist(db, picklist_id)
+                    )
+            package = await _write(
+                salesorder_id,
+                number,
+                "parcel",
+                zoho_service.create_package(
+                    db,
+                    salesorder_id,
+                    date=date.today().isoformat(),
+                    line_items=[
+                        {"so_line_item_id": line_id, "quantity": q, "picklist_item_id": on_list[line_id][2]}
+                        for line_id, q in wanted.items()
+                    ],
+                ),
+            )
+        except ZohoUpstreamError:
+            # A timeout can mean Books did it: look once, keep the original error.
+            await _best_effort_refresh(db, salesorder_id, number)
+            raise
         # The parcel exists in Books: nothing below may turn that into an error.
         try:
             await db.execute(
@@ -157,11 +349,9 @@ async def create_parcel(db: AsyncSession, salesorder_id: str, quantities: dict[s
             )
             await db.commit()
         except Exception as e:
-            logger.warning(
-                "Order board: bookkeeping after a parcel failed for %s (%s)", row.get("number"), type(e).__name__
-            )
+            logger.warning("Order board: bookkeeping after a parcel failed for %s (%s)", number, type(e).__name__)
             await db.rollback()
-        await _best_effort_refresh(db, salesorder_id, row.get("number") or "")
+        await _best_effort_refresh(db, salesorder_id, number)
     return package.get("package_number") or ""
 
 
@@ -194,13 +384,6 @@ _LINE_FIELDS = (
     "tax_id",
     "discount",
 )
-
-
-def _num(value) -> float:
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def _nonzero(value) -> bool:
@@ -287,19 +470,6 @@ def _outcome(package_number: str = "") -> dict:
         "failed_step": None,
         "error": None,
     }
-
-
-async def _write(salesorder_id: str, number: str, step: str, call):
-    """One Books write: logged, and fenced so that no sync pass stores a copy fetched while it ran."""
-    logger.info("Order board write: order=%s step=%s", number, step)
-    sync.note_write(salesorder_id)
-    try:
-        return await call
-    except ZohoRateLimited as e:
-        sync.open_rate_limit_window(e)
-        raise
-    finally:
-        sync.note_write(salesorder_id)
 
 
 async def _credit(db: AsyncSession, salesorder_id: str, number: str, invoice: dict, customer_id: str, cap: float):

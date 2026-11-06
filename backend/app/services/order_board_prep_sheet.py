@@ -2,6 +2,7 @@
 
 import io
 import unicodedata
+from collections.abc import Mapping
 from datetime import datetime
 
 from reportlab.lib.pagesizes import A4
@@ -88,14 +89,14 @@ def _grey(c: rl_canvas.Canvas, on: bool = True) -> None:
     c.setFillColorRGB(*(_GREY if on else (0, 0, 0)))
 
 
-def _header(c: rl_canvas.Canvas, row: dict, printed_at: datetime, shop_name: str) -> float:
+def _header(c: rl_canvas.Canvas, row: dict, printed_at: datetime, shop_name: str, picklist: str = "") -> float:
     top = _H - _M
     c.setFont("Helvetica-Bold", 22)
     c.drawString(_M, top - 18, shop_name)
     c.setFont("Helvetica-Bold", 15)
     c.drawRightString(_W - _M, top - 14, "BON DE PRÉPARATION")
     c.setFont("Courier", 14)
-    c.drawRightString(_W - _M, top - 32, row.get("number") or "")
+    c.drawRightString(_W - _M, top - 32, " · ".join(n for n in (row.get("number") or "", picklist) if n))
     c.setFont("Helvetica", 9)
     _grey(c)
     c.drawRightString(
@@ -178,18 +179,30 @@ def _box(c: rl_canvas.Canvas, x: float, y: float, w: float, h: float, label: str
     _grey(c, False)
 
 
-def render_prep_sheet(row: dict, *, printed_at: datetime, order_url: str | None, shop_name: str = "AITO3D") -> bytes:
+def render_prep_sheet(
+    row: dict,
+    *,
+    printed_at: datetime,
+    order_url: str | None,
+    shop_name: str = "AITO3D",
+    quantities: Mapping[str, float] | None = None,
+    picklist_number: str = "",
+) -> bytes:
+    """The sheet of what to take off the shelf: everything packable, or the units of one picklist
+    (``quantities``: units per line id)."""
     buf = io.BytesIO()
     c = _Canvas(buf, pagesize=A4)
     c.setTitle(f"Bon de préparation {row.get('number') or ''}")
     lines = row.get("lines") or []
-    pick = [ln for ln in lines if (ln.get("packable") or 0) > 0]
-    later = [
-        (ln, (ln.get("remaining") or 0) - (ln.get("packed_waiting") or 0) - (ln.get("packable") or 0)) for ln in lines
-    ]
+    take = {
+        ln.get("id"): (ln.get("packable") or 0) if quantities is None else (quantities.get(ln.get("id") or "") or 0)
+        for ln in lines
+    }
+    pick = [ln for ln in lines if take[ln.get("id")] > 0]
+    later = [(ln, (ln.get("remaining") or 0) - (ln.get("packed_waiting") or 0) - take[ln.get("id")]) for ln in lines]
     later = [(ln, q) for ln, q in later if round(q, 3) > 0]
 
-    y = _table_head(c, _info(c, row, _header(c, row, printed_at, shop_name), order_url))
+    y = _table_head(c, _info(c, row, _header(c, row, printed_at, shop_name, picklist_number), order_url))
     for ln in pick:
         if y - _ROW_H < _BOTTOM + 40:
             c.showPage()
@@ -198,7 +211,7 @@ def render_prep_sheet(row: dict, *, printed_at: datetime, order_url: str | None,
         c.setLineWidth(1.2)
         c.rect(_M + 2, base - 2, 10, 10)
         c.setFont("Helvetica-Bold", 13)
-        c.drawRightString(_COLS[1] - 8, base, _qty(ln["packable"]))
+        c.drawRightString(_COLS[1] - 8, base, _qty(take[ln.get("id")]))
         c.setFont("Helvetica", 10)
         c.drawString(_COLS[1], base, _fit(c, ln.get("name") or "", "Helvetica", 10, _COLS[2] - _COLS[1] - 8))
         c.setFont("Courier", 9)
@@ -211,7 +224,7 @@ def render_prep_sheet(row: dict, *, printed_at: datetime, order_url: str | None,
         c.line(_M, y - _ROW_H, _W - _M, y - _ROW_H)
         y -= _ROW_H
 
-    units = round(sum(ln["packable"] for ln in pick), 3)
+    units = round(sum(take[ln.get("id")] for ln in pick), 3)
     n = len(pick)
     c.setFont("Helvetica-Bold", 10)
     c.drawRightString(
@@ -239,7 +252,11 @@ def render_prep_sheet(row: dict, *, printed_at: datetime, order_url: str | None,
                 seg_top, seg_n = y, 0
                 c.setFont("Helvetica", 8)
                 _grey(c)
-                c.drawString(_M + 10, seg_top - 14, "Pas en stock, reste à livrer")
+                c.drawString(
+                    _M + 10,
+                    seg_top - 14,
+                    "Pas en stock, reste à livrer" if quantities is None else "Hors de ce prélèvement, reste à livrer",
+                )
                 _grey(c, False)
             yy = seg_top - 34 - 14 * seg_n
             c.setFont("Helvetica-Bold", 10)

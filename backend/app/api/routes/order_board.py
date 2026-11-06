@@ -12,7 +12,7 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Literal, TypeVar
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -134,6 +134,10 @@ class ParcelBody(BaseModel):
         return lines
 
 
+class PackBody(ParcelBody):
+    picklist_id: str = Field(min_length=1, max_length=64)
+
+
 class HandoverBody(BaseModel):
     mode: Literal["pickup", "delivery"]
     apply_credit: bool
@@ -182,28 +186,71 @@ def _logged(user: User | None, salesorder_id: str, action: str) -> None:
 @router.post("/orders/{salesorder_id}/prep-sheet")
 async def print_prep_sheet(
     salesorder_id: str,
+    picklist_id: str | None = Query(default=None, min_length=1, max_length=64),
     db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
 ) -> Response:
-    """Stamp the order as printed and return its prep sheet."""
+    """Stamp the order as printed and return its prep sheet: the units of one picklist, or everything packable."""
+    content = await _run(order_board_actions.picklist_content(db, salesorder_id, picklist_id)) if picklist_id else None
     row = await _run(order_board_actions.stamp_print(db, salesorder_id, user.username if user else ""))
     base = await aito_tracking.external_url(db)
     pdf = render_prep_sheet(
-        row, printed_at=datetime.now(), order_url=f"{base}/orders?order={salesorder_id}" if base else None
+        row,
+        printed_at=datetime.now(),
+        order_url=f"{base}/orders?order={salesorder_id}" if base else None,
+        quantities={line["line_id"]: line["quantity"] for line in content["lines"]} if content else None,
+        picklist_number=content["number"] if content else "",
     )
     _logged(user, salesorder_id, "prep_sheet")
     return _pdf(pdf, "bon-de-preparation.pdf")
 
 
-@router.post("/orders/{salesorder_id}/packages")
-async def create_parcel(
+@router.get("/orders/{salesorder_id}/picklist")
+async def get_picklist_preview(
+    salesorder_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+) -> dict:
+    """What a new picklist of this order may hold (asks Books; writes nothing)."""
+    return await _run(order_board_actions.picklist_preview(db, salesorder_id))
+
+
+@router.post("/orders/{salesorder_id}/picklists")
+async def create_picklist(
     salesorder_id: str,
     body: ParcelBody,
     db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ) -> dict:
+    picklist = await _run(
+        order_board_actions.create_picklist(db, salesorder_id, {line.line_id: line.quantity for line in body.lines})
+    )
+    _logged(user, salesorder_id, "create_picklist")
+    return {"board": await order_board_sync.read_board(db), "picklist": picklist}
+
+
+@router.get("/orders/{salesorder_id}/picklists/{picklist_id}")
+async def get_picklist_content(
+    salesorder_id: str,
+    picklist_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+) -> dict:
+    """What a parcel made from this picklist may hold (asks Books; writes nothing)."""
+    return await _run(order_board_actions.picklist_content(db, salesorder_id, picklist_id))
+
+
+@router.post("/orders/{salesorder_id}/packages")
+async def create_parcel(
+    salesorder_id: str,
+    body: PackBody,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> dict:
     number = await _run(
-        order_board_actions.create_parcel(db, salesorder_id, {line.line_id: line.quantity for line in body.lines})
+        order_board_actions.create_parcel(
+            db, salesorder_id, body.picklist_id, {line.line_id: line.quantity for line in body.lines}
+        )
     )
     _logged(user, salesorder_id, "create_parcel")
     return {"board": await order_board_sync.read_board(db), "package_number": number}

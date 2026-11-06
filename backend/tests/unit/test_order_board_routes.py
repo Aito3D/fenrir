@@ -166,11 +166,16 @@ async def test_finished_detail_maps_busy_to_503_and_unknown_to_404(async_client,
 
 
 BASE = "/api/v1/order-board"
-PARCEL = {"lines": [{"line_id": "l1", "quantity": 2}]}
+PICK = {"lines": [{"line_id": "l1", "quantity": 2}]}
+PARCEL = {**PICK, "picklist_id": "pl1"}
 HAND = {"mode": "pickup", "apply_credit": False}
 INVOICE = {"apply_credit": True}
 NEW_ROUTES = [
     ("post", f"{BASE}/orders/so1/prep-sheet", None, False),
+    ("post", f"{BASE}/orders/so1/prep-sheet?picklist_id=pl1", None, False),
+    ("get", f"{BASE}/orders/so1/picklist", None, False),
+    ("post", f"{BASE}/orders/so1/picklists", PICK, True),
+    ("get", f"{BASE}/orders/so1/picklists/pl1", None, False),
     ("post", f"{BASE}/orders/so1/packages", PARCEL, True),
     ("get", f"{BASE}/orders/so1/packages/p1/handover", None, False),
     ("post", f"{BASE}/orders/so1/packages/p1/handover", HAND, True),
@@ -234,8 +239,8 @@ async def test_create_parcel_returns_the_board_and_the_number(async_client, toke
 
     seen = {}
 
-    async def fake(db, salesorder_id, quantities):
-        seen["q"] = quantities
+    async def fake(db, salesorder_id, picklist_id, quantities):
+        seen["q"] = (picklist_id, quantities)
         return "PKG-7"
 
     monkeypatch.setattr(actions, "create_parcel", fake)
@@ -243,7 +248,60 @@ async def test_create_parcel_returns_the_board_and_the_number(async_client, toke
     assert r.status_code == 200
     assert r.json()["package_number"] == "PKG-7"
     assert "rows" in r.json()["board"]
+    assert seen["q"] == ("pl1", {"l1": 2})
+
+
+@pytest.mark.asyncio
+async def test_picklist_routes_pass_the_choice_through(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+
+    seen = {}
+
+    async def fake_create(db, salesorder_id, quantities):
+        seen["q"] = quantities
+        return {"id": "pl1", "number": "PL-00013"}
+
+    async def fake_preview(db, salesorder_id):
+        return {"lines": [{"line_id": "l1", "quantity": 3}]}
+
+    async def fake_content(db, salesorder_id, picklist_id):
+        return {"id": picklist_id, "number": "PL-00013", "status": "yet_to_start", "lines": PICK["lines"]}
+
+    monkeypatch.setattr(actions, "create_picklist", fake_create)
+    monkeypatch.setattr(actions, "picklist_preview", fake_preview)
+    monkeypatch.setattr(actions, "picklist_content", fake_content)
+    r = await async_client.post(f"{BASE}/orders/so1/picklists", headers=tokens["both"], json=PICK)
+    assert r.status_code == 200
+    assert r.json()["picklist"] == {"id": "pl1", "number": "PL-00013"} and "rows" in r.json()["board"]
     assert seen["q"] == {"l1": 2}
+    r = await async_client.get(f"{BASE}/orders/so1/picklist", headers=tokens["read"])
+    assert r.json() == {"lines": [{"line_id": "l1", "quantity": 3}]}
+    r = await async_client.get(f"{BASE}/orders/so1/picklists/pl1", headers=tokens["read"])
+    assert r.json()["number"] == "PL-00013"
+
+
+@pytest.mark.asyncio
+async def test_prep_sheet_of_a_picklist_prints_its_units_and_number(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+
+    seen = {}
+
+    async def fake_stamp(db, salesorder_id, by):
+        return {"number": "SO-1", "lines": [], "customer": "X"}
+
+    async def fake_content(db, salesorder_id, picklist_id):
+        return {"id": picklist_id, "number": "PL-00013", "status": "yet_to_start", "lines": PICK["lines"]}
+
+    def fake_render(row, **kw):
+        seen.update(kw)
+        return b"%PDF-fake"
+
+    monkeypatch.setattr(actions, "stamp_print", fake_stamp)
+    monkeypatch.setattr(actions, "picklist_content", fake_content)
+    monkeypatch.setattr("backend.app.api.routes.order_board.render_prep_sheet", fake_render)
+    r = await async_client.post(f"{BASE}/orders/so1/prep-sheet?picklist_id=pl1", headers=tokens["read"])
+    assert r.status_code == 200
+    assert (seen["quantities"], seen["picklist_number"]) == ({"l1": 2}, "PL-00013")
 
 
 @pytest.mark.asyncio
@@ -280,13 +338,15 @@ async def test_handover_and_invoice_return_board_and_outcome(async_client, token
 @pytest.mark.parametrize(
     ("url", "body"),
     [
-        ("orders/so1/packages", {"lines": []}),
-        ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": 0}]}),
-        ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": -1}]}),
-        ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": 1}, {"line_id": "l1", "quantity": 2}]}),
-        ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": 1}] * 201}),
-        ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": "inf"}]}),
-        ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": "nan"}]}),
+        ("orders/so1/packages", PICK),  # no picklist: a parcel is always made from one
+        ("orders/so1/packages", {"picklist_id": "", **PICK}),
+        ("orders/so1/picklists", {"lines": []}),
+        ("orders/so1/picklists", {"lines": [{"line_id": "l1", "quantity": 0}]}),
+        ("orders/so1/picklists", {"lines": [{"line_id": "l1", "quantity": -1}]}),
+        ("orders/so1/picklists", {"lines": [{"line_id": "l1", "quantity": 1}, {"line_id": "l1", "quantity": 2}]}),
+        ("orders/so1/picklists", {"lines": [{"line_id": "l1", "quantity": 1}] * 201}),
+        ("orders/so1/picklists", {"lines": [{"line_id": "l1", "quantity": "inf"}]}),
+        ("orders/so1/picklists", {"lines": [{"line_id": "l1", "quantity": "nan"}]}),
         ("orders/so1/packages/p1/handover", {"mode": "teleport", "apply_credit": False}),
         ("orders/so1/packages/p1/handover", {"mode": "pickup"}),
         ("orders/so1/invoice", {}),
@@ -317,9 +377,22 @@ async def test_action_errors_map_to_statuses(async_client, tokens, monkeypatch):
         async def boom(*a, exc=exc, **k):
             raise exc
 
-        for name in ("create_parcel", "hand_over", "invoice_shipped", "handover_preview", "stamp_print"):
+        for name in (
+            "create_parcel",
+            "hand_over",
+            "invoice_shipped",
+            "handover_preview",
+            "stamp_print",
+            "create_picklist",
+            "picklist_preview",
+            "picklist_content",
+        ):
             monkeypatch.setattr(actions, name, boom)
         calls = [
+            ("post", "orders/so1/picklists", PICK),
+            ("get", "orders/so1/picklist", None),
+            ("get", "orders/so1/picklists/pl1", None),
+            ("post", "orders/so1/prep-sheet?picklist_id=pl1", None),
             ("post", "orders/so1/packages", PARCEL),
             ("post", "orders/so1/packages/p1/handover", HAND),
             ("post", "orders/so1/invoice", INVOICE),
