@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ExternalLink, ReceiptText } from 'lucide-react';
+import { ExternalLink, Mail, ReceiptText } from 'lucide-react';
 import { api } from '../../api/client';
 import type { OrderBoardRow, OrderInvoice } from '../../api/client';
 import { formatMoney } from '../../utils/pricing';
@@ -8,11 +8,13 @@ import { Card } from '../Card';
 import { PdfDownloadButton } from '../aito/PdfDownloadButton';
 import { PdfPrintButton } from '../aito/PdfPrintButton';
 import { DOC_ICON_BUTTON_CLS, LINK_ICON_CLS } from '../aito/linkActionHelpers';
+import { OrderInvoiceEmailModal } from './OrderInvoiceEmailModal';
 import { daysPastDue, parseDay } from './orderBoard';
 import { TONE } from './orderStatus';
 
-/** The invoices of one order, one entry each, and the way to invoice what was handed over without one. */
-export function OrderInvoicesBlock({ row, onCreateInvoice, busy = false }: { row: Pick<OrderBoardRow, 'currency' | 'payment' | 'unbilled_units'>; onCreateInvoice?: () => void; busy?: boolean }) {
+/** The invoices of one order, one entry each, and the way to invoice what was handed over without one.
+ *  `canEmail` (the caller's orders:update) adds the send-by-mail button of the Aito card's invoice. */
+export function OrderInvoicesBlock({ row, onCreateInvoice, busy = false, canEmail = false }: { row: Pick<OrderBoardRow, 'currency' | 'payment' | 'unbilled_units'>; onCreateInvoice?: () => void; busy?: boolean; canEmail?: boolean }) {
   const { t } = useTranslation();
   const money = (n: number) => formatMoney(n, row.currency);
   const shortDay = (day: string) => parseDay(day).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
@@ -20,6 +22,7 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, busy = false }: { row
   // An invoice that was not in the list on the previous render flashes once; the ones present at mount never do.
   const [seen, setSeen] = useState(() => new Set(invoices.map(i => i.id)));
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
+  const [emailing, setEmailing] = useState<OrderInvoice | null>(null);
   if (invoices.some(i => !seen.has(i.id))) {
     setFresh(new Set(invoices.filter(i => !seen.has(i.id)).map(i => i.id)));
     setSeen(new Set(invoices.map(i => i.id)));
@@ -70,6 +73,11 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, busy = false }: { row
                 <span className="-mr-1 inline-flex shrink-0 items-center">
                   <PdfDownloadButton variant="icon" fetchPdf={() => api.getOrderInvoicePdf(i.id)} label={t('orders.inv.download')} filename={i.number} failureMessage={t('orders.inv.pdfFailed')} />
                   <PdfPrintButton variant="icon" fetchPdf={() => api.getOrderInvoicePdf(i.id)} label={t('orders.inv.print')} failureMessage={t('orders.inv.pdfFailed')} />
+                  {canEmail && (
+                    <button type="button" onClick={() => setEmailing(i)} aria-label={t('aito.sendInvoice')} title={t('aito.sendInvoice')} className={DOC_ICON_BUTTON_CLS}>
+                      <Mail aria-hidden="true" className={LINK_ICON_CLS} />
+                    </button>
+                  )}
                   {i.url && (
                     <a href={i.url} target="_blank" rel="noopener noreferrer" aria-label={t('orders.inv.open')} title={t('orders.inv.open')} className={DOC_ICON_BUTTON_CLS}>
                       <ExternalLink aria-hidden="true" className={LINK_ICON_CLS} />
@@ -81,6 +89,7 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, busy = false }: { row
           ))
         )}
       </div>
+      {emailing && <OrderInvoiceEmailModal invoice={emailing} onClose={() => setEmailing(null)} />}
     </Card>
   );
 }

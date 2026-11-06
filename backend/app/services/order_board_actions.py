@@ -1,4 +1,4 @@
-"""The Order Board's writes towards Books: print stamp, picklist, parcel, hand-over, invoice and credit."""
+"""The Order Board's writes towards Books: print stamp, picklist, parcel, hand-over, invoice, credit and invoice email."""
 
 import contextlib
 import logging
@@ -694,3 +694,11 @@ async def handover_preview(db: AsyncSession, salesorder_id: str, package_id: str
         result["invoice_total"] = total
         result["credit"] = min(total, _num(((row or {}).get("payment") or {}).get("advance")))
     return result
+
+
+async def email_invoice(db: AsyncSession, salesorder_id: str, number: str, invoice_id: str, to: str) -> None:
+    """Email one of the order's invoices through Books, then re-read the order: Books marks a draft invoice sent."""
+    with writing(salesorder_id):
+        logger.info("Order board write: order=%s step=invoice_email", number)
+        await zoho_service.email_invoice(db, invoice_id, to_mail_ids=[to])
+        await _best_effort_refresh(db, salesorder_id, number)

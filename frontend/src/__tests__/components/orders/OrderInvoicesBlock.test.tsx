@@ -111,4 +111,70 @@ describe('OrderInvoicesBlock', () => {
     expect(screen.getByText('FAC-0002').closest('[data-fresh]')).not.toBeNull();
     expect(screen.getByText('FAC-0001').closest('[data-fresh]')).toBeNull();
   });
+
+  it('offers no send-by-mail button without the right to update orders', () => {
+    render(<OrderInvoicesBlock row={row([inv()])} />);
+    expect(screen.queryByRole('button', { name: 'Send invoice' })).not.toBeInTheDocument();
+  });
+
+  it('emails an invoice to the address picked among those Books offers, then closes', async () => {
+    const posted: unknown[] = [];
+    server.use(
+      http.get('/api/v1/order-board/invoices/inv1/email', () =>
+        HttpResponse.json({
+          subject: 'Facture FAC-0001',
+          body: '<p>Bonjour</p>',
+          recipients: [
+            { email: 'compta@client.pf', name: 'Compta', contact_person_id: 'cp1' },
+            { email: 'moana@client.pf', name: 'Moana', contact_person_id: 'cp2' },
+          ],
+          default_email: 'moana@client.pf',
+          invoice_id: 'inv1',
+          invoice_number: 'FAC-0001',
+        }),
+      ),
+      http.post('/api/v1/order-board/invoices/inv1/email', async ({ request }) => {
+        posted.push(await request.json());
+        return HttpResponse.json({ board: { rows: [], sync: {} } });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<OrderInvoicesBlock canEmail row={row([inv()])} />);
+    await user.click(screen.getByRole('button', { name: 'Send invoice' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Send invoice by email' });
+    expect(dialog).toBeInTheDocument();
+    // The order's own contact is preselected; the operator picks the other address.
+    const select = await screen.findByRole('combobox');
+    await waitFor(() => expect(select).toHaveValue('moana@client.pf'));
+    expect(screen.getByText('Facture FAC-0001')).toBeInTheDocument();
+    await user.selectOptions(select, 'compta@client.pf');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(posted).toEqual([{ to: 'compta@client.pf' }]));
+    expect(await screen.findByText('Invoice sent to compta@client.pf')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('keeps the dialog open and says so when Books refuses the send', async () => {
+    server.use(
+      http.get('/api/v1/order-board/invoices/inv1/email', () =>
+        HttpResponse.json({
+          subject: 'Facture FAC-0001',
+          body: '',
+          recipients: [{ email: 'moana@client.pf', name: 'Moana', contact_person_id: 'cp2' }],
+          default_email: 'moana@client.pf',
+          invoice_id: 'inv1',
+          invoice_number: 'FAC-0001',
+        }),
+      ),
+      http.post('/api/v1/order-board/invoices/inv1/email', () => HttpResponse.json({ detail: 'Books says no' }, { status: 502 })),
+    );
+    const user = userEvent.setup();
+    render(<OrderInvoicesBlock canEmail row={row([inv()])} />);
+    await user.click(screen.getByRole('button', { name: 'Send invoice' }));
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('moana@client.pf'));
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    expect(await screen.findByText('Could not send the invoice')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Send invoice by email' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
+  });
 });

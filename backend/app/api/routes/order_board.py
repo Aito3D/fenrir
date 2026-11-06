@@ -7,24 +7,27 @@ endpoints, not the general settings API, because Operators hold
 """
 
 import logging
+import time
 from collections.abc import Awaitable
 from dataclasses import asdict
 from datetime import datetime
 from typing import Literal, TypeVar
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.aito import _EMAIL_GUARD, _check_zoho_email_rate_limit, _email_guard_key_or_409
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.user import User
 from backend.app.services import aito_tracking, order_board_actions, order_board_sync
+from backend.app.services.order_board_payment import order_contact
 from backend.app.services.order_board_prep_sheet import render_prep_sheet
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUnreachable, ZohoUpstreamError, zoho_service
 from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__name__)
@@ -145,6 +148,10 @@ class HandoverBody(BaseModel):
 
 class InvoiceBody(BaseModel):
     apply_credit: bool
+
+
+class InvoiceEmailBody(BaseModel):
+    to: str = Field(min_length=3, max_length=320)
 
 
 async def _run(call: Awaitable[_T]) -> _T:
@@ -300,13 +307,85 @@ async def get_invoice_pdf(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
 ) -> Response:
     """An invoice PDF, only for an invoice that a stored order lists (no open proxy to every Books invoice)."""
-    # Scan of the salesorder docs that have a detail: a few hundred rows, no JSON index worth building.
-    details = (
-        await db.execute(
-            select(OrderBoardDoc.detail).where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.detail.is_not(None))
-        )
-    ).scalars()
-    if not any(inv.get("invoice_id") == invoice_id for d in details if d for inv in (d.get("invoices") or [])):
-        raise HTTPException(status_code=404, detail="Invoice not found.")
+    await _listed_invoice(db, invoice_id)
     pdf = await _run(zoho_service.get_invoice_pdf(db, invoice_id))
     return _pdf(pdf, "facture.pdf")
+
+
+async def _listed_invoice(db: AsyncSession, invoice_id: str) -> tuple[str, dict, dict]:
+    """The stored order that lists this invoice (its id and detail) and the invoice entry itself, or a 404."""
+    # Scan of the salesorder docs that have a detail: a few hundred rows, no JSON index worth building.
+    docs = await db.execute(
+        select(OrderBoardDoc.zoho_id, OrderBoardDoc.detail).where(
+            OrderBoardDoc.kind == "salesorder", OrderBoardDoc.detail.is_not(None)
+        )
+    )
+    for salesorder_id, detail in docs:
+        for invoice in (detail or {}).get("invoices") or []:
+            if invoice.get("invoice_id") == invoice_id:
+                return salesorder_id, detail or {}, invoice
+    raise HTTPException(status_code=404, detail="Invoice not found.")
+
+
+async def _invoice_email(db: AsyncSession, invoice_id: str) -> tuple[str, dict, dict]:
+    """The order that lists the invoice, and what Books would email for it right now.
+
+    The address to preselect is the order's own contact when Books offers it, else Books' first.
+    """
+    salesorder_id, order, invoice = await _listed_invoice(db, invoice_id)
+    content = await _run(zoho_service.get_invoice_email_content(db, invoice_id))
+    emails = [r["email"] for r in content["recipients"]]
+    own = ((order_contact(order) or {}).get("email") or "").lower()
+    content = {
+        **content,
+        "default_email": next((e for e in emails if e.lower() == own), emails[0] if emails else None),
+        "invoice_id": invoice_id,
+        "invoice_number": invoice.get("invoice_number") or invoice_id,
+    }
+    return salesorder_id, order, content
+
+
+@router.get("/invoices/{invoice_id}/email")
+async def get_invoice_email(
+    invoice_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+) -> dict:
+    """What Books would send if this invoice were emailed now: subject, body and the addresses Books offers."""
+    return (await _invoice_email(db, invoice_id))[2]
+
+
+@router.post("/invoices/{invoice_id}/email")
+async def send_invoice_email(
+    invoice_id: str,
+    body: InvoiceEmailBody,
+    request: Request,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> dict:
+    """Email the invoice through Books to one of the addresses Books offers for it; answers with the fresh board."""
+    _check_zoho_email_rate_limit(request, user)
+    salesorder_id, order, content = await _invoice_email(db, invoice_id)
+    to = body.to.strip()
+    # Re-read, never taken from the request: otherwise any holder of orders:update could mail anyone from the
+    # shop's Books account, on the shop's own template.
+    if to.lower() not in {r["email"].lower() for r in content["recipients"]}:
+        raise HTTPException(status_code=422, detail="That address is not a recipient of this invoice")
+    # Same one-minute guard as the Aito card: a second tap must not mail the client the same invoice twice.
+    key = _email_guard_key_or_409("order-invoice", 0, invoice_id, to)
+    _EMAIL_GUARD.arm(key, time.monotonic())
+
+    async def send() -> None:
+        try:
+            await order_board_actions.email_invoice(
+                db, salesorder_id, order.get("salesorder_number") or salesorder_id, invoice_id, to
+            )
+        except ZohoUnreachable:
+            raise  # Books may have sent it all the same: the guard stays armed
+        except Exception:
+            _EMAIL_GUARD.release(key)
+            raise
+
+    await _run(send())
+    _logged(user, salesorder_id, "invoice_email")
+    return {"board": await order_board_sync.read_board(db)}

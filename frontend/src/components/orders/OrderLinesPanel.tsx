@@ -293,6 +293,7 @@ export function OrderLinesPanel({
         {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} />}
         <OrderInvoicesBlock
           row={row}
+          canEmail={canUpdate}
           busy={createInvoice.isPending}
           onCreateInvoice={canUpdate ? () => {
             if (createInvoice.isPending || invoiceSent.current) return;

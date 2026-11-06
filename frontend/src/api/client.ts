@@ -9897,6 +9897,13 @@ export const api = {
   createOrderInvoice: (id: string, body: { apply_credit: boolean }) =>
     request<OrderActionResult>(`/order-board/orders/${encodeURIComponent(id)}/invoice`, { method: 'POST', body: JSON.stringify(body) }),
   getOrderInvoicePdf: (invoiceId: string): Promise<Blob> => orderBoardBlob(`/order-board/invoices/${encodeURIComponent(invoiceId)}/pdf`),
+  /** What Books would email for this invoice right now; the send re-reads it server-side. */
+  getOrderInvoiceEmail: (invoiceId: string) => request<AitoInvoiceEmailContent>(`/order-board/invoices/${encodeURIComponent(invoiceId)}/email`),
+  sendOrderInvoiceEmail: (invoiceId: string, to: string) =>
+    request<{ board: OrderBoardResponse }>(`/order-board/invoices/${encodeURIComponent(invoiceId)}/email`, {
+      method: 'POST',
+      body: JSON.stringify({ to }),
+    }),
   getOrderBoardSettings: () => request<OrderBoardSettings>('/order-board/settings'),
   updateOrderBoardSettings: (body: OrderBoardSettings) =>
     request<OrderBoardSettings>('/order-board/settings', { method: 'PUT', body: JSON.stringify(body) }),

@@ -17,7 +17,7 @@ export function useHandOverPending(orderId: string): boolean {
   return useIsMutating({ mutationKey: HANDOVER_KEY, predicate: m => (m.state.variables as { id?: string } | undefined)?.id === orderId }) > 0;
 }
 
-/** The write actions of an order: start a picklist, box its parcel, hand it over, invoice it, print the prep sheet.
+/** The write actions of an order: start a picklist, box its parcel, hand it over, invoice it, email an invoice, print the prep sheet.
  *  Each answer carries the fresh board, which goes straight into the list; the
  *  finished orders are refetched. A failure is thrown to the caller, which words it.
  *  The callbacks run from the mutation itself, so they still fire after the caller unmounted. */
@@ -96,12 +96,19 @@ export function useOrderActions(callbacks?: {
     },
   });
 
+  // Books marks an emailed draft invoice sent, so the answer carries the board like every other write.
+  const emailInvoice = useMutation({
+    mutationFn: ({ invoiceId, to }: { invoiceId: string; to: string }) => api.sendOrderInvoiceEmail(invoiceId, to),
+    onSuccess: r => take(r.board),
+  });
+
   return {
     canUpdate: hasPermission('orders:update'),
     createParcel,
     createPicklist,
     handOver,
     createInvoice,
+    emailInvoice,
     /** The blob fetcher for a print button; the server stamps the order as printed, so the board is refetched once it ran. */
     printSheet: (id: string, picklistId: string) => async () => {
       const blob = await api.printOrderPrepSheet(id, picklistId);

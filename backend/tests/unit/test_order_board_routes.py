@@ -181,6 +181,8 @@ NEW_ROUTES = [
     ("post", f"{BASE}/orders/so1/packages/p1/handover", HAND, True),
     ("post", f"{BASE}/orders/so1/invoice", INVOICE, True),
     ("get", f"{BASE}/invoices/inv1/pdf", None, False),
+    ("get", f"{BASE}/invoices/inv1/email", None, False),
+    ("post", f"{BASE}/invoices/inv1/email", {"to": "a@b.pf"}, True),
 ]
 
 
@@ -494,3 +496,130 @@ async def test_a_books_failure_is_logged_without_its_message(async_client, token
     assert (r.status_code, r.json()["detail"]) == (502, "Customer Jane Doe has no item Widget")
     assert "Jane" not in caplog.text
     assert "step=hand_over" in caplog.text and "ZohoRequestRejected" in caplog.text
+
+
+@pytest.fixture
+def invoice_mail(monkeypatch):
+    """A fake Books for the invoice email: what it offers, what it was asked to send, and the re-read."""
+    from backend.app.api.routes import aito as aito_routes
+    from backend.app.services.zoho import zoho_service
+
+    aito_routes._reset_recent_emails()
+    aito_routes._ai_rate_limit_calls.clear()
+    book = {"sent": [], "refreshed": [], "error": None}
+
+    async def content(db, invoice_id):
+        return {
+            "subject": "Facture FA-1",
+            "body": "<p>Bonjour</p>",
+            "recipients": [
+                {"email": "compta@client.pf", "name": "Compta", "contact_person_id": "cp1"},
+                {"email": "Moana@client.pf", "name": "Moana", "contact_person_id": "cp2"},
+            ],
+        }
+
+    async def send(db, invoice_id, *, to_mail_ids):
+        if book["error"]:
+            raise book["error"]
+        book["sent"].append((invoice_id, to_mail_ids))
+
+    async def refresh(db, salesorder_id):
+        book["refreshed"].append(salesorder_id)
+
+    monkeypatch.setattr(zoho_service, "get_invoice_email_content", content)
+    monkeypatch.setattr(zoho_service, "email_invoice", send)
+    monkeypatch.setattr(order_board_sync, "refresh_order", refresh)
+    yield book
+    aito_routes._reset_recent_emails()
+    aito_routes._ai_rate_limit_calls.clear()
+
+
+async def _store_invoiced_order(db_session, contact_email="moana@client.pf"):
+    from backend.app.models.order_board_doc import OrderBoardDoc
+
+    detail = {
+        "salesorder_number": "SO-1",
+        "invoices": [{"invoice_id": "inv1", "invoice_number": "FA-1"}],
+        "contact_person_details": [{"first_name": "Moana", "email": contact_email}],
+    }
+    db_session.add(OrderBoardDoc(kind="salesorder", zoho_id="so1", header={}, detail=detail))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_invoice_email_preview_preselects_the_order_contact(async_client, tokens, db_session, invoice_mail):
+    await _store_invoiced_order(db_session)
+    r = await async_client.get(f"{BASE}/invoices/other/email", headers=tokens["read"])
+    assert r.status_code == 404
+    r = await async_client.get(f"{BASE}/invoices/inv1/email", headers=tokens["read"])
+    assert r.status_code == 200
+    body = r.json()
+    assert body["subject"] == "Facture FA-1" and body["body"] == "<p>Bonjour</p>"
+    assert [x["email"] for x in body["recipients"]] == ["compta@client.pf", "Moana@client.pf"]
+    # The order's contact, in the casing Books offers it: the select binds to the option values.
+    assert body["default_email"] == "Moana@client.pf"
+    assert (body["invoice_id"], body["invoice_number"]) == ("inv1", "FA-1")
+
+
+@pytest.mark.asyncio
+async def test_invoice_email_preview_falls_back_to_the_first_address(async_client, tokens, db_session, invoice_mail):
+    await _store_invoiced_order(db_session, contact_email="")
+    r = await async_client.get(f"{BASE}/invoices/inv1/email", headers=tokens["read"])
+    assert r.json()["default_email"] == "compta@client.pf"
+
+
+@pytest.mark.asyncio
+async def test_send_invoice_email_goes_to_an_offered_address_once(async_client, tokens, db_session, invoice_mail):
+    await _store_invoiced_order(db_session)
+    url, h = f"{BASE}/invoices/inv1/email", tokens["both"]
+    # Not an address Books offers for this invoice: refused before anything is sent (no open relay).
+    r = await async_client.post(url, headers=h, json={"to": "someone@else.pf"})
+    assert r.status_code == 422 and invoice_mail["sent"] == []
+    r = await async_client.post(url, headers=h, json={"to": " moana@client.pf "})
+    assert r.status_code == 200 and "rows" in r.json()["board"]
+    assert invoice_mail["sent"] == [("inv1", ["moana@client.pf"])]
+    assert invoice_mail["refreshed"] == ["so1"]  # Books marks a draft invoice sent
+    # A second tap inside the minute mails nobody.
+    r = await async_client.post(url, headers=h, json={"to": "Moana@client.pf"})
+    assert r.status_code == 409 and len(invoice_mail["sent"]) == 1
+    # Another address of the same invoice is a different send.
+    r = await async_client.post(url, headers=h, json={"to": "compta@client.pf"})
+    assert r.status_code == 200 and len(invoice_mail["sent"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_refused_invoice_email_can_be_retried_but_a_lost_answer_cannot(
+    async_client, tokens, db_session, invoice_mail
+):
+    from backend.app.services.zoho import ZohoRequestRejected, ZohoUnreachable
+
+    await _store_invoiced_order(db_session)
+    url, h, mail = f"{BASE}/invoices/inv1/email", tokens["both"], {"to": "moana@client.pf"}
+    invoice_mail["error"] = ZohoRequestRejected("Books says no")
+    r = await async_client.post(url, headers=h, json=mail)
+    assert (r.status_code, r.json()["detail"]) == (502, "Books says no")
+    assert invoice_mail["refreshed"] == []
+    invoice_mail["error"] = None
+    r = await async_client.post(url, headers=h, json=mail)  # a clean refusal released the guard
+    assert r.status_code == 200 and len(invoice_mail["sent"]) == 1
+
+    invoice_mail["error"] = ZohoUnreachable("timeout")
+    r = await async_client.post(url, headers=h, json={"to": "compta@client.pf"})
+    assert r.status_code == 502
+    invoice_mail["error"] = None
+    r = await async_client.post(url, headers=h, json={"to": "compta@client.pf"})  # Books may have sent it
+    assert r.status_code == 409 and len(invoice_mail["sent"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_invoice_email_waits_for_a_write_on_the_same_order(async_client, tokens, db_session, invoice_mail):
+    from backend.app.services import order_board_actions as actions
+
+    await _store_invoiced_order(db_session)
+    with actions.writing("so1"):
+        r = await async_client.post(
+            f"{BASE}/invoices/inv1/email", headers=tokens["both"], json={"to": "moana@client.pf"}
+        )
+    assert r.status_code == 409 and invoice_mail["sent"] == []
+    r = await async_client.post(f"{BASE}/invoices/inv1/email", headers=tokens["both"], json={"to": "moana@client.pf"})
+    assert r.status_code == 200  # the busy refusal released the guard

@@ -1,27 +1,16 @@
-import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
-import { Card, CardContent } from '../Card';
-import { Button } from '../Button';
-import { inputCls, labelCls } from '../formStyles';
 import { api, type AitoInvoiceEmailContent, type AitoRetainerEmailContent } from '../../api/client';
-import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useSendDocumentEmailMutation } from '../../hooks/useSendInvoiceMutation';
-import { ZohoEmailPreview } from './ZohoEmailPreview';
+import { SendEmailDialog } from './SendEmailDialog';
 import type { EmailDocument } from './emailDocument';
-
-/** A beat past .animate-modal-out's 150ms, same margin the drawers give
- *  drawer-out (200ms → 220). */
-const MODAL_OUT_MS = 170;
 
 /** Pick an address and email this project's invoice through Zoho Books.
  *
  *  The Send-quote modal's twin, and deliberately identical in shape: the two
  *  open from cards one above the other and must not read as two different
- *  kinds of dialog. Single-select with no free-text entry, because the
- *  server validates `to` against the addresses Books offers for this invoice
- *  and the UI must not offer what the API will refuse.
+ *  kinds of dialog. The dialog itself is `SendEmailDialog`, shared with the
+ *  Order Board's invoices; this is the Aito card's query and send around it.
  *
  *  Takes the `EmailDocument` (invoice or retainer) rather than the project
  *  row: unlike a quote, whose id lives on the project, the invoice or
@@ -46,24 +35,11 @@ export function SendInvoiceModal({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const [to, setTo] = useState('');
-  // The success close rides `requestClose`, not `onClose`: the modal leaves
-  // the way it entered (animate-modal-out) whether dismissed or done. The
-  // arrow defers the read past this line — `requestClose` is declared below,
-  // and only ever called after render.
-  const mutation = useSendDocumentEmailMutation(projectId, document, () => requestClose());
-  const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, {
-    animationMs: MODAL_OUT_MS,
-    // Same gate the backdrop has: while the send is in flight the modal is
-    // spoken for, and Escape must not tear it down mid-request.
-    onEscape: (close) => {
-      if (!mutation.isPending) close();
-    },
-  });
+  // The dialog closes itself once the send resolved, so the hook's own
+  // done-callback has nothing left to do here.
+  const mutation = useSendDocumentEmailMutation(projectId, document, () => {});
 
-  const title = t(document.kind === 'invoice' ? 'aito.sendInvoiceTitle' : 'aito.sendRetainerTitle');
-
-  const { data, isPending, isError } = useQuery<AitoInvoiceEmailContent | AitoRetainerEmailContent>({
+  const content = useQuery<AitoInvoiceEmailContent | AitoRetainerEmailContent>({
     queryKey: [document.kind === 'invoice' ? 'aito-invoice-email' : 'aito-retainer-email', projectId, document.id],
     queryFn: () =>
       document.kind === 'invoice'
@@ -77,136 +53,14 @@ export function SendInvoiceModal({
     retry: false,
   });
 
-  // Seed the selection once the prefill lands. The card's contact person
-  // wins when Books lists them; otherwise Books' own default. Guarded on
-  // `to` still being empty so a refetch cannot silently reset a choice
-  // already made.
-  useEffect(() => {
-    if (!data || to) return;
-    const own = contactPersonId
-      ? data.recipients.find((r) => r.contact_person_id === contactPersonId)
-      : undefined;
-    const seed = own?.email || data.default_email;
-    if (seed) setTo(seed);
-  }, [data, to, contactPersonId]);
-
-  const recipients = data?.recipients ?? [];
-
   return (
-    // z-[110], not z-50: ProjectDetailPanel's own backdrop is z-50, so a lower
-    // overlay renders behind the panel that opened this.
-    // pointer-events-none while closing: the modal is already spoken for, and
-    // a click landing here mid-exit would re-enter the close path.
-    <div
-      className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[110] ${
-        closing ? 'animate-overlay-out pointer-events-none' : 'animate-overlay-in'
-      }`}
-      onClick={mutation.isPending ? undefined : requestClose}
-    >
-      <Card
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        tabIndex={-1}
-        // max-w-2xl, not max-w-md: Books' templates are built on fixed-width
-        // tables that re-wrap into nonsense in a narrower frame.
-        // max-h-[90vh] + flex flex-col: the preview can be up to 26rem tall,
-        // so on short viewports the card must cap its own height and let the
-        // content scroll internally rather than pushing the Send/Cancel row
-        // off-screen.
-        className={`w-full max-w-2xl max-h-[90vh] flex flex-col focus:outline-none ${
-          closing ? 'animate-modal-out' : 'animate-modal-in'
-        }`}
-        onClick={(e: React.MouseEvent) => e.stopPropagation()}
-      >
-        <CardContent className="p-6 flex flex-col min-h-0">
-          <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>
-
-          {/* Scrollable content region: everything except the button row, so
-              the row below stays reachable even when the preview pushes the
-              card past the viewport height. */}
-          <div className="overflow-y-auto flex-1 min-h-0">
-            {isPending && (
-              <div className="flex items-center gap-2 text-bambu-gray text-sm py-6">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                {t('common.loading')}
-              </div>
-            )}
-
-            {isError && (
-              <p className="text-status-error text-sm py-6">
-                {t(document.kind === 'invoice' ? 'aito.sendInvoiceLoadFailed' : 'aito.sendRetainerLoadFailed')}
-              </p>
-            )}
-
-            {data && (
-              // animate-rise: this content replaces the loader (the query is
-              // never cached — staleTime/gcTime 0), so it always mounts fresh
-              // and needs the bridge — same as ImportQuoteDrawer's preview.
-              <div className="animate-rise">
-                <label className={labelCls} htmlFor="send-invoice-recipient">
-                  {t('aito.sendInvoiceRecipient')}
-                </label>
-                {recipients.length === 0 ? (
-                  <p className="text-bambu-gray text-sm">{t('aito.sendInvoiceNoRecipients')}</p>
-                ) : (
-                  <select
-                    id="send-invoice-recipient"
-                    className={inputCls}
-                    value={to}
-                    onChange={(e) => setTo(e.target.value)}
-                    disabled={mutation.isPending}
-                  >
-                    {recipients.map((r) => (
-                      <option key={r.email} value={r.email}>
-                        {r.name ? `${r.name} — ${r.email}` : r.email}
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                <div className="mt-4">
-                  <span className={labelCls}>{t('aito.sendInvoiceSubject')}</span>
-                  <p className="text-white text-sm">{data.subject}</p>
-                </div>
-
-                <div className="mt-4">
-                  <span id="send-invoice-message-label" className={labelCls}>
-                    {t('aito.sendInvoiceMessage')}
-                  </span>
-                  <ZohoEmailPreview html={data.body} labelledBy="send-invoice-message-label" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex gap-3 mt-6">
-            <Button
-              variant="secondary"
-              onClick={requestClose}
-              className="flex-1"
-              disabled={mutation.isPending}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              onClick={() => mutation.mutate(to)}
-              className="flex-1"
-              disabled={!to || mutation.isPending}
-            >
-              {mutation.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  {t('aito.sendInvoiceConfirm')}
-                </>
-              ) : (
-                t('aito.sendInvoiceConfirm')
-              )}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+    <SendEmailDialog
+      title={t(document.kind === 'invoice' ? 'aito.sendInvoiceTitle' : 'aito.sendRetainerTitle')}
+      loadFailed={t(document.kind === 'invoice' ? 'aito.sendInvoiceLoadFailed' : 'aito.sendRetainerLoadFailed')}
+      content={content}
+      onSend={mutation.mutateAsync}
+      contactPersonId={contactPersonId}
+      onClose={onClose}
+    />
   );
 }
