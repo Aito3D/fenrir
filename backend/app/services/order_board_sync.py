@@ -65,10 +65,17 @@ _rate_limited_until = 0.0
 # Set to cut the loop's sleep short (settings saved). Created by the loop
 # itself, so it belongs to the loop's event loop.
 _wake: asyncio.Event | None = None
+# time.monotonic() of the last write to each sales order here: a pass that began fetching
+# an order before that instant holds a copy older than the write and must not store it.
+_written_at: dict[str, float] = {}
 
 
 class OrderNotFinished(Exception):
     """The order is unknown, or not a finished one."""
+
+
+class OrderNotStored(Exception):
+    """No local copy of that sales order."""
 
 
 class ZohoBusy(Exception):
@@ -148,12 +155,50 @@ async def _pending_count(db: AsyncSession) -> int:
     ).scalar_one()
 
 
+def zoho_busy() -> bool:
+    """Books is throttling us, or the shared call budget is spent."""
+    return time.monotonic() < _rate_limited_until or zoho_service.calls_in_last_minute() >= CALL_CEILING
+
+
+async def _rows_with_prep(db: AsyncSession, state: dict) -> list[dict]:
+    """The stored rows, each with its print stamp (``{"at", "by"}``) or None."""
+    stamps = {
+        d.zoho_id: d.header
+        for d in (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "prep"))).scalars()
+    }
+    return [{**r, "prep": stamps.get(r["id"])} for r in state.get("rows") or []]
+
+
+async def find_board_row(db: AsyncSession, salesorder_id: str) -> dict | None:
+    row = await _find_state(db)
+    return next(
+        (r for r in await _rows_with_prep(db, (row.detail if row else None) or {}) if r["id"] == salesorder_id), None
+    )
+
+
+async def refresh_order(db: AsyncSession, salesorder_id: str) -> None:
+    """Re-read one order from Books after a write here, store it and rebuild the board."""
+    doc = (
+        await db.execute(
+            select(OrderBoardDoc).where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id)
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        raise OrderNotStored(salesorder_id)
+    fetched = await zoho_service.get_salesorder(db, salesorder_id)
+    _written_at[salesorder_id] = time.monotonic()
+    doc.detail = {**fetched, "_fetched_at": _now()}
+    doc.pending = True  # the next pass re-reads it once the list row has caught up
+    await recompute(db)
+    await db.commit()
+
+
 async def read_board(db: AsyncSession) -> dict:
     """The stored board and the sync status: one local read, no Zoho call."""
     row = await _find_state(db)
     state = (row.detail if row else None) or {}
     return {
-        "rows": state.get("rows") or [],
+        "rows": await _rows_with_prep(db, state),
         "computed_at": state.get("computed_at"),
         "stock_loaded_at": state.get("stock_loaded_at"),
         "sync": {
@@ -387,7 +432,12 @@ async def _sync(db: AsyncSession) -> None:
             logger.info("Order board: Zoho call ceiling reached, the remaining details wait for the next pass")
             break
         get = zoho_service.get_salesorder if doc.kind == "salesorder" else zoho_service.get_purchaseorder
-        doc.detail = {**await get(db, doc.zoho_id), "_fetched_at": _now()}
+        began = time.monotonic()
+        fetched = await get(db, doc.zoho_id)
+        if _written_at.get(doc.zoho_id, -1.0) >= began and doc.kind == "salesorder":
+            await db.refresh(doc)  # a write here is newer than this copy: keep it, and the pending mark
+            continue
+        doc.detail = {**fetched, "_fetched_at": _now()}
         doc.pending = False
         await db.commit()  # a later failure must not lose what was fetched
 
