@@ -35,6 +35,22 @@ def so(n, total, *, customer="c1", invoices=(), credit=0.0, fetched="2026-01-19T
     }
 
 
+def test_a_draft_invoice_is_listed_but_changes_no_figure():
+    sent, draft = inv(1000, 500, n=1), inv(300, 300, status="draft", n=2)
+    without = order_payment(so(1, 2000, invoices=[sent]), TODAY)
+    with_draft = order_payment(so(1, 2000, invoices=[draft, sent]), TODAY)
+    assert {k: v for k, v in with_draft.items() if k != "invoices"} == {
+        k: v for k, v in without.items() if k != "invoices"
+    }
+    assert [i["id"] for i in with_draft["invoices"]] == ["i1", "i2"]
+    assert with_draft["invoices"][-1]["status"] == "draft"
+
+
+def test_invoices_carry_their_status_and_void_stays_out():
+    pay = order_payment(so(1, 1000, invoices=[inv(1000, 0, status="paid"), inv(5, 5, status="void", n=2)]), TODAY)
+    assert [(i["id"], i["status"]) for i in pay["invoices"]] == [("i1", "paid")]
+
+
 @pytest.mark.parametrize(
     "order, expected",
     [
@@ -65,7 +81,7 @@ def so(n, total, *, customer="c1", invoices=(), credit=0.0, fetched="2026-01-19T
         (so(1, 1000, invoices=[inv(5000, 5000)]), {"state": "unpaid", "invoice_paid": 0, "paid": 0, "left": 1000}),
         (
             so(1, 1000, invoices=[inv(1000, 0, status="void"), inv(1000, 1000, status="draft", n=2)]),
-            {"state": "unpaid", "due": 0, "invoices": []},
+            {"state": "unpaid", "due": 0, "rest": 1000},
         ),
     ],
 )

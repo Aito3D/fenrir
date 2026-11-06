@@ -15,7 +15,7 @@ Two things go beyond "oldest first":
   stock when the invoice is created), so they count as ready and take nothing.
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import date
 
 from backend.app.services.order_board_payment import board_payments, order_contact, order_facts, order_payment
@@ -86,6 +86,7 @@ def _line(raw: dict, items: dict[str, dict]) -> dict:
         "packed_waiting": _r(min(remaining, max(0.0, _num(raw.get("quantity_packed")) - shipped))),
         "stock_available": None,
         "covered": 0.0,
+        "packable": 0.0,
         "shortfall": 0.0,
         "covered_by_po": 0.0,
         "po_numbers": [],
@@ -119,6 +120,7 @@ def _allocate(line: dict, stock: dict[str, float], incoming: dict[str, float], n
         set_aside = max(line["invoiced"], line["packed_waiting"])
         line["covered"] = _r(set_aside + _take(stock, item_id, line["remaining"] - set_aside))
         line["shortfall"] = _r(line["remaining"] - line["covered"])
+        line["packable"] = _r(max(0.0, line["covered"] - line["packed_waiting"]))
         if line["shortfall"] <= 0:
             line["state"] = "ready"
             return
@@ -128,6 +130,27 @@ def _allocate(line: dict, stock: dict[str, float], incoming: dict[str, float], n
             # order must not suggest goods are coming for this one.
             line["po_numbers"] = list(numbers.get(item_id, []))
         line["state"] = "backorder" if line["covered_by_po"] >= line["shortfall"] else "to_order"
+
+
+def units_to_invoice(
+    order: dict, extra_shipped: Mapping[str, float] | None = None, service_line_ids: Collection[str] = ()
+) -> dict[str, float]:
+    """Units per raw ``line_item_id`` an invoice may still bill; ``extra_shipped`` counts parcels about to go out.
+
+    A shipped unit is billable once; a service line is billable whole (it never ships).
+    """
+    extra = extra_shipped or {}
+    result: dict[str, float] = {}
+    for raw in order.get("line_items") or []:
+        line_id = raw.get("line_item_id") or ""
+        quantity, invoiced = _num(raw.get("quantity")), _num(raw.get("quantity_invoiced"))
+        if line_id in service_line_ids:
+            units = quantity - invoiced
+        else:
+            units = min(quantity, _num(raw.get("quantity_shipped")) + _num(extra.get(line_id))) - invoiced
+        if units > 0:
+            result[line_id] = _r(units)
+    return result
 
 
 def _status(live: list[dict]) -> str:
@@ -177,12 +200,26 @@ def _row(order: dict, age: int, lines: list[dict], status: str, items: dict[str,
         "units": units,
         "packages": [
             {
+                "id": p.get("package_id") or "",
+                "shipment_id": p.get("shipment_id") or "",
                 "number": p.get("package_number") or "",
                 "status": p.get("status") or "",
                 "date": p.get("date") or "",
             }
             for p in order.get("packages") or []
         ],
+        "unbilled_units": _r(
+            sum(
+                max(
+                    0.0,
+                    min(_num(raw.get("quantity")), _num(raw.get("quantity_shipped")))
+                    - _num(raw.get("quantity_invoiced")),
+                )
+                for raw in order.get("line_items") or []
+                if raw.get("item_id")
+            )
+        ),
+        "prep": None,
         "lines": [{k: v for k, v in line.items() if not k.startswith("_")} for line in lines],
         "payment": None,
         "contact": order_contact(order),

@@ -1365,6 +1365,55 @@ class ZohoService:
         """Retainer invoices touched since ``since`` (verified live, same day)."""
         return await self._list_modified_since(db, "/retainerinvoices", "retainerinvoices", "retainerinvoice_id", since)
 
+    async def create_package(self, db: AsyncSession, salesorder_id: str, *, date: str, line_items: list[dict]) -> dict:
+        """Create a package on a sales order. Body shape unverified against a live write (spec, "Not verified")."""
+        payload = await self._request(
+            db,
+            "POST",
+            "/packages",
+            params={"salesorder_id": salesorder_id},
+            json={"date": date, "line_items": line_items},
+        )
+        return payload["package"]
+
+    async def get_package(self, db: AsyncSession, package_id: str) -> dict:
+        """One package. Unverified against a live write (spec, "Not verified")."""
+        return (await self._request(db, "GET", f"/packages/{_seg(package_id)}"))["package"]
+
+    async def create_shipment(
+        self, db: AsyncSession, salesorder_id: str, package_id: str, *, date: str, delivery_method: str
+    ) -> dict:
+        """Ship a package. Body shape unverified against a live write (spec, "Not verified")."""
+        payload = await self._request(
+            db,
+            "POST",
+            "/shipmentorders",
+            params={"salesorder_id": salesorder_id, "package_ids": package_id},
+            json={"date": date, "delivery_method": delivery_method},
+        )
+        return payload.get("shipmentorder") or payload.get("shipment_order") or {}
+
+    async def mark_shipment_delivered(self, db: AsyncSession, shipment_id: str) -> None:
+        """Mark a shipment delivered. Unverified against a live write (spec, "Not verified")."""
+        await self._request(db, "POST", f"/shipmentorders/{_seg(shipment_id)}/status/delivered")
+
+    async def invoice_prefill(self, db: AsyncSession, salesorder_id: str) -> dict | None:
+        """The invoice Books would draft from a sales order; None when it refuses (nothing to invoice).
+
+        Unverified against a live write (spec, "Not verified").
+        """
+        try:
+            payload = await self._request(
+                db, "GET", "/invoices/editpage/fromsalesorder", params={"salesorder_id": salesorder_id}
+            )
+        except ZohoRequestRejected:
+            return None
+        return payload["invoice"]
+
+    async def mark_invoice_sent(self, db: AsyncSession, invoice_id: str) -> None:
+        """Mark an invoice sent. Unverified against a live write (spec, "Not verified")."""
+        await self._request(db, "POST", f"/invoices/{_seg(invoice_id)}/status/sent")
+
     async def get_invoice_raw(self, db: AsyncSession, invoice_id: str) -> dict:
         """One invoice as Books states it, unmapped.
 

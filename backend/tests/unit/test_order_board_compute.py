@@ -7,7 +7,7 @@ from itertools import count
 
 import pytest
 
-from backend.app.services.order_board import compute_board, order_row
+from backend.app.services.order_board import compute_board, order_row, units_to_invoice
 
 TODAY = date(2026, 1, 20)
 _ids = count(1)
@@ -294,7 +294,53 @@ def test_packages_are_carried_on_the_row():
     order = so("SO-1", "2026-01-03", [line("A", 1)])
     order["packages"] = [{"package_number": "PKG-1", "status": "not_shipped", "date": "2026-01-04", "quantity": 1}]
     (row,) = compute_board([order], [], {"A": item(1)}, TODAY)
-    assert row["packages"] == [{"number": "PKG-1", "status": "not_shipped", "date": "2026-01-04"}]
+    assert row["packages"] == [
+        {"id": "", "shipment_id": "", "number": "PKG-1", "status": "not_shipped", "date": "2026-01-04"}
+    ]
+
+
+def test_packages_carry_their_books_ids():
+    order = so("SO-1", "2026-01-03", [line("A", 1)])
+    order["packages"] = [
+        {"package_id": "p1", "shipment_id": "s1", "package_number": "PKG-1", "status": "shipped", "date": "2026-01-04"}
+    ]
+    (row,) = compute_board([order], [], {"A": item(1)}, TODAY)
+    assert row["packages"] == [
+        {"id": "p1", "shipment_id": "s1", "number": "PKG-1", "status": "shipped", "date": "2026-01-04"}
+    ]
+
+
+def test_packable_is_what_is_covered_and_not_boxed():
+    # qty 5, 1 already in a parcel, shelf holds 3 -> covered 3 (1 boxed + 2), packable 2
+    (row,) = compute_board([so("SO-1", "2026-01-03", [line("A", 5, packed=1)])], [], {"A": item(3)}, TODAY)
+    assert (only_line(row)["packable"], only_line(row)["covered"]) == (2, 3)
+
+
+def test_packable_is_zero_for_service_shipped_and_cancelled_lines():
+    order = so(
+        "SO-1",
+        "2026-01-03",
+        [line(None, 1), line("A", 2, shipped=2), line("A", 2, cancelled=2), line("A", 1)],
+    )
+    (row,) = compute_board([order], [], {"A": item(1)}, TODAY)
+    assert [ln["packable"] for ln in row["lines"]] == [0, 0, 0, 1]
+
+
+def test_unbilled_units_counts_shipped_units_no_invoice_covers():
+    (row,) = compute_board([so("SO-1", "2026-01-03", [line("A", 3, shipped=2, invoiced=1)])], [], {"A": item(0)}, TODAY)
+    assert row["unbilled_units"] == 1 and row["prep"] is None
+    (ahead,) = compute_board(
+        [so("SO-2", "2026-01-03", [line("A", 3, shipped=1, invoiced=3)])], [], {"A": item(0)}, TODAY
+    )
+    assert ahead["unbilled_units"] == 0
+
+
+def test_units_to_invoice():
+    order = so("SO-1", "2026-01-03", [line("A", 3, shipped=1), line("A", 2, shipped=2, invoiced=2), line(None, 2)])
+    l1, done, s1 = (raw["line_item_id"] for raw in order["line_items"])
+    assert units_to_invoice(order, service_line_ids=[s1]) == {l1: 1, s1: 2}
+    assert units_to_invoice(order, {l1: 2}, [s1]) == {l1: 3, s1: 2}
+    assert units_to_invoice(order, {l1: 9}) == {l1: 3} and done not in units_to_invoice(order)
 
 
 def test_is_core_matches_brand_case_insensitively():

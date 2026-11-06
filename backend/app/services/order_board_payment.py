@@ -38,7 +38,9 @@ def order_payment(order: dict, today: date, credit: float = 0.0) -> dict | None:
     total = _num(order.get("total"))
     if total <= 0:
         return None
-    invoices = [i for i in order.get("invoices") or [] if i.get("status") not in _IGNORED_INVOICE_STATUSES]
+    everything = [i for i in order.get("invoices") or [] if i.get("status") != "void"]
+    invoices = [i for i in everything if i.get("status") not in _IGNORED_INVOICE_STATUSES]
+    listed = invoices + [i for i in everything if i.get("status") in _IGNORED_INVOICE_STATUSES]
     invoiced = sum(_num(i.get("total")) for i in invoices)
     overdue_invoices = [i for i in invoices if _overdue(i, today)]
     overdue = sum(_num(i.get("balance")) for i in overdue_invoices)
@@ -67,9 +69,10 @@ def order_payment(order: dict, today: date, credit: float = 0.0) -> dict | None:
                 "due_date": i.get("due_date"),
                 "total": _num(i.get("total")),
                 "balance": _num(i.get("balance")),
+                "status": i.get("status") or "",
                 "url": None,
             }
-            for i in invoices
+            for i in listed
         ],
     }
 
