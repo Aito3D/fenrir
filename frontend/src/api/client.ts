@@ -5150,7 +5150,7 @@ export interface OrderHandoverOutcome {
   package_number: string;
   shipment: string;
   delivered: string;
-  invoice: 'none' | 'created' | 'draft' | 'manual' | string;
+  invoice: 'none' | 'created' | 'draft' | 'manual' | 'failed';
   invoice_number: string | null;
   manual_reason: OrderManualReason | null;
   credit_applied: number;

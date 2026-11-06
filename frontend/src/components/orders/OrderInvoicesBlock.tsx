@@ -56,7 +56,7 @@ export function OrderInvoicesBlock({ row, onCreateInvoice }: { row: Pick<OrderBo
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="min-w-0 truncate">
-                  <span className="text-bambu-gray">{shortDay(i.date)} · </span>
+                  <span className="text-bambu-gray">{i.date ? `${shortDay(i.date)} · ` : ""}</span>
                   {state(i)}
                 </span>
                 <span className="-mr-1 inline-flex shrink-0 items-center">
