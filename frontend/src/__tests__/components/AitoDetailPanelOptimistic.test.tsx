@@ -238,6 +238,23 @@ describe('ProjectDetailPanel optimistic writes', () => {
       expect(getDescriptionTextarea()).toBeInTheDocument();
     });
     expect(getDescriptionTextarea()).toHaveValue('new text');
+    // And the operator is told why (aito.editConflict), not the generic failure.
+    expect(await screen.findByText('Someone else edited this project — the board was refreshed, please retry.')).toBeInTheDocument();
+    expect(screen.queryByText('Could not save your changes. Please try again.')).not.toBeInTheDocument();
+  });
+
+  it('shows the generic save-failed toast, not the conflict one, on a plain 500 ApiError', async () => {
+    vi.spyOn(api, 'updateAitoProject').mockRejectedValue(new ApiError('boom', 500));
+    renderPanel(makeProject({ id: 1, description: 'old text' }));
+
+    await userEvent.click(screen.getByRole('button', { name: /edit description/i }));
+    const box = getDescriptionTextarea();
+    await userEvent.clear(box);
+    await userEvent.type(box, 'new text');
+    await userEvent.tab();
+
+    expect(await screen.findByText('Could not save your changes. Please try again.')).toBeInTheDocument();
+    expect(screen.queryByText('Someone else edited this project — the board was refreshed, please retry.')).not.toBeInTheDocument();
   });
 });
 

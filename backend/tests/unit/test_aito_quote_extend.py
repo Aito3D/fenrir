@@ -7,10 +7,10 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.models.aito_event import AitoEvent
-from backend.app.services.zoho import ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
 
 
-async def _expired(async_client):
+async def _expired(async_client, quote_id="E1"):
     r = await async_client.post(
         "/api/v1/aito/",
         json={
@@ -18,7 +18,7 @@ async def _expired(async_client):
             "client_id": "z1",
             "client_name": "ACME",
             "client_phone": "+689 87 00 00 00",
-            "quote_id": "E1",
+            "quote_id": quote_id,
             "quote_status": "expired",
         },
     )
@@ -138,3 +138,53 @@ async def test_extend_survives_a_reconcile_failure_after_the_commit(async_client
     r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
     assert r.status_code == 200
     assert r.json()["quote_status"] == "sent"
+
+
+@pytest.mark.asyncio
+async def test_extend_refuses_an_expired_card_without_a_quote_id(async_client, monkeypatch):
+    async def update(db, estimate_id, fields):
+        raise AssertionError("Books must not be called")
+
+    monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
+    pid = await _expired(async_client, quote_id=None)
+    r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_extend_answers_502_and_stays_expired_when_books_is_not_configured(async_client, monkeypatch):
+    async def update(db, estimate_id, fields):
+        raise ZohoNotConfiguredError("Zoho Books is not configured")
+
+    monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
+    pid = await _expired(async_client)
+    r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
+    assert r.status_code == 502
+    assert "not configured" in r.json()["detail"]
+    board = (await async_client.get("/api/v1/aito/")).json()
+    assert next(p for p in board if p["id"] == pid)["quote_status"] == "expired"
+
+
+@pytest.mark.asyncio
+async def test_extend_falls_back_to_our_expiry_and_sent_when_books_replies_empty(async_client, monkeypatch):
+    async def update(db, estimate_id, fields):
+        return {}
+
+    monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
+    pid = await _expired(async_client)
+    r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
+    assert r.status_code == 200, r.text
+    assert r.json()["quote_status"] == "sent"
+    # Same source as the route; a midnight rollover mid-test is the only slack.
+    assert r.json()["quote_expiry_date"] in {(date.today() + timedelta(days=d)).isoformat() for d in (15, 16)}
+
+
+@pytest.mark.asyncio
+async def test_extend_on_a_trashed_card_is_404(async_client, monkeypatch):
+    async def update(db, estimate_id, fields):
+        raise AssertionError("Books must not be called")
+
+    monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
+    pid = await _expired(async_client)
+    assert (await async_client.delete(f"/api/v1/aito/{pid}")).status_code == 204
+    assert (await async_client.post(f"/api/v1/aito/{pid}/quote-extend")).status_code == 404

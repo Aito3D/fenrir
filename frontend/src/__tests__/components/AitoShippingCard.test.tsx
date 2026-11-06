@@ -7,7 +7,7 @@ import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ShippingCard } from '../../components/aito/ShippingCard';
 import { ToastProvider } from '../../contexts/ToastContext';
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
 const shipped = {
@@ -400,6 +400,30 @@ describe('ShippingCard — Save', () => {
     expect(screen.getByLabelText(/recipient first name/i)).toHaveValue('Jean-Pierre');
     expect(screen.getByRole('button', { name: /^save$/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /edit shipping/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the edit-conflict toast, not the generic one, when the PATCH answers version_conflict', async () => {
+    const spy = vi.spyOn(api, 'updateAitoProject').mockRejectedValue(new ApiError('stale', 409, 'version_conflict'));
+    renderWithBoard(shipped);
+
+    await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(await screen.findByText('Someone else edited this project — the board was refreshed, please retry.')).toBeInTheDocument();
+    expect(screen.queryByText('Could not save your changes. Please try again.')).not.toBeInTheDocument();
+  });
+
+  it('shows the generic save-failed toast, not the conflict one, on a plain 500 ApiError', async () => {
+    const spy = vi.spyOn(api, 'updateAitoProject').mockRejectedValue(new ApiError('boom', 500));
+    renderWithBoard(shipped);
+
+    await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(await screen.findByText('Could not save your changes. Please try again.')).toBeInTheDocument();
+    expect(screen.queryByText('Someone else edited this project — the board was refreshed, please retry.')).not.toBeInTheDocument();
   });
 
   it('posts the full draft from the Add path — island pick seeds the rate, blur normalizes the names', async () => {
