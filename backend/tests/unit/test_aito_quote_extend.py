@@ -1,13 +1,25 @@
 """POST /aito/{id}/quote-extend: an expired quote gets 15 more days from today,
 written to Books first, then adopted locally with Books' own status."""
 
-from datetime import date, timedelta
+from datetime import date
 
 import pytest
 from sqlalchemy import select
 
 from backend.app.models.aito_event import AitoEvent
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
+
+
+class _FrozenDate(date):
+    @classmethod
+    def today(cls):
+        return cls(2026, 11, 6)
+
+
+@pytest.fixture(autouse=True)
+def _frozen_today(monkeypatch):
+    # The route reads date.today() from its own module namespace.
+    monkeypatch.setattr("backend.app.api.routes.aito.date", _FrozenDate)
 
 
 async def _expired(async_client, quote_id="E1"):
@@ -40,7 +52,7 @@ async def test_extend_pushes_today_plus_15_and_adopts_books_status(async_client,
     r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
 
     assert r.status_code == 200, r.text
-    expected = (date.today() + timedelta(days=15)).isoformat()
+    expected = "2026-11-21"
     assert calls == [("E1", {"expiry_date": expected})]
     assert r.json()["quote_status"] == "sent"
     assert r.json()["quote_expiry_date"] == expected
@@ -175,8 +187,7 @@ async def test_extend_falls_back_to_our_expiry_and_sent_when_books_replies_empty
     r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
     assert r.status_code == 200, r.text
     assert r.json()["quote_status"] == "sent"
-    # Same source as the route; a midnight rollover mid-test is the only slack.
-    assert r.json()["quote_expiry_date"] in {(date.today() + timedelta(days=d)).isoformat() for d in (15, 16)}
+    assert r.json()["quote_expiry_date"] == "2026-11-21"
 
 
 @pytest.mark.asyncio

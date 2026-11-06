@@ -35,11 +35,12 @@ describe('AitoDialogShell', () => {
     expect(dialog).toHaveAttribute('data-testid', 'shell');
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(dialog).not.toHaveAttribute('aria-busy');
-    expect(dialog.className).toContain('w-full max-w-[560px] flex flex-col focus:outline-none animate-modal-in');
-    expect(dialog.firstElementChild?.className).toContain('p-0 flex flex-col');
-    expect(dialog.firstElementChild?.className).not.toContain('min-h-0');
+    // Behavior-bearing classes only: the width cap, the entry (not exit) animation, no height cap.
+    expect(dialog).toHaveClass('max-w-[560px]', 'animate-modal-in');
+    expect(dialog).not.toHaveClass('animate-modal-out', 'max-h-[88vh]');
+    expect(dialog.firstElementChild).not.toHaveClass('min-h-0');
     expect(screen.getByRole('heading', { level: 2, name: 'Merge cards' })).toBeInTheDocument();
-    expect(screen.getByText('Pick one').className).toBe('mt-0.5 text-xs text-bambu-gray leading-snug');
+    expect(screen.getByText('Pick one')).not.toHaveClass('truncate');
     expect(screen.getByText('body')).toBeInTheDocument();
     cleanup();
   });
@@ -48,9 +49,9 @@ describe('AitoDialogShell', () => {
     const { cleanup } = shell({ capHeight: true, truncateSubtitle: true, ariaBusy: true });
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveAttribute('aria-busy', 'true');
-    expect(dialog.className).toContain('w-full max-w-[560px] max-h-[88vh] flex flex-col');
-    expect(dialog.firstElementChild?.className).toContain('p-0 flex flex-col min-h-0');
-    expect(screen.getByText('Pick one').className).toBe('mt-0.5 text-xs text-bambu-gray leading-snug truncate');
+    expect(dialog).toHaveClass('max-w-[560px]', 'max-h-[88vh]');
+    expect(dialog.firstElementChild).toHaveClass('min-h-0');
+    expect(screen.getByText('Pick one')).toHaveClass('truncate');
     cleanup();
   });
 
@@ -89,8 +90,9 @@ describe('AitoDialogShell', () => {
 
     const closing = shell({ closing: true });
     const dialog = screen.getByRole('dialog');
-    expect(dialog.className).toContain('animate-modal-out');
-    expect(dialog.parentElement?.className).toContain('animate-overlay-out pointer-events-none');
+    expect(dialog).toHaveClass('animate-modal-out');
+    expect(dialog).not.toHaveClass('animate-modal-in');
+    expect(dialog.parentElement).toHaveClass('animate-overlay-out', 'pointer-events-none');
     fireEvent.keyDown(dialog, { key: 'Escape' });
     expect(closing.requestClose).not.toHaveBeenCalled();
     closing.cleanup();

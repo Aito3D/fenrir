@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { ShippingLabelButton } from '../../components/aito/ShippingLabelButton';
@@ -183,7 +183,7 @@ describe('ShippingLabelButton', () => {
     fireEvent.load(iframe as unknown as HTMLIFrameElement);
 
     // Fonts still loading: no print yet, and the button still reads busy.
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await act(async () => {});
     expect(print).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: /print shipping label/i })).toBeDisabled();
 
@@ -256,7 +256,7 @@ describe('ShippingLabelButton', () => {
 
     unmount();
     rejectFonts();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await act(async () => {});
     expect(open).not.toHaveBeenCalled();
   });
 

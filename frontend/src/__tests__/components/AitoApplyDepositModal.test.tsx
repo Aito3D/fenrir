@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { ApplyDepositModal } from '../../components/aito/ApplyDepositModal';
@@ -138,14 +138,23 @@ describe('ApplyDepositModal', () => {
   });
 
   it('does not close on overlay click or X while the request is in flight', async () => {
-    vi.spyOn(api, 'applyAitoInvoiceDeposit').mockImplementation(() => new Promise(() => {}));
-    const onClose = vi.fn();
-    render(<ApplyDepositModal projectId={12} data={DATA} onClose={onClose} />);
-    await userEvent.click(screen.getByRole('button', { name: /^Apply/ }));
-    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
-    await userEvent.click(screen.getByRole('dialog').parentElement as HTMLElement);
-    await new Promise((r) => setTimeout(r, 250));
-    expect(onClose).not.toHaveBeenCalled();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      vi.spyOn(api, 'applyAitoInvoiceDeposit').mockImplementation(() => new Promise(() => {}));
+      const onClose = vi.fn();
+      render(<ApplyDepositModal projectId={12} data={DATA} onClose={onClose} />);
+      await user.click(screen.getByRole('button', { name: /^Apply/ }));
+      await user.click(screen.getByRole('button', { name: 'Close' }));
+      await user.click(screen.getByRole('dialog').parentElement as HTMLElement);
+      // Past the 170 ms exit animation, the only delay between a dismissal and onClose.
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(onClose).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rounds a typed amount to cents before sending', async () => {
