@@ -3,6 +3,7 @@ import { Check, CheckCheck, ClipboardList, Package, ReceiptText } from 'lucide-r
 import type { LucideIcon } from 'lucide-react';
 import type { OrderBoardLine, OrderPanelRow } from '../../api/client';
 import { OrderContactBlock } from './OrderContactBlock';
+import { OrderInvoicesBlock } from './OrderInvoicesBlock';
 import { OrderPaymentBlock } from './OrderPaymentBlock';
 import { OrderRefChips } from './OrderRefChips';
 import { formatQty, panelGroups, parseDay } from './orderBoard';
@@ -150,6 +151,7 @@ export function OrderLinesPanel({
       <div className="space-y-3 lg:self-start">
         <OrderContactBlock contact={row.contact} orderNumber={row.number} others={others} onGoto={onGoto} />
         {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} />}
+        <OrderInvoicesBlock row={row} />
       </div>
     </div>
   );

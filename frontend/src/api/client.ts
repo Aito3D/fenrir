@@ -5071,16 +5071,20 @@ export interface OrderBoardLine {
   /** What the shelf held for this line after older orders; null for a service line. */
   stock_available: number | null;
   covered: number;
+  /** What can still go into a new parcel today. */
+  packable: number;
   shortfall: number;
   covered_by_po: number;
   po_numbers: string[];
 }
 
 export type OrderPayState = 'unpaid' | 'partial' | 'paid';
-export interface OrderInvoice { id: string; number: string; date: string; due_date: string; total: number; balance: number; url: string | null }
+export interface OrderInvoice { id: string; number: string; date: string; due_date: string; total: number; balance: number; status: string; url: string | null }
 export interface OrderPayment { state: OrderPayState; pct: number; paid: number; invoice_paid: number; advance: number; due: number; overdue: number; rest: number; left: number; next_due: string | null; invoices: OrderInvoice[] }
 export interface OrderContact { name: string; email: string; phone: string; mobile: string }
 export interface OrderFacts { channel: string; reference: string; delivery_method: string; payment_terms: string; shopify_url: string | null; quote_url: string | null }
+
+export interface OrderPackage { id: string; shipment_id: string; number: string; status: string; date: string }
 
 export interface OrderBoardRow {
   id: string;
@@ -5096,7 +5100,11 @@ export interface OrderBoardRow {
   ready_ratio: number;
   packed: number;
   units: { total: number; shipped: number; ready: number; backordered: number; to_order: number };
-  packages: { number: string; status: string; date: string }[];
+  packages: OrderPackage[];
+  /** Handed over (shipped) but not invoiced yet. */
+  unbilled_units: number;
+  /** When and by whom the prep sheet was printed. */
+  prep: { at: string; by: string } | null;
   lines: OrderBoardLine[];
   zoho_url: string | null;
   customer_id: string;
@@ -5124,6 +5132,32 @@ export interface OrderBoardResponse {
     last_success_at: string | null;
   };
 }
+
+export type OrderManualReason = 'order_money' | 'line_discount' | 'draft';
+/** GET .../packages/{id}/handover: what a hand-over would do (services/order_board_actions.py:handover_preview). */
+export interface OrderHandoverPreview {
+  units: number;
+  available: boolean;
+  to_invoice: boolean;
+  invoice_total: number | null;
+  manual: boolean;
+  manual_reason: OrderManualReason | null;
+  credit: number;
+  covered_by: string[];
+}
+/** What a hand-over or an invoice call did, step by step (`_outcome` in the same service). */
+export interface OrderHandoverOutcome {
+  package_number: string;
+  shipment: string;
+  delivered: string;
+  invoice: 'none' | 'created' | 'draft' | 'manual' | string;
+  invoice_number: string | null;
+  manual_reason: OrderManualReason | null;
+  credit_applied: number;
+  failed_step: string | null;
+  error: string | null;
+}
+export type OrderActionResult = { board: OrderBoardResponse; outcome: OrderHandoverOutcome };
 
 export interface OrderBoardSettings {
   sync_enabled: boolean;
@@ -6614,6 +6648,15 @@ const foldersByArchiveBatch = batched(
   (id) => request<LibraryFolder[]>(`/library/folders/by-archive/${id}`),
   async (ids) => byId(await request<Record<string, LibraryFolder[]>>(`/bulk/archive-folders?${idsParam(ids)}`)),
 );
+
+/** A PDF from the order board: `request()` parses JSON and an <iframe src> carries no Authorization header. */
+async function orderBoardBlob(path: string, method: 'GET' | 'POST' = 'GET'): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+  const response = await fetch(`${API_BASE}${path}`, { method, headers });
+  if (!response.ok) await throwApiError(response);
+  return response.blob();
+}
 
 export const api = {
   // Overlay branding
@@ -9822,6 +9865,22 @@ export const api = {
   refreshOrderBoard: () => request<OrderBoardResponse>('/order-board/refresh', { method: 'POST' }),
   getFinishedOrders: () => request<{ rows: FinishedOrderRow[] }>('/order-board/finished'),
   getFinishedOrder: (id: string) => request<FinishedOrderDetail>(`/order-board/finished/${encodeURIComponent(id)}`),
+  printOrderPrepSheet: (id: string): Promise<Blob> => orderBoardBlob(`/order-board/orders/${encodeURIComponent(id)}/prep-sheet`, 'POST'),
+  createOrderParcel: (id: string, lines: { line_id: string; quantity: number }[]) =>
+    request<{ board: OrderBoardResponse; package_number: string }>(`/order-board/orders/${encodeURIComponent(id)}/packages`, {
+      method: 'POST',
+      body: JSON.stringify({ lines }),
+    }),
+  getOrderHandover: (id: string, packageId: string) =>
+    request<OrderHandoverPreview>(`/order-board/orders/${encodeURIComponent(id)}/packages/${encodeURIComponent(packageId)}/handover`),
+  handOverOrderParcel: (id: string, packageId: string, body: { mode: 'pickup' | 'delivery'; apply_credit: boolean }) =>
+    request<OrderActionResult>(`/order-board/orders/${encodeURIComponent(id)}/packages/${encodeURIComponent(packageId)}/handover`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  createOrderInvoice: (id: string, body: { apply_credit: boolean }) =>
+    request<OrderActionResult>(`/order-board/orders/${encodeURIComponent(id)}/invoice`, { method: 'POST', body: JSON.stringify(body) }),
+  getOrderInvoicePdf: (invoiceId: string): Promise<Blob> => orderBoardBlob(`/order-board/invoices/${encodeURIComponent(invoiceId)}/pdf`),
   getOrderBoardSettings: () => request<OrderBoardSettings>('/order-board/settings'),
   updateOrderBoardSettings: (body: OrderBoardSettings) =>
     request<OrderBoardSettings>('/order-board/settings', { method: 'PUT', body: JSON.stringify(body) }),

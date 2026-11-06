@@ -42,13 +42,13 @@ afterEach(() => {
 
 const line = (o: Partial<OrderBoardLine> = {}): OrderBoardLine => ({
   id: 'l1', item_id: 'A', name: 'Bambu Lab PLA Basic Noir', sku: 'BL-PLA-BK', state: 'ready', quantity: 1, shipped: 0,
-  cancelled: 0, remaining: 1, invoiced: 0, packed_waiting: 0, stock_available: 1, covered: 1, shortfall: 0,
+  cancelled: 0, remaining: 1, invoiced: 0, packed_waiting: 0, stock_available: 1, covered: 1, packable: 1, shortfall: 0,
   covered_by_po: 0, po_numbers: [], ...o,
 });
 
 const row = (o: Partial<OrderBoardRow> = {}): OrderBoardRow => ({
   id: 'so1', number: 'SO-00412', customer: 'Lycée de Taravao', date: '2026-09-12', total: 13600, currency: 'XPF',
-  status: 'to_ship', age_days: 54, is_core: true, ready_ratio: 1, packed: 0, customer_id: '', payment: null, contact: null,
+  status: 'to_ship', age_days: 54, is_core: true, ready_ratio: 1, packed: 0, unbilled_units: 0, prep: null, customer_id: '', payment: null, contact: null,
   facts: { channel: '', reference: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null },
   units: { total: 1, shipped: 0, ready: 1, backordered: 0, to_order: 0 }, packages: [], lines: [line()],
   zoho_url: 'https://books.example/app/1#/salesorders/so1', ...o,
@@ -195,8 +195,8 @@ describe('OrderBoardPage', () => {
         status: 'partial', packed: 2,
         units: { total: 12, shipped: 6, ready: 4, backordered: 2, to_order: 0 }, ready_ratio: 4 / 6,
         packages: [
-          { number: 'PKG-00031', status: 'delivered', date: '2026-10-28' },
-          { number: 'PKG-00034', status: 'not_shipped', date: '2026-11-04' },
+          { id: 'pk31', shipment_id: 'sh31', number: 'PKG-00031', status: 'delivered', date: '2026-10-28' },
+          { id: 'pk34', shipment_id: '', number: 'PKG-00034', status: 'not_shipped', date: '2026-11-04' },
         ],
         lines: [
           line({ id: 'ams', name: 'Bambu Lab AMS Lite', sku: 'BL-AMS', state: 'backorder', quantity: 6, shipped: 2, remaining: 4,

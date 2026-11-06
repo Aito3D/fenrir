@@ -14,8 +14,8 @@ const pay = (o: Partial<OrderPayment> = {}): OrderPayment => ({
   state: 'partial', pct: 40, paid: 250000, invoice_paid: 250000, advance: 0, due: 180000, overdue: 0, rest: 182000, left: 362000,
   next_due: '2026-11-11',
   invoices: [
-    { id: 'i1', number: 'FAC-0001', date: '2026-10-01', due_date: '2026-10-01', total: 250000, balance: 0, url: 'https://books.example/inv/i1' },
-    { id: 'i2', number: 'FAC-0002', date: '2026-11-01', due_date: '2026-11-11', total: 180000, balance: 180000, url: null },
+    { id: 'i1', number: 'FAC-0001', date: '2026-10-01', due_date: '2026-10-01', total: 250000, balance: 0, status: 'paid', url: 'https://books.example/inv/i1' },
+    { id: 'i2', number: 'FAC-0002', date: '2026-11-01', due_date: '2026-11-11', total: 180000, balance: 180000, status: 'sent', url: null },
   ],
   ...o,
 });
@@ -25,17 +25,17 @@ const contact = (o: Partial<OrderContact> = {}): OrderContact => ({ name: 'Teva 
 const flat = (el: HTMLElement) => (el.textContent ?? '').replace(/\s/g, ' ');
 
 describe('OrderPaymentBlock', () => {
-  it('shows what is left to pay, each non-zero legend part, and the invoices with their state', () => {
+  it('shows what is left to pay and each non-zero legend part; the invoices live in their own card', () => {
     render(<OrderPaymentBlock payment={pay()} currency="XPF" />);
     expect(screen.getByText('Left to pay')).toBeInTheDocument();
     expect(flat(screen.getByTestId('pay-left'))).toMatch(/362.000/);
-    expect(screen.getAllByText('Paid').length).toBeGreaterThan(0); // legend and the paid invoice
+    expect(screen.getAllByText('Paid').length).toBeGreaterThan(0); // legend
     expect(screen.getByText('Invoiced, awaiting payment')).toBeInTheDocument();
     expect(screen.getByText('Still to pay, not invoiced')).toBeInTheDocument();
     expect(screen.queryByText('Overdue')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'FAC-0001' })).toHaveAttribute('href', 'https://books.example/inv/i1');
-    expect(screen.getByText('FAC-0002').closest('a')).toBeNull(); // no url: plain text
-    expect(screen.getByText(/^Due /)).toBeInTheDocument();
+    expect(screen.queryByText('FAC-0001')).not.toBeInTheDocument();
+    expect(screen.queryByText('FAC-0002')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Due /)).not.toBeInTheDocument();
   });
 
   it('an advance renames the paid part and explains itself', () => {
@@ -52,26 +52,10 @@ describe('OrderPaymentBlock', () => {
     expect(widths.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(100.0001);
   });
 
-  it('says nothing is left, and that there is no invoice', () => {
+  it('says nothing is left to pay', () => {
     render(<OrderPaymentBlock payment={pay({ state: 'paid', pct: 100, due: 0, rest: 0, left: 0, invoices: [] })} currency="XPF" />);
     expect(screen.getByText('Nothing left to pay')).toBeInTheDocument();
-    expect(screen.getByText('No invoice yet for this order.')).toBeInTheDocument();
-  });
-
-  it('an invoice with a balance but no due date reads as awaiting payment, never Invalid Date', () => {
-    render(<OrderPaymentBlock payment={pay({ due: 1000, invoices: [{ id: 'i3', number: 'FAC-0003', date: '2026-11-01', due_date: '', total: 1000, balance: 1000, url: null }] })} currency="XPF" />);
-    expect(screen.getAllByText('Invoiced, awaiting payment').length).toBeGreaterThan(0);
-    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^Overdue \d+ d/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^Due /)).not.toBeInTheDocument();
-  });
-
-  it('counts overdue days from the due date', () => {
-    const due = new Date();
-    due.setDate(due.getDate() - 5);
-    const day = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`;
-    render(<OrderPaymentBlock payment={pay({ overdue: 180000, due: 0, invoices: [{ id: 'i2', number: 'FAC-0002', date: day, due_date: day, total: 180000, balance: 180000, url: null }] })} currency="XPF" />);
-    expect(screen.getByText('Overdue 5 d')).toBeInTheDocument();
+    expect(screen.queryByText('No invoice yet for this order.')).not.toBeInTheDocument();
   });
 });
 
@@ -188,7 +172,7 @@ describe('OrderLinesPanel layout', () => {
   it('the lines scroll in a focusable named region and the side column does not stick', () => {
     const row = {
       id: 'so1', number: 'SO-1', customer: 'X', date: '2026-09-12', total: 1, currency: 'XPF', age_days: 1, is_core: true,
-      ready_ratio: 1, packed: 0, customer_id: '', payment: pay(), contact: contact(),
+      ready_ratio: 1, packed: 0, unbilled_units: 0, prep: null, customer_id: '', payment: pay(), contact: contact(),
       facts: { channel: '', reference: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null },
       units: { total: 0, shipped: 0, ready: 0, backordered: 0, to_order: 0 }, packages: [], lines: [], zoho_url: null,
     } as unknown as OrderPanelRow;

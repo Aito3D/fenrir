@@ -9,6 +9,7 @@ import type {
   OrderBoardLine,
   OrderBoardResponse,
   OrderBoardRow,
+  OrderPackage,
   OrderPanelRow,
   OrderPayState,
   OrderStatus,
@@ -143,3 +144,15 @@ export const daysPastDue = (dueDay: string): number => {
   today.setHours(12, 0, 0, 0);
   return Math.round((today.getTime() - parseDay(dueDay).getTime()) / 86_400_000);
 };
+
+/** Units the shelf could put in a new parcel today, summed over the lines. */
+export const packableUnits = (row: Pick<OrderBoardRow, 'lines'>): number =>
+  Math.round(row.lines.reduce((n, l) => n + l.packable, 0) * 100) / 100;
+
+/** Parcels boxed in Books and not handed over yet. */
+export const waitingPackages = (row: Pick<OrderBoardRow, 'packages'>): OrderPackage[] =>
+  row.packages.filter(p => p.status === 'not_shipped');
+
+/** What the operator does next with this order: print the sheet and box, or hand a boxed parcel over. */
+export const nextStep = (row: Pick<OrderBoardRow, 'lines' | 'packages'>): 'print' | 'handover' | null =>
+  packableUnits(row) > 0 ? 'print' : waitingPackages(row).length > 0 ? 'handover' : null;
