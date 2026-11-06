@@ -20,6 +20,8 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
@@ -200,6 +202,16 @@ def open_rate_limit_window(e: ZohoRateLimited) -> None:
     _rate_limited_until = time.monotonic() + (e.retry_after or PENDING_PAUSE_SECONDS)
 
 
+@contextmanager
+def _busy_on_rate_limit(key: str) -> Iterator[None]:
+    """A Books 429 inside the block opens the back-off window and surfaces as ZohoBusy(key)."""
+    try:
+        yield
+    except ZohoRateLimited as e:
+        open_rate_limit_window(e)
+        raise ZohoBusy(key) from e
+
+
 async def refresh_order(db: AsyncSession, salesorder_id: str) -> None:
     """Re-read one order from Books after a write here, store it and rebuild the board."""
     doc = (
@@ -335,11 +347,8 @@ async def read_finished_order(db: AsyncSession, salesorder_id: str) -> dict:
         if time.monotonic() < _rate_limited_until or zoho_service.calls_in_last_minute() >= CALL_CEILING:
             raise ZohoBusy(salesorder_id)
         before = _snapshot(doc)
-        try:
+        with _busy_on_rate_limit(salesorder_id):
             fetched = await zoho_service.get_salesorder(db, salesorder_id)
-        except ZohoRateLimited as e:
-            open_rate_limit_window(e)
-            raise ZohoBusy(salesorder_id) from e
         # No pass lock here (a pass can run long): if a pass wrote this row meanwhile, its mark or newer detail
         # must not be lost, so the fetched copy goes in marked stale and the next open fetches again.
         await db.refresh(doc)
@@ -402,9 +411,8 @@ def _is_candidate(kind: str, header: dict, settings: OrderBoardSettings) -> bool
     return not settings.max_age_days or age_days(header.get("date") or "", date.today()) <= settings.max_age_days
 
 
-async def _sync(db: AsyncSession) -> None:
-    started = datetime.now(timezone.utc)
-    settings = await load_settings(db)
+async def _reconcile_listings(db: AsyncSession, settings: OrderBoardSettings) -> dict[tuple[str, str], OrderBoardDoc]:
+    """List Zoho and reconcile the stored rows with it. Returns the stored rows by (kind, id)."""
     listings = (
         ("salesorder", "salesorder_id", _SO_FIELDS, await zoho_service.list_salesorders(db)),
         ("purchaseorder", "purchaseorder_id", _PO_FIELDS, await zoho_service.list_purchaseorders(db)),
@@ -438,7 +446,12 @@ async def _sync(db: AsyncSession) -> None:
     for key in set(stored) - listed:  # deleted in Zoho
         await db.delete(stored.pop(key))
     await db.commit()
+    return stored
 
+
+async def _mark_payment_changes(
+    db: AsyncSession, stored: dict[tuple[str, str], OrderBoardDoc], settings: OrderBoardSettings, started: datetime
+) -> None:
     # A payment on the customer does not touch the sales order's list row, but
     # it changes the credit stored in the detail: find those customers.
     state = await _state(db)
@@ -456,6 +469,8 @@ async def _sync(db: AsyncSession) -> None:
     state.detail = {**(state.detail or {}), "payments_since": format_books_time(started)}
     await db.commit()
 
+
+async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str], OrderBoardDoc]) -> None:
     # Oldest sales orders first: they are served first, so they matter most.
     pending = sorted(
         (d for d in stored.values() if d.pending),
@@ -478,6 +493,10 @@ async def _sync(db: AsyncSession) -> None:
             doc.pending = True  # a write began while this copy was being stored: it may predate the write
             await db.commit()
 
+
+async def _reload_stock(
+    db: AsyncSession, stored: dict[tuple[str, str], OrderBoardDoc], settings: OrderBoardSettings
+) -> None:
     # Stock has no change feed in Books, so it is re-read on every pass.
     item_ids = sorted(
         {
@@ -502,6 +521,15 @@ async def _sync(db: AsyncSession) -> None:
     await recompute(db)
     state.detail = {**(state.detail or {}), "last_success_at": _now(), "last_error": None, "last_error_at": None}
     await db.commit()
+
+
+async def _sync(db: AsyncSession) -> None:
+    started = datetime.now(timezone.utc)
+    settings = await load_settings(db)
+    stored = await _reconcile_listings(db, settings)
+    await _mark_payment_changes(db, stored, settings, started)
+    await _fetch_pending_details(db, stored)
+    await _reload_stock(db, stored, settings)
 
 
 async def run_pass(db: AsyncSession) -> bool:

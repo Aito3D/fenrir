@@ -76,12 +76,10 @@ async def confirm_stored_copy(db: AsyncSession, salesorder_id: str) -> OrderBoar
         raise OrderNotOnBoard(salesorder_id)
     if doc.pending or sync.needs_refresh(salesorder_id):
         try:
-            await sync.refresh_order(db, salesorder_id)
+            with sync._busy_on_rate_limit(salesorder_id):
+                await sync.refresh_order(db, salesorder_id)
         except sync.OrderNotStored as e:
             raise OrderNotOnBoard(salesorder_id) from e
-        except ZohoRateLimited as e:
-            sync.open_rate_limit_window(e)
-            raise sync.ZohoBusy(salesorder_id) from e
     return doc
 
 
@@ -173,11 +171,8 @@ async def _pickable(db: AsyncSession, salesorder_id: str, row: dict, order: dict
     """Books' own picklist draft for the order and, per line, what a new picklist may hold: what Books still
     offers (units already on a picklist are not), never above what the shelf covers once the units picked and
     not boxed yet are set aside."""
-    try:
+    with sync._busy_on_rate_limit(salesorder_id):
         prefill = await zoho_service.picklist_prefill(db, salesorder_id) or {}
-    except ZohoRateLimited as e:
-        sync.open_rate_limit_window(e)
-        raise sync.ZohoBusy(salesorder_id) from e
     shelf = {line["id"]: line["packable"] for line in row["lines"]}
     held = picked_waiting(order)
     books: dict[str, float] = {}
@@ -248,12 +243,10 @@ async def _picklist(db: AsyncSession, order: dict, picklist_id: str) -> dict:
     if not any(p.get("picklist_id") == picklist_id for p in order.get("picklists") or []):
         raise OrderActionRefused("unknown_picklist")
     try:
-        return await zoho_service.get_picklist(db, picklist_id)
+        with sync._busy_on_rate_limit(picklist_id):
+            return await zoho_service.get_picklist(db, picklist_id)
     except ZohoNotFound as e:
         raise OrderActionRefused("unknown_picklist") from e
-    except ZohoRateLimited as e:
-        sync.open_rate_limit_window(e)
-        raise sync.ZohoBusy(picklist_id) from e
 
 
 def _to_box(picklist: dict, salesorder_id: str) -> dict[str, tuple[float, float, str]]:
