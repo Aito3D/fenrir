@@ -1140,6 +1140,15 @@ async def test_partial_invoice_of_an_order_with_a_shipping_charge_is_left_to_boo
 
 
 @pytest.mark.asyncio
+async def test_an_unparseable_order_money_field_counts_as_set_and_leaves_a_partial_invoice_to_books(db_session, books):
+    await _ready(db_session, books, qty=3, box=2)
+    books.prefill_extra = {"adjustment": "abc"}
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert "create_invoice" not in _names(books)
+    assert (outcome["invoice"], outcome["manual_reason"], outcome["failed_step"]) == ("manual", "order_money", None)
+
+
+@pytest.mark.asyncio
 async def test_whole_remaining_invoice_keeps_the_orders_shipping_charge(db_session, books):
     await _ready(db_session, books, qty=2, box=2)
     books.prefill_extra = {"shipping_charge": 200}
@@ -1504,7 +1513,15 @@ def test_invoice_payload_leaves_split_order_money_to_books_and_sends_no_empty_in
 
 @pytest.mark.parametrize(
     ("discount", "keep_a", "reason"),
-    [(3, 1, "line_discount"), ("3.00", 1, "line_discount"), ("10%", 1, None), ("10.00%", 1, None), (3, 2, None)],
+    [
+        (3, 1, "line_discount"),
+        ("3.00", 1, "line_discount"),
+        ("abc", 1, "line_discount"),  # unparseable counts as set, and it is not a percentage
+        ("10%", 1, None),
+        ("10.00%", 1, None),
+        (3, 2, None),
+        ("abc", 2, None),
+    ],
 )
 def test_a_fixed_line_discount_is_never_split(discount, keep_a, reason):
     lines = [{**PREFILL["line_items"][0], "discount": discount}]
