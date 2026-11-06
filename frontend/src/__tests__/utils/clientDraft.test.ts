@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parsePhone,
+  clientFieldsFromDraft,
   formatPhone,
   formatPhoneDisplay,
   titleCaseSegments,
@@ -475,5 +476,31 @@ describe('contactNameStandsOut', () => {
     expect(contactNameStandsOut('SNP', null)).toBe(false);
     expect(contactNameStandsOut('SNP', '  ')).toBe(false);
     expect(contactNameStandsOut(null, undefined)).toBe(false);
+  });
+});
+
+describe('clientFieldsFromDraft', () => {
+  it('maps a person draft to the wire fields', () => {
+    const d = { ...defaultClientDraft('1', 'Ann'), email: ' a@b.fr ', socialHandle: ' @ann ', socialNetwork: 'instagram' as const };
+    const f = clientFieldsFromDraft(d);
+    expect(f.client_email).toBe('a@b.fr');
+    expect(f.client_social_network).toBe('instagram');
+    expect(f.client_social_handle).toBe('@ann');
+    expect(f.client_is_company).toBe(false);
+    expect(f.client_contact_person_id).toBeNull();
+    expect(f.client_contact_name).toBeNull();
+  });
+
+  it('nulls empty fields and keeps contact fields only for companies', () => {
+    const base = defaultClientDraft('1', 'Acme');
+    expect(clientFieldsFromDraft(base)).toMatchObject({
+      client_email: null,
+      client_social_network: null,
+      client_social_handle: null,
+    });
+    const f = clientFieldsFromDraft({ ...base, isCompany: true, contactPersonId: 'p1', contactName: 'Bob' });
+    expect(f.client_contact_person_id).toBe('p1');
+    expect(f.client_contact_name).toBe('Bob');
+    expect(clientFieldsFromDraft({ ...base, isCompany: true, contactPersonId: 'p1', contactName: '' }).client_contact_name).toBeNull();
   });
 });

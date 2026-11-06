@@ -203,8 +203,8 @@ interface BlurredFlags {
 
 /** The one masking rule, shared by every caller that needs "is this error
  *  visible right now": a field only reports an error once it has been left
- *  once. Previously each of ClientSection, NewProjectModal and NewContactForm
- *  applied this by hand — NewProjectModal manufactured a fake fully-blurred
+ *  once. Previously each of ClientSection, NewProjectDrawer and NewContactForm
+ *  applied this by hand — NewProjectDrawer manufactured a fake fully-blurred
  *  draft to decide submit-ability, which conflated validity with visibility and
  *  let a malformed *stored* value disable "Create project" before the user
  *  touched anything, with no message and no way to tell why. */
@@ -218,6 +218,24 @@ export function maskVisibleErrors(errors: ClientDraftErrors, blurred: BlurredFla
 /** What the form should currently show and gate submit on for a `ClientDraft`. */
 export function visibleClientDraftErrors(draft: ClientDraft): ClientDraftErrors {
   return maskVisibleErrors(clientDraftErrors(draft), draft.blurred);
+}
+
+/** The client wire fields a draft maps to, shared by the create payload and
+ *  the optimistic placeholder so the two can never disagree. */
+export function clientFieldsFromDraft(draft: ClientDraft) {
+  return {
+    client_phone: formatPhone(draft) || null,
+    client_email: draft.email.trim() || null,
+    client_is_company: draft.isCompany,
+    // Both keys or neither: the server refuses a handle with no network,
+    // and a network with no handle clears the pair.
+    client_social_network: draft.socialHandle.trim() ? draft.socialNetwork : null,
+    client_social_handle: draft.socialHandle.trim() || null,
+    // Company cards only — the server clears it otherwise, but sending
+    // null keeps the wire honest about what the draft meant.
+    client_contact_person_id: draft.isCompany ? draft.contactPersonId : null,
+    client_contact_name: draft.isCompany && draft.contactName ? draft.contactName : null,
+  };
 }
 
 export function draftFromContact(contact: ZohoContact, defaultContactId: string): ClientDraft {

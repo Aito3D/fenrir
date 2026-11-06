@@ -37,13 +37,13 @@ export interface TaskEditorProps {
   value: TaskDraft[];
   onChange: (next: TaskDraft[]) => void;
   onRemove: (index: number) => void;
-  /** Rows that cannot be removed. The create modal passes 1: a project must
+  /** Rows that cannot be removed. The create drawer passes 1: a project must
    *  carry at least one task, and letting the user delete their way to zero
    *  and then be told "no" is worse than not offering it. Defaults to 0 so the
    *  detail panel is unaffected. */
   minRows?: number;
   /** Called when focus leaves a row, so a debounced save can flush early
-   *  rather than waiting out its timer. Optional: the create modal holds its
+   *  rather than waiting out its timer. Optional: the create drawer holds its
    *  tasks locally and has nothing to flush. */
   onRowBlur?: (task: TaskDraft) => void;
   /** Passed straight to `TaskStepList` — see its own prop doc. Required, not
@@ -51,7 +51,7 @@ export interface TaskEditorProps {
    *  modal) would silently inherit the wrong answer. */
   canTick: boolean;
   /** Whether to render this component's own "Tasks / Project total" heading.
-   *  Defaults to true so `NewProjectModal` (which has no panel header of its
+   *  Defaults to true so `NewProjectDrawer` (which has no panel header of its
    *  own to carry the total) is unaffected. The detail panel passes `false`:
    *  it renders its own "Work" eyebrow plus an aggregate progress bar above
    *  this component instead, and the project total already lives in the
@@ -65,7 +65,7 @@ export interface TaskEditorProps {
    *  in flight (see `useProjectTasks`' `addTaskMutation.onSuccess`).
    *
    *  Optional, and deliberately never defaulted to a bare `id === null`
-   *  check: the create modal (`NewProjectModal`) reuses this component and
+   *  check: the create drawer (`NewProjectDrawer`) reuses this component and
    *  EVERY one of its rows has `id === null` while none of them are actually
    *  pending a network call, so it must stay fully editable. It simply
    *  passes nothing. */
@@ -120,7 +120,7 @@ export interface TaskEditorProps {
 /** The task list for one Aito project: a heading, each task's `TaskRow`, "+
  *  Add task", and the project total. Purely presentational — it holds no
  *  persistence logic and never mutates `value` in place, only maps it into a
- *  new array. That split is what lets the create modal hold this array in
+ *  new array. That split is what lets the create drawer hold this array in
  *  local state and POST it with the project, while the detail panel wires
  *  each change to a PATCH; neither caller is visible from here. */
 export function TaskEditor({
@@ -188,7 +188,7 @@ export function TaskEditor({
   // A row with no steps IS the form — read mode would show nothing but "No
   // steps yet", so there is nothing to disclose. Deriving this replaces the
   // effect that used to diff row keys to open a newly added row in edit mode,
-  // and fixes the create modal for free: its first task previously started
+  // and fixes the create drawer for free: its first task previously started
   // both collapsed and not editing, costing two clicks before the user could
   // type a price.
   //

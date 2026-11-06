@@ -2146,6 +2146,8 @@ os.environ.get("AITO_TRACK_COLLAPSED_PROXY"
 1 export function useAitoRetainers
 1 export function useAitoViewers
 1 export function useCardActions
+1 export function useCardResolver
+1 export function useCardUrlMirror
 1 export function useCelebration
 1 export function useClientQuoteRating
 1 export function useClientRating
@@ -2154,6 +2156,7 @@ os.environ.get("AITO_TRACK_COLLAPSED_PROXY"
 1 export function useCopiedFlash
 1 export function useDescriptionEditor
 1 export function useHoverReveal
+1 export function useNewFromProject
 1 export function usePrintBlob
 1 export function useProjectPatchMutation
 1 export function useStatsFormat

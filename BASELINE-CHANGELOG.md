@@ -1201,3 +1201,6 @@ so it is not stranded.
 - 2026-11-05 T-586: user-approved behavior change (user-approved 2026-11-05) — frontend/src/components/aito/BillingCard.tsx extend-quote onError: on a 409 or 502 the failure toast is now "<aito.saveFailed> <server detail>" (same space separator as the create-card 422 toast) instead of the bare generic text, and a 409 invalidates ['aito-projects'] so the stale Expired state refreshes; other errors keep the generic toast. No new i18n keys. Goldens re-recorded: none. SURFACE.md unchanged. Pinned by AitoBillingCard.test.tsx extend failure cases (502 / 409 / other / non-API).
 - 2026-11-06 re-baseline: additive internal export useHoverReveal for T-592
 - 2026-11-06 T-587: user-approved behavior change (user-approved 2026-11-06) — frontend/src/pages/AitoPage.tsx (`cardRefetchedFor.current = null`): after a `?card=N` link was resolved and cleared, a second link to the same card in the same tab now refetches the board (`/api/v1/aito/`) and trash (`/api/v1/aito/trash`) before deciding, so the panel opens instead of a stale "in trash"/"gone" toast. Goldens re-recorded: none. SURFACE.md unchanged.
+- 2026-11-06 re-baseline: additive internal export useCardUrlMirror for T-593
+- 2026-11-06 re-baseline: additive internal export useCardResolver for T-593
+- 2026-11-06 re-baseline: additive internal export useNewFromProject for T-593
