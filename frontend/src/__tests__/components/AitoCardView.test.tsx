@@ -1296,7 +1296,7 @@ describe('CardView — the client still has to be told', () => {
   it('marks a finished card whose client has not been told', () => {
     render(<CardView project={{ ...finished, client_contacted_at: null }} onExpand={vi.fn()} />);
     expect(document.querySelector('[data-aito-card]')!.className).toContain('contact-pending');
-    expect(screen.getByTestId('aito-card-contact')).toBeInTheDocument();
+    expect(screen.getByTestId('aito-card-awaiting-contact')).toBeInTheDocument();
   });
 
   it('turns the client icon and name cyan while nobody has been told', () => {
@@ -1312,7 +1312,7 @@ describe('CardView — the client still has to be told', () => {
       <CardView project={{ ...finished, client_contacted_at: '2026-08-20T09:00:00Z' }} onExpand={vi.fn()} />,
     );
     expect(document.querySelector('[data-aito-card]')!.className).not.toContain('contact-pending');
-    expect(screen.queryByTestId('aito-card-contact')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('aito-card-awaiting-contact')).not.toBeInTheDocument();
     expect(screen.getByTestId('aito-card-client').className).not.toContain('text-cyan-400');
   });
 
@@ -1320,18 +1320,18 @@ describe('CardView — the client still has to be told', () => {
     render(
       <CardView project={{ ...finished, client_contacted_at: null, shipping_island: 'rangiroa' }} onExpand={vi.fn()} />,
     );
-    expect(screen.getByTestId('aito-card-contact')).toHaveTextContent('To ship');
+    expect(screen.getByTestId('aito-card-awaiting-contact')).toHaveTextContent('To ship');
     expect(document.querySelector('[data-aito-card]')!.className).toContain('contact-pending');
   });
 
   it('names the step as a call on a pickup card', () => {
     render(<CardView project={{ ...finished, client_contacted_at: null, shipping_island: null }} onExpand={vi.fn()} />);
-    expect(screen.getByTestId('aito-card-contact')).toHaveTextContent('To contact');
+    expect(screen.getByTestId('aito-card-awaiting-contact')).toHaveTextContent('To contact');
   });
 
   it('says nothing about contacting on a card that is still being worked on', () => {
     render(<CardView project={{ ...project, column: 'print', client_contacted_at: null }} onExpand={vi.fn()} />);
-    expect(screen.queryByTestId('aito-card-contact')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('aito-card-awaiting-contact')).not.toBeInTheDocument();
     expect(document.querySelector('[data-aito-card]')!.className).not.toContain('contact-pending');
   });
 
@@ -1340,7 +1340,7 @@ describe('CardView — the client still has to be told', () => {
     // existed has no contact recorded and never will, so shouting at the
     // operator about every one of them would make the archive unreadable.
     render(<CardView project={{ ...project, column: 'done', client_contacted_at: null }} onExpand={vi.fn()} />);
-    expect(screen.queryByTestId('aito-card-contact')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('aito-card-awaiting-contact')).not.toBeInTheDocument();
   });
 });
 

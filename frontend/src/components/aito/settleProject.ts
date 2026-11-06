@@ -15,7 +15,15 @@ import { replaceProject } from '../../utils/aitoOptimistic';
  *  Not every mutation's `onSuccess` is JUST this — several append a toast or
  *  a conflict check afterwards. Those callers still call this helper first,
  *  then keep their own extra step inline. */
-export function settleProject(queryClient: QueryClient, projectId: number, row: AitoProject): void {
+export function settleProject(
+  queryClient: QueryClient,
+  projectId: number,
+  row: AitoProject,
+  { refetchBoard = false }: { refetchBoard?: boolean } = {},
+): void {
   queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, row));
+  // The board refetch goes between the cache write and the events one, as the
+  // client-edit and transfer call sites always wrote it.
+  if (refetchBoard) void queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
   queryClient.invalidateQueries({ queryKey: ['aito-events', projectId] });
 }

@@ -311,6 +311,7 @@ export function AitoPage() {
   useEffect(() => {
     if (cardParam === null) {
       cardResolved.current = null;
+      cardRefetchedFor.current = null;
       return;
     }
     if (cardResolved.current === cardParam) return;

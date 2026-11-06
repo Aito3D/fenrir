@@ -5,7 +5,7 @@ import { UserRoundPen } from 'lucide-react';
 import { api, ApiError, type AitoProject, type ZohoContact, type ZohoContactPerson } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useToast } from '../../contexts/ToastContext';
-import { replaceProject } from '../../utils/aitoOptimistic';
+import { settleProject } from './settleProject';
 import {
   applyContactPerson,
   defaultClientDraft,
@@ -82,9 +82,7 @@ export function TransferClientModal({
   const transfer = useMutation({
     mutationFn: (next: ClientDraft) => api.transferAitoClient(project.id, transferBody(next)),
     onSuccess: (updated) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, updated));
-      void queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-      void queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
+      settleProject(queryClient, project.id, updated, { refetchBoard: true });
       // The card leaves one client's history and joins the other's; the
       // prefix also reaches ClientHistoryModal's longer-limit entry.
       for (const id of new Set([project.client_id, updated.client_id])) {

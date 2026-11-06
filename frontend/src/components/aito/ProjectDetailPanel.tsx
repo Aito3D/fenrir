@@ -61,7 +61,7 @@ import { isFinished, shipsToClient } from '../../utils/aitoBoard';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { elapsedDays, parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
-import { applyDescription, applySyncState, replaceProject } from '../../utils/aitoOptimistic';
+import { applyDescription, applySyncState } from '../../utils/aitoOptimistic';
 import { contactNameStandsOut, formatPhoneDisplay, isSocialNetwork } from '../../utils/clientDraft';
 import { islandLabel } from '../../utils/shippingDraft';
 import { focusRingCls, inputCls } from '../formStyles';
@@ -990,9 +990,7 @@ export function ProjectDetailPanel({
     });
   }, []);
   const onClientSaved = (updated: AitoProject) => {
-    queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, updated));
-    void queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-    void queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
+    settleProject(queryClient, project.id, updated, { refetchBoard: true });
     closeClientEdit();
   };
 

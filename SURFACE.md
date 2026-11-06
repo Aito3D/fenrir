@@ -2153,6 +2153,7 @@ os.environ.get("AITO_TRACK_COLLAPSED_PROXY"
 1 export function useContactFields
 1 export function useCopiedFlash
 1 export function useDescriptionEditor
+1 export function useHoverReveal
 1 export function usePrintBlob
 1 export function useProjectPatchMutation
 1 export function useStatsFormat

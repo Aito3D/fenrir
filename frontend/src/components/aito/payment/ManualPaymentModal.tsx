@@ -8,6 +8,7 @@ import { api } from '../../../api/client';
 import type { AitoManualPaymentMode, AitoProject } from '../../../api/client';
 import { useDismissableDialog } from '../../../hooks/useDismissableDialog';
 import { useToast } from '../../../contexts/ToastContext';
+import { replaceProject } from '../../../utils/aitoOptimistic';
 import { labelCls, inputCls } from '../../formStyles';
 import { ACTION_CELL, ACTION_GROUP } from '../quoteActionGroup';
 import { AmountField } from './AmountField';
@@ -38,7 +39,7 @@ export function ManualPaymentModal({ project, document, onClose }: {
     mutationFn: (body: { mode: AitoManualPaymentMode; amount: number; reference: string | null }) =>
       api.recordAitoManualPayment(project.id, { document_kind: document.kind, document_id: document.id, ...body }),
     onSuccess: (fresh) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (rows) => rows?.map((r) => (r.id === fresh.id ? fresh : r)));
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (rows) => replaceProject(rows, fresh));
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
       queryClient.invalidateQueries({ queryKey: ['aito-invoice', project.id] });
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
