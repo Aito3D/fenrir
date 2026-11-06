@@ -18,7 +18,7 @@ def _num(value) -> float:
 
 
 def _r(value: float) -> float:
-    """Keep float noise out of money values."""
+    """Keep float noise out of money values and quantities (fractional, e.g. rope by the metre)."""
     return round(value, 6)
 
 

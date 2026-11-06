@@ -344,7 +344,7 @@ async def read_finished_order(db: AsyncSession, salesorder_id: str) -> dict:
     if doc is None:
         raise OrderNotFinished(salesorder_id)
     if doc.detail is None or _is_stale(doc):
-        if time.monotonic() < _rate_limited_until or zoho_service.calls_in_last_minute() >= CALL_CEILING:
+        if zoho_busy():
             raise ZohoBusy(salesorder_id)
         before = _snapshot(doc)
         with _busy_on_rate_limit(salesorder_id):

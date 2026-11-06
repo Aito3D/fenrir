@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
 from backend.app.services.order_board import picked_waiting, units_to_invoice
+from backend.app.services.order_board_payment import _r
 from backend.app.services.zoho import ZohoNotFound, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 logger = logging.getLogger(__name__)
@@ -182,8 +183,7 @@ async def _pickable(db: AsyncSession, salesorder_id: str, row: dict, order: dict
             line_id = line["so_line_item_id"]
             books[line_id] = books.get(line_id, 0.0) + _num(line.get("quantity_to_be_picked"))
     offered = {
-        line_id: round(min(units, shelf.get(line_id, 0.0) - held.get(line_id, 0.0)), 6)
-        for line_id, units in books.items()
+        line_id: _r(min(units, shelf.get(line_id, 0.0) - held.get(line_id, 0.0))) for line_id, units in books.items()
     }
     return prefill, {line_id: units for line_id, units in offered.items() if units > 0}
 
@@ -260,7 +260,7 @@ def _to_box(picklist: dict, salesorder_id: str) -> dict[str, tuple[float, float,
         if line.get("salesorder_id") != salesorder_id or line.get("so_line_item_id") in result:
             raise OrderActionRefused("picklist_shared")  # cutting it down here would touch rows it cannot tell apart
         boxed = _num(line.get("quantity_packed"))
-        units = round(_num(line.get("quantity_picked" if done else "quantity_to_be_picked")) - boxed, 6)
+        units = _r(_num(line.get("quantity_picked" if done else "quantity_to_be_picked")) - boxed)
         if line.get("so_line_item_id") and line.get("line_item_id"):
             result[line["so_line_item_id"]] = (max(0.0, units), boxed, line["line_item_id"])
     return result
@@ -627,10 +627,7 @@ async def invoice_shipped(db: AsyncSession, salesorder_id: str, *, apply_credit:
 
 async def handover_preview(db: AsyncSession, salesorder_id: str, package_id: str) -> dict:
     """What a hand-over of this parcel would do, from the stored order and Books' own prefill. Reads only."""
-    doc = (await db.execute(_stored_query(salesorder_id))).scalar_one_or_none()
-    if doc is None or not doc.detail:
-        raise OrderNotOnBoard(salesorder_id)
-    order = doc.detail
+    order = await _stored_order(db, salesorder_id)
     stored = next((p for p in order.get("packages") or [] if p.get("package_id") == package_id), None)
     if stored is None:
         raise OrderActionRefused("unknown_package")
