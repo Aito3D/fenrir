@@ -148,7 +148,7 @@ def units_to_invoice(
             units = quantity - invoiced
         else:
             units = min(quantity, _num(raw.get("quantity_shipped")) + _num(extra.get(line_id))) - invoiced
-        if units > 0:
+        if line_id and _r(units) > 0:  # a line Books gave no id cannot be invoiced by id
             result[line_id] = _r(units)
     return result
 
