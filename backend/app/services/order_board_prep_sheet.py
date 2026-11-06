@@ -1,6 +1,7 @@
 """A4 prep sheet an operator prints to pick and pack an order (internal document)."""
 
 import io
+import unicodedata
 from datetime import datetime
 
 from reportlab.lib.pagesizes import A4
@@ -18,8 +19,47 @@ _BOTTOM = 60.0
 _COLS = (_M + 30, _M + 80, _W - _M - 150, _W - _M)  # tick | qty right edge, product x, ref x, right edge
 
 
+def _safe(text: str) -> str:
+    """Fold what Helvetica (cp1252) cannot encode: macrons lose the mark, okina becomes ', the rest '?'."""
+    out = []
+    for ch in str(text).replace("ʻ", "'").replace("ʼ", "'"):
+        try:
+            ch.encode("cp1252")
+            out.append(ch)
+            continue
+        except UnicodeEncodeError:
+            pass
+        base = "".join(k for k in unicodedata.normalize("NFKD", ch) if not unicodedata.combining(k))
+        out.append(base if base and all(_encodable(k) for k in base) else "?")
+    return "".join(out)
+
+
+def _encodable(ch: str) -> bool:
+    try:
+        ch.encode("cp1252")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+class _Canvas(rl_canvas.Canvas):
+    """Every string drawn or measured goes through _safe."""
+
+    def drawString(self, x, y, text, *a, **k):
+        super().drawString(x, y, _safe(text), *a, **k)
+
+    def drawRightString(self, x, y, text, *a, **k):
+        super().drawRightString(x, y, _safe(text), *a, **k)
+
+    def drawCentredString(self, x, y, text, *a, **k):
+        super().drawCentredString(x, y, _safe(text), *a, **k)
+
+    def stringWidth(self, text, *a, **k):
+        return super().stringWidth(_safe(text), *a, **k)
+
+
 def _qty(v: float) -> str:
-    return str(int(v)) if float(v).is_integer() else str(v)
+    return f"{round(float(v), 3):.3f}".rstrip("0").rstrip(".") or "0"
 
 
 def _amount(v: float, currency: str) -> str:
@@ -91,7 +131,8 @@ def _info(c: rl_canvas.Canvas, row: dict, y: float, order_url: str | None) -> fl
         infos.append(("Livraison", "Retrait en boutique" if pickup else facts["delivery_method"]))
     if payment is not None:
         left = payment.get("left") or 0
-        infos.append(("Paiement", "Payée" if left <= 0 else f"Reste à payer {_amount(left, cur)}"))
+        paid = round(left, 0 if cur == "XPF" else 2) <= 0
+        infos.append(("Paiement", "Payée" if paid else f"Reste à payer {_amount(left, cur)}"))
     x = _M + 215
     for i, (k, v) in enumerate(infos):
         yy = y - 4 - 14 * i
@@ -139,14 +180,14 @@ def _box(c: rl_canvas.Canvas, x: float, y: float, w: float, h: float, label: str
 
 def render_prep_sheet(row: dict, *, printed_at: datetime, order_url: str | None, shop_name: str = "AITO3D") -> bytes:
     buf = io.BytesIO()
-    c = rl_canvas.Canvas(buf, pagesize=A4)
+    c = _Canvas(buf, pagesize=A4)
     c.setTitle(f"Bon de préparation {row.get('number') or ''}")
     lines = row.get("lines") or []
     pick = [ln for ln in lines if (ln.get("packable") or 0) > 0]
     later = [
         (ln, (ln.get("remaining") or 0) - (ln.get("packed_waiting") or 0) - (ln.get("packable") or 0)) for ln in lines
     ]
-    later = [(ln, q) for ln, q in later if q > 0]
+    later = [(ln, q) for ln, q in later if round(q, 3) > 0]
 
     y = _table_head(c, _info(c, row, _header(c, row, printed_at, shop_name), order_url))
     for ln in pick:
@@ -170,7 +211,7 @@ def render_prep_sheet(row: dict, *, printed_at: datetime, order_url: str | None,
         c.line(_M, y - _ROW_H, _W - _M, y - _ROW_H)
         y -= _ROW_H
 
-    units = sum(ln["packable"] for ln in pick)
+    units = round(sum(ln["packable"] for ln in pick), 3)
     n = len(pick)
     c.setFont("Helvetica-Bold", 10)
     c.drawRightString(
@@ -178,29 +219,40 @@ def render_prep_sheet(row: dict, *, printed_at: datetime, order_url: str | None,
     )
     y -= 30
 
-    # Room for the later box plus the closing boxes and footer, else a new page.
-    need = (28 + 14 * len(later) if later else 0) + 110
-    if y - need < 30:
-        c.showPage()
-        y = _H - _M
     if later:
-        h = 28 + 14 * len(later)
-        c.setDash(3, 2)
-        c.setLineWidth(0.8)
-        c.roundRect(_M, y - h, _W - 2 * _M, h, 3)
-        c.setDash()
-        c.setFont("Helvetica", 8)
-        _grey(c)
-        c.drawString(_M + 10, y - 14, "Pas en stock, reste à livrer")
-        _grey(c, False)
-        c.setFont("Helvetica", 10)
-        for i, (ln, q) in enumerate(later):
-            yy = y - 30 - 14 * i
+        seg_top, seg_n = None, 0
+
+        def close_segment() -> None:
+            h = 22 + 14 * seg_n + 4
+            c.setDash(3, 2)
+            c.setLineWidth(0.8)
+            c.roundRect(_M, seg_top - h, _W - 2 * _M, h, 3)
+            c.setDash()
+
+        for ln, q in later:
+            if seg_top is None or seg_top - 22 - 14 * (seg_n + 1) < _BOTTOM:
+                if seg_top is not None:
+                    close_segment()
+                if seg_top is not None or y - 36 < _BOTTOM:
+                    c.showPage()
+                    y = _H - _M
+                seg_top, seg_n = y, 0
+                c.setFont("Helvetica", 8)
+                _grey(c)
+                c.drawString(_M + 10, seg_top - 14, "Pas en stock, reste à livrer")
+                _grey(c, False)
+            yy = seg_top - 34 - 14 * seg_n
             c.setFont("Helvetica-Bold", 10)
             c.drawRightString(_M + 40, yy, _qty(q))
             c.setFont("Helvetica", 10)
             c.drawString(_M + 50, yy, _fit(c, ln.get("name") or "", "Helvetica", 10, _W - 2 * _M - 70))
-        y -= h + 18
+            seg_n += 1
+        close_segment()
+        y = seg_top - (22 + 14 * seg_n + 4) - 18
+    # The four boxes and the footer need about 90pt, else they go on a new page.
+    if y - 90 < 30:
+        c.showPage()
+        y = _H - _M
     gap = 10.0
     w = (_W - 2 * _M - 3 * gap) / 4
     for i, label in enumerate(("Préparé par", "Contrôlé par", "Nombre de colis", "Poids")):

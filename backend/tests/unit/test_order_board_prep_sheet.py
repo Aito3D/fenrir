@@ -100,3 +100,38 @@ def test_fractional_quantity_is_printed_as_is():
 
 def test_output_is_a_pdf():
     assert sheet().startswith(b"%PDF-")
+
+
+def test_short_quantity_in_the_box_accounts_for_packed_waiting():
+    row = _row(lines=[_line("SKU-A", "Pièce A", packable=1.0, quantity=5.0, remaining=5.0, waiting=2.0)])
+    assert "Pas en stock, reste à livrer 2 Pièce A" in text(sheet(row))
+    assert "Pas en stock, reste à livrer 4 Pièce A" in text(
+        sheet(_row(lines=[_line("SKU-A", "Pièce A", 1.0, 5.0, 5.0)]))
+    )
+
+
+def test_tahitian_and_chinese_text_is_folded_not_squared():
+    t = text(sheet(_row(customer="Tāne Māʻohi", contact={"name": "王小明", "phone": "1", "mobile": ""})))
+    assert "Tane Ma'ohi" in t
+    assert "???" in t
+    assert "\ufffd" not in t
+
+
+def test_float_dust_is_rounded():
+    row = _row(lines=[_line("SKU-A", packable=0.1 + 0.2, quantity=0.3, remaining=0.3), _line("SKU-B", packable=1.0)])
+    t = text(sheet(row))
+    assert "0.3 " in t and "0.30000" not in t
+    assert "2 articles · 1.3 unités" in t
+
+
+def test_amount_that_rounds_to_zero_reads_paid():
+    assert "Payée" in text(sheet(_row(payment={"left": 0.3})))
+
+
+def test_a_long_short_list_flows_onto_further_pages():
+    row = _row(lines=[_line(f"S{i}", f"Manque{i:03d}", packable=0.0, quantity=1.0, remaining=1.0) for i in range(60)])
+    pdf = sheet(row)
+    assert pages(pdf) >= 2
+    t = text(pdf)
+    assert all(f"Manque{i:03d}" in t for i in range(60))
+    assert "Document interne" in t
