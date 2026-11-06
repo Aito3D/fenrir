@@ -11069,6 +11069,7 @@ export default {
       invoiceFailed: 'De factuur kon niet worden aangemaakt: {{reason}}',
       failed: 'De overhandiging is niet voltooid: {{reason}}',
       creditOffBoard: 'De bestelling staat niet meer op de lijst: pas het tegoed van de klant toe in Zoho.',
+      nothingToInvoice: 'Niets te factureren voor dit pakket.',
     },
     line: {
       ready: 'Gereed',
@@ -11118,6 +11119,7 @@ export default {
       pdfFailed: "De factuur kon niet worden opgehaald.",
       unbilled: "{{units}} overgedragen zonder factuur",
       create: "Factuur maken",
+      nothing: 'Niets meer te factureren.',
     },
     finished: {
       chip: 'Afgerond',

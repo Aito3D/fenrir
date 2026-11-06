@@ -10633,7 +10633,7 @@ export default {
       meta: '{{units}} · от {{date}}',
       invoice: 'Создаёт счёт на эту посылку: {{amount}}',
       invoiceNoAmount: 'Создаёт счёт на эту посылку',
-      applyCredit: 'Зачесть кредит клиента ({{amount}})',
+      applyCredit: 'Зачесть аванс клиента ({{amount}})',
       due: 'Осталось оплатить {{amount}}',
       settled: 'Счёт оплачен',
       alreadyInvoiced: 'Уже выставлен счёт ({{numbers}}): новый счёт не создаётся.',
@@ -10648,7 +10648,8 @@ export default {
       invoiceCreated: 'Счёт {{number}} создан',
       invoiceFailed: 'Не удалось создать счёт: {{reason}}',
       failed: 'Выдача не завершена: {{reason}}',
-      creditOffBoard: 'Заказ пропал из списка: зачтите кредит клиента в Zoho.',
+      creditOffBoard: 'Заказ пропал из списка: зачтите аванс клиента в Zoho.',
+      nothingToInvoice: 'Для этой посылки нечего выставлять в счёт.',
     },
     line: {
       ready: 'Готово',
@@ -10698,6 +10699,7 @@ export default {
       pdfFailed: "Не удалось получить счёт.",
       unbilled: "{{units}} передано без счёта",
       create: "Создать счёт",
+      nothing: 'Выставлять в счёт больше нечего.',
     },
     finished: {
       chip: 'Завершённые',

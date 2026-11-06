@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Loader2, PackagePlus } from 'lucide-react';
 import { ApiError } from '../../api/client';
@@ -34,9 +34,11 @@ export function OrderPackBar({ row, qty, onClose, onBusy }: { row: OrderPanelRow
       : e instanceof Error ? e.message : '';
   }
 
+  const sent = useRef(false); // a ref, so two clicks in one tick send one request
   const confirm = () => {
-    if (busy || units <= 0) return;
-    createParcel.mutate({ id: row.id, lines });
+    if (busy || sent.current || units <= 0) return;
+    sent.current = true;
+    createParcel.mutate({ id: row.id, lines }, { onSettled: () => { sent.current = false; } });
   };
 
   return (

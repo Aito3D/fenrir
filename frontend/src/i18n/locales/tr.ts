@@ -10956,7 +10956,7 @@ export default {
       meta: '{{units}} · {{date}} tarihli',
       invoice: 'Bu kolinin faturasını oluşturur: {{amount}}',
       invoiceNoAmount: 'Bu kolinin faturasını oluşturur',
-      applyCredit: 'Müşterinin alacağını uygula ({{amount}})',
+      applyCredit: 'Müşterinin avansını uygula ({{amount}})',
       due: 'Kalan {{amount}}',
       settled: 'Fatura kapandı',
       alreadyInvoiced: 'Zaten faturalandı ({{numbers}}): yeni fatura yok.',
@@ -10971,7 +10971,8 @@ export default {
       invoiceCreated: '{{number}} faturası oluşturuldu',
       invoiceFailed: 'Fatura oluşturulamadı: {{reason}}',
       failed: 'Teslim tamamlanamadı: {{reason}}',
-      creditOffBoard: 'Sipariş listeden çıktı: müşterinin alacağını Zoho’da uygulayın.',
+      creditOffBoard: 'Sipariş listeden çıktı: müşterinin avansını Zoho’da uygulayın.',
+      nothingToInvoice: 'Bu koli için faturalandırılacak bir şey yok.',
     },
     line: {
       ready: 'Hazır',
@@ -11021,6 +11022,7 @@ export default {
       pdfFailed: "Fatura alınamadı.",
       unbilled: "{{units}} faturasız teslim edildi",
       create: "Fatura oluştur",
+      nothing: 'Faturalandırılacak bir şey kalmadı.',
     },
     finished: {
       chip: 'Tamamlanan',

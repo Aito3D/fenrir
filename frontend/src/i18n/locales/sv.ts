@@ -11069,6 +11069,7 @@ errors: {
       invoiceFailed: 'Fakturan kunde inte skapas: {{reason}}',
       failed: 'Utlämningen slutfördes inte: {{reason}}',
       creditOffBoard: 'Ordern har lämnat listan: tillämpa kundens tillgodohavande i Zoho.',
+      nothingToInvoice: 'Inget att fakturera för detta paket.',
     },
     line: {
       ready: 'Klar',
@@ -11118,6 +11119,7 @@ errors: {
       pdfFailed: "Fakturan kunde inte hämtas.",
       unbilled: "{{units}} överlämnade utan faktura",
       create: "Skapa fakturan",
+      nothing: 'Inget kvar att fakturera.',
     },
     finished: {
       chip: 'Slutförda',

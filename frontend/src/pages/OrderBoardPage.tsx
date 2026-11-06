@@ -99,7 +99,7 @@ export function OrderBoardPage() {
   const [handover, setHandover] = useState<{ id: string; packageId: string; tick: number } | null>(null);
   const scrollTarget = useRef<string | null>(null);
   const [searchParams] = useSearchParams();
-  const deepLinked = useRef(false);
+  const deepLinked = useRef<string | null>(null);
 
   const finishedView = view === 'finished';
   const finishedQuery = useQuery({
@@ -155,11 +155,11 @@ export function OrderBoardPage() {
   };
 
   const ready = isBoardReady(data);
-  // A `?order=` link opens that order once the board is ready; the parameter stays in the URL, and an unknown id does nothing.
+  // A `?order=` link opens that order once per id, when the board is ready; the parameter stays in the URL, and an unknown id does nothing.
   useEffect(() => {
     const id = searchParams.get('order');
-    if (deepLinked.current || !id || !ready) return;
-    deepLinked.current = true;
+    if (deepLinked.current === id || !id || !ready) return;
+    deepLinked.current = id;
     if (data?.rows.some(r => r.id === id)) goto(id);
   });
   const all = ready && data ? data.rows : [];

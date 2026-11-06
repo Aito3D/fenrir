@@ -11053,6 +11053,7 @@ export default {
       invoiceFailed: 'No se pudo crear la factura: {{reason}}',
       failed: 'La entrega no se completó: {{reason}}',
       creditOffBoard: 'El pedido salió de la lista: aplique el saldo a favor del cliente en Zoho.',
+      nothingToInvoice: 'Nada que facturar para este paquete.',
     },
     line: {
       ready: 'Listo',
@@ -11102,6 +11103,7 @@ export default {
       pdfFailed: "No se pudo obtener la factura.",
       unbilled: "{{units}} entregadas sin factura",
       create: "Crear la factura",
+      nothing: 'No queda nada por facturar.',
     },
     finished: {
       chip: 'Finalizados',

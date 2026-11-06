@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, CheckCheck, ClipboardList, HandHelping, Package, ReceiptText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -15,7 +15,7 @@ import { formatQty, packableUnits, panelGroups, parseDay, waitingPackages } from
 import type { PanelGroup } from './orderBoard';
 import { TONE } from './orderStatus';
 import type { Tone } from './orderStatus';
-import { useOrderActions } from './useOrderActions';
+import { useHandOverPending, useOrderActions } from './useOrderActions';
 import { useOrderOutcomeToasts } from './useOrderOutcomeToasts';
 
 const GROUP: Record<PanelGroup['id'], { label: string; icon: LucideIcon; tone: Tone; band: string; name: string; dim: boolean }> = {
@@ -59,9 +59,14 @@ export function OrderLinesPanel({
   const { canUpdate, createInvoice } = useOrderActions({ invoice: { onSuccess: r => toasts.outcome(r.outcome), onError: toasts.failed } });
   // The parcel whose hand-over bar is open.
   const [handover, setHandover] = useState<string | null>(null);
+  // While a hand-over of this order is in flight, the bar on screen stays as it is.
+  const handingOver = useHandOverPending(row.id);
+  const pendingNow = useRef(handingOver);
+  pendingNow.current = handingOver;
   useEffect(() => {
-    if (startHandover && canUpdate) setHandover(startHandover);
+    if (startHandover && canUpdate && !pendingNow.current) setHandover(startHandover);
   }, [startHandover, handoverTick, canUpdate]);
+  const invoiceSent = useRef(false);
   const handoverOpen = !!handover && waitingPackages(row).some(p => p.id === handover);
   // Set while the operator is checking quantities for a new parcel: line id -> units.
   const [check, setCheck] = useState<Record<string, number> | null>(null);
@@ -215,7 +220,11 @@ export function OrderLinesPanel({
         <OrderInvoicesBlock
           row={row}
           busy={createInvoice.isPending}
-          onCreateInvoice={canUpdate ? () => !createInvoice.isPending && createInvoice.mutate({ id: row.id, applyCredit: true }) : undefined}
+          onCreateInvoice={canUpdate ? () => {
+            if (createInvoice.isPending || invoiceSent.current) return;
+            invoiceSent.current = true;
+            createInvoice.mutate({ id: row.id, applyCredit: true }, { onSettled: () => { invoiceSent.current = false; } });
+          } : undefined}
         />
       </div>
     </div>

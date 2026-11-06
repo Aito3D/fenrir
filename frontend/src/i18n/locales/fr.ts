@@ -11030,6 +11030,7 @@ export default {
       invoiceFailed: 'La facture n’a pas pu être créée : {{reason}}',
       failed: 'La remise n’a pas abouti : {{reason}}',
       creditOffBoard: 'La commande a quitté la liste : appliquez l’avoir du client dans Zoho.',
+      nothingToInvoice: 'Rien à facturer pour ce colis.',
     },
     line: {
       ready: 'Prêt',
@@ -11079,6 +11080,7 @@ export default {
       pdfFailed: "La facture n’a pas pu être récupérée.",
       unbilled: "{{units}} remis sans facture",
       create: "Créer la facture",
+      nothing: 'Rien à facturer.',
     },
     finished: {
       chip: 'Terminées',

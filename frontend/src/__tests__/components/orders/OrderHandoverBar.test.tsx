@@ -1,6 +1,6 @@
 /** The hand-over bar under a waiting parcel, the band that opens it, and "Create invoice" on the invoices card. */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../mocks/server';
@@ -204,6 +204,112 @@ describe('the hand-over bar', () => {
   });
 });
 
+describe('the hand-over bar, answers and refusals', () => {
+  const confirmText = 'Handed to the customer';
+  it.each([[400, 'too_many'], [409, 'busy']])('a %i refusal says the order changed and keeps the bar open', async (status, detail) => {
+    const user = userEvent.setup();
+    servePreview(preview());
+    post(() => HttpResponse.json({ detail }, { status }));
+    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    await user.click(screen.getByRole('button', { name: confirmText }));
+    expect(await screen.findByText('The order changed, check the quantities.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: confirmText })).toBeEnabled();
+  });
+
+  it('a 502 shows the server message as the reason', async () => {
+    const user = userEvent.setup();
+    servePreview(preview());
+    post(() => HttpResponse.json({ detail: 'Books said no' }, { status: 502 }));
+    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    await user.click(screen.getByRole('button', { name: confirmText }));
+    expect(await screen.findByText('The hand-over did not complete: Books said no')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: confirmText })).toBeEnabled();
+  });
+
+  it('a discount that cannot be split is a warning, next to the success toast', async () => {
+    const user = userEvent.setup();
+    servePreview(preview());
+    post(() => HttpResponse.json(answer({ invoice: 'manual', manual_reason: 'order_money', invoice_number: null, credit_applied: 0 })));
+    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    await user.click(screen.getByRole('button', { name: confirmText }));
+    expect(await screen.findByText('A discount or charge on this order cannot be split: invoice it in Zoho.')).toBeInTheDocument();
+    expect(screen.getByText('Parcel PKG-1 handed to the customer')).toBeInTheDocument();
+  });
+
+  it('a failed delivery step shows the failure and no success toast', async () => {
+    const user = userEvent.setup();
+    servePreview(preview());
+    post(() => HttpResponse.json(answer({ delivered: 'skipped', invoice: 'none', invoice_number: null, failed_step: 'delivered', error: 'Books timed out', credit_applied: 0 })));
+    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    await user.click(screen.getByRole('button', { name: confirmText }));
+    expect(await screen.findByText('The hand-over did not complete: Books timed out')).toBeInTheDocument();
+    expect(screen.queryByText(/Parcel PKG-1 handed to the customer/)).not.toBeInTheDocument();
+  });
+
+  it('a credit left off the board warns and still shows the success toast', async () => {
+    const user = userEvent.setup();
+    servePreview(preview());
+    post(() => HttpResponse.json(answer({ failed_step: 'credit', error: 'credit_off_board', credit_applied: 0 })));
+    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    await user.click(screen.getByRole('button', { name: confirmText }));
+    expect(await screen.findByText('The order left the list: apply the customer’s credit in Zoho.')).toBeInTheDocument();
+    expect(screen.getByText('Parcel PKG-1 handed to the customer · Invoice FAC-7 created')).toBeInTheDocument();
+  });
+
+  it('two click events in the same tick send one request', async () => {
+    servePreview(preview());
+    let hits = 0;
+    post(async () => { hits++; await new Promise(r => setTimeout(r, 150)); return HttpResponse.json(answer()); });
+    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    const confirm = await screen.findByRole('button', { name: confirmText });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(await screen.findByText(/Parcel PKG-1 handed to the customer/)).toBeInTheDocument();
+    expect(hits).toBe(1);
+  });
+
+  it('a bar opened again asks Zoho again and shows the new answer', async () => {
+    const user = userEvent.setup();
+    let asked = 0;
+    server.use(http.get('/api/v1/order-board/orders/so1/packages/p1/handover', () => { asked++; return HttpResponse.json(asked === 1 ? preview({ credit: 0 }) : preview({ invoice_total: 9000, credit: 0 })); }));
+    render(<OrderLinesPanel row={panelRow()} />);
+    await open(user);
+    expect(await screen.findByText(new RegExp(`: .*${amount('14400').source}`))).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await open(user);
+    expect(await screen.findByText(new RegExp(`: .*${amount('9000').source}`))).toBeInTheDocument();
+    expect(asked).toBe(2);
+  });
+
+  it('a new request for another parcel while one is in flight leaves the bar alone', async () => {
+    const user = userEvent.setup();
+    servePreview(preview());
+    let hits = 0;
+    post(async () => { hits++; await new Promise(r => setTimeout(r, 200)); return HttpResponse.json(answer()); });
+    const view = render(<OrderLinesPanel row={panelRow({ packages: [pkg(1), pkg(2)] })} startHandover="p1" handoverTick={1} />);
+    await user.click(await screen.findByRole('button', { name: confirmText }));
+    view.rerender(<OrderLinesPanel row={panelRow({ packages: [pkg(1), pkg(2)] })} startHandover="p2" handoverTick={2} />);
+    expect(screen.getByRole('button', { name: 'Sending to Zoho…' })).toBeDisabled();
+    expect(screen.getByText('PKG-1', { selector: 'span.font-mono' })).toBeInTheDocument();
+    await waitFor(() => expect(hits).toBe(1));
+  });
+
+  it('a reader sends no preview request', async () => {
+    mockUseAuth.hasPermission.mockImplementation(() => false);
+    let asked = 0;
+    server.use(http.get('/api/v1/order-board/orders/so1/packages/p1/handover', () => { asked++; return HttpResponse.json(preview()); }));
+    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    await new Promise(r => setTimeout(r, 100));
+    expect(asked).toBe(0);
+  });
+
+  it('says so when the available preview has nothing to invoice and names no invoice', async () => {
+    servePreview(preview({ to_invoice: false, invoice_total: null, credit: 0, covered_by: [] }));
+    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    expect(await screen.findByText('Nothing to invoice for this parcel.')).toBeInTheDocument();
+  });
+});
+
 describe('the Emballé band', () => {
   it('one button per waiting parcel, numbered when there are several, none without orders:update', async () => {
     const user = userEvent.setup();
@@ -256,5 +362,32 @@ describe('Create invoice on the invoices card', () => {
     mockUseAuth.hasPermission.mockImplementation(() => false);
     render(<OrderLinesPanel row={panelRow({ unbilled_units: 2 })} />);
     expect(screen.queryByRole('button', { name: 'Create invoice' })).not.toBeInTheDocument();
+  });
+
+  it('a failed step is worded as a warning', async () => {
+    const user = userEvent.setup();
+    server.use(http.post('/api/v1/order-board/orders/so1/invoice', () => HttpResponse.json(answer({ package_number: '', invoice: 'failed', invoice_number: null, failed_step: 'invoice', error: 'Books said no' }))));
+    render(<OrderLinesPanel row={panelRow({ unbilled_units: 2, packages: [] })} />);
+    await user.click(screen.getByRole('button', { name: 'Create invoice' }));
+    expect(await screen.findByText('The invoice could not be created: Books said no')).toBeInTheDocument();
+  });
+
+  it('says so when there was nothing to invoice', async () => {
+    const user = userEvent.setup();
+    server.use(http.post('/api/v1/order-board/orders/so1/invoice', () => HttpResponse.json(answer({ package_number: '', invoice: 'none', invoice_number: null, credit_applied: 0 }))));
+    render(<OrderLinesPanel row={panelRow({ unbilled_units: 2, packages: [] })} />);
+    await user.click(screen.getByRole('button', { name: 'Create invoice' }));
+    expect(await screen.findByText('Nothing left to invoice.')).toBeInTheDocument();
+  });
+
+  it('two click events in the same tick send one request', async () => {
+    let hits = 0;
+    server.use(http.post('/api/v1/order-board/orders/so1/invoice', async () => { hits++; await new Promise(r => setTimeout(r, 150)); return HttpResponse.json(answer({ package_number: '' })); }));
+    render(<OrderLinesPanel row={panelRow({ unbilled_units: 2, packages: [] })} />);
+    const create = screen.getByRole('button', { name: 'Create invoice' });
+    fireEvent.click(create);
+    fireEvent.click(create);
+    expect(await screen.findByText('Invoice FAC-7 created')).toBeInTheDocument();
+    expect(hits).toBe(1);
   });
 });

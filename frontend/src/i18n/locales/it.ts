@@ -11030,6 +11030,7 @@ export default {
       invoiceFailed: 'Impossibile creare la fattura: {{reason}}',
       failed: 'La consegna non è stata completata: {{reason}}',
       creditOffBoard: 'L’ordine è uscito dall’elenco: applica il credito del cliente in Zoho.',
+      nothingToInvoice: 'Niente da fatturare per questo pacco.',
     },
     line: {
       ready: 'Pronto',
@@ -11079,6 +11080,7 @@ export default {
       pdfFailed: "Impossibile recuperare la fattura.",
       unbilled: "{{units}} consegnate senza fattura",
       create: "Crea la fattura",
+      nothing: 'Niente da fatturare.',
     },
     finished: {
       chip: 'Completati',

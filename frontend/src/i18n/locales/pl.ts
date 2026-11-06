@@ -11250,6 +11250,7 @@ export default {
       invoiceFailed: 'Nie udało się utworzyć faktury: {{reason}}',
       failed: 'Wydanie nie zostało ukończone: {{reason}}',
       creditOffBoard: 'Zamówienie zniknęło z listy: zastosuj saldo klienta w Zoho.',
+      nothingToInvoice: 'Nic do zafakturowania dla tej paczki.',
     },
     line: {
       ready: 'Gotowe',
@@ -11299,6 +11300,7 @@ export default {
       pdfFailed: "Nie udało się pobrać faktury.",
       unbilled: "{{units}} przekazano bez faktury",
       create: "Utwórz fakturę",
+      nothing: 'Nie ma już nic do zafakturowania.',
     },
     finished: {
       chip: 'Zakończone',

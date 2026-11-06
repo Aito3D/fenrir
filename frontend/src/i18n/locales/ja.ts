@@ -11044,6 +11044,7 @@ export default {
       invoiceFailed: '請求書を作成できませんでした: {{reason}}',
       failed: '引き渡しが完了しませんでした: {{reason}}',
       creditOffBoard: '注文が一覧から外れました: 顧客のクレジットは Zoho で適用してください。',
+      nothingToInvoice: 'この荷物に請求するものはありません。',
     },
     line: {
       ready: '準備完了',
@@ -11093,6 +11094,7 @@ export default {
       pdfFailed: "請求書を取得できませんでした。",
       unbilled: "{{units}}が請求書なしで引き渡されました",
       create: "請求書を作成",
+      nothing: '請求するものはありません。',
     },
     finished: {
       chip: '完了',

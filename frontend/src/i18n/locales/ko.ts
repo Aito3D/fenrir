@@ -10666,6 +10666,7 @@ export default {
       invoiceFailed: '청구서를 생성할 수 없습니다: {{reason}}',
       failed: '전달이 완료되지 않았습니다: {{reason}}',
       creditOffBoard: '주문이 목록에서 빠졌습니다: 고객 크레딧은 Zoho에서 적용하세요.',
+      nothingToInvoice: '이 소포에는 청구할 항목이 없습니다.',
     },
     line: {
       ready: '준비됨',
@@ -10715,6 +10716,7 @@ export default {
       pdfFailed: "청구서를 가져올 수 없습니다.",
       unbilled: "{{units}}이(가) 청구서 없이 인계되었습니다",
       create: "청구서 만들기",
+      nothing: '청구할 항목이 없습니다.',
     },
     finished: {
       chip: '완료',

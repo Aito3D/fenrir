@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Check, HandHelping, Loader2, ReceiptText, Truck } from 'lucide-react';
@@ -33,7 +33,12 @@ export function OrderHandoverBar({ row, packageId, onClose }: { row: OrderPanelR
     queryKey: ['order-handover', row.id, packageId],
     queryFn: () => api.getOrderHandover(row.id, packageId),
     retry: false,
+    // Always what Books says now: a bar opened again must not show an earlier answer.
+    staleTime: 0,
+    gcTime: 0,
   });
+  // A ref, so two clicks in the same tick cannot both pass before the first re-render disables the button.
+  const sent = useRef(false);
   const pkg = row.packages.find(p => p.id === packageId);
   const p = preview.data;
   const money = (n: number) => formatMoney(n, row.currency);
@@ -44,8 +49,9 @@ export function OrderHandoverBar({ row, packageId, onClose }: { row: OrderPanelR
   const date = pkg ? parseDay(pkg.date).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : '';
 
   const confirm = () => {
-    if (busy) return;
-    handOver.mutate({ id: row.id, packageId, mode, applyCredit: offered ? credit : true });
+    if (busy || sent.current) return;
+    sent.current = true;
+    handOver.mutate({ id: row.id, packageId, mode, applyCredit: offered ? credit : true }, { onSettled: () => { sent.current = false; } });
   };
 
   const seg = (m: 'pickup' | 'delivery') => (
@@ -77,7 +83,7 @@ export function OrderHandoverBar({ row, packageId, onClose }: { row: OrderPanelR
         {p.invoice_total !== null && <span className={due > 0 ? TONE.warning.text : TONE.success.text}>{due > 0 ? t('orders.handover.due', { amount: money(due) }) : t('orders.handover.settled')}</span>}
       </>
     );
-  } else if (p.covered_by.length) second = <span className="text-bambu-gray">{t('orders.handover.alreadyInvoiced', { numbers: p.covered_by.join(', ') })}</span>;
+  } else second = <span className="text-bambu-gray">{p.covered_by.length ? t('orders.handover.alreadyInvoiced', { numbers: p.covered_by.join(', ') }) : t('orders.handover.nothingToInvoice')}</span>;
 
   return (
     <div className={`space-y-2 rounded-md border border-blue-500/40 px-3 py-2 text-xs ${TONE.info.soft}`}>

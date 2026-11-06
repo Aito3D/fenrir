@@ -11045,6 +11045,7 @@ export default {
       invoiceFailed: 'Die Rechnung konnte nicht erstellt werden: {{reason}}',
       failed: 'Die Übergabe wurde nicht abgeschlossen: {{reason}}',
       creditOffBoard: 'Die Bestellung ist nicht mehr in der Liste: Kundenguthaben in Zoho anrechnen.',
+      nothingToInvoice: 'Für dieses Paket ist nichts abzurechnen.',
     },
     line: {
       ready: 'Bereit',
@@ -11094,6 +11095,7 @@ export default {
       pdfFailed: "Die Rechnung konnte nicht abgerufen werden.",
       unbilled: "{{units}} ohne Rechnung übergeben",
       create: "Rechnung erstellen",
+      nothing: 'Nichts mehr abzurechnen.',
     },
     finished: {
       chip: 'Abgeschlossen',

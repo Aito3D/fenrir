@@ -1,5 +1,5 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '../../api/client';
+import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api, ApiError } from '../../api/client';
 import type { OrderActionResult, OrderBoardResponse } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -8,6 +8,13 @@ const BOARD_KEY = ['order-board'] as const;
 type Callbacks<R, V> = { onSuccess?: (result: R, variables: V) => void; onError?: (error: unknown) => void };
 type HandOverVars = { id: string; packageId: string; mode: 'pickup' | 'delivery'; applyCredit: boolean };
 type InvoiceVars = { id: string; applyCredit: boolean };
+
+const HANDOVER_KEY = ['order-hand-over'] as const;
+
+/** True while a hand-over of this order is in flight (from any component). */
+export function useHandOverPending(orderId: string): boolean {
+  return useIsMutating({ mutationKey: HANDOVER_KEY, predicate: m => (m.state.variables as { id?: string } | undefined)?.id === orderId }) > 0;
+}
 
 /** The write actions of an order: box a parcel, hand it over, invoice it, print the prep sheet.
  *  Each answer carries the fresh board, which goes straight into the list; the
@@ -27,30 +34,49 @@ export function useOrderActions(callbacks?: {
     void queryClient.invalidateQueries({ queryKey: ['order-board-finished-order'] });
   };
 
+  // What a hand-over preview showed is stale once the order was written, or refused because it moved.
+  const dropPreviews = (id: string) => queryClient.removeQueries({ queryKey: ['order-handover', id] });
+  const refused = (id: string, e: unknown) => {
+    if (e instanceof ApiError && (e.status === 400 || e.status === 409)) dropPreviews(id);
+  };
+
   const createParcel = useMutation({
     mutationFn: ({ id, lines }: { id: string; lines: { line_id: string; quantity: number }[] }) => api.createOrderParcel(id, lines),
     // Here, not in mutate(): these still run when the panel closed meanwhile.
-    onSuccess: r => {
+    onSuccess: (r, v) => {
       take(r.board);
+      dropPreviews(v.id);
       callbacks?.parcel?.onSuccess?.(r, undefined);
     },
-    onError: e => callbacks?.parcel?.onError?.(e),
+    onError: (e, v) => {
+      refused(v.id, e);
+      callbacks?.parcel?.onError?.(e);
+    },
   });
   const handOver = useMutation({
+    mutationKey: HANDOVER_KEY,
     mutationFn: ({ id, packageId, mode, applyCredit }: HandOverVars) => api.handOverOrderParcel(id, packageId, { mode, apply_credit: applyCredit }),
     onSuccess: (r, v) => {
       take(r.board);
+      dropPreviews(v.id);
       callbacks?.handOver?.onSuccess?.(r, v);
     },
-    onError: e => callbacks?.handOver?.onError?.(e),
+    onError: (e, v) => {
+      refused(v.id, e);
+      callbacks?.handOver?.onError?.(e);
+    },
   });
   const createInvoice = useMutation({
     mutationFn: ({ id, applyCredit }: InvoiceVars) => api.createOrderInvoice(id, { apply_credit: applyCredit }),
     onSuccess: (r, v) => {
       take(r.board);
+      dropPreviews(v.id);
       callbacks?.invoice?.onSuccess?.(r, v);
     },
-    onError: e => callbacks?.invoice?.onError?.(e),
+    onError: (e, v) => {
+      refused(v.id, e);
+      callbacks?.invoice?.onError?.(e);
+    },
   });
 
   return {

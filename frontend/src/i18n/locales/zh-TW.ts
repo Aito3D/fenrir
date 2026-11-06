@@ -11028,6 +11028,7 @@ export default {
       invoiceFailed: '無法建立發票：{{reason}}',
       failed: '交付未完成：{{reason}}',
       creditOffBoard: '訂單已不在清單中：請在 Zoho 中套用客戶餘額。',
+      nothingToInvoice: '此包裹沒有需要開立發票的內容。',
     },
     line: {
       ready: '就緒',
@@ -11077,6 +11078,7 @@ export default {
       pdfFailed: "無法取得發票。",
       unbilled: "{{units}}已交付但未開發票",
       create: "建立發票",
+      nothing: '沒有需要開立發票的內容。',
     },
     finished: {
       chip: '已完成',

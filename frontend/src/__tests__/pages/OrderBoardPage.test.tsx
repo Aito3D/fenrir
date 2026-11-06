@@ -3,7 +3,7 @@
  * scopes, the "3D only" toggle and the grouped lines panel.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -589,5 +589,74 @@ describe('OrderBoardPage actions', () => {
     expect(screen.queryByRole('button', { name: 'Handed to the customer' })).not.toBeInTheDocument();
     await user.click(screen.getAllByRole('button', { name: 'Hand over the parcel' })[0]); // the row icon; the band has one too
     expect(await screen.findByRole('button', { name: 'Handed to the customer' })).toBeInTheDocument();
+  });
+  it('a ?order= link that arrives while the board is loading opens the order once it is ready', async () => {
+    window.history.pushState({}, '', '/orders?order=so2');
+    server.use(http.get('/api/v1/order-board', async () => { await new Promise(r => setTimeout(r, 200)); return HttpResponse.json(board()); }));
+    render(<OrderBoardPage />);
+    expect(screen.queryByText('SO-00418')).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /SO-00418/, expanded: true })).toBeInTheDocument();
+    window.history.pushState({}, '', '/');
+  });
+
+  it('navigating to another ?order= while mounted opens that order; a closed one is not reopened', async () => {
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/orders?order=so2');
+    serve(board());
+    render(<OrderBoardPage />);
+    const first = await screen.findByRole('button', { name: /SO-00418/, expanded: true });
+    await user.click(first);
+    act(() => {
+      window.history.pushState({}, '', '/orders?order=so3');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(await screen.findByRole('button', { name: /SO-00421/, expanded: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /SO-00418/, expanded: false })).toBeInTheDocument();
+    window.history.pushState({}, '', '/');
+  });
+
+  it('the row hand icon is disabled while a hand-over of that order is in flight', async () => {
+    const user = userEvent.setup();
+    let hits = 0;
+    const waiting = row({ packages: [{ id: 'p9', shipment_id: 's9', number: 'PKG-9', status: 'not_shipped', date: '2026-11-05' }], lines: [line({ packable: 0, packed_waiting: 1 })] });
+    serve(board({ rows: [waiting] }));
+    server.use(
+      http.get('/api/v1/order-board/orders/so1/packages/p9/handover', () => HttpResponse.json({ units: 1, available: false, to_invoice: false, invoice_total: null, manual: false, manual_reason: null, credit: 0, covered_by: [] })),
+      http.post('/api/v1/order-board/orders/so1/packages/p9/handover', async () => { hits++; await new Promise(r => setTimeout(r, 300)); return HttpResponse.json({ board: board({ rows: [] }), outcome: { package_number: 'PKG-9', shipment: 'done', delivered: 'done', invoice: 'none', invoice_number: null, manual_reason: null, credit_applied: 0, failed_step: null, error: null } }); }),
+    );
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    await user.click(screen.getByRole('button', { name: 'Hand over the parcel' }));
+    await user.click(await screen.findByRole('button', { name: 'Handed to the customer' }));
+    const icon = screen.getByRole('button', { name: 'Hand over the parcel' });
+    expect(icon).toBeDisabled();
+    fireEvent.click(icon);
+    expect(screen.getByRole('button', { name: 'Sending to Zoho…' })).toBeDisabled();
+    await waitFor(() => expect(hits).toBe(1));
+  });
+
+  it('Create invoice on a finished order posts to the invoice endpoint and refetches its detail', async () => {
+    const user = userEvent.setup();
+    let details = 0;
+    let posts = 0;
+    serve(board());
+    server.use(
+      http.get('/api/v1/order-board/finished', () => HttpResponse.json({ rows: [fin(1)] })),
+      http.get('/api/v1/order-board/finished/:id', () => {
+        details += 1;
+        return HttpResponse.json({ ...row({ id: 'f1', number: 'SO-F001', unbilled_units: 1 }), status: 'finished' });
+      }),
+      http.post('/api/v1/order-board/orders/f1/invoice', () => {
+        posts += 1;
+        return HttpResponse.json({ board: board(), outcome: { package_number: '', shipment: 'skipped', delivered: 'skipped', invoice: 'created', invoice_number: 'FAC-9', manual_reason: null, credit_applied: 0, failed_step: null, error: null } });
+      }),
+    );
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /^Finished/ }));
+    await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
+    await user.click(await screen.findByRole('button', { name: 'Create invoice' }));
+    expect(await screen.findByText('Invoice FAC-9 created')).toBeInTheDocument();
+    expect(posts).toBe(1);
+    await waitFor(() => expect(details).toBe(2));
   });
 });

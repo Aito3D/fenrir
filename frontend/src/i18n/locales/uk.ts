@@ -10670,7 +10670,7 @@ export default {
       meta: '{{units}} · від {{date}}',
       invoice: 'Створює рахунок на цю посилку: {{amount}}',
       invoiceNoAmount: 'Створює рахунок на цю посилку',
-      applyCredit: 'Зарахувати кредит клієнта ({{amount}})',
+      applyCredit: 'Зарахувати аванс клієнта ({{amount}})',
       due: 'Залишилось сплатити {{amount}}',
       settled: 'Рахунок сплачено',
       alreadyInvoiced: 'Рахунок уже виставлено ({{numbers}}): новий не створюється.',
@@ -10685,7 +10685,8 @@ export default {
       invoiceCreated: 'Рахунок {{number}} створено',
       invoiceFailed: 'Не вдалося створити рахунок: {{reason}}',
       failed: 'Видачу не завершено: {{reason}}',
-      creditOffBoard: 'Замовлення зникло зі списку: зарахуйте кредит клієнта в Zoho.',
+      creditOffBoard: 'Замовлення зникло зі списку: зарахуйте аванс клієнта в Zoho.',
+      nothingToInvoice: 'Для цієї посилки нічого виставляти в рахунок.',
     },
     line: {
       ready: 'Готово',
@@ -10735,6 +10736,7 @@ export default {
       pdfFailed: "Не вдалося отримати рахунок.",
       unbilled: "{{units}} передано без рахунку",
       create: "Створити рахунок",
+      nothing: 'Виставляти в рахунок більше нічого.',
     },
     finished: {
       chip: 'Завершені',

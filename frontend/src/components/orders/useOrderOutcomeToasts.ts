@@ -29,6 +29,8 @@ export function useOrderOutcomeToasts() {
       } else if (o.invoice === 'manual') {
         showToast(o.manual_reason === 'draft' ? t('orders.handover.manualDraft', { number: o.invoice_number ?? '' }) : t('orders.handover.manual'), 'warning');
       }
+      // An invoice asked for on its own that found nothing to invoice would otherwise say nothing.
+      if (!mode && !o.failed_step && o.invoice === 'none') showToast(t('orders.inv.nothing'), 'info');
       const parts: string[] = [];
       if (mode && o.failed_step !== 'delivered') parts.push(t(mode === 'pickup' ? 'orders.handover.donePickup' : 'orders.handover.doneDelivery', { number: o.package_number }));
       if (o.invoice === 'created') parts.push(t('orders.handover.invoiceCreated', { number: o.invoice_number ?? '' }));

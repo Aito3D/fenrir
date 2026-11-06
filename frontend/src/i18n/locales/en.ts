@@ -11101,6 +11101,7 @@ export default {
       invoiceFailed: 'The invoice could not be created: {{reason}}',
       failed: 'The hand-over did not complete: {{reason}}',
       creditOffBoard: 'The order left the list: apply the customer’s credit in Zoho.',
+      nothingToInvoice: 'Nothing to invoice for this parcel.',
     },
     line: {
       ready: 'Ready',
@@ -11150,6 +11151,7 @@ export default {
       pdfFailed: "The invoice could not be fetched.",
       unbilled: "{{units}} handed over without an invoice",
       create: "Create invoice",
+      nothing: 'Nothing left to invoice.',
     },
     finished: {
       chip: 'Finished',
