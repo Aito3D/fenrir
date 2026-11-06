@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bordereau, colis et expédition · maquette</title>
+<title>Parcours d'une commande · maquette</title>
 <script src="https://cdn.tailwindcss.com/3.4.16"></script>
 <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
 <script>
@@ -22,6 +22,7 @@ tailwind.config = { theme: { extend: { colors: {
   .flash { animation: flash 1.6s ease-out; } @keyframes flash { from { background: rgba(59,130,246,.35); } }
   .toast { animation: toast .2s ease-out; } @keyframes toast { from { opacity: 0; transform: translateY(8px); } }
   @media (prefers-reduced-motion: reduce) { .panel, .flash, .toast { animation: none; } }
+  .qty { appearance: textfield; -moz-appearance: textfield; } .qty::-webkit-inner-spin-button, .qty::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   .sheet { font-family: Helvetica, Arial, sans-serif; color: #111; }
   .sheet table { border-collapse: collapse; }
   @media print { body > :not(#slip) { display: none !important; } #slip { position: static; background: #fff; } #slipBar { display: none; } }
@@ -29,12 +30,18 @@ tailwind.config = { theme: { extend: { colors: {
 </head>
 <body class="min-h-screen">
 
-<!-- demo controls: not part of the app -->
+<!-- guided tour: not part of the app -->
 <div class="sticky top-0 z-10 border-b border-line bg-surf">
-  <div class="mx-auto flex max-w-[1300px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-    <div class="text-sm"><span class="font-semibold">Bordereau, colis et expédition</span> <span class="text-sub">· maquette, données fictives</span></div>
-    <div class="text-xs text-sub">Choix retenus : icône sur la ligne · bon de préparation · confirmation avec vérification</div>
-    <button data-reset class="rounded-md border border-line px-2.5 py-1.5 text-xs text-sub hover:text-ink">Réinitialiser</button>
+  <div class="mx-auto max-w-[1300px] space-y-2 px-4 py-3">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div class="text-sm"><span class="font-semibold">Parcours d'une commande</span> <span class="text-sub">· maquette, données fictives, rien n'est envoyé à Zoho</span></div>
+      <span class="ml-auto flex items-center gap-2">
+        <button data-next class="inline-flex items-center gap-1.5 rounded-md bg-acc px-3 py-1.5 text-xs font-semibold text-bg disabled:opacity-40">Étape suivante <i data-lucide="arrow-right"></i></button>
+        <button data-reset class="rounded-md border border-line px-2.5 py-1.5 text-xs text-sub hover:text-ink">Recommencer</button>
+      </span>
+    </div>
+    <ol id="steps" class="flex flex-wrap items-center gap-1.5 text-xs"></ol>
+    <div id="hint" class="text-xs text-sub"></div>
   </div>
 </div>
 
@@ -47,18 +54,16 @@ tailwind.config = { theme: { extend: { colors: {
   <div class="overflow-x-auto"><div id="list" class="min-w-[62rem] space-y-2"></div></div>
 
   <details open class="rounded-xl border border-line bg-surf px-4 py-3 text-sm">
-    <summary class="cursor-pointer font-medium">Ce que je propose, et ce qui reste à décider</summary>
+    <summary class="cursor-pointer font-medium">Le parcours, étape par étape</summary>
     <ol class="mt-3 list-decimal space-y-1.5 pl-5 text-sub">
-      <li><span class="text-ink">Retenu :</span> le bouton dans le bandeau « À préparer » et une icône sur la ligne de la liste ; le bon de préparation interne ; la confirmation avec vérification des quantités.</li>
-      <li>L'icône de la ligne montre l'étape suivante : imprimante tant qu'il reste à emballer, main tendue quand un colis attend d'être remis.</li>
-      <li><span class="text-ink">« Remettre le colis »</span> propose « Retrait en boutique » par défaut. Le colis passe alors à « livré » dans Zoho. « Livraison » (par Aito3D) reste possible : le colis passe alors à « expédié ». Pas de transporteur ni de numéro de suivi : Zoho n'en contient aucun aujourd'hui.</li>
-      <li><span class="text-ink">La remise crée la facture</span> dans Zoho, datée du jour, pour les unités de ce colis qu'aucune facture ne couvre encore. Si tout est déjà facturé, rien n'est créé (voir SO-00435).</li>
-      <li><span class="text-ink">Proposition :</span> l'avoir du client est appliqué à la facture, case cochée par défaut. Sur SO-00433, l'acompte de 10 400 couvre une partie de la facture de 14 400 et il reste 4 000 à payer.</li>
-      <li><span class="text-ink">Carte « Factures »</span> à droite, sous le paiement : numéro, montant, état, puis télécharger, imprimer, ouvrir dans Zoho. Même forme que la carte Facturation d'Aito.</li>
-      <li>Une commande livrée en plusieurs colis reçoit une facture par colis.</li>
-      <li>Si Zoho refuse la facture après la remise, le colis reste remis et la carte propose « Créer la facture » pour réessayer.</li>
-      <li>Créer un colis ou le remettre demande la permission « Commandes : modifier ». Imprimer ne demande que la lecture.</li>
+      <li><span class="text-ink">Nouvelle commande.</span> Elle arrive de Zoho à la synchronisation. La barre montre ce que le stock couvre déjà.</li>
+      <li><span class="text-ink">Préparer.</span> L'opérateur coche les articles et saisit les quantités. Le maximum de chaque ligne est ce que le stock couvre. Une ligne décochée reste pour plus tard.</li>
+      <li><span class="text-ink">Créer et imprimer.</span> Fenrir crée le prélèvement dans Zoho pour ces unités, puis imprime le bon de préparation. La commande passe « En préparation ». Un seul prélèvement ouvert par commande.</li>
+      <li><span class="text-ink">Créer le colis.</span> L'opérateur confirme ce qui est dans le carton, ou baisse une quantité. Fenrir termine le prélèvement dans Zoho, puis crée le colis lié à ce prélèvement.</li>
+      <li><span class="text-ink">Remettre le colis.</span> « Retrait en boutique » par défaut : le colis passe à « livré ». « Livraison » : il passe à « expédié ». La remise crée la facture des unités du colis et applique l'avoir du client.</li>
+      <li><span class="text-ink">Le reste.</span> Ce qui n'a pas été pris revient dans « À préparer » : second prélèvement, second colis, seconde facture. Ce qui manque en stock attend son arrivée.</li>
     </ol>
+    <p class="mt-3 text-xs text-sub">Dans l'app, les étapes 3, 4 et 5 écrivent dans Zoho. Ces écritures n'ont pas encore été testées sur une vraie commande.</p>
   </details>
 </main>
 
@@ -86,6 +91,9 @@ const L = (id, name, sku, qty, price, o = {}) => ({ id, name, sku, qty, price, s
 const INV = (number, date, total, balance = 0) => ({ number, date, total, balance });
 // credit: money the customer already paid, waiting in Zoho as credit until an invoice exists
 const SEED = () => [
+  { number: 'SO-00441', customer: 'Atelier Moana', date: '2026-11-06', age: 0, status: 'partial', credit: 30000, ref: ['Shopify', '#1052'], pickup: true, fresh: 'new',
+    contact: { name: 'Hina Teriitahi', phone: '87 11 22 33' }, packages: [], invoices: [],
+    lines: [L('a', 'Bambu Lab PLA Basic Noir 1 kg', 'BL-PLA-BK-1K', 6, 3400), L('b', 'Bambu Lab AMS Lite', 'BL-AMS-LITE', 1, 34000), L('c', 'eSUN PETG Blanc 1 kg', 'ES-PETG-WH-1K', 4, 3200, { stock: 2 })] },
   { number: 'SO-00412', customer: 'Lycée Polyvalent de Taravao', date: '2026-09-12', age: 55, status: 'to_order', credit: 0, ref: ['Devis', 'DEV26-2604'],
     contact: { name: 'Intendance', phone: '40 54 71 00' }, packages: [], invoices: [],
     lines: [L('a', 'Bambu Lab A1 mini', 'BL-A1M', 4, 34000, { stock: 0, short: 'order' })] },
@@ -104,14 +112,13 @@ const SEED = () => [
   { number: 'SO-00435', customer: 'Mana Robotics', date: '2026-11-04', age: 2, status: 'incoming', credit: 0, ref: ['Shopify', '#1047'], pickup: true,
     contact: { name: 'Rahiti Chung', phone: '87 78 44 02' }, packages: [], invoices: [INV('FAC-2026-0444', '2026-11-04', 108600)],
     lines: [...['Blanc', 'Noir', 'Gris', 'Rouge', 'Bleu', 'Vert', 'Jaune'].map((c, i) => L('p' + i, `SUNLU PETG ${c} 1 kg`, `SNL-PTG-0${i + 1}`, 2, 2900, { invoiced: 2 })), L('z', 'Bambu Lab AMS Lite', 'BL-AMS-LITE', 2, 34000, { invoiced: 2, stock: 0 })] },
-].map(o => ({ ...o, total: o.lines.reduce((n, l) => n + l.qty * l.price, 0) }));
-let ORDERS = SEED(), nextPkg = 31, nextInv = 447;
+].map(o => ({ ...o, picklists: [], total: o.lines.reduce((n, l) => n + l.qty * l.price, 0) }));
+let ORDERS = SEED(), nextPkg = 31, nextInv = 447, nextPl = 13;
 
-const ui = { place: 'row', doc: 'interne', conf: 'qty', open: new Set(['SO-00425', 'SO-00433']), flow: {}, slip: null };
-const [hp, hd, hc, ho, hs] = location.hash.slice(1).split(',');
-if (hp === 'band') ui.place = 'band';
-if (hd === 'client') ui.doc = 'client';
-if (hc === 'direct') ui.conf = 'direct';
+// The order the guided tour follows.
+const TRACK = 'SO-00441';
+const ui = { place: 'row', doc: 'interne', conf: 'qty', open: new Set([TRACK]), flow: {}, slip: null };
+const [, , , ho, hs] = location.hash.slice(1).split(',');
 if (ho) ui.open = new Set([ho]);
 
 const rem = l => l.qty - l.shipped - l.packed;
@@ -129,6 +136,7 @@ function billing(o, p) {
   return { units: n, amount };
 }
 const picked = o => sum(o, l => flow(o).qty[l.id] ?? 0);
+const openPl = o => o.picklists.find(p => !p.done);
 
 function rowHtml(o) {
   const total = sum(o, l => l.qty), shipped = sum(o, l => l.shipped), packed = sum(o, l => l.packed), rdy = sum(o, ready), left = total - shipped - packed;
@@ -136,11 +144,11 @@ function rowHtml(o) {
   const age = o.age > 45 ? 'bg-red-500/20 text-red-400' : o.age > 20 ? 'bg-yellow-400/10 text-yellow-400' : 'bg-line/60 text-sub';
   const pct = Math.floor((paid(o) * 100) / o.total), waiting = o.packages.find(p => !p.shipped);
   const pay = pct >= 100 ? ['circle-check', 'Payée', 'bg-green-500/10 text-green-400', 0] : pct > 0 ? ['circle-dot-dashed', `${pct} % payé`, 'bg-white/5 text-white', pct] : ['circle-dashed', 'Impayée', 'bg-white/5 text-sub', 0];
-  return `<div id="row-${o.number}" class="overflow-clip rounded-xl border border-line bg-surf">
+  return `<div id="row-${o.number}" class="overflow-clip rounded-xl border ${o.number === TRACK ? 'border-acc/60' : 'border-line'} bg-surf ${o.fresh === 'new' ? 'flash' : ''}">
     <div role="button" tabindex="0" data-open="${o.number}" aria-expanded="${open}" class="row-grid w-full cursor-pointer px-4 py-3 text-left hover:bg-line/30"
       style="grid-template-columns:6.5rem minmax(0,1fr) 3.5rem minmax(11rem,16rem) 8.5rem 9.5rem 7.5rem ${ui.place === 'row' ? '2rem ' : ''}1.25rem">
       <span class="font-mono text-sm font-semibold">${o.number}</span>
-      <span class="min-w-0"><span class="block truncate">${o.customer}</span><span class="block text-xs text-sub">${long(o.date)}${f.printed ? ` · <span class="text-acc">En préparation</span>` : ''}</span></span>
+      <span class="min-w-0"><span class="block truncate">${o.customer}</span><span class="block text-xs text-sub">${long(o.date)}${openPl(o) ? ` · <span class="text-acc">En préparation</span>` : !o.age && !o.picklists.length ? ` · <span class="text-acc">Nouvelle</span>` : ''}</span></span>
       <span class="justify-self-start rounded-md px-2 py-0.5 text-xs ${age}">${o.age} j</span>
       <span>
         <span class="flex h-2 overflow-hidden rounded-full bg-bg"><span class="bg-neutral-500" style="${w(shipped)}"></span><span class="bg-blue-500" style="${w(packed)}"></span><span class="bg-green-500" style="${w(rdy)}"></span><span class="bg-yellow-500" style="${w(left - rdy)}"></span></span>
@@ -149,49 +157,54 @@ function rowHtml(o) {
       <span class="inline-flex items-center gap-1.5 justify-self-start rounded-full px-2.5 py-1 text-xs ${s.soft} ${s.text}"><i data-lucide="${s.icon}"></i>${s.label}</span>
       <span class="relative flex w-[9.5rem] items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full px-2.5 py-1 text-xs ${pay[2]}"><span class="absolute inset-y-0 left-0 bg-green-500/40" style="width:${pay[3]}%"></span><i data-lucide="${pay[0]}" class="relative"></i><span class="relative">${pay[1]}</span></span>
       <span class="text-right text-sm tabular-nums">${money(o.total)}</span>
-      ${ui.place === 'row' ? (rdy ? `<button type="button" data-slip="${o.number}" title="${DOC()} · ${units(rdy)}" class="relative grid h-8 w-8 place-items-center rounded-md border border-line text-sub hover:border-acc hover:text-acc"><i data-lucide="printer"></i>${f.printed ? '<span class="absolute -right-1 -top-1 grid h-3.5 w-3.5 place-items-center rounded-full bg-acc text-[9px] text-bg"><i data-lucide="check"></i></span>' : ''}</button>` : waiting ? `<button type="button" data-ship="${o.number},${waiting.number}" title="Remettre le colis · ${waiting.number}" class="grid h-8 w-8 place-items-center rounded-md border border-line text-sub hover:border-blue-400 hover:text-blue-400"><i data-lucide="${sendIcon(o)}"></i></button>` : '<span></span>') : ''}
+      ${openPl(o) ? `<button type="button" data-create="${o.number}" title="Créer le colis · ${openPl(o).number}" class="relative grid h-8 w-8 place-items-center rounded-md border border-line text-sub hover:border-green-500 hover:text-green-400"><i data-lucide="package-plus"></i>${f.printed ? '<span class="absolute -right-1 -top-1 grid h-3.5 w-3.5 place-items-center rounded-full bg-acc text-[9px] text-bg"><i data-lucide="check"></i></span>' : ''}</button>` : rdy ? `<button type="button" data-pick="${o.number}" title="Préparer · ${units(rdy)} en stock" class="grid h-8 w-8 place-items-center rounded-md border border-line text-sub hover:border-acc hover:text-acc"><i data-lucide="clipboard-list"></i></button>` : waiting ? `<button type="button" data-ship="${o.number},${waiting.number}" title="Remettre le colis · ${waiting.number}" class="grid h-8 w-8 place-items-center rounded-md border border-line text-sub hover:border-blue-400 hover:text-blue-400"><i data-lucide="${sendIcon(o)}"></i></button>` : '<span></span>'}
       <i data-lucide="chevron-down" class="text-sub transition-transform ${open ? 'rotate-180' : ''}"></i>
     </div>
     ${open ? panelHtml(o) : ''}
   </div>`;
 }
 
-// The new part: the buttons in the "À préparer" band.
+// The buttons in the "À préparer" band: "Préparer" while no picklist is open, then the picklist's sheet and its parcel.
 function prepActions(o) {
-  const f = flow(o), rdy = sum(o, ready);
-  if (!rdy) return '<span class="ml-auto text-[11px] text-sub">Rien en stock à emballer pour l\'instant</span>';
-  if (f.phase === 'confirm' || f.phase === 'creating') return '';
-  const printed = f.printed ? `<span class="inline-flex items-center gap-1 text-[11px] text-sub"><i data-lucide="check" class="text-acc"></i>Imprimé à ${f.printed} par ${ME}</span>` : '';
-  return `<span class="ml-auto flex flex-wrap items-center gap-2">${printed}
-    <button type="button" data-slip="${o.number}" class="inline-flex items-center gap-1.5 rounded-md border border-line bg-bg/60 px-2.5 py-1 text-xs text-ink hover:border-acc hover:text-acc"><i data-lucide="printer"></i>${f.printed ? 'Réimprimer' : DOC()}</button>
-    <button type="button" data-create="${o.number}" class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs ${f.printed ? 'bg-green-500 font-semibold text-bg hover:bg-green-400' : 'border border-line bg-bg/60 text-ink hover:border-green-500 hover:text-green-400'}"><i data-lucide="package-plus"></i>Créer le colis</button>
-  </span>`;
+  const f = flow(o), rdy = sum(o, ready), pl = openPl(o);
+  if (['pick', 'picking', 'confirm', 'creating'].includes(f.phase)) return '';
+  if (pl) {
+    const printed = f.printed ? `<span class="inline-flex items-center gap-1 text-[11px] text-sub"><i data-lucide="check" class="text-acc"></i>Imprimé à ${f.printed} par ${ME}</span>` : '';
+    return `<span class="ml-auto flex flex-wrap items-center gap-2">${printed}
+      <span class="rounded-full border border-line bg-bg/40 px-2 py-0.5 font-mono text-[10px] text-sub">${pl.number}</span>
+      <button type="button" data-slip="${o.number}" class="inline-flex items-center gap-1.5 rounded-md border border-line bg-bg/60 px-2.5 py-1 text-xs text-ink hover:border-acc hover:text-acc"><i data-lucide="printer"></i>${f.printed ? 'Réimprimer' : DOC()}</button>
+      <button type="button" data-create="${o.number}" class="inline-flex items-center gap-1.5 rounded-md bg-green-500 px-2.5 py-1 text-xs font-semibold text-bg hover:bg-green-400"><i data-lucide="package-plus"></i>Créer le colis</button>
+    </span>`;
+  }
+  if (!rdy) return '<span class="ml-auto text-[11px] text-sub">Rien en stock à préparer pour l\'instant</span>';
+  return `<span class="ml-auto"><button type="button" data-pick="${o.number}" class="inline-flex items-center gap-1.5 rounded-md bg-green-500 px-2.5 py-1 text-xs font-semibold text-bg hover:bg-green-400"><i data-lucide="clipboard-list"></i>Préparer</button></span>`;
 }
 
 function panelHtml(o) {
-  const f = flow(o), confirming = f.phase === 'confirm' || f.phase === 'creating', busy = f.phase === 'creating';
+  const f = flow(o), picking = f.phase === 'pick' || f.phase === 'picking', confirming = picking || f.phase === 'confirm' || f.phase === 'creating', busy = f.phase === 'picking' || f.phase === 'creating';
   const todo = o.lines.filter(l => rem(l) > 0), packed = o.lines.filter(l => l.packed > 0), shipped = o.lines.filter(l => l.shipped > 0);
   const band = (icon, label, n, cls, name, extra = '') => `<tr><th colspan="5" class="pb-1 pt-3 text-left font-normal"><div class="flex flex-wrap items-center gap-2 rounded-md px-3 py-1.5 text-xs ${cls}">
     <i data-lucide="${icon}" class="${name}"></i><span class="font-semibold uppercase tracking-wide ${name}">${label}</span><span class="rounded-full bg-bg/60 px-2 py-0.5 text-[11px] tabular-nums text-sub">${units(n)}</span>${extra}</div></th></tr>`;
   const prod = l => `<div>${l.name}</div><div class="font-mono text-xs text-sub">${l.sku}</div>`;
-  const stepper = l => `<span class="inline-flex items-center gap-1"><button type="button" data-step="${o.number},${l.id},-1" ${busy ? 'disabled' : ''} class="grid h-6 w-6 place-items-center rounded border border-line text-sub hover:text-ink" aria-label="Moins"><i data-lucide="minus"></i></button>
-    <span class="w-6 text-center font-semibold tabular-nums ${f.qty[l.id] < ready(l) ? 'text-yellow-400' : ''}">${f.qty[l.id]}</span>
-    <button type="button" data-step="${o.number},${l.id},1" ${busy ? 'disabled' : ''} class="grid h-6 w-6 place-items-center rounded border border-line text-sub hover:text-ink" aria-label="Plus"><i data-lucide="plus"></i></button><span class="text-xs text-sub">/ ${ready(l)}</span></span>`;
+  const max = l => f.max?.[l.id] ?? 0, q = l => f.qty[l.id] ?? 0, sb = 'grid h-6 w-6 place-items-center rounded border border-line text-sub hover:text-ink';
+  const stepper = l => `<span class="inline-flex items-center gap-1"><input type="checkbox" data-tick="${o.number},${l.id}" ${q(l) > 0 ? 'checked' : ''} ${busy ? 'disabled' : ''} class="mr-1 h-4 w-4 accent-green-500" aria-label="${picking ? 'À prélever' : 'Dans le colis'} · ${l.name}">
+    <button type="button" data-step="${o.number},${l.id},-1" ${busy ? 'disabled' : ''} class="${sb}" aria-label="Un de moins"><i data-lucide="minus"></i></button>
+    <input type="number" data-qty="${o.number},${l.id}" value="${q(l)}" min="0" max="${max(l)}" ${busy ? 'disabled' : ''} aria-label="Quantité · ${l.name}" class="qty h-6 w-12 rounded border border-line bg-bg px-1 text-center text-sm font-semibold tabular-nums focus:border-green-500 focus:outline-none ${q(l) <= 0 ? 'text-sub' : q(l) < max(l) ? 'text-yellow-400' : ''}">
+    <button type="button" data-step="${o.number},${l.id},1" ${busy ? 'disabled' : ''} class="${sb}" aria-label="Un de plus"><i data-lucide="plus"></i></button><span class="text-xs text-sub">/ ${max(l)}</span></span>`;
   const todoRows = todo.map((l, i) => {
     const r = ready(l), sh = rem(l) - r;
     const state = sh === 0 ? '<span class="text-green-400">Prêt</span>' : l.short === 'order' ? '<span class="text-red-400">À commander</span>' : '<span class="text-yellow-400">En arrivage</span>';
-    return `<tr class="${i ? 'border-t border-line/60' : ''} ${confirming && !r ? 'opacity-40' : ''}"><td class="border-l-2 border-line py-2 pl-4 pr-3">${prod(l)}</td>
-      <td class="whitespace-nowrap text-right tabular-nums">${confirming && r && ui.conf === 'qty' ? stepper(l) : rem(l)}</td>
+    return `<tr class="${i ? 'border-t border-line/60' : ''} ${confirming && !max(l) ? 'opacity-40' : ''}"><td class="border-l-2 border-line py-2 pl-4 pr-3">${prod(l)}</td>
+      <td class="whitespace-nowrap text-right tabular-nums">${confirming && max(l) ? stepper(l) : rem(l)}</td>
       <td class="text-right tabular-nums ${sh === 0 ? 'text-green-400' : ''}">${l.stock}</td><td class="text-right tabular-nums ${sh ? 'text-yellow-400' : 'text-sub'}">${sh ? '−' + sh : '–'}</td><td class="pl-4">${state}</td></tr>`;
   }).join('');
-  const n = picked(o), rdy = sum(o, ready);
+  const n = picked(o), of = Object.values(f.max ?? {}).reduce((a, b) => a + b, 0), pl = openPl(o);
   const confirmBar = confirming ? `<tr><td colspan="5" class="pt-2"><div class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-green-500/40 bg-green-500/10 px-3 py-2 text-xs">
-      <i data-lucide="package-plus" class="text-green-400"></i>
-      <span>${ui.conf === 'qty' ? `Colis de <span class="font-semibold text-white">${units(n)}</span> sur ${rdy} en stock` : `Créer un colis avec les <span class="font-semibold text-white">${units(n)}</span> en stock ?`}
-        <span class="text-sub">· daté du ${long(TODAY)} · numéro attribué par Zoho</span>${n < rdy ? ` <span class="text-yellow-400">· ${units(rdy - n)} reste${rdy - n > 1 ? 'nt' : ''} à préparer</span>` : ''}</span>
+      <i data-lucide="${picking ? 'clipboard-list' : 'package-plus'}" class="text-green-400"></i>
+      <span>${picking ? `Prélèvement : <span class="font-semibold text-white">${n}</span> sur ${of} en stock <span class="text-sub">· créé dans Zoho, puis imprimé</span>` : `Colis : <span class="font-semibold text-white">${n}</span> sur ${of} de <span class="font-mono">${pl.number}</span> <span class="text-sub">· daté du ${long(TODAY)} · numéro attribué par Zoho</span>`}${n < of ? ` <span class="text-yellow-400">· ${of - n} à préparer ensuite</span>` : ''}</span>
       <span class="ml-auto flex items-center gap-2">
         <button type="button" data-cancel="${o.number}" ${busy ? 'disabled' : ''} class="rounded-md px-2.5 py-1 text-sub hover:text-ink">Annuler</button>
-        <button type="button" data-confirm="${o.number}" ${busy || !n ? 'disabled' : ''} class="inline-flex items-center gap-1.5 rounded-md bg-green-500 px-3 py-1 font-semibold text-bg hover:bg-green-400 disabled:opacity-50">${busy ? '<i data-lucide="loader-circle" class="spin"></i>Création dans Zoho…' : '<i data-lucide="check"></i>Créer le colis'}</button>
+        <button type="button" data-confirm="${o.number}" ${busy || !n ? 'disabled' : ''} class="inline-flex items-center gap-1.5 rounded-md bg-green-500 px-3 py-1 font-semibold text-bg hover:bg-green-400 disabled:opacity-50">${busy ? '<i data-lucide="loader-circle" class="spin"></i>Création dans Zoho…' : `<i data-lucide="check"></i>${picking ? 'Créer et imprimer' : 'Créer le colis'}`}</button>
       </span></div></td></tr>` : '';
   const shipping = f.phase === 'ship' || f.phase === 'shipping', sending = f.phase === 'shipping';
   const waiting = o.packages.filter(p => !p.shipped), sp = shipping && o.packages.find(p => p.number === f.ship);
@@ -224,7 +237,7 @@ function panelHtml(o) {
       <span class="inline-flex items-center gap-1.5 rounded-full border border-line bg-surf px-2.5 py-1"><i data-lucide="${o.ref[0] === 'Shopify' ? 'shopping-bag' : 'file-text'}"></i>${o.ref[0]} · <span class="font-mono text-acc">${o.ref[1]}</span></span>
       ${o.pickup ? '<span class="inline-flex items-center gap-1.5 rounded-full border border-line bg-surf px-2.5 py-1"><i data-lucide="map-pin"></i>Retrait en boutique</span>' : ''}
     </div>
-    <table class="w-full text-sm"><thead class="text-left text-[11px] uppercase tracking-wide text-sub"><tr><th class="py-1.5 font-medium">Produit</th><th class="text-right font-medium">${confirming && ui.conf === 'qty' ? 'Dans le colis' : 'Qté'}</th><th class="text-right font-medium">Disponible</th><th class="text-right font-medium">Manque</th><th class="pl-4 font-medium">État</th></tr></thead>
+    <table class="w-full text-sm"><thead class="text-left text-[11px] uppercase tracking-wide text-sub"><tr><th class="py-1.5 font-medium">Produit</th><th class="text-right font-medium">${confirming ? (picking ? 'À prélever' : 'Dans le colis') : 'Qté'}</th><th class="text-right font-medium">Disponible</th><th class="text-right font-medium">Manque</th><th class="pl-4 font-medium">État</th></tr></thead>
     ${todo.length ? `<tbody>${band('clipboard-list', 'À préparer', sum(o, rem), 'bg-green-500/10', 'text-white', prepActions(o))}${todoRows}${confirmBar}</tbody>` : ''}
     ${packed.length ? `<tbody class="${o.fresh === 'packed' ? 'flash' : ''}">${band('package', 'Emballé, en attente de livraison', sum(o, l => l.packed), 'bg-blue-500/10', 'text-blue-400', waiting.map(pkgChip).join('') + shipBtns)}
       ${packed.map((l, i) => `<tr class="${i ? 'border-t border-line/60' : ''}"><td class="border-l-2 border-blue-500/60 py-2 pl-4 pr-3">${prod(l)}</td><td class="text-right tabular-nums">${l.packed}${l.packed < l.qty ? `<span class="ml-1 text-xs text-sub">sur ${l.qty}</span>` : ''}</td><td class="text-right text-sub">–</td><td class="text-right text-sub">–</td><td class="pl-4 text-blue-400"><span class="inline-flex items-center gap-1"><i data-lucide="package"></i>Emballé</span></td></tr>`).join('')}${shipBar}</tbody>` : ''}
@@ -264,21 +277,22 @@ function qr() {
 }
 
 function slipHtml(o) {
-  const client = ui.doc === 'client', rows = o.lines.filter(l => ready(l) > 0), later = o.lines.filter(l => rem(l) - ready(l) > 0);
-  const n = sum(o, ready), leftPay = o.total - paid(o);
+  const pl = openPl(o), take = l => pl ? (pl.items[l.id] ?? 0) : ready(l);
+  const client = ui.doc === 'client', rows = o.lines.filter(l => take(l) > 0), later = o.lines.filter(l => rem(l) - take(l) > 0);
+  const n = sum(o, take), leftPay = o.total - paid(o);
   const cell = 'border-bottom:1px solid #d4d4d4;padding:9px 8px;';
   const info = (k, v) => `<div style="display:flex;gap:8px;padding:2px 0"><span style="width:92px;color:#666">${k}</span><span style="font-weight:600">${v}</span></div>`;
   const box = k => `<div style="flex:1;border:1px solid #999;border-radius:4px;padding:6px 8px;height:54px;font-size:10px;color:#666">${k}</div>`;
   return `<div id="slipBar" class="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-line bg-surf px-4 py-2.5 text-sm">
-      <i data-lucide="file-text" class="text-sub"></i><span class="font-medium">${DOC()} · ${o.number}.pdf</span>
-      <span class="text-xs text-sub">Aperçu de la maquette. Dans l'app, la fenêtre d'impression s'ouvre directement.</span>
+      <i data-lucide="file-text" class="text-sub"></i><span class="font-medium">${DOC()} · ${o.number}${pl ? ' · ' + pl.number : ''}.pdf</span>
+      <span class="text-xs text-sub">Aperçu de la maquette : « Imprimer » continue le parcours. Dans l'app, la fenêtre d'impression s'ouvre directement.</span>
       <span class="ml-auto flex items-center gap-2"><button type="button" data-close class="rounded-md px-3 py-1.5 text-sub hover:text-ink">Fermer</button>
       <button type="button" data-print="${o.number}" class="inline-flex items-center gap-1.5 rounded-md bg-acc px-3 py-1.5 font-semibold text-bg"><i data-lucide="printer"></i>Imprimer</button></span></div>
     <div class="sheet mx-auto my-6 bg-white shadow-2xl" style="width:210mm;max-width:calc(100% - 24px);min-height:297mm;padding:16mm 15mm;font-size:12px;line-height:1.4">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:12px">
         <div><div style="font-size:22px;font-weight:800;letter-spacing:1px">AITO3D</div><div style="color:#666;font-size:10px">Papeete, Tahiti · contact@aito3d.example</div></div>
         <div style="text-align:right"><div style="font-size:17px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">${DOC()}</div>
-          <div style="font-family:Menlo,monospace;font-size:15px;margin-top:2px">${o.number}</div><div style="color:#666;font-size:10px">Imprimé le ${long(TODAY)} à ${NOW}</div></div>
+          <div style="font-family:Menlo,monospace;font-size:15px;margin-top:2px">${o.number}${pl ? ' · ' + pl.number : ''}</div><div style="color:#666;font-size:10px">Imprimé le ${long(TODAY)} à ${NOW}</div></div>
       </div>
       <div style="display:flex;justify-content:space-between;gap:24px;margin-top:14px">
         <div style="flex:1"><div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.5px">${client ? 'Destinataire' : 'Client'}</div>
@@ -289,11 +303,11 @@ function slipHtml(o) {
       </div>
       <table style="width:100%;margin-top:18px">
         <thead><tr style="text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#666"><th style="${cell}width:26px"></th><th style="${cell}width:46px;text-align:right">Qté</th><th style="${cell}">Produit</th><th style="${cell}width:150px">Référence</th>${client ? '' : `<th style="${cell}width:70px;text-align:right">Commandé</th>`}</tr></thead>
-        <tbody>${rows.map(l => `<tr><td style="${cell}"><span style="display:inline-block;width:13px;height:13px;border:1.5px solid #111;border-radius:2px"></span></td><td style="${cell}text-align:right;font-size:15px;font-weight:700">${ready(l)}</td><td style="${cell}">${l.name}</td><td style="${cell}font-family:Menlo,monospace;font-size:11px">${l.sku}</td>${client ? '' : `<td style="${cell}text-align:right;color:#666">${l.qty}</td>`}</tr>`).join('')}</tbody>
+        <tbody>${rows.map(l => `<tr><td style="${cell}"><span style="display:inline-block;width:13px;height:13px;border:1.5px solid #111;border-radius:2px"></span></td><td style="${cell}text-align:right;font-size:15px;font-weight:700">${take(l)}</td><td style="${cell}">${l.name}</td><td style="${cell}font-family:Menlo,monospace;font-size:11px">${l.sku}</td>${client ? '' : `<td style="${cell}text-align:right;color:#666">${l.qty}</td>`}</tr>`).join('')}</tbody>
       </table>
       <div style="margin-top:10px;text-align:right;font-weight:700">${rows.length} article${rows.length > 1 ? 's' : ''} · ${units(n)}</div>
-      ${later.length ? `<div style="margin-top:16px;border:1px dashed #999;border-radius:4px;padding:8px 10px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#666">${client ? 'Suivra dans un prochain envoi' : 'Pas en stock, reste à livrer'}</div>
-        ${later.map(l => `<div style="display:flex;gap:10px;padding-top:3px"><span style="width:30px;text-align:right;font-weight:600">${rem(l) - ready(l)}</span><span>${l.name}</span></div>`).join('')}</div>` : ''}
+      ${later.length ? `<div style="margin-top:16px;border:1px dashed #999;border-radius:4px;padding:8px 10px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#666">${client ? 'Suivra dans un prochain envoi' : pl ? 'Hors de ce prélèvement, reste à livrer' : 'Pas en stock, reste à livrer'}</div>
+        ${later.map(l => `<div style="display:flex;gap:10px;padding-top:3px"><span style="width:30px;text-align:right;font-weight:600">${rem(l) - take(l)}</span><span>${l.name}</span></div>`).join('')}</div>` : ''}
       ${client
         ? `<div style="margin-top:28px;display:flex;justify-content:space-between;align-items:flex-end;gap:20px"><div style="font-size:13px">Merci pour votre commande.<div style="color:#666;font-size:10px;margin-top:2px">Un souci avec ce colis ? Écrivez-nous en indiquant ${o.number}.</div></div>
             <div style="display:flex;gap:10px;width:260px">${box('Préparé par')}${box('Colis n° … / …')}</div></div>`
@@ -314,27 +328,67 @@ function render() {
   const slip = document.getElementById('slip'), o = ORDERS.find(x => x.number === ui.slip);
   slip.classList.toggle('hidden', !o);
   slip.innerHTML = o ? slipHtml(o) : '';
-  for (const b of document.querySelectorAll('[data-place]')) b.setAttribute('aria-pressed', b.dataset.place === ui.place);
-  for (const b of document.querySelectorAll('[data-doc]')) b.setAttribute('aria-pressed', b.dataset.doc === ui.doc);
-  for (const b of document.querySelectorAll('[data-conf]')) b.setAttribute('aria-pressed', b.dataset.conf === ui.conf);
+  const [at, hint, act] = where(find(TRACK));
+  document.getElementById('steps').innerHTML = STEPS.map((s, i) => `<li class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${i === at ? 'border-acc bg-acc/15 text-ink' : 'border-line text-sub'} ${i > at ? 'opacity-50' : ''}"><span class="grid h-4 w-4 place-items-center rounded-full text-[10px] font-bold ${i === at ? 'bg-acc text-bg' : 'bg-line text-sub'}">${i < at ? '✓' : i + 1}</span>${s}</li>`).join('<li class="text-sub opacity-50" aria-hidden="true">→</li>');
+  document.getElementById('hint').innerHTML = `<span class="font-mono text-acc">${TRACK}</span> · ${hint}`;
+  document.querySelector('[data-next]').disabled = !act;
   lucide.createIcons();
   for (const x of ORDERS) { x.fresh = false; for (const i of x.invoices) i.fresh = false; }
 }
 
 const find = n => ORDERS.find(o => o.number === n);
-function startConfirm(o) {
+// Step 2: choose what goes on the picklist. The maximum per line is what the shelf covers.
+function startPick(o) {
   const f = flow(o);
+  f.phase = 'pick';
+  f.max = Object.fromEntries(o.lines.filter(l => ready(l) > 0).map(l => [l.id, ready(l)]));
+  f.qty = { ...f.max };
+  f.edited = false;
+  ui.open.add(o.number);
+}
+// What "Étape suivante" types for the operator: a partial first parcel.
+function example(o) {
+  const f = flow(o), [first, second] = Object.keys(f.max);
+  if (!o.packages.length) {
+    if (f.max[first] >= 3) f.qty[first] = f.max[first] - 2;
+    if (second) f.qty[second] = 0;
+  }
+  f.edited = true;
+}
+const chosen = f => Object.fromEntries(Object.entries(f.qty).filter(([, q]) => q > 0));
+// Step 3: the picklist exists in Zoho, its sheet opens.
+function createPicklist(o) {
+  const pl = { number: 'PL-000' + nextPl++, date: TODAY, items: chosen(flow(o)), done: false };
+  o.picklists.push(pl);
+  ui.flow[o.number] = { phase: 'idle', printed: null, qty: {} };
+  ui.slip = o.number;
+  return pl;
+}
+function confirmPick(o) {
+  flow(o).phase = 'picking';
+  render();
+  setTimeout(() => {
+    const pl = createPicklist(o);
+    render();
+    toast(`Prélèvement <span class="font-mono text-acc">${pl.number}</span> créé dans Zoho Books · ${units(Object.values(pl.items).reduce((a, b) => a + b, 0))}`);
+  }, 900);
+}
+// Step 4: check what is really in the box, from the open picklist.
+function startConfirm(o) {
+  const f = flow(o), pl = openPl(o);
   f.phase = 'confirm';
-  f.qty = Object.fromEntries(o.lines.filter(l => ready(l) > 0).map(l => [l.id, ready(l)]));
+  f.max = { ...pl.items };
+  f.qty = { ...pl.items };
   ui.open.add(o.number);
 }
 function pack(o, number) {
-  const f = flow(o), n = picked(o);
-  for (const l of o.lines) { const q = f.qty[l.id] ?? 0; l.packed += q; l.stock -= q; }
-  o.packages.push({ number, date: TODAY, items: { ...f.qty } });
+  const f = flow(o), pl = openPl(o), items = chosen(f), n = picked(o);
+  for (const [id, q] of Object.entries(items)) { const l = o.lines.find(x => x.id === id); l.packed += q; l.stock -= q; }
+  Object.assign(pl, { done: true, items }); // the picklist is cut down to what was boxed, then completed
+  o.packages.push({ number, date: TODAY, items, picklist: pl.number });
   o.fresh = 'packed';
-  ui.flow[o.number] = { phase: 'idle', printed: sum(o, ready) ? f.printed : null, qty: {} };
-  return n;
+  ui.flow[o.number] = { phase: 'idle', printed: null, qty: {} };
+  return { n, pl };
 }
 function startShip(o, pkg) { Object.assign(flow(o), { phase: 'ship', ship: pkg, mode: 'pickup', apply: true }); ui.open.add(o.number); }
 function send(o) {
@@ -353,61 +407,93 @@ function send(o) {
   return { number: p.number, pickup: p.pickup, invoice };
 }
 function create(o) {
-  const f = flow(o);
-  f.phase = 'creating';
+  flow(o).phase = 'creating';
   render();
   setTimeout(() => {
-    const number = 'PKG-000' + nextPkg++, n = pack(o, number);
+    const number = 'PKG-000' + nextPkg++, { n, pl } = pack(o, number);
     render();
-    toast(`Colis <span class="font-mono text-acc">${number}</span> créé dans Zoho Books · ${units(n)}`);
+    toast(`Colis <span class="font-mono text-acc">${number}</span> créé dans Zoho Books · ${units(n)} · prélèvement <span class="font-mono text-acc">${pl.number}</span> terminé`);
   }, 900);
+}
+function doSend(o) {
+  flow(o).phase = 'shipping';
+  render();
+  setTimeout(() => {
+    const r = send(o), done = sum(o, l => l.shipped) === sum(o, l => l.qty);
+    render();
+    toast(`Colis <span class="font-mono text-acc">${r.number}</span> ${r.pickup ? 'remis au client' : 'marqué expédié'}${r.invoice ? ` · facture <span class="font-mono text-acc">${r.invoice.number}</span> créée` : ''}${done ? ' · commande terminée' : ''}`);
+  }, 900);
+}
+
+// The guided tour: where the followed order stands, what to do next, and what "Étape suivante" does.
+const STEPS = ['Nouvelle commande', 'Préparer : articles et quantités', 'Prélèvement dans Zoho, bon imprimé', 'Créer le colis', 'Remettre le colis', 'Expédié et facturé'];
+function where(o) {
+  const f = flow(o), pl = openPl(o), waiting = o.packages.find(p => !p.shipped), left = sum(o, rem), rdy = sum(o, ready);
+  const go = fn => () => { fn(); render(); };
+  if (f.phase === 'pick') return f.edited
+    ? [1, 'Le choix est fait. « Créer et imprimer » crée le prélèvement dans Zoho pour ces unités.', () => confirmPick(o)]
+    : [1, `Cochez les articles et saisissez les quantités. « Étape suivante » ${o.packages.length ? 'prend tout ce qui reste en stock' : 'prépare un premier colis partiel'}.`, go(() => example(o))];
+  if (f.phase === 'picking') return [1, 'Création du prélèvement dans Zoho…', null];
+  if (ui.slip === o.number) return [2, `Le prélèvement ${pl ? pl.number : ''} existe dans Zoho et son bon de préparation s’ouvre. Imprimez-le, puis allez chercher les articles.`, go(() => { f.printed = NOW; ui.slip = null; })];
+  if (f.phase === 'confirm') return [3, 'Vérifiez ce qui est vraiment dans le carton, baissez une quantité s’il manque un article, puis « Créer le colis ».', () => create(o)];
+  if (f.phase === 'creating') return [3, 'Le prélèvement est terminé dans Zoho, le colis est créé…', null];
+  if (pl) return [2, `La commande est « En préparation » : ${pl.number} est ouvert dans Zoho. Une fois les articles réunis, « Créer le colis ».`, go(() => startConfirm(o))];
+  if (f.phase === 'ship') return [4, 'Retrait en boutique par défaut. La remise crée la facture et applique l’avoir du client.', () => doSend(o)];
+  if (f.phase === 'shipping') return [4, 'Envoi à Zoho…', null];
+  if (waiting) return [4, `Le colis ${waiting.number} attend le client. « Remettre le colis » (bandeau bleu ou icône de la ligne).`, go(() => startShip(o, waiting.number))];
+  if (!left) return [5, 'Tout est expédié et facturé : la commande passe dans « Terminées ».', null];
+  if (o.packages.length) return rdy
+    ? [5, `Colis remis et facturé. Il reste ${units(left)} à préparer : « Préparer » lance un second prélèvement.`, go(() => startPick(o))]
+    : [5, `Colis remis et facturés. Les ${units(left)} restantes attendent le stock : « Préparer » reviendra à leur arrivée.`, null];
+  return [0, 'La commande vient d’arriver de Zoho. « Préparer » se trouve dans le bandeau vert et sur l’icône de la ligne.', go(() => startPick(o))];
 }
 
 document.addEventListener('click', e => {
   const hit = sel => e.target.closest(sel);
   let el;
   if (hit('[data-noop]')) { e.preventDefault(); return; }
-  if ((el = hit('[data-place]'))) ui.place = el.dataset.place;
-  else if ((el = hit('[data-doc]'))) ui.doc = el.dataset.doc;
-  else if ((el = hit('[data-conf]'))) ui.conf = el.dataset.conf;
-  else if (hit('[data-reset]')) { ORDERS = SEED(); nextPkg = 31; nextInv = 447; ui.flow = {}; ui.slip = null; ui.open = new Set(['SO-00425', 'SO-00433']); }
+  if (hit('[data-qty]')) return; // typing in a quantity: handled on change
+  if (hit('[data-next]')) { const act = where(find(TRACK))[2]; if (act) act(); }
+  else if (hit('[data-reset]')) { ORDERS = SEED(); nextPkg = 31; nextInv = 447; nextPl = 13; ui.flow = {}; ui.slip = null; ui.open = new Set([TRACK]); }
   else if ((el = hit('[data-slip]'))) ui.slip = el.dataset.slip;
   else if ((el = hit('[data-print]'))) { flow(find(el.dataset.print)).printed = NOW; ui.slip = null; }
   else if (hit('[data-close]')) ui.slip = null;
+  else if ((el = hit('[data-pick]'))) startPick(find(el.dataset.pick));
   else if ((el = hit('[data-create]'))) startConfirm(find(el.dataset.create));
   else if ((el = hit('[data-cancel]'))) flow(find(el.dataset.cancel)).phase = 'idle';
-  else if ((el = hit('[data-step]'))) { const [n, id, d] = el.dataset.step.split(','), o = find(n), l = o.lines.find(x => x.id === id), f = flow(o); f.qty[id] = Math.max(0, Math.min(ready(l), f.qty[id] + Number(d))); }
-  else if ((el = hit('[data-confirm]'))) { create(find(el.dataset.confirm)); return; }
+  else if ((el = hit('[data-tick]'))) { const [n, id] = el.dataset.tick.split(','), f = flow(find(n)); f.qty[id] = f.qty[id] > 0 ? 0 : f.max[id]; f.edited = true; }
+  else if ((el = hit('[data-step]'))) { const [n, id, d] = el.dataset.step.split(','), f = flow(find(n)); f.qty[id] = Math.max(0, Math.min(f.max[id], f.qty[id] + Number(d))); f.edited = true; }
+  else if ((el = hit('[data-confirm]'))) { const o = find(el.dataset.confirm); if (flow(o).phase === 'pick') confirmPick(o); else create(o); return; }
   else if ((el = hit('[data-ship]'))) { const [n, pkg] = el.dataset.ship.split(','); startShip(find(n), pkg); }
   else if ((el = hit('[data-mode]'))) { const [n, mode] = el.dataset.mode.split(','); flow(find(n)).mode = mode; }
   else if ((el = hit('[data-apply]'))) flow(find(el.dataset.apply)).apply = el.checked;
   else if ((el = hit('[data-demo]'))) { toast(el.dataset.demo); return; }
-  else if ((el = hit('[data-send]'))) {
-    const o = find(el.dataset.send);
-    flow(o).phase = 'shipping';
-    render();
-    setTimeout(() => {
-      const r = send(o), done = sum(o, l => l.shipped) === sum(o, l => l.qty);
-      render();
-      toast(`Colis <span class="font-mono text-acc">${r.number}</span> ${r.pickup ? 'remis au client' : 'marqué expédié'}${r.invoice ? ` · facture <span class="font-mono text-acc">${r.invoice.number}</span> créée` : ''}${done ? ' · commande terminée' : ''}`);
-    }, 900);
-    return;
-  }
+  else if ((el = hit('[data-send]'))) { doSend(find(el.dataset.send)); return; }
   else if ((el = hit('[data-open]'))) { const n = el.dataset.open; if (!ui.open.delete(n)) ui.open.add(n); }
   else return;
   render();
 });
+// A typed quantity is taken when the field is left or Enter is pressed, kept inside 0..max.
+document.addEventListener('change', e => {
+  const el = e.target.closest('[data-qty]');
+  if (!el) return;
+  const [n, id] = el.dataset.qty.split(','), f = flow(find(n)), v = Number(el.value.replace(',', '.'));
+  f.qty[id] = Number.isFinite(v) ? Math.max(0, Math.min(f.max[id], v)) : f.qty[id];
+  f.edited = true;
+  render();
+});
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && ui.slip) { ui.slip = null; render(); } });
 
-// Deep links for screenshots: #place,doc,conf,order,state (state: printed | confirm | slip | packed | ship | shipped)
+// Deep links for screenshots: #row,interne,qty,order,state (state: pick | slip | picked | confirm | packed | ship | shipped)
 if (ho && hs) {
-  const o = find(ho), f = flow(o);
-  if (hs === 'printed' || hs === 'confirm') f.printed = NOW;
-  if (hs === 'slip') ui.slip = ho;
-  if (hs === 'confirm') startConfirm(o);
-  if (hs === 'packed' || hs === 'ship' || hs === 'shipped') { if (sum(o, ready)) { startConfirm(o); pack(o, 'PKG-00031'); } o.fresh = false; }
-  if (hs === 'ship' || hs === 'shipped') startShip(o, o.packages.find(x => !x.shipped).number);
-  if (hs === 'shipped') send(o);
+  const o = find(ho), at = ['pick', 'slip', 'picked', 'confirm', 'packed', 'ship', 'shipped'].indexOf(hs);
+  if (at >= 0) { startPick(o); example(o); }
+  if (at >= 1) createPicklist(o);
+  if (at >= 2) { flow(o).printed = NOW; ui.slip = null; }
+  if (at >= 3) startConfirm(o);
+  if (at >= 4) { pack(o, 'PKG-000' + nextPkg++); o.fresh = false; }
+  if (at >= 5) startShip(o, o.packages.find(x => !x.shipped).number);
+  if (at >= 6) send(o);
 }
 render();
 </script>
