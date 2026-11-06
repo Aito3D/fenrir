@@ -1,0 +1,49 @@
+### exit: 0
+### stdout:
+{
+ "apikey_denied": [
+  "orders:read",
+  "orders:update"
+ ],
+ "apikey_scope": {
+  "orders:read": "None",
+  "orders:update": "None"
+ },
+ "categories": {
+  "Orders": [
+   "orders:read",
+   "orders:update"
+  ]
+ },
+ "groups": {
+  "Administrators": [
+   "orders:read",
+   "orders:update"
+  ],
+  "Operators": [
+   "orders:read",
+   "orders:update"
+  ],
+  "Viewers": []
+ },
+ "values": [
+  "orders:read",
+  "orders:update"
+ ]
+}
+# Backfill the order board permissions, once. Administrators is
+# handled by the ALL_PERMISSIONS sync above; Operators get both, as on
+# a fresh install; Viewers and custom groups get neither. Once only:
+# board rows carry customer names and order values, so an admin who
+# takes them away from Operators must not get them back on a restart.
+if await _backfill_due("_backfill_orders_permissions_done", "orders:read"):
+grp = (await session.execute(select(Group).where(Group.name == "Operators"))).scalar_one_or_none()
+if grp is not None and grp.permissions is not None:
+missing = [p for p in ("orders:read", "orders:update") if p not in grp.permissions]
+if missing:
+grp.permissions = [*grp.permissions, *missing]
+logger.info("Added %s to Operators group (backfill)", ", ".join(missing))
+await session.commit()
+
+### stderr:
+

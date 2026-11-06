@@ -1,0 +1,661 @@
+### exit: 0
+### stdout:
+{
+ "list_salesorders (two pages)": {
+  "returned": [
+   {
+    "salesorder_id": "1"
+   },
+   {
+    "salesorder_id": "2"
+   },
+   {
+    "salesorder_id": "3"
+   }
+  ],
+  "sent": [
+   "POST accounts:/oauth/v2/token form-keys=client_id,client_secret,grant_type,refresh_token",
+   "GET /salesorders?organization_id=ORG1&page=1&per_page=200",
+   "GET /salesorders?organization_id=ORG1&page=2&per_page=200"
+  ],
+  "answers_left_unread": 0
+ },
+ "list_purchaseorders (null list)": {
+  "returned": [],
+  "sent": [
+   "GET /purchaseorders?organization_id=ORG1&page=1&per_page=200"
+  ],
+  "answers_left_unread": 0
+ },
+ "get_salesorder (id escaped)": {
+  "returned": {
+   "salesorder_id": "so1",
+   "line_items": []
+  },
+  "sent": [
+   "GET /salesorders/so%2F1%20x%3Fy?organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "get_salesorder (404)": {
+  "raised": "ZohoNotFound: Sales order does not exist.",
+  "sent": [
+   "GET /salesorders/nope?organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "get_purchaseorder (empty body)": {
+  "returned": {},
+  "sent": [
+   "GET /purchaseorders/460000000026049?organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "list_items_by_ids": {
+  "returned": [
+   {
+    "item_id": "A",
+    "stock_on_hand": 3
+   }
+  ],
+  "sent": [
+   "GET /items?item_ids=A,B,C&organization_id=ORG1&per_page=200"
+  ],
+  "answers_left_unread": 0
+ },
+ "list_items_by_ids (no items key)": {
+  "returned": [],
+  "sent": [
+   "GET /items?item_ids=A&organization_id=ORG1&per_page=200"
+  ],
+  "answers_left_unread": 0
+ },
+ "books_salesorder_url_base": {
+  "returned": "https://books.zoho.test/app/ORG1#/salesorders/",
+  "sent": [],
+  "answers_left_unread": 0
+ },
+ "books_invoice_url": {
+  "returned": "https://books.zoho.test/app/ORG1#/invoices/inv1",
+  "sent": [],
+  "answers_left_unread": 0
+ },
+ "books_invoice_url (empty id: the prefix)": {
+  "returned": "https://books.zoho.test/app/ORG1#/invoices/",
+  "sent": [],
+  "answers_left_unread": 0
+ },
+ "books_app_url": {
+  "returned": "https://books.zoho.test/app/ORG1#/quotes/est1",
+  "sent": [],
+  "answers_left_unread": 0
+ },
+ "list_customer_payments": {
+  "returned": [
+   {
+    "payment_id": "pay1",
+    "unused_amount": 300.0,
+    "date": "2026-03-01"
+   }
+  ],
+  "sent": [
+   "GET /customerpayments?customer_id=c1&organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "list_customer_payments (no customer: no call)": {
+  "returned": [],
+  "sent": [],
+  "answers_left_unread": 0
+ },
+ "list_customer_payments (null list)": {
+  "returned": [],
+  "sent": [
+   "GET /customerpayments?customer_id=c1&organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "list_customer_payments_modified_since (two pages)": {
+  "returned": {
+   "rows": [
+    {
+     "id": "pay1",
+     "customer_id": "c1",
+     "last_modified_time": "2026-03-01T08:00:00-1000"
+    },
+    {
+     "id": "77",
+     "customer_id": "",
+     "last_modified_time": ""
+    },
+    {
+     "id": "pay3",
+     "customer_id": "c2",
+     "last_modified_time": "2026-03-02T08:00:00-1000"
+    }
+   ],
+   "truncated": false
+  },
+  "sent": [
+   "GET /customerpayments?last_modified_time=2026-03-01T08:00:00-1000&organization_id=ORG1&page=1&per_page=200&sort_column=last_modified_time&sort_order=A",
+   "GET /customerpayments?last_modified_time=2026-03-01T08:00:00-1000&organization_id=ORG1&page=2&per_page=200&sort_column=last_modified_time&sort_order=A"
+  ],
+  "answers_left_unread": 0
+ },
+ "list_customer_payments_modified_since (page cap: truncated)": {
+  "returned": {
+   "rows": [
+    {
+     "id": "pay1",
+     "customer_id": "c1",
+     "last_modified_time": "2026-03-01T08:00:00-1000"
+    },
+    {
+     "id": "pay1",
+     "customer_id": "c1",
+     "last_modified_time": "2026-03-01T08:00:00-1000"
+    },
+    {
+     "id": "pay1",
+     "customer_id": "c1",
+     "last_modified_time": "2026-03-01T08:00:00-1000"
+    },
+    {
+     "id": "pay1",
+     "customer_id": "c1",
+     "last_modified_time": "2026-03-01T08:00:00-1000"
+    },
+    {
+     "id": "pay1",
+     "customer_id": "c1",
+     "last_modified_time": "2026-03-01T08:00:00-1000"
+    }
+   ],
+   "truncated": true
+  },
+  "sent": [
+   "GET /customerpayments?last_modified_time=2026-03-01T08:00:00-1000&organization_id=ORG1&page=1&per_page=200&sort_column=last_modified_time&sort_order=A",
+   "GET /customerpayments?last_modified_time=2026-03-01T08:00:00-1000&organization_id=ORG1&page=2&per_page=200&sort_column=last_modified_time&sort_order=A",
+   "GET /customerpayments?last_modified_time=2026-03-01T08:00:00-1000&organization_id=ORG1&page=3&per_page=200&sort_column=last_modified_time&sort_order=A",
+   "GET /customerpayments?last_modified_time=2026-03-01T08:00:00-1000&organization_id=ORG1&page=4&per_page=200&sort_column=last_modified_time&sort_order=A",
+   "GET /customerpayments?last_modified_time=2026-03-01T08:00:00-1000&organization_id=ORG1&page=5&per_page=200&sort_column=last_modified_time&sort_order=A"
+  ],
+  "answers_left_unread": 3
+ },
+ "picklist_prefill": {
+  "returned": {
+   "location_id": "loc1",
+   "line_items": [
+    {
+     "salesorder_id": "so1",
+     "so_line_item_id": "l1",
+     "quantity_to_be_picked": 2
+    }
+   ]
+  },
+  "sent": [
+   "GET /picklists/editpage?organization_id=ORG1&salesorder_ids=so1"
+  ],
+  "answers_left_unread": 0
+ },
+ "picklist_prefill (400: refused)": {
+  "returned": null,
+  "sent": [
+   "GET /picklists/editpage?organization_id=ORG1&salesorder_ids=so1"
+  ],
+  "answers_left_unread": 0
+ },
+ "picklist_prefill (no picklist key)": {
+  "returned": null,
+  "sent": [
+   "GET /picklists/editpage?organization_id=ORG1&salesorder_ids=so1"
+  ],
+  "answers_left_unread": 0
+ },
+ "picklist_prefill (500)": {
+  "raised": "ZohoAmbiguous: Zoho Books error (HTTP 500)",
+  "sent": [
+   "GET /picklists/editpage?organization_id=ORG1&salesorder_ids=so1"
+  ],
+  "answers_left_unread": 0
+ },
+ "get_picklist (id escaped)": {
+  "returned": {
+   "picklist_id": "pl1",
+   "status": "yet_to_start"
+  },
+  "sent": [
+   "GET /picklists/pl%2F1?organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "get_picklist (404)": {
+  "raised": "ZohoNotFound: Picklist does not exist.",
+  "sent": [
+   "GET /picklists/nope?organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "get_picklist (no picklist key)": {
+  "returned": {},
+  "sent": [
+   "GET /picklists/pl1?organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "get_package (id escaped)": {
+  "returned": {
+   "package_id": "pk1",
+   "status": "not_shipped"
+  },
+  "sent": [
+   "GET /packages/pk%2F1?organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "get_package (404, no message)": {
+  "raised": "ZohoNotFound: Not found in Zoho Books",
+  "sent": [
+   "GET /packages/nope?organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "invoice_prefill": {
+  "returned": {
+   "customer_id": "c1",
+   "line_items": []
+  },
+  "sent": [
+   "GET /invoices/editpage/fromsalesorder?organization_id=ORG1&salesorder_id=so1"
+  ],
+  "answers_left_unread": 0
+ },
+ "invoice_prefill (400: refused)": {
+  "returned": null,
+  "sent": [
+   "GET /invoices/editpage/fromsalesorder?organization_id=ORG1&salesorder_id=so1"
+  ],
+  "answers_left_unread": 0
+ },
+ "invoice_prefill (no invoice key)": {
+  "raised": "KeyError: 'invoice'",
+  "sent": [
+   "GET /invoices/editpage/fromsalesorder?organization_id=ORG1&salesorder_id=so1"
+  ],
+  "answers_left_unread": 0
+ },
+ "get_invoice_pdf (id escaped)": {
+  "returned": "<29 bytes: b'%PDF-1.4 probe invoice\\n%'>",
+  "sent": [
+   "GET /invoices/inv%2F1?accept=pdf&organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "get_invoice_pdf (200 that is not a PDF)": {
+  "raised": "ZohoUpstreamError: Zoho Books did not return a PDF",
+  "sent": [
+   "GET /invoices/inv1?accept=pdf&organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "get_invoice_pdf (404)": {
+  "raised": "ZohoNotFound: Invoice does not exist.",
+  "sent": [
+   "GET /invoices/nope?accept=pdf&organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "create_picklist": {
+  "returned": {
+   "picklist_id": "pl1",
+   "picklist_number": "PL-00001"
+  },
+  "sent": [
+   {
+    "request": "POST /picklists?organization_id=ORG1",
+    "json": {
+     "date": "2026-03-14",
+     "location_id": "loc1",
+     "parent_entity": "salesorder",
+     "group_by": "none",
+     "line_items": [
+      {
+       "salesorder_id": "so1",
+       "so_line_item_id": "l1",
+       "quantity_to_be_picked": 1.5,
+       "quantity_picked": 0
+      }
+     ]
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "create_picklist (no picklist key)": {
+  "returned": {},
+  "sent": [
+   {
+    "request": "POST /picklists?organization_id=ORG1",
+    "json": {
+     "date": "2026-03-14",
+     "location_id": "loc1",
+     "parent_entity": "salesorder",
+     "group_by": "none",
+     "line_items": [
+      {
+       "salesorder_id": "so1",
+       "so_line_item_id": "l1",
+       "quantity_to_be_picked": 1.5,
+       "quantity_picked": 0
+      }
+     ]
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "update_picklist (id escaped)": {
+  "returned": {
+   "picklist_id": "pl1",
+   "status": "in_progress"
+  },
+  "sent": [
+   {
+    "request": "PUT /picklists/pl%2F1?organization_id=ORG1",
+    "json": {
+     "date": "2026-03-14",
+     "line_items": [
+      {
+       "line_item_id": "pl1-l1",
+       "quantity_to_be_picked": 1.5,
+       "quantity_picked": 1.5
+      }
+     ]
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "complete_picklist (id escaped)": {
+  "returned": null,
+  "sent": [
+   "POST /picklists/pl%2F1/setstatus?organization_id=ORG1&status=completed"
+  ],
+  "answers_left_unread": 0
+ },
+ "create_package": {
+  "returned": {
+   "package_id": "pk1",
+   "package_number": "PKG-00001"
+  },
+  "sent": [
+   {
+    "request": "POST /packages?organization_id=ORG1&salesorder_id=so1",
+    "json": {
+     "date": "2026-03-14",
+     "line_items": [
+      {
+       "so_line_item_id": "l1",
+       "quantity": 1.5,
+       "picklist_item_id": "pl1-l1"
+      }
+     ]
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "create_package (no package key)": {
+  "returned": {},
+  "sent": [
+   {
+    "request": "POST /packages?organization_id=ORG1&salesorder_id=so1",
+    "json": {
+     "date": "2026-03-14",
+     "line_items": [
+      {
+       "so_line_item_id": "l1",
+       "quantity": 1.5,
+       "picklist_item_id": "pl1-l1"
+      }
+     ]
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "create_shipment (shipmentorder key)": {
+  "returned": {
+   "shipment_id": "sh1"
+  },
+  "sent": [
+   {
+    "request": "POST /shipmentorders?organization_id=ORG1&package_ids=pk1&salesorder_id=so1",
+    "json": {
+     "date": "2026-03-14",
+     "delivery_method": "PICK UP"
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "create_shipment (shipment_order key)": {
+  "returned": {
+   "shipment_id": "sh2"
+  },
+  "sent": [
+   {
+    "request": "POST /shipmentorders?organization_id=ORG1&package_ids=pk1&salesorder_id=so1",
+    "json": {
+     "date": "2026-03-14",
+     "delivery_method": "Aito3D"
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "create_shipment (neither key)": {
+  "returned": {},
+  "sent": [
+   {
+    "request": "POST /shipmentorders?organization_id=ORG1&package_ids=pk1&salesorder_id=so1",
+    "json": {
+     "date": "2026-03-14",
+     "delivery_method": "Aito3D"
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "mark_shipment_delivered (id escaped)": {
+  "returned": null,
+  "sent": [
+   "POST /shipmentorders/sh%2F1/status/delivered?organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "create_invoice": {
+  "returned": {
+   "invoice_id": "inv1",
+   "invoice_number": "INV-1",
+   "total": 1000.0,
+   "balance": 1000.0
+  },
+  "sent": [
+   {
+    "request": "POST /invoices?organization_id=ORG1",
+    "json": {
+     "customer_id": "c1",
+     "date": "2026-03-14",
+     "line_items": [
+      {
+       "salesorder_item_id": "l1",
+       "quantity": 2,
+       "rate": 500.0
+      }
+     ]
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "create_invoice (no invoice key)": {
+  "returned": {},
+  "sent": [
+   {
+    "request": "POST /invoices?organization_id=ORG1",
+    "json": {
+     "customer_id": "c1",
+     "date": "2026-03-14",
+     "line_items": [
+      {
+       "salesorder_item_id": "l1",
+       "quantity": 2,
+       "rate": 500.0
+      }
+     ]
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "mark_invoice_sent (id escaped)": {
+  "returned": null,
+  "sent": [
+   "POST /invoices/inv%2F1/status/sent?organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "apply_invoice_credits (id escaped)": {
+  "returned": null,
+  "sent": [
+   {
+    "request": "POST /invoices/inv%2F1/credits?organization_id=ORG1",
+    "json": {
+     "invoice_payments": [
+      {
+       "payment_id": "pay1",
+       "amount_applied": 300.0
+      },
+      {
+       "payment_id": "pay2",
+       "amount_applied": 12.5
+      }
+     ]
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "create_package (400 with Books' reason)": {
+  "raised": "ZohoRequestRejected: Quantity exceeds what was ordered.",
+  "sent": [
+   {
+    "request": "POST /packages?organization_id=ORG1&salesorder_id=so1",
+    "json": {
+     "date": "2026-03-14",
+     "line_items": [
+      {
+       "so_line_item_id": "l1",
+       "quantity": 1.5,
+       "picklist_item_id": "pl1-l1"
+      }
+     ]
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "create_shipment (429, Retry-After 120)": {
+  "raised": "ZohoRateLimited: Zoho Books error (HTTP 429)",
+  "retry_after": 120.0,
+  "code": 44,
+  "retry_after_raw": "120",
+  "sent": [
+   {
+    "request": "POST /shipmentorders?organization_id=ORG1&package_ids=pk1&salesorder_id=so1",
+    "json": {
+     "date": "2026-03-14",
+     "delivery_method": "PICK UP"
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "create_invoice (500)": {
+  "raised": "ZohoAmbiguous: Zoho Books error (HTTP 500)",
+  "sent": [
+   {
+    "request": "POST /invoices?organization_id=ORG1",
+    "json": {
+     "customer_id": "c1",
+     "date": "2026-03-14",
+     "line_items": [
+      {
+       "salesorder_item_id": "l1",
+       "quantity": 2,
+       "rate": 500.0
+      }
+     ]
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "mark_invoice_sent (403)": {
+  "raised": "ZohoUpstreamError: Zoho Books error (HTTP 403)",
+  "sent": [
+   "POST /invoices/inv1/status/sent?organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "apply_invoice_credits (200 that is not JSON)": {
+  "raised": "ZohoAmbiguous: Zoho returned a non-JSON response (HTTP 200)",
+  "sent": [
+   {
+    "request": "POST /invoices/inv1/credits?organization_id=ORG1",
+    "json": {
+     "invoice_payments": [
+      {
+       "payment_id": "pay1",
+       "amount_applied": 300.0
+      },
+      {
+       "payment_id": "pay2",
+       "amount_applied": 12.5
+      }
+     ]
+    }
+   }
+  ],
+  "answers_left_unread": 0
+ },
+ "mark_shipment_delivered (401 twice: token refreshed once)": {
+  "raised": "ZohoUpstreamError: Zoho Books error (HTTP 401)",
+  "sent": [
+   "POST /shipmentorders/sh1/status/delivered?organization_id=ORG1",
+   "POST accounts:/oauth/v2/token form-keys=client_id,client_secret,grant_type,refresh_token",
+   "POST /shipmentorders/sh1/status/delivered?organization_id=ORG1"
+  ],
+  "answers_left_unread": 0
+ },
+ "not configured: get_salesorder": {
+  "raised": "ZohoNotConfiguredError: Zoho credentials are not configured",
+  "sent": []
+ },
+ "not configured: books_salesorder_url_base": {
+  "raised": "ZohoNotConfiguredError: Zoho credentials are not configured",
+  "sent": []
+ },
+ "not configured: create_invoice": {
+  "raised": "ZohoNotConfiguredError: Zoho credentials are not configured",
+  "sent": []
+ },
+ "not configured: is_configured": {
+  "returned": false,
+  "sent": []
+ }
+}
+
+### stderr:
+

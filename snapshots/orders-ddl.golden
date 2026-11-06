@@ -1,0 +1,25 @@
+### exit: 0
+### stdout:
+CREATE TABLE order_board_docs (
+	id INTEGER NOT NULL, 
+	kind VARCHAR(20) NOT NULL, 
+	zoho_id VARCHAR(64) NOT NULL, 
+	header JSON NOT NULL, 
+	detail JSON, 
+	pending BOOLEAN NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_order_board_docs_kind_zoho_id UNIQUE (kind, zoho_id)
+);
+CREATE TABLE order_board_docs (
+	id SERIAL NOT NULL, 
+	kind VARCHAR(20) NOT NULL, 
+	zoho_id VARCHAR(64) NOT NULL, 
+	header JSON NOT NULL, 
+	detail JSON, 
+	pending BOOLEAN NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_order_board_docs_kind_zoho_id UNIQUE (kind, zoho_id)
+);
+
+### stderr:
+

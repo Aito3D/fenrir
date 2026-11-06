@@ -1,0 +1,798 @@
+### exit: 0
+### stdout:
+{
+ "exports": {
+  "orderBoard": [
+   "ageTone",
+   "boxablePicklists",
+   "byBrand",
+   "byFinishedPayment",
+   "byPayment",
+   "bySearch",
+   "byStatus",
+   "canPick",
+   "checkLines",
+   "countByPayment",
+   "countByStatus",
+   "daysPastDue",
+   "finishedPayState",
+   "foldText",
+   "formatQty",
+   "isBoardReady",
+   "nextStep",
+   "otherOpenOrders",
+   "packableUnits",
+   "paidPct",
+   "panelGroups",
+   "parseDay",
+   "pollMs",
+   "searchFinished",
+   "sortRows",
+   "totalValue",
+   "waitingPackages"
+  ],
+  "orderStatus": [
+   "FIT_VIEWPORT",
+   "PAY_META",
+   "ROW_GRID",
+   "STATUSES",
+   "STATUS_META",
+   "TONE"
+  ],
+  "orderErrors": [
+   "errorReason",
+   "isRefused"
+  ]
+ },
+ "foldText": {
+  "LYCÉE": "lycee",
+  "Crème brûlée": "creme brulee",
+  "": "",
+  "null": "",
+  "undefined": "",
+  "ÀÉÎÕÜ ç ñ": "aeiou c n",
+  "ǆ ß": "ǆ ß"
+ },
+ "byBrand": {
+  "core": [
+   "SO-00002",
+   "SO-00004",
+   "SO-00006"
+  ],
+  "all": [
+   "SO-00001",
+   "SO-00002",
+   "SO-00003",
+   "SO-00004",
+   "SO-00005",
+   "SO-00006"
+  ]
+ },
+ "bySearch": {
+  "\"\"": [
+   "SO-00001",
+   "SO-00002",
+   "SO-00003",
+   "SO-00004",
+   "SO-00005",
+   "SO-00006"
+  ],
+  "\"   \"": [
+   "SO-00001",
+   "SO-00002",
+   "SO-00003",
+   "SO-00004",
+   "SO-00005",
+   "SO-00006"
+  ],
+  "\"lycee\"": [
+   "SO-00001"
+  ],
+  "\"LYCÉE\"": [
+   "SO-00001"
+  ],
+  "\"emile\"": [
+   "SO-00002",
+   "SO-00005"
+  ],
+  "\"so-00003\"": [
+   "SO-00003"
+  ],
+  "\"marlow\"": [
+   "SO-00002"
+  ],
+  "\"mar-8\"": [
+   "SO-00002"
+  ],
+  "\"esun-pla\"": [
+   "SO-00001"
+  ],
+  "\"zzz\"": [],
+  "\" Zoe \"": [
+   "SO-00003"
+  ],
+  "\"dev26\"": [
+   "SO-00001"
+  ],
+  "\"#1042\"": [
+   "SO-00003"
+  ],
+  "\"1042\"": [
+   "SO-00003"
+  ]
+ },
+ "bySearchRowWithoutFacts": {
+  "blank": [
+   "SO-00007"
+  ],
+  "query": {
+   "__threw__": "TypeError: Cannot read properties of undefined (reading 'reference')"
+  }
+ },
+ "byStatus": {
+  "all": [
+   "SO-00001",
+   "SO-00002",
+   "SO-00003",
+   "SO-00004",
+   "SO-00005",
+   "SO-00006"
+  ],
+  "to_ship": [
+   "SO-00001",
+   "SO-00005"
+  ],
+  "partial": [
+   "SO-00002"
+  ],
+  "incoming": [
+   "SO-00003"
+  ],
+  "to_order": [
+   "SO-00004",
+   "SO-00006"
+  ]
+ },
+ "countByStatus": {
+  "rows": {
+   "all": 6,
+   "to_ship": 2,
+   "partial": 1,
+   "incoming": 1,
+   "to_order": 2
+  },
+  "empty": {
+   "all": 0,
+   "to_ship": 0,
+   "partial": 0,
+   "incoming": 0,
+   "to_order": 0
+  }
+ },
+ "byPayment": {
+  "all": [
+   "SO-00001",
+   "SO-00002",
+   "SO-00003",
+   "SO-00004",
+   "SO-00005",
+   "SO-00006"
+  ],
+  "unpaid": [
+   "SO-00001",
+   "SO-00006"
+  ],
+  "partial": [
+   "SO-00002",
+   "SO-00004"
+  ],
+  "paid": [
+   "SO-00003"
+  ],
+  "overdue": [
+   "SO-00001",
+   "SO-00004"
+  ],
+  "nonsense": []
+ },
+ "countByPayment": {
+  "rows": {
+   "all": 6,
+   "unpaid": 2,
+   "partial": 2,
+   "paid": 1,
+   "overdue": 2
+  },
+  "empty": {
+   "all": 0,
+   "unpaid": 0,
+   "partial": 0,
+   "paid": 0,
+   "overdue": 0
+  }
+ },
+ "paidPct": {
+  "rows": 38,
+  "empty": null,
+  "no-payment": null,
+  "null-total-with-payment": null,
+  "all-paid": 100,
+  "a-hair-below-full": 49,
+  "paid-above-total": 150
+ },
+ "otherOpenOrders": {
+  "SO-00001": [
+   "SO-00002",
+   "SO-00006"
+  ],
+  "SO-00002": [
+   "SO-00001",
+   "SO-00006"
+  ],
+  "SO-00003": [],
+  "SO-00004": [],
+  "SO-00005": [],
+  "SO-00006": [
+   "SO-00001",
+   "SO-00002"
+  ]
+ },
+ "finishedPayState": {
+  "SO-00001": "paid",
+  "SO-00002": "partial",
+  "SO-00003": "partial",
+  "SO-00004": null,
+  "SO-00005": "paid",
+  "SO-00006": "unpaid"
+ },
+ "searchFinished": {
+  "\"\"": [
+   "SO-00001",
+   "SO-00002",
+   "SO-00003",
+   "SO-00004",
+   "SO-00005",
+   "SO-00006"
+  ],
+  "\"  \"": [
+   "SO-00001",
+   "SO-00002",
+   "SO-00003",
+   "SO-00004",
+   "SO-00005",
+   "SO-00006"
+  ],
+  "\"lycee\"": [
+   "SO-00001"
+  ],
+  "\"so-00002\"": [
+   "SO-00002"
+  ],
+  "\"1042\"": [
+   "SO-00001"
+  ],
+  "\"dev26\"": [
+   "SO-00003"
+  ],
+  "\"ZOÉ\"": [
+   "SO-00002"
+  ],
+  "\"zzz\"": []
+ },
+ "byFinishedPayment": {
+  "all": [
+   "SO-00001",
+   "SO-00002",
+   "SO-00003",
+   "SO-00004",
+   "SO-00005",
+   "SO-00006"
+  ],
+  "unpaid": [
+   "SO-00006"
+  ],
+  "partial": [
+   "SO-00002",
+   "SO-00003"
+  ],
+  "paid": [
+   "SO-00001",
+   "SO-00005"
+  ],
+  "overdue": [
+   "SO-00002"
+  ]
+ },
+ "totalValue": {
+  "rows": 14250.5,
+  "empty": 0
+ },
+ "sortRows": {
+  "age-en": [
+   "SO-00003",
+   "SO-00006",
+   "SO-00004",
+   "SO-00005",
+   "SO-00002",
+   "SO-00001"
+  ],
+  "age-fr": [
+   "SO-00003",
+   "SO-00006",
+   "SO-00004",
+   "SO-00005",
+   "SO-00002",
+   "SO-00001"
+  ],
+  "age-flipped-en": [
+   "SO-00001",
+   "SO-00002",
+   "SO-00005",
+   "SO-00004",
+   "SO-00006",
+   "SO-00003"
+  ],
+  "age-flipped-fr": [
+   "SO-00001",
+   "SO-00002",
+   "SO-00005",
+   "SO-00004",
+   "SO-00006",
+   "SO-00003"
+  ],
+  "value-en": [
+   "SO-00006",
+   "SO-00004",
+   "SO-00003",
+   "SO-00001",
+   "SO-00005",
+   "SO-00002"
+  ],
+  "value-fr": [
+   "SO-00006",
+   "SO-00004",
+   "SO-00003",
+   "SO-00001",
+   "SO-00005",
+   "SO-00002"
+  ],
+  "value-flipped-en": [
+   "SO-00002",
+   "SO-00005",
+   "SO-00001",
+   "SO-00003",
+   "SO-00004",
+   "SO-00006"
+  ],
+  "value-flipped-fr": [
+   "SO-00002",
+   "SO-00005",
+   "SO-00001",
+   "SO-00003",
+   "SO-00004",
+   "SO-00006"
+  ],
+  "customer-en": [
+   "SO-00006",
+   "SO-00004",
+   "SO-00002",
+   "SO-00005",
+   "SO-00001",
+   "SO-00003"
+  ],
+  "customer-fr": [
+   "SO-00006",
+   "SO-00004",
+   "SO-00002",
+   "SO-00005",
+   "SO-00001",
+   "SO-00003"
+  ],
+  "customer-flipped-en": [
+   "SO-00003",
+   "SO-00001",
+   "SO-00005",
+   "SO-00002",
+   "SO-00004",
+   "SO-00006"
+  ],
+  "customer-flipped-fr": [
+   "SO-00003",
+   "SO-00001",
+   "SO-00005",
+   "SO-00002",
+   "SO-00004",
+   "SO-00006"
+  ],
+  "ready-en": [
+   "SO-00004",
+   "SO-00003",
+   "SO-00002",
+   "SO-00006",
+   "SO-00001",
+   "SO-00005"
+  ],
+  "ready-fr": [
+   "SO-00004",
+   "SO-00003",
+   "SO-00002",
+   "SO-00006",
+   "SO-00001",
+   "SO-00005"
+  ],
+  "ready-flipped-en": [
+   "SO-00001",
+   "SO-00005",
+   "SO-00002",
+   "SO-00006",
+   "SO-00003",
+   "SO-00004"
+  ],
+  "ready-flipped-fr": [
+   "SO-00001",
+   "SO-00005",
+   "SO-00002",
+   "SO-00006",
+   "SO-00003",
+   "SO-00004"
+  ]
+ },
+ "isBoardReady": {
+  "undefined": false,
+  "fresh": false,
+  "stock-only": false,
+  "computed-only": false,
+  "ready": true,
+  "ready-running": true,
+  "ready-pending": true,
+  "never-disabled": false,
+  "never-unconfigured": false
+ },
+ "pollMs": {
+  "undefined": 4000,
+  "fresh": 4000,
+  "stock-only": 4000,
+  "computed-only": 60000,
+  "ready": 60000,
+  "ready-running": 4000,
+  "ready-pending": 4000,
+  "never-disabled": 60000,
+  "never-unconfigured": 60000
+ },
+ "ageTone": {
+  "0": "neutral",
+  "20": "neutral",
+  "21": "warning",
+  "45": "warning",
+  "46": "danger",
+  "400": "danger",
+  "-1": "neutral"
+ },
+ "formatQty": {
+  "0": "0",
+  "1": "1",
+  "1000000": "1000000",
+  "1.5": "1.5",
+  "2.005": "2.01",
+  "0.30000000000000004": "0.3",
+  "12.999": "13",
+  "-3.14159": "-3.14"
+ },
+ "parseDay": {
+  "\"2026-09-12\"": "2026-09-12T12:00:00.000Z",
+  "\"2026-01-01\"": "2026-01-01T12:00:00.000Z",
+  "\"2026-12-31\"": "2026-12-31T12:00:00.000Z",
+  "\"2026\"": "2026-01-01T12:00:00.000Z",
+  "\"\"": "1900-01-01T12:00:00.000Z",
+  "\"x-y-z\"": "Invalid Date"
+ },
+ "daysPastDue": {
+  "\"2026-03-14\"": 0,
+  "\"2026-03-13\"": 1,
+  "\"2026-03-15\"": -1,
+  "\"2026-02-14\"": 28,
+  "\"2027-03-14\"": -365,
+  "\"2026-03\"": 13,
+  "\"\"": 46093,
+  "\"soon\"": "NaN"
+ },
+ "panelGroups": {
+  "mixed": [
+   {
+    "id": "todo",
+    "units": 4.77,
+    "lines": [
+     {
+      "line": "p1",
+      "qty": 2,
+      "ofQty": 5
+     },
+     {
+      "line": "p2",
+      "qty": 2.5,
+      "ofQty": null
+     },
+     {
+      "line": "p7",
+      "qty": 0.07,
+      "ofQty": 0.1
+     },
+     {
+      "line": "p8",
+      "qty": 0.2,
+      "ofQty": null
+     }
+    ]
+   },
+   {
+    "id": "packed",
+    "units": 5.03,
+    "lines": [
+     {
+      "line": "p1",
+      "qty": 1,
+      "ofQty": 5
+     },
+     {
+      "line": "p3",
+      "qty": 4,
+      "ofQty": null
+     },
+     {
+      "line": "p7",
+      "qty": 0.03,
+      "ofQty": 0.1
+     }
+    ]
+   },
+   {
+    "id": "shipped",
+    "units": 5,
+    "lines": [
+     {
+      "line": "p1",
+      "qty": 2,
+      "ofQty": 5
+     },
+     {
+      "line": "p4",
+      "qty": 3,
+      "ofQty": null
+     }
+    ]
+   },
+   {
+    "id": "other",
+    "units": null,
+    "lines": [
+     {
+      "line": "p5",
+      "qty": 1,
+      "ofQty": null
+     },
+     {
+      "line": "p6",
+      "qty": 2,
+      "ofQty": null
+     }
+    ]
+   }
+  ],
+  "empty": [],
+  "searchRow": [
+   {
+    "id": "todo",
+    "units": 4,
+    "n": 2
+   }
+  ]
+ },
+ "packableUnits": {
+  "nothing": 0,
+  "shelf-holds-units": 1.34,
+  "open-picklist": 2,
+  "completed-picklist-units-waiting": 0,
+  "completed-picklist-all-boxed": 0,
+  "parcel-waiting-and-shelf": 1,
+  "delivered-only": 0,
+  "fields-missing": 0
+ },
+ "canPick": {
+  "nothing": false,
+  "shelf-holds-units": true,
+  "open-picklist": false,
+  "completed-picklist-units-waiting": false,
+  "completed-picklist-all-boxed": false,
+  "parcel-waiting-and-shelf": true,
+  "delivered-only": false,
+  "fields-missing": false
+ },
+ "boxablePicklists": {
+  "nothing": [],
+  "shelf-holds-units": [],
+  "open-picklist": [
+   "2"
+  ],
+  "completed-picklist-units-waiting": [
+   "1"
+  ],
+  "completed-picklist-all-boxed": [],
+  "parcel-waiting-and-shelf": [],
+  "delivered-only": [],
+  "fields-missing": []
+ },
+ "waitingPackages": {
+  "nothing": [],
+  "shelf-holds-units": [],
+  "open-picklist": [
+   "1"
+  ],
+  "completed-picklist-units-waiting": [],
+  "completed-picklist-all-boxed": [
+   "2",
+   "3"
+  ],
+  "parcel-waiting-and-shelf": [
+   "9"
+  ],
+  "delivered-only": [],
+  "fields-missing": []
+ },
+ "nextStep": {
+  "nothing": null,
+  "shelf-holds-units": "pick",
+  "open-picklist": "pack-2",
+  "completed-picklist-units-waiting": null,
+  "completed-picklist-all-boxed": "handover-2",
+  "parcel-waiting-and-shelf": "pick",
+  "delivered-only": null,
+  "fields-missing": null
+ },
+ "checkLines": {
+  "chosen": [
+   {
+    "line_id": "a",
+    "quantity": 2
+   },
+   {
+    "line_id": "b",
+    "quantity": 1.5
+   }
+  ],
+  "nothing-chosen": [],
+  "fractions": [
+   {
+    "line_id": "a",
+    "quantity": 0.34
+   },
+   {
+    "line_id": "b",
+    "quantity": 1
+   }
+  ],
+  "negative": [],
+  "empty": []
+ },
+ "STATUSES": [
+  "to_ship",
+  "partial",
+  "incoming",
+  "to_order"
+ ],
+ "STATUS_META": {
+  "to_ship": {
+   "tone": "success",
+   "icon": "PackageCheck",
+   "label": "orders.status.toShip",
+   "hint": "orders.hint.toShip"
+  },
+  "partial": {
+   "tone": "info",
+   "icon": "PackageOpen",
+   "label": "orders.status.partial",
+   "hint": "orders.hint.partial"
+  },
+  "incoming": {
+   "tone": "warning",
+   "icon": "Truck",
+   "label": "orders.status.incoming",
+   "hint": "orders.hint.incoming"
+  },
+  "to_order": {
+   "tone": "danger",
+   "icon": "ShoppingCart",
+   "label": "orders.status.toOrder",
+   "hint": "orders.hint.toOrder"
+  }
+ },
+ "PAY_META": {
+  "unpaid": {
+   "tone": "neutral",
+   "icon": "CircleDashed",
+   "label": "orders.pay.unpaid"
+  },
+  "partial": {
+   "tone": "neutral",
+   "icon": "CircleDotDashed",
+   "label": "orders.pay.partial"
+  },
+  "paid": {
+   "tone": "success",
+   "icon": "CircleCheck",
+   "label": "orders.pay.paid"
+  }
+ },
+ "TONE": {
+  "success": {
+   "text": "text-green-700 dark:text-green-400",
+   "soft": "bg-green-50 dark:bg-green-500/10",
+   "bar": "bg-green-500",
+   "edge": "border-l-green-500",
+   "rail": "border-green-500/60"
+  },
+  "info": {
+   "text": "text-blue-700 dark:text-blue-400",
+   "soft": "bg-blue-50 dark:bg-blue-500/10",
+   "bar": "bg-blue-500",
+   "edge": "border-l-blue-500",
+   "rail": "border-blue-500/60"
+  },
+  "warning": {
+   "text": "text-yellow-700 dark:text-yellow-400",
+   "soft": "bg-yellow-50 dark:bg-yellow-400/10",
+   "bar": "bg-yellow-500",
+   "edge": "border-l-yellow-500",
+   "rail": "border-yellow-500/60"
+  },
+  "danger": {
+   "text": "text-red-700 dark:text-red-400",
+   "soft": "bg-red-100 dark:bg-red-500/20",
+   "bar": "bg-red-500",
+   "edge": "border-l-red-500",
+   "rail": "border-red-500/60"
+  },
+  "neutral": {
+   "text": "text-bambu-gray",
+   "soft": "bg-bambu-dark-tertiary/60",
+   "bar": "bg-bambu-gray",
+   "edge": "border-l-bambu-green",
+   "rail": "border-bambu-gray/40"
+  }
+ },
+ "FIT_VIEWPORT": "sticky left-0 max-w-[calc(100vw-64px)] md:max-w-[calc(100vw-96px)] lg:static lg:max-w-none",
+ "ROW_GRID": "grid items-center gap-x-3 gap-y-1.5 grid-cols-[minmax(0,1fr)_auto_1.25rem] [grid-template-areas:'num_status_chev'_'cust_value_chev'_'bar_bar_bar'_'pay_pay_pay'] lg:[grid-template-areas:none] lg:grid-cols-[6.5rem_minmax(0,1fr)_3.5rem_minmax(11rem,16rem)_auto_9.5rem_7.5rem_3.5rem]",
+ "isRefused": {
+  "ApiError 400": true,
+  "ApiError 404": true,
+  "ApiError 409": true,
+  "ApiError 422": false,
+  "ApiError 502": false,
+  "ApiError 503": false,
+  "ApiError 500 with code": false,
+  "Error": false,
+  "TypeError": false,
+  "string": false,
+  "object with status": false,
+  "null": false,
+  "undefined": false
+ },
+ "errorReason": {
+  "ApiError 400": "t(orders.parcel.stale)",
+  "ApiError 404": "t(orders.parcel.stale)",
+  "ApiError 409": "t(orders.parcel.stale)",
+  "ApiError 422": "Validation failed",
+  "ApiError 502": "Le client est inactif.",
+  "ApiError 503": "t(orders.busy)",
+  "ApiError 500 with code": "boom",
+  "Error": "Failed to fetch",
+  "TypeError": "x is not a function",
+  "string": "",
+  "object with status": "",
+  "null": "",
+  "undefined": ""
+ },
+ "inputUntouched": true
+}
+
+### stderr:
+

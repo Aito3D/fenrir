@@ -1,0 +1,191 @@
+### exit: 0
+### stdout:
+{
+ "HandoverBody": {
+  "properties": {
+   "apply_credit": {
+    "title": "Apply Credit",
+    "type": "boolean"
+   },
+   "mode": {
+    "enum": [
+     "pickup",
+     "delivery"
+    ],
+    "title": "Mode",
+    "type": "string"
+   }
+  },
+  "required": [
+   "mode",
+   "apply_credit"
+  ],
+  "title": "HandoverBody",
+  "type": "object"
+ },
+ "InvoiceBody": {
+  "properties": {
+   "apply_credit": {
+    "title": "Apply Credit",
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "apply_credit"
+  ],
+  "title": "InvoiceBody",
+  "type": "object"
+ },
+ "OrderBoardSettingsBody": {
+  "properties": {
+   "core_brands": {
+    "items": {
+     "type": "string"
+    },
+    "maxItems": 30,
+    "title": "Core Brands",
+    "type": "array"
+   },
+   "max_age_days": {
+    "maximum": 3650,
+    "minimum": 0,
+    "title": "Max Age Days",
+    "type": "integer"
+   },
+   "sync_enabled": {
+    "title": "Sync Enabled",
+    "type": "boolean"
+   },
+   "sync_minutes": {
+    "enum": [
+     5,
+     15,
+     60
+    ],
+    "title": "Sync Minutes",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "sync_enabled",
+   "sync_minutes",
+   "max_age_days",
+   "core_brands"
+  ],
+  "title": "OrderBoardSettingsBody",
+  "type": "object"
+ },
+ "PackBody": {
+  "$defs": {
+   "ParcelLine": {
+    "properties": {
+     "line_id": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Line Id",
+      "type": "string"
+     },
+     "quantity": {
+      "exclusiveMinimum": 0,
+      "title": "Quantity",
+      "type": "number"
+     }
+    },
+    "required": [
+     "line_id",
+     "quantity"
+    ],
+    "title": "ParcelLine",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "lines": {
+    "items": {
+     "$ref": "#/$defs/ParcelLine"
+    },
+    "maxItems": 200,
+    "minItems": 1,
+    "title": "Lines",
+    "type": "array"
+   },
+   "picklist_id": {
+    "maxLength": 64,
+    "minLength": 1,
+    "title": "Picklist Id",
+    "type": "string"
+   }
+  },
+  "required": [
+   "lines",
+   "picklist_id"
+  ],
+  "title": "PackBody",
+  "type": "object"
+ },
+ "ParcelBody": {
+  "$defs": {
+   "ParcelLine": {
+    "properties": {
+     "line_id": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Line Id",
+      "type": "string"
+     },
+     "quantity": {
+      "exclusiveMinimum": 0,
+      "title": "Quantity",
+      "type": "number"
+     }
+    },
+    "required": [
+     "line_id",
+     "quantity"
+    ],
+    "title": "ParcelLine",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "lines": {
+    "items": {
+     "$ref": "#/$defs/ParcelLine"
+    },
+    "maxItems": 200,
+    "minItems": 1,
+    "title": "Lines",
+    "type": "array"
+   }
+  },
+  "required": [
+   "lines"
+  ],
+  "title": "ParcelBody",
+  "type": "object"
+ },
+ "ParcelLine": {
+  "properties": {
+   "line_id": {
+    "maxLength": 64,
+    "minLength": 1,
+    "title": "Line Id",
+    "type": "string"
+   },
+   "quantity": {
+    "exclusiveMinimum": 0,
+    "title": "Quantity",
+    "type": "number"
+   }
+  },
+  "required": [
+   "line_id",
+   "quantity"
+  ],
+  "title": "ParcelLine",
+  "type": "object"
+ }
+}
+
+### stderr:
+

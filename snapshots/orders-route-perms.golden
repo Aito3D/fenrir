@@ -1,0 +1,43 @@
+### exit: 0
+### stdout:
+1 @router.get("")
+1 @router.get("/finished")
+1 @router.get("/finished/{salesorder_id}")
+1 @router.get("/invoices/{invoice_id}/pdf")
+1 @router.get("/orders/{salesorder_id}/packages/{package_id}/handover")
+1 @router.get("/orders/{salesorder_id}/picklist")
+1 @router.get("/orders/{salesorder_id}/picklists/{picklist_id}")
+1 @router.get("/settings", response_model=OrderBoardSettingsBody)
+1 @router.post("/orders/{salesorder_id}/invoice")
+1 @router.post("/orders/{salesorder_id}/packages")
+1 @router.post("/orders/{salesorder_id}/packages/{package_id}/handover")
+1 @router.post("/orders/{salesorder_id}/picklists")
+1 @router.post("/orders/{salesorder_id}/prep-sheet")
+1 @router.post("/refresh")
+1 @router.put("/settings", response_model=OrderBoardSettingsBody)
+1 APIRouter(prefix="/order-board", tags=["order-board"])
+8 RequirePermissionIfAuthEnabled(Permission.ORDERS_READ)
+7 RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE)
+order_board,
+from backend.app.services.order_board_sync import start_order_board_sync
+start_order_board_sync()
+app.include_router(order_board.router, prefix=app_settings.api_prefix)
+--- permission per route (source order)
+GET / get_order_board ORDERS_READ
+GET /finished get_finished_orders ORDERS_READ
+GET /finished/{salesorder_id} get_finished_order ORDERS_READ
+POST /refresh refresh_order_board ORDERS_UPDATE
+GET /settings get_order_board_settings ORDERS_UPDATE
+PUT /settings update_order_board_settings ORDERS_UPDATE
+POST /orders/{salesorder_id}/prep-sheet print_prep_sheet ORDERS_READ
+GET /orders/{salesorder_id}/picklist get_picklist_preview ORDERS_READ
+POST /orders/{salesorder_id}/picklists create_picklist ORDERS_UPDATE
+GET /orders/{salesorder_id}/picklists/{picklist_id} get_picklist_content ORDERS_READ
+POST /orders/{salesorder_id}/packages create_parcel ORDERS_UPDATE
+GET /orders/{salesorder_id}/packages/{package_id}/handover get_handover_preview ORDERS_READ
+POST /orders/{salesorder_id}/packages/{package_id}/handover hand_over_parcel ORDERS_UPDATE
+POST /orders/{salesorder_id}/invoice invoice_order ORDERS_UPDATE
+GET /invoices/{invoice_id}/pdf get_invoice_pdf ORDERS_READ
+
+### stderr:
+

@@ -1,0 +1,3079 @@
+### exit: 0
+### stdout:
+--- de orders (190 keys)
+orders.age = "{{n}} T"  placeholders={{n}}
+orders.busy = "Zoho ist ausgelastet, versuchen Sie es gleich noch einmal."
+orders.chip.quote = "Angebot"
+orders.col.available = "Verfügbar"
+orders.col.product = "Produkt"
+orders.col.qty = "Menge"
+orders.col.short = "Fehlt"
+orders.col.state = "Zustand"
+orders.contact.alsoOpen = "Weitere offene Bestellungen dieses Kunden:"
+orders.contact.copied = "Kopiert"
+orders.contact.copy = "{{what}} kopieren"  placeholders={{what}}
+orders.contact.mailSubject = "Bestellung {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "Keine E-Mail in Zoho"
+orders.contact.noPhone = "Kein Telefon in Zoho"
+orders.contact.none = "Keine Kontaktperson für diese Bestellung in Zoho."
+orders.contact.title = "Kontakt"
+orders.coreOnly = "Nur 3D"
+orders.empty.core = "Keine offenen 3D-Bestellungen."
+orders.empty.coreHint = "„Nur 3D“ ausschalten, um die anderen Bestellungen zu sehen."
+orders.empty.noResults = "Keine Ergebnisse."
+orders.empty.none = "Keine offenen Bestellungen."
+orders.empty.noneHint = "Alle Kundenbestellungen sind versendet."
+orders.finished.chip = "Abgeschlossen"
+orders.finished.intro = "Abgeschlossene Aufträge: alles wurde versendet. Neueste zuerst."
+orders.finished.loadFailed = "Dieser Auftrag konnte nicht aus Zoho geladen werden."
+orders.finished.loading = "Dieser Auftrag wird aus Zoho geladen…"
+orders.finished.match = "Passende abgeschlossene Aufträge: {{n}}"  placeholders={{n}}
+orders.finished.none = "Keine abgeschlossenen Aufträge."
+orders.finished.older = "Ältere Aufträge anzeigen"
+orders.finished.shipped = "Versendet"
+orders.finished.show = "Anzeigen"
+orders.firstSync = "Erste Synchronisierung läuft — noch {{n}} Dokumente"  placeholders={{n}}
+orders.group.other = "Weitere Positionen"
+orders.group.packed = "Verpackt, wartet auf Lieferung"
+orders.group.shipped = "Versendet"
+orders.group.todo = "Vorzubereiten"
+orders.handover.alreadyInvoiced = "Bereits abgerechnet ({{numbers}}): keine neue Rechnung."  placeholders={{numbers}}
+orders.handover.applyCredit = "Guthaben des Kunden anrechnen ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "Als versendet markieren"
+orders.handover.confirmPickup = "An den Kunden übergeben"
+orders.handover.creditOffBoard = "Die Bestellung ist nicht mehr in der Liste: Kundenguthaben in Zoho anrechnen."
+orders.handover.delivery = "Lieferung"
+orders.handover.deliveryNote = "Das Paket wird in Zoho auf „versendet“ gesetzt."
+orders.handover.doneDelivery = "Paket {{number}} als versendet markiert"  placeholders={{number}}
+orders.handover.donePickup = "Paket {{number}} an den Kunden übergeben"  placeholders={{number}}
+orders.handover.due = "Noch offen: {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "Die Übergabe wurde nicht abgeschlossen: {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "Erstellt die Rechnung für dieses Paket: {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "Rechnung {{number}} erstellt"  placeholders={{number}}
+orders.handover.invoiceFailed = "Die Rechnung konnte nicht erstellt werden: {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "Erstellt die Rechnung für dieses Paket"
+orders.handover.manual = "Ein Rabatt oder Zuschlag auf diese Bestellung lässt sich nicht aufteilen: in Zoho abrechnen."
+orders.handover.manualDraft = "Eine Rechnung im Entwurf ({{number}}) wartet in Zoho: dort zuerst versenden."  placeholders={{number}}
+orders.handover.meta = "{{units}} · vom {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "Art der Übergabe"
+orders.handover.nothingToInvoice = "Für dieses Paket ist nichts abzurechnen."
+orders.handover.open = "Paket übergeben"
+orders.handover.openNumber = "{{number}} übergeben"  placeholders={{number}}
+orders.handover.pickup = "Abholung im Shop"
+orders.handover.pickupNote = "Das Paket wird in Zoho auf „zugestellt“ gesetzt."
+orders.handover.prefillRefused = "Zoho konnte die Rechnung nicht vorbereiten: in Zoho erstellen."
+orders.handover.previewFailed = "Zoho hat nicht mitgeteilt, was abgerechnet wird."
+orders.handover.sending = "Senden an Zoho…"
+orders.handover.settled = "Rechnung beglichen"
+orders.hidden = "+{{n}} ausgeblendet"  placeholders={{n}}
+orders.hint.incoming = "Fehlmenge durch Einkaufsbestellung gedeckt"
+orders.hint.partial = "teilweise versandbereit"
+orders.hint.toOrder = "Fehlmenge ohne offene Einkaufsbestellung"
+orders.hint.toShip = "alles auf Lager"
+orders.inv.create = "Rechnung erstellen"
+orders.inv.download = "Rechnung herunterladen"
+orders.inv.draft = "Entwurf"
+orders.inv.empty = "Noch keine Rechnung. Sie wird bei der Übergabe des Pakets erstellt."
+orders.inv.nothing = "Nichts mehr abzurechnen."
+orders.inv.open = "In Zoho Books öffnen"
+orders.inv.pdfFailed = "Die Rechnung konnte nicht abgerufen werden."
+orders.inv.print = "Rechnung drucken"
+orders.inv.title = "Rechnungen"
+orders.inv.unbilled = "{{units}} ohne Rechnung übergeben"  placeholders={{units}}
+orders.line.backorder = "Im Zulauf"
+orders.line.cancelled = "Storniert"
+orders.line.invoiced = "berechnet"
+orders.line.packed = "Verpackt"
+orders.line.ready = "Bereit"
+orders.line.service = "Dienstleistung"
+orders.line.shipped = "Versendet"
+orders.line.toOrder = "Zu bestellen"
+orders.loadFailed = "Die Bestellübersicht konnte nicht geladen werden."
+orders.notConnected = "Zoho Books ist nicht verbunden."
+orders.notConnectedHint = "Zoho-Zugangsdaten in den Einstellungen hinterlegen, um Bestellungen zu laden."
+orders.ofOrdered = "von {{n}}"  placeholders={{n}}
+orders.packed = "{{n}} verpackt"  placeholders={{n}}
+orders.parcel.create = "Paket erstellen"
+orders.parcel.created = "Paket {{number}} in Zoho Books erstellt"  placeholders={{number}}
+orders.parcel.creating = "Wird in Zoho erstellt…"
+orders.parcel.failed = "Das Paket konnte nicht erstellt werden: {{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "Paket: {{units}} von {{of}} aus {{number}}"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "Im Paket"
+orders.parcel.left = "{{units}} noch vorzubereiten"  placeholders={{units}}
+orders.parcel.less = "Eins weniger"
+orders.parcel.meta = "datiert {{date}} · Nummer wird von Zoho vergeben"  placeholders={{date}}
+orders.parcel.more = "Eins mehr"
+orders.parcel.stale = "Die Bestellung hat sich geändert, prüfen Sie die Mengen."
+orders.pay.advanceNote = "Vorauszahlung: das ungenutzte Guthaben des Kunden in Zoho, das auf die nächste Rechnung wartet."
+orders.pay.any = "Beliebige Zahlung"
+orders.pay.invDue = "Fällig {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "{{amount}} offen"  placeholders={{amount}}
+orders.pay.invOverdue = "{{n}} T. überfällig"  placeholders={{n}}
+orders.pay.left = "Noch zu zahlen"
+orders.pay.legendAdvance = "Im Voraus bezahlt"
+orders.pay.legendDue = "In Rechnung gestellt, Zahlung ausstehend"
+orders.pay.legendInvoice = "Per Rechnung bezahlt"
+orders.pay.legendOverdue = "Überfällig"
+orders.pay.legendPaid = "Bezahlt"
+orders.pay.legendRest = "Noch zu zahlen, nicht in Rechnung gestellt"
+orders.pay.nothingLeft = "Nichts mehr zu zahlen"
+orders.pay.overdue = "überfällig"
+orders.pay.overdueChip = "Überfällig"
+orders.pay.paid = "Bezahlt"
+orders.pay.partial = "Teilweise bezahlt"
+orders.pay.pct = "{{pct}} % bezahlt"  placeholders={{pct}}
+orders.pay.tile = "{{pct}} % bezahlt"  placeholders={{pct}}
+orders.pay.title = "Zahlung"
+orders.pay.unpaid = "Unbezahlt"
+orders.pick.boxed = "Alles von dieser Pickliste ist bereits in einem Paket."
+orders.pick.create = "Anlegen und drucken"
+orders.pick.created = "Pickliste {{number}} in Zoho Books angelegt"  placeholders={{number}}
+orders.pick.failed = "Die Pickliste konnte nicht angelegt werden: {{reason}}"  placeholders={{reason}}
+orders.pick.meta = "in Zoho angelegt, dann gedruckt"
+orders.pick.nothing = "Nichts zu entnehmen: Der gesamte Bestand steht bereits auf einer Pickliste."
+orders.pick.open = "Vorbereiten"
+orders.pick.summary = "Pickliste: {{units}} von {{of}} auf Lager"  placeholders={{of}},{{units}}
+orders.pick.toPick = "Zu entnehmen"
+orders.pkg.delivered = "{{number}} · zugestellt {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · verpackt {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · versendet {{date}}"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "In Vorbereitung"
+orders.prep.printFailed = "Der Packzettel konnte nicht erstellt werden."
+orders.prep.printed = "Gedruckt um {{time}} von {{name}}"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "Gedruckt um {{time}}"  placeholders={{time}}
+orders.prep.reprint = "Erneut drucken"
+orders.prep.sheet = "Packzettel"
+orders.readyPct = "{{pct}} % bereit"  placeholders={{pct}}
+orders.refresh = "Aktualisieren"
+orders.refreshFailed = "Die Bestellübersicht konnte nicht aktualisiert werden."
+orders.retry = "Erneut versuchen"
+orders.search = "Bestellnummer, Kunde, Produkt, SKU …"
+orders.settings.addBrand = "Marke hinzufügen"
+orders.settings.coreBrands = "Kernmarken"
+orders.settings.coreBrandsHint = "Der Schalter „Nur 3D“ behält Bestellungen mit mindestens einer Position dieser Marken."
+orders.settings.days = "Tage"
+orders.settings.hour = "1 Stunde"
+orders.settings.interval = "Zoho prüfen alle"
+orders.settings.intervalHint = "Jeder Durchlauf liest nur geänderte Dokumente, höchstens 20."
+orders.settings.lastSync = "Letzte Synchronisierung {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "Bestellungen ignorieren, die älter sind als"
+orders.settings.maxAgeHint = "Ältere Bestellungen erscheinen nicht und belegen keinen Bestand. 0 behält alle Bestellungen."
+orders.settings.minutes = "{{n}} Minuten"  placeholders={{n}}
+orders.settings.neverSynced = "Noch nicht synchronisiert"
+orders.settings.removeBrand = "{{brand}} entfernen"  placeholders={{brand}}
+orders.settings.saveFailed = "Einstellungen der Bestellübersicht konnten nicht gespeichert werden"
+orders.settings.saved = "Einstellungen der Bestellübersicht gespeichert"
+orders.settings.showsTitle = "Was die Übersicht zeigt"
+orders.settings.syncEnabled = "Bestellübersicht synchron halten"
+orders.settings.syncEnabledHint = "Liest Kundenaufträge, offene Einkaufsbestellungen und Bestand aus Zoho Books. Schreibt nie."
+orders.settings.syncNow = "Jetzt synchronisieren"
+orders.settings.syncTitle = "Zoho-Synchronisierung"
+orders.shipped = "{{shipped}}/{{total}} versendet"  placeholders={{shipped}},{{total}}
+orders.sort.age = "Alter"
+orders.sort.customer = "Kunde"
+orders.sort.label = "Sortieren"
+orders.sort.ready = "% bereit"
+orders.sort.value = "Wert"
+orders.status.all = "Alle"
+orders.status.inProgress = "In Arbeit"
+orders.status.incoming = "Unterwegs"
+orders.status.partial = "Teilweise"
+orders.status.toOrder = "Zu bestellen"
+orders.status.toShip = "Versandbereit"
+orders.syncFailed = "Letzte Synchronisierung fehlgeschlagen: {{reason}} — angezeigt werden die Daten vom {{when}}."  placeholders={{reason}},{{when}}
+orders.syncOff = "Die Bestell-Synchronisierung ist aus."
+orders.syncOffHint = "In den Einstellungen im Tab „Bestellungen“ einschalten."
+orders.syncing = "Synchronisierung · noch {{n}}"  placeholders={{n}}
+orders.title = "Bestellungen"
+orders.units_one = "{{count}} Einheit"  placeholders={{count}}
+orders.units_other = "{{count}} Einheiten"  placeholders={{count}}
+orders.updated = "Aktualisiert {{when}}"  placeholders={{when}}
+nav.orders = "Bestellungen"
+settings.tabs.orders = "Bestellungen"
+common.cancel = "Abbrechen"
+--- en orders (190 keys)
+orders.age = "{{n}} d"  placeholders={{n}}
+orders.busy = "Zoho is busy, try again in a moment."
+orders.chip.quote = "Quote"
+orders.col.available = "Available"
+orders.col.product = "Product"
+orders.col.qty = "Qty"
+orders.col.short = "Short"
+orders.col.state = "State"
+orders.contact.alsoOpen = "Also open for this customer:"
+orders.contact.copied = "Copied"
+orders.contact.copy = "Copy {{what}}"  placeholders={{what}}
+orders.contact.mailSubject = "Order {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "No email in Zoho"
+orders.contact.noPhone = "No phone in Zoho"
+orders.contact.none = "No contact person on this order in Zoho."
+orders.contact.title = "Contact"
+orders.coreOnly = "3D only"
+orders.empty.core = "No open 3D orders."
+orders.empty.coreHint = "Turn off \"3D only\" to see the other orders."
+orders.empty.noResults = "No results."
+orders.empty.none = "No open orders."
+orders.empty.noneHint = "Every customer order has shipped."
+orders.finished.chip = "Finished"
+orders.finished.intro = "Finished orders: everything has shipped. Newest first."
+orders.finished.loadFailed = "Could not load this order from Zoho."
+orders.finished.loading = "Loading this order from Zoho…"
+orders.finished.match = "Finished orders matching: {{n}}"  placeholders={{n}}
+orders.finished.none = "No finished orders."
+orders.finished.older = "Show older orders"
+orders.finished.shipped = "Shipped"
+orders.finished.show = "Show"
+orders.firstSync = "First sync in progress — {{n}} documents remaining"  placeholders={{n}}
+orders.group.other = "Other lines"
+orders.group.packed = "Packed, awaiting delivery"
+orders.group.shipped = "Shipped"
+orders.group.todo = "To prepare"
+orders.handover.alreadyInvoiced = "Already invoiced ({{numbers}}): no new invoice."  placeholders={{numbers}}
+orders.handover.applyCredit = "Apply the customer’s credit ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "Mark as shipped"
+orders.handover.confirmPickup = "Handed to the customer"
+orders.handover.creditOffBoard = "The order left the list: apply the customer’s credit in Zoho."
+orders.handover.delivery = "Delivery"
+orders.handover.deliveryNote = "The parcel becomes “shipped” in Zoho."
+orders.handover.doneDelivery = "Parcel {{number}} marked as shipped"  placeholders={{number}}
+orders.handover.donePickup = "Parcel {{number}} handed to the customer"  placeholders={{number}}
+orders.handover.due = "Still due {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "The hand-over did not complete: {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "Creates the invoice for this parcel: {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "Invoice {{number}} created"  placeholders={{number}}
+orders.handover.invoiceFailed = "The invoice could not be created: {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "Creates the invoice for this parcel"
+orders.handover.manual = "A discount or charge on this order cannot be split: invoice it in Zoho."
+orders.handover.manualDraft = "A draft invoice ({{number}}) is waiting in Zoho: send it there first."  placeholders={{number}}
+orders.handover.meta = "{{units}} · dated {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "Hand-over mode"
+orders.handover.nothingToInvoice = "Nothing to invoice for this parcel."
+orders.handover.open = "Hand over the parcel"
+orders.handover.openNumber = "Hand over {{number}}"  placeholders={{number}}
+orders.handover.pickup = "Shop pick-up"
+orders.handover.pickupNote = "The parcel becomes “delivered” in Zoho."
+orders.handover.prefillRefused = "Zoho could not prepare the invoice: create it in Zoho."
+orders.handover.previewFailed = "Zoho did not say what will be invoiced."
+orders.handover.sending = "Sending to Zoho…"
+orders.handover.settled = "Invoice settled"
+orders.hidden = "+{{n}} hidden"  placeholders={{n}}
+orders.hint.incoming = "shortfall covered by a PO"
+orders.hint.partial = "partly shippable"
+orders.hint.toOrder = "shortfall with no open PO"
+orders.hint.toShip = "everything in stock"
+orders.inv.create = "Create invoice"
+orders.inv.download = "Download invoice"
+orders.inv.draft = "Draft"
+orders.inv.empty = "No invoice yet. It is created when the parcel is handed over."
+orders.inv.nothing = "Nothing left to invoice."
+orders.inv.open = "Open in Zoho Books"
+orders.inv.pdfFailed = "The invoice could not be fetched."
+orders.inv.print = "Print invoice"
+orders.inv.title = "Invoices"
+orders.inv.unbilled = "{{units}} handed over without an invoice"  placeholders={{units}}
+orders.line.backorder = "Backorder"
+orders.line.cancelled = "Cancelled"
+orders.line.invoiced = "invoiced"
+orders.line.packed = "Packed"
+orders.line.ready = "Ready"
+orders.line.service = "Service"
+orders.line.shipped = "Shipped"
+orders.line.toOrder = "To order"
+orders.loadFailed = "Could not load the order board."
+orders.notConnected = "Zoho Books is not connected."
+orders.notConnectedHint = "Add the Zoho credentials in Settings to load orders."
+orders.ofOrdered = "of {{n}}"  placeholders={{n}}
+orders.packed = "{{n}} packed"  placeholders={{n}}
+orders.parcel.create = "Create parcel"
+orders.parcel.created = "Parcel {{number}} created in Zoho Books"  placeholders={{number}}
+orders.parcel.creating = "Creating in Zoho…"
+orders.parcel.failed = "The parcel could not be created: {{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "Parcel: {{units}} of {{of}} on {{number}}"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "In the parcel"
+orders.parcel.left = "{{units}} left to prepare"  placeholders={{units}}
+orders.parcel.less = "One less"
+orders.parcel.meta = "dated {{date}} · number assigned by Zoho"  placeholders={{date}}
+orders.parcel.more = "One more"
+orders.parcel.stale = "The order changed, check the quantities."
+orders.pay.advanceNote = "Advance: the customer's unused credit in Zoho, waiting for the next invoice."
+orders.pay.any = "Any payment"
+orders.pay.invDue = "Due {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "{{amount}} left"  placeholders={{amount}}
+orders.pay.invOverdue = "Overdue {{n}} d"  placeholders={{n}}
+orders.pay.left = "Left to pay"
+orders.pay.legendAdvance = "Paid in advance"
+orders.pay.legendDue = "Invoiced, awaiting payment"
+orders.pay.legendInvoice = "Paid on invoice"
+orders.pay.legendOverdue = "Overdue"
+orders.pay.legendPaid = "Paid"
+orders.pay.legendRest = "Still to pay, not invoiced"
+orders.pay.nothingLeft = "Nothing left to pay"
+orders.pay.overdue = "overdue"
+orders.pay.overdueChip = "Overdue"
+orders.pay.paid = "Paid"
+orders.pay.partial = "Partially paid"
+orders.pay.pct = "{{pct}}% paid"  placeholders={{pct}}
+orders.pay.tile = "{{pct}}% paid"  placeholders={{pct}}
+orders.pay.title = "Payment"
+orders.pay.unpaid = "Unpaid"
+orders.pick.boxed = "Everything on this picklist is already in a parcel."
+orders.pick.create = "Create and print"
+orders.pick.created = "Picklist {{number}} created in Zoho Books"  placeholders={{number}}
+orders.pick.failed = "The picklist could not be created: {{reason}}"  placeholders={{reason}}
+orders.pick.meta = "created in Zoho, then printed"
+orders.pick.nothing = "Nothing left to pick: every unit in stock is already on a picklist."
+orders.pick.open = "Prepare"
+orders.pick.summary = "Picklist: {{units}} of {{of}} in stock"  placeholders={{of}},{{units}}
+orders.pick.toPick = "To pick"
+orders.pkg.delivered = "{{number}} · delivered {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · packed {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · shipped {{date}}"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "Being prepared"
+orders.prep.printFailed = "The prep sheet could not be generated."
+orders.prep.printed = "Printed at {{time}} by {{name}}"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "Printed at {{time}}"  placeholders={{time}}
+orders.prep.reprint = "Reprint"
+orders.prep.sheet = "Prep sheet"
+orders.readyPct = "{{pct}} % ready"  placeholders={{pct}}
+orders.refresh = "Refresh"
+orders.refreshFailed = "Could not refresh the order board."
+orders.retry = "Retry"
+orders.search = "Order number, customer, product, SKU…"
+orders.settings.addBrand = "Add a brand"
+orders.settings.coreBrands = "Core brands"
+orders.settings.coreBrandsHint = "The \"3D only\" switch keeps orders with at least one line from these brands."
+orders.settings.days = "days"
+orders.settings.hour = "1 hour"
+orders.settings.interval = "Check Zoho every"
+orders.settings.intervalHint = "Each pass reads changed documents only, 20 at most."
+orders.settings.lastSync = "Last sync {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "Ignore orders older than"
+orders.settings.maxAgeHint = "Older orders stay off the board and take no stock. 0 keeps every order."
+orders.settings.minutes = "{{n}} minutes"  placeholders={{n}}
+orders.settings.neverSynced = "Not synced yet"
+orders.settings.removeBrand = "Remove {{brand}}"  placeholders={{brand}}
+orders.settings.saveFailed = "Could not save the order board settings"
+orders.settings.saved = "Order board settings saved"
+orders.settings.showsTitle = "What the board shows"
+orders.settings.syncEnabled = "Keep the order board in sync"
+orders.settings.syncEnabledHint = "Reads sales orders, open purchase orders and stock from Zoho Books. Never writes."
+orders.settings.syncNow = "Sync now"
+orders.settings.syncTitle = "Zoho sync"
+orders.shipped = "{{shipped}}/{{total}} shipped"  placeholders={{shipped}},{{total}}
+orders.sort.age = "Age"
+orders.sort.customer = "Customer"
+orders.sort.label = "Sort"
+orders.sort.ready = "% ready"
+orders.sort.value = "Value"
+orders.status.all = "All"
+orders.status.inProgress = "In progress"
+orders.status.incoming = "Incoming"
+orders.status.partial = "Partial"
+orders.status.toOrder = "To order"
+orders.status.toShip = "To ship"
+orders.syncFailed = "Last sync failed: {{reason}} — showing data from {{when}}."  placeholders={{reason}},{{when}}
+orders.syncOff = "Order sync is off."
+orders.syncOffHint = "Turn it on in Settings, Orders tab."
+orders.syncing = "Syncing · {{n}} remaining"  placeholders={{n}}
+orders.title = "Orders"
+orders.units_one = "{{count}} unit"  placeholders={{count}}
+orders.units_other = "{{count}} units"  placeholders={{count}}
+orders.updated = "Updated {{when}}"  placeholders={{when}}
+nav.orders = "Orders"
+settings.tabs.orders = "Orders"
+common.cancel = "Cancel"
+--- es orders (190 keys)
+orders.age = "{{n}} días"  placeholders={{n}}
+orders.busy = "Zoho está ocupado, inténtelo de nuevo en un momento."
+orders.chip.quote = "Presupuesto"
+orders.col.available = "Disponible"
+orders.col.product = "Producto"
+orders.col.qty = "Cant."
+orders.col.short = "Falta"
+orders.col.state = "Estado"
+orders.contact.alsoOpen = "También abiertos para este cliente:"
+orders.contact.copied = "Copiado"
+orders.contact.copy = "Copiar {{what}}"  placeholders={{what}}
+orders.contact.mailSubject = "Pedido {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "Sin correo en Zoho"
+orders.contact.noPhone = "Sin teléfono en Zoho"
+orders.contact.none = "Este pedido no tiene persona de contacto en Zoho."
+orders.contact.title = "Contacto"
+orders.coreOnly = "Solo 3D"
+orders.empty.core = "No hay pedidos 3D abiertos."
+orders.empty.coreHint = "Desactiva «Solo 3D» para ver los demás pedidos."
+orders.empty.noResults = "Sin resultados."
+orders.empty.none = "No hay pedidos abiertos."
+orders.empty.noneHint = "Todos los pedidos de clientes se han enviado."
+orders.finished.chip = "Finalizados"
+orders.finished.intro = "Pedidos finalizados: todo se ha enviado. Los más recientes primero."
+orders.finished.loadFailed = "No se pudo cargar este pedido desde Zoho."
+orders.finished.loading = "Cargando este pedido desde Zoho…"
+orders.finished.match = "Pedidos finalizados que coinciden: {{n}}"  placeholders={{n}}
+orders.finished.none = "No hay pedidos finalizados."
+orders.finished.older = "Mostrar pedidos anteriores"
+orders.finished.shipped = "Enviado"
+orders.finished.show = "Mostrar"
+orders.firstSync = "Primera sincronización en curso — quedan {{n}} documentos"  placeholders={{n}}
+orders.group.other = "Otras líneas"
+orders.group.packed = "Empaquetado, pendiente de entrega"
+orders.group.shipped = "Enviado"
+orders.group.todo = "Por preparar"
+orders.handover.alreadyInvoiced = "Ya facturado ({{numbers}}): no se crea otra factura."  placeholders={{numbers}}
+orders.handover.applyCredit = "Aplicar el saldo a favor del cliente ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "Marcar como enviado"
+orders.handover.confirmPickup = "Entregado al cliente"
+orders.handover.creditOffBoard = "El pedido salió de la lista: aplique el saldo a favor del cliente en Zoho."
+orders.handover.delivery = "Envío"
+orders.handover.deliveryNote = "El paquete pasa a «enviado» en Zoho."
+orders.handover.doneDelivery = "Paquete {{number}} marcado como enviado"  placeholders={{number}}
+orders.handover.donePickup = "Paquete {{number}} entregado al cliente"  placeholders={{number}}
+orders.handover.due = "Pendiente {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "La entrega no se completó: {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "Crea la factura de este paquete: {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "Factura {{number}} creada"  placeholders={{number}}
+orders.handover.invoiceFailed = "No se pudo crear la factura: {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "Crea la factura de este paquete"
+orders.handover.manual = "Un descuento o cargo de este pedido no se puede repartir: factúrelo en Zoho."
+orders.handover.manualDraft = "Hay una factura en borrador ({{number}}) en Zoho: envíela allí primero."  placeholders={{number}}
+orders.handover.meta = "{{units}} · con fecha {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "Modo de entrega"
+orders.handover.nothingToInvoice = "Nada que facturar para este paquete."
+orders.handover.open = "Entregar el paquete"
+orders.handover.openNumber = "Entregar {{number}}"  placeholders={{number}}
+orders.handover.pickup = "Recogida en tienda"
+orders.handover.pickupNote = "El paquete pasa a «entregado» en Zoho."
+orders.handover.prefillRefused = "Zoho no pudo preparar la factura: créela en Zoho."
+orders.handover.previewFailed = "Zoho no indicó qué se facturará."
+orders.handover.sending = "Enviando a Zoho…"
+orders.handover.settled = "Factura saldada"
+orders.hidden = "+{{n}} ocultos"  placeholders={{n}}
+orders.hint.incoming = "faltante cubierto por una orden de compra"
+orders.hint.partial = "enviable en parte"
+orders.hint.toOrder = "faltante sin orden de compra abierta"
+orders.hint.toShip = "todo en stock"
+orders.inv.create = "Crear la factura"
+orders.inv.download = "Descargar la factura"
+orders.inv.draft = "Borrador"
+orders.inv.empty = "Aún no hay factura. Se crea al entregar el paquete."
+orders.inv.nothing = "No queda nada por facturar."
+orders.inv.open = "Abrir en Zoho Books"
+orders.inv.pdfFailed = "No se pudo obtener la factura."
+orders.inv.print = "Imprimir la factura"
+orders.inv.title = "Facturas"
+orders.inv.unbilled = "{{units}} entregadas sin factura"  placeholders={{units}}
+orders.line.backorder = "En camino"
+orders.line.cancelled = "Cancelado"
+orders.line.invoiced = "facturado"
+orders.line.packed = "Empaquetado"
+orders.line.ready = "Listo"
+orders.line.service = "Servicio"
+orders.line.shipped = "Enviado"
+orders.line.toOrder = "Por pedir"
+orders.loadFailed = "No se pudo cargar el tablero de pedidos."
+orders.notConnected = "Zoho Books no está conectado."
+orders.notConnectedHint = "Añade las credenciales de Zoho en Ajustes para cargar los pedidos."
+orders.ofOrdered = "de {{n}}"  placeholders={{n}}
+orders.packed = "{{n}} empaquetados"  placeholders={{n}}
+orders.parcel.create = "Crear el paquete"
+orders.parcel.created = "Paquete {{number}} creado en Zoho Books"  placeholders={{number}}
+orders.parcel.creating = "Creando en Zoho…"
+orders.parcel.failed = "No se pudo crear el paquete: {{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "Paquete: {{units}} de {{of}} de {{number}}"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "En el paquete"
+orders.parcel.left = "{{units}} por preparar después"  placeholders={{units}}
+orders.parcel.less = "Uno menos"
+orders.parcel.meta = "con fecha {{date}} · número asignado por Zoho"  placeholders={{date}}
+orders.parcel.more = "Uno más"
+orders.parcel.stale = "El pedido ha cambiado, revise las cantidades."
+orders.pay.advanceNote = "Anticipo: el crédito sin usar del cliente en Zoho, a la espera de la próxima factura."
+orders.pay.any = "Cualquier pago"
+orders.pay.invDue = "Vence {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "Faltan {{amount}}"  placeholders={{amount}}
+orders.pay.invOverdue = "Vencida hace {{n}} d"  placeholders={{n}}
+orders.pay.left = "Pendiente de pago"
+orders.pay.legendAdvance = "Pagado por adelantado"
+orders.pay.legendDue = "Facturado, pendiente de pago"
+orders.pay.legendInvoice = "Pagado en factura"
+orders.pay.legendOverdue = "Vencido"
+orders.pay.legendPaid = "Pagado"
+orders.pay.legendRest = "Pendiente de pago, sin facturar"
+orders.pay.nothingLeft = "Nada pendiente de pago"
+orders.pay.overdue = "vencido"
+orders.pay.overdueChip = "Vencidos"
+orders.pay.paid = "Pagado"
+orders.pay.partial = "Pagado en parte"
+orders.pay.pct = "{{pct}} % pagado"  placeholders={{pct}}
+orders.pay.tile = "{{pct}} % pagado"  placeholders={{pct}}
+orders.pay.title = "Pago"
+orders.pay.unpaid = "Sin pagar"
+orders.pick.boxed = "Todo lo de esta lista ya está en un paquete."
+orders.pick.create = "Crear e imprimir"
+orders.pick.created = "Lista de picking {{number}} creada en Zoho Books"  placeholders={{number}}
+orders.pick.failed = "No se pudo crear la lista de picking: {{reason}}"  placeholders={{reason}}
+orders.pick.meta = "creada en Zoho y luego impresa"
+orders.pick.nothing = "Nada que recoger: todo el stock ya está en una lista de picking."
+orders.pick.open = "Preparar"
+orders.pick.summary = "Lista de picking: {{units}} de {{of}} en stock"  placeholders={{of}},{{units}}
+orders.pick.toPick = "A recoger"
+orders.pkg.delivered = "{{number}} · entregado el {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · empaquetado el {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · enviado el {{date}}"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "En preparación"
+orders.prep.printFailed = "No se pudo generar la hoja de preparación."
+orders.prep.printed = "Impreso a las {{time}} por {{name}}"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "Impreso a las {{time}}"  placeholders={{time}}
+orders.prep.reprint = "Reimprimir"
+orders.prep.sheet = "Hoja de preparación"
+orders.readyPct = "{{pct}} % listo"  placeholders={{pct}}
+orders.refresh = "Actualizar"
+orders.refreshFailed = "No se pudo actualizar el tablero de pedidos."
+orders.retry = "Reintentar"
+orders.search = "Número de pedido, cliente, producto, SKU…"
+orders.settings.addBrand = "Añadir una marca"
+orders.settings.coreBrands = "Marcas principales"
+orders.settings.coreBrandsHint = "El interruptor «Solo 3D» conserva los pedidos con al menos una línea de estas marcas."
+orders.settings.days = "días"
+orders.settings.hour = "1 hora"
+orders.settings.interval = "Consultar Zoho cada"
+orders.settings.intervalHint = "Cada pasada lee solo los documentos modificados, 20 como máximo."
+orders.settings.lastSync = "Última sincronización {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "Ignorar pedidos con más de"
+orders.settings.maxAgeHint = "Los pedidos más antiguos quedan fuera del tablero y no toman stock. 0 conserva todos los pedidos."
+orders.settings.minutes = "{{n}} minutos"  placeholders={{n}}
+orders.settings.neverSynced = "Aún sin sincronizar"
+orders.settings.removeBrand = "Quitar {{brand}}"  placeholders={{brand}}
+orders.settings.saveFailed = "No se pudieron guardar los ajustes del tablero de pedidos"
+orders.settings.saved = "Ajustes del tablero de pedidos guardados"
+orders.settings.showsTitle = "Qué muestra el tablero"
+orders.settings.syncEnabled = "Mantener sincronizado el tablero de pedidos"
+orders.settings.syncEnabledHint = "Lee pedidos de venta, órdenes de compra abiertas y stock de Zoho Books. Nunca escribe."
+orders.settings.syncNow = "Sincronizar ahora"
+orders.settings.syncTitle = "Sincronización con Zoho"
+orders.shipped = "{{shipped}}/{{total}} enviados"  placeholders={{shipped}},{{total}}
+orders.sort.age = "Antigüedad"
+orders.sort.customer = "Cliente"
+orders.sort.label = "Ordenar"
+orders.sort.ready = "% listo"
+orders.sort.value = "Valor"
+orders.status.all = "Todos"
+orders.status.inProgress = "En curso"
+orders.status.incoming = "En camino"
+orders.status.partial = "Parcial"
+orders.status.toOrder = "Por pedir"
+orders.status.toShip = "Para enviar"
+orders.syncFailed = "La última sincronización falló: {{reason}} — se muestran los datos del {{when}}."  placeholders={{reason}},{{when}}
+orders.syncOff = "La sincronización de pedidos está desactivada."
+orders.syncOffHint = "Actívala en Ajustes, pestaña Pedidos."
+orders.syncing = "Sincronizando · quedan {{n}}"  placeholders={{n}}
+orders.title = "Pedidos"
+orders.units_one = "{{count}} unidad"  placeholders={{count}}
+orders.units_other = "{{count}} unidades"  placeholders={{count}}
+orders.updated = "Actualizado {{when}}"  placeholders={{when}}
+nav.orders = "Pedidos"
+settings.tabs.orders = "Pedidos"
+common.cancel = "Cancelar"
+--- fr orders (190 keys)
+orders.age = "{{n}} j"  placeholders={{n}}
+orders.busy = "Zoho est occupé, réessayez dans un instant."
+orders.chip.quote = "Devis"
+orders.col.available = "Disponible"
+orders.col.product = "Produit"
+orders.col.qty = "Qté"
+orders.col.short = "Manque"
+orders.col.state = "État"
+orders.contact.alsoOpen = "Aussi ouvertes pour ce client :"
+orders.contact.copied = "Copié"
+orders.contact.copy = "Copier {{what}}"  placeholders={{what}}
+orders.contact.mailSubject = "Commande {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "Aucun e-mail dans Zoho"
+orders.contact.noPhone = "Aucun téléphone dans Zoho"
+orders.contact.none = "Aucune personne de contact sur cette commande dans Zoho."
+orders.contact.title = "Contact"
+orders.coreOnly = "3D seulement"
+orders.empty.core = "Aucune commande 3D en cours."
+orders.empty.coreHint = "Désactivez « 3D seulement » pour voir les autres commandes."
+orders.empty.noResults = "Aucun résultat."
+orders.empty.none = "Aucune commande en cours."
+orders.empty.noneHint = "Toutes les commandes clients sont expédiées."
+orders.finished.chip = "Terminées"
+orders.finished.intro = "Commandes terminées : tout est expédié. Les plus récentes d'abord."
+orders.finished.loadFailed = "Impossible de charger cette commande depuis Zoho."
+orders.finished.loading = "Chargement de cette commande depuis Zoho…"
+orders.finished.match = "Commandes terminées correspondantes : {{n}}"  placeholders={{n}}
+orders.finished.none = "Aucune commande terminée."
+orders.finished.older = "Afficher les commandes plus anciennes"
+orders.finished.shipped = "Expédiée"
+orders.finished.show = "Afficher"
+orders.firstSync = "Première synchronisation en cours — {{n}} documents restants"  placeholders={{n}}
+orders.group.other = "Autres lignes"
+orders.group.packed = "Emballé, en attente de livraison"
+orders.group.shipped = "Expédié"
+orders.group.todo = "À préparer"
+orders.handover.alreadyInvoiced = "Déjà facturé ({{numbers}}) : aucune nouvelle facture."  placeholders={{numbers}}
+orders.handover.applyCredit = "Appliquer l’avoir du client ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "Marquer expédié"
+orders.handover.confirmPickup = "Remis au client"
+orders.handover.creditOffBoard = "La commande a quitté la liste : appliquez l’avoir du client dans Zoho."
+orders.handover.delivery = "Livraison"
+orders.handover.deliveryNote = "Le colis passe à « expédié » dans Zoho."
+orders.handover.doneDelivery = "Colis {{number}} marqué expédié"  placeholders={{number}}
+orders.handover.donePickup = "Colis {{number}} remis au client"  placeholders={{number}}
+orders.handover.due = "Reste dû {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "La remise n’a pas abouti : {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "Crée la facture de ce colis : {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "Facture {{number}} créée"  placeholders={{number}}
+orders.handover.invoiceFailed = "La facture n’a pas pu être créée : {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "Crée la facture de ce colis"
+orders.handover.manual = "Une remise ou des frais de cette commande ne peuvent pas être répartis : à facturer dans Zoho."
+orders.handover.manualDraft = "Une facture brouillon ({{number}}) attend dans Zoho : envoyez-la d’abord."  placeholders={{number}}
+orders.handover.meta = "{{units}} · daté du {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "Mode de remise"
+orders.handover.nothingToInvoice = "Rien à facturer pour ce colis."
+orders.handover.open = "Remettre le colis"
+orders.handover.openNumber = "Remettre {{number}}"  placeholders={{number}}
+orders.handover.pickup = "Retrait en boutique"
+orders.handover.pickupNote = "Le colis passe à « livré » dans Zoho."
+orders.handover.prefillRefused = "Zoho n’a pas pu préparer la facture : créez-la dans Zoho."
+orders.handover.previewFailed = "Zoho n’a pas indiqué ce qui sera facturé."
+orders.handover.sending = "Envoi à Zoho…"
+orders.handover.settled = "Facture soldée"
+orders.hidden = "+{{n}} masquées"  placeholders={{n}}
+orders.hint.incoming = "manque couvert par une commande fournisseur"
+orders.hint.partial = "expédiable en partie"
+orders.hint.toOrder = "manque sans commande fournisseur ouverte"
+orders.hint.toShip = "tout est en stock"
+orders.inv.create = "Créer la facture"
+orders.inv.download = "Télécharger la facture"
+orders.inv.draft = "Brouillon"
+orders.inv.empty = "Aucune facture pour l’instant. Elle est créée à la remise du colis."
+orders.inv.nothing = "Rien à facturer."
+orders.inv.open = "Ouvrir dans Zoho Books"
+orders.inv.pdfFailed = "La facture n’a pas pu être récupérée."
+orders.inv.print = "Imprimer la facture"
+orders.inv.title = "Factures"
+orders.inv.unbilled = "Remis sans facture : {{units}}"  placeholders={{units}}
+orders.line.backorder = "En arrivage"
+orders.line.cancelled = "Annulé"
+orders.line.invoiced = "facturé"
+orders.line.packed = "Emballé"
+orders.line.ready = "Prêt"
+orders.line.service = "Service"
+orders.line.shipped = "Expédié"
+orders.line.toOrder = "À commander"
+orders.loadFailed = "Impossible de charger le tableau des commandes."
+orders.notConnected = "Zoho Books n'est pas connecté."
+orders.notConnectedHint = "Ajoutez les identifiants Zoho dans les paramètres pour charger les commandes."
+orders.ofOrdered = "sur {{n}}"  placeholders={{n}}
+orders.packed = "{{n}} emballés"  placeholders={{n}}
+orders.parcel.create = "Créer le colis"
+orders.parcel.created = "Colis {{number}} créé dans Zoho Books"  placeholders={{number}}
+orders.parcel.creating = "Création dans Zoho…"
+orders.parcel.failed = "Le colis n’a pas pu être créé : {{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "Colis : {{units}} sur {{of}} de {{number}}"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "Dans le colis"
+orders.parcel.left = "{{units}} à préparer ensuite"  placeholders={{units}}
+orders.parcel.less = "Un de moins"
+orders.parcel.meta = "daté du {{date}} · numéro attribué par Zoho"  placeholders={{date}}
+orders.parcel.more = "Un de plus"
+orders.parcel.stale = "La commande a changé, vérifiez les quantités."
+orders.pay.advanceNote = "Acompte : le crédit inutilisé du client dans Zoho, en attente de la prochaine facture."
+orders.pay.any = "Tout paiement"
+orders.pay.invDue = "Échéance {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "{{amount}} restant"  placeholders={{amount}}
+orders.pay.invOverdue = "En retard de {{n}} j"  placeholders={{n}}
+orders.pay.left = "Reste à payer"
+orders.pay.legendAdvance = "Payé d'avance"
+orders.pay.legendDue = "Facturé, en attente de paiement"
+orders.pay.legendInvoice = "Payé sur facture"
+orders.pay.legendOverdue = "En retard"
+orders.pay.legendPaid = "Payé"
+orders.pay.legendRest = "Reste à payer, non facturé"
+orders.pay.nothingLeft = "Plus rien à payer"
+orders.pay.overdue = "en retard"
+orders.pay.overdueChip = "En retard"
+orders.pay.paid = "Payée"
+orders.pay.partial = "Partiellement payée"
+orders.pay.pct = "{{pct}} % payé"  placeholders={{pct}}
+orders.pay.tile = "{{pct}} % payé"  placeholders={{pct}}
+orders.pay.title = "Paiement"
+orders.pay.unpaid = "Impayée"
+orders.pick.boxed = "Tout ce prélèvement est déjà dans un colis."
+orders.pick.create = "Créer et imprimer"
+orders.pick.created = "Prélèvement {{number}} créé dans Zoho Books"  placeholders={{number}}
+orders.pick.failed = "Le prélèvement n’a pas pu être créé : {{reason}}"  placeholders={{reason}}
+orders.pick.meta = "créé dans Zoho, puis imprimé"
+orders.pick.nothing = "Rien à prélever : tout le stock est déjà sur un prélèvement."
+orders.pick.open = "Préparer"
+orders.pick.summary = "Prélèvement : {{units}} sur {{of}} en stock"  placeholders={{of}},{{units}}
+orders.pick.toPick = "À prélever"
+orders.pkg.delivered = "{{number}} · livré le {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · emballé le {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · expédié le {{date}}"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "En préparation"
+orders.prep.printFailed = "Le bon de préparation n’a pas pu être généré."
+orders.prep.printed = "Imprimé à {{time}} par {{name}}"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "Imprimé à {{time}}"  placeholders={{time}}
+orders.prep.reprint = "Réimprimer"
+orders.prep.sheet = "Bon de préparation"
+orders.readyPct = "{{pct}} % prêt"  placeholders={{pct}}
+orders.refresh = "Actualiser"
+orders.refreshFailed = "Impossible d'actualiser le tableau des commandes."
+orders.retry = "Réessayer"
+orders.search = "Numéro de commande, client, produit, SKU…"
+orders.settings.addBrand = "Ajouter une marque"
+orders.settings.coreBrands = "Marques principales"
+orders.settings.coreBrandsHint = "Le bouton « 3D seulement » garde les commandes ayant au moins une ligne de ces marques."
+orders.settings.days = "jours"
+orders.settings.hour = "1 heure"
+orders.settings.interval = "Vérifier Zoho toutes les"
+orders.settings.intervalHint = "Chaque passe ne lit que les documents modifiés, 20 au plus."
+orders.settings.lastSync = "Dernière synchronisation {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "Ignorer les commandes de plus de"
+orders.settings.maxAgeHint = "Les commandes plus anciennes restent hors du tableau et ne prennent aucun stock. 0 garde toutes les commandes."
+orders.settings.minutes = "{{n}} min"  placeholders={{n}}
+orders.settings.neverSynced = "Pas encore synchronisé"
+orders.settings.removeBrand = "Retirer {{brand}}"  placeholders={{brand}}
+orders.settings.saveFailed = "Impossible d'enregistrer les paramètres du tableau des commandes"
+orders.settings.saved = "Paramètres du tableau des commandes enregistrés"
+orders.settings.showsTitle = "Ce que le tableau affiche"
+orders.settings.syncEnabled = "Garder le tableau des commandes à jour"
+orders.settings.syncEnabledHint = "Lit les commandes clients, les commandes fournisseurs ouvertes et le stock dans Zoho Books. N'écrit jamais."
+orders.settings.syncNow = "Synchroniser maintenant"
+orders.settings.syncTitle = "Synchronisation Zoho"
+orders.shipped = "{{shipped}}/{{total}} expédiés"  placeholders={{shipped}},{{total}}
+orders.sort.age = "Âge"
+orders.sort.customer = "Client"
+orders.sort.label = "Trier"
+orders.sort.ready = "% prêt"
+orders.sort.value = "Valeur"
+orders.status.all = "Toutes"
+orders.status.inProgress = "En cours"
+orders.status.incoming = "En arrivage"
+orders.status.partial = "Partielle"
+orders.status.toOrder = "À commander"
+orders.status.toShip = "À expédier"
+orders.syncFailed = "Dernière synchronisation échouée : {{reason}} — données affichées du {{when}}."  placeholders={{reason}},{{when}}
+orders.syncOff = "La synchronisation des commandes est désactivée."
+orders.syncOffHint = "Activez-la dans Paramètres, onglet Commandes."
+orders.syncing = "Synchronisation · {{n}} restants"  placeholders={{n}}
+orders.title = "Commandes"
+orders.units_one = "{{count}} unité"  placeholders={{count}}
+orders.units_other = "{{count}} unités"  placeholders={{count}}
+orders.updated = "Mis à jour {{when}}"  placeholders={{when}}
+nav.orders = "Commandes"
+settings.tabs.orders = "Commandes"
+common.cancel = "Annuler"
+--- it orders (190 keys)
+orders.age = "{{n}} gg"  placeholders={{n}}
+orders.busy = "Zoho è occupato, riprova tra un attimo."
+orders.chip.quote = "Preventivo"
+orders.col.available = "Disponibile"
+orders.col.product = "Prodotto"
+orders.col.qty = "Q.tà"
+orders.col.short = "Manca"
+orders.col.state = "Stato"
+orders.contact.alsoOpen = "Altri ordini aperti per questo cliente:"
+orders.contact.copied = "Copiato"
+orders.contact.copy = "Copia {{what}}"  placeholders={{what}}
+orders.contact.mailSubject = "Ordine {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "Nessuna e-mail in Zoho"
+orders.contact.noPhone = "Nessun telefono in Zoho"
+orders.contact.none = "Nessuna persona di contatto per questo ordine in Zoho."
+orders.contact.title = "Contatto"
+orders.coreOnly = "Solo 3D"
+orders.empty.core = "Nessun ordine 3D aperto."
+orders.empty.coreHint = "Disattiva «Solo 3D» per vedere gli altri ordini."
+orders.empty.noResults = "Nessun risultato."
+orders.empty.none = "Nessun ordine aperto."
+orders.empty.noneHint = "Tutti gli ordini dei clienti sono stati spediti."
+orders.finished.chip = "Completati"
+orders.finished.intro = "Ordini completati: tutto è stato spedito. I più recenti per primi."
+orders.finished.loadFailed = "Impossibile caricare questo ordine da Zoho."
+orders.finished.loading = "Caricamento di questo ordine da Zoho…"
+orders.finished.match = "Ordini completati corrispondenti: {{n}}"  placeholders={{n}}
+orders.finished.none = "Nessun ordine completato."
+orders.finished.older = "Mostra ordini meno recenti"
+orders.finished.shipped = "Spedito"
+orders.finished.show = "Mostra"
+orders.firstSync = "Prima sincronizzazione in corso — {{n}} documenti rimanenti"  placeholders={{n}}
+orders.group.other = "Altre righe"
+orders.group.packed = "Imballato, in attesa di consegna"
+orders.group.shipped = "Spedito"
+orders.group.todo = "Da preparare"
+orders.handover.alreadyInvoiced = "Già fatturato ({{numbers}}): nessuna nuova fattura."  placeholders={{numbers}}
+orders.handover.applyCredit = "Applica il credito del cliente ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "Segna come spedito"
+orders.handover.confirmPickup = "Consegnato al cliente"
+orders.handover.creditOffBoard = "L’ordine è uscito dall’elenco: applica il credito del cliente in Zoho."
+orders.handover.delivery = "Spedizione"
+orders.handover.deliveryNote = "Il pacco passa a «spedito» in Zoho."
+orders.handover.doneDelivery = "Pacco {{number}} segnato come spedito"  placeholders={{number}}
+orders.handover.donePickup = "Pacco {{number}} consegnato al cliente"  placeholders={{number}}
+orders.handover.due = "Ancora da pagare {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "La consegna non è stata completata: {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "Crea la fattura di questo pacco: {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "Fattura {{number}} creata"  placeholders={{number}}
+orders.handover.invoiceFailed = "Impossibile creare la fattura: {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "Crea la fattura di questo pacco"
+orders.handover.manual = "Uno sconto o un costo di questo ordine non può essere ripartito: fatturalo in Zoho."
+orders.handover.manualDraft = "Una fattura in bozza ({{number}}) attende in Zoho: inviala prima da lì."  placeholders={{number}}
+orders.handover.meta = "{{units}} · del {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "Modalità di consegna"
+orders.handover.nothingToInvoice = "Niente da fatturare per questo pacco."
+orders.handover.open = "Consegna il pacco"
+orders.handover.openNumber = "Consegna {{number}}"  placeholders={{number}}
+orders.handover.pickup = "Ritiro in negozio"
+orders.handover.pickupNote = "Il pacco passa a «consegnato» in Zoho."
+orders.handover.prefillRefused = "Zoho non ha potuto preparare la fattura: creala in Zoho."
+orders.handover.previewFailed = "Zoho non ha indicato cosa verrà fatturato."
+orders.handover.sending = "Invio a Zoho…"
+orders.handover.settled = "Fattura saldata"
+orders.hidden = "+{{n}} nascosti"  placeholders={{n}}
+orders.hint.incoming = "mancanza coperta da un ordine d'acquisto"
+orders.hint.partial = "spedibile in parte"
+orders.hint.toOrder = "mancanza senza ordine d'acquisto aperto"
+orders.hint.toShip = "tutto a magazzino"
+orders.inv.create = "Crea la fattura"
+orders.inv.download = "Scarica la fattura"
+orders.inv.draft = "Bozza"
+orders.inv.empty = "Nessuna fattura per ora. Viene creata alla consegna del collo."
+orders.inv.nothing = "Niente da fatturare."
+orders.inv.open = "Apri in Zoho Books"
+orders.inv.pdfFailed = "Impossibile recuperare la fattura."
+orders.inv.print = "Stampa la fattura"
+orders.inv.title = "Fatture"
+orders.inv.unbilled = "{{units}} consegnate senza fattura"  placeholders={{units}}
+orders.line.backorder = "In arrivo"
+orders.line.cancelled = "Annullato"
+orders.line.invoiced = "fatturato"
+orders.line.packed = "Imballato"
+orders.line.ready = "Pronto"
+orders.line.service = "Servizio"
+orders.line.shipped = "Spedito"
+orders.line.toOrder = "Da ordinare"
+orders.loadFailed = "Impossibile caricare la bacheca ordini."
+orders.notConnected = "Zoho Books non è collegato."
+orders.notConnectedHint = "Aggiungi le credenziali Zoho nelle Impostazioni per caricare gli ordini."
+orders.ofOrdered = "di {{n}}"  placeholders={{n}}
+orders.packed = "{{n}} imballati"  placeholders={{n}}
+orders.parcel.create = "Crea il pacco"
+orders.parcel.created = "Pacco {{number}} creato in Zoho Books"  placeholders={{number}}
+orders.parcel.creating = "Creazione in Zoho…"
+orders.parcel.failed = "Impossibile creare il pacco: {{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "Pacco: {{units}} su {{of}} di {{number}}"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "Nel pacco"
+orders.parcel.left = "{{units}} ancora da preparare"  placeholders={{units}}
+orders.parcel.less = "Uno in meno"
+orders.parcel.meta = "datato {{date}} · numero assegnato da Zoho"  placeholders={{date}}
+orders.parcel.more = "Uno in più"
+orders.parcel.stale = "L’ordine è cambiato, controlla le quantità."
+orders.pay.advanceNote = "Anticipo: il credito inutilizzato del cliente in Zoho, in attesa della prossima fattura."
+orders.pay.any = "Qualsiasi pagamento"
+orders.pay.invDue = "Scade {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "{{amount}} rimanenti"  placeholders={{amount}}
+orders.pay.invOverdue = "Scaduta da {{n}} g"  placeholders={{n}}
+orders.pay.left = "Ancora da pagare"
+orders.pay.legendAdvance = "Pagato in anticipo"
+orders.pay.legendDue = "Fatturato, in attesa di pagamento"
+orders.pay.legendInvoice = "Pagato su fattura"
+orders.pay.legendOverdue = "Scaduto"
+orders.pay.legendPaid = "Pagato"
+orders.pay.legendRest = "Ancora da pagare, non fatturato"
+orders.pay.nothingLeft = "Niente da pagare"
+orders.pay.overdue = "scaduto"
+orders.pay.overdueChip = "Scaduti"
+orders.pay.paid = "Pagato"
+orders.pay.partial = "Pagato in parte"
+orders.pay.pct = "{{pct}}% pagato"  placeholders={{pct}}
+orders.pay.tile = "{{pct}}% pagato"  placeholders={{pct}}
+orders.pay.title = "Pagamento"
+orders.pay.unpaid = "Non pagato"
+orders.pick.boxed = "Tutto questo prelievo è già in un pacco."
+orders.pick.create = "Crea e stampa"
+orders.pick.created = "Prelievo {{number}} creato in Zoho Books"  placeholders={{number}}
+orders.pick.failed = "Impossibile creare il prelievo: {{reason}}"  placeholders={{reason}}
+orders.pick.meta = "creato in Zoho, poi stampato"
+orders.pick.nothing = "Niente da prelevare: tutta la merce disponibile è già in un prelievo."
+orders.pick.open = "Prepara"
+orders.pick.summary = "Prelievo: {{units}} su {{of}} in magazzino"  placeholders={{of}},{{units}}
+orders.pick.toPick = "Da prelevare"
+orders.pkg.delivered = "{{number}} · consegnato il {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · imballato il {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · spedito il {{date}}"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "In preparazione"
+orders.prep.printFailed = "Impossibile generare la distinta di preparazione."
+orders.prep.printed = "Stampata alle {{time}} da {{name}}"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "Stampata alle {{time}}"  placeholders={{time}}
+orders.prep.reprint = "Ristampa"
+orders.prep.sheet = "Distinta di preparazione"
+orders.readyPct = "{{pct}} % pronto"  placeholders={{pct}}
+orders.refresh = "Aggiorna"
+orders.refreshFailed = "Impossibile aggiornare la bacheca ordini."
+orders.retry = "Riprova"
+orders.search = "Numero ordine, cliente, prodotto, SKU…"
+orders.settings.addBrand = "Aggiungi un marchio"
+orders.settings.coreBrands = "Marchi principali"
+orders.settings.coreBrandsHint = "L'interruttore «Solo 3D» mantiene gli ordini con almeno una riga di questi marchi."
+orders.settings.days = "giorni"
+orders.settings.hour = "1 ora"
+orders.settings.interval = "Controlla Zoho ogni"
+orders.settings.intervalHint = "Ogni passaggio legge solo i documenti modificati, al massimo 20."
+orders.settings.lastSync = "Ultima sincronizzazione {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "Ignora gli ordini più vecchi di"
+orders.settings.maxAgeHint = "Gli ordini più vecchi restano fuori dalla bacheca e non impegnano giacenze. 0 mantiene tutti gli ordini."
+orders.settings.minutes = "{{n}} minuti"  placeholders={{n}}
+orders.settings.neverSynced = "Non ancora sincronizzato"
+orders.settings.removeBrand = "Rimuovi {{brand}}"  placeholders={{brand}}
+orders.settings.saveFailed = "Impossibile salvare le impostazioni della bacheca ordini"
+orders.settings.saved = "Impostazioni della bacheca ordini salvate"
+orders.settings.showsTitle = "Cosa mostra la bacheca"
+orders.settings.syncEnabled = "Mantieni sincronizzata la bacheca ordini"
+orders.settings.syncEnabledHint = "Legge ordini di vendita, ordini d'acquisto aperti e giacenze da Zoho Books. Non scrive mai."
+orders.settings.syncNow = "Sincronizza ora"
+orders.settings.syncTitle = "Sincronizzazione Zoho"
+orders.shipped = "{{shipped}}/{{total}} spediti"  placeholders={{shipped}},{{total}}
+orders.sort.age = "Età"
+orders.sort.customer = "Cliente"
+orders.sort.label = "Ordina"
+orders.sort.ready = "% pronto"
+orders.sort.value = "Valore"
+orders.status.all = "Tutti"
+orders.status.inProgress = "In corso"
+orders.status.incoming = "In arrivo"
+orders.status.partial = "Parziale"
+orders.status.toOrder = "Da ordinare"
+orders.status.toShip = "Da spedire"
+orders.syncFailed = "Ultima sincronizzazione non riuscita: {{reason}} — dati mostrati del {{when}}."  placeholders={{reason}},{{when}}
+orders.syncOff = "La sincronizzazione degli ordini è disattivata."
+orders.syncOffHint = "Attivala in Impostazioni, scheda Ordini."
+orders.syncing = "Sincronizzazione · {{n}} rimanenti"  placeholders={{n}}
+orders.title = "Ordini"
+orders.units_one = "{{count}} unità"  placeholders={{count}}
+orders.units_other = "{{count}} unità"  placeholders={{count}}
+orders.updated = "Aggiornato {{when}}"  placeholders={{when}}
+nav.orders = "Ordini"
+settings.tabs.orders = "Ordini"
+common.cancel = "Annulla"
+--- ja orders (190 keys)
+orders.age = "{{n}}日"  placeholders={{n}}
+orders.busy = "Zoho が混み合っています。しばらくしてからもう一度お試しください。"
+orders.chip.quote = "見積"
+orders.col.available = "在庫"
+orders.col.product = "商品"
+orders.col.qty = "数量"
+orders.col.short = "不足"
+orders.col.state = "状態"
+orders.contact.alsoOpen = "この顧客の他の未処理注文:"
+orders.contact.copied = "コピーしました"
+orders.contact.copy = "{{what}} をコピー"  placeholders={{what}}
+orders.contact.mailSubject = "注文 {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "Zoho にメールアドレスがありません"
+orders.contact.noPhone = "Zoho に電話番号がありません"
+orders.contact.none = "Zoho のこの注文には担当者がいません。"
+orders.contact.title = "連絡先"
+orders.coreOnly = "3D のみ"
+orders.empty.core = "未出荷の 3D 受注はありません。"
+orders.empty.coreHint = "他の受注を見るには「3D のみ」をオフにしてください。"
+orders.empty.noResults = "該当なし。"
+orders.empty.none = "未出荷の受注はありません。"
+orders.empty.noneHint = "すべての受注が出荷済みです。"
+orders.finished.chip = "完了"
+orders.finished.intro = "完了した注文: すべて発送済みです。新しい順。"
+orders.finished.loadFailed = "Zoho からこの注文を読み込めませんでした。"
+orders.finished.loading = "Zoho からこの注文を読み込み中…"
+orders.finished.match = "一致する完了済みの注文: {{n}}"  placeholders={{n}}
+orders.finished.none = "完了した注文はありません。"
+orders.finished.older = "古い注文を表示"
+orders.finished.shipped = "発送済み"
+orders.finished.show = "表示"
+orders.firstSync = "初回同期中 — 残り {{n}} 件のドキュメント"  placeholders={{n}}
+orders.group.other = "その他の明細"
+orders.group.packed = "梱包済み・配送待ち"
+orders.group.shipped = "出荷済み"
+orders.group.todo = "準備するもの"
+orders.handover.alreadyInvoiced = "請求済み ({{numbers}}): 新しい請求書は作成しません。"  placeholders={{numbers}}
+orders.handover.applyCredit = "顧客のクレジットを適用 ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "発送済みにする"
+orders.handover.confirmPickup = "顧客に引き渡し済み"
+orders.handover.creditOffBoard = "注文が一覧から外れました: 顧客のクレジットは Zoho で適用してください。"
+orders.handover.delivery = "配送"
+orders.handover.deliveryNote = "荷物は Zoho で「発送済み」になります。"
+orders.handover.doneDelivery = "荷物 {{number}} を発送済みにしました"  placeholders={{number}}
+orders.handover.donePickup = "荷物 {{number}} を顧客に引き渡しました"  placeholders={{number}}
+orders.handover.due = "未払い {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "引き渡しが完了しませんでした: {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "この荷物の請求書を作成します: {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "請求書 {{number}} を作成しました"  placeholders={{number}}
+orders.handover.invoiceFailed = "請求書を作成できませんでした: {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "この荷物の請求書を作成します"
+orders.handover.manual = "この注文の値引きまたは手数料は分割できません: Zoho で請求してください。"
+orders.handover.manualDraft = "下書きの請求書 ({{number}}) が Zoho にあります: 先にそこで送信してください。"  placeholders={{number}}
+orders.handover.meta = "{{units}} · 日付 {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "引き渡し方法"
+orders.handover.nothingToInvoice = "この荷物に請求するものはありません。"
+orders.handover.open = "荷物を引き渡す"
+orders.handover.openNumber = "{{number}} を引き渡す"  placeholders={{number}}
+orders.handover.pickup = "店頭受け取り"
+orders.handover.pickupNote = "荷物は Zoho で「配達済み」になります。"
+orders.handover.prefillRefused = "Zoho が請求書を準備できませんでした: Zoho で作成してください。"
+orders.handover.previewFailed = "Zoho から請求内容の回答がありませんでした。"
+orders.handover.sending = "Zoho に送信中…"
+orders.handover.settled = "請求書は精算済み"
+orders.hidden = "+{{n}} 件非表示"  placeholders={{n}}
+orders.hint.incoming = "不足分は発注済み"
+orders.hint.partial = "一部出荷可能"
+orders.hint.toOrder = "不足分の発注なし"
+orders.hint.toShip = "すべて在庫あり"
+orders.inv.create = "請求書を作成"
+orders.inv.download = "請求書をダウンロード"
+orders.inv.draft = "下書き"
+orders.inv.empty = "請求書はまだありません。荷物の引き渡し時に作成されます。"
+orders.inv.nothing = "請求するものはありません。"
+orders.inv.open = "Zoho Books で開く"
+orders.inv.pdfFailed = "請求書を取得できませんでした。"
+orders.inv.print = "請求書を印刷"
+orders.inv.title = "請求書"
+orders.inv.unbilled = "{{units}}が請求書なしで引き渡されました"  placeholders={{units}}
+orders.line.backorder = "入荷待ち"
+orders.line.cancelled = "キャンセル"
+orders.line.invoiced = "請求済み"
+orders.line.packed = "梱包済み"
+orders.line.ready = "準備完了"
+orders.line.service = "サービス"
+orders.line.shipped = "出荷済み"
+orders.line.toOrder = "要発注"
+orders.loadFailed = "受注ボードを読み込めませんでした。"
+orders.notConnected = "Zoho Books に接続されていません。"
+orders.notConnectedHint = "受注を読み込むには、設定で Zoho の認証情報を追加してください。"
+orders.ofOrdered = "／{{n}}"  placeholders={{n}}
+orders.packed = "{{n}} 梱包済み"  placeholders={{n}}
+orders.parcel.create = "荷物を作成"
+orders.parcel.created = "荷物 {{number}} を Zoho Books に作成しました"  placeholders={{number}}
+orders.parcel.creating = "Zoho で作成中…"
+orders.parcel.failed = "荷物を作成できませんでした：{{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "荷物：{{number}} の {{of}} 点中 {{units}} 点"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "荷物に入れる数"
+orders.parcel.left = "残り {{units}} 点は後で準備"  placeholders={{units}}
+orders.parcel.less = "1 つ減らす"
+orders.parcel.meta = "日付 {{date}} · 番号は Zoho が付与"  placeholders={{date}}
+orders.parcel.more = "1 つ増やす"
+orders.parcel.stale = "注文が変更されました。数量を確認してください。"
+orders.pay.advanceNote = "前払い: Zoho にある顧客の未使用クレジットで、次の請求書を待っています。"
+orders.pay.any = "すべての支払い"
+orders.pay.invDue = "期限 {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "残り {{amount}}"  placeholders={{amount}}
+orders.pay.invOverdue = "{{n}} 日超過"  placeholders={{n}}
+orders.pay.left = "未払い残高"
+orders.pay.legendAdvance = "前払い済み"
+orders.pay.legendDue = "請求済み、入金待ち"
+orders.pay.legendInvoice = "請求書で支払い済み"
+orders.pay.legendOverdue = "期限超過"
+orders.pay.legendPaid = "支払い済み"
+orders.pay.legendRest = "未払い、未請求"
+orders.pay.nothingLeft = "未払いはありません"
+orders.pay.overdue = "期限超過"
+orders.pay.overdueChip = "期限超過"
+orders.pay.paid = "支払い済み"
+orders.pay.partial = "一部支払い済み"
+orders.pay.pct = "{{pct}}% 支払い済み"  placeholders={{pct}}
+orders.pay.tile = "{{pct}}% 支払い済み"  placeholders={{pct}}
+orders.pay.title = "支払い"
+orders.pay.unpaid = "未払い"
+orders.pick.boxed = "このピッキングリストの品はすべて荷物に入っています。"
+orders.pick.create = "作成して印刷"
+orders.pick.created = "ピッキングリスト {{number}} を Zoho Books に作成しました"  placeholders={{number}}
+orders.pick.failed = "ピッキングリストを作成できませんでした：{{reason}}"  placeholders={{reason}}
+orders.pick.meta = "Zoho に作成してから印刷"
+orders.pick.nothing = "ピッキングするものがありません。在庫分はすべてピッキングリストに載っています。"
+orders.pick.open = "準備する"
+orders.pick.summary = "ピッキングリスト：在庫 {{of}} 点中 {{units}} 点"  placeholders={{of}},{{units}}
+orders.pick.toPick = "ピッキング数"
+orders.pkg.delivered = "{{number}} · {{date}} 配達済み"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · {{date}} 梱包"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · {{date}} 出荷"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "準備中"
+orders.prep.printFailed = "準備票を作成できませんでした。"
+orders.prep.printed = "{{time}} に {{name}} が印刷"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "{{time}} に印刷"  placeholders={{time}}
+orders.prep.reprint = "再印刷"
+orders.prep.sheet = "準備票"
+orders.readyPct = "準備 {{pct}} %"  placeholders={{pct}}
+orders.refresh = "更新"
+orders.refreshFailed = "受注ボードを更新できませんでした。"
+orders.retry = "再試行"
+orders.search = "受注番号、顧客、商品、SKU…"
+orders.settings.addBrand = "ブランドを追加"
+orders.settings.coreBrands = "主要ブランド"
+orders.settings.coreBrandsHint = "「3D のみ」は、これらのブランドの明細を 1 つ以上含む受注を残します。"
+orders.settings.days = "日"
+orders.settings.hour = "1 時間"
+orders.settings.interval = "Zoho の確認間隔"
+orders.settings.intervalHint = "1 回の処理で読むのは変更されたドキュメントのみ、最大 20 件です。"
+orders.settings.lastSync = "前回の同期 {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "次の日数より古い受注を無視"
+orders.settings.maxAgeHint = "古い受注はボードに表示されず、在庫も引き当てません。0 ですべての受注を保持します。"
+orders.settings.minutes = "{{n}} 分"  placeholders={{n}}
+orders.settings.neverSynced = "未同期"
+orders.settings.removeBrand = "{{brand}} を削除"  placeholders={{brand}}
+orders.settings.saveFailed = "受注ボードの設定を保存できませんでした"
+orders.settings.saved = "受注ボードの設定を保存しました"
+orders.settings.showsTitle = "ボードに表示する内容"
+orders.settings.syncEnabled = "受注ボードを同期する"
+orders.settings.syncEnabledHint = "Zoho Books から受注、未完了の発注、在庫を読み取ります。書き込みは行いません。"
+orders.settings.syncNow = "今すぐ同期"
+orders.settings.syncTitle = "Zoho 同期"
+orders.shipped = "{{shipped}}/{{total}} 出荷済み"  placeholders={{shipped}},{{total}}
+orders.sort.age = "経過日数"
+orders.sort.customer = "顧客"
+orders.sort.label = "並べ替え"
+orders.sort.ready = "準備率"
+orders.sort.value = "金額"
+orders.status.all = "すべて"
+orders.status.inProgress = "進行中"
+orders.status.incoming = "入荷待ち"
+orders.status.partial = "一部可"
+orders.status.toOrder = "要発注"
+orders.status.toShip = "出荷可"
+orders.syncFailed = "前回の同期に失敗しました: {{reason}} — {{when}} 時点のデータを表示しています。"  placeholders={{reason}},{{when}}
+orders.syncOff = "受注の同期はオフです。"
+orders.syncOffHint = "設定の「受注」タブでオンにしてください。"
+orders.syncing = "同期中 · 残り {{n}} 件"  placeholders={{n}}
+orders.title = "受注"
+orders.units_one = "{{count}} 点"  placeholders={{count}}
+orders.units_other = "{{count}} 点"  placeholders={{count}}
+orders.updated = "{{when}} 更新"  placeholders={{when}}
+nav.orders = "受注"
+settings.tabs.orders = "受注"
+common.cancel = "キャンセル"
+--- ko orders (190 keys)
+orders.age = "{{n}}일"  placeholders={{n}}
+orders.busy = "Zoho가 바쁩니다. 잠시 후 다시 시도하세요."
+orders.chip.quote = "견적"
+orders.col.available = "가용 재고"
+orders.col.product = "제품"
+orders.col.qty = "수량"
+orders.col.short = "부족"
+orders.col.state = "상태"
+orders.contact.alsoOpen = "이 고객의 다른 진행 중인 주문:"
+orders.contact.copied = "복사됨"
+orders.contact.copy = "{{what}} 복사"  placeholders={{what}}
+orders.contact.mailSubject = "주문 {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "Zoho에 이메일 없음"
+orders.contact.noPhone = "Zoho에 전화번호 없음"
+orders.contact.none = "Zoho에서 이 주문에 담당자가 없습니다."
+orders.contact.title = "연락처"
+orders.coreOnly = "3D만"
+orders.empty.core = "미출고 3D 주문이 없습니다."
+orders.empty.coreHint = "다른 주문을 보려면 \"3D만\"을 끄세요."
+orders.empty.noResults = "결과 없음."
+orders.empty.none = "미출고 주문이 없습니다."
+orders.empty.noneHint = "모든 고객 주문이 출고되었습니다."
+orders.finished.chip = "완료"
+orders.finished.intro = "완료된 주문: 모두 발송되었습니다. 최신순."
+orders.finished.loadFailed = "Zoho에서 이 주문을 불러오지 못했습니다."
+orders.finished.loading = "Zoho에서 이 주문을 불러오는 중…"
+orders.finished.match = "일치하는 완료된 주문: {{n}}"  placeholders={{n}}
+orders.finished.none = "완료된 주문이 없습니다."
+orders.finished.older = "이전 주문 더 보기"
+orders.finished.shipped = "발송됨"
+orders.finished.show = "보기"
+orders.firstSync = "첫 동기화 진행 중 — 문서 {{n}}건 남음"  placeholders={{n}}
+orders.group.other = "기타 항목"
+orders.group.packed = "포장 완료, 배송 대기"
+orders.group.shipped = "출고됨"
+orders.group.todo = "준비할 품목"
+orders.handover.alreadyInvoiced = "이미 청구됨 ({{numbers}}): 새 청구서 없음."  placeholders={{numbers}}
+orders.handover.applyCredit = "고객 크레딧 적용 ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "발송됨으로 표시"
+orders.handover.confirmPickup = "고객에게 전달함"
+orders.handover.creditOffBoard = "주문이 목록에서 빠졌습니다: 고객 크레딧은 Zoho에서 적용하세요."
+orders.handover.delivery = "배송"
+orders.handover.deliveryNote = "Zoho에서 소포가 '발송됨'으로 바뀝니다."
+orders.handover.doneDelivery = "소포 {{number}}을(를) 발송됨으로 표시했습니다"  placeholders={{number}}
+orders.handover.donePickup = "소포 {{number}}을(를) 고객에게 전달했습니다"  placeholders={{number}}
+orders.handover.due = "남은 금액 {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "전달이 완료되지 않았습니다: {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "이 소포의 청구서를 생성합니다: {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "청구서 {{number}} 생성됨"  placeholders={{number}}
+orders.handover.invoiceFailed = "청구서를 생성할 수 없습니다: {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "이 소포의 청구서를 생성합니다"
+orders.handover.manual = "이 주문의 할인 또는 수수료는 나눌 수 없습니다: Zoho에서 청구하세요."
+orders.handover.manualDraft = "초안 청구서({{number}})가 Zoho에 있습니다: 먼저 그곳에서 발송하세요."  placeholders={{number}}
+orders.handover.meta = "{{units}} · {{date}}자"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "전달 방식"
+orders.handover.nothingToInvoice = "이 소포에는 청구할 항목이 없습니다."
+orders.handover.open = "소포 전달"
+orders.handover.openNumber = "{{number}} 전달"  placeholders={{number}}
+orders.handover.pickup = "매장 수령"
+orders.handover.pickupNote = "Zoho에서 소포가 '배달 완료'로 바뀝니다."
+orders.handover.prefillRefused = "Zoho가 청구서를 준비하지 못했습니다: Zoho에서 직접 생성하세요."
+orders.handover.previewFailed = "Zoho가 청구 내용을 알려 주지 않았습니다."
+orders.handover.sending = "Zoho로 전송 중…"
+orders.handover.settled = "청구서 정산 완료"
+orders.hidden = "+{{n}}건 숨김"  placeholders={{n}}
+orders.hint.incoming = "부족분이 발주로 충당됨"
+orders.hint.partial = "일부 출고 가능"
+orders.hint.toOrder = "부족분에 대한 발주 없음"
+orders.hint.toShip = "모두 재고 있음"
+orders.inv.create = "청구서 만들기"
+orders.inv.download = "청구서 다운로드"
+orders.inv.draft = "초안"
+orders.inv.empty = "아직 청구서가 없습니다. 소포를 인계할 때 생성됩니다."
+orders.inv.nothing = "청구할 항목이 없습니다."
+orders.inv.open = "Zoho Books에서 열기"
+orders.inv.pdfFailed = "청구서를 가져올 수 없습니다."
+orders.inv.print = "청구서 인쇄"
+orders.inv.title = "청구서"
+orders.inv.unbilled = "{{units}}이(가) 청구서 없이 인계되었습니다"  placeholders={{units}}
+orders.line.backorder = "입고 예정"
+orders.line.cancelled = "취소됨"
+orders.line.invoiced = "청구됨"
+orders.line.packed = "포장됨"
+orders.line.ready = "준비됨"
+orders.line.service = "서비스"
+orders.line.shipped = "출고됨"
+orders.line.toOrder = "발주 필요"
+orders.loadFailed = "주문 보드를 불러올 수 없습니다."
+orders.notConnected = "Zoho Books가 연결되어 있지 않습니다."
+orders.notConnectedHint = "주문을 불러오려면 설정에서 Zoho 자격 증명을 추가하세요."
+orders.ofOrdered = "/ {{n}}"  placeholders={{n}}
+orders.packed = "{{n}} 포장됨"  placeholders={{n}}
+orders.parcel.create = "소포 만들기"
+orders.parcel.created = "소포 {{number}}을(를) Zoho Books에 생성했습니다"  placeholders={{number}}
+orders.parcel.creating = "Zoho에서 생성 중…"
+orders.parcel.failed = "소포를 생성할 수 없습니다: {{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "소포: {{number}}의 {{of}}개 중 {{units}}개"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "소포에 담을 수량"
+orders.parcel.left = "{{units}}개는 나중에 준비"  placeholders={{units}}
+orders.parcel.less = "하나 줄이기"
+orders.parcel.meta = "날짜 {{date}} · 번호는 Zoho가 부여"  placeholders={{date}}
+orders.parcel.more = "하나 늘리기"
+orders.parcel.stale = "주문이 변경되었습니다. 수량을 확인하세요."
+orders.pay.advanceNote = "선금: Zoho에 있는 고객의 미사용 크레딧으로, 다음 청구서를 기다립니다."
+orders.pay.any = "모든 결제"
+orders.pay.invDue = "기한 {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "{{amount}} 남음"  placeholders={{amount}}
+orders.pay.invOverdue = "{{n}}일 초과"  placeholders={{n}}
+orders.pay.left = "남은 결제 금액"
+orders.pay.legendAdvance = "선결제됨"
+orders.pay.legendDue = "청구됨, 결제 대기 중"
+orders.pay.legendInvoice = "청구서로 결제됨"
+orders.pay.legendOverdue = "기한 초과"
+orders.pay.legendPaid = "결제 완료"
+orders.pay.legendRest = "남은 금액, 미청구"
+orders.pay.nothingLeft = "남은 결제 금액 없음"
+orders.pay.overdue = "기한 초과"
+orders.pay.overdueChip = "연체"
+orders.pay.paid = "결제 완료"
+orders.pay.partial = "일부 결제됨"
+orders.pay.pct = "{{pct}}% 결제됨"  placeholders={{pct}}
+orders.pay.tile = "{{pct}}% 결제됨"  placeholders={{pct}}
+orders.pay.title = "결제"
+orders.pay.unpaid = "미결제"
+orders.pick.boxed = "이 피킹 목록의 품목은 모두 이미 소포에 들어 있습니다."
+orders.pick.create = "생성 후 인쇄"
+orders.pick.created = "피킹 목록 {{number}}이(가) Zoho Books에 생성되었습니다"  placeholders={{number}}
+orders.pick.failed = "피킹 목록을 생성할 수 없습니다: {{reason}}"  placeholders={{reason}}
+orders.pick.meta = "Zoho에 생성한 뒤 인쇄"
+orders.pick.nothing = "피킹할 항목이 없습니다. 재고가 모두 이미 피킹 목록에 있습니다."
+orders.pick.open = "준비하기"
+orders.pick.summary = "피킹 목록: 재고 {{of}}개 중 {{units}}개"  placeholders={{of}},{{units}}
+orders.pick.toPick = "피킹 수량"
+orders.pkg.delivered = "{{number}} · {{date}} 배송 완료"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · {{date}} 포장"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · {{date}} 출고"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "준비 중"
+orders.prep.printFailed = "준비 전표를 생성할 수 없습니다."
+orders.prep.printed = "{{time}}에 {{name}}이(가) 인쇄함"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "{{time}}에 인쇄됨"  placeholders={{time}}
+orders.prep.reprint = "다시 인쇄"
+orders.prep.sheet = "준비 전표"
+orders.readyPct = "준비 {{pct}} %"  placeholders={{pct}}
+orders.refresh = "새로 고침"
+orders.refreshFailed = "주문 보드를 새로 고칠 수 없습니다."
+orders.retry = "다시 시도"
+orders.search = "주문 번호, 고객, 제품, SKU…"
+orders.settings.addBrand = "브랜드 추가"
+orders.settings.coreBrands = "주요 브랜드"
+orders.settings.coreBrandsHint = "\"3D만\" 스위치는 이 브랜드의 품목이 하나 이상 있는 주문을 남깁니다."
+orders.settings.days = "일"
+orders.settings.hour = "1시간"
+orders.settings.interval = "Zoho 확인 주기"
+orders.settings.intervalHint = "각 실행은 변경된 문서만, 최대 20건 읽습니다."
+orders.settings.lastSync = "마지막 동기화 {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "다음보다 오래된 주문 무시"
+orders.settings.maxAgeHint = "오래된 주문은 보드에 표시되지 않고 재고도 차지하지 않습니다. 0이면 모든 주문을 유지합니다."
+orders.settings.minutes = "{{n}}분"  placeholders={{n}}
+orders.settings.neverSynced = "아직 동기화되지 않음"
+orders.settings.removeBrand = "{{brand}} 삭제"  placeholders={{brand}}
+orders.settings.saveFailed = "주문 보드 설정을 저장할 수 없습니다"
+orders.settings.saved = "주문 보드 설정이 저장되었습니다"
+orders.settings.showsTitle = "보드에 표시할 내용"
+orders.settings.syncEnabled = "주문 보드 동기화 유지"
+orders.settings.syncEnabledHint = "Zoho Books에서 판매 주문, 미완료 구매 주문, 재고를 읽습니다. 쓰지 않습니다."
+orders.settings.syncNow = "지금 동기화"
+orders.settings.syncTitle = "Zoho 동기화"
+orders.shipped = "{{shipped}}/{{total}} 출고됨"  placeholders={{shipped}},{{total}}
+orders.sort.age = "경과일"
+orders.sort.customer = "고객"
+orders.sort.label = "정렬"
+orders.sort.ready = "준비율"
+orders.sort.value = "금액"
+orders.status.all = "전체"
+orders.status.inProgress = "진행 중"
+orders.status.incoming = "입고 예정"
+orders.status.partial = "부분 가능"
+orders.status.toOrder = "발주 필요"
+orders.status.toShip = "출고 가능"
+orders.syncFailed = "마지막 동기화 실패: {{reason}} — {{when}} 기준 데이터를 표시합니다."  placeholders={{reason}},{{when}}
+orders.syncOff = "주문 동기화가 꺼져 있습니다."
+orders.syncOffHint = "설정의 주문 탭에서 켜세요."
+orders.syncing = "동기화 중 · {{n}}건 남음"  placeholders={{n}}
+orders.title = "주문"
+orders.units_one = "{{count}}개"  placeholders={{count}}
+orders.units_other = "{{count}}개"  placeholders={{count}}
+orders.updated = "{{when}} 업데이트됨"  placeholders={{when}}
+nav.orders = "주문"
+settings.tabs.orders = "주문"
+common.cancel = "취소"
+--- nl orders (190 keys)
+orders.age = "{{n}} dgn"  placeholders={{n}}
+orders.busy = "Zoho is bezig, probeer het zo opnieuw."
+orders.chip.quote = "Offerte"
+orders.col.available = "Beschikbaar"
+orders.col.product = "Artikel"
+orders.col.qty = "Aantal"
+orders.col.short = "Tekort"
+orders.col.state = "Status"
+orders.contact.alsoOpen = "Ook openstaand voor deze klant:"
+orders.contact.copied = "Gekopieerd"
+orders.contact.copy = "{{what}} kopiëren"  placeholders={{what}}
+orders.contact.mailSubject = "Bestelling {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "Geen e-mail in Zoho"
+orders.contact.noPhone = "Geen telefoon in Zoho"
+orders.contact.none = "Geen contactpersoon voor deze bestelling in Zoho."
+orders.contact.title = "Contact"
+orders.coreOnly = "Alleen 3D"
+orders.empty.core = "Geen openstaande 3D-bestellingen."
+orders.empty.coreHint = "Zet \"Alleen 3D\" uit om de andere bestellingen te zien."
+orders.empty.noResults = "Geen resultaten."
+orders.empty.none = "Geen openstaande bestellingen."
+orders.empty.noneHint = "Alle klantbestellingen zijn verzonden."
+orders.finished.chip = "Afgerond"
+orders.finished.intro = "Afgeronde bestellingen: alles is verzonden. Nieuwste eerst."
+orders.finished.loadFailed = "Deze bestelling kon niet uit Zoho worden geladen."
+orders.finished.loading = "Deze bestelling wordt uit Zoho geladen…"
+orders.finished.match = "Overeenkomende afgeronde bestellingen: {{n}}"  placeholders={{n}}
+orders.finished.none = "Geen afgeronde bestellingen."
+orders.finished.older = "Oudere bestellingen tonen"
+orders.finished.shipped = "Verzonden"
+orders.finished.show = "Tonen"
+orders.firstSync = "Eerste synchronisatie bezig — nog {{n}} documenten"  placeholders={{n}}
+orders.group.other = "Overige regels"
+orders.group.packed = "Verpakt, wacht op levering"
+orders.group.shipped = "Verzonden"
+orders.group.todo = "Klaar te maken"
+orders.handover.alreadyInvoiced = "Al gefactureerd ({{numbers}}): geen nieuwe factuur."  placeholders={{numbers}}
+orders.handover.applyCredit = "Tegoed van de klant toepassen ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "Markeren als verzonden"
+orders.handover.confirmPickup = "Aan de klant overhandigd"
+orders.handover.creditOffBoard = "De bestelling staat niet meer op de lijst: pas het tegoed van de klant toe in Zoho."
+orders.handover.delivery = "Levering"
+orders.handover.deliveryNote = "Het pakket wordt in Zoho “verzonden”."
+orders.handover.doneDelivery = "Pakket {{number}} als verzonden gemarkeerd"  placeholders={{number}}
+orders.handover.donePickup = "Pakket {{number}} aan de klant overhandigd"  placeholders={{number}}
+orders.handover.due = "Nog te betalen {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "De overhandiging is niet voltooid: {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "Maakt de factuur voor dit pakket: {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "Factuur {{number}} aangemaakt"  placeholders={{number}}
+orders.handover.invoiceFailed = "De factuur kon niet worden aangemaakt: {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "Maakt de factuur voor dit pakket"
+orders.handover.manual = "Een korting of toeslag op deze bestelling kan niet worden verdeeld: factureer in Zoho."
+orders.handover.manualDraft = "Een conceptfactuur ({{number}}) wacht in Zoho: verstuur die eerst daar."  placeholders={{number}}
+orders.handover.meta = "{{units}} · gedateerd {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "Wijze van overhandiging"
+orders.handover.nothingToInvoice = "Niets te factureren voor dit pakket."
+orders.handover.open = "Pakket overhandigen"
+orders.handover.openNumber = "{{number}} overhandigen"  placeholders={{number}}
+orders.handover.pickup = "Afhalen in de winkel"
+orders.handover.pickupNote = "Het pakket wordt in Zoho “afgeleverd”."
+orders.handover.prefillRefused = "Zoho kon de factuur niet voorbereiden: maak hem aan in Zoho."
+orders.handover.previewFailed = "Zoho gaf niet aan wat er gefactureerd wordt."
+orders.handover.sending = "Verzenden naar Zoho…"
+orders.handover.settled = "Factuur voldaan"
+orders.hidden = "+{{n}} verborgen"  placeholders={{n}}
+orders.hint.incoming = "tekort gedekt door een inkooporder"
+orders.hint.partial = "deels verzendbaar"
+orders.hint.toOrder = "tekort zonder open inkooporder"
+orders.hint.toShip = "alles op voorraad"
+orders.inv.create = "Factuur maken"
+orders.inv.download = "Factuur downloaden"
+orders.inv.draft = "Concept"
+orders.inv.empty = "Nog geen factuur. Die wordt gemaakt bij de overdracht van het pakket."
+orders.inv.nothing = "Niets meer te factureren."
+orders.inv.open = "Openen in Zoho Books"
+orders.inv.pdfFailed = "De factuur kon niet worden opgehaald."
+orders.inv.print = "Factuur afdrukken"
+orders.inv.title = "Facturen"
+orders.inv.unbilled = "{{units}} overgedragen zonder factuur"  placeholders={{units}}
+orders.line.backorder = "Onderweg"
+orders.line.cancelled = "Geannuleerd"
+orders.line.invoiced = "gefactureerd"
+orders.line.packed = "Verpakt"
+orders.line.ready = "Gereed"
+orders.line.service = "Dienst"
+orders.line.shipped = "Verzonden"
+orders.line.toOrder = "Te bestellen"
+orders.loadFailed = "Het orderbord kon niet worden geladen."
+orders.notConnected = "Zoho Books is niet verbonden."
+orders.notConnectedHint = "Voeg de Zoho-gegevens toe in Instellingen om bestellingen te laden."
+orders.ofOrdered = "van {{n}}"  placeholders={{n}}
+orders.packed = "{{n}} verpakt"  placeholders={{n}}
+orders.parcel.create = "Pakket aanmaken"
+orders.parcel.created = "Pakket {{number}} aangemaakt in Zoho Books"  placeholders={{number}}
+orders.parcel.creating = "Aanmaken in Zoho…"
+orders.parcel.failed = "Het pakket kon niet worden aangemaakt: {{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "Pakket: {{units}} van {{of}} uit {{number}}"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "In het pakket"
+orders.parcel.left = "{{units}} nog voor te bereiden"  placeholders={{units}}
+orders.parcel.less = "Eén minder"
+orders.parcel.meta = "gedateerd {{date}} · nummer toegekend door Zoho"  placeholders={{date}}
+orders.parcel.more = "Eén meer"
+orders.parcel.stale = "De bestelling is gewijzigd, controleer de aantallen."
+orders.pay.advanceNote = "Voorschot: het ongebruikte tegoed van de klant in Zoho, in afwachting van de volgende factuur."
+orders.pay.any = "Elke betaling"
+orders.pay.invDue = "Vervalt {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "{{amount}} resterend"  placeholders={{amount}}
+orders.pay.invOverdue = "{{n}} d achterstallig"  placeholders={{n}}
+orders.pay.left = "Nog te betalen"
+orders.pay.legendAdvance = "Vooraf betaald"
+orders.pay.legendDue = "Gefactureerd, wacht op betaling"
+orders.pay.legendInvoice = "Betaald op factuur"
+orders.pay.legendOverdue = "Achterstallig"
+orders.pay.legendPaid = "Betaald"
+orders.pay.legendRest = "Nog te betalen, niet gefactureerd"
+orders.pay.nothingLeft = "Niets meer te betalen"
+orders.pay.overdue = "achterstallig"
+orders.pay.overdueChip = "Achterstallig"
+orders.pay.paid = "Betaald"
+orders.pay.partial = "Gedeeltelijk betaald"
+orders.pay.pct = "{{pct}}% betaald"  placeholders={{pct}}
+orders.pay.tile = "{{pct}}% betaald"  placeholders={{pct}}
+orders.pay.title = "Betaling"
+orders.pay.unpaid = "Onbetaald"
+orders.pick.boxed = "Alles van deze picklijst zit al in een pakket."
+orders.pick.create = "Aanmaken en afdrukken"
+orders.pick.created = "Picklijst {{number}} aangemaakt in Zoho Books"  placeholders={{number}}
+orders.pick.failed = "De picklijst kon niet worden aangemaakt: {{reason}}"  placeholders={{reason}}
+orders.pick.meta = "aangemaakt in Zoho, daarna afgedrukt"
+orders.pick.nothing = "Niets te picken: alle voorraad staat al op een picklijst."
+orders.pick.open = "Voorbereiden"
+orders.pick.summary = "Picklijst: {{units}} van {{of}} op voorraad"  placeholders={{of}},{{units}}
+orders.pick.toPick = "Te picken"
+orders.pkg.delivered = "{{number}} · afgeleverd {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · verpakt {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · verzonden {{date}}"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "In voorbereiding"
+orders.prep.printFailed = "De voorbereidingsbon kon niet worden gemaakt."
+orders.prep.printed = "Afgedrukt om {{time}} door {{name}}"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "Afgedrukt om {{time}}"  placeholders={{time}}
+orders.prep.reprint = "Opnieuw afdrukken"
+orders.prep.sheet = "Voorbereidingsbon"
+orders.readyPct = "{{pct}} % gereed"  placeholders={{pct}}
+orders.refresh = "Vernieuwen"
+orders.refreshFailed = "Het orderbord kon niet worden vernieuwd."
+orders.retry = "Opnieuw proberen"
+orders.search = "Ordernummer, klant, product, SKU…"
+orders.settings.addBrand = "Merk toevoegen"
+orders.settings.coreBrands = "Kernmerken"
+orders.settings.coreBrandsHint = "De schakelaar \"Alleen 3D\" behoudt bestellingen met minstens één regel van deze merken."
+orders.settings.days = "dagen"
+orders.settings.hour = "1 uur"
+orders.settings.interval = "Zoho controleren elke"
+orders.settings.intervalHint = "Elke ronde leest alleen gewijzigde documenten, hooguit 20."
+orders.settings.lastSync = "Laatste synchronisatie {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "Bestellingen negeren die ouder zijn dan"
+orders.settings.maxAgeHint = "Oudere bestellingen blijven van het bord en nemen geen voorraad. 0 behoudt alle bestellingen."
+orders.settings.minutes = "{{n}} minuten"  placeholders={{n}}
+orders.settings.neverSynced = "Nog niet gesynchroniseerd"
+orders.settings.removeBrand = "{{brand}} verwijderen"  placeholders={{brand}}
+orders.settings.saveFailed = "Instellingen van het orderbord konden niet worden opgeslagen"
+orders.settings.saved = "Instellingen van het orderbord opgeslagen"
+orders.settings.showsTitle = "Wat het bord toont"
+orders.settings.syncEnabled = "Orderbord gesynchroniseerd houden"
+orders.settings.syncEnabledHint = "Leest verkooporders, open inkooporders en voorraad uit Zoho Books. Schrijft nooit."
+orders.settings.syncNow = "Nu synchroniseren"
+orders.settings.syncTitle = "Zoho-synchronisatie"
+orders.shipped = "{{shipped}}/{{total}} verzonden"  placeholders={{shipped}},{{total}}
+orders.sort.age = "Leeftijd"
+orders.sort.customer = "Klant"
+orders.sort.label = "Sorteren"
+orders.sort.ready = "% gereed"
+orders.sort.value = "Waarde"
+orders.status.all = "Alle"
+orders.status.inProgress = "Lopend"
+orders.status.incoming = "Onderweg"
+orders.status.partial = "Gedeeltelijk"
+orders.status.toOrder = "Te bestellen"
+orders.status.toShip = "Te verzenden"
+orders.syncFailed = "Laatste synchronisatie mislukt: {{reason}} — gegevens van {{when}} worden getoond."  placeholders={{reason}},{{when}}
+orders.syncOff = "Ordersynchronisatie staat uit."
+orders.syncOffHint = "Zet deze aan in Instellingen, tabblad Bestellingen."
+orders.syncing = "Synchroniseren · nog {{n}}"  placeholders={{n}}
+orders.title = "Bestellingen"
+orders.units_one = "{{count}} stuk"  placeholders={{count}}
+orders.units_other = "{{count}} stuks"  placeholders={{count}}
+orders.updated = "Bijgewerkt {{when}}"  placeholders={{when}}
+nav.orders = "Bestellingen"
+settings.tabs.orders = "Bestellingen"
+common.cancel = "Annuleren"
+--- pl orders (190 keys)
+orders.age = "{{n}} dni"  placeholders={{n}}
+orders.busy = "Zoho jest zajęte, spróbuj ponownie za chwilę."
+orders.chip.quote = "Oferta"
+orders.col.available = "Dostępne"
+orders.col.product = "Produkt"
+orders.col.qty = "Ilość"
+orders.col.short = "Brak"
+orders.col.state = "Stan"
+orders.contact.alsoOpen = "Inne otwarte zamówienia tego klienta:"
+orders.contact.copied = "Skopiowano"
+orders.contact.copy = "Kopiuj {{what}}"  placeholders={{what}}
+orders.contact.mailSubject = "Zamówienie {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "Brak e-maila w Zoho"
+orders.contact.noPhone = "Brak telefonu w Zoho"
+orders.contact.none = "Brak osoby kontaktowej w tym zamówieniu w Zoho."
+orders.contact.title = "Kontakt"
+orders.coreOnly = "Tylko 3D"
+orders.empty.core = "Brak otwartych zamówień 3D."
+orders.empty.coreHint = "Wyłącz „Tylko 3D”, aby zobaczyć pozostałe zamówienia."
+orders.empty.noResults = "Brak wyników."
+orders.empty.none = "Brak otwartych zamówień."
+orders.empty.noneHint = "Wszystkie zamówienia klientów zostały wysłane."
+orders.finished.chip = "Zakończone"
+orders.finished.intro = "Zakończone zamówienia: wszystko zostało wysłane. Najnowsze najpierw."
+orders.finished.loadFailed = "Nie udało się wczytać tego zamówienia z Zoho."
+orders.finished.loading = "Wczytywanie tego zamówienia z Zoho…"
+orders.finished.match = "Pasujące zakończone zamówienia: {{n}}"  placeholders={{n}}
+orders.finished.none = "Brak zakończonych zamówień."
+orders.finished.older = "Pokaż starsze zamówienia"
+orders.finished.shipped = "Wysłano"
+orders.finished.show = "Pokaż"
+orders.firstSync = "Trwa pierwsza synchronizacja — pozostało dokumentów: {{n}}"  placeholders={{n}}
+orders.group.other = "Pozostałe pozycje"
+orders.group.packed = "Spakowane, czeka na dostawę"
+orders.group.shipped = "Wysłane"
+orders.group.todo = "Do przygotowania"
+orders.handover.alreadyInvoiced = "Już zafakturowano ({{numbers}}): bez nowej faktury."  placeholders={{numbers}}
+orders.handover.applyCredit = "Zastosuj saldo klienta ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "Oznacz jako wysłane"
+orders.handover.confirmPickup = "Wydano klientowi"
+orders.handover.creditOffBoard = "Zamówienie zniknęło z listy: zastosuj saldo klienta w Zoho."
+orders.handover.delivery = "Dostawa"
+orders.handover.deliveryNote = "Paczka zmienia status na „wysłana” w Zoho."
+orders.handover.doneDelivery = "Paczka {{number}} oznaczona jako wysłana"  placeholders={{number}}
+orders.handover.donePickup = "Paczka {{number}} wydana klientowi"  placeholders={{number}}
+orders.handover.due = "Do zapłaty {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "Wydanie nie zostało ukończone: {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "Tworzy fakturę za tę paczkę: {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "Faktura {{number}} utworzona"  placeholders={{number}}
+orders.handover.invoiceFailed = "Nie udało się utworzyć faktury: {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "Tworzy fakturę za tę paczkę"
+orders.handover.manual = "Rabatu lub opłaty tego zamówienia nie można rozdzielić: zafakturuj je w Zoho."
+orders.handover.manualDraft = "W Zoho czeka faktura robocza ({{number}}): najpierw wyślij ją tam."  placeholders={{number}}
+orders.handover.meta = "{{units}} · z dnia {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "Sposób wydania"
+orders.handover.nothingToInvoice = "Nic do zafakturowania dla tej paczki."
+orders.handover.open = "Wydaj paczkę"
+orders.handover.openNumber = "Wydaj {{number}}"  placeholders={{number}}
+orders.handover.pickup = "Odbiór w sklepie"
+orders.handover.pickupNote = "Paczka zmienia status na „dostarczona” w Zoho."
+orders.handover.prefillRefused = "Zoho nie mogło przygotować faktury: utwórz ją w Zoho."
+orders.handover.previewFailed = "Zoho nie podało, co zostanie zafakturowane."
+orders.handover.sending = "Wysyłanie do Zoho…"
+orders.handover.settled = "Faktura rozliczona"
+orders.hidden = "+{{n}} ukrytych"  placeholders={{n}}
+orders.hint.incoming = "brak pokryty zamówieniem zakupu"
+orders.hint.partial = "częściowo do wysyłki"
+orders.hint.toOrder = "brak bez otwartego zamówienia zakupu"
+orders.hint.toShip = "wszystko na stanie"
+orders.inv.create = "Utwórz fakturę"
+orders.inv.download = "Pobierz fakturę"
+orders.inv.draft = "Wersja robocza"
+orders.inv.empty = "Brak faktury. Powstaje przy przekazaniu paczki."
+orders.inv.nothing = "Nie ma już nic do zafakturowania."
+orders.inv.open = "Otwórz w Zoho Books"
+orders.inv.pdfFailed = "Nie udało się pobrać faktury."
+orders.inv.print = "Drukuj fakturę"
+orders.inv.title = "Faktury"
+orders.inv.unbilled = "{{units}} przekazano bez faktury"  placeholders={{units}}
+orders.line.backorder = "W drodze"
+orders.line.cancelled = "Anulowane"
+orders.line.invoiced = "zafakturowano"
+orders.line.packed = "Spakowane"
+orders.line.ready = "Gotowe"
+orders.line.service = "Usługa"
+orders.line.shipped = "Wysłane"
+orders.line.toOrder = "Do zamówienia"
+orders.loadFailed = "Nie udało się wczytać tablicy zamówień."
+orders.notConnected = "Zoho Books nie jest połączone."
+orders.notConnectedHint = "Dodaj dane logowania Zoho w Ustawieniach, aby wczytać zamówienia."
+orders.ofOrdered = "z {{n}}"  placeholders={{n}}
+orders.packed = "{{n}} spakowano"  placeholders={{n}}
+orders.parcel.create = "Utwórz paczkę"
+orders.parcel.created = "Paczka {{number}} utworzona w Zoho Books"  placeholders={{number}}
+orders.parcel.creating = "Tworzenie w Zoho…"
+orders.parcel.failed = "Nie udało się utworzyć paczki: {{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "Paczka: {{units}} z {{of}} z {{number}}"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "W paczce"
+orders.parcel.left = "{{units}} do przygotowania później"  placeholders={{units}}
+orders.parcel.less = "Jedna mniej"
+orders.parcel.meta = "z datą {{date}} · numer nadaje Zoho"  placeholders={{date}}
+orders.parcel.more = "Jedna więcej"
+orders.parcel.stale = "Zamówienie uległo zmianie, sprawdź ilości."
+orders.pay.advanceNote = "Zaliczka: niewykorzystane środki klienta w Zoho, czekające na kolejną fakturę."
+orders.pay.any = "Dowolna płatność"
+orders.pay.invDue = "Termin {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "Pozostało {{amount}}"  placeholders={{amount}}
+orders.pay.invOverdue = "Po terminie {{n}} d"  placeholders={{n}}
+orders.pay.left = "Do zapłaty"
+orders.pay.legendAdvance = "Opłacone z góry"
+orders.pay.legendDue = "Zafakturowane, czeka na płatność"
+orders.pay.legendInvoice = "Opłacone na fakturze"
+orders.pay.legendOverdue = "Po terminie"
+orders.pay.legendPaid = "Opłacone"
+orders.pay.legendRest = "Do zapłaty, niezafakturowane"
+orders.pay.nothingLeft = "Nic do zapłaty"
+orders.pay.overdue = "po terminie"
+orders.pay.overdueChip = "Po terminie"
+orders.pay.paid = "Opłacone"
+orders.pay.partial = "Częściowo opłacone"
+orders.pay.pct = "{{pct}}% opłacone"  placeholders={{pct}}
+orders.pay.tile = "{{pct}}% opłacone"  placeholders={{pct}}
+orders.pay.title = "Płatność"
+orders.pay.unpaid = "Nieopłacone"
+orders.pick.boxed = "Wszystko z tej listy jest już w paczce."
+orders.pick.create = "Utwórz i wydrukuj"
+orders.pick.created = "Lista kompletacji {{number}} utworzona w Zoho Books"  placeholders={{number}}
+orders.pick.failed = "Nie udało się utworzyć listy kompletacji: {{reason}}"  placeholders={{reason}}
+orders.pick.meta = "utworzona w Zoho, potem wydrukowana"
+orders.pick.nothing = "Nic do pobrania: cały stan jest już na liście kompletacji."
+orders.pick.open = "Przygotuj"
+orders.pick.summary = "Lista kompletacji: {{units}} z {{of}} na stanie"  placeholders={{of}},{{units}}
+orders.pick.toPick = "Do pobrania"
+orders.pkg.delivered = "{{number}} · dostarczono {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · spakowano {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · wysłano {{date}}"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "W przygotowaniu"
+orders.prep.printFailed = "Nie udało się wygenerować karty kompletacji."
+orders.prep.printed = "Wydrukowano o {{time}} przez {{name}}"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "Wydrukowano o {{time}}"  placeholders={{time}}
+orders.prep.reprint = "Drukuj ponownie"
+orders.prep.sheet = "Karta kompletacji"
+orders.readyPct = "{{pct}} % gotowe"  placeholders={{pct}}
+orders.refresh = "Odśwież"
+orders.refreshFailed = "Nie udało się odświeżyć tablicy zamówień."
+orders.retry = "Spróbuj ponownie"
+orders.search = "Numer zamówienia, klient, produkt, SKU…"
+orders.settings.addBrand = "Dodaj markę"
+orders.settings.coreBrands = "Główne marki"
+orders.settings.coreBrandsHint = "Przełącznik „Tylko 3D” zostawia zamówienia z co najmniej jedną pozycją tych marek."
+orders.settings.days = "dni"
+orders.settings.hour = "1 godzinę"
+orders.settings.interval = "Sprawdzaj Zoho co"
+orders.settings.intervalHint = "Każdy przebieg odczytuje tylko zmienione dokumenty, najwyżej 20."
+orders.settings.lastSync = "Ostatnia synchronizacja {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "Ignoruj zamówienia starsze niż"
+orders.settings.maxAgeHint = "Starsze zamówienia nie trafiają na tablicę i nie zajmują stanu. 0 zachowuje wszystkie zamówienia."
+orders.settings.minutes = "{{n}} min"  placeholders={{n}}
+orders.settings.neverSynced = "Jeszcze nie zsynchronizowano"
+orders.settings.removeBrand = "Usuń {{brand}}"  placeholders={{brand}}
+orders.settings.saveFailed = "Nie udało się zapisać ustawień tablicy zamówień"
+orders.settings.saved = "Zapisano ustawienia tablicy zamówień"
+orders.settings.showsTitle = "Co pokazuje tablica"
+orders.settings.syncEnabled = "Utrzymuj tablicę zamówień zsynchronizowaną"
+orders.settings.syncEnabledHint = "Odczytuje zamówienia sprzedaży, otwarte zamówienia zakupu i stany z Zoho Books. Nigdy nie zapisuje."
+orders.settings.syncNow = "Synchronizuj teraz"
+orders.settings.syncTitle = "Synchronizacja z Zoho"
+orders.shipped = "{{shipped}}/{{total}} wysłano"  placeholders={{shipped}},{{total}}
+orders.sort.age = "Wiek"
+orders.sort.customer = "Klient"
+orders.sort.label = "Sortuj"
+orders.sort.ready = "% gotowe"
+orders.sort.value = "Wartość"
+orders.status.all = "Wszystkie"
+orders.status.inProgress = "W toku"
+orders.status.incoming = "W drodze"
+orders.status.partial = "Częściowe"
+orders.status.toOrder = "Do zamówienia"
+orders.status.toShip = "Do wysyłki"
+orders.syncFailed = "Ostatnia synchronizacja nie powiodła się: {{reason}} — wyświetlane dane z {{when}}."  placeholders={{reason}},{{when}}
+orders.syncOff = "Synchronizacja zamówień jest wyłączona."
+orders.syncOffHint = "Włącz ją w Ustawieniach, na karcie Zamówienia."
+orders.syncing = "Synchronizacja · pozostało {{n}}"  placeholders={{n}}
+orders.title = "Zamówienia"
+orders.units_one = "{{count}} szt."  placeholders={{count}}
+orders.units_other = "{{count}} szt."  placeholders={{count}}
+orders.updated = "Zaktualizowano {{when}}"  placeholders={{when}}
+nav.orders = "Zamówienia"
+settings.tabs.orders = "Zamówienia"
+common.cancel = "Anuluj"
+--- ptBR orders (190 keys)
+orders.age = "{{n}} dias"  placeholders={{n}}
+orders.busy = "O Zoho está ocupado, tente novamente em instantes."
+orders.chip.quote = "Orçamento"
+orders.col.available = "Disponível"
+orders.col.product = "Produto"
+orders.col.qty = "Qtd."
+orders.col.short = "Falta"
+orders.col.state = "Estado"
+orders.contact.alsoOpen = "Também abertos para este cliente:"
+orders.contact.copied = "Copiado"
+orders.contact.copy = "Copiar {{what}}"  placeholders={{what}}
+orders.contact.mailSubject = "Pedido {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "Sem e-mail no Zoho"
+orders.contact.noPhone = "Sem telefone no Zoho"
+orders.contact.none = "Nenhuma pessoa de contato neste pedido no Zoho."
+orders.contact.title = "Contato"
+orders.coreOnly = "Somente 3D"
+orders.empty.core = "Nenhum pedido 3D em aberto."
+orders.empty.coreHint = "Desative \"Somente 3D\" para ver os outros pedidos."
+orders.empty.noResults = "Nenhum resultado."
+orders.empty.none = "Nenhum pedido em aberto."
+orders.empty.noneHint = "Todos os pedidos de clientes foram enviados."
+orders.finished.chip = "Concluídos"
+orders.finished.intro = "Pedidos concluídos: tudo foi enviado. Mais recentes primeiro."
+orders.finished.loadFailed = "Não foi possível carregar este pedido do Zoho."
+orders.finished.loading = "Carregando este pedido do Zoho…"
+orders.finished.match = "Pedidos concluídos correspondentes: {{n}}"  placeholders={{n}}
+orders.finished.none = "Nenhum pedido concluído."
+orders.finished.older = "Mostrar pedidos mais antigos"
+orders.finished.shipped = "Enviado"
+orders.finished.show = "Mostrar"
+orders.firstSync = "Primeira sincronização em andamento — restam {{n}} documentos"  placeholders={{n}}
+orders.group.other = "Outras linhas"
+orders.group.packed = "Embalado, aguardando entrega"
+orders.group.shipped = "Enviado"
+orders.group.todo = "A preparar"
+orders.handover.alreadyInvoiced = "Já faturado ({{numbers}}): nenhuma nova fatura."  placeholders={{numbers}}
+orders.handover.applyCredit = "Aplicar o crédito do cliente ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "Marcar como enviado"
+orders.handover.confirmPickup = "Entregue ao cliente"
+orders.handover.creditOffBoard = "O pedido saiu da lista: aplique o crédito do cliente no Zoho."
+orders.handover.delivery = "Entrega"
+orders.handover.deliveryNote = "O pacote passa a “enviado” no Zoho."
+orders.handover.doneDelivery = "Pacote {{number}} marcado como enviado"  placeholders={{number}}
+orders.handover.donePickup = "Pacote {{number}} entregue ao cliente"  placeholders={{number}}
+orders.handover.due = "Ainda a pagar {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "A entrega não foi concluída: {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "Cria a fatura deste pacote: {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "Fatura {{number}} criada"  placeholders={{number}}
+orders.handover.invoiceFailed = "Não foi possível criar a fatura: {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "Cria a fatura deste pacote"
+orders.handover.manual = "Um desconto ou encargo deste pedido não pode ser dividido: fature no Zoho."
+orders.handover.manualDraft = "Uma fatura em rascunho ({{number}}) aguarda no Zoho: envie-a lá primeiro."  placeholders={{number}}
+orders.handover.meta = "{{units}} · datado de {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "Forma de entrega"
+orders.handover.nothingToInvoice = "Nada a faturar para este pacote."
+orders.handover.open = "Entregar o pacote"
+orders.handover.openNumber = "Entregar {{number}}"  placeholders={{number}}
+orders.handover.pickup = "Retirada na loja"
+orders.handover.pickupNote = "O pacote passa a “entregue” no Zoho."
+orders.handover.prefillRefused = "O Zoho não conseguiu preparar a fatura: crie-a no Zoho."
+orders.handover.previewFailed = "O Zoho não informou o que será faturado."
+orders.handover.sending = "Enviando ao Zoho…"
+orders.handover.settled = "Fatura quitada"
+orders.hidden = "+{{n}} ocultos"  placeholders={{n}}
+orders.hint.incoming = "falta coberta por um pedido de compra"
+orders.hint.partial = "enviável em parte"
+orders.hint.toOrder = "falta sem pedido de compra aberto"
+orders.hint.toShip = "tudo em estoque"
+orders.inv.create = "Criar a fatura"
+orders.inv.download = "Baixar a fatura"
+orders.inv.draft = "Rascunho"
+orders.inv.empty = "Ainda não há fatura. Ela é criada na entrega do pacote."
+orders.inv.nothing = "Nada mais a faturar."
+orders.inv.open = "Abrir no Zoho Books"
+orders.inv.pdfFailed = "Não foi possível obter a fatura."
+orders.inv.print = "Imprimir a fatura"
+orders.inv.title = "Faturas"
+orders.inv.unbilled = "{{units}} entregues sem fatura"  placeholders={{units}}
+orders.line.backorder = "A caminho"
+orders.line.cancelled = "Cancelado"
+orders.line.invoiced = "faturado"
+orders.line.packed = "Embalado"
+orders.line.ready = "Pronto"
+orders.line.service = "Serviço"
+orders.line.shipped = "Enviado"
+orders.line.toOrder = "A comprar"
+orders.loadFailed = "Não foi possível carregar o quadro de pedidos."
+orders.notConnected = "O Zoho Books não está conectado."
+orders.notConnectedHint = "Adicione as credenciais do Zoho em Configurações para carregar os pedidos."
+orders.ofOrdered = "de {{n}}"  placeholders={{n}}
+orders.packed = "{{n}} embalados"  placeholders={{n}}
+orders.parcel.create = "Criar o pacote"
+orders.parcel.created = "Pacote {{number}} criado no Zoho Books"  placeholders={{number}}
+orders.parcel.creating = "Criando no Zoho…"
+orders.parcel.failed = "Não foi possível criar o pacote: {{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "Pacote: {{units}} de {{of}} de {{number}}"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "No pacote"
+orders.parcel.left = "{{units}} a preparar depois"  placeholders={{units}}
+orders.parcel.less = "Um a menos"
+orders.parcel.meta = "datado de {{date}} · número atribuído pelo Zoho"  placeholders={{date}}
+orders.parcel.more = "Um a mais"
+orders.parcel.stale = "O pedido mudou, confira as quantidades."
+orders.pay.advanceNote = "Adiantamento: o crédito não utilizado do cliente no Zoho, aguardando a próxima fatura."
+orders.pay.any = "Qualquer pagamento"
+orders.pay.invDue = "Vence {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "Faltam {{amount}}"  placeholders={{amount}}
+orders.pay.invOverdue = "Vencida há {{n}} d"  placeholders={{n}}
+orders.pay.left = "Falta pagar"
+orders.pay.legendAdvance = "Pago antecipadamente"
+orders.pay.legendDue = "Faturado, aguardando pagamento"
+orders.pay.legendInvoice = "Pago na fatura"
+orders.pay.legendOverdue = "Vencido"
+orders.pay.legendPaid = "Pago"
+orders.pay.legendRest = "Falta pagar, não faturado"
+orders.pay.nothingLeft = "Nada a pagar"
+orders.pay.overdue = "vencido"
+orders.pay.overdueChip = "Vencidos"
+orders.pay.paid = "Pago"
+orders.pay.partial = "Parcialmente pago"
+orders.pay.pct = "{{pct}}% pago"  placeholders={{pct}}
+orders.pay.tile = "{{pct}}% pago"  placeholders={{pct}}
+orders.pay.title = "Pagamento"
+orders.pay.unpaid = "Não pago"
+orders.pick.boxed = "Tudo desta lista já está em um pacote."
+orders.pick.create = "Criar e imprimir"
+orders.pick.created = "Lista de separação {{number}} criada no Zoho Books"  placeholders={{number}}
+orders.pick.failed = "Não foi possível criar a lista de separação: {{reason}}"  placeholders={{reason}}
+orders.pick.meta = "criada no Zoho e depois impressa"
+orders.pick.nothing = "Nada a separar: todo o estoque já está em uma lista de separação."
+orders.pick.open = "Preparar"
+orders.pick.summary = "Lista de separação: {{units}} de {{of}} em estoque"  placeholders={{of}},{{units}}
+orders.pick.toPick = "A separar"
+orders.pkg.delivered = "{{number}} · entregue em {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · embalado em {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · enviado em {{date}}"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "Em preparação"
+orders.prep.printFailed = "Não foi possível gerar a ficha de separação."
+orders.prep.printed = "Impressa às {{time}} por {{name}}"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "Impressa às {{time}}"  placeholders={{time}}
+orders.prep.reprint = "Reimprimir"
+orders.prep.sheet = "Ficha de separação"
+orders.readyPct = "{{pct}} % pronto"  placeholders={{pct}}
+orders.refresh = "Atualizar"
+orders.refreshFailed = "Não foi possível atualizar o quadro de pedidos."
+orders.retry = "Tentar novamente"
+orders.search = "Número do pedido, cliente, produto, SKU…"
+orders.settings.addBrand = "Adicionar uma marca"
+orders.settings.coreBrands = "Marcas principais"
+orders.settings.coreBrandsHint = "A chave \"Somente 3D\" mantém os pedidos com pelo menos uma linha dessas marcas."
+orders.settings.days = "dias"
+orders.settings.hour = "1 hora"
+orders.settings.interval = "Verificar o Zoho a cada"
+orders.settings.intervalHint = "Cada passagem lê apenas os documentos alterados, no máximo 20."
+orders.settings.lastSync = "Última sincronização {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "Ignorar pedidos com mais de"
+orders.settings.maxAgeHint = "Pedidos mais antigos ficam fora do quadro e não reservam estoque. 0 mantém todos os pedidos."
+orders.settings.minutes = "{{n}} minutos"  placeholders={{n}}
+orders.settings.neverSynced = "Ainda não sincronizado"
+orders.settings.removeBrand = "Remover {{brand}}"  placeholders={{brand}}
+orders.settings.saveFailed = "Não foi possível salvar as configurações do quadro de pedidos"
+orders.settings.saved = "Configurações do quadro de pedidos salvas"
+orders.settings.showsTitle = "O que o quadro mostra"
+orders.settings.syncEnabled = "Manter o quadro de pedidos sincronizado"
+orders.settings.syncEnabledHint = "Lê pedidos de venda, pedidos de compra abertos e estoque do Zoho Books. Nunca grava."
+orders.settings.syncNow = "Sincronizar agora"
+orders.settings.syncTitle = "Sincronização com o Zoho"
+orders.shipped = "{{shipped}}/{{total}} enviados"  placeholders={{shipped}},{{total}}
+orders.sort.age = "Idade"
+orders.sort.customer = "Cliente"
+orders.sort.label = "Ordenar"
+orders.sort.ready = "% pronto"
+orders.sort.value = "Valor"
+orders.status.all = "Todos"
+orders.status.inProgress = "Em andamento"
+orders.status.incoming = "A caminho"
+orders.status.partial = "Parcial"
+orders.status.toOrder = "A comprar"
+orders.status.toShip = "A enviar"
+orders.syncFailed = "A última sincronização falhou: {{reason}} — exibindo dados de {{when}}."  placeholders={{reason}},{{when}}
+orders.syncOff = "A sincronização de pedidos está desativada."
+orders.syncOffHint = "Ative em Configurações, aba Pedidos."
+orders.syncing = "Sincronizando · restam {{n}}"  placeholders={{n}}
+orders.title = "Pedidos"
+orders.units_one = "{{count}} unidade"  placeholders={{count}}
+orders.units_other = "{{count}} unidades"  placeholders={{count}}
+orders.updated = "Atualizado {{when}}"  placeholders={{when}}
+nav.orders = "Pedidos"
+settings.tabs.orders = "Pedidos"
+common.cancel = "Cancelar"
+--- ru orders (190 keys)
+orders.age = "{{n}} дн."  placeholders={{n}}
+orders.busy = "Zoho занят, повторите через минуту."
+orders.chip.quote = "Предложение"
+orders.col.available = "Доступно"
+orders.col.product = "Товар"
+orders.col.qty = "Кол-во"
+orders.col.short = "Не хватает"
+orders.col.state = "Состояние"
+orders.contact.alsoOpen = "Другие открытые заказы этого клиента:"
+orders.contact.copied = "Скопировано"
+orders.contact.copy = "Копировать {{what}}"  placeholders={{what}}
+orders.contact.mailSubject = "Заказ {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "В Zoho нет e-mail"
+orders.contact.noPhone = "В Zoho нет телефона"
+orders.contact.none = "У этого заказа в Zoho нет контактного лица."
+orders.contact.title = "Контакт"
+orders.coreOnly = "Только 3D"
+orders.empty.core = "Открытых 3D-заказов нет."
+orders.empty.coreHint = "Выключите «Только 3D», чтобы увидеть остальные заказы."
+orders.empty.noResults = "Ничего не найдено."
+orders.empty.none = "Открытых заказов нет."
+orders.empty.noneHint = "Все заказы клиентов отгружены."
+orders.finished.chip = "Завершённые"
+orders.finished.intro = "Завершённые заказы: всё отправлено. Сначала новые."
+orders.finished.loadFailed = "Не удалось загрузить заказ из Zoho."
+orders.finished.loading = "Загрузка заказа из Zoho…"
+orders.finished.match = "Подходящие завершённые заказы: {{n}}"  placeholders={{n}}
+orders.finished.none = "Нет завершённых заказов."
+orders.finished.older = "Показать более старые заказы"
+orders.finished.shipped = "Отправлен"
+orders.finished.show = "Показать"
+orders.firstSync = "Идёт первая синхронизация — осталось документов: {{n}}"  placeholders={{n}}
+orders.group.other = "Прочие позиции"
+orders.group.packed = "Упаковано, ждёт доставки"
+orders.group.shipped = "Отгружено"
+orders.group.todo = "Подготовить"
+orders.handover.alreadyInvoiced = "Уже выставлен счёт ({{numbers}}): новый счёт не создаётся."  placeholders={{numbers}}
+orders.handover.applyCredit = "Зачесть аванс клиента ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "Отметить как отправленную"
+orders.handover.confirmPickup = "Выдано клиенту"
+orders.handover.creditOffBoard = "Заказ пропал из списка: зачтите аванс клиента в Zoho."
+orders.handover.delivery = "Доставка"
+orders.handover.deliveryNote = "В Zoho посылка получит статус «отправлена»."
+orders.handover.doneDelivery = "Посылка {{number}} отмечена как отправленная"  placeholders={{number}}
+orders.handover.donePickup = "Посылка {{number}} выдана клиенту"  placeholders={{number}}
+orders.handover.due = "Осталось оплатить {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "Выдача не завершена: {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "Создаёт счёт на эту посылку: {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "Счёт {{number}} создан"  placeholders={{number}}
+orders.handover.invoiceFailed = "Не удалось создать счёт: {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "Создаёт счёт на эту посылку"
+orders.handover.manual = "Скидку или сбор по этому заказу нельзя разделить: выставите счёт в Zoho."
+orders.handover.manualDraft = "В Zoho ждёт черновик счёта ({{number}}): сначала отправьте его там."  placeholders={{number}}
+orders.handover.meta = "{{units}} · от {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "Способ выдачи"
+orders.handover.nothingToInvoice = "Для этой посылки нечего выставлять в счёт."
+orders.handover.open = "Выдать посылку"
+orders.handover.openNumber = "Выдать {{number}}"  placeholders={{number}}
+orders.handover.pickup = "Самовывоз из магазина"
+orders.handover.pickupNote = "В Zoho посылка получит статус «доставлена»."
+orders.handover.prefillRefused = "Zoho не смог подготовить счёт: создайте его в Zoho."
+orders.handover.previewFailed = "Zoho не сообщил, что будет выставлено в счёт."
+orders.handover.sending = "Отправка в Zoho…"
+orders.handover.settled = "Счёт оплачен"
+orders.hidden = "+{{n}} скрыто"  placeholders={{n}}
+orders.hint.incoming = "нехватка покрыта заказом поставщику"
+orders.hint.partial = "можно отгрузить частично"
+orders.hint.toOrder = "нехватка без открытого заказа поставщику"
+orders.hint.toShip = "всё есть на складе"
+orders.inv.create = "Создать счёт"
+orders.inv.download = "Скачать счёт"
+orders.inv.draft = "Черновик"
+orders.inv.empty = "Счёта пока нет. Он создаётся при передаче посылки."
+orders.inv.nothing = "Выставлять в счёт больше нечего."
+orders.inv.open = "Открыть в Zoho Books"
+orders.inv.pdfFailed = "Не удалось получить счёт."
+orders.inv.print = "Распечатать счёт"
+orders.inv.title = "Счета"
+orders.inv.unbilled = "{{units}} передано без счёта"  placeholders={{units}}
+orders.line.backorder = "В пути"
+orders.line.cancelled = "Отменено"
+orders.line.invoiced = "выставлен счёт"
+orders.line.packed = "Упаковано"
+orders.line.ready = "Готово"
+orders.line.service = "Услуга"
+orders.line.shipped = "Отгружено"
+orders.line.toOrder = "К закупке"
+orders.loadFailed = "Не удалось загрузить доску заказов."
+orders.notConnected = "Zoho Books не подключён."
+orders.notConnectedHint = "Добавьте учётные данные Zoho в Настройках, чтобы загрузить заказы."
+orders.ofOrdered = "из {{n}}"  placeholders={{n}}
+orders.packed = "{{n}} упаковано"  placeholders={{n}}
+orders.parcel.create = "Создать посылку"
+orders.parcel.created = "Посылка {{number}} создана в Zoho Books"  placeholders={{number}}
+orders.parcel.creating = "Создание в Zoho…"
+orders.parcel.failed = "Не удалось создать посылку: {{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "Посылка: {{units}} из {{of}} по {{number}}"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "В посылке"
+orders.parcel.left = "Осталось подготовить: {{units}}"  placeholders={{units}}
+orders.parcel.less = "На один меньше"
+orders.parcel.meta = "от {{date}} · номер присвоит Zoho"  placeholders={{date}}
+orders.parcel.more = "На один больше"
+orders.parcel.stale = "Заказ изменился, проверьте количества."
+orders.pay.advanceNote = "Аванс: неиспользованный кредит клиента в Zoho, ожидающий следующего счёта."
+orders.pay.any = "Любая оплата"
+orders.pay.invDue = "Срок {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "Осталось {{amount}}"  placeholders={{amount}}
+orders.pay.invOverdue = "Просрочен на {{n}} дн."  placeholders={{n}}
+orders.pay.left = "Осталось оплатить"
+orders.pay.legendAdvance = "Оплачено заранее"
+orders.pay.legendDue = "Выставлен счёт, ожидает оплаты"
+orders.pay.legendInvoice = "Оплачено по счёту"
+orders.pay.legendOverdue = "Просрочено"
+orders.pay.legendPaid = "Оплачено"
+orders.pay.legendRest = "Осталось оплатить, счёт не выставлен"
+orders.pay.nothingLeft = "Оплачивать больше нечего"
+orders.pay.overdue = "просрочен"
+orders.pay.overdueChip = "Просрочено"
+orders.pay.paid = "Оплачен"
+orders.pay.partial = "Оплачен частично"
+orders.pay.pct = "Оплачено {{pct}}%"  placeholders={{pct}}
+orders.pay.tile = "Оплачено {{pct}}%"  placeholders={{pct}}
+orders.pay.title = "Оплата"
+orders.pay.unpaid = "Не оплачен"
+orders.pick.boxed = "Всё из этого листа отбора уже в посылке."
+orders.pick.create = "Создать и напечатать"
+orders.pick.created = "Лист отбора {{number}} создан в Zoho Books"  placeholders={{number}}
+orders.pick.failed = "Не удалось создать лист отбора: {{reason}}"  placeholders={{reason}}
+orders.pick.meta = "создаётся в Zoho, затем печатается"
+orders.pick.nothing = "Отбирать нечего: весь запас уже в листе отбора."
+orders.pick.open = "Подготовить"
+orders.pick.summary = "Лист отбора: {{units}} из {{of}} на складе"  placeholders={{of}},{{units}}
+orders.pick.toPick = "К отбору"
+orders.pkg.delivered = "{{number}} · доставлено {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · упаковано {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · отгружено {{date}}"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "Готовится"
+orders.prep.printFailed = "Не удалось создать лист комплектации."
+orders.prep.printed = "Напечатано в {{time}}, {{name}}"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "Напечатано в {{time}}"  placeholders={{time}}
+orders.prep.reprint = "Напечатать снова"
+orders.prep.sheet = "Лист комплектации"
+orders.readyPct = "{{pct}} % готово"  placeholders={{pct}}
+orders.refresh = "Обновить"
+orders.refreshFailed = "Не удалось обновить доску заказов."
+orders.retry = "Повторить"
+orders.search = "Номер заказа, клиент, товар, SKU…"
+orders.settings.addBrand = "Добавить бренд"
+orders.settings.coreBrands = "Основные бренды"
+orders.settings.coreBrandsHint = "Переключатель «Только 3D» оставляет заказы, где есть хотя бы одна позиция этих брендов."
+orders.settings.days = "дн."
+orders.settings.hour = "1 час"
+orders.settings.interval = "Проверять Zoho каждые"
+orders.settings.intervalHint = "Каждый проход читает только изменённые документы, не более 20."
+orders.settings.lastSync = "Последняя синхронизация {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "Не учитывать заказы старше"
+orders.settings.maxAgeHint = "Более старые заказы не попадают на доску и не занимают остатки. 0 — учитывать все заказы."
+orders.settings.minutes = "{{n}} мин"  placeholders={{n}}
+orders.settings.neverSynced = "Ещё не синхронизировано"
+orders.settings.removeBrand = "Удалить {{brand}}"  placeholders={{brand}}
+orders.settings.saveFailed = "Не удалось сохранить настройки доски заказов"
+orders.settings.saved = "Настройки доски заказов сохранены"
+orders.settings.showsTitle = "Что показывает доска"
+orders.settings.syncEnabled = "Поддерживать доску заказов в актуальном состоянии"
+orders.settings.syncEnabledHint = "Читает заказы клиентов, открытые заказы поставщикам и остатки из Zoho Books. Ничего не записывает."
+orders.settings.syncNow = "Синхронизировать сейчас"
+orders.settings.syncTitle = "Синхронизация с Zoho"
+orders.shipped = "{{shipped}}/{{total}} отгружено"  placeholders={{shipped}},{{total}}
+orders.sort.age = "Возраст"
+orders.sort.customer = "Клиент"
+orders.sort.label = "Сортировка"
+orders.sort.ready = "% готово"
+orders.sort.value = "Сумма"
+orders.status.all = "Все"
+orders.status.inProgress = "В работе"
+orders.status.incoming = "В пути"
+orders.status.partial = "Частично"
+orders.status.toOrder = "К закупке"
+orders.status.toShip = "К отгрузке"
+orders.syncFailed = "Последняя синхронизация не удалась: {{reason}} — показаны данные от {{when}}."  placeholders={{reason}},{{when}}
+orders.syncOff = "Синхронизация заказов выключена."
+orders.syncOffHint = "Включите её в Настройках, на вкладке «Заказы»."
+orders.syncing = "Синхронизация · осталось {{n}}"  placeholders={{n}}
+orders.title = "Заказы"
+orders.units_one = "{{count}} ед."  placeholders={{count}}
+orders.units_other = "{{count}} ед."  placeholders={{count}}
+orders.updated = "Обновлено {{when}}"  placeholders={{when}}
+nav.orders = "Заказы"
+settings.tabs.orders = "Заказы"
+common.cancel = "Отмена"
+--- sv orders (190 keys)
+orders.age = "{{n}} dgr"  placeholders={{n}}
+orders.busy = "Zoho är upptaget, försök igen om en stund."
+orders.chip.quote = "Offert"
+orders.col.available = "Tillgängligt"
+orders.col.product = "Produkt"
+orders.col.qty = "Antal"
+orders.col.short = "Saknas"
+orders.col.state = "Läge"
+orders.contact.alsoOpen = "Även öppna för den här kunden:"
+orders.contact.copied = "Kopierat"
+orders.contact.copy = "Kopiera {{what}}"  placeholders={{what}}
+orders.contact.mailSubject = "Beställning {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "Ingen e-post i Zoho"
+orders.contact.noPhone = "Ingen telefon i Zoho"
+orders.contact.none = "Ingen kontaktperson på den här beställningen i Zoho."
+orders.contact.title = "Kontakt"
+orders.coreOnly = "Endast 3D"
+orders.empty.core = "Inga öppna 3D-beställningar."
+orders.empty.coreHint = "Stäng av \"Endast 3D\" för att se övriga beställningar."
+orders.empty.noResults = "Inga resultat."
+orders.empty.none = "Inga öppna beställningar."
+orders.empty.noneHint = "Alla kundbeställningar har skickats."
+orders.finished.chip = "Slutförda"
+orders.finished.intro = "Slutförda ordrar: allt har skickats. Nyaste först."
+orders.finished.loadFailed = "Kunde inte hämta den här ordern från Zoho."
+orders.finished.loading = "Hämtar den här ordern från Zoho…"
+orders.finished.match = "Matchande avslutade beställningar: {{n}}"  placeholders={{n}}
+orders.finished.none = "Inga slutförda ordrar."
+orders.finished.older = "Visa äldre ordrar"
+orders.finished.shipped = "Skickad"
+orders.finished.show = "Visa"
+orders.firstSync = "Första synkroniseringen pågår — {{n}} dokument kvar"  placeholders={{n}}
+orders.group.other = "Övriga rader"
+orders.group.packed = "Packat, väntar på leverans"
+orders.group.shipped = "Skickat"
+orders.group.todo = "Att förbereda"
+orders.handover.alreadyInvoiced = "Redan fakturerat ({{numbers}}): ingen ny faktura."  placeholders={{numbers}}
+orders.handover.applyCredit = "Tillämpa kundens tillgodohavande ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "Markera som skickat"
+orders.handover.confirmPickup = "Utlämnat till kunden"
+orders.handover.creditOffBoard = "Ordern har lämnat listan: tillämpa kundens tillgodohavande i Zoho."
+orders.handover.delivery = "Leverans"
+orders.handover.deliveryNote = "Paketet blir ”skickat” i Zoho."
+orders.handover.doneDelivery = "Paket {{number}} markerat som skickat"  placeholders={{number}}
+orders.handover.donePickup = "Paket {{number}} utlämnat till kunden"  placeholders={{number}}
+orders.handover.due = "Återstår att betala {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "Utlämningen slutfördes inte: {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "Skapar fakturan för detta paket: {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "Faktura {{number}} skapad"  placeholders={{number}}
+orders.handover.invoiceFailed = "Fakturan kunde inte skapas: {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "Skapar fakturan för detta paket"
+orders.handover.manual = "En rabatt eller avgift på denna order kan inte delas upp: fakturera i Zoho."
+orders.handover.manualDraft = "Ett fakturautkast ({{number}}) väntar i Zoho: skicka det där först."  placeholders={{number}}
+orders.handover.meta = "{{units}} · daterat {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "Sätt att lämna ut"
+orders.handover.nothingToInvoice = "Inget att fakturera för detta paket."
+orders.handover.open = "Lämna ut paketet"
+orders.handover.openNumber = "Lämna ut {{number}}"  placeholders={{number}}
+orders.handover.pickup = "Avhämtning i butiken"
+orders.handover.pickupNote = "Paketet blir ”levererat” i Zoho."
+orders.handover.prefillRefused = "Zoho kunde inte förbereda fakturan: skapa den i Zoho."
+orders.handover.previewFailed = "Zoho angav inte vad som kommer att faktureras."
+orders.handover.sending = "Skickar till Zoho…"
+orders.handover.settled = "Fakturan är reglerad"
+orders.hidden = "+{{n}} dolda"  placeholders={{n}}
+orders.hint.incoming = "brist täckt av en inköpsorder"
+orders.hint.partial = "delvis leveransklar"
+orders.hint.toOrder = "brist utan öppen inköpsorder"
+orders.hint.toShip = "allt finns i lager"
+orders.inv.create = "Skapa fakturan"
+orders.inv.download = "Ladda ner fakturan"
+orders.inv.draft = "Utkast"
+orders.inv.empty = "Ingen faktura ännu. Den skapas när paketet lämnas över."
+orders.inv.nothing = "Inget kvar att fakturera."
+orders.inv.open = "Öppna i Zoho Books"
+orders.inv.pdfFailed = "Fakturan kunde inte hämtas."
+orders.inv.print = "Skriv ut fakturan"
+orders.inv.title = "Fakturor"
+orders.inv.unbilled = "{{units}} överlämnade utan faktura"  placeholders={{units}}
+orders.line.backorder = "På väg in"
+orders.line.cancelled = "Avbruten"
+orders.line.invoiced = "fakturerad"
+orders.line.packed = "Packat"
+orders.line.ready = "Klar"
+orders.line.service = "Tjänst"
+orders.line.shipped = "Skickat"
+orders.line.toOrder = "Att beställa"
+orders.loadFailed = "Det gick inte att läsa in ordertavlan."
+orders.notConnected = "Zoho Books är inte anslutet."
+orders.notConnectedHint = "Lägg till Zoho-uppgifterna i Inställningar för att läsa in beställningar."
+orders.ofOrdered = "av {{n}}"  placeholders={{n}}
+orders.packed = "{{n}} packade"  placeholders={{n}}
+orders.parcel.create = "Skapa paketet"
+orders.parcel.created = "Paket {{number}} skapat i Zoho Books"  placeholders={{number}}
+orders.parcel.creating = "Skapar i Zoho…"
+orders.parcel.failed = "Paketet kunde inte skapas: {{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "Paket: {{units}} av {{of}} från {{number}}"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "I paketet"
+orders.parcel.left = "{{units}} kvar att förbereda"  placeholders={{units}}
+orders.parcel.less = "En färre"
+orders.parcel.meta = "daterat {{date}} · numret tilldelas av Zoho"  placeholders={{date}}
+orders.parcel.more = "En till"
+orders.parcel.stale = "Ordern har ändrats, kontrollera antalen."
+orders.pay.advanceNote = "Förskott: kundens oanvända tillgodohavande i Zoho, i väntan på nästa faktura."
+orders.pay.any = "Valfri betalning"
+orders.pay.invDue = "Förfaller {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "{{amount}} kvar"  placeholders={{amount}}
+orders.pay.invOverdue = "Förfallen {{n}} d"  placeholders={{n}}
+orders.pay.left = "Kvar att betala"
+orders.pay.legendAdvance = "Betald i förskott"
+orders.pay.legendDue = "Fakturerad, väntar på betalning"
+orders.pay.legendInvoice = "Betald på faktura"
+orders.pay.legendOverdue = "Förfallen"
+orders.pay.legendPaid = "Betald"
+orders.pay.legendRest = "Kvar att betala, ej fakturerat"
+orders.pay.nothingLeft = "Inget kvar att betala"
+orders.pay.overdue = "förfallen"
+orders.pay.overdueChip = "Förfallna"
+orders.pay.paid = "Betald"
+orders.pay.partial = "Delvis betald"
+orders.pay.pct = "{{pct}} % betalt"  placeholders={{pct}}
+orders.pay.tile = "{{pct}} % betalt"  placeholders={{pct}}
+orders.pay.title = "Betalning"
+orders.pay.unpaid = "Obetald"
+orders.pick.boxed = "Allt på den här plocklistan ligger redan i ett paket."
+orders.pick.create = "Skapa och skriv ut"
+orders.pick.created = "Plocklista {{number}} skapad i Zoho Books"  placeholders={{number}}
+orders.pick.failed = "Plocklistan kunde inte skapas: {{reason}}"  placeholders={{reason}}
+orders.pick.meta = "skapas i Zoho och skrivs sedan ut"
+orders.pick.nothing = "Inget att plocka: allt i lager finns redan på en plocklista."
+orders.pick.open = "Förbered"
+orders.pick.summary = "Plocklista: {{units}} av {{of}} i lager"  placeholders={{of}},{{units}}
+orders.pick.toPick = "Att plocka"
+orders.pkg.delivered = "{{number}} · levererat {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · packat {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · skickat {{date}}"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "Under förberedelse"
+orders.prep.printFailed = "Plocklistan kunde inte skapas."
+orders.prep.printed = "Utskriven {{time}} av {{name}}"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "Utskriven {{time}}"  placeholders={{time}}
+orders.prep.reprint = "Skriv ut igen"
+orders.prep.sheet = "Plocklista"
+orders.readyPct = "{{pct}} % klart"  placeholders={{pct}}
+orders.refresh = "Uppdatera"
+orders.refreshFailed = "Det gick inte att uppdatera ordertavlan."
+orders.retry = "Försök igen"
+orders.search = "Ordernummer, kund, produkt, SKU…"
+orders.settings.addBrand = "Lägg till ett varumärke"
+orders.settings.coreBrands = "Kärnvarumärken"
+orders.settings.coreBrandsHint = "Reglaget \"Endast 3D\" behåller beställningar med minst en rad från dessa varumärken."
+orders.settings.days = "dagar"
+orders.settings.hour = "1 timme"
+orders.settings.interval = "Kontrollera Zoho var"
+orders.settings.intervalHint = "Varje pass läser bara ändrade dokument, högst 20."
+orders.settings.lastSync = "Senaste synkronisering {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "Ignorera beställningar äldre än"
+orders.settings.maxAgeHint = "Äldre beställningar hålls utanför tavlan och tar inget lager. 0 behåller alla beställningar."
+orders.settings.minutes = "{{n}} minuter"  placeholders={{n}}
+orders.settings.neverSynced = "Inte synkroniserad än"
+orders.settings.removeBrand = "Ta bort {{brand}}"  placeholders={{brand}}
+orders.settings.saveFailed = "Det gick inte att spara ordertavlans inställningar"
+orders.settings.saved = "Ordertavlans inställningar sparade"
+orders.settings.showsTitle = "Vad tavlan visar"
+orders.settings.syncEnabled = "Håll ordertavlan synkroniserad"
+orders.settings.syncEnabledHint = "Läser kundorder, öppna inköpsorder och lager från Zoho Books. Skriver aldrig."
+orders.settings.syncNow = "Synkronisera nu"
+orders.settings.syncTitle = "Zoho-synkronisering"
+orders.shipped = "{{shipped}}/{{total}} skickade"  placeholders={{shipped}},{{total}}
+orders.sort.age = "Ålder"
+orders.sort.customer = "Kund"
+orders.sort.label = "Sortera"
+orders.sort.ready = "% klart"
+orders.sort.value = "Värde"
+orders.status.all = "Alla"
+orders.status.inProgress = "Pågående"
+orders.status.incoming = "På väg in"
+orders.status.partial = "Delvis"
+orders.status.toOrder = "Att beställa"
+orders.status.toShip = "Att skicka"
+orders.syncFailed = "Senaste synkroniseringen misslyckades: {{reason}} — visar data från {{when}}."  placeholders={{reason}},{{when}}
+orders.syncOff = "Ordersynkroniseringen är avstängd."
+orders.syncOffHint = "Slå på den i Inställningar, fliken Beställningar."
+orders.syncing = "Synkroniserar · {{n}} kvar"  placeholders={{n}}
+orders.title = "Beställningar"
+orders.units_one = "{{count}} enhet"  placeholders={{count}}
+orders.units_other = "{{count}} enheter"  placeholders={{count}}
+orders.updated = "Uppdaterad {{when}}"  placeholders={{when}}
+nav.orders = "Beställningar"
+settings.tabs.orders = "Beställningar"
+common.cancel = "Avbryt"
+--- tr orders (190 keys)
+orders.age = "{{n}} gün"  placeholders={{n}}
+orders.busy = "Zoho meşgul, birazdan tekrar deneyin."
+orders.chip.quote = "Teklif"
+orders.col.available = "Mevcut"
+orders.col.product = "Ürün"
+orders.col.qty = "Adet"
+orders.col.short = "Eksik"
+orders.col.state = "Durum"
+orders.contact.alsoOpen = "Bu müşterinin diğer açık siparişleri:"
+orders.contact.copied = "Kopyalandı"
+orders.contact.copy = "{{what}} kopyala"  placeholders={{what}}
+orders.contact.mailSubject = "Sipariş {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "Zoho'da e-posta yok"
+orders.contact.noPhone = "Zoho'da telefon yok"
+orders.contact.none = "Bu siparişte Zoho'da iletişim kişisi yok."
+orders.contact.title = "İletişim"
+orders.coreOnly = "Yalnızca 3D"
+orders.empty.core = "Açık 3D siparişi yok."
+orders.empty.coreHint = "Diğer siparişleri görmek için \"Yalnızca 3D\"yi kapatın."
+orders.empty.noResults = "Sonuç yok."
+orders.empty.none = "Açık sipariş yok."
+orders.empty.noneHint = "Tüm müşteri siparişleri gönderildi."
+orders.finished.chip = "Tamamlanan"
+orders.finished.intro = "Tamamlanan siparişler: her şey gönderildi. En yeniler önce."
+orders.finished.loadFailed = "Bu sipariş Zoho'dan yüklenemedi."
+orders.finished.loading = "Bu sipariş Zoho'dan yükleniyor…"
+orders.finished.match = "Eşleşen tamamlanan siparişler: {{n}}"  placeholders={{n}}
+orders.finished.none = "Tamamlanan sipariş yok."
+orders.finished.older = "Eski siparişleri göster"
+orders.finished.shipped = "Gönderildi"
+orders.finished.show = "Göster"
+orders.firstSync = "İlk eşitleme sürüyor — {{n}} belge kaldı"  placeholders={{n}}
+orders.group.other = "Diğer satırlar"
+orders.group.packed = "Paketlendi, teslimat bekliyor"
+orders.group.shipped = "Gönderildi"
+orders.group.todo = "Hazırlanacak"
+orders.handover.alreadyInvoiced = "Zaten faturalandı ({{numbers}}): yeni fatura yok."  placeholders={{numbers}}
+orders.handover.applyCredit = "Müşterinin avansını uygula ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "Gönderildi olarak işaretle"
+orders.handover.confirmPickup = "Müşteriye teslim edildi"
+orders.handover.creditOffBoard = "Sipariş listeden çıktı: müşterinin avansını Zoho’da uygulayın."
+orders.handover.delivery = "Teslimat"
+orders.handover.deliveryNote = "Koli Zoho’da “gönderildi” olur."
+orders.handover.doneDelivery = "{{number}} kolisi gönderildi olarak işaretlendi"  placeholders={{number}}
+orders.handover.donePickup = "{{number}} kolisi müşteriye teslim edildi"  placeholders={{number}}
+orders.handover.due = "Kalan {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "Teslim tamamlanamadı: {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "Bu kolinin faturasını oluşturur: {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "{{number}} faturası oluşturuldu"  placeholders={{number}}
+orders.handover.invoiceFailed = "Fatura oluşturulamadı: {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "Bu kolinin faturasını oluşturur"
+orders.handover.manual = "Bu siparişteki bir indirim veya masraf bölünemiyor: Zoho’da faturalandırın."
+orders.handover.manualDraft = "Zoho’da bir taslak fatura ({{number}}) bekliyor: önce orada gönderin."  placeholders={{number}}
+orders.handover.meta = "{{units}} · {{date}} tarihli"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "Teslim yöntemi"
+orders.handover.nothingToInvoice = "Bu koli için faturalandırılacak bir şey yok."
+orders.handover.open = "Koliyi teslim et"
+orders.handover.openNumber = "{{number}} teslim et"  placeholders={{number}}
+orders.handover.pickup = "Mağazadan teslim alma"
+orders.handover.pickupNote = "Koli Zoho’da “teslim edildi” olur."
+orders.handover.prefillRefused = "Zoho faturayı hazırlayamadı: faturayı Zoho’da oluşturun."
+orders.handover.previewFailed = "Zoho neyin faturalanacağını bildirmedi."
+orders.handover.sending = "Zoho’ya gönderiliyor…"
+orders.handover.settled = "Fatura kapandı"
+orders.hidden = "+{{n}} gizli"  placeholders={{n}}
+orders.hint.incoming = "eksik bir satın alma siparişiyle karşılanıyor"
+orders.hint.partial = "kısmen gönderilebilir"
+orders.hint.toOrder = "eksik için açık satın alma siparişi yok"
+orders.hint.toShip = "hepsi stokta"
+orders.inv.create = "Fatura oluştur"
+orders.inv.download = "Faturayı indir"
+orders.inv.draft = "Taslak"
+orders.inv.empty = "Henüz fatura yok. Koli teslim edilirken oluşturulur."
+orders.inv.nothing = "Faturalandırılacak bir şey kalmadı."
+orders.inv.open = "Zoho Books'ta aç"
+orders.inv.pdfFailed = "Fatura alınamadı."
+orders.inv.print = "Faturayı yazdır"
+orders.inv.title = "Faturalar"
+orders.inv.unbilled = "{{units}} faturasız teslim edildi"  placeholders={{units}}
+orders.line.backorder = "Yolda"
+orders.line.cancelled = "İptal edildi"
+orders.line.invoiced = "faturalandı"
+orders.line.packed = "Paketlendi"
+orders.line.ready = "Hazır"
+orders.line.service = "Hizmet"
+orders.line.shipped = "Gönderildi"
+orders.line.toOrder = "Sipariş edilecek"
+orders.loadFailed = "Sipariş panosu yüklenemedi."
+orders.notConnected = "Zoho Books bağlı değil."
+orders.notConnectedHint = "Siparişleri yüklemek için Ayarlar'da Zoho kimlik bilgilerini ekleyin."
+orders.ofOrdered = "/ {{n}}"  placeholders={{n}}
+orders.packed = "{{n}} paketlendi"  placeholders={{n}}
+orders.parcel.create = "Koliyi oluştur"
+orders.parcel.created = "Koli {{number}} Zoho Books’ta oluşturuldu"  placeholders={{number}}
+orders.parcel.creating = "Zoho’da oluşturuluyor…"
+orders.parcel.failed = "Koli oluşturulamadı: {{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "Koli: {{number}} listesindeki {{of}} adetten {{units}}"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "Kolide"
+orders.parcel.left = "{{units}} sonra hazırlanacak"  placeholders={{units}}
+orders.parcel.less = "Bir eksik"
+orders.parcel.meta = "tarih {{date}} · numarayı Zoho verir"  placeholders={{date}}
+orders.parcel.more = "Bir fazla"
+orders.parcel.stale = "Sipariş değişti, miktarları kontrol edin."
+orders.pay.advanceNote = "Avans: müşterinin Zoho'daki kullanılmamış bakiyesi, sonraki faturayı bekliyor."
+orders.pay.any = "Herhangi bir ödeme"
+orders.pay.invDue = "Vade {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "{{amount}} kaldı"  placeholders={{amount}}
+orders.pay.invOverdue = "{{n}} gün gecikmiş"  placeholders={{n}}
+orders.pay.left = "Ödenecek tutar"
+orders.pay.legendAdvance = "Peşin ödendi"
+orders.pay.legendDue = "Faturalandı, ödeme bekleniyor"
+orders.pay.legendInvoice = "Faturada ödendi"
+orders.pay.legendOverdue = "Gecikmiş"
+orders.pay.legendPaid = "Ödendi"
+orders.pay.legendRest = "Ödenecek, faturalanmadı"
+orders.pay.nothingLeft = "Ödenecek tutar kalmadı"
+orders.pay.overdue = "gecikmiş"
+orders.pay.overdueChip = "Gecikmiş"
+orders.pay.paid = "Ödendi"
+orders.pay.partial = "Kısmen ödendi"
+orders.pay.pct = "%{{pct}} ödendi"  placeholders={{pct}}
+orders.pay.tile = "%{{pct}} ödendi"  placeholders={{pct}}
+orders.pay.title = "Ödeme"
+orders.pay.unpaid = "Ödenmedi"
+orders.pick.boxed = "Bu toplama listesindeki her şey zaten bir kolide."
+orders.pick.create = "Oluştur ve yazdır"
+orders.pick.created = "Toplama listesi {{number}} Zoho Books’ta oluşturuldu"  placeholders={{number}}
+orders.pick.failed = "Toplama listesi oluşturulamadı: {{reason}}"  placeholders={{reason}}
+orders.pick.meta = "Zoho’da oluşturulur, sonra yazdırılır"
+orders.pick.nothing = "Toplanacak bir şey yok: stoktaki her şey zaten bir toplama listesinde."
+orders.pick.open = "Hazırla"
+orders.pick.summary = "Toplama listesi: stoktaki {{of}} adetten {{units}}"  placeholders={{of}},{{units}}
+orders.pick.toPick = "Toplanacak"
+orders.pkg.delivered = "{{number}} · {{date}} teslim edildi"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · {{date}} paketlendi"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · {{date}} gönderildi"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "Hazırlanıyor"
+orders.prep.printFailed = "Hazırlık fişi oluşturulamadı."
+orders.prep.printed = "{{time}} saatinde {{name}} tarafından yazdırıldı"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "{{time}} saatinde yazdırıldı"  placeholders={{time}}
+orders.prep.reprint = "Yeniden yazdır"
+orders.prep.sheet = "Hazırlık fişi"
+orders.readyPct = "{{pct}} % hazır"  placeholders={{pct}}
+orders.refresh = "Yenile"
+orders.refreshFailed = "Sipariş panosu yenilenemedi."
+orders.retry = "Yeniden dene"
+orders.search = "Sipariş numarası, müşteri, ürün, SKU…"
+orders.settings.addBrand = "Marka ekle"
+orders.settings.coreBrands = "Ana markalar"
+orders.settings.coreBrandsHint = "\"Yalnızca 3D\" anahtarı, bu markalardan en az bir satırı olan siparişleri tutar."
+orders.settings.days = "gün"
+orders.settings.hour = "1 saat"
+orders.settings.interval = "Zoho'yu şu aralıkla denetle"
+orders.settings.intervalHint = "Her geçiş yalnızca değişen belgeleri okur, en fazla 20."
+orders.settings.lastSync = "Son eşitleme {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "Şundan eski siparişleri yok say"
+orders.settings.maxAgeHint = "Daha eski siparişler panoda görünmez ve stok ayırmaz. 0 tüm siparişleri tutar."
+orders.settings.minutes = "{{n}} dakika"  placeholders={{n}}
+orders.settings.neverSynced = "Henüz eşitlenmedi"
+orders.settings.removeBrand = "{{brand}} markasını kaldır"  placeholders={{brand}}
+orders.settings.saveFailed = "Sipariş panosu ayarları kaydedilemedi"
+orders.settings.saved = "Sipariş panosu ayarları kaydedildi"
+orders.settings.showsTitle = "Panonun gösterdikleri"
+orders.settings.syncEnabled = "Sipariş panosunu eşit tut"
+orders.settings.syncEnabledHint = "Zoho Books'tan satış siparişlerini, açık satın alma siparişlerini ve stoğu okur. Asla yazmaz."
+orders.settings.syncNow = "Şimdi eşitle"
+orders.settings.syncTitle = "Zoho eşitlemesi"
+orders.shipped = "{{shipped}}/{{total}} gönderildi"  placeholders={{shipped}},{{total}}
+orders.sort.age = "Yaş"
+orders.sort.customer = "Müşteri"
+orders.sort.label = "Sırala"
+orders.sort.ready = "% hazır"
+orders.sort.value = "Tutar"
+orders.status.all = "Tümü"
+orders.status.inProgress = "Devam eden"
+orders.status.incoming = "Yolda"
+orders.status.partial = "Kısmi"
+orders.status.toOrder = "Sipariş edilecek"
+orders.status.toShip = "Gönderilecek"
+orders.syncFailed = "Son eşitleme başarısız oldu: {{reason}} — {{when}} tarihli veriler gösteriliyor."  placeholders={{reason}},{{when}}
+orders.syncOff = "Sipariş eşitlemesi kapalı."
+orders.syncOffHint = "Ayarlar'da Siparişler sekmesinden açın."
+orders.syncing = "Eşitleniyor · {{n}} kaldı"  placeholders={{n}}
+orders.title = "Siparişler"
+orders.units_one = "{{count}} adet"  placeholders={{count}}
+orders.units_other = "{{count}} adet"  placeholders={{count}}
+orders.updated = "Güncellendi {{when}}"  placeholders={{when}}
+nav.orders = "Siparişler"
+settings.tabs.orders = "Siparişler"
+common.cancel = "İptal"
+--- uk orders (190 keys)
+orders.age = "{{n}} дн."  placeholders={{n}}
+orders.busy = "Zoho зайнятий, спробуйте за хвилину."
+orders.chip.quote = "Пропозиція"
+orders.col.available = "Доступно"
+orders.col.product = "Товар"
+orders.col.qty = "К-сть"
+orders.col.short = "Бракує"
+orders.col.state = "Стан"
+orders.contact.alsoOpen = "Інші відкриті замовлення цього клієнта:"
+orders.contact.copied = "Скопійовано"
+orders.contact.copy = "Копіювати {{what}}"  placeholders={{what}}
+orders.contact.mailSubject = "Замовлення {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "У Zoho немає e-mail"
+orders.contact.noPhone = "У Zoho немає телефону"
+orders.contact.none = "У цього замовлення в Zoho немає контактної особи."
+orders.contact.title = "Контакт"
+orders.coreOnly = "Лише 3D"
+orders.empty.core = "Відкритих 3D-замовлень немає."
+orders.empty.coreHint = "Вимкніть «Лише 3D», щоб побачити інші замовлення."
+orders.empty.noResults = "Нічого не знайдено."
+orders.empty.none = "Відкритих замовлень немає."
+orders.empty.noneHint = "Усі замовлення клієнтів відвантажено."
+orders.finished.chip = "Завершені"
+orders.finished.intro = "Завершені замовлення: усе відправлено. Спочатку нові."
+orders.finished.loadFailed = "Не вдалося завантажити замовлення з Zoho."
+orders.finished.loading = "Завантаження замовлення з Zoho…"
+orders.finished.match = "Відповідні завершені замовлення: {{n}}"  placeholders={{n}}
+orders.finished.none = "Немає завершених замовлень."
+orders.finished.older = "Показати старіші замовлення"
+orders.finished.shipped = "Відправлено"
+orders.finished.show = "Показати"
+orders.firstSync = "Триває перша синхронізація — залишилося документів: {{n}}"  placeholders={{n}}
+orders.group.other = "Інші позиції"
+orders.group.packed = "Запаковано, чекає на доставку"
+orders.group.shipped = "Відвантажено"
+orders.group.todo = "Підготувати"
+orders.handover.alreadyInvoiced = "Рахунок уже виставлено ({{numbers}}): новий не створюється."  placeholders={{numbers}}
+orders.handover.applyCredit = "Зарахувати аванс клієнта ({{amount}})"  placeholders={{amount}}
+orders.handover.confirmDelivery = "Позначити як відправлену"
+orders.handover.confirmPickup = "Видано клієнту"
+orders.handover.creditOffBoard = "Замовлення зникло зі списку: зарахуйте аванс клієнта в Zoho."
+orders.handover.delivery = "Доставка"
+orders.handover.deliveryNote = "У Zoho посилка отримає статус «відправлено»."
+orders.handover.doneDelivery = "Посилку {{number}} позначено як відправлену"  placeholders={{number}}
+orders.handover.donePickup = "Посилку {{number}} видано клієнту"  placeholders={{number}}
+orders.handover.due = "Залишилось сплатити {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "Видачу не завершено: {{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "Створює рахунок на цю посилку: {{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "Рахунок {{number}} створено"  placeholders={{number}}
+orders.handover.invoiceFailed = "Не вдалося створити рахунок: {{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "Створює рахунок на цю посилку"
+orders.handover.manual = "Знижку або збір за цим замовленням не можна розділити: виставте рахунок у Zoho."
+orders.handover.manualDraft = "У Zoho чекає чернетка рахунку ({{number}}): спершу надішліть її там."  placeholders={{number}}
+orders.handover.meta = "{{units}} · від {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "Спосіб видачі"
+orders.handover.nothingToInvoice = "Для цієї посилки нічого виставляти в рахунок."
+orders.handover.open = "Видати посилку"
+orders.handover.openNumber = "Видати {{number}}"  placeholders={{number}}
+orders.handover.pickup = "Самовивіз із магазину"
+orders.handover.pickupNote = "У Zoho посилка отримає статус «доставлено»."
+orders.handover.prefillRefused = "Zoho не зміг підготувати рахунок: створіть його в Zoho."
+orders.handover.previewFailed = "Zoho не повідомив, що буде виставлено в рахунок."
+orders.handover.sending = "Надсилання до Zoho…"
+orders.handover.settled = "Рахунок сплачено"
+orders.hidden = "+{{n}} приховано"  placeholders={{n}}
+orders.hint.incoming = "нестачу покрито замовленням постачальнику"
+orders.hint.partial = "можна відвантажити частково"
+orders.hint.toOrder = "нестача без відкритого замовлення постачальнику"
+orders.hint.toShip = "усе є на складі"
+orders.inv.create = "Створити рахунок"
+orders.inv.download = "Завантажити рахунок"
+orders.inv.draft = "Чернетка"
+orders.inv.empty = "Рахунку ще немає. Його створюють під час передачі посилки."
+orders.inv.nothing = "Виставляти в рахунок більше нічого."
+orders.inv.open = "Відкрити в Zoho Books"
+orders.inv.pdfFailed = "Не вдалося отримати рахунок."
+orders.inv.print = "Надрукувати рахунок"
+orders.inv.title = "Рахунки"
+orders.inv.unbilled = "{{units}} передано без рахунку"  placeholders={{units}}
+orders.line.backorder = "У дорозі"
+orders.line.cancelled = "Скасовано"
+orders.line.invoiced = "виставлено рахунок"
+orders.line.packed = "Запаковано"
+orders.line.ready = "Готово"
+orders.line.service = "Послуга"
+orders.line.shipped = "Відвантажено"
+orders.line.toOrder = "До закупівлі"
+orders.loadFailed = "Не вдалося завантажити дошку замовлень."
+orders.notConnected = "Zoho Books не підключено."
+orders.notConnectedHint = "Додайте облікові дані Zoho в Налаштуваннях, щоб завантажити замовлення."
+orders.ofOrdered = "із {{n}}"  placeholders={{n}}
+orders.packed = "{{n}} запаковано"  placeholders={{n}}
+orders.parcel.create = "Створити посилку"
+orders.parcel.created = "Посилку {{number}} створено в Zoho Books"  placeholders={{number}}
+orders.parcel.creating = "Створення в Zoho…"
+orders.parcel.failed = "Не вдалося створити посилку: {{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "Посилка: {{units}} із {{of}} за {{number}}"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "У посилці"
+orders.parcel.left = "Залишилося підготувати: {{units}}"  placeholders={{units}}
+orders.parcel.less = "На одну менше"
+orders.parcel.meta = "від {{date}} · номер присвоїть Zoho"  placeholders={{date}}
+orders.parcel.more = "На одну більше"
+orders.parcel.stale = "Замовлення змінилося, перевірте кількості."
+orders.pay.advanceNote = "Аванс: невикористаний кредит клієнта в Zoho, що чекає на наступний рахунок."
+orders.pay.any = "Будь-яка оплата"
+orders.pay.invDue = "Термін {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "Залишилось {{amount}}"  placeholders={{amount}}
+orders.pay.invOverdue = "Прострочено на {{n}} дн."  placeholders={{n}}
+orders.pay.left = "Залишилось сплатити"
+orders.pay.legendAdvance = "Сплачено наперед"
+orders.pay.legendDue = "Виставлено рахунок, очікує оплати"
+orders.pay.legendInvoice = "Сплачено за рахунком"
+orders.pay.legendOverdue = "Прострочено"
+orders.pay.legendPaid = "Сплачено"
+orders.pay.legendRest = "Залишилось сплатити, рахунок не виставлено"
+orders.pay.nothingLeft = "Нічого сплачувати"
+orders.pay.overdue = "прострочено"
+orders.pay.overdueChip = "Прострочено"
+orders.pay.paid = "Сплачено"
+orders.pay.partial = "Сплачено частково"
+orders.pay.pct = "Сплачено {{pct}}%"  placeholders={{pct}}
+orders.pay.tile = "Сплачено {{pct}}%"  placeholders={{pct}}
+orders.pay.title = "Оплата"
+orders.pay.unpaid = "Не сплачено"
+orders.pick.boxed = "Усе з цього листа відбору вже в посилці."
+orders.pick.create = "Створити й надрукувати"
+orders.pick.created = "Лист відбору {{number}} створено в Zoho Books"  placeholders={{number}}
+orders.pick.failed = "Не вдалося створити лист відбору: {{reason}}"  placeholders={{reason}}
+orders.pick.meta = "створюється в Zoho, потім друкується"
+orders.pick.nothing = "Нічого відбирати: увесь запас уже в листі відбору."
+orders.pick.open = "Підготувати"
+orders.pick.summary = "Лист відбору: {{units}} із {{of}} на складі"  placeholders={{of}},{{units}}
+orders.pick.toPick = "До відбору"
+orders.pkg.delivered = "{{number}} · доставлено {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · запаковано {{date}}"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · відвантажено {{date}}"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "Готується"
+orders.prep.printFailed = "Не вдалося створити аркуш комплектації."
+orders.prep.printed = "Надруковано о {{time}}, {{name}}"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "Надруковано о {{time}}"  placeholders={{time}}
+orders.prep.reprint = "Друкувати знову"
+orders.prep.sheet = "Аркуш комплектації"
+orders.readyPct = "{{pct}} % готово"  placeholders={{pct}}
+orders.refresh = "Оновити"
+orders.refreshFailed = "Не вдалося оновити дошку замовлень."
+orders.retry = "Повторити"
+orders.search = "Номер замовлення, клієнт, товар, SKU…"
+orders.settings.addBrand = "Додати бренд"
+orders.settings.coreBrands = "Основні бренди"
+orders.settings.coreBrandsHint = "Перемикач «Лише 3D» залишає замовлення, де є хоча б одна позиція цих брендів."
+orders.settings.days = "дн."
+orders.settings.hour = "1 годину"
+orders.settings.interval = "Перевіряти Zoho кожні"
+orders.settings.intervalHint = "Кожен прохід читає лише змінені документи, не більше 20."
+orders.settings.lastSync = "Остання синхронізація {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "Не враховувати замовлення, старші за"
+orders.settings.maxAgeHint = "Старіші замовлення не потрапляють на дошку й не займають залишки. 0 — враховувати всі замовлення."
+orders.settings.minutes = "{{n}} хв"  placeholders={{n}}
+orders.settings.neverSynced = "Ще не синхронізовано"
+orders.settings.removeBrand = "Видалити {{brand}}"  placeholders={{brand}}
+orders.settings.saveFailed = "Не вдалося зберегти налаштування дошки замовлень"
+orders.settings.saved = "Налаштування дошки замовлень збережено"
+orders.settings.showsTitle = "Що показує дошка"
+orders.settings.syncEnabled = "Підтримувати дошку замовлень актуальною"
+orders.settings.syncEnabledHint = "Читає замовлення клієнтів, відкриті замовлення постачальникам і залишки із Zoho Books. Нічого не записує."
+orders.settings.syncNow = "Синхронізувати зараз"
+orders.settings.syncTitle = "Синхронізація із Zoho"
+orders.shipped = "{{shipped}}/{{total}} відвантажено"  placeholders={{shipped}},{{total}}
+orders.sort.age = "Вік"
+orders.sort.customer = "Клієнт"
+orders.sort.label = "Сортування"
+orders.sort.ready = "% готово"
+orders.sort.value = "Сума"
+orders.status.all = "Усі"
+orders.status.inProgress = "У роботі"
+orders.status.incoming = "У дорозі"
+orders.status.partial = "Частково"
+orders.status.toOrder = "До закупівлі"
+orders.status.toShip = "До відвантаження"
+orders.syncFailed = "Остання синхронізація не вдалася: {{reason}} — показано дані від {{when}}."  placeholders={{reason}},{{when}}
+orders.syncOff = "Синхронізацію замовлень вимкнено."
+orders.syncOffHint = "Увімкніть її в Налаштуваннях, на вкладці «Замовлення»."
+orders.syncing = "Синхронізація · залишилося {{n}}"  placeholders={{n}}
+orders.title = "Замовлення"
+orders.units_one = "{{count}} од."  placeholders={{count}}
+orders.units_other = "{{count}} од."  placeholders={{count}}
+orders.updated = "Оновлено {{when}}"  placeholders={{when}}
+nav.orders = "Замовлення"
+settings.tabs.orders = "Замовлення"
+common.cancel = "Скасувати"
+--- zhCN orders (190 keys)
+orders.age = "{{n}} 天"  placeholders={{n}}
+orders.busy = "Zoho 正忙，请稍后重试。"
+orders.chip.quote = "报价"
+orders.col.available = "可用"
+orders.col.product = "产品"
+orders.col.qty = "数量"
+orders.col.short = "缺口"
+orders.col.state = "状态"
+orders.contact.alsoOpen = "该客户的其他未完成订单："
+orders.contact.copied = "已复制"
+orders.contact.copy = "复制 {{what}}"  placeholders={{what}}
+orders.contact.mailSubject = "订单 {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "Zoho 中没有电子邮件"
+orders.contact.noPhone = "Zoho 中没有电话"
+orders.contact.none = "Zoho 中此订单没有联系人。"
+orders.contact.title = "联系人"
+orders.coreOnly = "仅 3D"
+orders.empty.core = "没有未完成的 3D 订单。"
+orders.empty.coreHint = "关闭“仅 3D”即可查看其他订单。"
+orders.empty.noResults = "没有结果。"
+orders.empty.none = "没有未完成的订单。"
+orders.empty.noneHint = "所有客户订单均已发货。"
+orders.finished.chip = "已完成"
+orders.finished.intro = "已完成订单：全部已发货。最新的在前。"
+orders.finished.loadFailed = "无法从 Zoho 加载此订单。"
+orders.finished.loading = "正在从 Zoho 加载此订单…"
+orders.finished.match = "匹配的已完成订单：{{n}}"  placeholders={{n}}
+orders.finished.none = "没有已完成订单。"
+orders.finished.older = "显示更早的订单"
+orders.finished.shipped = "已发货"
+orders.finished.show = "显示"
+orders.firstSync = "首次同步进行中 — 剩余 {{n}} 个单据"  placeholders={{n}}
+orders.group.other = "其他行"
+orders.group.packed = "已装箱，等待配送"
+orders.group.shipped = "已发货"
+orders.group.todo = "待备货"
+orders.handover.alreadyInvoiced = "已开票（{{numbers}}）：不再创建新发票。"  placeholders={{numbers}}
+orders.handover.applyCredit = "使用客户余额（{{amount}}）"  placeholders={{amount}}
+orders.handover.confirmDelivery = "标记为已发货"
+orders.handover.confirmPickup = "已交给客户"
+orders.handover.creditOffBoard = "订单已不在列表中：请在 Zoho 中使用客户余额。"
+orders.handover.delivery = "配送"
+orders.handover.deliveryNote = "包裹在 Zoho 中变为“已发货”。"
+orders.handover.doneDelivery = "包裹 {{number}} 已标记为已发货"  placeholders={{number}}
+orders.handover.donePickup = "包裹 {{number}} 已交给客户"  placeholders={{number}}
+orders.handover.due = "仍需支付 {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "交付未完成：{{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "为此包裹创建发票：{{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "发票 {{number}} 已创建"  placeholders={{number}}
+orders.handover.invoiceFailed = "无法创建发票：{{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "为此包裹创建发票"
+orders.handover.manual = "此订单的折扣或费用无法拆分：请在 Zoho 中开票。"
+orders.handover.manualDraft = "Zoho 中有一张草稿发票（{{number}}）：请先在那里发送。"  placeholders={{number}}
+orders.handover.meta = "{{units}} · 日期 {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "交付方式"
+orders.handover.nothingToInvoice = "此包裹没有需要开票的内容。"
+orders.handover.open = "交付包裹"
+orders.handover.openNumber = "交付 {{number}}"  placeholders={{number}}
+orders.handover.pickup = "门店自取"
+orders.handover.pickupNote = "包裹在 Zoho 中变为“已送达”。"
+orders.handover.prefillRefused = "Zoho 无法准备发票：请在 Zoho 中创建。"
+orders.handover.previewFailed = "Zoho 未说明将开具什么发票。"
+orders.handover.sending = "正在发送到 Zoho…"
+orders.handover.settled = "发票已结清"
+orders.hidden = "+{{n}} 个已隐藏"  placeholders={{n}}
+orders.hint.incoming = "缺口已由采购单覆盖"
+orders.hint.partial = "部分可发货"
+orders.hint.toOrder = "缺口没有未完成的采购单"
+orders.hint.toShip = "全部有库存"
+orders.inv.create = "创建发票"
+orders.inv.download = "下载发票"
+orders.inv.draft = "草稿"
+orders.inv.empty = "暂无发票。包裹交付时会自动创建。"
+orders.inv.nothing = "没有需要开票的内容。"
+orders.inv.open = "在 Zoho Books 中打开"
+orders.inv.pdfFailed = "无法获取发票。"
+orders.inv.print = "打印发票"
+orders.inv.title = "发票"
+orders.inv.unbilled = "{{units}}已交付但未开发票"  placeholders={{units}}
+orders.line.backorder = "在途"
+orders.line.cancelled = "已取消"
+orders.line.invoiced = "已开票"
+orders.line.packed = "已装箱"
+orders.line.ready = "就绪"
+orders.line.service = "服务"
+orders.line.shipped = "已发货"
+orders.line.toOrder = "需采购"
+orders.loadFailed = "无法加载订单看板。"
+orders.notConnected = "尚未连接 Zoho Books。"
+orders.notConnectedHint = "请在设置中添加 Zoho 凭据以加载订单。"
+orders.ofOrdered = "共 {{n}}"  placeholders={{n}}
+orders.packed = "已装箱 {{n}}"  placeholders={{n}}
+orders.parcel.create = "创建包裹"
+orders.parcel.created = "包裹 {{number}} 已在 Zoho Books 中创建"  placeholders={{number}}
+orders.parcel.creating = "正在 Zoho 中创建…"
+orders.parcel.failed = "无法创建包裹：{{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "包裹：{{number}} 的 {{of}} 件中的 {{units}} 件"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "包裹内数量"
+orders.parcel.left = "另有 {{units}} 件待备货"  placeholders={{units}}
+orders.parcel.less = "减一"
+orders.parcel.meta = "日期 {{date}} · 编号由 Zoho 分配"  placeholders={{date}}
+orders.parcel.more = "加一"
+orders.parcel.stale = "订单已变更，请核对数量。"
+orders.pay.advanceNote = "预付款：客户在 Zoho 中未使用的余额，等待下一张发票。"
+orders.pay.any = "任意付款"
+orders.pay.invDue = "到期 {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "剩余 {{amount}}"  placeholders={{amount}}
+orders.pay.invOverdue = "逾期 {{n}} 天"  placeholders={{n}}
+orders.pay.left = "待付金额"
+orders.pay.legendAdvance = "已预付"
+orders.pay.legendDue = "已开票，等待付款"
+orders.pay.legendInvoice = "已按发票付款"
+orders.pay.legendOverdue = "已逾期"
+orders.pay.legendPaid = "已付款"
+orders.pay.legendRest = "待付款，未开票"
+orders.pay.nothingLeft = "无需再付款"
+orders.pay.overdue = "已逾期"
+orders.pay.overdueChip = "已逾期"
+orders.pay.paid = "已付款"
+orders.pay.partial = "部分付款"
+orders.pay.pct = "已付 {{pct}}%"  placeholders={{pct}}
+orders.pay.tile = "已付 {{pct}}%"  placeholders={{pct}}
+orders.pay.title = "付款"
+orders.pay.unpaid = "未付款"
+orders.pick.boxed = "此拣货单上的货已全部装入包裹。"
+orders.pick.create = "创建并打印"
+orders.pick.created = "拣货单 {{number}} 已在 Zoho Books 中创建"  placeholders={{number}}
+orders.pick.failed = "无法创建拣货单：{{reason}}"  placeholders={{reason}}
+orders.pick.meta = "先在 Zoho 中创建，再打印"
+orders.pick.nothing = "没有可拣的货：库存已全部在拣货单上。"
+orders.pick.open = "备货"
+orders.pick.summary = "拣货单：库存 {{of}} 件中的 {{units}} 件"  placeholders={{of}},{{units}}
+orders.pick.toPick = "拣货数量"
+orders.pkg.delivered = "{{number}} · {{date}} 送达"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · {{date}} 装箱"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · {{date}} 发货"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "备货中"
+orders.prep.printFailed = "无法生成备货单。"
+orders.prep.printed = "{{name}} 于 {{time}} 打印"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "于 {{time}} 打印"  placeholders={{time}}
+orders.prep.reprint = "重新打印"
+orders.prep.sheet = "备货单"
+orders.readyPct = "就绪 {{pct}} %"  placeholders={{pct}}
+orders.refresh = "刷新"
+orders.refreshFailed = "无法刷新订单看板。"
+orders.retry = "重试"
+orders.search = "订单号、客户、产品、SKU…"
+orders.settings.addBrand = "添加品牌"
+orders.settings.coreBrands = "核心品牌"
+orders.settings.coreBrandsHint = "“仅 3D”开关会保留至少有一行属于这些品牌的订单。"
+orders.settings.days = "天"
+orders.settings.hour = "1 小时"
+orders.settings.interval = "检查 Zoho 的间隔"
+orders.settings.intervalHint = "每次只读取有变化的单据，最多 20 个。"
+orders.settings.lastSync = "上次同步 {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "忽略早于以下天数的订单"
+orders.settings.maxAgeHint = "更早的订单不会出现在看板上，也不占用库存。0 表示保留所有订单。"
+orders.settings.minutes = "{{n}} 分钟"  placeholders={{n}}
+orders.settings.neverSynced = "尚未同步"
+orders.settings.removeBrand = "移除 {{brand}}"  placeholders={{brand}}
+orders.settings.saveFailed = "无法保存订单看板设置"
+orders.settings.saved = "订单看板设置已保存"
+orders.settings.showsTitle = "看板显示的内容"
+orders.settings.syncEnabled = "保持订单看板同步"
+orders.settings.syncEnabledHint = "从 Zoho Books 读取销售订单、未完成的采购单和库存。从不写入。"
+orders.settings.syncNow = "立即同步"
+orders.settings.syncTitle = "Zoho 同步"
+orders.shipped = "已发 {{shipped}}/{{total}}"  placeholders={{shipped}},{{total}}
+orders.sort.age = "账龄"
+orders.sort.customer = "客户"
+orders.sort.label = "排序"
+orders.sort.ready = "就绪率"
+orders.sort.value = "金额"
+orders.status.all = "全部"
+orders.status.inProgress = "进行中"
+orders.status.incoming = "在途"
+orders.status.partial = "部分可发"
+orders.status.toOrder = "需采购"
+orders.status.toShip = "可发货"
+orders.syncFailed = "上次同步失败：{{reason}} — 显示的是 {{when}} 的数据。"  placeholders={{reason}},{{when}}
+orders.syncOff = "订单同步已关闭。"
+orders.syncOffHint = "请在设置的“订单”选项卡中开启。"
+orders.syncing = "同步中 · 剩余 {{n}} 个"  placeholders={{n}}
+orders.title = "订单"
+orders.units_one = "{{count}} 件"  placeholders={{count}}
+orders.units_other = "{{count}} 件"  placeholders={{count}}
+orders.updated = "更新于 {{when}}"  placeholders={{when}}
+nav.orders = "订单"
+settings.tabs.orders = "订单"
+common.cancel = "取消"
+--- zhTW orders (190 keys)
+orders.age = "{{n}} 天"  placeholders={{n}}
+orders.busy = "Zoho 正忙，請稍後再試。"
+orders.chip.quote = "報價"
+orders.col.available = "可用"
+orders.col.product = "產品"
+orders.col.qty = "數量"
+orders.col.short = "缺口"
+orders.col.state = "狀態"
+orders.contact.alsoOpen = "該客戶的其他未完成訂單："
+orders.contact.copied = "已複製"
+orders.contact.copy = "複製 {{what}}"  placeholders={{what}}
+orders.contact.mailSubject = "訂單 {{number}}"  placeholders={{number}}
+orders.contact.noEmail = "Zoho 中沒有電子郵件"
+orders.contact.noPhone = "Zoho 中沒有電話"
+orders.contact.none = "Zoho 中此訂單沒有聯絡人。"
+orders.contact.title = "聯絡人"
+orders.coreOnly = "僅 3D"
+orders.empty.core = "沒有未完成的 3D 訂單。"
+orders.empty.coreHint = "關閉「僅 3D」即可查看其他訂單。"
+orders.empty.noResults = "沒有結果。"
+orders.empty.none = "沒有未完成的訂單。"
+orders.empty.noneHint = "所有客戶訂單皆已出貨。"
+orders.finished.chip = "已完成"
+orders.finished.intro = "已完成訂單：全部已出貨。最新的在前。"
+orders.finished.loadFailed = "無法從 Zoho 載入此訂單。"
+orders.finished.loading = "正在從 Zoho 載入此訂單…"
+orders.finished.match = "符合的已完成訂單：{{n}}"  placeholders={{n}}
+orders.finished.none = "沒有已完成訂單。"
+orders.finished.older = "顯示較早的訂單"
+orders.finished.shipped = "已出貨"
+orders.finished.show = "顯示"
+orders.firstSync = "首次同步進行中 — 剩餘 {{n}} 份單據"  placeholders={{n}}
+orders.group.other = "其他項目"
+orders.group.packed = "已裝箱，等待配送"
+orders.group.shipped = "已出貨"
+orders.group.todo = "待備貨"
+orders.handover.alreadyInvoiced = "已開立發票（{{numbers}}）：不會建立新發票。"  placeholders={{numbers}}
+orders.handover.applyCredit = "套用客戶餘額（{{amount}}）"  placeholders={{amount}}
+orders.handover.confirmDelivery = "標記為已出貨"
+orders.handover.confirmPickup = "已交給客戶"
+orders.handover.creditOffBoard = "訂單已不在清單中：請在 Zoho 中套用客戶餘額。"
+orders.handover.delivery = "配送"
+orders.handover.deliveryNote = "包裹在 Zoho 中會變為「已出貨」。"
+orders.handover.doneDelivery = "包裹 {{number}} 已標記為已出貨"  placeholders={{number}}
+orders.handover.donePickup = "包裹 {{number}} 已交給客戶"  placeholders={{number}}
+orders.handover.due = "尚需支付 {{amount}}"  placeholders={{amount}}
+orders.handover.failed = "交付未完成：{{reason}}"  placeholders={{reason}}
+orders.handover.invoice = "為此包裹建立發票：{{amount}}"  placeholders={{amount}}
+orders.handover.invoiceCreated = "發票 {{number}} 已建立"  placeholders={{number}}
+orders.handover.invoiceFailed = "無法建立發票：{{reason}}"  placeholders={{reason}}
+orders.handover.invoiceNoAmount = "為此包裹建立發票"
+orders.handover.manual = "此訂單的折扣或費用無法拆分：請在 Zoho 中開立發票。"
+orders.handover.manualDraft = "Zoho 中有一張草稿發票（{{number}}）：請先在那裡寄出。"  placeholders={{number}}
+orders.handover.meta = "{{units}} · 日期 {{date}}"  placeholders={{date}},{{units}}
+orders.handover.modeLabel = "交付方式"
+orders.handover.nothingToInvoice = "此包裹沒有需要開立發票的內容。"
+orders.handover.open = "交付包裹"
+orders.handover.openNumber = "交付 {{number}}"  placeholders={{number}}
+orders.handover.pickup = "門市自取"
+orders.handover.pickupNote = "包裹在 Zoho 中會變為「已送達」。"
+orders.handover.prefillRefused = "Zoho 無法準備發票：請在 Zoho 中建立。"
+orders.handover.previewFailed = "Zoho 未說明將開立什麼發票。"
+orders.handover.sending = "正在傳送到 Zoho…"
+orders.handover.settled = "發票已結清"
+orders.hidden = "+{{n}} 筆已隱藏"  placeholders={{n}}
+orders.hint.incoming = "缺口已由採購單涵蓋"
+orders.hint.partial = "部分可出貨"
+orders.hint.toOrder = "缺口沒有未結的採購單"
+orders.hint.toShip = "全部有庫存"
+orders.inv.create = "建立發票"
+orders.inv.download = "下載發票"
+orders.inv.draft = "草稿"
+orders.inv.empty = "尚無發票。包裹交付時會自動建立。"
+orders.inv.nothing = "沒有需要開立發票的內容。"
+orders.inv.open = "在 Zoho Books 中開啟"
+orders.inv.pdfFailed = "無法取得發票。"
+orders.inv.print = "列印發票"
+orders.inv.title = "發票"
+orders.inv.unbilled = "{{units}}已交付但未開發票"  placeholders={{units}}
+orders.line.backorder = "在途"
+orders.line.cancelled = "已取消"
+orders.line.invoiced = "已開立發票"
+orders.line.packed = "已裝箱"
+orders.line.ready = "就緒"
+orders.line.service = "服務"
+orders.line.shipped = "已出貨"
+orders.line.toOrder = "需採購"
+orders.loadFailed = "無法載入訂單看板。"
+orders.notConnected = "尚未連接 Zoho Books。"
+orders.notConnectedHint = "請在設定中新增 Zoho 憑證以載入訂單。"
+orders.ofOrdered = "共 {{n}}"  placeholders={{n}}
+orders.packed = "已裝箱 {{n}}"  placeholders={{n}}
+orders.parcel.create = "建立包裹"
+orders.parcel.created = "包裹 {{number}} 已在 Zoho Books 中建立"  placeholders={{number}}
+orders.parcel.creating = "正在 Zoho 中建立…"
+orders.parcel.failed = "無法建立包裹：{{reason}}"  placeholders={{reason}}
+orders.parcel.fromPick = "包裹：{{number}} 的 {{of}} 件中的 {{units}} 件"  placeholders={{number}},{{of}},{{units}}
+orders.parcel.inParcel = "包裹內數量"
+orders.parcel.left = "另有 {{units}} 件待備貨"  placeholders={{units}}
+orders.parcel.less = "減一"
+orders.parcel.meta = "日期 {{date}} · 編號由 Zoho 指派"  placeholders={{date}}
+orders.parcel.more = "加一"
+orders.parcel.stale = "訂單已變更，請核對數量。"
+orders.pay.advanceNote = "預付款：客戶在 Zoho 中未使用的餘額，等待下一張發票。"
+orders.pay.any = "任何付款"
+orders.pay.invDue = "到期 {{date}}"  placeholders={{date}}
+orders.pay.invLeft = "剩餘 {{amount}}"  placeholders={{amount}}
+orders.pay.invOverdue = "逾期 {{n}} 天"  placeholders={{n}}
+orders.pay.left = "待付金額"
+orders.pay.legendAdvance = "已預付"
+orders.pay.legendDue = "已開立發票，等待付款"
+orders.pay.legendInvoice = "已依發票付款"
+orders.pay.legendOverdue = "已逾期"
+orders.pay.legendPaid = "已付款"
+orders.pay.legendRest = "待付款，未開立發票"
+orders.pay.nothingLeft = "無需再付款"
+orders.pay.overdue = "已逾期"
+orders.pay.overdueChip = "已逾期"
+orders.pay.paid = "已付款"
+orders.pay.partial = "部分付款"
+orders.pay.pct = "已付 {{pct}}%"  placeholders={{pct}}
+orders.pay.tile = "已付 {{pct}}%"  placeholders={{pct}}
+orders.pay.title = "付款"
+orders.pay.unpaid = "未付款"
+orders.pick.boxed = "此揀貨單上的貨已全部裝入包裹。"
+orders.pick.create = "建立並列印"
+orders.pick.created = "揀貨單 {{number}} 已在 Zoho Books 中建立"  placeholders={{number}}
+orders.pick.failed = "無法建立揀貨單：{{reason}}"  placeholders={{reason}}
+orders.pick.meta = "先在 Zoho 中建立，再列印"
+orders.pick.nothing = "沒有可揀的貨：庫存已全部在揀貨單上。"
+orders.pick.open = "備貨"
+orders.pick.summary = "揀貨單：庫存 {{of}} 件中的 {{units}} 件"  placeholders={{of}},{{units}}
+orders.pick.toPick = "揀貨數量"
+orders.pkg.delivered = "{{number}} · {{date}} 送達"  placeholders={{date}},{{number}}
+orders.pkg.packed = "{{number}} · {{date}} 裝箱"  placeholders={{date}},{{number}}
+orders.pkg.shipped = "{{number}} · {{date}} 出貨"  placeholders={{date}},{{number}}
+orders.prep.inProgress = "備貨中"
+orders.prep.printFailed = "無法產生備貨單。"
+orders.prep.printed = "{{name}} 於 {{time}} 列印"  placeholders={{name}},{{time}}
+orders.prep.printedNoName = "於 {{time}} 列印"  placeholders={{time}}
+orders.prep.reprint = "重新列印"
+orders.prep.sheet = "備貨單"
+orders.readyPct = "就緒 {{pct}} %"  placeholders={{pct}}
+orders.refresh = "重新整理"
+orders.refreshFailed = "無法重新整理訂單看板。"
+orders.retry = "重試"
+orders.search = "訂單編號、客戶、產品、SKU…"
+orders.settings.addBrand = "新增品牌"
+orders.settings.coreBrands = "核心品牌"
+orders.settings.coreBrandsHint = "「僅 3D」開關會保留至少有一行屬於這些品牌的訂單。"
+orders.settings.days = "天"
+orders.settings.hour = "1 小時"
+orders.settings.interval = "檢查 Zoho 的間隔"
+orders.settings.intervalHint = "每次只讀取有變更的單據，最多 20 份。"
+orders.settings.lastSync = "上次同步 {{when}}"  placeholders={{when}}
+orders.settings.maxAge = "忽略早於以下天數的訂單"
+orders.settings.maxAgeHint = "較早的訂單不會出現在看板上，也不佔用庫存。0 表示保留所有訂單。"
+orders.settings.minutes = "{{n}} 分鐘"  placeholders={{n}}
+orders.settings.neverSynced = "尚未同步"
+orders.settings.removeBrand = "移除 {{brand}}"  placeholders={{brand}}
+orders.settings.saveFailed = "無法儲存訂單看板設定"
+orders.settings.saved = "訂單看板設定已儲存"
+orders.settings.showsTitle = "看板顯示的內容"
+orders.settings.syncEnabled = "保持訂單看板同步"
+orders.settings.syncEnabledHint = "從 Zoho Books 讀取銷售訂單、未結的採購單與庫存。絕不寫入。"
+orders.settings.syncNow = "立即同步"
+orders.settings.syncTitle = "Zoho 同步"
+orders.shipped = "已出 {{shipped}}/{{total}}"  placeholders={{shipped}},{{total}}
+orders.sort.age = "天數"
+orders.sort.customer = "客戶"
+orders.sort.label = "排序"
+orders.sort.ready = "就緒率"
+orders.sort.value = "金額"
+orders.status.all = "全部"
+orders.status.inProgress = "進行中"
+orders.status.incoming = "在途"
+orders.status.partial = "部分可出"
+orders.status.toOrder = "需採購"
+orders.status.toShip = "可出貨"
+orders.syncFailed = "上次同步失敗：{{reason}} — 顯示的是 {{when}} 的資料。"  placeholders={{reason}},{{when}}
+orders.syncOff = "訂單同步已關閉。"
+orders.syncOffHint = "請在設定的「訂單」分頁中開啟。"
+orders.syncing = "同步中 · 剩餘 {{n}} 筆"  placeholders={{n}}
+orders.title = "訂單"
+orders.units_one = "{{count}} 件"  placeholders={{count}}
+orders.units_other = "{{count}} 件"  placeholders={{count}}
+orders.updated = "更新於 {{when}}"  placeholders={{when}}
+nav.orders = "訂單"
+settings.tabs.orders = "訂單"
+common.cancel = "取消"
+
+--- orders parity against en
+de: missing=[] extra=[]
+en: missing=[] extra=[]
+es: missing=[] extra=[]
+fr: missing=[] extra=[]
+it: missing=[] extra=[]
+ja: missing=[] extra=[]
+ko: missing=[] extra=[]
+nl: missing=[] extra=[]
+pl: missing=[] extra=[]
+ptBR: missing=[] extra=[]
+ru: missing=[] extra=[]
+sv: missing=[] extra=[]
+tr: missing=[] extra=[]
+uk: missing=[] extra=[]
+zhCN: missing=[] extra=[]
+zhTW: missing=[] extra=[]
+
+### stderr:
+

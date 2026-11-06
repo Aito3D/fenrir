@@ -1,0 +1,29 @@
+### exit: 0
+### stdout:
+const loadOrderBoardPage = () => import('./pages/OrderBoardPage').then(m => ({ default: m.OrderBoardPage }));
+const OrderBoardPage = lazyWithReload(loadOrderBoardPage);
+[/^\/orders\/?$/, loadOrderBoardPage],
+<Route path="orders" element={<PermissionRoute permission="orders:read"><OrderBoardPage /></PermissionRoute>} />
+{ id: 'orders', to: '/orders', icon: PackageCheck, labelKey: 'nav.orders' },
+orders: 'orders:read',
+import { OrdersSettingsCard } from '../components/orders/OrdersSettingsCard'; // Fenrir: Orders tab
+const validTabs = ['general', 'plugs', 'sensors', 'notifications', 'queue', 'filament', 'camera', 'network', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup', 'zoho', 'orders', 'projects'] as const; // Fenrir: + orders, projects
+const canSeeOrdersTab = hasPermission('orders:update'); // Fenrir: Orders tab
+if (!authLoading && activeTab === 'orders' && !canSeeOrdersTab) handleTabChange('general');
+}, [authLoading, activeTab, canSeeOrdersTab]);
+...(canSeeOrdersTab
+? [{ tab: 'orders', icon: PackageCheck, label: t('settings.tabs.orders') } as SettingsTabEntry]
+{tab === 'orders' && (
+<div id="card-orders-tab" className="space-y-3">
+<OrdersSettingsCard />
+--- backend registration
+backend/app/main.py: order_board,
+backend/app/main.py: from backend.app.services.order_board_sync import start_order_board_sync
+backend/app/main.py: start_order_board_sync()
+backend/app/main.py: app.include_router(order_board.router, prefix=app_settings.api_prefix)
+backend/app/models/__init__.py: from backend.app.models.order_board_doc import OrderBoardDoc
+backend/app/models/__init__.py: "OrderBoardDoc",
+backend/app/core/database.py: order_board_doc,
+
+### stderr:
+

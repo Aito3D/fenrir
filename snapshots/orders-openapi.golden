@@ -1,0 +1,1194 @@
+### exit: 0
+### stdout:
+{
+ "operations": {
+  "GET /api/v1/order-board": {
+   "description": "The stored board, when it was computed, and the sync status.",
+   "operationId": "get_order_board_api_v1_order_board_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Get Order Board Api V1 Order Board Get",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Order Board",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "GET /api/v1/order-board/finished": {
+   "description": "Shipped orders, newest first, from the stored list rows (no Zoho call).",
+   "operationId": "get_finished_orders_api_v1_order_board_finished_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Get Finished Orders Api V1 Order Board Finished Get",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Finished Orders",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "GET /api/v1/order-board/finished/{salesorder_id}": {
+   "description": "One shipped order in full; fetched from Zoho the first time it is opened, then kept.",
+   "operationId": "get_finished_order_api_v1_order_board_finished__salesorder_id__get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Get Finished Order Api V1 Order Board Finished  Salesorder Id  Get",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Finished Order",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "GET /api/v1/order-board/invoices/{invoice_id}/pdf": {
+   "description": "An invoice PDF, only for an invoice that a stored order lists (no open proxy to every Books invoice).",
+   "operationId": "get_invoice_pdf_api_v1_order_board_invoices__invoice_id__pdf_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "invoice_id",
+     "required": true,
+     "schema": {
+      "title": "Invoice Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Invoice Pdf",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "GET /api/v1/order-board/orders/{salesorder_id}/packages/{package_id}/handover": {
+   "operationId": "get_handover_preview_api_v1_order_board_orders__salesorder_id__packages__package_id__handover_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "path",
+     "name": "package_id",
+     "required": true,
+     "schema": {
+      "title": "Package Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Get Handover Preview Api V1 Order Board Orders  Salesorder Id  Packages  Package Id  Handover Get",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Handover Preview",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "GET /api/v1/order-board/orders/{salesorder_id}/picklist": {
+   "description": "What a new picklist of this order may hold (asks Books; writes nothing).",
+   "operationId": "get_picklist_preview_api_v1_order_board_orders__salesorder_id__picklist_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Get Picklist Preview Api V1 Order Board Orders  Salesorder Id  Picklist Get",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Picklist Preview",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "GET /api/v1/order-board/orders/{salesorder_id}/picklists/{picklist_id}": {
+   "description": "What a parcel made from this picklist may hold (asks Books; writes nothing).",
+   "operationId": "get_picklist_content_api_v1_order_board_orders__salesorder_id__picklists__picklist_id__get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "path",
+     "name": "picklist_id",
+     "required": true,
+     "schema": {
+      "title": "Picklist Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Get Picklist Content Api V1 Order Board Orders  Salesorder Id  Picklists  Picklist Id  Get",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Picklist Content",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "GET /api/v1/order-board/settings": {
+   "operationId": "get_order_board_settings_api_v1_order_board_settings_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/OrderBoardSettingsBody"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Order Board Settings",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/orders/{salesorder_id}/invoice": {
+   "operationId": "invoice_order_api_v1_order_board_orders__salesorder_id__invoice_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/InvoiceBody"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Invoice Order Api V1 Order Board Orders  Salesorder Id  Invoice Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Invoice Order",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/orders/{salesorder_id}/packages": {
+   "operationId": "create_parcel_api_v1_order_board_orders__salesorder_id__packages_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/PackBody"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Create Parcel Api V1 Order Board Orders  Salesorder Id  Packages Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Create Parcel",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/orders/{salesorder_id}/packages/{package_id}/handover": {
+   "operationId": "hand_over_parcel_api_v1_order_board_orders__salesorder_id__packages__package_id__handover_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "path",
+     "name": "package_id",
+     "required": true,
+     "schema": {
+      "title": "Package Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/HandoverBody"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Hand Over Parcel Api V1 Order Board Orders  Salesorder Id  Packages  Package Id  Handover Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Hand Over Parcel",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/orders/{salesorder_id}/picklists": {
+   "operationId": "create_picklist_api_v1_order_board_orders__salesorder_id__picklists_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/ParcelBody"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Create Picklist Api V1 Order Board Orders  Salesorder Id  Picklists Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Create Picklist",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/orders/{salesorder_id}/prep-sheet": {
+   "description": "Stamp the order as printed and return its prep sheet: the units of one picklist, or everything packable.",
+   "operationId": "print_prep_sheet_api_v1_order_board_orders__salesorder_id__prep_sheet_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "query",
+     "name": "picklist_id",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Picklist Id"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Print Prep Sheet",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/refresh": {
+   "description": "One bounded sync pass, then the board. A pass already running is left\nto finish; the caller gets the board as it stands.",
+   "operationId": "refresh_order_board_api_v1_order_board_refresh_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Refresh Order Board Api V1 Order Board Refresh Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Refresh Order Board",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "PUT /api/v1/order-board/settings": {
+   "description": "Save the settings and rebuild the board from the local copy.",
+   "operationId": "update_order_board_settings_api_v1_order_board_settings_put",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/OrderBoardSettingsBody"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/OrderBoardSettingsBody"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Update Order Board Settings",
+   "tags": [
+    "order-board"
+   ]
+  }
+ },
+ "schemas": {
+  "HTTPValidationError": {
+   "properties": {
+    "detail": {
+     "items": {
+      "$ref": "#/components/schemas/ValidationError"
+     },
+     "title": "Detail",
+     "type": "array"
+    }
+   },
+   "title": "HTTPValidationError",
+   "type": "object"
+  },
+  "HandoverBody": {
+   "properties": {
+    "apply_credit": {
+     "title": "Apply Credit",
+     "type": "boolean"
+    },
+    "mode": {
+     "enum": [
+      "pickup",
+      "delivery"
+     ],
+     "title": "Mode",
+     "type": "string"
+    }
+   },
+   "required": [
+    "mode",
+    "apply_credit"
+   ],
+   "title": "HandoverBody",
+   "type": "object"
+  },
+  "InvoiceBody": {
+   "properties": {
+    "apply_credit": {
+     "title": "Apply Credit",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "apply_credit"
+   ],
+   "title": "InvoiceBody",
+   "type": "object"
+  },
+  "OrderBoardSettingsBody": {
+   "properties": {
+    "core_brands": {
+     "items": {
+      "type": "string"
+     },
+     "maxItems": 30,
+     "title": "Core Brands",
+     "type": "array"
+    },
+    "max_age_days": {
+     "maximum": 3650.0,
+     "minimum": 0.0,
+     "title": "Max Age Days",
+     "type": "integer"
+    },
+    "sync_enabled": {
+     "title": "Sync Enabled",
+     "type": "boolean"
+    },
+    "sync_minutes": {
+     "enum": [
+      5,
+      15,
+      60
+     ],
+     "title": "Sync Minutes",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "sync_enabled",
+    "sync_minutes",
+    "max_age_days",
+    "core_brands"
+   ],
+   "title": "OrderBoardSettingsBody",
+   "type": "object"
+  },
+  "PackBody": {
+   "properties": {
+    "lines": {
+     "items": {
+      "$ref": "#/components/schemas/ParcelLine"
+     },
+     "maxItems": 200,
+     "minItems": 1,
+     "title": "Lines",
+     "type": "array"
+    },
+    "picklist_id": {
+     "maxLength": 64,
+     "minLength": 1,
+     "title": "Picklist Id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "lines",
+    "picklist_id"
+   ],
+   "title": "PackBody",
+   "type": "object"
+  },
+  "ParcelBody": {
+   "properties": {
+    "lines": {
+     "items": {
+      "$ref": "#/components/schemas/ParcelLine"
+     },
+     "maxItems": 200,
+     "minItems": 1,
+     "title": "Lines",
+     "type": "array"
+    }
+   },
+   "required": [
+    "lines"
+   ],
+   "title": "ParcelBody",
+   "type": "object"
+  },
+  "ParcelLine": {
+   "properties": {
+    "line_id": {
+     "maxLength": 64,
+     "minLength": 1,
+     "title": "Line Id",
+     "type": "string"
+    },
+    "quantity": {
+     "exclusiveMinimum": 0.0,
+     "title": "Quantity",
+     "type": "number"
+    }
+   },
+   "required": [
+    "line_id",
+    "quantity"
+   ],
+   "title": "ParcelLine",
+   "type": "object"
+  },
+  "ValidationError": {
+   "properties": {
+    "ctx": {
+     "title": "Context",
+     "type": "object"
+    },
+    "input": {
+     "title": "Input"
+    },
+    "loc": {
+     "items": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "integer"
+       }
+      ]
+     },
+     "title": "Location",
+     "type": "array"
+    },
+    "msg": {
+     "title": "Message",
+     "type": "string"
+    },
+    "type": {
+     "title": "Error Type",
+     "type": "string"
+    }
+   },
+   "required": [
+    "loc",
+    "msg",
+    "type"
+   ],
+   "title": "ValidationError",
+   "type": "object"
+  }
+ }
+}
+
+### stderr:
+
