@@ -1526,6 +1526,10 @@ async def _terminal_error(
         )
 
 
+def _throttled() -> bool:
+    return _throttled_until is not None and time.monotonic() < _throttled_until
+
+
 def _arm_rate_limit_throttle(e: ZohoRateLimited) -> None:
     """Set ``_throttled_until`` from a caught ``ZohoRateLimited``.
 
@@ -2620,7 +2624,7 @@ async def run_sync_once(
     seam the sync_project tests drive a whole pass through. See
     ``_sync_selection`` for the three modes side by side.
     """
-    if _throttled_until is not None and time.monotonic() < _throttled_until:
+    if _throttled():
         pending_only = True
     selected = _sync_selection(pending_only=pending_only, attention_only=attention_only)
     pending_first = case((AitoProject.quote_sync_state == "pending", 0), else_=1)
@@ -2811,7 +2815,7 @@ async def _drain_reconcile_queue(db: AsyncSession) -> int:
     reconciled = 0
     while _reconcile_queue:
         await _serve_due_pushes(db)
-        if _throttled_until is not None and time.monotonic() < _throttled_until:
+        if _throttled():
             break
         if zoho_service.calls_in_last_minute() >= BACKGROUND_CALL_CEILING:
             break
@@ -2837,7 +2841,7 @@ async def run_change_pass(db: AsyncSession) -> int:
     Costs three listings whatever the board's size; the per-card reads are
     spent only on cards with a reason. Skipped whole inside a rate-limit
     hold, and stopped by ``BACKGROUND_CALL_CEILING``."""
-    if _throttled_until is not None and time.monotonic() < _throttled_until:
+    if _throttled():
         return 0
     started = time.monotonic()
     calls_before = zoho_service.calls_total

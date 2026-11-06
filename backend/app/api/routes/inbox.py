@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import require_auth_if_enabled
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.notification_inbox import Notification, UserInboxPreference
 from backend.app.models.user import User
 from backend.app.schemas.inbox import (
@@ -26,7 +27,6 @@ from backend.app.services.aito_events import utc_now_naive
 from backend.app.services.inbox import DEFAULT_KINDS, KINDS, SOUND_DEFAULT_KINDS, preferences_for
 
 router = APIRouter(prefix="/inbox", tags=["inbox"])
-_AITO_READ = "aito:read"
 
 
 def _available() -> list[InboxKindInfo]:
@@ -56,7 +56,7 @@ async def list_inbox(
     if current_user is None:
         return InboxPage(items=[], unread=0)
     mine = [Notification.user_id == current_user.id]
-    if not current_user.has_permission(_AITO_READ):
+    if not current_user.has_permission(Permission.AITO_READ.value):
         # Rows written while the user could read Aito stay stored, but a
         # revoked aito:read hides them (and their unread count) from now on:
         # their bodies carry client names and quote numbers.

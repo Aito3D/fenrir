@@ -1702,7 +1702,7 @@ os.environ.get("AITO_TRACK_COLLAPSED_PROXY"
 ```
 16 Permission.AITO_CREATE
 3 Permission.AITO_DELETE
-21 Permission.AITO_READ
+22 Permission.AITO_READ
 40 Permission.AITO_UPDATE
 ```
 

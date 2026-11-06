@@ -3865,7 +3865,6 @@ async def update_task(
         )
     if project is not None:
         await _record_sync_queued_on_transition(db, project, was_pending)
-    if project:
         await _apply_rules(db, project, await _summary_for(db, task.project_id), actor=_actor(current_user))
     queued = project is not None and project.quote_sync_state == "pending"
     await _commit_and_wake(db, queued, project.id if project is not None else None)

@@ -1204,3 +1204,4 @@ so it is not stranded.
 - 2026-11-06 re-baseline: additive internal export useCardUrlMirror for T-593
 - 2026-11-06 re-baseline: additive internal export useCardResolver for T-593
 - 2026-11-06 re-baseline: additive internal export useNewFromProject for T-593
+- 2026-11-06 re-baseline: T-604 changes the Permission.AITO_READ occurrence count 21 -> 22 (dedup; standing user approval 2026-11-06)
