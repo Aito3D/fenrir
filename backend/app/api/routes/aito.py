@@ -269,6 +269,11 @@ _FLAG_RANK: dict[str, int] = {"urgent": 0, "sav": 0, "pause": 2, "fiverr": 2}
 _UNFLAGGED_RANK = 1
 
 
+async def _next_task_position(db: AsyncSession, project_id: int) -> int:
+    highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
+    return (highest + 1) if highest is not None else 0
+
+
 def _flag_rank(flag: str | None) -> int:
     """Rank for the Python-side sort. An unrecognised value ranks as
     unflagged rather than raising: this runs on a drag, and a row written by
@@ -3750,8 +3755,7 @@ async def add_task(
     # checking the post-mark state alone would fire sync.queued on every task
     # added to an already-pending project, not just the transition into it.
     was_pending = _mark_pending_if_ours_noting(project)
-    highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
-    task = AitoTask(project_id=project_id, position=(highest + 1) if highest is not None else 0, **task_fields)
+    task = AitoTask(project_id=project_id, position=await _next_task_position(db, project_id), **task_fields)
     db.add(task)
     await db.flush()  # so _summary_for's SELECT sees the new row
     await record(
@@ -5734,8 +5738,7 @@ async def transfer_tasks(
             )
 
     keep_ticks = target.quote_status == "accepted"
-    highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == target.id))
-    next_position = (highest + 1) if highest is not None else 0
+    next_position = await _next_task_position(db, target.id)
     for offset, task in enumerate(moving):
         task.project_id = target.id
         task.position = next_position + offset
@@ -5844,8 +5847,7 @@ async def merge_project(
 
     stmt = select(AitoTask).where(AitoTask.project_id == source.id).order_by(AitoTask.position, AitoTask.id)
     source_tasks = list((await db.execute(stmt)).scalars())
-    highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
-    next_position = (highest + 1) if highest is not None else 0
+    next_position = await _next_task_position(db, project_id)
     keep_ticks = target.quote_status == "accepted"
     copied_fields = list(AitoTaskBase.model_fields)
     copies: list[tuple[int, AitoTask]] = []  # Fenrir: (source task id, its copy) for the PDM rows below

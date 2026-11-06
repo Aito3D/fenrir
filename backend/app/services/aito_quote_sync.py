@@ -686,7 +686,7 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
             await zoho_service.update_estimate_notes(db, estimate["estimate_id"], notes)
         except Exception:  # noqa: BLE001 — logged, retried by the next sync
             logger.warning("tracking notes not written on estimate %s", estimate["estimate_id"], exc_info=True)
-    await _write_back_rounded_costs(db, project.id, pushed_costs)
+    await _write_back_rounded_costs(db, pushed_costs)
     # `project.quote_status` may have been decided by a completely different
     # session (routes/aito.py's set_quote_status) while create_estimate's
     # network call above was in flight; this session never sees that commit
@@ -800,9 +800,7 @@ async def _snapshot_pushed_costs(db: AsyncSession, project_id: int) -> dict[int,
     }
 
 
-async def _write_back_rounded_costs(
-    db: AsyncSession, project_id: int, pushed_costs: dict[int, dict[str, tuple[float, int]]]
-) -> None:
+async def _write_back_rounded_costs(db: AsyncSession, pushed_costs: dict[int, dict[str, tuple[float, int]]]) -> None:
     """Adopt the total the quote can actually express, for every service.
 
     ``<service>_cost`` is a pre-discount total for all units but a line is
@@ -1302,7 +1300,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # Cleared only once a PUT that carried the customer succeeded: a
         # failure above raises past this line and leaves the flag owed.
         project.client_push_pending = False
-    await _write_back_rounded_costs(db, project.id, pushed_costs)
+    await _write_back_rounded_costs(db, pushed_costs)
     # `project.quote_status` was loaded before this call's own get_estimate,
     # let alone this update_estimate_lines round trip -- and nothing in
     # between refreshes it (expire_on_commit=False). An Accept/Decline
