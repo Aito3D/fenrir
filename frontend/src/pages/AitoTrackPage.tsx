@@ -11,10 +11,10 @@ import { TrackingPaymentMethods } from '../components/aito/TrackingPaymentMethod
 import { TrackingRail } from '../components/aito/TrackingRail';
 import { TrackingShopPanel } from '../components/aito/TrackingShopPanel';
 import { CardSkeleton, Footer, Logo } from '../components/aito/trackingShell';
-import { useTrackingLanguage } from '../hooks/useTrackingLanguage';
+import { useI18nSettleDeadline, useTrackingLanguage } from '../hooks/useTrackingLanguage';
 import { useTrackingPanel } from '../hooks/useTrackingPanel';
 import { prefersReducedMotion } from '../utils/motion';
-import { CARD, FOCUS, I18N_SETTLE_TIMEOUT_MS, PAGE, PRESS, delayAt } from '../utils/trackingShell';
+import { CARD, FOCUS, PAGE, PRESS, delayAt } from '../utils/trackingShell';
 import { TRACK_MOTION, etaCopy, statusCopy, trackStageIndex, trackStateDelay, trackingStage, updatedAt } from '../utils/aitoTracking';
 import type { AitoColumnId } from '../api/client';
 
@@ -68,8 +68,8 @@ export function AitoTrackPage() {
   });
 
   const data = query.data;
-  // The first paint waits for the language bundle (English ships in the
-  // entry, everything else is a lazy chunk) so the choreography never plays
+  // The first paint waits for the language bundle (every locale, English
+  // included, is a lazy chunk; English loads on demand at the deadline) so the choreography never plays
   // in English and then flips. Later language switches keep the content
   // mounted — react-i18next re-renders it in place when the chunk lands.
   const everReady = useRef(false);
@@ -78,11 +78,7 @@ export function AitoTrackPage() {
   // guards against) must not hide data that has already landed forever:
   // once this fires, `settled` goes true even if `ready` never does, and it
   // never un-settles — same one-way latch as `everReady` itself.
-  const [i18nTimedOut, setI18nTimedOut] = useState(false);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setI18nTimedOut(true), I18N_SETTLE_TIMEOUT_MS);
-    return () => window.clearTimeout(timer);
-  }, []);
+  const i18nTimedOut = useI18nSettleDeadline();
   const settled = everReady.current || i18nTimedOut;
   // The choreography plays on the FIRST data only. React Query refetches on
   // window focus once the 30 s stale time has passed; replaying the rail on

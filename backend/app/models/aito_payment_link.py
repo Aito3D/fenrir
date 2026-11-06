@@ -11,7 +11,7 @@ docs/superpowers/specs/2026-09-12-aito-heimdall-payment-links-design.md §3.1.
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -33,6 +33,9 @@ class AitoPaymentLink(Base):
     # Quote links are minted by the reconciler; invoice links only on demand.
     document_kind: Mapped[str] = mapped_column(String(10), nullable=False, default="quote", server_default="quote")
     document_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Quote links: True when the amount was a deposit share when minted, False for the full total.
+    # NULL (rows minted before this column, invoice links) = read today's `aito_deposit_pct` instead.
+    deposit: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # Integer XPF francs — what Heimdall holds.
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="XPF", server_default="XPF")

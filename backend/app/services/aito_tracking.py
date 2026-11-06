@@ -203,11 +203,6 @@ async def ensure_tracking_token(db: AsyncSession, project: AitoProject) -> str:
     return won_token
 
 
-async def tracking_url(db: AsyncSession, project: AitoProject) -> str | None:
-    """Read-only: None until both the setting and the token exist."""
-    return tracking_url_for(await external_url(db), project.tracking_token)
-
-
 async def build_tracking_url(db: AsyncSession, project: AitoProject) -> str | None:
     """The write path: mints the token, then builds. None only while
     `external_url` is empty — the token is kept so the link appears the
@@ -276,9 +271,9 @@ async def payment_state(db: AsyncSession, project: AitoProject) -> AitoTrackingP
     if row is None:
         return None
     paid = row.status == "paid"
-    return AitoTrackingPayment(
-        state="paid" if paid else "unpaid", url=None if paid else row.url, deposit=(await deposit_pct(db)) > 0
-    )
+    # The kind of link minted, not today's setting; legacy rows (NULL) fall back to the setting.
+    deposit = row.deposit if row.deposit is not None else (await deposit_pct(db)) > 0
+    return AitoTrackingPayment(state="paid" if paid else "unpaid", url=None if paid else row.url, deposit=deposit)
 
 
 async def _shown_link(db: AsyncSession, project: AitoProject) -> AitoPaymentLink | None:

@@ -10,7 +10,7 @@ import logging
 import math
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
@@ -126,6 +126,8 @@ class Wanted:
     reference: str
     amount: int
     expires_on: str
+    # Whether `amount` is a deposit share (pct > 0) or the full total; recorded on the row at mint.
+    deposit: bool = field(default=False, compare=False)
 
 
 # How long a quote Aito writes to Books stays valid, and the life of a
@@ -148,7 +150,7 @@ def wanted_link(project: AitoProject, *, pct: int, today: date) -> Wanted | None
     if amount <= 0:
         return None
     expires_on = project.quote_expiry_date or (today + QUOTE_VALIDITY).isoformat()
-    return Wanted(reference=project.quote_number, amount=amount, expires_on=expires_on)
+    return Wanted(reference=project.quote_number, amount=amount, expires_on=expires_on, deposit=pct > 0)
 
 
 def expires_in_days(expires_on: str, today: date) -> int:
@@ -434,6 +436,7 @@ async def _create(
             created_at=now,
             document_kind="quote",
             document_number=wanted.reference,
+            deposit=wanted.deposit,
         )
         db.add(row)
         await db.commit()
@@ -764,6 +767,8 @@ async def reconcile_project(
                 prior_failures = row.sync_failures or 0
                 prior_amount, prior_expires_on = row.amount, row.expires_on
                 _adopt(row, view, now, expires_fallback=wanted.expires_on)
+                if row.amount == wanted.amount:
+                    row.deposit = wanted.deposit  # the link now asks for this kind of amount
                 if _fields_match(row, wanted, today):
                     # Converged: tell the story an amount or expiry change
                     # actually reached the client-facing link (T-011 — this

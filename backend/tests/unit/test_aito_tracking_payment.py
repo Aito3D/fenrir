@@ -147,3 +147,23 @@ async def test_a_paid_link_never_exposes_the_checkout_url(db_session):
     payment = (await _track(db_session)).payment
     assert payment.state == "paid"
     assert payment.url is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("setting", "recorded"), [("0", True), ("30", False)])
+async def test_deposit_wording_follows_the_link_not_a_later_setting(db_session, setting, recorded):
+    p = await _project(db_session)
+    await _link(db_session, p.id, status="paid", deposit=recorded)
+    await set_setting(db_session, "aito_deposit_pct", setting)
+    await db_session.commit()
+    payment = (await _track(db_session)).payment
+    assert payment.deposit is recorded
+
+
+@pytest.mark.asyncio
+async def test_legacy_null_deposit_falls_back_to_the_setting(db_session):
+    p = await _project(db_session)
+    await _link(db_session, p.id, status="paid", deposit=None)
+    await set_setting(db_session, "aito_deposit_pct", "30")
+    await db_session.commit()
+    assert (await _track(db_session)).payment.deposit is True

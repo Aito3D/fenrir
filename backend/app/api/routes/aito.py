@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes import auth as auth_routes
 from backend.app.api.routes.auth import _get_client_ip
+from backend.app.core import database as core_database
 from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_any_permission_if_auth_enabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -1535,7 +1536,9 @@ def _track_rate_limited(request: Request) -> tuple[str, float] | None:
     now = time.monotonic()
     host = _get_client_ip(request)
     try:
-        ipaddress.ip_address(host)
+        addr = ipaddress.ip_address(host)
+        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+            host = str(addr.ipv4_mapped)  # T-037: a mapped client keys like its plain IPv4 address and /24
     except ValueError:
         host = "__no_ip__"  # no real peer, or unparseable — one shared, cappable bucket (T-012)
     net = _track_rate_net_key(host)
@@ -1594,9 +1597,23 @@ def _track_rate_hit(host: str, stamp: float) -> None:
     _release_miss(_track_rate_net_misses, _track_rate_net_key(host), stamp)
 
 
+async def _log_tracking_view(project_id: int, now: datetime) -> None:
+    """Runs after the response, on its own session: a held write lock must
+    never delay the public page. The log must never break the page it measures."""
+    try:
+        async with core_database.async_session() as session:
+            await tracking_service.log_view(session, project_id, now)
+    except Exception:  # noqa: BLE001
+        logger.warning("tracking view log failed for project %s", project_id, exc_info=True)
+
+
 @router.get("/track/{token}", response_model=AitoTrackingResponse)
 async def get_tracking(
-    token: str, request: Request, response: Response, db: AsyncSession = Depends(get_db, scope="function")
+    token: str,
+    request: Request,
+    response: Response,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> AitoTrackingResponse | JSONResponse:
     """The client's public tracking page. No auth: the token IS the
     credential (a 6-character code, unique-indexed, normalised on lookup
@@ -1613,7 +1630,13 @@ async def get_tracking(
             headers={"Cache-Control": "no-store", "Retry-After": "60"},
         )
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    found = await compute_tracking(db, token, await _shipping_names(db), await _island_labels(db), now)
+    try:
+        found = await compute_tracking(db, token, await _shipping_names(db), await _island_labels(db), now)
+    except BaseException:
+        # A lookup that raised or was cancelled never answered hit-or-miss, so it is no guess:
+        # hand the reservation back (the CALLS ceilings stay counted) and let the error through.
+        _track_rate_hit(*admitted)
+        raise
     if found is None:
         # The miss reserved at arrival stands.
         # Not `raise HTTPException`: FastAPI's exception handler builds a
@@ -1625,11 +1648,7 @@ async def get_tracking(
         )
     _track_rate_hit(*admitted)
     project_id, data = found
-    try:
-        await tracking_service.log_view(db, project_id, now)
-    except Exception:  # noqa: BLE001 — the log must never break the page it measures
-        logger.warning("tracking view log failed for project %s", project_id, exc_info=True)
-        await db.rollback()
+    background_tasks.add_task(_log_tracking_view, project_id, now)
     return data
 
 

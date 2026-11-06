@@ -3033,3 +3033,28 @@ async def test_a_429_hit_by_a_push_served_during_the_polls_stops_the_remaining_p
     assert served == 3
     assert [c[0] for c in fake.calls] == ["patch"]  # the nested attempt; no GET after it
     assert svc._throttled_until is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("pct", "expected"), [(0, False), (30, True)])
+async def test_create_records_whether_the_link_is_a_deposit(db_session, fake, pct, expected):
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=pct, today=TODAY, now=NOW)
+    (r,) = await _rows(db_session, p.id)
+    assert r.deposit is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("first", "second"), [(0, 30), (30, 0)])
+async def test_repricing_a_pending_link_updates_its_deposit_flag(db_session, fake, first, second):
+    from backend.app.services.aito_tracking import payment_state
+
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=first, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=second, today=TODAY, now=NOW)
+    assert [c[0] for c in fake.calls] == ["create", "patch"]
+    (r,) = await _rows(db_session, p.id)
+    assert r.deposit is (second > 0)
+    state = await payment_state(db_session, p)
+    assert state is not None
+    assert state.deposit is (second > 0)

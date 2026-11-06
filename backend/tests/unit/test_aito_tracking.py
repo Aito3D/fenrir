@@ -5,18 +5,19 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import select, text
 
+from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.settings import Settings
 from backend.app.services.aito_tracking import (
     TOKEN_ALPHABET,
     build_tracking_url,
+    done_at,
     ensure_tracking_token,
     log_view,
     mint_token,
     mint_unique_token,
     normalize_token,
     purge_tracking_views,
-    tracking_url,
     tracking_url_for,
 )
 from backend.tests.unit.test_aito_contacted import _declared_permissions
@@ -166,16 +167,14 @@ async def test_mint_unique_token_gives_up_after_ten_collisions(async_client, db_
 
 
 @pytest.mark.asyncio
-async def test_tracking_url_follows_external_url_without_minting(async_client, db_session):
+async def test_build_tracking_url_follows_external_url_and_keeps_token(async_client, db_session):
     pid = await _create(async_client)
     project = await _project(db_session, pid)
-    assert await tracking_url(db_session, project) is None
-    assert project.tracking_token is None  # a read never mints
+    assert await build_tracking_url(db_session, project) is None  # no external_url yet
+    assert project.tracking_token is not None  # the token is kept for when the setting is filled
     await _set_external_url(db_session, "https://aito.example/")
-    assert await tracking_url(db_session, project) is None  # still no token
     url = await build_tracking_url(db_session, project)
     assert url == f"https://aito.example/t/{project.tracking_token}"
-    assert await tracking_url(db_session, project) == url
 
 
 @pytest.mark.asyncio
@@ -214,7 +213,7 @@ async def _set(db_session, pid: int, **cols):
 
 
 async def _done_event(db_session, pid: int, days_ago: float):
-    at = (datetime.now(timezone.utc) - timedelta(days=days_ago)).replace(tzinfo=None).isoformat(sep=" ")
+    at = (datetime.now(timezone.utc) - timedelta(days=days_ago)).replace(tzinfo=None)
     await db_session.execute(
         text(
             "INSERT INTO aito_events (project_id, occurred_at, kind, actor_class, changes) "
@@ -343,7 +342,7 @@ async def test_public_updated_at_is_the_latest_event_else_the_row_timestamp(asyn
             "UPDATE aito_events SET occurred_until = :until "
             "WHERE id = (SELECT id FROM aito_events WHERE project_id = :pid ORDER BY occurred_at DESC LIMIT 1)"
         ),
-        {"until": until.isoformat(sep=" "), "pid": pid},
+        {"until": until, "pid": pid},
     )
     await db_session.commit()
     body = (await async_client.get(TRACK + token)).json()
@@ -434,17 +433,43 @@ async def test_public_view_is_logged_once_per_open_deduped_within_5min_and_never
 
 
 @pytest.mark.asyncio
+async def test_view_is_logged_after_the_response_and_a_failing_write_is_swallowed(
+    async_client, db_session, monkeypatch, caplog
+):
+    """T-040: the view write is a background task on its own session, so the
+    page never waits on it (a held write lock) and a failure never reaches it."""
+    from backend.app.services import aito_tracking as svc
+
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    seen = []
+
+    async def spy(session, project_id, now):
+        assert session is not db_session
+        seen.append(project_id)
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(svc, "log_view", spy)
+    with caplog.at_level("WARNING"):
+        resp = await async_client.get(TRACK + token)
+    assert resp.status_code == 200
+    assert seen == [pid]
+    assert "tracking view log failed" in caplog.text
+    assert token not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_purge_tracking_views_drops_only_rows_past_retention(async_client, db_session):
     pid = await _create(async_client)
     old = (datetime.now(timezone.utc) - timedelta(days=401)).replace(tzinfo=None)
     recent = (datetime.now(timezone.utc) - timedelta(days=399)).replace(tzinfo=None)
     await db_session.execute(
         text("INSERT INTO aito_tracking_views (project_id, viewed_at) VALUES (:pid, :at)"),
-        {"pid": pid, "at": old.isoformat(sep=" ")},
+        {"pid": pid, "at": old},
     )
     await db_session.execute(
         text("INSERT INTO aito_tracking_views (project_id, viewed_at) VALUES (:pid, :at)"),
-        {"pid": pid, "at": recent.isoformat(sep=" ")},
+        {"pid": pid, "at": recent},
     )
     await db_session.commit()
 
@@ -525,6 +550,27 @@ async def test_public_expires_30_days_after_the_latest_move_to_done(async_client
     await _done_event(db_session, stale, 2)
     r = await async_client.get(TRACK + await _token(async_client, db_session, stale))
     assert r.status_code == 200 and r.json()["done_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_done_at_reads_string_encoded_and_mixed_change_lists(async_client, db_session):
+    pid = await _create(async_client, description="done-at")
+    t = datetime(2026, 1, 10, 12, 0, 0)
+
+    def event(at, changes):
+        return AitoEvent(project_id=pid, occurred_at=at, kind="stage.changed", actor_class="user", changes=changes)
+
+    assert await done_at(db_session, pid) is None
+    # A stage.changed without to=done (and one with no changes at all) is skipped.
+    db_session.add(event(t, [{"field": "column", "from": "devis", "to": "finish"}]))
+    db_session.add(event(t + timedelta(hours=1), None))
+    await db_session.commit()
+    assert await done_at(db_session, pid) is None
+    # changes stored as a JSON string: decoded; a non-column change before the move is skipped.
+    mixed = '[{"field": "title", "to": "done"}, {"field": "column", "from": "finish", "to": "done"}]'
+    db_session.add(event(t + timedelta(days=1), mixed))
+    await db_session.commit()
+    assert await done_at(db_session, pid) == t + timedelta(days=1)
 
 
 @pytest.mark.asyncio
@@ -978,7 +1024,7 @@ async def test_public_404s_once_the_quote_is_declined_or_expired(async_client, d
 async def _age(db_session, pid: int, days: float) -> None:
     """Push every trace of activity on the card `days` into the past — its
     events and its row timestamp — so last_activity reads that old."""
-    at = (datetime.now(timezone.utc) - timedelta(days=days)).replace(tzinfo=None).isoformat(sep=" ")
+    at = (datetime.now(timezone.utc) - timedelta(days=days)).replace(tzinfo=None)
     await db_session.execute(
         text("UPDATE aito_events SET occurred_at = :at, occurred_until = NULL WHERE project_id = :pid"),
         {"pid": pid, "at": at},
@@ -1322,3 +1368,46 @@ def test_track_rate_net_key(host, expected):
     from backend.app.api.routes import aito as aito_routes
 
     assert aito_routes._track_rate_net_key(host) == expected
+
+
+def test_ipv4_mapped_clients_share_the_plain_ipv4_bucket_and_its_own_24(track_rate_clock):
+    """T-037: ::ffff:a.b.c.d keys like a.b.c.d, so mapped visitors on different
+    /24s no longer fold into one ::/48 network bucket."""
+    from types import SimpleNamespace
+
+    from backend.app.api.routes import aito as aito_routes
+
+    def req(host):
+        return SimpleNamespace(client=SimpleNamespace(host=host), headers={})
+
+    assert aito_routes._track_rate_limited(req("::ffff:203.0.113.9"))[0] == "203.0.113.9"
+    assert aito_routes._track_rate_limited(req("203.0.113.9"))[0] == "203.0.113.9"
+    aito_routes._track_rate_limited(req("::ffff:198.51.100.7"))
+    assert set(aito_routes._track_rate_net_calls) == {"203.0.113.0/24", "198.51.100.0/24"}
+    assert len(aito_routes._track_rate_net_calls["203.0.113.0/24"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_public_route_releases_the_reserved_miss_when_the_lookup_raises(
+    async_client, track_rate_clock, monkeypatch
+):
+    """T-059: a lookup that raises (DB drop, cancellation) answered nothing, so its reserved miss is handed back;
+    a real unknown token still keeps its miss."""
+    from backend.app.api.routes import aito as aito_routes
+
+    async def boom(*_args, **_kwargs):
+        raise RuntimeError("database is locked")
+
+    real = aito_routes.compute_tracking
+    monkeypatch.setattr(aito_routes, "compute_tracking", boom)
+    for _ in range(aito_routes._TRACK_RATE_MAX_MISSES_PER_IP + 5):
+        with pytest.raises(RuntimeError):
+            await async_client.get(TRACK + "ZZZZZZ")
+    assert not aito_routes._track_rate_ip_misses
+    assert not aito_routes._track_rate_net_misses
+    assert (
+        sum(len(v) for v in aito_routes._track_rate_ip_calls.values()) == aito_routes._TRACK_RATE_MAX_MISSES_PER_IP + 5
+    )
+    monkeypatch.setattr(aito_routes, "compute_tracking", real)
+    assert (await async_client.get(TRACK + "ZZZZZZ")).status_code == 404
+    assert sum(len(v) for v in aito_routes._track_rate_ip_misses.values()) == 1

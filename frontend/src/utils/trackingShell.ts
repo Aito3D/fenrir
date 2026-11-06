@@ -40,7 +40,11 @@ export const PAGE = 'min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito
 // The locale chunk fetch behind each page's `ready` gate has the same
 // failure mode as a hung tracking request or a hung code check — a
 // stalled connection that never errors — so both pages give it the same
-// deadline: past this, i18next's bundled English strings stand in rather
+// deadline: past this, English is loaded on demand and stands in rather
 // than leave a client staring at a skeleton for data that has already
 // arrived.
 export const I18N_SETTLE_TIMEOUT_MS = 10_000;
+// English, loaded at that deadline, gets this much longer: a link that
+// stalls the locale chunk usually stalls English too, so the pages render
+// after it anyway (raw keys) and switch to English if it lands later.
+export const I18N_ENGLISH_EXTRA_MS = 3_000;
