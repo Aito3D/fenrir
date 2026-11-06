@@ -163,3 +163,189 @@ async def test_finished_detail_maps_busy_to_503_and_unknown_to_404(async_client,
 
     monkeypatch.setattr(order_board_sync, "read_finished_order", fine)
     assert (await async_client.get(url, headers=tokens["read"])).json() == {"id": "so1"}
+
+
+BASE = "/api/v1/order-board"
+PARCEL = {"lines": [{"line_id": "l1", "quantity": 2}]}
+HAND = {"mode": "pickup", "apply_credit": False}
+INVOICE = {"apply_credit": True}
+NEW_ROUTES = [
+    ("post", f"{BASE}/orders/so1/prep-sheet", None, False),
+    ("post", f"{BASE}/orders/so1/packages", PARCEL, True),
+    ("get", f"{BASE}/orders/so1/packages/p1/handover", None, False),
+    ("post", f"{BASE}/orders/so1/packages/p1/handover", HAND, True),
+    ("post", f"{BASE}/orders/so1/invoice", INVOICE, True),
+    ("get", f"{BASE}/invoices/inv1/pdf", None, False),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("method", "url", "body", "writes"), NEW_ROUTES)
+async def test_new_routes_need_their_permission(async_client, tokens, method, url, body, writes):
+    kwargs = {"json": body} if body else {}
+    denied = ("none", "read") if writes else ("none",)
+    for who in denied:
+        r = await getattr(async_client, method)(url, headers=tokens[who], **kwargs)
+        assert r.status_code == 403, f"{method.upper()} {url} as {who}: {r.status_code}"
+    if not writes:  # allowed through for orders:read: anything but 403 (404 here: nothing stored)
+        r = await getattr(async_client, method)(url, headers=tokens["read"], **kwargs)
+        assert r.status_code not in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_prep_sheet_is_a_pdf_and_stamps_with_the_username(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+
+    seen = {}
+
+    async def fake_stamp(db, salesorder_id, by):
+        seen.update(id=salesorder_id, by=by)
+        return {"number": "SO-1", "lines": [], "customer": "X"}
+
+    monkeypatch.setattr(actions, "stamp_print", fake_stamp)
+    monkeypatch.setattr("backend.app.api.routes.order_board.render_prep_sheet", lambda row, **kw: b"%PDF-fake")
+    r = await async_client.post(f"{BASE}/orders/so1/prep-sheet", headers=tokens["read"])
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content.startswith(b"%PDF-")
+    assert seen == {"id": "so1", "by": "orders-read"}
+
+
+@pytest.mark.asyncio
+async def test_prep_sheet_renders_a_real_pdf(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+
+    async def fake_stamp(db, salesorder_id, by):
+        return {"number": "SO-1", "customer": "X", "lines": [], "printed": None}
+
+    monkeypatch.setattr(actions, "stamp_print", fake_stamp)
+    r = await async_client.post(f"{BASE}/orders/so1/prep-sheet", headers=tokens["read"])
+    assert r.status_code == 200 and r.content.startswith(b"%PDF-")
+
+
+@pytest.mark.asyncio
+async def test_create_parcel_returns_the_board_and_the_number(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+
+    seen = {}
+
+    async def fake(db, salesorder_id, quantities):
+        seen["q"] = quantities
+        return "PKG-7"
+
+    monkeypatch.setattr(actions, "create_parcel", fake)
+    r = await async_client.post(f"{BASE}/orders/so1/packages", headers=tokens["both"], json=PARCEL)
+    assert r.status_code == 200
+    assert r.json()["package_number"] == "PKG-7"
+    assert "rows" in r.json()["board"]
+    assert seen["q"] == {"l1": 2}
+
+
+@pytest.mark.asyncio
+async def test_handover_and_invoice_return_board_and_outcome(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+
+    calls = []
+
+    async def fake_hand(db, so, pkg, *, mode, apply_credit):
+        calls.append(("hand", so, pkg, mode, apply_credit))
+        return {"invoice": "created"}
+
+    async def fake_inv(db, so, *, apply_credit):
+        calls.append(("inv", so, apply_credit))
+        return {"invoice": "none"}
+
+    async def fake_preview(db, so, pkg):
+        return {"package": pkg}
+
+    monkeypatch.setattr(actions, "hand_over", fake_hand)
+    monkeypatch.setattr(actions, "invoice_shipped", fake_inv)
+    monkeypatch.setattr(actions, "handover_preview", fake_preview)
+    h = tokens["both"]
+    r = await async_client.post(f"{BASE}/orders/so1/packages/p1/handover", headers=h, json=HAND)
+    assert r.json()["outcome"] == {"invoice": "created"} and "rows" in r.json()["board"]
+    r = await async_client.post(f"{BASE}/orders/so1/invoice", headers=h, json=INVOICE)
+    assert r.json()["outcome"] == {"invoice": "none"} and "rows" in r.json()["board"]
+    r = await async_client.get(f"{BASE}/orders/so1/packages/p1/handover", headers=tokens["read"])
+    assert r.json() == {"package": "p1"}
+    assert calls == [("hand", "so1", "p1", "pickup", False), ("inv", "so1", True)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("url", "body"),
+    [
+        ("orders/so1/packages", {"lines": []}),
+        ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": 0}]}),
+        ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": -1}]}),
+        ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": 1}, {"line_id": "l1", "quantity": 2}]}),
+        ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": 1}] * 201}),
+        ("orders/so1/packages/p1/handover", {"mode": "teleport", "apply_credit": False}),
+        ("orders/so1/packages/p1/handover", {"mode": "pickup"}),
+        ("orders/so1/invoice", {}),
+    ],
+)
+async def test_bodies_are_validated(async_client, tokens, url, body):
+    r = await async_client.post(f"{BASE}/{url}", headers=tokens["both"], json=body)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_action_errors_map_to_statuses(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+    from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRequestRejected, ZohoUpstreamError
+
+    cases = [
+        (actions.OrderNotOnBoard("x"), 404, None),
+        (order_board_sync.OrderNotStored("x"), 404, None),
+        (actions.OrderActionRefused("too_many"), 400, "too_many"),
+        (actions.OrderBusy("x"), 409, None),
+        (order_board_sync.ZohoBusy("x"), 503, "Zoho is busy, try again shortly."),
+        (ZohoNotConfiguredError("x"), 503, None),
+        (ZohoRequestRejected("Books says no"), 502, "Books says no"),
+        (ZohoUpstreamError("boom"), 502, "boom"),
+    ]
+    for exc, status, detail in cases:
+
+        async def boom(*a, exc=exc, **k):
+            raise exc
+
+        for name in ("create_parcel", "hand_over", "invoice_shipped", "handover_preview", "stamp_print"):
+            monkeypatch.setattr(actions, name, boom)
+        calls = [
+            ("post", "orders/so1/packages", PARCEL),
+            ("post", "orders/so1/packages/p1/handover", HAND),
+            ("post", "orders/so1/invoice", INVOICE),
+            ("get", "orders/so1/packages/p1/handover", None),
+            ("post", "orders/so1/prep-sheet", None),
+        ]
+        for method, url, body in calls:
+            kwargs = {"json": body} if body else {}
+            r = await getattr(async_client, method)(f"{BASE}/{url}", headers=tokens["both"], **kwargs)
+            assert r.status_code == status, (type(exc).__name__, url, r.status_code)
+            if detail:
+                assert r.json()["detail"] == detail
+
+
+@pytest.mark.asyncio
+async def test_invoice_pdf_only_for_an_invoice_of_a_stored_order(async_client, tokens, db_session, monkeypatch):
+    from backend.app.models.order_board_doc import OrderBoardDoc
+    from backend.app.services.zoho import zoho_service
+
+    fetched = []
+
+    async def fake_pdf(db, invoice_id):
+        fetched.append(invoice_id)
+        return b"%PDF-inv"
+
+    monkeypatch.setattr(zoho_service, "get_invoice_pdf", fake_pdf)
+    db_session.add(
+        OrderBoardDoc(kind="salesorder", zoho_id="so1", header={}, detail={"invoices": [{"invoice_id": "inv1"}]})
+    )
+    db_session.add(OrderBoardDoc(kind="salesorder", zoho_id="so2", header={}, detail=None))
+    await db_session.commit()
+    r = await async_client.get(f"{BASE}/invoices/other/pdf", headers=tokens["read"])
+    assert r.status_code == 404 and fetched == []
+    r = await async_client.get(f"{BASE}/invoices/inv1/pdf", headers=tokens["read"])
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
+    assert r.content.startswith(b"%PDF-") and fetched == ["inv1"]
