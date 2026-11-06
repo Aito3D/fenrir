@@ -546,6 +546,28 @@ describe('LoginPage', () => {
       }
     });
 
+    it.each([
+      ['a backslash after the slash', '/\\evil.com', '/'],
+      ['a tab after the slash', '/\t/evil.com', '/'],
+      ['a newline inside the path', '/aito\n/x', '/'],
+      // %5C is not decoded by the URL parser (it stays a literal path segment,
+      // same origin), so it is accepted unchanged: a harmless 404 route.
+      ['an encoded backslash', '/%5Cevil.com', '/%5Cevil.com'],
+      ['a query target', '/aito?card=12', '/aito?card=12'],
+      ['a hash target', '/aito#x', '/aito#x'],
+      ['encoded characters', '/aito?q=%C3%A9%20x', '/aito?q=%C3%A9%20x'],
+    ])('?next= with %s is handled as expected', async (_label, next, expected) => {
+      reduceMotion();
+      window.history.pushState({}, '', `/login?next=${encodeURIComponent(next)}`);
+      try {
+        await signIn();
+        expect(mockNavigate).toHaveBeenCalledTimes(1);
+        expect(mockNavigate).toHaveBeenCalledWith(expected, { replace: true });
+      } finally {
+        window.history.replaceState({}, '', '/login');
+      }
+    });
+
     it('navigates exactly once, to the stashed target, under reduced motion', async () => {
       const user = userEvent.setup();
       // Force reduced motion so exitToDashboard() takes its synchronous

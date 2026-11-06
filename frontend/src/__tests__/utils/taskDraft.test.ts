@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
   emptyTaskDraft,
@@ -14,6 +17,7 @@ import {
   roundUpTo50,
   freshenTaskDraft,
   isBlankTaskDraft,
+  IMPRESSION_COLOR_MAX,
 } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
 import { computePricing } from '../../utils/pricing';
@@ -487,5 +491,16 @@ describe('Main d\'oeuvre', () => {
 
   it('blank description normalises to an empty string, never undefined', () => {
     expect(normaliseTaskDraft({ maindoeuvreCost: 4000 }).maindoeuvreDescription).toBe('');
+  });
+});
+
+describe('IMPRESSION_COLOR_MAX', () => {
+  it('equals the impression_color max_length in backend/app/schemas/aito.py', () => {
+    // AitoTaskBase is the only definition; AitoTaskCreate/Update/Response inherit it.
+    const here = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(resolve(here, '../../../../backend/app/schemas/aito.py'), 'utf-8');
+    const matches = [...source.matchAll(/impression_color:[^\n]*max_length=(\d+)/g)];
+    expect(matches.length, 'expected exactly one impression_color field in schemas/aito.py').toBe(1);
+    expect(IMPRESSION_COLOR_MAX).toBe(Number(matches[0][1]));
   });
 });

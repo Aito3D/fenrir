@@ -41,6 +41,9 @@ function sanitizeRedirectTarget(target: string | null | undefined): string | nul
   if (!target) return null;
   if (!target.startsWith('/')) return null;
   if (target.startsWith('//')) return null;
+  // The URL parser drops tabs/newlines and reads `\` as `/`, so `/\evil.com`
+  // and `/<TAB>/evil.com` resolve to another origin. Refuse them outright.
+  if ([...target].some((c) => c === '\\' || c <= '\x1f' || c === '\x7f')) return null;
   if (target.startsWith('/login')) return null;
   return target;
 }

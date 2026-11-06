@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
-import { api, type AitoProject } from '../../api/client';
+import { api, ApiError, type AitoProject } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { settleProject } from './settleProject';
 import { DOC_ICON_BUTTON_CLS } from './linkActionHelpers';
@@ -101,7 +101,15 @@ export function BillingCard({
       settleProject(queryClient, project.id, row);
       showToast(t('aito.quoteExtended'), 'success');
     },
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
+    onError: (error) => {
+      // 502 carries Books' own refusal, 409 means someone (or the poll) already
+      // moved the quote: show the reason, and on a 409 refetch so the stale
+      // Expired state clears.
+      const status = error instanceof ApiError ? error.status : 0;
+      if (status === 409) queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      const detail = status === 409 || status === 502 ? ` ${(error as ApiError).message}` : '';
+      showToast(`${t('aito.saveFailed')}${detail}`, 'error');
+    },
   });
   const justSynced = pendingSeenFor === project.id && project.quote_sync_state === 'idle';
   // A managed card whose quote Zoho has not created yet.
