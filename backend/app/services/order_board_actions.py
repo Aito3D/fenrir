@@ -58,21 +58,13 @@ async def _row(db: AsyncSession, salesorder_id: str) -> dict:
     return row
 
 
-def _stored_query(salesorder_id: str):
-    return (
-        select(OrderBoardDoc)
-        .where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id)
-        .execution_options(populate_existing=True)
-    )
-
-
 async def confirm_stored_copy(db: AsyncSession, salesorder_id: str) -> OrderBoardDoc:
     """Entry check of every Books write, inside the writer lock: an order whose last write was never confirmed
     by a re-read, or whose stored copy is pending (that flag survives a restart), is re-read first, and a failure
     here stops the action before anything is sent. Returns the stored order."""
     if sync.zoho_busy():
         raise sync.ZohoBusy(salesorder_id)
-    doc = (await db.execute(_stored_query(salesorder_id))).scalar_one_or_none()
+    doc = (await db.execute(sync._stored_query(salesorder_id))).scalar_one_or_none()
     if doc is None:
         raise OrderNotOnBoard(salesorder_id)
     if doc.pending or sync.needs_refresh(salesorder_id):
@@ -109,7 +101,7 @@ async def _best_effort_refresh(db: AsyncSession, salesorder_id: str, number: str
         logger.warning("Order board: re-read after a write failed for %s (%s)", number, type(e).__name__)
         try:  # the next pass, and the next write, re-read it
             await db.rollback()
-            doc = (await db.execute(_stored_query(salesorder_id))).scalar_one_or_none()
+            doc = (await db.execute(sync._stored_query(salesorder_id))).scalar_one_or_none()
             if doc is not None:
                 doc.pending = True
                 await db.commit()
@@ -163,7 +155,7 @@ def _open_picklists(order: dict) -> list[dict]:
 
 
 async def _stored_order(db: AsyncSession, salesorder_id: str) -> dict:
-    doc = (await db.execute(_stored_query(salesorder_id))).scalar_one_or_none()
+    doc = (await db.execute(sync._stored_query(salesorder_id))).scalar_one_or_none()
     if doc is None or not doc.detail:
         raise OrderNotOnBoard(salesorder_id)
     return doc.detail
@@ -282,6 +274,48 @@ async def picklist_content(db: AsyncSession, salesorder_id: str, picklist_id: st
     }
 
 
+def _parcel_allowed(row: dict, doc_detail: dict, on_list: dict, done: bool) -> dict[str, float]:
+    # Never more than the order still has to box; and for a completed picklist never more than the order
+    # counts as picked and not boxed, so a parcel Books created without telling the picklist is not repeated.
+    unboxed = {line["id"]: line["remaining"] - line["packed_waiting"] for line in row["lines"]}
+    held = picked_waiting(doc_detail)
+    return {
+        line_id: min(units, unboxed.get(line_id, 0.0), held.get(line_id, 0.0) if done else units)
+        for line_id, (units, _, _) in on_list.items()
+    }
+
+
+def _picklist_update_body(picklist: dict, on_list: dict, wanted: dict[str, float]) -> dict:
+    return {
+        "date": picklist.get("date") or date.today().isoformat(),
+        "location_id": picklist.get("location_id"),
+        "group_by": picklist.get("group_by"),
+        # Books removes the rows left out: the picklist becomes exactly what was picked
+        # (a row with units already in a parcel stays, at those units).
+        "line_items": [
+            {
+                "line_item_id": row_id,
+                "quantity_to_be_picked": boxed + wanted.get(line_id, 0.0),
+                "quantity_picked": boxed + wanted.get(line_id, 0.0),
+            }
+            for line_id, (_, boxed, row_id) in on_list.items()
+            if boxed + wanted.get(line_id, 0.0) > 0
+        ],
+    }
+
+
+async def _forget_prep_stamp(db: AsyncSession, salesorder_id: str, number: str) -> None:
+    # The parcel exists in Books: nothing here may turn that into an error.
+    try:
+        await db.execute(
+            delete(OrderBoardDoc).where(OrderBoardDoc.kind == "prep", OrderBoardDoc.zoho_id == salesorder_id)
+        )
+        await db.commit()
+    except Exception as e:
+        logger.warning("Order board: bookkeeping after a parcel failed for %s (%s)", number, type(e).__name__)
+        await db.rollback()
+
+
 async def create_parcel(db: AsyncSession, salesorder_id: str, picklist_id: str, quantities: dict[str, float]) -> str:
     """Box what was picked; returns Books' package number.
 
@@ -296,33 +330,11 @@ async def create_parcel(db: AsyncSession, salesorder_id: str, picklist_id: str, 
         picklist = await _picklist(db, doc.detail or {}, picklist_id)
         on_list = _to_box(picklist, salesorder_id)
         done = picklist.get("status") == "completed"
-        # Never more than the order still has to box; and for a completed picklist never more than the order
-        # counts as picked and not boxed, so a parcel Books created without telling the picklist is not repeated.
-        unboxed = {line["id"]: line["remaining"] - line["packed_waiting"] for line in row["lines"]}
-        held = picked_waiting(doc.detail or {})
-        allowed = {
-            line_id: min(units, unboxed.get(line_id, 0.0), held.get(line_id, 0.0) if done else units)
-            for line_id, (units, _, _) in on_list.items()
-        }
+        allowed = _parcel_allowed(row, doc.detail or {}, on_list, done)
         _within(wanted, allowed, set(on_list))
         try:
             if not done:
-                body = {
-                    "date": picklist.get("date") or date.today().isoformat(),
-                    "location_id": picklist.get("location_id"),
-                    "group_by": picklist.get("group_by"),
-                    # Books removes the rows left out: the picklist becomes exactly what was picked
-                    # (a row with units already in a parcel stays, at those units).
-                    "line_items": [
-                        {
-                            "line_item_id": row_id,
-                            "quantity_to_be_picked": boxed + wanted.get(line_id, 0.0),
-                            "quantity_picked": boxed + wanted.get(line_id, 0.0),
-                        }
-                        for line_id, (_, boxed, row_id) in on_list.items()
-                        if boxed + wanted.get(line_id, 0.0) > 0
-                    ],
-                }
+                body = _picklist_update_body(picklist, on_list, wanted)
                 updated = await _write(
                     salesorder_id,
                     number,
@@ -352,20 +364,14 @@ async def create_parcel(db: AsyncSession, salesorder_id: str, picklist_id: str, 
             await _best_effort_refresh(db, salesorder_id, number)
             raise
         # The parcel exists in Books: nothing below may turn that into an error.
-        try:
-            await db.execute(
-                delete(OrderBoardDoc).where(OrderBoardDoc.kind == "prep", OrderBoardDoc.zoho_id == salesorder_id)
-            )
-            await db.commit()
-        except Exception as e:
-            logger.warning("Order board: bookkeeping after a parcel failed for %s (%s)", number, type(e).__name__)
-            await db.rollback()
+        await _forget_prep_stamp(db, salesorder_id, number)
         await _best_effort_refresh(db, salesorder_id, number)
     return package.get("package_number") or ""
 
 
 # --- Hand-over, invoice, credit --------------------------------------------------------------------------------
 
+_PACKAGE_STATUSES = ("not_shipped", "shipped", "delivered")
 _ORDER_MONEY = ("discount", "shipping_charge", "adjustment")
 _INVOICE_FIELDS = (
     "customer_id",
@@ -584,7 +590,7 @@ async def hand_over(
         if package.get("salesorder_id") != salesorder_id:
             raise OrderActionRefused("unknown_package")
         status = package.get("status")
-        if status not in ("not_shipped", "shipped", "delivered"):
+        if status not in _PACKAGE_STATUSES:
             raise ZohoUpstreamError("unexpected package status")  # never guess "already shipped"
         # A new shipment needs the order on the board; a retry may find it gone after its last parcel shipped.
         if row is None and status == "not_shipped":
@@ -647,7 +653,7 @@ async def handover_preview(db: AsyncSession, salesorder_id: str, package_id: str
     try:
         package = await zoho_service.get_package(db, package_id)
         status = package.get("status")
-        if status not in ("not_shipped", "shipped", "delivered"):
+        if status not in _PACKAGE_STATUSES:
             raise ValueError("unexpected package status")
         boxed: dict[str, float] = {}
         if status == "not_shipped":  # a shipped parcel is already in quantity_shipped

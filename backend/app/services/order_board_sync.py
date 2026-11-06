@@ -148,6 +148,14 @@ async def _find_state(db: AsyncSession) -> OrderBoardDoc | None:
     ).scalar_one_or_none()
 
 
+def _stored_query(salesorder_id: str):
+    return (
+        select(OrderBoardDoc)
+        .where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id)
+        .execution_options(populate_existing=True)
+    )
+
+
 async def _state(db: AsyncSession) -> OrderBoardDoc:
     """The state row, created on first use. Only a sync pass may call this:
     passes run one at a time, so the row cannot be inserted twice. Reads and
@@ -214,13 +222,7 @@ def _busy_on_rate_limit(key: str) -> Iterator[None]:
 
 async def refresh_order(db: AsyncSession, salesorder_id: str) -> None:
     """Re-read one order from Books after a write here, store it and rebuild the board."""
-    doc = (
-        await db.execute(
-            select(OrderBoardDoc)
-            .where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id)
-            .execution_options(populate_existing=True)
-        )
-    ).scalar_one_or_none()
+    doc = (await db.execute(_stored_query(salesorder_id))).scalar_one_or_none()
     if doc is None:
         raise OrderNotStored(salesorder_id)
     fetched = await zoho_service.get_salesorder(db, salesorder_id)
