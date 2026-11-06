@@ -485,6 +485,7 @@ export default {
     trackingCopy: '추적 링크 복사',
     trackingOpen: '추적 링크 열기',
     trackingCopied: '복사됨',
+    trackingCopyFailed: '추적 링크를 복사하지 못했습니다',
     trackingNeedsExternalUrl: '추적 링크를 사용하려면 설정에서 외부 URL을 지정하세요',
     trackingSettingsLink: '설정',
     trackingLabel: '추적 링크',

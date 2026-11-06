@@ -8,6 +8,9 @@ import { server } from '../mocks/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AitoTrackPage } from '../../pages/AitoTrackPage';
+import { resetI18nDeadlineForTests, useI18nSettleDeadline } from '../../hooks/useTrackingLanguage';
+import { renderHook, act } from '@testing-library/react';
+import { I18N_SETTLE_TIMEOUT_MS } from '../../utils/trackingShell';
 import type { AitoTracking } from '../../api/client';
 
 // `ready` (react-i18next's bundle-loaded flag) is only ever false for a real
@@ -88,7 +91,10 @@ function mockTrack(body: AitoTracking | null) {
 // shop's language, so pin it for the file (jsdom's navigator is en-US).
 beforeAll(() => i18n.changeLanguage('fr'));
 afterAll(() => i18n.changeLanguage('en'));
-afterEach(() => setReadyOverride(null));
+afterEach(() => {
+  setReadyOverride(null);
+  resetI18nDeadlineForTests();
+});
 
 describe('AitoTrackPage', () => {
   const originalTitle = document.title;
@@ -386,6 +392,25 @@ describe('AitoTrackPage', () => {
       expect(screen.getByRole('heading', { level: 2, name: 'En fabrication' })).toBeInTheDocument();
       expect(screen.queryByTestId('track-error')).not.toBeInTheDocument();
       expect(document.querySelector('.bg-aito-line\\/60')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // T-057: a deadline already settled on /t must not restart on /t/<code>.
+  it('shows the order at once when the deadline already settled earlier in the page session', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const entry = renderHook(() => useI18nSettleDeadline());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(I18N_SETTLE_TIMEOUT_MS + 1);
+      });
+      entry.unmount();
+      setReadyOverride(false);
+      mockTrack(FIXTURE);
+      renderAt('after-entry');
+      await vi.advanceTimersByTimeAsync(1_000);
+      await waitFor(() => expect(screen.getByTestId('track-content')).toBeInTheDocument());
     } finally {
       vi.useRealTimers();
     }
@@ -813,6 +838,56 @@ describe('AitoTrackPage — online payment', () => {
     expect(screen.getByTestId('track-payment-block')).toBe(block);
   });
 
+  // jsdom lays nothing out: offsetHeight is 0, so the tween's `to === from`
+  // guard returns early. Fake heights: the old block is 100px, the remount 40px.
+  async function flipWithHeights(token: string) {
+    let payment: AitoTracking['payment'] = { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false };
+    server.use(http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ ...FIXTURE, column: 'devis', accepted: true, payment })));
+    const { queryClient } = renderAt(token);
+    await screen.findByTestId('track-payment');
+    const old = screen.getByTestId('track-payment-block');
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this === old ? 100 : 40;
+    });
+    payment = { state: 'paid', url: 'https://secure.osb.pf/pay/abc', deposit: false };
+    await queryClient.refetchQueries({ queryKey: ['aito-track', token] });
+    await waitFor(() => expect(screen.getByTestId('track-payment')).toHaveAttribute('data-state', 'paid'));
+    return screen.getByTestId('track-payment-block');
+  }
+
+  describe('height tween', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('pins the old height while the flip tweens and clears only on the wrapper\'s own height transitionend', async () => {
+      const block = await flipWithHeights('tween');
+      // Re-read: the effect set 100px then 40px; the final inline height is the new one.
+      expect(block.style.overflow).toBe('hidden');
+      expect(block.style.height).toBe('40px');
+      // A child's colour transition bubbling up must not cut the tween short.
+      fireEvent(block, new Event('transitionend'));
+      const colour = Object.assign(new Event('transitionend', { bubbles: true }), { propertyName: 'color' });
+      fireEvent(block, colour);
+      expect(block.style.overflow).toBe('hidden');
+      expect(block.style.height).toBe('40px');
+      const child = block.firstElementChild as HTMLElement;
+      fireEvent(child, Object.assign(new Event('transitionend', { bubbles: true }), { propertyName: 'height' }));
+      expect(block.style.height).toBe('40px');
+      fireEvent(block, Object.assign(new Event('transitionend'), { propertyName: 'height' }));
+      expect(block.style.height).toBe('');
+      expect(block.style.overflow).toBe('');
+    });
+
+    it('does not tween under prefers-reduced-motion', async () => {
+      const mm = vi.spyOn(window, 'matchMedia').mockImplementation(
+        (q: string) => ({ matches: true, media: q, addEventListener: vi.fn(), removeEventListener: vi.fn() }) as unknown as MediaQueryList,
+      );
+      const block = await flipWithHeights('tween-reduced');
+      expect(block.style.overflow).toBe('');
+      expect(block.style.height).toBe('');
+      mm.mockRestore();
+    });
+  });
+
   it('an invoice flipping to paid pops the paid row\'s dot too', async () => {
     let invoice: AitoTracking['invoice'] = 'unpaid';
     server.use(http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ ...FIXTURE, column: 'finish', invoice })));
@@ -1061,4 +1136,29 @@ describe('AitoTrackPage — amounts owed (2026-10-13)', () => {
     expect(await screen.findByTestId('track-payment')).toHaveAttribute('data-state', 'paid');
     expect(screen.queryByTestId('track-balance')).not.toBeInTheDocument();
   });
+  // T-039: English is lazy now, so a locale that stalls past the deadline
+  // used to leave raw 'aito.track.*' keys. Simulate the stall by dropping the
+  // loaded fr bundle; English must stand in, and a bundle arriving later wins.
+  it('renders English, not raw keys, when the locale stalls past the deadline', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const frBundle = i18n.getResourceBundle('fr', 'translation');
+    try {
+      i18n.removeResourceBundle('fr', 'translation');
+      setReadyOverride(false);
+      mockTrack(FIXTURE);
+      renderAt('stalled-en');
+      await vi.advanceTimersByTimeAsync(10_001);
+      await waitFor(() => expect(screen.getByTestId('track-content')).toBeInTheDocument());
+      expect(document.body.textContent).not.toContain('aito.track.');
+      // The stalled locale landing afterwards still wins over the English stand-in.
+      i18n.addResourceBundle('fr', 'translation', frBundle, true, false);
+      expect(i18n.t('aito.track.status.workingTitle')).toBe('En fabrication');
+    } finally {
+      vi.useRealTimers();
+      setReadyOverride(null);
+      i18n.options.fallbackLng = false;
+      i18n.addResourceBundle('fr', 'translation', frBundle, true, true);
+    }
+  });
+
 });

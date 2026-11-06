@@ -9521,6 +9521,7 @@ export default {
     trackingCopy: 'Volglink kopiëren',
     trackingOpen: 'Volglink openen',
     trackingCopied: 'Gekopieerd',
+    trackingCopyFailed: 'De trackinglink kon niet worden gekopieerd',
     trackingNeedsExternalUrl: 'Stel de externe URL in bij Instellingen om volglinks in te schakelen',
     trackingSettingsLink: 'Instellingen',
     trackingLabel: 'Volglink',

@@ -9,8 +9,6 @@
       "persisted": true,
       "stable": true
     },
-    "_url_set": "https://aito3d.example/t/<TOKEN>",
-    "_url_unset": null,
     "_view_log": {
       "1": 2,
       "3": 1
@@ -19,6 +17,7 @@
     "dead_link": {
       "data": {
         "accepted": true,
+        "balance": null,
         "column": "model",
         "done_at": null,
         "due_date": null,
@@ -35,6 +34,7 @@
     "deposit_link_current_not_superseded": {
       "data": {
         "accepted": true,
+        "balance": null,
         "column": "model",
         "done_at": null,
         "due_date": null,
@@ -55,6 +55,7 @@
     "devis_exact": {
       "data": {
         "accepted": false,
+        "balance": null,
         "column": "devis",
         "done_at": null,
         "due_date": "2026-03-20",
@@ -95,6 +96,7 @@
     "devis_hyphen_space": {
       "data": {
         "accepted": false,
+        "balance": null,
         "column": "devis",
         "done_at": null,
         "due_date": "2026-03-20",
@@ -135,6 +137,7 @@
     "devis_lowercase": {
       "data": {
         "accepted": false,
+        "balance": null,
         "column": "devis",
         "done_at": null,
         "due_date": "2026-03-20",
@@ -176,6 +179,7 @@
     "done_no_stage_event_cold_labels": {
       "data": {
         "accepted": true,
+        "balance": null,
         "column": "done",
         "done_at": null,
         "due_date": null,
@@ -195,6 +199,7 @@
     "done_shipped_lta": {
       "data": {
         "accepted": true,
+        "balance": null,
         "column": "done",
         "done_at": "2026-03-01T10:00:00",
         "due_date": null,
@@ -221,6 +226,7 @@
     "finish_paid": {
       "data": {
         "accepted": true,
+        "balance": null,
         "column": "finish",
         "done_at": null,
         "due_date": "2026-03-01",
@@ -240,6 +246,7 @@
     "legacy_token_folded_activity": {
       "data": {
         "accepted": true,
+        "balance": null,
         "column": "model",
         "done_at": null,
         "due_date": "2026-03-01",
@@ -256,6 +263,7 @@
     "link_never_created": {
       "data": {
         "accepted": true,
+        "balance": null,
         "column": "waiting",
         "done_at": null,
         "due_date": null,
@@ -271,6 +279,7 @@
     "print_pending_link": {
       "data": {
         "accepted": true,
+        "balance": null,
         "column": "print",
         "done_at": null,
         "due_date": "2026-03-30",
@@ -298,6 +307,7 @@
     "waiting_lookalikes": {
       "data": {
         "accepted": false,
+        "balance": null,
         "column": "waiting",
         "done_at": null,
         "due_date": null,
@@ -317,6 +327,7 @@
     "waiting_unpaid_no_payment": {
       "data": {
         "accepted": false,
+        "balance": null,
         "column": "waiting",
         "done_at": null,
         "due_date": null,
@@ -338,6 +349,7 @@
     "deposit_link_current_not_superseded": {
       "data": {
         "accepted": true,
+        "balance": null,
         "column": "model",
         "done_at": null,
         "due_date": null,
@@ -357,6 +369,7 @@
     "finish_paid": {
       "data": {
         "accepted": true,
+        "balance": null,
         "column": "finish",
         "done_at": null,
         "due_date": "2026-03-01",
@@ -376,6 +389,7 @@
     "print_pending_link": {
       "data": {
         "accepted": true,
+        "balance": null,
         "column": "print",
         "done_at": null,
         "due_date": "2026-03-30",

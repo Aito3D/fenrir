@@ -9520,6 +9520,7 @@ export default {
     trackingCopy: 'Kopiuj link śledzenia',
     trackingOpen: 'Otwórz link śledzenia',
     trackingCopied: 'Skopiowano',
+    trackingCopyFailed: 'Nie udało się skopiować linku śledzenia',
     trackingNeedsExternalUrl: 'Ustaw zewnętrzny adres URL w Ustawieniach, aby włączyć linki śledzenia',
     trackingSettingsLink: 'Ustawienia',
     trackingLabel: 'Link śledzenia',

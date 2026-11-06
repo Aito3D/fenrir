@@ -5,7 +5,7 @@ import { Check, Copy, ExternalLink } from 'lucide-react';
 import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
-import { copyTextToClipboard } from '../../utils/clipboard';
+import { copyTextToClipboard, writeClipboardFromPromise } from '../../utils/clipboard';
 import { LINK_ICON_BUTTON_CLS, LINK_ICON_CLS, openFetchedLink, useCopiedFlash } from './linkActionHelpers';
 import { CopiedLabel } from './linkActions';
 
@@ -34,26 +34,40 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
 
   const copy = useMutation({
-    mutationFn: () => api.getAitoTrackingLink(project.id),
-    onSuccess: async ({ tracking_url }) => {
+    mutationFn: async ({ link, write }: { link: Promise<string | null>; write: Promise<void> | null }) => {
+      const written = write ? await write.then(() => true, () => false) : false;
+      return { tracking_url: await link, written, attempted: write !== null };
+    },
+    onSuccess: async ({ tracking_url, written, attempted }) => {
       // Both failure paths toast rather than dying quietly (T-090): an empty
       // `tracking_url` means the endpoint minted nothing,
-      // and a false from `copyTextToClipboard` means the browser refused the
-      // write. PaymentBlock's link_pending copy button already toasts on
-      // refusal, so this also keeps the two link rows behaving alike.
+      // and a failed copy means the browser refused the write. PaymentBlock's
+      // link_pending copy button already toasts on refusal, so this also keeps
+      // the two link rows behaving alike.
       if (!tracking_url) {
         showToast(t('common.errorLoading'), 'error');
         return;
       }
-      if (await copyTextToClipboard(tracking_url)) {
+      // `written`: the in-gesture ClipboardItem write already landed; otherwise
+      // fall back to the post-fetch write (plain-HTTP origins, refused writes).
+      if (written || (await copyTextToClipboard(tracking_url))) {
         flashCopied();
       } else {
-        showToast(t('common.errorLoading'), 'error');
+        showToast(attempted ? t('aito.trackingCopyFailed') : t('common.errorLoading'), 'error');
       }
       invalidate();
     },
     onError: () => showToast(t('common.errorLoading'), 'error'),
   });
+
+  // The clipboard write starts here, synchronously in the click, not in the
+  // mutation: the link fetch outlives the user gesture (T-041).
+  const startCopy = () => {
+    const link = api.getAitoTrackingLink(project.id).then((r) => r.tracking_url);
+    const write = writeClipboardFromPromise(link);
+    write?.catch(() => undefined);
+    copy.mutate({ link, write });
+  };
 
   const open = useMutation({
     mutationFn: () =>
@@ -89,7 +103,7 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
           disabled={!configured || copy.isPending}
           title={disabledTitle ?? (copied ? t('aito.trackingCopied') : t('aito.trackingCopy'))}
           aria-label={t('aito.trackingCopy')}
-          onClick={() => copy.mutate()}
+          onClick={startCopy}
           className={LINK_ICON_BUTTON_CLS}
         >
           {copied ? (

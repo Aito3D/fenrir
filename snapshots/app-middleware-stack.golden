@@ -1,8 +1,10 @@
 ### exit: 0
 ### stdout:
-0 BaseHTTPMiddleware
+0 JsonGZipMiddleware
 1 BaseHTTPMiddleware
 2 BaseHTTPMiddleware
+3 BaseHTTPMiddleware
+4 RefusedHeaderResponseMask
 
 ### stderr:
 

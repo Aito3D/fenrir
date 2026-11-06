@@ -6653,6 +6653,10 @@ async def _run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE aito_payment_links ADD COLUMN document_number VARCHAR(64)")
     await _safe_execute(conn, "UPDATE aito_payment_links SET document_number = reference WHERE document_number IS NULL")
 
+    # Migration: remember whether a quote link asked for a deposit (2026-11-05). Nullable, no
+    # default: NULL on legacy rows keeps the page reading today's aito_deposit_pct for them.
+    await _safe_execute(conn, "ALTER TABLE aito_payment_links ADD COLUMN deposit BOOLEAN")
+
     await _backfill_aito_events(conn)
 
     # Migration: heal the 'invoiced' quote statuses the sync worker stored

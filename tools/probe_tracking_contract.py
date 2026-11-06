@@ -1,8 +1,8 @@
 """Golden probe: the tracking feature's wire contract.
 
-Three operations — the public `GET /api/v1/aito/track/{token}` the page reads,
-and the two AITO_UPDATE routes the detail panel's Copy / Regenerate buttons
-call — plus every `AitoTracking*` model the payload is built from. The
+Two operations — the public `GET /api/v1/aito/track/{token}` the page reads,
+and the AITO_UPDATE route the detail panel's Copy button
+calls — plus every `AitoTracking*` model the payload is built from. The
 frontend mirrors these field-for-field in TypeScript (api/client.ts), so a
 renamed field, a widened type, a dropped response code or a security change on
 the public route breaks the page against a real backend while every unit test
@@ -26,7 +26,6 @@ from backend.app.main import app  # noqa: E402
 OPERATIONS = [
     ("/api/v1/aito/track/{token}", "get"),
     ("/api/v1/aito/{project_id}/tracking-link", "get"),
-    ("/api/v1/aito/{project_id}/tracking-token", "post"),
 ]
 
 

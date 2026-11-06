@@ -2,9 +2,24 @@
 ### stdout:
 {
   "models": {
+    "AitoTrackingBalance": {
+      "properties": {
+        "currency": "string",
+        "due": "integer",
+        "paid": "integer",
+        "paid_pct": "integer",
+        "total": "integer"
+      },
+      "required": [
+        "currency",
+        "due",
+        "paid",
+        "paid_pct",
+        "total"
+      ]
+    },
     "AitoTrackingLinkResponse": {
       "properties": {
-        "quote_notes": "string[failed,updated] | null",
         "tracking_url": "string | null"
       },
       "required": [
@@ -26,6 +41,7 @@
     "AitoTrackingResponse": {
       "properties": {
         "accepted": "boolean",
+        "balance": "AitoTrackingBalance | null",
         "column": "string[devis,done,finish,model,print,scan,waiting]",
         "done_at": "string(date-time) | null",
         "due_date": "string(date) | null",
@@ -91,32 +107,6 @@
     },
     "GET /api/v1/aito/{project_id}/tracking-link": {
       "operationId": "get_tracking_link_api_v1_aito__project_id__tracking_link_get",
-      "parameters": [
-        {
-          "in": "header",
-          "name": "X-API-Key",
-          "required": false,
-          "type": "string | null"
-        },
-        {
-          "in": "path",
-          "name": "project_id",
-          "required": true,
-          "type": "integer"
-        }
-      ],
-      "responses": {
-        "200": "AitoTrackingLinkResponse",
-        "422": "HTTPValidationError"
-      },
-      "security": [
-        {
-          "HTTPBearer": []
-        }
-      ]
-    },
-    "POST /api/v1/aito/{project_id}/tracking-token": {
-      "operationId": "regenerate_tracking_token_api_v1_aito__project_id__tracking_token_post",
       "parameters": [
         {
           "in": "header",

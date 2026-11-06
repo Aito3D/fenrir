@@ -485,6 +485,7 @@ export default {
     trackingCopy: 'Takip bağlantısını kopyala',
     trackingOpen: 'Takip bağlantısını aç',
     trackingCopied: 'Kopyalandı',
+    trackingCopyFailed: 'Takip bağlantısı kopyalanamadı',
     trackingNeedsExternalUrl: 'Takip bağlantılarını etkinleştirmek için Ayarlar’da dış URL’yi girin',
     trackingSettingsLink: 'Ayarlar',
     trackingLabel: 'Takip bağlantısı',

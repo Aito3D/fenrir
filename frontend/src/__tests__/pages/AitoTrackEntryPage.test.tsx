@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
-import i18n from '../../i18n';
+import i18n, { LOCALE_LOADERS } from '../../i18n';
+import { I18N_ENGLISH_EXTRA_MS, I18N_SETTLE_TIMEOUT_MS } from '../../utils/trackingShell';
 import { screen, render as rtlRender, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse, delay } from 'msw';
 import { server } from '../mocks/server';
-import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AitoTrackEntryPage } from '../../pages/AitoTrackEntryPage';
+import { resetI18nDeadlineForTests } from '../../hooks/useTrackingLanguage';
 import { normalizeCode } from '../../utils/trackingCode';
 import { api, type AitoTracking } from '../../api/client';
 
@@ -48,6 +50,10 @@ const FIXTURE: AitoTracking = {
   due_date: '2026-09-20', shipping: null, done_at: null,
   invoice: null, payment: null, reference: 'EST-000142', updated_at: '2026-09-03T21:05:00', accepted: false,
 };
+
+function NavigateAway() {
+  return <Link to="/away">leave</Link>;
+}
 
 function Landed() {
   const { token } = useParams();
@@ -168,6 +174,7 @@ afterAll(() => i18n.changeLanguage('en'));
 afterEach(async () => {
   vi.restoreAllMocks();
   setReadyOverride(null);
+  resetI18nDeadlineForTests();
   await i18n.changeLanguage('fr');
 });
 
@@ -208,6 +215,18 @@ describe('AitoTrackEntryPage', () => {
     const caret = row().querySelector('.code-caret-wrap') as HTMLElement;
     expect(caret).toHaveAttribute('data-index', '2');
     expect(caret.style.transform).toContain('calc(2 *');
+  });
+
+  it('pins the caret back to the end when a selection change lands mid-code', async () => {
+    renderEntry();
+    await screen.findByRole('heading', { name: 'Suivre ma commande' });
+    await userEvent.type(input(), 'k7f');
+    const el = input();
+    el.setSelectionRange(0, 1);
+    // React's onSelect rides on key/mouse-up and selectionchange, not the raw select event.
+    fireEvent.keyUp(el);
+    expect(el.selectionStart).toBe(3);
+    expect(el.selectionEnd).toBe(3);
   });
 
   it('checks the code on the sixth character, seeds the cache and opens the page', async () => {
@@ -438,4 +457,101 @@ describe('AitoTrackEntryPage', () => {
       setReadyOverride(null);
     }
   });
+  // T-039: English is lazy now, so a locale that stalls past the deadline
+  // used to leave raw 'aito.track.*' keys. Simulate the stall by dropping the
+  // loaded fr bundle; English must stand in, and a bundle arriving later wins.
+  it('renders English, not raw keys, when the locale stalls past the deadline', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const frBundle = i18n.getResourceBundle('fr', 'translation');
+    try {
+      i18n.removeResourceBundle('fr', 'translation');
+      setReadyOverride(false);
+      renderEntry();
+      await vi.advanceTimersByTimeAsync(10_001);
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Track my order' })).toBeInTheDocument());
+      expect(document.body.textContent).not.toContain('aito.track.');
+      // The stalled locale landing afterwards still wins over the English stand-in.
+      i18n.addResourceBundle('fr', 'translation', frBundle, true, false);
+      expect(i18n.t('aito.track.enterTitle')).toBe('Suivre ma commande');
+    } finally {
+      vi.useRealTimers();
+      setReadyOverride(null);
+      i18n.options.fallbackLng = false;
+      i18n.addResourceBundle('fr', 'translation', frBundle, true, true);
+    }
+  });
+
+  // T-053: English stalls too -> the latch still flips after a bounded extra
+  // wait (raw keys), and the page switches to English when the chunk lands.
+  it('renders after the English extra limit when English stalls too, then switches to English when it lands', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const frBundle = i18n.getResourceBundle('fr', 'translation');
+    const enBundle = (await LOCALE_LOADERS.en()).default;
+    let release: (v: { default: object }) => void = () => {};
+    vi.spyOn(LOCALE_LOADERS, 'en').mockReturnValue(new Promise((r) => (release = r)));
+    try {
+      i18n.removeResourceBundle('fr', 'translation');
+      setReadyOverride(false);
+      renderEntry();
+      await vi.advanceTimersByTimeAsync(I18N_SETTLE_TIMEOUT_MS + 1);
+      expect(document.querySelector('.motion-safe\\:animate-pulse')).toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(I18N_ENGLISH_EXTRA_MS);
+      await waitFor(() => expect(document.querySelector('.motion-safe\\:animate-pulse')).not.toBeInTheDocument());
+      expect(screen.getByRole('heading')).toHaveTextContent('aito.track.enterTitle');
+      await act(async () => {
+        release({ default: enBundle });
+      });
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Track my order' })).toBeInTheDocument());
+    } finally {
+      vi.useRealTimers();
+      setReadyOverride(null);
+      i18n.options.fallbackLng = false;
+      i18n.addResourceBundle('fr', 'translation', frBundle, true, true);
+    }
+  });
+
+  // T-042: a check still out when the client leaves /t must not pull them back
+  // to /t/<code> when the answer finally lands.
+  it('aborts the in-flight check on unmount and never redirects after the client has left', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const held = mockTrackHeld();
+      const signals: (AbortSignal | undefined)[] = [];
+      const real = api.getAitoTracking;
+      vi.spyOn(api, 'getAitoTracking').mockImplementation((token: string, signal?: AbortSignal) => {
+        signals.push(signal);
+        return real(token, signal);
+      });
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      rtlRender(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/t']}>
+            <Routes>
+              <Route path="/t" element={<AitoTrackEntryPage />} />
+              <Route path="/t/:token" element={<Landed />} />
+              <Route path="/away" element={<p>elsewhere</p>} />
+            </Routes>
+            <NavigateAway />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await screen.findByRole('heading', { name: 'Suivre ma commande' });
+      await user.type(input(), 'k7f3xq');
+      await waitFor(() => expect(held.seen).toEqual(['K7F3XQ']));
+      expect(signals[0]?.aborted).toBe(false);
+
+      await user.click(screen.getByRole('link', { name: 'leave' }));
+      expect(await screen.findByText('elsewhere')).toBeInTheDocument();
+      expect(signals[0]?.aborted).toBe(true);
+
+      held.release('K7F3XQ', 200);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(screen.getByText('elsewhere')).toBeInTheDocument();
+      expect(screen.queryByText(/landed on/)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
 });

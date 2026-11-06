@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { MapPin } from 'lucide-react';
 import aito3dLogo from '../../assets/aito3d_logo.png';
 import { SHOP_MAIL_HREF, SHOP_TEL_HREF } from '../../utils/aitoShop';
-import { BRAND, CARD, FOCUS, PAGE, PRESS, delayAt } from '../../utils/trackingShell';
+import { BRAND, CARD, FOCUS, PAGE, PRESS, TERMS_BUTTON, delayAt } from '../../utils/trackingShell';
 import { TRACK_MOTION } from '../../utils/aitoTracking';
 import { AITO3D_SENDER } from '../../utils/aitoSender';
 import type { PanelTrigger } from './TrackingPayment';
@@ -79,6 +79,57 @@ export function TrackingPaidRow({
         <span className="font-semibold text-aito-ink">{title}</span>
       </div>
       <p className="mt-[4px] text-[13px] text-aito-muted">{sub}</p>
+    </div>
+  );
+}
+
+/** The bordered unpaid/overdue card TrackingInvoice and TrackingPayment both
+ *  render: dot, title and sub-line, the `balance` node (already built by the
+ *  caller, since each passes its own props), any per-card `children` (the pay
+ *  link), then the terms button that opens the page's payment panel. Takes
+ *  `data-testid` / `data-state` as named-literal props like TrackingPaidRow. */
+export function TrackingUnpaidCard({
+  'data-testid': testid,
+  'data-state': state,
+  dotClassName,
+  title,
+  sub,
+  balance,
+  terms,
+  children,
+}: {
+  'data-testid': string;
+  'data-state': string;
+  dotClassName: string;
+  title: ReactNode;
+  sub: ReactNode;
+  balance: ReactNode;
+  terms: PanelTrigger;
+  children?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div data-testid={testid} data-state={state}>
+      <div className="flex flex-wrap items-center gap-[16px] rounded-[12px] border border-aito-line px-[16px] py-[16px] text-[15px]">
+        <span className="flex min-w-0 flex-1 items-center gap-[8px]">
+          <span className={`h-[8px] w-[8px] shrink-0 rounded-full ${dotClassName}`} aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold text-aito-ink">{title}</span>
+            <span className="block text-[13px] text-aito-muted">{sub}</span>
+          </span>
+        </span>
+        {balance}
+        {children}
+        <button
+          type="button"
+          aria-expanded={terms.open}
+          aria-controls={terms.controls}
+          onClick={(e) => terms.toggle(e.currentTarget)}
+          className={`${TERMS_BUTTON} ${terms.open ? 'border-aito-cyan/60 bg-aito-cyan/12' : 'border-aito-cyan/35'}`}
+        >
+          {t('aito.track.paymentTermsToggle')}
+        </button>
+      </div>
     </div>
   );
 }

@@ -5,11 +5,11 @@ import { api, ApiError } from '../api/client';
 import { TrackingLanguageSelect } from '../components/aito/TrackingLanguageSelect';
 import { TrackingCodeInput } from '../components/aito/TrackingCodeInput';
 import { CardSkeleton, Footer, Logo } from '../components/aito/trackingShell';
-import { useTrackingLanguage } from '../hooks/useTrackingLanguage';
+import { useI18nSettleDeadline, useTrackingLanguage } from '../hooks/useTrackingLanguage';
 import { ENTRY_MOTION, TRACK_MOTION } from '../utils/aitoTracking';
 import { prefersReducedMotion } from '../utils/motion';
 import { CODE_LENGTH, type CodeState } from '../utils/trackingCode';
-import { CARD, I18N_SETTLE_TIMEOUT_MS, PAGE, delayAt } from '../utils/trackingShell';
+import { CARD, PAGE, delayAt } from '../utils/trackingShell';
 
 type Failure = 'notFound' | 'tooMany' | 'error';
 
@@ -85,26 +85,28 @@ export function AitoTrackEntryPage() {
   // may speak.
   const sequence = useRef(0);
   const leaveTimer = useRef<number | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
   useEffect(
     () => () => {
       if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current);
+      // A client who left /t must not be pulled back by a late answer: abort the
+      // in-flight check and retire its sequence number so it stays silent.
+      sequence.current++;
+      controllerRef.current?.abort();
     },
     [],
   );
   // A stalled locale chunk must not leave the front door stuck on a
-  // skeleton forever: once this fires, the page proceeds with i18next's
-  // bundled English strings even though `ready` never went true.
-  const [i18nTimedOut, setI18nTimedOut] = useState(false);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setI18nTimedOut(true), I18N_SETTLE_TIMEOUT_MS);
-    return () => window.clearTimeout(timer);
-  }, []);
+  // skeleton forever: once this fires, the page proceeds with
+  // English (loaded on demand) even though `ready` never went true.
+  const i18nTimedOut = useI18nSettleDeadline();
 
   const check = async (value: string) => {
     const seq = ++sequence.current;
     setState('checking');
     setFailure(null);
     const controller = new AbortController();
+    controllerRef.current = controller;
     const timeout = window.setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
     try {
       const data = await api.getAitoTracking(value, controller.signal);

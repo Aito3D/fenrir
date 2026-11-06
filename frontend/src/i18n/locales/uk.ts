@@ -486,6 +486,7 @@ export default {
     trackingCopy: 'Скопіювати посилання відстеження',
     trackingOpen: 'Відкрити посилання відстеження',
     trackingCopied: 'Скопійовано',
+    trackingCopyFailed: 'Не вдалося скопіювати посилання для відстеження',
     trackingNeedsExternalUrl: 'Вкажіть зовнішню URL-адресу в налаштуваннях, щоб увімкнути посилання відстеження',
     trackingSettingsLink: 'Налаштування',
     trackingLabel: 'Посилання відстеження',

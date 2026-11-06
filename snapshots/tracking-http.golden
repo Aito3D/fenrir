@@ -9,7 +9,6 @@
   },
   "link_set": {
     "body": {
-      "quote_notes": null,
       "tracking_url": "https://aito3d.example/t/<TOKEN>"
     },
     "headers": {
@@ -20,7 +19,6 @@
   },
   "link_unset": {
     "body": {
-      "quote_notes": null,
       "tracking_url": null
     },
     "headers": {
@@ -51,6 +49,7 @@
   "public_known_hyphen_lowercase": {
     "body": {
       "accepted": true,
+      "balance": null,
       "column": "print",
       "done_at": null,
       "due_date": "2099-01-01",
@@ -91,7 +90,7 @@
   "public_no_token": {
     "status": 404
   },
-  "public_old_token_after_regenerate_status": 404,
+  "public_old_token_after_regenerate_status": 200,
   "public_unknown": {
     "body": {
       "detail": "Lien introuvable"
@@ -104,29 +103,20 @@
   },
   "regenerate": {
     "body": {
-      "quote_notes": null,
-      "tracking_url": "https://aito3d.example/t/<TOKEN>"
+      "detail": "Method Not Allowed"
     },
-    "events": [
-      {
-        "actor_class": "user",
-        "changes": null,
-        "detail": {},
-        "kind": "tracking.regenerated"
-      }
-    ],
+    "events": [],
     "headers": {
-      "cache-control": "no-store",
       "content-type": "application/json"
     },
-    "status": 200,
-    "token_changed": true
+    "status": 405,
+    "token_changed": false
   },
   "regenerate_missing_card": {
     "body": {
-      "detail": "Project not found"
+      "detail": "Method Not Allowed"
     },
-    "status": 404
+    "status": 405
   },
   "spa": {
     "/T": {
