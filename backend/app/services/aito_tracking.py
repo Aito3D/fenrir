@@ -7,6 +7,7 @@ source of truth instead of guessing an origin per caller. Spec:
 docs/superpowers/specs/2026-09-06-aito-tracking-page-design.md
 """
 
+import asyncio
 import json
 import secrets
 from datetime import date, datetime, timedelta
@@ -389,6 +390,9 @@ async def last_activity(db: AsyncSession, project: AitoProject) -> datetime:
 
 
 VIEW_DEDUP_WINDOW = timedelta(minutes=5)
+# The dedupe is check-then-insert with no unique constraint: two opens logged
+# at once (each in its own background session) would both see no row.
+_VIEW_LOG_LOCK = asyncio.Lock()
 
 
 async def log_view(db: AsyncSession, project_id: int, now: datetime) -> None:
@@ -396,20 +400,21 @@ async def log_view(db: AsyncSession, project_id: int, now: datetime) -> None:
     the same project (a refresh, a link-scanner refetch) that lands inside
     the window writes nothing. The route wraps this in a try/except: the log
     must never break the page it measures."""
-    recent = (
-        await db.execute(
-            select(AitoTrackingView.id)
-            .where(
-                AitoTrackingView.project_id == project_id,
-                AitoTrackingView.viewed_at > now - VIEW_DEDUP_WINDOW,
+    async with _VIEW_LOG_LOCK:
+        recent = (
+            await db.execute(
+                select(AitoTrackingView.id)
+                .where(
+                    AitoTrackingView.project_id == project_id,
+                    AitoTrackingView.viewed_at > now - VIEW_DEDUP_WINDOW,
+                )
+                .limit(1)
             )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if recent is not None:
-        return
-    db.add(AitoTrackingView(project_id=project_id, viewed_at=now))
-    await db.commit()
+        ).scalar_one_or_none()
+        if recent is not None:
+            return
+        db.add(AitoTrackingView(project_id=project_id, viewed_at=now))
+        await db.commit()
 
 
 async def purge_tracking_views(db: AsyncSession, older_than: timedelta = timedelta(days=400)) -> int:

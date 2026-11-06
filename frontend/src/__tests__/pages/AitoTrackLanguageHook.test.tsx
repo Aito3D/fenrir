@@ -40,26 +40,34 @@ describe('useTrackingLanguage fallbacks', () => {
 });
 
 describe('useI18nSettleDeadline', () => {
-  it('does not report the deadline when unmounted while English is still loading', async () => {
+  // T-050: result.current never changes after unmount, so the latch is read
+  // through a fresh mount instead.
+  it('latches nothing when English fails after unmount', async () => {
     vi.useFakeTimers();
     vi.spyOn(i18next, 'hasResourceBundle').mockReturnValue(false);
-    vi.spyOn(i18next, 'addResourceBundle').mockImplementation(() => i18next);
-    const fallback = i18next.options.fallbackLng;
-    let release: (v: { default: object }) => void = () => {};
-    vi.spyOn(LOCALE_LOADERS, 'en').mockReturnValue(new Promise((r) => (release = r)));
-    try {
-      const { result, unmount } = renderHook(() => useI18nSettleDeadline());
-      await act(async () => {
-        vi.advanceTimersByTime(I18N_SETTLE_TIMEOUT_MS + 1);
-      });
-      unmount();
-      await act(async () => {
-        release({ default: {} });
-      });
-      expect(result.current).toBe(false);
-    } finally {
-      i18next.options.fallbackLng = fallback;
-    }
+    let fail: (e: Error) => void = () => {};
+    vi.spyOn(LOCALE_LOADERS, 'en').mockReturnValue(new Promise((_r, j) => (fail = j)));
+    const { unmount } = renderHook(() => useI18nSettleDeadline());
+    await act(async () => {
+      vi.advanceTimersByTime(I18N_SETTLE_TIMEOUT_MS + 1);
+    });
+    unmount();
+    await act(async () => {
+      fail(new Error('offline'));
+    });
+    expect(renderHook(() => useI18nSettleDeadline()).result.current).toBe(false);
+  });
+
+  // T-056: a failed English load settles at once, not after the extra limit.
+  it('settles as soon as English fails to load', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(i18next, 'hasResourceBundle').mockReturnValue(false);
+    vi.spyOn(LOCALE_LOADERS, 'en').mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => useI18nSettleDeadline());
+    await act(async () => {
+      vi.advanceTimersByTime(I18N_SETTLE_TIMEOUT_MS + 1);
+    });
+    expect(result.current).toBe(true);
   });
 
   // T-057: the latch is per page session, not per mount.

@@ -1,5 +1,6 @@
 """Tracking token: minting, link building, and the two response fields."""
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -381,6 +382,27 @@ async def test_log_view_dedups_within_5min_but_not_across_projects_or_past_the_w
     # An open 5+ minutes after the first write is outside the window.
     await log_view(db_session, pid, base + timedelta(minutes=5, seconds=1))
     assert (await count(pid)).scalar_one() == 2
+
+
+@pytest.mark.asyncio
+async def test_log_view_waits_for_a_view_already_being_logged(async_client, db_session, monkeypatch):
+    """T-054: two opens logged at once must not both pass the dedupe check,
+    so the check-then-insert runs under one lock."""
+    from backend.app.services import aito_tracking as svc
+
+    pid = await _create(async_client)
+    lock = asyncio.Lock()
+    monkeypatch.setattr(svc, "_VIEW_LOG_LOCK", lock)
+    await lock.acquire()
+    pending = asyncio.create_task(log_view(db_session, pid, datetime(2026, 9, 6, 12, 0, 0)))
+    await asyncio.sleep(0.05)
+    assert not pending.done()
+    lock.release()
+    await pending
+    count = await db_session.execute(
+        text("SELECT COUNT(*) FROM aito_tracking_views WHERE project_id = :pid"), {"pid": pid}
+    )
+    assert count.scalar_one() == 1
 
 
 @pytest.mark.asyncio

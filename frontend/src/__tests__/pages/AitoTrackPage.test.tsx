@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { describe, it, expect, afterEach, beforeEach, beforeAll, afterAll, vi } from 'vitest';
-import i18n from '../../i18n';
+import i18n, { LOCALE_LOADERS } from '../../i18n';
 import { fireEvent, screen, within, waitFor, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
@@ -10,7 +10,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AitoTrackPage } from '../../pages/AitoTrackPage';
 import { resetI18nDeadlineForTests, useI18nSettleDeadline } from '../../hooks/useTrackingLanguage';
 import { renderHook, act } from '@testing-library/react';
-import { I18N_SETTLE_TIMEOUT_MS } from '../../utils/trackingShell';
+import { I18N_ENGLISH_EXTRA_MS, I18N_SETTLE_TIMEOUT_MS } from '../../utils/trackingShell';
 import type { AitoTracking } from '../../api/client';
 
 // `ready` (react-i18next's bundle-loaded flag) is only ever false for a real
@@ -1150,9 +1150,41 @@ describe('AitoTrackPage — amounts owed (2026-10-13)', () => {
       await vi.advanceTimersByTimeAsync(10_001);
       await waitFor(() => expect(screen.getByTestId('track-content')).toBeInTheDocument());
       expect(document.body.textContent).not.toContain('aito.track.');
-      // The stalled locale landing afterwards still wins over the English stand-in.
-      i18n.addResourceBundle('fr', 'translation', frBundle, true, false);
-      expect(i18n.t('aito.track.status.workingTitle')).toBe('En fabrication');
+      // T-051: the stalled locale landing afterwards still wins over the English stand-in.
+      await act(async () => {
+        await i18n.reloadResources('fr');
+      });
+      await waitFor(() => expect(screen.getByText('En fabrication')).toBeInTheDocument());
+    } finally {
+      vi.useRealTimers();
+      setReadyOverride(null);
+      i18n.options.fallbackLng = false;
+      i18n.addResourceBundle('fr', 'translation', frBundle, true, true);
+    }
+  });
+
+  // T-055: the order page's gate, not just the entry page's, must stop
+  // waiting on English after I18N_ENGLISH_EXTRA_MS.
+  it('renders after the English extra limit when English stalls too, then switches to English when it lands', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const frBundle = i18n.getResourceBundle('fr', 'translation');
+    const enBundle = (await LOCALE_LOADERS.en()).default;
+    let release: (v: { default: object }) => void = () => {};
+    vi.spyOn(LOCALE_LOADERS, 'en').mockReturnValue(new Promise((r) => (release = r)));
+    try {
+      i18n.removeResourceBundle('fr', 'translation');
+      setReadyOverride(false);
+      mockTrack(FIXTURE);
+      renderAt('stalled-both');
+      await vi.advanceTimersByTimeAsync(I18N_SETTLE_TIMEOUT_MS + 1);
+      expect(screen.queryByTestId('track-content')).toBeNull();
+      await vi.advanceTimersByTimeAsync(I18N_ENGLISH_EXTRA_MS);
+      await waitFor(() => expect(screen.getByTestId('track-content')).toBeInTheDocument());
+      expect(document.body.textContent).toContain('aito.track.');
+      await act(async () => {
+        release({ default: enBundle });
+      });
+      await waitFor(() => expect(screen.getByText('In production')).toBeInTheDocument());
     } finally {
       vi.useRealTimers();
       setReadyOverride(null);

@@ -3058,3 +3058,21 @@ async def test_repricing_a_pending_link_updates_its_deposit_flag(db_session, fak
     state = await payment_state(db_session, p)
     assert state is not None
     assert state.deposit is (second > 0)
+
+
+@pytest.mark.asyncio
+async def test_a_reprice_heimdall_does_not_apply_keeps_the_old_deposit_flag(db_session, fake):
+    """T-052: when Heimdall answers 2xx but keeps the old (full) amount, the
+    link still asks for the full price, so it must not be relabelled a deposit."""
+    from backend.app.services.aito_tracking import payment_state
+
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
+    fake.stubborn = True
+    await reconcile_project(db_session, p, pct=30, today=TODAY, now=NOW)
+    assert [c[0] for c in fake.calls] == ["create", "patch"]
+    (r,) = await _rows(db_session, p.id)
+    assert r.deposit is False
+    state = await payment_state(db_session, p)
+    assert state is not None
+    assert state.deposit is False

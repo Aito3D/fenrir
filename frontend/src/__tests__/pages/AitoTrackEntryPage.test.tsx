@@ -470,9 +470,11 @@ describe('AitoTrackEntryPage', () => {
       await vi.advanceTimersByTimeAsync(10_001);
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Track my order' })).toBeInTheDocument());
       expect(document.body.textContent).not.toContain('aito.track.');
-      // The stalled locale landing afterwards still wins over the English stand-in.
-      i18n.addResourceBundle('fr', 'translation', frBundle, true, false);
-      expect(i18n.t('aito.track.enterTitle')).toBe('Suivre ma commande');
+      // T-051: the stalled locale landing afterwards still wins over the English stand-in.
+      await act(async () => {
+        await i18n.reloadResources('fr');
+      });
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Suivre ma commande' })).toBeInTheDocument());
     } finally {
       vi.useRealTimers();
       setReadyOverride(null);
