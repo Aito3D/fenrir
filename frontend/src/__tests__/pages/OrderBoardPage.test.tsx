@@ -557,4 +557,37 @@ describe('OrderBoardPage actions', () => {
     await user.click(screen.getByRole('button', { name: 'Hand over the parcel' }));
     expect(screen.getByRole('button', { name: /SO-00412/, expanded: true })).toBeInTheDocument();
   });
+  it('?order= opens and scrolls to that order once; closing it does not reopen it, an unknown id does nothing', async () => {
+    const user = userEvent.setup();
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    window.history.pushState({}, '', '/orders?order=so2');
+    serve(board());
+    const view = render(<OrderBoardPage />);
+    const card = await screen.findByRole('button', { name: /SO-00418/, expanded: true });
+    expect(scroll).toHaveBeenCalled();
+    expect(window.location.search).toBe('?order=so2');
+    await user.click(card);
+    expect(screen.getByRole('button', { name: /SO-00418/, expanded: false })).toBeInTheDocument();
+    view.unmount();
+    window.history.pushState({}, '', '/orders?order=nope');
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    expect(screen.queryAllByRole('button', { expanded: true })).toHaveLength(0);
+    window.history.pushState({}, '', '/');
+  });
+
+  it('a second click on the hand icon reopens a cancelled bar', async () => {
+    const user = userEvent.setup();
+    const waiting = row({ packages: [{ id: 'p9', shipment_id: 's9', number: 'PKG-9', status: 'not_shipped', date: '2026-11-05' }], lines: [line({ packable: 0, packed_waiting: 1 })] });
+    serve(board({ rows: [waiting] }));
+    server.use(http.get('/api/v1/order-board/orders/so1/packages/p9/handover', () => HttpResponse.json({ units: 1, available: false, to_invoice: false, invoice_total: null, manual: false, manual_reason: null, credit: 0, covered_by: [] })));
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    await user.click(screen.getByRole('button', { name: 'Hand over the parcel' }));
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('button', { name: 'Handed to the customer' })).not.toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: 'Hand over the parcel' })[0]); // the row icon; the band has one too
+    expect(await screen.findByRole('button', { name: 'Handed to the customer' })).toBeInTheDocument();
+  });
 });

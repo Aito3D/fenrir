@@ -80,7 +80,7 @@ describe('the row icon', () => {
   });
 
   it('hands the package id down to the panel', () => {
-    render(<OrderCard row={row(waiting)} open onToggle={vi.fn()} startHandover="p9" />);
-    expect(panel).toHaveBeenCalledWith(expect.objectContaining({ startHandover: 'p9' }));
+    render(<OrderCard row={row(waiting)} open onToggle={vi.fn()} startHandover="p9" handoverTick={3} />);
+    expect(panel).toHaveBeenCalledWith(expect.objectContaining({ startHandover: 'p9', handoverTick: 3 }));
   });
 });

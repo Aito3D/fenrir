@@ -25,6 +25,7 @@ export function OrderCard({
   onGoto,
   onHandover,
   startHandover,
+  handoverTick,
 }: {
   row: OrderBoardRow;
   open: boolean;
@@ -35,6 +36,8 @@ export function OrderCard({
   onHandover?: (packageId: string) => void;
   /** A parcel whose hand-over bar the opened panel should show. */
   startHandover?: string;
+  /** Changes with every click on the hand icon. */
+  handoverTick?: number;
 }) {
   const { t } = useTranslation();
   const meta = STATUS_META[row.status];
@@ -103,7 +106,7 @@ export function OrderCard({
         </button>
         {step && <OrderRowAction row={row} step={step} onHandover={onHandover} />}
       </div>
-      {open && <OrderLinesPanel row={row} others={others} onGoto={onGoto} startHandover={startHandover} />}
+      {open && <OrderLinesPanel row={row} others={others} onGoto={onGoto} startHandover={startHandover} handoverTick={handoverTick} />}
     </Card>
   );
 }

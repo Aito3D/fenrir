@@ -1,19 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, CheckCheck, ClipboardList, Package, ReceiptText } from 'lucide-react';
+import { Check, CheckCheck, ClipboardList, HandHelping, Package, ReceiptText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { OrderBoardLine, OrderPanelRow } from '../../api/client';
 import { OrderContactBlock } from './OrderContactBlock';
+import { OrderHandoverBar } from './OrderHandoverBar';
 import { OrderInvoicesBlock } from './OrderInvoicesBlock';
 import { OrderPackBar } from './OrderPackBar';
 import { OrderPaymentBlock } from './OrderPaymentBlock';
 import { OrderPrepActions } from './OrderPrepActions';
 import { OrderQtyStepper } from './OrderQtyStepper';
 import { OrderRefChips } from './OrderRefChips';
-import { formatQty, packableUnits, panelGroups, parseDay } from './orderBoard';
+import { formatQty, packableUnits, panelGroups, parseDay, waitingPackages } from './orderBoard';
 import type { PanelGroup } from './orderBoard';
 import { TONE } from './orderStatus';
 import type { Tone } from './orderStatus';
+import { useOrderActions } from './useOrderActions';
+import { useOrderOutcomeToasts } from './useOrderOutcomeToasts';
 
 const GROUP: Record<PanelGroup['id'], { label: string; icon: LucideIcon; tone: Tone; band: string; name: string; dim: boolean }> = {
   todo: { label: 'orders.group.todo', icon: ClipboardList, tone: 'neutral', band: 'bg-bambu-green/10', name: 'text-white', dim: false },
@@ -40,14 +43,26 @@ export function OrderLinesPanel({
   row,
   others = [],
   onGoto,
+  startHandover,
+  handoverTick,
 }: {
   row: OrderPanelRow;
   others?: { id: string; number: string }[];
   onGoto?: (id: string) => void;
-  /** A parcel whose hand-over bar opens on mount (Task 8 reads it). */
+  /** A parcel whose hand-over bar opens, on mount and whenever `handoverTick` changes. */
   startHandover?: string;
+  /** Changes with every click on the hand icon, so a second click reopens a bar that was cancelled. */
+  handoverTick?: number;
 }) {
   const { t } = useTranslation();
+  const toasts = useOrderOutcomeToasts();
+  const { canUpdate, createInvoice } = useOrderActions({ invoice: { onSuccess: r => toasts.outcome(r.outcome), onError: toasts.failed } });
+  // The parcel whose hand-over bar is open.
+  const [handover, setHandover] = useState<string | null>(null);
+  useEffect(() => {
+    if (startHandover && canUpdate) setHandover(startHandover);
+  }, [startHandover, handoverTick, canUpdate]);
+  const handoverOpen = !!handover && waitingPackages(row).some(p => p.id === handover);
   // Set while the operator is checking quantities for a new parcel: line id -> units.
   const [check, setCheck] = useState<Record<string, number> | null>(null);
   const [pending, setPending] = useState(false);
@@ -104,6 +119,21 @@ export function OrderLinesPanel({
                         </span>
                       )}
                       {chips(group.id)}
+                      {group.id === 'packed' && canUpdate && !handoverOpen && (
+                        <span className="ml-auto flex flex-wrap items-center gap-2">
+                          {waitingPackages(row).map((p, _i, all) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => setHandover(p.id)}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-blue-400 hover:text-blue-400"
+                            >
+                              <HandHelping aria-hidden="true" className="h-3.5 w-3.5" />
+                              {all.length > 1 ? t('orders.handover.openNumber', { number: p.number }) : t('orders.handover.open')}
+                            </button>
+                          ))}
+                        </span>
+                      )}
                       {group.id === 'todo' && packable && !check && (
                         <OrderPrepActions row={row} onCreate={() => setCheck(Object.fromEntries(row.lines.filter(l => l.packable > 0).map(l => [l.id, l.packable])))} />
                       )}
@@ -159,6 +189,13 @@ export function OrderLinesPanel({
                     </tr>
                   );
                 })}
+                {group.id === 'packed' && handoverOpen && handover && (
+                  <tr>
+                    <td colSpan={5} className="pt-2">
+                      <OrderHandoverBar key={handover} row={row} packageId={handover} onClose={() => setHandover(null)} />
+                    </td>
+                  </tr>
+                )}
                 {group.id === 'todo' && check && (
                   <tr>
                     <td colSpan={5} className="pt-2">
@@ -175,7 +212,11 @@ export function OrderLinesPanel({
       <div className="space-y-3 lg:self-start">
         <OrderContactBlock contact={row.contact} orderNumber={row.number} others={others} onGoto={onGoto} />
         {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} />}
-        <OrderInvoicesBlock row={row} />
+        <OrderInvoicesBlock
+          row={row}
+          busy={createInvoice.isPending}
+          onCreateInvoice={canUpdate ? () => !createInvoice.isPending && createInvoice.mutate({ id: row.id, applyCredit: true }) : undefined}
+        />
       </div>
     </div>
   );

@@ -11,7 +11,7 @@ import { daysPastDue, parseDay } from './orderBoard';
 import { TONE } from './orderStatus';
 
 /** The invoices of one order, one entry each, and the way to invoice what was handed over without one. */
-export function OrderInvoicesBlock({ row, onCreateInvoice }: { row: Pick<OrderBoardRow, 'currency' | 'payment' | 'unbilled_units'>; onCreateInvoice?: () => void }) {
+export function OrderInvoicesBlock({ row, onCreateInvoice, busy = false }: { row: Pick<OrderBoardRow, 'currency' | 'payment' | 'unbilled_units'>; onCreateInvoice?: () => void; busy?: boolean }) {
   const { t } = useTranslation();
   const money = (n: number) => formatMoney(n, row.currency);
   const shortDay = (day: string) => parseDay(day).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
@@ -39,7 +39,7 @@ export function OrderInvoicesBlock({ row, onCreateInvoice }: { row: Pick<OrderBo
       {row.unbilled_units > 0 && onCreateInvoice && (
         <div className={`mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md px-2.5 py-1.5 ${TONE.warning.soft}`}>
           <span className={TONE.warning.text}>{t('orders.inv.unbilled', { units: t('orders.units', { count: row.unbilled_units }) })}</span>
-          <button type="button" onClick={onCreateInvoice} className="rounded-md bg-bambu-green px-2.5 py-1 font-semibold text-black hover:bg-bambu-green/90">
+          <button type="button" disabled={busy} onClick={onCreateInvoice} className="rounded-md bg-bambu-green px-2.5 py-1 font-semibold text-black hover:bg-bambu-green/90 disabled:opacity-50">
             {t('orders.inv.create')}
           </button>
         </div>

@@ -12,11 +12,13 @@ export function OrderPackBar({ row, qty, onClose, onBusy }: { row: OrderPanelRow
   const { t } = useTranslation();
   const { showToast } = useToast();
   const { createParcel } = useOrderActions({
-    onSuccess: r => {
-      showToast(t('orders.parcel.created', { number: r.package_number }));
-      onClose();
+    parcel: {
+      onSuccess: r => {
+        showToast(t('orders.parcel.created', { number: r.package_number }));
+        onClose();
+      },
+      onError: e => showToast(t('orders.parcel.failed', { reason: reason(e) }), 'error'),
     },
-    onError: e => showToast(t('orders.parcel.failed', { reason: reason(e) }), 'error'),
   });
   const busy = createParcel.isPending;
   useEffect(() => onBusy(busy), [busy, onBusy]);

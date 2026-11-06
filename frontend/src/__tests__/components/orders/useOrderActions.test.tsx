@@ -45,6 +45,24 @@ describe('useOrderActions', () => {
     expect(client.getQueryData(['order-board'])).toBeUndefined();
   });
 
+  it('the callbacks of a hand-over and of an invoice run with the answer or the error', async () => {
+    server.use(
+      http.post('*/order-board/orders/so1/packages/p1/handover', () => HttpResponse.json({ board, outcome })),
+      http.post('*/order-board/orders/so1/invoice', () => HttpResponse.json({ detail: 'x' }, { status: 503 })),
+    );
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const done = vi.fn();
+    const failed = vi.fn();
+    const { result } = renderHook(() => useOrderActions({ handOver: { onSuccess: done }, invoice: { onError: failed } }), { wrapper });
+    await act(async () => {
+      await result.current.handOver.mutateAsync({ id: 'so1', packageId: 'p1', mode: 'delivery', applyCredit: false });
+      await result.current.createInvoice.mutateAsync({ id: 'so1', applyCredit: true }).catch(() => undefined);
+    });
+    expect(done).toHaveBeenCalledWith({ board, outcome }, { id: 'so1', packageId: 'p1', mode: 'delivery', applyCredit: false });
+    expect(failed).toHaveBeenCalledTimes(1);
+  });
+
   it('the sheet fetcher returns the PDF and refetches the board once printed', async () => {
     server.use(http.post('*/order-board/orders/so1/prep-sheet', () => new HttpResponse(new Blob(['%PDF-']), { headers: { 'Content-Type': 'application/pdf' } })));
     const { client, result } = setup();

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Archive, Box, Loader2, PackageCheck, Plug, PowerOff, RefreshCw, Search, SearchX } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -95,8 +96,10 @@ export function OrderBoardPage() {
   const [view, setView] = useState<'open' | 'finished'>('open');
   const [payFilter, setPayFilter] = useState<PayFilter>('all');
   const [finishedShown, setFinishedShown] = useState(FINISHED_PAGE);
-  const [handover, setHandover] = useState<{ id: string; packageId: string } | null>(null);
+  const [handover, setHandover] = useState<{ id: string; packageId: string; tick: number } | null>(null);
   const scrollTarget = useRef<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const deepLinked = useRef(false);
 
   const finishedView = view === 'finished';
   const finishedQuery = useQuery({
@@ -141,14 +144,24 @@ export function OrderBoardPage() {
     setOpen(prev => new Set(prev).add(id));
     scrollTarget.current = id;
   };
-  const toggleOpen = (id: string) =>
+  const toggleOpen = (id: string) => {
+    // A closed order forgets its hand-over request, so opening it again does not bring the bar back.
+    setHandover(h => (h?.id === id ? null : h));
     setOpen(prev => {
       const next = new Set(prev);
       if (!next.delete(id)) next.add(id);
       return next;
     });
+  };
 
   const ready = isBoardReady(data);
+  // A `?order=` link opens that order once the board is ready; the parameter stays in the URL, and an unknown id does nothing.
+  useEffect(() => {
+    const id = searchParams.get('order');
+    if (deepLinked.current || !id || !ready) return;
+    deepLinked.current = true;
+    if (data?.rows.some(r => r.id === id)) goto(id);
+  });
   const all = ready && data ? data.rows : [];
   // Tiles follow the brand toggle only; chips add the search; the list adds the status.
   const branded = byBrand(all, coreOnly);
@@ -278,9 +291,10 @@ export function OrderBoardPage() {
         onGoto={goto}
         onHandover={packageId => {
           setOpen(prev => new Set(prev).add(row.id));
-          setHandover({ id: row.id, packageId });
+          setHandover(h => ({ id: row.id, packageId, tick: (h?.tick ?? 0) + 1 }));
         }}
         startHandover={handover?.id === row.id ? handover.packageId : undefined}
+        handoverTick={handover?.id === row.id ? handover.tick : undefined}
       />
     ));
   }
