@@ -1,12 +1,16 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, CheckCheck, ClipboardList, Package, ReceiptText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { OrderBoardLine, OrderPanelRow } from '../../api/client';
 import { OrderContactBlock } from './OrderContactBlock';
 import { OrderInvoicesBlock } from './OrderInvoicesBlock';
+import { OrderPackBar } from './OrderPackBar';
 import { OrderPaymentBlock } from './OrderPaymentBlock';
+import { OrderPrepActions } from './OrderPrepActions';
+import { OrderQtyStepper } from './OrderQtyStepper';
 import { OrderRefChips } from './OrderRefChips';
-import { formatQty, panelGroups, parseDay } from './orderBoard';
+import { formatQty, packableUnits, panelGroups, parseDay } from './orderBoard';
 import type { PanelGroup } from './orderBoard';
 import { TONE } from './orderStatus';
 import type { Tone } from './orderStatus';
@@ -40,8 +44,13 @@ export function OrderLinesPanel({
   row: OrderPanelRow;
   others?: { id: string; number: string }[];
   onGoto?: (id: string) => void;
+  /** A parcel whose hand-over bar opens on mount (Task 8 reads it). */
+  startHandover?: string;
 }) {
   const { t } = useTranslation();
+  // Set while the operator is checking quantities for a new parcel: line id -> units.
+  const [check, setCheck] = useState<Record<string, number> | null>(null);
+  const packable = packableUnits(row) > 0;
   const shortDay = (day: string) => parseDay(day).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const chips = (group: PanelGroup['id']) =>
     row.packages
@@ -72,7 +81,7 @@ export function OrderLinesPanel({
           <thead className="bg-bambu-dark text-left lg:sticky lg:top-0 lg:z-10 text-[11px] uppercase tracking-wide text-bambu-gray">
             <tr>
               <th className="py-1.5 font-medium">{t('orders.col.product')}</th>
-              <th className="text-right font-medium">{t('orders.col.qty')}</th>
+              <th className="text-right font-medium">{t(check ? 'orders.parcel.inParcel' : 'orders.col.qty')}</th>
               <th className="text-right font-medium">{t('orders.col.available')}</th>
               <th className="text-right font-medium">{t('orders.col.short')}</th>
               <th className="pl-4 font-medium">{t('orders.col.state')}</th>
@@ -94,6 +103,9 @@ export function OrderLinesPanel({
                         </span>
                       )}
                       {chips(group.id)}
+                      {group.id === 'todo' && packable && !check && (
+                        <OrderPrepActions row={row} onCreate={() => setCheck(Object.fromEntries(row.lines.filter(l => l.packable > 0).map(l => [l.id, l.packable])))} />
+                      )}
                     </div>
                   </th>
                 </tr>
@@ -101,13 +113,17 @@ export function OrderLinesPanel({
                   const todo = group.id === 'todo';
                   const short = todo && (line.state === 'backorder' || line.state === 'to_order');
                   return (
-                    <tr key={line.id} className={index ? 'border-t border-bambu-dark-tertiary/60' : ''}>
+                    <tr key={line.id} className={`${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${todo && check && line.packable <= 0 ? 'opacity-40' : ''}`}>
                       <td className={`border-l-2 py-2 pl-4 pr-3 ${TONE[meta.tone].rail}`}>
                         <div className="text-white">{line.name}</div>
                         {line.sku && <div className="font-mono text-xs text-bambu-gray">{line.sku}</div>}
                       </td>
                       <td className="whitespace-nowrap text-right tabular-nums text-white">
-                        {formatQty(qty)}
+                        {todo && check && line.packable > 0 ? (
+                          <OrderQtyStepper id={line.id} value={check[line.id] ?? 0} max={line.packable} disabled={false} onChange={v => setCheck({ ...check, [line.id]: v })} />
+                        ) : (
+                          formatQty(qty)
+                        )}
                         {ofQty !== null && <span className="ml-1 text-xs text-bambu-gray">{t('orders.ofOrdered', { n: formatQty(ofQty) })}</span>}
                         {todo && line.invoiced > 0 && (
                           <span className={`ml-1.5 rounded px-1.5 py-0.5 text-[10px] ${TONE.info.soft} ${TONE.info.text}`}>{t('orders.line.invoiced')}</span>
@@ -142,6 +158,13 @@ export function OrderLinesPanel({
                     </tr>
                   );
                 })}
+                {group.id === 'todo' && check && (
+                  <tr>
+                    <td colSpan={5} className="pt-2">
+                      <OrderPackBar row={row} qty={check} onClose={() => setCheck(null)} />
+                    </td>
+                  </tr>
+                )}
               </tbody>
             );
           })}

@@ -31,6 +31,8 @@ vi.mock('../../contexts/AuthContext', async (importOriginal) => {
   return { ...actual, useAuth: () => mockUseAuth };
 });
 
+vi.mock('../../components/aito/usePrintBlob', () => ({ usePrintBlob: () => ({ print: (produce: () => Promise<Blob>) => produce(), busy: false }) }));
+
 import { render } from '../utils';
 import { OrderBoardPage } from '../../pages/OrderBoardPage';
 
@@ -527,5 +529,32 @@ describe('OrderBoardPage', () => {
     expect(screen.queryByRole('button', { name: /^Age/ })).not.toBeInTheDocument();
     expect(tile(/^In progress 2/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Overdue/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('OrderBoardPage actions', () => {
+  it('the print icon fetches the sheet and refetches the board', async () => {
+    const user = userEvent.setup();
+    let boards = 0;
+    let sheets = 0;
+    server.use(
+      http.get('/api/v1/order-board', () => { boards++; return HttpResponse.json(board({ rows: [row()] })); }),
+      http.post('/api/v1/order-board/orders/so1/prep-sheet', () => { sheets++; return new HttpResponse('%PDF'); }),
+    );
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    const before = boards;
+    await user.click(screen.getByRole('button', { name: 'Prep sheet' }));
+    await waitFor(() => expect(sheets).toBe(1));
+    await waitFor(() => expect(boards).toBeGreaterThan(before));
+  });
+
+  it('the hand icon opens its order', async () => {
+    const user = userEvent.setup();
+    serve(board({ rows: [row({ packages: [{ id: 'p9', shipment_id: 's9', number: 'PKG-9', status: 'not_shipped', date: '2026-11-05' }], lines: [line({ packable: 0, packed_waiting: 1 })] })] }));
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    await user.click(screen.getByRole('button', { name: 'Hand over the parcel' }));
+    expect(screen.getByRole('button', { name: /SO-00412/, expanded: true })).toBeInTheDocument();
   });
 });

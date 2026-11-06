@@ -3,8 +3,10 @@ import { ChevronDown } from 'lucide-react';
 import type { OrderBoardRow } from '../../api/client';
 import { formatMoney } from '../../utils/pricing';
 import { Card } from '../Card';
-import { ageTone, formatQty, parseDay } from './orderBoard';
+import { useAuth } from '../../contexts/AuthContext';
+import { ageTone, formatQty, nextStep, parseDay } from './orderBoard';
 import { OrderLinesPanel } from './OrderLinesPanel';
+import { OrderRowAction } from './OrderRowAction';
 import { PaymentPill } from './PaymentPill';
 import { ROW_GRID, STATUS_META, TONE } from './orderStatus';
 
@@ -21,12 +23,18 @@ export function OrderCard({
   onToggle,
   others,
   onGoto,
+  onHandover,
+  startHandover,
 }: {
   row: OrderBoardRow;
   open: boolean;
   onToggle: () => void;
   others?: { id: string; number: string }[];
   onGoto?: (id: string) => void;
+  /** The hand icon: open this order for that parcel. */
+  onHandover?: (packageId: string) => void;
+  /** A parcel whose hand-over bar the opened panel should show. */
+  startHandover?: string;
 }) {
   const { t } = useTranslation();
   const meta = STATUS_META[row.status];
@@ -34,15 +42,19 @@ export function OrderCard({
   const Icon = meta.icon;
   const units = row.units;
   const width = (n: number) => ({ width: units.total > 0 ? `${(n / units.total) * 100}%` : '0%' });
+  const { hasPermission } = useAuth();
+  const next = nextStep(row);
+  const step = next === 'print' || (next === 'handover' && hasPermission('orders:update')) ? next : null;
   const age = t('orders.age', { n: row.age_days });
 
   return (
     <Card id={`order-${row.id}`} className="overflow-clip">
+      <div className="relative">
       <button
         type="button"
         aria-expanded={open}
         onClick={onToggle}
-        className={`w-full px-4 py-3 text-left hover:bg-bambu-dark-tertiary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green ${ROW_GRID}`}
+        className={`w-full px-4 py-3 text-left hover:bg-bambu-dark-tertiary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green ${ROW_GRID} ${step ? 'pb-12 lg:pb-3' : ''}`}
       >
         <span data-testid="order-number" className="font-mono text-sm font-semibold text-white [grid-area:num] lg:[grid-area:auto]">
           {row.number}
@@ -52,6 +64,7 @@ export function OrderCard({
           <span className="block text-xs text-bambu-gray">
             {parseDay(row.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
             <span className="lg:hidden"> · {age}</span>
+            {row.prep && <span className={TONE.success.text}> · {t('orders.prep.inProgress')}</span>}
           </span>
         </span>
         <span className={`hidden justify-self-start rounded-md px-2 py-0.5 text-xs lg:inline-block ${AGE[ageTone(row.age_days)]}`}>{age}</span>
@@ -86,9 +99,11 @@ export function OrderCard({
         <span data-testid="order-value" className={`text-right text-sm tabular-nums [grid-area:value] lg:[grid-area:auto] ${row.total === null ? 'text-bambu-gray' : 'text-white'}`}>
           {row.total === null ? '–' : formatMoney(row.total, row.currency)}
         </span>
-        <ChevronDown aria-hidden="true" className={`h-4 w-4 text-bambu-gray transition-transform [grid-area:chev] lg:[grid-area:auto] ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown aria-hidden="true" className={`h-4 w-4 text-bambu-gray transition-transform [grid-area:chev] lg:[grid-area:auto] lg:justify-self-end ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && <OrderLinesPanel row={row} others={others} onGoto={onGoto} />}
+      {step && <OrderRowAction row={row} step={step} onHandover={onHandover} />}
+      </div>
+      {open && <OrderLinesPanel row={row} others={others} onGoto={onGoto} startHandover={startHandover} />}
     </Card>
   );
 }

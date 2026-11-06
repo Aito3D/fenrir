@@ -95,6 +95,7 @@ export function OrderBoardPage() {
   const [view, setView] = useState<'open' | 'finished'>('open');
   const [payFilter, setPayFilter] = useState<PayFilter>('all');
   const [finishedShown, setFinishedShown] = useState(FINISHED_PAGE);
+  const [handover, setHandover] = useState<{ id: string; packageId: string } | null>(null);
   const scrollTarget = useRef<string | null>(null);
 
   const finishedView = view === 'finished';
@@ -275,6 +276,11 @@ export function OrderBoardPage() {
         onToggle={() => toggleOpen(row.id)}
         others={otherOpenOrders(all, row).map(o => ({ id: o.id, number: o.number }))}
         onGoto={goto}
+        onHandover={packageId => {
+          setOpen(prev => new Set(prev).add(row.id));
+          setHandover({ id: row.id, packageId });
+        }}
+        startHandover={handover?.id === row.id ? handover.packageId : undefined}
       />
     ));
   }

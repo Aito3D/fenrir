@@ -65,7 +65,7 @@ export function FinishedOrderCard({ row, open, onToggle }: { row: FinishedOrderR
         <span data-testid="order-value" className={`text-right text-sm tabular-nums [grid-area:value] lg:[grid-area:auto] ${row.total === null ? 'text-bambu-gray' : 'text-white'}`}>
           {row.total === null ? '–' : formatMoney(row.total, row.currency)}
         </span>
-        <ChevronDown aria-hidden="true" className={`h-4 w-4 text-bambu-gray transition-transform [grid-area:chev] lg:[grid-area:auto] ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown aria-hidden="true" className={`h-4 w-4 text-bambu-gray transition-transform [grid-area:chev] lg:[grid-area:auto] lg:justify-self-end ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && detail.data && <OrderLinesPanel row={detail.data} />}
       {open && detail.isError && (
