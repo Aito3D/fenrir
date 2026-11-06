@@ -304,6 +304,46 @@ async def test_content_lists_what_is_left_to_box(db_session, parcels):
     assert e.value.args[0] == "unknown_picklist"
 
 
+@pytest.mark.asyncio
+async def test_busy_zoho_gives_no_picklist_preview(db_session, parcels):
+    await _board(db_session, parcels, order(1))
+    parcels.meter = sync.CALL_CEILING
+    reads = parcels.calls["detail"]
+    with pytest.raises(sync.ZohoBusy):
+        await actions.picklist_preview(db_session, "so1")
+    assert parcels.calls["detail"] == reads
+    assert parcels.writes == []
+
+
+@pytest.mark.asyncio
+async def test_a_picklist_gone_from_books_is_unknown(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1))
+    pl = await _pick(db_session, "so1", {"l1": 1})
+
+    async def gone(db, picklist_id):
+        raise ZohoNotFound("no such picklist")
+
+    monkeypatch.setattr(zoho_service, "get_picklist", gone)
+    with pytest.raises(actions.OrderActionRefused) as e:
+        await actions.picklist_content(db_session, "so1", pl)
+    assert e.value.args[0] == "unknown_picklist"
+    assert sync._rate_limited_until == 0.0
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_picklist_read_is_busy_and_opens_the_window(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1))
+    pl = await _pick(db_session, "so1", {"l1": 1})
+
+    async def limited(db, picklist_id):
+        raise ZohoRateLimited("429", retry_after=30)
+
+    monkeypatch.setattr(zoho_service, "get_picklist", limited)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.picklist_content(db_session, "so1", pl)
+    assert sync._rate_limited_until > time.monotonic() + 20
+
+
 # --- Parcel ------------------------------------------------------------------------------------------------------
 
 
@@ -1717,3 +1757,26 @@ async def test_a_new_shipment_needs_the_row_still_on_the_board(db_session, books
         await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
     assert _names(books) == ["get_package"]  # refused after the look, before any write
     assert books.effects == Counter()
+
+
+@pytest.mark.asyncio
+async def test_busy_zoho_makes_the_preview_unavailable_without_a_call(db_session, books):
+    await _ready(db_session, books)
+    books.meter = sync.CALL_CEILING
+    preview = await actions.handover_preview(db_session, "so1", "pk1")
+    assert (preview["units"], preview["available"], preview["to_invoice"], preview["manual"]) == (
+        2.0,
+        False,
+        False,
+        False,
+    )
+    assert books.log == []
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_prefill_in_the_preview_opens_the_window_and_leaves_it_unavailable(db_session, books):
+    await _ready(db_session, books)
+    books.errors["invoice_prefill"] = ZohoRateLimited("429", retry_after=30)
+    preview = await actions.handover_preview(db_session, "so1", "pk1")
+    assert (preview["available"], preview["to_invoice"]) == (False, False)
+    assert sync._rate_limited_until > time.monotonic() + 20
