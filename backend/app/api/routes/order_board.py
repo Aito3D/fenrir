@@ -25,6 +25,7 @@ from backend.app.models.user import User
 from backend.app.services import aito_tracking, order_board_actions, order_board_sync
 from backend.app.services.order_board_prep_sheet import render_prep_sheet
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
+from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
@@ -161,6 +162,18 @@ async def _run(call: Awaitable[_T]) -> _T:
         raise HTTPException(status_code=502, detail=str(e)[:300]) from None  # Books' own reason, for the operator
 
 
+def _pdf(content: bytes, filename: str) -> Response:
+    """Inline PDF with a fixed name; it holds customer data, so no cache keeps it."""
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": build_content_disposition(filename, disposition="inline"),
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 def _logged(user: User | None, salesorder_id: str, action: str) -> None:
     logger.info("Order board: user=%s order=%s action=%s", user.id if user else "-", salesorder_id, action)
 
@@ -178,7 +191,7 @@ async def print_prep_sheet(
         row, printed_at=datetime.now(), order_url=f"{base}/orders?order={salesorder_id}" if base else None
     )
     _logged(user, salesorder_id, "prep_sheet")
-    return Response(content=pdf, media_type="application/pdf")
+    return _pdf(pdf, "bon-de-preparation.pdf")
 
 
 @router.post("/orders/{salesorder_id}/packages")
@@ -248,4 +261,4 @@ async def get_invoice_pdf(
     if not any(inv.get("invoice_id") == invoice_id for d in details if d for inv in (d.get("invoices") or [])):
         raise HTTPException(status_code=404, detail="Invoice not found.")
     pdf = await _run(zoho_service.get_invoice_pdf(db, invoice_id))
-    return Response(content=pdf, media_type="application/pdf")
+    return _pdf(pdf, "facture.pdf")

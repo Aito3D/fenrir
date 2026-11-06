@@ -187,9 +187,9 @@ async def test_new_routes_need_their_permission(async_client, tokens, method, ur
     for who in denied:
         r = await getattr(async_client, method)(url, headers=tokens[who], **kwargs)
         assert r.status_code == 403, f"{method.upper()} {url} as {who}: {r.status_code}"
-    if not writes:  # allowed through for orders:read: anything but 403 (404 here: nothing stored)
+    if not writes:  # allowed through for orders:read: nothing is stored, so the order or invoice is unknown
         r = await getattr(async_client, method)(url, headers=tokens["read"], **kwargs)
-        assert r.status_code not in (401, 403)
+        assert r.status_code == 404, f"{method.upper()} {url}: {r.status_code}"
 
 
 @pytest.mark.asyncio
@@ -208,6 +208,11 @@ async def test_prep_sheet_is_a_pdf_and_stamps_with_the_username(async_client, to
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/pdf"
     assert r.content.startswith(b"%PDF-")
+    assert (
+        r.headers["content-disposition"].startswith("inline;")
+        and "bon-de-preparation.pdf" in r.headers["content-disposition"]
+    )
+    assert r.headers["cache-control"] == "no-store"
     assert seen == {"id": "so1", "by": "orders-read"}
 
 
@@ -280,6 +285,8 @@ async def test_handover_and_invoice_return_board_and_outcome(async_client, token
         ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": -1}]}),
         ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": 1}, {"line_id": "l1", "quantity": 2}]}),
         ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": 1}] * 201}),
+        ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": "inf"}]}),
+        ("orders/so1/packages", {"lines": [{"line_id": "l1", "quantity": "nan"}]}),
         ("orders/so1/packages/p1/handover", {"mode": "teleport", "apply_credit": False}),
         ("orders/so1/packages/p1/handover", {"mode": "pickup"}),
         ("orders/so1/invoice", {}),
@@ -349,3 +356,50 @@ async def test_invoice_pdf_only_for_an_invoice_of_a_stored_order(async_client, t
     r = await async_client.get(f"{BASE}/invoices/inv1/pdf", headers=tokens["read"])
     assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
     assert r.content.startswith(b"%PDF-") and fetched == ["inv1"]
+    assert r.headers["content-disposition"].startswith("inline;") and "facture.pdf" in r.headers["content-disposition"]
+    assert r.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_invoice_pdf_errors_map_to_statuses(async_client, tokens, db_session, monkeypatch):
+    from backend.app.models.order_board_doc import OrderBoardDoc
+    from backend.app.services.zoho import (
+        ZohoNotConfiguredError,
+        ZohoRateLimited,
+        ZohoRequestRejected,
+        ZohoUpstreamError,
+        zoho_service,
+    )
+
+    db_session.add(
+        OrderBoardDoc(kind="salesorder", zoho_id="so1", header={}, detail={"invoices": [{"invoice_id": "inv1"}]})
+    )
+    await db_session.commit()
+    cases = [
+        (order_board_sync.ZohoBusy("x"), 503, "Zoho is busy, try again shortly."),
+        (ZohoNotConfiguredError("x"), 503, "Zoho Books is not connected."),
+        (ZohoRequestRejected("Books says no"), 502, "Books says no"),
+        (ZohoUpstreamError("x" * 500), 502, "x" * 300),
+        (ZohoRateLimited("slow down"), 502, "slow down"),
+    ]
+    for exc, status, detail in cases:
+
+        async def boom(db, invoice_id, exc=exc):
+            raise exc
+
+        monkeypatch.setattr(zoho_service, "get_invoice_pdf", boom)
+        r = await async_client.get(f"{BASE}/invoices/inv1/pdf", headers=tokens["read"])
+        assert (r.status_code, r.json()["detail"]) == (status, detail), type(exc).__name__
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_write_is_a_502_with_the_reason(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+    from backend.app.services.zoho import ZohoRateLimited
+
+    async def boom(*a, **k):
+        raise ZohoRateLimited("slow down")
+
+    monkeypatch.setattr(actions, "create_parcel", boom)
+    r = await async_client.post(f"{BASE}/orders/so1/packages", headers=tokens["both"], json=PARCEL)
+    assert (r.status_code, r.json()["detail"]) == (502, "slow down")
