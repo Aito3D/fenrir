@@ -1865,6 +1865,7 @@ os.environ.get("AITO_TRACK_COLLAPSED_PROXY"
 1 export function blockVisible
 1 export function BoardCardActions
 1 export function BoardColumn
+1 export function BoardColumnBody
 1 export function BoardSearch
 1 export function buildBoard
 1 export function buildFallbackSummary
@@ -2000,6 +2001,7 @@ os.environ.get("AITO_TRACK_COLLAPSED_PROXY"
 1 export function MobileColumnSheet
 1 export function MoneyScreen
 1 export function monthGroupKey
+1 export function moreMenuViewItems
 1 export function needsClientContact
 1 export function netCost
 1 export function NewContactForm
@@ -2147,6 +2149,7 @@ os.environ.get("AITO_TRACK_COLLAPSED_PROXY"
 1 export function useCelebration
 1 export function useClientQuoteRating
 1 export function useClientRating
+1 export function useColumnSummaries
 1 export function useContactFields
 1 export function useCopiedFlash
 1 export function useDescriptionEditor

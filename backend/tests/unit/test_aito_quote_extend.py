@@ -98,3 +98,43 @@ async def test_extend_reconciles_the_payment_link_right_away(async_client, monke
 
     assert (await async_client.post(f"/api/v1/aito/{pid}/quote-extend")).status_code == 200
     assert reconciled == [{"only_project_id": pid, "force": True}]
+
+
+@pytest.mark.asyncio
+async def test_extend_does_not_wait_for_a_busy_background_pass(async_client, monkeypatch):
+    """T-585: a pass holding the payment-link lock must not stall the response."""
+    from backend.app.api.routes import aito as aito_routes
+    from backend.app.services import aito_payment_links
+
+    async def update(db, estimate_id, fields):
+        return {"estimate_id": estimate_id, "status": "sent", **fields}
+
+    async def fail_reconcile(db, **kwargs):
+        raise AssertionError("must not reconcile while a pass is busy")
+
+    monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
+    monkeypatch.setattr(aito_routes, "reconcile_payment_links", fail_reconcile)
+    pid = await _expired(async_client)
+
+    async with aito_payment_links._pass_lock:
+        r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_extend_survives_a_reconcile_failure_after_the_commit(async_client, monkeypatch):
+    from backend.app.api.routes import aito as aito_routes
+
+    async def update(db, estimate_id, fields):
+        return {"estimate_id": estimate_id, "status": "sent", **fields}
+
+    async def boom(db, **kwargs):
+        raise RuntimeError("heimdall exploded")
+
+    monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
+    monkeypatch.setattr(aito_routes, "reconcile_payment_links", boom)
+    pid = await _expired(async_client)
+
+    r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
+    assert r.status_code == 200
+    assert r.json()["quote_status"] == "sent"

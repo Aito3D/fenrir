@@ -1,18 +1,26 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Archive, BarChart3, ChevronLeft, ChevronRight, FileInput, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileInput } from 'lucide-react';
 import type { AitoProject } from '../../api/client';
 import type { ColumnMeta } from './columns';
-import { CompactBoardCard } from './CompactBoardCard';
+import { BoardColumnBody } from './BoardColumnBody';
+import { moreMenuViewItems, useColumnSummaries } from './touchBoardHelpers';
 import { ColumnList } from './ColumnList';
 import { ColumnStrip } from './ColumnStrip';
 import { ColumnCountPill, OldestCardChip } from './MobileBoardHeader';
 import { ActionMenu } from './ActionMenu';
 import { TabletBoardHeader } from './TabletBoardHeader';
-import { summariseColumn, visibleCount, TABLET_GAP_PX, type ColumnSummary } from '../../utils/aitoMobileBoard';
+import { visibleCount, TABLET_GAP_PX, type ColumnSummary } from '../../utils/aitoMobileBoard';
 import { TABLET_FIRST_STORAGE_KEY, useMobileColumn } from '../../hooks/useMobileColumn';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
-import { prefersReducedMotion } from '../../utils/motion';
+import { useSnapPager } from '../../hooks/useSnapPager';
+
+/** Px between two columns' resting positions (their width plus the gap). */
+function columnPitch(pager: HTMLElement) {
+  const cols = pager.querySelectorAll<HTMLElement>('[data-index]');
+  if (cols.length < 2) return 1;
+  return cols[1].offsetLeft - cols[0].offsetLeft || 1;
+}
 
 export interface TabletBoardProps {
   columns: { column: ColumnMeta; projects: AitoProject[] }[];
@@ -124,7 +132,6 @@ export function TabletBoard({
   const [first, setFirst] = useMobileColumn(ids, TABLET_FIRST_STORAGE_KEY);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [boardWidth, setBoardWidth] = useState(0);
-  const pagerRef = useRef<HTMLDivElement>(null);
   const rangeRef = useRef<HTMLButtonElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
 
@@ -133,10 +140,13 @@ export function TabletBoard({
   const start = Math.min(first, maxFirst);
   const end = start + k - 1;
 
-  const summaries = useMemo(
-    () => columns.map(({ column, projects }) => summariseColumn(column, projects, now)),
-    [columns, now],
-  );
+  const summaries = useColumnSummaries(columns, now);
+
+  // Pages are the possible first columns; the clamp lives here, NOT in the
+  // stored value: writing it back saved the provisional pre-measure clamp on
+  // mount, and lost the place on a 2 -> 4 -> 2 rotation.
+  const adoptFirst = useCallback((index: number) => setFirst(Math.min(index, maxFirst)), [setFirst, maxFirst]);
+  const { pagerRef, jump, alignTo, endJump, handlers: pagerHandlers } = useSnapPager(maxFirst + 1, start, adoptFirst, columnPitch);
 
   // The board's own width, not the viewport's: that is what an open sidebar
   // or a split screen changes.
@@ -152,61 +162,22 @@ export function TabletBoard({
       window.removeEventListener('resize', measure);
       observer?.disconnect();
     };
-  }, []);
+  }, [pagerRef]);
 
-  const pitch = useCallback(() => {
-    const cols = pagerRef.current?.querySelectorAll<HTMLElement>('[data-index]');
-    if (!cols || cols.length < 2) return 1;
-    return cols[1].offsetLeft - cols[0].offsetLeft || 1;
-  }, []);
-
-  // Land on the stored column, and re-align after every width change: the
-  // column pitch is in px, so a rotation would otherwise leave the window
-  // between two columns. The clamp lives in the render (`start`), NOT in the
-  // stored value: writing it back here saved the provisional pre-measure
-  // clamp on mount, and lost the place on a 2 → 4 → 2 rotation. Nothing runs
-  // until the board has been measured.
+  // The column pitch is in px, so after every width the board is measured at
+  // (the hook only sees window resizes) put the window back on its columns.
+  // Nothing runs until the board has been measured.
   useLayoutEffect(() => {
-    const pager = pagerRef.current;
-    if (!pager || !boardWidth) return;
-    pager.scrollLeft = start * pitch();
+    if (!boardWidth) return;
+    alignTo(start);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on size changes only; `start` is read fresh
   }, [boardWidth, k]);
 
-  // A smooth jump scrolls THROUGH the columns in between; without this the
-  // range picker would flick through their names on the way. Cleared on
-  // arrival, or the moment a finger takes over.
-  const jumpTargetRef = useRef<number | null>(null);
-
-  const scrollToFirst = (index: number, smooth: boolean) => {
-    const pager = pagerRef.current;
-    const target = Math.min(Math.max(index, 0), maxFirst);
-    setFirst(target);
-    if (!pager) return;
-    const left = target * pitch();
-    if (smooth && !prefersReducedMotion() && typeof pager.scrollTo === 'function') {
-      jumpTargetRef.current = target;
-      pager.scrollTo({ left, behavior: 'smooth' });
-    } else {
-      jumpTargetRef.current = null;
-      pager.scrollLeft = left;
-    }
-  };
+  const scrollToFirst = (index: number, smooth: boolean) => jump(Math.min(Math.max(index, 0), maxFirst), smooth);
 
   const ensureVisible = (index: number) => {
     if (index < start) scrollToFirst(index, true);
     else if (index > end) scrollToFirst(index - k + 1, true);
-  };
-
-  const onScroll = () => {
-    const pager = pagerRef.current;
-    if (!pager) return;
-    const index = Math.min(Math.round(pager.scrollLeft / pitch()), maxFirst);
-    if (jumpTargetRef.current !== null) {
-      if (index === jumpTargetRef.current) jumpTargetRef.current = null;
-      return;
-    }
-    if (index !== start) setFirst(index);
   };
 
   const closeOverlay = (returnTo: HTMLElement | null) => {
@@ -244,20 +215,13 @@ export function TabletBoard({
           ref={pagerRef}
           data-testid="aito-tablet-pager"
           aria-busy={pending || undefined}
-          onScroll={onScroll}
+          {...pagerHandlers}
           // Any scroll the user starts — finger, trackpad, keyboard — takes
           // over from a smooth jump still in flight; a trackpad fires no
           // pointerdown, so without onWheel the header could stay on the
           // jump's target while the pager sits elsewhere.
-          onPointerDown={() => {
-            jumpTargetRef.current = null;
-          }}
-          onWheel={() => {
-            jumpTargetRef.current = null;
-          }}
-          onKeyDown={() => {
-            jumpTargetRef.current = null;
-          }}
+          onWheel={endJump}
+          onKeyDown={endJump}
           className={`h-full flex gap-3 overflow-x-auto overflow-y-hidden snap-x snap-mandatory overscroll-x-contain scrollbar-hide px-4 pt-3 pb-4 scroll-px-4 transition-opacity duration-300 ${
             pending ? 'opacity-40' : ''
           }`}
@@ -278,16 +242,7 @@ export function TabletBoard({
                 <ColumnCountPill count={projects.length} pending={pending} />
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain scrollbar-hide p-2 flex flex-col gap-2">
-                {projects.map((project) => (
-                  <CompactBoardCard key={project.id} project={project} onExpand={() => onExpandCard(project.id)} />
-                ))}
-                {projects.length === 0 &&
-                  !pending &&
-                  (filtering ? (
-                    <p className="py-8 text-center text-sm text-bambu-gray">{t('aito.searchNoResults')}</p>
-                  ) : (
-                    <div className="animate-fade-in min-h-[8rem] rounded-lg border border-dashed border-bambu-dark-tertiary/80" />
-                  ))}
+                <BoardColumnBody projects={projects} pending={pending} filtering={filtering} onExpandCard={onExpandCard} />
               </div>
             </section>
           ))}
@@ -333,15 +288,7 @@ export function TabletBoard({
           placement="below"
           caption={heading}
           items={[
-            {
-              key: 'done',
-              icon: Archive,
-              label: t('aito.showDone'),
-              trailing: pending ? '–' : doneCount,
-              onSelect: () => onShowView('done'),
-            },
-            { key: 'trash', icon: Trash2, label: t('aito.trash'), onSelect: () => onShowView('trash') },
-            { key: 'stats', icon: BarChart3, label: t('aito.statistics'), onSelect: () => onShowView('stats') },
+            ...moreMenuViewItems(t, pending, doneCount, onShowView),
             { key: 'import', icon: FileInput, label: t('aito.importQuote'), onSelect: onImport },
           ]}
           onClose={() => closeOverlay(moreRef.current)}

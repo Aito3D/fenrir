@@ -98,7 +98,12 @@ from backend.app.schemas.aito import (
     AitoWatchResponse,
     AitoWatchUpdate,
 )
-from backend.app.services import aito_quote_sync, aito_tracking as tracking_service, project_print_trace
+from backend.app.services import (
+    aito_payment_links,
+    aito_quote_sync,
+    aito_tracking as tracking_service,
+    project_print_trace,
+)
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_client_rating import read_client_rating
@@ -5573,8 +5578,14 @@ async def extend_quote_expiry(
     request_immediate_sync()
     # The expiry cancelled the payment link; mint its replacement now (it
     # lives until the new expiry_date) rather than at the loop's next pass.
-    # Never raises on a Heimdall failure: the row carries it to the panel.
-    await reconcile_payment_links(db, only_project_id=project.id, force=True)
+    # Never waits behind a busy background pass: the extension is committed,
+    # so the woken loop mints the link and the board refresh shows it.
+    if not aito_payment_links._pass_lock.locked():
+        try:
+            await reconcile_payment_links(db, only_project_id=project.id, force=True)
+        except Exception:
+            logger.exception("Aito quote extension: payment link reconcile failed for project %s", project_id)
+            await db.rollback()
     await db.refresh(project)
     return await _project_response(db, project, summary)
 
