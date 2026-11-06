@@ -220,7 +220,7 @@ def render_prep_sheet(row: dict, *, printed_at: datetime, order_url: str | None,
     y -= 30
 
     if later:
-        seg_top, seg_n = None, 0
+        seg_top, seg_n = -1.0, 0  # -1: no segment started yet (page coordinates are positive)
 
         def close_segment() -> None:
             h = 22 + 14 * seg_n + 4
@@ -230,10 +230,10 @@ def render_prep_sheet(row: dict, *, printed_at: datetime, order_url: str | None,
             c.setDash()
 
         for ln, q in later:
-            if seg_top is None or seg_top - 22 - 14 * (seg_n + 1) < _BOTTOM:
-                if seg_top is not None:
+            if seg_top < 0 or seg_top - 22 - 14 * (seg_n + 1) < _BOTTOM:
+                if seg_top >= 0:
                     close_segment()
-                if seg_top is not None or y - 36 < _BOTTOM:
+                if seg_top >= 0 or y - 36 < _BOTTOM:
                     c.showPage()
                     y = _H - _M
                 seg_top, seg_n = y, 0
