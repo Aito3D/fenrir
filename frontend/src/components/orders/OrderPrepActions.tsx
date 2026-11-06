@@ -3,7 +3,7 @@ import { Check, ClipboardList, Loader2, PackagePlus, Printer } from 'lucide-reac
 import type { OrderPanelRow, OrderPicklist } from '../../api/client';
 import { boxablePicklists, canPick } from './orderBoard';
 import { FIT_VIEWPORT } from './orderStatus';
-import { useOrderActions } from './useOrderActions';
+import { useAuth } from '../../contexts/AuthContext';
 
 /** Local HH:mm of an ISO timestamp. */
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
@@ -30,7 +30,7 @@ export function OrderPrepActions({
   onPrint: (picklist: OrderPicklist) => void;
 }) {
   const { t } = useTranslation();
-  const { canUpdate } = useOrderActions();
+  const canUpdate = useAuth().hasPermission('orders:update');
   const printed = row.prep;
   const spin = <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />;
   return (

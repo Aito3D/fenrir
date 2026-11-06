@@ -66,7 +66,9 @@ function Notice({ icon: Icon, title, hint }: { icon: LucideIcon; title: string; 
 }
 
 /** Which open sales orders can ship today, and what holds back the others.
- *  Read-only: the board is computed on the server from a local copy of Zoho. */
+ *  The list is read from the stored board (one local read, polled). The opened order
+ *  runs the fulfilment steps that write to Zoho Books (picklist, parcel, hand-over,
+ *  invoice) through OrderLinesPanel / useOrderActions. */
 export function OrderBoardPage() {
   const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
