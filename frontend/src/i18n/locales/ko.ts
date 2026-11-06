@@ -10667,6 +10667,8 @@ export default {
       failed: '전달이 완료되지 않았습니다: {{reason}}',
       creditOffBoard: '주문이 목록에서 빠졌습니다: 고객 크레딧은 Zoho에서 적용하세요.',
       nothingToInvoice: '이 소포에는 청구할 항목이 없습니다.',
+      prefillRefused: 'Zoho가 청구서를 준비하지 못했습니다: Zoho에서 직접 생성하세요.',
+      modeLabel: '전달 방식',
     },
     line: {
       ready: '준비됨',

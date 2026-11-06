@@ -92,9 +92,9 @@ describe('the parcel check', () => {
     await user.click(screen.getByRole('button', { name: 'Create parcel' }));
     expect(qty()).toHaveTextContent('2');
     expect(screen.queryByRole('button', { name: 'Prep sheet' })).not.toBeInTheDocument();
-    for (let i = 0; i < 3; i++) await user.click(screen.getByRole('button', { name: 'One less' }));
+    for (let i = 0; i < 3; i++) await user.click(screen.getByRole('button', { name: /^One less/ }));
     expect(qty()).toHaveTextContent('0');
-    for (let i = 0; i < 3; i++) await user.click(screen.getByRole('button', { name: 'One more' }));
+    for (let i = 0; i < 3; i++) await user.click(screen.getByRole('button', { name: /^One more/ }));
     expect(qty()).toHaveTextContent('2');
   });
 
@@ -105,7 +105,7 @@ describe('the parcel check', () => {
     await user.click(screen.getByRole('button', { name: 'Create parcel' }));
     expect(screen.queryByTestId('pack-qty-l2')).not.toBeInTheDocument();
     expect(screen.getByText(/Parcel: 2 of 2 in stock/)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'One less' }));
+    await user.click(screen.getByRole('button', { name: /^One less/ }));
     expect(screen.getByText(/1 left to prepare/)).toBeInTheDocument();
   });
 
@@ -125,7 +125,7 @@ describe('the parcel check', () => {
     server.use(http.post('/api/v1/order-board/orders/so1/packages', async ({ request }) => { body = await request.json(); return HttpResponse.json(created()); }));
     render(<OrderLinesPanel row={panelRow({}, [line(), line({ id: 'l2', name: 'Filament B', packable: 1, quantity: 1, remaining: 1 })])} />);
     await user.click(screen.getByRole('button', { name: 'Create parcel' }));
-    const lessButtons = screen.getAllByRole('button', { name: 'One less' });
+    const lessButtons = screen.getAllByRole('button', { name: /^One less/ });
     await user.click(lessButtons[1]);
     await user.click(screen.getAllByRole('button', { name: 'Create parcel' })[0]);
     expect(await screen.findByText('Parcel PKG-7 created in Zoho Books')).toBeInTheDocument();
@@ -162,14 +162,14 @@ describe('the parcel check', () => {
     const user = userEvent.setup();
     render(<OrderLinesPanel row={panelRow({}, [line({ packable: 2.5, quantity: 2.5, remaining: 2.5 })])} />);
     await user.click(screen.getByRole('button', { name: 'Create parcel' }));
-    const walk = async (name: string, expected: string[]) => {
+    const walk = async (name: RegExp, expected: string[]) => {
       for (const v of expected) {
         await user.click(screen.getByRole('button', { name }));
         expect(qty()).toHaveTextContent(new RegExp(`^${v}$`));
       }
     };
-    await walk('One less', ['1.5', '0.5', '0']);
-    await walk('One more', ['1', '2', '2.5', '2.5']);
+    await walk(/^One less/, ['1.5', '0.5', '0']);
+    await walk(/^One more/, ['1', '2', '2.5', '2.5']);
   });
 
   it('follows the live lines: capped, zeros dropped, counted and sent from the same values', async () => {
@@ -203,8 +203,8 @@ describe('the parcel check', () => {
     await user.click(confirm);
     await user.click(confirm);
     await user.keyboard('{Enter}');
-    expect(screen.getByRole('button', { name: 'One less' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'One more' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^One less/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^One more/ })).toBeDisabled();
     expect(await screen.findByText('Parcel PKG-7 created in Zoho Books')).toBeInTheDocument();
     expect(hits).toBe(1);
   });

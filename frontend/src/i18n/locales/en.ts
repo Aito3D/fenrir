@@ -11102,6 +11102,8 @@ export default {
       failed: 'The hand-over did not complete: {{reason}}',
       creditOffBoard: 'The order left the list: apply the customer’s credit in Zoho.',
       nothingToInvoice: 'Nothing to invoice for this parcel.',
+      prefillRefused: 'Zoho could not prepare the invoice: create it in Zoho.',
+      modeLabel: 'Hand-over mode',
     },
     line: {
       ready: 'Ready',

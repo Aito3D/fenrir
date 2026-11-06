@@ -1,7 +1,8 @@
 import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, ApiError } from '../../api/client';
+import { api } from '../../api/client';
 import type { OrderActionResult, OrderBoardResponse } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
+import { isRefused } from './orderErrors';
 
 const BOARD_KEY = ['order-board'] as const;
 
@@ -28,7 +29,9 @@ export function useOrderActions(callbacks?: {
   const queryClient = useQueryClient();
   const { hasPermission } = useAuth();
 
-  const take = (board: OrderBoardResponse) => {
+  const take = async (board: OrderBoardResponse) => {
+    // A poll already in flight would land after this answer and put the old board back.
+    await queryClient.cancelQueries({ queryKey: BOARD_KEY, exact: true });
     queryClient.setQueryData(BOARD_KEY, board);
     void queryClient.invalidateQueries({ queryKey: [...BOARD_KEY, 'finished'], exact: true });
     void queryClient.invalidateQueries({ queryKey: ['order-board-finished-order'] });
@@ -37,14 +40,16 @@ export function useOrderActions(callbacks?: {
   // What a hand-over preview showed is stale once the order was written, or refused because it moved.
   const dropPreviews = (id: string) => queryClient.removeQueries({ queryKey: ['order-handover', id] });
   const refused = (id: string, e: unknown) => {
-    if (e instanceof ApiError && (e.status === 400 || e.status === 409)) dropPreviews(id);
+    if (!isRefused(e)) return;
+    dropPreviews(id);
+    void queryClient.invalidateQueries({ queryKey: BOARD_KEY, exact: true });
   };
 
   const createParcel = useMutation({
     mutationFn: ({ id, lines }: { id: string; lines: { line_id: string; quantity: number }[] }) => api.createOrderParcel(id, lines),
     // Here, not in mutate(): these still run when the panel closed meanwhile.
-    onSuccess: (r, v) => {
-      take(r.board);
+    onSuccess: async (r, v) => {
+      await take(r.board);
       dropPreviews(v.id);
       callbacks?.parcel?.onSuccess?.(r, undefined);
     },
@@ -56,8 +61,8 @@ export function useOrderActions(callbacks?: {
   const handOver = useMutation({
     mutationKey: HANDOVER_KEY,
     mutationFn: ({ id, packageId, mode, applyCredit }: HandOverVars) => api.handOverOrderParcel(id, packageId, { mode, apply_credit: applyCredit }),
-    onSuccess: (r, v) => {
-      take(r.board);
+    onSuccess: async (r, v) => {
+      await take(r.board);
       dropPreviews(v.id);
       callbacks?.handOver?.onSuccess?.(r, v);
     },
@@ -68,8 +73,8 @@ export function useOrderActions(callbacks?: {
   });
   const createInvoice = useMutation({
     mutationFn: ({ id, applyCredit }: InvoiceVars) => api.createOrderInvoice(id, { apply_credit: applyCredit }),
-    onSuccess: (r, v) => {
-      take(r.board);
+    onSuccess: async (r, v) => {
+      await take(r.board);
       dropPreviews(v.id);
       callbacks?.invoice?.onSuccess?.(r, v);
     },

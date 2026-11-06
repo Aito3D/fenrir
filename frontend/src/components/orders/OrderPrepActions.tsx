@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Check, Loader2, PackagePlus, Printer } from 'lucide-react';
 import type { OrderPanelRow } from '../../api/client';
 import { usePrintBlob } from '../aito/usePrintBlob';
+import { FIT_VIEWPORT } from './orderStatus';
 import { useOrderActions } from './useOrderActions';
 
 /** Local HH:mm of an ISO timestamp. */
@@ -14,7 +15,7 @@ export function OrderPrepActions({ row, onCreate }: { row: OrderPanelRow; onCrea
   const { print, busy } = usePrintBlob({ failureMessage: t('orders.prep.printFailed'), downloadFilename: `${row.number}-prep.pdf` });
   const printed = row.prep;
   return (
-    <span className="ml-auto flex flex-wrap items-center gap-2">
+    <span className={`flex basis-full flex-wrap items-center gap-2 lg:ml-auto lg:basis-auto ${FIT_VIEWPORT}`}>
       {printed && (
         <span className="inline-flex items-center gap-1 text-[11px] text-bambu-gray">
           <Check aria-hidden="true" className="h-3.5 w-3.5 text-bambu-green" />
@@ -33,6 +34,7 @@ export function OrderPrepActions({ row, onCreate }: { row: OrderPanelRow; onCrea
       {canUpdate && (
         <button
           type="button"
+          data-opens="parcel"
           onClick={onCreate}
           className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs ${
             printed

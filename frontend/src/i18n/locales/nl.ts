@@ -11070,6 +11070,8 @@ export default {
       failed: 'De overhandiging is niet voltooid: {{reason}}',
       creditOffBoard: 'De bestelling staat niet meer op de lijst: pas het tegoed van de klant toe in Zoho.',
       nothingToInvoice: 'Niets te factureren voor dit pakket.',
+      prefillRefused: 'Zoho kon de factuur niet voorbereiden: maak hem aan in Zoho.',
+      modeLabel: 'Wijze van overhandiging',
     },
     line: {
       ready: 'Gereed',

@@ -11045,6 +11045,8 @@ export default {
       failed: '引き渡しが完了しませんでした: {{reason}}',
       creditOffBoard: '注文が一覧から外れました: 顧客のクレジットは Zoho で適用してください。',
       nothingToInvoice: 'この荷物に請求するものはありません。',
+      prefillRefused: 'Zoho が請求書を準備できませんでした: Zoho で作成してください。',
+      modeLabel: '引き渡し方法',
     },
     line: {
       ready: '準備完了',

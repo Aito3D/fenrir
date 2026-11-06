@@ -10687,6 +10687,8 @@ export default {
       failed: 'Видачу не завершено: {{reason}}',
       creditOffBoard: 'Замовлення зникло зі списку: зарахуйте аванс клієнта в Zoho.',
       nothingToInvoice: 'Для цієї посилки нічого виставляти в рахунок.',
+      prefillRefused: 'Zoho не зміг підготувати рахунок: створіть його в Zoho.',
+      modeLabel: 'Спосіб видачі',
     },
     line: {
       ready: 'Готово',

@@ -10973,6 +10973,8 @@ export default {
       failed: 'Teslim tamamlanamadı: {{reason}}',
       creditOffBoard: 'Sipariş listeden çıktı: müşterinin avansını Zoho’da uygulayın.',
       nothingToInvoice: 'Bu koli için faturalandırılacak bir şey yok.',
+      prefillRefused: 'Zoho faturayı hazırlayamadı: faturayı Zoho’da oluşturun.',
+      modeLabel: 'Teslim yöntemi',
     },
     line: {
       ready: 'Hazır',

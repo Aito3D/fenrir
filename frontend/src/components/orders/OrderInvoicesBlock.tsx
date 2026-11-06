@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ExternalLink, ReceiptText } from 'lucide-react';
 import { api } from '../../api/client';
@@ -16,6 +17,13 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, busy = false }: { row
   const money = (n: number) => formatMoney(n, row.currency);
   const shortDay = (day: string) => parseDay(day).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const invoices = row.payment?.invoices ?? [];
+  // An invoice that was not in the list on the previous render flashes once; the ones present at mount never do.
+  const [seen, setSeen] = useState(() => new Set(invoices.map(i => i.id)));
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
+  if (invoices.some(i => !seen.has(i.id))) {
+    setFresh(new Set(invoices.filter(i => !seen.has(i.id)).map(i => i.id)));
+    setSeen(new Set(invoices.map(i => i.id)));
+  }
 
   const state = (i: OrderInvoice) => {
     if (i.status === 'draft') return <span className="text-bambu-gray">{t('orders.inv.draft')}</span>;
@@ -49,7 +57,7 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, busy = false }: { row
           <div className="py-1.5 text-bambu-gray">{t('orders.inv.empty')}</div>
         ) : (
           invoices.map(i => (
-            <div key={i.id} className="px-1 py-1.5">
+            <div key={i.id} data-fresh={fresh.has(i.id) || undefined} className={`px-1 py-1.5 ${fresh.has(i.id) ? 'rounded-md bg-bambu-green/10 motion-safe:animate-[pulse_1s_ease-in-out_2]' : ''}`}>
               <div className="flex items-baseline justify-between gap-3 text-sm">
                 <span className="font-mono text-white">{i.number}</span>
                 <span className="font-semibold tabular-nums text-white">{money(i.total)}</span>

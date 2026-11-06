@@ -11070,6 +11070,8 @@ errors: {
       failed: 'Utlämningen slutfördes inte: {{reason}}',
       creditOffBoard: 'Ordern har lämnat listan: tillämpa kundens tillgodohavande i Zoho.',
       nothingToInvoice: 'Inget att fakturera för detta paket.',
+      prefillRefused: 'Zoho kunde inte förbereda fakturan: skapa den i Zoho.',
+      modeLabel: 'Sätt att lämna ut',
     },
     line: {
       ready: 'Klar',

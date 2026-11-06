@@ -310,6 +310,40 @@ describe('the hand-over bar, answers and refusals', () => {
   });
 });
 
+describe('the hand-over bar, final review', () => {
+  it('words a refused invoice preparation and does not show the raw code', async () => {
+    const user = userEvent.setup();
+    servePreview(preview());
+    post(() => HttpResponse.json(answer({ invoice: 'failed', invoice_number: null, failed_step: 'invoice', error: 'prefill_refused', credit_applied: 0 })));
+    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    await user.click(screen.getByRole('button', { name: 'Handed to the customer' }));
+    expect(await screen.findByText('Zoho could not prepare the invoice: create it in Zoho.')).toBeInTheDocument();
+    expect(screen.queryByText(/prefill_refused/)).not.toBeInTheDocument();
+  });
+
+  it('the switch is a labelled group, and closing the bar returns focus to the band button', async () => {
+    const user = userEvent.setup();
+    servePreview(preview());
+    render(<OrderLinesPanel row={panelRow()} />);
+    await open(user);
+    expect(screen.getByRole('group', { name: 'Hand-over mode' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('button', { name: 'Hand over the parcel' })).toHaveFocus();
+  });
+
+  it('the parcel check closes when a refetch leaves nothing to pack', async () => {
+    const user = userEvent.setup();
+    const withStock = () => panelRow({ packages: [], lines: [line({ packable: 2, packed_waiting: 0 })] });
+    const second = render(<OrderLinesPanel row={withStock()} />);
+    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
+    expect(screen.getByRole('columnheader', { name: 'In the parcel' })).toBeInTheDocument();
+    second.rerender(<OrderLinesPanel row={panelRow({ packages: [], lines: [line({ packable: 0, packed_waiting: 0 })] })} />);
+    expect(screen.queryByRole('columnheader', { name: 'In the parcel' })).not.toBeInTheDocument();
+    second.rerender(<OrderLinesPanel row={withStock()} />);
+    expect(screen.queryByRole('columnheader', { name: 'In the parcel' })).not.toBeInTheDocument();
+  });
+});
+
 describe('the Emballé band', () => {
   it('one button per waiting parcel, numbered when there are several, none without orders:update', async () => {
     const user = userEvent.setup();
@@ -354,7 +388,7 @@ describe('Create invoice on the invoices card', () => {
     await user.click(create);
     expect(create).toBeDisabled();
     expect(await screen.findByText('Invoice FAC-7 created')).toBeInTheDocument();
-    expect(body).toEqual({ apply_credit: true });
+    expect(body).toEqual({ apply_credit: false });
     expect(hits).toBe(1);
   });
 
@@ -370,6 +404,16 @@ describe('Create invoice on the invoices card', () => {
     render(<OrderLinesPanel row={panelRow({ unbilled_units: 2, packages: [] })} />);
     await user.click(screen.getByRole('button', { name: 'Create invoice' }));
     expect(await screen.findByText('The invoice could not be created: Books said no')).toBeInTheDocument();
+  });
+
+  it('applies the credit only when the customer has an advance', async () => {
+    const user = userEvent.setup();
+    const bodies: unknown[] = [];
+    server.use(http.post('/api/v1/order-board/orders/so1/invoice', async ({ request }) => { bodies.push(await request.json()); return HttpResponse.json(answer({ package_number: '' })); }));
+    const payment = { state: 'partial', pct: 40, paid: 0, invoice_paid: 0, advance: 5000, due: 0, overdue: 0, rest: 0, left: 0, next_due: null, invoices: [] } as OrderPanelRow['payment'];
+    render(<OrderLinesPanel row={panelRow({ unbilled_units: 2, packages: [], payment })} />);
+    await user.click(screen.getByRole('button', { name: 'Create invoice' }));
+    await waitFor(() => expect(bodies).toEqual([{ apply_credit: true }]));
   });
 
   it('says so when there was nothing to invoice', async () => {

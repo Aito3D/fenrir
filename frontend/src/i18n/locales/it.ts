@@ -11031,6 +11031,8 @@ export default {
       failed: 'La consegna non è stata completata: {{reason}}',
       creditOffBoard: 'L’ordine è uscito dall’elenco: applica il credito del cliente in Zoho.',
       nothingToInvoice: 'Niente da fatturare per questo pacco.',
+      prefillRefused: 'Zoho non ha potuto preparare la fattura: creala in Zoho.',
+      modeLabel: 'Modalità di consegna',
     },
     line: {
       ready: 'Pronto',

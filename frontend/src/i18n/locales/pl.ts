@@ -11251,6 +11251,8 @@ export default {
       failed: 'Wydanie nie zostało ukończone: {{reason}}',
       creditOffBoard: 'Zamówienie zniknęło z listy: zastosuj saldo klienta w Zoho.',
       nothingToInvoice: 'Nic do zafakturowania dla tej paczki.',
+      prefillRefused: 'Zoho nie mogło przygotować faktury: utwórz ją w Zoho.',
+      modeLabel: 'Sposób wydania',
     },
     line: {
       ready: 'Gotowe',

@@ -6,7 +6,7 @@ import { useHandOverPending, useOrderActions } from './useOrderActions';
 
 const ICON = 'absolute grid h-7 w-7 place-items-center rounded-md text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green disabled:opacity-50';
 /** Bottom right on the phone, before the chevron on desktop. */
-export const ROW_ACTION_POS = 'bottom-2.5 right-4 lg:bottom-auto lg:right-[2.75rem] lg:top-1/2 lg:-translate-y-1/2';
+const ROW_ACTION_POS = 'bottom-2.5 right-4 lg:bottom-auto lg:right-[2.75rem] lg:top-1/2 lg:-translate-y-1/2';
 
 /** The next step of an order as one icon next to its row: print the sheet, or go and hand a parcel over. */
 export function OrderRowAction({ row, step, onHandover }: { row: OrderBoardRow; step: 'print' | 'handover'; onHandover?: (packageId: string) => void }) {

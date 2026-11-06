@@ -11046,6 +11046,8 @@ export default {
       failed: 'Die Übergabe wurde nicht abgeschlossen: {{reason}}',
       creditOffBoard: 'Die Bestellung ist nicht mehr in der Liste: Kundenguthaben in Zoho anrechnen.',
       nothingToInvoice: 'Für dieses Paket ist nichts abzurechnen.',
+      prefillRefused: 'Zoho konnte die Rechnung nicht vorbereiten: in Zoho erstellen.',
+      modeLabel: 'Art der Übergabe',
     },
     line: {
       ready: 'Bereit',

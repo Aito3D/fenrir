@@ -11029,6 +11029,8 @@ export default {
       failed: '交付未完成：{{reason}}',
       creditOffBoard: '訂單已不在清單中：請在 Zoho 中套用客戶餘額。',
       nothingToInvoice: '此包裹沒有需要開立發票的內容。',
+      prefillRefused: 'Zoho 無法準備發票：請在 Zoho 中建立。',
+      modeLabel: '交付方式',
     },
     line: {
       ready: '就緒',

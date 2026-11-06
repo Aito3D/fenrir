@@ -659,4 +659,36 @@ describe('OrderBoardPage actions', () => {
     expect(posts).toBe(1);
     await waitFor(() => expect(details).toBe(2));
   });
+
+  it('a refused hand-over (409) says the order changed and refetches the board', async () => {
+    const user = userEvent.setup();
+    let boards = 0;
+    const waiting = row({ packages: [{ id: 'p9', shipment_id: 's9', number: 'PKG-9', status: 'not_shipped', date: '2026-11-05' }], lines: [line({ packable: 0, packed_waiting: 1 })] });
+    server.use(
+      http.get('/api/v1/order-board', () => { boards++; return HttpResponse.json(board({ rows: [waiting] })); }),
+      http.get('/api/v1/order-board/orders/so1/packages/p9/handover', () => HttpResponse.json({ units: 1, available: false, to_invoice: false, invoice_total: null, manual: false, manual_reason: null, credit: 0, covered_by: [] })),
+      http.post('/api/v1/order-board/orders/so1/packages/p9/handover', () => HttpResponse.json({ detail: 'busy' }, { status: 409 })),
+    );
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    await user.click(screen.getByRole('button', { name: 'Hand over the parcel' }));
+    await user.click(await screen.findByRole('button', { name: 'Handed to the customer' }));
+    expect(await screen.findByText('The order changed, check the quantities.')).toBeInTheDocument();
+    await waitFor(() => expect(boards).toBe(2));
+  });
+
+  it('a parcel for an order that left the board (404) says the order changed and refetches the board', async () => {
+    const user = userEvent.setup();
+    let boards = 0;
+    server.use(
+      http.get('/api/v1/order-board', () => { boards++; return HttpResponse.json(board({ rows: [row()] })); }),
+      http.post('/api/v1/order-board/orders/so1/packages', () => HttpResponse.json({ detail: 'order_not_on_board' }, { status: 404 })),
+    );
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /SO-00412/ }));
+    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
+    await user.click(screen.getAllByRole('button', { name: 'Create parcel' })[0]);
+    expect((await screen.findAllByText(/The order changed, check the quantities\./)).length).toBeGreaterThan(0);
+    await waitFor(() => expect(boards).toBe(2));
+  });
 });

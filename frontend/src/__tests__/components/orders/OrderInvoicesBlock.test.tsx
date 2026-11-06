@@ -103,4 +103,12 @@ describe('OrderInvoicesBlock', () => {
     await user.click(screen.getByRole('button', { name: 'Download invoice' }));
     await waitFor(() => expect(hit).toBe(true));
   });
+
+  it('flashes an invoice that appears after mount, never the ones present at mount', () => {
+    const view = render(<OrderInvoicesBlock row={row([inv()])} />);
+    expect(screen.getByText('FAC-0001').closest('[data-fresh]')).toBeNull();
+    view.rerender(<OrderInvoicesBlock row={row([inv(), inv({ id: 'inv2', number: 'FAC-0002' })])} />);
+    expect(screen.getByText('FAC-0002').closest('[data-fresh]')).not.toBeNull();
+    expect(screen.getByText('FAC-0001').closest('[data-fresh]')).toBeNull();
+  });
 });

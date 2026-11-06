@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Loader2, PackagePlus } from 'lucide-react';
-import { ApiError } from '../../api/client';
 import type { OrderPanelRow } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
+import { errorReason } from './orderErrors';
+import { FIT_VIEWPORT } from './orderStatus';
 import { formatQty, packableUnits, parcelLines } from './orderBoard';
 import { useOrderActions } from './useOrderActions';
 
@@ -17,7 +18,7 @@ export function OrderPackBar({ row, qty, onClose, onBusy }: { row: OrderPanelRow
         showToast(t('orders.parcel.created', { number: r.package_number }));
         onClose();
       },
-      onError: e => showToast(t('orders.parcel.failed', { reason: reason(e) }), 'error'),
+      onError: e => showToast(t('orders.parcel.failed', { reason: errorReason(t, e) }), 'error'),
     },
   });
   const busy = createParcel.isPending;
@@ -27,13 +28,6 @@ export function OrderPackBar({ row, qty, onClose, onBusy }: { row: OrderPanelRow
   const of = packableUnits(row);
   const today = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
 
-  // A refused answer (400, 409) means the order moved under the operator: look again. 502 carries Books' own words.
-  function reason(e: unknown) {
-    return e instanceof ApiError && e.status === 503 ? t('orders.busy')
-      : e instanceof ApiError && (e.status === 400 || e.status === 409) ? t('orders.parcel.stale')
-      : e instanceof Error ? e.message : '';
-  }
-
   const sent = useRef(false); // a ref, so two clicks in one tick send one request
   const confirm = () => {
     if (busy || sent.current || units <= 0) return;
@@ -42,7 +36,7 @@ export function OrderPackBar({ row, qty, onClose, onBusy }: { row: OrderPanelRow
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-bambu-green/40 bg-bambu-green/10 px-3 py-2 text-xs">
+    <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 ${FIT_VIEWPORT} rounded-md border border-bambu-green/40 bg-bambu-green/10 px-3 py-2 text-xs`}>
       <PackagePlus aria-hidden="true" className="h-4 w-4 text-bambu-green" />
       <span>
         <span className="text-white">{t('orders.parcel.summary', { units: formatQty(units), of: formatQty(of) })}</span>

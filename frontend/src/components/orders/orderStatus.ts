@@ -14,6 +14,9 @@ export const TONE: Record<Tone, { text: string; soft: string; bar: string; edge:
   neutral: { text: 'text-bambu-gray', soft: 'bg-bambu-dark-tertiary/60', bar: 'bg-bambu-gray', edge: 'border-l-bambu-green', rail: 'border-bambu-gray/40' },
 };
 
+/** Below lg the lines table scrolls sideways inside the panel: keep a bar or an action group to the visible width, at the left edge. */
+export const FIT_VIEWPORT = 'sticky left-0 max-w-[calc(100vw-64px)] md:max-w-[calc(100vw-96px)] lg:static lg:max-w-none';
+
 export const STATUSES: OrderStatus[] = ['to_ship', 'partial', 'incoming', 'to_order'];
 
 export const STATUS_META: Record<OrderStatus, { tone: Tone; icon: LucideIcon; label: string; hint: string }> = {

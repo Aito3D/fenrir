@@ -13,7 +13,7 @@ import { OrderQtyStepper } from './OrderQtyStepper';
 import { OrderRefChips } from './OrderRefChips';
 import { formatQty, packableUnits, panelGroups, parseDay, waitingPackages } from './orderBoard';
 import type { PanelGroup } from './orderBoard';
-import { TONE } from './orderStatus';
+import { FIT_VIEWPORT, TONE } from './orderStatus';
 import type { Tone } from './orderStatus';
 import { useHandOverPending, useOrderActions } from './useOrderActions';
 import { useOrderOutcomeToasts } from './useOrderOutcomeToasts';
@@ -69,9 +69,25 @@ export function OrderLinesPanel({
   const invoiceSent = useRef(false);
   const handoverOpen = !!handover && waitingPackages(row).some(p => p.id === handover);
   // Set while the operator is checking quantities for a new parcel: line id -> units.
-  const [check, setCheck] = useState<Record<string, number> | null>(null);
+  const [checkState, setCheck] = useState<Record<string, number> | null>(null);
   const [pending, setPending] = useState(false);
   const packable = packableUnits(row) > 0;
+  // A check only exists while something is packable; a refetch that empties the group closes it for good.
+  const check = checkState && packable ? checkState : null;
+  useEffect(() => {
+    if (checkState && !packable) {
+      setCheck(null);
+      setPending(false);
+    }
+  }, [checkState, packable]);
+  // After a bar closes, focus goes back to the button that opened it (found again by `data-opens`).
+  const root = useRef<HTMLDivElement>(null);
+  const refocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (!refocus.current) return;
+    root.current?.querySelector<HTMLElement>(`[data-opens="${refocus.current}"]`)?.focus();
+    refocus.current = null;
+  });
   const shortDay = (day: string) => parseDay(day).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const chips = (group: PanelGroup['id']) =>
     row.packages
@@ -89,7 +105,7 @@ export function OrderLinesPanel({
       ));
 
   return (
-    <div className="grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_27rem]">
+    <div ref={root} className="grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_27rem]">
       <div className="order-last min-w-0 lg:order-none">
       <OrderRefChips row={row} />
       <div
@@ -125,11 +141,12 @@ export function OrderLinesPanel({
                       )}
                       {chips(group.id)}
                       {group.id === 'packed' && canUpdate && !handoverOpen && (
-                        <span className="ml-auto flex flex-wrap items-center gap-2">
+                        <span className={`flex basis-full flex-wrap items-center gap-2 lg:ml-auto lg:basis-auto ${FIT_VIEWPORT}`}>
                           {waitingPackages(row).map((p, _i, all) => (
                             <button
                               key={p.id}
                               type="button"
+                              data-opens={`handover-${p.id}`}
                               onClick={() => setHandover(p.id)}
                               className="inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-blue-400 hover:text-blue-400"
                             >
@@ -156,7 +173,7 @@ export function OrderLinesPanel({
                       </td>
                       <td className="whitespace-nowrap text-right tabular-nums text-white">
                         {todo && check && line.packable > 0 ? (
-                          <OrderQtyStepper id={line.id} value={Math.min(check[line.id] ?? 0, line.packable)} max={line.packable} disabled={pending} onChange={v => setCheck({ ...check, [line.id]: v })} />
+                          <OrderQtyStepper id={line.id} name={line.name} value={Math.min(check[line.id] ?? 0, line.packable)} max={line.packable} disabled={pending} onChange={v => setCheck({ ...check, [line.id]: v })} />
                         ) : (
                           formatQty(qty)
                         )}
@@ -197,14 +214,14 @@ export function OrderLinesPanel({
                 {group.id === 'packed' && handoverOpen && handover && (
                   <tr>
                     <td colSpan={5} className="pt-2">
-                      <OrderHandoverBar key={handover} row={row} packageId={handover} onClose={() => setHandover(null)} />
+                      <OrderHandoverBar key={handover} row={row} packageId={handover} onClose={() => { refocus.current = `handover-${handover}`; setHandover(null); }} />
                     </td>
                   </tr>
                 )}
                 {group.id === 'todo' && check && (
                   <tr>
                     <td colSpan={5} className="pt-2">
-                      <OrderPackBar row={row} qty={check} onClose={() => { setCheck(null); setPending(false); }} onBusy={setPending} />
+                      <OrderPackBar row={row} qty={check} onClose={() => { refocus.current = 'parcel'; setCheck(null); setPending(false); }} onBusy={setPending} />
                     </td>
                   </tr>
                 )}
@@ -223,7 +240,7 @@ export function OrderLinesPanel({
           onCreateInvoice={canUpdate ? () => {
             if (createInvoice.isPending || invoiceSent.current) return;
             invoiceSent.current = true;
-            createInvoice.mutate({ id: row.id, applyCredit: true }, { onSettled: () => { invoiceSent.current = false; } });
+            createInvoice.mutate({ id: row.id, applyCredit: (row.payment?.advance ?? 0) > 0 }, { onSettled: () => { invoiceSent.current = false; } });
           } : undefined}
         />
       </div>

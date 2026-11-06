@@ -11031,6 +11031,8 @@ export default {
       failed: 'La remise n’a pas abouti : {{reason}}',
       creditOffBoard: 'La commande a quitté la liste : appliquez l’avoir du client dans Zoho.',
       nothingToInvoice: 'Rien à facturer pour ce colis.',
+      prefillRefused: 'Zoho n’a pas pu préparer la facture : créez-la dans Zoho.',
+      modeLabel: 'Mode de remise',
     },
     line: {
       ready: 'Prêt',

@@ -7,7 +7,7 @@ import type { OrderPanelRow } from '../../api/client';
 import { formatMoney } from '../../utils/pricing';
 import { Skeleton } from '../Skeleton';
 import { parseDay } from './orderBoard';
-import { TONE } from './orderStatus';
+import { FIT_VIEWPORT, TONE } from './orderStatus';
 import { useOrderActions } from './useOrderActions';
 import { useOrderOutcomeToasts } from './useOrderOutcomeToasts';
 
@@ -86,14 +86,14 @@ export function OrderHandoverBar({ row, packageId, onClose }: { row: OrderPanelR
   } else second = <span className="text-bambu-gray">{p.covered_by.length ? t('orders.handover.alreadyInvoiced', { numbers: p.covered_by.join(', ') }) : t('orders.handover.nothingToInvoice')}</span>;
 
   return (
-    <div className={`space-y-2 rounded-md border border-blue-500/40 px-3 py-2 text-xs ${TONE.info.soft}`}>
+    <div className={`space-y-2 rounded-md border border-blue-500/40 px-3 py-2 text-xs ${FIT_VIEWPORT} ${TONE.info.soft}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {mode === 'pickup' ? <HandHelping aria-hidden="true" className={`h-4 w-4 ${TONE.info.text}`} /> : <Truck aria-hidden="true" className={`h-4 w-4 ${TONE.info.text}`} />}
         <span>
           <span className="font-mono font-semibold text-white">{pkg?.number}</span>
           {p && <span className="text-bambu-gray"> · {t('orders.handover.meta', { units: t('orders.units', { count: p.units }), date })}</span>}
         </span>
-        <span className="inline-flex items-center gap-0.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark p-0.5">
+        <span role="group" aria-label={t('orders.handover.modeLabel')} className="inline-flex items-center gap-0.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark p-0.5">
           {seg('pickup')}
           {seg('delivery')}
         </span>

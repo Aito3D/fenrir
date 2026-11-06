@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { ApiError } from '../../api/client';
+import { errorReason, isRefused } from './orderErrors';
 import type { OrderHandoverOutcome } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -11,11 +12,8 @@ export function useOrderOutcomeToasts() {
   return {
     /** A thrown error: Zoho busy, the order moved under the operator, or Books' own message. */
     failed: (e: unknown) => {
-      const reason =
-        e instanceof ApiError && e.status === 503 ? t('orders.busy')
-        : e instanceof ApiError && (e.status === 400 || e.status === 409) ? t('orders.parcel.stale')
-        : e instanceof Error ? e.message : '';
-      showToast(e instanceof ApiError && [400, 409, 503].includes(e.status) ? reason : t('orders.handover.failed', { reason }), 'error');
+      const reason = errorReason(t, e);
+      showToast(isRefused(e) || (e instanceof ApiError && e.status === 503) ? reason : t('orders.handover.failed', { reason }), 'error');
     },
     /** An answered outcome; `mode` is set for a hand-over, absent for an invoice on its own. */
     outcome: (o: OrderHandoverOutcome, mode?: 'pickup' | 'delivery') => {
@@ -23,6 +21,7 @@ export function useOrderOutcomeToasts() {
       if (o.failed_step) {
         const text =
           o.failed_step === 'credit' && o.error === 'credit_off_board' ? t('orders.handover.creditOffBoard')
+          : o.failed_step === 'invoice' && o.error === 'prefill_refused' ? t('orders.handover.prefillRefused')
           : o.failed_step === 'invoice' || o.failed_step === 'sent' ? t('orders.handover.invoiceFailed', { reason })
           : t('orders.handover.failed', { reason });
         showToast(text, 'warning');
