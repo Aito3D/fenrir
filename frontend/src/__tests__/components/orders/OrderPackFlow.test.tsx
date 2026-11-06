@@ -1,4 +1,4 @@
-/** The prep sheet band and the parcel check of an opened order. */
+/** The prep band of an opened order: choosing what to pick, the picklist's sheet, and the parcel check. */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -43,93 +43,235 @@ const panelRow = (o: Partial<OrderPanelRow> = {}, lines = [line()]): OrderPanelR
 });
 
 const created = (board = {}) => ({ board: { rows: [], computed_at: null, stock_loaded_at: null, sync: {}, ...board }, package_number: 'PKG-7' });
-const qty = (id = 'l1') => screen.getByTestId(`pack-qty-${id}`);
+const qty = (id = 'l1') => screen.getByTestId(`pack-qty-${id}`) as HTMLInputElement;
+const BASE = '/api/v1/order-board/orders/so1';
+const L1 = [{ line_id: 'l1', quantity: 2 }];
+const preview = (lines = L1) => http.get(`${BASE}/picklist`, () => HttpResponse.json({ lines }));
+const content = (lines = L1) => http.get(`${BASE}/picklists/pl1`, () => HttpResponse.json({ id: 'pl1', number: 'PL-00013', status: 'yet_to_start', lines }));
+const picklist = (status = 'yet_to_start') => ({ id: 'pl1', number: 'PL-00013', status, date: '2026-11-06' });
+/** An order whose picklist is open in Books. */
+const picking = (o: Partial<OrderPanelRow> = {}) => panelRow({ picklists: [picklist()], picked: 0, ...o });
+const two = [line(), line({ id: 'l2', name: 'Filament B', packable: 5, quantity: 5, remaining: 5 })];
 
-describe('the prep sheet band', () => {
-  it('shows the sheet button only when something is packable, and Create parcel only with orders:update', () => {
+describe('the prep band', () => {
+  it('offers Prepare with orders:update while the shelf holds something and no picklist is open', () => {
     const first = render(<OrderLinesPanel row={panelRow()} />);
-    expect(screen.getByRole('button', { name: 'Prep sheet' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create parcel' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Prepare' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Prep sheet/ })).not.toBeInTheDocument();
     first.unmount();
     mockUseAuth.hasPermission.mockImplementation(() => false);
     const second = render(<OrderLinesPanel row={panelRow()} />);
-    expect(screen.getByRole('button', { name: 'Prep sheet' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Create parcel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Prepare' })).not.toBeInTheDocument();
     second.unmount();
     mockUseAuth.hasPermission.mockImplementation(() => true);
     render(<OrderLinesPanel row={panelRow({}, [line({ packable: 0 })])} />);
-    expect(screen.queryByRole('button', { name: 'Prep sheet' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Create parcel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Prepare' })).not.toBeInTheDocument();
+  });
+
+  it('an open picklist shows its number, its sheet and its parcel, and no second Prepare', () => {
+    const first = render(<OrderLinesPanel row={picking()} />);
+    expect(screen.getByText('PL-00013')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Prep sheet · PL-00013' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create parcel · PL-00013' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Prepare' })).not.toBeInTheDocument();
+    first.unmount();
+    mockUseAuth.hasPermission.mockImplementation(() => false);
+    render(<OrderLinesPanel row={picking()} />);
+    expect(screen.getByRole('button', { name: 'Prep sheet · PL-00013' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Create parcel/ })).not.toBeInTheDocument();
+  });
+
+  it('a completed picklist keeps its parcel button only while picked units wait for a box', () => {
+    const first = render(<OrderLinesPanel row={panelRow({ picklists: [picklist('completed')], picked: 0 })} />);
+    expect(screen.queryByRole('button', { name: /Create parcel/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Prepare' })).toBeInTheDocument();
+    first.unmount();
+    render(<OrderLinesPanel row={panelRow({ picklists: [picklist('completed')], picked: 2 })} />);
+    expect(screen.getByRole('button', { name: 'Create parcel · PL-00013' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Prepare' })).toBeInTheDocument();
   });
 
   it('a printed order reads Printed at … by … and offers Reprint', () => {
     const at = '2026-11-06T18:30:00+00:00';
     const time = new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    const first = render(<OrderLinesPanel row={panelRow({ prep: { at, by: 'Hina' } })} />);
+    const first = render(<OrderLinesPanel row={picking({ prep: { at, by: 'Hina' } })} />);
     expect(screen.getByText(`Printed at ${time} by Hina`)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reprint' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Prep sheet' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reprint · PL-00013' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Prep sheet/ })).not.toBeInTheDocument();
     first.unmount();
-    render(<OrderLinesPanel row={panelRow({ prep: { at, by: '' } })} />);
+    render(<OrderLinesPanel row={picking({ prep: { at, by: '' } })} />);
     expect(screen.getByText(`Printed at ${time}`)).toBeInTheDocument();
   });
 
-  it('printing asks the order-board endpoint for the sheet', async () => {
+  it('printing asks for the sheet of that picklist', async () => {
     const user = userEvent.setup();
-    let asked = 0;
-    server.use(http.post('/api/v1/order-board/orders/so1/prep-sheet', () => { asked++; return new HttpResponse('%PDF', { headers: { 'Content-Type': 'application/pdf' } }); }));
-    render(<OrderLinesPanel row={panelRow()} />);
-    await user.click(screen.getByRole('button', { name: 'Prep sheet' }));
-    await waitFor(() => expect(asked).toBe(1));
+    const asked: (string | null)[] = [];
+    server.use(http.post(`${BASE}/prep-sheet`, ({ request }) => { asked.push(new URL(request.url).searchParams.get('picklist_id')); return new HttpResponse('%PDF', { headers: { 'Content-Type': 'application/pdf' } }); }));
+    render(<OrderLinesPanel row={picking()} />);
+    await user.click(screen.getByRole('button', { name: 'Prep sheet · PL-00013' }));
+    await waitFor(() => expect(asked).toEqual(['pl1']));
     expect(print).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('the parcel check', () => {
-  it('starts at the packable quantity and never leaves 0..packable', async () => {
+describe('choosing what to pick', () => {
+  it('opens on what Zoho allows, every line ticked at its maximum', async () => {
     const user = userEvent.setup();
-    render(<OrderLinesPanel row={panelRow()} />);
-    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
-    expect(qty()).toHaveTextContent('2');
-    expect(screen.queryByRole('button', { name: 'Prep sheet' })).not.toBeInTheDocument();
-    for (let i = 0; i < 3; i++) await user.click(screen.getByRole('button', { name: /^One less/ }));
-    expect(qty()).toHaveTextContent('0');
-    for (let i = 0; i < 3; i++) await user.click(screen.getByRole('button', { name: /^One more/ }));
-    expect(qty()).toHaveTextContent('2');
+    server.use(preview());
+    render(<OrderLinesPanel row={panelRow({}, [line(), line({ id: 'l2', name: 'AMS', packable: 0, state: 'backorder', stock_available: 0 })])} />);
+    await user.click(screen.getByRole('button', { name: 'Prepare' }));
+    await waitFor(() => expect(qty()).toHaveValue(2));
+    expect(screen.getByRole('checkbox', { name: /^To pick · Bambu Lab PLA/ })).toBeChecked();
+    expect(screen.getByRole('columnheader', { name: 'To pick' })).toBeInTheDocument();
+    expect(screen.queryByTestId('pack-qty-l2')).not.toBeInTheDocument();
+    expect(screen.getByText(/Picklist: 2 of 2 in stock/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Prepare' })).not.toBeInTheDocument();
   });
 
-  it('lines without packable units get no stepper, and the bar says what is left', async () => {
+  it('a line can be left out, put back, and its units typed', async () => {
     const user = userEvent.setup();
-    const lines = [line(), line({ id: 'l2', name: 'AMS', packable: 0, state: 'backorder', stock_available: 0 })];
-    render(<OrderLinesPanel row={panelRow({}, lines)} />);
+    server.use(preview([...L1, { line_id: 'l2', quantity: 5 }]));
+    render(<OrderLinesPanel row={panelRow({}, two)} />);
+    await user.click(screen.getByRole('button', { name: 'Prepare' }));
+    const tick = await screen.findByRole('checkbox', { name: 'To pick · Filament B' });
+    await user.click(tick);
+    expect(qty('l2')).toHaveValue(0);
+    expect(screen.getByText(/Picklist: 2 of 7 in stock/)).toBeInTheDocument();
+    expect(screen.getByText(/5 left to prepare/)).toBeInTheDocument();
+    await user.click(tick);
+    expect(qty('l2')).toHaveValue(5);
+    await user.clear(qty('l2'));
+    await user.type(qty('l2'), '3');
+    expect(screen.getByText(/Picklist: 5 of 7 in stock/)).toBeInTheDocument();
+    expect(tick).toBeChecked();
+    await user.clear(qty('l2'));
+    await user.type(qty('l2'), '9'); // above what Zoho allows: not taken, and put right when the field is left
+    expect(screen.getByText(/Picklist: 5 of 7 in stock/)).toBeInTheDocument();
+    await user.tab();
+    expect(qty('l2')).toHaveValue(5);
+  });
+
+  it('walks a fractional maximum by one, clamped to 0..max', async () => {
+    const user = userEvent.setup();
+    server.use(preview([{ line_id: 'l1', quantity: 2.5 }]));
+    render(<OrderLinesPanel row={panelRow({}, [line({ packable: 2.5, quantity: 2.5, remaining: 2.5 })])} />);
+    await user.click(screen.getByRole('button', { name: 'Prepare' }));
+    await waitFor(() => expect(qty()).toHaveValue(2.5));
+    const walk = async (name: RegExp, expected: number[]) => {
+      for (const v of expected) {
+        await user.click(screen.getByRole('button', { name }));
+        expect(qty()).toHaveValue(v);
+      }
+    };
+    await walk(/^One less/, [1.5, 0.5, 0]);
+    await walk(/^One more/, [1, 2, 2.5, 2.5]);
+  });
+
+  it('creates the picklist with the chosen lines, then prints its sheet', async () => {
+    const user = userEvent.setup();
+    let body: unknown;
+    const sheets: (string | null)[] = [];
+    server.use(
+      preview([...L1, { line_id: 'l2', quantity: 5 }]),
+      http.post(`${BASE}/picklists`, async ({ request }) => { body = await request.json(); return HttpResponse.json({ ...created(), picklist: { id: 'pl1', number: 'PL-00013' } }); }),
+      http.post(`${BASE}/prep-sheet`, ({ request }) => { sheets.push(new URL(request.url).searchParams.get('picklist_id')); return new HttpResponse('%PDF', { headers: { 'Content-Type': 'application/pdf' } }); }),
+    );
+    render(<OrderLinesPanel row={panelRow({}, two)} />);
+    await user.click(screen.getByRole('button', { name: 'Prepare' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'To pick · Filament B' }));
+    await user.click(screen.getAllByRole('button', { name: /^One less/ })[0]);
+    await user.click(screen.getByRole('button', { name: 'Create and print' }));
+    expect(await screen.findByText('Picklist PL-00013 created in Zoho Books')).toBeInTheDocument();
+    expect(body).toEqual({ lines: [{ line_id: 'l1', quantity: 1 }] });
+    await waitFor(() => expect(sheets).toEqual(['pl1']));
+    expect(print).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('pack-qty-l1')).not.toBeInTheDocument();
+  });
+
+  it('nothing left to pick says so and opens no check', async () => {
+    const user = userEvent.setup();
+    server.use(preview([]));
+    render(<OrderLinesPanel row={panelRow()} />);
+    await user.click(screen.getByRole('button', { name: 'Prepare' }));
+    expect(await screen.findByText(/Nothing left to pick/)).toBeInTheDocument();
+    expect(screen.queryByTestId('pack-qty-l1')).not.toBeInTheDocument();
+  });
+
+  it('a refused opening says the order changed', async () => {
+    const user = userEvent.setup();
+    server.use(http.get(`${BASE}/picklist`, () => HttpResponse.json({ detail: 'picklist_open' }, { status: 400 })));
+    render(<OrderLinesPanel row={panelRow()} />);
+    await user.click(screen.getByRole('button', { name: 'Prepare' }));
+    expect(await screen.findByText('The picklist could not be created: The order changed, check the quantities.')).toBeInTheDocument();
+    expect(screen.queryByTestId('pack-qty-l1')).not.toBeInTheDocument();
+  });
+
+  it('a refused picklist keeps the choice open and says why', async () => {
+    const user = userEvent.setup();
+    server.use(preview(), http.post(`${BASE}/picklists`, () => HttpResponse.json({ detail: 'Books said no' }, { status: 502 })));
+    render(<OrderLinesPanel row={panelRow()} />);
+    await user.click(screen.getByRole('button', { name: 'Prepare' }));
+    await user.click(await screen.findByRole('button', { name: 'Create and print' }));
+    expect(await screen.findByText('The picklist could not be created: Books said no')).toBeInTheDocument();
+    expect(qty()).toBeInTheDocument();
+    expect(print).not.toHaveBeenCalled();
+  });
+
+  it('the row icon opens the choice, or the parcel check of a picklist', async () => {
+    server.use(preview(), content());
+    const first = render(<OrderLinesPanel row={panelRow()} start="pick" startTick={1} />);
+    expect(await screen.findByText(/Picklist: 2 of 2 in stock/)).toBeInTheDocument();
+    first.unmount();
+    render(<OrderLinesPanel row={picking()} start="pack-pl1" startTick={1} />);
+    expect(await screen.findByText(/Parcel: 2 of 2 on PL-00013/)).toBeInTheDocument();
+  });
+});
+
+describe('the parcel check', () => {
+  const open = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Create parcel · PL-00013' }));
+    await waitFor(() => expect(qty()).toBeInTheDocument());
+  };
+
+  it('opens on what the picklist holds and sends the picklist with the lines above zero', async () => {
+    const user = userEvent.setup();
+    let body: unknown;
+    server.use(
+      content([...L1, { line_id: 'l2', quantity: 5 }]),
+      http.post(`${BASE}/packages`, async ({ request }) => { body = await request.json(); return HttpResponse.json(created()); }),
+    );
+    render(<OrderLinesPanel row={picking({ lines: two })} />);
+    await open(user);
+    expect(qty()).toHaveValue(2);
+    expect(screen.getByRole('columnheader', { name: 'In the parcel' })).toBeInTheDocument();
+    expect(screen.getByText(/Parcel: 7 of 7 on PL-00013/)).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'In the parcel · Filament B' }));
+    expect(screen.getByText(/5 left to prepare/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Create parcel' }));
-    expect(screen.queryByTestId('pack-qty-l2')).not.toBeInTheDocument();
-    expect(screen.getByText(/Parcel: 2 of 2 in stock/)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^One less/ }));
-    expect(screen.getByText(/1 left to prepare/)).toBeInTheDocument();
+    expect(await screen.findByText('Parcel PKG-7 created in Zoho Books')).toBeInTheDocument();
+    expect(body).toEqual({ picklist_id: 'pl1', lines: [{ line_id: 'l1', quantity: 2 }] });
+    expect(screen.queryByTestId('pack-qty-l1')).not.toBeInTheDocument();
   });
 
   it('a fractional maximum is sent as is', async () => {
     const user = userEvent.setup();
     let body: unknown;
-    server.use(http.post('/api/v1/order-board/orders/so1/packages', async ({ request }) => { body = await request.json(); return HttpResponse.json(created()); }));
-    render(<OrderLinesPanel row={panelRow({}, [line({ packable: 2.5, quantity: 2.5, remaining: 2.5 })])} />);
+    server.use(
+      content([{ line_id: 'l1', quantity: 2.5 }]),
+      http.post(`${BASE}/packages`, async ({ request }) => { body = await request.json(); return HttpResponse.json(created()); }),
+    );
+    render(<OrderLinesPanel row={picking({ lines: [line({ packable: 2.5, quantity: 2.5, remaining: 2.5 })] })} />);
+    await open(user);
     await user.click(screen.getByRole('button', { name: 'Create parcel' }));
-    await user.click(screen.getAllByRole('button', { name: 'Create parcel' })[0]);
-    await waitFor(() => expect(body).toEqual({ lines: [{ line_id: 'l1', quantity: 2.5 }] }));
+    await waitFor(() => expect(body).toEqual({ picklist_id: 'pl1', lines: [{ line_id: 'l1', quantity: 2.5 }] }));
   });
 
-  it('confirm sends only the lines above zero and closes on success with a toast', async () => {
+  it('a picklist already boxed says so and opens no check', async () => {
     const user = userEvent.setup();
-    let body: unknown;
-    server.use(http.post('/api/v1/order-board/orders/so1/packages', async ({ request }) => { body = await request.json(); return HttpResponse.json(created()); }));
-    render(<OrderLinesPanel row={panelRow({}, [line(), line({ id: 'l2', name: 'Filament B', packable: 1, quantity: 1, remaining: 1 })])} />);
-    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
-    const lessButtons = screen.getAllByRole('button', { name: /^One less/ });
-    await user.click(lessButtons[1]);
-    await user.click(screen.getAllByRole('button', { name: 'Create parcel' })[0]);
-    expect(await screen.findByText('Parcel PKG-7 created in Zoho Books')).toBeInTheDocument();
-    expect(body).toEqual({ lines: [{ line_id: 'l1', quantity: 2 }] });
+    server.use(content([]));
+    render(<OrderLinesPanel row={picking()} />);
+    await user.click(screen.getByRole('button', { name: 'Create parcel · PL-00013' }));
+    expect(await screen.findByText('Everything on this picklist is already in a parcel.')).toBeInTheDocument();
     expect(screen.queryByTestId('pack-qty-l1')).not.toBeInTheDocument();
   });
 
@@ -140,10 +282,10 @@ describe('the parcel check', () => {
     [502, 'Books said no', 'The parcel could not be created: Books said no'],
   ])('a refused parcel (%i) keeps the check open and says why', async (status, detail, text) => {
     const user = userEvent.setup();
-    server.use(http.post('/api/v1/order-board/orders/so1/packages', () => HttpResponse.json({ detail }, { status })));
-    render(<OrderLinesPanel row={panelRow()} />);
+    server.use(content(), http.post(`${BASE}/packages`, () => HttpResponse.json({ detail }, { status })));
+    render(<OrderLinesPanel row={picking()} />);
+    await open(user);
     await user.click(screen.getByRole('button', { name: 'Create parcel' }));
-    await user.click(screen.getAllByRole('button', { name: 'Create parcel' })[0]);
     const shown = await screen.findAllByText((_c, el) => (el?.textContent ?? '').includes(text) && el?.children.length === 0);
     expect(shown.length).toBeGreaterThan(0);
     expect(qty()).toBeInTheDocument();
@@ -151,60 +293,31 @@ describe('the parcel check', () => {
 
   it('cancel closes the check', async () => {
     const user = userEvent.setup();
-    render(<OrderLinesPanel row={panelRow()} />);
-    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
+    server.use(content());
+    render(<OrderLinesPanel row={picking()} />);
+    await open(user);
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByTestId('pack-qty-l1')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Prep sheet' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create parcel · PL-00013' })).toHaveFocus();
   });
 
-  it('walks a fractional maximum by one, clamped to 0..packable', async () => {
-    const user = userEvent.setup();
-    render(<OrderLinesPanel row={panelRow({}, [line({ packable: 2.5, quantity: 2.5, remaining: 2.5 })])} />);
-    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
-    const walk = async (name: RegExp, expected: string[]) => {
-      for (const v of expected) {
-        await user.click(screen.getByRole('button', { name }));
-        expect(qty()).toHaveTextContent(new RegExp(`^${v}$`));
-      }
-    };
-    await walk(/^One less/, ['1.5', '0.5', '0']);
-    await walk(/^One more/, ['1', '2', '2.5', '2.5']);
-  });
-
-  it('follows the live lines: capped, zeros dropped, counted and sent from the same values', async () => {
-    const user = userEvent.setup();
-    let body: unknown;
-    server.use(http.post('/api/v1/order-board/orders/so1/packages', async ({ request }) => { body = await request.json(); return HttpResponse.json(created()); }));
-    const two = [line(), line({ id: 'l2', name: 'Filament B', packable: 1, quantity: 1, remaining: 1 })];
-    const view = render(<OrderLinesPanel row={panelRow({}, two)} />);
-    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
-    expect(screen.getByText(/Parcel: 3 of 3 in stock/)).toBeInTheDocument();
-    view.rerender(<OrderLinesPanel row={panelRow({}, [line({ packable: 1 }), line({ id: 'l2', name: 'Filament B', packable: 0, quantity: 1, remaining: 1 })])} />);
-    expect(qty()).toHaveTextContent('1');
-    expect(screen.queryByTestId('pack-qty-l2')).not.toBeInTheDocument();
-    expect(screen.getByText(/Parcel: 1 of 1 in stock/)).toBeInTheDocument();
-    expect(screen.queryByText(/left to prepare/)).not.toBeInTheDocument();
-    await user.click(screen.getAllByRole('button', { name: 'Create parcel' })[0]);
-    await waitFor(() => expect(body).toEqual({ lines: [{ line_id: 'l1', quantity: 1 }] }));
-  });
-
-  it('sends one request however often confirm is hit, and locks the steppers meanwhile', async () => {
+  it('sends one request however often confirm is hit, and locks the line meanwhile', async () => {
     const user = userEvent.setup();
     let hits = 0;
-    server.use(http.post('/api/v1/order-board/orders/so1/packages', async () => {
+    server.use(content(), http.post(`${BASE}/packages`, async () => {
       hits++;
       await new Promise(r => setTimeout(r, 150));
       return HttpResponse.json(created());
     }));
-    render(<OrderLinesPanel row={panelRow()} />);
-    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
-    const confirm = screen.getAllByRole('button', { name: 'Create parcel' })[0];
+    render(<OrderLinesPanel row={picking()} />);
+    await open(user);
+    const confirm = screen.getByRole('button', { name: 'Create parcel' });
     await user.click(confirm);
     await user.click(confirm);
     await user.keyboard('{Enter}');
     expect(screen.getByRole('button', { name: /^One less/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /^One more/ })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /^In the parcel/ })).toBeDisabled();
+    expect(qty()).toBeDisabled();
     expect(await screen.findByText('Parcel PKG-7 created in Zoho Books')).toBeInTheDocument();
     expect(hits).toBe(1);
   });

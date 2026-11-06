@@ -18,6 +18,9 @@ import {
   isBoardReady,
   otherOpenOrders,
   paidPct,
+  boxablePicklists,
+  canPick,
+  checkLines,
   nextStep,
   packableUnits,
   panelGroups,
@@ -282,9 +285,31 @@ describe('parcel steps', () => {
     expect(waitingPackages(r).map(p => p.id)).toEqual(['p1']);
   });
 
-  it('nextStep is print while something is packable, then handover, then null', () => {
-    expect(nextStep(row({ lines: [line({ packable: 1 })], packages: [pkg('not_shipped')] }))).toBe('print');
-    expect(nextStep(row({ lines: [line({ packable: 0 })], packages: [pkg('not_shipped')] }))).toBe('handover');
+  const pl = (id: string, status: string) => ({ id, number: id.toUpperCase(), status, date: '2026-11-06' });
+
+  it('nextStep boxes a picklist first, then picks, then hands over, then nothing', () => {
+    const shelf = [line({ packable: 1 })];
+    expect(nextStep(row({ lines: shelf, packages: [pkg('not_shipped')], picklists: [pl('pl1', 'completed'), pl('pl2', 'yet_to_start')] }))).toBe('pack-pl2');
+    expect(nextStep(row({ lines: shelf, picklists: [pl('pl1', 'completed'), pl('pl2', 'completed')], picked: 2 }))).toBe('pack-pl2');
+    expect(nextStep(row({ lines: shelf, packages: [pkg('not_shipped')], picklists: [pl('pl1', 'completed')], picked: 0 }))).toBe('pick');
+    expect(nextStep(row({ lines: shelf, packages: [pkg('not_shipped')] }))).toBe('pick'); // a board from before picklists
+    expect(nextStep(row({ lines: [line({ packable: 0 })], packages: [pkg('not_shipped')] }))).toBe('handover-p1');
     expect(nextStep(row({ lines: [line({ packable: 0 })], packages: [pkg('shipped')] }))).toBeNull();
+  });
+
+  it('canPick needs the shelf and no open picklist; boxablePicklists follows the picked units', () => {
+    const shelf = [line({ packable: 1 })];
+    expect(canPick(row({ lines: shelf, picklists: [pl('pl1', 'completed')] }))).toBe(true);
+    expect(canPick(row({ lines: shelf, picklists: [pl('pl1', 'in_progress')] }))).toBe(false);
+    expect(canPick(row({ lines: [line({ packable: 0 })] }))).toBe(false);
+    expect(boxablePicklists(row({ picklists: [pl('pl1', 'completed'), pl('pl2', 'on_hold')], picked: 0 })).map(p => p.id)).toEqual(['pl2']);
+    expect(boxablePicklists(row({ picklists: [pl('pl1', 'completed')], picked: 1 })).map(p => p.id)).toEqual(['pl1']);
+  });
+
+  it('checkLines sends the chosen units, never above the maximum, zeros dropped', () => {
+    expect(checkLines({ max: { a: 2, b: 5, c: 1 }, qty: { a: 9, b: 0, c: 0.5 } })).toEqual([
+      { line_id: 'a', quantity: 2 },
+      { line_id: 'c', quantity: 0.5 },
+    ]);
   });
 });

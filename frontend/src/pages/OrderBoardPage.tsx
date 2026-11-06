@@ -96,7 +96,7 @@ export function OrderBoardPage() {
   const [view, setView] = useState<'open' | 'finished'>('open');
   const [payFilter, setPayFilter] = useState<PayFilter>('all');
   const [finishedShown, setFinishedShown] = useState(FINISHED_PAGE);
-  const [handover, setHandover] = useState<{ id: string; packageId: string; tick: number } | null>(null);
+  const [start, setStart] = useState<{ id: string; target: string; tick: number } | null>(null);
   const scrollTarget = useRef<string | null>(null);
   const [searchParams] = useSearchParams();
   const deepLinked = useRef<string | null>(null);
@@ -145,8 +145,8 @@ export function OrderBoardPage() {
     scrollTarget.current = id;
   };
   const toggleOpen = (id: string) => {
-    // A closed order forgets its hand-over request, so opening it again does not bring the bar back.
-    setHandover(h => (h?.id === id ? null : h));
+    // A closed order forgets the step it was opened on, so opening it again does not bring the bar back.
+    setStart(s => (s?.id === id ? null : s));
     setOpen(prev => {
       const next = new Set(prev);
       if (!next.delete(id)) next.add(id);
@@ -289,12 +289,12 @@ export function OrderBoardPage() {
         onToggle={() => toggleOpen(row.id)}
         others={otherOpenOrders(all, row).map(o => ({ id: o.id, number: o.number }))}
         onGoto={goto}
-        onHandover={packageId => {
+        onStart={target => {
           setOpen(prev => new Set(prev).add(row.id));
-          setHandover(h => ({ id: row.id, packageId, tick: (h?.tick ?? 0) + 1 }));
+          setStart(s => ({ id: row.id, target, tick: (s?.tick ?? 0) + 1 }));
         }}
-        startHandover={handover?.id === row.id ? handover.packageId : undefined}
-        handoverTick={handover?.id === row.id ? handover.tick : undefined}
+        start={start?.id === row.id ? start.target : undefined}
+        startTick={start?.id === row.id ? start.tick : undefined}
       />
     ));
   }

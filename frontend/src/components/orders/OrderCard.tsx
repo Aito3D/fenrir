@@ -23,21 +23,21 @@ export function OrderCard({
   onToggle,
   others,
   onGoto,
-  onHandover,
-  startHandover,
-  handoverTick,
+  onStart,
+  start,
+  startTick,
 }: {
   row: OrderBoardRow;
   open: boolean;
   onToggle: () => void;
   others?: { id: string; number: string }[];
   onGoto?: (id: string) => void;
-  /** The hand icon: open this order for that parcel. */
-  onHandover?: (packageId: string) => void;
-  /** A parcel whose hand-over bar the opened panel should show. */
-  startHandover?: string;
-  /** Changes with every click on the hand icon. */
-  handoverTick?: number;
+  /** The row icon: open this order on that step (a `nextStep` target). */
+  onStart?: (target: string) => void;
+  /** The step the opened panel should start on. */
+  start?: string;
+  /** Changes with every click on the row icon. */
+  startTick?: number;
 }) {
   const { t } = useTranslation();
   const meta = STATUS_META[row.status];
@@ -47,7 +47,7 @@ export function OrderCard({
   const width = (n: number) => ({ width: units.total > 0 ? `${(n / units.total) * 100}%` : '0%' });
   const { hasPermission } = useAuth();
   const next = nextStep(row);
-  const step = next === 'print' || (next === 'handover' && hasPermission('orders:update')) ? next : null;
+  const step = hasPermission('orders:update') ? next : null;
   const age = t('orders.age', { n: row.age_days });
 
   return (
@@ -67,7 +67,7 @@ export function OrderCard({
             <span className="block text-xs text-bambu-gray">
               {parseDay(row.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
               <span className="lg:hidden"> · {age}</span>
-              {row.prep && <span className={TONE.success.text}> · {t('orders.prep.inProgress')}</span>}
+              {(row.prep || (row.picklists ?? []).some(p => p.status !== 'completed')) && <span className={TONE.success.text}> · {t('orders.prep.inProgress')}</span>}
             </span>
           </span>
           <span className={`hidden justify-self-start rounded-md px-2 py-0.5 text-xs lg:inline-block ${AGE[ageTone(row.age_days)]}`}>{age}</span>
@@ -104,9 +104,9 @@ export function OrderCard({
           </span>
           <ChevronDown aria-hidden="true" className={`h-4 w-4 text-bambu-gray transition-transform [grid-area:chev] lg:[grid-area:auto] lg:justify-self-end ${open ? 'rotate-180' : ''}`} />
         </button>
-        {step && <OrderRowAction row={row} step={step} onHandover={onHandover} />}
+        {step && <OrderRowAction row={row} target={step} onStart={onStart} />}
       </div>
-      {open && <OrderLinesPanel row={row} others={others} onGoto={onGoto} startHandover={startHandover} handoverTick={handoverTick} />}
+      {open && <OrderLinesPanel row={row} others={others} onGoto={onGoto} start={start} startTick={startTick} />}
     </Card>
   );
 }

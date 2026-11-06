@@ -108,23 +108,23 @@ describe('the hand-over bar', () => {
 
   it('says Invoice settled when the credit covers it', async () => {
     servePreview(preview({ credit: 14400 }));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     expect(await screen.findByText('Invoice settled')).toBeInTheDocument();
   });
 
   it('names the invoices when nothing is left to invoice', async () => {
     servePreview(preview({ to_invoice: false, invoice_total: null, credit: 0, covered_by: ['FAC-1', 'FAC-2'] }));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     expect(await screen.findByText('Already invoiced (FAC-1, FAC-2): no new invoice.')).toBeInTheDocument();
   });
 
   it('words a manual preview by its reason', async () => {
     servePreview(preview({ manual: true, manual_reason: 'draft', covered_by: ['FAC-D'] }));
-    const first = render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    const first = render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     expect(await screen.findByText('A draft invoice (FAC-D) is waiting in Zoho: send it there first.')).toBeInTheDocument();
     first.unmount();
     servePreview(preview({ manual: true, manual_reason: 'order_money' }));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     expect(await screen.findByText('A discount or charge on this order cannot be split: invoice it in Zoho.')).toBeInTheDocument();
   });
 
@@ -133,7 +133,7 @@ describe('the hand-over bar', () => {
     servePreview(500);
     let body: unknown;
     post(b => { body = b; return HttpResponse.json(answer({ invoice: 'none', invoice_number: null })); });
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     expect(await screen.findByText('Zoho did not say what will be invoiced.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Handed to the customer' }));
     expect(await screen.findByText('Parcel PKG-1 handed to the customer')).toBeInTheDocument();
@@ -145,7 +145,7 @@ describe('the hand-over bar', () => {
     server.use(http.get('/api/v1/order-board/orders/so1/packages/p1/handover', async () => { await new Promise(r => setTimeout(r, 400)); return HttpResponse.json(preview()); }));
     let hits = 0;
     post(() => { hits++; return HttpResponse.json(answer()); });
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     await user.click(screen.getByRole('button', { name: 'Handed to the customer' }));
     await waitFor(() => expect(hits).toBe(1));
   });
@@ -154,7 +154,7 @@ describe('the hand-over bar', () => {
     const user = userEvent.setup();
     servePreview(preview());
     post(() => HttpResponse.json(answer({ invoice: 'failed', invoice_number: null, failed_step: 'invoice', error: 'Books said no', credit_applied: 0 })));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     await user.click(screen.getByRole('button', { name: 'Handed to the customer' }));
     expect(await screen.findByText('The invoice could not be created: Books said no')).toBeInTheDocument();
     expect(screen.getByText('Parcel PKG-1 handed to the customer')).toBeInTheDocument();
@@ -165,12 +165,12 @@ describe('the hand-over bar', () => {
     const user = userEvent.setup();
     servePreview(preview());
     post(() => HttpResponse.json(answer({ invoice: 'manual', manual_reason: 'draft', invoice_number: 'FAC-D', credit_applied: 0 })));
-    const first = render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    const first = render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     await user.click(screen.getByRole('button', { name: 'Handed to the customer' }));
     expect(await screen.findByText('A draft invoice (FAC-D) is waiting in Zoho: send it there first.')).toBeInTheDocument();
     first.unmount();
     post(() => HttpResponse.json(answer({ failed_step: 'credit', error: 'credit_off_board' })));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     await user.click(screen.getByRole('button', { name: 'Handed to the customer' }));
     expect(await screen.findByText('The order left the list: apply the customer’s credit in Zoho.')).toBeInTheDocument();
   });
@@ -179,7 +179,7 @@ describe('the hand-over bar', () => {
     const user = userEvent.setup();
     servePreview(preview());
     post(() => HttpResponse.json({ detail: 'unavailable' }, { status: 503 }));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     await user.click(screen.getByRole('button', { name: 'Handed to the customer' }));
     expect(await screen.findByText('Zoho is busy, try again in a moment.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Handed to the customer' })).toBeEnabled();
@@ -190,7 +190,7 @@ describe('the hand-over bar', () => {
     servePreview(preview());
     let hits = 0;
     post(async () => { hits++; await new Promise(r => setTimeout(r, 200)); return HttpResponse.json(answer()); });
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     await screen.findByRole('checkbox');
     const confirm = screen.getByRole('button', { name: 'Handed to the customer' });
     await user.click(confirm);
@@ -210,7 +210,7 @@ describe('the hand-over bar, answers and refusals', () => {
     const user = userEvent.setup();
     servePreview(preview());
     post(() => HttpResponse.json({ detail }, { status }));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     await user.click(screen.getByRole('button', { name: confirmText }));
     expect(await screen.findByText('The order changed, check the quantities.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: confirmText })).toBeEnabled();
@@ -220,7 +220,7 @@ describe('the hand-over bar, answers and refusals', () => {
     const user = userEvent.setup();
     servePreview(preview());
     post(() => HttpResponse.json({ detail: 'Books said no' }, { status: 502 }));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     await user.click(screen.getByRole('button', { name: confirmText }));
     expect(await screen.findByText('The hand-over did not complete: Books said no')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: confirmText })).toBeEnabled();
@@ -230,7 +230,7 @@ describe('the hand-over bar, answers and refusals', () => {
     const user = userEvent.setup();
     servePreview(preview());
     post(() => HttpResponse.json(answer({ invoice: 'manual', manual_reason: 'order_money', invoice_number: null, credit_applied: 0 })));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     await user.click(screen.getByRole('button', { name: confirmText }));
     expect(await screen.findByText('A discount or charge on this order cannot be split: invoice it in Zoho.')).toBeInTheDocument();
     expect(screen.getByText('Parcel PKG-1 handed to the customer')).toBeInTheDocument();
@@ -240,7 +240,7 @@ describe('the hand-over bar, answers and refusals', () => {
     const user = userEvent.setup();
     servePreview(preview());
     post(() => HttpResponse.json(answer({ delivered: 'skipped', invoice: 'none', invoice_number: null, failed_step: 'delivered', error: 'Books timed out', credit_applied: 0 })));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     await user.click(screen.getByRole('button', { name: confirmText }));
     expect(await screen.findByText('The hand-over did not complete: Books timed out')).toBeInTheDocument();
     expect(screen.queryByText(/Parcel PKG-1 handed to the customer/)).not.toBeInTheDocument();
@@ -250,7 +250,7 @@ describe('the hand-over bar, answers and refusals', () => {
     const user = userEvent.setup();
     servePreview(preview());
     post(() => HttpResponse.json(answer({ failed_step: 'credit', error: 'credit_off_board', credit_applied: 0 })));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     await user.click(screen.getByRole('button', { name: confirmText }));
     expect(await screen.findByText('The order left the list: apply the customer’s credit in Zoho.')).toBeInTheDocument();
     expect(screen.getByText('Parcel PKG-1 handed to the customer · Invoice FAC-7 created')).toBeInTheDocument();
@@ -260,7 +260,7 @@ describe('the hand-over bar, answers and refusals', () => {
     servePreview(preview());
     let hits = 0;
     post(async () => { hits++; await new Promise(r => setTimeout(r, 150)); return HttpResponse.json(answer()); });
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     const confirm = await screen.findByRole('button', { name: confirmText });
     fireEvent.click(confirm);
     fireEvent.click(confirm);
@@ -286,9 +286,9 @@ describe('the hand-over bar, answers and refusals', () => {
     servePreview(preview());
     let hits = 0;
     post(async () => { hits++; await new Promise(r => setTimeout(r, 200)); return HttpResponse.json(answer()); });
-    const view = render(<OrderLinesPanel row={panelRow({ packages: [pkg(1), pkg(2)] })} startHandover="p1" handoverTick={1} />);
+    const view = render(<OrderLinesPanel row={panelRow({ packages: [pkg(1), pkg(2)] })} start="handover-p1" startTick={1} />);
     await user.click(await screen.findByRole('button', { name: confirmText }));
-    view.rerender(<OrderLinesPanel row={panelRow({ packages: [pkg(1), pkg(2)] })} startHandover="p2" handoverTick={2} />);
+    view.rerender(<OrderLinesPanel row={panelRow({ packages: [pkg(1), pkg(2)] })} start="handover-p2" startTick={2} />);
     expect(screen.getByRole('button', { name: 'Sending to Zoho…' })).toBeDisabled();
     expect(screen.getByText('PKG-1', { selector: 'span.font-mono' })).toBeInTheDocument();
     await waitFor(() => expect(hits).toBe(1));
@@ -298,14 +298,14 @@ describe('the hand-over bar, answers and refusals', () => {
     mockUseAuth.hasPermission.mockImplementation(() => false);
     let asked = 0;
     server.use(http.get('/api/v1/order-board/orders/so1/packages/p1/handover', () => { asked++; return HttpResponse.json(preview()); }));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     await new Promise(r => setTimeout(r, 100));
     expect(asked).toBe(0);
   });
 
   it('says so when the available preview has nothing to invoice and names no invoice', async () => {
     servePreview(preview({ to_invoice: false, invoice_total: null, credit: 0, covered_by: [] }));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     expect(await screen.findByText('Nothing to invoice for this parcel.')).toBeInTheDocument();
   });
 });
@@ -315,7 +315,7 @@ describe('the hand-over bar, final review', () => {
     const user = userEvent.setup();
     servePreview(preview());
     post(() => HttpResponse.json(answer({ invoice: 'failed', invoice_number: null, failed_step: 'invoice', error: 'prefill_refused', credit_applied: 0 })));
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     await user.click(screen.getByRole('button', { name: 'Handed to the customer' }));
     expect(await screen.findByText('Zoho could not prepare the invoice: create it in Zoho.')).toBeInTheDocument();
     expect(screen.queryByText(/prefill_refused/)).not.toBeInTheDocument();
@@ -331,16 +331,26 @@ describe('the hand-over bar, final review', () => {
     expect(screen.getByRole('button', { name: 'Hand over the parcel' })).toHaveFocus();
   });
 
-  it('the parcel check closes when a refetch leaves nothing to pack', async () => {
+  it('the choice of what to pick closes when a refetch leaves nothing on the shelf', async () => {
     const user = userEvent.setup();
+    server.use(http.get('/api/v1/order-board/orders/so1/picklist', () => HttpResponse.json({ lines: [{ line_id: 'l1', quantity: 2 }] })));
     const withStock = () => panelRow({ packages: [], lines: [line({ packable: 2, packed_waiting: 0 })] });
     const second = render(<OrderLinesPanel row={withStock()} />);
-    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
-    expect(screen.getByRole('columnheader', { name: 'In the parcel' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Prepare' }));
+    expect(await screen.findByRole('columnheader', { name: 'To pick' })).toBeInTheDocument();
     second.rerender(<OrderLinesPanel row={panelRow({ packages: [], lines: [line({ packable: 0, packed_waiting: 0 })] })} />);
-    expect(screen.queryByRole('columnheader', { name: 'In the parcel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'To pick' })).not.toBeInTheDocument();
     second.rerender(<OrderLinesPanel row={withStock()} />);
-    expect(screen.queryByRole('columnheader', { name: 'In the parcel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'To pick' })).not.toBeInTheDocument();
+  });
+
+  it('the parcel check of a picklist does not depend on what the shelf holds', async () => {
+    const user = userEvent.setup();
+    server.use(http.get('/api/v1/order-board/orders/so1/picklists/pl1', () => HttpResponse.json({ id: 'pl1', number: 'PL-00013', status: 'yet_to_start', lines: [{ line_id: 'l1', quantity: 2 }] })));
+    const picklists = [{ id: 'pl1', number: 'PL-00013', status: 'yet_to_start', date: '2026-11-06' }];
+    render(<OrderLinesPanel row={panelRow({ packages: [], picklists, picked: 0, lines: [line({ packable: 0, packed_waiting: 0 })] })} />);
+    await user.click(screen.getByRole('button', { name: 'Create parcel · PL-00013' }));
+    expect(await screen.findByRole('columnheader', { name: 'In the parcel' })).toBeInTheDocument();
   });
 });
 
@@ -355,7 +365,7 @@ describe('the Emballé band', () => {
     expect(screen.getByText('PKG-2', { selector: 'span.font-mono' })).toBeInTheDocument();
     first.unmount();
     mockUseAuth.hasPermission.mockImplementation(() => false);
-    render(<OrderLinesPanel row={panelRow()} startHandover="p1" />);
+    render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     expect(screen.queryByRole('button', { name: 'Hand over the parcel' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Handed to the customer' })).not.toBeInTheDocument();
   });
@@ -363,10 +373,10 @@ describe('the Emballé band', () => {
   it('cancelling closes the bar, and a new request for the same parcel opens it again', async () => {
     const user = userEvent.setup();
     servePreview(preview());
-    const view = render(<OrderLinesPanel row={panelRow()} startHandover="p1" handoverTick={1} />);
+    const view = render(<OrderLinesPanel row={panelRow()} start="handover-p1" startTick={1} />);
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('button', { name: 'Handed to the customer' })).not.toBeInTheDocument();
-    view.rerender(<OrderLinesPanel row={panelRow()} startHandover="p1" handoverTick={2} />);
+    view.rerender(<OrderLinesPanel row={panelRow()} start="handover-p1" startTick={2} />);
     expect(await screen.findByRole('button', { name: 'Handed to the customer' })).toBeInTheDocument();
   });
 });

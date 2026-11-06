@@ -68,7 +68,7 @@ describe('useOrderActions', () => {
     const { client, result } = setup();
     client.setQueryData(['order-board'], board);
     expect(result.current.canUpdate).toBe(true);
-    const blob = await result.current.printSheet('so1')();
+    const blob = await result.current.printSheet('so1', 'pl1')();
     expect(blob.size).toBeGreaterThan(0);
     await waitFor(() => expect(client.getQueryState(['order-board'])?.isInvalidated).toBe(true));
   });

@@ -533,20 +533,17 @@ describe('OrderBoardPage', () => {
 });
 
 describe('OrderBoardPage actions', () => {
-  it('the print icon fetches the sheet and refetches the board', async () => {
+  it('the prepare icon opens its order on the choice of what to pick', async () => {
     const user = userEvent.setup();
-    let boards = 0;
-    let sheets = 0;
     server.use(
-      http.get('/api/v1/order-board', () => { boards++; return HttpResponse.json(board({ rows: [row()] })); }),
-      http.post('/api/v1/order-board/orders/so1/prep-sheet', () => { sheets++; return new HttpResponse('%PDF'); }),
+      http.get('/api/v1/order-board', () => HttpResponse.json(board({ rows: [row()] }))),
+      http.get('/api/v1/order-board/orders/so1/picklist', () => HttpResponse.json({ lines: [{ line_id: row().lines[0].id, quantity: 1 }] })),
     );
     render(<OrderBoardPage />);
     await screen.findByText('SO-00412');
-    const before = boards;
-    await user.click(screen.getByRole('button', { name: 'Prep sheet' }));
-    await waitFor(() => expect(sheets).toBe(1));
-    await waitFor(() => expect(boards).toBeGreaterThan(before));
+    await user.click(screen.getByRole('button', { name: 'Prepare' }));
+    expect(await screen.findByRole('columnheader', { name: 'To pick' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create and print' })).toBeInTheDocument();
   });
 
   it('the hand icon opens its order', async () => {
@@ -677,17 +674,18 @@ describe('OrderBoardPage actions', () => {
     await waitFor(() => expect(boards).toBe(2));
   });
 
-  it('a parcel for an order that left the board (404) says the order changed and refetches the board', async () => {
+  it('a picklist for an order that left the board (404) says the order changed and refetches the board', async () => {
     const user = userEvent.setup();
     let boards = 0;
     server.use(
       http.get('/api/v1/order-board', () => { boards++; return HttpResponse.json(board({ rows: [row()] })); }),
-      http.post('/api/v1/order-board/orders/so1/packages', () => HttpResponse.json({ detail: 'order_not_on_board' }, { status: 404 })),
+      http.get('/api/v1/order-board/orders/so1/picklist', () => HttpResponse.json({ lines: [{ line_id: row().lines[0].id, quantity: 1 }] })),
+      http.post('/api/v1/order-board/orders/so1/picklists', () => HttpResponse.json({ detail: 'order_not_on_board' }, { status: 404 })),
     );
     render(<OrderBoardPage />);
     await user.click(await screen.findByRole('button', { name: /SO-00412/ }));
-    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
-    await user.click(screen.getAllByRole('button', { name: 'Create parcel' })[0]);
+    await user.click(screen.getAllByRole('button', { name: 'Prepare' })[0]);
+    await user.click(await screen.findByRole('button', { name: 'Create and print' }));
     expect((await screen.findAllByText(/The order changed, check the quantities\./)).length).toBeGreaterThan(0);
     await waitFor(() => expect(boards).toBe(2));
   });

@@ -17,8 +17,8 @@ vi.mock('../../../contexts/AuthContext', async importOriginal => {
 });
 const print = vi.fn((produce: () => Promise<Blob>) => produce());
 vi.mock('../../../components/aito/usePrintBlob', () => ({ usePrintBlob: () => ({ print, busy: false }) }));
-const panel = vi.fn((_props: { startHandover?: string }) => <div data-testid="panel" />);
-vi.mock('../../../components/orders/OrderLinesPanel', () => ({ OrderLinesPanel: (p: { startHandover?: string }) => panel(p) }));
+const panel = vi.fn((_props: { start?: string }) => <div data-testid="panel" />);
+vi.mock('../../../components/orders/OrderLinesPanel', () => ({ OrderLinesPanel: (p: { start?: string }) => panel(p) }));
 
 import { render } from '../../utils';
 import { OrderCard } from '../../../components/orders/OrderCard';
@@ -41,46 +41,62 @@ const row = (o: Partial<OrderBoardRow> = {}): OrderBoardRow => ({
 });
 const waiting = { packages: [{ id: 'p9', shipment_id: 's9', number: 'PKG-9', status: 'not_shipped', date: '2026-11-05' }], lines: [line({ packable: 0, packed_waiting: 1 })] };
 
+const open = { picklists: [{ id: 'pl1', number: 'PL-00013', status: 'yet_to_start', date: '2026-11-06' }], picked: 0 };
+
 describe('the row icon', () => {
-  it('is a sibling of the row button, prints for the print step and does not toggle the row', async () => {
+  it('is a sibling of the row button, starts the picking step and does not toggle the row', async () => {
     const user = userEvent.setup();
     const onToggle = vi.fn();
-    render(<OrderCard row={row()} open={false} onToggle={onToggle} />);
-    const icon = screen.getByRole('button', { name: 'Prep sheet' });
+    const onStart = vi.fn();
+    render(<OrderCard row={row()} open={false} onToggle={onToggle} onStart={onStart} />);
+    const icon = screen.getByRole('button', { name: 'Prepare' });
     expect(screen.getByRole('button', { expanded: false }).contains(icon)).toBe(false);
     await user.click(icon);
-    expect(print).toHaveBeenCalledTimes(1);
+    expect(onStart).toHaveBeenCalledWith('pick');
     expect(onToggle).not.toHaveBeenCalled();
     expect(screen.queryByTestId('row-printed')).not.toBeInTheDocument();
   });
 
-  it('shows a tick and Being prepared once the sheet was printed', () => {
-    render(<OrderCard row={row({ prep: { at: '2026-11-06T18:30:00+00:00', by: 'Hina' } })} open={false} onToggle={vi.fn()} />);
+  it('an open picklist turns it into Create parcel and the row reads Being prepared', async () => {
+    const user = userEvent.setup();
+    const onStart = vi.fn();
+    render(<OrderCard row={row(open)} open={false} onToggle={vi.fn()} onStart={onStart} />);
+    expect(screen.getByText(/Being prepared/)).toBeInTheDocument();
+    expect(screen.queryByTestId('row-printed')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
+    expect(onStart).toHaveBeenCalledWith('pack-pl1');
+  });
+
+  it('shows a tick once the sheet was printed', () => {
+    render(<OrderCard row={row({ ...open, prep: { at: '2026-11-06T18:30:00+00:00', by: 'Hina' } })} open={false} onToggle={vi.fn()} />);
     expect(screen.getByTestId('row-printed')).toBeInTheDocument();
     expect(screen.getByText(/Being prepared/)).toBeInTheDocument();
   });
 
   it('is absent when there is nothing to do', () => {
     render(<OrderCard row={row({ lines: [line({ packable: 0 })] })} open={false} onToggle={vi.fn()} />);
-    expect(screen.queryByRole('button', { name: 'Prep sheet' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Prepare' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Hand over the parcel' })).not.toBeInTheDocument();
   });
 
-  it('the hand icon needs orders:update, and opens the order for that package', async () => {
+  it('needs orders:update, and opens the order for that package', async () => {
     const user = userEvent.setup();
-    const onHandover = vi.fn();
+    const onStart = vi.fn();
     mockUseAuth.hasPermission.mockImplementation(() => false);
-    const first = render(<OrderCard row={row(waiting)} open={false} onToggle={vi.fn()} onHandover={onHandover} />);
+    const first = render(<OrderCard row={row(waiting)} open={false} onToggle={vi.fn()} onStart={onStart} />);
     expect(screen.queryByRole('button', { name: 'Hand over the parcel' })).not.toBeInTheDocument();
     first.unmount();
+    const second = render(<OrderCard row={row()} open={false} onToggle={vi.fn()} onStart={onStart} />);
+    expect(screen.queryByRole('button', { name: 'Prepare' })).not.toBeInTheDocument();
+    second.unmount();
     mockUseAuth.hasPermission.mockImplementation(() => true);
-    render(<OrderCard row={row(waiting)} open={false} onToggle={vi.fn()} onHandover={onHandover} />);
+    render(<OrderCard row={row(waiting)} open={false} onToggle={vi.fn()} onStart={onStart} />);
     await user.click(screen.getByRole('button', { name: 'Hand over the parcel' }));
-    expect(onHandover).toHaveBeenCalledWith('p9');
+    expect(onStart).toHaveBeenCalledWith('handover-p9');
   });
 
-  it('hands the package id down to the panel', () => {
-    render(<OrderCard row={row(waiting)} open onToggle={vi.fn()} startHandover="p9" handoverTick={3} />);
-    expect(panel).toHaveBeenCalledWith(expect.objectContaining({ startHandover: 'p9', handoverTick: 3 }));
+  it('hands the step down to the panel', () => {
+    render(<OrderCard row={row(waiting)} open onToggle={vi.fn()} start="handover-p9" startTick={3} />);
+    expect(panel).toHaveBeenCalledWith(expect.objectContaining({ start: 'handover-p9', startTick: 3 }));
   });
 });

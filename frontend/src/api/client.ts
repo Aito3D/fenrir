@@ -5085,6 +5085,10 @@ export interface OrderContact { name: string; email: string; phone: string; mobi
 export interface OrderFacts { channel: string; reference: string; delivery_method: string; payment_terms: string; shopify_url: string | null; quote_url: string | null }
 
 export interface OrderPackage { id: string; shipment_id: string; number: string; status: string; date: string }
+/** A Books picklist of the order; `status` is "completed" once everything on it was picked. */
+export interface OrderPicklist { id: string; number: string; status: string; date: string }
+/** Units per order line a picklist (or a parcel made from one) may hold, as Books states them now. */
+export interface OrderPickLines { lines: { line_id: string; quantity: number }[] }
 
 export interface OrderBoardRow {
   id: string;
@@ -5101,6 +5105,9 @@ export interface OrderBoardRow {
   packed: number;
   units: { total: number; shipped: number; ready: number; backordered: number; to_order: number };
   packages: OrderPackage[];
+  picklists: OrderPicklist[];
+  /** Units a picklist counts as picked that no parcel holds yet. */
+  picked: number;
   /** Handed over (shipped) but not invoiced yet. */
   unbilled_units: number;
   /** When and by whom the prep sheet was printed. */
@@ -9865,11 +9872,20 @@ export const api = {
   refreshOrderBoard: () => request<OrderBoardResponse>('/order-board/refresh', { method: 'POST' }),
   getFinishedOrders: () => request<{ rows: FinishedOrderRow[] }>('/order-board/finished'),
   getFinishedOrder: (id: string) => request<FinishedOrderDetail>(`/order-board/finished/${encodeURIComponent(id)}`),
-  printOrderPrepSheet: (id: string): Promise<Blob> => orderBoardBlob(`/order-board/orders/${encodeURIComponent(id)}/prep-sheet`, 'POST'),
-  createOrderParcel: (id: string, lines: { line_id: string; quantity: number }[]) =>
-    request<{ board: OrderBoardResponse; package_number: string }>(`/order-board/orders/${encodeURIComponent(id)}/packages`, {
+  printOrderPrepSheet: (id: string, picklistId: string): Promise<Blob> =>
+    orderBoardBlob(`/order-board/orders/${encodeURIComponent(id)}/prep-sheet?picklist_id=${encodeURIComponent(picklistId)}`, 'POST'),
+  getOrderPicklistPreview: (id: string) => request<OrderPickLines>(`/order-board/orders/${encodeURIComponent(id)}/picklist`),
+  createOrderPicklist: (id: string, lines: OrderPickLines['lines']) =>
+    request<{ board: OrderBoardResponse; picklist: { id: string; number: string } }>(`/order-board/orders/${encodeURIComponent(id)}/picklists`, {
       method: 'POST',
       body: JSON.stringify({ lines }),
+    }),
+  getOrderPicklist: (id: string, picklistId: string) =>
+    request<OrderPickLines & { id: string; number: string; status: string }>(`/order-board/orders/${encodeURIComponent(id)}/picklists/${encodeURIComponent(picklistId)}`),
+  createOrderParcel: (id: string, picklistId: string, lines: OrderPickLines['lines']) =>
+    request<{ board: OrderBoardResponse; package_number: string }>(`/order-board/orders/${encodeURIComponent(id)}/packages`, {
+      method: 'POST',
+      body: JSON.stringify({ picklist_id: picklistId, lines }),
     }),
   getOrderHandover: (id: string, packageId: string) =>
     request<OrderHandoverPreview>(`/order-board/orders/${encodeURIComponent(id)}/packages/${encodeURIComponent(packageId)}/handover`),

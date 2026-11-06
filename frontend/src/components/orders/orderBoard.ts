@@ -12,6 +12,7 @@ import type {
   OrderPackage,
   OrderPanelRow,
   OrderPayState,
+  OrderPicklist,
   OrderStatus,
 } from '../../api/client';
 
@@ -149,16 +150,34 @@ export const daysPastDue = (dueDay: string): number => {
 export const packableUnits = (row: Pick<OrderBoardRow, 'lines'>): number =>
   Math.round(row.lines.reduce((n, l) => n + (l.packable ?? 0), 0) * 100) / 100;
 
-/** What the check would put in the parcel, from the live lines: the chosen quantity capped by what is packable now, zeros dropped. */
-export const parcelLines = (row: Pick<OrderBoardRow, 'lines'>, chosen: Record<string, number>): { line_id: string; quantity: number }[] =>
-  row.lines
-    .map(l => ({ line_id: l.id, quantity: Math.round(Math.min(chosen[l.id] ?? 0, l.packable ?? 0) * 100) / 100 }))
+/** What is being chosen for a new picklist, or checked for the parcel of one: per line, the most Books allows and the units chosen. */
+export interface OrderCheck { kind: 'pick' | 'pack'; picklist?: { id: string; number: string }; max: Record<string, number>; qty: Record<string, number> }
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** The lines a check would send: the chosen quantity, never above its maximum, zeros dropped. */
+export const checkLines = (check: Pick<OrderCheck, 'max' | 'qty'>): { line_id: string; quantity: number }[] =>
+  Object.entries(check.max)
+    .map(([line_id, max]) => ({ line_id, quantity: round2(Math.min(check.qty[line_id] ?? 0, max)) }))
     .filter(l => l.quantity > 0);
+
+/** Picklists a parcel can be made from: the open ones, and the completed ones while picked units wait for a box. */
+export const boxablePicklists = (row: Pick<OrderBoardRow, 'picklists' | 'picked'>): OrderPicklist[] =>
+  (row.picklists ?? []).filter(p => p.status !== 'completed' || (row.picked ?? 0) > 0);
+
+/** A new picklist is possible: the shelf holds something and no picklist is open (Books takes one at a time here). */
+export const canPick = (row: Pick<OrderBoardRow, 'lines' | 'picklists'>): boolean =>
+  packableUnits(row) > 0 && !(row.picklists ?? []).some(p => p.status !== 'completed');
 
 /** Parcels boxed in Books and not handed over yet. */
 export const waitingPackages = (row: Pick<OrderBoardRow, 'packages'>): OrderPackage[] =>
   row.packages.filter(p => p.status === 'not_shipped');
 
-/** What the operator does next with this order: print the sheet and box, or hand a boxed parcel over. */
-export const nextStep = (row: Pick<OrderBoardRow, 'lines' | 'packages'>): 'print' | 'handover' | null =>
-  packableUnits(row) > 0 ? 'print' : waitingPackages(row).length > 0 ? 'handover' : null;
+/** What the operator does next with this order, as the target the panel opens: box what was picked,
+ *  choose what to pick, or hand a boxed parcel over. */
+export const nextStep = (row: Pick<OrderBoardRow, 'lines' | 'packages' | 'picklists' | 'picked'>): string | null => {
+  const boxable = boxablePicklists(row);
+  const open = boxable.find(p => p.status !== 'completed') ?? boxable[boxable.length - 1];
+  const parcel = waitingPackages(row)[0];
+  return open ? `pack-${open.id}` : canPick(row) ? 'pick' : parcel ? `handover-${parcel.id}` : null;
+};

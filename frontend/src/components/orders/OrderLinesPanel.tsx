@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Check, CheckCheck, ClipboardList, HandHelping, Package, ReceiptText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { OrderBoardLine, OrderPanelRow } from '../../api/client';
+import { api } from '../../api/client';
+import type { OrderBoardLine, OrderPanelRow, OrderPicklist } from '../../api/client';
+import { useToast } from '../../contexts/ToastContext';
+import { usePrintBlob } from '../aito/usePrintBlob';
+import { errorReason, isRefused } from './orderErrors';
 import { OrderContactBlock } from './OrderContactBlock';
 import { OrderHandoverBar } from './OrderHandoverBar';
 import { OrderInvoicesBlock } from './OrderInvoicesBlock';
@@ -11,8 +16,8 @@ import { OrderPaymentBlock } from './OrderPaymentBlock';
 import { OrderPrepActions } from './OrderPrepActions';
 import { OrderQtyStepper } from './OrderQtyStepper';
 import { OrderRefChips } from './OrderRefChips';
-import { formatQty, packableUnits, panelGroups, parseDay, waitingPackages } from './orderBoard';
-import type { PanelGroup } from './orderBoard';
+import { boxablePicklists, canPick, formatQty, packableUnits, panelGroups, parseDay, waitingPackages } from './orderBoard';
+import type { OrderCheck, PanelGroup } from './orderBoard';
 import { FIT_VIEWPORT, TONE } from './orderStatus';
 import type { Tone } from './orderStatus';
 import { useHandOverPending, useOrderActions } from './useOrderActions';
@@ -43,37 +48,67 @@ export function OrderLinesPanel({
   row,
   others = [],
   onGoto,
-  startHandover,
-  handoverTick,
+  start,
+  startTick,
 }: {
   row: OrderPanelRow;
   others?: { id: string; number: string }[];
   onGoto?: (id: string) => void;
-  /** A parcel whose hand-over bar opens, on mount and whenever `handoverTick` changes. */
-  startHandover?: string;
-  /** Changes with every click on the hand icon, so a second click reopens a bar that was cancelled. */
-  handoverTick?: number;
+  /** The step that opens, on mount and whenever `startTick` changes: 'pick', 'pack-<picklist id>' or 'handover-<package id>'. */
+  start?: string;
+  /** Changes with every click on the row icon, so a second click reopens a bar that was cancelled. */
+  startTick?: number;
 }) {
   const { t } = useTranslation();
   const toasts = useOrderOutcomeToasts();
-  const { canUpdate, createInvoice } = useOrderActions({ invoice: { onSuccess: r => toasts.outcome(r.outcome), onError: toasts.failed } });
+  const { canUpdate, createInvoice, printSheet } = useOrderActions({ invoice: { onSuccess: r => toasts.outcome(r.outcome), onError: toasts.failed } });
   // The parcel whose hand-over bar is open.
   const [handover, setHandover] = useState<string | null>(null);
   // While a hand-over of this order is in flight, the bar on screen stays as it is.
   const handingOver = useHandOverPending(row.id);
   const pendingNow = useRef(handingOver);
   pendingNow.current = handingOver;
+  // Set while the operator chooses the lines of a new picklist, or checks the parcel of one.
+  const [checkState, setCheck] = useState<OrderCheck | null>(null);
+  const [pending, setPending] = useState(false);
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const { print, busy: printing } = usePrintBlob({ failureMessage: t('orders.prep.printFailed'), downloadFilename: `${row.number}-prep.pdf` });
+  // The check being loaded: what a picklist or its parcel may hold is asked from Zoho when the check opens.
+  const [opening, setOpening] = useState<string | null>(null);
+  const openCheck = async (picklist: OrderPicklist | null) => {
+    setOpening(picklist?.id ?? 'pick');
+    try {
+      const { lines } = picklist ? await api.getOrderPicklist(row.id, picklist.id) : await api.getOrderPicklistPreview(row.id);
+      const max = Object.fromEntries(lines.map(l => [l.line_id, l.quantity]));
+      if (!lines.length) showToast(t(picklist ? 'orders.pick.boxed' : 'orders.pick.nothing'), 'error');
+      else setCheck({ kind: picklist ? 'pack' : 'pick', picklist: picklist ?? undefined, max, qty: { ...max } });
+    } catch (e) {
+      showToast(t(picklist ? 'orders.parcel.failed' : 'orders.pick.failed', { reason: errorReason(t, e) }), 'error');
+      if (isRefused(e)) void queryClient.invalidateQueries({ queryKey: ['order-board'], exact: true });
+    } finally {
+      setOpening(null);
+    }
+  };
+  const starter = useRef({ openCheck, row });
+  starter.current = { openCheck, row };
   useEffect(() => {
-    if (startHandover && canUpdate && !pendingNow.current) setHandover(startHandover);
-  }, [startHandover, handoverTick, canUpdate]);
+    if (!start || !canUpdate || pendingNow.current) return;
+    const id = start.slice(start.indexOf('-') + 1);
+    if (start.startsWith('handover-')) setHandover(id);
+    else if (start === 'pick') void starter.current.openCheck(null);
+    else {
+      const picklist = (starter.current.row.picklists ?? []).find(p => p.id === id);
+      if (picklist) void starter.current.openCheck(picklist);
+    }
+  }, [start, startTick, canUpdate]);
   const invoiceSent = useRef(false);
   const handoverOpen = !!handover && waitingPackages(row).some(p => p.id === handover);
-  // Set while the operator is checking quantities for a new parcel: line id -> units.
-  const [checkState, setCheck] = useState<Record<string, number> | null>(null);
-  const [pending, setPending] = useState(false);
-  const packable = packableUnits(row) > 0;
-  // A check only exists while something is packable; a refetch that empties the group closes it for good.
+  // A choice of what to pick only exists while the shelf holds something, the parcel check of a picklist while
+  // units are left to box; a refetch that ends either closes it for good.
+  const packable = checkState?.kind === 'pack' ? panelGroups(row).some(g => g.id === 'todo') : packableUnits(row) > 0;
   const check = checkState && packable ? checkState : null;
+  const checkLabel = check ? (check.kind === 'pick' ? 'orders.pick.toPick' : 'orders.parcel.inParcel') : null;
   useEffect(() => {
     if (checkState && !packable) {
       setCheck(null);
@@ -118,7 +153,7 @@ export function OrderLinesPanel({
           <thead className="bg-bambu-dark text-left lg:sticky lg:top-0 lg:z-10 text-[11px] uppercase tracking-wide text-bambu-gray">
             <tr>
               <th className="py-1.5 font-medium">{t('orders.col.product')}</th>
-              <th className="text-right font-medium">{t(check ? 'orders.parcel.inParcel' : 'orders.col.qty')}</th>
+              <th className="text-right font-medium">{t(checkLabel ?? 'orders.col.qty')}</th>
               <th className="pl-4 text-right font-medium">{t('orders.col.available')}</th>
               <th className="pl-4 text-right font-medium">{t('orders.col.short')}</th>
               <th className="pl-4 font-medium">{t('orders.col.state')}</th>
@@ -156,8 +191,15 @@ export function OrderLinesPanel({
                           ))}
                         </span>
                       )}
-                      {group.id === 'todo' && packable && !check && (
-                        <OrderPrepActions row={row} onCreate={() => setCheck(Object.fromEntries(row.lines.filter(l => l.packable > 0).map(l => [l.id, l.packable])))} />
+                      {group.id === 'todo' && !check && (canPick(row) || boxablePicklists(row).length > 0) && (
+                        <OrderPrepActions
+                          row={row}
+                          opening={opening}
+                          printing={printing}
+                          onPick={() => void openCheck(null)}
+                          onPack={p => void openCheck(p)}
+                          onPrint={p => void print(printSheet(row.id, p.id))}
+                        />
                       )}
                     </div>
                   </th>
@@ -166,14 +208,22 @@ export function OrderLinesPanel({
                   const todo = group.id === 'todo';
                   const short = todo && (line.state === 'backorder' || line.state === 'to_order');
                   return (
-                    <tr key={line.id} className={`${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${todo && check && line.packable <= 0 ? 'opacity-40' : ''}`}>
+                    <tr key={line.id} className={`${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${todo && check && !(check.max[line.id] > 0) ? 'opacity-40' : ''}`}>
                       <td className={`border-l-2 py-2 pl-4 pr-3 ${TONE[meta.tone].rail}`}>
                         <div className="text-white">{line.name}</div>
                         {line.sku && <div className="font-mono text-xs text-bambu-gray">{line.sku}</div>}
                       </td>
                       <td className="whitespace-nowrap text-right tabular-nums text-white">
-                        {todo && check && line.packable > 0 ? (
-                          <OrderQtyStepper id={line.id} name={line.name} value={Math.min(check[line.id] ?? 0, line.packable)} max={line.packable} disabled={pending} onChange={v => setCheck({ ...check, [line.id]: v })} />
+                        {todo && check && checkLabel && check.max[line.id] > 0 ? (
+                          <OrderQtyStepper
+                            id={line.id}
+                            name={line.name}
+                            label={t(checkLabel)}
+                            value={Math.min(check.qty[line.id] ?? 0, check.max[line.id])}
+                            max={check.max[line.id]}
+                            disabled={pending}
+                            onChange={v => setCheck({ ...check, qty: { ...check.qty, [line.id]: v } })}
+                          />
                         ) : (
                           formatQty(qty)
                         )}
@@ -221,7 +271,13 @@ export function OrderLinesPanel({
                 {group.id === 'todo' && check && (
                   <tr>
                     <td colSpan={5} className="pt-2">
-                      <OrderPackBar row={row} qty={check} onClose={() => { refocus.current = 'parcel'; setCheck(null); setPending(false); }} onBusy={setPending} />
+                      <OrderPackBar
+                        row={row}
+                        check={check}
+                        onClose={() => { refocus.current = check.picklist ? `pack-${check.picklist.id}` : 'pick'; setCheck(null); setPending(false); }}
+                        onBusy={setPending}
+                        onPicked={p => void print(printSheet(row.id, p.id))}
+                      />
                     </td>
                   </tr>
                 )}

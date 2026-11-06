@@ -17,12 +17,13 @@ export function useHandOverPending(orderId: string): boolean {
   return useIsMutating({ mutationKey: HANDOVER_KEY, predicate: m => (m.state.variables as { id?: string } | undefined)?.id === orderId }) > 0;
 }
 
-/** The write actions of an order: box a parcel, hand it over, invoice it, print the prep sheet.
+/** The write actions of an order: start a picklist, box its parcel, hand it over, invoice it, print the prep sheet.
  *  Each answer carries the fresh board, which goes straight into the list; the
  *  finished orders are refetched. A failure is thrown to the caller, which words it.
  *  The callbacks run from the mutation itself, so they still fire after the caller unmounted. */
 export function useOrderActions(callbacks?: {
   parcel?: Callbacks<{ package_number: string }, unknown>;
+  picklist?: Callbacks<{ picklist: { id: string; number: string } }, unknown>;
   handOver?: Callbacks<OrderActionResult, HandOverVars>;
   invoice?: Callbacks<OrderActionResult, InvoiceVars>;
 }) {
@@ -46,7 +47,7 @@ export function useOrderActions(callbacks?: {
   };
 
   const createParcel = useMutation({
-    mutationFn: ({ id, lines }: { id: string; lines: { line_id: string; quantity: number }[] }) => api.createOrderParcel(id, lines),
+    mutationFn: ({ id, picklistId, lines }: { id: string; picklistId: string; lines: { line_id: string; quantity: number }[] }) => api.createOrderParcel(id, picklistId, lines),
     // Here, not in mutate(): these still run when the panel closed meanwhile.
     onSuccess: async (r, v) => {
       await take(r.board);
@@ -56,6 +57,17 @@ export function useOrderActions(callbacks?: {
     onError: (e, v) => {
       refused(v.id, e);
       callbacks?.parcel?.onError?.(e);
+    },
+  });
+  const createPicklist = useMutation({
+    mutationFn: ({ id, lines }: { id: string; lines: { line_id: string; quantity: number }[] }) => api.createOrderPicklist(id, lines),
+    onSuccess: async r => {
+      await take(r.board);
+      callbacks?.picklist?.onSuccess?.(r, undefined);
+    },
+    onError: (e, v) => {
+      refused(v.id, e);
+      callbacks?.picklist?.onError?.(e);
     },
   });
   const handOver = useMutation({
@@ -87,11 +99,12 @@ export function useOrderActions(callbacks?: {
   return {
     canUpdate: hasPermission('orders:update'),
     createParcel,
+    createPicklist,
     handOver,
     createInvoice,
     /** The blob fetcher for a print button; the server stamps the order as printed, so the board is refetched once it ran. */
-    printSheet: (id: string) => async () => {
-      const blob = await api.printOrderPrepSheet(id);
+    printSheet: (id: string, picklistId: string) => async () => {
+      const blob = await api.printOrderPrepSheet(id, picklistId);
       void queryClient.invalidateQueries({ queryKey: BOARD_KEY, exact: true });
       return blob;
     },
