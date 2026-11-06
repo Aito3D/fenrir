@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from collections import Counter
 from datetime import date
 
 import pytest
@@ -10,7 +11,13 @@ from sqlalchemy.exc import OperationalError
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_actions as actions, order_board_sync as sync
-from backend.app.services.zoho import ZohoRateLimited, ZohoRequestRejected, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import (
+    ZohoNotFound,
+    ZohoRateLimited,
+    ZohoRequestRejected,
+    ZohoUpstreamError,
+    zoho_service,
+)
 from backend.tests.unit.test_order_board_sync import (  # noqa: F401
     _synced,
     file_sessions,
@@ -280,3 +287,687 @@ async def test_a_simultaneous_first_stamp_updates_the_winner_instead_of_failing(
         assert row["prep"]["by"] == "loser"
         stamps = (await one.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "prep"))).scalars().all()
         assert len(stamps) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_pending_stored_copy_is_reread_before_a_parcel(db_session, parcels):
+    """The pending flag survives a restart, where the in-memory unconfirmed mark does not."""
+    await _board(db_session, parcels, order(1, qty=2))
+    parcels.orders["so1"]["line_items"][0]["quantity_packed"] = 2  # boxed in Books meanwhile
+    doc = await _doc(db_session, "so1")
+    doc.pending = True
+    await db_session.commit()
+    with pytest.raises(actions.OrderActionRefused) as e:
+        await actions.create_parcel(db_session, "so1", {"l1": 2})
+    assert e.value.args[0] == "too_many"
+    assert parcels.created == []
+
+
+@pytest.mark.asyncio
+async def test_an_unstored_order_needing_a_refresh_is_not_on_the_board(db_session, parcels):
+    await _board(db_session, parcels, order(1))
+    sync.note_write("so9")
+    with pytest.raises(actions.OrderNotOnBoard):
+        await actions.create_parcel(db_session, "so9", {"l9": 1})
+
+
+# --- Hand-over and invoice ---------------------------------------------------------------------------------------
+
+TODAY = date.today().isoformat()
+
+
+def _mirror_packages(zoho, salesorder_id):
+    zoho.orders[salesorder_id]["packages"] = [
+        {
+            "package_id": p["package_id"],
+            "package_number": p["package_number"],
+            "status": p["status"],
+            "shipment_id": p["shipment_id"],
+            "quantity": sum(line["quantity"] for line in p["line_items"]),
+        }
+        for p in zoho.packages.values()
+        if p["salesorder_id"] == salesorder_id
+    ]
+
+
+def handover_order(zoho, *, qty=3, box=2, status="not_shipped", invoiced=0, advance=0, method=None, service=False):
+    """so1 with one line l1 (rate 500) of ``qty`` units; package pk1 holds ``box`` of them."""
+    doc = order(1, qty=qty, packed=box)
+    line = doc["line_items"][0]
+    line["quantity_invoiced"] = doc["quantity_invoiced"] = invoiced
+    if status != "not_shipped":
+        line["quantity_shipped"] = doc["quantity_shipped"] = box
+    if method is not None:
+        doc["delivery_method"] = method
+    if advance:
+        doc["total"] = 1500.0
+        doc["contact"] = {"unused_customer_credits": advance}
+    if service:
+        doc["line_items"].append(
+            {
+                "line_item_id": "l1s",
+                "item_id": "",
+                "product_type": "service",
+                "name": "Design",
+                "quantity": 1,
+                "quantity_shipped": 0,
+                "quantity_packed": 0,
+                "quantity_cancelled": 0,
+                "quantity_invoiced": 0,
+            }
+        )
+    zoho.add(doc)
+    zoho.packages["pk1"] = {
+        "package_id": "pk1",
+        "package_number": "PKG-00001",
+        "salesorder_id": "so1",
+        "status": status,
+        "shipment_id": "" if status == "not_shipped" else "sh0",
+        "line_items": [{"so_line_item_id": "l1", "quantity": box}],
+    }
+    _mirror_packages(zoho, "so1")
+    return doc
+
+
+@pytest.fixture
+def books(zoho, monkeypatch):  # noqa: F811
+    """A recording Books: every call lands in ``books.log`` as (name, args); writes change the stored orders the way
+    Books does. ``books.errors[name]`` makes that call raise once, before it has any effect."""
+    import copy
+
+    zoho.log = []
+    zoho.packages = {}
+    zoho.errors = {}
+    zoho.prefill_extra = {}
+    zoho.line_discount = 0
+    zoho.unused = []
+    zoho.draft_counts = True
+    zoho.ship_gate = None
+    zoho.ship_entered = asyncio.Event()
+
+    def rec(name, *args):
+        zoho.log.append((name, args))
+        if name in zoho.errors:
+            raise zoho.errors.pop(name)
+
+    async def get_salesorder(db, salesorder_id):
+        rec("get_salesorder", salesorder_id)
+        zoho.calls["detail"] += 1
+        return copy.deepcopy(zoho.orders[salesorder_id])
+
+    async def get_package(db, package_id):
+        rec("get_package", package_id)
+        if package_id not in zoho.packages:
+            raise ZohoNotFound("no such package")
+        return copy.deepcopy(zoho.packages[package_id])
+
+    async def create_shipment(db, salesorder_id, package_id, *, date, delivery_method):
+        zoho.ship_entered.set()
+        if zoho.ship_gate:
+            await zoho.ship_gate.wait()
+        rec("create_shipment", salesorder_id, package_id, date, delivery_method)
+        package = zoho.packages[package_id]
+        package.update(status="shipped", shipment_id="sh1")
+        doc = zoho.orders[salesorder_id]
+        for item in package["line_items"]:
+            for line in doc["line_items"]:
+                if line["line_item_id"] == item["so_line_item_id"]:
+                    line["quantity_shipped"] += item["quantity"]
+                    doc["quantity_shipped"] += item["quantity"]
+        _mirror_packages(zoho, salesorder_id)
+        return {"shipment_id": "sh1"}
+
+    async def mark_shipment_delivered(db, shipment_id):
+        rec("mark_shipment_delivered", shipment_id)
+        package = next(p for p in zoho.packages.values() if p["shipment_id"] == shipment_id)
+        package["status"] = "delivered"
+        _mirror_packages(zoho, package["salesorder_id"])
+
+    async def invoice_prefill(db, salesorder_id):
+        rec("invoice_prefill", salesorder_id)
+        doc = zoho.orders[salesorder_id]
+        lines = [
+            {
+                "line_item_id": "",
+                "salesorder_item_id": line["line_item_id"],
+                "item_id": line["item_id"],
+                "name": line["name"],
+                "description": "",
+                "rate": 500.0,
+                "quantity": line["quantity"] - line["quantity_invoiced"],
+                "tax_id": "t1",
+                "discount": zoho.line_discount,
+                "item_total": 0,
+            }
+            for line in doc["line_items"]
+            if line["quantity"] - line["quantity_invoiced"] > 0
+        ]
+        if not lines:
+            return None
+        return {
+            "customer_id": doc["customer_id"],
+            "is_inclusive_tax": True,
+            "date": "2020-01-01",
+            "discount": 0,
+            "shipping_charge": 0,
+            "adjustment": 0,
+            "notes": "",
+            "template_id": "tpl",
+            "salesorder_id": salesorder_id,
+            "line_items": lines,
+            **zoho.prefill_extra,
+        }
+
+    async def create_invoice(db, payload):
+        rec("create_invoice", payload)
+        doc = next(d for d in zoho.orders.values() if d["customer_id"] == payload["customer_id"])
+        if zoho.draft_counts:
+            for item in payload["line_items"]:
+                for line in doc["line_items"]:
+                    if line["line_item_id"] == item["salesorder_item_id"]:
+                        line["quantity_invoiced"] += item["quantity"]
+        total = sum(item["rate"] * item["quantity"] for item in payload["line_items"]) + float(
+            payload.get("shipping_charge") or 0
+        )
+        number = f"INV-{len(doc['invoices']) + 1}"
+        doc["invoices"].append({"invoice_id": number.lower(), "invoice_number": number, "status": "draft"})
+        return {"invoice_id": number.lower(), "invoice_number": number, "total": total, "balance": total}
+
+    async def mark_invoice_sent(db, invoice_id):
+        rec("mark_invoice_sent", invoice_id)
+        for doc in zoho.orders.values():
+            for invoice in doc["invoices"]:
+                if invoice["invoice_id"] == invoice_id:
+                    invoice["status"] = "sent"
+
+    async def list_customer_payments(db, customer_id):
+        rec("list_customer_payments", customer_id)
+        return copy.deepcopy(zoho.unused)
+
+    async def apply_invoice_credits(db, invoice_id, invoice_payments):
+        rec("apply_invoice_credits", invoice_id, invoice_payments)
+
+    for fn in (
+        get_salesorder,
+        get_package,
+        create_shipment,
+        mark_shipment_delivered,
+        invoice_prefill,
+        create_invoice,
+        mark_invoice_sent,
+        list_customer_payments,
+        apply_invoice_credits,
+    ):
+        monkeypatch.setattr(zoho_service, fn.__name__, fn)
+    return zoho
+
+
+async def _ready(db, books, **kw):
+    handover_order(books, **kw)
+    await sync.run_pass(db)
+    await sync.run_pass(db)
+    books.log.clear()
+
+
+def _names(books):
+    return [name for name, _ in books.log]
+
+
+def _calls(books, name):
+    return [args for n, args in books.log if n == name]
+
+
+@pytest.mark.asyncio
+async def test_pickup_runs_every_step_in_order(db_session, books):
+    await _ready(db_session, books, advance=600)
+    books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 900}]
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert _names(books) == [
+        "get_package",
+        "create_shipment",
+        "mark_shipment_delivered",
+        "get_salesorder",
+        "invoice_prefill",
+        "create_invoice",
+        "mark_invoice_sent",
+        "list_customer_payments",
+        "apply_invoice_credits",
+        "get_salesorder",
+    ]
+    assert _calls(books, "create_shipment") == [("so1", "pk1", TODAY, "PICK UP")]
+    assert _calls(books, "mark_shipment_delivered") == [("sh1",)]
+    assert outcome == {
+        "package_number": "PKG-00001",
+        "shipment": "done",
+        "delivered": "done",
+        "invoice": "created",
+        "invoice_number": "INV-1",
+        "credit_applied": 600.0,
+        "failed_step": None,
+        "error": None,
+    }
+    row = (await sync.read_board(db_session))["rows"][0]
+    assert row["packages"][0]["status"] == "delivered"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "sent"), [(None, "Aito3D"), ("", "Aito3D"), ("pick up", "Aito3D"), ("Chronopost", "Chronopost")]
+)
+async def test_delivery_is_not_marked_delivered_and_uses_the_orders_method_or_aito3d(db_session, books, method, sent):
+    await _ready(db_session, books, method=method)
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="delivery", apply_credit=False)
+    assert _calls(books, "create_shipment") == [("so1", "pk1", TODAY, sent)]
+    assert "mark_shipment_delivered" not in _names(books)
+    assert (outcome["shipment"], outcome["delivered"], outcome["invoice"]) == ("done", "skipped", "created")
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_already_shipped_gets_no_second_shipment(db_session, books):
+    await _ready(db_session, books, status="shipped")
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert "create_shipment" not in _names(books)
+    assert _calls(books, "mark_shipment_delivered") == [("sh0",)]
+    assert (outcome["shipment"], outcome["delivered"], outcome["invoice"]) == ("skipped", "done", "created")
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_already_delivered_only_gets_its_invoice(db_session, books):
+    await _ready(db_session, books, status="delivered")
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert _names(books) == [
+        "get_package",
+        "get_salesorder",
+        "invoice_prefill",
+        "create_invoice",
+        "mark_invoice_sent",
+        "get_salesorder",
+    ]
+    assert (outcome["shipment"], outcome["delivered"], outcome["invoice"]) == ("skipped", "skipped", "created")
+
+
+@pytest.mark.asyncio
+async def test_nothing_left_to_invoice_creates_no_invoice(db_session, books):
+    await _ready(db_session, books, invoiced=3)  # invoiced up front
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert "create_invoice" not in _names(books)
+    assert (outcome["invoice"], outcome["invoice_number"], outcome["failed_step"]) == ("none", None, None)
+
+
+@pytest.mark.asyncio
+async def test_an_order_holding_a_draft_invoice_gets_no_second_one(db_session, books):
+    """Should Books not count a draft in quantity_invoiced, the draft still blocks a duplicate."""
+    await _ready(db_session, books)
+    books.orders["so1"]["invoices"] = [{"invoice_id": "d1", "invoice_number": "INV-0", "status": "draft"}]
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert "create_invoice" not in _names(books)
+    assert outcome["invoice"] == "none"
+
+
+@pytest.mark.asyncio
+async def test_a_service_line_rides_on_the_invoice(db_session, books):
+    await _ready(db_session, books, service=True)
+    await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    (payload,) = _calls(books, "create_invoice")[0]
+    assert {(line["salesorder_item_id"], line["quantity"]) for line in payload["line_items"]} == {("l1", 2), ("l1s", 1)}
+
+
+@pytest.mark.asyncio
+async def test_partial_invoice_of_an_order_with_a_shipping_charge_is_left_to_books(db_session, books):
+    await _ready(db_session, books, qty=3, box=2)
+    books.prefill_extra = {"shipping_charge": 200}
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert "create_invoice" not in _names(books)
+    assert (outcome["invoice"], outcome["failed_step"], outcome["shipment"]) == ("manual", None, "done")
+
+
+@pytest.mark.asyncio
+async def test_whole_remaining_invoice_keeps_the_orders_shipping_charge(db_session, books):
+    await _ready(db_session, books, qty=2, box=2)
+    books.prefill_extra = {"shipping_charge": 200}
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    (payload,) = _calls(books, "create_invoice")[0]
+    assert payload["shipping_charge"] == 200
+    assert outcome["invoice"] == "created"
+
+
+@pytest.mark.asyncio
+async def test_invoice_lines_carry_the_order_line_link_and_todays_date(db_session, books):
+    await _ready(db_session, books, qty=3, box=2)
+    await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    (payload,) = _calls(books, "create_invoice")[0]
+    assert payload == {
+        "customer_id": "c1",
+        "is_inclusive_tax": True,
+        "discount": 0,
+        "shipping_charge": 0,
+        "adjustment": 0,
+        "date": TODAY,
+        "line_items": [
+            {
+                "salesorder_item_id": "l1",
+                "item_id": "A",
+                "name": "Thing",
+                "rate": 500.0,
+                "quantity": 2,
+                "tax_id": "t1",
+                "discount": 0,
+            }
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_credit_is_capped_by_the_orders_advance_and_by_the_invoice(db_session, books):
+    payments = [
+        {"payment_id": "p2", "date": "2026-10-02", "unused_amount": 500},
+        {"payment_id": "p0", "date": "2026-08-01", "unused_amount": 0},
+        {"payment_id": "p1", "date": "2026-09-01", "unused_amount": 400},
+        {"payment_id": "p3", "date": "2026-10-03", "unused_amount": 300},
+    ]
+    await _ready(db_session, books, advance=600)  # invoice 1000, advance 600
+    books.unused = payments
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert _calls(books, "apply_invoice_credits") == [
+        ("inv-1", [{"payment_id": "p1", "amount_applied": 400}, {"payment_id": "p2", "amount_applied": 200}])
+    ]
+    assert outcome["credit_applied"] == 600
+
+    books.orders.clear()
+    books.packages.clear()
+    await _ready(db_session, books, advance=5000)  # advance capped at the order's 1500, invoice 1000
+    books.unused = payments
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert _calls(books, "apply_invoice_credits")[-1] == (
+        "inv-1",
+        [
+            {"payment_id": "p1", "amount_applied": 400},
+            {"payment_id": "p2", "amount_applied": 500},
+            {"payment_id": "p3", "amount_applied": 100},
+        ],
+    )
+    assert outcome["credit_applied"] == 1000
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("advance", "apply_credit"), [(600, False), (0, True)])
+async def test_no_credit_call_when_unticked_or_no_advance(db_session, books, advance, apply_credit):
+    await _ready(db_session, books, advance=advance)
+    books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 900}]
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=apply_credit)
+    assert "list_customer_payments" not in _names(books)
+    assert "apply_invoice_credits" not in _names(books)
+    assert (outcome["invoice"], outcome["credit_applied"]) == ("created", 0)
+
+
+@pytest.mark.asyncio
+async def test_no_unused_payment_is_not_a_failure(db_session, books):
+    await _ready(db_session, books, advance=600)
+    books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 0}]
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert "apply_invoice_credits" not in _names(books)
+    assert (outcome["invoice"], outcome["credit_applied"], outcome["failed_step"]) == ("created", 0, None)
+
+
+@pytest.mark.asyncio
+async def test_invoice_refused_reports_the_step_and_keeps_the_shipment(db_session, books):
+    await _ready(db_session, books)
+    books.errors["create_invoice"] = ZohoRequestRejected("Books says no")
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert outcome["shipment"] == outcome["delivered"] == "done"
+    assert (outcome["invoice"], outcome["failed_step"], outcome["error"]) == ("failed", "invoice", "Books says no")
+    assert _names(books)[-1] == "get_salesorder"  # the closing re-read ran
+    row = (await sync.read_board(db_session))["rows"][0]
+    assert row["packages"][0]["status"] == "delivered"
+
+
+@pytest.mark.asyncio
+async def test_retry_after_a_refused_invoice_creates_only_the_invoice(db_session, books):
+    await _ready(db_session, books)
+    books.errors["create_invoice"] = ZohoRequestRejected("Books says no")
+    await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert (outcome["shipment"], outcome["delivered"], outcome["invoice"]) == ("skipped", "skipped", "created")
+    assert len(_calls(books, "create_shipment")) == len(_calls(books, "mark_shipment_delivered")) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failing",
+    ["mark_shipment_delivered", "invoice_prefill", "create_invoice", "mark_invoice_sent", "list_customer_payments"],
+)
+@pytest.mark.parametrize("qty", [3, 2])  # 2: the shipment takes the order off the board
+async def test_a_retry_after_any_failed_step_repeats_no_write(db_session, books, failing, qty):
+    await _ready(db_session, books, qty=qty, box=2, advance=600)
+    books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 900}]
+    books.errors[failing] = ZohoUpstreamError("timeout")
+    first = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert first["error"] == "timeout"
+    await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    succeeded = Counter(_names(books))
+    succeeded[failing] -= 1  # the call that raised had no effect
+    for write in ("create_shipment", "mark_shipment_delivered", "create_invoice"):
+        assert succeeded[write] == 1, write
+    # A draft whose "sent" failed stays a draft: the operator sends it in Books, Fenrir never re-invoices it.
+    assert succeeded["mark_invoice_sent"] == (0 if failing == "mark_invoice_sent" else 1)
+    assert books.packages["pk1"]["status"] == "delivered"
+    assert len(books.orders["so1"]["invoices"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_mark_sent_failure_leaves_a_draft_and_applies_no_credit(db_session, books):
+    await _ready(db_session, books, advance=600)
+    books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 900}]
+    books.errors["mark_invoice_sent"] = ZohoRequestRejected("cannot send")
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert (outcome["invoice"], outcome["invoice_number"], outcome["failed_step"]) == ("draft", "INV-1", "sent")
+    assert outcome["credit_applied"] == 0
+    assert "list_customer_payments" not in _names(books)
+    again = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert again["invoice"] == "none"
+    assert len(_calls(books, "create_invoice")) == 1
+
+
+@pytest.mark.asyncio
+async def test_shipment_refused_raises_and_nothing_else_runs(db_session, books):
+    await _ready(db_session, books)
+    books.errors["create_shipment"] = ZohoRequestRejected("refused")
+    with pytest.raises(ZohoRequestRejected):
+        await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert _names(books) == ["get_package", "create_shipment", "get_salesorder"]  # one look in case it went through
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_shipment_opens_the_back_off_window(db_session, books):
+    await _ready(db_session, books)
+    books.errors["create_shipment"] = ZohoRateLimited("429", retry_after=30)
+    with pytest.raises(ZohoRateLimited):
+        await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert sync._rate_limited_until > time.monotonic() + 20
+
+
+@pytest.mark.asyncio
+async def test_busy_zoho_hands_nothing_over(db_session, books):
+    await _ready(db_session, books)
+    books.meter = sync.CALL_CEILING
+    with pytest.raises(sync.ZohoBusy):
+        await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.invoice_shipped(db_session, "so1", apply_credit=False)
+    assert books.log == []
+
+
+@pytest.mark.asyncio
+async def test_invoice_shipped_runs_the_invoice_part_alone(db_session, books):
+    await _ready(db_session, books, status="shipped")  # shipped in Books by hand
+    outcome = await actions.invoice_shipped(db_session, "so1", apply_credit=False)
+    assert _names(books) == [
+        "get_salesorder",
+        "invoice_prefill",
+        "create_invoice",
+        "mark_invoice_sent",
+        "get_salesorder",
+    ]
+    assert outcome == {
+        "package_number": "",
+        "shipment": "skipped",
+        "delivered": "skipped",
+        "invoice": "created",
+        "invoice_number": "INV-1",
+        "credit_applied": 0.0,
+        "failed_step": None,
+        "error": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_invoice_shipped_works_for_a_finished_order_with_no_board_row(db_session, books):
+    await _ready(db_session, books, qty=2, box=2, status="delivered", service=True)
+    assert (await sync.read_board(db_session))["rows"] == []
+    outcome = await actions.invoice_shipped(db_session, "so1", apply_credit=True)
+    (payload,) = _calls(books, "create_invoice")[0]
+    assert {(line["salesorder_item_id"], line["quantity"]) for line in payload["line_items"]} == {("l1", 2), ("l1s", 1)}
+    assert (outcome["invoice"], outcome["credit_applied"]) == ("created", 0)
+    with pytest.raises(actions.OrderNotOnBoard):
+        await actions.invoice_shipped(db_session, "so9", apply_credit=False)
+
+
+@pytest.mark.asyncio
+async def test_hand_over_of_another_orders_package_is_refused(db_session, books):
+    await _ready(db_session, books)
+    books.packages["pk2"] = {**books.packages["pk1"], "package_id": "pk2", "salesorder_id": "so2"}
+    for package in ("pk2", "nope"):
+        with pytest.raises(actions.OrderActionRefused) as e:
+            await actions.hand_over(db_session, "so1", package, mode="pickup", apply_credit=False)
+        assert e.value.args[0] == "unknown_package"
+    assert _names(books) == ["get_package", "get_package"]
+
+
+@pytest.mark.asyncio
+async def test_hand_over_of_an_order_off_the_board_is_refused(db_session, books):
+    with pytest.raises(actions.OrderNotOnBoard):
+        await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+
+
+@pytest.mark.asyncio
+async def test_preview_totals_the_kept_units_for_a_tax_inclusive_order(db_session, books):
+    await _ready(db_session, books, qty=3, box=2, advance=600)
+    preview = await actions.handover_preview(db_session, "so1", "pk1")
+    assert preview == {
+        "units": 2.0,
+        "available": True,
+        "to_invoice": True,
+        "invoice_total": 1000.0,
+        "manual": False,
+        "credit": 600.0,
+        "covered_by": [],
+    }
+    assert _names(books) == ["get_package", "invoice_prefill"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("extra", "discount"), [({"is_inclusive_tax": False}, 0), ({}, "10%"), ({"shipping_charge": 200}, 0)]
+)
+async def test_preview_has_no_total_when_tax_is_exclusive_or_a_line_is_discounted(db_session, books, extra, discount):
+    await _ready(db_session, books, qty=2, box=2, advance=600)
+    books.prefill_extra, books.line_discount = extra, discount
+    preview = await actions.handover_preview(db_session, "so1", "pk1")
+    assert (preview["to_invoice"], preview["invoice_total"], preview["credit"]) == (True, None, 0)
+
+
+@pytest.mark.asyncio
+async def test_preview_says_manual_for_a_partial_invoice_with_order_money(db_session, books):
+    await _ready(db_session, books, qty=3, box=2)
+    books.prefill_extra = {"adjustment": -50}
+    preview = await actions.handover_preview(db_session, "so1", "pk1")
+    assert (preview["to_invoice"], preview["manual"], preview["invoice_total"]) == (True, True, None)
+
+
+@pytest.mark.asyncio
+async def test_preview_names_the_invoices_when_everything_is_invoiced(db_session, books):
+    doc = handover_order(books, invoiced=3)
+    doc["invoices"] = [
+        {"invoice_id": "i1", "invoice_number": "INV-7", "status": "paid"},
+        {"invoice_id": "i2", "invoice_number": "INV-6", "status": "void"},
+    ]
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    books.log.clear()
+    preview = await actions.handover_preview(db_session, "so1", "pk1")
+    assert (preview["to_invoice"], preview["covered_by"], preview["invoice_total"]) == (False, ["INV-7"], None)
+    assert "invoice_prefill" not in _names(books)
+
+
+@pytest.mark.asyncio
+async def test_preview_survives_a_books_failure(db_session, books):
+    await _ready(db_session, books)
+    books.errors["get_package"] = ZohoUpstreamError("down")
+    assert await actions.handover_preview(db_session, "so1", "pk1") == {
+        "units": 2.0,
+        "available": False,
+        "to_invoice": False,
+        "invoice_total": None,
+        "manual": False,
+        "credit": 0.0,
+        "covered_by": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_preview_of_a_package_not_on_the_order_is_refused(db_session, books):
+    await _ready(db_session, books)
+    with pytest.raises(actions.OrderActionRefused) as e:
+        await actions.handover_preview(db_session, "so1", "nope")
+    assert e.value.args[0] == "unknown_package"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_hand_over_is_refused(db_session, books):
+    await _ready(db_session, books)
+    books.ship_gate = asyncio.Event()
+    first = asyncio.create_task(actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False))
+    await books.ship_entered.wait()
+    with pytest.raises(actions.OrderBusy):
+        await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    with pytest.raises(actions.OrderBusy):
+        await actions.invoice_shipped(db_session, "so1", apply_credit=False)
+    books.ship_gate.set()
+    assert (await first)["shipment"] == "done"
+    assert len(_calls(books, "create_shipment")) == 1
+
+
+PREFILL = {
+    "customer_id": "c1",
+    "is_inclusive_tax": False,
+    "discount": "",
+    "notes": "Merci",
+    "template_id": "tpl",
+    "line_items": [
+        {"salesorder_item_id": "a", "item_id": "A", "rate": 10, "quantity": 2, "tax_id": "", "item_total": 20},
+        {"salesorder_item_id": "b", "item_id": "B", "rate": 5, "quantity": 0},
+        {"salesorder_item_id": "c", "item_id": "C", "rate": 7, "quantity": 1},
+    ],
+}
+
+
+def test_invoice_payload_never_exceeds_the_prefill_nor_sends_an_empty_line():
+    payload = actions.invoice_payload(PREFILL, {"a": 5, "b": 3, "zz": 1}, "2026-11-06")
+    assert payload == {
+        "customer_id": "c1",
+        "is_inclusive_tax": False,
+        "notes": "Merci",
+        "date": "2026-11-06",
+        "line_items": [{"salesorder_item_id": "a", "item_id": "A", "rate": 10, "quantity": 2}],
+    }
+
+
+def test_invoice_payload_leaves_split_order_money_to_books_and_sends_no_empty_invoice():
+    charged = {**PREFILL, "shipping_charge": "12.50"}
+    assert actions.invoice_payload(charged, {"a": 1, "c": 1}, "2026-11-06") is None  # a reduced
+    whole = actions.invoice_payload(charged, {"a": 2, "c": 1}, "2026-11-06")
+    assert whole is not None and whole["shipping_charge"] == "12.50"
+    assert actions.invoice_payload({**PREFILL, "discount": "10%"}, {"a": 2}, "2026-11-06") is None  # c dropped
+    assert actions.invoice_payload({**PREFILL, "adjustment": 0}, {"a": 2}, "2026-11-06") is not None
+    assert actions.invoice_payload(PREFILL, {"zz": 1}, "2026-11-06") is None

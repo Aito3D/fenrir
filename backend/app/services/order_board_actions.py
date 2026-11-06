@@ -1,9 +1,11 @@
-"""The Order Board's writes towards Books: print stamp and parcel creation."""
+"""The Order Board's writes towards Books: print stamp, parcel, hand-over, invoice and credit."""
 
 import logging
 import math
+from collections.abc import Mapping
 from contextlib import contextmanager
 from datetime import date
+from typing import Literal
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -11,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
-from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
+from backend.app.services.order_board import units_to_invoice
+from backend.app.services.zoho import ZohoNotFound, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,7 @@ class OrderBusy(Exception):
 
 
 class OrderActionRefused(Exception):
-    """args[0] is one of "nothing_to_pack", "unknown_line", "too_many", "bad_quantity"."""
+    """args[0] is one of "nothing_to_pack", "unknown_line", "too_many", "bad_quantity", "unknown_package"."""
 
 
 @contextmanager
@@ -52,11 +55,27 @@ async def _row(db: AsyncSession, salesorder_id: str) -> dict:
     return row
 
 
-async def confirm_stored_copy(db: AsyncSession, salesorder_id: str) -> None:
+def _stored_query(salesorder_id: str):
+    return (
+        select(OrderBoardDoc)
+        .where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id)
+        .execution_options(populate_existing=True)
+    )
+
+
+async def confirm_stored_copy(db: AsyncSession, salesorder_id: str) -> OrderBoardDoc:
     """Entry check of every Books write, inside the writer lock: an order whose last write was never confirmed
-    by a re-read is re-read first, and a failure here stops the action before anything is sent."""
-    if sync.needs_refresh(salesorder_id):
-        await sync.refresh_order(db, salesorder_id)
+    by a re-read, or whose stored copy is pending (that flag survives a restart), is re-read first, and a failure
+    here stops the action before anything is sent. Returns the stored order."""
+    doc = (await db.execute(_stored_query(salesorder_id))).scalar_one_or_none()
+    if doc is None:
+        raise OrderNotOnBoard(salesorder_id)
+    if doc.pending or sync.needs_refresh(salesorder_id):
+        try:
+            await sync.refresh_order(db, salesorder_id)
+        except sync.OrderNotStored as e:
+            raise OrderNotOnBoard(salesorder_id) from e
+    return doc
 
 
 async def stamp_print(db: AsyncSession, salesorder_id: str, by: str) -> dict:
@@ -83,6 +102,13 @@ async def _best_effort_refresh(db: AsyncSession, salesorder_id: str, number: str
     except Exception as e:
         logger.warning("Order board: re-read after a write failed for %s (%s)", number, type(e).__name__)
         await db.rollback()
+        try:  # the next pass, and the next write, re-read it
+            doc = (await db.execute(_stored_query(salesorder_id))).scalar_one_or_none()
+            if doc is not None:
+                doc.pending = True
+                await db.commit()
+        except Exception:
+            await db.rollback()
 
 
 async def create_parcel(db: AsyncSession, salesorder_id: str, quantities: dict[str, float]) -> str:
@@ -125,23 +151,322 @@ async def create_parcel(db: AsyncSession, salesorder_id: str, quantities: dict[s
                 delete(OrderBoardDoc).where(OrderBoardDoc.kind == "prep", OrderBoardDoc.zoho_id == salesorder_id)
             )
             await db.commit()
-            await sync.refresh_order(db, salesorder_id)
         except Exception as e:
             logger.warning(
                 "Order board: bookkeeping after a parcel failed for %s (%s)", row.get("number"), type(e).__name__
             )
             await db.rollback()
-            try:
-                doc = (
-                    await db.execute(
-                        select(OrderBoardDoc).where(
-                            OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id
-                        )
-                    )
-                ).scalar_one_or_none()
-                if doc is not None:
-                    doc.pending = True
-                    await db.commit()
-            except Exception:
-                await db.rollback()
+        await _best_effort_refresh(db, salesorder_id, row.get("number") or "")
     return package["package_number"]
+
+
+# --- Hand-over, invoice, credit --------------------------------------------------------------------------------
+
+_ORDER_MONEY = ("discount", "shipping_charge", "adjustment")
+_INVOICE_FIELDS = (
+    "customer_id",
+    "is_inclusive_tax",
+    "discount",
+    "discount_type",
+    "is_discount_before_tax",
+    "shipping_charge",
+    "adjustment",
+    "adjustment_description",
+    "reference_number",
+    "payment_terms",
+    "payment_terms_label",
+    "notes",
+    "terms",
+)
+_LINE_FIELDS = (
+    "salesorder_item_id",
+    "item_id",
+    "name",
+    "description",
+    "rate",
+    "quantity",
+    "unit",
+    "tax_id",
+    "discount",
+)
+
+
+def _num(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _nonzero(value) -> bool:
+    """A money field that is set: ``"10%"`` counts, ``0`` and ``""`` do not."""
+    try:
+        return float(str(value or 0).strip().rstrip("%") or 0) != 0
+    except ValueError:
+        return True
+
+
+def _offered(prefill: dict | None, keep: Mapping[str, float]) -> list[dict]:
+    """The prefill's lines this invoice may bill; a kept line Books does not offer is not invoiceable."""
+    return [line for line in (prefill or {}).get("line_items") or [] if line.get("salesorder_item_id") in keep]
+
+
+def invoice_payload(prefill: dict, keep: Mapping[str, float], today: str) -> dict | None:
+    """Books' own prefill restricted to ``keep`` (units per order line), never above what it offers.
+
+    None when Books has to do it: no line left, or order-level money that this invoice would have to split.
+    """
+    lines = []
+    for line in _offered(prefill, keep):
+        quantity = min(_num(keep[line["salesorder_item_id"]]), _num(line.get("quantity")))
+        if quantity > 0:
+            lines.append({**{k: line[k] for k in _LINE_FIELDS if line.get(k) not in (None, "")}, "quantity": quantity})
+    if not lines:
+        return None
+    sent = {line["salesorder_item_id"]: line["quantity"] for line in lines}
+    whole = all(
+        sent.get(raw.get("salesorder_item_id"), 0) >= _num(raw.get("quantity"))
+        for raw in prefill.get("line_items") or []
+        if _num(raw.get("quantity")) > 0
+    )
+    if not whole and any(_nonzero(prefill.get(k)) for k in _ORDER_MONEY):
+        return None
+    head = {k: prefill[k] for k in _INVOICE_FIELDS if prefill.get(k) not in (None, "")}
+    return {**head, "date": today, "line_items": lines}
+
+
+def _service_line_ids(row: dict | None, order: dict) -> set[str]:
+    if row is not None:
+        return {line["id"] for line in row["lines"] if line["state"] == "service"}
+    return {
+        line.get("line_item_id") or ""
+        for line in order.get("line_items") or []
+        if line.get("product_type") == "service"
+    }
+
+
+def _has_draft(order: dict) -> bool:
+    # Books may not count a draft in quantity_invoiced (unverified): a draft on the order blocks a second invoice.
+    return any(invoice.get("status") == "draft" for invoice in order.get("invoices") or [])
+
+
+def _delivery_method(mode: str, order: dict) -> str:
+    if mode == "pickup":
+        return "PICK UP"
+    own = (order.get("delivery_method") or "").strip()
+    return own if own and own.casefold() != "pick up" else "Aito3D"
+
+
+def _outcome(package_number: str = "") -> dict:
+    return {
+        "package_number": package_number,
+        "shipment": "skipped",
+        "delivered": "skipped",
+        "invoice": "none",
+        "invoice_number": None,
+        "credit_applied": 0.0,
+        "failed_step": None,
+        "error": None,
+    }
+
+
+async def _write(salesorder_id: str, number: str, step: str, call):
+    """One Books write: logged, and fenced so that no sync pass stores a copy fetched while it ran."""
+    logger.info("Order board write: order=%s step=%s", number, step)
+    sync.note_write(salesorder_id)
+    try:
+        return await call
+    except ZohoRateLimited as e:
+        sync.open_rate_limit_window(e)
+        raise
+    finally:
+        sync.note_write(salesorder_id)
+
+
+async def _credit(db: AsyncSession, salesorder_id: str, number: str, invoice: dict, customer_id: str, cap: float):
+    """Apply the customer's unused payments, oldest first, up to ``cap``; returns the amount applied."""
+    payments = await zoho_service.list_customer_payments(db, customer_id)
+    applied, left = [], round(cap, 2)
+    for payment in sorted(payments, key=lambda p: p.get("date") or ""):
+        amount = round(min(_num(payment.get("unused_amount")), left), 2)
+        if amount > 0:
+            applied.append({"payment_id": payment["payment_id"], "amount_applied": amount})
+            left = round(left - amount, 2)
+    if not applied:
+        return 0.0
+    await _write(
+        salesorder_id, number, "credit", zoho_service.apply_invoice_credits(db, invoice["invoice_id"], applied)
+    )
+    return round(sum(p["amount_applied"] for p in applied), 2)
+
+
+async def _finish(
+    db: AsyncSession,
+    salesorder_id: str,
+    number: str,
+    outcome: dict,
+    *,
+    row: dict | None,
+    deliver: str | None,
+    apply_credit: bool,
+) -> dict:
+    """Steps 2 to 6 of a hand-over (``deliver`` is the shipment to mark delivered). Never raises: a failure stops
+    the sequence and is reported in the outcome. ``row`` is the board row read before the first write."""
+    advance = _num(((row or {}).get("payment") or {}).get("advance"))
+    step = "delivered"
+    try:
+        if deliver is not None:
+            if not deliver:
+                raise ZohoUpstreamError("Books returned no shipment id")
+            await _write(salesorder_id, number, step, zoho_service.mark_shipment_delivered(db, deliver))
+            outcome["delivered"] = "done"
+        step = "invoice"
+        fresh = await zoho_service.get_salesorder(db, salesorder_id)
+        keep = units_to_invoice(fresh, service_line_ids=_service_line_ids(row, fresh))
+        prefill = await zoho_service.invoice_prefill(db, salesorder_id) if keep and not _has_draft(fresh) else None
+        if prefill is None or not _offered(prefill, keep):
+            return outcome
+        payload = invoice_payload(prefill, keep, date.today().isoformat())
+        if payload is None:
+            outcome["invoice"] = "manual"
+            return outcome
+        invoice = await _write(salesorder_id, number, step, zoho_service.create_invoice(db, payload))
+        outcome.update(invoice="draft", invoice_number=invoice.get("invoice_number"))
+        step = "sent"
+        await _write(salesorder_id, number, step, zoho_service.mark_invoice_sent(db, invoice["invoice_id"]))
+        outcome["invoice"] = "created"
+        if apply_credit and advance > 0:
+            step = "credit"
+            balance = invoice.get("balance") if invoice.get("balance") is not None else invoice.get("total")
+            cap = min(_num(balance), advance)
+            outcome["credit_applied"] = await _credit(
+                db, salesorder_id, number, invoice, fresh.get("customer_id") or "", cap
+            )
+    except Exception as e:  # after a write nothing may raise: the operator needs to see what was done
+        if isinstance(e, ZohoRateLimited):
+            sync.open_rate_limit_window(e)
+        if step == "invoice":
+            outcome["invoice"] = "failed"
+        outcome.update(failed_step=step, error=str(e)[:300])
+    finally:
+        await _best_effort_refresh(db, salesorder_id, number)
+    return outcome
+
+
+async def hand_over(
+    db: AsyncSession, salesorder_id: str, package_id: str, *, mode: Literal["pickup", "delivery"], apply_credit: bool
+) -> dict:
+    """Ship a parcel, mark it delivered on a pick-up, invoice what is shipped and apply the customer's credit.
+
+    Every step whose result Books already shows is skipped, so the same request repeated finishes the job.
+    """
+    with writing(salesorder_id):
+        doc = await confirm_stored_copy(db, salesorder_id)
+        order = doc.detail or {}
+        number = doc.header.get("salesorder_number") or ""
+        row = await sync.find_board_row(db, salesorder_id)  # read now: the shipment may take it off the board
+        if sync.zoho_busy():
+            raise sync.ZohoBusy(salesorder_id)
+        try:
+            package = await zoho_service.get_package(db, package_id)
+        except ZohoNotFound as e:
+            raise OrderActionRefused("unknown_package") from e
+        except ZohoRateLimited as e:
+            sync.open_rate_limit_window(e)
+            raise
+        if package.get("salesorder_id") != salesorder_id:
+            raise OrderActionRefused("unknown_package")
+        status = package.get("status")
+        # A new shipment needs the order on the board; a retry may find it gone after its last parcel shipped.
+        if row is None and status == "not_shipped":
+            raise OrderNotOnBoard(salesorder_id)
+        outcome = _outcome(package.get("package_number") or "")
+        shipment_id = package.get("shipment_id") or ""
+        if status == "not_shipped":
+            try:
+                shipment = await _write(
+                    salesorder_id,
+                    number,
+                    "shipment",
+                    zoho_service.create_shipment(
+                        db,
+                        salesorder_id,
+                        package_id,
+                        date=date.today().isoformat(),
+                        delivery_method=_delivery_method(mode, order),
+                    ),
+                )
+            except ZohoUpstreamError:
+                await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean it went through
+                raise
+            shipment_id = shipment.get("shipment_id") or ""
+            outcome["shipment"] = "done"
+        deliver = shipment_id if mode == "pickup" and status != "delivered" else None
+        return await _finish(db, salesorder_id, number, outcome, row=row, deliver=deliver, apply_credit=apply_credit)
+
+
+async def invoice_shipped(db: AsyncSession, salesorder_id: str, *, apply_credit: bool) -> dict:
+    """Invoice what is shipped and not invoiced yet, for any stored order (a finished one has no board row)."""
+    with writing(salesorder_id):
+        doc = await confirm_stored_copy(db, salesorder_id)
+        row = await sync.find_board_row(db, salesorder_id)
+        if sync.zoho_busy():
+            raise sync.ZohoBusy(salesorder_id)
+        number = doc.header.get("salesorder_number") or ""
+        return await _finish(db, salesorder_id, number, _outcome(), row=row, deliver=None, apply_credit=apply_credit)
+
+
+async def handover_preview(db: AsyncSession, salesorder_id: str, package_id: str) -> dict:
+    """What a hand-over of this parcel would do, from the stored order and Books' own prefill. Reads only."""
+    doc = (await db.execute(_stored_query(salesorder_id))).scalar_one_or_none()
+    if doc is None or not doc.detail:
+        raise OrderNotOnBoard(salesorder_id)
+    order = doc.detail
+    stored = next((p for p in order.get("packages") or [] if p.get("package_id") == package_id), None)
+    if stored is None:
+        raise OrderActionRefused("unknown_package")
+    result = {
+        "units": _num(stored.get("quantity")),
+        "available": False,
+        "to_invoice": False,
+        "invoice_total": None,
+        "manual": False,
+        "credit": 0.0,
+        "covered_by": [],
+    }
+    if sync.zoho_busy():
+        return result
+    row = await sync.find_board_row(db, salesorder_id)
+    try:
+        package = await zoho_service.get_package(db, package_id)
+        boxed: dict[str, float] = {}
+        if package.get("status") == "not_shipped":  # a shipped parcel is already in quantity_shipped
+            for line in package.get("line_items") or []:
+                line_id = line.get("so_line_item_id") or ""
+                boxed[line_id] = boxed.get(line_id, 0.0) + _num(line.get("quantity"))
+        keep = units_to_invoice(order, extra_shipped=boxed, service_line_ids=_service_line_ids(row, order))
+        prefill = await zoho_service.invoice_prefill(db, salesorder_id) if keep and not _has_draft(order) else None
+    except ZohoUpstreamError as e:
+        if isinstance(e, ZohoRateLimited):
+            sync.open_rate_limit_window(e)
+        return result
+    result["available"] = True
+    if not _offered(prefill, keep):
+        result["covered_by"] = [
+            i.get("invoice_number") or "" for i in order.get("invoices") or [] if i.get("status") != "void"
+        ]
+        return result
+    result["to_invoice"] = True
+    payload = invoice_payload(prefill or {}, keep, date.today().isoformat())
+    result["manual"] = payload is None
+    # Only a total Books would print as is: tax included, no discount and no order-level money to add.
+    if (
+        payload
+        and payload.get("is_inclusive_tax")
+        and not any(_nonzero(line.get("discount")) for line in payload["line_items"])
+        and not any(_nonzero(payload.get(k)) for k in _ORDER_MONEY)
+    ):
+        total = round(sum(_num(line.get("rate")) * line["quantity"] for line in payload["line_items"]), 2)
+        result["invoice_total"] = total
+        result["credit"] = min(total, _num(((row or {}).get("payment") or {}).get("advance")))
+    return result
