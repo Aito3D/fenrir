@@ -197,6 +197,7 @@ export const CODE_LENGTH
 export const delayAt
 export const ENTRY_MOTION
 export const FOCUS
+export const I18N_ENGLISH_EXTRA_MS
 export const I18N_SETTLE_TIMEOUT_MS
 export const PAGE
 export const PRESS

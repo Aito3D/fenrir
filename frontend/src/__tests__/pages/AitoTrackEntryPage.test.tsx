@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
-import i18n from '../../i18n';
+import i18n, { LOCALE_LOADERS } from '../../i18n';
+import { I18N_ENGLISH_EXTRA_MS, I18N_SETTLE_TIMEOUT_MS } from '../../utils/trackingShell';
 import { screen, render as rtlRender, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse, delay } from 'msw';
@@ -470,6 +471,35 @@ describe('AitoTrackEntryPage', () => {
       // The stalled locale landing afterwards still wins over the English stand-in.
       i18n.addResourceBundle('fr', 'translation', frBundle, true, false);
       expect(i18n.t('aito.track.enterTitle')).toBe('Suivre ma commande');
+    } finally {
+      vi.useRealTimers();
+      setReadyOverride(null);
+      i18n.options.fallbackLng = false;
+      i18n.addResourceBundle('fr', 'translation', frBundle, true, true);
+    }
+  });
+
+  // T-053: English stalls too -> the latch still flips after a bounded extra
+  // wait (raw keys), and the page switches to English when the chunk lands.
+  it('renders after the English extra limit when English stalls too, then switches to English when it lands', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const frBundle = i18n.getResourceBundle('fr', 'translation');
+    const enBundle = (await LOCALE_LOADERS.en()).default;
+    let release: (v: { default: object }) => void = () => {};
+    vi.spyOn(LOCALE_LOADERS, 'en').mockReturnValue(new Promise((r) => (release = r)));
+    try {
+      i18n.removeResourceBundle('fr', 'translation');
+      setReadyOverride(false);
+      renderEntry();
+      await vi.advanceTimersByTimeAsync(I18N_SETTLE_TIMEOUT_MS + 1);
+      expect(document.querySelector('.motion-safe\\:animate-pulse')).toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(I18N_ENGLISH_EXTRA_MS);
+      await waitFor(() => expect(document.querySelector('.motion-safe\\:animate-pulse')).not.toBeInTheDocument());
+      expect(screen.getByRole('heading')).toHaveTextContent('aito.track.enterTitle');
+      await act(async () => {
+        release({ default: enBundle });
+      });
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Track my order' })).toBeInTheDocument());
     } finally {
       vi.useRealTimers();
       setReadyOverride(null);

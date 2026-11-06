@@ -44,3 +44,7 @@ export const PAGE = 'min-h-screen bg-aito-midnight pt-[64px] pb-[48px] text-aito
 // than leave a client staring at a skeleton for data that has already
 // arrived.
 export const I18N_SETTLE_TIMEOUT_MS = 10_000;
+// English, loaded at that deadline, gets this much longer: a link that
+// stalls the locale chunk usually stalls English too, so the pages render
+// after it anyway (raw keys) and switch to English if it lands later.
+export const I18N_ENGLISH_EXTRA_MS = 3_000;

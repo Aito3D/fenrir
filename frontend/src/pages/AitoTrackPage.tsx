@@ -68,8 +68,8 @@ export function AitoTrackPage() {
   });
 
   const data = query.data;
-  // The first paint waits for the language bundle (English ships in the
-  // entry, everything else is a lazy chunk) so the choreography never plays
+  // The first paint waits for the language bundle (every locale, English
+  // included, is a lazy chunk; English loads on demand at the deadline) so the choreography never plays
   // in English and then flips. Later language switches keep the content
   // mounted — react-i18next re-renders it in place when the chunk lands.
   const everReady = useRef(false);
