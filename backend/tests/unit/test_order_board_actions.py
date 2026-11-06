@@ -372,12 +372,16 @@ def handover_order(zoho, *, qty=3, box=2, status="not_shipped", invoiced=0, adva
 @pytest.fixture
 def books(zoho, monkeypatch):  # noqa: F811
     """A recording Books: every call lands in ``books.log`` as (name, args); writes change the stored orders the way
-    Books does. ``books.errors[name]`` makes that call raise once, before it has any effect."""
+    Books does. ``books.errors[name]`` makes that call raise once, before it has any effect; ``books.late_errors[name]``
+    once, after Books acted (a timeout on the way back). ``books.effects`` counts what Books did."""
     import copy
 
     zoho.log = []
     zoho.packages = {}
     zoho.errors = {}
+    zoho.late_errors = {}
+    zoho.effects = Counter()
+    zoho.hide_shipment_id = False
     zoho.prefill_extra = {}
     zoho.line_discount = 0
     zoho.unused = []
@@ -390,6 +394,17 @@ def books(zoho, monkeypatch):  # noqa: F811
         if name in zoho.errors:
             raise zoho.errors.pop(name)
 
+    def done(name):
+        zoho.effects[name] += 1
+        if name in zoho.late_errors:
+            raise zoho.late_errors.pop(name)
+
+    def count_invoiced(doc, payload):
+        for item in payload["line_items"]:
+            for line in doc["line_items"]:
+                if line["line_item_id"] == item["salesorder_item_id"]:
+                    line["quantity_invoiced"] += item["quantity"]
+
     async def get_salesorder(db, salesorder_id):
         rec("get_salesorder", salesorder_id)
         zoho.calls["detail"] += 1
@@ -399,7 +414,10 @@ def books(zoho, monkeypatch):  # noqa: F811
         rec("get_package", package_id)
         if package_id not in zoho.packages:
             raise ZohoNotFound("no such package")
-        return copy.deepcopy(zoho.packages[package_id])
+        package = copy.deepcopy(zoho.packages[package_id])
+        if zoho.hide_shipment_id:
+            package["shipment_id"] = ""
+        return package
 
     async def create_shipment(db, salesorder_id, package_id, *, date, delivery_method):
         zoho.ship_entered.set()
@@ -415,6 +433,7 @@ def books(zoho, monkeypatch):  # noqa: F811
                     line["quantity_shipped"] += item["quantity"]
                     doc["quantity_shipped"] += item["quantity"]
         _mirror_packages(zoho, salesorder_id)
+        done("create_shipment")
         return {"shipment_id": "sh1"}
 
     async def mark_shipment_delivered(db, shipment_id):
@@ -422,6 +441,7 @@ def books(zoho, monkeypatch):  # noqa: F811
         package = next(p for p in zoho.packages.values() if p["shipment_id"] == shipment_id)
         package["status"] = "delivered"
         _mirror_packages(zoho, package["salesorder_id"])
+        done("mark_shipment_delivered")
 
     async def invoice_prefill(db, salesorder_id):
         rec("invoice_prefill", salesorder_id)
@@ -462,15 +482,15 @@ def books(zoho, monkeypatch):  # noqa: F811
         rec("create_invoice", payload)
         doc = next(d for d in zoho.orders.values() if d["customer_id"] == payload["customer_id"])
         if zoho.draft_counts:
-            for item in payload["line_items"]:
-                for line in doc["line_items"]:
-                    if line["line_item_id"] == item["salesorder_item_id"]:
-                        line["quantity_invoiced"] += item["quantity"]
+            count_invoiced(doc, payload)
         total = sum(item["rate"] * item["quantity"] for item in payload["line_items"]) + float(
             payload.get("shipping_charge") or 0
         )
         number = f"INV-{len(doc['invoices']) + 1}"
-        doc["invoices"].append({"invoice_id": number.lower(), "invoice_number": number, "status": "draft"})
+        doc["invoices"].append(
+            {"invoice_id": number.lower(), "invoice_number": number, "status": "draft", "_payload": payload}
+        )
+        done("create_invoice")
         return {"invoice_id": number.lower(), "invoice_number": number, "total": total, "balance": total}
 
     async def mark_invoice_sent(db, invoice_id):
@@ -479,6 +499,9 @@ def books(zoho, monkeypatch):  # noqa: F811
             for invoice in doc["invoices"]:
                 if invoice["invoice_id"] == invoice_id:
                     invoice["status"] = "sent"
+                    if not zoho.draft_counts:  # this Books counts an invoice once it is sent
+                        count_invoiced(doc, invoice["_payload"])
+        done("mark_invoice_sent")
 
     async def list_customer_payments(db, customer_id):
         rec("list_customer_payments", customer_id)
@@ -486,6 +509,11 @@ def books(zoho, monkeypatch):  # noqa: F811
 
     async def apply_invoice_credits(db, invoice_id, invoice_payments):
         rec("apply_invoice_credits", invoice_id, invoice_payments)
+        for applied in invoice_payments:
+            for payment in zoho.unused:
+                if payment["payment_id"] == applied["payment_id"]:
+                    payment["unused_amount"] -= applied["amount_applied"]
+        done("apply_invoice_credits")
 
     for fn in (
         get_salesorder,
@@ -542,6 +570,7 @@ async def test_pickup_runs_every_step_in_order(db_session, books):
         "delivered": "done",
         "invoice": "created",
         "invoice_number": "INV-1",
+        "manual_reason": None,
         "credit_applied": 600.0,
         "failed_step": None,
         "error": None,
@@ -601,7 +630,31 @@ async def test_an_order_holding_a_draft_invoice_gets_no_second_one(db_session, b
     books.orders["so1"]["invoices"] = [{"invoice_id": "d1", "invoice_number": "INV-0", "status": "draft"}]
     outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
     assert "create_invoice" not in _names(books)
-    assert outcome["invoice"] == "none"
+    assert (outcome["invoice"], outcome["manual_reason"], outcome["invoice_number"], outcome["failed_step"]) == (
+        "manual",
+        "draft",
+        "INV-0",
+        None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_draft_with_nothing_left_to_invoice_is_just_nothing(db_session, books):
+    await _ready(db_session, books, invoiced=3)
+    books.orders["so1"]["invoices"] = [{"invoice_id": "d1", "invoice_number": "INV-0", "status": "draft"}]
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert (outcome["invoice"], outcome["manual_reason"], outcome["invoice_number"]) == ("none", None, None)
+
+
+@pytest.mark.asyncio
+async def test_preview_points_at_the_draft_that_blocks_the_invoice(db_session, books):
+    doc = handover_order(books)
+    doc["invoices"] = [{"invoice_id": "d1", "invoice_number": "INV-0", "status": "draft"}]
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    preview = await actions.handover_preview(db_session, "so1", "pk1")
+    assert (preview["to_invoice"], preview["manual"], preview["manual_reason"]) == (False, True, "draft")
+    assert (preview["covered_by"], preview["invoice_total"]) == (["INV-0"], None)
 
 
 @pytest.mark.asyncio
@@ -618,7 +671,7 @@ async def test_partial_invoice_of_an_order_with_a_shipping_charge_is_left_to_boo
     books.prefill_extra = {"shipping_charge": 200}
     outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
     assert "create_invoice" not in _names(books)
-    assert (outcome["invoice"], outcome["failed_step"], outcome["shipment"]) == ("manual", None, "done")
+    assert (outcome["invoice"], outcome["manual_reason"], outcome["failed_step"]) == ("manual", "order_money", None)
 
 
 @pytest.mark.asyncio
@@ -666,7 +719,7 @@ async def test_credit_is_capped_by_the_orders_advance_and_by_the_invoice(db_sess
         {"payment_id": "p3", "date": "2026-10-03", "unused_amount": 300},
     ]
     await _ready(db_session, books, advance=600)  # invoice 1000, advance 600
-    books.unused = payments
+    books.unused = [dict(p) for p in payments]
     outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
     assert _calls(books, "apply_invoice_credits") == [
         ("inv-1", [{"payment_id": "p1", "amount_applied": 400}, {"payment_id": "p2", "amount_applied": 200}])
@@ -676,7 +729,7 @@ async def test_credit_is_capped_by_the_orders_advance_and_by_the_invoice(db_sess
     books.orders.clear()
     books.packages.clear()
     await _ready(db_session, books, advance=5000)  # advance capped at the order's 1500, invoice 1000
-    books.unused = payments
+    books.unused = [dict(p) for p in payments]
     outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
     assert _calls(books, "apply_invoice_credits")[-1] == (
         "inv-1",
@@ -697,7 +750,7 @@ async def test_no_credit_call_when_unticked_or_no_advance(db_session, books, adv
     outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=apply_credit)
     assert "list_customer_payments" not in _names(books)
     assert "apply_invoice_credits" not in _names(books)
-    assert (outcome["invoice"], outcome["credit_applied"]) == ("created", 0)
+    assert (outcome["invoice"], outcome["credit_applied"], outcome["failed_step"]) == ("created", 0, None)
 
 
 @pytest.mark.asyncio
@@ -737,7 +790,9 @@ async def test_retry_after_a_refused_invoice_creates_only_the_invoice(db_session
     ["mark_shipment_delivered", "invoice_prefill", "create_invoice", "mark_invoice_sent", "list_customer_payments"],
 )
 @pytest.mark.parametrize("qty", [3, 2])  # 2: the shipment takes the order off the board
-async def test_a_retry_after_any_failed_step_repeats_no_write(db_session, books, failing, qty):
+@pytest.mark.parametrize("draft_counts", [True, False])
+async def test_a_retry_after_any_failed_step_repeats_no_write(db_session, books, failing, qty, draft_counts):
+    books.draft_counts = draft_counts
     await _ready(db_session, books, qty=qty, box=2, advance=600)
     books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 900}]
     books.errors[failing] = ZohoUpstreamError("timeout")
@@ -815,6 +870,7 @@ async def test_invoice_shipped_runs_the_invoice_part_alone(db_session, books):
         "delivered": "skipped",
         "invoice": "created",
         "invoice_number": "INV-1",
+        "manual_reason": None,
         "credit_applied": 0.0,
         "failed_step": None,
         "error": None,
@@ -829,6 +885,7 @@ async def test_invoice_shipped_works_for_a_finished_order_with_no_board_row(db_s
     (payload,) = _calls(books, "create_invoice")[0]
     assert {(line["salesorder_item_id"], line["quantity"]) for line in payload["line_items"]} == {("l1", 2), ("l1s", 1)}
     assert (outcome["invoice"], outcome["credit_applied"]) == ("created", 0)
+    assert (outcome["failed_step"], outcome["error"]) == ("credit", "credit_off_board")
     with pytest.raises(actions.OrderNotOnBoard):
         await actions.invoice_shipped(db_session, "so9", apply_credit=False)
 
@@ -860,6 +917,7 @@ async def test_preview_totals_the_kept_units_for_a_tax_inclusive_order(db_sessio
         "to_invoice": True,
         "invoice_total": 1000.0,
         "manual": False,
+        "manual_reason": None,
         "credit": 600.0,
         "covered_by": [],
     }
@@ -883,6 +941,7 @@ async def test_preview_says_manual_for_a_partial_invoice_with_order_money(db_ses
     books.prefill_extra = {"adjustment": -50}
     preview = await actions.handover_preview(db_session, "so1", "pk1")
     assert (preview["to_invoice"], preview["manual"], preview["invoice_total"]) == (True, True, None)
+    assert preview["manual_reason"] == "order_money"
 
 
 @pytest.mark.asyncio
@@ -910,6 +969,7 @@ async def test_preview_survives_a_books_failure(db_session, books):
         "to_invoice": False,
         "invoice_total": None,
         "manual": False,
+        "manual_reason": None,
         "credit": 0.0,
         "covered_by": [],
     }
@@ -953,7 +1013,8 @@ PREFILL = {
 
 
 def test_invoice_payload_never_exceeds_the_prefill_nor_sends_an_empty_line():
-    payload = actions.invoice_payload(PREFILL, {"a": 5, "b": 3, "zz": 1}, "2026-11-06")
+    payload, reason = actions.invoice_payload(PREFILL, {"a": 5, "b": 3, "zz": 1}, "2026-11-06")
+    assert reason is None
     assert payload == {
         "customer_id": "c1",
         "is_inclusive_tax": False,
@@ -965,9 +1026,79 @@ def test_invoice_payload_never_exceeds_the_prefill_nor_sends_an_empty_line():
 
 def test_invoice_payload_leaves_split_order_money_to_books_and_sends_no_empty_invoice():
     charged = {**PREFILL, "shipping_charge": "12.50"}
-    assert actions.invoice_payload(charged, {"a": 1, "c": 1}, "2026-11-06") is None  # a reduced
-    whole = actions.invoice_payload(charged, {"a": 2, "c": 1}, "2026-11-06")
-    assert whole is not None and whole["shipping_charge"] == "12.50"
-    assert actions.invoice_payload({**PREFILL, "discount": "10%"}, {"a": 2}, "2026-11-06") is None  # c dropped
-    assert actions.invoice_payload({**PREFILL, "adjustment": 0}, {"a": 2}, "2026-11-06") is not None
-    assert actions.invoice_payload(PREFILL, {"zz": 1}, "2026-11-06") is None
+    assert actions.invoice_payload(charged, {"a": 1, "c": 1}, "2026-11-06") == (None, "order_money")  # a reduced
+    whole, reason = actions.invoice_payload(charged, {"a": 2, "c": 1}, "2026-11-06")
+    assert reason is None and whole is not None and whole["shipping_charge"] == "12.50"
+    assert actions.invoice_payload({**PREFILL, "discount": "10%"}, {"a": 2}, "2026-11-06") == (None, "order_money")
+    assert actions.invoice_payload({**PREFILL, "adjustment": 0}, {"a": 2}, "2026-11-06")[0] is not None
+    assert actions.invoice_payload(PREFILL, {"zz": 1}, "2026-11-06") == (None, None)
+
+
+@pytest.mark.parametrize(
+    ("discount", "keep_a", "reason"),
+    [(3, 1, "line_discount"), ("3.00", 1, "line_discount"), ("10%", 1, None), ("10.00%", 1, None), (3, 2, None)],
+)
+def test_a_fixed_line_discount_is_never_split(discount, keep_a, reason):
+    lines = [{**PREFILL["line_items"][0], "discount": discount}]
+    payload, why = actions.invoice_payload({**PREFILL, "line_items": lines}, {"a": keep_a}, "2026-11-06")
+    assert why == reason
+    assert (payload is None) == (reason is not None)
+    if payload is not None:
+        assert payload["line_items"][0]["discount"] == discount
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failing",
+    ["create_shipment", "mark_shipment_delivered", "create_invoice", "mark_invoice_sent", "apply_invoice_credits"],
+)
+@pytest.mark.parametrize("qty", [3, 2])
+@pytest.mark.parametrize("draft_counts", [True, False])
+async def test_a_timeout_after_books_acted_is_never_repeated(db_session, books, failing, qty, draft_counts):
+    books.draft_counts = draft_counts
+    await _ready(db_session, books, qty=qty, box=2, advance=600)
+    books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 900}]
+    books.late_errors[failing] = ZohoUpstreamError("timeout")
+    for _ in range(3):
+        try:
+            await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+        except ZohoUpstreamError:
+            assert failing == "create_shipment" and books.effects["create_shipment"] == 1
+    assert books.effects["create_shipment"] == books.effects["mark_shipment_delivered"] == 1
+    assert books.effects["create_invoice"] == 1
+    assert books.effects["mark_invoice_sent"] <= 1
+    assert books.effects["apply_invoice_credits"] <= 1
+    assert books.packages["pk1"]["status"] == "delivered"
+
+
+@pytest.mark.asyncio
+async def test_a_credit_left_undone_off_the_board_is_reported(db_session, books):
+    await _ready(db_session, books, qty=2, box=2, advance=600)
+    books.errors["create_invoice"] = ZohoRequestRejected("Books says no")
+    await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert (await sync.read_board(db_session))["rows"] == []
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert (outcome["invoice"], outcome["failed_step"], outcome["error"]) == ("created", "credit", "credit_off_board")
+    assert "apply_invoice_credits" not in _names(books)
+
+
+@pytest.mark.asyncio
+async def test_the_shipment_id_falls_back_to_the_stored_order(db_session, books):
+    await _ready(db_session, books, status="shipped")
+    books.hide_shipment_id = True
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert _calls(books, "mark_shipment_delivered") == [("sh0",)]
+    assert (outcome["delivered"], outcome["failed_step"]) == ("done", None)
+
+
+@pytest.mark.asyncio
+async def test_a_broken_database_cannot_raise_out_of_the_closing_refresh(db_session, books, monkeypatch):
+    await _ready(db_session, books)
+
+    async def boom(*args, **kwargs):
+        raise OperationalError("x", {}, Exception("disk I/O error"))
+
+    monkeypatch.setattr(sync, "refresh_order", boom)
+    monkeypatch.setattr(db_session, "rollback", boom)
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert (outcome["shipment"], outcome["invoice"]) == ("done", "created")

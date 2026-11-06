@@ -1,5 +1,6 @@
 """The Order Board's writes towards Books: print stamp, parcel, hand-over, invoice and credit."""
 
+import contextlib
 import logging
 import math
 from collections.abc import Mapping
@@ -101,14 +102,15 @@ async def _best_effort_refresh(db: AsyncSession, salesorder_id: str, number: str
         await sync.refresh_order(db, salesorder_id)
     except Exception as e:
         logger.warning("Order board: re-read after a write failed for %s (%s)", number, type(e).__name__)
-        await db.rollback()
         try:  # the next pass, and the next write, re-read it
+            await db.rollback()
             doc = (await db.execute(_stored_query(salesorder_id))).scalar_one_or_none()
             if doc is not None:
                 doc.pending = True
                 await db.commit()
         except Exception:
-            await db.rollback()
+            with contextlib.suppress(Exception):
+                await db.rollback()
 
 
 async def create_parcel(db: AsyncSession, salesorder_id: str, quantities: dict[str, float]) -> str:
@@ -211,28 +213,41 @@ def _offered(prefill: dict | None, keep: Mapping[str, float]) -> list[dict]:
     return [line for line in (prefill or {}).get("line_items") or [] if line.get("salesorder_item_id") in keep]
 
 
-def invoice_payload(prefill: dict, keep: Mapping[str, float], today: str) -> dict | None:
+def _is_amount(discount) -> bool:
+    """A line discount that is a fixed amount ("10.00%" is a percentage, a bare number an amount)."""
+    return _nonzero(discount) and not str(discount).strip().endswith("%")
+
+
+def invoice_payload(prefill: dict, keep: Mapping[str, float], today: str) -> tuple[dict | None, str | None]:
     """Books' own prefill restricted to ``keep`` (units per order line), never above what it offers.
 
-    None when Books has to do it: no line left, or order-level money that this invoice would have to split.
+    Returns ``(body, None)``; ``(None, None)`` when no line is left; ``(None, reason)`` when Books has to do it:
+    "order_money" (order-level money a partial invoice would split), "line_discount" (a fixed-amount line discount
+    on a reduced line).
     """
-    lines = []
+    lines, reduced = [], False
     for line in _offered(prefill, keep):
-        quantity = min(_num(keep[line["salesorder_item_id"]]), _num(line.get("quantity")))
-        if quantity > 0:
-            lines.append({**{k: line[k] for k in _LINE_FIELDS if line.get(k) not in (None, "")}, "quantity": quantity})
+        offered = _num(line.get("quantity"))
+        quantity = min(_num(keep[line["salesorder_item_id"]]), offered)
+        if quantity <= 0:
+            continue
+        if quantity < offered:
+            reduced = True
+            if _is_amount(line.get("discount")):
+                return None, "line_discount"
+        lines.append({**{k: line[k] for k in _LINE_FIELDS if line.get(k) not in (None, "")}, "quantity": quantity})
     if not lines:
-        return None
-    sent = {line["salesorder_item_id"]: line["quantity"] for line in lines}
-    whole = all(
-        sent.get(raw.get("salesorder_item_id"), 0) >= _num(raw.get("quantity"))
+        return None, None
+    sent = {line["salesorder_item_id"] for line in lines}
+    dropped = any(
+        raw.get("salesorder_item_id") not in sent
         for raw in prefill.get("line_items") or []
         if _num(raw.get("quantity")) > 0
     )
-    if not whole and any(_nonzero(prefill.get(k)) for k in _ORDER_MONEY):
-        return None
+    if (reduced or dropped) and any(_nonzero(prefill.get(k)) for k in _ORDER_MONEY):
+        return None, "order_money"
     head = {k: prefill[k] for k in _INVOICE_FIELDS if prefill.get(k) not in (None, "")}
-    return {**head, "date": today, "line_items": lines}
+    return {**head, "date": today, "line_items": lines}, None
 
 
 def _service_line_ids(row: dict | None, order: dict) -> set[str]:
@@ -245,9 +260,9 @@ def _service_line_ids(row: dict | None, order: dict) -> set[str]:
     }
 
 
-def _has_draft(order: dict) -> bool:
+def _drafts(order: dict) -> list[str]:
     # Books may not count a draft in quantity_invoiced (unverified): a draft on the order blocks a second invoice.
-    return any(invoice.get("status") == "draft" for invoice in order.get("invoices") or [])
+    return [i.get("invoice_number") or "" for i in order.get("invoices") or [] if i.get("status") == "draft"]
 
 
 def _delivery_method(mode: str, order: dict) -> str:
@@ -264,6 +279,7 @@ def _outcome(package_number: str = "") -> dict:
         "delivered": "skipped",
         "invoice": "none",
         "invoice_number": None,
+        "manual_reason": None,
         "credit_applied": 0.0,
         "failed_step": None,
         "error": None,
@@ -323,19 +339,26 @@ async def _finish(
         step = "invoice"
         fresh = await zoho_service.get_salesorder(db, salesorder_id)
         keep = units_to_invoice(fresh, service_line_ids=_service_line_ids(row, fresh))
-        prefill = await zoho_service.invoice_prefill(db, salesorder_id) if keep and not _has_draft(fresh) else None
-        if prefill is None or not _offered(prefill, keep):
+        if not keep:
             return outcome
-        payload = invoice_payload(prefill, keep, date.today().isoformat())
+        drafts = _drafts(fresh)
+        if drafts:
+            outcome.update(invoice="manual", manual_reason="draft", invoice_number=drafts[0])
+            return outcome
+        prefill = await zoho_service.invoice_prefill(db, salesorder_id)
+        payload, reason = invoice_payload(prefill or {}, keep, date.today().isoformat())
         if payload is None:
-            outcome["invoice"] = "manual"
+            if reason:
+                outcome.update(invoice="manual", manual_reason=reason)
             return outcome
         invoice = await _write(salesorder_id, number, step, zoho_service.create_invoice(db, payload))
         outcome.update(invoice="draft", invoice_number=invoice.get("invoice_number"))
         step = "sent"
         await _write(salesorder_id, number, step, zoho_service.mark_invoice_sent(db, invoice["invoice_id"]))
         outcome["invoice"] = "created"
-        if apply_credit and advance > 0:
+        if apply_credit and row is None:  # no board row, no advance to cap the credit by
+            outcome.update(failed_step="credit", error="credit_off_board")
+        elif apply_credit and advance > 0:
             step = "credit"
             balance = invoice.get("balance") if invoice.get("balance") is not None else invoice.get("total")
             cap = min(_num(balance), advance)
@@ -381,7 +404,9 @@ async def hand_over(
         if row is None and status == "not_shipped":
             raise OrderNotOnBoard(salesorder_id)
         outcome = _outcome(package.get("package_number") or "")
-        shipment_id = package.get("shipment_id") or ""
+        shipment_id = package.get("shipment_id") or next(
+            (p.get("shipment_id") or "" for p in order.get("packages") or [] if p.get("package_id") == package_id), ""
+        )
         if status == "not_shipped":
             try:
                 shipment = await _write(
@@ -431,6 +456,7 @@ async def handover_preview(db: AsyncSession, salesorder_id: str, package_id: str
         "to_invoice": False,
         "invoice_total": None,
         "manual": False,
+        "manual_reason": None,
         "credit": 0.0,
         "covered_by": [],
     }
@@ -445,20 +471,23 @@ async def handover_preview(db: AsyncSession, salesorder_id: str, package_id: str
                 line_id = line.get("so_line_item_id") or ""
                 boxed[line_id] = boxed.get(line_id, 0.0) + _num(line.get("quantity"))
         keep = units_to_invoice(order, extra_shipped=boxed, service_line_ids=_service_line_ids(row, order))
-        prefill = await zoho_service.invoice_prefill(db, salesorder_id) if keep and not _has_draft(order) else None
+        drafts = _drafts(order) if keep else []
+        prefill = await zoho_service.invoice_prefill(db, salesorder_id) if keep and not drafts else None
     except ZohoUpstreamError as e:
         if isinstance(e, ZohoRateLimited):
             sync.open_rate_limit_window(e)
         return result
     result["available"] = True
-    if not _offered(prefill, keep):
+    if drafts:
+        result.update(manual=True, manual_reason="draft", covered_by=drafts)
+        return result
+    payload, reason = invoice_payload(prefill or {}, keep, date.today().isoformat())
+    if payload is None and reason is None:
         result["covered_by"] = [
             i.get("invoice_number") or "" for i in order.get("invoices") or [] if i.get("status") != "void"
         ]
         return result
-    result["to_invoice"] = True
-    payload = invoice_payload(prefill or {}, keep, date.today().isoformat())
-    result["manual"] = payload is None
+    result.update(to_invoice=True, manual=payload is None, manual_reason=reason)
     # Only a total Books would print as is: tax included, no discount and no order-level money to add.
     if (
         payload
