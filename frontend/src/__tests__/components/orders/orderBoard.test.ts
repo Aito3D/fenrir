@@ -287,10 +287,12 @@ describe('parcel steps', () => {
 
   const pl = (id: string, status: string) => ({ id, number: id.toUpperCase(), status, date: '2026-11-06' });
 
-  it('nextStep boxes a picklist first, then picks, then hands over, then nothing', () => {
+  it('nextStep boxes the open picklist first, then picks, then hands over, then nothing', () => {
     const shelf = [line({ packable: 1 })];
     expect(nextStep(row({ lines: shelf, packages: [pkg('not_shipped')], picklists: [pl('pl1', 'completed'), pl('pl2', 'yet_to_start')] }))).toBe('pack-pl2');
-    expect(nextStep(row({ lines: shelf, picklists: [pl('pl1', 'completed'), pl('pl2', 'completed')], picked: 2 }))).toBe('pack-pl2');
+    // Completed picklists with units left are not a row target: the row cannot tell which one holds them.
+    expect(nextStep(row({ lines: shelf, picklists: [pl('pl1', 'completed'), pl('pl2', 'completed')], picked: 2 }))).toBe('pick');
+    expect(nextStep(row({ lines: [line({ packable: 0 })], packages: [pkg('not_shipped')], picklists: [pl('pl1', 'completed')], picked: 2 }))).toBe('handover-p1');
     expect(nextStep(row({ lines: shelf, packages: [pkg('not_shipped')], picklists: [pl('pl1', 'completed')], picked: 0 }))).toBe('pick');
     expect(nextStep(row({ lines: shelf, packages: [pkg('not_shipped')] }))).toBe('pick'); // a board from before picklists
     expect(nextStep(row({ lines: [line({ packable: 0 })], packages: [pkg('not_shipped')] }))).toBe('handover-p1');

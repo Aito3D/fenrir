@@ -389,3 +389,15 @@ picklists whose units were never boxed, and one picklist still open.
 the picklist exists with the chosen units; after "Créer le colis" it is completed with the confirmed units and the
 lines left out are gone from it; the package lists the picklist; the units left out are offered again by "Préparer".
 If Books refuses the update or the completion, the screen shows Books' message and nothing is boxed.
+
+**After the independent review (same day).**
+
+- A parcel never holds more than the order still has to box. For a completed picklist it also never holds more than
+  the order counts as picked and not boxed: if Books created a package and the answer was lost, the retry is refused
+  even when Books did not count the package on the picklist row.
+- A picklist with two rows for one order line is left to Books, like one shared with another order.
+- When an open picklist is cut down, a row that already has units in a parcel stays on it.
+- The row icon only targets an open picklist. Completed picklists with units left are offered in the band of the
+  opened order, one button each; the board cannot tell which of several holds the units, so a button may answer
+  "everything on this picklist is already in a parcel".
+- A second click on the row icon does not reset a choice in progress.

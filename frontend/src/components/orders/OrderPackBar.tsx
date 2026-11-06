@@ -38,7 +38,7 @@ export function OrderPackBar({
       onSuccess: r => {
         showToast(t('orders.pick.created', { number: r.picklist.number }));
         onClose();
-        onPicked(r.picklist);
+        if (r.picklist.id) onPicked(r.picklist); // without an id there is no sheet to ask for: the band offers it after the next refresh
       },
       onError: e => showToast(t('orders.pick.failed', { reason: errorReason(t, e) }), 'error'),
     },

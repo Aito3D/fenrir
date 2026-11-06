@@ -173,11 +173,11 @@ export const canPick = (row: Pick<OrderBoardRow, 'lines' | 'picklists'>): boolea
 export const waitingPackages = (row: Pick<OrderBoardRow, 'packages'>): OrderPackage[] =>
   row.packages.filter(p => p.status === 'not_shipped');
 
-/** What the operator does next with this order, as the target the panel opens: box what was picked,
- *  choose what to pick, or hand a boxed parcel over. */
-export const nextStep = (row: Pick<OrderBoardRow, 'lines' | 'packages' | 'picklists' | 'picked'>): string | null => {
-  const boxable = boxablePicklists(row);
-  const open = boxable.find(p => p.status !== 'completed') ?? boxable[boxable.length - 1];
+/** What the operator does next with this order, as the target the panel opens: box the open picklist,
+ *  choose what to pick, or hand a boxed parcel over. A completed picklist with units left is not a target:
+ *  the row cannot tell which one holds them, the band of the opened order offers each. */
+export const nextStep = (row: Pick<OrderBoardRow, 'lines' | 'packages' | 'picklists'>): string | null => {
+  const open = (row.picklists ?? []).find(p => p.status !== 'completed');
   const parcel = waitingPackages(row)[0];
   return open ? `pack-${open.id}` : canPick(row) ? 'pick' : parcel ? `handover-${parcel.id}` : null;
 };

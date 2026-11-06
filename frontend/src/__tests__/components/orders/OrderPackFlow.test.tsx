@@ -217,6 +217,35 @@ describe('choosing what to pick', () => {
     expect(print).not.toHaveBeenCalled();
   });
 
+  it('a second click on the row icon keeps what was typed', async () => {
+    const user = userEvent.setup();
+    let asked = 0;
+    server.use(http.get(`${BASE}/picklist`, () => { asked++; return HttpResponse.json({ lines: L1 }); }));
+    const view = render(<OrderLinesPanel row={panelRow()} start="pick" startTick={1} />);
+    await waitFor(() => expect(qty()).toHaveValue(2));
+    await user.click(screen.getByRole('button', { name: /^One less/ }));
+    view.rerender(<OrderLinesPanel row={panelRow()} start="pick" startTick={2} />);
+    await new Promise(r => setTimeout(r, 50));
+    expect(qty()).toHaveValue(1);
+    expect(asked).toBe(1);
+  });
+
+  it('a picklist answered without an id is created but asks for no sheet', async () => {
+    const user = userEvent.setup();
+    let sheets = 0;
+    server.use(
+      preview(),
+      http.post(`${BASE}/picklists`, () => HttpResponse.json({ ...created(), picklist: { id: '', number: '' } })),
+      http.post(`${BASE}/prep-sheet`, () => { sheets++; return new HttpResponse('%PDF'); }),
+    );
+    render(<OrderLinesPanel row={panelRow()} />);
+    await user.click(screen.getByRole('button', { name: 'Prepare' }));
+    await user.click(await screen.findByRole('button', { name: 'Create and print' }));
+    await waitFor(() => expect(screen.queryByTestId('pack-qty-l1')).not.toBeInTheDocument());
+    expect(sheets).toBe(0);
+    expect(print).not.toHaveBeenCalled();
+  });
+
   it('the row icon opens the choice, or the parcel check of a picklist', async () => {
     server.use(preview(), content());
     const first = render(<OrderLinesPanel row={panelRow()} start="pick" startTick={1} />);

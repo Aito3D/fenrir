@@ -180,13 +180,16 @@ async def _pickable(db: AsyncSession, salesorder_id: str, row: dict, order: dict
         raise sync.ZohoBusy(salesorder_id) from e
     shelf = {line["id"]: line["packable"] for line in row["lines"]}
     held = picked_waiting(order)
-    offered: dict[str, float] = {}
+    books: dict[str, float] = {}
     for line in prefill.get("line_items") or []:
-        line_id = line.get("so_line_item_id") or ""
-        units = min(_num(line.get("quantity_to_be_picked")), shelf.get(line_id, 0.0) - held.get(line_id, 0.0))
-        if line.get("salesorder_id") == salesorder_id and round(units, 6) > 0:
-            offered[line_id] = round(units, 6)
-    return prefill, offered
+        if line.get("salesorder_id") == salesorder_id and line.get("so_line_item_id"):
+            line_id = line["so_line_item_id"]
+            books[line_id] = books.get(line_id, 0.0) + _num(line.get("quantity_to_be_picked"))
+    offered = {
+        line_id: round(min(units, shelf.get(line_id, 0.0) - held.get(line_id, 0.0)), 6)
+        for line_id, units in books.items()
+    }
+    return prefill, {line_id: units for line_id, units in offered.items() if units > 0}
 
 
 def _lines(units: Mapping[str, float]) -> list[dict]:
@@ -255,12 +258,13 @@ async def _picklist(db: AsyncSession, order: dict, picklist_id: str) -> dict:
 
 def _to_box(picklist: dict, salesorder_id: str) -> dict[str, tuple[float, float, str]]:
     """Per order line of a picklist: the units no parcel holds yet, the units already boxed, and the picklist
-    row id. A completed picklist counts what was picked, an open one what is to be picked."""
+    row id. A completed picklist counts what was picked, an open one what is to be picked. A picklist that also
+    holds another order, or two rows for one line, is left to Books ("picklist_shared")."""
     done = picklist.get("status") == "completed"
     result: dict[str, tuple[float, float, str]] = {}
     for line in picklist.get("line_items") or []:
-        if line.get("salesorder_id") != salesorder_id:
-            raise OrderActionRefused("picklist_shared")  # cutting it down here would touch another order
+        if line.get("salesorder_id") != salesorder_id or line.get("so_line_item_id") in result:
+            raise OrderActionRefused("picklist_shared")  # cutting it down here would touch rows it cannot tell apart
         boxed = _num(line.get("quantity_packed"))
         units = round(_num(line.get("quantity_picked" if done else "quantity_to_be_picked")) - boxed, 6)
         if line.get("so_line_item_id") and line.get("line_item_id"):
@@ -297,21 +301,32 @@ async def create_parcel(db: AsyncSession, salesorder_id: str, picklist_id: str, 
         wanted = _wanted(quantities)
         picklist = await _picklist(db, doc.detail or {}, picklist_id)
         on_list = _to_box(picklist, salesorder_id)
-        _within(wanted, {line_id: units for line_id, (units, _, _) in on_list.items()}, set(on_list))
+        done = picklist.get("status") == "completed"
+        # Never more than the order still has to box; and for a completed picklist never more than the order
+        # counts as picked and not boxed, so a parcel Books created without telling the picklist is not repeated.
+        unboxed = {line["id"]: line["remaining"] - line["packed_waiting"] for line in row["lines"]}
+        held = picked_waiting(doc.detail or {})
+        allowed = {
+            line_id: min(units, unboxed.get(line_id, 0.0), held.get(line_id, 0.0) if done else units)
+            for line_id, (units, _, _) in on_list.items()
+        }
+        _within(wanted, allowed, set(on_list))
         try:
-            if picklist.get("status") != "completed":
+            if not done:
                 body = {
                     "date": picklist.get("date") or date.today().isoformat(),
                     "location_id": picklist.get("location_id"),
                     "group_by": picklist.get("group_by"),
-                    # Books removes the rows left out: the picklist becomes exactly what was picked.
+                    # Books removes the rows left out: the picklist becomes exactly what was picked
+                    # (a row with units already in a parcel stays, at those units).
                     "line_items": [
                         {
-                            "line_item_id": on_list[line_id][2],
-                            "quantity_to_be_picked": on_list[line_id][1] + q,
-                            "quantity_picked": on_list[line_id][1] + q,
+                            "line_item_id": row_id,
+                            "quantity_to_be_picked": boxed + wanted.get(line_id, 0.0),
+                            "quantity_picked": boxed + wanted.get(line_id, 0.0),
                         }
-                        for line_id, q in wanted.items()
+                        for line_id, (_, boxed, row_id) in on_list.items()
+                        if boxed + wanted.get(line_id, 0.0) > 0
                     ],
                 }
                 updated = await _write(

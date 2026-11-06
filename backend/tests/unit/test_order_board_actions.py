@@ -457,6 +457,110 @@ async def test_a_retry_after_a_refused_parcel_repeats_no_picklist_write(db_sessi
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("linked", [True, False])
+async def test_a_parcel_books_created_behind_a_timeout_is_not_repeated(db_session, parcels, monkeypatch, linked):
+    """Books made the package and the answer was lost. The retry is refused whether or not Books counted the
+    package on the picklist row: the order's own picked-and-not-boxed units say there is nothing left."""
+    await _board(db_session, parcels, order(1, qty=5))
+    pl = await _pick(db_session, "so1", {"l1": 2})
+    real = zoho_service.create_package
+
+    async def lost_answer(db, salesorder_id, *, date, line_items):
+        await real(
+            db,
+            salesorder_id,
+            date=date,
+            line_items=line_items if linked else [{**i, "picklist_item_id": ""} for i in line_items],
+        )
+        raise ZohoUpstreamError("timeout")
+
+    monkeypatch.setattr(zoho_service, "create_package", lost_answer)
+    with pytest.raises(ZohoUpstreamError, match="timeout"):
+        await actions.create_parcel(db_session, "so1", pl, {"l1": 2})
+    with pytest.raises(actions.OrderActionRefused) as e:
+        await actions.create_parcel(db_session, "so1", pl, {"l1": 2})
+    assert e.value.args[0] == "too_many"
+    assert len(parcels.created) == 1
+    assert parcels.writes.count("update_picklist") == parcels.writes.count("complete_picklist") == 1
+
+
+@pytest.mark.asyncio
+async def test_units_boxed_in_books_without_the_picklist_are_not_boxed_again(db_session, parcels):
+    await _board(db_session, parcels, order(1, qty=2))
+    pl = await _pick(db_session, "so1", {"l1": 2})
+    parcels.orders["so1"]["line_items"][0]["quantity_packed"] = 2  # a parcel made in Books, not from the picklist
+    doc = await _doc(db_session, "so1")
+    doc.pending = True
+    await db_session.commit()
+    with pytest.raises(actions.OrderActionRefused) as e:
+        await actions.create_parcel(db_session, "so1", pl, {"l1": 2})
+    assert e.value.args[0] == "too_many"
+    assert parcels.writes == ["create_picklist"]
+
+
+@pytest.mark.asyncio
+async def test_a_retry_that_boxes_less_leaves_the_rest_on_the_completed_picklist(db_session, parcels):
+    await _board(db_session, parcels, order(1, qty=3))
+    pl = await _pick(db_session, "so1", {"l1": 3})
+    parcels.create_error = ZohoRequestRejected("no")
+    with pytest.raises(ZohoRequestRejected):
+        await actions.create_parcel(db_session, "so1", pl, {"l1": 3})
+    parcels.create_error = None
+    await actions.create_parcel(db_session, "so1", pl, {"l1": 2})
+    assert (await actions.picklist_content(db_session, "so1", pl))["lines"] == [{"line_id": "l1", "quantity": 1}]
+    assert (await sync.read_board(db_session))["rows"][0]["picked"] == 1
+    assert await actions.create_parcel(db_session, "so1", pl, {"l1": 1}) == "PKG-00001"
+    assert parcels.writes.count("update_picklist") == 1
+
+
+@pytest.mark.asyncio
+async def test_two_rows_for_one_line_are_left_to_books(db_session, parcels):
+    await _board(db_session, parcels, order(1, qty=5))
+    pl = await _pick(db_session, "so1", {"l1": 3})
+    rows = parcels.picklists[pl]["line_items"]
+    rows.append({**rows[0], "line_item_id": "pl1-l1-bis", "quantity_to_be_picked": 2})
+    for call in (
+        actions.picklist_content(db_session, "so1", pl),
+        actions.create_parcel(db_session, "so1", pl, {"l1": 1}),
+    ):
+        with pytest.raises(actions.OrderActionRefused) as e:
+            await call
+        assert e.value.args[0] == "picklist_shared"
+    assert parcels.writes == ["create_picklist"]
+
+
+@pytest.mark.asyncio
+async def test_a_row_already_boxed_stays_on_the_picklist_when_it_is_cut_down(db_session, parcels):
+    await _board(db_session, parcels, _two_lines(qty=3))
+    parcels.stock["B"] = 3
+    await sync.run_pass(db_session)
+    pl = await _pick(db_session, "so1", {"l1": 3, "lb": 2})
+    row_b = next(r for r in parcels.picklists[pl]["line_items"] if r["so_line_item_id"] == "lb")
+    row_b["quantity_packed"] = 2  # boxed in Books from the open picklist
+    await actions.create_parcel(db_session, "so1", pl, {"l1": 1})
+    assert parcels.bodies["update_picklist"]["line_items"] == [
+        {"line_item_id": "pl1-l1", "quantity_to_be_picked": 1, "quantity_picked": 1},
+        {"line_item_id": "pl1-lb", "quantity_to_be_picked": 2, "quantity_picked": 2},
+    ]
+    assert parcels.created[0][2] == [{"so_line_item_id": "l1", "quantity": 1, "picklist_item_id": "pl1-l1"}]
+
+
+@pytest.mark.asyncio
+async def test_prefill_rows_for_one_line_are_summed(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1, qty=5))
+
+    async def split(db, salesorder_id):
+        row = {"salesorder_id": "so1", "so_line_item_id": "l1", "quantity_picked": 0}
+        return {
+            "location_id": "loc1",
+            "line_items": [{**row, "quantity_to_be_picked": 3}, {**row, "quantity_to_be_picked": 1}],
+        }
+
+    monkeypatch.setattr(zoho_service, "picklist_prefill", split)
+    assert await actions.picklist_preview(db_session, "so1") == {"lines": [{"line_id": "l1", "quantity": 4}]}
+
+
+@pytest.mark.asyncio
 async def test_an_update_that_already_completes_the_picklist_is_not_completed_twice(db_session, parcels, monkeypatch):
     await _board(db_session, parcels, order(1))
     pl = await _pick(db_session, "so1", {"l1": 1})

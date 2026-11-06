@@ -90,12 +90,13 @@ export function OrderLinesPanel({
       setOpening(null);
     }
   };
-  const starter = useRef({ openCheck, row });
-  starter.current = { openCheck, row };
+  const starter = useRef({ openCheck, row, checking: checkState !== null });
+  starter.current = { openCheck, row, checking: checkState !== null };
   useEffect(() => {
     if (!start || !canUpdate || pendingNow.current) return;
     const id = start.slice(start.indexOf('-') + 1);
     if (start.startsWith('handover-')) setHandover(id);
+    else if (starter.current.checking) return; // a check is open: the row icon does not wipe what was typed
     else if (start === 'pick') void starter.current.openCheck(null);
     else {
       const picklist = (starter.current.row.picklists ?? []).find(p => p.id === id);
