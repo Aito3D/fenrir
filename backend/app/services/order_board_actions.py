@@ -118,6 +118,7 @@ async def _best_effort_refresh(db: AsyncSession, salesorder_id: str, number: str
 
 
 def _num(value) -> float:
+    # Deliberately tolerant, unlike the raising _num of order_board_payment: garbage reads as 0.0 here.
     try:
         return float(value or 0)
     except (TypeError, ValueError):

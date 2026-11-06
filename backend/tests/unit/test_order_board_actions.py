@@ -1636,3 +1636,84 @@ async def test_a_rate_limited_entry_reread_is_busy_and_opens_the_window(db_sessi
         await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
     assert sync._rate_limited_until > time.monotonic() + 20
     assert "get_package" not in _names(books)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failing", "kw", "step", "delivered", "invoice"),
+    [
+        ("mark_shipment_delivered", {}, "delivered", "skipped", "none"),
+        ("get_salesorder", {}, "invoice", "done", "failed"),  # reads open the window in _finish itself
+        ("invoice_prefill", {}, "invoice", "done", "failed"),
+        ("create_invoice", {}, "invoice", "done", "failed"),
+        ("mark_invoice_sent", {}, "sent", "done", "draft"),
+        ("list_customer_payments", {"advance": 600}, "credit", "done", "created"),
+        ("apply_invoice_credits", {"advance": 600}, "credit", "done", "created"),
+    ],
+)
+async def test_a_429_after_the_shipment_opens_the_window_and_returns_the_outcome(
+    db_session, books, failing, kw, step, delivered, invoice
+):
+    await _ready(db_session, books, **kw)
+    books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 900}]
+    books.errors[failing] = ZohoRateLimited("429", retry_after=30)
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert (outcome["failed_step"], outcome["error"], outcome["shipment"]) == (step, "429", "done")
+    assert (outcome["delivered"], outcome["invoice"], outcome["credit_applied"]) == (delivered, invoice, 0.0)
+    assert sync._rate_limited_until > time.monotonic() + 20
+    sync._rate_limited_until = 0.0  # the retry is what the operator does once the window has passed
+    await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert books.effects["create_shipment"] == 1
+    assert books.effects["mark_shipment_delivered"] == 1
+    assert books.effects["create_invoice"] == 1  # a 429 on create_invoice fired before Books acted
+    assert len(books.orders["so1"]["invoices"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_delivery_without_a_shipment_id_is_reported_as_the_delivered_step(db_session, books):
+    await _ready(db_session, books, status="shipped")
+    books.hide_shipment_id = True
+    doc = await _doc(db_session, "so1")
+    doc.detail = {**doc.detail, "packages": [{**p, "shipment_id": ""} for p in doc.detail["packages"]]}
+    await db_session.commit()
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert (outcome["failed_step"], outcome["error"]) == ("delivered", "Books returned no shipment id")
+    assert outcome["delivered"] == "skipped"
+    assert "mark_shipment_delivered" not in _names(books)
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_entry_get_package_reraises_raw_and_opens_the_window(db_session, books):
+    await _ready(db_session, books)
+    books.errors["get_package"] = ZohoRateLimited("429", retry_after=30)
+    with pytest.raises(ZohoRateLimited) as e:
+        await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert not isinstance(e.value, sync.ZohoBusy)  # today the raw error escapes, it is not turned into "busy"
+    assert sync._rate_limited_until > time.monotonic() + 20
+    assert _names(books) == ["get_package"]  # no write, no look after it
+    assert books.effects == Counter()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["shipped", "delivered"])
+async def test_a_shipped_parcel_of_an_order_off_the_board_still_gets_its_invoice(db_session, books, status):
+    await _ready(db_session, books, qty=2, box=2, status=status)
+    assert (await sync.read_board(db_session))["rows"] == []
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="delivery", apply_credit=False)
+    assert "create_shipment" not in _names(books)
+    assert (outcome["shipment"], outcome["invoice"], outcome["failed_step"]) == ("skipped", "created", None)
+    assert books.effects["create_invoice"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_new_shipment_needs_the_row_still_on_the_board(db_session, books, monkeypatch):
+    await _ready(db_session, books)
+
+    async def gone(db, salesorder_id):
+        return None
+
+    monkeypatch.setattr(sync, "find_board_row", gone)
+    with pytest.raises(actions.OrderNotOnBoard):
+        await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert _names(books) == ["get_package"]  # refused after the look, before any write
+    assert books.effects == Counter()
