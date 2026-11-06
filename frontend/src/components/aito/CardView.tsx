@@ -39,9 +39,9 @@ export interface CardViewProps {
    *  and no actions: its id does not exist, so anything acting on it would act
    *  on nothing. Cleared the instant the real row replaces it. */
   placeholder?: boolean;
-  /** The mobile board's card: the contact rides inline after the client name
-   *  instead of taking its own line, and there is no grip at all — the phone
-   *  board has no drag. Every other fact on the card is unchanged. */
+  /** The compact card (phone and tablet boards): the contact rides inline after
+   *  the client name instead of taking its own line, and there is no grip at
+   *  all — those boards have no drag. Every other fact on the card is unchanged. */
   compact?: boolean;
 }
 
@@ -68,6 +68,35 @@ const FLAG_LABEL_KEY: Record<AitoFlag, string> = {
   pause: 'aito.pause',
   fiverr: 'aito.fiverr',
 };
+
+// One shared minute tick (and a wake on tab visibility) for every mounted card.
+// The memo below would otherwise freeze the due badge, age label and heat
+// colour, which are computed from the wall clock during render.
+let clockTick = 0;
+const clockListeners = new Set<() => void>();
+const bumpClock = () => {
+  clockTick += 1;
+  clockListeners.forEach((listener) => listener());
+};
+const onClockVisibility = () => {
+  if (document.visibilityState === 'visible') bumpClock();
+};
+let clockTimer: ReturnType<typeof setInterval> | undefined;
+function subscribeClock(listener: () => void) {
+  if (clockListeners.size === 0) {
+    clockTimer = setInterval(bumpClock, 60_000);
+    document.addEventListener('visibilitychange', onClockVisibility);
+  }
+  clockListeners.add(listener);
+  return () => {
+    clockListeners.delete(listener);
+    if (clockListeners.size === 0) {
+      clearInterval(clockTimer);
+      document.removeEventListener('visibilitychange', onClockVisibility);
+    }
+  };
+}
+const getClockTick = () => clockTick;
 
 /** Presentational card, shared by the in-column sortable wrapper and the
  *  DragOverlay clone.
@@ -98,37 +127,9 @@ const FLAG_LABEL_KEY: Record<AitoFlag, string> = {
  *  share one path with nothing to double-fire. The parent-injected actions
  *  (mark-sent, mark-done, restore, hold-to-delete) opt out by stopping
  *  propagation, so their own clicks never reach the region handler. Phone,
- *  email and delete live in the detail panel, not here. */
-// One shared minute tick (and a wake on tab visibility) for every mounted card.
-// The memo below would otherwise freeze the due badge, age label and heat
-// colour, which are computed from the wall clock during render.
-let clockTick = 0;
-const clockListeners = new Set<() => void>();
-const bumpClock = () => {
-  clockTick += 1;
-  clockListeners.forEach((listener) => listener());
-};
-const onClockVisibility = () => {
-  if (document.visibilityState === 'visible') bumpClock();
-};
-let clockTimer: ReturnType<typeof setInterval> | undefined;
-function subscribeClock(listener: () => void) {
-  if (clockListeners.size === 0) {
-    clockTimer = setInterval(bumpClock, 60_000);
-    document.addEventListener('visibilitychange', onClockVisibility);
-  }
-  clockListeners.add(listener);
-  return () => {
-    clockListeners.delete(listener);
-    if (clockListeners.size === 0) {
-      clearInterval(clockTimer);
-      document.removeEventListener('visibilitychange', onClockVisibility);
-    }
-  };
-}
-const getClockTick = () => clockTick;
-
-/** Memoised: the board re-renders on every WebSocket invalidation, keystroke
+ *  email and delete live in the detail panel, not here.
+ *
+ *  Memoised: the board re-renders on every WebSocket invalidation, keystroke
  *  in the search box and presence update, and React Query's structural
  *  sharing keeps an unchanged `project` referentially equal, so an unchanged
  *  card has nothing to render. `BoardColumn` keeps its callbacks, the
@@ -346,9 +347,6 @@ export const CardView = memo(function CardView({
               reader does next. The job's age moved down to the footer
               (2026-09-08) so the name keeps the row. */}
           <DueDateBadge dueDate={project.due_date ?? null} column={project.column} />
-          {/* Money already in: a paid online link. Pending is deliberately
-              silent — the board must not get noisier for something the
-              client has not done yet. */}
           {/* Expired quote: amber like its Billing-card tone; dropped once the card is finished. */}
           {project.quote_status === 'expired' && !isFinished(project.column) && (
             <span
@@ -360,6 +358,9 @@ export const CardView = memo(function CardView({
               <span className="sr-only">{t('aito.quoteExpired')}</span>
             </span>
           )}
+          {/* Money already in: a paid online link. Pending is deliberately
+              silent — the board must not get noisier for something the
+              client has not done yet. */}
           {project.payment_link?.state === 'paid' && (
             <span
               data-testid="aito-card-paid-online"

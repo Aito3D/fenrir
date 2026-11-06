@@ -275,6 +275,102 @@ async def sweep_inbox(db: AsyncSession, *, force: bool = False) -> None:
         logger.info("Inbox sweep: %d overdue card(s) recorded, %d inbox row(s) purged", overdue, purged)
 
 
+async def _load_sweep_targets(db: AsyncSession) -> list[tuple[AitoProject, int, str, str, str | None]]:
+    """The projects still owing money, least-recently-checked first, each with the
+    plain locals the pass reads (see T-027 below)."""
+    stmt = (
+        select(AitoProject)
+        .where(
+            AitoProject.status == "active",
+            AitoProject.quote_invoiced.is_(True),
+            AitoProject.quote_id.is_not(None),
+            or_(AitoProject.invoice_balance.is_(None), AitoProject.invoice_balance > 0),
+        )
+        # T-026 (loop-9): least-recently-checked first (nulls -- never
+        # swept -- ahead of everything), id as a stable tiebreaker. A
+        # pass that gets cut short (a 429, most commonly) leaves its
+        # unreached tail with the oldest invoice_checked_at values, so
+        # resuming with this order means the NEXT pass starts exactly
+        # where the interrupted one left off instead of re-spending its
+        # calls on the same head-of-list projects every tick.
+        .order_by(AitoProject.invoice_checked_at.asc().nulls_first(), AitoProject.id)
+    )
+    projects = list((await db.execute(stmt)).scalars().all())
+    # T-027: id/quote_id/client_id are captured up front, while every row
+    # is still fresh, rather than re-read off `project` inside the loop.
+    # A rollback below (recovering from a failed commit) expires every
+    # object still held by the session, including projects further down
+    # this same list -- re-reading a plain column off an expired ORM
+    # object triggers an implicit lazy-load that needs a greenlet and
+    # raises ``MissingGreenlet`` outside of one, so the values this loop
+    # needs to *read* are pinned to plain locals instead.
+    targets = [
+        (project, project.id, project.quote_id or "", project.client_id or "", project.quote_number)
+        for project in projects
+    ]
+    return targets
+
+
+async def _refresh_cached_invoice(
+    db: AsyncSession,
+    project: AitoProject,
+    project_id: int,
+    quote_id: str,
+    client_id: str,
+    quote_number: str | None,
+) -> None:
+    """Read the project's newest invoice from Books and cache it on the row (or clear
+    the cache when Books knows none). Raises whatever Books / parsing raise; the
+    caller isolates the failure to this project."""
+    # `remember_document_numbers` below READS the stored list.
+    # Reload just that column first: a rollback for an earlier
+    # project may have expired this row (a lazy-load would raise
+    # MissingGreenlet), and another writer may have appended a
+    # number since the pass began, which must not be overwritten.
+    # It runs before anything is staged on the session, so its
+    # SELECT never autoflushes this project's half-done writes.
+    await db.refresh(project, attribute_names=["document_numbers"])
+    invoices = await zoho_service.list_project_invoices(db, quote_id, client_id)
+    if invoices:
+        newest = invoices[0]
+        credit: float | None = None
+        if float(newest.get("balance") or 0) > 0:
+            # Still owed: spend the quote's own unused deposits on
+            # it first (a retainer paid online after the invoice
+            # was raised in Books by hand, typically), and cache
+            # whatever Books says the invoice is AFTER that.
+            newest, credit = await settle_with_deposits(db, project_id, quote_id, newest, quote_number)
+        # Parsed into locals before any assignment: a ValueError on
+        # the balance must leave the row untouched, not half-written.
+        status = newest.get("status") or None
+        balance = float(newest.get("balance") or 0)
+        total = invoice_total_of(newest)
+        due = newest.get("due_date") or None
+        project.invoice_status = status
+        project.invoice_balance = balance
+        project.invoice_total = total
+        project.invoice_due_date = due
+        remember_document_numbers(project, newest.get("number"))
+        if credit is not None:
+            # The status reconcile stops reading a locked (invoiced)
+            # estimate, so this figure otherwise freezes the day
+            # the invoice is raised. The payments list was in hand
+            # anyway — zero extra calls.
+            project.customer_credit_total = credit
+    else:
+        # T-007: Books no longer knows about an invoice for this
+        # project (deleted, or its estimate/customer link removed).
+        # The cached fields must not keep answering for an invoice
+        # that is gone -- clear them the same way a fresh project
+        # reads before its first invoice ever existed. This still
+        # counts as a refresh (the call succeeded), so the row is
+        # stamped and counted below like any other pass.
+        project.invoice_status = None
+        project.invoice_balance = None
+        project.invoice_total = None
+        project.invoice_due_date = None
+
+
 async def sweep_invoices(
     db: AsyncSession,
     *,
@@ -332,36 +428,7 @@ async def sweep_invoices(
 
     updated = 0
     try:
-        stmt = (
-            select(AitoProject)
-            .where(
-                AitoProject.status == "active",
-                AitoProject.quote_invoiced.is_(True),
-                AitoProject.quote_id.is_not(None),
-                or_(AitoProject.invoice_balance.is_(None), AitoProject.invoice_balance > 0),
-            )
-            # T-026 (loop-9): least-recently-checked first (nulls -- never
-            # swept -- ahead of everything), id as a stable tiebreaker. A
-            # pass that gets cut short (a 429, most commonly) leaves its
-            # unreached tail with the oldest invoice_checked_at values, so
-            # resuming with this order means the NEXT pass starts exactly
-            # where the interrupted one left off instead of re-spending its
-            # calls on the same head-of-list projects every tick.
-            .order_by(AitoProject.invoice_checked_at.asc().nulls_first(), AitoProject.id)
-        )
-        projects = list((await db.execute(stmt)).scalars().all())
-        # T-027: id/quote_id/client_id are captured up front, while every row
-        # is still fresh, rather than re-read off `project` inside the loop.
-        # A rollback below (recovering from a failed commit) expires every
-        # object still held by the session, including projects further down
-        # this same list -- re-reading a plain column off an expired ORM
-        # object triggers an implicit lazy-load that needs a greenlet and
-        # raises ``MissingGreenlet`` outside of one, so the values this loop
-        # needs to *read* are pinned to plain locals instead.
-        targets = [
-            (project, project.id, project.quote_id or "", project.client_id or "", project.quote_number)
-            for project in projects
-        ]
+        targets = await _load_sweep_targets(db)
         cut_short = False
         for project, project_id, quote_id, client_id, quote_number in targets:
             if serve_due_pushes is not None:
@@ -374,53 +441,7 @@ async def sweep_invoices(
                 cut_short = True
                 break
             try:
-                # `remember_document_numbers` below READS the stored list.
-                # Reload just that column first: a rollback for an earlier
-                # project may have expired this row (a lazy-load would raise
-                # MissingGreenlet), and another writer may have appended a
-                # number since the pass began, which must not be overwritten.
-                # It runs before anything is staged on the session, so its
-                # SELECT never autoflushes this project's half-done writes.
-                await db.refresh(project, attribute_names=["document_numbers"])
-                invoices = await zoho_service.list_project_invoices(db, quote_id, client_id)
-                if invoices:
-                    newest = invoices[0]
-                    credit: float | None = None
-                    if float(newest.get("balance") or 0) > 0:
-                        # Still owed: spend the quote's own unused deposits on
-                        # it first (a retainer paid online after the invoice
-                        # was raised in Books by hand, typically), and cache
-                        # whatever Books says the invoice is AFTER that.
-                        newest, credit = await settle_with_deposits(db, project_id, quote_id, newest, quote_number)
-                    # Parsed into locals before any assignment: a ValueError on
-                    # the balance must leave the row untouched, not half-written.
-                    status = newest.get("status") or None
-                    balance = float(newest.get("balance") or 0)
-                    total = invoice_total_of(newest)
-                    due = newest.get("due_date") or None
-                    project.invoice_status = status
-                    project.invoice_balance = balance
-                    project.invoice_total = total
-                    project.invoice_due_date = due
-                    remember_document_numbers(project, newest.get("number"))
-                    if credit is not None:
-                        # The status reconcile stops reading a locked (invoiced)
-                        # estimate, so this figure otherwise freezes the day
-                        # the invoice is raised. The payments list was in hand
-                        # anyway — zero extra calls.
-                        project.customer_credit_total = credit
-                else:
-                    # T-007: Books no longer knows about an invoice for this
-                    # project (deleted, or its estimate/customer link removed).
-                    # The cached fields must not keep answering for an invoice
-                    # that is gone -- clear them the same way a fresh project
-                    # reads before its first invoice ever existed. This still
-                    # counts as a refresh (the call succeeded), so the row is
-                    # stamped and counted below like any other pass.
-                    project.invoice_status = None
-                    project.invoice_balance = None
-                    project.invoice_total = None
-                    project.invoice_due_date = None
+                await _refresh_cached_invoice(db, project, project_id, quote_id, client_id, quote_number)
             except ZohoRateLimited:
                 # T-006: stop here rather than spending one more request per
                 # remaining project — everything refreshed so far this pass was
