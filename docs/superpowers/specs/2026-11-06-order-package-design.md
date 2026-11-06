@@ -342,3 +342,50 @@ with offline data at desktop, 900 px and phone width.
 (delivered, `PICK UP`); the invoice (linked to the order so `quantity_invoiced` rises, status sent, right total and tax);
 which customer payment the credit took. Then one "Livraison": does a shipped, undelivered parcel raise
 `quantity_shipped`? If not, its invoice is not created and nothing on the board says so.
+
+## Change of 2026-11-06: a picklist comes first
+
+Asked by the user after the first build: "when the operator prepares an order, he should be able to select what item is
+in the package, and also edit the quantity, so he can make a partial order for the first package and come back later for
+a second one", then "when the operator does that, it should first create a prélèvement (picklist) in Zoho". Built on
+branch `order-picklist`. It replaces "Prep sheet" and "Create the parcel" above.
+
+**What Books has (probed read-only, field names only).** Books serves `/picklists`, `/picklists/{id}` and
+`/picklists/editpage?salesorder_ids=`, its own draft of a picklist: only the units no picklist holds yet. The shop has
+11 picklists (`PL-00012` on 2026-11-05). A sales order lists its `picklists[]`; a line carries `quantity_picked`. A
+package line made from a picklist carries `picklist_item_id`, the picklist row's id. One old order holds completed
+picklists whose units were never boxed, and one picklist still open.
+
+**The flow now.**
+
+1. **Préparer** (band of "À préparer", and the row icon). Fenrir asks Books what a new picklist may hold and opens the
+   choice: every line ticked at its maximum. A tick takes a line or leaves it out; the units are typed or stepped.
+   The maximum per line is the lesser of what Books still offers and what the shelf covers, once units already picked
+   and not boxed are set aside.
+2. **Créer et imprimer.** Fenrir creates the picklist in Books with the chosen lines (`quantity_picked` 0), then prints
+   the prep sheet for it: its units, its number beside the order's, and what stays behind.
+3. The order reads "En préparation"; the band shows the picklist number, its sheet (reprint) and **Créer le colis**.
+4. **Créer le colis** opens the check on what the picklist still holds; the operator confirms or lowers it. Fenrir then
+   cuts the picklist down to the confirmed units (a line left out is removed from it), marks it completed, and creates
+   the package, each line pointing at its picklist row.
+5. Units left out are "à préparer" again: a second picklist, then a second parcel, later.
+
+**Rules (my calls).**
+
+- One open picklist per order at a time from Fenrir: what an open picklist holds is not on the stored order, so the
+  shelf could not be shared between two. Refusal code `picklist_open`.
+- A parcel is always made from a picklist. The direct parcel of the first build is gone.
+- A completed picklist keeps its "Créer le colis" while the order has picked units not boxed: this is the retry after
+  a failed package, and the way to box the old picklists.
+- A picklist that also holds another order's lines is refused (`picklist_shared`): finish it in Books.
+- Every step whose result Books already shows is skipped: a retry after a failed package repeats no picklist write.
+- New refusal codes: `picklist_open`, `unknown_picklist`, `picklist_shared`. The operator reads all three as "the order
+  changed".
+- Routes: `GET /order-board/orders/{id}/picklist` (what may be picked), `POST …/picklists`, `GET …/picklists/{id}`
+  (what is left to box), `POST …/packages` now needs `picklist_id`, `POST …/prep-sheet?picklist_id=`.
+- Row fields: `picklists` (id, number, status, date) and `picked` (units picked and not boxed).
+
+**Unverified, added to the first live run.** No picklist write was sent. To check in Books on the first order:
+the picklist exists with the chosen units; after "Créer le colis" it is completed with the confirmed units and the
+lines left out are gone from it; the package lists the picklist; the units left out are offered again by "Préparer".
+If Books refuses the update or the completion, the screen shows Books' message and nothing is boxed.
