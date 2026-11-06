@@ -1,6 +1,6 @@
 # Order Board: prep sheet, create the parcel, hand it over, invoice
 
-Date: 2026-11-06. Status: awaiting the user's read.
+Date: 2026-11-06. Status: approved by the user and built (see "As built" at the end). No write has been tried against live Books yet.
 Mockup (approved, French UI, fake data): `docs/superpowers/specs/2026-11-06-order-package-demo/index.html`.
 Hash for a given state: `#,,,SO-00433,ship` (states: `printed`, `confirm`, `slip`, `packed`, `ship`, `shipped`).
 Builds on the Order Board (`2026-11-05-order-board-design.md`) and its payment view (`2026-11-05-order-payment-design.md`).
@@ -304,3 +304,41 @@ If Books refuses a body, the message will say which field; that fix is expected 
 - An invoice created "sent" cannot be made a draft again from Fenrir; a wrong one is voided in Books.
 - Two server processes would defeat the per-order lock (the shop runs one).
 - The refactor campaign on the order board is still open and touches the same files.
+
+## As built (2026-11-06)
+
+Built on branch `order-package`, eight tasks, each reviewed, then a whole-branch review. What differs from the text above:
+
+- **Print stamp storage:** a row of kind `prep` in `order_board_docs` (no new column, no migration).
+- **Service lines:** only lines Books marks `product_type = "service"` ride on the first invoice. A physical item that is
+  not stock-tracked is shown under "other lines" by the board, cannot be packed from Fenrir, and is not invoiced by
+  Fenrir: it is packed, shipped and invoiced in Books. (Replaces call 10.)
+- **Draft invoice:** when the order already has a draft invoice and units are waiting for an invoice, Fenrir creates no
+  new invoice and says so ("a draft invoice … is waiting in Zoho: send it there first"). (Stricter than call 11.)
+- **No automatic invoice** also when a line carries a fixed-amount discount and is invoiced only in part.
+- **Outcome reasons:** the answer of a hand-over carries `manual_reason` (`order_money`, `line_discount`, `draft`) and
+  error codes `credit_off_board` (invoice created after the order left the board: the credit was not applied) and
+  `prefill_refused` (Books refused to prepare the invoice).
+- **Refusal codes** of the write routes: `nothing_to_pack`, `unknown_line`, `too_many`, `bad_quantity`, `unknown_package`
+  (400), another writer on the same order (409), Books busy (503), Books' own message (502).
+- **Unconfirmed writes:** after a Books write the order is re-read; until a re-read succeeds (or while the stored copy is
+  marked pending) the next action on that order re-reads it first. A sync pass drops a copy it fetched before a write.
+- **After the last parcel** the order leaves the open list at once and appears under "Terminées" after the next sync pass.
+- **Hand-over preview amount** is shown only for tax-inclusive orders without line discounts; otherwise the bar says the
+  invoice will be created, without an amount. The invoice itself is always Books' own figures.
+- **Prep sheet:** text outside Latin-1 is folded (macrons dropped, ʻokina as an apostrophe, other scripts as "?");
+  labels are in mixed case, not capitals.
+- **Phone:** the action buttons stay within the screen while the lines table scrolls sideways; the row icon sits beside
+  the payment pill.
+- **Not built:** nothing from the non-goals. The invoice card's empty text on a finished order still says the invoice is
+  created at hand-over.
+
+Verified: backend suite 26,191 passed (2 unrelated failures: a known afternoon date test and a timing test that passes
+alone); 1,137 Zoho and order tests on the final code; frontend suite 10,806 passed (3 unrelated files failed under load
+and pass alone); lint, type checks, unused-code check, translation parity, build. Screens checked in a headless browser
+with offline data at desktop, 900 px and phone width.
+
+**Still owed (needs the user):** the first live run. Check in Books, on one order: the package; the shipment
+(delivered, `PICK UP`); the invoice (linked to the order so `quantity_invoiced` rises, status sent, right total and tax);
+which customer payment the credit took. Then one "Livraison": does a shipped, undelivered parcel raise
+`quantity_shipped`? If not, its invoice is not created and nothing on the board says so.
