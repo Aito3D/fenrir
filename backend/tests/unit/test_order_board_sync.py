@@ -917,3 +917,33 @@ async def test_a_pass_does_not_revert_an_order_refreshed_meanwhile_that_it_never
         await running
         rows = {r["id"]: r for r in (await sync.read_board(writing))["rows"]}
         assert rows["so1"]["lines"][0]["quantity"] == 3
+
+
+@pytest.mark.asyncio
+async def test_a_write_that_begins_while_a_pass_stores_its_copy_leaves_the_order_pending(db_session, zoho, monkeypatch):
+    """The write starts after the pass's newer-write check but before its commit lands."""
+    await _synced(db_session, zoho, order(1))
+    zoho.orders["so1"] = {**order(1), "last_modified_time": "2026-11-02T08:00:00-1000"}
+    real_commit, fetched = db_session.commit, []
+    real_get = zoho.get_salesorder
+
+    async def get(db, salesorder_id):
+        fetched.append(salesorder_id)
+        return await real_get(db, salesorder_id)
+
+    async def commit():
+        if fetched == ["so1"]:
+            fetched.append("written")
+            sync.note_write("so1")  # a hand-over starts right now
+        await real_commit()
+
+    monkeypatch.setattr(zoho_service, "get_salesorder", get)
+    monkeypatch.setattr(db_session, "commit", commit)
+    await sync.run_pass(db_session)
+    doc = (
+        await db_session.execute(
+            select(OrderBoardDoc).where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == "so1")
+        )
+    ).scalar_one()
+    assert fetched == ["so1", "written"]
+    assert doc.pending is True

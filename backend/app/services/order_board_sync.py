@@ -474,6 +474,9 @@ async def _sync(db: AsyncSession) -> None:
         doc.detail = {**fetched, "_fetched_at": _now()}
         doc.pending = False
         await db.commit()  # a later failure must not lose what was fetched
+        if _written_at.get(doc.zoho_id, -1.0) >= began and doc.kind == "salesorder":
+            doc.pending = True  # a write began while this copy was being stored: it may predate the write
+            await db.commit()
 
     # Stock has no change feed in Books, so it is re-read on every pass.
     item_ids = sorted(

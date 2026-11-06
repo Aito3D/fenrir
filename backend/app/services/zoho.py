@@ -1374,11 +1374,11 @@ class ZohoService:
             params={"salesorder_id": salesorder_id},
             json={"date": date, "line_items": line_items},
         )
-        return payload["package"]
+        return payload.get("package") or {}
 
     async def get_package(self, db: AsyncSession, package_id: str) -> dict:
         """One package. Unverified against a live write (spec, "Not verified")."""
-        return (await self._request(db, "GET", f"/packages/{_seg(package_id)}"))["package"]
+        return (await self._request(db, "GET", f"/packages/{_seg(package_id)}")).get("package") or {}
 
     async def create_shipment(
         self, db: AsyncSession, salesorder_id: str, package_id: str, *, date: str, delivery_method: str

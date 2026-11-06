@@ -84,7 +84,7 @@ async def get_finished_order(
     except ZohoNotConfiguredError:
         raise HTTPException(status_code=503, detail="Zoho Books is not connected.") from None
     except ZohoUpstreamError as e:
-        logger.warning("Finished order fetch failed: %s", e)
+        logger.warning("Finished order fetch failed (%s)", type(e).__name__)
         raise HTTPException(status_code=502, detail="Zoho Books did not answer.") from None
 
 
@@ -158,7 +158,8 @@ async def _run(call: Awaitable[_T]) -> _T:
     except ZohoNotConfiguredError:
         raise HTTPException(status_code=503, detail="Zoho Books is not connected.") from None
     except ZohoUpstreamError as e:
-        logger.warning("Order board Zoho call failed: %s", e)
+        # Books' message can name a customer or an item: the log keeps the step and the class only.
+        logger.warning("Order board Zoho call failed: step=%s (%s)", getattr(call, "__name__", "?"), type(e).__name__)
         raise HTTPException(status_code=502, detail=str(e)[:300]) from None  # Books' own reason, for the operator
 
 

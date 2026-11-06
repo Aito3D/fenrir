@@ -403,3 +403,21 @@ async def test_a_rate_limited_write_is_a_502_with_the_reason(async_client, token
     monkeypatch.setattr(actions, "create_parcel", boom)
     r = await async_client.post(f"{BASE}/orders/so1/packages", headers=tokens["both"], json=PARCEL)
     assert (r.status_code, r.json()["detail"]) == (502, "slow down")
+
+
+@pytest.mark.asyncio
+async def test_a_books_failure_is_logged_without_its_message(async_client, tokens, monkeypatch, caplog):
+    import logging
+
+    from backend.app.services import order_board_actions as actions
+    from backend.app.services.zoho import ZohoRequestRejected
+
+    async def hand_over(*a, **k):
+        raise ZohoRequestRejected("Customer Jane Doe has no item Widget")
+
+    monkeypatch.setattr(actions, "hand_over", hand_over)
+    with caplog.at_level(logging.WARNING):
+        r = await async_client.post(f"{BASE}/orders/so1/packages/p1/handover", headers=tokens["both"], json=HAND)
+    assert (r.status_code, r.json()["detail"]) == (502, "Customer Jane Doe has no item Widget")
+    assert "Jane" not in caplog.text
+    assert "step=hand_over" in caplog.text and "ZohoRequestRejected" in caplog.text
