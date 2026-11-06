@@ -68,6 +68,8 @@ _wake: asyncio.Event | None = None
 # time.monotonic() of the last write to each sales order here: a pass that began fetching
 # an order before that instant holds a copy older than the write and must not store it.
 _written_at: dict[str, float] = {}
+# Orders written to Books here whose re-read has not succeeded yet: the stored copy may not show the write.
+_unconfirmed: set[str] = set()
 
 
 class OrderNotFinished(Exception):
@@ -134,7 +136,13 @@ async def save_settings(db: AsyncSession, settings: OrderBoardSettings) -> None:
 
 async def _find_state(db: AsyncSession) -> OrderBoardDoc | None:
     return (
-        await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "state", OrderBoardDoc.zoho_id == "board"))
+        await db.execute(
+            select(OrderBoardDoc)
+            .where(OrderBoardDoc.kind == "state", OrderBoardDoc.zoho_id == "board")
+            .execution_options(
+                populate_existing=True
+            )  # never a copy a running pass loaded before another session's commit
+        )
     ).scalar_one_or_none()
 
 
@@ -176,11 +184,29 @@ async def find_board_row(db: AsyncSession, salesorder_id: str) -> dict | None:
     )
 
 
+def note_write(salesorder_id: str) -> None:
+    """A Books write on this order is starting or has just ended: drop any pass fetch that began before now,
+    and treat the stored copy as unconfirmed until a refresh succeeds."""
+    _written_at[salesorder_id] = time.monotonic()
+    _unconfirmed.add(salesorder_id)
+
+
+def needs_refresh(salesorder_id: str) -> bool:
+    return salesorder_id in _unconfirmed
+
+
+def open_rate_limit_window(e: ZohoRateLimited) -> None:
+    global _rate_limited_until
+    _rate_limited_until = time.monotonic() + (e.retry_after or PENDING_PAUSE_SECONDS)
+
+
 async def refresh_order(db: AsyncSession, salesorder_id: str) -> None:
     """Re-read one order from Books after a write here, store it and rebuild the board."""
     doc = (
         await db.execute(
-            select(OrderBoardDoc).where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id)
+            select(OrderBoardDoc)
+            .where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id)
+            .execution_options(populate_existing=True)
         )
     ).scalar_one_or_none()
     if doc is None:
@@ -191,6 +217,7 @@ async def refresh_order(db: AsyncSession, salesorder_id: str) -> None:
     doc.pending = True  # the next pass re-reads it once the list row has caught up
     await recompute(db)
     await db.commit()
+    _unconfirmed.discard(salesorder_id)
 
 
 async def read_board(db: AsyncSession) -> dict:
@@ -301,7 +328,6 @@ async def read_finished(db: AsyncSession) -> dict:
 
 async def read_finished_order(db: AsyncSession, salesorder_id: str) -> dict:
     """One finished order in full. Fetched from Zoho only when no current copy is stored; then kept."""
-    global _rate_limited_until
     doc = next((d for d in await _finished_docs(db) if d.zoho_id == salesorder_id), None)
     if doc is None:
         raise OrderNotFinished(salesorder_id)
@@ -312,7 +338,7 @@ async def read_finished_order(db: AsyncSession, salesorder_id: str) -> dict:
         try:
             fetched = await zoho_service.get_salesorder(db, salesorder_id)
         except ZohoRateLimited as e:
-            _rate_limited_until = time.monotonic() + (e.retry_after or PENDING_PAUSE_SECONDS)
+            open_rate_limit_window(e)
             raise ZohoBusy(salesorder_id) from e
         # No pass lock here (a pass can run long): if a pass wrote this row meanwhile, its mark or newer detail
         # must not be lost, so the fetched copy goes in marked stale and the next open fetches again.
@@ -338,7 +364,15 @@ async def recompute(db: AsyncSession) -> None:
     if not current.get("computed_at") and await _pending_count(db):
         return
     settings = await load_settings(db)
-    docs = (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind != "state"))).scalars().all()
+    docs = (
+        (
+            await db.execute(
+                select(OrderBoardDoc).where(OrderBoardDoc.kind != "state").execution_options(populate_existing=True)
+            )
+        )
+        .scalars()
+        .all()
+    )
     rows = compute_board(
         [d.detail for d in docs if d.kind == "salesorder" and d.detail and _is_candidate(d.kind, d.header, settings)],
         [d.detail for d in docs if d.kind == "purchaseorder" and d.detail],
@@ -474,7 +508,6 @@ async def run_pass(db: AsyncSession) -> bool:
     A Zoho failure ends the pass, is recorded for the page to show, and leaves
     the stored board as it was.
     """
-    global _rate_limited_until
     # During a 429 back-off even a Refresh click sends nothing: the Kanban
     # shares this budget and freezes while Books is throttling.
     if _pass_lock.locked() or time.monotonic() < _rate_limited_until:
@@ -485,7 +518,7 @@ async def run_pass(db: AsyncSession) -> bool:
         except (ZohoUpstreamError, ZohoNotConfiguredError) as e:
             await db.rollback()
             if isinstance(e, ZohoRateLimited):
-                _rate_limited_until = time.monotonic() + (e.retry_after or PENDING_PAUSE_SECONDS)
+                open_rate_limit_window(e)
             logger.warning("Order board sync pass failed: %s", e)
             state = await _state(db)
             state.detail = {**(state.detail or {}), "last_error": str(e)[:300], "last_error_at": _now()}

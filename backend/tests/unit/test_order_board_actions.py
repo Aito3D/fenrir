@@ -1,16 +1,23 @@
 """The Order Board's writes: print stamp and parcel creation. Zoho is a fake throughout."""
 
 import asyncio
+import time
 from datetime import date
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import false, select
+from sqlalchemy.exc import OperationalError
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_actions as actions, order_board_sync as sync
-from backend.app.services.zoho import ZohoRequestRejected, ZohoUpstreamError, zoho_service
-from backend.tests.unit.test_order_board_sync import _synced, order, zoho  # noqa: F401
+from backend.app.services.zoho import ZohoRateLimited, ZohoRequestRejected, ZohoUpstreamError, zoho_service
+from backend.tests.unit.test_order_board_sync import (  # noqa: F401
+    _synced,
+    file_sessions,
+    no_back_off_left_over,
+    order,
+    zoho,
+)
 
 
 async def _doc(db, zoho_id):
@@ -26,9 +33,11 @@ def parcels(zoho, monkeypatch):  # noqa: F811
     """create_package on the fake: records the call and boxes the units on the stored order."""
     zoho.created = []
     zoho.create_gate = None
+    zoho.create_entered = asyncio.Event()
     zoho.create_error = None
 
     async def create_package(db, salesorder_id, *, date, line_items):
+        zoho.create_entered.set()
         if zoho.create_gate:
             await zoho.create_gate.wait()
         if zoho.create_error:
@@ -79,7 +88,15 @@ async def test_create_parcel_sends_lines_date_and_no_number(db_session, parcels)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("asked", "code"),
-    [({}, "nothing_to_pack"), ({"l1": 0}, "nothing_to_pack"), ({"nope": 1}, "unknown_line"), ({"l1": 3}, "too_many")],
+    [
+        ({}, "nothing_to_pack"),
+        ({"l1": 0}, "nothing_to_pack"),
+        ({"nope": 1}, "unknown_line"),
+        ({"l1": 3}, "too_many"),
+        ({"l1": -1}, "bad_quantity"),
+        ({"l1": float("nan")}, "bad_quantity"),
+        ({"l1": float("inf")}, "bad_quantity"),
+    ],
 )
 async def test_create_parcel_refuses_without_calling_zoho(db_session, parcels, asked, code):
     await _board(db_session, parcels, order(1, qty=2))
@@ -111,26 +128,13 @@ async def test_busy_zoho_is_not_called(db_session, parcels):
     assert parcels.created == []
 
 
-@pytest.fixture
-async def file_sessions(tmp_path):
-    """Two sessions must not share one in-memory connection: a file database."""
-    from backend.app.core.database import Base, load_all_models
-
-    load_all_models()
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'orders.db'}")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    await engine.dispose()
-
-
 @pytest.mark.asyncio
 async def test_second_writer_on_the_same_order_is_refused(file_sessions, parcels):
     async with file_sessions() as one, file_sessions() as two:
         await _board(one, parcels, order(1), order(2))
         parcels.create_gate = asyncio.Event()
         first = asyncio.create_task(actions.create_parcel(one, "so1", {"l1": 1}))
-        await asyncio.sleep(0.05)
+        await parcels.create_entered.wait()
         with pytest.raises(actions.OrderBusy):
             await actions.create_parcel(two, "so1", {"l1": 1})
         other = asyncio.create_task(actions.create_parcel(two, "so2", {"l2": 1}))
@@ -155,12 +159,12 @@ async def test_parcel_clears_the_stamp_and_the_row_shows_the_boxed_units(db_sess
 async def test_a_books_refusal_changes_nothing(db_session, parcels):
     await _board(db_session, parcels, order(1, qty=3))
     await actions.stamp_print(db_session, "so1", "paul")
-    before = (await _doc(db_session, "so1")).detail
+    before = {k: v for k, v in (await _doc(db_session, "so1")).detail.items() if k != "_fetched_at"}
     parcels.create_error = ZohoRequestRejected("no")
     with pytest.raises(ZohoRequestRejected):
         await actions.create_parcel(db_session, "so1", {"l1": 1})
     assert (await sync.read_board(db_session))["rows"][0]["prep"]["by"] == "paul"
-    assert (await _doc(db_session, "so1")).detail == before
+    assert {k: v for k, v in (await _doc(db_session, "so1")).detail.items() if k != "_fetched_at"} == before
 
 
 @pytest.mark.asyncio
@@ -174,3 +178,105 @@ async def test_refresh_failure_after_the_write_still_returns_the_number(db_sessi
     assert await actions.create_parcel(db_session, "so1", {"l1": 1}) == "PKG-00001"
     assert (await _doc(db_session, "so1")).pending is True
     assert (await db_session.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "prep"))).first() is None
+
+
+def _failing_reads(monkeypatch):
+    real = zoho_service.get_salesorder
+
+    async def boom(db, salesorder_id):
+        raise ZohoUpstreamError("boom")
+
+    monkeypatch.setattr(zoho_service, "get_salesorder", boom)
+    return real
+
+
+@pytest.mark.asyncio
+async def test_after_an_unconfirmed_write_the_next_parcel_refreshes_first_and_is_refused(
+    db_session, parcels, monkeypatch
+):
+    await _board(db_session, parcels, order(1, qty=2))
+    real = _failing_reads(monkeypatch)
+    await actions.create_parcel(db_session, "so1", {"l1": 2})  # written, re-read failed
+    assert sync.needs_refresh("so1")
+    monkeypatch.setattr(zoho_service, "get_salesorder", real)
+    with pytest.raises(actions.OrderActionRefused) as e:
+        await actions.create_parcel(db_session, "so1", {"l1": 2})
+    assert e.value.args[0] == "too_many"
+    assert len(parcels.created) == 1
+    assert not sync.needs_refresh("so1")
+
+
+@pytest.mark.asyncio
+async def test_if_the_entry_refresh_fails_too_nothing_is_written(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1, qty=2))
+    _failing_reads(monkeypatch)
+    await actions.create_parcel(db_session, "so1", {"l1": 1})
+    with pytest.raises(ZohoUpstreamError):
+        await actions.create_parcel(db_session, "so1", {"l1": 1})
+    assert len(parcels.created) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_create_timeout_triggers_one_refresh_and_reraises(db_session, parcels):
+    await _board(db_session, parcels, order(1, qty=2))
+    parcels.create_error = ZohoUpstreamError("timeout")
+    reads = parcels.calls["detail"]
+    with pytest.raises(ZohoUpstreamError, match="timeout"):
+        await actions.create_parcel(db_session, "so1", {"l1": 1})
+    assert parcels.calls["detail"] == reads + 1
+
+
+@pytest.mark.asyncio
+async def test_a_create_timeout_whose_refresh_fails_leaves_the_order_unconfirmed(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1, qty=2))
+    parcels.create_error = ZohoUpstreamError("timeout")
+    _failing_reads(monkeypatch)
+    with pytest.raises(ZohoUpstreamError, match="timeout"):
+        await actions.create_parcel(db_session, "so1", {"l1": 1})
+    assert sync.needs_refresh("so1")
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_write_opens_the_back_off_window(db_session, parcels):
+    await _board(db_session, parcels, order(1))
+    parcels.create_error = ZohoRateLimited("429", retry_after=30)
+    with pytest.raises(ZohoRateLimited):
+        await actions.create_parcel(db_session, "so1", {"l1": 1})
+    assert sync._rate_limited_until > time.monotonic() + 20
+
+
+@pytest.mark.asyncio
+async def test_a_database_error_on_the_stamp_delete_still_returns_the_number(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1, qty=2))
+    await actions.stamp_print(db_session, "so1", "paul")
+    real_commit = db_session.commit
+    calls = []
+
+    async def flaky():
+        calls.append(1)
+        if len(calls) == 1:
+            raise OperationalError("COMMIT", {}, Exception("database is locked"))
+        await real_commit()
+
+    monkeypatch.setattr(db_session, "commit", flaky)
+    assert await actions.create_parcel(db_session, "so1", {"l1": 1}) == "PKG-00001"
+    assert (await _doc(db_session, "so1")).pending is True
+
+
+@pytest.mark.asyncio
+async def test_a_simultaneous_first_stamp_updates_the_winner_instead_of_failing(file_sessions, zoho, monkeypatch):
+    async with file_sessions() as one, file_sessions() as two:
+        await _board(one, zoho, order(1))
+        real_query = actions._prep_query
+        calls = []
+
+        def blind_first(salesorder_id):
+            calls.append(1)
+            return select(OrderBoardDoc).where(false()) if len(calls) == 1 else real_query(salesorder_id)
+
+        monkeypatch.setattr(actions, "_prep_query", blind_first)
+        await actions.stamp_print(two, "so1", "winner")
+        row = await actions.stamp_print(one, "so1", "loser")
+        assert row["prep"]["by"] == "loser"
+        stamps = (await one.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "prep"))).scalars().all()
+        assert len(stamps) == 1

@@ -171,8 +171,12 @@ class FakeZoho:
 def no_back_off_left_over():
     """The 429 back-off window is module state; one test must not hand it to the next."""
     sync._rate_limited_until = 0.0
+    sync._unconfirmed.clear()
+    sync._written_at.clear()
     yield
     sync._rate_limited_until = 0.0
+    sync._unconfirmed.clear()
+    sync._written_at.clear()
 
 
 @pytest.fixture
@@ -842,9 +846,9 @@ async def test_a_new_order_fetched_by_a_failed_pass_is_not_finished(db_session, 
     assert (await sync.read_finished(db_session))["rows"] == []
 
 
-@pytest.mark.asyncio
-async def test_a_pass_does_not_store_a_copy_fetched_before_a_write(tmp_path, zoho, monkeypatch):
-    """The pass's get is parked while refresh_order (another session) stores a newer detail."""
+@pytest.fixture
+async def file_sessions(tmp_path):
+    """Two sessions must not share one in-memory connection: a file database."""
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     from backend.app.core.database import Base, load_all_models
@@ -853,36 +857,63 @@ async def test_a_pass_does_not_store_a_copy_fetched_before_a_write(tmp_path, zoh
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'orders.db'}")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    sessions = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    try:
-        async with sessions() as passing, sessions() as writing:
-            await _synced(passing, zoho, order(1))
-            old = order(1)
-            zoho.orders["so1"] = {**old, "last_modified_time": "2026-11-02T08:00:00-1000"}  # list row moves on
-            gate, parked = asyncio.Event(), asyncio.Event()
-            real = zoho.get_salesorder
-
-            async def parked_get(db, salesorder_id):
-                parked.set()
-                await gate.wait()
-                return old
-
-            monkeypatch.setattr(zoho_service, "get_salesorder", parked_get)
-            running = asyncio.create_task(sync.run_pass(passing))
-            await parked.wait()
-            newer = {**old, "status": "confirmed", "reference_number": "NEWER"}
-            monkeypatch.setattr(zoho_service, "get_salesorder", lambda db, i: _return(newer))
-            await sync.refresh_order(writing, "so1")
-            gate.set()
-            await running
-            doc = await _doc(writing, "so1")
-            await writing.refresh(doc)
-            assert doc.detail["reference_number"] == "NEWER"
-            assert doc.pending is True
-            monkeypatch.setattr(zoho_service, "get_salesorder", real)
-    finally:
-        await engine.dispose()
+    yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    await engine.dispose()
 
 
 async def _return(value):
     return value
+
+
+@pytest.mark.asyncio
+async def test_a_pass_does_not_store_a_copy_fetched_before_a_write(file_sessions, zoho, monkeypatch):
+    """The pass's get is parked while refresh_order (another session) stores a newer detail."""
+    async with file_sessions() as passing, file_sessions() as writing:
+        await _synced(passing, zoho, order(1))
+        old = order(1)
+        zoho.orders["so1"] = {**old, "last_modified_time": "2026-11-02T08:00:00-1000"}  # list row moves on
+        gate, parked = asyncio.Event(), asyncio.Event()
+
+        async def parked_get(db, salesorder_id):
+            parked.set()
+            await gate.wait()
+            return old
+
+        monkeypatch.setattr(zoho_service, "get_salesorder", parked_get)
+        running = asyncio.create_task(sync.run_pass(passing))
+        await parked.wait()
+        newer = {**old, "status": "confirmed", "reference_number": "NEWER"}
+        monkeypatch.setattr(zoho_service, "get_salesorder", lambda db, i: _return(newer))
+        await sync.refresh_order(writing, "so1")
+        gate.set()
+        await running
+        doc = await _doc(writing, "so1")
+        await writing.refresh(doc)
+        assert doc.detail["reference_number"] == "NEWER"
+        assert doc.pending is True
+
+
+@pytest.mark.asyncio
+async def test_a_pass_does_not_revert_an_order_refreshed_meanwhile_that_it_never_fetched(
+    file_sessions, zoho, monkeypatch
+):
+    async with file_sessions() as passing, file_sessions() as writing:
+        await _synced(passing, zoho, order(1), order(2))
+        zoho.orders["so2"] = {**order(2), "last_modified_time": "2026-11-02T08:00:00-1000"}
+        gate, parked = asyncio.Event(), asyncio.Event()
+        real = zoho.get_salesorder
+
+        async def parked_get(db, salesorder_id):
+            parked.set()
+            await gate.wait()
+            return await real(db, salesorder_id)
+
+        monkeypatch.setattr(zoho_service, "get_salesorder", parked_get)
+        running = asyncio.create_task(sync.run_pass(passing))
+        await parked.wait()
+        monkeypatch.setattr(zoho_service, "get_salesorder", lambda db, i: _return(order(1, qty=3)))
+        await sync.refresh_order(writing, "so1")
+        gate.set()
+        await running
+        rows = {r["id"]: r for r in (await sync.read_board(writing))["rows"]}
+        assert rows["so1"]["lines"][0]["quantity"] == 3
