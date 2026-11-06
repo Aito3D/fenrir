@@ -366,6 +366,28 @@ describe('ClientEditor', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onSaved).not.toHaveBeenCalled();
   });
+
+  it('offers a switch to another Zoho contact, except on an invoiced card', async () => {
+    mockZoho();
+    const onChangeClient = vi.fn();
+    const { unmount } = render(
+      <ClientEditor project={project} onSaved={vi.fn()} onCancel={vi.fn()} onChangeClient={onChangeClient} />,
+    );
+    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('aito.transferClient') }));
+    expect(onChangeClient).toHaveBeenCalledTimes(1);
+    unmount();
+    render(
+      <ClientEditor
+        project={{ ...project, quote_invoiced: true }}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+        onChangeClient={onChangeClient}
+      />,
+    );
+    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    expect(screen.queryByRole('button', { name: i18n.t('aito.transferClient') })).toBeNull();
+  });
 });
 
 const SNP_PROJECT: Partial<AitoProject> = {

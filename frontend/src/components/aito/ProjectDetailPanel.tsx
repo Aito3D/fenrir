@@ -1175,6 +1175,14 @@ export function ProjectDetailPanel({
               onCancel={closeClientEdit}
               triggerRef={clientEditButtonRef}
               closing={closingClient}
+              onChangeClient={
+                canUpdate
+                  ? () => {
+                      closeClientEdit();
+                      setTransferringClient(true);
+                    }
+                  : undefined
+              }
             />
           )}
         </div>

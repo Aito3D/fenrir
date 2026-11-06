@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { AtSign, Building2, Cloud, User } from 'lucide-react';
+import { AtSign, Building2, Cloud, User, UserRoundPen } from 'lucide-react';
 import { api, ApiError } from '../../api/client';
 import type { AitoClientEdit, AitoProject, ZohoContactDetail, ZohoContactPerson } from '../../api/client';
 import { PhoneInput } from './PhoneInput';
@@ -40,6 +40,9 @@ export interface ClientEditorProps {
    *  unmounts it a beat later (SHEET_OUT_MS). Nothing here fires `onCancel`
    *  again while it is set. */
   closing?: boolean;
+  /** Hands the card to ANOTHER Zoho contact (the transfer modal) instead of
+   *  editing this one. Omitted, the sheet offers no switch. */
+  onChangeClient?: () => void;
 }
 
 interface Draft {
@@ -169,7 +172,7 @@ const fieldLabelCls = `${eyebrowCls} mb-1 block font-medium text-bambu-gray`;
  *  a Books refusal comes back as an error with the draft still on screen —
  *  the editor closes only through `onSaved`. Escape and an outside press
  *  close it through `onCancel`, the same two exits the date picker has. */
-export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing = false }: ClientEditorProps) {
+export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing = false, onChangeClient }: ClientEditorProps) {
   const { t } = useTranslation();
   const isCompany = project.client_is_company === true;
   const rootRef = useRef<HTMLFormElement>(null);
@@ -493,6 +496,17 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
         </>
       )}
       {!hasName && <p className="text-xs text-bambu-gray">{t('aito.clientNameRequired')}</p>}
+      {/* Invoiced cards are locked to their client (transfer_client 409s). */}
+      {onChangeClient && !project.quote_invoiced && (
+        <button
+          type="button"
+          onClick={onChangeClient}
+          className={`flex items-center gap-1.5 rounded-md text-[.8rem] text-bambu-green-light hover:text-white ${focusRingCls}`}
+        >
+          <UserRoundPen className="h-3.5 w-3.5" aria-hidden="true" />
+          {t('aito.transferClient')}
+        </button>
+      )}
 
       <div>
         <label htmlFor="panel-client-phone" className={fieldLabelCls}>
