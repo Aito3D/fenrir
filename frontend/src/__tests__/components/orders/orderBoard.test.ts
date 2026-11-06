@@ -271,6 +271,12 @@ describe('parcel steps', () => {
     expect(packableUnits(row({ lines: [line({ packable: 2 }), line({ id: 'l2', packable: 2.5 })] }))).toBe(4.5);
   });
 
+  it('packableUnits treats a line without packable (older cached row) as 0', () => {
+    const old = line({ id: 'l2' }) as Partial<ReturnType<typeof line>>;
+    delete old.packable;
+    expect(packableUnits(row({ lines: [line({ packable: 2 }), old as ReturnType<typeof line>] }))).toBe(2);
+  });
+
   it('waitingPackages keeps the parcels not shipped yet', () => {
     const r = row({ packages: [pkg('not_shipped'), { ...pkg('shipped'), id: 'p2' }] });
     expect(waitingPackages(r).map(p => p.id)).toEqual(['p1']);

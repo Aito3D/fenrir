@@ -157,4 +157,55 @@ describe('the parcel check', () => {
     expect(screen.queryByTestId('pack-qty-l1')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Prep sheet' })).toBeInTheDocument();
   });
+
+  it('walks a fractional maximum by one, clamped to 0..packable', async () => {
+    const user = userEvent.setup();
+    render(<OrderLinesPanel row={panelRow({}, [line({ packable: 2.5, quantity: 2.5, remaining: 2.5 })])} />);
+    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
+    const walk = async (name: string, expected: string[]) => {
+      for (const v of expected) {
+        await user.click(screen.getByRole('button', { name }));
+        expect(qty()).toHaveTextContent(new RegExp(`^${v}$`));
+      }
+    };
+    await walk('One less', ['1.5', '0.5', '0']);
+    await walk('One more', ['1', '2', '2.5', '2.5']);
+  });
+
+  it('follows the live lines: capped, zeros dropped, counted and sent from the same values', async () => {
+    const user = userEvent.setup();
+    let body: unknown;
+    server.use(http.post('/api/v1/order-board/orders/so1/packages', async ({ request }) => { body = await request.json(); return HttpResponse.json(created()); }));
+    const two = [line(), line({ id: 'l2', name: 'Filament B', packable: 1, quantity: 1, remaining: 1 })];
+    const view = render(<OrderLinesPanel row={panelRow({}, two)} />);
+    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
+    expect(screen.getByText(/Parcel: 3 of 3 in stock/)).toBeInTheDocument();
+    view.rerender(<OrderLinesPanel row={panelRow({}, [line({ packable: 1 }), line({ id: 'l2', name: 'Filament B', packable: 0, quantity: 1, remaining: 1 })])} />);
+    expect(qty()).toHaveTextContent('1');
+    expect(screen.queryByTestId('pack-qty-l2')).not.toBeInTheDocument();
+    expect(screen.getByText(/Parcel: 1 of 1 in stock/)).toBeInTheDocument();
+    expect(screen.queryByText(/left to prepare/)).not.toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: 'Create parcel' })[0]);
+    await waitFor(() => expect(body).toEqual({ lines: [{ line_id: 'l1', quantity: 1 }] }));
+  });
+
+  it('sends one request however often confirm is hit, and locks the steppers meanwhile', async () => {
+    const user = userEvent.setup();
+    let hits = 0;
+    server.use(http.post('/api/v1/order-board/orders/so1/packages', async () => {
+      hits++;
+      await new Promise(r => setTimeout(r, 150));
+      return HttpResponse.json(created());
+    }));
+    render(<OrderLinesPanel row={panelRow()} />);
+    await user.click(screen.getByRole('button', { name: 'Create parcel' }));
+    const confirm = screen.getAllByRole('button', { name: 'Create parcel' })[0];
+    await user.click(confirm);
+    await user.click(confirm);
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('button', { name: 'One less' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'One more' })).toBeDisabled();
+    expect(await screen.findByText('Parcel PKG-7 created in Zoho Books')).toBeInTheDocument();
+    expect(hits).toBe(1);
+  });
 });

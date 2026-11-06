@@ -147,7 +147,13 @@ export const daysPastDue = (dueDay: string): number => {
 
 /** Units the shelf could put in a new parcel today, summed over the lines. */
 export const packableUnits = (row: Pick<OrderBoardRow, 'lines'>): number =>
-  Math.round(row.lines.reduce((n, l) => n + l.packable, 0) * 100) / 100;
+  Math.round(row.lines.reduce((n, l) => n + (l.packable ?? 0), 0) * 100) / 100;
+
+/** What the check would put in the parcel, from the live lines: the chosen quantity capped by what is packable now, zeros dropped. */
+export const parcelLines = (row: Pick<OrderBoardRow, 'lines'>, chosen: Record<string, number>): { line_id: string; quantity: number }[] =>
+  row.lines
+    .map(l => ({ line_id: l.id, quantity: Math.round(Math.min(chosen[l.id] ?? 0, l.packable ?? 0) * 100) / 100 }))
+    .filter(l => l.quantity > 0);
 
 /** Parcels boxed in Books and not handed over yet. */
 export const waitingPackages = (row: Pick<OrderBoardRow, 'packages'>): OrderPackage[] =>

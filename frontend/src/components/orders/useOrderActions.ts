@@ -8,7 +8,10 @@ const BOARD_KEY = ['order-board'] as const;
 /** The write actions of an order: box a parcel, hand it over, invoice it, print the prep sheet.
  *  Each answer carries the fresh board, which goes straight into the list; the
  *  finished orders are refetched. A failure is thrown to the caller, which words it. */
-export function useOrderActions() {
+export function useOrderActions(parcel?: {
+  onSuccess?: (result: { package_number: string }) => void;
+  onError?: (error: unknown) => void;
+}) {
   const queryClient = useQueryClient();
   const { hasPermission } = useAuth();
 
@@ -20,7 +23,12 @@ export function useOrderActions() {
 
   const createParcel = useMutation({
     mutationFn: ({ id, lines }: { id: string; lines: { line_id: string; quantity: number }[] }) => api.createOrderParcel(id, lines),
-    onSuccess: r => take(r.board),
+    // Here, not in mutate(): these still run when the panel closed meanwhile.
+    onSuccess: r => {
+      take(r.board);
+      parcel?.onSuccess?.(r);
+    },
+    onError: e => parcel?.onError?.(e),
   });
   const handOver = useMutation({
     mutationFn: ({ id, packageId, mode, applyCredit }: { id: string; packageId: string; mode: 'pickup' | 'delivery'; applyCredit: boolean }) =>

@@ -50,6 +50,7 @@ export function OrderLinesPanel({
   const { t } = useTranslation();
   // Set while the operator is checking quantities for a new parcel: line id -> units.
   const [check, setCheck] = useState<Record<string, number> | null>(null);
+  const [pending, setPending] = useState(false);
   const packable = packableUnits(row) > 0;
   const shortDay = (day: string) => parseDay(day).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const chips = (group: PanelGroup['id']) =>
@@ -120,7 +121,7 @@ export function OrderLinesPanel({
                       </td>
                       <td className="whitespace-nowrap text-right tabular-nums text-white">
                         {todo && check && line.packable > 0 ? (
-                          <OrderQtyStepper id={line.id} value={check[line.id] ?? 0} max={line.packable} disabled={false} onChange={v => setCheck({ ...check, [line.id]: v })} />
+                          <OrderQtyStepper id={line.id} value={Math.min(check[line.id] ?? 0, line.packable)} max={line.packable} disabled={pending} onChange={v => setCheck({ ...check, [line.id]: v })} />
                         ) : (
                           formatQty(qty)
                         )}
@@ -161,7 +162,7 @@ export function OrderLinesPanel({
                 {group.id === 'todo' && check && (
                   <tr>
                     <td colSpan={5} className="pt-2">
-                      <OrderPackBar row={row} qty={check} onClose={() => setCheck(null)} />
+                      <OrderPackBar row={row} qty={check} onClose={() => { setCheck(null); setPending(false); }} onBusy={setPending} />
                     </td>
                   </tr>
                 )}
