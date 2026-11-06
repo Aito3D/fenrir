@@ -5418,6 +5418,10 @@ export default {
     gridSmall: "Дрібна сітка",
     gridMedium: "Середня сітка",
     gridLarge: "Велика сітка",
+    gridGrouped: "Групувати за матеріалом",
+    groupVariant: "Варіант",
+    groupAddColor: "Додати колір із цими налаштуваннями",
+    groupLineValue: "Решта рядка: {{value}}",
     // Grid
     emptyTitle: "Поки що немає пресетів",
     emptySubtitle: "Створіть пресет вручну або імпортуйте його з папки.",

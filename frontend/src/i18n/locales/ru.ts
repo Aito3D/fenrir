@@ -5405,6 +5405,10 @@ export default {
     gridSmall: "Мелкая сетка",
     gridMedium: "Средняя сетка",
     gridLarge: "Крупная сетка",
+    gridGrouped: "Группировать по материалу",
+    groupVariant: "Вариант",
+    groupAddColor: "Добавить цвет с этими настройками",
+    groupLineValue: "Остальные в строке: {{value}}",
     // Grid
     emptyTitle: "Пока нет пресетов",
     emptySubtitle: "Создайте пресет вручную или импортируйте его из папки.",

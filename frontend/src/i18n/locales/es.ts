@@ -5600,6 +5600,10 @@ export default {
     gridSmall: 'Cuadrícula pequeña',
     gridMedium: 'Cuadrícula mediana',
     gridLarge: 'Cuadrícula grande',
+    gridGrouped: 'Agrupar por material',
+    groupVariant: 'Variante',
+    groupAddColor: 'Añadir un color con estos ajustes',
+    groupLineValue: 'Resto de la fila: {{value}}',
     // Grid
     emptyTitle: 'Todavía no hay presets',
     emptySubtitle: 'Cree un preset manualmente o impórtelo desde una carpeta.',

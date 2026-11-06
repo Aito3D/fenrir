@@ -5585,6 +5585,10 @@ export default {
     gridSmall: '小網格',
     gridMedium: '中網格',
     gridLarge: '大網格',
+    gridGrouped: '依材料分組',
+    groupVariant: '變體',
+    groupAddColor: '以這些設定新增顏色',
+    groupLineValue: '本列其他: {{value}}',
     // Grid
     emptyTitle: '尚無預設',
     emptySubtitle: '手動建立預設，或從資料夾匯入。',

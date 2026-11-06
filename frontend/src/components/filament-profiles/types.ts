@@ -61,5 +61,6 @@ export interface PresetForm {
   nozzle_size: string;
 }
 
-export type GridSize = 'small' | 'medium' | 'large';
+/** Card grid sizes, plus 'grouped': sections per material (PresetMaterialGroups). */
+export type GridSize = 'grouped' | 'small' | 'medium' | 'large';
 export type SortField = 'name' | 'brand' | 'material' | 'color';

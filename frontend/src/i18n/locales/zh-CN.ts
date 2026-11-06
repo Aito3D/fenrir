@@ -5585,6 +5585,10 @@ export default {
     gridSmall: '小网格',
     gridMedium: '中网格',
     gridLarge: '大网格',
+    gridGrouped: '按材料分组',
+    groupVariant: '变体',
+    groupAddColor: '用这些设置添加颜色',
+    groupLineValue: '本行其他: {{value}}',
     // Grid
     emptyTitle: '暂无预设',
     emptySubtitle: '手动创建预设，或从文件夹导入。',

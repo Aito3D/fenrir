@@ -5593,6 +5593,10 @@ export default {
     gridSmall: 'Küçük ızgara',
     gridMedium: 'Orta ızgara',
     gridLarge: 'Büyük ızgara',
+    gridGrouped: 'Malzemeye göre grupla',
+    groupVariant: 'Varyant',
+    groupAddColor: 'Bu ayarlarla renk ekle',
+    groupLineValue: 'Satırın geri kalanı: {{value}}',
     // Grid
     emptyTitle: 'Henüz ön ayar yok',
     emptySubtitle: 'Bir ön ayarı elle oluşturun veya bir klasörden içe aktarın.',

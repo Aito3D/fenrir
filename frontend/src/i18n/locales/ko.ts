@@ -5412,6 +5412,10 @@ export default {
     gridSmall: '작은 그리드',
     gridMedium: '중간 그리드',
     gridLarge: '큰 그리드',
+    gridGrouped: '재료별로 그룹화',
+    groupVariant: '변형',
+    groupAddColor: '이 설정으로 색상 추가',
+    groupLineValue: '이 줄의 나머지: {{value}}',
     // Grid
     emptyTitle: '아직 프리셋이 없습니다',
     emptySubtitle: '프리셋을 직접 만들거나 폴더에서 가져오세요.',

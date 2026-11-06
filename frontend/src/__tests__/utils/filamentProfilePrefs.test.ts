@@ -48,8 +48,8 @@ describe('filamentProfilePrefs', () => {
   });
 
   describe('grid size', () => {
-    it('returns default "medium" when unset', () => {
-      expect(readGridSize()).toBe('medium');
+    it('returns default "grouped" when unset', () => {
+      expect(readGridSize()).toBe('grouped');
     });
 
     it('persists write→read roundtrip for "small"', () => {
@@ -57,24 +57,29 @@ describe('filamentProfilePrefs', () => {
       expect(readGridSize()).toBe('small');
     });
 
+    it('persists write→read roundtrip for "medium"', () => {
+      writeGridSize('medium');
+      expect(readGridSize()).toBe('medium');
+    });
+
     it('persists write→read roundtrip for "large"', () => {
       writeGridSize('large');
       expect(readGridSize()).toBe('large');
     });
 
-    it('rejects invalid stored value and returns "medium"', () => {
+    it('rejects invalid stored value and returns "grouped"', () => {
       localStorage.setItem('profiles-grid-size', 'huge');
-      expect(readGridSize()).toBe('medium');
+      expect(readGridSize()).toBe('grouped');
     });
 
-    it('rejects null stored value and returns "medium"', () => {
+    it('rejects null stored value and returns "grouped"', () => {
       localStorage.setItem('profiles-grid-size', 'null');
-      expect(readGridSize()).toBe('medium');
+      expect(readGridSize()).toBe('grouped');
     });
 
-    it('rejects non-string stored value and returns "medium"', () => {
+    it('rejects non-string stored value and returns "grouped"', () => {
       localStorage.setItem('profiles-grid-size', '123');
-      expect(readGridSize()).toBe('medium');
+      expect(readGridSize()).toBe('grouped');
     });
   });
 });

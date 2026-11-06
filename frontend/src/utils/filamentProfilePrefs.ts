@@ -51,12 +51,12 @@ export function writeMaterialFilter(v: string): void {
 export function readGridSize(): GridSize {
   try {
     const saved = localStorage.getItem(GRID_SIZE_KEY);
-    if (!saved) return 'medium';
-    if (!['small', 'medium', 'large'].includes(saved)) return 'medium';
+    if (!saved) return 'grouped';
+    if (!['grouped', 'small', 'medium', 'large'].includes(saved)) return 'grouped';
     return saved as GridSize;
   } catch {
     // Quota exceeded or private mode — return default.
-    return 'medium';
+    return 'grouped';
   }
 }
 

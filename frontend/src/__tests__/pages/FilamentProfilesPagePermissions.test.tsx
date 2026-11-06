@@ -70,6 +70,8 @@ function stubBase() {
 
 beforeEach(() => {
   permissions.granted = ['filaments:read'];
+  // These tests check the card menus, which only the card grid renders.
+  localStorage.setItem('profiles-grid-size', 'medium');
 });
 
 afterEach(() => {

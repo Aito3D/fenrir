@@ -9,6 +9,7 @@ import {
   Download,
   Droplets,
   Grid2x2,
+  Layers,
   Loader2,
   Plus,
   RefreshCw,
@@ -32,6 +33,7 @@ import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { PresetCard } from '../components/filament-profiles/PresetCard';
+import { PresetMaterialGroups } from '../components/filament-profiles/PresetMaterialGroups';
 import { PresetEditorModal } from '../components/filament-profiles/PresetEditorModal';
 import { SyncBaseResultModal } from '../components/filament-profiles/SyncBaseResultModal';
 import { SyncModal } from '../components/filament-profiles/SyncModal';
@@ -54,6 +56,7 @@ import {
 } from '../utils/filamentProfilePrefs';
 
 const GRID_CLASSES: Record<GridSize, string> = {
+  grouped: 'grid grid-cols-1 gap-3',
   small: 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2',
   medium: 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4',
   large: 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6',
@@ -280,17 +283,18 @@ export function FilamentProfilesPage() {
     }
   }, [editorState, presets, presetsQuery.isLoading]);
 
+  const grouped = gridSize === 'grouped';
   const searchLower = search.trim().toLowerCase();
   const filteredPresets = useMemo(() => {
     return presets
-      .filter((p) => !materialFilter || p.material === materialFilter)
+      .filter((p) => grouped || !materialFilter || p.material === materialFilter)
       .filter((p) => !brandFilter || p.brand === brandFilter)
       .filter((p) => {
         if (!searchLower) return true;
         return [p.name, p.brand, p.material, p.color].some((v) => v.toLowerCase().includes(searchLower));
       })
       .sort(presetComparator(sortField));
-  }, [presets, materialFilter, brandFilter, searchLower, sortField]);
+  }, [presets, grouped, materialFilter, brandFilter, searchLower, sortField]);
 
   const handleBrandPillClick = (brand: string) => {
     const next = brandFilter === brand ? '' : brand;
@@ -804,6 +808,15 @@ export function FilamentProfilesPage() {
             <div className="flex items-center gap-1 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1">
               <button
                 type="button"
+                onClick={() => handleGridSizeChange('grouped')}
+                aria-label={t('filamentProfiles.gridGrouped')}
+                aria-pressed={grouped}
+                className={`rounded p-1.5 ${grouped ? 'bg-bambu-green/20 text-bambu-green' : 'text-bambu-gray/60 hover:text-white'}`}
+              >
+                <Layers className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
                 onClick={() => handleGridSizeChange('small')}
                 aria-label={t('filamentProfiles.gridSmall')}
                 aria-pressed={gridSize === 'small'}
@@ -871,7 +884,7 @@ export function FilamentProfilesPage() {
           </div>
         )}
 
-        {materials.length >= 1 && (
+        {!grouped && materials.length >= 1 && (
           <div className="flex flex-wrap gap-1.5">
             {materials.map((material) => (
               <button
@@ -962,7 +975,15 @@ export function FilamentProfilesPage() {
         </div>
       )}
 
-      {!presetsQuery.isError && !presetsQuery.isLoading && filteredCount > 0 && (
+      {!presetsQuery.isError && !presetsQuery.isLoading && filteredCount > 0 && grouped && (
+        <PresetMaterialGroups
+          presets={filteredPresets}
+          onOpen={(preset) => setEditorState({ mode: 'edit', presetId: preset.id })}
+          onAddColor={canCreatePreset ? handleDuplicate : undefined}
+        />
+      )}
+
+      {!presetsQuery.isError && !presetsQuery.isLoading && filteredCount > 0 && !grouped && (
         <div className={GRID_CLASSES[gridSize]}>
           {filteredPresets.map((preset) => (
             <PresetCard

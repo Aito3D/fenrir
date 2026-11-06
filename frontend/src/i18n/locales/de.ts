@@ -5598,6 +5598,10 @@ export default {
     gridSmall: 'Kleines Raster',
     gridMedium: 'Mittleres Raster',
     gridLarge: 'Großes Raster',
+    gridGrouped: 'Nach Material gruppieren',
+    groupVariant: 'Variante',
+    groupAddColor: 'Farbe mit diesen Einstellungen hinzufügen',
+    groupLineValue: 'Rest der Zeile: {{value}}',
     // Grid
     emptyTitle: 'Noch keine Presets',
     emptySubtitle: 'Erstellen Sie ein Preset manuell oder importieren Sie es aus einem Ordner.',

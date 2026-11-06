@@ -5634,6 +5634,10 @@ export default {
     gridSmall: 'Small grid',
     gridMedium: 'Medium grid',
     gridLarge: 'Large grid',
+    gridGrouped: 'Group by material',
+    groupVariant: 'Different settings',
+    groupAddColor: 'Add a colour with these settings',
+    groupLineValue: 'Rest of the line: {{value}}',
     // Grid
     emptyTitle: 'No presets yet',
     emptySubtitle: 'Create a preset manually or import from a folder.',

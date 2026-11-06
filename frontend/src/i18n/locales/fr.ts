@@ -5586,6 +5586,10 @@ export default {
     gridSmall: 'Petite grille',
     gridMedium: 'Grille moyenne',
     gridLarge: 'Grande grille',
+    gridGrouped: 'Grouper par matériau',
+    groupVariant: 'Variante',
+    groupAddColor: 'Ajouter une couleur avec ces réglages',
+    groupLineValue: 'Reste de la ligne : {{value}}',
     // Grid
     emptyTitle: "Aucun preset pour l'instant",
     emptySubtitle: 'Créez un preset manuellement ou importez-le depuis un dossier.',

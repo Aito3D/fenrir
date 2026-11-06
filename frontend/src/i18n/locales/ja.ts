@@ -5598,6 +5598,10 @@ export default {
     gridSmall: '小グリッド',
     gridMedium: '中グリッド',
     gridLarge: '大グリッド',
+    gridGrouped: '素材ごとにグループ化',
+    groupVariant: 'バリアント',
+    groupAddColor: 'この設定で色を追加',
+    groupLineValue: 'この行の他の設定: {{value}}',
     // Grid
     emptyTitle: 'プリセットはまだありません',
     emptySubtitle: 'プリセットを手動で作成するか、フォルダからインポートしてください。',
