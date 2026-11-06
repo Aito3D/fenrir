@@ -57,7 +57,7 @@ export function OrderCard({
           type="button"
           aria-expanded={open}
           onClick={onToggle}
-          className={`w-full px-4 py-3 text-left hover:bg-bambu-dark-tertiary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green ${ROW_GRID} ${step ? 'pb-12 lg:pb-3' : ''}`}
+          className={`w-full px-4 py-3 text-left hover:bg-bambu-dark-tertiary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green ${ROW_GRID}`}
         >
           <span data-testid="order-number" className="font-mono text-sm font-semibold text-white [grid-area:num] lg:[grid-area:auto]">
             {row.number}
@@ -92,7 +92,7 @@ export function OrderCard({
             <Icon aria-hidden="true" className="h-3.5 w-3.5" />
             {t(meta.label)}
           </span>
-          <span data-testid="order-pay" className="[grid-area:pay] lg:[grid-area:auto]">
+          <span data-testid="order-pay" className={`[grid-area:pay] lg:[grid-area:auto] ${step ? 'max-lg:pr-10' : ''}`}>
             {row.payment ? (
               <PaymentPill state={row.payment.state} pct={row.payment.pct} overdue={row.payment.overdue > 0} fill />
             ) : (

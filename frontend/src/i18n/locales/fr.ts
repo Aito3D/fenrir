@@ -11080,7 +11080,7 @@ export default {
       print: "Imprimer la facture",
       open: "Ouvrir dans Zoho Books",
       pdfFailed: "La facture n’a pas pu être récupérée.",
-      unbilled: "{{units}} remis sans facture",
+      unbilled: "Remis sans facture : {{units}}",
       create: "Créer la facture",
       nothing: 'Rien à facturer.',
     },

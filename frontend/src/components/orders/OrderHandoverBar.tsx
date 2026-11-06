@@ -6,7 +6,6 @@ import { api } from '../../api/client';
 import type { OrderPanelRow } from '../../api/client';
 import { formatMoney } from '../../utils/pricing';
 import { Skeleton } from '../Skeleton';
-import { parseDay } from './orderBoard';
 import { FIT_VIEWPORT, TONE } from './orderStatus';
 import { useOrderActions } from './useOrderActions';
 import { useOrderOutcomeToasts } from './useOrderOutcomeToasts';
@@ -46,7 +45,8 @@ export function OrderHandoverBar({ row, packageId, onClose }: { row: OrderPanelR
   const offered = invoice && p.invoice_total !== null && p.credit > 0;
   const applied = offered && credit ? p.credit : 0;
   const due = p && p.invoice_total !== null ? Math.round((p.invoice_total - applied) * 100) / 100 : 0;
-  const date = pkg ? parseDay(pkg.date).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+  // The hand-over is dated today, whatever day the parcel was boxed.
+  const date = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
 
   const confirm = () => {
     if (busy || sent.current) return;

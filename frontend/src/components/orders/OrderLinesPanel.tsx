@@ -119,8 +119,8 @@ export function OrderLinesPanel({
             <tr>
               <th className="py-1.5 font-medium">{t('orders.col.product')}</th>
               <th className="text-right font-medium">{t(check ? 'orders.parcel.inParcel' : 'orders.col.qty')}</th>
-              <th className="text-right font-medium">{t('orders.col.available')}</th>
-              <th className="text-right font-medium">{t('orders.col.short')}</th>
+              <th className="pl-4 text-right font-medium">{t('orders.col.available')}</th>
+              <th className="pl-4 text-right font-medium">{t('orders.col.short')}</th>
               <th className="pl-4 font-medium">{t('orders.col.state')}</th>
             </tr>
           </thead>
