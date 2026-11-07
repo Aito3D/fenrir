@@ -717,7 +717,7 @@ async def edit_lines(db: AsyncSession, salesorder_id: str, version: str, lines: 
                 new[item_id] = q
         if any(floors.get(line_id, 0.0) > 0 and line_id not in edits for line_id in physical):
             raise OrderActionRefused("below_floor")
-        items: dict[str, dict] = {}
+        items: dict = {}
         if new:
             try:
                 found = await zoho_service.list_items_by_ids(db, list(new))

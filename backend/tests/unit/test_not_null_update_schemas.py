@@ -61,6 +61,8 @@ NOT_A_ROW_UPDATE = {
     ),
     "FilamentProfileDefaultWrite": "replaces a default as a whole; its validator reads a null key field as empty",
     "OrderBoardSettingsBody": "Fenrir: stored as settings, every field required",
+    "LinesBody": "a Zoho Books order edit, not a database row",
+    "ParcelEditBody": "a Zoho Books parcel edit, not a database row",
 }
 
 
