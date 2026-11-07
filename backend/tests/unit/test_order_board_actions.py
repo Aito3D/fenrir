@@ -47,6 +47,31 @@ def parcels(zoho, monkeypatch):  # noqa: F811
     zoho.writes = []
     zoho.bodies = {}
     zoho.prefill_error = None
+    zoho.packages = {}
+    zoho.steps = []  # (step, body) per write, for the parcel edit
+    zoho.fail_step = None
+    zoho.fail_with = ZohoUpstreamError
+
+    def step(name, body):
+        """Raise once on ``zoho.fail_step``, before Books changes anything; else record the write."""
+        if zoho.fail_step == name:
+            zoho.fail_step = None
+            raise zoho.fail_with(f"{name} failed")
+        zoho.steps.append((name, body))
+
+    def order_line(line_id):
+        return next(
+            line for doc in zoho.orders.values() for line in doc["line_items"] if line["line_item_id"] == line_id
+        )
+
+    def box(line_items, sign):
+        """Count (sign 1) or uncount (-1) a package's units on the order lines and on the picklist rows."""
+        for item in line_items:
+            order_line(item["so_line_item_id"])["quantity_packed"] += sign * item["quantity"]
+            for pl in zoho.picklists.values():
+                for row in pl["line_items"]:
+                    if row["line_item_id"] == item.get("picklist_item_id"):
+                        row["quantity_packed"] += sign * item["quantity"]
 
     def listed(line_id):
         return sum(
@@ -77,6 +102,7 @@ def parcels(zoho, monkeypatch):  # noqa: F811
                     entry["status"] = pl["status"]
 
     async def create_picklist(db, body):
+        step("create_picklist", body)
         zoho.writes.append("create_picklist")
         zoho.bodies["create_picklist"] = body
         pid = f"pl{len(zoho.picklists) + 1}"
@@ -104,18 +130,32 @@ def parcels(zoho, monkeypatch):  # noqa: F811
         return copy.deepcopy(zoho.picklists[picklist_id])
 
     async def update_picklist(db, picklist_id, body):
+        step("picklist", body)
         zoho.writes.append("update_picklist")
-        zoho.bodies["update_picklist"] = body
+        zoho.bodies["update_picklist"] = zoho.bodies["picklist"] = body
         pl = zoho.picklists[picklist_id]
-        sent = {row["line_item_id"]: row for row in body["line_items"]}
+        done = pl["status"] == "completed"
+        if done:  # a completed picklist's units count as picked on the order
+            for row in pl["line_items"]:
+                order_line(row["so_line_item_id"])["quantity_picked"] -= row["quantity_picked"]
+        sent = {row["line_item_id"]: row for row in body["line_items"] if row.get("line_item_id")}
         pl["line_items"] = [
             {**row, **sent[row["line_item_id"]]} for row in pl["line_items"] if row["line_item_id"] in sent
+        ] + [
+            {**row, "line_item_id": f"{picklist_id}-{row['so_line_item_id']}", "quantity_packed": 0}
+            for row in body["line_items"]
+            if not row.get("line_item_id")
         ]
-        pl["status"] = "in_progress"
+        if done:
+            for row in pl["line_items"]:
+                order_line(row["so_line_item_id"])["quantity_picked"] += row["quantity_picked"]
+        else:
+            pl["status"] = "in_progress"
         mirror(pl)
         return copy.deepcopy(pl)
 
     async def complete_picklist(db, picklist_id):
+        step("complete_picklist", picklist_id)
         zoho.writes.append("complete_picklist")
         pl = zoho.picklists[picklist_id]
         pl["status"] = "completed"
@@ -132,6 +172,7 @@ def parcels(zoho, monkeypatch):  # noqa: F811
             await zoho.create_gate.wait()
         if zoho.create_error:
             raise zoho.create_error
+        step("create_package", line_items)
         zoho.writes.append("create_package")
         zoho.created.append((salesorder_id, date, line_items))
         doc = zoho.orders[salesorder_id]
@@ -146,7 +187,47 @@ def parcels(zoho, monkeypatch):  # noqa: F811
         doc["packages"] = [{"package_id": "pk1", "package_number": "PKG-00001", "status": "not_shipped"}]
         return {"package_id": "pk1", "package_number": "PKG-00001"}
 
-    for call in (picklist_prefill, create_picklist, get_picklist, update_picklist, complete_picklist, create_package):
+    async def get_package(db, package_id):
+        if package_id not in zoho.packages:
+            raise ZohoNotFound("no such package")
+        return copy.deepcopy(zoho.packages[package_id])
+
+    async def update_package(db, package_id, salesorder_id, body):
+        step("parcel", body)
+        zoho.bodies["parcel"] = body
+        package = zoho.packages[package_id]
+        box(package["line_items"], -1)
+        package["line_items"] = copy.deepcopy(body["line_items"])
+        box(package["line_items"], 1)
+        return copy.deepcopy(package)
+
+    async def delete_package(db, package_id):
+        step("delete_package", package_id)
+        box(zoho.packages.pop(package_id)["line_items"], -1)
+        for doc in zoho.orders.values():
+            doc["packages"] = [p for p in doc.get("packages") or [] if p["package_id"] != package_id]
+
+    async def delete_picklist(db, picklist_id):
+        step("delete_picklist", picklist_id)
+        pl = zoho.picklists.pop(picklist_id)
+        if pl["status"] == "completed":
+            for row in pl["line_items"]:
+                order_line(row["so_line_item_id"])["quantity_picked"] -= row["quantity_picked"]
+        for doc in zoho.orders.values():
+            doc["picklists"] = [p for p in doc.get("picklists") or [] if p["picklist_id"] != picklist_id]
+
+    for call in (
+        picklist_prefill,
+        create_picklist,
+        get_picklist,
+        update_picklist,
+        complete_picklist,
+        create_package,
+        get_package,
+        update_package,
+        delete_package,
+        delete_picklist,
+    ):
         monkeypatch.setattr(zoho_service, call.__name__, call)
     return zoho
 
@@ -1880,3 +1961,244 @@ async def test_search_items_drops_services_and_caps_at_five(db_session, lines_ed
         "stock_on_hand": 3.0,
         "product_type": "goods",
     }
+
+
+# --- Edit a packed parcel ----------------------------------------------------------------------------------------
+
+
+def _packed(zoho, *, qty=3, picked=2, parcels_=(("p1", 2),)):
+    """so1: l1 (item A, qty ``qty``) picked on the completed picklist pl1 (row r1) and boxed in ``parcels_``
+    (package id, units of l1 each); l2 (item C, qty 4, 4 on the shelf) not picked."""
+    doc = order(1, qty=qty)
+    boxed = sum(units for _, units in parcels_)
+    doc["line_items"][0].update(quantity_picked=picked, quantity_packed=boxed)
+    doc["line_items"].append({**doc["line_items"][0], "line_item_id": "l2", "item_id": "C", "quantity": 4})
+    doc["line_items"][1].update(quantity_picked=0, quantity_packed=0)
+    doc["picklists"] = [{"picklist_id": "pl1", "picklist_number": "PL-00001", "status": "completed"}]
+    doc["packages"] = []
+    zoho.stock["C"] = 4
+    zoho.picklists["pl1"] = {
+        "picklist_id": "pl1",
+        "picklist_number": "PL-00001",
+        "status": "completed",
+        "date": "2026-11-06",
+        "location_id": "loc1",
+        "group_by": "none",
+        "line_items": [
+            {
+                "line_item_id": "r1",
+                "salesorder_id": "so1",
+                "so_line_item_id": "l1",
+                "quantity_to_be_picked": picked,
+                "quantity_picked": picked,
+                "quantity_packed": boxed,
+            }
+        ],
+    }
+    for n, (package_id, units) in enumerate(parcels_, 1):
+        number = f"PKG-{n:05d}"
+        doc["packages"].append({"package_id": package_id, "package_number": number, "status": "not_shipped"})
+        zoho.packages[package_id] = {
+            "package_id": package_id,
+            "package_number": number,
+            "salesorder_id": "so1",
+            "date": "2026-11-06",
+            "status": "not_shipped",
+            "line_items": [{"so_line_item_id": "l1", "quantity": units, "picklist_item_id": "r1"}],
+        }
+    return doc
+
+
+def _labels(zoho):
+    return [name for name, _ in zoho.steps]
+
+
+@pytest.mark.asyncio
+async def test_content_lists_the_parcel_lines_with_their_ceiling_and_the_shelf_lines(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    assert await actions.package_content(db_session, "so1", "p1") == {
+        "id": "p1",
+        "number": "PKG-00001",
+        "version": VERSION,
+        "picklist_id": "pl1",
+        "lines": [{"line_id": "l1", "quantity": 2, "max": 3}, {"line_id": "l2", "quantity": 0, "max": 4}],
+    }
+    with pytest.raises(actions.OrderActionRefused, match="unknown_package"):
+        await actions.package_content(db_session, "so1", "nope")
+    assert parcels.steps == []
+
+
+@pytest.mark.asyncio
+async def test_raising_a_line_writes_picklist_then_package(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    row = await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3})
+    assert _labels(parcels) == ["picklist", "parcel"]
+    assert parcels.bodies["picklist"]["line_items"] == [
+        {"line_item_id": "r1", "quantity_to_be_picked": 3, "quantity_picked": 3}
+    ]
+    assert parcels.bodies["parcel"] == {
+        "date": "2026-11-06",
+        "line_items": [{"so_line_item_id": "l1", "quantity": 3, "picklist_item_id": "r1"}],
+    }
+    assert row["lines"][0]["packed_waiting"] == 3
+
+
+@pytest.mark.asyncio
+async def test_lowering_a_line_writes_package_then_picklist(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    row = await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert _labels(parcels) == ["parcel", "picklist"]
+    assert parcels.bodies["picklist"]["line_items"] == [
+        {"line_item_id": "r1", "quantity_to_be_picked": 1, "quantity_picked": 1}
+    ]
+    assert (row["lines"][0]["packed_waiting"], row["picked"]) == (1, 0)
+
+
+@pytest.mark.asyncio
+async def test_adding_a_shelf_line_takes_its_picklist_row_id_from_the_fresh_picklist(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 2, "l2": 1})
+    assert _labels(parcels) == ["picklist", "parcel"]
+    assert parcels.bodies["picklist"]["line_items"] == [
+        {"line_item_id": "r1", "quantity_to_be_picked": 2, "quantity_picked": 2},
+        {"salesorder_id": "so1", "so_line_item_id": "l2", "quantity_to_be_picked": 1, "quantity_picked": 1},
+    ]
+    assert parcels.bodies["parcel"]["line_items"] == [
+        {"so_line_item_id": "l1", "quantity": 2, "picklist_item_id": "r1"},
+        {"so_line_item_id": "l2", "quantity": 1, "picklist_item_id": "pl1-l2"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_emptying_deletes_the_package_then_its_picklist(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    row = await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 0})
+    assert parcels.steps == [("delete_package", "p1"), ("delete_picklist", "pl1")]
+    assert (row["packages"], row["picklists"], row["lines"][0]["packed_waiting"]) == ([], [], 0)
+
+
+@pytest.mark.asyncio
+async def test_emptying_a_parcel_with_a_sibling_keeps_the_sibling_units_on_the_picklist(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels, qty=5, picked=5, parcels_=(("p1", 2), ("p2", 3))))
+    await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {})
+    assert _labels(parcels) == ["delete_package", "picklist"]
+    assert parcels.bodies["picklist"]["line_items"] == [
+        {"line_item_id": "r1", "quantity_to_be_picked": 3, "quantity_picked": 3}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sibling_parcel_units_stay_on_the_picklist_row(db_session, parcels):
+    # pl1 row r1: picked 5, packed 5 = p1 (2) + p2 (3); lowering p1 to 1 → row quantity 4, p2 untouched
+    await _board(db_session, parcels, _packed(parcels, qty=5, picked=5, parcels_=(("p1", 2), ("p2", 3))))
+    await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert _labels(parcels) == ["parcel", "picklist"]
+    assert parcels.bodies["picklist"]["line_items"] == [
+        {"line_item_id": "r1", "quantity_to_be_picked": 4, "quantity_picked": 4}
+    ]
+    assert parcels.packages["p2"]["line_items"][0]["quantity"] == 3
+
+
+@pytest.mark.asyncio
+async def test_retry_after_a_package_timeout_skips_the_done_step(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    parcels.fail_step = "parcel"
+    with pytest.raises(ZohoUpstreamError):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3})
+    assert _labels(parcels) == ["picklist"]
+    assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 3  # picklist ≥ package in Books
+    parcels.steps.clear()
+    version = (await actions.package_content(db_session, "so1", "p1"))["version"]
+    await actions.edit_parcel(db_session, "so1", "p1", version, {"l1": 2}, {"l1": 3})  # same request again
+    assert _labels(parcels) == ["parcel"]  # the picklist is already at 3
+
+
+@pytest.mark.asyncio
+async def test_retry_after_a_picklist_down_failure_finishes_the_job(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    parcels.fail_step = "picklist"
+    with pytest.raises(ZohoUpstreamError):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert _labels(parcels) == ["parcel"]
+    parcels.steps.clear()
+    await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})  # the parcel already says 1
+    assert _labels(parcels) == ["picklist"]
+    assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 1
+
+
+def _ship(zoho):
+    zoho.packages["p1"]["status"] = "shipped"
+
+
+def _open_second_picklist(zoho):
+    zoho.orders["so1"]["picklists"].append({"picklist_id": "pl2", "status": "in_progress"})
+
+
+def _share(zoho):
+    zoho.picklists["pl1"]["line_items"][0]["salesorder_id"] = "so2"
+
+
+def _change(zoho):
+    zoho.packages["p1"]["line_items"][0]["quantity"] = 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("setup", "version", "lines", "code"),
+    [
+        (_ship, VERSION, {"l1": 3}, "package_shipped"),
+        (_open_second_picklist, VERSION, {"l1": 3}, "picklist_open"),
+        (_share, VERSION, {"l1": 3}, "picklist_shared"),
+        (_change, VERSION, {"l1": 3}, "package_changed"),
+        (None, "2026-10-01T08:00:00-1000", {"l1": 3}, "version"),
+        (None, VERSION, {"l1": 4}, "too_many"),
+        (None, VERSION, {"l1": 2, "nope": 1}, "unknown_line"),
+        (None, VERSION, {"l1": 2}, "nothing_changed"),
+        (None, VERSION, {"l1": -1}, "bad_quantity"),
+    ],
+)
+async def test_edit_parcel_refuses_without_writing(db_session, parcels, setup, version, lines, code):
+    doc = _packed(parcels)
+    await _board(db_session, parcels, doc)
+    if setup:
+        setup(parcels)
+    with pytest.raises(actions.OrderActionRefused, match=code):
+        await actions.edit_parcel(db_session, "so1", "p1", version, {"l1": 2}, lines)
+    assert parcels.steps == []
+
+
+@pytest.mark.asyncio
+async def test_replace_mode_deletes_and_recreates(db_session, parcels, monkeypatch):
+    monkeypatch.setattr(actions, "_PARCEL_EDIT_REPLACES", True)
+    await _board(db_session, parcels, _packed(parcels))
+    row = await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3})
+    assert _labels(parcels) == ["delete_package", "picklist", "create_package"]
+    assert parcels.bodies["picklist"]["line_items"] == [
+        {"line_item_id": "r1", "quantity_to_be_picked": 3, "quantity_picked": 3}
+    ]
+    assert parcels.created[-1][2] == [{"so_line_item_id": "l1", "quantity": 3, "picklist_item_id": "r1"}]
+    assert row["lines"][0]["packed_waiting"] == 3
+
+
+@pytest.mark.asyncio
+async def test_replace_mode_recreates_a_picklist_books_will_not_change(db_session, parcels, monkeypatch):
+    monkeypatch.setattr(actions, "_PARCEL_EDIT_REPLACES", True)
+    await _board(db_session, parcels, _packed(parcels))
+    parcels.fail_step, parcels.fail_with = "picklist", ZohoRequestRejected
+    await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert _labels(parcels) == [
+        "delete_package",
+        "delete_picklist",
+        "create_picklist",
+        "complete_picklist",
+        "create_package",
+    ]
+    assert parcels.created[-1][2] == [{"so_line_item_id": "l1", "quantity": 1, "picklist_item_id": "pl1-l1"}]
+
+
+@pytest.mark.asyncio
+async def test_replace_mode_emptying_the_only_parcel_deletes_its_picklist(db_session, parcels, monkeypatch):
+    monkeypatch.setattr(actions, "_PARCEL_EDIT_REPLACES", True)
+    await _board(db_session, parcels, _packed(parcels))
+    await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {})
+    assert parcels.steps == [("delete_package", "p1"), ("delete_picklist", "pl1")]
