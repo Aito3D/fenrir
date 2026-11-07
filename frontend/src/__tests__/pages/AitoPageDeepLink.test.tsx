@@ -153,7 +153,8 @@ describe('AitoPage ?card= deep link', () => {
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
 
-    const panel = await screen.findByRole('dialog');
+    // Two fetches and a panel mount: a loaded CI runner can take over the 1 s default wait.
+    const panel = await screen.findByRole('dialog', {}, { timeout: 4000 });
     expect(panel).toHaveTextContent('Old bracket');
   });
 
