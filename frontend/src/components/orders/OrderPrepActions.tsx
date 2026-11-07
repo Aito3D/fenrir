@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, ClipboardList, Loader2, PackagePlus, Printer } from 'lucide-react';
 import type { OrderPanelRow, OrderPicklist } from '../../api/client';
@@ -20,8 +21,11 @@ export function OrderPrepActions({
   onPick,
   onPack,
   onPrint,
+  lead,
 }: {
   row: OrderPanelRow;
+  /** Shown first: the order's Edit button, or its lock while a picklist is open. */
+  lead?: ReactNode;
   /** The check being loaded from Zoho: 'pick', or a picklist id. */
   opening: string | null;
   printing: boolean;
@@ -35,6 +39,7 @@ export function OrderPrepActions({
   const spin = <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />;
   return (
     <span className={`flex basis-full flex-wrap items-center gap-2 lg:ml-auto lg:basis-auto ${FIT_VIEWPORT}`}>
+      {lead}
       {printed && (
         <span className="inline-flex items-center gap-1 text-[11px] text-bambu-gray">
           <Check aria-hidden="true" className="h-3.5 w-3.5 text-bambu-green" />

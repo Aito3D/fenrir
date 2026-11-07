@@ -9,6 +9,8 @@ import type {
   OrderBoardLine,
   OrderBoardResponse,
   OrderBoardRow,
+  OrderEditLine,
+  OrderItemHit,
   OrderPackage,
   OrderPanelRow,
   OrderPayState,
@@ -189,4 +191,46 @@ export const nextStep = (row: Pick<OrderBoardRow, 'lines' | 'packages' | 'pickli
   const open = (row.picklists ?? []).find(p => p.status !== 'completed');
   const parcel = waitingPackages(row)[0];
   return open ? `pack-${open.id}` : canPick(row) ? 'pick' : parcel ? `handover-${parcel.id}` : null;
+};
+
+/** An edit of the order's lines: the new ordered quantity of each live line, the lines removed, the items added. */
+export interface OrderEdit { qty: Record<string, number>; gone: Set<string>; added: { item: OrderItemHit; quantity: number }[] }
+
+const liveLines = (row: Pick<OrderBoardRow, 'lines'>) => row.lines.filter(l => LIVE.has(l.state));
+
+export const startEdit = (row: Pick<OrderBoardRow, 'lines'>): OrderEdit => ({
+  qty: Object.fromEntries(liveLines(row).map(l => [l.id, l.quantity])),
+  gone: new Set(),
+  added: [],
+});
+
+const editedQty = (edit: OrderEdit, line: OrderBoardLine) => round2(edit.qty[line.id] ?? line.quantity);
+
+export interface OrderEditChange { kind: 'qty' | 'gone' | 'add'; line?: OrderBoardLine; item?: OrderItemHit; from?: number; to?: number }
+
+/** What the edit changes, in the order of the lines, the added items last. */
+export const editChanges = (row: Pick<OrderBoardRow, 'lines'>, edit: OrderEdit): OrderEditChange[] => [
+  ...liveLines(row).flatMap((line): OrderEditChange[] =>
+    edit.gone.has(line.id) ? [{ kind: 'gone', line }]
+    : editedQty(edit, line) !== line.quantity ? [{ kind: 'qty', line, from: line.quantity, to: editedQty(edit, line) }]
+    : []),
+  ...edit.added.map((a): OrderEditChange => ({ kind: 'add', item: a.item, to: round2(a.quantity) })),
+];
+
+/** The lines sent: every live line kept at its quantity, then the added items. Service, cancelled and fully
+ *  shipped lines are not sent: the server keeps them. */
+export const editPayload = (row: Pick<OrderBoardRow, 'lines'>, edit: OrderEdit): OrderEditLine[] => [
+  ...liveLines(row).filter(l => !edit.gone.has(l.id)).map(l => ({ line_id: l.id, quantity: editedQty(edit, l) })),
+  ...edit.added.map(a => ({ item_id: a.item.id, quantity: round2(a.quantity) })),
+];
+
+/** The order total after the edit, or null when Books' arithmetic cannot be reproduced (discounts, shipping, tax exclusive).
+ *  Live lines count at their edited ordered quantity, every other line except a cancelled one at its quantity. */
+export const editTotal = (row: Pick<OrderBoardRow, 'lines' | 'estimable'>, edit: OrderEdit): number | null => {
+  if (!row.estimable) return null;
+  const lines = row.lines.reduce(
+    (n, l) => n + (LIVE.has(l.state) ? (edit.gone.has(l.id) ? 0 : editedQty(edit, l)) : l.state === 'cancelled' ? 0 : l.quantity) * l.rate,
+    0,
+  );
+  return round2(lines + edit.added.reduce((n, a) => n + a.quantity * a.item.rate, 0));
 };

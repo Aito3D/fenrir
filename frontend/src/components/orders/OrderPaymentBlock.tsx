@@ -10,10 +10,16 @@ const HATCH = {
   backgroundImage: 'repeating-linear-gradient(135deg, rgb(34 197 94 / 0.85) 0 3px, rgb(34 197 94 / 0.25) 3px 6px)',
 };
 
-/** Payment of one order: left to pay, the bar with its legend. */
-export function OrderPaymentBlock({ payment: p, currency }: { payment: OrderPayment; currency: string }) {
+/** Payment of one order: left to pay, the bar with its legend. `total` replaces the order total while an edit is open:
+ *  what is left (or the credit left over) and the uninvoiced rest follow it. */
+export function OrderPaymentBlock({ payment, currency, total }: { payment: OrderPayment; currency: string; total?: number }) {
   const { t } = useTranslation();
   const money = (n: number) => formatMoney(n, currency);
+  const p = total === undefined ? payment : {
+    ...payment,
+    left: Math.round((total - payment.paid) * 100) / 100,
+    rest: Math.max(0, Math.round((total - payment.invoice_paid - payment.advance - payment.due - payment.overdue) * 100) / 100),
+  };
   // Parts never add up to more than the bar, even when invoices exceed the order total.
   const whole = p.invoice_paid + p.advance + p.due + p.overdue + p.rest;
   const parts = [
@@ -33,6 +39,8 @@ export function OrderPaymentBlock({ payment: p, currency }: { payment: OrderPaym
         <span data-testid="pay-left" className="ml-auto tabular-nums text-bambu-gray">
           {p.left > 0 ? (
             <>{t('orders.pay.left')} <span className="font-semibold text-white">{money(p.left)}</span></>
+          ) : p.left < 0 ? (
+            t('orders.edit.creditLeft', { amount: money(-p.left) })
           ) : (
             t('orders.pay.nothingLeft')
           )}

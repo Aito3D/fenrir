@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Check, CheckCheck, ClipboardList, HandHelping, Package, ReceiptText, Trash2 } from 'lucide-react';
+import { Check, CheckCheck, ClipboardList, HandHelping, Lock, Package, Pencil, ReceiptText, Trash2, Undo2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../../api/client';
 import type { OrderBoardLine, OrderPanelRow, OrderPicklist } from '../../api/client';
@@ -10,15 +10,18 @@ import { HoldButton } from '../aito/HoldButton';
 import { usePrintBlob } from '../aito/usePrintBlob';
 import { errorReason, isRefused } from './orderErrors';
 import { OrderContactBlock } from './OrderContactBlock';
+import { OrderEditBar } from './OrderEditBar';
 import { OrderHandoverBar } from './OrderHandoverBar';
 import { OrderInvoicesBlock } from './OrderInvoicesBlock';
+import { OrderItemSearch } from './OrderItemSearch';
 import { OrderPackBar } from './OrderPackBar';
 import { OrderPaymentBlock } from './OrderPaymentBlock';
 import { OrderPrepActions } from './OrderPrepActions';
 import { OrderQtyStepper } from './OrderQtyStepper';
 import { OrderRefChips } from './OrderRefChips';
-import { boxablePicklists, canPick, formatQty, packableUnits, panelGroups, parseDay, waitingPackages } from './orderBoard';
-import type { OrderCheck, PanelGroup } from './orderBoard';
+import { boxablePicklists, canPick, editTotal, formatQty, packableUnits, panelGroups, parseDay, startEdit, waitingPackages } from './orderBoard';
+import type { OrderCheck, OrderEdit, PanelGroup } from './orderBoard';
+import { formatMoney } from '../../utils/pricing';
 import { FIT_VIEWPORT, TONE } from './orderStatus';
 import type { Tone } from './orderStatus';
 import { useHandOverPending, useOrderActions } from './useOrderActions';
@@ -41,6 +44,8 @@ const LINE_STATE: Record<OrderBoardLine['state'], { label: string; cls: string }
 };
 
 const dash = <span className="text-bambu-gray">–</span>;
+const EDIT_BTN = 'inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-bambu-green hover:text-bambu-green';
+const TRASH = 'grid h-7 w-7 place-items-center rounded-md text-bambu-gray hover:bg-red-500/15 hover:text-red-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-bambu-gray';
 
 /** The expanded order: one table, split into what is left to prepare, what is
  *  boxed and waiting, what has gone, and the lines that never ship. A group
@@ -94,10 +99,13 @@ export function OrderLinesPanel({
       setOpening(null);
     }
   };
-  const starter = useRef({ openCheck, row, checking: checkState !== null });
-  starter.current = { openCheck, row, checking: checkState !== null };
+  // Set while the operator edits the order's lines.
+  const [editState, setEdit] = useState<OrderEdit | null>(null);
+  const [saving, setSaving] = useState(false);
+  const starter = useRef({ openCheck, row, checking: checkState !== null, editing: editState !== null });
+  starter.current = { openCheck, row, checking: checkState !== null, editing: editState !== null };
   useEffect(() => {
-    if (!start || !canUpdate || pendingNow.current) return;
+    if (!start || !canUpdate || pendingNow.current || starter.current.editing) return; // an edit is open: one bar at a time
     const id = start.slice(start.indexOf('-') + 1);
     if (start.startsWith('handover-')) setHandover(id);
     else if (starter.current.checking) return; // a check is open: the row icon does not wipe what was typed
@@ -120,6 +128,40 @@ export function OrderLinesPanel({
       setPending(false);
     }
   }, [checkState, packable]);
+  // A refetch that empties "to prepare" closes the edit for good.
+  const hasTodo = panelGroups(row).some(g => g.id === 'todo');
+  const edit = editState && hasTodo ? editState : null;
+  useEffect(() => {
+    if (editState && !hasTodo) {
+      setEdit(null);
+      setSaving(false);
+    }
+  }, [editState, hasTodo]);
+  const closeEdit = () => { refocus.current = 'edit'; setEdit(null); setSaving(false); };
+  const picklistOpen = (row.picklists ?? []).find(p => p.status !== 'completed');
+  const editLead = canUpdate && !handoverOpen ? (
+    picklistOpen ? (
+      <span title={t('orders.edit.lockedHint')} className="inline-flex items-center gap-1.5 text-[11px] text-bambu-gray">
+        <Lock aria-hidden="true" className="h-3.5 w-3.5" />
+        {t('orders.edit.locked', { number: picklistOpen.number })}
+      </span>
+    ) : (
+      <button type="button" data-opens="edit" onClick={() => setEdit(startEdit(row))} className={EDIT_BTN}>
+        <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
+        {t('orders.edit.open')}
+      </button>
+    )
+  ) : null;
+  const itemIds = new Set([...row.lines.flatMap(l => (l.item_id ? [l.item_id] : [])), ...(edit?.added ?? []).map(a => a.item.id)]);
+  const editQty = (id: string, v: number) => edit && setEdit({ ...edit, qty: { ...edit.qty, [id]: v } });
+  const setGone = (id: string, gone: boolean) => {
+    if (!edit) return;
+    const next = new Set(edit.gone);
+    if (gone) next.add(id);
+    else next.delete(id);
+    setEdit({ ...edit, gone: next });
+  };
+  const editingTotal = edit ? editTotal(row, edit) : null;
   // After a bar closes, focus goes back to the button that opened it (found again by `data-opens`).
   const root = useRef<HTMLDivElement>(null);
   const refocus = useRef<string | null>(null);
@@ -145,7 +187,10 @@ export function OrderLinesPanel({
       ));
 
   return (
-    <div ref={root} className="grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_27rem]">
+    <div
+      ref={root}
+      onKeyDown={e => { if (e.key === 'Escape' && edit && !saving) closeEdit(); }}
+      className="grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_27rem]">
       <div className="order-last min-w-0 lg:order-none">
       <OrderRefChips row={row}>
         {canUpdate && (
@@ -173,10 +218,10 @@ export function OrderLinesPanel({
           <thead className="bg-bambu-dark text-left lg:sticky lg:top-0 lg:z-10 text-[11px] uppercase tracking-wide text-bambu-gray">
             <tr>
               <th className="py-1.5 font-medium">{t('orders.col.product')}</th>
-              <th className="text-right font-medium">{t(checkLabel ?? 'orders.col.qty')}</th>
+              <th className="text-right font-medium">{t(edit ? 'orders.edit.ordered' : (checkLabel ?? 'orders.col.qty'))}</th>
               <th className="pl-4 text-right font-medium">{t('orders.col.available')}</th>
               <th className="pl-4 text-right font-medium">{t('orders.col.short')}</th>
-              <th className="pl-4 font-medium">{t('orders.col.state')}</th>
+              <th className="pl-4 font-medium">{edit ? '' : t('orders.col.state')}</th>
             </tr>
           </thead>
           {panelGroups(row).map(group => {
@@ -186,7 +231,7 @@ export function OrderLinesPanel({
               <tbody key={group.id} className={meta.dim ? 'opacity-60' : ''}>
                 <tr>
                   <th role="rowheader" colSpan={5} className="pt-3 pb-1 text-left font-normal">
-                    <div className={`flex flex-wrap items-center gap-2 rounded-md px-3 py-1.5 text-xs ${meta.band}`}>
+                    <div className={`flex flex-wrap items-center gap-2 rounded-md px-3 py-1.5 text-xs ${meta.band} ${group.id === 'todo' && edit ? 'ring-1 ring-bambu-green/40' : ''}`}>
                       <Icon aria-hidden="true" className={`h-3.5 w-3.5 ${meta.name}`} />
                       <span className={`font-semibold uppercase tracking-wide ${meta.name}`}>{t(meta.label)}</span>
                       {group.units !== null && (
@@ -195,7 +240,7 @@ export function OrderLinesPanel({
                         </span>
                       )}
                       {chips(group.id)}
-                      {group.id === 'packed' && canUpdate && !handoverOpen && (
+                      {group.id === 'packed' && canUpdate && !handoverOpen && !edit && (
                         <span className={`flex basis-full flex-wrap items-center gap-2 lg:ml-auto lg:basis-auto ${FIT_VIEWPORT}`}>
                           {waitingPackages(row).map((p, _i, all) => (
                             <button
@@ -211,9 +256,10 @@ export function OrderLinesPanel({
                           ))}
                         </span>
                       )}
-                      {group.id === 'todo' && !check && (canPick(row) || boxablePicklists(row).length > 0) && (
+                      {group.id === 'todo' && !check && !edit && (editLead || canPick(row) || boxablePicklists(row).length > 0) && (
                         <OrderPrepActions
                           row={row}
+                          lead={editLead}
                           opening={opening}
                           printing={printing}
                           onPick={() => void openCheck(null)}
@@ -227,14 +273,34 @@ export function OrderLinesPanel({
                 {group.lines.map(({ line, qty, ofQty }, index) => {
                   const todo = group.id === 'todo';
                   const short = todo && (line.state === 'backorder' || line.state === 'to_order');
+                  const editing = todo && edit;
+                  const gone = !!edit && todo && edit.gone.has(line.id);
                   return (
-                    <tr key={line.id} className={`${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${todo && check && !(check.max[line.id] > 0) ? 'opacity-40' : ''}`}>
-                      <td className={`border-l-2 py-2 pl-4 pr-3 ${TONE[meta.tone].rail}`}>
+                    <tr key={line.id} className={`${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${(todo && check && !(check.max[line.id] > 0)) || gone ? 'opacity-40' : ''}`}>
+                      <td className={`border-l-2 py-2 pl-4 pr-3 ${TONE[meta.tone].rail} ${gone ? 'line-through' : ''}`}>
                         <div className="text-white">{line.name}</div>
                         {line.sku && <div className="font-mono text-xs text-bambu-gray">{line.sku}</div>}
                       </td>
                       <td className="whitespace-nowrap text-right tabular-nums text-white">
-                        {todo && check && checkLabel && check.max[line.id] > 0 ? (
+                        {editing && gone ? (
+                          <span className="line-through">{formatQty(line.quantity)}</span>
+                        ) : editing ? (
+                          <>
+                            <OrderQtyStepper
+                              id={line.id}
+                              name={line.name}
+                              label={t('orders.edit.ordered')}
+                              value={edit.qty[line.id] ?? line.quantity}
+                              min={line.floor}
+                              checkbox={false}
+                              disabled={saving}
+                              onChange={v => editQty(line.id, v)}
+                            />
+                            {line.floor > 0 && (
+                              <span title={t('orders.edit.cannotRemove')} className="ml-1.5 text-[10px] text-bambu-gray">{t('orders.edit.min', { n: formatQty(line.floor) })}</span>
+                            )}
+                          </>
+                        ) : todo && check && checkLabel && check.max[line.id] > 0 ? (
                           <OrderQtyStepper
                             id={line.id}
                             name={line.name}
@@ -247,7 +313,7 @@ export function OrderLinesPanel({
                         ) : (
                           formatQty(qty)
                         )}
-                        {ofQty !== null && <span className="ml-1 text-xs text-bambu-gray">{t('orders.ofOrdered', { n: formatQty(ofQty) })}</span>}
+                        {ofQty !== null && !editing && <span className="ml-1 text-xs text-bambu-gray">{t('orders.ofOrdered', { n: formatQty(ofQty) })}</span>}
                         {todo && line.invoiced > 0 && (
                           <span className={`ml-1.5 rounded px-1.5 py-0.5 text-[10px] ${TONE.info.soft} ${TONE.info.text}`}>{t('orders.line.invoiced')}</span>
                         )}
@@ -258,6 +324,27 @@ export function OrderLinesPanel({
                       <td className={`text-right tabular-nums ${short ? LINE_STATE[line.state].cls : ''}`}>
                         {short ? <>−{formatQty(line.shortfall)}</> : dash}
                       </td>
+                      {editing ? (
+                        <td className="whitespace-nowrap pl-4">
+                          {gone ? (
+                            <button type="button" disabled={saving} onClick={() => setGone(line.id, false)} className="inline-flex items-center gap-1 text-xs text-bambu-gray hover:text-white disabled:opacity-50">
+                              <Undo2 aria-hidden="true" className="h-3.5 w-3.5" />
+                              {t('orders.edit.restore')}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              aria-label={`${t('orders.edit.remove')} · ${line.name}`}
+                              title={t(line.floor > 0 ? 'orders.edit.cannotRemove' : 'orders.edit.remove')}
+                              disabled={saving || line.floor > 0}
+                              onClick={() => setGone(line.id, true)}
+                              className={TRASH}
+                            >
+                              <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      ) : (
                       <td className="whitespace-nowrap pl-4">
                         {group.id === 'packed' && (
                           <span className={`inline-flex items-center gap-1 ${TONE.info.text}`}>
@@ -278,6 +365,7 @@ export function OrderLinesPanel({
                           </span>
                         )}
                       </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -287,6 +375,62 @@ export function OrderLinesPanel({
                       <OrderHandoverBar key={handover} row={row} packageId={handover} onClose={() => { refocus.current = `handover-${handover}`; setHandover(null); }} />
                     </td>
                   </tr>
+                )}
+                {group.id === 'todo' && edit && (
+                  <>
+                    {edit.added.map(({ item, quantity }) => (
+                      <tr key={`add-${item.id}`} className="border-t border-bambu-dark-tertiary/60">
+                        <td className="border-l-2 border-bambu-green py-2 pl-4 pr-3">
+                          <div className="text-white">{item.name}</div>
+                          {item.sku && <div className="font-mono text-xs text-bambu-gray">{item.sku}</div>}
+                          <span className="mt-0.5 inline-block rounded bg-bambu-green/15 px-1.5 py-0.5 text-[10px] text-bambu-green">
+                            {t('orders.edit.newLine', { price: formatMoney(item.rate, row.currency) })}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap text-right tabular-nums text-white">
+                          <OrderQtyStepper
+                            id={`add-${item.id}`}
+                            name={item.name}
+                            label={t('orders.edit.ordered')}
+                            value={quantity}
+                            min={1}
+                            checkbox={false}
+                            disabled={saving}
+                            onChange={v => setEdit({ ...edit, added: edit.added.map(a => (a.item.id === item.id ? { ...a, quantity: v } : a)) })}
+                          />
+                        </td>
+                        <td className="text-right tabular-nums text-white">{item.stock_on_hand !== null ? formatQty(item.stock_on_hand) : dash}</td>
+                        <td className="text-right">{dash}</td>
+                        <td className="pl-4">
+                          <button
+                            type="button"
+                            aria-label={`${t('orders.edit.remove')} · ${item.name}`}
+                            title={t('orders.edit.remove')}
+                            disabled={saving}
+                            onClick={() => setEdit({ ...edit, added: edit.added.filter(a => a.item.id !== item.id) })}
+                            className={TRASH}
+                          >
+                            <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-bambu-dark-tertiary/60">
+                      <td colSpan={5} className="py-2 pl-4">
+                        <OrderItemSearch
+                          orderItemIds={itemIds}
+                          currency={row.currency}
+                          disabled={saving}
+                          onAdd={item => setEdit({ ...edit, added: [...edit.added, { item, quantity: 1 }] })}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td colSpan={5} className="pt-2">
+                        <OrderEditBar row={row} edit={edit} onClose={closeEdit} onBusy={setSaving} />
+                      </td>
+                    </tr>
+                  </>
                 )}
                 {group.id === 'todo' && check && (
                   <tr>
@@ -309,7 +453,7 @@ export function OrderLinesPanel({
       </div>
       <div className="space-y-3 lg:self-start">
         <OrderContactBlock contact={row.contact} orderNumber={row.number} others={others} onGoto={onGoto} />
-        {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} />}
+        {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} />}
         <OrderInvoicesBlock
           row={row}
           canEmail={canUpdate}

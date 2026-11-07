@@ -21,6 +21,10 @@ import {
   boxablePicklists,
   canPick,
   checkLines,
+  editChanges,
+  editPayload,
+  editTotal,
+  startEdit,
   nextStep,
   packableUnits,
   panelGroups,
@@ -313,5 +317,46 @@ describe('parcel steps', () => {
       { line_id: 'a', quantity: 2 },
       { line_id: 'c', quantity: 0.5 },
     ]);
+  });
+});
+
+describe('editing the order', () => {
+  const item = { id: 'B', name: 'Buse 0,4', sku: 'NOZ-04', rate: 1500, stock_on_hand: 3, product_type: 'goods' };
+  const lines = [
+    line({ id: 'l1', quantity: 2, rate: 3400 }),
+    line({ id: 'l2', name: 'AMS', quantity: 5, rate: 1000, state: 'backorder' }),
+    line({ id: 'sv', name: 'Main d\'oeuvre', quantity: 1, rate: 2000, state: 'service' }),
+    line({ id: 'cx', quantity: 4, rate: 9999, state: 'cancelled' }),
+    line({ id: 'sh', quantity: 1, rate: 500, state: 'shipped' }),
+  ];
+  const r = row({ lines });
+
+  it('startEdit opens every live line at its ordered quantity, nothing removed or added', () => {
+    const e = startEdit(r);
+    expect(e.qty).toEqual({ l1: 2, l2: 5 });
+    expect(e.gone.size).toBe(0);
+    expect(e.added).toEqual([]);
+    expect(editChanges(r, e)).toEqual([]);
+  });
+
+  it('editChanges lists quantities, removals and additions in order', () => {
+    const e = { qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 2 }] };
+    expect(editChanges(r, e).map(c => [c.kind, c.line?.id ?? c.item?.id, c.from, c.to])).toEqual([
+      ['qty', 'l1', 2, 3],
+      ['gone', 'l2', undefined, undefined],
+      ['add', 'B', undefined, 2],
+    ]);
+  });
+
+  it('editPayload sends the kept live lines and the added items, nothing else', () => {
+    const e = { qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 1 }] };
+    expect(editPayload(r, e)).toEqual([{ line_id: 'l1', quantity: 3 }, { item_id: 'B', quantity: 1 }]);
+  });
+
+  it('editTotal sums the kept lines, services, shipped lines and added items; null when not estimable', () => {
+    expect(editTotal(r, startEdit(r))).toBe(2 * 3400 + 5 * 1000 + 2000 + 500);
+    const e = { qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 2 }] };
+    expect(editTotal(r, e)).toBe(3 * 3400 + 2000 + 500 + 2 * 1500);
+    expect(editTotal(row({ lines, estimable: false }), e)).toBeNull();
   });
 });
