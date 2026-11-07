@@ -236,3 +236,29 @@ export const editTotal = (row: Pick<OrderBoardRow, 'lines' | 'estimable'>, edit:
   );
   return round2(lines + edit.added.reduce((n, a) => n + a.quantity * a.item.rate, 0));
 };
+
+/** An edit of a waiting parcel: per line, the units it held when opened, the most it may hold (its units plus what
+ *  the shelf still covers) and the units chosen. `picklist` is the number of the picklist the parcel was made from. */
+export interface ParcelEdit { packageId: string; number: string; picklist: string; version: string; was: Record<string, number>; max: Record<string, number>; qty: Record<string, number> }
+
+const parcelQty = (p: ParcelEdit, id: string) => round2(Math.min(p.qty[id] ?? 0, p.max[id]));
+
+/** Units in the parcel now and when opened, units taken from the shelf and units sent back to prepare. */
+export const parcelDiff = (p: ParcelEdit): { added: number; removed: number; units: number; wasUnits: number } => {
+  let added = 0, removed = 0, units = 0;
+  for (const id of Object.keys(p.max)) {
+    const q = parcelQty(p, id), d = q - (p.was[id] ?? 0);
+    units += q;
+    if (d > 0) added += d;
+    else removed -= d;
+  }
+  return { added: round2(added), removed: round2(removed), units: round2(units), wasUnits: round2(Object.values(p.was).reduce((n, q) => n + q, 0)) };
+};
+
+/** What the parcel should hold after the save, zeros dropped (an empty list deletes it). */
+export const parcelLines = (p: ParcelEdit): { line_id: string; quantity: number }[] =>
+  Object.keys(p.max).map(line_id => ({ line_id, quantity: parcelQty(p, line_id) })).filter(l => l.quantity > 0);
+
+/** The parcel as the editor showed it when it opened: the server refuses the save if Books moved since. */
+export const parcelWas = (p: ParcelEdit): { line_id: string; quantity: number }[] =>
+  Object.entries(p.was).filter(([, q]) => q > 0).map(([line_id, quantity]) => ({ line_id, quantity }));

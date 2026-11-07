@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Check, CheckCheck, ClipboardList, HandHelping, Lock, Package, Pencil, ReceiptText, Trash2, Undo2 } from 'lucide-react';
+import { Check, CheckCheck, ClipboardList, HandHelping, Loader2, Lock, Package, Pencil, ReceiptText, Trash2, Undo2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../../api/client';
 import type { OrderBoardLine, OrderPanelRow, OrderPicklist } from '../../api/client';
@@ -15,12 +15,14 @@ import { OrderHandoverBar } from './OrderHandoverBar';
 import { OrderInvoicesBlock } from './OrderInvoicesBlock';
 import { OrderItemSearch } from './OrderItemSearch';
 import { OrderPackBar } from './OrderPackBar';
+import { OrderParcelEditBar } from './OrderParcelEditBar';
+import { OrderParcelEditRows } from './OrderParcelEditRows';
 import { OrderPaymentBlock } from './OrderPaymentBlock';
 import { OrderPrepActions } from './OrderPrepActions';
 import { OrderQtyStepper } from './OrderQtyStepper';
 import { OrderRefChips } from './OrderRefChips';
 import { boxablePicklists, canPick, editTotal, formatQty, packableUnits, panelGroups, parseDay, startEdit, waitingPackages } from './orderBoard';
-import type { OrderCheck, OrderEdit, PanelGroup } from './orderBoard';
+import type { OrderCheck, OrderEdit, PanelGroup, ParcelEdit } from './orderBoard';
 import { formatMoney } from '../../utils/pricing';
 import { FIT_VIEWPORT, TONE } from './orderStatus';
 import type { Tone } from './orderStatus';
@@ -102,8 +104,25 @@ export function OrderLinesPanel({
   // Set while the operator edits the order's lines.
   const [editState, setEdit] = useState<OrderEdit | null>(null);
   const [saving, setSaving] = useState(false);
-  const starter = useRef({ openCheck, row, checking: checkState !== null, editing: editState !== null });
-  starter.current = { openCheck, row, checking: checkState !== null, editing: editState !== null };
+  // Set while the operator edits a waiting parcel, opened from what Books holds for it now.
+  const [parcelState, setParcel] = useState<ParcelEdit | null>(null);
+  const [parcelBusy, setParcelBusy] = useState(false);
+  const openParcel = async (packageId: string) => {
+    setOpening(`parcel-${packageId}`);
+    try {
+      const c = await api.getOrderPackage(row.id, packageId);
+      const was = Object.fromEntries(c.lines.filter(l => l.quantity > 0).map(l => [l.line_id, l.quantity]));
+      const picklist = (row.picklists ?? []).find(p => p.id === c.picklist_id)?.number ?? c.picklist_id;
+      setParcel({ packageId, number: c.number, picklist, version: c.version, was, max: Object.fromEntries(c.lines.map(l => [l.line_id, l.max])), qty: Object.fromEntries(c.lines.map(l => [l.line_id, l.quantity])) });
+    } catch (e) {
+      showToast(t('orders.parcelEdit.failed', { reason: errorReason(t, e) }), 'error');
+      if (isRefused(e)) void queryClient.invalidateQueries({ queryKey: ['order-board'], exact: true });
+    } finally {
+      setOpening(null);
+    }
+  };
+  const starter = useRef({ openCheck, row, checking: checkState !== null, editing: editState !== null || parcelState !== null });
+  starter.current = { openCheck, row, checking: checkState !== null, editing: editState !== null || parcelState !== null };
   useEffect(() => {
     if (!start || !canUpdate || pendingNow.current || starter.current.editing) return; // an edit is open: one bar at a time
     const id = start.slice(start.indexOf('-') + 1);
@@ -138,8 +157,17 @@ export function OrderLinesPanel({
     }
   }, [editState, hasTodo]);
   const closeEdit = () => { refocus.current = 'edit'; setEdit(null); setSaving(false); };
+  // A refetch where the parcel is no longer waiting (handed over, deleted) closes its edit.
+  const parcel = parcelState && waitingPackages(row).some(p => p.id === parcelState.packageId) ? parcelState : null;
+  useEffect(() => {
+    if (parcelState && !parcel) {
+      setParcel(null);
+      setParcelBusy(false);
+    }
+  }, [parcelState, parcel]);
+  const closeParcel = () => { if (parcel) refocus.current = `parcel-${parcel.packageId}`; setParcel(null); setParcelBusy(false); };
   const picklistOpen = (row.picklists ?? []).find(p => p.status !== 'completed');
-  const editLead = canUpdate && !handoverOpen ? (
+  const editLead = canUpdate && !handoverOpen && !parcel ? (
     picklistOpen ? (
       <span title={t('orders.edit.lockedHint')} className="inline-flex items-center gap-1.5 text-[11px] text-bambu-gray">
         <Lock aria-hidden="true" className="h-3.5 w-3.5" />
@@ -189,7 +217,11 @@ export function OrderLinesPanel({
   return (
     <div
       ref={root}
-      onKeyDown={e => { if (e.key === 'Escape' && edit && !saving) closeEdit(); }}
+      onKeyDown={e => {
+        if (e.key !== 'Escape') return;
+        if (edit && !saving) closeEdit();
+        if (parcel && !parcelBusy) closeParcel();
+      }}
       className="grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_27rem]">
       <div className="order-last min-w-0 lg:order-none">
       <OrderRefChips row={row}>
@@ -218,7 +250,7 @@ export function OrderLinesPanel({
           <thead className="bg-bambu-dark text-left lg:sticky lg:top-0 lg:z-10 text-[11px] uppercase tracking-wide text-bambu-gray">
             <tr>
               <th className="py-1.5 font-medium">{t('orders.col.product')}</th>
-              <th className="text-right font-medium">{t(edit ? 'orders.edit.ordered' : (checkLabel ?? 'orders.col.qty'))}</th>
+              <th className="text-right font-medium">{t(edit ? 'orders.edit.ordered' : parcel ? 'orders.parcelEdit.inParcel' : (checkLabel ?? 'orders.col.qty'))}</th>
               <th className="pl-4 text-right font-medium">{t('orders.col.available')}</th>
               <th className="pl-4 text-right font-medium">{t('orders.col.short')}</th>
               <th className="pl-4 font-medium">{edit ? '' : t('orders.col.state')}</th>
@@ -231,7 +263,7 @@ export function OrderLinesPanel({
               <tbody key={group.id} className={meta.dim ? 'opacity-60' : ''}>
                 <tr>
                   <th role="rowheader" colSpan={5} className="pt-3 pb-1 text-left font-normal">
-                    <div className={`flex flex-wrap items-center gap-2 rounded-md px-3 py-1.5 text-xs ${meta.band} ${group.id === 'todo' && edit ? 'ring-1 ring-bambu-green/40' : ''}`}>
+                    <div className={`flex flex-wrap items-center gap-2 rounded-md px-3 py-1.5 text-xs ${meta.band} ${(group.id === 'todo' && edit) || (group.id === 'packed' && parcel) ? `ring-1 ${edit ? 'ring-bambu-green/40' : 'ring-blue-400/40'}` : ''}`}>
                       <Icon aria-hidden="true" className={`h-3.5 w-3.5 ${meta.name}`} />
                       <span className={`font-semibold uppercase tracking-wide ${meta.name}`}>{t(meta.label)}</span>
                       {group.units !== null && (
@@ -240,11 +272,23 @@ export function OrderLinesPanel({
                         </span>
                       )}
                       {chips(group.id)}
-                      {group.id === 'packed' && canUpdate && !handoverOpen && !edit && (
+                      {group.id === 'packed' && canUpdate && !handoverOpen && !edit && !parcel && (
                         <span className={`flex basis-full flex-wrap items-center gap-2 lg:ml-auto lg:basis-auto ${FIT_VIEWPORT}`}>
                           {waitingPackages(row).map((p, _i, all) => (
+                            <span key={p.id} className="contents">
+                            {!check && (
+                              <button
+                                type="button"
+                                data-opens={`parcel-${p.id}`}
+                                disabled={opening !== null}
+                                onClick={() => void openParcel(p.id)}
+                                className={EDIT_BTN}
+                              >
+                                {opening === `parcel-${p.id}` ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <Pencil aria-hidden="true" className="h-3.5 w-3.5" />}
+                                {all.length > 1 ? t('orders.parcelEdit.openNumber', { number: p.number }) : t('orders.parcelEdit.open')}
+                              </button>
+                            )}
                             <button
-                              key={p.id}
                               type="button"
                               data-opens={`handover-${p.id}`}
                               onClick={() => setHandover(p.id)}
@@ -253,10 +297,11 @@ export function OrderLinesPanel({
                               <HandHelping aria-hidden="true" className="h-3.5 w-3.5" />
                               {all.length > 1 ? t('orders.handover.openNumber', { number: p.number }) : t('orders.handover.open')}
                             </button>
+                            </span>
                           ))}
                         </span>
                       )}
-                      {group.id === 'todo' && !check && !edit && (editLead || canPick(row) || boxablePicklists(row).length > 0) && (
+                      {group.id === 'todo' && !check && !edit && !parcel && (editLead || canPick(row) || boxablePicklists(row).length > 0) && (
                         <OrderPrepActions
                           row={row}
                           lead={editLead}
@@ -270,7 +315,15 @@ export function OrderLinesPanel({
                     </div>
                   </th>
                 </tr>
-                {group.lines.map(({ line, qty, ofQty }, index) => {
+                {group.id === 'packed' && parcel ? (
+                  <OrderParcelEditRows
+                    lines={group.lines.map(l => l.line)}
+                    all={row.lines}
+                    parcel={parcel}
+                    busy={parcelBusy}
+                    onQty={(id, v) => setParcel({ ...parcel, qty: { ...parcel.qty, [id]: v } })}
+                  />
+                ) : group.lines.map(({ line, qty, ofQty }, index) => {
                   const todo = group.id === 'todo';
                   const short = todo && (line.state === 'backorder' || line.state === 'to_order');
                   const editing = todo && edit;
@@ -370,6 +423,13 @@ export function OrderLinesPanel({
                     </tr>
                   );
                 })}
+                {group.id === 'packed' && parcel && (
+                  <tr>
+                    <td colSpan={5} className="pt-2">
+                      <OrderParcelEditBar row={row} parcel={parcel} onClose={closeParcel} onBusy={setParcelBusy} />
+                    </td>
+                  </tr>
+                )}
                 {group.id === 'packed' && handoverOpen && handover && (
                   <tr>
                     <td colSpan={5} className="pt-2">

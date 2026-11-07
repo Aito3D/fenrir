@@ -23,6 +23,9 @@ import {
   checkLines,
   editChanges,
   editPayload,
+  parcelDiff,
+  parcelLines,
+  parcelWas,
   editTotal,
   startEdit,
   nextStep,
@@ -365,5 +368,19 @@ describe('editing the order', () => {
     expect(editChanges(r, e).map(c => [c.kind, c.line?.id])).toEqual([['gone', 'l1']]);
     expect(editPayload(r, e)).toEqual([{ line_id: 'l2', quantity: 5 }]);
     expect(editTotal(r, e)).toBe(5 * 1000 + 2000 + 500);
+  });
+});
+
+describe('parcel edit', () => {
+  const p = { packageId: 'p1', number: 'PKG-1', picklist: 'PL-1', version: 'v1', was: { l1: 2, l3: 1 }, max: { l1: 3, l2: 4, l3: 1 }, qty: { l1: 1, l2: 2, l3: 0 } };
+
+  it('parcelDiff sums the units now and before, what came from the shelf and what went back', () => {
+    expect(parcelDiff(p)).toEqual({ added: 2, removed: 2, units: 3, wasUnits: 3 });
+    expect(parcelDiff({ ...p, qty: { l1: 2, l2: 0, l3: 1 } })).toEqual({ added: 0, removed: 0, units: 3, wasUnits: 3 });
+  });
+
+  it('parcelLines keeps each line under its ceiling and drops zeros; parcelWas lists the parcel as opened', () => {
+    expect(parcelLines({ ...p, qty: { l1: 9, l2: 2, l3: 0 } })).toEqual([{ line_id: 'l1', quantity: 3 }, { line_id: 'l2', quantity: 2 }]);
+    expect(parcelWas(p)).toEqual([{ line_id: 'l1', quantity: 2 }, { line_id: 'l3', quantity: 1 }]);
   });
 });
