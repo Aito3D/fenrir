@@ -59,6 +59,18 @@ def parcels(zoho, monkeypatch):  # noqa: F811
             raise zoho.fail_with(f"{name} failed")
         zoho.steps.append((name, body))
 
+    def bump(doc):
+        """Books moves the order's last_modified_time on every write that touches it."""
+        zoho.bumps = getattr(zoho, "bumps", 0) + 1
+        doc["last_modified_time"] = f"2026-11-07T08:{zoho.bumps:02d}:00-1000"
+
+    def order_of_picklist(picklist_id):
+        return next(
+            doc
+            for doc in zoho.orders.values()
+            if any(p["picklist_id"] == picklist_id for p in doc.get("picklists") or [])
+        )
+
     def order_line(line_id):
         return next(
             line for doc in zoho.orders.values() for line in doc["line_items"] if line["line_item_id"] == line_id
@@ -134,6 +146,7 @@ def parcels(zoho, monkeypatch):  # noqa: F811
         zoho.writes.append("update_picklist")
         zoho.bodies["update_picklist"] = zoho.bodies["picklist"] = body
         pl = zoho.picklists[picklist_id]
+        bump(order_of_picklist(picklist_id))
         done = pl["status"] == "completed"
         if done:  # a completed picklist's units count as picked on the order
             for row in pl["line_items"]:
@@ -176,6 +189,7 @@ def parcels(zoho, monkeypatch):  # noqa: F811
         zoho.writes.append("create_package")
         zoho.created.append((salesorder_id, date, line_items))
         doc = zoho.orders[salesorder_id]
+        bump(doc)
         for item in line_items:
             for line in doc["line_items"]:
                 if line["line_item_id"] == item["so_line_item_id"]:
@@ -195,6 +209,7 @@ def parcels(zoho, monkeypatch):  # noqa: F811
     async def update_package(db, package_id, salesorder_id, body):
         step("parcel", body)
         zoho.bodies["parcel"] = body
+        bump(zoho.orders[salesorder_id])
         package = zoho.packages[package_id]
         box(package["line_items"], -1)
         package["line_items"] = copy.deepcopy(body["line_items"])
@@ -205,10 +220,13 @@ def parcels(zoho, monkeypatch):  # noqa: F811
         step("delete_package", package_id)
         box(zoho.packages.pop(package_id)["line_items"], -1)
         for doc in zoho.orders.values():
+            if any(p["package_id"] == package_id for p in doc.get("packages") or []):
+                bump(doc)
             doc["packages"] = [p for p in doc.get("packages") or [] if p["package_id"] != package_id]
 
     async def delete_picklist(db, picklist_id):
         step("delete_picklist", picklist_id)
+        bump(order_of_picklist(picklist_id))
         pl = zoho.picklists.pop(picklist_id)
         if pl["status"] == "completed":
             for row in pl["line_items"]:
@@ -1935,6 +1953,84 @@ async def test_an_edit_timeout_triggers_one_refresh_and_reraises(db_session, lin
     assert lines_edit.calls["detail"] == reads + 2  # the forced re-read before, one after the failed write
 
 
+def _with_shipped(doc):
+    doc["line_items"].append(_extra_line("l3", "D", quantity_shipped=2, quantity_packed=2, quantity_invoiced=2))
+
+
+def _with_untracked(doc):
+    doc["line_items"].append(_extra_line("l3", "U"))
+
+
+def _with_cancelled(doc):
+    doc["line_items"].append(_extra_line("l3", "D", quantity_cancelled=2))
+
+
+def _extra_line(line_id, item_id, **figures):
+    return {
+        "line_item_id": line_id,
+        "item_id": item_id,
+        "name": "Extra",
+        "sku": "X1",
+        "quantity": 2,
+        "rate": 700,
+        "product_type": "goods",
+        "quantity_shipped": 0,
+        "quantity_packed": 0,
+        "quantity_cancelled": 0,
+        "quantity_invoiced": 0,
+        **figures,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("extra", "state", "code"),
+    [
+        (_with_shipped, "shipped", "unknown_line"),
+        (_with_untracked, "service", "service_line"),
+        (_with_cancelled, "cancelled", "unknown_line"),
+    ],
+)
+async def test_a_line_that_is_not_live_rides_along_unchanged_and_is_not_editable(
+    db_session, lines_edit, extra, state, code
+):
+    lines_edit.items_by_id["U"] = {
+        "item_id": "U",
+        "name": "Untracked",
+        "product_type": "goods",
+        "track_inventory": False,
+    }
+    doc = _edit_order()
+    extra(doc)
+    await _board(db_session, lines_edit, doc)
+    assert {line["id"]: line["state"] for line in (await actions._row(db_session, "so1"))["lines"]}["l3"] == state
+    with pytest.raises(actions.OrderActionRefused, match=code):
+        await actions.edit_lines(db_session, "so1", VERSION, [{"line_id": "l3", "quantity": 3}])
+    await actions.edit_lines(
+        db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}, {"line_id": "l2", "quantity": 1}]
+    )
+    body = lines_edit.bodies["lines"]["line_items"]
+    assert [line["line_item_id"] for line in body] == ["l1", "l2", "s1", "l3"]
+    assert body[3] == {
+        "line_item_id": "l3",
+        "item_id": doc["line_items"][3]["item_id"],
+        "name": "Extra",
+        "rate": 700,
+        "quantity": 2,
+    }  # only the fields an order update takes, as Books has them
+
+
+@pytest.mark.asyncio
+async def test_a_picklist_books_opened_since_the_stored_copy_locks_the_edit(db_session, lines_edit):
+    await _board(db_session, lines_edit, _edit_order())
+    lines_edit.orders["so1"]["picklists"] = [{"picklist_id": "pl9", "status": "in_progress"}]  # stored copy has none
+    with pytest.raises(actions.OrderActionRefused, match="picklist_open"):
+        await actions.edit_lines(
+            db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}, {"line_id": "l2", "quantity": 1}]
+        )
+    assert "lines" not in lines_edit.bodies
+
+
 @pytest.mark.asyncio
 async def test_search_items_drops_services_and_caps_at_five(db_session, lines_edit):
     lines_edit.item_search = [
@@ -2121,9 +2217,37 @@ async def test_retry_after_a_picklist_down_failure_finishes_the_job(db_session, 
         await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
     assert _labels(parcels) == ["parcel"]
     parcels.steps.clear()
-    await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})  # the parcel already says 1
+    with pytest.raises(actions.OrderActionRefused, match="version"):  # the package write moved the order on
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    version = (await actions.package_content(db_session, "so1", "p1"))["version"]
+    await actions.edit_parcel(db_session, "so1", "p1", version, {"l1": 2}, {"l1": 1})  # the parcel already says 1
     assert _labels(parcels) == ["picklist"]
     assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 1
+
+
+@pytest.mark.asyncio
+async def test_reopened_after_a_picklist_down_failure_the_save_runs_only_that_step(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    parcels.fail_step = "picklist"
+    with pytest.raises(ZohoUpstreamError):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    parcels.steps.clear()
+    content = await actions.package_content(db_session, "so1", "p1")  # what the operator sees on reopening
+    assert content["version"] != VERSION and content["lines"][0]["quantity"] == 1
+    await actions.edit_parcel(db_session, "so1", "p1", content["version"], {"l1": 1}, {"l1": 1})
+    assert parcels.steps == [
+        (
+            "picklist",
+            {
+                **parcels.bodies["picklist"],
+                "line_items": [{"line_item_id": "r1", "quantity_to_be_picked": 1, "quantity_picked": 1}],
+            },
+        )
+    ]
+    assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 1
+    version = (await actions.package_content(db_session, "so1", "p1"))["version"]
+    with pytest.raises(actions.OrderActionRefused, match="nothing_changed"):  # now nothing is left to do
+        await actions.edit_parcel(db_session, "so1", "p1", version, {"l1": 1}, {"l1": 1})
 
 
 def _ship(zoho):

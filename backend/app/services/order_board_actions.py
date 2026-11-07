@@ -14,7 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
-from backend.app.services.order_board import _ORDER_MONEY, _nonzero, picked_waiting, units_to_invoice
+from backend.app.services.order_board import (
+    _LIVE_STATES,
+    _ORDER_MONEY,
+    _nonzero,
+    picked_waiting,
+    units_to_invoice,
+)
 from backend.app.services.zoho import (
     ZohoNotFound,
     ZohoRateLimited,
@@ -670,18 +676,17 @@ async def search_items(db: AsyncSession, query: str) -> list[dict]:
             "product_type": item.get("product_type") or "",
         }
         for item in found
-        if item.get("product_type") != "service"
+        if not (item.get("product_type") or "").endswith("service")
     ][:5]
 
 
-def _is_physical(raw: dict) -> bool:
-    return bool(raw.get("item_id")) and raw.get("product_type") != "service"
-
-
 async def edit_lines(db: AsyncSession, salesorder_id: str, version: str, lines: list[dict]) -> dict:
-    """Set the quantities of an order's goods lines, drop the ones left out and add new items, in Books. The whole
-    line list is sent back, service lines untouched. ``version`` is the order's ``last_modified_time`` the operator
-    saw: an order saved in Books since is refused. Lines already packed, picked or invoiced cannot go below that."""
+    """Set the quantities of an order's live goods lines, drop the ones left out and add new items, in Books. The
+    whole line list is sent back. Only a line the board shows as live (ready, backorder, to order) is editable;
+    every other line (service, untracked, cancelled, fully shipped) goes back untouched, and naming one is refused
+    ``service_line`` (service or untracked) or ``unknown_line`` (cancelled, shipped). ``version`` is the order's
+    ``last_modified_time`` the operator saw: an order saved in Books since is refused. Lines already packed, picked
+    or invoiced cannot go below that."""
     with writing(salesorder_id):
         doc = await confirm_stored_copy(db, salesorder_id)
         number = doc.header.get("salesorder_number") or ""
@@ -690,9 +695,16 @@ async def edit_lines(db: AsyncSession, salesorder_id: str, version: str, lines: 
         detail = await _reread(db, salesorder_id)  # the comparison and the floors must come from Books as it is now
         if detail.get("last_modified_time", "") != version:
             raise OrderActionRefused("version")
-        floors = {line["id"]: line["floor"] for line in (await _row(db, salesorder_id))["lines"]}
+        if _open_picklists(detail):  # Books may hold one the stored copy did not
+            raise OrderActionRefused("picklist_open")
+        board = {line["id"]: line for line in (await _row(db, salesorder_id))["lines"]}
+        floors = {line_id: line["floor"] for line_id, line in board.items()}
         raws = detail.get("line_items") or []
-        physical = {raw["line_item_id"] for raw in raws if _is_physical(raw)}
+        live = {
+            raw["line_item_id"]
+            for raw in raws
+            if raw.get("line_item_id") in board and board[raw["line_item_id"]]["state"] in _LIVE_STATES
+        }
         edits: dict[str, float] = {}
         new: dict[str, float] = {}
         for entry in lines:
@@ -701,9 +713,9 @@ async def edit_lines(db: AsyncSession, salesorder_id: str, version: str, lines: 
                 raise OrderActionRefused("bad_quantity")
             if "line_id" in entry:
                 line_id = entry["line_id"]
-                if any(raw.get("line_item_id") == line_id and not _is_physical(raw) for raw in raws):
+                if line_id not in live and (board.get(line_id) or {}).get("state") == "service":
                     raise OrderActionRefused("service_line")
-                if line_id not in physical:
+                if line_id not in live:
                     raise OrderActionRefused("unknown_line")
                 if line_id in edits:
                     raise OrderActionRefused("unknown_line")
@@ -715,7 +727,7 @@ async def edit_lines(db: AsyncSession, salesorder_id: str, version: str, lines: 
                 if not item_id or item_id in new or any(raw.get("item_id") == item_id for raw in raws):
                     raise OrderActionRefused("unknown_item")
                 new[item_id] = q
-        if any(floors.get(line_id, 0.0) > 0 and line_id not in edits for line_id in physical):
+        if any(floors.get(line_id, 0.0) > 0 and line_id not in edits for line_id in live):
             raise OrderActionRefused("below_floor")
         items: dict = {}
         if new:
@@ -725,22 +737,20 @@ async def edit_lines(db: AsyncSession, salesorder_id: str, version: str, lines: 
                 sync.open_rate_limit_window(e)
                 raise sync.ZohoBusy(salesorder_id) from e
             items = {item.get("item_id"): item for item in found}
-            if any(i not in items or items[i].get("product_type") == "service" for i in new):
+            if any(i not in items or (items[i].get("product_type") or "").endswith("service") for i in new):
                 raise OrderActionRefused("unknown_item")
         if (
             not new
-            and len(edits) == len(physical)
+            and len(edits) == len(live)
             and all(
-                _num(raw.get("quantity")) == edits[raw["line_item_id"]]
-                for raw in raws
-                if raw["line_item_id"] in physical
+                _num(raw.get("quantity")) == edits[raw["line_item_id"]] for raw in raws if raw["line_item_id"] in live
             )
         ):
             raise OrderActionRefused("nothing_changed")
         body_lines = []
         for raw in raws:
             line_id = raw.get("line_item_id")
-            if line_id in physical and line_id not in edits:
+            if line_id in live and line_id not in edits:
                 continue
             kept = {k: raw[k] for k in _SO_LINE_FIELDS if k in raw}
             if line_id in edits:
@@ -860,13 +870,21 @@ async def package_content(db: AsyncSession, salesorder_id: str, package_id: str)
 
 
 def _picklist_rows(
-    picklist: dict, package: dict, old: Mapping[str, float], new: Mapping[str, float], rising: bool, salesorder_id: str
+    picklist: dict,
+    package: dict,
+    old: Mapping[str, float],
+    new: Mapping[str, float],
+    rising: bool,
+    salesorder_id: str,
+    settle: bool = False,
 ) -> tuple[list[dict], dict[str, float], bool]:
     """The picklist rows to send, the units per order line, and whether Books already shows them.
 
     A line this edit changes holds the units the other parcels boxed from its row plus this parcel's: the larger of
     its old and new units while rising (never under what is picked), its new units otherwise. Every other row stays
-    as it is. Counted from what Books shows now, so the same request repeated finds a done step done.
+    as it is. Counted from what Books shows now, so the same request repeated finds a done step done. ``settle``
+    (the package already holds what is asked) brings every row down to what the parcels hold, never up: it
+    finishes a picklist-down step that failed after the package step.
     """
     in_parcel = _boxed(package)
     rows, units, same = [], {}, True
@@ -875,9 +893,12 @@ def _picklist_rows(
         picked = _num(r.get("quantity_picked"))
         target = picked
         before, after = old.get(line_id, 0.0), new.get(line_id, 0.0)
-        if abs(before - after) > 1e-9:
+        if settle or abs(before - after) > 1e-9:
             others = max(0.0, _num(r.get("quantity_packed")) - in_parcel.get(line_id, 0.0))
-            target = max(picked, others + max(before, after)) if rising else others + after
+            if settle:
+                target = min(picked, others + after)
+            else:
+                target = max(picked, others + max(before, after)) if rising else others + after
         target = round(target, 6)
         same = same and abs(target - picked) <= 1e-9
         units[line_id] = target
@@ -997,8 +1018,9 @@ async def _rewrite_parcel(
         )
         package = await _package(db, package_id)
         picklist = await _picklist(db, order, picklist_id)
-    if any(q > new.get(line_id, 0.0) + 1e-9 for line_id, q in old.items()):  # C: picklist down
-        rows, _, same = _picklist_rows(picklist, package, old, new, False, salesorder_id)
+    settle = _same(old, new)  # the package step is done; only a picklist-down step that failed is left
+    if settle or any(q > new.get(line_id, 0.0) + 1e-9 for line_id, q in old.items()):  # C: picklist down
+        rows, _, same = _picklist_rows(picklist, package, old, new, False, salesorder_id, settle)
         if not same:
             await update_picklist("picklist_down", rows)
 
@@ -1022,7 +1044,10 @@ async def edit_parcel(
         if not _same(boxed, old) and not _same(boxed, new):
             raise OrderActionRefused("package_changed")
         _within(new, ceiling, {line["id"] for line in row["lines"]})
-        if _same(old, new):
+        # The parcel already holding what is asked is a done package step; the picklist may still be above it.
+        if _same(old, new) and (
+            _PARCEL_EDIT_REPLACES or _picklist_rows(picklist, package, old, new, False, salesorder_id, True)[2]
+        ):
             raise OrderActionRefused("nothing_changed")
         try:
             await _rewrite_parcel(db, salesorder_id, number, detail, package, picklist, old, new)
