@@ -276,6 +276,29 @@ describe('PresetEditorModal — edit mode', () => {
     expect(onDelete).toHaveBeenCalledTimes(1);
   });
 
+  it('duplicates the saved preset, and refuses once there are unsaved edits', async () => {
+    const user = userEvent.setup();
+    const onDuplicate = vi.fn();
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={vi.fn()}
+        onDelete={null}
+        onDuplicate={onDuplicate}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const duplicate = screen.getByRole('button', { name: 'Duplicate' });
+    await user.click(duplicate);
+    expect(onDuplicate).toHaveBeenCalledTimes(1);
+    await user.type(screen.getByRole('textbox', { name: 'Color label' }), 'x');
+    expect(duplicate).toBeDisabled();
+  });
+
   it('saves the full FilamentPresetPayload shape', async () => {
     const user = userEvent.setup();
     const onSave = vi.fn().mockResolvedValue(undefined);

@@ -1021,6 +1021,7 @@ export function FilamentProfilesPage() {
               extraMaterials={extraMaterials}
               onSave={(payload) => handleSavePreset(payload, editingPreset)}
               onDelete={editingPreset && canDeletePreset ? () => setConfirmDelete(editingPreset) : null}
+              onDuplicate={editingPreset && canCreatePreset ? () => void handleDuplicate(editingPreset) : null}
               onClose={() => setEditorState({ mode: 'closed' })}
               canSave={editorState.mode === 'create' ? canCreatePreset : canUpdatePreset}
               onDirtyChange={handleEditorDirtyChange}

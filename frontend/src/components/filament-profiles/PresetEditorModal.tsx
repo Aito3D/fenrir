@@ -43,6 +43,8 @@ export interface PresetEditorModalProps {
   extraMaterials: string[];
   onSave: (payload: FilamentPresetEditorPayload) => Promise<void>;
   onDelete: (() => void) | null;
+  /** Copies the saved preset and opens the copy; null hides the button. */
+  onDuplicate?: (() => void) | null;
   onClose: () => void;
   /** Gates the Save/Create button on the permission its own endpoint
    *  enforces (`filaments:create` when creating, `filaments:update` when
@@ -116,6 +118,7 @@ export function PresetEditorModal({
   extraMaterials,
   onSave,
   onDelete,
+  onDuplicate,
   onClose,
   canSave = true,
   onDirtyChange,
@@ -797,6 +800,12 @@ export function PresetEditorModal({
             {onDelete && (
               <Button variant="danger" size="sm" onClick={handleDeleteClick}>
                 {t('filamentProfiles.deletePreset')}
+              </Button>
+            )}
+            {onDuplicate && (
+              // Disabled while dirty: the server copies the saved preset, not the unsaved edits.
+              <Button variant="secondary" size="sm" onClick={onDuplicate} disabled={saving || dirty}>
+                {t('filamentProfiles.duplicate')}
               </Button>
             )}
             <Button variant="secondary" size="sm" onClick={handleDismiss} disabled={saving}>
