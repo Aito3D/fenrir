@@ -21,24 +21,28 @@ export function OrderParcelEditRows({
     <OrderQtyStepper id={line.id} name={line.name} label={label} value={Math.min(parcel.qty[line.id] ?? 0, parcel.max[line.id])}
       min={0} max={parcel.max[line.id]} checkbox={false} disabled={busy} onChange={v => onQty(line.id, v)} />
   );
-  const product = (line: OrderBoardLine, caption: string | null) => (
+  const product = (line: OrderBoardLine, ...captions: (string | null)[]) => { const caption = captions.filter((c): c is string => !!c); return (
     <>
       <div className="text-white">{line.name}</div>
       {line.sku && <div className="font-mono text-xs text-bambu-gray">{line.sku}</div>}
-      {caption && <span className="text-[10px] text-bambu-gray">{caption}</span>}
+      {caption.map(c => <div key={c} className="text-[10px] text-bambu-gray">{c}</div>)}
     </>
-  );
+  ); };
   const stock = (line: OrderBoardLine) => <td className="text-right tabular-nums text-white">{line.stock_available !== null ? formatQty(line.stock_available) : '–'}</td>;
   const adds = all.filter(l => l.id in parcel.max && !(l.id in parcel.was));
+  const others = (line: OrderBoardLine) => {
+    const n = Math.round((line.packed_waiting - (parcel.was[line.id] ?? 0)) * 100) / 100;
+    return n > 0 ? t('orders.parcelEdit.otherParcel', { n: formatQty(n) }) : null;
+  };
   return (
     <>
-      {lines.map((line, index) => {
+      {/* a line of another parcel the shelf still covers renders once, as its add row */}
+      {lines.filter(l => l.id in parcel.was || !(l.id in parcel.max)).map((line, index) => {
         const mine = line.id in parcel.was;
         const q = parcel.qty[line.id] ?? 0;
-        const others = Math.round((line.packed_waiting - (parcel.was[line.id] ?? 0)) * 100) / 100;
         return (
           <tr key={line.id} className={`${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${mine ? '' : 'opacity-40'}`}>
-            <td className={`border-l-2 py-2 pl-4 pr-3 ${TONE.info.rail}`}>{product(line, others > 0 ? t('orders.parcelEdit.otherParcel', { n: formatQty(others) }) : null)}</td>
+            <td className={`border-l-2 py-2 pl-4 pr-3 ${TONE.info.rail}`}>{product(line, others(line))}</td>
             <td className="whitespace-nowrap text-right tabular-nums text-white">
               {mine ? <>{stepper(line, t('orders.parcelEdit.inParcel'))}<Tag d={Math.round((q - parcel.was[line.id]) * 100) / 100} /></> : formatQty(line.packed_waiting)}
             </td>
@@ -58,7 +62,7 @@ export function OrderParcelEditRows({
         return (
           <tr key={`join-${line.id}`} className={`border-t border-bambu-dark-tertiary/60 ${q > 0 ? '' : 'opacity-70'}`}>
             <td className={`border-l-2 py-2 pl-4 pr-3 ${q > 0 ? TONE.info.rail : 'border-dashed border-bambu-dark-tertiary'}`}>
-              {product(line, t('orders.parcelEdit.shelf', { n: formatQty(parcel.max[line.id]) }))}
+              {product(line, others(line), t('orders.parcelEdit.shelf', { n: formatQty(parcel.max[line.id]) }))}
             </td>
             <td className="whitespace-nowrap text-right tabular-nums text-white">{stepper(line, t('orders.parcelEdit.addRow'))}<Tag d={q} /></td>
             {stock(line)}

@@ -113,6 +113,25 @@ describe('editing a parcel', () => {
     expect(screen.queryByTestId('pack-qty-l3')).not.toBeInTheDocument();
   });
 
+  it('a line of another parcel the shelf still covers renders once, as an add row with its count', async () => {
+    const user = userEvent.setup();
+    server.use(http.get(`${BASE}/packages/p1`, () => HttpResponse.json({
+      id: 'p1', number: 'PKG-00031', version: 'v1', picklist_id: 'pl1',
+      lines: [{ line_id: 'l1', quantity: 2, max: 3 }, { line_id: 'l3', quantity: 0, max: 2 }],
+    })));
+    const row = panelRow({ packages: [pkg('p1', 'PKG-00031'), pkg('p2', 'PKG-00032')], lines: [lines[0], line({ id: 'l3', name: 'Buse 0.4', packed_waiting: 1, remaining: 3, quantity: 3, packable: 2 })] });
+    render(<OrderLinesPanel row={row} />);
+    await user.click(parcelButton());
+    await screen.findByRole('columnheader', { name: 'In the parcel' });
+    const rows = screen.getAllByText('Buse 0.4').map(el => el.closest('tr'));
+    const packed = rows.filter(r => r?.closest('tbody')?.querySelector('[data-testid="pack-qty-l3"]'));
+    expect(packed).toHaveLength(1);
+    expect(screen.getAllByTestId('pack-qty-l3')).toHaveLength(1);
+    expect(packed[0]).toHaveTextContent('1 in another parcel');
+    expect(packed[0]).toHaveTextContent('To prepare · 2 in stock');
+    expect(packed[0]).toContainElement(screen.getByTestId('pack-qty-l3'));
+  });
+
   it('the bar sums units, added and removed, and names the picklist; Save is disabled until something changed', async () => {
     const user = userEvent.setup();
     server.use(content);
