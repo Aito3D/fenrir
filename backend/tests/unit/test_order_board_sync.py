@@ -127,6 +127,8 @@ class FakeZoho:
 
     async def get_salesorder(self, db, salesorder_id):
         self.calls["detail"] += 1
+        if self.slow:
+            await asyncio.sleep(0.05)
         if self.fail_detail_once:
             self.fail_detail_once = False
             raise ZohoUpstreamError("detail boom")
@@ -859,6 +861,22 @@ async def file_sessions(tmp_path):
         await conn.run_sync(Base.metadata.create_all)
     yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_operators_opening_the_same_finished_order_together_share_one_fetch(file_sessions, zoho):
+    async with file_sessions() as db:
+        await _synced(db, zoho, order(1, age=10, shipped=1))
+    before = zoho.calls["detail"]
+    zoho.slow = True
+
+    async def open_order():
+        async with file_sessions() as db:
+            return await sync.read_finished_order(db, "so1")
+
+    rows = await asyncio.gather(open_order(), open_order(), open_order())
+    assert zoho.calls["detail"] == before + 1
+    assert all(r["status"] == "finished" for r in rows)
 
 
 async def _return(value):

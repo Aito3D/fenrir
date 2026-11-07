@@ -60,6 +60,8 @@ _SO_FIELDS = (
 _PO_FIELDS = ("last_modified_time", "status", "billed_status", "received_status", "quantity_yet_to_receive")
 
 _pass_lock = asyncio.Lock()
+# shortcut: one lock per finished order ever opened, never pruned; a few hundred entries, revisit past 10k orders
+_detail_locks: dict[str, asyncio.Lock] = {}
 # time.monotonic() before which Books asked us not to call again (429).
 _rate_limited_until = 0.0
 # Set to cut the loop's sleep short (settings saved). Created by the loop
@@ -332,23 +334,33 @@ async def read_finished_order(db: AsyncSession, salesorder_id: str) -> dict:
     if doc is None:
         raise OrderNotFinished(salesorder_id)
     if doc.detail is None or _is_stale(doc):
-        if time.monotonic() < _rate_limited_until or zoho_service.calls_in_last_minute() >= CALL_CEILING:
-            raise ZohoBusy(salesorder_id)
-        before = _snapshot(doc)
-        try:
-            fetched = await zoho_service.get_salesorder(db, salesorder_id)
-        except ZohoRateLimited as e:
-            open_rate_limit_window(e)
-            raise ZohoBusy(salesorder_id) from e
-        # No pass lock here (a pass can run long): if a pass wrote this row meanwhile, its mark or newer detail
-        # must not be lost, so the fetched copy goes in marked stale and the next open fetches again.
-        await db.refresh(doc)
-        doc.detail = {**fetched, "_fetched_at": _now(), **({"_stale": True} if _snapshot(doc) != before else {})}
-        doc.pending = False
-        await db.commit()
+        # One fetch per order at a time: operators opening the same order together share the first one's
+        # copy instead of each calling Zoho. The re-read after the wait sees what the first open stored.
+        async with _detail_locks.setdefault(salesorder_id, asyncio.Lock()):
+            await db.refresh(doc)
+            if doc.detail is None or _is_stale(doc):
+                await _fetch_finished_detail(db, doc)
     rows = [order_row(doc.detail, {}, date.today())]
     await _add_links(db, rows)
     return rows[0]
+
+
+async def _fetch_finished_detail(db: AsyncSession, doc: OrderBoardDoc) -> None:
+    salesorder_id = doc.zoho_id
+    if time.monotonic() < _rate_limited_until or zoho_service.calls_in_last_minute() >= CALL_CEILING:
+        raise ZohoBusy(salesorder_id)
+    before = _snapshot(doc)
+    try:
+        fetched = await zoho_service.get_salesorder(db, salesorder_id)
+    except ZohoRateLimited as e:
+        open_rate_limit_window(e)
+        raise ZohoBusy(salesorder_id) from e
+    # No pass lock here (a pass can run long): if a pass wrote this row meanwhile, its mark or newer detail
+    # must not be lost, so the fetched copy goes in marked stale and the next open fetches again.
+    await db.refresh(doc)
+    doc.detail = {**fetched, "_fetched_at": _now(), **({"_stale": True} if _snapshot(doc) != before else {})}
+    doc.pending = False
+    await db.commit()
 
 
 async def recompute(db: AsyncSession) -> None:
