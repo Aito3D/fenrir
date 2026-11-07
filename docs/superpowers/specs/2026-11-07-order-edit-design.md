@@ -295,3 +295,58 @@ Added to the watched first live run already owed for the board's writes, on one 
 - The completed-picklist `PUT` (fallback above).
 - A Books edit of a Shopify-imported order might be refused by Books itself (the integration may lock
   them); then the feature is Books-only for direct orders and the Shopify note becomes a refusal.
+
+## As built (2026-11-07)
+
+Backend (`backend/app/services/order_board_actions.py`, routes in the order-board router, Books calls in
+`services/zoho.py`): `search_items`, `edit_lines`, `package_content`, `edit_parcel`, with `_rewrite_parcel`
+holding both Books sequences and the module flag `_PARCEL_EDIT_REPLACES = False` (False = edit the
+completed picklist and the package in place; True = delete the package, edit or recreate the picklist, create
+the package again). Frontend: `orderBoard.ts` (`startEdit`, `editChanges`, `editPayload`, `editTotal`,
+`ParcelEdit`, `parcelDiff`, `parcelLines`, `parcelWas`), `OrderEditBar`, `OrderItemSearch`, `OrderParcelEditBar`,
+`OrderParcelEditRows`, and the "Edit" / "Modifier" buttons in `OrderLinesPanel`.
+
+Deviations from the design, each deliberate:
+
+- The floor of a line is read from the recomputed row after the forced re-read, not from a separate helper.
+- `picklist_open` is judged on the stored copy of the order.
+- Parcel picklist row target = what other parcels hold packed + this parcel's new units. The base is
+  `quantity_packed`, not `quantity_picked`: after the raising step ran, picked already includes the rise, so a
+  retry would write it twice.
+- The ceiling adds back the units waiting on the parcel's own picklist row (otherwise a retry after a failed
+  package step is refused `too_many`).
+- `package_changed` also accepts a package that already equals the requested lines, so a failure after the
+  package step can be finished by repeating the request.
+- Replace mode, when Books rejects the completed picklist edit: the picklist is re-read first and is deleted only
+  if no row was boxed from it (a sibling parcel); otherwise the rejection is re-raised with the package deleted
+  and the picklist kept (guard against dropping a sibling's boxed units).
+- Retries the board cannot finish: an emptied parcel whose `delete_picklist` failed, and any replace-mode retry
+  after `delete_package`, answer `unknown_package`. Finish in Books; the state is safe (picklist >= parcels).
+- Picked-but-not-boxed units on a changed row go back to pickable (the row resets to what parcels hold).
+- An edit that takes the order off the board answers `row: null`.
+- Shopify test: the bar uses the same test as the Shopify chip (`facts.shopify_order || facts.shopify_url`),
+  not `channel === 'shopify'` (channel is Books' free text).
+- `editTotal` also counts fully shipped (non-live) lines at their quantity, so an untouched order shows `row.total`.
+- Quantity rule: the stepper's `positive` prop ignores any step or typed value at or below 0 (a 1.5 line steps to
+  0.5); the helpers still treat a quantity <= 0 as a removal and leave it out of the payload. The trash is the way
+  to remove a line.
+- A refused parcel save (400/404/409) closes the parcel editor, its `was`/`version` being stale; the order editor
+  stays open on a refusal.
+- `ParcelEdit` carries the picklist number for the bar's sentence. A line of another parcel that the shelf
+  covers shows once, as its add row, with both captions.
+- Not built: the packed group's flash after a save, and the "+a · −r" detail in the toast.
+- en reads "1 units" for one unit (the brief's copy kept); other locales use a form that reads for any number.
+  nl `was` is "(eerder n)" because the parity gate rejects "(was n)" as English.
+- Type check: `items` in `edit_lines` is annotated `dict` (basedpyright rejected `dict[str, dict]` for Books' optional ids).
+
+Still owed (nothing here was run against Books):
+
+- A browser check of both modes: no implementer looked at the page.
+- The watched first live run, on one real order:
+  - order edit: raise a line, remove a line, add an item; Books shows the three changes, `quantity_*` figures
+    untouched, total recomputed by Books; a Shopify order's shop record unchanged.
+  - parcel edit: lower a line, add a line from the shelf; Books shows the picklist and the package at the same
+    quantities (check whether `PUT` on the completed picklist was accepted; if not, flip the fallback flag); the
+    freed units show in "À préparer" after the pass.
+  - empty a parcel: both documents gone in Books; the units back in "À préparer".
+- Risks from above: `PUT /salesorders` header fields, the completed-picklist `PUT`, Books refusing Shopify-imported orders.
