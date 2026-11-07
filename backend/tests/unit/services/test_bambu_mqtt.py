@@ -5542,6 +5542,14 @@ class TestHMSUserActionFiltering:
         mqtt_client._update_state({"hms": [{"attr": 0x05000300, "code": 0x400E}]})
         assert mqtt_client.state.hms_errors == []
 
+    def test_dirty_toolhead_lens_is_downgraded_to_warning(self, mqtt_client):
+        """0C00-0100-0001-0004 (toolhead camera lens dirty) is level 1 in Bambu's
+        scheme but the print carries on; the shop shows it as a warning."""
+        mqtt_client._update_state({"hms": [{"attr": 0x0C000100, "code": 0x00010004}]})
+        (error,) = mqtt_client.state.hms_errors
+        assert error.full_code == "0C00010000010004"
+        assert error.severity == 2
+
     def test_real_layer_shift_still_passes_through(self, mqtt_client):
         """0300_4057 (Z-axis step loss) is a real fault and must NOT be filtered."""
         mqtt_client._update_state({"hms": [{"attr": 0x03000100, "code": 0x4057}]})
@@ -5580,7 +5588,14 @@ class TestHMSUserActionFiltering:
 
     @pytest.mark.parametrize(
         ("attr", "label"),
-        [(0x07002500, "AMS A"), (0x07032500, "AMS D"), (0x18002500, "AMS-HT A"), (0x18072500, "AMS-HT H")],
+        [
+            (0x07002500, "AMS A"),
+            (0x07032500, "AMS D"),
+            (0x18002500, "AMS-HT A"),
+            (0x18072500, "AMS-HT H"),
+            (0x07002600, "AMS A induction hotend"),
+            (0x18072600, "AMS-HT H induction hotend"),
+        ],
     )
     def test_ams_printer_power_drying_notice_filtered(self, mqtt_client, attr, label):
         """ "AMS A uses printer power for drying during loading/printing" is an

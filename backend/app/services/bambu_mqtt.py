@@ -855,9 +855,13 @@ _HMS_USER_ACTION_CODES: frozenset[str] = frozenset(
 # adapter. It had no text before the upstream HMS catalogue, so it was silently
 # dropped; once it gained one it became a notification and a badge each time the
 # printer re-raised it. Dropped at parse time like the cancel echoes above.
+# Part 0x26, "The induction hotend is heating up, and the drying power of AMS <X>
+# will be reduced", is the same kind of advisory (H2 series).
 _HMS_HIDDEN_FULL_CODES: frozenset[str] = frozenset(
-    [f"07{unit:02X}250000020001" for unit in range(8)]  # AMS A-H
-    + [f"18{unit:02X}250000020001" for unit in range(8)]  # AMS-HT A-H
+    f"{module}{unit:02X}{part}0000020001"
+    for module in ("07", "18")  # AMS A-H, AMS-HT A-H
+    for unit in range(8)
+    for part in ("25", "26")  # printer-power drying, induction-hotend drying
 )
 
 # "MQTT command verification failed" — the printer's authorization/authentication
@@ -872,6 +876,11 @@ _HMS_HIDDEN_FULL_CODES: frozenset[str] = frozenset(
 # (0500) and code's high half (0001); the MMMM_EEEE short code collapses it to
 # "0500_0007", which matches nothing in any catalog.
 HMS_MQTT_VERIFY_FAILED: str = "0500050000010007"
+
+# Faults Bambu files at level 1 (error) that the shop treats as level 2
+# (warning): the print carries on, only the chip label and camera-wall tint
+# change. "Toolhead Camera lens seems to be dirty" (X1 series).
+_HMS_SEVERITY_OVERRIDES: dict[str, int] = {"0C00010000010004": 2}
 
 
 @dataclass
@@ -5401,7 +5410,7 @@ class BambuMQTTClient:
                                 module=module,
                                 # No fallback: 0 is Bambu's "invalid" level, and
                                 # promoting it would render it as a fault.
-                                severity=severity,
+                                severity=_HMS_SEVERITY_OVERRIDES.get(full_code, severity),
                                 actions=actions,
                                 job_id=self.state.subtask_id,
                                 full_code=full_code,
