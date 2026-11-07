@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="fr" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modifier une commande et un colis · maquette</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  bg: '#0c1016', surf: '#141b23', line: '#212c37', ink: '#e9eff6', sub: '#93a4b6', acc: '#14b8a6',
+} } } };
+</script>
+<style>
+  html { font-size: 14.4px; }
+  body { background: #0c1016; color: #e9eff6; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  [data-lucide] { width: 1em; height: 1em; }
+  .seg[aria-pressed=true] { background: #14b8a6; color: #0c1016; }
+  .row-grid { display: grid; align-items: center; column-gap: 12px; }
+  .spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
+  .panel { animation: open .16s ease-out; } @keyframes open { from { opacity: 0; transform: translateY(-3px); } }
+  .flash { animation: flash 1.6s ease-out; } @keyframes flash { from { background: rgba(59,130,246,.35); } }
+  .toast { animation: toast .2s ease-out; } @keyframes toast { from { opacity: 0; transform: translateY(8px); } }
+  @media (prefers-reduced-motion: reduce) { .panel, .flash, .toast { animation: none; } }
+  .qty { appearance: textfield; -moz-appearance: textfield; } .qty::-webkit-inner-spin-button, .qty::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .strike { text-decoration: line-through; opacity: .45; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- guided tour: not part of the app -->
+<div class="sticky top-0 z-10 border-b border-line bg-surf">
+  <div class="mx-auto max-w-[1300px] space-y-2 px-4 py-3">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div class="text-sm"><span class="font-semibold">Modifier une commande, puis un colis</span> <span class="text-sub">· maquette, données fictives, rien n'est envoyé à Zoho</span></div>
+      <span class="ml-auto flex items-center gap-2">
+        <button data-next class="inline-flex items-center gap-1.5 rounded-md bg-acc px-3 py-1.5 text-xs font-semibold text-bg disabled:opacity-40">Étape suivante <i data-lucide="arrow-right"></i></button>
+        <button data-reset class="rounded-md border border-line px-2.5 py-1.5 text-xs text-sub hover:text-ink">Recommencer</button>
+      </span>
+    </div>
+    <ol id="steps" class="flex flex-wrap items-center gap-1.5 text-xs"></ol>
+    <div id="hint" class="text-xs text-sub"></div>
+  </div>
+</div>
+
+<main class="mx-auto max-w-[1300px] space-y-5 p-4 sm:p-6">
+  <header class="flex flex-wrap items-center justify-between gap-3">
+    <h1 class="flex items-center gap-3 text-2xl font-bold"><i data-lucide="package-check" class="text-acc"></i> Commandes</h1>
+    <div class="text-sm text-sub">Mis à jour 7 nov. 2026, 09:40</div>
+  </header>
+
+  <div class="overflow-x-auto"><div id="list" class="min-w-[62rem] space-y-2"></div></div>
+
+  <details open class="rounded-xl border border-line bg-surf px-4 py-3 text-sm">
+    <summary class="cursor-pointer font-medium">Ce que la maquette propose</summary>
+    <div class="mt-3 grid gap-4 text-sub lg:grid-cols-2">
+      <div>
+        <div class="font-semibold text-ink">1 · Modifier la commande (bandeau « À préparer »)</div>
+        <ul class="mt-1.5 list-disc space-y-1 pl-5">
+          <li>Un bouton <span class="text-ink">Modifier</span> dans le bandeau vert. Les lignes à préparer reçoivent un compteur de quantité et une corbeille ; une ligne « Ajouter un article » cherche dans les articles Zoho Books (nom ou SKU, stock affiché).</li>
+          <li>Une quantité ne descend jamais sous ce qui est déjà emballé, expédié ou facturé ; une telle ligne ne peut pas être retirée. Les groupes bleu et gris ne bougent pas.</li>
+          <li>Le total, la pastille de paiement et « Reste à payer » suivent en direct. Si le client a payé plus que le nouveau total, le surplus reste en avoir chez Zoho.</li>
+          <li><span class="text-ink">Enregistrer</span> envoie la commande entière à Zoho Books (<span class="font-mono text-xs">PUT /salesorders</span>, toutes les lignes : celles qu'on omet sont supprimées, comme pour un prélèvement). Fenrir relit la commande ensuite.</li>
+          <li>Pas de modification tant qu'un prélèvement est ouvert : il faut d'abord créer le colis ou annuler le prélèvement. Une commande Shopify prévient que la boutique n'est pas mise à jour.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="font-semibold text-ink">2 · Modifier le colis (bandeau « Emballé »)</div>
+        <ul class="mt-1.5 list-disc space-y-1 pl-5">
+          <li>Un bouton <span class="text-ink">Modifier</span> à côté de « Remettre le colis », pour un colis pas encore remis. Les lignes du colis reçoivent un compteur ; les lignes « À préparer » en stock s'ajoutent en dessous, à 0 par défaut.</li>
+          <li>Retirer une unité la renvoie dans « À préparer » ; en ajouter une la prend sur le stock, jusqu'à ce que l'étagère couvre. Un colis vidé est supprimé.</li>
+          <li><span class="text-ink">Enregistrer le colis</span> : Fenrir met d'abord le prélèvement du colis aux nouvelles quantités (<span class="font-mono text-xs">PUT /picklists</span>), puis le colis (<span class="font-mono text-xs">PUT /packages</span>) ; les deux restent cohérents dans Zoho. Si Zoho refuse de toucher un prélèvement terminé, l'alternative est de supprimer le colis et de recréer prélèvement + colis en une fois, même résultat pour l'opérateur.</li>
+          <li>Un colis déjà remis ou expédié ne se modifie plus (il est facturé).</li>
+        </ul>
+      </div>
+    </div>
+    <p class="mt-3 text-xs text-sub">Dans l'app, les deux enregistrements écrivent dans Zoho. Les corps de requête n'ont pas encore été testés sur une vraie commande, comme les autres écritures du tableau.</p>
+  </details>
+</main>
+
+<div id="toast" class="pointer-events-none fixed bottom-5 left-1/2 z-30 -translate-x-1/2"></div>
+
+<script>
+const TODAY = '2026-11-07', NOW = '09:40', ME = 'Paul';
+const day = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d, 12); };
+const short = s => day(s).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+const long = s => day(s).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+const num = n => n.toLocaleString('fr-FR').replace(/[  ]/g, ' ');
+const money = n => num(n) + ' FCFP';
+const units = n => `${n} unité${n > 1 ? 's' : ''}`;
+
+const DONE = { label: 'Terminée', icon: 'check-check', text: 'text-sub', soft: 'bg-white/5' };
+const STATUS = {
+  to_ship: { label: 'À expédier', icon: 'package-check', text: 'text-green-400', soft: 'bg-green-500/10' },
+  partial: { label: 'Partielle', icon: 'package-open', text: 'text-blue-400', soft: 'bg-blue-500/10' },
+  incoming: { label: 'En arrivage', icon: 'truck', text: 'text-yellow-400', soft: 'bg-yellow-400/10' },
+  to_order: { label: 'À commander', icon: 'shopping-cart', text: 'text-red-400', soft: 'bg-red-500/20' },
+};
+// Zoho Books items the "Ajouter un article" search finds (name, SKU, price, stock on hand).
+const ITEMS = [
+  ['Bambu Lab PLA Basic Noir 1 kg', 'BL-PLA-BK-1K', 3400, 12], ['Bambu Lab PLA Basic Blanc 1 kg', 'BL-PLA-WH-1K', 3400, 7],
+  ['Bambu Lab PLA Matte Rouge 1 kg', 'BL-PLA-MT-RD-1K', 3600, 3], ['Bambu Lab AMS Lite', 'BL-AMS-LITE', 34000, 2],
+  ['Bambu Lab Buse 0,4 acier trempé', 'BL-NOZ-04-HS', 4900, 5], ['Bambu Lab Plateau texturé PEI A1', 'BL-PLATE-PEI-A1', 6200, 4],
+  ['eSUN PETG Blanc 1 kg', 'ES-PETG-WH-1K', 3200, 2], ['Polymaker PolyLite ASA Gris 1 kg', 'PM-ASA-GY-1K', 4800, 0],
+  ['SUNLU PETG Noir 1 kg', 'SNL-PTG-02', 2900, 9], ['Colle PVA bâton Bambu', 'BL-GLUE', 900, 20],
+].map(([name, sku, price, stock]) => ({ name, sku, price, stock }));
+// line: ordered qty, already shipped, already in a package, stock left for this order, why it is short
+const L = (id, name, sku, qty, price, o = {}) => ({ id, name, sku, qty, price, shipped: 0, packed: 0, invoiced: 0, stock: qty, short: 'po', ...o });
+const INV = (number, date, total, balance = 0) => ({ number, date, total, balance });
+const SEED = () => [
+  { number: 'SO-00441', customer: 'Atelier Moana', date: '2026-11-06', age: 1, status: 'partial', credit: 30000, ref: ['Shopify', '#1052'], pickup: true, fresh: 'new',
+    contact: { name: 'Hina Teriitahi', phone: '87 11 22 33' }, packages: [], invoices: [],
+    lines: [L('a', 'Bambu Lab PLA Basic Noir 1 kg', 'BL-PLA-BK-1K', 6, 3400), L('b', 'Bambu Lab AMS Lite', 'BL-AMS-LITE', 1, 34000), L('c', 'eSUN PETG Blanc 1 kg', 'ES-PETG-WH-1K', 4, 3200, { stock: 2 })] },
+  { number: 'SO-00412', customer: 'Lycée Polyvalent de Taravao', date: '2026-09-12', age: 56, status: 'to_order', credit: 0, ref: ['Devis', 'DEV26-2604'],
+    contact: { name: 'Intendance', phone: '40 54 71 00' }, packages: [], invoices: [],
+    lines: [L('a', 'Bambu Lab A1 mini', 'BL-A1M', 4, 34000, { stock: 0, short: 'order' })] },
+  { number: 'SO-00421', customer: 'Tahiti Nautic Center', date: '2026-10-09', age: 29, status: 'partial', credit: 66080, ref: ['Devis', 'DEV26-2671'], pickup: true,
+    contact: { name: 'Teva Marchand', phone: '87 22 45 67' }, packages: [{ number: 'PKG-00027', date: '2026-10-12', shipped: true, pickup: true, items: { c: 4 } }], invoices: [INV('FAC-2026-0412', '2026-10-12', 12800)],
+    lines: [L('a', 'Bambu Lab AMS Lite', 'BL-AMS-LITE', 5, 34000), L('b', 'Polymaker PolyLite ASA Gris 1 kg', 'PM-ASA-GY-1K', 3, 4800, { stock: 0 }), L('c', 'eSUN PETG Blanc 1 kg', 'ES-PETG-WH-1K', 4, 3200, { shipped: 4, invoiced: 4, stock: 0 })] },
+  { number: 'SO-00433', customer: 'Collège de Paea', date: '2026-11-02', age: 5, status: 'to_ship', credit: 10400, ref: ['Devis', 'DEV26-2702'], pickup: true,
+    contact: { name: 'Gestionnaire', phone: '40 53 31 26' }, packages: [{ number: 'PKG-00030', date: '2026-11-04', items: { a: 3 }, picklist: 'PL-00011' }], invoices: [],
+    lines: [L('a', 'Polymaker PolyLite ASA Gris 1 kg', 'PM-ASA-GY-1K', 3, 4800, { packed: 3, stock: 0 }), L('b', 'eSUN PETG Blanc 1 kg', 'ES-PETG-WH-1K', 2, 3200)],
+    picklists: [{ number: 'PL-00011', date: '2026-11-04', items: { a: 3 }, done: true }] },
+  { number: 'SO-00435', customer: 'Mana Robotics', date: '2026-11-04', age: 3, status: 'incoming', credit: 0, ref: ['Shopify', '#1047'], pickup: true,
+    contact: { name: 'Rahiti Chung', phone: '87 78 44 02' }, packages: [], invoices: [INV('FAC-2026-0444', '2026-11-04', 108600)],
+    lines: [...['Blanc', 'Noir', 'Gris'].map((c, i) => L('p' + i, `SUNLU PETG ${c} 1 kg`, `SNL-PTG-0${i + 1}`, 2, 2900, { invoiced: 2 })), L('z', 'Bambu Lab AMS Lite', 'BL-AMS-LITE', 2, 34000, { invoiced: 2, stock: 0 })] },
+].map(o => ({ picklists: [], ...o, total: o.lines.reduce((n, l) => n + l.qty * l.price, 0) }));
+let ORDERS = SEED(), nextPkg = 31, nextPl = 13;
+
+// The order the guided tour follows.
+const TRACK = 'SO-00441';
+const ui = { open: new Set([TRACK]), flow: {} };
+const [ho, hs] = location.hash.slice(1).split(',');
+if (ho) ui.open = new Set([ho]);
+
+const rem = l => l.qty - l.shipped - l.packed;
+const ready = l => Math.min(rem(l), l.stock);
+const locked = l => Math.max(l.shipped + l.packed, l.invoiced); // the ordered quantity can never go below this
+const sum = (o, f) => o.lines.reduce((n, l) => n + f(l), 0);
+const flow = o => ui.flow[o.number] ??= { phase: 'idle', qty: {} };
+const paid = o => o.invoices.reduce((n, i) => n + i.total - i.balance, 0) + o.credit;
+const picked = o => sum(o, l => flow(o).qty[l.id] ?? 0);
+const openPl = o => o.picklists.find(p => !p.done);
+const find = n => ORDERS.find(o => o.number === n);
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+// ---- editing the order -------------------------------------------------------------------------
+// e.qty: new ordered quantity per existing line; e.gone: removed line ids; e.added: new lines; e.q: the search text.
+function startEdit(o) {
+  const f = flow(o);
+  Object.assign(f, { phase: 'edit', e: { qty: Object.fromEntries(o.lines.map(l => [l.id, l.qty])), gone: new Set(), added: [], q: '', pick: null } });
+  ui.open.add(o.number);
+}
+function editTotal(o) {
+  const { e } = flow(o);
+  return o.lines.reduce((n, l) => n + (e.gone.has(l.id) ? 0 : (e.qty[l.id] ?? l.qty) * l.price), 0) + e.added.reduce((n, a) => n + a.qty * a.price, 0);
+}
+function changes(o) {
+  const { e } = flow(o), out = [];
+  for (const l of o.lines) {
+    if (e.gone.has(l.id)) out.push({ kind: 'gone', text: `retire ${l.name}` });
+    else if (e.qty[l.id] !== l.qty) out.push({ kind: 'qty', text: `${l.name} : ${l.qty} → ${e.qty[l.id]}` });
+  }
+  for (const a of e.added) out.push({ kind: 'add', text: `ajoute ${a.name} × ${a.qty}` });
+  return out;
+}
+function search(o) {
+  const { e } = flow(o), q = e.q.trim().toLowerCase();
+  if (q.length < 2) return [];
+  const taken = new Set([...o.lines.map(l => l.sku), ...e.added.map(a => a.sku)]);
+  return ITEMS.filter(i => !taken.has(i.sku) && (i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q))).slice(0, 5);
+}
+function addItem(o, sku) {
+  const { e } = flow(o), it = ITEMS.find(i => i.sku === sku);
+  e.added.push({ id: 'n' + sku, ...it, qty: 1 });
+  e.q = '';
+}
+// Step 3: the whole order goes to Zoho Books; left-out lines are removed there.
+function saveEdit(o) {
+  const { e } = flow(o);
+  o.lines = o.lines.filter(l => !e.gone.has(l.id));
+  for (const l of o.lines) { const q = e.qty[l.id]; l.stock = Math.max(0, l.stock + (q - l.qty)); l.qty = q; }
+  for (const a of e.added) o.lines.push(L(a.id, a.name, a.sku, a.qty, a.price, { stock: Math.min(a.qty, a.stock) }));
+  o.total = sum(o, l => l.qty * l.price);
+  o.status = sum(o, ready) === sum(o, rem) ? 'to_ship' : sum(o, ready) ? 'partial' : 'incoming';
+  o.fresh = 'edited';
+  ui.flow[o.number] = { phase: 'idle', qty: {} };
+}
+function doSave(o) {
+  const n = changes(o).length;
+  flow(o).phase = 'saving';
+  render();
+  setTimeout(() => { saveEdit(o); render(); toast(`Commande <span class="font-mono text-acc">${o.number}</span> mise à jour dans Zoho Books · ${n} modification${n > 1 ? 's' : ''} · total ${money(o.total)}`); }, 900);
+}
+
+// ---- editing a parcel --------------------------------------------------------------------------
+// p.q: units per line in the parcel after the edit (lines of the parcel, then "À préparer" lines in stock at 0).
+function startPkg(o, number) {
+  const pkg = o.packages.find(p => p.number === number), q = { ...pkg.items };
+  for (const l of o.lines) if (!(l.id in q) && ready(l) > 0) q[l.id] = 0;
+  Object.assign(flow(o), { phase: 'pkg', pkg: number, p: { q } });
+  ui.open.add(o.number);
+}
+const pkgMax = (o, pkg, l) => (pkg.items[l.id] ?? 0) + ready(l); // what is in the box already, plus what the shelf still covers
+function pkgDiff(o) {
+  const f = flow(o), pkg = o.packages.find(p => p.number === f.pkg);
+  let added = 0, removed = 0, n = 0;
+  for (const [id, q] of Object.entries(f.p.q)) { const was = pkg.items[id] ?? 0; n += q; if (q > was) added += q - was; else removed += was - q; }
+  return { added, removed, n, was: Object.values(pkg.items).reduce((a, b) => a + b, 0) };
+}
+function savePkg(o) {
+  const f = flow(o), pkg = o.packages.find(p => p.number === f.pkg), pl = o.picklists.find(p => p.number === pkg.picklist), items = {};
+  for (const [id, q] of Object.entries(f.p.q)) {
+    const l = o.lines.find(x => x.id === id), d = q - (pkg.items[id] ?? 0);
+    l.packed += d; l.stock -= d;
+    if (q > 0) items[id] = q;
+  }
+  if (Object.keys(items).length) { pkg.items = items; if (pl) Object.assign(pl, { items: { ...items }, edited: true }); o.fresh = 'packed'; }
+  else { o.packages = o.packages.filter(p => p !== pkg); o.picklists = o.picklists.filter(p => p !== pl); }
+  ui.flow[o.number] = { phase: 'idle', qty: {} };
+  return Object.keys(items).length > 0;
+}
+function doSavePkg(o) {
+  const f = flow(o), d = pkgDiff(o), number = f.pkg;
+  f.phase = 'pkgsaving';
+  render();
+  setTimeout(() => {
+    const kept = savePkg(o);
+    render();
+    toast(kept ? `Colis <span class="font-mono text-acc">${number}</span> mis à jour dans Zoho Books · ${units(d.n)}${d.added ? ` · +${d.added}` : ''}${d.removed ? ` · −${d.removed} de retour dans À préparer` : ''}` : `Colis <span class="font-mono text-acc">${number}</span> supprimé dans Zoho Books · ${units(d.removed)} de retour dans À préparer`);
+  }, 900);
+}
+
+// ---- the shortcut from the first mockup: picklist, then parcel (not the subject here) --------------------
+function pickAndPack(o, take) {
+  const items = {};
+  for (const l of o.lines) { const q = Math.min(take[l.id] ?? 0, ready(l)); if (q > 0) items[l.id] = q; }
+  const pl = { number: 'PL-000' + nextPl++, date: TODAY, items, done: true };
+  for (const [id, q] of Object.entries(items)) { const l = o.lines.find(x => x.id === id); l.packed += q; l.stock -= q; }
+  o.picklists.push(pl);
+  o.packages.push({ number: 'PKG-000' + nextPkg++, date: TODAY, items: { ...items }, picklist: pl.number });
+  o.fresh = 'packed';
+  return o.packages.at(-1);
+}
+
+// ---- rendering ---------------------------------------------------------------------------------
+const sb = 'grid h-6 w-6 place-items-center rounded border border-line text-sub hover:text-ink disabled:opacity-30 disabled:hover:text-sub';
+// One quantity control: − field + / max. `key` tells the click handler which figure it drives.
+const stepper = (key, value, min, max, label, busy, tone = 'green') => `<span class="inline-flex items-center gap-1">
+    <button type="button" data-step="${key},-1" ${busy || value <= min ? 'disabled' : ''} class="${sb}" aria-label="Un de moins"><i data-lucide="minus"></i></button>
+    <input type="number" data-qty="${key}" value="${value}" min="${min}" ${max !== null ? `max="${max}"` : ''} ${busy ? 'disabled' : ''} aria-label="${label}" class="qty h-6 w-12 rounded border border-line bg-bg px-1 text-center text-sm font-semibold tabular-nums focus:border-${tone}-500 focus:outline-none">
+    <button type="button" data-step="${key},1" ${busy || (max !== null && value >= max) ? 'disabled' : ''} class="${sb}" aria-label="Un de plus"><i data-lucide="plus"></i></button>${max !== null ? `<span class="text-xs text-sub">/ ${max}</span>` : ''}</span>`;
+
+function rowHtml(o) {
+  const total = sum(o, l => l.qty), shipped = sum(o, l => l.shipped), packed = sum(o, l => l.packed), rdy = sum(o, ready), left = total - shipped - packed;
+  const s = shipped === total ? DONE : STATUS[o.status], w = n => `width:${(n / total) * 100}%`, open = ui.open.has(o.number);
+  const age = o.age > 45 ? 'bg-red-500/20 text-red-400' : o.age > 20 ? 'bg-yellow-400/10 text-yellow-400' : 'bg-line/60 text-sub';
+  const pct = Math.min(100, Math.floor((paid(o) * 100) / o.total)), waiting = o.packages.find(p => !p.shipped);
+  const pay = pct >= 100 ? ['circle-check', 'Payée', 'bg-green-500/10 text-green-400', 0] : pct > 0 ? ['circle-dot-dashed', `${pct} % payé`, 'bg-white/5 text-white', pct] : ['circle-dashed', 'Impayée', 'bg-white/5 text-sub', 0];
+  return `<div id="row-${o.number}" class="overflow-clip rounded-xl border ${o.number === TRACK ? 'border-acc/60' : 'border-line'} bg-surf ${o.fresh === 'new' || o.fresh === 'edited' ? 'flash' : ''}">
+    <div role="button" tabindex="0" data-open="${o.number}" aria-expanded="${open}" class="row-grid w-full cursor-pointer px-4 py-3 text-left hover:bg-line/30"
+      style="grid-template-columns:6.5rem minmax(0,1fr) 3.5rem minmax(11rem,16rem) 8.5rem 9.5rem 7.5rem 2rem 1.25rem">
+      <span class="font-mono text-sm font-semibold">${o.number}</span>
+      <span class="min-w-0"><span class="block truncate">${o.customer}</span><span class="block text-xs text-sub">${long(o.date)}${openPl(o) ? ` · <span class="text-acc">En préparation</span>` : o.age <= 1 && !o.picklists.length ? ` · <span class="text-acc">Nouvelle</span>` : ''}</span></span>
+      <span class="justify-self-start rounded-md px-2 py-0.5 text-xs ${age}">${o.age} j</span>
+      <span>
+        <span class="flex h-2 overflow-hidden rounded-full bg-bg"><span class="bg-neutral-500" style="${w(shipped)}"></span><span class="bg-blue-500" style="${w(packed)}"></span><span class="bg-green-500" style="${w(rdy)}"></span><span class="bg-yellow-500" style="${w(left - rdy)}"></span></span>
+        <span class="mt-1 flex justify-between gap-2 whitespace-nowrap text-[11px] text-sub"><span>${shipped}/${total} expédiés${packed ? ` · ${packed} emballés` : ''}</span><span>${left ? Math.round((rdy / left) * 100) + ' % prêt' : packed ? 'tout est emballé' : 'passe dans Terminées'}</span></span>
+      </span>
+      <span class="inline-flex items-center gap-1.5 justify-self-start rounded-full px-2.5 py-1 text-xs ${s.soft} ${s.text}"><i data-lucide="${s.icon}"></i>${s.label}</span>
+      <span class="relative flex w-[9.5rem] items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-full px-2.5 py-1 text-xs ${pay[2]}"><span class="absolute inset-y-0 left-0 bg-green-500/40" style="width:${pay[3]}%"></span><i data-lucide="${pay[0]}" class="relative"></i><span class="relative">${pay[1]}</span></span>
+      <span class="text-right text-sm tabular-nums">${money(o.total)}</span>
+      ${rdy ? `<button type="button" data-noop title="Préparer · ${units(rdy)} en stock (première maquette)" class="grid h-8 w-8 place-items-center rounded-md border border-line text-sub hover:border-acc hover:text-acc"><i data-lucide="clipboard-list"></i></button>` : waiting ? `<button type="button" data-noop title="Remettre le colis · ${waiting.number} (première maquette)" class="grid h-8 w-8 place-items-center rounded-md border border-line text-sub hover:border-blue-400 hover:text-blue-400"><i data-lucide="hand-helping"></i></button>` : '<span></span>'}
+      <i data-lucide="chevron-down" class="text-sub transition-transform ${open ? 'rotate-180' : ''}"></i>
+    </div>
+    ${open ? panelHtml(o) : ''}
+  </div>`;
+}
+
+const btn = (data, icon, label, cls = 'border border-line bg-bg/60 text-ink hover:border-acc hover:text-acc') =>
+  `<button type="button" ${data} class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs ${cls}"><i data-lucide="${icon}"></i>${label}</button>`;
+
+// The "À préparer" band: the first mockup's buttons, plus "Modifier".
+function prepActions(o) {
+  const f = flow(o), rdy = sum(o, ready), pl = openPl(o);
+  if (f.phase !== 'idle') return '';
+  const edit = pl
+    ? `<span class="inline-flex items-center gap-1.5 text-[11px] text-sub" title="Créez le colis de ${pl.number} ou annulez-le pour modifier la commande"><i data-lucide="lock"></i>Prélèvement ${pl.number} ouvert</span>`
+    : btn(`data-edit="${o.number}"`, 'pencil', 'Modifier');
+  return `<span class="ml-auto flex flex-wrap items-center gap-2">${edit}
+    ${pl ? btn(`data-noop`, 'package-plus', 'Créer le colis', 'bg-green-500 font-semibold text-bg hover:bg-green-400') : rdy ? btn(`data-noop`, 'clipboard-list', 'Préparer', 'bg-green-500 font-semibold text-bg hover:bg-green-400') : '<span class="text-[11px] text-sub">Rien en stock à préparer pour l\'instant</span>'}</span>`;
+}
+
+function panelHtml(o) {
+  const f = flow(o), editing = f.phase === 'edit' || f.phase === 'saving', saving = f.phase === 'saving';
+  const pkgEdit = f.phase === 'pkg' || f.phase === 'pkgsaving', pkgSaving = f.phase === 'pkgsaving', ep = pkgEdit && o.packages.find(p => p.number === f.pkg);
+  const todo = o.lines.filter(l => rem(l) > 0 || (editing && f.e.gone.has(l.id))), packed = o.lines.filter(l => l.packed > 0), shipped = o.lines.filter(l => l.shipped > 0);
+  const band = (icon, label, n, cls, name, extra = '') => `<tr><th colspan="5" class="pb-1 pt-3 text-left font-normal"><div class="flex flex-wrap items-center gap-2 rounded-md px-3 py-1.5 text-xs ${cls}">
+    <i data-lucide="${icon}" class="${name}"></i><span class="font-semibold uppercase tracking-wide ${name}">${label}</span>${n === null ? "" : `<span class="rounded-full bg-bg/60 px-2 py-0.5 text-[11px] tabular-nums text-sub">${units(n)}</span>`}${extra}</div></th></tr>`;
+  const prod = l => `<div>${l.name}</div><div class="font-mono text-xs text-sub">${l.sku}</div>`;
+  const dash = '<td class="text-right text-sub">–</td>';
+
+  // --- À préparer: plain, or in edit mode (ordered quantity + trash + add row) ---
+  const todoRows = todo.map((l, i) => {
+    const gone = editing && f.e.gone.has(l.id), r = ready(l), sh = rem(l) - r;
+    const state = sh === 0 ? '<span class="text-green-400">Prêt</span>' : l.short === 'order' ? '<span class="text-red-400">À commander</span>' : '<span class="text-yellow-400">En arrivage</span>';
+    const qtyCell = editing
+      ? gone ? `<span class="strike">${l.qty}</span>` : `${stepper(`e,${o.number},${l.id}`, f.e.qty[l.id], locked(l), null, `Quantité commandée · ${l.name}`, saving)}${locked(l) ? `<span class="ml-1.5 text-[10px] text-sub" title="Déjà emballé, expédié ou facturé">min ${locked(l)}</span>` : ''}`
+      : `${rem(l)}${rem(l) < l.qty ? `<span class="ml-1 text-xs text-sub">sur ${l.qty}</span>` : ''}`;
+    const trash = editing ? `<td class="whitespace-nowrap pl-4">${gone
+      ? `<button type="button" data-undo="${o.number},${l.id}" ${saving ? 'disabled' : ''} class="inline-flex items-center gap-1 text-xs text-sub hover:text-ink"><i data-lucide="undo-2"></i>Rétablir</button>`
+      : `<button type="button" data-gone="${o.number},${l.id}" ${saving || locked(l) ? 'disabled' : ''} title="${locked(l) ? 'Des unités sont déjà emballées, expédiées ou facturées' : 'Retirer la ligne'}" class="grid h-7 w-7 place-items-center rounded-md text-sub hover:bg-red-500/15 hover:text-red-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-sub"><i data-lucide="trash-2"></i></button>`}</td>` : `<td class="pl-4">${state}</td>`;
+    return `<tr class="${i ? 'border-t border-line/60' : ''} ${gone ? 'opacity-60' : ''}"><td class="border-l-2 border-line py-2 pl-4 pr-3 ${gone ? 'strike' : ''}">${prod(l)}</td>
+      <td class="whitespace-nowrap text-right tabular-nums">${qtyCell}</td>
+      <td class="text-right tabular-nums ${sh === 0 ? 'text-green-400' : ''}">${l.stock}</td><td class="text-right tabular-nums ${sh ? 'text-yellow-400' : 'text-sub'}">${sh ? '−' + sh : '–'}</td>${trash}</tr>`;
+  }).join('');
+  const addedRows = editing ? f.e.added.map(a => `<tr class="border-t border-line/60 flash"><td class="border-l-2 border-acc py-2 pl-4 pr-3">${prod(a)}<span class="mt-0.5 inline-block rounded bg-acc/15 px-1.5 py-0.5 text-[10px] text-acc">Nouvelle ligne · ${money(a.price)}</span></td>
+      <td class="whitespace-nowrap text-right tabular-nums">${stepper(`a,${o.number},${a.id}`, a.qty, 1, null, `Quantité · ${a.name}`, saving)}</td>
+      <td class="text-right tabular-nums ${a.stock >= a.qty ? 'text-green-400' : ''}">${a.stock}</td><td class="text-right tabular-nums ${a.stock < a.qty ? 'text-yellow-400' : 'text-sub'}">${a.stock < a.qty ? '−' + (a.qty - a.stock) : '–'}</td>
+      <td class="pl-4"><button type="button" data-unadd="${o.number},${a.id}" ${saving ? 'disabled' : ''} class="grid h-7 w-7 place-items-center rounded-md text-sub hover:bg-red-500/15 hover:text-red-400"><i data-lucide="trash-2"></i></button></td></tr>`).join('') : '';
+  const hits = editing ? search(o) : [];
+  const addRow = editing ? `<tr class="border-t border-line/60"><td colspan="5" class="py-2 pl-4">
+      <div class="relative max-w-md"><div class="flex items-center gap-2 rounded-md border border-dashed border-line bg-bg/40 px-2.5 py-1.5 text-xs focus-within:border-acc"><i data-lucide="search" class="text-sub"></i>
+        <input type="search" data-search="${o.number}" value="${esc(f.e.q)}" ${saving ? 'disabled' : ''} placeholder="Ajouter un article · nom ou SKU dans Zoho Books" aria-label="Ajouter un article" class="w-full bg-transparent text-sm text-ink placeholder:text-sub focus:outline-none"></div>
+        ${hits.length ? `<ul class="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-md border border-line bg-surf shadow-xl">${hits.map(h => `<li><button type="button" data-add="${o.number},${h.sku}" class="flex w-full items-center gap-3 px-3 py-1.5 text-left text-sm hover:bg-line/50"><span class="min-w-0 flex-1"><span class="block truncate">${h.name}</span><span class="font-mono text-xs text-sub">${h.sku}</span></span><span class="tabular-nums text-xs ${h.stock ? 'text-green-400' : 'text-yellow-400'}">${h.stock} en stock</span><span class="tabular-nums text-xs text-sub">${money(h.price)}</span></button></li>`).join('')}</ul>` : f.e.q.trim().length >= 2 ? '<div class="absolute left-0 right-0 top-full z-10 mt-1 rounded-md border border-line bg-surf px-3 py-1.5 text-xs text-sub">Aucun article</div>' : ''}
+      </div></td></tr>` : '';
+  const ch = editing ? changes(o) : [], newTotal = editing ? editTotal(o) : o.total;
+  const editBar = editing ? `<tr><td colspan="5" class="pt-2"><div class="space-y-2 rounded-md border border-acc/40 bg-acc/10 px-3 py-2 text-xs">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <i data-lucide="pencil" class="text-acc"></i>
+        <span>${ch.length ? `<span class="font-semibold text-white">${ch.length} modification${ch.length > 1 ? 's' : ''}</span> <span class="text-sub">· ${ch.map(c => c.text).join(' · ')}</span>` : '<span class="text-sub">Changez une quantité, retirez une ligne ou ajoutez un article.</span>'}</span>
+        <span class="ml-auto whitespace-nowrap tabular-nums">Total <span class="font-semibold text-white">${money(newTotal)}</span>${newTotal !== o.total ? ` <span class="text-sub">(était ${money(o.total)})</span>` : ''}</span>
+      </div>
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-acc/20 pt-2">
+        <i data-lucide="book-open" class="text-acc"></i>
+        <span class="text-sub">Enregistre la commande entière dans Zoho Books, puis la relit.${o.ref[0] === 'Shopify' ? ' <span class="text-yellow-400">Commande Shopify : la boutique n’est pas mise à jour.</span>' : ''}${paid(o) > newTotal ? ` <span class="text-yellow-400">Le client a payé ${money(paid(o) - newTotal)} de trop : reste en avoir.</span>` : ''}</span>
+        <span class="ml-auto flex items-center gap-2">
+          <button type="button" data-cancel="${o.number}" ${saving ? 'disabled' : ''} class="rounded-md px-2.5 py-1 text-sub hover:text-ink">Annuler</button>
+          <button type="button" data-save="${o.number}" ${saving || !ch.length ? 'disabled' : ''} class="inline-flex items-center gap-1.5 rounded-md bg-acc px-3 py-1 font-semibold text-bg hover:bg-teal-400 disabled:opacity-50">${saving ? '<i data-lucide="loader-circle" class="spin"></i>Enregistrement dans Zoho…' : '<i data-lucide="check"></i>Enregistrer'}</button>
+        </span>
+      </div></div></td></tr>` : '';
+
+  // --- Emballé: plain, or one parcel in edit mode (parcel quantity per line + "À préparer" lines in stock) ---
+  const waiting = o.packages.filter(p => !p.shipped);
+  const pkgBtns = pkgEdit ? '' : `<span class="ml-auto flex flex-wrap items-center gap-2">${waiting.map(p => `${btn(`data-pkg="${o.number},${p.number}"`, 'pencil', `Modifier${waiting.length > 1 ? ' · ' + p.number : ''}`)}${btn('data-noop', 'hand-helping', `Remettre le colis${waiting.length > 1 ? ' · ' + p.number : ''}`, 'border border-line bg-bg/60 text-ink hover:border-blue-400 hover:text-blue-400')}`).join('')}</span>`;
+  const pkgChip = p => `<a href="#" data-noop title="Ouvrir le colis dans Zoho Books (lien de démonstration)" class="inline-flex items-center gap-1 rounded-full border border-line bg-bg/40 px-2 py-0.5 text-[10px] ${p.shipped ? 'text-sub' : ep && ep !== p ? 'text-sub' : 'text-blue-400'} hover:border-acc/60">${p.number} · ${p.shipped ? (p.pickup ? 'remis' : 'expédié') : 'emballé'} le ${short(p.date)}${p.picklist ? ` · ${p.picklist}` : ''}<i data-lucide="external-link" class="opacity-60"></i></a>`;
+  const inPkg = l => o.packages.filter(p => !p.shipped && p.items[l.id]).map(p => p.number);
+  const packedRows = packed.map((l, i) => {
+    const mine = ep && l.id in f.p.q, q = mine ? f.p.q[l.id] : l.packed, max = mine ? pkgMax(o, ep, l) : null;
+    const was = mine ? ep.items[l.id] ?? 0 : null, delta = mine ? q - was : 0;
+    const otherPkgs = ep ? l.packed - (ep.items[l.id] ?? 0) : 0;
+    return `<tr class="${i ? 'border-t border-line/60' : ''} ${ep && !mine ? 'opacity-40' : ''}"><td class="border-l-2 border-blue-500/60 py-2 pl-4 pr-3">${prod(l)}${otherPkgs ? `<span class="text-[10px] text-sub">${otherPkgs} dans un autre colis</span>` : ''}</td>
+      <td class="whitespace-nowrap text-right tabular-nums">${mine ? `${stepper(`p,${o.number},${l.id}`, q, 0, max, `Dans le colis · ${l.name}`, pkgSaving, 'blue')}${delta ? `<span class="ml-1.5 rounded px-1.5 py-0.5 text-[10px] ${delta > 0 ? 'bg-green-500/15 text-green-400' : 'bg-yellow-400/15 text-yellow-400'}">${delta > 0 ? '+' + delta : delta}</span>` : ''}` : `${l.packed}${l.packed < l.qty ? `<span class="ml-1 text-xs text-sub">sur ${l.qty}</span>` : ''}`}</td>
+      ${mine ? `<td class="text-right tabular-nums">${l.stock}</td>` : dash}${dash}<td class="pl-4 text-blue-400"><span class="inline-flex items-center gap-1"><i data-lucide="package"></i>${mine ? (q === 0 ? '<span class="text-yellow-400">Retiré du colis</span>' : 'Dans le colis') : `Emballé${ep ? ' · ' + inPkg(l).join(', ') : ''}`}</span></td></tr>`;
+  }).join('');
+  // Lines of "À préparer" that the shelf covers: they can join the parcel.
+  const joinRows = ep ? o.lines.filter(l => l.id in f.p.q && !(l.id in ep.items) && l.packed === 0).map(l => {
+    const q = f.p.q[l.id];
+    return `<tr class="border-t border-line/60 ${q ? '' : 'opacity-70'}"><td class="border-l-2 ${q ? 'border-blue-500/60' : 'border-dashed border-line'} py-2 pl-4 pr-3">${prod(l)}<span class="text-[10px] text-sub">À préparer · ${ready(l)} en stock</span></td>
+      <td class="whitespace-nowrap text-right tabular-nums">${stepper(`p,${o.number},${l.id}`, q, 0, ready(l), `Ajouter au colis · ${l.name}`, pkgSaving, 'blue')}${q ? `<span class="ml-1.5 rounded bg-green-500/15 px-1.5 py-0.5 text-[10px] text-green-400">+${q}</span>` : ''}</td>
+      <td class="text-right tabular-nums">${l.stock}</td>${dash}<td class="pl-4 ${q ? 'text-blue-400' : 'text-sub'}"><span class="inline-flex items-center gap-1"><i data-lucide="${q ? 'package-plus' : 'plus'}"></i>${q ? 'Ajouté au colis' : 'Ajouter au colis'}</span></td></tr>`;
+  }).join('') : '';
+  const d = ep ? pkgDiff(o) : null;
+  const pkgBar = ep ? `<tr><td colspan="5" class="pt-2"><div class="space-y-2 rounded-md border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <i data-lucide="pencil" class="text-blue-400"></i>
+        <span><span class="font-mono font-semibold text-white">${ep.number}</span> : <span class="font-semibold text-white">${units(d.n)}</span>${d.n !== d.was ? ` <span class="text-sub">(était ${d.was})</span>` : ''}${d.added ? ` <span class="text-green-400">· +${d.added} depuis le stock</span>` : ''}${d.removed ? ` <span class="text-yellow-400">· −${d.removed} de retour dans À préparer</span>` : ''}</span>
+      </div>
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-blue-500/20 pt-2">
+        <i data-lucide="book-open" class="text-blue-400"></i>
+        <span class="text-sub">${d.n ? `Met le prélèvement <span class="font-mono">${ep.picklist}</span> aux mêmes quantités, puis le colis, dans Zoho Books.` : `Colis vide : supprime <span class="font-mono">${ep.number}</span> et le prélèvement <span class="font-mono">${ep.picklist}</span> dans Zoho Books ; tout revient dans À préparer.`}</span>
+        <span class="ml-auto flex items-center gap-2">
+          <button type="button" data-cancel="${o.number}" ${pkgSaving ? 'disabled' : ''} class="rounded-md px-2.5 py-1 text-sub hover:text-ink">Annuler</button>
+          <button type="button" data-savepkg="${o.number}" ${pkgSaving || (!d.added && !d.removed) ? 'disabled' : ''} class="inline-flex items-center gap-1.5 rounded-md ${d.n ? 'bg-blue-500 hover:bg-blue-400' : 'bg-red-500 hover:bg-red-400'} px-3 py-1 font-semibold text-white disabled:opacity-50">${pkgSaving ? '<i data-lucide="loader-circle" class="spin"></i>Enregistrement dans Zoho…' : d.n ? '<i data-lucide="check"></i>Enregistrer le colis' : '<i data-lucide="trash-2"></i>Supprimer le colis'}</button>
+        </span>
+      </div></div></td></tr>` : '';
+
+  const lines = `<div class="min-w-0">
+    <div class="mb-1 flex flex-wrap gap-1.5 text-xs text-sub">
+      <span class="inline-flex items-center gap-1.5 rounded-full border border-line bg-surf px-2.5 py-1"><i data-lucide="book-open"></i>Zoho Books · <span class="font-mono text-acc">${o.number}</span></span>
+      <span class="inline-flex items-center gap-1.5 rounded-full border border-line bg-surf px-2.5 py-1"><i data-lucide="${o.ref[0] === 'Shopify' ? 'shopping-bag' : 'file-text'}"></i>${o.ref[0]} · <span class="font-mono text-acc">${o.ref[1]}</span></span>
+      ${o.pickup ? '<span class="inline-flex items-center gap-1.5 rounded-full border border-line bg-surf px-2.5 py-1"><i data-lucide="map-pin"></i>Retrait en boutique</span>' : ''}
+    </div>
+    <table class="w-full text-sm"><thead class="text-left text-[11px] uppercase tracking-wide text-sub"><tr><th class="py-1.5 font-medium">Produit</th><th class="text-right font-medium">${editing ? 'Commandé' : pkgEdit ? 'Dans le colis' : 'Qté'}</th><th class="text-right font-medium">Disponible</th><th class="text-right font-medium">Manque</th><th class="pl-4 font-medium">${editing ? '' : 'État'}</th></tr></thead>
+    ${todo.length || editing ? `<tbody>${band('clipboard-list', 'À préparer', editing ? null : sum(o, rem), editing ? 'bg-acc/10 ring-1 ring-acc/40' : 'bg-green-500/10', 'text-white', prepActions(o))}${todoRows}${addedRows}${addRow}${editBar}</tbody>` : ''}
+    ${packed.length ? `<tbody class="${o.fresh === 'packed' ? 'flash' : ''}">${band('package', 'Emballé, en attente de livraison', sum(o, l => l.packed), 'bg-blue-500/10', 'text-blue-400', waiting.map(pkgChip).join('') + pkgBtns)}${packedRows}${joinRows}${pkgBar}</tbody>` : ''}
+    ${shipped.length ? `<tbody class="opacity-60">${band('check-check', 'Expédié', sum(o, l => l.shipped), 'bg-white/5', 'text-sub', o.packages.filter(p => p.shipped).map(pkgChip).join(''))}
+      ${shipped.map(l => `<tr><td class="border-l-2 border-line py-2 pl-4 pr-3">${prod(l)}</td><td class="text-right tabular-nums">${l.shipped}</td>${dash}${dash}<td class="pl-4 text-sub"><span class="inline-flex items-center gap-1"><i data-lucide="check"></i>Expédié</span></td></tr>`).join('')}</tbody>` : ''}
+    </table></div>`;
+
+  const total = editing ? newTotal : o.total, leftPay = total - paid(o), ib = 'grid h-7 w-7 place-items-center rounded-md text-[15px] text-sub hover:bg-line hover:text-ink';
+  const invRow = i => `<div class="rounded-md px-1 py-1.5">
+      <div class="flex items-baseline justify-between gap-3 text-sm"><span class="font-mono text-white">${i.number}</span><span class="font-semibold tabular-nums">${money(i.total)}</span></div>
+      <div class="flex items-center justify-between gap-2"><span class="min-w-0 truncate"><span class="text-sub">${short(i.date)} · </span>${i.balance ? `<span class="text-yellow-400">Reste à payer ${money(i.balance)}</span>` : '<span class="text-green-400">Payée</span>'}</span>
+        <span class="-mr-1 inline-flex shrink-0 items-center"><button type="button" data-demo="Téléchargement de ${i.number}.pdf (démo)" title="Télécharger le PDF" class="${ib}"><i data-lucide="download"></i></button><button type="button" data-demo="Impression de ${i.number} (démo)" title="Imprimer" class="${ib}"><i data-lucide="printer"></i></button><a href="#" data-noop title="Ouvrir dans Zoho Books (lien de démonstration)" class="${ib}"><i data-lucide="external-link"></i></a></span></div></div>`;
+  const side = `<div class="space-y-3">
+    <section class="rounded-lg border border-line bg-surf p-3 text-xs"><div class="flex items-center gap-2"><i data-lucide="user-round" class="text-sub"></i><span class="font-semibold uppercase tracking-wide">Contact</span></div>
+      <div class="mt-2 text-sm">${o.contact.name}</div><div class="mt-1 flex items-center gap-2 text-sm"><i data-lucide="smartphone" class="text-sub"></i><span class="tabular-nums text-acc">${o.contact.phone}</span></div></section>
+    <section class="rounded-lg border border-line bg-surf p-3 text-xs ${editing && total !== o.total ? 'ring-1 ring-acc/40' : ''}"><div class="flex items-center gap-2"><i data-lucide="wallet" class="text-sub"></i><span class="font-semibold uppercase tracking-wide">Paiement</span>
+      <span class="ml-auto tabular-nums text-sub">${leftPay > 0 ? `Reste à payer <span class="font-semibold text-ink">${money(leftPay)}</span>` : leftPay < 0 ? `Avoir restant <span class="font-semibold text-ink">${money(-leftPay)}</span>` : 'Rien à payer'}</span></div>
+      <div class="mt-2.5 flex h-2.5 overflow-hidden rounded-full bg-bg"><span class="bg-green-500" style="width:${Math.min(100, (paid(o) / total) * 100)}%"></span></div>
+      <div class="mt-1.5 flex justify-between text-[11px] text-sub"><span>Payé ${money(paid(o))}</span><span>Total ${money(total)}</span></div></section>
+    <section class="rounded-lg border border-line bg-surf p-3 text-xs"><div class="flex items-center gap-2"><i data-lucide="receipt-text" class="text-sub"></i><span class="font-semibold uppercase tracking-wide">Factures</span></div>
+      <div class="mt-1.5 divide-y divide-line/60">${o.invoices.length ? o.invoices.map(invRow).join('') : '<div class="py-1.5 text-sub">Aucune facture pour l’instant. Elle est créée à la remise du colis.</div>'}</div></section>
+  </div>`;
+  return `<div class="panel grid gap-4 border-t border-line bg-bg/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">${lines}${side}</div>`;
+}
+
+function toast(html) {
+  const el = document.getElementById('toast');
+  el.innerHTML = `<div class="toast flex items-center gap-2 rounded-lg border border-green-500/40 bg-surf px-4 py-2.5 text-sm shadow-xl"><i data-lucide="circle-check" class="text-green-400"></i>${html}</div>`;
+  lucide.createIcons();
+  setTimeout(() => { el.innerHTML = ''; }, 4500);
+}
+
+function render() {
+  const focused = document.activeElement?.dataset?.search, pos = document.activeElement?.selectionStart;
+  document.getElementById('list').innerHTML = ORDERS.map(rowHtml).join('');
+  const [at, hint, act] = where(find(TRACK));
+  document.getElementById('steps').innerHTML = STEPS.map((s, i) => `<li class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${i === at ? 'border-acc bg-acc/15 text-ink' : 'border-line text-sub'} ${i > at ? 'opacity-50' : ''}"><span class="grid h-4 w-4 place-items-center rounded-full text-[10px] font-bold ${i === at ? 'bg-acc text-bg' : 'bg-line text-sub'}">${i < at ? '✓' : i + 1}</span>${s}</li>`).join('<li class="text-sub opacity-50" aria-hidden="true">→</li>');
+  document.getElementById('hint').innerHTML = `<span class="font-mono text-acc">${TRACK}</span> · ${hint}`;
+  document.querySelector('[data-next]').disabled = !act;
+  lucide.createIcons();
+  if (focused) { const el = document.querySelector(`[data-search="${focused}"]`); el?.focus(); try { el?.setSelectionRange(pos, pos); } catch {} }
+  for (const x of ORDERS) x.fresh = false;
+}
+
+// What "Étape suivante" types for the operator.
+function exampleEdit(o) { const { e } = flow(o); e.qty.a = 8; e.gone.add('b'); addItem(o, 'BL-NOZ-04-HS'); }
+function examplePkg(o) { const { p } = flow(o); p.q.a -= 1; p.q.c = ready(o.lines.find(l => l.id === 'c')); }
+
+// The guided tour: where the followed order stands, what to do next, and what "Étape suivante" does.
+const STEPS = ['Nouvelle commande', 'Modifier la commande', 'Enregistrée dans Zoho', 'Prélèvement et colis', 'Modifier le colis', 'Colis enregistré'];
+function where(o) {
+  const f = flow(o), waiting = o.packages.find(p => !p.shipped);
+  const go = fn => () => { fn(); render(); };
+  if (f.phase === 'edit') return changes(o).length
+    ? [1, 'Les changements sont listés dans la barre, le total et le paiement suivent. « Enregistrer » envoie la commande à Zoho Books.', () => doSave(o)]
+    : [1, 'Changez une quantité, retirez une ligne, ajoutez un article par la recherche. « Étape suivante » passe le PLA à 8, retire l’AMS et ajoute une buse.', go(() => exampleEdit(o))];
+  if (f.phase === 'saving') return [1, 'Enregistrement dans Zoho…', null];
+  if (f.phase === 'pkg') return (pkgDiff(o).added || pkgDiff(o).removed)
+    ? [4, 'Le colis a changé : « Enregistrer le colis » met le prélèvement puis le colis à jour dans Zoho.', () => doSavePkg(o)]
+    : [4, 'Baissez une quantité pour sortir une unité du carton, ou montez une ligne « À préparer » pour l’y mettre. « Étape suivante » retire 1 PLA et ajoute le PETG.', go(() => examplePkg(o))];
+  if (f.phase === 'pkgsaving') return [4, 'Enregistrement dans Zoho…', null];
+  if (o.fresh === 'edited' || (!o.packages.length && o.lines.length === 3 && o.lines.some(l => l.id === 'nBL-NOZ-04-HS')))
+    return [2, `Zoho a la nouvelle commande : total ${money(o.total)}, ${paid(o) >= o.total ? 'payée' : Math.floor(paid(o) * 100 / o.total) + ' % payé'}. « Étape suivante » saute le prélèvement et le colis (première maquette) en laissant 2 PLA sur l’étagère.`, go(() => pickAndPack(o, { a: 4, "nBL-NOZ-04-HS": 1 }))];
+  if (waiting && !o.picklists.some(p => p.edited)) return [3, `Le colis ${waiting.number} attend le client. « Modifier » dans le bandeau bleu ouvre son contenu.`, go(() => startPkg(o, waiting.number))];
+  if (waiting) return [5, `${waiting.number} et son prélèvement reflètent le carton dans Zoho. Les unités retirées sont revenues dans « À préparer ».`, null];
+  return [0, 'La commande vient d’arriver de Zoho. « Modifier » se trouve dans le bandeau vert, à côté de « Préparer ».', go(() => startEdit(o))];
+}
+
+document.addEventListener('click', e => {
+  const hit = sel => e.target.closest(sel);
+  let el;
+  if (hit('[data-noop]')) { e.preventDefault(); toast('Bouton de la première maquette : pas le sujet ici.'); return; }
+  if (hit('[data-qty], [data-search]')) return;
+  if (hit('[data-next]')) { const act = where(find(TRACK))[2]; if (act) act(); }
+  else if (hit('[data-reset]')) { ORDERS = SEED(); nextPkg = 31; nextPl = 13; ui.flow = {}; ui.open = new Set([TRACK]); }
+  else if ((el = hit('[data-edit]'))) startEdit(find(el.dataset.edit));
+  else if ((el = hit('[data-pkg]'))) { const [n, p] = el.dataset.pkg.split(','); startPkg(find(n), p); }
+  else if ((el = hit('[data-cancel]'))) ui.flow[el.dataset.cancel] = { phase: 'idle', qty: {} };
+  else if ((el = hit('[data-gone]'))) { const [n, id] = el.dataset.gone.split(','); flow(find(n)).e.gone.add(id); }
+  else if ((el = hit('[data-undo]'))) { const [n, id] = el.dataset.undo.split(','); flow(find(n)).e.gone.delete(id); }
+  else if ((el = hit('[data-unadd]'))) { const [n, id] = el.dataset.unadd.split(','), f = flow(find(n)); f.e.added = f.e.added.filter(a => a.id !== id); }
+  else if ((el = hit('[data-add]'))) { const [n, sku] = el.dataset.add.split(','); addItem(find(n), sku); }
+  else if ((el = hit('[data-step]'))) { const [k, n, id, d] = el.dataset.step.split(','); step(k, find(n), id, Number(d)); }
+  else if ((el = hit('[data-save]'))) { doSave(find(el.dataset.save)); return; }
+  else if ((el = hit('[data-savepkg]'))) { doSavePkg(find(el.dataset.savepkg)); return; }
+  else if ((el = hit('[data-demo]'))) { toast(el.dataset.demo); return; }
+  else if ((el = hit('[data-open]'))) { const n = el.dataset.open; if (!ui.open.delete(n)) ui.open.add(n); }
+  else return;
+  render();
+});
+// The three figures a stepper can drive: e = ordered quantity, a = quantity of a new line, p = units in the parcel.
+function step(kind, o, id, d, set = null) {
+  const f = flow(o), l = o.lines.find(x => x.id === id);
+  if (kind === 'e') f.e.qty[id] = Math.max(locked(l), set ?? f.e.qty[id] + d);
+  else if (kind === 'a') { const a = f.e.added.find(x => x.id === id); a.qty = Math.max(1, set ?? a.qty + d); }
+  else { const pkg = o.packages.find(p => p.number === f.pkg); f.p.q[id] = Math.max(0, Math.min(pkgMax(o, pkg, l), set ?? f.p.q[id] + d)); }
+}
+document.addEventListener('change', e => {
+  const el = e.target.closest('[data-qty]');
+  if (!el) return;
+  const [k, n, id] = el.dataset.qty.split(','), v = Number(el.value.replace(',', '.'));
+  if (Number.isFinite(v)) step(k, find(n), id, 0, v);
+  render();
+});
+document.addEventListener('input', e => {
+  const el = e.target.closest('[data-search]');
+  if (!el) return;
+  flow(find(el.dataset.search)).e.q = el.value;
+  render();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { for (const o of ORDERS) if (['edit', 'pkg'].includes(flow(o).phase)) ui.flow[o.number] = { phase: 'idle', qty: {} }; render(); }
+  if (e.key === 'Enter' && e.target.matches('[data-search]')) { const o = find(e.target.dataset.search), [h] = search(o); if (h) { addItem(o, h.sku); render(); } }
+});
+
+// Deep links for screenshots: #SO-nnnnn,state (state: edit | edited | packed | pkg | pkgsaved)
+if (ho && hs) {
+  const o = find(ho), at = ['edit', 'edited', 'packed', 'pkg', 'pkgsaved'].indexOf(hs);
+  if (at >= 0) { startEdit(o); exampleEdit(o); }
+  if (at >= 1) saveEdit(o);
+  if (at >= 2) pickAndPack(o, { a: 4, "nBL-NOZ-04-HS": 1 });
+  if (at >= 3) startPkg(o, o.packages.find(p => !p.shipped).number);
+  if (at >= 4) { examplePkg(o); savePkg(o); }
+  o.fresh = false;
+}
+render();
+</script>
+</body>
+</html>
