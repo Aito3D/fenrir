@@ -42,8 +42,9 @@ describe('OrderInvoicesBlock', () => {
   it('lists each invoice with number, amount, status and its three actions', () => {
     render(<OrderInvoicesBlock row={row([inv(), inv({ id: 'inv2', number: 'FAC-0002', url: null, due_date: day(-5), balance: 100 })])} />);
     expect(screen.getByText('Invoices')).toBeInTheDocument();
-    expect(screen.getByText('FAC-0001')).toBeInTheDocument();
-    expect(screen.getByText('FAC-0002')).toBeInTheDocument();
+    // The number opens the invoice in Books when a link exists; without one it is plain text.
+    expect(screen.getByText('FAC-0001').closest('a')).toHaveAttribute('href', inv().url);
+    expect(screen.getByText('FAC-0002').closest('a')).toBeNull();
     expect(screen.getAllByText(/250.000/).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: 'Download invoice' })).toHaveLength(2);
     expect(screen.getAllByRole('button', { name: 'Print invoice' })).toHaveLength(2);

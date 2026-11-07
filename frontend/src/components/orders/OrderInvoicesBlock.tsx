@@ -62,7 +62,11 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, busy = false, canEmai
           invoices.map(i => (
             <div key={i.id} data-fresh={fresh.has(i.id) || undefined} className={`px-1 py-1.5 ${fresh.has(i.id) ? 'rounded-md bg-bambu-green/10 motion-safe:animate-[pulse_1s_ease-in-out_2]' : ''}`}>
               <div className="flex items-baseline justify-between gap-3 text-sm">
-                <span className="font-mono text-white">{i.number}</span>
+                {i.url ? (
+                  <a href={i.url} target="_blank" rel="noopener noreferrer" title={t('orders.inv.open')} className="font-mono text-white hover:text-bambu-green hover:underline">{i.number}</a>
+                ) : (
+                  <span className="font-mono text-white">{i.number}</span>
+                )}
                 <span className="font-semibold tabular-nums text-white">{money(i.total)}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
