@@ -134,3 +134,22 @@ async def test_void_salesorder(db_session):
     await _fake(db_session, seen)
     await zoho_service.void_salesorder(db_session, "so1")
     assert (seen[0][0], seen[0][1].endswith("/salesorders/so1/status/void")) == ("POST", True)
+
+
+@pytest.mark.asyncio
+async def test_edit_write_calls(db_session):
+    seen: list = []
+    await _fake(db_session, seen, body={"salesorder": {"salesorder_id": "so1"}, "package": {"package_id": "p1"}})
+    so = {"line_items": [{"line_item_id": "l1", "quantity": 3}]}
+    assert (await zoho_service.update_salesorder(db_session, "so1", so))["salesorder_id"] == "so1"
+    pk = {"date": "2026-11-07", "line_items": [{"so_line_item_id": "l1", "quantity": 2}]}
+    assert (await zoho_service.update_package(db_session, "p1", "so1", pk))["package_id"] == "p1"
+    await zoho_service.delete_package(db_session, "p1")
+    await zoho_service.delete_picklist(db_session, "pl1")
+    assert [(m, p.rsplit("/v3", 1)[1]) for m, p, _, _ in seen] == [
+        ("PUT", "/salesorders/so1"),
+        ("PUT", "/packages/p1"),
+        ("DELETE", "/packages/p1"),
+        ("DELETE", "/picklists/pl1"),
+    ]
+    assert _json(seen[0][3]) == so and _json(seen[1][3]) == pk and seen[1][2]["salesorder_id"] == "so1"

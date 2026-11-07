@@ -1405,6 +1405,26 @@ class ZohoService:
         """One package. Unverified against a live write (spec, "Not verified")."""
         return (await self._request(db, "GET", f"/packages/{_seg(package_id)}")).get("package") or {}
 
+    async def update_salesorder(self, db: AsyncSession, salesorder_id: str, body: dict) -> dict:
+        """Replace a sales order's lines. Unverified against a live write."""
+        payload = await self._request(db, "PUT", f"/salesorders/{_seg(salesorder_id)}", json=body)
+        return payload.get("salesorder") or {}
+
+    async def update_package(self, db: AsyncSession, package_id: str, salesorder_id: str, body: dict) -> dict:
+        """Replace a package's lines. Unverified against a live write."""
+        payload = await self._request(
+            db, "PUT", f"/packages/{_seg(package_id)}", params={"salesorder_id": salesorder_id}, json=body
+        )
+        return payload.get("package") or {}
+
+    async def delete_package(self, db: AsyncSession, package_id: str) -> None:
+        """Delete a package. Unverified against a live write."""
+        await self._request(db, "DELETE", f"/packages/{_seg(package_id)}")
+
+    async def delete_picklist(self, db: AsyncSession, picklist_id: str) -> None:
+        """Delete a picklist. Unverified against a live write."""
+        await self._request(db, "DELETE", f"/picklists/{_seg(picklist_id)}")
+
     async def create_shipment(
         self, db: AsyncSession, salesorder_id: str, package_id: str, *, date: str, delivery_method: str
     ) -> dict:
