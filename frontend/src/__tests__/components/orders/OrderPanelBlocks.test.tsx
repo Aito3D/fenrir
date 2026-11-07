@@ -99,11 +99,11 @@ describe('OrderContactBlock', () => {
 });
 
 const panelRow = (o: Partial<OrderPanelRow['facts']> = {}, zoho_url: string | null = 'https://books.example/so/1'): OrderPanelRow =>
-  ({ number: 'SO-00425', zoho_url, facts: { channel: '', reference: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null, ...o } }) as OrderPanelRow;
+  ({ number: 'SO-00425', zoho_url, facts: { channel: '', reference: '', shopify_order: '', quote_number: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null, ...o } }) as OrderPanelRow;
 
 describe('OrderRefChips', () => {
   it('links a Shopify order to Shopify and a quote to Books; a bare reference is plain text', () => {
-    const { unmount } = render(<OrderRefChips row={panelRow({ channel: 'Shopify', reference: '1038', shopify_url: 'https://shop.example/o/1', delivery_method: 'Pickup', payment_terms: 'Due on receipt' })} />);
+    const { unmount } = render(<OrderRefChips row={panelRow({ channel: 'Shopify', reference: '1038', shopify_order: '1038', shopify_url: 'https://shop.example/o/1', delivery_method: 'Pickup', payment_terms: 'Due on receipt' })} />);
     const zoho = screen.getByRole('link', { name: /Zoho Books · SO-00425/ });
     expect(zoho).toHaveAttribute('href', 'https://books.example/so/1');
     expect(zoho).toHaveAttribute('target', '_blank');
@@ -113,11 +113,23 @@ describe('OrderRefChips', () => {
     expect(screen.getByText('Due on receipt')).toBeInTheDocument();
     unmount();
 
-    const quote = render(<OrderRefChips row={panelRow({ reference: 'DEV26-2671', quote_url: 'https://books.example/q/1' })} />);
+    const quote = render(<OrderRefChips row={panelRow({ reference: 'DEV26-2671', quote_number: 'DEV26-2671', quote_url: 'https://books.example/q/1' })} />);
     expect(screen.getByRole('link', { name: /Quote · DEV26-2671/ })).toHaveAttribute('href', 'https://books.example/q/1');
+    expect(screen.queryByText(/Shopify/)).toBeNull();
     quote.unmount();
 
-    const bare = render(<OrderRefChips row={panelRow({ reference: 'DEV26-2671' })} />);
+    // A POS sale quoted first: both chips, the quote named by its Books number, not by the reference.
+    const both = render(<OrderRefChips row={panelRow({ reference: '1102', shopify_order: '1102', shopify_url: 'https://shop.example/orders?query=1102', quote_number: 'DEV26-2970', quote_url: 'https://books.example/q/2' })} />);
+    expect(screen.getByRole('link', { name: /Shopify · #1102/ })).toHaveAttribute('href', 'https://shop.example/orders?query=1102');
+    expect(screen.getByRole('link', { name: /Quote · DEV26-2970/ })).toHaveAttribute('href', 'https://books.example/q/2');
+    both.unmount();
+
+    // The quote's number not read yet: the chip still links to the quote, unnamed.
+    const unnamed = render(<OrderRefChips row={panelRow({ reference: '1102', shopify_order: '1102', quote_url: 'https://books.example/q/2' })} />);
+    expect(screen.getByRole('link', { name: /^Quote$/ })).toHaveAttribute('href', 'https://books.example/q/2');
+    unnamed.unmount();
+
+    const bare = render(<OrderRefChips row={panelRow({ reference: 'DEV26-2671', quote_number: 'DEV26-2671' })} />);
     const chip = within(bare.container).getByText((_, el) => el?.textContent === 'Quote · DEV26-2671' && el.tagName === 'SPAN' && el.className.includes('rounded-full'));
     expect(chip.closest('a')).toBeNull();
   });
@@ -173,7 +185,7 @@ describe('OrderLinesPanel layout', () => {
     const row = {
       id: 'so1', number: 'SO-1', customer: 'X', date: '2026-09-12', total: 1, currency: 'XPF', age_days: 1, is_core: true,
       ready_ratio: 1, packed: 0, unbilled_units: 0, prep: null, customer_id: '', payment: pay(), contact: contact(),
-      facts: { channel: '', reference: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null },
+      facts: { channel: '', reference: '', shopify_order: '', quote_number: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null },
       units: { total: 0, shipped: 0, ready: 0, backordered: 0, to_order: 0 }, packages: [], lines: [], zoho_url: null,
     } as unknown as OrderPanelRow;
     render(<OrderLinesPanel row={row} />);

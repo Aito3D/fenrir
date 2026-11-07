@@ -125,6 +125,10 @@ class FakeZoho:
         self.calls["list_po"] += 1
         return [{k: v for k, v in d.items() if k != "line_items"} for d in self.purchases.values()]
 
+    async def get_estimate(self, db, estimate_id):
+        self.calls["estimate"] += 1
+        return {"estimate_id": estimate_id, "estimate_number": f"DEV26-{estimate_id}"}
+
     async def get_salesorder(self, db, salesorder_id):
         self.calls["detail"] += 1
         if self.slow:
@@ -188,6 +192,7 @@ def zoho(monkeypatch):
         "list_salesorders",
         "list_purchaseorders",
         "get_salesorder",
+        "get_estimate",
         "get_purchaseorder",
         "list_items_by_ids",
         "list_customer_payments_modified_since",
@@ -739,6 +744,28 @@ async def test_opening_a_finished_order_fetches_once_then_serves_the_copy(db_ses
     assert zoho.calls["detail"] == before + 1
     # With a copy stored, the list shows its payment.
     assert (await sync.read_finished(db_session))["rows"][0]["payment"] is not None
+
+
+@pytest.mark.asyncio
+async def test_a_pos_order_with_a_quote_gets_its_quote_number_once_and_a_shopify_link(db_session, zoho):
+    """The reference is the Shopify order number and Books holds the quote's number: read once, then kept."""
+    pos = {**order(1, estimate_id="e1"), "reference_number": "1102"}
+    shop = {
+        **order(2),
+        "reference_number": "1091",
+        "sales_channel_formatted": "Shopify",
+        "account_identifier": "ab12-3",
+    }
+    converted = {**order(3, estimate_id="e3"), "reference_number": "DEV26-2948"}
+    await _synced(db_session, zoho, pos, shop, converted)
+    assert zoho.calls["estimate"] == 1  # the converted order's reference already is its quote number
+    rows = {r["id"]: r["facts"] for r in (await sync.read_board(db_session))["rows"]}
+    assert rows["so1"]["quote_number"] == "DEV26-e1" and rows["so1"]["shopify_order"] == "1102"
+    assert rows["so1"]["shopify_url"] == "https://admin.shopify.com/store/ab12-3/orders?query=1102"
+    assert rows["so2"]["shopify_order"] == "1091" and rows["so2"]["quote_number"] == ""
+    assert rows["so3"]["quote_number"] == "DEV26-2948" and rows["so3"]["shopify_order"] == ""
+    await sync.run_pass(db_session)
+    assert zoho.calls["estimate"] == 1
 
 
 @pytest.mark.asyncio

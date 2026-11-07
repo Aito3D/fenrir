@@ -116,12 +116,27 @@ def order_facts(order: dict) -> dict:
     """Channel, reference and links; missing Zoho fields read as empty."""
     terms = _text(order.get("payment_terms_label"))
     store, shop_order = _text(order.get("account_identifier")), _text(order.get("marketplace_so_id"))
+    reference = _text(order.get("reference_number"))
+    # Books fills the reference with the quote's number when it converts a quote; the Shopify sync and the
+    # POS fill it with the Shopify order number. A quote's number is read separately (quote_number_missing).
+    shopify_order = reference if reference.isdigit() else ""
     return {
         "channel": _text(order.get("sales_channel_formatted")),
-        "reference": _text(order.get("reference_number")),
+        "reference": reference,
+        "shopify_order": shopify_order,
+        "quote_number": _text(order.get("estimate_number")) or ("" if shopify_order else reference),
         "delivery_method": _text(order.get("delivery_method")),
         "payment_terms": "" if terms == "-" else terms,
         "estimate_id": order.get("estimate_id") or None,
         "shopify_url": f"https://admin.shopify.com/store/{store}/orders/{shop_order}" if store and shop_order else None,
         "quote_url": None,
     }
+
+
+def quote_number_missing(order: dict) -> bool:
+    """A sales order whose quote number is known only to Books: it has a quote, but its reference is not it."""
+    return (
+        bool(order.get("estimate_id"))
+        and "estimate_number" not in order
+        and _text(order.get("reference_number")).isdigit()
+    )

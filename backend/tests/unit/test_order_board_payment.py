@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.services.order_board_payment import board_payments, order_contact, order_facts, order_payment
+from backend.app.services.order_board_payment import (
+    board_payments,
+    order_contact,
+    order_facts,
+    order_payment,
+    quote_number_missing,
+)
 
 TODAY = date(2026, 1, 20)
 
@@ -162,7 +168,15 @@ def test_facts_and_links():
     )
     assert shop["shopify_url"] == "https://admin.shopify.com/store/123a4b-56/orders/5550001112223"
     assert shop["payment_terms"] == ""
-    assert order_facts({"reference_number": "DEV26-2655", "estimate_id": "e1"})["shopify_url"] is None
+    assert shop["shopify_order"] == "1042" and shop["quote_number"] == ""
+    converted = order_facts({"reference_number": "DEV26-2655", "estimate_id": "e1"})
+    assert converted["shopify_url"] is None and converted["shopify_order"] == ""
+    assert converted["quote_number"] == "DEV26-2655"  # Books writes the quote's number as the reference
+    assert not quote_number_missing({"reference_number": "DEV26-2655", "estimate_id": "e1"})
+    # A POS order with a quote: the reference is the Shopify number, the quote's number is read separately.
+    pos = {"reference_number": "1102", "estimate_id": "e2"}
+    assert quote_number_missing(pos) and order_facts(pos)["quote_number"] == ""
+    assert order_facts({**pos, "estimate_number": "DEV26-2970"})["quote_number"] == "DEV26-2970"
     assert order_facts({})["reference"] == ""  # missing Zoho fields do not raise
 
 

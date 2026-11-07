@@ -22,15 +22,16 @@ function Chip({ href, children }: { href?: string | null; children: ReactNode })
 export function OrderRefChips({ row, children }: { row: OrderPanelRow; children?: ReactNode }) {
   const { t } = useTranslation();
   const f = row.facts;
-  const shopify = !!f.shopify_url || f.channel.toLowerCase() === 'shopify';
+  // An order can carry both: a POS sale is a Shopify order and may have been quoted first.
+  const quote = f.quote_number || (f.quote_url ? '' : null);
   return (
     <div className="mb-2 flex flex-wrap gap-1.5">
       <Chip href={row.zoho_url}>Zoho Books · <span className="font-mono text-white">{row.number}</span></Chip>
-      {shopify && (f.reference || f.shopify_url) && (
-        <Chip href={f.shopify_url}>Shopify{f.reference && <> · <span className="font-mono text-white">#{f.reference}</span></>}</Chip>
+      {(f.shopify_order || f.shopify_url) && (
+        <Chip href={f.shopify_url}>Shopify{f.shopify_order && <> · <span className="font-mono text-white">#{f.shopify_order}</span></>}</Chip>
       )}
-      {!shopify && f.reference && (
-        <Chip href={f.quote_url}>{t('orders.chip.quote')} · <span className="font-mono text-white">{f.reference}</span></Chip>
+      {quote !== null && (
+        <Chip href={f.quote_url}>{t('orders.chip.quote')}{quote && <> · <span className="font-mono text-white">{quote}</span></>}</Chip>
       )}
       {f.delivery_method && <Chip>{f.delivery_method}</Chip>}
       {f.payment_terms && <Chip>{f.payment_terms}</Chip>}

@@ -27,7 +27,13 @@ def _row(**kw):
         "date": "2026-11-02",
         "currency": "XPF",
         "contact": {"name": "Hina Teriitahi", "email": "", "phone": "40 12 34 56", "mobile": "87 11 22 33"},
-        "facts": {"channel": "Shopify", "reference": "#1042", "delivery_method": "Livraison"},
+        "facts": {
+            "channel": "Shopify",
+            "reference": "1042",
+            "shopify_order": "1042",
+            "quote_number": "",
+            "delivery_method": "Livraison",
+        },
         "payment": {"left": 4000.0},
         "lines": [_line("SKU-A"), _line("SKU-B", "Boîte à clés", packable=0.0, quantity=5.0, remaining=5.0)],
     }

@@ -5082,7 +5082,7 @@ export type OrderPayState = 'unpaid' | 'partial' | 'paid';
 export interface OrderInvoice { id: string; number: string; date: string; due_date: string; total: number; balance: number; status: string; url: string | null }
 export interface OrderPayment { state: OrderPayState; pct: number; paid: number; invoice_paid: number; advance: number; due: number; overdue: number; rest: number; left: number; next_due: string | null; invoices: OrderInvoice[] }
 export interface OrderContact { name: string; email: string; phone: string; mobile: string }
-export interface OrderFacts { channel: string; reference: string; delivery_method: string; payment_terms: string; shopify_url: string | null; quote_url: string | null }
+export interface OrderFacts { channel: string; reference: string; shopify_order: string; quote_number: string; delivery_method: string; payment_terms: string; shopify_url: string | null; quote_url: string | null }
 
 export interface OrderPackage { id: string; shipment_id: string; number: string; status: string; date: string }
 /** A Books picklist of the order; `status` is "completed" once everything on it was picked. */

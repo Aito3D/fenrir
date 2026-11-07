@@ -36,7 +36,7 @@ const line = (o: Partial<OrderBoardLine> = {}): OrderBoardLine => ({
 const row = (o: Partial<OrderBoardRow> = {}): OrderBoardRow => ({
   id: 'so1', number: 'SO-00412', customer: 'Lycée', date: '2026-09-12', total: 13600, currency: 'XPF', status: 'to_ship', age_days: 5,
   is_core: true, ready_ratio: 1, packed: 0, unbilled_units: 0, prep: null, customer_id: '', payment: null, contact: null,
-  facts: { channel: '', reference: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null },
+  facts: { channel: '', reference: '', shopify_order: '', quote_number: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null },
   units: { total: 1, shipped: 0, ready: 1, backordered: 0, to_order: 0 }, packages: [], lines: [line()], zoho_url: null, ...o,
 });
 const waiting = { packages: [{ id: 'p9', shipment_id: 's9', number: 'PKG-9', status: 'not_shipped', date: '2026-11-05' }], lines: [line({ packable: 0, packed_waiting: 1 })] };

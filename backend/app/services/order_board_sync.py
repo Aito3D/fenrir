@@ -31,7 +31,7 @@ from backend.app.core.tasks import spawn_background_task
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services.aito_poll_watermark import format_books_time
 from backend.app.services.order_board import age_days, compute_board, order_row
-from backend.app.services.order_board_payment import order_payment
+from backend.app.services.order_board_payment import order_payment, quote_number_missing
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 logger = logging.getLogger(__name__)
@@ -250,12 +250,22 @@ async def _add_links(db: AsyncSession, rows: list[dict]) -> None:
         quote_base = await zoho_service.books_app_url(db, "")
     except ZohoNotConfiguredError:
         order_base = invoice_base = quote_base = None
+    store = await _shopify_store(db) if any(r["facts"]["shopify_order"] for r in rows) else ""
     for row in rows:
         row["zoho_url"] = f"{order_base}{row['id']}" if order_base else None
+        facts = row["facts"]
+        if store and facts["shopify_order"] and not facts["shopify_url"]:
+            facts["shopify_url"] = f"https://admin.shopify.com/store/{store}/orders?query={facts['shopify_order']}"
         for invoice in (row.get("payment") or {}).get("invoices", []):
             invoice["url"] = f"{invoice_base}{invoice['id']}" if invoice_base and invoice["id"] else None
         facts = row["facts"]
         facts["quote_url"] = f"{quote_base}{facts['estimate_id']}" if quote_base and facts["estimate_id"] else None
+
+
+async def _shopify_store(db: AsyncSession) -> str:
+    """The shop's Shopify store handle, as Books' Shopify sync writes it on the orders it creates."""
+    docs = (await db.execute(select(OrderBoardDoc.detail).where(OrderBoardDoc.kind == "salesorder"))).scalars()
+    return next((d["account_identifier"] for d in docs if d and d.get("account_identifier")), "")
 
 
 _PAID_FLAGS = {"paid": "paid", "partially_paid": "partial", "unpaid": "unpaid"}
@@ -345,6 +355,13 @@ async def read_finished_order(db: AsyncSession, salesorder_id: str) -> dict:
     return rows[0]
 
 
+async def _store_quote_number(db: AsyncSession, doc: OrderBoardDoc) -> None:
+    quote = await zoho_service.get_estimate(db, doc.detail["estimate_id"])
+    await db.refresh(doc)
+    doc.detail = {**doc.detail, "estimate_number": quote.get("estimate_number") or ""}
+    await db.commit()
+
+
 async def _fetch_finished_detail(db: AsyncSession, doc: OrderBoardDoc) -> None:
     salesorder_id = doc.zoho_id
     if time.monotonic() < _rate_limited_until or zoho_service.calls_in_last_minute() >= CALL_CEILING:
@@ -361,6 +378,8 @@ async def _fetch_finished_detail(db: AsyncSession, doc: OrderBoardDoc) -> None:
     doc.detail = {**fetched, "_fetched_at": _now(), **({"_stale": True} if _snapshot(doc) != before else {})}
     doc.pending = False
     await db.commit()
+    if quote_number_missing(doc.detail) and zoho_service.calls_in_last_minute() < CALL_CEILING:
+        await _store_quote_number(db, doc)
 
 
 async def recompute(db: AsyncSession) -> None:
@@ -489,6 +508,14 @@ async def _sync(db: AsyncSession) -> None:
         if _written_at.get(doc.zoho_id, -1.0) >= began and doc.kind == "salesorder":
             doc.pending = True  # a write began while this copy was being stored: it may predate the write
             await db.commit()
+
+    # The quote's number is not on the order: read it once, kept with the order from then on.
+    for doc in stored.values():
+        if doc.kind != "salesorder" or not doc.detail or not quote_number_missing(doc.detail):
+            continue
+        if zoho_service.calls_in_last_minute() >= CALL_CEILING:
+            break
+        await _store_quote_number(db, doc)
 
     # Stock has no change feed in Books, so it is re-read on every pass.
     item_ids = sorted(

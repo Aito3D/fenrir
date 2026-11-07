@@ -124,10 +124,11 @@ def _info(c: rl_canvas.Canvas, row: dict, y: float, order_url: str | None) -> fl
 
     facts, payment, cur = row.get("facts") or {}, row.get("payment"), row.get("currency") or ""
     pickup = (facts.get("delivery_method") or "").upper() == "PICK UP"
-    shopify = (facts.get("channel") or "").lower() == "shopify"
     infos = [("Commande du", _long_date(row.get("date") or ""))]
-    if facts.get("reference"):
-        infos.append(("Shopify" if shopify else "Devis", facts["reference"]))
+    if facts.get("shopify_order"):
+        infos.append(("Shopify", facts["shopify_order"]))
+    if facts.get("quote_number"):
+        infos.append(("Devis", facts["quote_number"]))
     if facts.get("delivery_method"):
         infos.append(("Livraison", "Retrait en boutique" if pickup else facts["delivery_method"]))
     if payment is not None:

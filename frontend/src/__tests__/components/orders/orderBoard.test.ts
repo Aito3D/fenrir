@@ -43,7 +43,7 @@ const row = (o: Partial<OrderBoardRow> = {}): OrderBoardRow => ({
   status: 'to_ship', age_days: 5, is_core: true, ready_ratio: 1, packed: 0, unbilled_units: 0, prep: null,
   units: { total: 1, shipped: 0, ready: 1, backordered: 0, to_order: 0 }, packages: [], lines: [line()],
   zoho_url: null, customer_id: '', payment: null, contact: null,
-  facts: { channel: '', reference: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null }, ...o,
+  facts: { channel: '', reference: '', shopify_order: '', quote_number: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null }, ...o,
 });
 
 const board = (o: Partial<OrderBoardResponse> = {}, sync: Partial<OrderBoardResponse['sync']> = {}): OrderBoardResponse => ({
