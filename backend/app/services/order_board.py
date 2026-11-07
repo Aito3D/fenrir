@@ -67,6 +67,17 @@ def _incoming(purchase_orders: list[dict]) -> tuple[dict[str, float], dict[str, 
     return incoming, numbers
 
 
+_ORDER_MONEY = ("discount", "shipping_charge", "adjustment")
+
+
+def _nonzero(value) -> bool:
+    """A money field that is set: ``"10%"`` counts, ``0`` and ``""`` do not."""
+    try:
+        return float(str(value or 0).strip().rstrip("%") or 0) != 0
+    except ValueError:
+        return True
+
+
 def _line(raw: dict, items: dict[str, dict]) -> dict:
     item_id = raw.get("item_id") or None
     item = items.get(item_id) if item_id else None
@@ -84,6 +95,9 @@ def _line(raw: dict, items: dict[str, dict]) -> dict:
         "remaining": _r(remaining),
         "invoiced": _r(min(remaining, max(0.0, _num(raw.get("quantity_invoiced")) - shipped))),
         "packed_waiting": _r(min(remaining, max(0.0, _num(raw.get("quantity_packed")) - shipped))),
+        "rate": float(_num(raw.get("rate"))),
+        # Books' packed/picked/invoiced figures are cumulative, so the lowest quantity the line may be edited to is the largest.
+        "floor": _r(max(_num(raw.get(k)) for k in ("quantity_packed", "quantity_picked", "quantity_invoiced"))),
         "stock_available": None,
         "covered": 0.0,
         "packable": 0.0,
@@ -203,6 +217,11 @@ def _row(order: dict, age: int, lines: list[dict], status: str, items: dict[str,
         "total": None if total is None else float(total),
         "currency": order.get("currency_code") or "",
         "status": status,
+        "version": order.get("last_modified_time") or "",
+        # The pre-save total is only exact for a tax-inclusive order with no discount or charge.
+        "estimable": bool(order.get("is_inclusive_tax"))
+        and not any(_nonzero(raw.get("discount")) for raw in order.get("line_items") or [])
+        and not any(_nonzero(order.get(k)) for k in _ORDER_MONEY),
         "age_days": age,
         "is_core": any(brand.casefold() in core for brand in brands if brand),
         "ready_ratio": units["ready"] / owed if owed else 1.0,

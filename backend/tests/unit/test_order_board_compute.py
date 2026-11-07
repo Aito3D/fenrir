@@ -451,3 +451,44 @@ def test_row_lists_its_picklists_and_the_units_picked_and_not_boxed():
     assert picked_waiting(order) == {order["line_items"][0]["line_item_id"]: 2}
     (plain,) = compute_board([so("SO-2", "2026-01-03", [line("A", 1, packed=1)])], [], {"A": item(9)}, TODAY)
     assert (plain["picked"], plain["picklists"]) == (0, [])
+
+
+def _raw_line(**kw):
+    base = {
+        "line_item_id": "l1",
+        "item_id": "A",
+        "quantity": 5,
+        "quantity_shipped": 2,
+        "quantity_packed": 3,
+        "quantity_picked": 3,
+        "quantity_invoiced": 1,
+        "quantity_cancelled": 0,
+        "rate": 3400,
+    }
+    return {**base, **kw}
+
+
+def test_line_carries_rate_and_books_cumulative_floor():
+    (row,) = compute_board([so("SO-1", "2026-01-03", [_raw_line()])], [], {"A": item(9)}, TODAY)
+    assert (only_line(row)["rate"], only_line(row)["floor"]) == (3400.0, 3.0)
+
+
+def test_floor_is_the_picked_units_when_they_exceed_packed():
+    raw = _raw_line(quantity_packed=1, quantity_picked=4, quantity_invoiced=0)
+    (row,) = compute_board([so("SO-1", "2026-01-03", [raw])], [], {"A": item(9)}, TODAY)
+    assert only_line(row)["floor"] == 4.0
+
+
+def test_row_version_and_estimable():
+    def row_for(extra, line_discount=0):
+        order = {**so("SO-1", "2026-01-03", [line("A", 1)]), **extra}
+        order["line_items"][0]["discount"] = line_discount
+        return order_row(order, {"A": item(1)}, TODAY)
+
+    version = "2026-11-01T08:00:00-1000"
+    assert row_for({"is_inclusive_tax": True, "last_modified_time": version})["version"] == version
+    assert row_for({"is_inclusive_tax": True})["version"] == ""
+    assert row_for({"is_inclusive_tax": True})["estimable"] is True
+    assert row_for({"is_inclusive_tax": True, "shipping_charge": 500})["estimable"] is False
+    assert row_for({"is_inclusive_tax": True}, line_discount=10)["estimable"] is False
+    assert row_for({"is_inclusive_tax": False})["estimable"] is False

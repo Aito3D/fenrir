@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
-from backend.app.services.order_board import picked_waiting, units_to_invoice
+from backend.app.services.order_board import _ORDER_MONEY, _nonzero, picked_waiting, units_to_invoice
 from backend.app.services.zoho import ZohoNotFound, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 logger = logging.getLogger(__name__)
@@ -372,7 +372,6 @@ async def create_parcel(db: AsyncSession, salesorder_id: str, picklist_id: str, 
 
 # --- Hand-over, invoice, credit --------------------------------------------------------------------------------
 
-_ORDER_MONEY = ("discount", "shipping_charge", "adjustment")
 _INVOICE_FIELDS = (
     "customer_id",
     "is_inclusive_tax",
@@ -399,14 +398,6 @@ _LINE_FIELDS = (
     "tax_id",
     "discount",
 )
-
-
-def _nonzero(value) -> bool:
-    """A money field that is set: ``"10%"`` counts, ``0`` and ``""`` do not."""
-    try:
-        return float(str(value or 0).strip().rstrip("%") or 0) != 0
-    except ValueError:
-        return True
 
 
 def _offered(prefill: dict | None, keep: Mapping[str, float]) -> list[dict]:
