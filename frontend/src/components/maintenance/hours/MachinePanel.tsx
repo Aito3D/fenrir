@@ -65,14 +65,14 @@ export function MachinePanel({
   const drifting = machine.trust === 'drifting';
 
   return (
-    <div data-testid="hours-panel-backdrop" className="fixed inset-0 z-40 bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget && !suspendDismiss) requestClose(); }}>
+    <div data-testid="hours-panel-backdrop" className="fixed inset-0 z-40 bg-black/50 animate-overlay-in" onMouseDown={(e) => { if (e.target === e.currentTarget && !suspendDismiss) requestClose(); }}>
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="fixed inset-x-0 bottom-0 flex max-h-[85dvh] flex-col rounded-t-2xl border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-2xl focus:outline-none sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:max-h-none sm:w-full sm:max-w-[420px] sm:rounded-none sm:border-y-0 sm:border-r-0"
+        className="hours-panel-in fixed inset-x-0 bottom-0 flex max-h-[85dvh] flex-col rounded-t-2xl border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-2xl focus:outline-none sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:max-h-none sm:w-full sm:max-w-[420px] sm:rounded-none sm:border-y-0 sm:border-r-0"
       >
         <div className="flex-1 space-y-5 overflow-y-auto p-4">
           <header data-testid="hours-panel-header" className="space-y-2">

@@ -1920,6 +1920,21 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
 .animate-sheet-out {
   animation: sheet-out 0.2s var(--ease-exit) forwards;
 }
+/* Hours machine panel: bottom sheet below sm, right drawer from sm — enters from
+   whichever edge it is docked to. Plain CSS because these classes take no sm: variant. */
+.hours-panel-in {
+  animation: sheet-in 0.28s var(--ease-signature);
+}
+@media (min-width: 640px) {
+  .hours-panel-in {
+    animation: drawer-in 0.25s var(--ease-signature);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hours-panel-in {
+    animation: fade-in 0.15s ease-out;
+  }
+}
 /* Phone catalog: the list slides in from the side you are moving towards. */
 @keyframes drill-in {
   from { opacity: 0; transform: translateX(28px); }

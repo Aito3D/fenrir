@@ -116,8 +116,8 @@ export function ConfirmOutcomeDialog({ archiveId, runId, change = false, onClose
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" data-testid="confirm-outcome-dialog">
-      <div className="bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary w-full max-w-md overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-overlay-in" data-testid="confirm-outcome-dialog">
+      <div className="bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary w-full max-w-md overflow-hidden animate-modal-in">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-bambu-dark-tertiary">
           <h3 className="text-white font-semibold">{change ? t('archivePage.changeOutcome') : t('confirmOutcome.title')}</h3>

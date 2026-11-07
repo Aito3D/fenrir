@@ -227,7 +227,7 @@ export function OrderLinesPanel({
         if (edit && !saving) closeEdit();
         if (parcel && !parcelBusy) closeParcel();
       }}
-      className="grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_27rem]">
+      className="animate-rise-sm grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_27rem]">
       <div className="order-last min-w-0 lg:order-none">
       <OrderRefChips row={row}>
         {canUpdate && (
@@ -430,14 +430,14 @@ export function OrderLinesPanel({
                 })}
                 {group.id === 'packed' && parcel && (
                   <tr>
-                    <td colSpan={5} className="pt-2">
+                    <td colSpan={5} className="pt-2 animate-rise-sm">
                       <OrderParcelEditBar row={row} parcel={parcel} onClose={closeParcel} onBusy={setParcelBusy} />
                     </td>
                   </tr>
                 )}
                 {group.id === 'packed' && handoverOpen && handover && (
                   <tr>
-                    <td colSpan={5} className="pt-2">
+                    <td colSpan={5} className="pt-2 animate-rise-sm">
                       <OrderHandoverBar key={handover} row={row} packageId={handover} onClose={() => { refocus.current = `handover-${handover}`; setHandover(null); }} />
                     </td>
                   </tr>
@@ -492,7 +492,7 @@ export function OrderLinesPanel({
                       </td>
                     </tr>
                     <tr>
-                      <td colSpan={5} className="pt-2">
+                      <td colSpan={5} className="pt-2 animate-rise-sm">
                         <OrderEditBar row={row} edit={edit} onClose={closeEdit} onBusy={setSaving} />
                       </td>
                     </tr>
@@ -500,7 +500,7 @@ export function OrderLinesPanel({
                 )}
                 {group.id === 'todo' && check && (
                   <tr>
-                    <td colSpan={5} className="pt-2">
+                    <td colSpan={5} className="pt-2 animate-rise-sm">
                       <OrderPackBar
                         row={row}
                         check={check}
