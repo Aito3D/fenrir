@@ -182,7 +182,8 @@ async def test_ensure_pushed_returns_at_once_for_a_card_that_is_not_pending(db_s
         raise AssertionError("must not flush")
 
     monkeypatch.setattr(aito_quote_sync, "flush_and_wait", never)
-    await aito_routes.ensure_pushed(db_session, project)
+    assert await aito_routes.ensure_pushed(db_session, project) is None
+    assert project.quote_sync_state == "idle"
 
 
 @pytest.mark.asyncio
@@ -310,4 +311,5 @@ async def test_strict_ensure_pushed_leaves_a_card_alone_that_was_not_pending(db_
         raise AssertionError("must not flush")
 
     monkeypatch.setattr(aito_quote_sync, "flush_and_wait", never)
-    await aito_routes.ensure_pushed(db_session, project, strict=True)
+    assert await aito_routes.ensure_pushed(db_session, project, strict=True) is None
+    assert project.quote_sync_state == "error"

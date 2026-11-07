@@ -121,16 +121,19 @@ async def test_extend_does_not_wait_for_a_busy_background_pass(async_client, mon
     async def update(db, estimate_id, fields):
         return {"estimate_id": estimate_id, "status": "sent", **fields}
 
-    async def fail_reconcile(db, **kwargs):
-        raise AssertionError("must not reconcile while a pass is busy")
+    reconciled: list[dict] = []
+
+    async def record_reconcile(db, **kwargs):
+        reconciled.append(kwargs)
 
     monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
-    monkeypatch.setattr(aito_routes, "reconcile_payment_links", fail_reconcile)
+    monkeypatch.setattr(aito_routes, "reconcile_payment_links", record_reconcile)
     pid = await _expired(async_client)
 
     async with aito_payment_links._pass_lock:
         r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
     assert r.status_code == 200
+    assert reconciled == []
 
 
 @pytest.mark.asyncio

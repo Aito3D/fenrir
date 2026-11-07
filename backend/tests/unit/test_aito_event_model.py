@@ -9,6 +9,7 @@ unique column, which is exactly what our own events need.
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from backend.app.models.aito_event import AitoEvent
@@ -49,6 +50,8 @@ async def test_many_events_may_have_no_zoho_comment_id(db_session):
             )
         )
     await db_session.commit()
+    count = (await db_session.execute(select(func.count()).select_from(AitoEvent))).scalar_one()
+    assert count == 3
 
 
 @pytest.mark.asyncio
