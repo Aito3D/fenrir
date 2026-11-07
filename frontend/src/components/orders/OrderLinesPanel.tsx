@@ -291,7 +291,8 @@ export function OrderLinesPanel({
                               name={line.name}
                               label={t('orders.edit.ordered')}
                               value={edit.qty[line.id] ?? line.quantity}
-                              min={Math.max(line.floor, 1)} // removing a line is the trash's job, never a 0
+                              min={line.floor}
+                              positive // removing a line is the trash's job, never a 0
                               checkbox={false}
                               disabled={saving}
                               onChange={v => editQty(line.id, v)}
@@ -393,7 +394,7 @@ export function OrderLinesPanel({
                             name={item.name}
                             label={t('orders.edit.ordered')}
                             value={quantity}
-                            min={1}
+                            positive
                             checkbox={false}
                             disabled={saving}
                             onChange={v => setEdit({ ...edit, added: edit.added.map(a => (a.item.id === item.id ? { ...a, quantity: v } : a)) })}

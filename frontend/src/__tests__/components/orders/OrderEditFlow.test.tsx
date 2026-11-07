@@ -206,13 +206,30 @@ describe('editing the order', () => {
     }));
     render(<OrderLinesPanel row={panelRow({}, two)} />);
     await openEdit(user);
+    await user.click(screen.getByRole('button', { name: 'One more · Bambu Lab PLA Basic Noir' }));
     await user.clear(qty('l1'));
     await user.type(qty('l1'), '0');
     await user.tab();
-    expect(qty('l1')).toHaveValue(1);
+    expect(qty('l1')).toHaveValue(3); // the previous value comes back
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toEqual({ version: 'v1', lines: [{ line_id: 'l1', quantity: 1 }, { line_id: 'l2', quantity: 5 }] });
+    expect(bodies[0]).toEqual({ version: 'v1', lines: [{ line_id: 'l1', quantity: 3 }, { line_id: 'l2', quantity: 5 }] });
+  });
+
+  it('a fractional quantity steps by one without crossing 0 and survives the field losing focus', async () => {
+    const user = userEvent.setup();
+    const rope = (id: string, quantity: number) => line({ id, item_id: id, name: `Corde ${id}`, quantity, remaining: quantity });
+    render(<OrderLinesPanel row={panelRow({}, [rope('r1', 1.5), rope('r2', 0.5)])} />);
+    await openEdit(user);
+    await user.click(screen.getByRole('button', { name: 'One less · Corde r1' }));
+    expect(qty('r1')).toHaveValue(0.5);
+    expect(screen.getByRole('button', { name: 'One less · Corde r1' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'One less · Corde r2' })).toBeDisabled();
+    await user.click(qty('r2'));
+    await user.tab();
+    expect(qty('r2')).toHaveValue(0.5);
+    expect(screen.getByText(/Corde r1: 1.5 → 0.5/)).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument(); // r2 is untouched
   });
 
   it('a refused save (400 version) toasts the reason and keeps the edit open', async () => {

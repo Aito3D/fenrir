@@ -6,12 +6,16 @@ import { formatQty } from './orderBoard';
 const BTN = 'grid h-6 w-6 place-items-center rounded border border-bambu-dark-tertiary text-bambu-gray hover:text-white disabled:opacity-40';
 
 /** One line of a check: a tick to take the line or leave it, and its units, typed or one a click, kept inside min..max.
- *  Without `max` there is no ceiling (an ordered quantity); `checkbox={false}` drops the tick. */
+ *  Without `max` there is no ceiling (an ordered quantity); `checkbox={false}` drops the tick; `positive` never lets the value
+ *  reach 0 (a step or a typed value at or below 0 keeps the previous one, so 0.5 m of rope stays 0.5). */
 export function OrderQtyStepper({
-  id, name, label, value, min = 0, max, checkbox = true, disabled, onChange,
-}: { id: string; name: string; label: string; value: number; min?: number; max?: number; checkbox?: boolean; disabled: boolean; onChange: (v: number) => void }) {
+  id, name, label, value, min = 0, max, checkbox = true, positive = false, disabled, onChange,
+}: { id: string; name: string; label: string; value: number; min?: number; max?: number; checkbox?: boolean; positive?: boolean; disabled: boolean; onChange: (v: number) => void }) {
   const { t } = useTranslation();
-  const set = (v: number) => onChange(Math.round(Math.min(max ?? Infinity, Math.max(min, v)) * 100) / 100);
+  const set = (v: number) => {
+    if (positive && v <= 0) return;
+    onChange(Math.round(Math.min(max ?? Infinity, Math.max(min, v)) * 100) / 100);
+  };
   return (
     <span className="inline-flex items-center gap-1">
       {checkbox && max !== undefined && <input
@@ -22,7 +26,7 @@ export function OrderQtyStepper({
         onChange={e => onChange(e.target.checked ? max : 0)}
         className="mr-1 h-4 w-4 accent-bambu-green"
       />}
-      <button type="button" aria-label={`${t('orders.parcel.less')} · ${name}`} disabled={disabled || (min > 0 && value <= min)} onClick={() => set(value - 1)} className={BTN}>
+      <button type="button" aria-label={`${t('orders.parcel.less')} · ${name}`} disabled={disabled || (min > 0 && value <= min) || (positive && value - 1 <= 0)} onClick={() => set(value - 1)} className={BTN}>
         <Minus aria-hidden="true" className="h-3 w-3" />
       </button>
       <NumberInput
