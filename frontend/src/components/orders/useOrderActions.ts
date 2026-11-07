@@ -1,6 +1,6 @@
 import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
-import type { OrderActionResult, OrderBoardResponse } from '../../api/client';
+import type { OrderActionResult, OrderBoardResponse, OrderBoardRow, OrderEditLine } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { isRefused } from './orderErrors';
 
@@ -24,6 +24,8 @@ export function useHandOverPending(orderId: string): boolean {
 export function useOrderActions(callbacks?: {
   parcel?: Callbacks<{ package_number: string }, unknown>;
   picklist?: Callbacks<{ picklist: { id: string; number: string } }, unknown>;
+  edit?: Callbacks<{ row: OrderBoardRow | null }, unknown>;
+  parcelEdit?: Callbacks<{ row: OrderBoardRow | null }, unknown>;
   handOver?: Callbacks<OrderActionResult, HandOverVars>;
   invoice?: Callbacks<OrderActionResult, InvoiceVars>;
   cancel?: Callbacks<void, string>;
@@ -69,6 +71,34 @@ export function useOrderActions(callbacks?: {
     onError: (e, v) => {
       refused(v.id, e);
       callbacks?.picklist?.onError?.(e);
+    },
+  });
+  const dropPackages = (id: string) => queryClient.removeQueries({ queryKey: ['order-package', id] });
+  const editLines = useMutation({
+    mutationFn: ({ id, version, lines }: { id: string; version: string; lines: OrderEditLine[] }) => api.updateOrderLines(id, { version, lines }),
+    onSuccess: async (r, v) => {
+      await take(r.board);
+      dropPreviews(v.id);
+      dropPackages(v.id);
+      callbacks?.edit?.onSuccess?.(r, undefined);
+    },
+    onError: (e, v) => {
+      refused(v.id, e);
+      callbacks?.edit?.onError?.(e);
+    },
+  });
+  const editParcel = useMutation({
+    mutationFn: ({ id, packageId, version, was, lines }: { id: string; packageId: string; version: string; was: { line_id: string; quantity: number }[]; lines: { line_id: string; quantity: number }[] }) =>
+      api.updateOrderPackage(id, packageId, { version, was, lines }),
+    onSuccess: async (r, v) => {
+      await take(r.board);
+      dropPreviews(v.id);
+      dropPackages(v.id);
+      callbacks?.parcelEdit?.onSuccess?.(r, undefined);
+    },
+    onError: (e, v) => {
+      refused(v.id, e);
+      callbacks?.parcelEdit?.onError?.(e);
     },
   });
   const handOver = useMutation({
@@ -121,6 +151,8 @@ export function useOrderActions(callbacks?: {
     cancelOrder,
     createParcel,
     createPicklist,
+    editLines,
+    editParcel,
     handOver,
     createInvoice,
     emailInvoice,

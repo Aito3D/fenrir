@@ -36,6 +36,39 @@ describe('useOrderActions', () => {
     expect(client.getQueryData(['order-board'])).toEqual(board);
   });
 
+  it('editLines puts the body and takes the board', async () => {
+    let seen: unknown;
+    server.use(http.put('*/order-board/orders/so1/lines', async ({ request }) => {
+      seen = await request.json();
+      return HttpResponse.json({ board, row: null });
+    }));
+    const { client, result } = setup();
+    const lines = [{ line_id: 'l1', quantity: 3 }, { item_id: 'i9', quantity: 1 }];
+    await act(async () => {
+      await result.current.editLines.mutateAsync({ id: 'so1', version: 'v1', lines });
+    });
+    expect(seen).toEqual({ version: 'v1', lines });
+    expect(client.getQueryData(['order-board'])).toEqual(board);
+  });
+
+  it('editParcel puts was and lines and drops the package query', async () => {
+    let seen: unknown;
+    server.use(http.put('*/order-board/orders/so1/packages/p1', async ({ request }) => {
+      seen = await request.json();
+      return HttpResponse.json({ board, row: null });
+    }));
+    const { client, result } = setup();
+    client.setQueryData(['order-package', 'so1', 'p1'], { id: 'p1' });
+    const was = [{ line_id: 'l1', quantity: 2 }];
+    const lines = [{ line_id: 'l1', quantity: 1 }];
+    await act(async () => {
+      await result.current.editParcel.mutateAsync({ id: 'so1', packageId: 'p1', version: 'v2', was, lines });
+    });
+    expect(seen).toEqual({ version: 'v2', was, lines });
+    expect(client.getQueryData(['order-package', 'so1', 'p1'])).toBeUndefined();
+    expect(client.getQueryData(['order-board'])).toEqual(board);
+  });
+
   it('a failed call is thrown to the caller and leaves the list alone', async () => {
     server.use(http.post('*/order-board/orders/so1/invoice', () => HttpResponse.json({ detail: 'too_many' }, { status: 400 })));
     const { client, result } = setup();

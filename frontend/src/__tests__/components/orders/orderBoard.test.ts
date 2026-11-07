@@ -34,7 +34,7 @@ import {
 
 const line = (o: Partial<OrderBoardLine> = {}): OrderBoardLine => ({
   id: 'l1', item_id: 'A', name: 'Thing', sku: 'SKU-1', state: 'ready', quantity: 1, shipped: 0, cancelled: 0,
-  remaining: 1, invoiced: 0, packed_waiting: 0, stock_available: 1, covered: 1, packable: 1, shortfall: 0, covered_by_po: 0,
+  remaining: 1, invoiced: 0, packed_waiting: 0, stock_available: 1, covered: 1, packable: 1, shortfall: 0, rate: 3400, floor: 0, covered_by_po: 0,
   po_numbers: [], ...o,
 });
 
@@ -43,7 +43,7 @@ const row = (o: Partial<OrderBoardRow> = {}): OrderBoardRow => ({
   status: 'to_ship', age_days: 5, is_core: true, ready_ratio: 1, packed: 0, unbilled_units: 0, prep: null,
   units: { total: 1, shipped: 0, ready: 1, backordered: 0, to_order: 0 }, packages: [], lines: [line()],
   zoho_url: null, customer_id: '', payment: null, contact: null,
-  facts: { channel: '', reference: '', shopify_order: '', quote_number: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null }, ...o,
+  facts: { channel: '', reference: '', shopify_order: '', quote_number: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null }, version: 'v1', estimable: true, ...o,
 });
 
 const board = (o: Partial<OrderBoardResponse> = {}, sync: Partial<OrderBoardResponse['sync']> = {}): OrderBoardResponse => ({

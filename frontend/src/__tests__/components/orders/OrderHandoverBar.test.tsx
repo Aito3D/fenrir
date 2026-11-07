@@ -29,14 +29,14 @@ afterEach(() => {
 
 const line = (o: Partial<OrderBoardLine> = {}): OrderBoardLine => ({
   id: 'l1', item_id: 'A', name: 'Bambu Lab PLA Basic Noir', sku: 'BL-PLA-BK', state: 'ready', quantity: 2, shipped: 0,
-  cancelled: 0, remaining: 2, invoiced: 0, packed_waiting: 2, stock_available: 2, covered: 2, packable: 0, shortfall: 0,
+  cancelled: 0, remaining: 2, invoiced: 0, packed_waiting: 2, stock_available: 2, covered: 2, packable: 0, shortfall: 0, rate: 3400, floor: 0,
   covered_by_po: 0, po_numbers: [], ...o,
 });
 const pkg = (n: number, o: Partial<OrderPackage> = {}): OrderPackage => ({ id: `p${n}`, shipment_id: `s${n}`, number: `PKG-${n}`, status: 'not_shipped', date: '2026-11-05', ...o });
 const panelRow = (o: Partial<OrderPanelRow> = {}): OrderPanelRow => ({
   id: 'so1', number: 'SO-00412', customer: 'Lycée de Taravao', date: '2026-09-12', total: 14400, currency: 'XPF',
   age_days: 5, is_core: true, ready_ratio: 1, packed: 2, unbilled_units: 0, prep: null, customer_id: '', payment: null, contact: null,
-  facts: { channel: '', reference: '', shopify_order: '', quote_number: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null },
+  facts: { channel: '', reference: '', shopify_order: '', quote_number: '', delivery_method: '', payment_terms: '', shopify_url: null, quote_url: null }, version: 'v1', estimable: true,
   units: { total: 2, shipped: 0, ready: 0, backordered: 0, to_order: 0 }, packages: [pkg(1)], lines: [line()],
   zoho_url: null, ...o,
 });

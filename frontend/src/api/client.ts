@@ -5076,6 +5076,9 @@ export interface OrderBoardLine {
   shortfall: number;
   covered_by_po: number;
   po_numbers: string[];
+  /** Books' price per unit and the least this line may drop to (what already left or is billed). */
+  rate: number;
+  floor: number;
 }
 
 export type OrderPayState = 'unpaid' | 'partial' | 'paid';
@@ -5118,7 +5121,16 @@ export interface OrderBoardRow {
   payment: OrderPayment | null;
   contact: OrderContact | null;
   facts: OrderFacts;
+  /** Changes whenever the order changes in Books; sent back with an edit. */
+  version: string;
+  estimable: boolean;
 }
+
+export interface OrderItemHit { id: string; name: string; sku: string; rate: number; stock_on_hand: number | null; product_type: string }
+export type OrderEditLine = { line_id: string; quantity: number } | { item_id: string; quantity: number };
+export interface OrderPackageContent { id: string; number: string; version: string; picklist_id: string; lines: { line_id: string; quantity: number; max: number }[] }
+/** `row` is null when the edit took the order off the board. */
+export type OrderEditResult = { board: OrderBoardResponse; row: OrderBoardRow | null };
 
 /** What the opened panel needs: a board row, or a finished order fetched on demand. */
 export type OrderPanelRow = Omit<OrderBoardRow, 'status'>;
@@ -9887,6 +9899,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ picklist_id: picklistId, lines }),
     }),
+  searchOrderItems: (q: string) => request<{ items: OrderItemHit[] }>(`/order-board/items?q=${encodeURIComponent(q)}`),
+  updateOrderLines: (id: string, body: { version: string; lines: OrderEditLine[] }) =>
+    request<OrderEditResult>(`/order-board/orders/${encodeURIComponent(id)}/lines`, { method: 'PUT', body: JSON.stringify(body) }),
+  getOrderPackage: (id: string, packageId: string) =>
+    request<OrderPackageContent>(`/order-board/orders/${encodeURIComponent(id)}/packages/${encodeURIComponent(packageId)}`),
+  updateOrderPackage: (id: string, packageId: string, body: { version: string; was: OrderPickLines['lines']; lines: OrderPickLines['lines'] }) =>
+    request<OrderEditResult>(`/order-board/orders/${encodeURIComponent(id)}/packages/${encodeURIComponent(packageId)}`, { method: 'PUT', body: JSON.stringify(body) }),
   getOrderHandover: (id: string, packageId: string) =>
     request<OrderHandoverPreview>(`/order-board/orders/${encodeURIComponent(id)}/packages/${encodeURIComponent(packageId)}/handover`),
   handOverOrderParcel: (id: string, packageId: string, body: { mode: 'pickup' | 'delivery'; apply_credit: boolean }) =>
