@@ -272,7 +272,7 @@ async def test_public_shape_titles_fallback_due_date_and_shipping(async_client, 
     assert body["balance"] is None  # no live link, no invoice: nothing owed to show
     assert body["updated_at"]  # project.updated_at, naive UTC ISO string
     assert body["column"] == "print"
-    assert body["tasks"] == [{"title": "Support GoPro", "quantity": None}, {"title": "Pièce 2", "quantity": None}]
+    assert body["tasks"] == [{"title": "Support GoPro", "quantity": 1}, {"title": "Pièce 2", "quantity": 1}]
     assert body["due_date"] == "2026-09-20"
     assert body["shipping"]["island"] == "Rangiroa"  # label resolved server-side, key 'rangiroa' → its real label
     assert body["shipping"]["service"] == "Livraison Avion Tuamotu"
@@ -318,7 +318,7 @@ async def test_public_task_quantity_only_when_every_priced_service_agrees(async_
         json={"title": "print only", "impression_cost": 900.0, "impression_quantity": 3, "scan_quantity": 7},
     )  # unpriced scan ignored
     tasks = (await async_client.get(TRACK + await _token(async_client, db_session, pid))).json()["tasks"]
-    assert [t["quantity"] for t in tasks] == [2, None, None, 3]
+    assert [t["quantity"] for t in tasks] == [2, None, 1, 3]
 
 
 @pytest.mark.asyncio

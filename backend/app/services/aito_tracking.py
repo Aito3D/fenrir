@@ -359,7 +359,8 @@ _SERVICE_COUNTS = (
 
 def task_quantity(task: AitoTask) -> int | None:
     """One number only when it is unambiguous: every COUNTED service on the
-    task has the same count and it is > 1. Otherwise None — never a guess.
+    task has the same count (1 included, so ×1 matches the other rows).
+    Otherwise None — never a guess.
 
     "Counted", not "priced": main d'œuvre is a priced service that carries no
     quantity, so it is not in ``_SERVICE_COUNTS`` and a labour-only task has
@@ -370,7 +371,7 @@ def task_quantity(task: AitoTask) -> int | None:
     if len(counts) != 1:
         return None
     (count,) = counts
-    return count if count > 1 else None
+    return count
 
 
 async def last_activity(db: AsyncSession, project: AitoProject) -> datetime:
