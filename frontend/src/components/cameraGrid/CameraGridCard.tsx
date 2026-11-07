@@ -219,7 +219,8 @@ export const CameraGridCard = memo(function CameraGridCard({
   const iconSm = layout === 'compact' ? 'w-2.5 h-2.5' : 'w-3 h-3';
   const iconCtrl = layout === 'compact' ? 'w-3 h-3' : 'w-3.5 h-3.5';
   const barH = layout === 'compact' ? 'h-1' : 'h-1.5';
-  const rawTopError = hmsErrors?.length ? getTopHMSError(hmsErrors) : null;
+  // The wall only interrupts for a stopped task (Bambu level 1); warnings and notices stay in the HMS modal.
+  const rawTopError = hmsErrors?.length ? getTopHMSError(hmsErrors.filter(e => e.severity === 1)) : null;
   const topError = rawTopError && dismissedErrorDesc === rawTopError.description ? null : rawTopError;
 
   // Border/glow per state (blinking border = operator action needed: paused,
@@ -456,14 +457,10 @@ export const CameraGridCard = memo(function CameraGridCard({
         {topError && (
           <button
             onClick={() => onDismissError?.(printerId, topError.description)}
-            className={`absolute left-2 right-2 ${layout === 'compact' ? 'top-7' : 'top-8'} z-20 flex items-start gap-1.5 px-2 py-1.5 rounded-md shadow-lg border backdrop-blur-sm cursor-pointer hover:opacity-80 transition-opacity text-left animate-grid-slide-in-top ${
-              topError.severity <= 2
-                ? 'bg-red-900/90 border-red-500/50 text-red-100'
-                : 'bg-red-900/80 border-red-500/40 text-red-200'
-            }`}
+            className={`absolute left-2 right-2 ${layout === 'compact' ? 'top-7' : 'top-8'} z-20 flex items-start gap-1.5 px-2 py-1.5 rounded-md shadow-lg border backdrop-blur-sm cursor-pointer hover:opacity-80 transition-opacity text-left animate-grid-slide-in-top bg-red-900/90 border-red-500/50 text-red-100`}
             title={t('printers.clickToDismiss')}
           >
-            <AlertTriangle className={`w-4 h-4 shrink-0 mt-0.5 ${topError.severity <= 2 ? 'text-red-300' : 'text-red-400'}`} />
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-300" />
             <span className={`${textXs} leading-tight line-clamp-2 text-red-200`}>{topError.description}</span>
           </button>
         )}

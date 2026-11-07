@@ -363,7 +363,7 @@ describe('CameraGridCard', () => {
   describe('HMS error banner', () => {
     const desc = 'The task was canceled.';
     // The text is the backend's catalogue sentence (#2728); the frontend keeps no table.
-    const err: HMSError = { attr: 0x0300, code: '0x400C', module: 0, severity: 2, full_code: '0300400C', description: desc };
+    const err: HMSError = { attr: 0x0300, code: '0x400C', module: 0, severity: 1, full_code: '0300400C', description: desc };
 
     it('shows the top HMS error and dismissing it calls onDismissError with (printerId, description)', async () => {
       const user = userEvent.setup();
@@ -376,6 +376,23 @@ describe('CameraGridCard', () => {
       await user.click(banner);
 
       expect(handlers.onDismissError).toHaveBeenCalledWith(4, desc);
+    });
+
+    it('shows no banner for a warning (level 2) or a notice (level 3): the wall only interrupts for a stopped task', () => {
+      const warning: HMSError = { ...err, severity: 2, description: 'Filament ran out.' };
+      const notice: HMSError = { ...err, severity: 3, description: 'The top cover is open.', actions: ['CHECK_FILAMENT'] };
+      render(<CameraGridCard {...baseProps({ hmsErrors: [warning, notice] })} />);
+
+      expect(screen.queryByText('Filament ran out.')).not.toBeInTheDocument();
+      expect(screen.queryByText('The top cover is open.')).not.toBeInTheDocument();
+    });
+
+    it('shows the error when it sits beside a warning', () => {
+      const warning: HMSError = { ...err, severity: 2, description: 'Filament ran out.' };
+      render(<CameraGridCard {...baseProps({ hmsErrors: [warning, err] })} />);
+
+      expect(screen.getByText(desc)).toBeInTheDocument();
+      expect(screen.queryByText('Filament ran out.')).not.toBeInTheDocument();
     });
 
     it('hides the banner once its description matches dismissedErrorDesc', () => {

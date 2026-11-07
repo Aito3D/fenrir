@@ -344,7 +344,7 @@ async def read_finished_order(db: AsyncSession, salesorder_id: str) -> dict:
     if doc is None:
         raise OrderNotFinished(salesorder_id)
     await _ensure_finished_detail(db, doc)
-    rows = [order_row(doc.detail, {}, date.today())]
+    rows = [order_row(doc.detail or {}, {}, date.today())]
     await _add_links(db, rows)
     return rows[0]
 
@@ -364,9 +364,9 @@ async def _ensure_finished_detail(db: AsyncSession, doc: OrderBoardDoc) -> None:
 
 
 async def _store_quote_number(db: AsyncSession, doc: OrderBoardDoc) -> None:
-    quote = await zoho_service.get_estimate(db, doc.detail["estimate_id"])
+    quote = await zoho_service.get_estimate(db, str((doc.detail or {}).get("estimate_id") or ""))
     await db.refresh(doc)
-    doc.detail = {**doc.detail, "estimate_number": quote.get("estimate_number") or ""}
+    doc.detail = {**(doc.detail or {}), "estimate_number": quote.get("estimate_number") or ""}
     await db.commit()
 
 
@@ -383,10 +383,11 @@ async def _fetch_finished_detail(db: AsyncSession, doc: OrderBoardDoc) -> None:
     # No pass lock here (a pass can run long): if a pass wrote this row meanwhile, its mark or newer detail
     # must not be lost, so the fetched copy goes in marked stale and the next open fetches again.
     await db.refresh(doc)
-    doc.detail = {**fetched, "_fetched_at": _now(), **({"_stale": True} if _snapshot(doc) != before else {})}
+    detail = {**fetched, "_fetched_at": _now(), **({"_stale": True} if _snapshot(doc) != before else {})}
+    doc.detail = detail
     doc.pending = False
     await db.commit()
-    if quote_number_missing(doc.detail) and zoho_service.calls_in_last_minute() < CALL_CEILING:
+    if quote_number_missing(detail) and zoho_service.calls_in_last_minute() < CALL_CEILING:
         await _store_quote_number(db, doc)
 
 

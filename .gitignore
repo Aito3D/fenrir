@@ -115,3 +115,6 @@ feature_votes.sh
 
 # Dev data: the PDM project storage root (settings.base_dir/projects)
 /projects/
+
+# Photos the notification service saves at runtime
+notification_photos/
