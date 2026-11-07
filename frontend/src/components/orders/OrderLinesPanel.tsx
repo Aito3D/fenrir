@@ -46,7 +46,7 @@ const LINE_STATE: Record<OrderBoardLine['state'], { label: string; cls: string }
 };
 
 const dash = <span className="text-bambu-gray">–</span>;
-const EDIT_BTN = 'inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-bambu-green hover:text-bambu-green';
+const EDIT_BTN = 'inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-bambu-green hover:text-bambu-green disabled:opacity-50';
 const TRASH = 'grid h-7 w-7 place-items-center rounded-md text-bambu-gray hover:bg-red-500/15 hover:text-red-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-bambu-gray';
 
 /** The expanded order: one table, split into what is left to prepare, what is
@@ -87,10 +87,13 @@ export function OrderLinesPanel({
   const { print, busy: printing } = usePrintBlob({ failureMessage: t('orders.prep.printFailed'), downloadFilename: `${row.number}-prep.pdf` });
   // The check being loaded: what a picklist or its parcel may hold is asked from Zoho when the check opens.
   const [opening, setOpening] = useState<string | null>(null);
+  // Whether a bar is open now, read after an await: a bar opened while Zoho answered wins, one bar at a time.
+  const barOpen = useRef(false);
   const openCheck = async (picklist: OrderPicklist | null) => {
     setOpening(picklist?.id ?? 'pick');
     try {
       const { lines } = picklist ? await api.getOrderPicklist(row.id, picklist.id) : await api.getOrderPicklistPreview(row.id);
+      if (barOpen.current) return;
       const max = Object.fromEntries(lines.map(l => [l.line_id, l.quantity]));
       if (!lines.length) showToast(t(picklist ? 'orders.pick.boxed' : 'orders.pick.nothing'), 'error');
       else setCheck({ kind: picklist ? 'pack' : 'pick', picklist: picklist ?? undefined, max, qty: { ...max } });
@@ -111,6 +114,7 @@ export function OrderLinesPanel({
     setOpening(`parcel-${packageId}`);
     try {
       const c = await api.getOrderPackage(row.id, packageId);
+      if (barOpen.current) return;
       const was = Object.fromEntries(c.lines.filter(l => l.quantity > 0).map(l => [l.line_id, l.quantity]));
       const picklist = (row.picklists ?? []).find(p => p.id === c.picklist_id)?.number ?? c.picklist_id;
       setParcel({ packageId, number: c.number, picklist, version: c.version, was, max: Object.fromEntries(c.lines.map(l => [l.line_id, l.max])), qty: Object.fromEntries(c.lines.map(l => [l.line_id, l.quantity])) });
@@ -159,6 +163,7 @@ export function OrderLinesPanel({
   const closeEdit = () => { refocus.current = 'edit'; setEdit(null); setSaving(false); };
   // A refetch where the parcel is no longer waiting (handed over, deleted) closes its edit.
   const parcel = parcelState && waitingPackages(row).some(p => p.id === parcelState.packageId) ? parcelState : null;
+  barOpen.current = !!edit || !!check || handoverOpen || !!parcel;
   useEffect(() => {
     if (parcelState && !parcel) {
       setParcel(null);
@@ -174,7 +179,7 @@ export function OrderLinesPanel({
         {t('orders.edit.locked', { number: picklistOpen.number })}
       </span>
     ) : (
-      <button type="button" data-opens="edit" onClick={() => setEdit(startEdit(row))} className={EDIT_BTN}>
+      <button type="button" data-opens="edit" disabled={opening !== null} onClick={() => setEdit(startEdit(row))} className={EDIT_BTN}>
         <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
         {t('orders.edit.open')}
       </button>

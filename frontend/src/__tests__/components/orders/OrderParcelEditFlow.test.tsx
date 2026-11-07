@@ -184,7 +184,7 @@ describe('editing a parcel', () => {
 
   it('a 400 package_changed toasts the reason and refetches the board', async () => {
     const user = userEvent.setup();
-    server.use(content, http.put(`${BASE}/packages/p1`, () => HttpResponse.json({ detail: { code: 'package_changed', message: 'changed' } }, { status: 400 })));
+    server.use(content, http.put(`${BASE}/packages/p1`, () => HttpResponse.json({ detail: 'package_changed' }, { status: 400 })));
     let reads = 0;
     const Probe = () => { useQuery({ queryKey: ['order-board'], queryFn: () => { reads += 1; return board; }, staleTime: Infinity }); return null; };
     render(<><Probe /><OrderLinesPanel row={panelRow()} /></>);
@@ -195,6 +195,23 @@ describe('editing a parcel', () => {
     expect(await screen.findByText('Parcel edit failed: the parcel changed in Books, look again')).toBeInTheDocument();
     await waitFor(() => expect(reads).toBe(2));
     expect(screen.queryByRole('columnheader', { name: 'In the parcel' })).not.toBeInTheDocument(); // what it showed is stale
+  });
+
+  it('while the parcel is read from Books, Edit is disabled and a hand-over opened meanwhile wins', async () => {
+    const user = userEvent.setup();
+    let answer: () => void = () => {};
+    server.use(http.get(`${BASE}/packages/p1`, () => new Promise<Response>(resolve => {
+      answer = () => resolve(HttpResponse.json({ id: 'p1', number: 'PKG-00031', version: 'v1', picklist_id: 'pl1', lines: [{ line_id: 'l1', quantity: 2, max: 3 }] }));
+    })));
+    render(<OrderLinesPanel row={panelRow()} />);
+    await user.click(parcelButton());
+    const orderEdit = editButtons().find(b => b.dataset.opens === 'edit');
+    expect(orderEdit).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Hand over the parcel' }));
+    answer();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Hand over the parcel' })).not.toBeInTheDocument());
+    await new Promise(r => setTimeout(r, 50));
+    expect(screen.queryByRole('columnheader', { name: 'In the parcel' })).not.toBeInTheDocument(); // one bar at a time
   });
 
   it('the hand-over buttons are hidden while a parcel is being edited', async () => {
