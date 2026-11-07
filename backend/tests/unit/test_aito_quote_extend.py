@@ -1,16 +1,28 @@
 """POST /aito/{id}/quote-extend: an expired quote gets 15 more days from today,
 written to Books first, then adopted locally with Books' own status."""
 
-from datetime import date, timedelta
+from datetime import date
 
 import pytest
 from sqlalchemy import select
 
 from backend.app.models.aito_event import AitoEvent
-from backend.app.services.zoho import ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
 
 
-async def _expired(async_client):
+class _FrozenDate(date):
+    @classmethod
+    def today(cls):
+        return cls(2026, 11, 6)
+
+
+@pytest.fixture(autouse=True)
+def _frozen_today(monkeypatch):
+    # The route reads date.today() from its own module namespace.
+    monkeypatch.setattr("backend.app.api.routes.aito.date", _FrozenDate)
+
+
+async def _expired(async_client, quote_id="E1"):
     r = await async_client.post(
         "/api/v1/aito/",
         json={
@@ -18,7 +30,7 @@ async def _expired(async_client):
             "client_id": "z1",
             "client_name": "ACME",
             "client_phone": "+689 87 00 00 00",
-            "quote_id": "E1",
+            "quote_id": quote_id,
             "quote_status": "expired",
         },
     )
@@ -40,7 +52,7 @@ async def test_extend_pushes_today_plus_15_and_adopts_books_status(async_client,
     r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
 
     assert r.status_code == 200, r.text
-    expected = (date.today() + timedelta(days=15)).isoformat()
+    expected = "2026-11-21"
     assert calls == [("E1", {"expiry_date": expected})]
     assert r.json()["quote_status"] == "sent"
     assert r.json()["quote_expiry_date"] == expected
@@ -98,3 +110,95 @@ async def test_extend_reconciles_the_payment_link_right_away(async_client, monke
 
     assert (await async_client.post(f"/api/v1/aito/{pid}/quote-extend")).status_code == 200
     assert reconciled == [{"only_project_id": pid, "force": True}]
+
+
+@pytest.mark.asyncio
+async def test_extend_does_not_wait_for_a_busy_background_pass(async_client, monkeypatch):
+    """T-585: a pass holding the payment-link lock must not stall the response."""
+    from backend.app.api.routes import aito as aito_routes
+    from backend.app.services import aito_payment_links
+
+    async def update(db, estimate_id, fields):
+        return {"estimate_id": estimate_id, "status": "sent", **fields}
+
+    reconciled: list[dict] = []
+
+    async def record_reconcile(db, **kwargs):
+        reconciled.append(kwargs)
+
+    monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
+    monkeypatch.setattr(aito_routes, "reconcile_payment_links", record_reconcile)
+    pid = await _expired(async_client)
+
+    async with aito_payment_links._pass_lock:
+        r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
+    assert r.status_code == 200
+    assert reconciled == []
+
+
+@pytest.mark.asyncio
+async def test_extend_survives_a_reconcile_failure_after_the_commit(async_client, monkeypatch):
+    from backend.app.api.routes import aito as aito_routes
+
+    async def update(db, estimate_id, fields):
+        return {"estimate_id": estimate_id, "status": "sent", **fields}
+
+    async def boom(db, **kwargs):
+        raise RuntimeError("heimdall exploded")
+
+    monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
+    monkeypatch.setattr(aito_routes, "reconcile_payment_links", boom)
+    pid = await _expired(async_client)
+
+    r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
+    assert r.status_code == 200
+    assert r.json()["quote_status"] == "sent"
+
+
+@pytest.mark.asyncio
+async def test_extend_refuses_an_expired_card_without_a_quote_id(async_client, monkeypatch):
+    async def update(db, estimate_id, fields):
+        raise AssertionError("Books must not be called")
+
+    monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
+    pid = await _expired(async_client, quote_id=None)
+    r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_extend_answers_502_and_stays_expired_when_books_is_not_configured(async_client, monkeypatch):
+    async def update(db, estimate_id, fields):
+        raise ZohoNotConfiguredError("Zoho Books is not configured")
+
+    monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
+    pid = await _expired(async_client)
+    r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
+    assert r.status_code == 502
+    assert "not configured" in r.json()["detail"]
+    board = (await async_client.get("/api/v1/aito/")).json()
+    assert next(p for p in board if p["id"] == pid)["quote_status"] == "expired"
+
+
+@pytest.mark.asyncio
+async def test_extend_falls_back_to_our_expiry_and_sent_when_books_replies_empty(async_client, monkeypatch):
+    async def update(db, estimate_id, fields):
+        return {}
+
+    monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
+    pid = await _expired(async_client)
+    r = await async_client.post(f"/api/v1/aito/{pid}/quote-extend")
+    assert r.status_code == 200, r.text
+    assert r.json()["quote_status"] == "sent"
+    assert r.json()["quote_expiry_date"] == "2026-11-21"
+
+
+@pytest.mark.asyncio
+async def test_extend_on_a_trashed_card_is_404(async_client, monkeypatch):
+    async def update(db, estimate_id, fields):
+        raise AssertionError("Books must not be called")
+
+    monkeypatch.setattr(zoho_service, "update_estimate_fields", update)
+    pid = await _expired(async_client)
+    assert (await async_client.delete(f"/api/v1/aito/{pid}")).status_code == 204
+    assert (await async_client.post(f"/api/v1/aito/{pid}/quote-extend")).status_code == 404

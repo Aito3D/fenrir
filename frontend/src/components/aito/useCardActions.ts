@@ -8,6 +8,12 @@ import { buildSummary, copyText } from './copySummary';
 import { buildJobTicketHtml } from './printJobTicket';
 import { usePrintBlob } from './usePrintBlob';
 
+/** The absolute URL a card is reached by; the search parameter is the one
+ *  AitoPage's deep-link effect reads. */
+export function cardLink(id: number): string {
+  return `${window.location.origin}/aito?card=${id}`;
+}
+
 /** The card menu's two read-only exports — Copy summary and Print job ticket
  *  (spec A4, A6) — kept out of the panel, which only hands over the card and
  *  its live task list.
@@ -20,12 +26,6 @@ import { usePrintBlob } from './usePrintBlob';
  *  `external_url`, or a viewer who may not edit, goes without the link rather
  *  than asking for one the server would refuse; a failed fetch does too —
  *  the rest of the text is still worth having. */
-/** The absolute URL a card is reached by; the search parameter is the one
- *  AitoPage's deep-link effect reads. */
-export function cardLink(id: number): string {
-  return `${window.location.origin}/aito?card=${id}`;
-}
-
 export function useCardActions(project: AitoProject, tasks: TaskDraft[], currency: string, canUpdate: boolean) {
   const { t } = useTranslation();
   const { showToast } = useToast();

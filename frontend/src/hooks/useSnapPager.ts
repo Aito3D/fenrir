@@ -19,12 +19,25 @@ export interface SnapPagerHandlers {
  *  on request, re-aligns after a width change, and settles itself when a
  *  swipe is released between two pages (the Aito phone board's mechanics).
  *
+ *  Pages are as wide as the pager unless `pageWidth` says otherwise (the
+ *  tablet board's columns are narrower than its pager): it returns the px
+ *  distance between two pages' resting positions.
+ *
  *  Spread `handlers` on the scrolling element and give it `pagerRef`. */
 export function useSnapPager(
   count: number,
   current: number,
   setCurrent: (index: number) => void,
-): { pagerRef: RefObject<HTMLDivElement | null>; jump: (index: number, smooth: boolean) => void; handlers: SnapPagerHandlers } {
+  pageWidth?: (pager: HTMLElement) => number,
+): {
+  pagerRef: RefObject<HTMLDivElement | null>;
+  jump: (index: number, smooth: boolean) => void;
+  /** Put `index` in view at once, without adopting it (after a size change). */
+  alignTo: (index: number) => void;
+  /** Abandon a smooth jump in flight (the user took over by other means). */
+  endJump: () => void;
+  handlers: SnapPagerHandlers;
+} {
   const pagerRef = useRef<HTMLDivElement>(null);
 
   // The width the pager was last laid out for: a resize only re-aligns when
@@ -33,17 +46,22 @@ export function useSnapPager(
   // would yank a swipe in progress to the stale `current`.
   const alignedWidthRef = useRef(0);
 
-  const scrollToPage = useCallback((index: number, smooth: boolean) => {
-    const pager = pagerRef.current;
-    if (!pager) return;
-    alignedWidthRef.current = pager.clientWidth;
-    const left = index * pager.clientWidth;
-    if (smooth && !prefersReducedMotion() && typeof pager.scrollTo === 'function') {
-      pager.scrollTo({ left, behavior: 'smooth' });
-    } else {
-      pager.scrollLeft = left;
-    }
-  }, []);
+  const pitchOf = useCallback((pager: HTMLElement) => (pageWidth ? pageWidth(pager) : pager.clientWidth), [pageWidth]);
+
+  const scrollToPage = useCallback(
+    (index: number, smooth: boolean) => {
+      const pager = pagerRef.current;
+      if (!pager) return;
+      alignedWidthRef.current = pager.clientWidth;
+      const left = index * pitchOf(pager);
+      if (smooth && !prefersReducedMotion() && typeof pager.scrollTo === 'function') {
+        pager.scrollTo({ left, behavior: 'smooth' });
+      } else {
+        pager.scrollLeft = left;
+      }
+    },
+    [pitchOf],
+  );
 
   // Land on the remembered page before the first paint.
   useLayoutEffect(() => {
@@ -93,12 +111,12 @@ export function useSnapPager(
   const settle = useCallback(() => {
     settleTimerRef.current = null;
     const pager = pagerRef.current;
-    if (!pager || pager.clientWidth === 0 || fingerDownRef.current) return;
-    const index = Math.min(Math.max(Math.round(pager.scrollLeft / pager.clientWidth), 0), count - 1);
+    if (!pager || pitchOf(pager) === 0 || fingerDownRef.current) return;
+    const index = Math.min(Math.max(Math.round(pager.scrollLeft / pitchOf(pager)), 0), count - 1);
     if (jumpTargetRef.current !== null) endJump();
     if (index !== currentRef.current) setCurrent(index);
-    if (Math.abs(pager.scrollLeft - index * pager.clientWidth) > 1) scrollToPage(index, true);
-  }, [count, endJump, scrollToPage, setCurrent]);
+    if (Math.abs(pager.scrollLeft - index * pitchOf(pager)) > 1) scrollToPage(index, true);
+  }, [count, endJump, pitchOf, scrollToPage, setCurrent]);
 
   const scheduleSettle = useCallback(() => {
     if (settleTimerRef.current !== null) clearTimeout(settleTimerRef.current);
@@ -114,15 +132,15 @@ export function useSnapPager(
 
   const onScroll = useCallback(() => {
     const pager = pagerRef.current;
-    if (!pager || pager.clientWidth === 0) return;
+    if (!pager || pitchOf(pager) === 0) return;
     scheduleSettle();
-    const index = Math.round(pager.scrollLeft / pager.clientWidth);
+    const index = Math.round(pager.scrollLeft / pitchOf(pager));
     if (jumpTargetRef.current !== null) {
       if (index === jumpTargetRef.current) endJump();
       return;
     }
     if (index !== currentRef.current) setCurrent(index);
-  }, [endJump, scheduleSettle, setCurrent]);
+  }, [endJump, pitchOf, scheduleSettle, setCurrent]);
 
   const jump = useCallback(
     (index: number, smooth: boolean) => {
@@ -148,9 +166,13 @@ export function useSnapPager(
     scheduleSettle();
   }, [scheduleSettle]);
 
+  const alignTo = useCallback((index: number) => scrollToPage(index, false), [scrollToPage]);
+
   return {
     pagerRef,
     jump,
+    alignTo,
+    endJump,
     handlers: { onScroll, onPointerDown: endJump, onTouchStart, onTouchEnd, onTouchCancel: onTouchEnd },
   };
 }

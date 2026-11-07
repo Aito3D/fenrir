@@ -1153,7 +1153,9 @@ def test_release_miss_tolerates_a_key_with_nothing_reserved(track_rate_clock):
     dict-access error."""
     from backend.app.api.routes import aito as aito_routes
 
-    aito_routes._release_miss({}, "never-reserved", 1.0)  # must not raise
+    buckets: dict = {}
+    aito_routes._release_miss(buckets, "never-reserved", 1.0)  # must not raise
+    assert buckets == {}
 
 
 def test_release_miss_tolerates_a_bucket_the_sweep_deleted_first(track_rate_clock, monkeypatch):

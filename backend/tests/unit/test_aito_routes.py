@@ -1355,6 +1355,24 @@ async def test_add_task_appends_at_the_end(async_client):
 
 
 @pytest.mark.asyncio
+async def test_task_impression_color_cap_is_100_on_create_and_patch(async_client):
+    """The frontend's IMPRESSION_COLOR_MAX (100) mirrors this cap; the board's
+    contract test pins the number, this pins the 422 on both write schemas."""
+    project_id = (await _create(async_client)).json()["id"]
+    url = f"/api/v1/aito/{project_id}/tasks"
+    assert (await async_client.post(url, json=_task(impression_color="c" * 101))).status_code == 422
+    ok = await async_client.post(url, json=_task(impression_color="c" * 100))
+    assert ok.status_code == 201
+    task_id = ok.json()["id"]
+    assert (
+        await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"impression_color": "c" * 101})
+    ).status_code == 422
+    r = await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"impression_color": "d" * 100})
+    assert r.status_code == 200
+    assert r.json()["impression_color"] == "d" * 100
+
+
+@pytest.mark.asyncio
 async def test_patch_task_writes_clears_and_leaves_alone(async_client):
     project_id = (await _create(async_client, tasks=[_task(scan_cost=4000.0)])).json()["id"]
     task_id = (await async_client.get(f"/api/v1/aito/{project_id}/tasks")).json()[0]["id"]

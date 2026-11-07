@@ -16,6 +16,7 @@ import { useCurrency } from '../../hooks/useCurrency';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import type { ZohoQuotePreview } from '../../api/client';
 import { SERVICES, summariseTasks, taskCost, toTaskLike } from '../../utils/aitoBoardRules';
+import { useAitoZohoStatus } from '../../hooks/useAitoZohoStatus';
 
 export interface ImportQuoteDrawerProps {
   onClose: () => void;
@@ -67,11 +68,7 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
   // into visible 'miss' — same reveal-not-swallow rule as NewProjectDrawer.
   const [revealed, setRevealed] = useState(false);
 
-  const statusQuery = useQuery({
-    queryKey: ['zoho-status', { probe: false }],
-    queryFn: () => api.getZohoStatus(),
-    staleTime: 60_000,
-  });
+  const statusQuery = useAitoZohoStatus();
   const zohoNotConfigured = statusQuery.data?.configured === false;
 
   const previewQuery = useQuery({

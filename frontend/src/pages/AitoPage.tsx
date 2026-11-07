@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAnimation } from '@dnd-kit/core';
 import { AlertTriangle, Archive, BarChart3, FileInput, Kanban, Loader2, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth } from '../contexts/AuthContext';
-import { useToast } from '../contexts/ToastContext';
 import { CardView } from '../components/aito/CardView';
 import { BoardColumn } from '../components/aito/BoardColumn';
 import { BoardSearch } from '../components/aito/BoardSearch';
@@ -21,7 +19,7 @@ import { StatsView } from '../components/aito/StatsView';
 import { useTimeframe } from '../components/stats/timeframe';
 import { ViewToggleButton } from '../components/aito/ViewToggleButton';
 import { api, type AitoProject } from '../api/client';
-import { formatPhone } from '../utils/clientDraft';
+import { clientFieldsFromDraft } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
 import type { TaskDraft } from '../utils/taskDraft';
 import type { ShippingDraft } from '../utils/shippingDraft';
@@ -34,6 +32,7 @@ import { useCardFlight } from '../hooks/useCardFlight';
 import { CelebrationProvider } from '../components/aito/celebration';
 import { useCardMorph } from '../hooks/useCardMorph';
 import { useDeepLinkParam } from '../hooks/useDeepLinkParam';
+import { useCardResolver, useCardUrlMirror, useNewFromProject } from '../components/aito/useCardDeepLink';
 import { useAitoViewParams } from '../hooks/useAitoViewParams';
 import { useBoardLoadingStatus } from '../hooks/useBoardLoadingStatus';
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -192,53 +191,13 @@ export function AitoPage() {
   const filtering = search.trim().length > 0 || followupIds !== null;
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { open: openCard, close: closeCard } = useCardMorph(setExpandedId);
-  const { showToast } = useToast();
   // `?card=41` (an inbox row's link, or the card menu's "Copy link"). Acted
   // on once both lists can answer it — see the effect below. Unlike the other
   // deep links the parameter STAYS while the panel is open: the URL mirrors
   // `expandedId` both ways (next effect), so the address bar is always the
   // card's own link and a reload lands on the same panel.
   const [cardParam, clearCardParam] = useDeepLinkParam('card');
-  const [searchParams, setSearchParams] = useSearchParams();
-  // The last `expandedId` the mirror saw, so a close (non-null → null) can be
-  // told from a link that is still being resolved (null all along).
-  const mirroredId = useRef<number | null>(null);
-  useEffect(() => {
-    const closed = expandedId === null && mirroredId.current !== null;
-    mirroredId.current = expandedId;
-    const wanted = expandedId === null ? null : String(expandedId);
-    if (searchParams.get('card') === wanted) return;
-    // Null with nothing closed: a pending link, whose parameter the resolver
-    // below still needs. Everything else is a mismatch the URL must follow.
-    if (wanted === null && !closed) return;
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        if (wanted === null) next.delete('card');
-        else next.set('card', wanted);
-        return next;
-      },
-      // Replace, not push: Back leaves the board, it does not step back
-      // through every card that was peeked at.
-      { replace: true },
-    );
-  }, [expandedId, searchParams, setSearchParams]);
-  // The parameter value the resolver has already acted on. The mirror writes
-  // the same parameter for a card opened from the board, and a board refetch
-  // re-runs the resolver with it still there; neither may reopen or
-  // re-scroll. Reset when the parameter leaves, so the same link works twice.
-  const cardResolved = useRef<string | null>(null);
-  // `?newFromProject=7` (a PDM project page's "New order"): the create drawer
-  // opens seeded from that project, and the order it creates gets its first
-  // task linked to it (by the create mutation itself — see
-  // useAitoPageMutations). The parameter leaves the URL once the drawer is
-  // submitted or closed, so a reload never reopens it.
-  const [newFromProjectParam, clearNewFromProjectParam] = useDeepLinkParam('newFromProject');
-  const [projectSeed, setProjectSeed] = useState<{
-    projectId: number;
-    seed: { description: string; taskTitle: string };
-  } | null>(null);
-  const seedRequestedFor = useRef<string | null>(null);
+  useCardUrlMirror(expandedId);
 
   // Deleted projects. Fetched only while their view is on screen: the trash is
   // the one surface that needs them, its button carries no count, and the board
@@ -252,40 +211,8 @@ export function AitoPage() {
     enabled: view === 'trash' || (cardParam !== null && expandedId === null),
   });
 
-  // The link the board was refetched for. A miss is never decided from the
-  // cached lists alone: an inbox link usually names a card someone else made a
-  // moment ago, which a board cache up to a minute old does not hold yet. So
-  // the first miss refetches both lists once, and the answer comes from that.
-  const cardRefetchedFor = useRef<string | null>(null);
-  const refetchBoard = aitoQuery.refetch;
-  const refetchTrash = trashQuery.refetch;
 
-  useEffect(() => {
-    if (newFromProjectParam === null) {
-      seedRequestedFor.current = null;
-      return;
-    }
-    if (seedRequestedFor.current === newFromProjectParam) return;
-    seedRequestedFor.current = newFromProjectParam;
-    const projectId = Number(newFromProjectParam);
-    if (!canCreate || !Number.isInteger(projectId) || projectId <= 0) {
-      clearNewFromProjectParam();
-      return;
-    }
-    api.getProject(projectId).then(
-      (project) => {
-        setProjectSeed({
-          projectId,
-          seed: { description: project.description?.trim() || project.name, taskTitle: project.name },
-        });
-        setShowModal(true);
-      },
-      () => {
-        clearNewFromProjectParam();
-        showToast(t('common.errorLoading'), 'error');
-      },
-    );
-  }, [newFromProjectParam, canCreate, clearNewFromProjectParam, showToast, t]);
+  const { projectSeed, resetProjectSeed } = useNewFromProject({ canCreate, setShowModal });
 
   // `/` jumps to the search box, as on most sites with one. Not while typing
   // in a field, and not while a panel or modal is up: the box sits behind it.
@@ -306,68 +233,7 @@ export function AitoPage() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [overlayOpen]);
 
-  // The plain `setExpandedId`, not `openCard`: the morph needs a source card
-  // on screen, and a link arrives with nothing clicked.
-  useEffect(() => {
-    if (cardParam === null) {
-      cardResolved.current = null;
-      return;
-    }
-    if (cardResolved.current === cardParam) return;
-    // A panel already up wrote this parameter itself (the mirror above): the
-    // link is not a request, it is a reflection.
-    if (expandedId !== null) {
-      cardResolved.current = cardParam;
-      return;
-    }
-    if (!aitoQuery.data) return;
-    const id = Number(cardParam);
-    const card = aitoQuery.data.find((p) => p.id === id);
-    if (card) {
-      cardResolved.current = cardParam;
-      setExpandedId(id);
-      // A done card has no column on the board: bring the archive up behind
-      // the panel instead, so the card is on screen when the panel closes.
-      // Plain, not `changeView`: nothing is on screen yet to transition
-      // from. The follow-up filter goes the way it does on any view change.
-      if (card.column === 'done') {
-        setFollowup(null);
-        setView('done');
-      } else document.querySelector(`[data-column-id="${card.column}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center' });
-      return;
-    }
-    if (aitoQuery.isFetching || trashQuery.isFetching || trashQuery.isPending) return;
-    if (cardRefetchedFor.current !== cardParam) {
-      cardRefetchedFor.current = cardParam;
-      void refetchBoard();
-      void refetchTrash();
-      return;
-    }
-    clearCardParam();
-    // A list that could not be read cannot say the card is gone.
-    if (aitoQuery.isError || trashQuery.isError) {
-      showToast(t('aito.cardLookupFailed'), 'error');
-      return;
-    }
-    const inTrash = trashQuery.data?.some((p) => p.id === id) ?? false;
-    showToast(t(inTrash ? 'aito.cardInTrash' : 'aito.cardGone'), inTrash ? 'info' : 'error');
-  }, [
-    cardParam,
-    expandedId,
-    aitoQuery.data,
-    aitoQuery.isFetching,
-    aitoQuery.isError,
-    trashQuery.isFetching,
-    trashQuery.isPending,
-    trashQuery.isError,
-    trashQuery.data,
-    refetchBoard,
-    refetchTrash,
-    clearCardParam,
-    setView,
-    showToast,
-    t,
-  ]);
+  useCardResolver({ cardParam, clearCardParam, expandedId, setExpandedId, setFollowup, setView, aitoQuery, trashQuery });
 
   // Both lists, because a card opens the same detail panel from either. The
   // board query holds active rows only, so a trashed card looked up there
@@ -556,10 +422,7 @@ export function AitoPage() {
     // user their card exists.
     setShowModal(false);
     const linkProjectId = projectSeed?.projectId;
-    if (projectSeed) {
-      setProjectSeed(null);
-      clearNewFromProjectParam();
-    }
+    resetProjectSeed();
     createMutation.mutate({
       description,
       draft,
@@ -575,17 +438,11 @@ export function AitoPage() {
         description,
         client_id: draft.id,
         client_name: draft.name,
-        client_phone: formatPhone(draft) || null,
-        client_email: draft.email.trim() || null,
-        client_social_network: draft.socialHandle.trim() ? draft.socialNetwork : null,
-        client_social_handle: draft.socialHandle.trim() || null,
-        client_is_company: draft.isCompany,
-        client_contact_person_id: draft.isCompany ? draft.contactPersonId : null,
-        client_contact_name: draft.isCompany && draft.contactName ? draft.contactName : null,
+        ...clientFieldsFromDraft(draft),
         due_date: dueDate,
         // No quote_status: a manual create posts none (see the mutationFn
-        // above), so it defaults to null — the same "waits for Accept" state
-        // a draft import has. `TaskDraft` already structurally matches
+        // in useAitoPageMutations), so it defaults to null — the same
+        // "waits for Accept" state a draft import has. `TaskDraft` already structurally matches
         // `TaskLike` (see aitoBoardRules.ts), so no conversion is needed.
         tasks,
       }),
@@ -594,10 +451,7 @@ export function AitoPage() {
 
   const closeNewProjectDrawer = () => {
     setShowModal(false);
-    if (projectSeed) {
-      setProjectSeed(null);
-      clearNewFromProjectParam();
-    }
+    resetProjectSeed();
   };
 
   // The in-production count and the print backlog, shown by the touch boards

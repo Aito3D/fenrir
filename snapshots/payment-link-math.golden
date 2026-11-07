@@ -951,7 +951,7 @@
    "pct": 0,
    "wanted": {
     "amount": 12500,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -960,7 +960,7 @@
    "pct": 30,
    "wanted": {
     "amount": 3750,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -969,7 +969,7 @@
    "pct": 100,
    "wanted": {
     "amount": 12500,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1083,7 +1083,7 @@
    "pct": 0,
    "wanted": {
     "amount": 12500,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1092,7 +1092,7 @@
    "pct": 30,
    "wanted": {
     "amount": 3750,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1101,7 +1101,7 @@
    "pct": 100,
    "wanted": {
     "amount": 12500,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1110,7 +1110,7 @@
    "pct": 0,
    "wanted": {
     "amount": 12500,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1119,7 +1119,7 @@
    "pct": 30,
    "wanted": {
     "amount": 3750,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1128,7 +1128,7 @@
    "pct": 100,
    "wanted": {
     "amount": 12500,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1137,7 +1137,7 @@
    "pct": 0,
    "wanted": {
     "amount": 12500,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1146,7 +1146,7 @@
    "pct": 30,
    "wanted": {
     "amount": 3750,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1155,7 +1155,7 @@
    "pct": 100,
    "wanted": {
     "amount": 12500,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1224,7 +1224,7 @@
    "pct": 0,
    "wanted": {
     "amount": 12500,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1233,7 +1233,7 @@
    "pct": 30,
    "wanted": {
     "amount": 3751,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1242,7 +1242,7 @@
    "pct": 100,
    "wanted": {
     "amount": 12501,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1251,7 +1251,7 @@
    "pct": 0,
    "wanted": {
     "amount": 10000,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1260,7 +1260,7 @@
    "pct": 30,
    "wanted": {
     "amount": 1250,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1269,7 +1269,7 @@
    "pct": 100,
    "wanted": {
     "amount": 10000,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1308,7 +1308,7 @@
    "pct": 0,
    "wanted": {
     "amount": 1,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1322,7 +1322,7 @@
    "pct": 100,
    "wanted": {
     "amount": 1,
-    "expires_on": "2026-10-01",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
@@ -1410,93 +1410,6 @@
   {
    "case": "expiry-blank",
    "pct": 0,
-   "wanted": {
-    "amount": 12500,
-    "expires_on": "2026-10-01",
-    "reference": "DEV-000123"
-   }
-  },
-  {
-   "case": "expiry-blank",
-   "pct": 30,
-   "wanted": {
-    "amount": 3750,
-    "expires_on": "2026-10-01",
-    "reference": "DEV-000123"
-   }
-  },
-  {
-   "case": "expiry-blank",
-   "pct": 100,
-   "wanted": {
-    "amount": 12500,
-    "expires_on": "2026-10-01",
-    "reference": "DEV-000123"
-   }
-  },
-  {
-   "case": "expiry-garbage",
-   "pct": 0,
-   "wanted": {
-    "amount": 12500,
-    "expires_on": "not-a-date",
-    "reference": "DEV-000123"
-   }
-  },
-  {
-   "case": "expiry-garbage",
-   "pct": 30,
-   "wanted": {
-    "amount": 3750,
-    "expires_on": "not-a-date",
-    "reference": "DEV-000123"
-   }
-  },
-  {
-   "case": "expiry-garbage",
-   "pct": 100,
-   "wanted": {
-    "amount": 12500,
-    "expires_on": "not-a-date",
-    "reference": "DEV-000123"
-   }
-  }
- ],
- "03b-wanted-link-validity-days": [
-  {
-   "validity_days": 0,
-   "wanted": {
-    "amount": 12500,
-    "expires_on": "2026-09-16",
-    "reference": "DEV-000123"
-   }
-  },
-  {
-   "validity_days": 1,
-   "wanted": {
-    "amount": 12500,
-    "expires_on": "2026-09-17",
-    "reference": "DEV-000123"
-   }
-  },
-  {
-   "validity_days": 7,
-   "wanted": {
-    "amount": 12500,
-    "expires_on": "2026-09-23",
-    "reference": "DEV-000123"
-   }
-  },
-  {
-   "validity_days": 15,
-   "wanted": {
-    "amount": 12500,
-    "expires_on": "2026-10-01",
-    "reference": "DEV-000123"
-   }
-  },
-  {
-   "validity_days": 30,
    "wanted": {
     "amount": 12500,
     "expires_on": "2026-10-16",
@@ -1504,26 +1417,47 @@
    }
   },
   {
-   "validity_days": 365,
+   "case": "expiry-blank",
+   "pct": 30,
    "wanted": {
-    "amount": 12500,
-    "expires_on": "2027-09-16",
+    "amount": 3750,
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
   {
-   "validity_days": 400,
+   "case": "expiry-blank",
+   "pct": 100,
    "wanted": {
     "amount": 12500,
-    "expires_on": "2027-10-21",
+    "expires_on": "2026-10-16",
     "reference": "DEV-000123"
    }
   },
   {
-   "validity_days": -5,
+   "case": "expiry-garbage",
+   "pct": 0,
    "wanted": {
     "amount": 12500,
-    "expires_on": "2026-09-11",
+    "expires_on": "not-a-date",
+    "reference": "DEV-000123"
+   }
+  },
+  {
+   "case": "expiry-garbage",
+   "pct": 30,
+   "wanted": {
+    "amount": 3750,
+    "expires_on": "not-a-date",
+    "reference": "DEV-000123"
+   }
+  },
+  {
+   "case": "expiry-garbage",
+   "pct": 100,
+   "wanted": {
+    "amount": 12500,
+    "expires_on": "not-a-date",
     "reference": "DEV-000123"
    }
   }

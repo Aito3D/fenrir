@@ -1,13 +1,13 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Archive, BarChart3, FileInput, Plus, Trash2 } from 'lucide-react';
+import { FileInput, Plus } from 'lucide-react';
 import type { AitoProject } from '../../api/client';
 import type { ColumnMeta } from './columns';
-import { CompactBoardCard } from './CompactBoardCard';
+import { BoardColumnBody } from './BoardColumnBody';
+import { moreMenuViewItems, useColumnSummaries } from './touchBoardHelpers';
 import { MobileBoardHeader } from './MobileBoardHeader';
 import { MobileColumnSheet } from './MobileColumnSheet';
 import { ActionMenu } from './ActionMenu';
-import { summariseColumn } from '../../utils/aitoMobileBoard';
 import { useMobileColumn } from '../../hooks/useMobileColumn';
 import { useSnapPager } from '../../hooks/useSnapPager';
 
@@ -66,10 +66,7 @@ export function MobileBoard({
   const moreRef = useRef<HTMLButtonElement>(null);
   const fabRef = useRef<HTMLButtonElement>(null);
 
-  const summaries = useMemo(
-    () => columns.map(({ column, projects }) => summariseColumn(column, projects, now)),
-    [columns, now],
-  );
+  const summaries = useColumnSummaries(columns, now);
 
   const closeOverlay = (returnTo: HTMLElement | null) => {
     setOverlay(null);
@@ -113,16 +110,7 @@ export function MobileBoard({
               inert={index !== current || undefined}
               className="w-full flex-none snap-start snap-always overflow-y-auto overscroll-y-contain px-4 pt-3 pb-28 flex flex-col gap-2"
             >
-              {projects.map((project) => (
-                <CompactBoardCard key={project.id} project={project} onExpand={() => onExpandCard(project.id)} />
-              ))}
-              {projects.length === 0 &&
-                !pending &&
-                (filtering ? (
-                  <p className="py-8 text-center text-sm text-bambu-gray">{t('aito.searchNoResults')}</p>
-                ) : (
-                  <div className="animate-fade-in min-h-[8rem] rounded-lg border border-dashed border-bambu-dark-tertiary/80" />
-                ))}
+              <BoardColumnBody projects={projects} pending={pending} filtering={filtering} onExpandCard={onExpandCard} />
             </section>
           ))}
         </div>
@@ -170,17 +158,7 @@ export function MobileBoard({
           anchorRef={moreRef}
           placement="below"
           caption={heading}
-          items={[
-            {
-              key: 'done',
-              icon: Archive,
-              label: t('aito.showDone'),
-              trailing: pending ? '–' : doneCount,
-              onSelect: () => onShowView('done'),
-            },
-            { key: 'trash', icon: Trash2, label: t('aito.trash'), onSelect: () => onShowView('trash') },
-            { key: 'stats', icon: BarChart3, label: t('aito.statistics'), onSelect: () => onShowView('stats') },
-          ]}
+          items={moreMenuViewItems(t, pending, doneCount, onShowView)}
           onClose={() => closeOverlay(moreRef.current)}
         />
       )}

@@ -757,11 +757,10 @@ describe('TaskRow', () => {
 
     fireEvent.change(screen.getByLabelText('Printing Cost'), { target: { value: '999' } });
 
-    // Give every pending render and query a chance to flush. Under the old
-    // effect the computed total lands here and 999 is gone.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
+    // Under the old effect the computed total lands after the edit and 999 is
+    // gone. Barrier: the edit's own report, then the computed figure rendered.
+    await waitFor(() => expect(screen.getByTestId('impression-computed')).not.toHaveTextContent('—'));
+    await act(async () => {});
 
     const tasks = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[];
     expect(tasks[0].impressionCost).toBe(999);
@@ -802,15 +801,18 @@ describe('TaskRow', () => {
 
     const settledCallCount = onChangeSpy.mock.calls.length;
 
-    // With the guard in place, giving the tree more time to flush is a no-op.
-    // Without it, onChange keeps firing here — the count grows instead of
-    // holding steady (or the test times out first, in an unguarded infinite
-    // synchronous loop).
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+    // With the guard in place the tree is quiet. Without it, onChange keeps
+    // firing here — the count grows instead of holding steady (or the test
+    // times out first, in an unguarded infinite synchronous loop). Positive
+    // barrier: one more real edit must add exactly one report, no loop.
+    fireEvent.change(screen.getByLabelText(/weight/i), { target: { value: '41' } });
+    await waitFor(() => {
+      const last = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[];
+      expect(last[0].impression.weightG).toBe(41);
     });
+    await act(async () => {});
 
-    expect(onChangeSpy.mock.calls.length).toBe(settledCallCount);
+    expect(onChangeSpy.mock.calls.length).toBe(settledCallCount + 1);
   });
 
   it('opening a task with a stored cost and touching nothing issues zero onChange calls, even though today\'s rates would recompute a different total', async () => {
@@ -829,16 +831,15 @@ describe('TaskRow', () => {
     };
     render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
 
-    // Give every query (filaments, printers, defaults, settings) every chance
-    // to resolve. Pricing only happens inside ImpressionFields' change
-    // handler now, so mounting alone should never report anything — this
-    // window is here to be sure nothing async sneaks in after mount either.
+    // Pricing only happens inside ImpressionFields' change handler now, so
+    // mounting alone should never report anything.
     await screen.findByRole('combobox', { name: /printer/i });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
+    // Positive barrier instead of a sleep: one real edit is made, and it must
+    // be the FIRST and only report — anything the mount sent comes before it.
+    fireEvent.change(screen.getByLabelText(/weight/i), { target: { value: '41' } });
+    await waitFor(() => expect(onChangeSpy).toHaveBeenCalledTimes(1));
+    expect((onChangeSpy.mock.calls[0][0] as TaskDraft).impression.weightG).toBe(41);
 
-    expect(onChangeSpy).not.toHaveBeenCalled();
   });
 
   it('opening a task whose printer reference is absent from the calculator list issues zero onChange calls and leaves the stored cost untouched', async () => {
@@ -857,11 +858,12 @@ describe('TaskRow', () => {
     render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
 
     await screen.findByRole('combobox', { name: /material/i });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
+    // Positive barrier instead of a sleep: one real edit is made, and it must
+    // be the FIRST and only report — anything the mount sent comes before it.
+    fireEvent.change(screen.getByLabelText(/weight/i), { target: { value: '41' } });
+    await waitFor(() => expect(onChangeSpy).toHaveBeenCalledTimes(1));
+    expect((onChangeSpy.mock.calls[0][0] as TaskDraft).impression.weightG).toBe(41);
 
-    expect(onChangeSpy).not.toHaveBeenCalled();
   });
 
   it('reports the quantity-multiplied total, not the per-unit total_ttc', async () => {
@@ -1099,6 +1101,8 @@ describe('TaskRow', () => {
     // fallback — indistinguishable from a genuinely empty calculator until the
     // fetch actually resolves — so every printing task asserted "No printers
     // configured" plus a `/calculator` link for the whole cold-cache window.
+    const filamentsRequested = vi.fn();
+    const printersRequested = vi.fn();
     let resolveFilaments: (v: unknown) => void = () => {};
     let resolvePrinters: (v: unknown) => void = () => {};
     const filamentsPromise = new Promise((resolve) => {
@@ -1109,10 +1113,12 @@ describe('TaskRow', () => {
     });
     server.use(
       http.get('/api/v1/calculator/filaments/', async () => {
+        filamentsRequested();
         await filamentsPromise;
         return HttpResponse.json(mockFilaments);
       }),
       http.get('/api/v1/calculator/printers/', async () => {
+        printersRequested();
         await printersPromise;
         return HttpResponse.json(mockPrinters);
       }),
@@ -1126,12 +1132,14 @@ describe('TaskRow', () => {
     render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
 
     const band = within(await screen.findByTestId('impression-band'));
-    // Give the still-pending queries (and any render they would trigger) a
-    // real chance to settle before asserting on the loading-window content —
-    // if the guard regresses, this is where the false message would show up.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+    // Gate on the requests themselves: both queries are in flight (held by the
+    // deferred promises) before the loading-window content is asserted — if
+    // the guard regresses, this is where the false message would show up.
+    await waitFor(() => {
+      expect(filamentsRequested).toHaveBeenCalled();
+      expect(printersRequested).toHaveBeenCalled();
     });
+    await act(async () => {});
     expect(band.queryByText(/no printers configured/i)).not.toBeInTheDocument();
     expect(band.queryByText(/no filaments configured/i)).not.toBeInTheDocument();
     expect(band.queryByRole('link', { name: 'Calculator' })).not.toBeInTheDocument();
@@ -1356,11 +1364,13 @@ describe('TaskRow', () => {
     await waitFor(() => expect(screen.getByTestId('impression-computed')).not.toHaveTextContent('—'));
     fireEvent.change(screen.getByLabelText(/weight/i), { target: { value: '45' } });
 
-    // Give every pending render and query a chance to flush — under the old
-    // unguarded handleChange the computed total lands here.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+    // Under the old unguarded handleChange the computed total lands with the
+    // edit's own report; wait for that report, then the computed figure.
+    await waitFor(() => {
+      expect((onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft).impression.weightG).toBe(45);
     });
+    await waitFor(() => expect(screen.getByTestId('impression-computed')).not.toHaveTextContent('—'));
+    await act(async () => {});
 
     const lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
     expect(lastTask.impression.weightG).toBe(45);
@@ -1496,9 +1506,10 @@ describe('TaskRow', () => {
     fireEvent.change(screen.getByLabelText(/weight/i), { target: { value: '' } });
     expect(screen.getByTestId('impression-price-provenance')).toHaveTextContent('Manual');
     fireEvent.change(screen.getByLabelText(/weight/i), { target: { value: '45' } });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => {
+      expect((onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft).impression.weightG).toBe(45);
     });
+    await act(async () => {});
     expect((onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft).impressionCost).toBe(40_000);
     expect(screen.getByTestId('impression-price-provenance')).toHaveTextContent('Manual');
     expect(screen.getByRole('button', { name: 'Follow calculator' })).toBeInTheDocument();

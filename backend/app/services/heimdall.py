@@ -117,9 +117,6 @@ class LinkView:
     zoho_payment_id: str | None = None
 
 
-PaymentView = LinkView
-
-
 def parse_credential(token: str) -> tuple[str, str]:
     """Split ``hmd_live.<key_id>.<secret>`` into ``(key_id, secret)``.
 

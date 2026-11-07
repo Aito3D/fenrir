@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, useQuery } from '@tanstack/react-query';
 import { render } from '../utils';
 import { BillingCard } from '../../components/aito/BillingCard';
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
 vi.mock('../../utils/clipboard', () => ({ copyTextToClipboard: vi.fn(async () => true) }));
@@ -373,6 +374,90 @@ describe('BillingCard expired quote', () => {
     renderCard(project({ quote_status: 'expired' }));
     await userEvent.click(screen.getByRole('button', { name: 'Extend the quote by 15 days' }));
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12));
+  });
+
+  /** Reads the card from the ['aito-projects'] cache, as the board does, so
+   *  settleProject's cache write is what re-renders it. */
+  function LiveCard({ start }: { start: AitoProject }) {
+    const { data } = useQuery({ queryKey: ['aito-projects'], queryFn: async () => [start], staleTime: Infinity });
+    const row = data?.find((p) => p.id === start.id);
+    if (!row) return null;
+    return (
+      <BillingCard
+        project={row}
+        canUpdate
+        onRetrySync={() => {}}
+        retryPending={false}
+        onForceSync={() => {}}
+        forcePending={false}
+        depositPct={0}
+        currency="XPF"
+        heimdallConfigured
+      />
+    );
+  }
+  const extendName = 'Extend the quote by 15 days';
+
+  it('settles the row, toasts success and drops the icon once Books took the new date', async () => {
+    vi.spyOn(api, 'extendAitoQuote').mockResolvedValue(
+      project({ quote_status: 'sent', quote_expiry_date: '2026-11-17' }),
+    );
+    render(<LiveCard start={project({ quote_status: 'expired' })} />);
+    await userEvent.click(await screen.findByRole('button', { name: extendName }));
+    expect(await screen.findByText('Quote extended by 15 days')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: extendName })).not.toBeInTheDocument());
+  });
+
+  const saveFailed = 'Could not save your changes. Please try again.';
+  const clickExtend = async () => {
+    render(<LiveCard start={project({ quote_status: 'expired' })} />);
+    await userEvent.click(await screen.findByRole('button', { name: extendName }));
+  };
+
+  it('appends Books\' reason to the failure toast on a 502 and keeps the card expired', async () => {
+    vi.spyOn(api, 'extendAitoQuote').mockRejectedValue(new ApiError('Books refused the date', 502));
+    const invalidate = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+    await clickExtend();
+    expect(await screen.findByText(`${saveFailed} Books refused the date`)).toBeInTheDocument();
+    expect(screen.queryByText('Quote extended by 15 days')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: extendName })).toBeEnabled();
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['aito-projects'] });
+  });
+
+  it('appends the reason and refreshes the board on a 409', async () => {
+    vi.spyOn(api, 'extendAitoQuote').mockRejectedValue(
+      new ApiError('Only an expired Zoho quote can be extended', 409),
+    );
+    const invalidate = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+    await clickExtend();
+    expect(
+      await screen.findByText(`${saveFailed} Only an expired Zoho quote can be extended`),
+    ).toBeInTheDocument();
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['aito-projects'] });
+  });
+
+  it('keeps the generic failure toast for any other error', async () => {
+    vi.spyOn(api, 'extendAitoQuote').mockRejectedValueOnce(new ApiError('boom', 500));
+    const invalidate = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+    await clickExtend();
+    expect(await screen.findByText(saveFailed)).toBeInTheDocument();
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['aito-projects'] });
+  });
+
+  it('keeps the generic failure toast for a non-API error', async () => {
+    vi.spyOn(api, 'extendAitoQuote').mockRejectedValue(new Error('network'));
+    await clickExtend();
+    expect(await screen.findByText(saveFailed)).toBeInTheDocument();
+  });
+
+  it('disables the icon while the request is pending', async () => {
+    let resolve!: (row: AitoProject) => void;
+    vi.spyOn(api, 'extendAitoQuote').mockReturnValue(new Promise<AitoProject>((r) => { resolve = r; }));
+    render(<LiveCard start={project({ quote_status: 'expired' })} />);
+    await userEvent.click(await screen.findByRole('button', { name: extendName }));
+    await waitFor(() => expect(screen.getByRole('button', { name: extendName })).toBeDisabled());
+    resolve(project({ quote_status: 'sent' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: extendName })).not.toBeInTheDocument());
   });
 
   it('hides the icon on a quote that is not expired and for read-only users', () => {

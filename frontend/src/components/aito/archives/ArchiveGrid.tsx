@@ -2,24 +2,6 @@ import { Fragment, useEffect, useRef, type ReactNode } from 'react';
 import type { AitoProject } from '../../../api/client';
 import { useFlipReorder } from '../../../hooks/useFlipReorder';
 
-/** The scroller + responsive card grid shared by the Done and Trash archives.
- *
- *  `DoneGrid` and `TrashGrid` are the same archive shape wearing a different
- *  card and a different restore action — this is that shared shape, factored
- *  out so the two do not drift. `animate-rise-lg`, not `animate-rise`: only
- *  the -lg entrance reads `--enter-delay`, which is the ONLY thing
- *  `stagger-parents` below sets. Same pairing the board's columns use.
- *
- *  After first paint the grid reflows rather than redraws: a restore takes a
- *  card out on the optimistic write, and without `useFlipReorder` every card
- *  after it jumped a slot on one frame. `useCardFlight` only watches the
- *  board, and the grid is two-dimensional, so it is the camera wall's FLIP
- *  hook — 2-D, retargeting, reduced-motion aware — not the board's Y-only
- *  reflow. The hook also rises a card that ARRIVES on a populated grid, which
- *  is why the stagger entrance is confined to first paint below: a card
- *  returning from a search filter would otherwise get both, and the CSS
- *  animation's delayed `backwards` fill would blank it out again the moment
- *  the hook's tween finished. */
 export interface ArchiveGroup {
   key: string;
   label: string;
@@ -44,6 +26,24 @@ function GroupHeader({ group, count }: { group: ArchiveGroup; count: number }) {
   );
 }
 
+/** The scroller + responsive card grid shared by the Done and Trash archives.
+ *
+ *  `DoneGrid` and `TrashGrid` are the same archive shape wearing a different
+ *  card and a different restore action — this is that shared shape, factored
+ *  out so the two do not drift. `animate-rise-lg`, not `animate-rise`: only
+ *  the -lg entrance reads `--enter-delay`, which is the ONLY thing
+ *  `stagger-parents` below sets. Same pairing the board's columns use.
+ *
+ *  After first paint the grid reflows rather than redraws: a restore takes a
+ *  card out on the optimistic write, and without `useFlipReorder` every card
+ *  after it jumped a slot on one frame. `useCardFlight` only watches the
+ *  board, and the grid is two-dimensional, so it is the camera wall's FLIP
+ *  hook — 2-D, retargeting, reduced-motion aware — not the board's Y-only
+ *  reflow. The hook also rises a card that ARRIVES on a populated grid, which
+ *  is why the stagger entrance is confined to first paint below: a card
+ *  returning from a search filter would otherwise get both, and the CSS
+ *  animation's delayed `backwards` fill would blank it out again the moment
+ *  the hook's tween finished. */
 export function ArchiveGrid({
   projects,
   renderCard,

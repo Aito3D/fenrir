@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
 import { Check, Copy, Pencil, Phone, Plane, Trash2 } from 'lucide-react';
 import { ShippingFields } from './ShippingFields';
 import { HoldButton } from './HoldButton';
@@ -11,10 +10,11 @@ import type { ShippingDraft } from '../../utils/shippingDraft';
 import { formatPhoneDisplay, parsePhone } from '../../utils/clientDraft';
 import { applyShipping } from '../../utils/aitoOptimistic';
 import { copyTextToClipboard } from '../../utils/clipboard';
-import { api, type AitoProject, type AitoProjectUpdate, type AitoShippingService } from '../../api/client';
+import { type AitoProject, type AitoProjectUpdate, type AitoShippingService } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
 import { useProjectPatchMutation } from './useProjectPatchMutation';
+import { useAitoShippingServices } from '../../hooks/useAitoShippingServices';
 
 /** Every shipment field the project already carries, reshaped into the same
  *  draft `ShippingFields` drives in the create drawer.
@@ -113,11 +113,7 @@ export function ShippingCard({
 
   // Same query key the create drawer and ClientSection use, so this shares
   // their cache instead of re-fetching a table that rarely changes.
-  const servicesQuery = useQuery({
-    queryKey: ['aito-shipping-services'],
-    queryFn: api.getAitoShippingServices,
-    staleTime: 60 * 60_000,
-  });
+  const servicesQuery = useAitoShippingServices();
 
   // Same SHAPE as `ProjectDetailPanel`'s description-save mutation — one
   // `useProjectPatchMutation`, an optimistic transform mirroring the

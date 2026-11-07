@@ -33,7 +33,8 @@
    "aito.quote_viewed",
    "aito.quote_accepted",
    "aito.quote_declined",
-   "aito.paid"
+   "aito.paid",
+   "hours.readings_due"
   ],
   "KINDS": {
    "aito.overdue": {
@@ -72,6 +73,11 @@
      "quote.viewed"
     ],
     "family": "aito"
+   },
+   "hours.readings_due": {
+    "default_on": true,
+    "events": [],
+    "family": "printer"
    },
    "printer.failed": {
     "default_on": false,
@@ -119,6 +125,7 @@
    "payment_link.replaced": null,
    "payment_link.updated": null,
    "poll.reconciled": null,
+   "print.queued_from_revision": null,
    "project.client.changed": null,
    "project.contacted.cleared": null,
    "project.contacted.set": null,
@@ -126,14 +133,20 @@
    "project.due.cleared": null,
    "project.due.overdue": "aito.overdue",
    "project.due.set": null,
+   "project.files_dropped": null,
    "project.fiverr.cleared": null,
    "project.fiverr.set": null,
+   "project.force_synced": null,
    "project.merged": null,
    "project.pause.cleared": null,
    "project.pause.set": null,
    "project.restored": null,
+   "project.revision_added": null,
+   "project.revision_status_changed": null,
    "project.sav.cleared": null,
    "project.sav.set": null,
+   "project.shipped.cleared": null,
+   "project.shipped.set": null,
    "project.sms.sent": null,
    "project.trashed": null,
    "project.updated": null,
@@ -144,6 +157,7 @@
    "quote.declined": "aito.quote_declined",
    "quote.emailed": null,
    "quote.expired": null,
+   "quote.extended": null,
    "quote.sent": null,
    "quote.unaccepted": null,
    "quote.viewed": "aito.quote_viewed",
@@ -156,6 +170,9 @@
    "sync.queued": null,
    "sync.status_rejected": null,
    "task.added": null,
+   "task.deliveries_changed": null,
+   "task.project_linked": null,
+   "task.project_unlinked": null,
    "task.removed": null,
    "task.reordered": null,
    "task.step.ticked": null,

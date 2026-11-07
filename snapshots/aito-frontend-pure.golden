@@ -4599,6 +4599,7 @@
    "quote_invoiced": false,
    "flag": null,
    "client_contacted_at": null,
+   "done_at": null,
    "due_date": null,
    "quote_sync_error": null,
    "quote_status_block": null,
@@ -4622,6 +4623,8 @@
    "shipping_lta": null,
    "shipping_service_name": null,
    "tracking_configured": false,
+   "search_text": "",
+   "document_numbers": [],
    "version": 0,
    "created_at": "__timestamp__",
    "updated_at": "__timestamp__"
@@ -4663,6 +4666,7 @@
    "quote_invoiced": false,
    "flag": null,
    "client_contacted_at": null,
+   "done_at": null,
    "due_date": null,
    "quote_sync_error": null,
    "quote_status_block": null,
@@ -4686,6 +4690,8 @@
    "shipping_lta": null,
    "shipping_service_name": null,
    "tracking_configured": false,
+   "search_text": "",
+   "document_numbers": [],
    "version": 0,
    "created_at": "__timestamp__",
    "updated_at": "__timestamp__"

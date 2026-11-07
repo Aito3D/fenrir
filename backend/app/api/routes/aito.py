@@ -99,7 +99,12 @@ from backend.app.schemas.aito import (
     AitoWatchResponse,
     AitoWatchUpdate,
 )
-from backend.app.services import aito_quote_sync, aito_tracking as tracking_service, project_print_trace
+from backend.app.services import (
+    aito_payment_links,
+    aito_quote_sync,
+    aito_tracking as tracking_service,
+    project_print_trace,
+)
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_client_rating import read_client_rating
@@ -263,6 +268,11 @@ _FLAG_CLEARED_EVENT: dict[str, str] = {
 # thing in SQL and another in the client.
 _FLAG_RANK: dict[str, int] = {"urgent": 0, "sav": 0, "pause": 2, "fiverr": 2}
 _UNFLAGGED_RANK = 1
+
+
+async def _next_task_position(db: AsyncSession, project_id: int) -> int:
+    highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
+    return (highest + 1) if highest is not None else 0
 
 
 def _flag_rank(flag: str | None) -> int:
@@ -1667,12 +1677,16 @@ async def _with_books_quote_snapshot(db: AsyncSession, payload: AitoProjectCreat
     through the same schema rules (unknown statuses degrade to None, https
     quote_url, bounds) the posted ones did.
 
-    A hand-made card (no quote_id) is returned untouched, without a Books
-    call. Books unreachable, throttling, or not knowing the quote refuses the
+    A hand-made card (no quote_id) makes no Books call and has any posted
+    quote_number/quote_date/quote_total/quote_url dropped (T-581): its snapshot
+    only ever comes from the sync worker's own create, since the payment-link
+    pass mints from those fields. Books unreachable, throttling, or not knowing the quote refuses the
     create: an import whose figures cannot be confirmed is not stored.
     """
     if payload.quote_id is None:
-        return payload
+        return payload.model_copy(
+            update={"quote_number": None, "quote_date": None, "quote_total": None, "quote_url": None}
+        )
     try:
         estimate = await zoho_service.get_estimate(db, payload.quote_id)
         quote_url = await zoho_service.books_app_url(db, payload.quote_id)
@@ -3760,8 +3774,7 @@ async def add_task(
     # checking the post-mark state alone would fire sync.queued on every task
     # added to an already-pending project, not just the transition into it.
     was_pending = _mark_pending_if_ours_noting(project)
-    highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
-    task = AitoTask(project_id=project_id, position=(highest + 1) if highest is not None else 0, **task_fields)
+    task = AitoTask(project_id=project_id, position=await _next_task_position(db, project_id), **task_fields)
     db.add(task)
     await db.flush()  # so _summary_for's SELECT sees the new row
     await record(
@@ -3871,7 +3884,6 @@ async def update_task(
         )
     if project is not None:
         await _record_sync_queued_on_transition(db, project, was_pending)
-    if project:
         await _apply_rules(db, project, await _summary_for(db, task.project_id), actor=_actor(current_user))
     queued = project is not None and project.quote_sync_state == "pending"
     await _commit_and_wake(db, queued, project.id if project is not None else None)
@@ -4795,6 +4807,7 @@ async def edit_project_client(
         # Only when nobody else wrote in the meantime (T-053): otherwise the
         # listener's bump stands, so the version stays monotonic.
         await db.flush()
+        await db.refresh(project, ["version"])
         if pin_to_claim and project.version != claimed_version:
             project.version = claimed_version
     await db.commit()
@@ -5587,8 +5600,14 @@ async def extend_quote_expiry(
     request_immediate_sync()
     # The expiry cancelled the payment link; mint its replacement now (it
     # lives until the new expiry_date) rather than at the loop's next pass.
-    # Never raises on a Heimdall failure: the row carries it to the panel.
-    await reconcile_payment_links(db, only_project_id=project.id, force=True)
+    # Never waits behind a busy background pass: the extension is committed,
+    # so the woken loop mints the link and the board refresh shows it.
+    if not aito_payment_links._pass_lock.locked():
+        try:
+            await reconcile_payment_links(db, only_project_id=project.id, force=True)
+        except Exception:
+            logger.exception("Aito quote extension: payment link reconcile failed for project %s", project_id)
+            await db.rollback()
     await db.refresh(project)
     return await _project_response(db, project, summary)
 
@@ -5737,8 +5756,7 @@ async def transfer_tasks(
             )
 
     keep_ticks = target.quote_status == "accepted"
-    highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == target.id))
-    next_position = (highest + 1) if highest is not None else 0
+    next_position = await _next_task_position(db, target.id)
     for offset, task in enumerate(moving):
         task.project_id = target.id
         task.position = next_position + offset
@@ -5847,8 +5865,7 @@ async def merge_project(
 
     stmt = select(AitoTask).where(AitoTask.project_id == source.id).order_by(AitoTask.position, AitoTask.id)
     source_tasks = list((await db.execute(stmt)).scalars())
-    highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
-    next_position = (highest + 1) if highest is not None else 0
+    next_position = await _next_task_position(db, project_id)
     keep_ticks = target.quote_status == "accepted"
     copied_fields = list(AitoTaskBase.model_fields)
     copies: list[tuple[int, AitoTask]] = []  # Fenrir: (source task id, its copy) for the PDM rows below

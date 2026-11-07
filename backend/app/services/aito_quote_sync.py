@@ -686,7 +686,7 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
             await zoho_service.update_estimate_notes(db, estimate["estimate_id"], notes)
         except Exception:  # noqa: BLE001 — logged, retried by the next sync
             logger.warning("tracking notes not written on estimate %s", estimate["estimate_id"], exc_info=True)
-    await _write_back_rounded_costs(db, project.id, pushed_costs)
+    await _write_back_rounded_costs(db, pushed_costs)
     # `project.quote_status` may have been decided by a completely different
     # session (routes/aito.py's set_quote_status) while create_estimate's
     # network call above was in flight; this session never sees that commit
@@ -800,9 +800,7 @@ async def _snapshot_pushed_costs(db: AsyncSession, project_id: int) -> dict[int,
     }
 
 
-async def _write_back_rounded_costs(
-    db: AsyncSession, project_id: int, pushed_costs: dict[int, dict[str, tuple[float, int]]]
-) -> None:
+async def _write_back_rounded_costs(db: AsyncSession, pushed_costs: dict[int, dict[str, tuple[float, int]]]) -> None:
     """Adopt the total the quote can actually express, for every service.
 
     ``<service>_cost`` is a pre-discount total for all units but a line is
@@ -1302,7 +1300,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # Cleared only once a PUT that carried the customer succeeded: a
         # failure above raises past this line and leaves the flag owed.
         project.client_push_pending = False
-    await _write_back_rounded_costs(db, project.id, pushed_costs)
+    await _write_back_rounded_costs(db, pushed_costs)
     # `project.quote_status` was loaded before this call's own get_estimate,
     # let alone this update_estimate_lines round trip -- and nothing in
     # between refreshes it (expire_on_commit=False). An Accept/Decline
@@ -1526,6 +1524,10 @@ async def _terminal_error(
             subject_id=project_id,
             detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
         )
+
+
+def _throttled() -> bool:
+    return _throttled_until is not None and time.monotonic() < _throttled_until
 
 
 def _arm_rate_limit_throttle(e: ZohoRateLimited) -> None:
@@ -2622,7 +2624,7 @@ async def run_sync_once(
     seam the sync_project tests drive a whole pass through. See
     ``_sync_selection`` for the three modes side by side.
     """
-    if _throttled_until is not None and time.monotonic() < _throttled_until:
+    if _throttled():
         pending_only = True
     selected = _sync_selection(pending_only=pending_only, attention_only=attention_only)
     pending_first = case((AitoProject.quote_sync_state == "pending", 0), else_=1)
@@ -2813,7 +2815,7 @@ async def _drain_reconcile_queue(db: AsyncSession) -> int:
     reconciled = 0
     while _reconcile_queue:
         await _serve_due_pushes(db)
-        if _throttled_until is not None and time.monotonic() < _throttled_until:
+        if _throttled():
             break
         if zoho_service.calls_in_last_minute() >= BACKGROUND_CALL_CEILING:
             break
@@ -2839,7 +2841,7 @@ async def run_change_pass(db: AsyncSession) -> int:
     Costs three listings whatever the board's size; the per-card reads are
     spent only on cards with a reason. Skipped whole inside a rate-limit
     hold, and stopped by ``BACKGROUND_CALL_CEILING``."""
-    if _throttled_until is not None and time.monotonic() < _throttled_until:
+    if _throttled():
         return 0
     started = time.monotonic()
     calls_before = zoho_service.calls_total

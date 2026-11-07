@@ -108,6 +108,34 @@ function BoardHost({ showPanel, project: projectOverride }: { showPanel: boolean
   ) : null;
 }
 
+// Resolves once msw has answered the next PATCH: the request itself is the
+// gate for "the write landed", not a fixed real-time sleep. flushEffects then
+// yields one macrotask so the client applies the reply.
+function nextPatchResponse() {
+  return new Promise<void>((resolve) => {
+    const onResponse = ({ request }: { request: Request }) => {
+      if (request.method !== 'PATCH') return;
+      server.events.removeListener('response:mocked', onResponse);
+      resolve();
+    };
+    server.events.on('response:mocked', onResponse);
+  });
+}
+afterEach(() => vi.restoreAllMocks());
+const flushEffects = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+// Counts invalidations of the board query synchronously, so "the board was not
+// refreshed" is asserted on the call itself rather than on a GET that has had
+// some arbitrary time to show up.
+function spyBoardInvalidations() {
+  const spy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+  spy.mockClear();
+  return () => spy.mock.calls.filter(([f]) => (f as { queryKey?: unknown[] } | undefined)?.queryKey?.[0] === 'aito-projects').length;
+}
+
 // ProjectDetailPanel renders TaskEditor unconditionally, and every TaskRow
 // renders ImpressionFields, which always queries these three endpoints
 // regardless of whether a given test touches Impression3D (mirrors
@@ -1193,23 +1221,23 @@ describe('ProjectDetailPanel tasks', () => {
     // row 101's form, leaving 101's edit in flight and unpersisted.
     await editTask(1);
     const scan102 = await screen.findByLabelText('Scan Cost');
+    const done102 = nextPatchResponse();
     fireEvent.change(scan102, { target: { value: '700' } });
 
-    // Give row 102's PATCH (and any resulting cache write / resync effect)
-    // time to fully settle.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
+    // Row 102's PATCH is debounced: wait for its reply, then let the cache
+    // write / resync effect it triggers run.
+    await done102;
+    await flushEffects();
     expect(scan102).toHaveValue('700');
 
     // Row 101's typed-but-unsaved value must have survived row 102's resync.
     await editTask(0);
     expect(await screen.findByLabelText('Scan Cost')).toHaveValue('900');
 
+    const done101 = nextPatchResponse();
     resolvePatch101({ ...mockTask, scan_cost: 900 });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
+    await done101;
+    await flushEffects();
     expect(await screen.findByLabelText('Scan Cost')).toHaveValue('900');
   });
 
@@ -1344,11 +1372,11 @@ describe('ProjectDetailPanel tasks', () => {
     // has `impression_cost: null` and no printer/filament, so ImpressionFields
     // never had a resolvable Impression3D service to recompute in the first
     // place.
-    let patched = false;
+    const bodies: unknown[] = [];
     server.use(
       http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockImpressionTask])),
-      http.patch('/api/v1/aito/tasks/:id', () => {
-        patched = true;
+      http.patch('/api/v1/aito/tasks/:id', async ({ request }) => {
+        bodies.push(await request.json());
         return HttpResponse.json(mockImpressionTask);
       }),
     );
@@ -1358,24 +1386,22 @@ describe('ProjectDetailPanel tasks', () => {
     // presses Edit, sees the task's stored quote, and touches nothing.
     await editTask();
 
-    // Give every query (filaments, printers, defaults, settings, tasks)
-    // every chance to resolve. Pricing only happens inside ImpressionFields'
-    // change handler now, so mounting alone should never PATCH anything —
-    // this window is here to be sure nothing async sneaks in after mount.
+    // Pricing only happens inside ImpressionFields' change handler now, so
+    // mounting alone should never PATCH anything. Positive barrier instead of
+    // a sleep: once every query has resolved, a real edit is made and its
+    // PATCH awaited — anything the mount sent would be recorded before it.
     await screen.findByRole('combobox', { name: /printer/i });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
-
-    expect(patched).toBe(false);
+    fireEvent.change(await screen.findByLabelText('Scan Cost'), { target: { value: '777' } });
+    await waitFor(() => expect(bodies).toHaveLength(1), { timeout: 3000 });
+    expect(bodies[0]).toEqual({ scan_cost: 777 });
   });
 
   it('opening a task whose printer reference is dangling (absent from the calculator list) issues zero PATCHes', async () => {
-    let patched = false;
+    const bodies: unknown[] = [];
     server.use(
       http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockDanglingPrinterTask])),
-      http.patch('/api/v1/aito/tasks/:id', () => {
-        patched = true;
+      http.patch('/api/v1/aito/tasks/:id', async ({ request }) => {
+        bodies.push(await request.json());
         return HttpResponse.json(mockDanglingPrinterTask);
       }),
     );
@@ -1384,12 +1410,12 @@ describe('ProjectDetailPanel tasks', () => {
     // Opening the row's edit form is the scenario under test.
     await editTask();
 
+    // Positive barrier (see the sibling test): a real edit's PATCH must be
+    // the first and only write.
     await screen.findByRole('combobox', { name: /material/i });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
-
-    expect(patched).toBe(false);
+    fireEvent.change(await screen.findByLabelText('Scan Cost'), { target: { value: '777' } });
+    await waitFor(() => expect(bodies).toHaveLength(1), { timeout: 3000 });
+    expect(bodies[0]).toEqual({ scan_cost: 777 });
   });
 
   it('editing one row then deleting it does not leak its edited state onto the row that slides into its slot', async () => {
@@ -1544,6 +1570,7 @@ describe('ProjectDetailPanel tasks', () => {
     // "editing a value back to its original..." below), which would make
     // this test about that edge case instead of the everything-has-landed
     // path it is meant to cover.
+    const landed = nextPatchResponse();
     await user.type(scan, '700');
     await waitFor(() => expect(screen.getByLabelText('Scan Cost')).toHaveValue('700'));
 
@@ -1556,9 +1583,8 @@ describe('ProjectDetailPanel tasks', () => {
     // path, so it waits for the body to arrive and for its response to be
     // applied.
     await waitFor(() => expect(patches.at(-1)).toEqual({ scan_cost: 700 }));
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
+    await landed;
+    await flushEffects();
 
     boardFetches.mockClear();
     // Close only the panel — BoardHost (standing in for AitoPage) stays
@@ -1603,22 +1629,22 @@ describe('ProjectDetailPanel tasks', () => {
     const scan = await screen.findByLabelText('Scan Cost');
 
     // Keystroke 1: PATCH fires and lands, so the panel is now dirty.
+    const firstLanded = nextPatchResponse();
     fireEvent.change(scan, { target: { value: '700' } });
     await waitFor(() => expect(bodies).toHaveLength(1));
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
+    await firstLanded;
+    await flushEffects();
 
     // Keystroke 2: PATCH fires and stays open.
     fireEvent.change(scan, { target: { value: '900' } });
     await waitFor(() => expect(bodies).toHaveLength(2));
 
     boardFetches.mockClear();
+    const boardInvalidations = spyBoardInvalidations();
     rerender(<BoardHost showPanel={false} />);
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
+    await flushEffects();
     // The write this refresh is meant to reflect has not landed yet.
+    expect(boardInvalidations()).toBe(0);
     expect(boardFetches).not.toHaveBeenCalled();
 
     releaseSecondPatch({ ...mockTask, scan_cost: 900 });
@@ -1655,10 +1681,10 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(bodies).toHaveLength(1));
 
     boardFetches.mockClear();
+    const boardInvalidations = spyBoardInvalidations();
     rerender(<BoardHost showPanel={false} />);
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
+    await flushEffects();
+    expect(boardInvalidations()).toBe(0);
     expect(boardFetches).not.toHaveBeenCalled();
 
     releasePatch({ ...mockTask, scan_cost: 700 });
@@ -1717,10 +1743,10 @@ describe('ProjectDetailPanel tasks', () => {
     // Now let the PATCH land, well after the panel (and its tasks query
     // observer) is gone — this is the settle-after-close ordering.
     stored = { ...stored, scan_cost: 700 };
-    await act(async () => {
-      releasePatch(stored);
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
+    const landed = nextPatchResponse();
+    releasePatch(stored);
+    await landed;
+    await flushEffects();
 
     // Reopen well inside the 60s staleTime window.
     rerender(<Host open />);
@@ -1755,9 +1781,10 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
     boardFetches.mockClear();
+    const boardInvalidations = spyBoardInvalidations();
     rerender(<BoardHost showPanel={false} />);
-    // Give an invalidation a chance to land before asserting its absence.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await flushEffects();
+    expect(boardInvalidations()).toBe(0);
     expect(boardFetches).not.toHaveBeenCalled();
   });
 });

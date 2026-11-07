@@ -1836,7 +1836,7 @@ async def test_write_back_rounds_every_services_cost(db_session):
     )
 
     pushed_costs = await _snapshot_pushed_costs(db_session, project.id)
-    await _write_back_rounded_costs(db_session, project.id, pushed_costs)
+    await _write_back_rounded_costs(db_session, pushed_costs)
     task_row = (await db_session.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalar_one()
 
     # 2401 / 2 = 1200.5 -> rate 1200 (banker's rounding on .5) x 2 = 2400

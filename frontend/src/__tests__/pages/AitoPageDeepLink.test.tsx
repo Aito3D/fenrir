@@ -6,7 +6,7 @@
  * closing the panel takes the parameter away again.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -135,6 +135,26 @@ describe('AitoPage ?card= deep link', () => {
     expect(boardCalls).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText('This card no longer exists')).not.toBeInTheDocument();
     expect(window.location.search).toBe('?card=58');
+  });
+
+  it('refetches again for a second link to the same card instead of deciding from stale lists', async () => {
+    renderAt('/aito?card=40');
+    expect(await screen.findByText('This card is in the trash')).toBeInTheDocument();
+    await waitFor(() => expect(window.location.search).not.toContain('card='));
+
+    // A colleague restores the card; this tab never heard about it.
+    const restored = makeProject({ id: 40, description: 'Old bracket', column: 'print' });
+    server.use(
+      http.get('/api/v1/aito/', () => HttpResponse.json([active, restored])),
+      http.get('/api/v1/aito/trash', () => HttpResponse.json([])),
+    );
+    act(() => {
+      window.history.pushState({}, '', '/aito?card=40');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+
+    const panel = await screen.findByRole('dialog');
+    expect(panel).toHaveTextContent('Old bracket');
   });
 
   it('says the lookup failed, not that the card is gone, when the trash cannot be read', async () => {

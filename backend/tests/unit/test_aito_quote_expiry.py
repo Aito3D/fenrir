@@ -1,7 +1,7 @@
 """expiry_date on the estimate Aito creates, its copy-back, and the
 paid-retainer auto-accept read off the sweep's estimate."""
 
-from datetime import date, timedelta
+from datetime import date
 
 import pytest
 
@@ -11,6 +11,12 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.services import aito_quote_sync
 from backend.app.services.aito_quote_sync import _apply_estimate, _create_quote, _paid_retainer_total, expiry_for
 from backend.app.services.zoho import ZohoUpstreamError, zoho_service
+
+
+class _FrozenDate(date):
+    @classmethod
+    def today(cls):
+        return cls(2026, 11, 6)
 
 
 async def _configure_zoho(db) -> None:
@@ -36,11 +42,12 @@ async def _pending_project(db) -> AitoProject:
     return p
 
 
-def test_expiry_for_is_30_days_after_the_quote_date():
+def test_expiry_for_is_30_days_after_the_quote_date(monkeypatch):
+    monkeypatch.setattr("datetime.date", _FrozenDate)  # expiry_for imports date locally
     assert expiry_for("2026-10-21") == "2026-11-20"
     assert expiry_for("2026-01-31") == "2026-03-02"
     assert expiry_for("2026-12-15") == "2027-01-14"
-    assert expiry_for(None) == (date.today() + timedelta(days=30)).isoformat()
+    assert expiry_for(None) == "2026-12-06"
 
 
 def test_required_amount_is_the_total_or_the_ceiled_deposit_share():
@@ -73,6 +80,7 @@ def test_apply_estimate_copies_expiry_back():
 
 @pytest.mark.asyncio
 async def test_create_sends_expiry_one_month_from_today(db_session, monkeypatch):
+    monkeypatch.setattr("datetime.date", _FrozenDate)  # expiry_for imports date locally
     await _configure_zoho(db_session)
     # The retired days setting, still stored on an upgraded install, is ignored.
     await set_setting(db_session, "aito_quote_validity_days", "20")
@@ -105,7 +113,7 @@ async def test_create_sends_expiry_one_month_from_today(db_session, monkeypatch)
     # get_catalogue is NOT patched: it reads the settings table, no network —
     # the same shape backend/tests/unit/test_aito_tracking_delivery.py relies on.
     await _create_quote(db_session, p)
-    assert captured["expiry_date"] == (date.today() + timedelta(days=30)).isoformat()
+    assert captured["expiry_date"] == "2026-12-06"
     assert p.quote_expiry_date == captured["expiry_date"]
 
 

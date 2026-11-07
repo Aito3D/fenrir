@@ -8,6 +8,7 @@ import { api } from '../../../api/client';
 import type { AitoPaymentLink, AitoProject } from '../../../api/client';
 import { useDismissableDialog } from '../../../hooks/useDismissableDialog';
 import { useToast } from '../../../contexts/ToastContext';
+import { replaceProject } from '../../../utils/aitoOptimistic';
 import { copyTextToClipboard } from '../../../utils/clipboard';
 import { formatMoney } from '../../../utils/pricing';
 import { inputCls } from '../../formStyles';
@@ -48,7 +49,7 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
   const [error, setError] = useState<string | null>(null);
 
   const replaceBoardRow = (fresh: AitoProject) => {
-    queryClient.setQueryData<AitoProject[]>(['aito-projects'], (rows) => rows?.map((r) => (r.id === fresh.id ? fresh : r)));
+    queryClient.setQueryData<AitoProject[]>(['aito-projects'], (rows) => replaceProject(rows, fresh));
     queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
   };
 

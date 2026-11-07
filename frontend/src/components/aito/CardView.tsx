@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Building2, CreditCard, Eye, FileClock, GripVertical, Lock, User } from 'lucide-react';
 import { DueDateBadge } from './DueDateBadge';
@@ -8,13 +8,12 @@ import { contactNameStandsOut } from '../../utils/clientDraft';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAitoViewers } from '../../hooks/useAitoPresence';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
-import { prefersReducedMotion } from '../../utils/motion';
 import { ageAnchor, agingTextCls } from '../../utils/aitoAging';
 import { isFinished, needsClientContact, shipsToClient } from '../../utils/aitoBoard';
 import { useCardDrop } from '../projects/aito/CardDropTarget';
 import { CardProjectChips } from '../projects/aito/CardProjectChips';
 import { DoneOutcomeTags } from './DoneOutcomeTags';
-import { hoverRevealDelay, markHoverWarm } from './hoverWarmth';
+import { useHoverReveal } from './useHoverReveal';
 
 export interface CardViewProps {
   project: AitoProject;
@@ -40,9 +39,9 @@ export interface CardViewProps {
    *  and no actions: its id does not exist, so anything acting on it would act
    *  on nothing. Cleared the instant the real row replaces it. */
   placeholder?: boolean;
-  /** The mobile board's card: the contact rides inline after the client name
-   *  instead of taking its own line, and there is no grip at all — the phone
-   *  board has no drag. Every other fact on the card is unchanged. */
+  /** The compact card (phone and tablet boards): the contact rides inline after
+   *  the client name instead of taking its own line, and there is no grip at
+   *  all — those boards have no drag. Every other fact on the card is unchanged. */
   compact?: boolean;
 }
 
@@ -69,6 +68,35 @@ const FLAG_LABEL_KEY: Record<AitoFlag, string> = {
   pause: 'aito.pause',
   fiverr: 'aito.fiverr',
 };
+
+// One shared minute tick (and a wake on tab visibility) for every mounted card.
+// The memo below would otherwise freeze the due badge, age label and heat
+// colour, which are computed from the wall clock during render.
+let clockTick = 0;
+const clockListeners = new Set<() => void>();
+const bumpClock = () => {
+  clockTick += 1;
+  clockListeners.forEach((listener) => listener());
+};
+const onClockVisibility = () => {
+  if (document.visibilityState === 'visible') bumpClock();
+};
+let clockTimer: ReturnType<typeof setInterval> | undefined;
+function subscribeClock(listener: () => void) {
+  if (clockListeners.size === 0) {
+    clockTimer = setInterval(bumpClock, 60_000);
+    document.addEventListener('visibilitychange', onClockVisibility);
+  }
+  clockListeners.add(listener);
+  return () => {
+    clockListeners.delete(listener);
+    if (clockListeners.size === 0) {
+      clearInterval(clockTimer);
+      document.removeEventListener('visibilitychange', onClockVisibility);
+    }
+  };
+}
+const getClockTick = () => clockTick;
 
 /** Presentational card, shared by the in-column sortable wrapper and the
  *  DragOverlay clone.
@@ -99,8 +127,9 @@ const FLAG_LABEL_KEY: Record<AitoFlag, string> = {
  *  share one path with nothing to double-fire. The parent-injected actions
  *  (mark-sent, mark-done, restore, hold-to-delete) opt out by stopping
  *  propagation, so their own clicks never reach the region handler. Phone,
- *  email and delete live in the detail panel, not here. */
-/** Memoised: the board re-renders on every WebSocket invalidation, keystroke
+ *  email and delete live in the detail panel, not here.
+ *
+ *  Memoised: the board re-renders on every WebSocket invalidation, keystroke
  *  in the search box and presence update, and React Query's structural
  *  sharing keeps an unchanged `project` referentially equal, so an unchanged
  *  card has nothing to render. `BoardColumn` keeps its callbacks, the
@@ -118,6 +147,7 @@ export const CardView = memo(function CardView({
   compact = false,
 }: CardViewProps) {
   const { t, i18n } = useTranslation();
+  useSyncExternalStore(subscribeClock, getClockTick);
   // Normalised once, because a server older than this bundle sends no
   // `task_steps` at all and the type cannot know that. The field is required by
   // the current API contract, but the contract only binds a server that has
@@ -139,144 +169,8 @@ export const CardView = memo(function CardView({
   const { user } = useAuth();
   const viewers = useAitoViewers(project.id).filter((name) => name !== (user?.username ?? ''));
 
-  // Hover-intent reveal of a clamped description and of the per-task rows
-  // (collapsed, the card shows one summary line for all its tasks — see
-  // TaskStepsSummary). ONE dwell per visit: it starts when the pointer enters
-  // the card and ends when it leaves the whole card. It used to run per zone
-  // (name row, body) and restart at every boundary, so a pointer that drifted
-  // from the name to the text never rested a full second inside either — a
-  // one-second dwell that took three. The footer is the one exception: its
-  // buttons must not move under a pointer that is about to press them, so
-  // resting there PAUSES the dwell and moving back up resumes it. How long
-  // the dwell is comes from hoverWarmth.ts — a second, or much less right
-  // after another card was read. The card floats over its neighbours rather
-  // than growing in place: the shell holds the collapsed height so the
-  // column never reflows, which is what stops the cards below jumping out
-  // from under the pointer that is resting on this one.
-  const [expanded, setExpanded] = useState(false);
-  const [shellHeight, setShellHeight] = useState<number | null>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
-  const descriptionRef = useRef<HTMLParagraphElement>(null);
-  const timerRef = useRef<number | null>(null);
-  // When the running dwell fires, so a pause can compute what is left of it.
-  const deadlineRef = useRef<number | null>(null);
-  // What a paused dwell still owes; null when nothing is paused.
-  const remainingRef = useRef<number | null>(null);
-  // `expanded` as a ref, for handlers that must not re-arm the dwell on an
-  // already-open card without waiting for a render.
-  const expandedRef = useRef(false);
-
-  const clearTimer = useCallback(() => {
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    deadlineRef.current = null;
-  }, []);
-
-  // A card can be unmounted mid-hover by a refetch, a filter or a drag.
-  useEffect(() => clearTimer, [clearTimer]);
-
-  const armTimer = useCallback(
-    (delay: number) => {
-      clearTimer();
-      deadlineRef.current = Date.now() + delay;
-      timerRef.current = window.setTimeout(() => {
-        timerRef.current = null;
-        deadlineRef.current = null;
-        const description = descriptionRef.current;
-        const card = cardRef.current;
-        if (!description || !card) return;
-        // Nothing hidden means nothing to reveal. The +1 absorbs the sub-pixel
-        // rounding a fractional line-height leaves behind. Tasks always have
-        // something hidden: their names and per-task progress sit behind the
-        // summary line until the card grows.
-        const clipped = description.scrollHeight > description.clientHeight + 1;
-        if (!clipped && !hasTasks) return;
-        setShellHeight(card.offsetHeight);
-        expandedRef.current = true;
-        setExpanded(true);
-      }, delay);
-    },
-    [clearTimer, hasTasks],
-  );
-
-  // The pointer arrived on the card (shell mouseenter). Idempotent: a dwell
-  // already running or paused is this visit's dwell and keeps its clock —
-  // one dwell per visit is the whole rule.
-  const startHoverIntent = useCallback(() => {
-    // The overlay is a picture of a card mid-drag and a placeholder has no id
-    // yet; neither should grow under the pointer.
-    if (overlay || placeholder || expandedRef.current) return;
-    if (timerRef.current !== null || remainingRef.current !== null) return;
-    armTimer(hoverRevealDelay());
-  }, [armTimer, overlay, placeholder]);
-
-  // The pointer moved onto the footer: hold a PENDING dwell where it is, and
-  // leave an open reveal alone. A pointer that crossed the description on its
-  // way to a button must not get the reveal a moment later, on the button;
-  // one that read the description, got the reveal, and then moved down to
-  // the button must keep it (`endHoverIntent`, on the shell, handles the
-  // leave).
-  const pauseHoverIntent = useCallback(() => {
-    if (timerRef.current === null || deadlineRef.current === null) return;
-    remainingRef.current = Math.max(0, deadlineRef.current - Date.now());
-    clearTimer();
-  }, [clearTimer]);
-
-  // The pointer left the footer — back up into the body, or off the card,
-  // in which case the shell's own leave runs next and clears this again.
-  const resumeHoverIntent = useCallback(() => {
-    const remaining = remainingRef.current;
-    if (remaining === null || expandedRef.current) return;
-    remainingRef.current = null;
-    armTimer(remaining);
-  }, [armTimer]);
-
-  const endHoverIntent = useCallback(() => {
-    clearTimer();
-    remainingRef.current = null;
-    // Only a reveal that was actually read warms the board; a pointer that
-    // merely crossed the card on its way somewhere else was not reading.
-    if (expandedRef.current) markHoverWarm();
-    expandedRef.current = false;
-    setExpanded(false);
-    setShellHeight(null);
-  }, [clearTimer]);
-
-  // Grow into the reveal instead of jumping to it. The dwell is deliberate
-  // — a press cancels it, so by the time this fires the user is holding still
-  // and looking straight at the card, which is the worst possible moment to
-  // teleport. `shellHeight` is the collapsed
-  // height, already measured by the timer above before the state flipped, so
-  // both ends of the tween are known and nothing has to be guessed.
-  //
-  // A layout effect, and WAAPI rather than a CSS transition, for the same two
-  // reasons `useFlipReorder` uses them: the animation has to be in flight
-  // before the browser paints the expanded height, and inline styles would
-  // fight the card's own Tailwind transition on transform/box-shadow — which
-  // is what carries the lift and the shadow at the same time.
-  //
-  // Only the opening is animated. On leave the pointer has already moved on,
-  // and a card still shrinking under the NEXT card's hover is worse than one
-  // that is simply gone.
-  useLayoutEffect(() => {
-    const card = cardRef.current;
-    if (!expanded || !card || shellHeight === null) return;
-    if (typeof card.animate !== 'function' || prefersReducedMotion()) return;
-    const target = card.offsetHeight;
-    // Nothing to travel: the reveal only fires when the description is
-    // clipped, but a one-word overflow can round to the same height.
-    if (target <= shellHeight) return;
-    card.animate([{ height: `${shellHeight}px` }, { height: `${target}px` }], {
-      // Fast for an entrance (the 250ms budget is for things arriving from
-      // off-screen); this box is already there and is only changing size, and
-      // the text inside it is being read, so it must settle promptly.
-      duration: 200,
-      // easeOutQuint — var(--ease-signature) in index.css.
-      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-    });
-  }, [expanded, shellHeight]);
+  const { expanded, shellHeight, cardRef, descriptionRef, startHoverIntent, pauseHoverIntent, resumeHoverIntent, endHoverIntent } =
+    useHoverReveal({ disabled: overlay || placeholder, hasTasks });
 
 
   const created = parseUTCDate(project.created_at);
@@ -321,6 +215,7 @@ export const CardView = memo(function CardView({
   // an assertion at each site.
   const paintedFlag = isFinished(project.column) ? null : project.flag;
   const awaitingContact = needsClientContact(project);
+  const nameColorCls = awaitingContact ? 'text-cyan-400' : project.client_name ? 'text-white' : 'text-bambu-gray';
   const contactShown = contactNameStandsOut(project.client_name, project.client_contact_name);
 
   const cardDrop = useCardDrop({
@@ -397,7 +292,7 @@ export const CardView = memo(function CardView({
             // button is already a phone, and the same icon twice on one card
             // reads as a repetition rather than as an alert.
             className={`w-3.5 h-3.5 flex-shrink-0 ${
-              awaitingContact ? 'text-cyan-400' : project.client_name ? 'text-white' : 'text-bambu-gray'
+              nameColorCls
             }`}
             strokeWidth={2.5}
             aria-hidden="true"
@@ -405,7 +300,7 @@ export const CardView = memo(function CardView({
           <p
             data-testid="aito-card-client"
             className={`${compact ? 'min-w-0' : 'flex-1 min-w-0'} text-sm font-semibold tracking-[-0.01em] truncate ${
-              awaitingContact ? 'text-cyan-400' : project.client_name ? 'text-white' : 'text-bambu-gray'
+              nameColorCls
             }`}
           >
             <span className="sr-only">
@@ -452,9 +347,6 @@ export const CardView = memo(function CardView({
               reader does next. The job's age moved down to the footer
               (2026-09-08) so the name keeps the row. */}
           <DueDateBadge dueDate={project.due_date ?? null} column={project.column} />
-          {/* Money already in: a paid online link. Pending is deliberately
-              silent — the board must not get noisier for something the
-              client has not done yet. */}
           {/* Expired quote: amber like its Billing-card tone; dropped once the card is finished. */}
           {project.quote_status === 'expired' && !isFinished(project.column) && (
             <span
@@ -466,6 +358,9 @@ export const CardView = memo(function CardView({
               <span className="sr-only">{t('aito.quoteExpired')}</span>
             </span>
           )}
+          {/* Money already in: a paid online link. Pending is deliberately
+              silent — the board must not get noisier for something the
+              client has not done yet. */}
           {project.payment_link?.state === 'paid' && (
             <span
               data-testid="aito-card-paid-online"
@@ -602,7 +497,7 @@ export const CardView = memo(function CardView({
                     beside the task rows was the same number twice per card. */}
                 {awaitingContact && (
                   <span
-                    data-testid="aito-card-contact"
+                    data-testid="aito-card-awaiting-contact"
                     className="text-xs font-semibold text-cyan-400 tabular-nums flex-shrink-0"
                   >
                     {/* No age of its own: the card's elapsed time is the next

@@ -83,11 +83,10 @@ class RatingProfile:
 INDIVIDUAL_PROFILE = RatingProfile(on_time_slack_days=3, grace_days=7, good_min_settled=3, severe_overdue_days=45)
 COMPANY_PROFILE = RatingProfile(on_time_slack_days=14, grace_days=21, good_min_settled=2, severe_overdue_days=60)
 
-# The individual figures under their historical names — the spec's worked
-# examples and the tests read them.
+# Two of the individual figures under their historical names — the spec's
+# worked examples and the tests read them.
 GRACE_DAYS = INDIVIDUAL_PROFILE.grace_days
 ON_TIME_SLACK_DAYS = INDIVIDUAL_PROFILE.on_time_slack_days
-GOOD_MIN_SETTLED = INDIVIDUAL_PROFILE.good_min_settled
 # Share of settled invoices that must be on time for `good` — and the share
 # that makes a record strong enough to buffer a mild overdue invoice.
 GOOD_MIN_ON_TIME_RATIO = 0.9

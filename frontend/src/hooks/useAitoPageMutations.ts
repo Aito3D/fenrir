@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, type AitoProject, type ZohoQuotePreview, type ZohoQuoteShipping } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
-import { formatPhone } from '../utils/clientDraft';
+import { clientFieldsFromDraft, formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
 import { taskDraftToTaskCreate } from '../utils/taskDraft';
 import type { TaskDraft } from '../utils/taskDraft';
@@ -122,17 +122,7 @@ export function useAitoPageMutations() {
         regenerate_description: regenerateDescription,
         client_id: draft.id,
         client_name: draft.name,
-        client_phone: formatPhone(draft) || null,
-        client_email: draft.email.trim() || null,
-        client_is_company: draft.isCompany,
-        // Both keys or neither: the server refuses a handle with no network,
-        // and a network with no handle clears the pair.
-        client_social_network: draft.socialHandle.trim() ? draft.socialNetwork : null,
-        client_social_handle: draft.socialHandle.trim() || null,
-        // Company cards only — the server clears it otherwise, but sending
-        // null keeps the wire honest about what the draft meant.
-        client_contact_person_id: draft.isCompany ? draft.contactPersonId : null,
-        client_contact_name: draft.isCompany && draft.contactName ? draft.contactName : null,
+        ...clientFieldsFromDraft(draft),
         due_date: dueDate,
         tasks: tasks.map(taskDraftToTaskCreate),
         ...(shipping ? shippingPayload(shipping) : {}),

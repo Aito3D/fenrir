@@ -1,10 +1,10 @@
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
 import { Loader2, Printer } from 'lucide-react';
-import { api, type AitoProject } from '../../api/client';
+import { type AitoProject } from '../../api/client';
 import { usePrintBlob } from './usePrintBlob';
 import { useAitoInvoice } from './useAitoInvoice';
 import aito3dLogo from '../../assets/aito3d_logo.png';
+import { useAitoShippingServices } from '../../hooks/useAitoShippingServices';
 
 /** Shared look of the Shipping card's header cells — Print, Edit, Remove —
  *  so the three read as one row. Exported for the card's own two. */
@@ -38,12 +38,7 @@ export function ShippingLabelButton({ project }: { project: AitoProject }) {
   // Same key as ShippingCard and the create drawer, so this shares their
   // cache — and only when a label can exist: a card with no shipping has no
   // island to name, so no reason to ask.
-  const servicesQuery = useQuery({
-    queryKey: ['aito-shipping-services'],
-    queryFn: api.getAitoShippingServices,
-    staleTime: 60 * 60_000,
-    enabled: hasLabel,
-  });
+  const servicesQuery = useAitoShippingServices(hasLabel);
   const invoiceQuery = useAitoInvoice(project, hasLabel);
   const reference = invoiceQuery.data?.number || project.quote_number || null;
 

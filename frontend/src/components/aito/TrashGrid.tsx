@@ -89,6 +89,9 @@ function TrashCard({
   );
 }
 
+/** A soft delete is the last write the row took. */
+const deletedAt = (project: AitoProject) => project.updated_at;
+
 /** Deleted projects, as a grid — the same shape as the Done archive.
  *
  *  This replaced a modal holding a list of stripped-down rows. Two archives
@@ -107,9 +110,6 @@ function TrashCard({
  *  The rows are the caller's: `AitoPage` owns the ['aito-trash'] query because
  *  it also has to resolve a trashed project for the detail panel, and the
  *  board query it normally looks in does not carry deleted rows. */
-/** A soft delete is the last write the row took. */
-const deletedAt = (project: AitoProject) => project.updated_at;
-
 export function TrashGrid({
   projects,
   query,

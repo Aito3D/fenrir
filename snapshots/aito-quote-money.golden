@@ -26,31 +26,43 @@
   ],
   "air-priced/multi": [
    {
-    "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "Scan only",
-    "item_id": "ITEM-SCAN",
+    "description": "Scan only",
     "item_order": 1,
+    "line_item_category": "header"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "item_id": "ITEM-SCAN",
+    "item_order": 2,
     "quantity": 1,
     "rate": 1234,
     "tax_id": "TAX-1",
     "unit": "Projet"
    },
    {
+    "description": "Imp q7",
+    "item_order": 3,
+    "line_item_category": "header"
+   },
+   {
     "description": "",
-    "header_name": "Imp q7",
     "item_id": "ITEM-IMP",
-    "item_order": 2,
+    "item_order": 4,
     "quantity": 7,
     "rate": 100,
     "tax_id": "TAX-1",
     "unit": "Projet"
    },
    {
+    "description": "Imp disc",
+    "item_order": 5,
+    "line_item_category": "header"
+   },
+   {
     "description": "",
     "discount": "50%",
-    "header_name": "Imp disc",
     "item_id": "ITEM-IMP",
-    "item_order": 3,
+    "item_order": 6,
     "quantity": 2,
     "rate": 500,
     "tax_id": "TAX-1",
@@ -59,7 +71,7 @@
    {
     "description": "Nom: Jean Dupont\nT\u00e9l\u00e9phone: 87123456\n\u00cele: Raiatea",
     "item_id": "ITEM-SHIP-AIR",
-    "item_order": 4,
+    "item_order": 7,
     "quantity": 1,
     "rate": 1500.0,
     "tax_id": "TAX-1",
@@ -68,10 +80,14 @@
   ],
   "air-priced/single-all-services": [
    {
-    "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "All",
-    "item_id": "ITEM-SCAN",
+    "description": "All",
     "item_order": 1,
+    "line_item_category": "header"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "item_id": "ITEM-SCAN",
+    "item_order": 2,
     "quantity": 1,
     "rate": 100,
     "tax_id": "TAX-1",
@@ -79,9 +95,8 @@
    },
    {
     "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "All",
     "item_id": "ITEM-MODEL",
-    "item_order": 2,
+    "item_order": 3,
     "quantity": 1,
     "rate": 200,
     "tax_id": "TAX-1",
@@ -89,9 +104,8 @@
    },
    {
     "description": "Mat\u00e9riau: PETG\nPoids: 50 gr\nTemps: 1h30\nCouleur: Noir",
-    "header_name": "All",
     "item_id": "ITEM-IMP",
-    "item_order": 3,
+    "item_order": 4,
     "quantity": 2,
     "rate": 150,
     "tax_id": "TAX-1",
@@ -99,9 +113,8 @@
    },
    {
     "description": "",
-    "header_name": "All",
     "item_id": "ITEM-USI",
-    "item_order": 4,
+    "item_order": 5,
     "quantity": 1,
     "rate": 400,
     "tax_id": "TAX-1",
@@ -110,7 +123,7 @@
    {
     "description": "Nom: Jean Dupont\nT\u00e9l\u00e9phone: 87123456\n\u00cele: Raiatea",
     "item_id": "ITEM-SHIP-AIR",
-    "item_order": 5,
+    "item_order": 6,
     "quantity": 1,
     "rate": 1500.0,
     "tax_id": "TAX-1",
@@ -119,19 +132,13 @@
   ],
   "air-priced/zero-costs-only": [
    {
-    "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "Zero",
-    "item_id": "ITEM-SCAN",
+    "description": "Zero",
     "item_order": 1,
-    "quantity": 1,
-    "rate": 0,
-    "tax_id": "TAX-1",
-    "unit": "Projet"
+    "line_item_category": "header"
    },
    {
     "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "Zero",
-    "item_id": "ITEM-MODEL",
+    "item_id": "ITEM-SCAN",
     "item_order": 2,
     "quantity": 1,
     "rate": 0,
@@ -139,9 +146,8 @@
     "unit": "Projet"
    },
    {
-    "description": "",
-    "header_name": "Zero",
-    "item_id": "ITEM-IMP",
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "item_id": "ITEM-MODEL",
     "item_order": 3,
     "quantity": 1,
     "rate": 0,
@@ -150,9 +156,17 @@
    },
    {
     "description": "",
-    "header_name": "Zero",
-    "item_id": "ITEM-USI",
+    "item_id": "ITEM-IMP",
     "item_order": 4,
+    "quantity": 1,
+    "rate": 0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "item_id": "ITEM-USI",
+    "item_order": 5,
     "quantity": 1,
     "rate": 0,
     "tax_id": "TAX-1",
@@ -161,7 +175,7 @@
    {
     "description": "Nom: Jean Dupont\nT\u00e9l\u00e9phone: 87123456\n\u00cele: Raiatea",
     "item_id": "ITEM-SHIP-AIR",
-    "item_order": 5,
+    "item_order": 6,
     "quantity": 1,
     "rate": 1500.0,
     "tax_id": "TAX-1",
@@ -192,31 +206,43 @@
   ],
   "air-zero/multi": [
    {
-    "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "Scan only",
-    "item_id": "ITEM-SCAN",
+    "description": "Scan only",
     "item_order": 1,
+    "line_item_category": "header"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "item_id": "ITEM-SCAN",
+    "item_order": 2,
     "quantity": 1,
     "rate": 1234,
     "tax_id": "TAX-1",
     "unit": "Projet"
    },
    {
+    "description": "Imp q7",
+    "item_order": 3,
+    "line_item_category": "header"
+   },
+   {
     "description": "",
-    "header_name": "Imp q7",
     "item_id": "ITEM-IMP",
-    "item_order": 2,
+    "item_order": 4,
     "quantity": 7,
     "rate": 100,
     "tax_id": "TAX-1",
     "unit": "Projet"
    },
    {
+    "description": "Imp disc",
+    "item_order": 5,
+    "line_item_category": "header"
+   },
+   {
     "description": "",
     "discount": "50%",
-    "header_name": "Imp disc",
     "item_id": "ITEM-IMP",
-    "item_order": 3,
+    "item_order": 6,
     "quantity": 2,
     "rate": 500,
     "tax_id": "TAX-1",
@@ -225,7 +251,7 @@
    {
     "description": "Nom: A B\nT\u00e9l\u00e9phone: 87000000\n\u00cele: Tahiti",
     "item_id": "ITEM-SHIP-AIR",
-    "item_order": 4,
+    "item_order": 7,
     "quantity": 1,
     "rate": 0.0,
     "tax_id": "TAX-1",
@@ -234,10 +260,14 @@
   ],
   "air-zero/single-all-services": [
    {
-    "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "All",
-    "item_id": "ITEM-SCAN",
+    "description": "All",
     "item_order": 1,
+    "line_item_category": "header"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "item_id": "ITEM-SCAN",
+    "item_order": 2,
     "quantity": 1,
     "rate": 100,
     "tax_id": "TAX-1",
@@ -245,9 +275,8 @@
    },
    {
     "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "All",
     "item_id": "ITEM-MODEL",
-    "item_order": 2,
+    "item_order": 3,
     "quantity": 1,
     "rate": 200,
     "tax_id": "TAX-1",
@@ -255,9 +284,8 @@
    },
    {
     "description": "Mat\u00e9riau: PETG\nPoids: 50 gr\nTemps: 1h30\nCouleur: Noir",
-    "header_name": "All",
     "item_id": "ITEM-IMP",
-    "item_order": 3,
+    "item_order": 4,
     "quantity": 2,
     "rate": 150,
     "tax_id": "TAX-1",
@@ -265,9 +293,8 @@
    },
    {
     "description": "",
-    "header_name": "All",
     "item_id": "ITEM-USI",
-    "item_order": 4,
+    "item_order": 5,
     "quantity": 1,
     "rate": 400,
     "tax_id": "TAX-1",
@@ -276,7 +303,7 @@
    {
     "description": "Nom: A B\nT\u00e9l\u00e9phone: 87000000\n\u00cele: Tahiti",
     "item_id": "ITEM-SHIP-AIR",
-    "item_order": 5,
+    "item_order": 6,
     "quantity": 1,
     "rate": 0.0,
     "tax_id": "TAX-1",
@@ -285,19 +312,13 @@
   ],
   "air-zero/zero-costs-only": [
    {
-    "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "Zero",
-    "item_id": "ITEM-SCAN",
+    "description": "Zero",
     "item_order": 1,
-    "quantity": 1,
-    "rate": 0,
-    "tax_id": "TAX-1",
-    "unit": "Projet"
+    "line_item_category": "header"
    },
    {
     "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "Zero",
-    "item_id": "ITEM-MODEL",
+    "item_id": "ITEM-SCAN",
     "item_order": 2,
     "quantity": 1,
     "rate": 0,
@@ -305,9 +326,8 @@
     "unit": "Projet"
    },
    {
-    "description": "",
-    "header_name": "Zero",
-    "item_id": "ITEM-IMP",
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "item_id": "ITEM-MODEL",
     "item_order": 3,
     "quantity": 1,
     "rate": 0,
@@ -316,9 +336,17 @@
    },
    {
     "description": "",
-    "header_name": "Zero",
-    "item_id": "ITEM-USI",
+    "item_id": "ITEM-IMP",
     "item_order": 4,
+    "quantity": 1,
+    "rate": 0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "item_id": "ITEM-USI",
+    "item_order": 5,
     "quantity": 1,
     "rate": 0,
     "tax_id": "TAX-1",
@@ -327,7 +355,7 @@
    {
     "description": "Nom: A B\nT\u00e9l\u00e9phone: 87000000\n\u00cele: Tahiti",
     "item_id": "ITEM-SHIP-AIR",
-    "item_order": 5,
+    "item_order": 6,
     "quantity": 1,
     "rate": 0.0,
     "tax_id": "TAX-1",
@@ -338,31 +366,43 @@
   "none/empty": [],
   "none/multi": [
    {
-    "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "Scan only",
-    "item_id": "ITEM-SCAN",
+    "description": "Scan only",
     "item_order": 1,
+    "line_item_category": "header"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "item_id": "ITEM-SCAN",
+    "item_order": 2,
     "quantity": 1,
     "rate": 1234,
     "tax_id": "TAX-1",
     "unit": "Projet"
    },
    {
+    "description": "Imp q7",
+    "item_order": 3,
+    "line_item_category": "header"
+   },
+   {
     "description": "",
-    "header_name": "Imp q7",
     "item_id": "ITEM-IMP",
-    "item_order": 2,
+    "item_order": 4,
     "quantity": 7,
     "rate": 100,
     "tax_id": "TAX-1",
     "unit": "Projet"
    },
    {
+    "description": "Imp disc",
+    "item_order": 5,
+    "line_item_category": "header"
+   },
+   {
     "description": "",
     "discount": "50%",
-    "header_name": "Imp disc",
     "item_id": "ITEM-IMP",
-    "item_order": 3,
+    "item_order": 6,
     "quantity": 2,
     "rate": 500,
     "tax_id": "TAX-1",
@@ -371,10 +411,14 @@
   ],
   "none/single-all-services": [
    {
-    "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "All",
-    "item_id": "ITEM-SCAN",
+    "description": "All",
     "item_order": 1,
+    "line_item_category": "header"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "item_id": "ITEM-SCAN",
+    "item_order": 2,
     "quantity": 1,
     "rate": 100,
     "tax_id": "TAX-1",
@@ -382,9 +426,8 @@
    },
    {
     "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "All",
     "item_id": "ITEM-MODEL",
-    "item_order": 2,
+    "item_order": 3,
     "quantity": 1,
     "rate": 200,
     "tax_id": "TAX-1",
@@ -392,9 +435,8 @@
    },
    {
     "description": "Mat\u00e9riau: PETG\nPoids: 50 gr\nTemps: 1h30\nCouleur: Noir",
-    "header_name": "All",
     "item_id": "ITEM-IMP",
-    "item_order": 3,
+    "item_order": 4,
     "quantity": 2,
     "rate": 150,
     "tax_id": "TAX-1",
@@ -402,9 +444,8 @@
    },
    {
     "description": "",
-    "header_name": "All",
     "item_id": "ITEM-USI",
-    "item_order": 4,
+    "item_order": 5,
     "quantity": 1,
     "rate": 400,
     "tax_id": "TAX-1",
@@ -413,19 +454,13 @@
   ],
   "none/zero-costs-only": [
    {
-    "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "Zero",
-    "item_id": "ITEM-SCAN",
+    "description": "Zero",
     "item_order": 1,
-    "quantity": 1,
-    "rate": 0,
-    "tax_id": "TAX-1",
-    "unit": "Projet"
+    "line_item_category": "header"
    },
    {
     "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "Zero",
-    "item_id": "ITEM-MODEL",
+    "item_id": "ITEM-SCAN",
     "item_order": 2,
     "quantity": 1,
     "rate": 0,
@@ -433,9 +468,8 @@
     "unit": "Projet"
    },
    {
-    "description": "",
-    "header_name": "Zero",
-    "item_id": "ITEM-IMP",
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "item_id": "ITEM-MODEL",
     "item_order": 3,
     "quantity": 1,
     "rate": 0,
@@ -444,9 +478,17 @@
    },
    {
     "description": "",
-    "header_name": "Zero",
-    "item_id": "ITEM-USI",
+    "item_id": "ITEM-IMP",
     "item_order": 4,
+    "quantity": 1,
+    "rate": 0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "item_id": "ITEM-USI",
+    "item_order": 5,
     "quantity": 1,
     "rate": 0,
     "tax_id": "TAX-1",
@@ -477,31 +519,43 @@
   ],
   "sea-priced/multi": [
    {
-    "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "Scan only",
-    "item_id": "ITEM-SCAN",
+    "description": "Scan only",
     "item_order": 1,
+    "line_item_category": "header"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "item_id": "ITEM-SCAN",
+    "item_order": 2,
     "quantity": 1,
     "rate": 1234,
     "tax_id": "TAX-1",
     "unit": "Projet"
    },
    {
+    "description": "Imp q7",
+    "item_order": 3,
+    "line_item_category": "header"
+   },
+   {
     "description": "",
-    "header_name": "Imp q7",
     "item_id": "ITEM-IMP",
-    "item_order": 2,
+    "item_order": 4,
     "quantity": 7,
     "rate": 100,
     "tax_id": "TAX-1",
     "unit": "Projet"
    },
    {
+    "description": "Imp disc",
+    "item_order": 5,
+    "line_item_category": "header"
+   },
+   {
     "description": "",
     "discount": "50%",
-    "header_name": "Imp disc",
     "item_id": "ITEM-IMP",
-    "item_order": 3,
+    "item_order": 6,
     "quantity": 2,
     "rate": 500,
     "tax_id": "TAX-1",
@@ -510,7 +564,7 @@
    {
     "description": "Nom: Ana T\nT\u00e9l\u00e9phone: 40123456\n\u00cele: Nuku Hiva",
     "item_id": "ITEM-SHIP-SEA",
-    "item_order": 4,
+    "item_order": 7,
     "quantity": 1,
     "rate": 2750.5,
     "tax_id": "TAX-1",
@@ -519,10 +573,14 @@
   ],
   "sea-priced/single-all-services": [
    {
-    "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "All",
-    "item_id": "ITEM-SCAN",
+    "description": "All",
     "item_order": 1,
+    "line_item_category": "header"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "item_id": "ITEM-SCAN",
+    "item_order": 2,
     "quantity": 1,
     "rate": 100,
     "tax_id": "TAX-1",
@@ -530,9 +588,8 @@
    },
    {
     "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "All",
     "item_id": "ITEM-MODEL",
-    "item_order": 2,
+    "item_order": 3,
     "quantity": 1,
     "rate": 200,
     "tax_id": "TAX-1",
@@ -540,9 +597,8 @@
    },
    {
     "description": "Mat\u00e9riau: PETG\nPoids: 50 gr\nTemps: 1h30\nCouleur: Noir",
-    "header_name": "All",
     "item_id": "ITEM-IMP",
-    "item_order": 3,
+    "item_order": 4,
     "quantity": 2,
     "rate": 150,
     "tax_id": "TAX-1",
@@ -550,9 +606,8 @@
    },
    {
     "description": "",
-    "header_name": "All",
     "item_id": "ITEM-USI",
-    "item_order": 4,
+    "item_order": 5,
     "quantity": 1,
     "rate": 400,
     "tax_id": "TAX-1",
@@ -561,7 +616,7 @@
    {
     "description": "Nom: Ana T\nT\u00e9l\u00e9phone: 40123456\n\u00cele: Nuku Hiva",
     "item_id": "ITEM-SHIP-SEA",
-    "item_order": 5,
+    "item_order": 6,
     "quantity": 1,
     "rate": 2750.5,
     "tax_id": "TAX-1",
@@ -570,19 +625,13 @@
   ],
   "sea-priced/zero-costs-only": [
    {
-    "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "Zero",
-    "item_id": "ITEM-SCAN",
+    "description": "Zero",
     "item_order": 1,
-    "quantity": 1,
-    "rate": 0,
-    "tax_id": "TAX-1",
-    "unit": "Projet"
+    "line_item_category": "header"
    },
    {
     "description": "*Fichier non c\u00e9d\u00e9*",
-    "header_name": "Zero",
-    "item_id": "ITEM-MODEL",
+    "item_id": "ITEM-SCAN",
     "item_order": 2,
     "quantity": 1,
     "rate": 0,
@@ -590,9 +639,8 @@
     "unit": "Projet"
    },
    {
-    "description": "",
-    "header_name": "Zero",
-    "item_id": "ITEM-IMP",
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "item_id": "ITEM-MODEL",
     "item_order": 3,
     "quantity": 1,
     "rate": 0,
@@ -601,9 +649,17 @@
    },
    {
     "description": "",
-    "header_name": "Zero",
-    "item_id": "ITEM-USI",
+    "item_id": "ITEM-IMP",
     "item_order": 4,
+    "quantity": 1,
+    "rate": 0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "item_id": "ITEM-USI",
+    "item_order": 5,
     "quantity": 1,
     "rate": 0,
     "tax_id": "TAX-1",
@@ -612,7 +668,7 @@
    {
     "description": "Nom: Ana T\nT\u00e9l\u00e9phone: 40123456\n\u00cele: Nuku Hiva",
     "item_id": "ITEM-SHIP-SEA",
-    "item_order": 5,
+    "item_order": 6,
     "quantity": 1,
     "rate": 2750.5,
     "tax_id": "TAX-1",
@@ -622,10 +678,14 @@
  },
  "build_line_items_existing": [
   {
-   "description": "*Fichier non c\u00e9d\u00e9*",
-   "header_name": "All",
-   "item_id": "ITEM-SCAN",
+   "description": "All",
    "item_order": 1,
+   "line_item_category": "header"
+  },
+  {
+   "description": "*Fichier non c\u00e9d\u00e9*",
+   "item_id": "ITEM-SCAN",
+   "item_order": 2,
    "quantity": 1,
    "rate": 100,
    "tax_id": "TAX-1",
@@ -633,9 +693,8 @@
   },
   {
    "description": "*Fichier non c\u00e9d\u00e9*",
-   "header_name": "All",
    "item_id": "ITEM-MODEL",
-   "item_order": 2,
+   "item_order": 3,
    "quantity": 1,
    "rate": 200,
    "tax_id": "TAX-1",
@@ -643,9 +702,8 @@
   },
   {
    "description": "Mat\u00e9riau: PETG\nPoids: 50 gr\nTemps: 1h30\nCouleur: Noir",
-   "header_name": "All",
    "item_id": "ITEM-IMP",
-   "item_order": 3,
+   "item_order": 4,
    "quantity": 2,
    "rate": 150,
    "tax_id": "TAX-1",
@@ -653,9 +711,8 @@
   },
   {
    "description": "",
-   "header_name": "All",
    "item_id": "ITEM-USI",
-   "item_order": 4,
+   "item_order": 5,
    "quantity": 1,
    "rate": 400,
    "tax_id": "TAX-1",
@@ -664,7 +721,7 @@
   {
    "description": "Nom: Jean Dupont\nT\u00e9l\u00e9phone: 87123456\n\u00cele: Raiatea",
    "item_id": "ITEM-SHIP-AIR",
-   "item_order": 5,
+   "item_order": 6,
    "quantity": 1,
    "rate": 1500.0,
    "tax_id": "TAX-1",

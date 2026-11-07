@@ -332,4 +332,6 @@ def _bump_version_on_content_change(_mapper, _connection, target: "AitoProject")
     state = sa_inspect(target)
     changed = {attr.key for attr in state.attrs if attr.history.has_changes()}
     if changed & VERSIONED_FIELDS:
-        target.version = (target.version or 0) + 1
+        # SQL-side increment against the live row, not the value this session
+        # loaded: a background writer and a guarded PATCH must not both claim V+1.
+        target.version = AitoProject.version + 1
