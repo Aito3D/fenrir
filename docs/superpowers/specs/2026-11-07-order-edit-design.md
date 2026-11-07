@@ -309,7 +309,13 @@ the package again). Frontend: `orderBoard.ts` (`startEdit`, `editChanges`, `edit
 Deviations from the design, each deliberate:
 
 - The floor of a line is read from the recomputed row after the forced re-read, not from a separate helper.
-- `picklist_open` is judged on the stored copy of the order.
+- `picklist_open` is judged on the stored copy of the order and again on the fresh copy after the forced re-read.
+- The editable lines are the ones the board shows live (ready, backorder, to order). Service, untracked, cancelled
+  and fully shipped lines go back to Books unchanged (`_SO_LINE_FIELDS` only); naming one is refused
+  `service_line` (service or untracked) or `unknown_line` (cancelled, shipped).
+- A parcel save whose package already holds the requested lines and whose picklist is still above it runs only the
+  picklist-down step (every row brought down to what the parcels hold, never up); `nothing_changed` only when
+  neither would change.
 - Parcel picklist row target = what other parcels hold packed + this parcel's new units. The base is
   `quantity_packed`, not `quantity_picked`: after the raising step ran, picked already includes the rise, so a
   retry would write it twice.
