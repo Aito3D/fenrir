@@ -1685,3 +1685,198 @@ async def test_a_refused_void_reraises_and_keeps_the_order_on_the_board(db_sessi
     with pytest.raises(ZohoUpstreamError):
         await actions.cancel_order(db_session, "so1")
     assert [r["id"] for r in (await sync.read_board(db_session))["rows"]] == ["so1"]
+
+
+# --- Edit the order's lines --------------------------------------------------------------------------------------
+
+VERSION = "2026-11-01T08:00:00-1000"
+
+
+@pytest.fixture
+def lines_edit(parcels, monkeypatch):
+    """Books' order update and item lookups on the fake. so1: l1 (item A, qty 2, rate 1000), l2 (item C, qty 1)
+    and a service line s1."""
+    parcels.items_by_id = {
+        "B": {"item_id": "B", "name": "Bee", "sku": "B1", "rate": 2900, "product_type": "goods"},
+        "SVC": {"item_id": "SVC", "name": "Labour", "rate": 100, "product_type": "service"},
+    }
+    parcels.item_search = []
+
+    stock_read = zoho_service.list_items_by_ids  # the sync fake's stock read, for the ids it knows
+
+    async def list_items_by_ids(db, ids):
+        return [parcels.items_by_id[i] for i in ids if i in parcels.items_by_id] + await stock_read(
+            db, [i for i in ids if i not in parcels.items_by_id]
+        )
+
+    async def list_items(db, search_text):
+        return parcels.item_search
+
+    async def update_salesorder(db, salesorder_id, body):
+        if parcels.create_error:
+            raise parcels.create_error
+        parcels.writes.append("update_salesorder")
+        parcels.bodies["lines"] = body
+        doc = parcels.orders[salesorder_id]
+        old = {line["line_item_id"]: line for line in doc["line_items"]}
+        doc["line_items"] = [
+            {
+                **old.get(line.get("line_item_id"), {}),
+                **line,
+                "line_item_id": line.get("line_item_id") or f"new-{line['item_id']}",
+            }
+            for line in body["line_items"]
+        ]
+        doc["last_modified_time"] = "2026-11-07T09:00:00-1000"
+        return {}
+
+    for call in (list_items_by_ids, list_items, update_salesorder):
+        monkeypatch.setattr(zoho_service, call.__name__, call)
+    return parcels
+
+
+def _edit_order(**line_kw):
+    doc = order(1, qty=2)
+    doc["line_items"][0].update(rate=1000, product_type="goods", **line_kw)
+    doc["line_items"].append(
+        {
+            **doc["line_items"][0],
+            "line_item_id": "l2",
+            "item_id": "C",
+            "quantity": 1,
+            "quantity_packed": 0,
+            "quantity_invoiced": 0,
+            "quantity_shipped": 0,
+        }
+    )
+    doc["line_items"].append(
+        {"line_item_id": "s1", "name": "Labour", "quantity": 1, "rate": 500, "product_type": "service"}
+    )
+    return doc
+
+
+@pytest.mark.asyncio
+async def test_edit_sends_the_whole_order_and_the_row_shows_it(db_session, lines_edit):
+    await _board(db_session, lines_edit, _edit_order())
+    row = await actions.edit_lines(
+        db_session,
+        "so1",
+        VERSION,
+        [{"line_id": "l1", "quantity": 3}, {"line_id": "l2", "quantity": 1}, {"item_id": "B", "quantity": 1}],
+    )
+    body = lines_edit.bodies["lines"]["line_items"]
+    assert [line.get("line_item_id") for line in body] == ["l1", "l2", "s1", None]  # service kept, new line last
+    assert body[0]["quantity"] == 3 and body[3] == {"item_id": "B", "quantity": 1, "rate": 2900.0}
+    assert {line["id"]: line["quantity"] for line in row["lines"]}["l1"] == 3 and row["version"] != VERSION
+
+
+@pytest.mark.asyncio
+async def test_omitted_line_is_removed(db_session, lines_edit):
+    await _board(db_session, lines_edit, _edit_order())
+    row = await actions.edit_lines(db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 2}])
+    assert "l2" not in [line.get("line_item_id") for line in lines_edit.bodies["lines"]["line_items"]]
+    assert "l2" not in [line["id"] for line in row["lines"]]
+
+
+@pytest.mark.asyncio
+async def test_floor_uses_books_cumulative_figures(db_session, lines_edit):
+    await _board(
+        db_session, lines_edit, _edit_order(quantity_packed=3, quantity_invoiced=1, quantity_shipped=2, quantity=5)
+    )
+    keep = {"line_id": "l2", "quantity": 1}
+    await actions.edit_lines(db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}, keep])  # accepted
+    with pytest.raises(actions.OrderActionRefused, match="below_floor"):
+        await actions.edit_lines(
+            db_session, "so1", "2026-11-07T09:00:00-1000", [{"line_id": "l1", "quantity": 2.9}, keep]
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_floored_line_cannot_be_omitted(db_session, lines_edit):
+    await _board(db_session, lines_edit, _edit_order(quantity_packed=1))
+    with pytest.raises(actions.OrderActionRefused, match="below_floor"):
+        await actions.edit_lines(db_session, "so1", VERSION, [{"line_id": "l2", "quantity": 2}])
+    assert "lines" not in lines_edit.bodies
+
+
+@pytest.mark.asyncio
+async def test_a_moved_order_is_refused_before_any_write(db_session, lines_edit):
+    await _board(db_session, lines_edit, _edit_order())
+    lines_edit.orders["so1"]["last_modified_time"] = "2026-11-07T10:00:00-1000"  # someone saved in Books
+    with pytest.raises(actions.OrderActionRefused, match="version"):
+        await actions.edit_lines(
+            db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}, {"line_id": "l2", "quantity": 1}]
+        )
+    assert "lines" not in lines_edit.bodies
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("lines", "code"),
+    [
+        ([{"line_id": "s1", "quantity": 2}], "service_line"),
+        ([{"line_id": "nope", "quantity": 1}], "unknown_line"),
+        ([{"line_id": "l1", "quantity": 2}, {"item_id": "A", "quantity": 1}], "unknown_item"),
+        ([{"line_id": "l1", "quantity": 2}, {"item_id": "SVC", "quantity": 1}], "unknown_item"),
+        ([{"line_id": "l1", "quantity": 1.2345}], "bad_quantity"),
+        ([{"line_id": "l1", "quantity": 2}, {"line_id": "l2", "quantity": 1}], "nothing_changed"),
+    ],
+)
+async def test_edit_refuses_without_writing(db_session, lines_edit, lines, code):
+    await _board(db_session, lines_edit, _edit_order())
+    with pytest.raises(actions.OrderActionRefused, match=code):
+        await actions.edit_lines(db_session, "so1", VERSION, lines)
+    assert "lines" not in lines_edit.bodies
+
+
+@pytest.mark.asyncio
+async def test_edit_is_locked_while_a_picklist_is_open(db_session, lines_edit):
+    await _board(db_session, lines_edit, _edit_order())
+    lines_edit.stock["A"] = 5
+    await sync.run_pass(db_session)
+    await _pick(db_session, "so1", {"l1": 1})
+    with pytest.raises(actions.OrderActionRefused, match="picklist_open"):
+        await actions.edit_lines(
+            db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}, {"line_id": "l2", "quantity": 1}]
+        )
+    assert "lines" not in lines_edit.bodies
+
+
+@pytest.mark.asyncio
+async def test_an_edit_timeout_triggers_one_refresh_and_reraises(db_session, lines_edit, monkeypatch):
+    await _board(db_session, lines_edit, _edit_order())
+    lines_edit.create_error = ZohoUpstreamError("timeout")
+    reads = lines_edit.calls["detail"]
+    with pytest.raises(ZohoUpstreamError, match="timeout"):
+        await actions.edit_lines(
+            db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}, {"line_id": "l2", "quantity": 1}]
+        )
+    assert lines_edit.calls["detail"] == reads + 2  # the forced re-read before, one after the failed write
+
+
+@pytest.mark.asyncio
+async def test_search_items_drops_services_and_caps_at_five(db_session, lines_edit):
+    lines_edit.item_search = [
+        {"item_id": "svc", "name": "Labour", "product_type": "service"},
+        *(
+            {
+                "item_id": f"i{n}",
+                "name": f"Item {n}",
+                "sku": f"S{n}",
+                "rate": 10,
+                "stock_on_hand": 3,
+                "product_type": "goods",
+            }
+            for n in range(7)
+        ),
+    ]
+    found = await actions.search_items(db_session, "item")
+    assert [i["id"] for i in found] == ["i0", "i1", "i2", "i3", "i4"]
+    assert found[0] == {
+        "id": "i0",
+        "name": "Item 0",
+        "sku": "S0",
+        "rate": 10.0,
+        "stock_on_hand": 3.0,
+        "product_type": "goods",
+    }

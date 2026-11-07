@@ -32,7 +32,8 @@ class OrderBusy(Exception):
 
 class OrderActionRefused(Exception):
     """args[0] is one of "nothing_to_pack", "unknown_line", "too_many", "bad_quantity", "unknown_package",
-    "picklist_open", "unknown_picklist", "picklist_shared"."""
+    "picklist_open", "unknown_picklist", "picklist_shared", and from an order edit "version", "service_line",
+    "below_floor", "unknown_item", "nothing_changed"."""
 
 
 @contextmanager
@@ -625,6 +626,128 @@ async def cancel_order(db: AsyncSession, salesorder_id: str) -> None:
             await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean it went through
             raise
         await _best_effort_refresh(db, salesorder_id, number)
+
+
+# --- Edit the order's lines ------------------------------------------------------------------------------------
+
+_SO_LINE_FIELDS = ("line_item_id", "item_id", "name", "description", "rate", "quantity", "unit", "tax_id", "discount")
+
+
+async def search_items(db: AsyncSession, query: str) -> list[dict]:
+    """Books items matching ``query`` that are goods, not services; the first five."""
+    if sync.zoho_busy():
+        raise sync.ZohoBusy(query)
+    try:
+        found = await zoho_service.list_items(db, query)
+    except ZohoRateLimited as e:
+        sync.open_rate_limit_window(e)
+        raise sync.ZohoBusy(query) from e
+    return [
+        {
+            "id": item.get("item_id") or "",
+            "name": item.get("name") or "",
+            "sku": item.get("sku") or "",
+            "rate": float(_num(item.get("rate"))),
+            "stock_on_hand": None if item.get("stock_on_hand") is None else float(_num(item.get("stock_on_hand"))),
+            "product_type": item.get("product_type") or "",
+        }
+        for item in found
+        if item.get("product_type") != "service"
+    ][:5]
+
+
+def _is_physical(raw: dict) -> bool:
+    return bool(raw.get("item_id")) and raw.get("product_type") != "service"
+
+
+async def edit_lines(db: AsyncSession, salesorder_id: str, version: str, lines: list[dict]) -> dict:
+    """Set the quantities of an order's goods lines, drop the ones left out and add new items, in Books. The whole
+    line list is sent back, service lines untouched. ``version`` is the order's ``last_modified_time`` the operator
+    saw: an order saved in Books since is refused. Lines already packed, picked or invoiced cannot go below that."""
+    with writing(salesorder_id):
+        doc = await confirm_stored_copy(db, salesorder_id)
+        number = doc.header.get("salesorder_number") or ""
+        if _open_picklists(doc.detail or {}):
+            raise OrderActionRefused("picklist_open")
+        try:  # the comparison and the floors must come from Books as it is now
+            await sync.refresh_order(db, salesorder_id)
+        except sync.OrderNotStored as e:
+            raise OrderNotOnBoard(salesorder_id) from e
+        except ZohoRateLimited as e:
+            sync.open_rate_limit_window(e)
+            raise sync.ZohoBusy(salesorder_id) from e
+        detail = await _stored_order(db, salesorder_id)
+        if detail.get("last_modified_time", "") != version:
+            raise OrderActionRefused("version")
+        floors = {line["id"]: line["floor"] for line in (await _row(db, salesorder_id))["lines"]}
+        raws = detail.get("line_items") or []
+        physical = {raw["line_item_id"] for raw in raws if _is_physical(raw)}
+        edits: dict[str, float] = {}
+        new: dict[str, float] = {}
+        for entry in lines:
+            q = entry.get("quantity")
+            if not isinstance(q, int | float) or not math.isfinite(q) or q <= 0 or round(q, 3) != q:
+                raise OrderActionRefused("bad_quantity")
+            if "line_id" in entry:
+                line_id = entry["line_id"]
+                if any(raw.get("line_item_id") == line_id and not _is_physical(raw) for raw in raws):
+                    raise OrderActionRefused("service_line")
+                if line_id not in physical:
+                    raise OrderActionRefused("unknown_line")
+                if line_id in edits:
+                    raise OrderActionRefused("unknown_line")
+                if q < floors.get(line_id, 0.0) - 1e-9:
+                    raise OrderActionRefused("below_floor")
+                edits[line_id] = q
+            else:
+                item_id = entry.get("item_id")
+                if not item_id or item_id in new or any(raw.get("item_id") == item_id for raw in raws):
+                    raise OrderActionRefused("unknown_item")
+                new[item_id] = q
+        if any(floors.get(line_id, 0.0) > 0 and line_id not in edits for line_id in physical):
+            raise OrderActionRefused("below_floor")
+        items: dict[str, dict] = {}
+        if new:
+            try:
+                found = await zoho_service.list_items_by_ids(db, list(new))
+            except ZohoRateLimited as e:
+                sync.open_rate_limit_window(e)
+                raise sync.ZohoBusy(salesorder_id) from e
+            items = {item.get("item_id"): item for item in found}
+            if any(i not in items or items[i].get("product_type") == "service" for i in new):
+                raise OrderActionRefused("unknown_item")
+        if (
+            not new
+            and len(edits) == len(physical)
+            and all(
+                _num(raw.get("quantity")) == edits[raw["line_item_id"]]
+                for raw in raws
+                if raw["line_item_id"] in physical
+            )
+        ):
+            raise OrderActionRefused("nothing_changed")
+        body_lines = []
+        for raw in raws:
+            line_id = raw.get("line_item_id")
+            if line_id in physical and line_id not in edits:
+                continue
+            kept = {k: raw[k] for k in _SO_LINE_FIELDS if k in raw}
+            if line_id in edits:
+                kept["quantity"] = edits[line_id]
+            body_lines.append(kept)
+        body_lines += [{"item_id": i, "quantity": q, "rate": float(_num(items[i].get("rate")))} for i, q in new.items()]
+        try:
+            await _write(
+                salesorder_id,
+                number,
+                "lines",
+                zoho_service.update_salesorder(db, salesorder_id, {"line_items": body_lines}),
+            )
+        except ZohoUpstreamError:
+            await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean Books saved it
+            raise
+        await _best_effort_refresh(db, salesorder_id, number)
+    return await _row(db, salesorder_id)
 
 
 async def invoice_shipped(db: AsyncSession, salesorder_id: str, *, apply_credit: bool) -> dict:
