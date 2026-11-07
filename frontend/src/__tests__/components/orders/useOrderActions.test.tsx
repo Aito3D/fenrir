@@ -63,6 +63,19 @@ describe('useOrderActions', () => {
     expect(failed).toHaveBeenCalledTimes(1);
   });
 
+  it('a cancel posts the order id, puts the returned board into the list and runs its callback', async () => {
+    server.use(http.post('*/order-board/orders/so1/cancel', () => HttpResponse.json({ board })));
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const done = vi.fn();
+    const { result } = renderHook(() => useOrderActions({ cancel: { onSuccess: done } }), { wrapper });
+    await act(async () => {
+      await result.current.cancelOrder.mutateAsync('so1');
+    });
+    expect(client.getQueryData(['order-board'])).toEqual(board);
+    expect(done).toHaveBeenCalledWith(undefined, 'so1');
+  });
+
   it('the sheet fetcher returns the PDF and refetches the board once printed', async () => {
     server.use(http.post('*/order-board/orders/so1/prep-sheet', () => new HttpResponse(new Blob(['%PDF-']), { headers: { 'Content-Type': 'application/pdf' } })));
     const { client, result } = setup();

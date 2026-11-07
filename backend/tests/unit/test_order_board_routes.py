@@ -180,6 +180,7 @@ NEW_ROUTES = [
     ("get", f"{BASE}/orders/so1/packages/p1/handover", None, False),
     ("post", f"{BASE}/orders/so1/packages/p1/handover", HAND, True),
     ("post", f"{BASE}/orders/so1/invoice", INVOICE, True),
+    ("post", f"{BASE}/orders/so1/cancel", None, True),
     ("get", f"{BASE}/invoices/inv1/pdf", None, False),
     ("get", f"{BASE}/invoices/inv1/email", None, False),
     ("post", f"{BASE}/invoices/inv1/email", {"to": "a@b.pf"}, True),
@@ -388,6 +389,7 @@ async def test_action_errors_map_to_statuses(async_client, tokens, monkeypatch):
             "create_picklist",
             "picklist_preview",
             "picklist_content",
+            "cancel_order",
         ):
             monkeypatch.setattr(actions, name, boom)
         calls = [
@@ -398,6 +400,7 @@ async def test_action_errors_map_to_statuses(async_client, tokens, monkeypatch):
             ("post", "orders/so1/packages", PARCEL),
             ("post", "orders/so1/packages/p1/handover", HAND),
             ("post", "orders/so1/invoice", INVOICE),
+            ("post", "orders/so1/cancel", None),
             ("get", "orders/so1/packages/p1/handover", None),
             ("post", "orders/so1/prep-sheet", None),
         ]
@@ -496,6 +499,20 @@ async def test_a_books_failure_is_logged_without_its_message(async_client, token
     assert (r.status_code, r.json()["detail"]) == (502, "Customer Jane Doe has no item Widget")
     assert "Jane" not in caplog.text
     assert "step=hand_over" in caplog.text and "ZohoRequestRejected" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_cancel_returns_the_board(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+
+    calls = []
+
+    async def fake_cancel(db, so):
+        calls.append(so)
+
+    monkeypatch.setattr(actions, "cancel_order", fake_cancel)
+    r = await async_client.post(f"{BASE}/orders/so1/cancel", headers=tokens["both"])
+    assert r.status_code == 200 and "rows" in r.json()["board"] and calls == ["so1"]
 
 
 @pytest.fixture

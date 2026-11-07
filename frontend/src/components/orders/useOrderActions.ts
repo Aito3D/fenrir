@@ -17,7 +17,7 @@ export function useHandOverPending(orderId: string): boolean {
   return useIsMutating({ mutationKey: HANDOVER_KEY, predicate: m => (m.state.variables as { id?: string } | undefined)?.id === orderId }) > 0;
 }
 
-/** The write actions of an order: start a picklist, box its parcel, hand it over, invoice it, email an invoice, print the prep sheet.
+/** The write actions of an order: start a picklist, box its parcel, hand it over, invoice it, email an invoice, cancel it, print the prep sheet.
  *  Each answer carries the fresh board, which goes straight into the list; the
  *  finished orders are refetched. A failure is thrown to the caller, which words it.
  *  The callbacks run from the mutation itself, so they still fire after the caller unmounted. */
@@ -26,6 +26,7 @@ export function useOrderActions(callbacks?: {
   picklist?: Callbacks<{ picklist: { id: string; number: string } }, unknown>;
   handOver?: Callbacks<OrderActionResult, HandOverVars>;
   invoice?: Callbacks<OrderActionResult, InvoiceVars>;
+  cancel?: Callbacks<void, string>;
 }) {
   const queryClient = useQueryClient();
   const { hasPermission } = useAuth();
@@ -96,6 +97,19 @@ export function useOrderActions(callbacks?: {
     },
   });
 
+  const cancelOrder = useMutation({
+    mutationFn: (id: string) => api.cancelOrder(id),
+    onSuccess: async (r, id) => {
+      await take(r.board);
+      dropPreviews(id);
+      callbacks?.cancel?.onSuccess?.(undefined, id);
+    },
+    onError: (e, id) => {
+      refused(id, e);
+      callbacks?.cancel?.onError?.(e);
+    },
+  });
+
   // Books marks an emailed draft invoice sent, so the answer carries the board like every other write.
   const emailInvoice = useMutation({
     mutationFn: ({ invoiceId, to }: { invoiceId: string; to: string }) => api.sendOrderInvoiceEmail(invoiceId, to),
@@ -104,6 +118,7 @@ export function useOrderActions(callbacks?: {
 
   return {
     canUpdate: hasPermission('orders:update'),
+    cancelOrder,
     createParcel,
     createPicklist,
     handOver,

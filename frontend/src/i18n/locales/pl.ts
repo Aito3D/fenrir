@@ -11180,6 +11180,8 @@ export default {
     search: 'Numer zamówienia, klient, produkt, SKU…',
     coreOnly: 'Tylko 3D',
     hidden: '+{{n}} ukrytych',
+    hideFinished: 'Ukryj zakończone',
+    showMore: 'Pokaż więcej',
     sort: {
       label: 'Sortuj',
       age: 'Wiek',
@@ -11308,6 +11310,11 @@ export default {
       overdueChip: 'Po terminie',
       tile: '{{pct}}% opłacone',
     },
+    cancel: {
+      label: "Anuluj zamówienie",
+      hint: "Przytrzymaj 1 s, aby anulować",
+      done: "{{number}} anulowano",
+    },
     inv: {
       title: "Faktury",
       empty: "Brak faktury. Powstaje przy przekazaniu paczki.",
@@ -11321,15 +11328,10 @@ export default {
       nothing: 'Nie ma już nic do zafakturowania.',
     },
     finished: {
-      chip: 'Zakończone',
-      intro: 'Zakończone zamówienia: wszystko zostało wysłane. Najnowsze najpierw.',
+      loadListFailed: 'Nie udało się wczytać zakończonych zamówień.',
       shipped: 'Wysłano',
-      older: 'Pokaż starsze zamówienia',
       loading: 'Wczytywanie tego zamówienia z Zoho…',
       loadFailed: 'Nie udało się wczytać tego zamówienia z Zoho.',
-      match: 'Pasujące zakończone zamówienia: {{n}}',
-      show: 'Pokaż',
-      none: 'Brak zakończonych zamówień.',
     },
     contact: {
       title: 'Kontakt',

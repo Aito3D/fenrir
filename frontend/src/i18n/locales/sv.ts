@@ -10999,6 +10999,8 @@ errors: {
     search: 'Ordernummer, kund, produkt, SKU…',
     coreOnly: 'Endast 3D',
     hidden: '+{{n}} dolda',
+    hideFinished: 'Dölj slutförda',
+    showMore: 'Visa fler',
     sort: {
       label: 'Sortera',
       age: 'Ålder',
@@ -11127,6 +11129,11 @@ errors: {
       overdueChip: 'Förfallna',
       tile: '{{pct}} % betalt',
     },
+    cancel: {
+      label: "Avbryt order",
+      hint: "Håll 1 s för att avbryta",
+      done: "{{number}} avbruten",
+    },
     inv: {
       title: "Fakturor",
       empty: "Ingen faktura ännu. Den skapas när paketet lämnas över.",
@@ -11140,15 +11147,10 @@ errors: {
       nothing: 'Inget kvar att fakturera.',
     },
     finished: {
-      chip: 'Slutförda',
-      intro: 'Slutförda ordrar: allt har skickats. Nyaste först.',
+      loadListFailed: 'Det gick inte att läsa in de slutförda ordrarna.',
       shipped: 'Skickad',
-      older: 'Visa äldre ordrar',
       loading: 'Hämtar den här ordern från Zoho…',
       loadFailed: 'Kunde inte hämta den här ordern från Zoho.',
-      match: 'Matchande avslutade beställningar: {{n}}',
-      show: 'Visa',
-      none: 'Inga slutförda ordrar.',
     },
     contact: {
       title: 'Kontakt',

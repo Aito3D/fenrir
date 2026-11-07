@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Archive, Box, Loader2, PackageCheck, Plug, PowerOff, RefreshCw, Search, SearchX } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
-import type { FinishedOrderRow, OrderBoardResponse, OrderBoardRow } from '../api/client';
+import type { OrderBoardResponse, OrderBoardRow } from '../api/client';
 import { Button } from '../components/Button';
 import { Skeleton } from '../components/Skeleton';
 import { FinishedOrderCard } from '../components/orders/FinishedOrderCard';
@@ -26,6 +26,7 @@ import {
   searchFinished,
   sortRows,
   totalValue,
+  withFinished,
 } from '../components/orders/orderBoard';
 import type { PayFilter, SortKey, StatusFilter } from '../components/orders/orderBoard';
 import { STATUSES, STATUS_META, TONE } from '../components/orders/orderStatus';
@@ -37,9 +38,10 @@ import { formatMoney } from '../utils/pricing';
 
 const BOARD_KEY = ['order-board'] as const;
 const FINISHED_KEY = ['order-board', 'finished'] as const;
-const FINISHED_PAGE = 50;
+const PAGE = 50;
 const PAY_CHIPS: Exclude<PayFilter, 'all' | 'overdue'>[] = ['unpaid', 'partial', 'paid'];
 const CORE_ONLY_KEY = 'orders.coreOnly';
+const HIDE_FINISHED_KEY = 'orders.hideFinished';
 const SORTS: SortKey[] = ['age', 'value', 'customer', 'ready'];
 
 const chipCls = (active: boolean) =>
@@ -52,6 +54,23 @@ function readCoreOnly(): boolean {
     return localStorage.getItem(CORE_ONLY_KEY) !== 'false';
   } catch {
     return true;
+  }
+}
+
+// "Hide finished" is off unless the viewer turned it on.
+function readHideFinished(): boolean {
+  try {
+    return localStorage.getItem(HIDE_FINISHED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function remember(key: string, value: boolean) {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    // remembered for this visit only
   }
 }
 
@@ -93,19 +112,18 @@ export function OrderBoardPage() {
   const [sort, setSort] = useState<{ key: SortKey; flipped: boolean }>({ key: 'age', flipped: false });
   const [coreOnly, setCoreOnly] = useState(readCoreOnly);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const [view, setView] = useState<'open' | 'finished'>('open');
+  const [hideFinished, setHideFinished] = useState(readHideFinished);
   const [payFilter, setPayFilter] = useState<PayFilter>('all');
-  const [finishedShown, setFinishedShown] = useState(FINISHED_PAGE);
+  const [shown, setShown] = useState(PAGE);
   const [start, setStart] = useState<{ id: string; target: string; tick: number } | null>(null);
   const scrollTarget = useRef<string | null>(null);
   const [searchParams] = useSearchParams();
   const deepLinked = useRef<string | null>(null);
 
-  const finishedView = view === 'finished';
   const finishedQuery = useQuery({
     queryKey: FINISHED_KEY,
     queryFn: api.getFinishedOrders,
-    enabled: finishedView || query.trim() !== '',
+    enabled: !hideFinished,
   });
 
   // After "Also open for this customer" renders the target, bring it into view.
@@ -120,25 +138,18 @@ export function OrderBoardPage() {
   const toggleCoreOnly = () => {
     const next = !coreOnly;
     setCoreOnly(next);
-    try {
-      localStorage.setItem(CORE_ONLY_KEY, String(next));
-    } catch {
-      // remembered for this visit only
-    }
+    remember(CORE_ONLY_KEY, next);
   };
-  const showOpen = (next: StatusFilter) => {
-    setView('open');
-    setStatus(next);
+  const toggleHideFinished = () => {
+    const next = !hideFinished;
+    setHideFinished(next);
+    remember(HIDE_FINISHED_KEY, next);
   };
-  const showFinished = () => {
-    setView('finished');
-    setFinishedShown(FINISHED_PAGE);
-  };
+  const showOpen = (next: StatusFilter) => setStatus(next);
   const goto = (id: string) => {
     setQuery('');
     setStatus('all');
     setPayFilter('all');
-    setView('open');
     // Turned off for this visit only: the saved choice stays as the viewer set it.
     if (coreOnly && !data?.rows.find(r => r.id === id)?.is_core) setCoreOnly(false);
     setOpen(prev => new Set(prev).add(id));
@@ -166,16 +177,24 @@ export function OrderBoardPage() {
   // Tiles follow the brand toggle only; chips add the search; the list adds the status.
   const branded = byBrand(all, coreOnly);
   const searched = bySearch(branded, query);
-  const finishedFound: FinishedOrderRow[] = searchFinished(finishedQuery.data?.rows ?? [], query);
-  const finishedCounts = Object.fromEntries(['all', ...PAY_CHIPS].map(f => [f, byFinishedPayment(finishedFound, f as PayFilter).length]));
-  const payCounts = finishedView ? finishedCounts : countByPayment(searched);
-  // Overdue only exists in the open view, and only while something is overdue.
-  const showOverdue = !finishedView && payCounts.overdue > 0;
+  // Finished orders have no live status: they only join the list under All.
+  // shortcut: finished rows carry no brand, so "3D only" does not filter them; add is_core to the finished endpoint if that matters.
+  const finishedFound = hideFinished || status !== 'all' ? [] : searchFinished(finishedQuery.data?.rows ?? [], query);
+  const payCounts = countByPayment(searched);
+  for (const f of PAY_CHIPS) payCounts[f] += byFinishedPayment(finishedFound, f).length;
+  payCounts.all += finishedFound.length;
+  // Overdue only while something open is overdue.
+  const showOverdue = payCounts.overdue > 0;
   const pay: PayFilter = payFilter === 'overdue' && !showOverdue ? 'all' : payFilter;
-  const listed = sortRows(byPayment(byStatus(searched, status), pay), sort.key, sort.flipped, i18n.language);
-  const finishedListed = byFinishedPayment([...finishedFound].sort((a, b) => b.date.localeCompare(a.date)), pay);
+  const listed = sortRows(
+    withFinished(byPayment(byStatus(searched, status), pay), byFinishedPayment(finishedFound, pay)),
+    sort.key,
+    sort.flipped,
+    i18n.language,
+  );
   const tileCounts = countByStatus(branded);
   const chipCounts = countByStatus(searched);
+  chipCounts.all += hideFinished ? 0 : searchFinished(finishedQuery.data?.rows ?? [], query).length;
   const hidden = all.length - branded.length;
   const syncing = !!data && (data.sync.running || data.sync.pending > 0);
 
@@ -183,10 +202,10 @@ export function OrderBoardPage() {
     <button
       key={id}
       type="button"
-      aria-pressed={!finishedView && status === id}
+      aria-pressed={status === id}
       title={id === 'all' ? undefined : t(STATUS_META[id].hint)}
-      onClick={() => showOpen(!finishedView && status === id ? 'all' : id)}
-      className={`rounded-xl border border-l-4 border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-3 text-left hover:bg-bambu-dark-tertiary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green ${TONE[tone].edge} ${!finishedView && status === id ? 'ring-2 ring-bambu-green/60' : ''}`}
+      onClick={() => showOpen(status === id ? 'all' : id)}
+      className={`rounded-xl border border-l-4 border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-3 text-left hover:bg-bambu-dark-tertiary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green ${TONE[tone].edge} ${status === id ? 'ring-2 ring-bambu-green/60' : ''}`}
     >
       <span className="block text-xs text-bambu-gray">{label}</span>{' '}
       {ready ? (
@@ -204,7 +223,6 @@ export function OrderBoardPage() {
     const share = paidPct(rows);
     return formatMoney(totalValue(rows), rows[0].currency) + (share === null ? '' : ` · ${t('orders.pay.tile', { pct: share })}`);
   };
-  const finishedHint = view === 'open' && ready && query.trim() !== '' ? finishedFound.length : 0;
 
   let list: ReactNode;
   if (isError && !data) {
@@ -235,53 +253,16 @@ export function OrderBoardPage() {
         ))}
       </>
     );
-  } else if (finishedView) {
-    if (finishedQuery.isError) {
-      list = (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-6 py-10 text-center">
-          <div className="font-medium text-white">{t('orders.loadFailed')}</div>
-          <Button variant="secondary" size="sm" className="mt-4" onClick={() => finishedQuery.refetch()}>
-            {t('orders.retry')}
-          </Button>
-        </div>
-      );
-    } else if (!finishedQuery.data) {
-      list = Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-16 rounded-xl" />);
-    } else {
-      list = (
-        <>
-          <div className="flex items-center gap-2 px-1 text-xs text-bambu-gray">
-            <Archive aria-hidden="true" className="h-3.5 w-3.5" />
-            {t('orders.finished.intro')}
-          </div>
-          {finishedListed.length === 0 ? (
-            <Notice icon={SearchX} title={finishedFound.length === 0 && !query.trim() ? t('orders.finished.none') : t('orders.empty.noResults')} />
-          ) : (
-            finishedListed
-              .slice(0, finishedShown)
-              .map(r => <FinishedOrderCard key={r.id} row={r} open={open.has(r.id)} onToggle={() => toggleOpen(r.id)} />)
-          )}
-          {finishedListed.length > finishedShown && (
-            <button
-              type="button"
-              onClick={() => setFinishedShown(n => n + FINISHED_PAGE)}
-              className="mx-auto block rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-2 text-xs text-bambu-gray hover:text-white"
-            >
-              {t('orders.finished.older')}
-            </button>
-          )}
-        </>
-      );
-    }
-  } else if (all.length === 0) {
+  } else if (listed.length === 0 && all.length === 0) {
     list = <Notice icon={PackageCheck} title={t('orders.empty.none')} hint={t('orders.empty.noneHint')} />;
-  } else if (coreOnly && branded.length === 0 && !query.trim() && status === 'all') {
+  } else if (listed.length === 0 && coreOnly && branded.length === 0 && !query.trim() && status === 'all') {
     list = <Notice icon={Box} title={t('orders.empty.core')} hint={t('orders.empty.coreHint')} />;
   } else if (listed.length === 0) {
-    // The finished-orders hint below stands in for "No results".
-    list = finishedHint > 0 ? null : <Notice icon={SearchX} title={t('orders.empty.noResults')} />;
+    list = <Notice icon={SearchX} title={t('orders.empty.noResults')} />;
   } else {
-    list = listed.map(row => (
+    list = listed.slice(0, shown).map(({ open: row, fin }) => !row ? (
+      <FinishedOrderCard key={fin.id} row={fin} open={open.has(fin.id)} onToggle={() => toggleOpen(fin.id)} />
+    ) : (
       <OrderCard
         key={row.id}
         row={row}
@@ -350,7 +331,6 @@ export function OrderBoardPage() {
             className="w-full rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary py-2 pl-10 pr-3 text-sm text-white placeholder:text-bambu-gray/50 focus:border-bambu-green focus:outline-none"
           />
         </div>
-        {!finishedView && (
         <button
           type="button"
           aria-pressed={coreOnly}
@@ -361,21 +341,22 @@ export function OrderBoardPage() {
           {t('orders.coreOnly')}
           {coreOnly && hidden > 0 && <span className="text-xs text-bambu-gray">{t('orders.hidden', { n: hidden })}</span>}
         </button>
-        )}
+        <button
+          type="button"
+          aria-pressed={hideFinished}
+          onClick={toggleHideFinished}
+          className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${hideFinished ? 'border-bambu-green/50 bg-bambu-green/10 text-bambu-green' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`}
+        >
+          <Archive aria-hidden="true" className="h-4 w-4" />
+          {t('orders.hideFinished')}
+        </button>
         <div className="flex flex-wrap items-center gap-1.5">
           {(['all', ...STATUSES] as StatusFilter[]).map(id => (
-            <button key={id} type="button" aria-pressed={!finishedView && status === id} onClick={() => showOpen(id)} className={chipCls(!finishedView && status === id)}>
+            <button key={id} type="button" aria-pressed={status === id} onClick={() => showOpen(id)} className={chipCls(status === id)}>
               {id === 'all' ? t('orders.status.all') : t(STATUS_META[id].label)} <span className="text-bambu-gray">{chipCounts[id]}</span>
             </button>
           ))}
-          <span aria-hidden="true" className="mx-1 h-5 w-px bg-bambu-dark-tertiary" />
-          <button type="button" aria-pressed={finishedView} onClick={showFinished} className={`inline-flex items-center gap-1.5 ${chipCls(finishedView)}`}>
-            <Archive aria-hidden="true" className="h-3.5 w-3.5" />
-            {t('orders.finished.chip')}
-            {finishedQuery.data && <span className="text-bambu-gray">{finishedFound.length}</span>}
-          </button>
         </div>
-        {!finishedView && (
         <div className="ml-auto inline-flex items-center gap-1 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1 text-xs">
           <span className="px-2 text-bambu-gray">{t('orders.sort.label')}</span>
           {SORTS.map(key => {
@@ -394,7 +375,6 @@ export function OrderBoardPage() {
             );
           })}
         </div>
-        )}
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -407,15 +387,22 @@ export function OrderBoardPage() {
       </div>
 
       <div className="space-y-2">{list}</div>
-      {finishedHint > 0 && (
+      {ready && listed.length > shown && (
         <button
           type="button"
-          onClick={showFinished}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-bambu-dark-tertiary px-4 py-3 text-sm text-bambu-gray hover:text-white"
+          onClick={() => setShown(n => n + PAGE)}
+          className="mx-auto mt-2 block rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-2 text-xs text-bambu-gray hover:text-white"
         >
-          <Archive aria-hidden="true" className="h-4 w-4" />
-          {t('orders.finished.match', { n: finishedHint })} · <span className="text-bambu-green">{t('orders.finished.show')}</span>
+          {t('orders.showMore')}
         </button>
+      )}
+      {ready && !hideFinished && finishedQuery.isError && (
+        <div className="mt-2 flex items-center justify-center gap-3 text-sm text-bambu-gray">
+          {t('orders.finished.loadListFailed')}
+          <Button variant="secondary" size="sm" onClick={() => finishedQuery.refetch()}>
+            {t('orders.retry')}
+          </Button>
+        </div>
       )}
     </div>
   );

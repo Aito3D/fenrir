@@ -9896,6 +9896,7 @@ export const api = {
     }),
   createOrderInvoice: (id: string, body: { apply_credit: boolean }) =>
     request<OrderActionResult>(`/order-board/orders/${encodeURIComponent(id)}/invoice`, { method: 'POST', body: JSON.stringify(body) }),
+  cancelOrder: (id: string) => request<{ board: OrderBoardResponse }>(`/order-board/orders/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
   getOrderInvoicePdf: (invoiceId: string): Promise<Blob> => orderBoardBlob(`/order-board/invoices/${encodeURIComponent(invoiceId)}/pdf`),
   /** What Books would email for this invoice right now; the send re-reads it server-side. */
   getOrderInvoiceEmail: (invoiceId: string) => request<AitoInvoiceEmailContent>(`/order-board/invoices/${encodeURIComponent(invoiceId)}/email`),

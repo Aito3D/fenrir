@@ -1636,3 +1636,52 @@ async def test_a_rate_limited_entry_reread_is_busy_and_opens_the_window(db_sessi
         await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
     assert sync._rate_limited_until > time.monotonic() + 20
     assert "get_package" not in _names(books)
+
+
+# --- Cancel ------------------------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def voids(zoho, monkeypatch):  # noqa: F811
+    """void_salesorder on the fake: Books marks the order void, or refuses with `zoho.void_error`."""
+    zoho.voided = []
+    zoho.void_error = None
+
+    async def void_salesorder(db, salesorder_id):
+        if zoho.void_error:
+            raise zoho.void_error
+        zoho.voided.append(salesorder_id)
+        zoho.orders[salesorder_id]["status"] = "void"
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_salesorder)
+    return zoho
+
+
+@pytest.mark.asyncio
+async def test_cancel_voids_in_books_and_takes_the_order_off_the_board(db_session, voids):
+    await _board(db_session, voids, order(1), order(2))
+    await actions.cancel_order(db_session, "so1")
+    assert voids.voided == ["so1"]
+    assert [r["id"] for r in (await sync.read_board(db_session))["rows"]] == ["so2"]
+    await sync.run_pass(db_session)
+    assert [r["id"] for r in (await sync.read_board(db_session))["rows"]] == ["so2"]
+
+
+@pytest.mark.asyncio
+async def test_cancel_of_an_unknown_or_busy_order_writes_nothing(db_session, voids):
+    await _board(db_session, voids, order(1))
+    with pytest.raises(actions.OrderNotOnBoard):
+        await actions.cancel_order(db_session, "nope")
+    voids.meter = sync.CALL_CEILING
+    with pytest.raises(sync.ZohoBusy):
+        await actions.cancel_order(db_session, "so1")
+    assert voids.voided == []
+
+
+@pytest.mark.asyncio
+async def test_a_refused_void_reraises_and_keeps_the_order_on_the_board(db_session, voids):
+    await _board(db_session, voids, order(1))
+    voids.void_error = ZohoUpstreamError("has shipments")
+    with pytest.raises(ZohoUpstreamError):
+        await actions.cancel_order(db_session, "so1")
+    assert [r["id"] for r in (await sync.read_board(db_session))["rows"]] == ["so1"]

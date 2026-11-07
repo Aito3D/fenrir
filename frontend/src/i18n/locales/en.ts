@@ -11031,6 +11031,8 @@ export default {
     search: 'Order number, customer, product, SKU…',
     coreOnly: '3D only',
     hidden: '+{{n}} hidden',
+    hideFinished: 'Hide finished',
+    showMore: 'Show more',
     sort: {
       label: 'Sort',
       age: 'Age',
@@ -11159,6 +11161,11 @@ export default {
       overdueChip: 'Overdue',
       tile: '{{pct}}% paid',
     },
+    cancel: {
+      label: "Cancel order",
+      hint: "Hold 1s to cancel",
+      done: "{{number}} cancelled",
+    },
     inv: {
       title: "Invoices",
       empty: "No invoice yet. It is created when the parcel is handed over.",
@@ -11172,15 +11179,10 @@ export default {
       nothing: 'Nothing left to invoice.',
     },
     finished: {
-      chip: 'Finished',
-      intro: 'Finished orders: everything has shipped. Newest first.',
+      loadListFailed: 'Could not load the finished orders.',
       shipped: 'Shipped',
-      older: 'Show older orders',
       loading: 'Loading this order from Zoho…',
       loadFailed: 'Could not load this order from Zoho.',
-      match: 'Finished orders matching: {{n}}',
-      show: 'Show',
-      none: 'No finished orders.',
     },
     contact: {
       title: 'Contact',

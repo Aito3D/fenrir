@@ -80,8 +80,9 @@ export const byFinishedPayment = (rows: FinishedOrderRow[], filter: PayFilter): 
 export const totalValue = (rows: OrderBoardRow[]): number => rows.reduce((sum, r) => sum + (r.total ?? 0), 0);
 
 /** Default directions: age oldest first, value and % ready highest first, customer A to Z. */
-export const sortRows = (rows: OrderBoardRow[], key: SortKey, flipped: boolean, locale: string): OrderBoardRow[] => {
-  const compare: Record<SortKey, (a: OrderBoardRow, b: OrderBoardRow) => number> = {
+type Sortable = Pick<OrderBoardRow, 'age_days' | 'total' | 'customer' | 'ready_ratio'>;
+export const sortRows = <T extends Sortable>(rows: T[], key: SortKey, flipped: boolean, locale: string): T[] => {
+  const compare: Record<SortKey, (a: T, b: T) => number> = {
     age: (a, b) => b.age_days - a.age_days,
     value: (a, b) => (b.total ?? 0) - (a.total ?? 0),
     customer: (a, b) => (a.customer ?? '').localeCompare(b.customer ?? '', locale),
@@ -90,6 +91,14 @@ export const sortRows = (rows: OrderBoardRow[], key: SortKey, flipped: boolean, 
   const sign = flipped ? -1 : 1;
   return [...rows].sort((a, b) => sign * compare[key](a, b));
 };
+
+/** One list entry: an open order, or a finished one given an age and 100 % ready so all sorts place it. */
+export type BoardEntry = Sortable & ({ open: OrderBoardRow; fin?: never } | { fin: FinishedOrderRow; open?: never });
+
+export const withFinished = (open: OrderBoardRow[], finished: FinishedOrderRow[]): BoardEntry[] => [
+  ...open.map(r => ({ ...r, open: r })),
+  ...finished.map(f => ({ age_days: daysPastDue(f.date), total: f.total, customer: f.customer, ready_ratio: 1, fin: f })),
+];
 
 /** An empty or half-built board must never look like a verified answer. */
 export const isBoardReady = (r: OrderBoardResponse | undefined): boolean =>

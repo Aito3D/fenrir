@@ -10960,6 +10960,8 @@ export default {
     search: 'Numero ordine, cliente, prodotto, SKU…',
     coreOnly: 'Solo 3D',
     hidden: '+{{n}} nascosti',
+    hideFinished: 'Nascondi completati',
+    showMore: 'Mostra altri',
     sort: {
       label: 'Ordina',
       age: 'Età',
@@ -11088,6 +11090,11 @@ export default {
       overdueChip: 'Scaduti',
       tile: '{{pct}}% pagato',
     },
+    cancel: {
+      label: "Annulla ordine",
+      hint: "Tieni premuto 1 s per annullare",
+      done: "{{number}} annullato",
+    },
     inv: {
       title: "Fatture",
       empty: "Nessuna fattura per ora. Viene creata alla consegna del collo.",
@@ -11101,15 +11108,10 @@ export default {
       nothing: 'Niente da fatturare.',
     },
     finished: {
-      chip: 'Completati',
-      intro: 'Ordini completati: tutto è stato spedito. I più recenti per primi.',
+      loadListFailed: 'Impossibile caricare gli ordini completati.',
       shipped: 'Spedito',
-      older: 'Mostra ordini meno recenti',
       loading: 'Caricamento di questo ordine da Zoho…',
       loadFailed: 'Impossibile caricare questo ordine da Zoho.',
-      match: 'Ordini completati corrispondenti: {{n}}',
-      show: 'Mostra',
-      none: 'Nessun ordine completato.',
     },
     contact: {
       title: 'Contatto',

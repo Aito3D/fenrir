@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Check, CheckCheck, ClipboardList, HandHelping, Package, ReceiptText } from 'lucide-react';
+import { Check, CheckCheck, ClipboardList, HandHelping, Package, ReceiptText, Trash2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../../api/client';
 import type { OrderBoardLine, OrderPanelRow, OrderPicklist } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
+import { HoldButton } from '../aito/HoldButton';
 import { usePrintBlob } from '../aito/usePrintBlob';
 import { errorReason, isRefused } from './orderErrors';
 import { OrderContactBlock } from './OrderContactBlock';
@@ -61,7 +62,11 @@ export function OrderLinesPanel({
 }) {
   const { t } = useTranslation();
   const toasts = useOrderOutcomeToasts();
-  const { canUpdate, createInvoice, printSheet } = useOrderActions({ invoice: { onSuccess: r => toasts.outcome(r.outcome), onError: toasts.failed } });
+  const { showToast } = useToast();
+  const { canUpdate, createInvoice, cancelOrder, printSheet } = useOrderActions({
+    invoice: { onSuccess: r => toasts.outcome(r.outcome), onError: toasts.failed },
+    cancel: { onSuccess: () => showToast(t('orders.cancel.done', { number: row.number })), onError: toasts.failed },
+  });
   // The parcel whose hand-over bar is open.
   const [handover, setHandover] = useState<string | null>(null);
   // While a hand-over of this order is in flight, the bar on screen stays as it is.
@@ -71,7 +76,6 @@ export function OrderLinesPanel({
   // Set while the operator chooses the lines of a new picklist, or checks the parcel of one.
   const [checkState, setCheck] = useState<OrderCheck | null>(null);
   const [pending, setPending] = useState(false);
-  const { showToast } = useToast();
   const queryClient = useQueryClient();
   const { print, busy: printing } = usePrintBlob({ failureMessage: t('orders.prep.printFailed'), downloadFilename: `${row.number}-prep.pdf` });
   // The check being loaded: what a picklist or its parcel may hold is asked from Zoho when the check opens.
@@ -143,7 +147,22 @@ export function OrderLinesPanel({
   return (
     <div ref={root} className="grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_27rem]">
       <div className="order-last min-w-0 lg:order-none">
-      <OrderRefChips row={row} />
+      <OrderRefChips row={row}>
+        {canUpdate && (
+          <HoldButton
+            onHold={() => cancelOrder.mutate(row.id)}
+            disabled={cancelOrder.isPending}
+            durationMs={1000}
+            label={t('orders.cancel.label')}
+            hint={t('orders.cancel.hint')}
+            progress="bar"
+            className="border border-bambu-dark-tertiary px-2.5 py-1 text-xs text-bambu-gray hover:border-red-400/45 hover:text-red-400 focus-visible:ring-red-400/40 data-[holding=true]:border-red-400 data-[holding=true]:text-red-400"
+          >
+            <Trash2 aria-hidden="true" className="relative h-3.5 w-3.5 text-red-400" />
+            <span className="relative">{t('orders.cancel.label')}</span>
+          </HoldButton>
+        )}
+      </OrderRefChips>
       <div
         role="region"
         tabIndex={0}

@@ -10596,6 +10596,8 @@ export default {
     search: '주문 번호, 고객, 제품, SKU…',
     coreOnly: '3D만',
     hidden: '+{{n}}건 숨김',
+    hideFinished: '완료 숨기기',
+    showMore: '더 보기',
     sort: {
       label: '정렬',
       age: '경과일',
@@ -10724,6 +10726,11 @@ export default {
       overdueChip: '연체',
       tile: '{{pct}}% 결제됨',
     },
+    cancel: {
+      label: "주문 취소",
+      hint: "1초간 길게 눌러 취소",
+      done: "{{number}} 취소됨",
+    },
     inv: {
       title: "청구서",
       empty: "아직 청구서가 없습니다. 소포를 인계할 때 생성됩니다.",
@@ -10737,15 +10744,10 @@ export default {
       nothing: '청구할 항목이 없습니다.',
     },
     finished: {
-      chip: '완료',
-      intro: '완료된 주문: 모두 발송되었습니다. 최신순.',
+      loadListFailed: '완료된 주문을 불러올 수 없습니다.',
       shipped: '발송됨',
-      older: '이전 주문 더 보기',
       loading: 'Zoho에서 이 주문을 불러오는 중…',
       loadFailed: 'Zoho에서 이 주문을 불러오지 못했습니다.',
-      match: '일치하는 완료된 주문: {{n}}',
-      show: '보기',
-      none: '완료된 주문이 없습니다.',
     },
     contact: {
       title: '연락처',

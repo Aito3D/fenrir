@@ -1,6 +1,6 @@
 /** The prep band of an opened order: choosing what to pick, the picklist's sheet, and the parcel check. */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../mocks/server';
@@ -21,6 +21,7 @@ const print = vi.fn((produce: () => Promise<Blob>) => produce());
 vi.mock('../../../components/aito/usePrintBlob', () => ({ usePrintBlob: () => ({ print, busy: false }) }));
 
 import { render } from '../../utils';
+import { holdToConfirm } from '../../holdHelpers';
 import { OrderLinesPanel } from '../../../components/orders/OrderLinesPanel';
 
 afterEach(() => {
@@ -349,5 +350,29 @@ describe('the parcel check', () => {
     expect(qty()).toBeDisabled();
     expect(await screen.findByText('Parcel PKG-7 created in Zoho Books')).toBeInTheDocument();
     expect(hits).toBe(1);
+  });
+});
+
+describe('cancel order', () => {
+  it('needs orders:update, a short tap only hints, a 1s hold posts the cancel and the board replaces the list', async () => {
+    mockUseAuth.hasPermission.mockImplementation(p => p !== 'orders:update');
+    const first = render(<OrderLinesPanel row={panelRow()} />);
+    expect(screen.queryByRole('button', { name: 'Cancel order' })).not.toBeInTheDocument();
+    first.unmount();
+    mockUseAuth.hasPermission.mockImplementation(() => true);
+    let hits = 0;
+    server.use(http.post(`${BASE}/cancel`, () => {
+      hits++;
+      return HttpResponse.json({ board: { rows: [], computed_at: null, stock_loaded_at: null, sync: {} } });
+    }));
+    render(<OrderLinesPanel row={panelRow()} />);
+    const button = screen.getByRole('button', { name: 'Cancel order' });
+    fireEvent.pointerDown(button);
+    fireEvent.pointerUp(button);
+    expect(screen.getByText('Hold 1s to cancel')).toBeInTheDocument();
+    expect(hits).toBe(0);
+    await holdToConfirm(button);
+    await waitFor(() => expect(hits).toBe(1));
+    expect(await screen.findByText('SO-00412 cancelled')).toBeInTheDocument();
   });
 });

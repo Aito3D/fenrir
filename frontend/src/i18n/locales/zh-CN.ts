@@ -10958,6 +10958,8 @@ export default {
     search: '订单号、客户、产品、SKU…',
     coreOnly: '仅 3D',
     hidden: '+{{n}} 个已隐藏',
+    hideFinished: '隐藏已完成',
+    showMore: '显示更多',
     sort: {
       label: '排序',
       age: '账龄',
@@ -11086,6 +11088,11 @@ export default {
       overdueChip: '已逾期',
       tile: '已付 {{pct}}%',
     },
+    cancel: {
+      label: "取消订单",
+      hint: "长按 1 秒取消",
+      done: "{{number}} 已取消",
+    },
     inv: {
       title: "发票",
       empty: "暂无发票。包裹交付时会自动创建。",
@@ -11099,15 +11106,10 @@ export default {
       nothing: '没有需要开票的内容。',
     },
     finished: {
-      chip: '已完成',
-      intro: '已完成订单：全部已发货。最新的在前。',
+      loadListFailed: '无法加载已完成订单。',
       shipped: '已发货',
-      older: '显示更早的订单',
       loading: '正在从 Zoho 加载此订单…',
       loadFailed: '无法从 Zoho 加载此订单。',
-      match: '匹配的已完成订单：{{n}}',
-      show: '显示',
-      none: '没有已完成订单。',
     },
     contact: {
       title: '联系人',

@@ -10983,6 +10983,8 @@ export default {
     search: 'Número de pedido, cliente, producto, SKU…',
     coreOnly: 'Solo 3D',
     hidden: '+{{n}} ocultos',
+    hideFinished: 'Ocultar finalizados',
+    showMore: 'Mostrar más',
     sort: {
       label: 'Ordenar',
       age: 'Antigüedad',
@@ -11111,6 +11113,11 @@ export default {
       overdueChip: 'Vencidos',
       tile: '{{pct}} % pagado',
     },
+    cancel: {
+      label: "Cancelar pedido",
+      hint: "Mantén 1 s para cancelar",
+      done: "{{number}} cancelado",
+    },
     inv: {
       title: "Facturas",
       empty: "Aún no hay factura. Se crea al entregar el paquete.",
@@ -11124,15 +11131,10 @@ export default {
       nothing: 'No queda nada por facturar.',
     },
     finished: {
-      chip: 'Finalizados',
-      intro: 'Pedidos finalizados: todo se ha enviado. Los más recientes primero.',
+      loadListFailed: 'No se pudieron cargar los pedidos finalizados.',
       shipped: 'Enviado',
-      older: 'Mostrar pedidos anteriores',
       loading: 'Cargando este pedido desde Zoho…',
       loadFailed: 'No se pudo cargar este pedido desde Zoho.',
-      match: 'Pedidos finalizados que coinciden: {{n}}',
-      show: 'Mostrar',
-      none: 'No hay pedidos finalizados.',
     },
     contact: {
       title: 'Contacto',

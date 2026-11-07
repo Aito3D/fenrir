@@ -1418,6 +1418,10 @@ class ZohoService:
         )
         return payload.get("shipmentorder") or payload.get("shipment_order") or {}
 
+    async def void_salesorder(self, db: AsyncSession, salesorder_id: str) -> None:
+        """Mark a sales order void. From Zoho's API reference, unverified against a live write."""
+        await self._request(db, "POST", f"/salesorders/{_seg(salesorder_id)}/status/void")
+
     async def mark_shipment_delivered(self, db: AsyncSession, shipment_id: str) -> None:
         """Mark a shipment delivered. Unverified against a live write (spec, "Not verified")."""
         await self._request(db, "POST", f"/shipmentorders/{_seg(shipment_id)}/status/delivered")

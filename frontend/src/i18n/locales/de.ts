@@ -10975,6 +10975,8 @@ export default {
     search: 'Bestellnummer, Kunde, Produkt, SKU …',
     coreOnly: 'Nur 3D',
     hidden: '+{{n}} ausgeblendet',
+    hideFinished: 'Abgeschlossene ausblenden',
+    showMore: 'Mehr anzeigen',
     sort: {
       label: 'Sortieren',
       age: 'Alter',
@@ -11103,6 +11105,11 @@ export default {
       overdueChip: 'Überfällig',
       tile: '{{pct}} % bezahlt',
     },
+    cancel: {
+      label: "Bestellung stornieren",
+      hint: "1 s halten zum Stornieren",
+      done: "{{number}} storniert",
+    },
     inv: {
       title: "Rechnungen",
       empty: "Noch keine Rechnung. Sie wird bei der Übergabe des Pakets erstellt.",
@@ -11116,15 +11123,10 @@ export default {
       nothing: 'Nichts mehr abzurechnen.',
     },
     finished: {
-      chip: 'Abgeschlossen',
-      intro: 'Abgeschlossene Aufträge: alles wurde versendet. Neueste zuerst.',
+      loadListFailed: 'Die abgeschlossenen Aufträge konnten nicht geladen werden.',
       shipped: 'Versendet',
-      older: 'Ältere Aufträge anzeigen',
       loading: 'Dieser Auftrag wird aus Zoho geladen…',
       loadFailed: 'Dieser Auftrag konnte nicht aus Zoho geladen werden.',
-      match: 'Passende abgeschlossene Aufträge: {{n}}',
-      show: 'Anzeigen',
-      none: 'Keine abgeschlossenen Aufträge.',
     },
     contact: {
       title: 'Kontakt',

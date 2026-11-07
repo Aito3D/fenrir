@@ -394,32 +394,55 @@ describe('OrderBoardPage', () => {
     expect(scroll).toHaveBeenCalled();
   });
 
-  it('the Finished chip lists finished orders newest first, 50 at a time', async () => {
+  it('All mixes finished orders into the list, 50 at a time; a status chip leaves them out', async () => {
     const user = userEvent.setup();
     serve(board());
     serveFinished(Array.from({ length: 60 }, (_, i) => fin(i + 1)));
     render(<OrderBoardPage />);
-    await screen.findByText('SO-00412');
-    await user.click(screen.getByRole('button', { name: /^Finished/ }));
     expect(await screen.findByText('SO-F001')).toBeInTheDocument();
-    expect(screen.getByText('Finished orders: everything has shipped. Newest first.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All 62' })).toBeInTheDocument();
     expect(screen.getAllByTestId('order-number')).toHaveLength(50);
-    expect(screen.queryByText('SO-00412')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Show older orders' }));
-    expect(screen.getAllByTestId('order-number')).toHaveLength(60);
-    expect(screen.queryByRole('button', { name: 'Show older orders' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show more' }));
+    expect(screen.getAllByTestId('order-number')).toHaveLength(62);
+    expect(screen.queryByRole('button', { name: 'Show more' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'To ship 1' }));
-    expect(await screen.findByText('SO-00412')).toBeInTheDocument();
+    expect(screen.queryByText('SO-F001')).not.toBeInTheDocument();
+    expect(screen.getByText('SO-00412')).toBeInTheDocument();
   });
 
-  it('the Finished view lists the newest order first whatever order the server answers in', async () => {
+  it('finished orders take their place in every sort, with no separation', async () => {
     const user = userEvent.setup();
     serve(board());
-    serveFinished([fin(1, { date: '2026-03-01' }), fin(2, { date: '2026-09-15' }), fin(3, { date: '2026-06-10' })]);
+    serveFinished([fin(1, { date: '2026-03-01', total: 5000 }), fin(2, { date: new Date().toISOString().slice(0, 10), total: 1 })]);
     render(<OrderBoardPage />);
-    await user.click(await screen.findByRole('button', { name: /^Finished/ }));
     await screen.findByText('SO-F001');
-    expect(screen.getAllByTestId('order-number').map(n => n.textContent)).toEqual(['SO-F002', 'SO-F003', 'SO-F001']);
+    const numbers = () => screen.getAllByTestId('order-number').map(n => n.textContent);
+    expect(numbers()[0]).toBe('SO-F001'); // oldest first
+    expect(numbers().at(-1)).toBe('SO-F002');
+    await user.click(screen.getByRole('button', { name: /^Value/ }));
+    expect(numbers().slice(-2)).toEqual(['SO-F001', 'SO-F002']); // 5 000 and 1 sit below the open orders
+  });
+
+  it('Hide finished takes them off the list and is remembered', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    serveFinished([fin(1)]);
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-F001');
+    await user.click(screen.getByRole('button', { name: 'Hide finished' }));
+    expect(screen.queryByText('SO-F001')).not.toBeInTheDocument();
+    expect(screen.getByText('SO-00412')).toBeInTheDocument();
+    expect(localStorage.getItem('orders.hideFinished')).toBe('true');
+  });
+
+  it('the search reaches finished orders', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    serveFinished([fin(1, { customer: 'Zorglub' }), fin(2)]);
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-F002');
+    await user.type(screen.getByPlaceholderText('Order number, customer, product, SKU…'), 'zorglub');
+    expect(screen.getAllByTestId('order-number').map(n => n.textContent)).toEqual(['SO-F001']);
   });
 
   it('a finished row shows the Zoho flag until opened, then the percentage', async () => {
@@ -427,7 +450,6 @@ describe('OrderBoardPage', () => {
     serve(board());
     serveFinished([fin(1, { paid_flag: 'partial' })]);
     render(<OrderBoardPage />);
-    await user.click(await screen.findByRole('button', { name: /^Finished/ }));
     const card = await screen.findByRole('button', { name: /SO-F001/ });
     expect(within(card).getByTestId('order-pay')).toHaveTextContent('Partially paid');
     await user.click(card);
@@ -445,7 +467,6 @@ describe('OrderBoardPage', () => {
         payment: pay({ left: 100 }) }), status: 'finished' });
     });
     render(<OrderBoardPage />);
-    await user.click(await screen.findByRole('button', { name: /^Finished/ }));
     await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
     expect(screen.getByText('Loading this order from Zoho…')).toBeInTheDocument();
     release();
@@ -469,7 +490,6 @@ describe('OrderBoardPage', () => {
       http.post('/api/v1/order-board/refresh', () => HttpResponse.json(board())),
     );
     render(<OrderBoardPage />);
-    await user.click(await screen.findByRole('button', { name: /^Finished/ }));
     await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
     await screen.findByRole('table');
     expect(details).toBe(1);
@@ -486,49 +506,11 @@ describe('OrderBoardPage', () => {
     serveFinished([fin(1)], () => (fail ? HttpResponse.json({ detail: 'down' }, { status: 503 }) : HttpResponse.json({
       ...row({ id: 'f1', number: 'SO-F001' }), status: 'finished' })));
     render(<OrderBoardPage />);
-    await user.click(await screen.findByRole('button', { name: /^Finished/ }));
     await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
     expect(await screen.findByText('Could not load this order from Zoho.')).toBeInTheDocument();
     fail = false;
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByRole('table')).toBeInTheDocument();
-  });
-
-  it('a search that matches finished orders offers to show them', async () => {
-    const user = userEvent.setup();
-    serve(board());
-    serveFinished([fin(1, { customer: 'Atelier Ancien' }), fin(2, { customer: 'Atelier Vieux' })]);
-    render(<OrderBoardPage />);
-    await screen.findByText('SO-00412');
-    await user.type(screen.getByPlaceholderText('Order number, customer, product, SKU…'), 'atelier');
-    await user.click(await screen.findByRole('button', { name: /Finished orders matching: 2/ }));
-    expect(await screen.findByText('SO-F001')).toBeInTheDocument();
-    expect(screen.getByText('SO-F002')).toBeInTheDocument();
-  });
-
-  it('the hint replaces No results when only finished orders match', async () => {
-    const user = userEvent.setup();
-    serve(board());
-    serveFinished([fin(1, { customer: 'Zorglub' })]);
-    render(<OrderBoardPage />);
-    await screen.findByText('SO-00412');
-    await user.type(screen.getByPlaceholderText('Order number, customer, product, SKU…'), 'zorglub');
-    expect(await screen.findByRole('button', { name: /Finished orders matching: 1/ })).toBeInTheDocument();
-    expect(screen.queryByText('No results.')).not.toBeInTheDocument();
-  });
-
-  it('the Finished view hides 3D only and Sort, and keeps the tiles', async () => {
-    const user = userEvent.setup();
-    serve(board());
-    serveFinished([fin(1)]);
-    render(<OrderBoardPage />);
-    await screen.findByText('SO-00412');
-    await user.click(screen.getByRole('button', { name: /^Finished/ }));
-    await screen.findByText('SO-F001');
-    expect(screen.queryByRole('button', { name: /3D only/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Age/ })).not.toBeInTheDocument();
-    expect(tile(/^In progress 2/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Overdue/ })).not.toBeInTheDocument();
   });
 });
 
@@ -649,7 +631,6 @@ describe('OrderBoardPage actions', () => {
       }),
     );
     render(<OrderBoardPage />);
-    await user.click(await screen.findByRole('button', { name: /^Finished/ }));
     await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
     await user.click(await screen.findByRole('button', { name: 'Create invoice' }));
     expect(await screen.findByText('Invoice FAC-9 created')).toBeInTheDocument();

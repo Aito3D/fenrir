@@ -10902,6 +10902,8 @@ export default {
     search: 'Sipariş numarası, müşteri, ürün, SKU…',
     coreOnly: 'Yalnızca 3D',
     hidden: '+{{n}} gizli',
+    hideFinished: 'Tamamlananları gizle',
+    showMore: 'Daha fazla göster',
     sort: {
       label: 'Sırala',
       age: 'Yaş',
@@ -11030,6 +11032,11 @@ export default {
       overdueChip: 'Gecikmiş',
       tile: '%{{pct}} ödendi',
     },
+    cancel: {
+      label: "Siparişi iptal et",
+      hint: "İptal için 1 sn basılı tutun",
+      done: "{{number}} iptal edildi",
+    },
     inv: {
       title: "Faturalar",
       empty: "Henüz fatura yok. Koli teslim edilirken oluşturulur.",
@@ -11043,15 +11050,10 @@ export default {
       nothing: 'Faturalandırılacak bir şey kalmadı.',
     },
     finished: {
-      chip: 'Tamamlanan',
-      intro: 'Tamamlanan siparişler: her şey gönderildi. En yeniler önce.',
+      loadListFailed: 'Tamamlanan siparişler yüklenemedi.',
       shipped: 'Gönderildi',
-      older: 'Eski siparişleri göster',
       loading: 'Bu sipariş Zoho\'dan yükleniyor…',
       loadFailed: 'Bu sipariş Zoho\'dan yüklenemedi.',
-      match: 'Eşleşen tamamlanan siparişler: {{n}}',
-      show: 'Göster',
-      none: 'Tamamlanan sipariş yok.',
     },
     contact: {
       title: 'İletişim',

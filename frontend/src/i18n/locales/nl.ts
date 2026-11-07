@@ -10999,6 +10999,8 @@ export default {
     search: 'Ordernummer, klant, product, SKU…',
     coreOnly: 'Alleen 3D',
     hidden: '+{{n}} verborgen',
+    hideFinished: 'Afgeronde verbergen',
+    showMore: 'Meer tonen',
     sort: {
       label: 'Sorteren',
       age: 'Leeftijd',
@@ -11127,6 +11129,11 @@ export default {
       overdueChip: 'Achterstallig',
       tile: '{{pct}}% betaald',
     },
+    cancel: {
+      label: "Bestelling annuleren",
+      hint: "1 s vasthouden om te annuleren",
+      done: "{{number}} geannuleerd",
+    },
     inv: {
       title: "Facturen",
       empty: "Nog geen factuur. Die wordt gemaakt bij de overdracht van het pakket.",
@@ -11140,15 +11147,10 @@ export default {
       nothing: 'Niets meer te factureren.',
     },
     finished: {
-      chip: 'Afgerond',
-      intro: 'Afgeronde bestellingen: alles is verzonden. Nieuwste eerst.',
+      loadListFailed: 'De afgeronde bestellingen konden niet worden geladen.',
       shipped: 'Verzonden',
-      older: 'Oudere bestellingen tonen',
       loading: 'Deze bestelling wordt uit Zoho geladen…',
       loadFailed: 'Deze bestelling kon niet uit Zoho worden geladen.',
-      match: 'Overeenkomende afgeronde bestellingen: {{n}}',
-      show: 'Tonen',
-      none: 'Geen afgeronde bestellingen.',
     },
     contact: {
       title: 'Contact',

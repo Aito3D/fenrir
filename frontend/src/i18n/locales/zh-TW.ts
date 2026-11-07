@@ -10958,6 +10958,8 @@ export default {
     search: '訂單編號、客戶、產品、SKU…',
     coreOnly: '僅 3D',
     hidden: '+{{n}} 筆已隱藏',
+    hideFinished: '隱藏已完成',
+    showMore: '顯示更多',
     sort: {
       label: '排序',
       age: '天數',
@@ -11086,6 +11088,11 @@ export default {
       overdueChip: '已逾期',
       tile: '已付 {{pct}}%',
     },
+    cancel: {
+      label: "取消訂單",
+      hint: "長按 1 秒取消",
+      done: "{{number}} 已取消",
+    },
     inv: {
       title: "發票",
       empty: "尚無發票。包裹交付時會自動建立。",
@@ -11099,15 +11106,10 @@ export default {
       nothing: '沒有需要開立發票的內容。',
     },
     finished: {
-      chip: '已完成',
-      intro: '已完成訂單：全部已出貨。最新的在前。',
+      loadListFailed: '無法載入已完成訂單。',
       shipped: '已出貨',
-      older: '顯示較早的訂單',
       loading: '正在從 Zoho 載入此訂單…',
       loadFailed: '無法從 Zoho 載入此訂單。',
-      match: '符合的已完成訂單：{{n}}',
-      show: '顯示',
-      none: '沒有已完成訂單。',
     },
     contact: {
       title: '聯絡人',

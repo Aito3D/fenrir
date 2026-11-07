@@ -126,3 +126,11 @@ async def test_picklist_calls(db_session):
 async def test_a_refused_picklist_prefill_is_none(db_session):
     await _fake(db_session, [], status=400, body={"code": 1, "message": "no"})
     assert await zoho_service.picklist_prefill(db_session, "so1") is None
+
+
+@pytest.mark.asyncio
+async def test_void_salesorder(db_session):
+    seen: list = []
+    await _fake(db_session, seen)
+    await zoho_service.void_salesorder(db_session, "so1")
+    assert (seen[0][0], seen[0][1].endswith("/salesorders/so1/status/void")) == ("POST", True)

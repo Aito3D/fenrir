@@ -10960,6 +10960,8 @@ export default {
     search: 'Número do pedido, cliente, produto, SKU…',
     coreOnly: 'Somente 3D',
     hidden: '+{{n}} ocultos',
+    hideFinished: 'Ocultar concluídos',
+    showMore: 'Mostrar mais',
     sort: {
       label: 'Ordenar',
       age: 'Idade',
@@ -11088,6 +11090,11 @@ export default {
       overdueChip: 'Vencidos',
       tile: '{{pct}}% pago',
     },
+    cancel: {
+      label: "Cancelar pedido",
+      hint: "Segure 1 s para cancelar",
+      done: "{{number}} cancelado",
+    },
     inv: {
       title: "Faturas",
       empty: "Ainda não há fatura. Ela é criada na entrega do pacote.",
@@ -11101,15 +11108,10 @@ export default {
       nothing: 'Nada mais a faturar.',
     },
     finished: {
-      chip: 'Concluídos',
-      intro: 'Pedidos concluídos: tudo foi enviado. Mais recentes primeiro.',
+      loadListFailed: 'Não foi possível carregar os pedidos concluídos.',
       shipped: 'Enviado',
-      older: 'Mostrar pedidos mais antigos',
       loading: 'Carregando este pedido do Zoho…',
       loadFailed: 'Não foi possível carregar este pedido do Zoho.',
-      match: 'Pedidos concluídos correspondentes: {{n}}',
-      show: 'Mostrar',
-      none: 'Nenhum pedido concluído.',
     },
     contact: {
       title: 'Contato',

@@ -10960,6 +10960,8 @@ export default {
     search: 'Numéro de commande, client, produit, SKU…',
     coreOnly: '3D seulement',
     hidden: '+{{n}} masquées',
+    hideFinished: 'Masquer les terminées',
+    showMore: 'Afficher plus',
     sort: {
       label: 'Trier',
       age: 'Âge',
@@ -11088,6 +11090,11 @@ export default {
       overdueChip: 'En retard',
       tile: '{{pct}} % payé',
     },
+    cancel: {
+      label: "Annuler la commande",
+      hint: "Maintenir 1 s pour annuler",
+      done: "{{number}} annulée",
+    },
     inv: {
       title: "Factures",
       empty: "Aucune facture pour l’instant. Elle est créée à la remise du colis.",
@@ -11101,15 +11108,10 @@ export default {
       nothing: 'Rien à facturer.',
     },
     finished: {
-      chip: 'Terminées',
-      intro: 'Commandes terminées : tout est expédié. Les plus récentes d\'abord.',
+      loadListFailed: 'Impossible de charger les commandes terminées.',
       shipped: 'Expédiée',
-      older: 'Afficher les commandes plus anciennes',
       loading: 'Chargement de cette commande depuis Zoho…',
       loadFailed: 'Impossible de charger cette commande depuis Zoho.',
-      match: 'Commandes terminées correspondantes : {{n}}',
-      show: 'Afficher',
-      none: 'Aucune commande terminée.',
     },
     contact: {
       title: 'Contact',

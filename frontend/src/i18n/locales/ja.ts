@@ -10974,6 +10974,8 @@ export default {
     search: '受注番号、顧客、商品、SKU…',
     coreOnly: '3D のみ',
     hidden: '+{{n}} 件非表示',
+    hideFinished: '完了を非表示',
+    showMore: 'さらに表示',
     sort: {
       label: '並べ替え',
       age: '経過日数',
@@ -11102,6 +11104,11 @@ export default {
       overdueChip: '期限超過',
       tile: '{{pct}}% 支払い済み',
     },
+    cancel: {
+      label: "注文をキャンセル",
+      hint: "1秒長押しでキャンセル",
+      done: "{{number}} をキャンセルしました",
+    },
     inv: {
       title: "請求書",
       empty: "請求書はまだありません。荷物の引き渡し時に作成されます。",
@@ -11115,15 +11122,10 @@ export default {
       nothing: '請求するものはありません。',
     },
     finished: {
-      chip: '完了',
-      intro: '完了した注文: すべて発送済みです。新しい順。',
+      loadListFailed: '完了した注文を読み込めませんでした。',
       shipped: '発送済み',
-      older: '古い注文を表示',
       loading: 'Zoho からこの注文を読み込み中…',
       loadFailed: 'Zoho からこの注文を読み込めませんでした。',
-      match: '一致する完了済みの注文: {{n}}',
-      show: '表示',
-      none: '完了した注文はありません。',
     },
     contact: {
       title: '連絡先',

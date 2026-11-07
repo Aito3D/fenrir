@@ -300,6 +300,17 @@ async def invoice_order(
     return {"board": await order_board_sync.read_board(db), "outcome": outcome}
 
 
+@router.post("/orders/{salesorder_id}/cancel")
+async def cancel_order(
+    salesorder_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> dict:
+    await _run(order_board_actions.cancel_order(db, salesorder_id))
+    _logged(user, salesorder_id, "cancel")
+    return {"board": await order_board_sync.read_board(db)}
+
+
 @router.get("/invoices/{invoice_id}/pdf")
 async def get_invoice_pdf(
     invoice_id: str,
