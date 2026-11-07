@@ -166,6 +166,13 @@ export function OrderBoardPage() {
   };
 
   const ready = isBoardReady(data);
+  // The rows rise in once, when the board first shows; filters and refreshes later swap them in place.
+  const [entering, setEntering] = useState(true);
+  useEffect(() => {
+    if (!ready || !entering) return;
+    const id = setTimeout(() => setEntering(false), 700);
+    return () => clearTimeout(id);
+  }, [ready, entering]);
   // A `?order=` link opens that order once per id, when the board is ready; the parameter stays in the URL, and an unknown id does nothing.
   useEffect(() => {
     const id = searchParams.get('order');
@@ -386,7 +393,7 @@ export function OrderBoardPage() {
         ))}
       </div>
 
-      <div className="space-y-2">{list}</div>
+      <div data-testid="orders-list" className={`space-y-2 ${ready && entering ? 'orders-rows-enter stagger-children' : ''}`}>{list}</div>
       {ready && listed.length > shown && (
         <button
           type="button"

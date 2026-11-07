@@ -2113,6 +2113,14 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
 .stagger-fade-in > *:nth-child(7) { animation-delay: 300ms; }
 .stagger-fade-in > *:nth-child(n + 8) { animation-delay: 350ms; }
 
+/* Order Board: the rows rise in when the board first shows. Paired with
+   .stagger-children for the 50ms delays (its nth-child rules outrank this
+   one's shorthand), and neutralized with it under reduced motion. The page
+   drops the class after the cascade so filtered-in rows never replay it. */
+.orders-rows-enter > * {
+  animation: rise-sm 0.28s var(--ease-signature) backwards;
+}
+
 /* Opacity-only so recomputing numbers never shift layout */
 @keyframes value-tick {
   from { opacity: 0.35; }

@@ -73,6 +73,16 @@ describe('the row icon', () => {
     expect(screen.getByText(/Being prepared/)).toBeInTheDocument();
   });
 
+  it('pops the tick only when the sheet gets printed on screen', () => {
+    const printed = row({ ...open, prep: { at: '2026-11-06T18:30:00+00:00', by: 'Hina' } });
+    const first = render(<OrderCard row={printed} open={false} onToggle={vi.fn()} />);
+    expect(screen.getByTestId('row-printed')).not.toHaveClass('animate-slice-done');
+    first.unmount();
+    const { rerender } = render(<OrderCard row={row(open)} open={false} onToggle={vi.fn()} />);
+    rerender(<OrderCard row={printed} open={false} onToggle={vi.fn()} />);
+    expect(screen.getByTestId('row-printed')).toHaveClass('animate-slice-done');
+  });
+
   it('is absent when there is nothing to do', () => {
     render(<OrderCard row={row({ lines: [line({ packable: 0 })] })} open={false} onToggle={vi.fn()} />);
     expect(screen.queryByRole('button', { name: 'Prepare' })).not.toBeInTheDocument();

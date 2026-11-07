@@ -45,6 +45,8 @@ export function OrderCard({
   const Icon = meta.icon;
   const units = row.units;
   const width = (n: number) => ({ width: units.total > 0 ? `${(n / units.total) * 100}%` : '0%' });
+  // A pack or hand-over lands on the next refresh: the segments slide to their new share instead of jumping.
+  const seg = 'transition-[width] duration-300 ease-(--ease-signature) motion-reduce:duration-[120ms] motion-reduce:ease-linear';
   const { hasPermission } = useAuth();
   const next = nextStep(row);
   const step = hasPermission('orders:update') ? next : null;
@@ -73,10 +75,10 @@ export function OrderCard({
           <span className={`hidden justify-self-start rounded-md px-2 py-0.5 text-xs lg:inline-block ${AGE[ageTone(row.age_days)]}`}>{age}</span>
           <span className="[grid-area:bar] lg:[grid-area:auto]">
             <span className="flex h-2 overflow-hidden rounded-full bg-bambu-dark">
-              <span className={TONE.neutral.bar} style={width(units.shipped)} />
-              <span className={TONE.success.bar} style={width(units.ready)} />
-              <span className={TONE.warning.bar} style={width(units.backordered)} />
-              <span className={TONE.danger.bar} style={width(units.to_order)} />
+              <span className={`${TONE.neutral.bar} ${seg}`} style={width(units.shipped)} />
+              <span className={`${TONE.success.bar} ${seg}`} style={width(units.ready)} />
+              <span className={`${TONE.warning.bar} ${seg}`} style={width(units.backordered)} />
+              <span className={`${TONE.danger.bar} ${seg}`} style={width(units.to_order)} />
             </span>
             <span className="mt-1 flex justify-between gap-2 whitespace-nowrap text-[11px] text-bambu-gray">
               <span>
