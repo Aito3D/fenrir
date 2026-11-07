@@ -11331,6 +11331,7 @@ export default {
       loadListFailed: 'Nie udało się wczytać zakończonych zamówień.',
       shipped: 'Wysłano',
       loading: 'Wczytywanie tego zamówienia z Zoho…',
+      busyRetrying: 'Zoho jest zajęte, ponawianie…',
       loadFailed: 'Nie udało się wczytać tego zamówienia z Zoho.',
     },
     contact: {

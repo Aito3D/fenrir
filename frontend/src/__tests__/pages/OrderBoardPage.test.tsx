@@ -503,7 +503,7 @@ describe('OrderBoardPage', () => {
     const user = userEvent.setup();
     let fail = true;
     serve(board());
-    serveFinished([fin(1)], () => (fail ? HttpResponse.json({ detail: 'down' }, { status: 503 }) : HttpResponse.json({
+    serveFinished([fin(1)], () => (fail ? HttpResponse.json({ detail: 'down' }, { status: 502 }) : HttpResponse.json({
       ...row({ id: 'f1', number: 'SO-F001' }), status: 'finished' })));
     render(<OrderBoardPage />);
     await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
@@ -511,6 +511,17 @@ describe('OrderBoardPage', () => {
     fail = false;
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByRole('table')).toBeInTheDocument();
+  });
+
+  it('a finished order refused because Zoho is busy says so and tries again by itself', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    serveFinished([fin(1)], () => HttpResponse.json({ detail: 'Zoho is busy, try again shortly.' }, { status: 503 }));
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
+    expect(await screen.findByText('Zoho is busy, trying again…')).toBeInTheDocument();
+    expect(screen.queryByText('Could not load this order from Zoho.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
   });
 });
 

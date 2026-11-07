@@ -343,16 +343,24 @@ async def read_finished_order(db: AsyncSession, salesorder_id: str) -> dict:
     doc = next((d for d in await _finished_docs(db) if d.zoho_id == salesorder_id), None)
     if doc is None:
         raise OrderNotFinished(salesorder_id)
-    if doc.detail is None or _is_stale(doc):
-        # One fetch per order at a time: operators opening the same order together share the first one's
-        # copy instead of each calling Zoho. The re-read after the wait sees what the first open stored.
-        async with _detail_locks.setdefault(salesorder_id, asyncio.Lock()):
-            await db.refresh(doc)
-            if doc.detail is None or _is_stale(doc):
-                await _fetch_finished_detail(db, doc)
+    await _ensure_finished_detail(db, doc)
     rows = [order_row(doc.detail, {}, date.today())]
     await _add_links(db, rows)
     return rows[0]
+
+
+async def _ensure_finished_detail(db: AsyncSession, doc: OrderBoardDoc) -> None:
+    """Fetch the finished order's detail when none is stored or the copy is out of date; otherwise nothing.
+
+    One fetch per order at a time: operators opening the same order together, or an open racing the pass,
+    share the first fetch instead of each calling Zoho. The re-read after the wait sees what it stored.
+    """
+    if doc.detail is not None and not _is_stale(doc):
+        return
+    async with _detail_locks.setdefault(doc.zoho_id, asyncio.Lock()):
+        await db.refresh(doc)
+        if doc.detail is None or _is_stale(doc):
+            await _fetch_finished_detail(db, doc)
 
 
 async def _store_quote_number(db: AsyncSession, doc: OrderBoardDoc) -> None:
@@ -492,10 +500,12 @@ async def _sync(db: AsyncSession) -> None:
         (d for d in stored.values() if d.pending),
         key=lambda d: (d.kind != "salesorder", d.header.get("date") or "", d.zoho_id),
     )
+    fetched_count = 0
     for doc in pending[:MAX_DETAILS_PER_PASS]:
         if zoho_service.calls_in_last_minute() >= CALL_CEILING:
             logger.info("Order board: Zoho call ceiling reached, the remaining details wait for the next pass")
             break
+        fetched_count += 1
         get = zoho_service.get_salesorder if doc.kind == "salesorder" else zoho_service.get_purchaseorder
         began = time.monotonic()
         fetched = await get(db, doc.zoho_id)
@@ -508,6 +518,25 @@ async def _sync(db: AsyncSession) -> None:
         if _written_at.get(doc.zoho_id, -1.0) >= began and doc.kind == "salesorder":
             doc.pending = True  # a write began while this copy was being stored: it may predate the write
             await db.commit()
+
+    # Finished orders are served from the copy too. The slots this pass has left fill in the ones with no
+    # copy or an out-of-date one, newest first (the ones operators open), so opening one never calls Books.
+    finished = sorted(
+        (
+            d
+            for d in stored.values()
+            if d.kind == "salesorder" and _is_finished(d.header) and (d.detail is None or _is_stale(d))
+        ),
+        key=lambda d: (d.header.get("date") or "", d.zoho_id),
+        reverse=True,
+    )
+    for doc in finished[: max(0, MAX_DETAILS_PER_PASS - fetched_count)]:
+        if zoho_busy():
+            break
+        try:
+            await _ensure_finished_detail(db, doc)
+        except ZohoBusy:
+            break
 
     # The quote's number is not on the order: read it once, kept with the order from then on.
     for doc in stored.values():

@@ -11150,6 +11150,7 @@ export default {
       loadListFailed: 'De afgeronde bestellingen konden niet worden geladen.',
       shipped: 'Verzonden',
       loading: 'Deze bestelling wordt uit Zoho geladen…',
+      busyRetrying: 'Zoho is bezet, opnieuw proberen…',
       loadFailed: 'Deze bestelling kon niet uit Zoho worden geladen.',
     },
     contact: {

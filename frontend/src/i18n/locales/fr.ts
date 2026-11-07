@@ -11111,6 +11111,7 @@ export default {
       loadListFailed: 'Impossible de charger les commandes terminées.',
       shipped: 'Expédiée',
       loading: 'Chargement de cette commande depuis Zoho…',
+      busyRetrying: 'Zoho est occupé, nouvel essai…',
       loadFailed: 'Impossible de charger cette commande depuis Zoho.',
     },
     contact: {

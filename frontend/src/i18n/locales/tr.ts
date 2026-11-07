@@ -11053,6 +11053,7 @@ export default {
       loadListFailed: 'Tamamlanan siparişler yüklenemedi.',
       shipped: 'Gönderildi',
       loading: 'Bu sipariş Zoho\'dan yükleniyor…',
+      busyRetrying: 'Zoho meşgul, yeniden deneniyor…',
       loadFailed: 'Bu sipariş Zoho\'dan yüklenemedi.',
     },
     contact: {

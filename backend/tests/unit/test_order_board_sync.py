@@ -270,7 +270,7 @@ async def test_non_candidates_are_never_fetched(db_session, zoho):
     )
     await sync.run_pass(db_session)
     board = await sync.read_board(db_session)
-    assert zoho.calls["detail"] == 0
+    assert zoho.calls["detail"] == 1  # only the shipped order, filled for the finished list
     assert (board["rows"], board["sync"]["pending"]) == ([], 0)
     assert board["computed_at"]  # an empty board is still a computed one
 
@@ -588,6 +588,13 @@ async def _doc(db, zoho_id):
     return (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.zoho_id == zoho_id))).scalar_one()
 
 
+async def _forget_detail(db, zoho_id):
+    """An order whose copy the pass has not filled yet (it shipped before the board existed)."""
+    doc = await _doc(db, zoho_id)
+    doc.detail = None
+    await db.commit()
+
+
 PAYMENT_C1 = {"id": "p1", "customer_id": "c1", "last_modified_time": "2026-11-05T09:00:00-1000"}
 
 
@@ -667,17 +674,17 @@ async def test_an_order_that_ships_completely_keeps_its_detail_and_costs_no_stoc
 
 
 @pytest.mark.asyncio
-async def test_a_payment_marks_a_finished_orders_detail_stale(db_session, zoho):
+async def test_a_payment_refreshes_a_finished_orders_detail_in_the_pass(db_session, zoho):
     zoho.add(order(1, qty=2))
     await sync.run_pass(db_session)
     zoho.orders["so1"] = order(1, qty=2, shipped=2)
     await sync.run_pass(db_session)
     details = zoho.calls["detail"]
     zoho.payments = [PAYMENT_C1]
-    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)  # the payment marks the copy stale; the same pass refreshes it
     doc = await _doc(db_session, "so1")
-    assert doc.detail["_stale"] is True and doc.pending is False
-    assert zoho.calls["detail"] == details
+    assert "_stale" not in doc.detail and doc.pending is False
+    assert zoho.calls["detail"] == details + 1
 
 
 @pytest.mark.asyncio
@@ -715,7 +722,7 @@ async def test_finished_list_is_newest_first_and_costs_no_zoho_call(db_session, 
     assert [r["id"] for r in rows] == ["so2", "so1"]
     assert [r["paid_flag"] for r in rows] == ["partial", "paid"]
     assert rows[0]["number"] == "SO-00002" and rows[0]["customer"] == "Customer 2" and rows[0]["total"] == 1000.0
-    assert rows[0]["currency"] == "XPF" and rows[0]["reference"] == "" and rows[0]["payment"] is None
+    assert rows[0]["currency"] == "XPF" and rows[0]["reference"] == "" and rows[0]["payment"] is not None
     assert rows[0]["zoho_url"] == "https://books.example/app/1#/salesorders/so2"
     assert sum(zoho.calls.values()) == before
 
@@ -736,6 +743,9 @@ async def test_an_unshipped_order_older_than_the_age_limit_is_not_listed(db_sess
 async def test_opening_a_finished_order_fetches_once_then_serves_the_copy(db_session, zoho):
     await _synced(db_session, zoho, order(1, age=10, shipped=1))
     before = zoho.calls["detail"]
+    await sync.read_finished_order(db_session, "so1")
+    assert zoho.calls["detail"] == before  # the pass filled the copy: opening costs nothing
+    await _forget_detail(db_session, "so1")
     row = await sync.read_finished_order(db_session, "so1")
     assert row["status"] == "finished" and row["zoho_url"]
     assert zoho.calls["detail"] == before + 1
@@ -769,22 +779,20 @@ async def test_a_pos_order_with_a_quote_gets_its_quote_number_once_and_a_shopify
 
 
 @pytest.mark.asyncio
-async def test_a_changed_list_row_or_a_stale_mark_refetches_on_open(db_session, zoho):
+async def test_a_changed_list_row_or_a_stale_mark_refetches_in_the_pass_or_on_open(db_session, zoho):
     await _synced(db_session, zoho, order(1, age=10, shipped=1))
-    await sync.read_finished_order(db_session, "so1")
     calls = zoho.calls["detail"]
-    # The list row moved on: refetch.
+    # The list row moved on: the pass refetches, the open then costs nothing.
     zoho.orders["so1"] = {**order(1, age=10, shipped=1), "last_modified_time": "2026-11-04T08:00:00-1000"}
     await sync.run_pass(db_session)
+    assert zoho.calls["detail"] == calls + 1
+    await sync.read_finished_order(db_session, "so1")
+    assert zoho.calls["detail"] == calls + 1
+    # A stale mark the pass could not clear (ceiling reached): the open refetches, and clears it.
+    doc = await _doc(db_session, "so1")
+    doc.detail = {**doc.detail, "_stale": True}
+    await db_session.commit()
     assert (await sync.read_finished(db_session))["rows"][0]["payment"] is None  # copy is out of date
-    await sync.read_finished_order(db_session, "so1")
-    assert zoho.calls["detail"] == calls + 1
-    await sync.read_finished_order(db_session, "so1")
-    assert zoho.calls["detail"] == calls + 1
-    # A payment marks it stale: refetch, and the mark is cleared.
-    zoho.payments = [PAYMENT_C1]
-    await sync.run_pass(db_session)
-    assert (await _doc(db_session, "so1")).detail["_stale"] is True
     await sync.read_finished_order(db_session, "so1")
     assert zoho.calls["detail"] == calls + 2
     assert "_stale" not in (await _doc(db_session, "so1")).detail
@@ -793,6 +801,7 @@ async def test_a_changed_list_row_or_a_stale_mark_refetches_on_open(db_session, 
 @pytest.mark.asyncio
 async def test_opening_during_a_back_off_raises_busy_and_sends_nothing(db_session, zoho):
     await _synced(db_session, zoho, order(1, age=10, shipped=1))
+    await _forget_detail(db_session, "so1")
     before = sum(zoho.calls.values())
     sync._rate_limited_until = time.monotonic() + 60
     with pytest.raises(sync.ZohoBusy):
@@ -809,6 +818,7 @@ async def test_a_rate_limited_open_opens_the_back_off_window(db_session, zoho, m
     from backend.app.services.zoho import ZohoRateLimited
 
     await _synced(db_session, zoho, order(1, age=10, shipped=1))
+    await _forget_detail(db_session, "so1")
 
     async def limited(db, salesorder_id):
         raise ZohoRateLimited("slow down", retry_after=90)
@@ -832,9 +842,9 @@ async def test_a_stale_mark_set_while_the_fetch_was_in_flight_survives_it(db_ses
     """Simulated with the same session (the in-memory test database has one connection): the fake
     marks the stored detail stale while the Zoho call is running, as a concurrent pass would."""
     await _synced(db_session, zoho, order(1, age=10, shipped=1))
-    await sync.read_finished_order(db_session, "so1")
-    zoho.orders["so1"] = {**order(1, age=10, shipped=1), "last_modified_time": "2026-11-04T08:00:00-1000"}
-    await sync.run_pass(db_session)  # the stored copy is now out of date: the next open fetches
+    doc = await _doc(db_session, "so1")
+    doc.detail = {**doc.detail, "last_modified_time": "2026-10-01T08:00:00-1000"}  # out of date: the next open fetches
+    await db_session.commit()
     real = zoho.get_salesorder
 
     async def marked_meanwhile(db, salesorder_id):
@@ -894,6 +904,7 @@ async def file_sessions(tmp_path):
 async def test_operators_opening_the_same_finished_order_together_share_one_fetch(file_sessions, zoho):
     async with file_sessions() as db:
         await _synced(db, zoho, order(1, age=10, shipped=1))
+        await _forget_detail(db, "so1")
     before = zoho.calls["detail"]
     zoho.slow = True
 

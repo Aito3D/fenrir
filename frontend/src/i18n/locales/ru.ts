@@ -10730,6 +10730,7 @@ export default {
       loadListFailed: 'Не удалось загрузить завершённые заказы.',
       shipped: 'Отправлен',
       loading: 'Загрузка заказа из Zoho…',
+      busyRetrying: 'Zoho занят, повторная попытка…',
       loadFailed: 'Не удалось загрузить заказ из Zoho.',
     },
     contact: {

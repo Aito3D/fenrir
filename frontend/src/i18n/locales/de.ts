@@ -11126,6 +11126,7 @@ export default {
       loadListFailed: 'Die abgeschlossenen Aufträge konnten nicht geladen werden.',
       shipped: 'Versendet',
       loading: 'Dieser Auftrag wird aus Zoho geladen…',
+      busyRetrying: 'Zoho ist ausgelastet, neuer Versuch…',
       loadFailed: 'Dieser Auftrag konnte nicht aus Zoho geladen werden.',
     },
     contact: {

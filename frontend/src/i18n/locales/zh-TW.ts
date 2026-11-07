@@ -11109,6 +11109,7 @@ export default {
       loadListFailed: '無法載入已完成訂單。',
       shipped: '已出貨',
       loading: '正在從 Zoho 載入此訂單…',
+      busyRetrying: 'Zoho 正忙，正在重試…',
       loadFailed: '無法從 Zoho 載入此訂單。',
     },
     contact: {

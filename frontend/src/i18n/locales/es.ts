@@ -11134,6 +11134,7 @@ export default {
       loadListFailed: 'No se pudieron cargar los pedidos finalizados.',
       shipped: 'Enviado',
       loading: 'Cargando este pedido desde Zoho…',
+      busyRetrying: 'Zoho está ocupado, reintentando…',
       loadFailed: 'No se pudo cargar este pedido desde Zoho.',
     },
     contact: {

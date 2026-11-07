@@ -11182,6 +11182,7 @@ export default {
       loadListFailed: 'Could not load the finished orders.',
       shipped: 'Shipped',
       loading: 'Loading this order from Zoho…',
+      busyRetrying: 'Zoho is busy, trying again…',
       loadFailed: 'Could not load this order from Zoho.',
     },
     contact: {

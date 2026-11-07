@@ -11111,6 +11111,7 @@ export default {
       loadListFailed: 'Não foi possível carregar os pedidos concluídos.',
       shipped: 'Enviado',
       loading: 'Carregando este pedido do Zoho…',
+      busyRetrying: 'O Zoho está ocupado, tentando de novo…',
       loadFailed: 'Não foi possível carregar este pedido do Zoho.',
     },
     contact: {

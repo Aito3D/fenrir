@@ -11109,6 +11109,7 @@ export default {
       loadListFailed: '无法加载已完成订单。',
       shipped: '已发货',
       loading: '正在从 Zoho 加载此订单…',
+      busyRetrying: 'Zoho 正忙，正在重试…',
       loadFailed: '无法从 Zoho 加载此订单。',
     },
     contact: {

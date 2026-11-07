@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, PackageCheck } from 'lucide-react';
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import type { FinishedOrderRow } from '../../api/client';
 import { formatMoney } from '../../utils/pricing';
 import { Button } from '../Button';
@@ -20,7 +20,10 @@ export function FinishedOrderCard({ row, open, onToggle }: { row: FinishedOrderR
     queryFn: () => api.getFinishedOrder(row.id),
     enabled: open,
     staleTime: 60_000,
-    retry: false,
+    // "Zoho is busy" (503) is the shared per-minute call budget being spent, usually by the Kanban: it clears
+    // within the minute, so wait and try again before telling the operator it failed.
+    retry: (count, error) => error instanceof ApiError && error.status === 503 && count < 4,
+    retryDelay: 5_000,
   });
   // The list row only carries Zoho's paid flag; a computed payment (the detail's, else the row's) adds the percentage.
   const payment = detail.data?.payment ?? row.payment;
@@ -78,7 +81,7 @@ export function FinishedOrderCard({ row, open, onToggle }: { row: FinishedOrderR
       )}
       {open && detail.isPending && (
         <div className="space-y-2 px-4 py-3">
-          <div className="text-sm text-bambu-gray">{t('orders.finished.loading')}</div>
+          <div className="text-sm text-bambu-gray">{t(detail.failureCount > 0 ? 'orders.finished.busyRetrying' : 'orders.finished.loading')}</div>
           <Skeleton className="h-10 rounded-lg" />
         </div>
       )}

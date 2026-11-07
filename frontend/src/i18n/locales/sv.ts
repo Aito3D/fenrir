@@ -11150,6 +11150,7 @@ errors: {
       loadListFailed: 'Det gick inte att läsa in de slutförda ordrarna.',
       shipped: 'Skickad',
       loading: 'Hämtar den här ordern från Zoho…',
+      busyRetrying: 'Zoho är upptaget, försöker igen…',
       loadFailed: 'Kunde inte hämta den här ordern från Zoho.',
     },
     contact: {

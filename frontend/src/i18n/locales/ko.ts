@@ -10747,6 +10747,7 @@ export default {
       loadListFailed: '완료된 주문을 불러올 수 없습니다.',
       shipped: '발송됨',
       loading: 'Zoho에서 이 주문을 불러오는 중…',
+      busyRetrying: 'Zoho가 바쁩니다. 다시 시도하는 중…',
       loadFailed: 'Zoho에서 이 주문을 불러오지 못했습니다.',
     },
     contact: {

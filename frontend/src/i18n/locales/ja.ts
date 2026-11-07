@@ -11125,6 +11125,7 @@ export default {
       loadListFailed: '完了した注文を読み込めませんでした。',
       shipped: '発送済み',
       loading: 'Zoho からこの注文を読み込み中…',
+      busyRetrying: 'Zoho が混み合っています。再試行中…',
       loadFailed: 'Zoho からこの注文を読み込めませんでした。',
     },
     contact: {
