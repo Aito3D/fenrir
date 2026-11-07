@@ -28,6 +28,14 @@ from backend.tests.unit.test_order_board_sync import (  # noqa: F401
 )
 
 
+def _rate_limited():
+    return ZohoRateLimited("429", retry_after=30)
+
+
+def _assert_window_open():
+    assert sync._rate_limited_until > time.monotonic() + 20
+
+
 async def _doc(db, zoho_id):
     return (
         await db.execute(
@@ -267,10 +275,10 @@ async def test_one_open_picklist_at_a_time(db_session, parcels):
 @pytest.mark.asyncio
 async def test_a_rate_limited_prefill_is_busy_and_opens_the_window(db_session, parcels):
     await _board(db_session, parcels, order(1))
-    parcels.prefill_error = ZohoRateLimited("429", retry_after=30)
+    parcels.prefill_error = _rate_limited()
     with pytest.raises(sync.ZohoBusy):
         await actions.create_picklist(db_session, "so1", {"l1": 1})
-    assert sync._rate_limited_until > time.monotonic() + 20
+    _assert_window_open()
     assert parcels.writes == []
 
 
@@ -336,12 +344,12 @@ async def test_a_rate_limited_picklist_read_is_busy_and_opens_the_window(db_sess
     pl = await _pick(db_session, "so1", {"l1": 1})
 
     async def limited(db, picklist_id):
-        raise ZohoRateLimited("429", retry_after=30)
+        raise _rate_limited()
 
     monkeypatch.setattr(zoho_service, "get_picklist", limited)
     with pytest.raises(sync.ZohoBusy):
         await actions.picklist_content(db_session, "so1", pl)
-    assert sync._rate_limited_until > time.monotonic() + 20
+    _assert_window_open()
 
 
 # --- Parcel ------------------------------------------------------------------------------------------------------
@@ -694,10 +702,10 @@ async def test_a_create_timeout_whose_refresh_fails_leaves_the_order_unconfirmed
 async def test_a_rate_limited_write_opens_the_back_off_window(db_session, parcels):
     await _board(db_session, parcels, order(1))
     pl = await _pick(db_session, "so1", {"l1": 1})
-    parcels.create_error = ZohoRateLimited("429", retry_after=30)
+    parcels.create_error = _rate_limited()
     with pytest.raises(ZohoRateLimited):
         await actions.create_parcel(db_session, "so1", pl, {"l1": 1})
-    assert sync._rate_limited_until > time.monotonic() + 20
+    _assert_window_open()
 
 
 @pytest.mark.asyncio
@@ -1310,10 +1318,10 @@ async def test_shipment_refused_raises_and_nothing_else_runs(db_session, books):
 @pytest.mark.asyncio
 async def test_rate_limited_shipment_opens_the_back_off_window(db_session, books):
     await _ready(db_session, books)
-    books.errors["create_shipment"] = ZohoRateLimited("429", retry_after=30)
+    books.errors["create_shipment"] = _rate_limited()
     with pytest.raises(ZohoRateLimited):
         await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
-    assert sync._rate_limited_until > time.monotonic() + 20
+    _assert_window_open()
 
 
 @pytest.mark.asyncio
@@ -1688,10 +1696,10 @@ async def test_a_rate_limited_entry_reread_is_busy_and_opens_the_window(db_sessi
     doc = await _doc(db_session, "so1")
     doc.pending = True
     await db_session.commit()
-    books.errors["get_salesorder"] = ZohoRateLimited("429", retry_after=30)
+    books.errors["get_salesorder"] = _rate_limited()
     with pytest.raises(sync.ZohoBusy):
         await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
-    assert sync._rate_limited_until > time.monotonic() + 20
+    _assert_window_open()
     assert "get_package" not in _names(books)
 
 
@@ -1713,11 +1721,11 @@ async def test_a_429_after_the_shipment_opens_the_window_and_returns_the_outcome
 ):
     await _ready(db_session, books, **kw)
     books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 900}]
-    books.errors[failing] = ZohoRateLimited("429", retry_after=30)
+    books.errors[failing] = _rate_limited()
     outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
     assert (outcome["failed_step"], outcome["error"], outcome["shipment"]) == (step, "429", "done")
     assert (outcome["delivered"], outcome["invoice"], outcome["credit_applied"]) == (delivered, invoice, 0.0)
-    assert sync._rate_limited_until > time.monotonic() + 20
+    _assert_window_open()
     sync._rate_limited_until = 0.0  # the retry is what the operator does once the window has passed
     await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
     assert books.effects["create_shipment"] == 1
@@ -1742,11 +1750,11 @@ async def test_delivery_without_a_shipment_id_is_reported_as_the_delivered_step(
 @pytest.mark.asyncio
 async def test_a_rate_limited_entry_get_package_reraises_raw_and_opens_the_window(db_session, books):
     await _ready(db_session, books)
-    books.errors["get_package"] = ZohoRateLimited("429", retry_after=30)
+    books.errors["get_package"] = _rate_limited()
     with pytest.raises(ZohoRateLimited) as e:
         await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
     assert not isinstance(e.value, sync.ZohoBusy)  # today the raw error escapes, it is not turned into "busy"
-    assert sync._rate_limited_until > time.monotonic() + 20
+    _assert_window_open()
     assert _names(books) == ["get_package"]  # no write, no look after it
     assert books.effects == Counter()
 
@@ -1793,7 +1801,7 @@ async def test_busy_zoho_makes_the_preview_unavailable_without_a_call(db_session
 @pytest.mark.asyncio
 async def test_a_rate_limited_prefill_in_the_preview_opens_the_window_and_leaves_it_unavailable(db_session, books):
     await _ready(db_session, books)
-    books.errors["invoice_prefill"] = ZohoRateLimited("429", retry_after=30)
+    books.errors["invoice_prefill"] = _rate_limited()
     preview = await actions.handover_preview(db_session, "so1", "pk1")
     assert (preview["available"], preview["to_invoice"]) == (False, False)
-    assert sync._rate_limited_until > time.monotonic() + 20
+    _assert_window_open()
