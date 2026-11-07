@@ -356,3 +356,18 @@ Still owed (nothing here was run against Books):
     freed units show in "À préparer" after the pass.
   - empty a parcel: both documents gone in Books; the units back in "À préparer".
 - Risks from above: `PUT /salesorders` header fields, the completed-picklist `PUT`, Books refusing Shopify-imported orders.
+
+### Parked after the final review (2026-11-07)
+
+- After a Books timeout on the LAST step of a parcel edit (picklist-down), the server finishes that step on any
+  re-save, but the board offers no way to send one: the reopened parcel already matches, so Save is disabled.
+  Books is left safe (picklist ≥ package, units shown as picked-waiting). Follow-up: `package_content` returns
+  `pending: true` when picklist rows exceed the package and the bar enables Save ("Terminer la mise à jour").
+- A no-change parcel save (`was == lines`, only reachable through the API) also trims picked-not-boxed units on
+  rows of lines the parcel does not hold. Follow-up: limit the settle step to the parcel's own rows.
+- While a hand-over bar is open, Prepare/Pack and the row icon run their Books read and then do nothing (they
+  no longer stack a second bar). Follow-up: hide the prep actions while a hand-over bar is open.
+- A service line whose item is missing from the items cache shows as live and becomes editable. Books refuses
+  a bad line edit itself; follow-up: treat `product_type` ending in "service" as non-live on the board too.
+- Refusal codes `picklist_open`, `unknown_line`, `bad_quantity`, `too_many`, `picklist_shared` are not in the
+  frontend's `REASON_CODES` and read as the generic "the order changed" copy (pre-existing).
