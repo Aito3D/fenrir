@@ -13,8 +13,9 @@ export function OrderQtyStepper({
 }: { id: string; name: string; label: string; value: number; min?: number; max?: number; checkbox?: boolean; positive?: boolean; disabled: boolean; onChange: (v: number) => void }) {
   const { t } = useTranslation();
   const set = (v: number) => {
-    if (positive && v <= 0) return;
-    onChange(Math.round(Math.min(max ?? Infinity, Math.max(min, v)) * 100) / 100);
+    const next = Math.round(Math.min(max ?? Infinity, Math.max(min, v)) * 100) / 100;
+    if (positive && next <= 0) return; // after rounding: 0.004 would otherwise become 0, a removal
+    onChange(next);
   };
   return (
     <span className="inline-flex items-center gap-1">

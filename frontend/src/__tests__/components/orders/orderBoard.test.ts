@@ -336,6 +336,7 @@ describe('editing the order', () => {
 
   it('startEdit opens every live line at its ordered quantity, nothing removed or added', () => {
     const e = startEdit(r);
+    expect(e.version).toBe(r.version); // the save sends the version the edit opened on
     expect(e.qty).toEqual({ l1: 2, l2: 5 });
     expect(e.gone.size).toBe(0);
     expect(e.added).toEqual([]);
@@ -343,7 +344,7 @@ describe('editing the order', () => {
   });
 
   it('editChanges lists quantities, removals and additions in order', () => {
-    const e = { qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 2 }] };
+    const e = { version: 'v1', qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 2 }] };
     expect(editChanges(r, e).map(c => [c.kind, c.line?.id ?? c.item?.id, c.from, c.to])).toEqual([
       ['qty', 'l1', 2, 3],
       ['gone', 'l2', undefined, undefined],
@@ -352,19 +353,19 @@ describe('editing the order', () => {
   });
 
   it('editPayload sends the kept live lines and the added items, nothing else', () => {
-    const e = { qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 1 }] };
+    const e = { version: 'v1', qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 1 }] };
     expect(editPayload(r, e)).toEqual([{ line_id: 'l1', quantity: 3 }, { item_id: 'B', quantity: 1 }]);
   });
 
   it('editTotal sums the kept lines, services, shipped lines and added items; null when not estimable', () => {
     expect(editTotal(r, startEdit(r))).toBe(2 * 3400 + 5 * 1000 + 2000 + 500);
-    const e = { qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 2 }] };
+    const e = { version: 'v1', qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 2 }] };
     expect(editTotal(r, e)).toBe(3 * 3400 + 2000 + 500 + 2 * 1500);
     expect(editTotal(row({ lines, estimable: false }), e)).toBeNull();
   });
 
   it('a line edited down to 0 is a removal: reported as gone, left out of the payload and the total', () => {
-    const e = { qty: { l1: 0, l2: 5 }, gone: new Set<string>(), added: [] };
+    const e = { version: 'v1', qty: { l1: 0, l2: 5 }, gone: new Set<string>(), added: [] };
     expect(editChanges(r, e).map(c => [c.kind, c.line?.id])).toEqual([['gone', 'l1']]);
     expect(editPayload(r, e)).toEqual([{ line_id: 'l2', quantity: 5 }]);
     expect(editTotal(r, e)).toBe(5 * 1000 + 2000 + 500);

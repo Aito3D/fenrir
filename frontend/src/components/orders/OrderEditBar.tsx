@@ -35,7 +35,7 @@ export function OrderEditBar({ row, edit, onClose, onBusy }: { row: OrderPanelRo
   const save = () => {
     if (busy || sent.current || !changes.length) return;
     sent.current = true;
-    editLines.mutate({ id: row.id, version: row.version, lines: editPayload(row, edit) }, { onSettled: () => { sent.current = false; } });
+    editLines.mutate({ id: row.id, version: edit.version, lines: editPayload(row, edit) }, { onSettled: () => { sent.current = false; } });
   };
   const words = changes.map(c =>
     c.kind === 'qty' ? t('orders.edit.qtyChange', { name: c.line?.name, from: formatQty(c.from ?? 0), to: formatQty(c.to ?? 0) })

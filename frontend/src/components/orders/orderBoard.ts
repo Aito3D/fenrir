@@ -193,12 +193,14 @@ export const nextStep = (row: Pick<OrderBoardRow, 'lines' | 'packages' | 'pickli
   return open ? `pack-${open.id}` : canPick(row) ? 'pick' : parcel ? `handover-${parcel.id}` : null;
 };
 
-/** An edit of the order's lines: the new ordered quantity of each live line, the lines removed, the items added. */
-export interface OrderEdit { qty: Record<string, number>; gone: Set<string>; added: { item: OrderItemHit; quantity: number }[] }
+/** An edit of the order's lines: the new ordered quantity of each live line, the lines removed, the items added.
+ *  `version` is the order's Books version when the edit opened: a save over a later change is refused, never applied. */
+export interface OrderEdit { version: string; qty: Record<string, number>; gone: Set<string>; added: { item: OrderItemHit; quantity: number }[] }
 
 const liveLines = (row: Pick<OrderBoardRow, 'lines'>) => row.lines.filter(l => LIVE.has(l.state));
 
-export const startEdit = (row: Pick<OrderBoardRow, 'lines'>): OrderEdit => ({
+export const startEdit = (row: Pick<OrderBoardRow, 'lines' | 'version'>): OrderEdit => ({
+  version: row.version,
   qty: Object.fromEntries(liveLines(row).map(l => [l.id, l.quantity])),
   gone: new Set(),
   added: [],
@@ -219,8 +221,8 @@ export const editChanges = (row: Pick<OrderBoardRow, 'lines'>, edit: OrderEdit):
   ...edit.added.map((a): OrderEditChange => ({ kind: 'add', item: a.item, to: round2(a.quantity) })),
 ];
 
-/** The lines sent: every live line kept at its quantity, then the added items. Service, cancelled and fully
- *  shipped lines are not sent: the server keeps them. */
+/** The lines sent: every live line kept at its quantity, then the added items. Service, untracked, cancelled and
+ *  fully shipped lines are not sent: the server sends them back to Books unchanged. */
 export const editPayload = (row: Pick<OrderBoardRow, 'lines'>, edit: OrderEdit): OrderEditLine[] => [
   ...liveLines(row).filter(l => !removed(edit, l)).map(l => ({ line_id: l.id, quantity: editedQty(edit, l) })),
   ...edit.added.map(a => ({ item_id: a.item.id, quantity: round2(a.quantity) })),

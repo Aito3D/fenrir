@@ -211,6 +211,10 @@ describe('editing the order', () => {
     await user.type(qty('l1'), '0');
     await user.tab();
     expect(qty('l1')).toHaveValue(3); // the previous value comes back
+    await user.clear(qty('l1'));
+    await user.type(qty('l1'), '0.004'); // rounds to 0: held like a typed 0
+    await user.tab();
+    expect(qty('l1')).toHaveValue(3);
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toEqual({ version: 'v1', lines: [{ line_id: 'l1', quantity: 3 }, { line_id: 'l2', quantity: 5 }] });
@@ -234,7 +238,7 @@ describe('editing the order', () => {
 
   it('a refused save (400 version) toasts the reason and keeps the edit open', async () => {
     const user = userEvent.setup();
-    server.use(http.put(`${BASE}/lines`, () => HttpResponse.json({ detail: { code: 'version', message: 'changed' } }, { status: 400 })));
+    server.use(http.put(`${BASE}/lines`, () => HttpResponse.json({ detail: 'version' }, { status: 400 })));
     render(<OrderLinesPanel row={panelRow()} />);
     await openEdit(user);
     await user.click(screen.getByRole('button', { name: 'One more · Bambu Lab PLA Basic Noir' }));
@@ -243,6 +247,22 @@ describe('editing the order', () => {
     expect(screen.getByRole('columnheader', { name: 'Ordered' })).toBeInTheDocument();
     expect(qty('l1')).toHaveValue(3);
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+  });
+
+  it('saves with the version the edit opened on, even after a refetch brought a newer one', async () => {
+    const user = userEvent.setup();
+    const bodies: { version: string }[] = [];
+    server.use(http.put(`${BASE}/lines`, async ({ request }) => {
+      bodies.push((await request.json()) as { version: string });
+      return HttpResponse.json({ detail: 'version' }, { status: 400 });
+    }));
+    const view = render(<OrderLinesPanel row={panelRow()} />);
+    await openEdit(user);
+    await user.click(screen.getByRole('button', { name: 'One more · Bambu Lab PLA Basic Noir' }));
+    view.rerender(<OrderLinesPanel row={panelRow({ version: 'v2' })} />); // a colleague saved in Books meanwhile
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0].version).toBe('v1');
   });
 
   it('Escape and Annuler close the edit; the row icon does not open a check while editing', async () => {
