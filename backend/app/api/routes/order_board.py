@@ -126,15 +126,16 @@ class ParcelLine(BaseModel):
     quantity: float = Field(gt=0, allow_inf_nan=False)
 
 
+def _no_duplicate_line_ids(lines: list) -> list:
+    if len({line.line_id for line in lines}) != len(lines):
+        raise ValueError("a line may appear only once")
+    return lines
+
+
 class ParcelBody(BaseModel):
     lines: list[ParcelLine] = Field(min_length=1, max_length=200)
 
-    @field_validator("lines")
-    @classmethod
-    def _no_duplicates(cls, lines: list[ParcelLine]) -> list[ParcelLine]:
-        if len({line.line_id for line in lines}) != len(lines):
-            raise ValueError("a line may appear only once")
-        return lines
+    _no_duplicates = field_validator("lines")(_no_duplicate_line_ids)
 
 
 class PackBody(ParcelBody):
@@ -175,6 +176,8 @@ class ParcelEditBody(BaseModel):
     version: str = Field(max_length=64)
     was: list[ParcelLine] = Field(min_length=1, max_length=200)
     lines: list[ParcelQty] = Field(max_length=200)  # empty: the parcel is emptied
+
+    _no_duplicates = field_validator("was", "lines")(_no_duplicate_line_ids)
 
 
 class HandoverBody(BaseModel):

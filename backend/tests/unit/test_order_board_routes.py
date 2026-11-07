@@ -674,6 +674,24 @@ async def test_invoice_email_waits_for_a_write_on_the_same_order(async_client, t
             "orders/so1/packages/p1",
             {"version": "v", "was": PICK["lines"], "lines": [{"line_id": "l1", "quantity": -1}]},
         ),
+        (
+            "put",
+            "orders/so1/packages/p1",
+            {
+                "version": "v",
+                "was": [{"line_id": "l1", "quantity": 1}] * 2,
+                "lines": [{"line_id": "l1", "quantity": 1}],
+            },
+        ),
+        (
+            "put",
+            "orders/so1/packages/p1",
+            {
+                "version": "v",
+                "was": [{"line_id": "l1", "quantity": 1}],
+                "lines": [{"line_id": "l1", "quantity": 2}] * 2,
+            },
+        ),
         ("get", "items?q=p", None),
     ],
 )
