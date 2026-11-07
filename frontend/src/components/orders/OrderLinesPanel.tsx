@@ -291,7 +291,7 @@ export function OrderLinesPanel({
                               name={line.name}
                               label={t('orders.edit.ordered')}
                               value={edit.qty[line.id] ?? line.quantity}
-                              min={line.floor}
+                              min={Math.max(line.floor, 1)} // removing a line is the trash's job, never a 0
                               checkbox={false}
                               disabled={saving}
                               onChange={v => editQty(line.id, v)}

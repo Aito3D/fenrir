@@ -101,6 +101,9 @@ describe('editing the order', () => {
     await user.click(screen.getByRole('button', { name: 'One more · Filament B' }));
     await user.click(screen.getByRole('button', { name: 'One more · Filament B' }));
     expect(qty('l2')).toHaveValue(5); // no maximum
+    await user.click(screen.getByRole('button', { name: 'One less · Bambu Lab PLA Basic Noir' }));
+    expect(qty('l1')).toHaveValue(1);
+    expect(screen.getByRole('button', { name: 'One less · Bambu Lab PLA Basic Noir' })).toBeDisabled(); // never 0: the trash removes
     expect(screen.getByRole('button', { name: 'One less · Filament B' })).toBeEnabled();
   });
 
@@ -192,6 +195,24 @@ describe('editing the order', () => {
     expect(await screen.findByText('Order SO-00412 updated in Zoho Books · 3 changes')).toBeInTheDocument();
     expect(bodies).toEqual([{ version: 'v1', lines: [{ line_id: 'l1', quantity: 3 }, { item_id: 'B', quantity: 1 }] }]);
     await waitFor(() => expect(screen.queryByRole('columnheader', { name: 'Ordered' })).not.toBeInTheDocument());
+  });
+
+  it('a quantity typed as 0 is never sent as 0', async () => {
+    const user = userEvent.setup();
+    const bodies: unknown[] = [];
+    server.use(http.put(`${BASE}/lines`, async ({ request }) => {
+      bodies.push(await request.json());
+      return HttpResponse.json({ board: { rows: [], computed_at: null, stock_loaded_at: null, sync: {} }, row: null });
+    }));
+    render(<OrderLinesPanel row={panelRow({}, two)} />);
+    await openEdit(user);
+    await user.clear(qty('l1'));
+    await user.type(qty('l1'), '0');
+    await user.tab();
+    expect(qty('l1')).toHaveValue(1);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ version: 'v1', lines: [{ line_id: 'l1', quantity: 1 }, { line_id: 'l2', quantity: 5 }] });
   });
 
   it('a refused save (400 version) toasts the reason and keeps the edit open', async () => {

@@ -359,4 +359,11 @@ describe('editing the order', () => {
     expect(editTotal(r, e)).toBe(3 * 3400 + 2000 + 500 + 2 * 1500);
     expect(editTotal(row({ lines, estimable: false }), e)).toBeNull();
   });
+
+  it('a line edited down to 0 is a removal: reported as gone, left out of the payload and the total', () => {
+    const e = { qty: { l1: 0, l2: 5 }, gone: new Set<string>(), added: [] };
+    expect(editChanges(r, e).map(c => [c.kind, c.line?.id])).toEqual([['gone', 'l1']]);
+    expect(editPayload(r, e)).toEqual([{ line_id: 'l2', quantity: 5 }]);
+    expect(editTotal(r, e)).toBe(5 * 1000 + 2000 + 500);
+  });
 });

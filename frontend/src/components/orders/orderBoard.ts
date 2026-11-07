@@ -205,13 +205,15 @@ export const startEdit = (row: Pick<OrderBoardRow, 'lines'>): OrderEdit => ({
 });
 
 const editedQty = (edit: OrderEdit, line: OrderBoardLine) => round2(edit.qty[line.id] ?? line.quantity);
+// A line edited down to 0 is a removal: Books refuses a zero quantity.
+const removed = (edit: OrderEdit, line: OrderBoardLine) => edit.gone.has(line.id) || editedQty(edit, line) <= 0;
 
 export interface OrderEditChange { kind: 'qty' | 'gone' | 'add'; line?: OrderBoardLine; item?: OrderItemHit; from?: number; to?: number }
 
 /** What the edit changes, in the order of the lines, the added items last. */
 export const editChanges = (row: Pick<OrderBoardRow, 'lines'>, edit: OrderEdit): OrderEditChange[] => [
   ...liveLines(row).flatMap((line): OrderEditChange[] =>
-    edit.gone.has(line.id) ? [{ kind: 'gone', line }]
+    removed(edit, line) ? [{ kind: 'gone', line }]
     : editedQty(edit, line) !== line.quantity ? [{ kind: 'qty', line, from: line.quantity, to: editedQty(edit, line) }]
     : []),
   ...edit.added.map((a): OrderEditChange => ({ kind: 'add', item: a.item, to: round2(a.quantity) })),
@@ -220,7 +222,7 @@ export const editChanges = (row: Pick<OrderBoardRow, 'lines'>, edit: OrderEdit):
 /** The lines sent: every live line kept at its quantity, then the added items. Service, cancelled and fully
  *  shipped lines are not sent: the server keeps them. */
 export const editPayload = (row: Pick<OrderBoardRow, 'lines'>, edit: OrderEdit): OrderEditLine[] => [
-  ...liveLines(row).filter(l => !edit.gone.has(l.id)).map(l => ({ line_id: l.id, quantity: editedQty(edit, l) })),
+  ...liveLines(row).filter(l => !removed(edit, l)).map(l => ({ line_id: l.id, quantity: editedQty(edit, l) })),
   ...edit.added.map(a => ({ item_id: a.item.id, quantity: round2(a.quantity) })),
 ];
 
@@ -229,7 +231,7 @@ export const editPayload = (row: Pick<OrderBoardRow, 'lines'>, edit: OrderEdit):
 export const editTotal = (row: Pick<OrderBoardRow, 'lines' | 'estimable'>, edit: OrderEdit): number | null => {
   if (!row.estimable) return null;
   const lines = row.lines.reduce(
-    (n, l) => n + (LIVE.has(l.state) ? (edit.gone.has(l.id) ? 0 : editedQty(edit, l)) : l.state === 'cancelled' ? 0 : l.quantity) * l.rate,
+    (n, l) => n + (LIVE.has(l.state) ? (removed(edit, l) ? 0 : editedQty(edit, l)) : l.state === 'cancelled' ? 0 : l.quantity) * l.rate,
     0,
   );
   return round2(lines + edit.added.reduce((n, a) => n + a.quantity * a.item.rate, 0));
