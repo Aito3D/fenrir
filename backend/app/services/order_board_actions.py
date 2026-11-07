@@ -937,6 +937,9 @@ async def _rewrite_parcel(
             try:
                 picklist = await update_picklist("picklist", rows)
             except ZohoRequestRejected:  # Books will not change a completed picklist: make it again
+                held = await _picklist(db, order, picklist_id)
+                if any(_num(r.get("quantity_packed")) > 0 for r in held.get("line_items") or []):
+                    raise  # another parcel boxed from it: keep it (picklist ≥ package), "Créer le colis" finishes
                 await _write(salesorder_id, number, "delete_picklist", zoho_service.delete_picklist(db, picklist_id))
                 fresh = {
                     "date": date.today().isoformat(),

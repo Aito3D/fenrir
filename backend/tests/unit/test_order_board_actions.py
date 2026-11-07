@@ -2202,3 +2202,14 @@ async def test_replace_mode_emptying_the_only_parcel_deletes_its_picklist(db_ses
     await _board(db_session, parcels, _packed(parcels))
     await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {})
     assert parcels.steps == [("delete_package", "p1"), ("delete_picklist", "pl1")]
+
+
+@pytest.mark.asyncio
+async def test_replace_mode_keeps_a_picklist_a_sibling_parcel_boxed_from(db_session, parcels, monkeypatch):
+    monkeypatch.setattr(actions, "_PARCEL_EDIT_REPLACES", True)
+    await _board(db_session, parcels, _packed(parcels, qty=5, picked=5, parcels_=(("p1", 2), ("p2", 3))))
+    parcels.fail_step, parcels.fail_with = "picklist", ZohoRequestRejected
+    with pytest.raises(ZohoRequestRejected):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert _labels(parcels) == ["delete_package"]
+    assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 5  # p2's row untouched
