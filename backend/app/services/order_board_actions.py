@@ -758,7 +758,10 @@ async def edit_lines(db: AsyncSession, salesorder_id: str, version: str, lines: 
             await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean Books saved it
             raise
         await _best_effort_refresh(db, salesorder_id, number)
-    return await _row(db, salesorder_id)
+    try:
+        return await _row(db, salesorder_id)
+    except OrderNotOnBoard:
+        return {}  # the edit took it off the board; the write is done
 
 
 # --- Edit a packed parcel --------------------------------------------------------------------------------------
@@ -1027,7 +1030,10 @@ async def edit_parcel(
             await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean Books did it
             raise
         await _best_effort_refresh(db, salesorder_id, number)
-    return await _row(db, salesorder_id)
+    try:
+        return await _row(db, salesorder_id)
+    except OrderNotOnBoard:
+        return {}  # the edit took it off the board; the write is done
 
 
 async def invoice_shipped(db: AsyncSession, salesorder_id: str, *, apply_credit: bool) -> dict:

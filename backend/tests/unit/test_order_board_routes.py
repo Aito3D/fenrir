@@ -170,6 +170,8 @@ PICK = {"lines": [{"line_id": "l1", "quantity": 2}]}
 PARCEL = {**PICK, "picklist_id": "pl1"}
 HAND = {"mode": "pickup", "apply_credit": False}
 INVOICE = {"apply_credit": True}
+LINES = {"version": "v1", "lines": [{"line_id": "l1", "quantity": 3}]}
+PARCEL_EDIT = {"version": "v1", "was": [{"line_id": "l1", "quantity": 2}], "lines": [{"line_id": "l1", "quantity": 1}]}
 NEW_ROUTES = [
     ("post", f"{BASE}/orders/so1/prep-sheet", None, False),
     ("post", f"{BASE}/orders/so1/prep-sheet?picklist_id=pl1", None, False),
@@ -181,6 +183,10 @@ NEW_ROUTES = [
     ("post", f"{BASE}/orders/so1/packages/p1/handover", HAND, True),
     ("post", f"{BASE}/orders/so1/invoice", INVOICE, True),
     ("post", f"{BASE}/orders/so1/cancel", None, True),
+    ("get", f"{BASE}/items?q=pla", None, False),
+    ("put", f"{BASE}/orders/so1/lines", LINES, True),
+    ("get", f"{BASE}/orders/so1/packages/p1", None, False),
+    ("put", f"{BASE}/orders/so1/packages/p1", PARCEL_EDIT, True),
     ("get", f"{BASE}/invoices/inv1/pdf", None, False),
     ("get", f"{BASE}/invoices/inv1/email", None, False),
     ("post", f"{BASE}/invoices/inv1/email", {"to": "a@b.pf"}, True),
@@ -197,7 +203,8 @@ async def test_new_routes_need_their_permission(async_client, tokens, method, ur
         assert r.status_code == 403, f"{method.upper()} {url} as {who}: {r.status_code}"
     if not writes:  # allowed through for orders:read: nothing is stored, so the order or invoice is unknown
         r = await getattr(async_client, method)(url, headers=tokens["read"], **kwargs)
-        assert r.status_code == 404, f"{method.upper()} {url}: {r.status_code}"
+        expected = 503 if "/items" in url else 404  # item search names no order: it reaches Books, unconfigured here
+        assert r.status_code == expected, f"{method.upper()} {url}: {r.status_code}"
 
 
 @pytest.mark.asyncio
@@ -369,6 +376,8 @@ async def test_action_errors_map_to_statuses(async_client, tokens, monkeypatch):
         (actions.OrderNotOnBoard("x"), 404, None),
         (order_board_sync.OrderNotStored("x"), 404, None),
         (actions.OrderActionRefused("too_many"), 400, "too_many"),
+        (actions.OrderActionRefused("version"), 400, "version"),
+        (actions.OrderActionRefused("package_changed"), 400, "package_changed"),
         (actions.OrderBusy("x"), 409, None),
         (order_board_sync.ZohoBusy("x"), 503, "Zoho is busy, try again shortly."),
         (ZohoNotConfiguredError("x"), 503, None),
@@ -390,6 +399,10 @@ async def test_action_errors_map_to_statuses(async_client, tokens, monkeypatch):
             "picklist_preview",
             "picklist_content",
             "cancel_order",
+            "search_items",
+            "edit_lines",
+            "package_content",
+            "edit_parcel",
         ):
             monkeypatch.setattr(actions, name, boom)
         calls = [
@@ -403,6 +416,10 @@ async def test_action_errors_map_to_statuses(async_client, tokens, monkeypatch):
             ("post", "orders/so1/cancel", None),
             ("get", "orders/so1/packages/p1/handover", None),
             ("post", "orders/so1/prep-sheet", None),
+            ("get", "items?q=pla", None),
+            ("put", "orders/so1/lines", LINES),
+            ("get", "orders/so1/packages/p1", None),
+            ("put", "orders/so1/packages/p1", PARCEL_EDIT),
         ]
         for method, url, body in calls:
             kwargs = {"json": body} if body else {}
@@ -640,3 +657,64 @@ async def test_invoice_email_waits_for_a_write_on_the_same_order(async_client, t
     assert r.status_code == 409 and invoice_mail["sent"] == []
     r = await async_client.post(f"{BASE}/invoices/inv1/email", headers=tokens["both"], json={"to": "moana@client.pf"})
     assert r.status_code == 200  # the busy refusal released the guard
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "url", "body"),
+    [
+        ("put", "orders/so1/lines", {"version": "v", "lines": [{"line_id": "l1", "item_id": "B", "quantity": 1}]}),
+        ("put", "orders/so1/lines", {"version": "v", "lines": [{"quantity": 1}]}),
+        ("put", "orders/so1/lines", {"version": "v", "lines": [{"line_id": "l1", "quantity": 1}] * 2}),
+        ("put", "orders/so1/lines", {"version": "v", "lines": []}),
+        ("put", "orders/so1/lines", {"version": "v", "lines": [{"line_id": "l1", "quantity": 0}]}),
+        ("put", "orders/so1/packages/p1", {"version": "v", "was": [], "lines": []}),
+        (
+            "put",
+            "orders/so1/packages/p1",
+            {"version": "v", "was": PICK["lines"], "lines": [{"line_id": "l1", "quantity": -1}]},
+        ),
+        ("get", "items?q=p", None),
+    ],
+)
+async def test_edit_bodies_are_validated(async_client, tokens, method, url, body):
+    kwargs = {"json": body} if body else {}
+    r = await getattr(async_client, method)(f"{BASE}/{url}", headers=tokens["both"], **kwargs)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_edit_routes_pass_the_choice_through(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+
+    seen = {}
+
+    async def fake_edit(db, salesorder_id, version, lines):
+        seen.update(v=version, lines=lines)
+        return {"number": "SO-1"}
+
+    async def fake_parcel(db, salesorder_id, package_id, version, was, lines):
+        seen.update(p=package_id, was=was, plines=lines)
+        return {"number": "SO-1"}
+
+    monkeypatch.setattr(actions, "edit_lines", fake_edit)
+    monkeypatch.setattr(actions, "edit_parcel", fake_parcel)
+    body = {"version": "v1", "lines": [{"line_id": "l1", "quantity": 3}, {"item_id": "B", "quantity": 1}]}
+    r = await async_client.put(f"{BASE}/orders/so1/lines", json=body, headers=tokens["both"])
+    assert r.status_code == 200 and "board" in r.json() and r.json()["row"] == {"number": "SO-1"}
+    assert seen["lines"] == [{"line_id": "l1", "quantity": 3}, {"item_id": "B", "quantity": 1}]
+    body = {"version": "v1", "was": [{"line_id": "l1", "quantity": 2}], "lines": []}
+    r = await async_client.put(f"{BASE}/orders/so1/packages/p1", json=body, headers=tokens["both"])
+    assert r.status_code == 200 and seen["was"] == {"l1": 2} and seen["plines"] == {}
+
+
+@pytest.mark.asyncio
+async def test_edit_that_takes_the_order_off_the_board_still_answers_200(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+
+    async def gone(*a, **k):
+        return {}
+
+    monkeypatch.setattr(actions, "edit_lines", gone)
+    r = await async_client.put(f"{BASE}/orders/so1/lines", json=LINES, headers=tokens["both"])
+    assert r.status_code == 200 and r.json()["row"] is None and "board" in r.json()

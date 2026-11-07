@@ -2213,3 +2213,20 @@ async def test_replace_mode_keeps_a_picklist_a_sibling_parcel_boxed_from(db_sess
         await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
     assert _labels(parcels) == ["delete_package"]
     assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 5  # p2's row untouched
+
+
+@pytest.mark.asyncio
+async def test_an_edit_that_takes_the_order_off_the_board_returns_nothing(db_session, lines_edit, monkeypatch):
+    await _board(db_session, lines_edit, _edit_order())
+    reads = iter([await actions._row(db_session, "so1")])  # the floors read; the read after the write finds nothing
+
+    async def vanishing(db, salesorder_id):
+        try:
+            return next(reads)
+        except StopIteration:
+            raise actions.OrderNotOnBoard(salesorder_id) from None
+
+    monkeypatch.setattr(actions, "_row", vanishing)
+    lines = [{"line_id": "l1", "quantity": 3}, {"line_id": "l2", "quantity": 1}]
+    assert await actions.edit_lines(db_session, "so1", VERSION, lines) == {}
+    assert lines_edit.writes.count("update_salesorder") == 1

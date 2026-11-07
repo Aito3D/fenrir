@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Literal, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -141,6 +141,42 @@ class PackBody(ParcelBody):
     picklist_id: str = Field(min_length=1, max_length=64)
 
 
+class EditLine(BaseModel):
+    line_id: str | None = Field(default=None, min_length=1, max_length=64)
+    item_id: str | None = Field(default=None, min_length=1, max_length=64)
+    quantity: float = Field(gt=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _one_target(self) -> "EditLine":
+        if (self.line_id is None) == (self.item_id is None):
+            raise ValueError("a line names exactly one of line_id or item_id")
+        return self
+
+
+class LinesBody(BaseModel):
+    version: str = Field(max_length=64)
+    lines: list[EditLine] = Field(min_length=1, max_length=200)
+
+    @field_validator("lines")
+    @classmethod
+    def _no_duplicates(cls, lines: list[EditLine]) -> list[EditLine]:
+        keys = [line.line_id or line.item_id for line in lines]
+        if len(set(keys)) != len(keys):
+            raise ValueError("a line may appear only once")
+        return lines
+
+
+class ParcelQty(BaseModel):
+    line_id: str = Field(min_length=1, max_length=64)
+    quantity: float = Field(ge=0, allow_inf_nan=False)
+
+
+class ParcelEditBody(BaseModel):
+    version: str = Field(max_length=64)
+    was: list[ParcelLine] = Field(min_length=1, max_length=200)
+    lines: list[ParcelQty] = Field(max_length=200)  # empty: the parcel is emptied
+
+
 class HandoverBody(BaseModel):
     mode: Literal["pickup", "delivery"]
     apply_credit: bool
@@ -261,6 +297,65 @@ async def create_parcel(
     )
     _logged(user, salesorder_id, "create_parcel")
     return {"board": await order_board_sync.read_board(db), "package_number": number}
+
+
+@router.get("/items")
+async def search_items(
+    q: str = Query(min_length=2, max_length=80),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+) -> dict:
+    """Books items matching a search, for adding a line to an order."""
+    return {"items": await _run(order_board_actions.search_items(db, q))}
+
+
+@router.put("/orders/{salesorder_id}/lines")
+async def edit_order_lines(
+    salesorder_id: str,
+    body: LinesBody,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> dict:
+    row = await _run(
+        order_board_actions.edit_lines(
+            db, salesorder_id, body.version, [line.model_dump(exclude_none=True) for line in body.lines]
+        )
+    )
+    _logged(user, salesorder_id, "edit_lines")
+    return {"board": await order_board_sync.read_board(db), "row": row or None}
+
+
+@router.get("/orders/{salesorder_id}/packages/{package_id}")
+async def get_package_content(
+    salesorder_id: str,
+    package_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+) -> dict:
+    """What a packed parcel holds and may be changed to (asks Books; writes nothing)."""
+    return await _run(order_board_actions.package_content(db, salesorder_id, package_id))
+
+
+@router.put("/orders/{salesorder_id}/packages/{package_id}")
+async def edit_parcel(
+    salesorder_id: str,
+    package_id: str,
+    body: ParcelEditBody,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> dict:
+    row = await _run(
+        order_board_actions.edit_parcel(
+            db,
+            salesorder_id,
+            package_id,
+            body.version,
+            {line.line_id: line.quantity for line in body.was},
+            {line.line_id: line.quantity for line in body.lines},
+        )
+    )
+    _logged(user, salesorder_id, "edit_parcel")
+    return {"board": await order_board_sync.read_board(db), "row": row or None}
 
 
 @router.get("/orders/{salesorder_id}/packages/{package_id}/handover")
