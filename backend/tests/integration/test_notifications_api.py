@@ -5,9 +5,11 @@ Tests the full request/response cycle for /api/v1/notifications/ endpoints.
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from backend.tests._fixtures.notification_toggles import EVENT_TOGGLE_COLUMNS, TOGGLE_TARGET
+
+_SEND_TEST = "backend.app.services.notification_service.notification_service.send_test_notification"
 
 
 class TestNotificationsAPI:
@@ -713,3 +715,113 @@ class TestHomeAssistantNotificationProvider:
         result = response.json()
         assert result["success"] is False
         assert "not configured" in result["message"].lower() or "Home Assistant" in result["message"]
+
+
+class TestNotificationTestAll:
+    """POST /api/v1/notifications/test-all: partial failure, status stamping, scope and permission."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_no_enabled_providers(self, async_client: AsyncClient, notification_provider_factory):
+        from unittest.mock import AsyncMock, patch
+
+        await notification_provider_factory(name="Off", enabled=False)
+
+        with patch(_SEND_TEST, new=AsyncMock()) as send:
+            response = await async_client.post("/api/v1/notifications/test-all")
+
+        assert response.status_code == 200
+        assert response.json() == {"tested": 0, "success": 0, "failed": 0, "results": []}
+        send.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_partial_failure_is_reported_and_stamped(
+        self, async_client: AsyncClient, notification_provider_factory, db_session
+    ):
+        from unittest.mock import AsyncMock, patch
+
+        good = await notification_provider_factory(name="Good", attach_photo=True)
+        bad = await notification_provider_factory(name="Bad", provider_type="webhook", config={"url": "https://x.test"})
+        off = await notification_provider_factory(name="Off", enabled=False)
+        good_id, bad_id, off_id = good.id, bad.id, off.id
+
+        async def fake_send(provider_type, config, db, attach_photo=False):
+            return (True, "sent") if provider_type == "ntfy" else (False, "boom")
+
+        with patch(_SEND_TEST, new=AsyncMock(side_effect=fake_send)) as send:
+            response = await async_client.post("/api/v1/notifications/test-all")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert (data["tested"], data["success"], data["failed"]) == (2, 1, 1)
+        by_id = {r["provider_id"]: r for r in data["results"]}
+        assert set(by_id) == {good_id, bad_id}
+        assert by_id[good_id] == {
+            "provider_id": good_id,
+            "provider_name": "Good",
+            "provider_type": "ntfy",
+            "success": True,
+            "message": "sent",
+        }
+        assert by_id[bad_id]["success"] is False
+        assert by_id[bad_id]["message"] == "boom"
+        assert by_id[bad_id]["provider_type"] == "webhook"
+        assert send.await_count == 2
+        # config is passed decoded, attach_photo follows the provider
+        calls = {c.args[0]: c for c in send.await_args_list}
+        assert calls["ntfy"].args[1] == {"server": "https://ntfy.sh", "topic": "test-topic"}
+        assert calls["ntfy"].kwargs["attach_photo"] is True
+        assert calls["webhook"].args[1] == {"url": "https://x.test"}
+
+        db_session.expire_all()
+        from backend.app.models.notification import NotificationProvider
+
+        rows = {p.id: p for p in (await db_session.execute(select(NotificationProvider))).scalars()}
+        assert rows[good_id].last_success is not None
+        assert rows[good_id].last_error is None
+        assert rows[bad_id].last_error == "boom"
+        assert rows[bad_id].last_error_at is not None
+        assert rows[bad_id].last_success is None
+        assert rows[off_id].last_success is None
+        assert rows[off_id].last_error is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_forbidden_without_notifications_update(
+        self, async_client: AsyncClient, notification_provider_factory
+    ):
+        from unittest.mock import AsyncMock, patch
+
+        from backend.tests.integration.test_printer_scope_1727 import _admin_token, _auth, _group, _user
+
+        await notification_provider_factory(name="Any")
+        admin = await _admin_token(async_client)
+        read_only = await _group(async_client, admin, "readers", permissions=["notifications:read"])
+        reader = _auth((await _user(async_client, admin, "reader", [read_only]))[0])
+
+        with patch(_SEND_TEST, new=AsyncMock()) as send:
+            response = await async_client.post("/api/v1/notifications/test-all", headers=reader)
+
+        assert response.status_code == 403
+        send.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scoped_caller_tests_only_providers_of_their_printers(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        from unittest.mock import AsyncMock, patch
+
+        from backend.tests.integration.test_notification_scope import _setup
+
+        a, b, member, ids = await _setup(async_client, printer_factory)
+
+        with patch(_SEND_TEST, new=AsyncMock(return_value=(True, "ok"))) as send:
+            response = await async_client.post("/api/v1/notifications/test-all", headers=member)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert (data["tested"], data["success"], data["failed"]) == (1, 1, 0)
+        assert [r["provider_id"] for r in data["results"]] == [ids["ours"]]
+        assert send.await_count == 1

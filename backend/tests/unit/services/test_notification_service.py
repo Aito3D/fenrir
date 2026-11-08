@@ -3063,3 +3063,99 @@ class TestEmailProvider:
         # contain BOTH the escaped URL AND the cid img (we swapped, not duplicated).
         # The plain-text part still has the URL; check it's there at least once.
         assert self.PHOTO_URL in raw
+
+
+class _FailedCommitSession:
+    """Session double: one commit fails, then every statement raises until rollback()."""
+
+    def __init__(self):
+        self.commits_to_fail = 1
+        self.needs_rollback = False
+        self.rollbacks = 0
+        self.commits = 0
+
+    def add(self, _obj):
+        pass
+
+    async def execute(self, _stmt):
+        if self.needs_rollback:
+            raise RuntimeError("PendingRollbackError")
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = MagicMock()
+        return result
+
+    async def commit(self):
+        if self.needs_rollback:
+            raise RuntimeError("PendingRollbackError")
+        if self.commits_to_fail:
+            self.commits_to_fail -= 1
+            self.needs_rollback = True
+            raise RuntimeError("database is locked")
+        self.commits += 1
+
+    async def rollback(self):
+        self.rollbacks += 1
+        self.needs_rollback = False
+
+
+class TestFanOutSurvivesFailedBookkeeping:
+    @pytest.mark.asyncio
+    async def test_second_provider_is_sent_and_session_usable_after_failed_commit(self):
+        service = NotificationService()
+        providers = []
+        for i in (1, 2):
+            p = MagicMock()
+            p.id = i
+            p.name = f"P{i}"
+            p.daily_digest_enabled = False
+            p.daily_digest_time = None
+            providers.append(p)
+        db = _FailedCommitSession()
+
+        with patch.object(service, "_send_to_provider", new_callable=AsyncMock, return_value=(True, None)) as send:
+            await service._send_to_providers(providers=providers, title="t", message="m", db=db, event_type="e")
+
+        assert send.await_count == 2
+        assert db.rollbacks >= 1
+        assert not db.needs_rollback
+        await db.commit()  # the caller's next commit works
+
+
+class TestFanOutSurvivesFailedFlushRealSession:
+    """Real aiosqlite session: a rollback expires loaded rows, which must stay readable."""
+
+    @pytest.mark.asyncio
+    async def test_all_providers_sent_and_session_usable_after_failed_flush(self):
+        from sqlalchemy import event, select
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from backend.app.models.notification import NotificationLog
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda c: NotificationProvider.__table__.create(c))
+            await conn.run_sync(lambda c: NotificationLog.__table__.create(c))
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as db:
+            for i in (1, 2, 3):
+                db.add(NotificationProvider(name=f"P{i}", provider_type="ntfy", config="{}"))
+            await db.commit()
+        async with sessions() as db:
+            providers = list((await db.execute(select(NotificationProvider))).scalars())
+            calls = {"n": 0}
+
+            @event.listens_for(db.sync_session, "after_flush")
+            def fail_first_flush(*_args):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise RuntimeError("database is locked")
+
+            service = NotificationService()
+            with patch.object(service, "_send_to_provider", new_callable=AsyncMock, return_value=(True, None)) as send:
+                await service._send_to_providers(providers, "t", "m", db, event_type="e")
+
+            assert send.await_count == 3
+            logs = list((await db.execute(select(NotificationLog))).scalars())
+            assert len(logs) == 3
+            await db.commit()
+        await engine.dispose()

@@ -1592,7 +1592,27 @@ class NotificationService:
                 # Read by every notification reader: no refused header's value.
                 provider.last_error = redact_refused_headers(error)
                 provider.last_error_at = datetime.now(timezone.utc)
-            await db.commit()
+            try:
+                await db.commit()
+            except Exception:
+                await self._rollback_quietly(db)
+                raise
+
+    @staticmethod
+    async def _rollback_quietly(db: AsyncSession):
+        """Clear a session whose commit failed so the next statement on it works."""
+        try:
+            await db.rollback()
+        except Exception:
+            logger.warning("Rollback after a failed commit also failed", exc_info=True)
+            return
+        # Rollback expires every loaded row and an async session cannot lazy-load: reload the
+        # providers the fan-out still reads (a row deleted meanwhile is simply skipped).
+        for obj in [o for o in db.sync_session.identity_map.values() if isinstance(o, NotificationProvider)]:
+            try:
+                await db.refresh(obj)
+            except Exception:
+                logger.debug("Could not reload provider after rollback", exc_info=True)
 
     async def _get_providers_for_event(
         self,
@@ -1666,6 +1686,7 @@ class NotificationService:
             await db.commit()
         except Exception as e:
             logger.warning("Failed to log notification: %s", e)
+            await self._rollback_quietly(db)
             # Don't fail the notification just because logging failed
 
     async def _send_to_providers(
@@ -1730,7 +1751,11 @@ class NotificationService:
                     logger.warning("Failed to send notification via %s: %s", provider.name, error)
             except Exception as e:
                 logger.exception("Error sending notification via %s", provider.name)
-                await self._update_provider_status(db, provider.id, False, str(e))
+                # Bookkeeping must not end the fan-out for the providers after this one.
+                try:
+                    await self._update_provider_status(db, provider.id, False, str(e))
+                except Exception:
+                    logger.warning("Failed to update status of %s", provider.name, exc_info=True)
                 await self._log_notification(
                     db=db,
                     provider_id=provider.id,
@@ -3126,6 +3151,7 @@ class NotificationService:
             logger.info("Queued notification for digest: %s for provider %s", event_type, provider.name)
         except Exception as e:
             logger.warning("Failed to queue notification for digest: %s", e)
+            await self._rollback_quietly(db)
 
     async def send_digest(self, provider_id: int):
         """Send all queued notifications as a single digest for a provider."""
