@@ -5,7 +5,10 @@ Books documents (``header`` = the list row, ``detail`` = the full document
 once fetched; an item keeps its whole document in ``header``). The single
 ``("state", "board")`` row keeps the computed board and the sync status in
 ``detail``. The copy is disposable: delete the rows and the next passes
-rebuild it from Books.
+rebuild it from Books. The one exception is a ``prep`` row (``zoho_id`` = the
+sales order id): it holds the print stamp ``{"at", "by"}`` of that order's
+preparation sheet in ``header``, exists only here, and is dropped once a parcel
+is created for the order.
 """
 
 from sqlalchemy import Boolean, Integer, String, UniqueConstraint

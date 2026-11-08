@@ -18,20 +18,18 @@ Two things go beyond "oldest first":
 from collections.abc import Collection, Mapping, Sequence
 from datetime import date
 
-from backend.app.services.order_board_payment import board_payments, order_contact, order_facts, order_payment
+from backend.app.services.order_board_payment import (
+    _num,
+    _r,
+    board_payments,
+    order_contact,
+    order_facts,
+    order_payment,
+)
 
 _SKIPPED_STATUSES = ("draft", "void")
 _OPEN_PO_STATUSES = ("open", "partially_billed")
 _LIVE_STATES = ("ready", "backorder", "to_order")
-
-
-def _num(value) -> float:
-    return float(value or 0)
-
-
-def _r(value: float) -> float:
-    """Quantities can be fractional (rope by the metre); keep float noise out."""
-    return round(value, 6)
 
 
 def age_days(day: str, today: date) -> int:

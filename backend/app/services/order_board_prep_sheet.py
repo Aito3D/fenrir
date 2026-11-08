@@ -24,12 +24,9 @@ def _safe(text: str) -> str:
     """Fold what Helvetica (cp1252) cannot encode: macrons lose the mark, okina becomes ', the rest '?'."""
     out = []
     for ch in str(text).replace("ʻ", "'").replace("ʼ", "'"):
-        try:
-            ch.encode("cp1252")
+        if _encodable(ch):
             out.append(ch)
             continue
-        except UnicodeEncodeError:
-            pass
         base = "".join(k for k in unicodedata.normalize("NFKD", ch) if not unicodedata.combining(k))
         out.append(base if base and all(_encodable(k) for k in base) else "?")
     return "".join(out)
@@ -180,6 +177,81 @@ def _box(c: rl_canvas.Canvas, x: float, y: float, w: float, h: float, label: str
     _grey(c, False)
 
 
+def _pick_rows(c: rl_canvas.Canvas, pick: list[dict], take: dict, y: float) -> float:
+    for ln in pick:
+        if y - _ROW_H < _BOTTOM + 40:
+            c.showPage()
+            y = _table_head(c, _H - _M - 10)
+        base = y - 16
+        c.setLineWidth(1.2)
+        c.rect(_M + 2, base - 2, 10, 10)
+        c.setFont("Helvetica-Bold", 13)
+        c.drawRightString(_COLS[1] - 8, base, _qty(take[ln.get("id")]))
+        c.setFont("Helvetica", 10)
+        c.drawString(_COLS[1], base, _fit(c, ln.get("name") or "", "Helvetica", 10, _COLS[2] - _COLS[1] - 8))
+        c.setFont("Courier", 9)
+        c.drawString(_COLS[2], base, _fit(c, ln.get("sku") or "", "Courier", 9, _COLS[3] - _COLS[2] - 60))
+        _grey(c)
+        c.setFont("Helvetica", 10)
+        c.drawRightString(_COLS[3], base, _qty(ln.get("quantity") or 0))
+        _grey(c, False)
+        c.setLineWidth(0.3)
+        c.line(_M, y - _ROW_H, _W - _M, y - _ROW_H)
+        y -= _ROW_H
+    return y
+
+
+def _later_segment(c: rl_canvas.Canvas, later: list[tuple[dict, float]], y: float, picklist_mode: bool) -> float:
+    seg_top, seg_n = -1.0, 0  # -1: no segment started yet (page coordinates are positive)
+
+    def close_segment() -> None:
+        h = 22 + 14 * seg_n + 4
+        c.setDash(3, 2)
+        c.setLineWidth(0.8)
+        c.roundRect(_M, seg_top - h, _W - 2 * _M, h, 3)
+        c.setDash()
+
+    for ln, q in later:
+        if seg_top < 0 or seg_top - 22 - 14 * (seg_n + 1) < _BOTTOM:
+            if seg_top >= 0:
+                close_segment()
+            if seg_top >= 0 or y - 36 < _BOTTOM:
+                c.showPage()
+                y = _H - _M
+            seg_top, seg_n = y, 0
+            c.setFont("Helvetica", 8)
+            _grey(c)
+            c.drawString(
+                _M + 10,
+                seg_top - 14,
+                "Pas en stock, reste à livrer" if not picklist_mode else "Hors de ce prélèvement, reste à livrer",
+            )
+            _grey(c, False)
+        yy = seg_top - 34 - 14 * seg_n
+        c.setFont("Helvetica-Bold", 10)
+        c.drawRightString(_M + 40, yy, _qty(q))
+        c.setFont("Helvetica", 10)
+        c.drawString(_M + 50, yy, _fit(c, ln.get("name") or "", "Helvetica", 10, _W - 2 * _M - 70))
+        seg_n += 1
+    close_segment()
+    y = seg_top - (22 + 14 * seg_n + 4) - 18
+    return y
+
+
+def _footer(c: rl_canvas.Canvas, y: float) -> None:
+    # The four boxes and the footer need about 90pt, else they go on a new page.
+    if y - 90 < 30:
+        c.showPage()
+        y = _H - _M
+    gap = 10.0
+    w = (_W - 2 * _M - 3 * gap) / 4
+    for i, label in enumerate(("Préparé par", "Contrôlé par", "Nombre de colis", "Poids")):
+        _box(c, _M + i * (w + gap), y, w, 54, label)
+    c.setFont("Helvetica", 8)
+    _grey(c)
+    c.drawString(_M, y - 70, "Document interne. Le colis est créé dans Zoho Books après contrôle.")
+
+
 def render_prep_sheet(
     row: dict,
     *,
@@ -204,26 +276,7 @@ def render_prep_sheet(
     later = [(ln, q) for ln, q in later if round(q, 3) > 0]
 
     y = _table_head(c, _info(c, row, _header(c, row, printed_at, shop_name, picklist_number), order_url))
-    for ln in pick:
-        if y - _ROW_H < _BOTTOM + 40:
-            c.showPage()
-            y = _table_head(c, _H - _M - 10)
-        base = y - 16
-        c.setLineWidth(1.2)
-        c.rect(_M + 2, base - 2, 10, 10)
-        c.setFont("Helvetica-Bold", 13)
-        c.drawRightString(_COLS[1] - 8, base, _qty(take[ln.get("id")]))
-        c.setFont("Helvetica", 10)
-        c.drawString(_COLS[1], base, _fit(c, ln.get("name") or "", "Helvetica", 10, _COLS[2] - _COLS[1] - 8))
-        c.setFont("Courier", 9)
-        c.drawString(_COLS[2], base, _fit(c, ln.get("sku") or "", "Courier", 9, _COLS[3] - _COLS[2] - 60))
-        _grey(c)
-        c.setFont("Helvetica", 10)
-        c.drawRightString(_COLS[3], base, _qty(ln.get("quantity") or 0))
-        _grey(c, False)
-        c.setLineWidth(0.3)
-        c.line(_M, y - _ROW_H, _W - _M, y - _ROW_H)
-        y -= _ROW_H
+    y = _pick_rows(c, pick, take, y)
 
     units = round(sum(take[ln.get("id")] for ln in pick), 3)
     n = len(pick)
@@ -234,50 +287,8 @@ def render_prep_sheet(
     y -= 30
 
     if later:
-        seg_top, seg_n = -1.0, 0  # -1: no segment started yet (page coordinates are positive)
-
-        def close_segment() -> None:
-            h = 22 + 14 * seg_n + 4
-            c.setDash(3, 2)
-            c.setLineWidth(0.8)
-            c.roundRect(_M, seg_top - h, _W - 2 * _M, h, 3)
-            c.setDash()
-
-        for ln, q in later:
-            if seg_top < 0 or seg_top - 22 - 14 * (seg_n + 1) < _BOTTOM:
-                if seg_top >= 0:
-                    close_segment()
-                if seg_top >= 0 or y - 36 < _BOTTOM:
-                    c.showPage()
-                    y = _H - _M
-                seg_top, seg_n = y, 0
-                c.setFont("Helvetica", 8)
-                _grey(c)
-                c.drawString(
-                    _M + 10,
-                    seg_top - 14,
-                    "Pas en stock, reste à livrer" if quantities is None else "Hors de ce prélèvement, reste à livrer",
-                )
-                _grey(c, False)
-            yy = seg_top - 34 - 14 * seg_n
-            c.setFont("Helvetica-Bold", 10)
-            c.drawRightString(_M + 40, yy, _qty(q))
-            c.setFont("Helvetica", 10)
-            c.drawString(_M + 50, yy, _fit(c, ln.get("name") or "", "Helvetica", 10, _W - 2 * _M - 70))
-            seg_n += 1
-        close_segment()
-        y = seg_top - (22 + 14 * seg_n + 4) - 18
-    # The four boxes and the footer need about 90pt, else they go on a new page.
-    if y - 90 < 30:
-        c.showPage()
-        y = _H - _M
-    gap = 10.0
-    w = (_W - 2 * _M - 3 * gap) / 4
-    for i, label in enumerate(("Préparé par", "Contrôlé par", "Nombre de colis", "Poids")):
-        _box(c, _M + i * (w + gap), y, w, 54, label)
-    c.setFont("Helvetica", 8)
-    _grey(c)
-    c.drawString(_M, y - 70, "Document interne. Le colis est créé dans Zoho Books après contrôle.")
+        y = _later_segment(c, later, y, quantities is not None)
+    _footer(c, y)
     c.showPage()
     c.save()
     return buf.getvalue()

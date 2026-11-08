@@ -28,6 +28,14 @@ from backend.tests.unit.test_order_board_sync import (  # noqa: F401
 )
 
 
+def _rate_limited():
+    return ZohoRateLimited("429", retry_after=30)
+
+
+def _assert_window_open():
+    assert sync._rate_limited_until > time.monotonic() + 20
+
+
 async def _doc(db, zoho_id):
     return (
         await db.execute(
@@ -366,10 +374,10 @@ async def test_one_open_picklist_at_a_time(db_session, parcels):
 @pytest.mark.asyncio
 async def test_a_rate_limited_prefill_is_busy_and_opens_the_window(db_session, parcels):
     await _board(db_session, parcels, order(1))
-    parcels.prefill_error = ZohoRateLimited("429", retry_after=30)
+    parcels.prefill_error = _rate_limited()
     with pytest.raises(sync.ZohoBusy):
         await actions.create_picklist(db_session, "so1", {"l1": 1})
-    assert sync._rate_limited_until > time.monotonic() + 20
+    _assert_window_open()
     assert parcels.writes == []
 
 
@@ -401,6 +409,46 @@ async def test_content_lists_what_is_left_to_box(db_session, parcels):
     with pytest.raises(actions.OrderActionRefused) as e:
         await actions.picklist_content(db_session, "so1", "nope")
     assert e.value.args[0] == "unknown_picklist"
+
+
+@pytest.mark.asyncio
+async def test_busy_zoho_gives_no_picklist_preview(db_session, parcels):
+    await _board(db_session, parcels, order(1))
+    parcels.meter = sync.CALL_CEILING
+    reads = parcels.calls["detail"]
+    with pytest.raises(sync.ZohoBusy):
+        await actions.picklist_preview(db_session, "so1")
+    assert parcels.calls["detail"] == reads
+    assert parcels.writes == []
+
+
+@pytest.mark.asyncio
+async def test_a_picklist_gone_from_books_is_unknown(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1))
+    pl = await _pick(db_session, "so1", {"l1": 1})
+
+    async def gone(db, picklist_id):
+        raise ZohoNotFound("no such picklist")
+
+    monkeypatch.setattr(zoho_service, "get_picklist", gone)
+    with pytest.raises(actions.OrderActionRefused) as e:
+        await actions.picklist_content(db_session, "so1", pl)
+    assert e.value.args[0] == "unknown_picklist"
+    assert sync._rate_limited_until == 0.0
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_picklist_read_is_busy_and_opens_the_window(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1))
+    pl = await _pick(db_session, "so1", {"l1": 1})
+
+    async def limited(db, picklist_id):
+        raise _rate_limited()
+
+    monkeypatch.setattr(zoho_service, "get_picklist", limited)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.picklist_content(db_session, "so1", pl)
+    _assert_window_open()
 
 
 # --- Parcel ------------------------------------------------------------------------------------------------------
@@ -753,10 +801,10 @@ async def test_a_create_timeout_whose_refresh_fails_leaves_the_order_unconfirmed
 async def test_a_rate_limited_write_opens_the_back_off_window(db_session, parcels):
     await _board(db_session, parcels, order(1))
     pl = await _pick(db_session, "so1", {"l1": 1})
-    parcels.create_error = ZohoRateLimited("429", retry_after=30)
+    parcels.create_error = _rate_limited()
     with pytest.raises(ZohoRateLimited):
         await actions.create_parcel(db_session, "so1", pl, {"l1": 1})
-    assert sync._rate_limited_until > time.monotonic() + 20
+    _assert_window_open()
 
 
 @pytest.mark.asyncio
@@ -1199,6 +1247,15 @@ async def test_partial_invoice_of_an_order_with_a_shipping_charge_is_left_to_boo
 
 
 @pytest.mark.asyncio
+async def test_an_unparseable_order_money_field_counts_as_set_and_leaves_a_partial_invoice_to_books(db_session, books):
+    await _ready(db_session, books, qty=3, box=2)
+    books.prefill_extra = {"adjustment": "abc"}
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert "create_invoice" not in _names(books)
+    assert (outcome["invoice"], outcome["manual_reason"], outcome["failed_step"]) == ("manual", "order_money", None)
+
+
+@pytest.mark.asyncio
 async def test_whole_remaining_invoice_keeps_the_orders_shipping_charge(db_session, books):
     await _ready(db_session, books, qty=2, box=2)
     books.prefill_extra = {"shipping_charge": 200}
@@ -1360,10 +1417,10 @@ async def test_shipment_refused_raises_and_nothing_else_runs(db_session, books):
 @pytest.mark.asyncio
 async def test_rate_limited_shipment_opens_the_back_off_window(db_session, books):
     await _ready(db_session, books)
-    books.errors["create_shipment"] = ZohoRateLimited("429", retry_after=30)
+    books.errors["create_shipment"] = _rate_limited()
     with pytest.raises(ZohoRateLimited):
         await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
-    assert sync._rate_limited_until > time.monotonic() + 20
+    _assert_window_open()
 
 
 @pytest.mark.asyncio
@@ -1563,7 +1620,15 @@ def test_invoice_payload_leaves_split_order_money_to_books_and_sends_no_empty_in
 
 @pytest.mark.parametrize(
     ("discount", "keep_a", "reason"),
-    [(3, 1, "line_discount"), ("3.00", 1, "line_discount"), ("10%", 1, None), ("10.00%", 1, None), (3, 2, None)],
+    [
+        (3, 1, "line_discount"),
+        ("3.00", 1, "line_discount"),
+        ("abc", 1, "line_discount"),  # unparseable counts as set, and it is not a percentage
+        ("10%", 1, None),
+        ("10.00%", 1, None),
+        (3, 2, None),
+        ("abc", 2, None),
+    ],
 )
 def test_a_fixed_line_discount_is_never_split(discount, keep_a, reason):
     lines = [{**PREFILL["line_items"][0], "discount": discount}]
@@ -1730,10 +1795,10 @@ async def test_a_rate_limited_entry_reread_is_busy_and_opens_the_window(db_sessi
     doc = await _doc(db_session, "so1")
     doc.pending = True
     await db_session.commit()
-    books.errors["get_salesorder"] = ZohoRateLimited("429", retry_after=30)
+    books.errors["get_salesorder"] = _rate_limited()
     with pytest.raises(sync.ZohoBusy):
         await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
-    assert sync._rate_limited_until > time.monotonic() + 20
+    _assert_window_open()
     assert "get_package" not in _names(books)
 
 
@@ -2354,3 +2419,107 @@ async def test_an_edit_that_takes_the_order_off_the_board_returns_nothing(db_ses
     lines = [{"line_id": "l1", "quantity": 3}, {"line_id": "l2", "quantity": 1}]
     assert await actions.edit_lines(db_session, "so1", VERSION, lines) == {}
     assert lines_edit.writes.count("update_salesorder") == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failing", "kw", "step", "delivered", "invoice"),
+    [
+        ("mark_shipment_delivered", {}, "delivered", "skipped", "none"),
+        ("get_salesorder", {}, "invoice", "done", "failed"),  # reads open the window in _finish itself
+        ("invoice_prefill", {}, "invoice", "done", "failed"),
+        ("create_invoice", {}, "invoice", "done", "failed"),
+        ("mark_invoice_sent", {}, "sent", "done", "draft"),
+        ("list_customer_payments", {"advance": 600}, "credit", "done", "created"),
+        ("apply_invoice_credits", {"advance": 600}, "credit", "done", "created"),
+    ],
+)
+async def test_a_429_after_the_shipment_opens_the_window_and_returns_the_outcome(
+    db_session, books, failing, kw, step, delivered, invoice
+):
+    await _ready(db_session, books, **kw)
+    books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 900}]
+    books.errors[failing] = _rate_limited()
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert (outcome["failed_step"], outcome["error"], outcome["shipment"]) == (step, "429", "done")
+    assert (outcome["delivered"], outcome["invoice"], outcome["credit_applied"]) == (delivered, invoice, 0.0)
+    _assert_window_open()
+    sync._rate_limited_until = 0.0  # the retry is what the operator does once the window has passed
+    await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert books.effects["create_shipment"] == 1
+    assert books.effects["mark_shipment_delivered"] == 1
+    assert books.effects["create_invoice"] == 1  # a 429 on create_invoice fired before Books acted
+    assert len(books.orders["so1"]["invoices"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_delivery_without_a_shipment_id_is_reported_as_the_delivered_step(db_session, books):
+    await _ready(db_session, books, status="shipped")
+    books.hide_shipment_id = True
+    doc = await _doc(db_session, "so1")
+    doc.detail = {**doc.detail, "packages": [{**p, "shipment_id": ""} for p in doc.detail["packages"]]}
+    await db_session.commit()
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert (outcome["failed_step"], outcome["error"]) == ("delivered", "Books returned no shipment id")
+    assert outcome["delivered"] == "skipped"
+    assert "mark_shipment_delivered" not in _names(books)
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_entry_get_package_reraises_raw_and_opens_the_window(db_session, books):
+    await _ready(db_session, books)
+    books.errors["get_package"] = _rate_limited()
+    with pytest.raises(ZohoRateLimited) as e:
+        await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert not isinstance(e.value, sync.ZohoBusy)  # today the raw error escapes, it is not turned into "busy"
+    _assert_window_open()
+    assert _names(books) == ["get_package"]  # no write, no look after it
+    assert books.effects == Counter()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["shipped", "delivered"])
+async def test_a_shipped_parcel_of_an_order_off_the_board_still_gets_its_invoice(db_session, books, status):
+    await _ready(db_session, books, qty=2, box=2, status=status)
+    assert (await sync.read_board(db_session))["rows"] == []
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="delivery", apply_credit=False)
+    assert "create_shipment" not in _names(books)
+    assert (outcome["shipment"], outcome["invoice"], outcome["failed_step"]) == ("skipped", "created", None)
+    assert books.effects["create_invoice"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_new_shipment_needs_the_row_still_on_the_board(db_session, books, monkeypatch):
+    await _ready(db_session, books)
+
+    async def gone(db, salesorder_id):
+        return None
+
+    monkeypatch.setattr(sync, "find_board_row", gone)
+    with pytest.raises(actions.OrderNotOnBoard):
+        await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert _names(books) == ["get_package"]  # refused after the look, before any write
+    assert books.effects == Counter()
+
+
+@pytest.mark.asyncio
+async def test_busy_zoho_makes_the_preview_unavailable_without_a_call(db_session, books):
+    await _ready(db_session, books)
+    books.meter = sync.CALL_CEILING
+    preview = await actions.handover_preview(db_session, "so1", "pk1")
+    assert (preview["units"], preview["available"], preview["to_invoice"], preview["manual"]) == (
+        2.0,
+        False,
+        False,
+        False,
+    )
+    assert books.log == []
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_prefill_in_the_preview_opens_the_window_and_leaves_it_unavailable(db_session, books):
+    await _ready(db_session, books)
+    books.errors["invoice_prefill"] = _rate_limited()
+    preview = await actions.handover_preview(db_session, "so1", "pk1")
+    assert (preview["available"], preview["to_invoice"]) == (False, False)
+    _assert_window_open()
