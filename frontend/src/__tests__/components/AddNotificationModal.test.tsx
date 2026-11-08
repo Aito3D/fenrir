@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
@@ -1086,5 +1086,154 @@ describe('AddNotificationModal — Notify!', () => {
   it('does not show the Live Activities badge for push-only providers', () => {
     render(<NotificationProviderCard provider={notifyProvider({ live_activities: false })} onEdit={() => undefined} />);
     expect(screen.queryByText('Live Activities (iOS)')).not.toBeInTheDocument();
+  });
+});
+
+describe('AddNotificationModal — form tail, errors and dismissal', () => {
+  const fail = (detail: string) => HttpResponse.json({ detail }, { status: 500 });
+
+  it('closes on Escape', async () => {
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AddNotificationModal provider={buildProvider()} onClose={onClose} />);
+    await screen.findByDisplayValue('My ntfy');
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('rejects Data JSON that parses to a non-object', async () => {
+    const patchSpy = vi.fn();
+    server.use(http.patch('*/api/v1/notifications/1', () => {
+      patchSpy();
+      return HttpResponse.json({ id: 1 });
+    }));
+    const user = userEvent.setup();
+    render(
+      <AddNotificationModal
+        provider={buildProvider({ provider_type: 'homeassistant', config: { service: 'notify.x' } })}
+        onClose={() => undefined}
+      />,
+    );
+    await user.type(await screen.findByPlaceholderText(/"priority": "high"/), '[[1]');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(await screen.findByText(/must be a valid JSON object/i)).toBeInTheDocument();
+    expect(patchSpy).not.toHaveBeenCalled();
+  });
+
+  it('shows the server error when updating fails and stays open', async () => {
+    server.use(http.patch('*/api/v1/notifications/1', () => fail('update boom')));
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AddNotificationModal provider={buildProvider()} onClose={onClose} />);
+    await user.click(await screen.findByRole('button', { name: /^save$/i }));
+    expect(await screen.findByText(/update boom/)).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('shows the server error when creating fails and stays open', async () => {
+    server.use(http.post('*/api/v1/notifications/', () => fail('create boom')));
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AddNotificationModal onClose={onClose} />);
+    await user.type(await screen.findByPlaceholderText("My Notifications"), 'New');
+    await user.type(screen.getByLabelText(/smtp server/i), 'smtp.example.com');
+    await user.type(screen.getByLabelText(/from email/i), 'a@example.com');
+    await user.type(screen.getByLabelText(/to email/i), 'b@example.com');
+    await user.click(screen.getByRole('button', { name: /^add$/i }));
+    expect(await screen.findByText(/create boom/)).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('shows the server error when a configuration test fails', async () => {
+    server.use(http.post('*/api/v1/notifications/test-config', () => fail('test boom')));
+    const user = userEvent.setup();
+    render(<AddNotificationModal provider={buildProvider()} onClose={() => undefined} />);
+    await user.click(await screen.findByRole('button', { name: /test configuration/i }));
+    expect(await screen.findByText(/test boom/)).toBeInTheDocument();
+  });
+
+  it('sends the chosen printer, quiet hours and digest time on save', async () => {
+    let captured: Record<string, unknown> | null = null;
+    server.use(http.patch('*/api/v1/notifications/1', async ({ request }) => {
+      captured = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json({ id: 1 });
+    }));
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AddNotificationModal provider={buildProvider()} onClose={onClose} />);
+
+    const printerSelect = (await screen.findByText('Printer Filter')).parentElement!.querySelector('select')!;
+    await waitFor(() => expect(within(printerSelect).getByText('Test Printer')).toBeInTheDocument());
+    await user.selectOptions(printerSelect, 'Test Printer');
+
+    const switchFor = (label: string) => within(screen.getByText(label).closest('div')!.parentElement!).getByRole('switch');
+    await user.click(switchFor('Quiet Hours (Do Not Disturb)'));
+    const start = screen.getByText('Start', { selector: 'label' }).parentElement!.querySelector('input')!;
+    const end = screen.getByText('End', { selector: 'label' }).parentElement!.querySelector('input')!;
+    fireEvent.change(start, { target: { value: '22:30' } });
+    fireEvent.change(end, { target: { value: '06:15' } });
+
+    await user.click(switchFor('Daily Digest'));
+    const digest = screen.getByText('Send digest at').parentElement!.querySelector('input')!;
+    fireEvent.change(digest, { target: { value: '08:45' } });
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(captured).toMatchObject({
+      printer_id: 1,
+      quiet_hours_enabled: true,
+      quiet_hours_start: '22:30',
+      quiet_hours_end: '06:15',
+      daily_digest_enabled: true,
+      daily_digest_time: '08:45',
+    });
+  });
+
+  it('sends the chosen Telegram verdict mode', async () => {
+    let captured: Record<string, unknown> | null = null;
+    server.use(http.patch('*/api/v1/notifications/1', async ({ request }) => {
+      captured = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json({ id: 1 });
+    }));
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AddNotificationModal
+        provider={buildProvider({ provider_type: 'telegram', config: { bot_token: 't', chat_id: '1' } })}
+        onClose={onClose}
+      />,
+    );
+    await user.selectOptions(await screen.findByLabelText(/outcome verdict via/i), 'reactions');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(captured).toMatchObject({ telegram_verdict_mode: 'reactions' });
+  });
+
+  it('adds and removes Notify! tile metrics', async () => {
+    let captured: { config: Record<string, unknown> } | null = null;
+    server.use(http.patch('*/api/v1/notifications/1', async ({ request }) => {
+      captured = (await request.json()) as { config: Record<string, unknown> };
+      return HttpResponse.json({ id: 1 });
+    }));
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AddNotificationModal
+        provider={buildProvider({
+          provider_type: 'notify',
+          config: { device_id: 'IO12345678901234', token: 's', live_activities: true },
+        })}
+        onClose={onClose}
+      />,
+    );
+    await user.click(screen.getByText('Live Activity appearance'));
+    const eta = screen.getByRole('checkbox', { name: 'ETA' });
+    const bed = screen.getByRole('checkbox', { name: /bed/i });
+    await user.click(eta);
+    await user.click(bed);
+    await user.click(bed);
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(captured!.config.live_activity_metrics).toEqual(['eta']);
   });
 });

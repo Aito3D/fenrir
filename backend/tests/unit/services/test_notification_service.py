@@ -4,6 +4,7 @@ Tests event-based notifications and toggle behavior.
 """
 
 import json
+import smtplib
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -3051,6 +3052,46 @@ class TestEmailProvider:
         # The plain-text part still has the URL; check it's there at least once.
         assert self.PHOTO_URL in raw
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("host", ["169.254.169.254", "0.0.0.0", "metadata.google.internal"])
+    async def test_refuses_dangerous_smtp_host_without_connecting(self, service, smtp_config, host):
+        """T-021: the LAN-service host policy applies before smtplib is touched."""
+        with (
+            patch("backend.app.services.notification_service.smtplib.SMTP") as smtp,
+            patch("backend.app.services.notification_service.smtplib.SMTP_SSL") as smtp_ssl,
+        ):
+            ok, detail = await service._send_email({**smtp_config, "smtp_server": host}, "s", "b")
+        assert ok is False
+        assert "SMTP server" in detail
+        smtp.assert_not_called()
+        smtp_ssl.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("exc", "expected"),
+        [
+            (
+                smtplib.SMTPConnectError(-1, b"SSH-2.0-OpenSSH internal-secret-banner"),
+                "SMTP error: could not complete the SMTP exchange (see server logs at debug level for details)",
+            ),
+            (
+                ConnectionRefusedError("Connection refused to 10.0.0.9"),
+                "Email error: could not send the email (see server logs at debug level for details)",
+            ),
+        ],
+    )
+    async def test_connection_failure_returns_fixed_wording(self, service, smtp_config, exc, expected):
+        with patch("backend.app.services.notification_service.smtplib.SMTP", side_effect=exc):
+            ok, detail = await service._send_email(smtp_config, "s", "b")
+        assert ok is False
+        assert detail == expected
+        assert "banner" not in detail and "10.0.0.9" not in detail
+
+    @pytest.mark.asyncio
+    async def test_success_text_unchanged(self, service, smtp_config):
+        with patch("backend.app.services.notification_service.smtplib.SMTP", self._fake_smtp_class({})):
+            assert await service._send_email(smtp_config, "s", "b") == (True, "Email sent successfully")
+
 
 class _FailedCommitSession:
     """Session double: one commit fails, then every statement raises until rollback()."""
@@ -3203,3 +3244,35 @@ class TestSharedHttpResult:
         success, message = await self._call(service, name, self._client(200), *args)
 
         assert (success, message) == (True, "Message sent successfully")
+
+
+class TestSettingsReadsDoNotAutoflush:
+    """Settings reads ahead of a network send must not flush the caller's pending rows (T-027, #2770)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("path", ["eta", "photo_url", "homeassistant"])
+    async def test_no_flush_before_send(self, path):
+        from sqlalchemy import event
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from backend.app.models.notification import NotificationLog
+        from backend.app.models.settings import Settings
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda c: Settings.__table__.create(c))
+            await conn.run_sync(lambda c: NotificationLog.__table__.create(c))
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as db:
+            flushes = []
+            event.listen(db.sync_session, "before_flush", lambda *_a: flushes.append(1))
+            db.add(NotificationLog(provider_id=1, event_type="e", title="t", message="m", success=True))
+            service = NotificationService()
+            if path == "eta":
+                await service._format_eta(60, db)
+            elif path == "photo_url":
+                await service._get_or_build_photo_url(db, b"img", "e")
+            else:
+                await service._send_homeassistant({}, "t", "m", db)
+            assert flushes == []
+        await engine.dispose()

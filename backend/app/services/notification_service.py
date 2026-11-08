@@ -318,7 +318,8 @@ class NotificationService:
         from backend.app.api.routes.settings import get_setting
 
         eta_time = datetime.now() + timedelta(seconds=seconds)
-        time_format = await get_setting(db, "time_format")
+        with db.no_autoflush:  # don't flush the caller's pending rows before a send (#2770)
+            time_format = await get_setting(db, "time_format")
 
         if time_format == "12h":
             return eta_time.strftime("%I:%M %p").lstrip("0")
@@ -1000,6 +1001,12 @@ class NotificationService:
         if auth_enabled and not all([username, password]):
             return False, "Username and password are required when authentication is enabled"
 
+        # Same LAN-service host policy as the HTTP providers (a bare IPv6 literal needs brackets in a URL).
+        host_part = f"[{smtp_server}]" if ":" in smtp_server and not smtp_server.startswith("[") else smtp_server
+        url_error = _assert_safe_provider_url(f"http://{host_part}:{smtp_port}", label="SMTP server")
+        if url_error:
+            return False, url_error
+
         # Template-driven: only inline-embed when the user's template explicitly
         # referenced {finish_photo_url} (so the URL appears in the rendered body)
         # AND the photo bytes are available. Falls back to text-only otherwise.
@@ -1087,9 +1094,15 @@ class NotificationService:
         except smtplib.SMTPAuthenticationError:
             return False, "SMTP authentication failed - check username/password"
         except smtplib.SMTPException as e:
-            return False, f"SMTP error: {str(e)}"
+            # Raw server/socket text is a banner-read and port-scan channel; keep it in the log only.
+            logger.debug("SMTP error sending email: %s", e)
+            return (
+                False,
+                "SMTP error: could not complete the SMTP exchange (see server logs at debug level for details)",
+            )
         except Exception as e:
-            return False, f"Email error: {str(e)}"
+            logger.debug("Email error: %s", e)
+            return False, "Email error: could not send the email (see server logs at debug level for details)"
 
     async def _send_discord(
         self, config: dict, title: str, message: str, image_data: bytes | None = None
@@ -1244,7 +1257,8 @@ class NotificationService:
             from backend.app.api.routes.settings import get_homeassistant_settings
 
             try:
-                ha_settings = await get_homeassistant_settings(db)
+                with db.no_autoflush:  # don't flush the caller's pending rows before a send (#2770)
+                    ha_settings = await get_homeassistant_settings(db)
                 ha_url = ha_settings.get("ha_url", "")
                 ha_token = ha_settings.get("ha_token", "")
             except Exception as e:
@@ -1375,7 +1389,8 @@ class NotificationService:
 
         from backend.app.api.routes.settings import get_setting
 
-        external_url = (await get_setting(db, "external_url") or "").strip()
+        with db.no_autoflush:  # don't flush the caller's pending rows before a send (#2770)
+            external_url = (await get_setting(db, "external_url") or "").strip()
         if not external_url:
             return None
 
