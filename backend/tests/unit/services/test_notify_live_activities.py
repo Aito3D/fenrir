@@ -102,6 +102,28 @@ async def start(setup):
     return service, api, factory, clock
 
 
+def watch_worker_wake(service):
+    """Swap in a wake event that reports when the worker parks and counts set() calls."""
+    import asyncio
+
+    class WatchedWake(asyncio.Event):
+        def __init__(self):
+            super().__init__()
+            self.parked = asyncio.Event()
+            self.sets = 0
+
+        def set(self):
+            self.sets += 1
+            super().set()
+
+        async def wait(self):
+            self.parked.set()
+            return await super().wait()
+
+    service._wake = WatchedWake()
+    return service._wake
+
+
 @pytest.mark.asyncio
 async def test_start_independent_of_push_digest_and_group_thread(setup):
     service, api, factory, clock = setup
@@ -710,17 +732,16 @@ async def test_dormant_worker_has_no_periodic_sql_or_mqtt_wakeups(setup):
 
     event.listen(engine.sync_engine, "before_cursor_execute", record)
     service.worker_interval = 0.01
+    wake = watch_worker_wake(service)
     service.start()
     try:
-        for _ in range(100):
-            if not service._initial_discovery:
-                break
-            await asyncio.sleep(0.001)
+        await asyncio.wait_for(wake.parked.wait(), 5)
         queries.clear()
         service.observe(1, state())
         service.print_started(1, state())
         service.print_finished(1, {"subtask_id": "job1", "status": "completed"})
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0)
+        assert wake.sets == 0
         assert queries == []
         assert service._snapshots == {}
         api.start_activity.assert_not_awaited()
@@ -843,7 +864,14 @@ async def test_scheduled_cleanup_does_not_wait_for_create_and_keeps_late_handle(
         await release.wait()
         return {"activityId": "LA123456"}
 
+    ended = asyncio.Event()
+
+    async def end(*args):
+        ended.set()
+        return {"success": True}
+
     api.start_activity.side_effect = create
+    api.end_activity.side_effect = end
     service.observe(1, state())
     tick = asyncio.create_task(service.tick())
     await entered.wait()
@@ -854,10 +882,7 @@ async def test_scheduled_cleanup_does_not_wait_for_create_and_keeps_late_handle(
     release.set()
     await tick
     try:
-        for _ in range(100):
-            if api.end_activity.await_count:
-                break
-            await asyncio.sleep(0.005)
+        await asyncio.wait_for(ended.wait(), 5)
         api.end_activity.assert_awaited_once_with("LA123456", "secret")
         assert await rows(factory) == []
     finally:
@@ -882,12 +907,10 @@ async def test_boot_cleans_disabled_activity_without_printer_queries_or_pruning(
 
     event.listen(engine.sync_engine, "before_cursor_execute", record)
     restarted = NotifyLiveActivityService(factory, api)
+    wake = watch_worker_wake(restarted)
     restarted.start()
     try:
-        for _ in range(100):
-            if (await rows(factory))[0].state == "ended":
-                break
-            await asyncio.sleep(0.005)
+        await asyncio.wait_for(wake.parked.wait(), 5)
         assert (await rows(factory))[0].state == "ended"
         assert not any("from printers" in statement for statement in statements)
         assert not any(statement.startswith("delete from notification_live_activities") for statement in statements)
