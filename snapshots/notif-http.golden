@@ -267,21 +267,7 @@
   },
   "status": 200,
   "step": "A05-create-telegram",
-  "wire": [
-   {
-    "body": {
-     "allowed_updates": [
-      "message_reaction"
-     ],
-     "timeout": 50
-    },
-    "headers": {
-     "content-type": "application/json"
-    },
-    "method": "POST",
-    "url": "https://api.telegram.org/bot123456:ABC-DEF/getUpdates"
-   }
-  ]
+  "wire": []
  },
  {
   "body": {

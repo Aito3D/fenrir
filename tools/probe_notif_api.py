@@ -73,6 +73,12 @@ def scrub(v):
 
 
 async def answer(request: httpx.Request) -> httpx.Response:
+    if request.url.path.endswith("/getUpdates"):
+        # The Telegram reaction poller is a background task whose long-poll timing depends on
+        # scheduling, so it is never recorded; and like real Telegram the call is held open
+        # (an instant empty answer would make the poller spin and starve the probe). The probe
+        # cancels the poller's tasks at the end, which releases this wait.
+        await asyncio.Event().wait()
     body = request.content.decode("utf-8", "replace")
     try:
         body = json.loads(body)
