@@ -62,6 +62,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
   const [onBillingChargeFailed, setOnBillingChargeFailed] = useState(provider?.on_billing_charge_failed ?? true);
   const [onPrinterOffline, setOnPrinterOffline] = useState(provider?.on_printer_offline ?? false);
   const [onPrinterError, setOnPrinterError] = useState(provider?.on_printer_error ?? false);
+  const [printerErrorMaxLevel, setPrinterErrorMaxLevel] = useState(provider?.printer_error_max_level ?? 2);
   const [onAiFailureDetection, setOnAiFailureDetection] = useState(provider?.on_ai_failure_detection ?? false);
   const [onFilamentLow, setOnFilamentLow] = useState(provider?.on_filament_low ?? false);
   const [onMaintenanceDue, setOnMaintenanceDue] = useState(provider?.on_maintenance_due ?? false);
@@ -259,6 +260,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       on_billing_charge_failed: onBillingChargeFailed,
       on_printer_offline: onPrinterOffline,
       on_printer_error: onPrinterError,
+      printer_error_max_level: printerErrorMaxLevel,
       on_ai_failure_detection: onAiFailureDetection,
       on_filament_low: onFilamentLow,
       on_maintenance_due: onMaintenanceDue,
@@ -919,6 +921,18 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                   <span className="text-sm text-white">{t('notifications.error')}</span>
                   <Toggle checked={onPrinterError} onChange={setOnPrinterError} />
                 </div>
+                {onPrinterError && (
+                  <select
+                    aria-label={t('notifications.error')}
+                    value={printerErrorMaxLevel}
+                    onChange={(e) => setPrinterErrorMaxLevel(Number(e.target.value))}
+                    className="w-full px-2 py-1 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-sm text-white focus:border-bambu-green focus:outline-none"
+                  >
+                    <option value={1}>{t('notifications.printerErrorLevel1')}</option>
+                    <option value={2}>{t('notifications.printerErrorLevel2')}</option>
+                    <option value={3}>{t('notifications.printerErrorLevel3')}</option>
+                  </select>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-white">{t('notifications.aiFailureDetection')}</span>
                   <Toggle checked={onAiFailureDetection} onChange={setOnAiFailureDetection} />

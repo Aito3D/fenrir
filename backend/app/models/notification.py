@@ -97,6 +97,9 @@ class NotificationProvider(Base):
     # Event triggers - printer status
     on_printer_offline: Mapped[bool | None] = mapped_column(Boolean, default=False)
     on_printer_error: Mapped[bool | None] = mapped_column(Boolean, default=False)  # AMS issues, etc.
+    # Highest Bambu alert level on_printer_error notifies: 1 error (print
+    # stopped), 2 warning (default), 3 notice. Non-HMS callers always send.
+    printer_error_max_level: Mapped[int] = mapped_column(Integer, default=2, server_default="2")
     on_ai_failure_detection: Mapped[bool | None] = mapped_column(
         Boolean, default=False, server_default=false()
     )  # Obico spaghetti / failure detection (#1794)

@@ -4583,6 +4583,11 @@ async def _run_migrations(conn):
         # compares an upgraded database with a fresh install column by column.
         await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_aito_payment_received BOOLEAN")
 
+    # Migration: alert-level cut for printer error notifications (2026-11-07).
+    await _safe_execute(
+        conn, "ALTER TABLE notification_providers ADD COLUMN printer_error_max_level INTEGER DEFAULT 2 NOT NULL"
+    )
+
     # Reprints reuse their source archive, so archive uniqueness must only be
     # the legacy fallback for rows without a per-run UUID. The globally unique
     # print_run_id is the idempotency key for all new charges.

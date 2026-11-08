@@ -2100,6 +2100,7 @@ class TestPrinterErrorNotifications:
         provider.enabled = True
         provider.config = json.dumps({"webhook_url": "http://test.local/webhook"})
         provider.on_printer_error = True  # Enable error notifications
+        provider.printer_error_max_level = 2
         provider.quiet_hours_enabled = False
         provider.daily_digest_enabled = False
         provider.printer_id = None
@@ -2155,6 +2156,28 @@ class TestPrinterErrorNotifications:
             )
 
             mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("max_level", "severity", "sent"),
+        [(1, 1, True), (1, 2, False), (2, 2, True), (2, 3, False), (3, 3, True), (1, None, True)],
+    )
+    async def test_on_printer_error_respects_alert_level(
+        self, service, mock_provider, mock_db, max_level, severity, sent
+    ):
+        """A provider only gets faults up to its printer_error_max_level; no level means always."""
+        mock_provider.printer_error_max_level = max_level
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
+            mock_get.return_value = [mock_provider]
+            mock_build.return_value = ("Printer Error", "detail")
+
+            await service.on_printer_error(1, "Test", "Nozzle Error", mock_db, "lens dirty", severity=severity)
+
+            assert mock_send.called is sent
 
     @pytest.mark.asyncio
     async def test_on_printer_error_includes_error_detail(self, service, mock_provider, mock_db):

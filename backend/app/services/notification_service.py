@@ -2191,9 +2191,17 @@ class NotificationService:
         db: AsyncSession,
         error_detail: str | None = None,
         image_data: bytes | None = None,
+        severity: int | None = None,
     ):
-        """Handle printer error event (AMS issues, etc.)."""
+        """Handle printer error event (AMS issues, etc.).
+
+        ``severity`` is Bambu's alert level (1 error, 2 warning, 3 notice); a
+        provider only gets faults up to its ``printer_error_max_level``. None
+        (power alerts and other non-HMS callers) reaches every provider.
+        """
         providers = await self._get_providers_for_event(db, "on_printer_error", printer_id)
+        if severity is not None:
+            providers = [p for p in providers if severity <= p.printer_error_max_level]
         if not providers:
             return
 

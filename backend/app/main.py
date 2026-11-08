@@ -2634,7 +2634,13 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                         error_detail = description
 
                         await notification_service.on_printer_error(
-                            printer_id, printer_name, error_type, db, error_detail, image_data=error_image_data
+                            printer_id,
+                            printer_name,
+                            error_type,
+                            db,
+                            error_detail,
+                            image_data=error_image_data,
+                            severity=error.severity,
                         )
                         sent_count += 1
 

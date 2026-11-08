@@ -54,6 +54,9 @@ class NotificationProviderBase(BaseModel):
     # Event triggers - printer status
     on_printer_offline: bool = Field(default=False, description="Notify when printer goes offline")
     on_printer_error: bool = Field(default=False, description="Notify on printer errors (AMS, etc.)")
+    printer_error_max_level: int = Field(
+        default=2, ge=1, le=3, description="Highest Bambu alert level to notify: 1 errors, 2 +warnings, 3 +notices"
+    )
     on_ai_failure_detection: bool = Field(
         default=False,
         description="Notify when AI failure detection identifies a possible print failure (spaghetti)",
@@ -195,6 +198,7 @@ class NotificationProviderUpdate(IgnoresNullForRequiredColumns):
     # Event triggers - printer status
     on_printer_offline: bool | None = None
     on_printer_error: bool | None = None
+    printer_error_max_level: int | None = Field(default=None, ge=1, le=3)
     on_ai_failure_detection: bool | None = None
     on_filament_low: bool | None = None
     on_maintenance_due: bool | None = None

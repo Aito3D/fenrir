@@ -471,6 +471,18 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                     onChange={(checked) => updateMutation.mutate({ on_printer_error: checked })}
                   />
                 </div>
+                {provider.on_printer_error && (
+                  <select
+                    aria-label={t('notifications.printerError')}
+                    value={provider.printer_error_max_level ?? 2}
+                    onChange={(e) => updateMutation.mutate({ printer_error_max_level: Number(e.target.value) })}
+                    className="w-full px-2 py-1 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-sm text-white focus:border-bambu-green focus:outline-none"
+                  >
+                    <option value={1}>{t('notifications.printerErrorLevel1')}</option>
+                    <option value={2}>{t('notifications.printerErrorLevel2')}</option>
+                    <option value={3}>{t('notifications.printerErrorLevel3')}</option>
+                  </select>
+                )}
 
                 <div className="flex items-center justify-between">
                   <div>
