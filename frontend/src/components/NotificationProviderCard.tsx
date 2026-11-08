@@ -9,6 +9,7 @@ import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
 import { Toggle } from './Toggle';
+import { EVENT_FLAGS, CARD_BADGES_BEFORE_VERDICT, CARD_BADGES_AFTER_VERDICT, CARD_SECTIONS, type CardFlag } from './notificationEventFlags';
 import { isNotifyPushOnlyTarget, isNotifyPhotoUnsupported } from '../utils/notify';
 
 interface NotificationProviderCardProps {
@@ -123,99 +124,18 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             {provider.provider_type === 'notify' && provider.config.lock_screen_widgets === true && !isNotifyPushOnlyTarget(String(provider.config.device_id || '')) && (
               <span className="px-2 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-400 text-xs rounded">{t('notifications.notifyLockScreenWidgets')}</span>
             )}
-            {provider.on_print_start && (
-              <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs rounded">{t('notifications.start')}</span>
-            )}
-            {provider.on_plate_not_empty && (
-              <span className="px-2 py-0.5 bg-rose-100 dark:bg-rose-600/20 text-rose-700 dark:text-rose-300 text-xs rounded">{t('notifications.plateCheck')}</span>
-            )}
-            {provider.on_print_complete && (
-              <span className="px-2 py-0.5 bg-bambu-green/20 text-bambu-green text-xs rounded">{t('notifications.complete')}</span>
-            )}
-            {provider.on_plate_clear_required && (
-              <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs rounded">{t('notifications.plateClear')}</span>
-            )}
-            {provider.on_print_confirm_request && (
-              <span className="px-2 py-0.5 bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400 text-xs rounded">{t('notifications.printConfirmRequest')}</span>
-            )}
+            {CARD_BADGES_BEFORE_VERDICT.map((key) => provider[key] && (
+              <span key={key} className={`px-2 py-0.5 ${EVENT_FLAGS[key].badge.cls} text-xs rounded`}>{t(EVENT_FLAGS[key].badge.label)}</span>
+            ))}
             {provider.provider_type === 'telegram' && provider.on_print_confirm_request && provider.telegram_verdict_mode === 'reactions' && (
               <span className="px-2 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-400 text-xs rounded">{t('notifications.telegramVerdictBadgeReactions')}</span>
             )}
             {provider.provider_type === 'telegram' && provider.on_print_confirm_request && provider.telegram_verdict_mode === 'both' && (
               <span className="px-2 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-400 text-xs rounded">{t('notifications.telegramVerdictBadgeBoth')}</span>
             )}
-            {provider.on_print_failed && (
-              <span className="px-2 py-0.5 bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 text-xs rounded">{t('notifications.failed')}</span>
-            )}
-            {provider.on_print_stopped && (
-              <span className="px-2 py-0.5 bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400 text-xs rounded">{t('notifications.stopped')}</span>
-            )}
-            {provider.on_billing_charge_failed && (
-              <span className="px-2 py-0.5 bg-red-100 dark:bg-red-600/20 text-red-700 dark:text-red-300 text-xs rounded">{t('notifications.billingChargeFailedLabel')}</span>
-            )}
-            {provider.on_aito_payment_received && (
-              <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs rounded">{t('notifications.aitoPaymentReceivedLabel')}</span>
-            )}
-            {provider.on_print_progress && (
-              <span className="px-2 py-0.5 bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-xs rounded">{t('notifications.progress')}</span>
-            )}
-            {provider.on_printer_offline && (
-              <span className="px-2 py-0.5 bg-gray-500/20 text-gray-400 text-xs rounded">{t('notifications.offline')}</span>
-            )}
-            {provider.on_printer_error && (
-              <span className="px-2 py-0.5 bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400 text-xs rounded">{t('notifications.error')}</span>
-            )}
-            {provider.on_ai_failure_detection && (
-              <span className="px-2 py-0.5 bg-fuchsia-100 dark:bg-fuchsia-500/20 text-fuchsia-700 dark:text-fuchsia-300 text-xs rounded">{t('notifications.aiFailureDetection')}</span>
-            )}
-            {provider.on_ha_sensor_alert && (
-              <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-xs rounded">{t('notifications.haSensorAlert')}</span>
-            )}
-            {provider.on_location_ha_sensor_alert && (
-              <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-xs rounded">{t('notifications.locationHaSensorAlert')}</span>
-            )}
-            {provider.on_filament_low && (
-              <span className="px-2 py-0.5 bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 text-xs rounded">{t('notifications.lowFilament')}</span>
-            )}
-            {provider.on_maintenance_due && (
-              <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-xs rounded">{t('notifications.maintenance')}</span>
-            )}
-            {provider.on_ams_humidity_high && (
-              <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-600/20 text-blue-700 dark:text-blue-300 text-xs rounded">{t('notifications.amsHumidity')}</span>
-            )}
-            {provider.on_ams_temperature_high && (
-              <span className="px-2 py-0.5 bg-orange-100 dark:bg-orange-600/20 text-orange-700 dark:text-orange-300 text-xs rounded">{t('notifications.amsTemp')}</span>
-            )}
-            {provider.on_ams_drying_suspended && (
-              <span className="px-2 py-0.5 bg-rose-100 dark:bg-rose-600/20 text-rose-700 dark:text-rose-300 text-xs rounded">{t('notifications.amsDryingSuspended')}</span>
-            )}
-            {provider.on_ams_ht_humidity_high && (
-              <span className="px-2 py-0.5 bg-cyan-100 dark:bg-cyan-600/20 text-cyan-700 dark:text-cyan-300 text-xs rounded">{t('notifications.amsHtHumidity')}</span>
-            )}
-            {provider.on_ams_ht_temperature_high && (
-              <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-600/20 text-amber-700 dark:text-amber-300 text-xs rounded">{t('notifications.amsHtTemp')}</span>
-            )}
-            {provider.on_bed_cooled && (
-              <span className="px-2 py-0.5 bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400 text-xs rounded">{t('notifications.bedCooled')}</span>
-            )}
-            {provider.on_first_layer_complete && (
-              <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-600/20 text-emerald-700 dark:text-emerald-300 text-xs rounded">{t('notifications.firstLayer')}</span>
-            )}
-            {provider.on_print_pause_upcoming && (
-              <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs rounded">{t('notifications.pauseUpcomingBadge')}</span>
-            )}
-            {provider.on_app_message && (
-              <span className="px-2 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-400 text-xs rounded">{t('notifications.appMessagesBadge')}</span>
-            )}
-            {provider.on_print_missing_spool_assignment && (
-              <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 text-xs rounded">{t('notifications.missingSpoolAssignmentLabel')}</span>
-            )}
-            {provider.on_stock_reorder_alert && (
-              <span className="px-2 py-0.5 bg-lime-100 dark:bg-lime-500/20 text-lime-700 dark:text-lime-400 text-xs rounded">{t('notifications.stockReorderAlert')}</span>
-            )}
-            {provider.on_stock_break_alert && (
-              <span className="px-2 py-0.5 bg-red-100 dark:bg-red-600/20 text-red-700 dark:text-red-300 text-xs rounded">{t('notifications.stockBreakAlert')}</span>
-            )}
+            {CARD_BADGES_AFTER_VERDICT.map((key) => provider[key] && (
+              <span key={key} className={`px-2 py-0.5 ${EVENT_FLAGS[key].badge.cls} text-xs rounded`}>{t(EVENT_FLAGS[key].badge.label)}</span>
+            ))}
             {provider.quiet_hours_enabled && (
               <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 text-xs rounded flex items-center gap-1">
                 <Moon className="w-3 h-3" />
@@ -305,410 +225,32 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 />
               </div>
 
-              {/* Print Lifecycle Events */}
-              <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('notifications.printEvents')}</p>
+              {/* Quick toggles per event, grouped by section (see notificationEventFlags.ts) */}
+              {CARD_SECTIONS.map((section) => (
+                <div key={section.title} className="space-y-2">
+                  <p className="text-xs text-bambu-gray uppercase tracking-wide">{t(section.title)}</p>
 
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">{t('notifications.printStarted')}</p>
-                  <Toggle
-                    checked={provider.on_print_start}
-                    onChange={(checked) => updateMutation.mutate({ on_print_start: checked })}
-                  />
+                  {section.keys.map((key) => {
+                    const flag: CardFlag = EVENT_FLAGS[key].card;
+                    return (
+                      <div key={key} className="flex items-center justify-between">
+                        {flag.desc ? (
+                          <div>
+                            <p className="text-sm text-white">{t(flag.label)}</p>
+                            <p className="text-xs text-bambu-gray">{t(flag.desc)}</p>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-white">{t(flag.label)}</p>
+                        )}
+                        <Toggle
+                          checked={provider[key] ?? flag.default}
+                          onChange={(checked) => updateMutation.mutate({ [key]: checked })}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.plateNotEmpty')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.plateNotEmptyDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_plate_not_empty ?? true}
-                    onChange={(checked) => updateMutation.mutate({ on_plate_not_empty: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">{t('notifications.printCompleted')}</p>
-                  <Toggle
-                    checked={provider.on_print_complete}
-                    onChange={(checked) => updateMutation.mutate({ on_print_complete: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.plateClearRequired')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.plateClearRequiredDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_plate_clear_required ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_plate_clear_required: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.printConfirmRequest')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.printConfirmRequestDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_print_confirm_request ?? true}
-                    onChange={(checked) => updateMutation.mutate({ on_print_confirm_request: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.bedCooledLabel')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.bedCooledDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_bed_cooled ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_bed_cooled: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.firstLayerCompleteLabel')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.firstLayerCompleteDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_first_layer_complete ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_first_layer_complete: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.pauseUpcomingLabel')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.pauseUpcomingDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_print_pause_upcoming ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_print_pause_upcoming: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.missingSpoolAssignmentLabel')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.missingSpoolAssignmentDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_print_missing_spool_assignment ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_print_missing_spool_assignment: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.aitoPaymentReceivedLabel')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.aitoPaymentReceivedDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_aito_payment_received ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_aito_payment_received: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">{t('notifications.printFailed')}</p>
-                  <Toggle
-                    checked={provider.on_print_failed}
-                    onChange={(checked) => updateMutation.mutate({ on_print_failed: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">{t('notifications.printStopped')}</p>
-                  <Toggle
-                    checked={provider.on_print_stopped}
-                    onChange={(checked) => updateMutation.mutate({ on_print_stopped: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.billingChargeFailedLabel')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.billingChargeFailedDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_billing_charge_failed ?? true}
-                    onChange={(checked) => updateMutation.mutate({ on_billing_charge_failed: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.progressMilestones')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.progressMilestonesDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_print_progress}
-                    onChange={(checked) => updateMutation.mutate({ on_print_progress: checked })}
-                  />
-                </div>
-              </div>
-
-              {/* Printer Status Events */}
-              <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('notifications.printerStatus')}</p>
-
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">{t('notifications.printerOffline')}</p>
-                  <Toggle
-                    checked={provider.on_printer_offline}
-                    onChange={(checked) => updateMutation.mutate({ on_printer_offline: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">{t('notifications.printerError')}</p>
-                  <Toggle
-                    checked={provider.on_printer_error}
-                    onChange={(checked) => updateMutation.mutate({ on_printer_error: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.aiFailureDetection')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.aiFailureDetectionDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_ai_failure_detection ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_ai_failure_detection: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.haSensorAlert')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.haSensorAlertDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_ha_sensor_alert ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_ha_sensor_alert: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.locationHaSensorAlert')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.locationHaSensorAlertDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_location_ha_sensor_alert ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_location_ha_sensor_alert: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">{t('notifications.lowFilamentLabel')}</p>
-<Toggle
-                    checked={provider.on_filament_low}
-                    onChange={(checked) => updateMutation.mutate({ on_filament_low: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.maintenanceDue')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.maintenanceDueDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_maintenance_due ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_maintenance_due: checked })}
-                  />
-                </div>
-              </div>
-
-              {/* AMS Environmental Alarms (regular AMS) */}
-              <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('notifications.amsAlarms')}</p>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.amsHumidityHigh')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.amsHumidityHighDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_ams_humidity_high ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_ams_humidity_high: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.amsTemperatureHigh')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.amsTemperatureHighDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_ams_temperature_high ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_ams_temperature_high: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.amsDryingSuspendedTitle')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.amsDryingSuspendedDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_ams_drying_suspended ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_ams_drying_suspended: checked })}
-                  />
-                </div>
-              </div>
-
-              {/* AMS-HT Environmental Alarms */}
-              <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('notifications.amsHtAlarms')}</p>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.amsHtHumidityHigh')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.amsHtHumidityHighDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_ams_ht_humidity_high ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_ams_ht_humidity_high: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.amsHtTemperatureHigh')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.amsHtTemperatureHighDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_ams_ht_temperature_high ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_ams_ht_temperature_high: checked })}
-                  />
-                </div>
-              </div>
-
-              {/* Inventory Stock Alerts */}
-              <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('notifications.inventoryAlerts')}</p>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.stockReorderAlert')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.stockReorderAlertDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_stock_reorder_alert ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_stock_reorder_alert: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.stockBreakAlert')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.stockBreakAlertDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_stock_break_alert ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_stock_break_alert: checked })}
-                  />
-                </div>
-              </div>
-
-              {/* Print Queue Events */}
-              <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('notifications.printQueue')}</p>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.jobAdded')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.jobAddedDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_queue_job_added ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_queue_job_added: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.jobAssigned')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.jobAssignedDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_queue_job_assigned ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_queue_job_assigned: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.jobStarted')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.jobStartedDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_queue_job_started ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_queue_job_started: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.jobWaiting')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.jobWaitingDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_queue_job_waiting ?? true}
-                    onChange={(checked) => updateMutation.mutate({ on_queue_job_waiting: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.jobSkipped')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.jobSkippedDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_queue_job_skipped ?? true}
-                    onChange={(checked) => updateMutation.mutate({ on_queue_job_skipped: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.jobFailed')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.jobFailedDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_queue_job_failed ?? true}
-                    onChange={(checked) => updateMutation.mutate({ on_queue_job_failed: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.queueComplete')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.queueCompleteDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_queue_completed ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_queue_completed: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white">{t('notifications.appMessages')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.appMessagesDescription')}</p>
-                  </div>
-                  <Toggle
-                    checked={provider.on_app_message ?? false}
-                    onChange={(checked) => updateMutation.mutate({ on_app_message: checked })}
-                  />
-                </div>
-              </div>
+              ))}
 
               {/* Quiet Hours */}
               <div className="space-y-2">

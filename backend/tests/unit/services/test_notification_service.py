@@ -3159,3 +3159,60 @@ class TestFanOutSurvivesFailedFlushRealSession:
             assert len(logs) == 3
             await db.commit()
         await engine.dispose()
+
+
+class TestSharedHttpResult:
+    """CallMeBot, Pushover and Discord share the opaque failure wording (T-004, user-approved)."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @staticmethod
+    def _client(status_code: int, text: str = "leaky-remote-body"):
+        response = MagicMock()
+        response.status_code = status_code
+        response.text = text
+        response.json = MagicMock(side_effect=ValueError("not json"))
+        client = AsyncMock()
+        client.get = AsyncMock(return_value=response)
+        client.post = AsyncMock(return_value=response)
+        return client
+
+    async def _call(self, service, name, client, *args):
+        with patch.object(service, "_get_client", new_callable=AsyncMock, return_value=client):
+            return await getattr(service, name)(*args)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("name", "args", "label"),
+        [
+            ("_send_callmebot", ({"phone": "+1", "apikey": "k"}, "M"), "CallMeBot"),
+            ("_send_pushover", ({"user_key": "u" * 30, "app_token": "a" * 30}, "T", "M"), "Pushover"),
+            (
+                "_send_discord",
+                ({"webhook_url": "https://discord.com/api/webhooks/1/abc"}, "T", "M"),
+                "Discord webhook",
+            ),
+        ],
+    )
+    async def test_failure_is_opaque(self, service, name, args, label):
+        success, message = await self._call(service, name, self._client(403), *args)
+
+        assert success is False
+        assert message == f"HTTP 403 from the configured {label} (see server logs at debug level for details)"
+        assert "leaky-remote-body" not in message
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("name", "args"),
+        [
+            ("_send_callmebot", ({"phone": "+1", "apikey": "k"}, "M")),
+            ("_send_pushover", ({"user_key": "u" * 30, "app_token": "a" * 30}, "T", "M")),
+            ("_send_discord", ({"webhook_url": "https://discord.com/api/webhooks/1/abc"}, "T", "M")),
+        ],
+    )
+    async def test_success_text_unchanged(self, service, name, args):
+        success, message = await self._call(service, name, self._client(200), *args)
+
+        assert (success, message) == (True, "Message sent successfully")

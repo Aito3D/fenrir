@@ -156,9 +156,9 @@ def _opaque_http_failure(response: httpx.Response, *, label: str) -> str:
     an authenticated read primitive against any host the Fenrir process can
     reach, including services that are not exposed to the network at all.
 
-    Providers whose host Fenrir hardcodes (Pushover, Telegram, CallMeBot)
-    keep returning the upstream body — there is no trust boundary to cross
-    when the destination cannot be influenced.
+    Telegram, whose host Fenrir hardcodes, keeps returning the upstream body —
+    there is no trust boundary to cross when the destination cannot be
+    influenced. Every other sender uses this wording.
 
     The body is logged at debug level, where it stays available to whoever
     already administers the host without being handed back over the API.
@@ -170,6 +170,18 @@ def _opaque_http_failure(response: httpx.Response, *, label: str) -> str:
         (response.text or "")[:200],
     )
     return f"HTTP {response.status_code} from the configured {label} (see server logs at debug level for details)"
+
+
+def _http_result(
+    response: httpx.Response,
+    ok_codes: tuple[int, ...],
+    label: str,
+    success: str = "Message sent successfully",
+) -> tuple[bool, str]:
+    """Plain status-check result shared by the senders: success text or the opaque failure."""
+    if response.status_code in ok_codes:
+        return True, success
+    return False, _opaque_http_failure(response, label=label)
 
 
 _sample_notification_image: bytes | None = None
@@ -478,10 +490,7 @@ class NotificationService:
         client = await self._get_client()
         response = await client.get(url)
 
-        if response.status_code == 200:
-            return True, "Message sent successfully"
-        else:
-            return False, f"HTTP {response.status_code}: {response.text[:200]}"
+        return _http_result(response, (200,), "CallMeBot")
 
     async def _send_bark(
         self, config: dict, title: str, message: str, url: str | None = None, image_url: str | None = None
@@ -591,9 +600,7 @@ class NotificationService:
         client = await self._get_client()
         response = await client.post(f"{server}/message", json=payload, headers={"X-Gotify-Key": app_token})
 
-        if response.status_code == 200:
-            return True, "Message sent successfully"
-        return False, _opaque_http_failure(response, label="Gotify server")
+        return _http_result(response, (200,), "Gotify server")
 
     async def _send_ntfy(
         self,
@@ -754,7 +761,7 @@ class NotificationService:
                 errors = error_data.get("errors", [])
                 return False, f"Pushover error: {', '.join(errors)}"
             except Exception:
-                return False, f"HTTP {response.status_code}: {response.text[:200]}"
+                return False, _opaque_http_failure(response, label="Pushover")
 
     async def _send_telegram(
         self,
@@ -1120,10 +1127,7 @@ class NotificationService:
         else:
             response = await client.post(webhook_url, json={"embeds": [embed]})
 
-        if response.status_code in (200, 204):
-            return True, "Message sent successfully"
-        else:
-            return False, f"HTTP {response.status_code}: {response.text[:200]}"
+        return _http_result(response, (200, 204), "Discord webhook")
 
     async def _send_webhook(
         self,
@@ -1212,10 +1216,9 @@ class NotificationService:
         try:
             response = await client.post(webhook_url, json=data, headers=headers)
 
-            if response.status_code in (200, 201, 202, 204):
-                return True, "Webhook delivered successfully"
-            else:
-                return False, _opaque_http_failure(response, label="webhook endpoint")
+            return _http_result(
+                response, (200, 201, 202, 204), "webhook endpoint", success="Webhook delivered successfully"
+            )
         except Exception as e:
             return False, f"Webhook error: {str(e)}"
 
