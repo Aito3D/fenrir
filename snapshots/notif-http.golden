@@ -1,0 +1,3739 @@
+### exit: 0
+### stdout:
+[
+ {
+  "body": [],
+  "status": 200,
+  "step": "A01-empty",
+  "wire": []
+ },
+ {
+  "body": {
+   "attach_photo": true,
+   "config": {
+    "auth_header": "********",
+    "payload_format": "json",
+    "webhook_url": "********"
+   },
+   "created_at": "<ts>",
+   "daily_digest_enabled": false,
+   "daily_digest_time": null,
+   "enabled": true,
+   "id": 1,
+   "last_error": null,
+   "last_error_at": null,
+   "last_success": null,
+   "name": "Hook",
+   "on_ai_failure_detection": false,
+   "on_aito_payment_received": false,
+   "on_ams_drying_suspended": true,
+   "on_ams_ht_humidity_high": false,
+   "on_ams_ht_temperature_high": false,
+   "on_ams_humidity_high": false,
+   "on_ams_temperature_high": false,
+   "on_app_message": false,
+   "on_bed_cooled": false,
+   "on_billing_charge_failed": true,
+   "on_filament_low": false,
+   "on_first_layer_complete": false,
+   "on_ha_sensor_alert": false,
+   "on_location_ha_sensor_alert": false,
+   "on_maintenance_due": false,
+   "on_plate_clear_required": false,
+   "on_plate_not_empty": true,
+   "on_print_complete": true,
+   "on_print_confirm_request": true,
+   "on_print_failed": true,
+   "on_print_missing_spool_assignment": false,
+   "on_print_pause_upcoming": false,
+   "on_print_progress": false,
+   "on_print_start": false,
+   "on_print_stopped": true,
+   "on_printer_error": false,
+   "on_printer_offline": false,
+   "on_queue_completed": false,
+   "on_queue_job_added": false,
+   "on_queue_job_assigned": false,
+   "on_queue_job_failed": true,
+   "on_queue_job_skipped": true,
+   "on_queue_job_started": false,
+   "on_queue_job_waiting": true,
+   "on_stock_break_alert": false,
+   "on_stock_reorder_alert": false,
+   "printer_id": null,
+   "provider_type": "webhook",
+   "quiet_hours_enabled": false,
+   "quiet_hours_end": null,
+   "quiet_hours_start": null,
+   "telegram_verdict_mode": "buttons",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "A02-create-webhook",
+  "wire": []
+ },
+ {
+  "body": {
+   "attach_photo": true,
+   "config": {
+    "auth_token": "********",
+    "server": "https://ntfy.example.test",
+    "topic": "fenrir"
+   },
+   "created_at": "<ts>",
+   "daily_digest_enabled": false,
+   "daily_digest_time": null,
+   "enabled": true,
+   "id": 2,
+   "last_error": null,
+   "last_error_at": null,
+   "last_success": null,
+   "name": "Ntfy",
+   "on_ai_failure_detection": false,
+   "on_aito_payment_received": false,
+   "on_ams_drying_suspended": true,
+   "on_ams_ht_humidity_high": false,
+   "on_ams_ht_temperature_high": false,
+   "on_ams_humidity_high": false,
+   "on_ams_temperature_high": false,
+   "on_app_message": false,
+   "on_bed_cooled": false,
+   "on_billing_charge_failed": true,
+   "on_filament_low": false,
+   "on_first_layer_complete": false,
+   "on_ha_sensor_alert": false,
+   "on_location_ha_sensor_alert": false,
+   "on_maintenance_due": false,
+   "on_plate_clear_required": false,
+   "on_plate_not_empty": true,
+   "on_print_complete": true,
+   "on_print_confirm_request": true,
+   "on_print_failed": true,
+   "on_print_missing_spool_assignment": false,
+   "on_print_pause_upcoming": false,
+   "on_print_progress": false,
+   "on_print_start": true,
+   "on_print_stopped": true,
+   "on_printer_error": false,
+   "on_printer_offline": false,
+   "on_queue_completed": false,
+   "on_queue_job_added": false,
+   "on_queue_job_assigned": false,
+   "on_queue_job_failed": true,
+   "on_queue_job_skipped": true,
+   "on_queue_job_started": false,
+   "on_queue_job_waiting": true,
+   "on_stock_break_alert": false,
+   "on_stock_reorder_alert": false,
+   "printer_id": null,
+   "provider_type": "ntfy",
+   "quiet_hours_enabled": true,
+   "quiet_hours_end": "07:00",
+   "quiet_hours_start": "22:00",
+   "telegram_verdict_mode": "buttons",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "A03-create-ntfy",
+  "wire": []
+ },
+ {
+  "body": {
+   "attach_photo": true,
+   "config": {
+    "app_token": "********",
+    "event_priorities": {
+     "print_complete": 5,
+     "print_failed": 2
+    },
+    "server": "https://gotify.example.test"
+   },
+   "created_at": "<ts>",
+   "daily_digest_enabled": false,
+   "daily_digest_time": null,
+   "enabled": true,
+   "id": 3,
+   "last_error": null,
+   "last_error_at": null,
+   "last_success": null,
+   "name": "Gotify",
+   "on_ai_failure_detection": false,
+   "on_aito_payment_received": false,
+   "on_ams_drying_suspended": true,
+   "on_ams_ht_humidity_high": false,
+   "on_ams_ht_temperature_high": false,
+   "on_ams_humidity_high": false,
+   "on_ams_temperature_high": false,
+   "on_app_message": false,
+   "on_bed_cooled": false,
+   "on_billing_charge_failed": true,
+   "on_filament_low": false,
+   "on_first_layer_complete": false,
+   "on_ha_sensor_alert": false,
+   "on_location_ha_sensor_alert": false,
+   "on_maintenance_due": false,
+   "on_plate_clear_required": false,
+   "on_plate_not_empty": true,
+   "on_print_complete": true,
+   "on_print_confirm_request": true,
+   "on_print_failed": true,
+   "on_print_missing_spool_assignment": false,
+   "on_print_pause_upcoming": false,
+   "on_print_progress": false,
+   "on_print_start": false,
+   "on_print_stopped": true,
+   "on_printer_error": false,
+   "on_printer_offline": false,
+   "on_queue_completed": false,
+   "on_queue_job_added": false,
+   "on_queue_job_assigned": false,
+   "on_queue_job_failed": true,
+   "on_queue_job_skipped": true,
+   "on_queue_job_started": false,
+   "on_queue_job_waiting": true,
+   "on_stock_break_alert": false,
+   "on_stock_reorder_alert": false,
+   "printer_id": null,
+   "provider_type": "gotify",
+   "quiet_hours_enabled": false,
+   "quiet_hours_end": null,
+   "quiet_hours_start": null,
+   "telegram_verdict_mode": "buttons",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "A04-create-gotify",
+  "wire": []
+ },
+ {
+  "body": {
+   "attach_photo": true,
+   "config": {
+    "bot_token": "********",
+    "chat_id": "-100123"
+   },
+   "created_at": "<ts>",
+   "daily_digest_enabled": false,
+   "daily_digest_time": null,
+   "enabled": true,
+   "id": 4,
+   "last_error": null,
+   "last_error_at": null,
+   "last_success": null,
+   "name": "TG",
+   "on_ai_failure_detection": false,
+   "on_aito_payment_received": false,
+   "on_ams_drying_suspended": true,
+   "on_ams_ht_humidity_high": false,
+   "on_ams_ht_temperature_high": false,
+   "on_ams_humidity_high": false,
+   "on_ams_temperature_high": false,
+   "on_app_message": false,
+   "on_bed_cooled": false,
+   "on_billing_charge_failed": true,
+   "on_filament_low": false,
+   "on_first_layer_complete": false,
+   "on_ha_sensor_alert": false,
+   "on_location_ha_sensor_alert": false,
+   "on_maintenance_due": false,
+   "on_plate_clear_required": false,
+   "on_plate_not_empty": true,
+   "on_print_complete": true,
+   "on_print_confirm_request": true,
+   "on_print_failed": true,
+   "on_print_missing_spool_assignment": false,
+   "on_print_pause_upcoming": false,
+   "on_print_progress": false,
+   "on_print_start": false,
+   "on_print_stopped": true,
+   "on_printer_error": false,
+   "on_printer_offline": false,
+   "on_queue_completed": false,
+   "on_queue_job_added": false,
+   "on_queue_job_assigned": false,
+   "on_queue_job_failed": true,
+   "on_queue_job_skipped": true,
+   "on_queue_job_started": false,
+   "on_queue_job_waiting": true,
+   "on_stock_break_alert": false,
+   "on_stock_reorder_alert": false,
+   "printer_id": null,
+   "provider_type": "telegram",
+   "quiet_hours_enabled": false,
+   "quiet_hours_end": null,
+   "quiet_hours_start": null,
+   "telegram_verdict_mode": "both",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "A05-create-telegram",
+  "wire": [
+   {
+    "body": {
+     "allowed_updates": [
+      "message_reaction"
+     ],
+     "timeout": 50
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "method": "POST",
+    "url": "https://api.telegram.org/bot123456:ABC-DEF/getUpdates"
+   }
+  ]
+ },
+ {
+  "body": {
+   "attach_photo": true,
+   "config": {
+    "auth_enabled": "true",
+    "from_email": "a@example.test",
+    "password": "********",
+    "security": "starttls",
+    "smtp_port": 587,
+    "smtp_server": "smtp.example.test",
+    "to_email": "b@example.test",
+    "username": "u"
+   },
+   "created_at": "<ts>",
+   "daily_digest_enabled": false,
+   "daily_digest_time": null,
+   "enabled": true,
+   "id": 5,
+   "last_error": null,
+   "last_error_at": null,
+   "last_success": null,
+   "name": "Mail",
+   "on_ai_failure_detection": false,
+   "on_aito_payment_received": false,
+   "on_ams_drying_suspended": true,
+   "on_ams_ht_humidity_high": false,
+   "on_ams_ht_temperature_high": false,
+   "on_ams_humidity_high": false,
+   "on_ams_temperature_high": false,
+   "on_app_message": false,
+   "on_bed_cooled": false,
+   "on_billing_charge_failed": true,
+   "on_filament_low": false,
+   "on_first_layer_complete": false,
+   "on_ha_sensor_alert": false,
+   "on_location_ha_sensor_alert": false,
+   "on_maintenance_due": false,
+   "on_plate_clear_required": false,
+   "on_plate_not_empty": true,
+   "on_print_complete": true,
+   "on_print_confirm_request": true,
+   "on_print_failed": true,
+   "on_print_missing_spool_assignment": false,
+   "on_print_pause_upcoming": false,
+   "on_print_progress": false,
+   "on_print_start": false,
+   "on_print_stopped": true,
+   "on_printer_error": false,
+   "on_printer_offline": false,
+   "on_queue_completed": false,
+   "on_queue_job_added": false,
+   "on_queue_job_assigned": false,
+   "on_queue_job_failed": true,
+   "on_queue_job_skipped": true,
+   "on_queue_job_started": false,
+   "on_queue_job_waiting": true,
+   "on_stock_break_alert": false,
+   "on_stock_reorder_alert": false,
+   "printer_id": null,
+   "provider_type": "email",
+   "quiet_hours_enabled": false,
+   "quiet_hours_end": null,
+   "quiet_hours_start": null,
+   "telegram_verdict_mode": "buttons",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "A06-create-email",
+  "wire": []
+ },
+ {
+  "body": {
+   "attach_photo": true,
+   "config": {
+    "device_id": "ABCDEFGH1234",
+    "live_activities": true,
+    "token": "********"
+   },
+   "created_at": "<ts>",
+   "daily_digest_enabled": false,
+   "daily_digest_time": null,
+   "enabled": true,
+   "id": 6,
+   "last_error": null,
+   "last_error_at": null,
+   "last_success": null,
+   "name": "Notify",
+   "on_ai_failure_detection": false,
+   "on_aito_payment_received": false,
+   "on_ams_drying_suspended": true,
+   "on_ams_ht_humidity_high": false,
+   "on_ams_ht_temperature_high": false,
+   "on_ams_humidity_high": false,
+   "on_ams_temperature_high": false,
+   "on_app_message": false,
+   "on_bed_cooled": false,
+   "on_billing_charge_failed": true,
+   "on_filament_low": false,
+   "on_first_layer_complete": false,
+   "on_ha_sensor_alert": false,
+   "on_location_ha_sensor_alert": false,
+   "on_maintenance_due": false,
+   "on_plate_clear_required": false,
+   "on_plate_not_empty": true,
+   "on_print_complete": true,
+   "on_print_confirm_request": true,
+   "on_print_failed": true,
+   "on_print_missing_spool_assignment": false,
+   "on_print_pause_upcoming": false,
+   "on_print_progress": false,
+   "on_print_start": false,
+   "on_print_stopped": true,
+   "on_printer_error": false,
+   "on_printer_offline": false,
+   "on_queue_completed": false,
+   "on_queue_job_added": false,
+   "on_queue_job_assigned": false,
+   "on_queue_job_failed": true,
+   "on_queue_job_skipped": true,
+   "on_queue_job_started": false,
+   "on_queue_job_waiting": true,
+   "on_stock_break_alert": false,
+   "on_stock_reorder_alert": false,
+   "printer_id": null,
+   "provider_type": "notify",
+   "quiet_hours_enabled": false,
+   "quiet_hours_end": null,
+   "quiet_hours_start": null,
+   "telegram_verdict_mode": "buttons",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "A07-create-notify",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Enter the secret values; nothing is stored for this provider yet"
+  },
+  "status": 400,
+  "step": "A08-refuse-placeholder-secret",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Notify! requires a valid device or group ID (8\u201332 letters and digits)"
+  },
+  "status": 422,
+  "step": "A09-refuse-bad-notify-id",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Unknown printer: 999"
+  },
+  "status": 400,
+  "step": "A10-refuse-unknown-printer",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "expected": "'callmebot', 'ntfy', 'pushover', 'telegram', 'email', 'discord', 'webhook', 'homeassistant', 'bark', 'gotify' or 'notify'"
+     },
+     "input": "carrier-pigeon",
+     "loc": [
+      "body",
+      "provider_type"
+     ],
+     "msg": "Input should be 'callmebot', 'ntfy', 'pushover', 'telegram', 'email', 'discord', 'webhook', 'homeassistant', 'bark', 'gotify' or 'notify'",
+     "type": "enum"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "A11-refuse-unknown-type",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "min_length": 1
+     },
+     "input": "",
+     "loc": [
+      "body",
+      "name"
+     ],
+     "msg": "String should have at least 1 character",
+     "type": "string_too_short"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "A12-refuse-empty-name",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "error": {}
+     },
+     "input": "25:99",
+     "loc": [
+      "body",
+      "quiet_hours_start"
+     ],
+     "msg": "Value error, Time must be in HH:MM format (e.g., 22:00)",
+     "type": "value_error"
+    },
+    {
+     "ctx": {
+      "error": {}
+     },
+     "input": "x",
+     "loc": [
+      "body",
+      "quiet_hours_end"
+     ],
+     "msg": "Value error, Time must be in HH:MM format (e.g., 22:00)",
+     "type": "value_error"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "A13-refuse-bad-quiet-hours",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "expected": "'buttons', 'reactions' or 'both'"
+     },
+     "input": "smoke",
+     "loc": [
+      "body",
+      "telegram_verdict_mode"
+     ],
+     "msg": "Input should be 'buttons', 'reactions' or 'both'",
+     "type": "literal_error"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "A14-refuse-bad-verdict-mode",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "input": {
+      "name": "x",
+      "provider_type": "webhook"
+     },
+     "loc": [
+      "body",
+      "config"
+     ],
+     "msg": "Field required",
+     "type": "missing"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "A15-refuse-missing-config",
+  "wire": []
+ },
+ {
+  "body": [
+   {
+    "attach_photo": true,
+    "config": {
+     "device_id": "ABCDEFGH1234",
+     "live_activities": true,
+     "token": "********"
+    },
+    "created_at": "<ts>",
+    "daily_digest_enabled": false,
+    "daily_digest_time": null,
+    "enabled": true,
+    "id": 6,
+    "last_error": null,
+    "last_error_at": null,
+    "last_success": null,
+    "name": "Notify",
+    "on_ai_failure_detection": false,
+    "on_aito_payment_received": false,
+    "on_ams_drying_suspended": true,
+    "on_ams_ht_humidity_high": false,
+    "on_ams_ht_temperature_high": false,
+    "on_ams_humidity_high": false,
+    "on_ams_temperature_high": false,
+    "on_app_message": false,
+    "on_bed_cooled": false,
+    "on_billing_charge_failed": true,
+    "on_filament_low": false,
+    "on_first_layer_complete": false,
+    "on_ha_sensor_alert": false,
+    "on_location_ha_sensor_alert": false,
+    "on_maintenance_due": false,
+    "on_plate_clear_required": false,
+    "on_plate_not_empty": true,
+    "on_print_complete": true,
+    "on_print_confirm_request": true,
+    "on_print_failed": true,
+    "on_print_missing_spool_assignment": false,
+    "on_print_pause_upcoming": false,
+    "on_print_progress": false,
+    "on_print_start": false,
+    "on_print_stopped": true,
+    "on_printer_error": false,
+    "on_printer_offline": false,
+    "on_queue_completed": false,
+    "on_queue_job_added": false,
+    "on_queue_job_assigned": false,
+    "on_queue_job_failed": true,
+    "on_queue_job_skipped": true,
+    "on_queue_job_started": false,
+    "on_queue_job_waiting": true,
+    "on_stock_break_alert": false,
+    "on_stock_reorder_alert": false,
+    "printer_id": null,
+    "provider_type": "notify",
+    "quiet_hours_enabled": false,
+    "quiet_hours_end": null,
+    "quiet_hours_start": null,
+    "telegram_verdict_mode": "buttons",
+    "updated_at": "<ts>"
+   },
+   {
+    "attach_photo": true,
+    "config": {
+     "auth_enabled": "true",
+     "from_email": "a@example.test",
+     "password": "********",
+     "security": "starttls",
+     "smtp_port": 587,
+     "smtp_server": "smtp.example.test",
+     "to_email": "b@example.test",
+     "username": "u"
+    },
+    "created_at": "<ts>",
+    "daily_digest_enabled": false,
+    "daily_digest_time": null,
+    "enabled": true,
+    "id": 5,
+    "last_error": null,
+    "last_error_at": null,
+    "last_success": null,
+    "name": "Mail",
+    "on_ai_failure_detection": false,
+    "on_aito_payment_received": false,
+    "on_ams_drying_suspended": true,
+    "on_ams_ht_humidity_high": false,
+    "on_ams_ht_temperature_high": false,
+    "on_ams_humidity_high": false,
+    "on_ams_temperature_high": false,
+    "on_app_message": false,
+    "on_bed_cooled": false,
+    "on_billing_charge_failed": true,
+    "on_filament_low": false,
+    "on_first_layer_complete": false,
+    "on_ha_sensor_alert": false,
+    "on_location_ha_sensor_alert": false,
+    "on_maintenance_due": false,
+    "on_plate_clear_required": false,
+    "on_plate_not_empty": true,
+    "on_print_complete": true,
+    "on_print_confirm_request": true,
+    "on_print_failed": true,
+    "on_print_missing_spool_assignment": false,
+    "on_print_pause_upcoming": false,
+    "on_print_progress": false,
+    "on_print_start": false,
+    "on_print_stopped": true,
+    "on_printer_error": false,
+    "on_printer_offline": false,
+    "on_queue_completed": false,
+    "on_queue_job_added": false,
+    "on_queue_job_assigned": false,
+    "on_queue_job_failed": true,
+    "on_queue_job_skipped": true,
+    "on_queue_job_started": false,
+    "on_queue_job_waiting": true,
+    "on_stock_break_alert": false,
+    "on_stock_reorder_alert": false,
+    "printer_id": null,
+    "provider_type": "email",
+    "quiet_hours_enabled": false,
+    "quiet_hours_end": null,
+    "quiet_hours_start": null,
+    "telegram_verdict_mode": "buttons",
+    "updated_at": "<ts>"
+   },
+   {
+    "attach_photo": true,
+    "config": {
+     "bot_token": "********",
+     "chat_id": "-100123"
+    },
+    "created_at": "<ts>",
+    "daily_digest_enabled": false,
+    "daily_digest_time": null,
+    "enabled": true,
+    "id": 4,
+    "last_error": null,
+    "last_error_at": null,
+    "last_success": null,
+    "name": "TG",
+    "on_ai_failure_detection": false,
+    "on_aito_payment_received": false,
+    "on_ams_drying_suspended": true,
+    "on_ams_ht_humidity_high": false,
+    "on_ams_ht_temperature_high": false,
+    "on_ams_humidity_high": false,
+    "on_ams_temperature_high": false,
+    "on_app_message": false,
+    "on_bed_cooled": false,
+    "on_billing_charge_failed": true,
+    "on_filament_low": false,
+    "on_first_layer_complete": false,
+    "on_ha_sensor_alert": false,
+    "on_location_ha_sensor_alert": false,
+    "on_maintenance_due": false,
+    "on_plate_clear_required": false,
+    "on_plate_not_empty": true,
+    "on_print_complete": true,
+    "on_print_confirm_request": true,
+    "on_print_failed": true,
+    "on_print_missing_spool_assignment": false,
+    "on_print_pause_upcoming": false,
+    "on_print_progress": false,
+    "on_print_start": false,
+    "on_print_stopped": true,
+    "on_printer_error": false,
+    "on_printer_offline": false,
+    "on_queue_completed": false,
+    "on_queue_job_added": false,
+    "on_queue_job_assigned": false,
+    "on_queue_job_failed": true,
+    "on_queue_job_skipped": true,
+    "on_queue_job_started": false,
+    "on_queue_job_waiting": true,
+    "on_stock_break_alert": false,
+    "on_stock_reorder_alert": false,
+    "printer_id": null,
+    "provider_type": "telegram",
+    "quiet_hours_enabled": false,
+    "quiet_hours_end": null,
+    "quiet_hours_start": null,
+    "telegram_verdict_mode": "both",
+    "updated_at": "<ts>"
+   },
+   {
+    "attach_photo": true,
+    "config": {
+     "app_token": "********",
+     "event_priorities": {
+      "print_complete": 5,
+      "print_failed": 2
+     },
+     "server": "https://gotify.example.test"
+    },
+    "created_at": "<ts>",
+    "daily_digest_enabled": false,
+    "daily_digest_time": null,
+    "enabled": true,
+    "id": 3,
+    "last_error": null,
+    "last_error_at": null,
+    "last_success": null,
+    "name": "Gotify",
+    "on_ai_failure_detection": false,
+    "on_aito_payment_received": false,
+    "on_ams_drying_suspended": true,
+    "on_ams_ht_humidity_high": false,
+    "on_ams_ht_temperature_high": false,
+    "on_ams_humidity_high": false,
+    "on_ams_temperature_high": false,
+    "on_app_message": false,
+    "on_bed_cooled": false,
+    "on_billing_charge_failed": true,
+    "on_filament_low": false,
+    "on_first_layer_complete": false,
+    "on_ha_sensor_alert": false,
+    "on_location_ha_sensor_alert": false,
+    "on_maintenance_due": false,
+    "on_plate_clear_required": false,
+    "on_plate_not_empty": true,
+    "on_print_complete": true,
+    "on_print_confirm_request": true,
+    "on_print_failed": true,
+    "on_print_missing_spool_assignment": false,
+    "on_print_pause_upcoming": false,
+    "on_print_progress": false,
+    "on_print_start": false,
+    "on_print_stopped": true,
+    "on_printer_error": false,
+    "on_printer_offline": false,
+    "on_queue_completed": false,
+    "on_queue_job_added": false,
+    "on_queue_job_assigned": false,
+    "on_queue_job_failed": true,
+    "on_queue_job_skipped": true,
+    "on_queue_job_started": false,
+    "on_queue_job_waiting": true,
+    "on_stock_break_alert": false,
+    "on_stock_reorder_alert": false,
+    "printer_id": null,
+    "provider_type": "gotify",
+    "quiet_hours_enabled": false,
+    "quiet_hours_end": null,
+    "quiet_hours_start": null,
+    "telegram_verdict_mode": "buttons",
+    "updated_at": "<ts>"
+   },
+   {
+    "attach_photo": true,
+    "config": {
+     "auth_token": "********",
+     "server": "https://ntfy.example.test",
+     "topic": "fenrir"
+    },
+    "created_at": "<ts>",
+    "daily_digest_enabled": false,
+    "daily_digest_time": null,
+    "enabled": true,
+    "id": 2,
+    "last_error": null,
+    "last_error_at": null,
+    "last_success": null,
+    "name": "Ntfy",
+    "on_ai_failure_detection": false,
+    "on_aito_payment_received": false,
+    "on_ams_drying_suspended": true,
+    "on_ams_ht_humidity_high": false,
+    "on_ams_ht_temperature_high": false,
+    "on_ams_humidity_high": false,
+    "on_ams_temperature_high": false,
+    "on_app_message": false,
+    "on_bed_cooled": false,
+    "on_billing_charge_failed": true,
+    "on_filament_low": false,
+    "on_first_layer_complete": false,
+    "on_ha_sensor_alert": false,
+    "on_location_ha_sensor_alert": false,
+    "on_maintenance_due": false,
+    "on_plate_clear_required": false,
+    "on_plate_not_empty": true,
+    "on_print_complete": true,
+    "on_print_confirm_request": true,
+    "on_print_failed": true,
+    "on_print_missing_spool_assignment": false,
+    "on_print_pause_upcoming": false,
+    "on_print_progress": false,
+    "on_print_start": true,
+    "on_print_stopped": true,
+    "on_printer_error": false,
+    "on_printer_offline": false,
+    "on_queue_completed": false,
+    "on_queue_job_added": false,
+    "on_queue_job_assigned": false,
+    "on_queue_job_failed": true,
+    "on_queue_job_skipped": true,
+    "on_queue_job_started": false,
+    "on_queue_job_waiting": true,
+    "on_stock_break_alert": false,
+    "on_stock_reorder_alert": false,
+    "printer_id": null,
+    "provider_type": "ntfy",
+    "quiet_hours_enabled": true,
+    "quiet_hours_end": "07:00",
+    "quiet_hours_start": "22:00",
+    "telegram_verdict_mode": "buttons",
+    "updated_at": "<ts>"
+   },
+   {
+    "attach_photo": true,
+    "config": {
+     "auth_header": "********",
+     "payload_format": "json",
+     "webhook_url": "********"
+    },
+    "created_at": "<ts>",
+    "daily_digest_enabled": false,
+    "daily_digest_time": null,
+    "enabled": true,
+    "id": 1,
+    "last_error": null,
+    "last_error_at": null,
+    "last_success": null,
+    "name": "Hook",
+    "on_ai_failure_detection": false,
+    "on_aito_payment_received": false,
+    "on_ams_drying_suspended": true,
+    "on_ams_ht_humidity_high": false,
+    "on_ams_ht_temperature_high": false,
+    "on_ams_humidity_high": false,
+    "on_ams_temperature_high": false,
+    "on_app_message": false,
+    "on_bed_cooled": false,
+    "on_billing_charge_failed": true,
+    "on_filament_low": false,
+    "on_first_layer_complete": false,
+    "on_ha_sensor_alert": false,
+    "on_location_ha_sensor_alert": false,
+    "on_maintenance_due": false,
+    "on_plate_clear_required": false,
+    "on_plate_not_empty": true,
+    "on_print_complete": true,
+    "on_print_confirm_request": true,
+    "on_print_failed": true,
+    "on_print_missing_spool_assignment": false,
+    "on_print_pause_upcoming": false,
+    "on_print_progress": false,
+    "on_print_start": false,
+    "on_print_stopped": true,
+    "on_printer_error": false,
+    "on_printer_offline": false,
+    "on_queue_completed": false,
+    "on_queue_job_added": false,
+    "on_queue_job_assigned": false,
+    "on_queue_job_failed": true,
+    "on_queue_job_skipped": true,
+    "on_queue_job_started": false,
+    "on_queue_job_waiting": true,
+    "on_stock_break_alert": false,
+    "on_stock_reorder_alert": false,
+    "printer_id": null,
+    "provider_type": "webhook",
+    "quiet_hours_enabled": false,
+    "quiet_hours_end": null,
+    "quiet_hours_start": null,
+    "telegram_verdict_mode": "buttons",
+    "updated_at": "<ts>"
+   }
+  ],
+  "status": 200,
+  "step": "A16-list",
+  "wire": []
+ },
+ {
+  "body": {
+   "attach_photo": true,
+   "config": {
+    "auth_token": "********",
+    "server": "https://ntfy.example.test",
+    "topic": "fenrir"
+   },
+   "created_at": "<ts>",
+   "daily_digest_enabled": false,
+   "daily_digest_time": null,
+   "enabled": true,
+   "id": 2,
+   "last_error": null,
+   "last_error_at": null,
+   "last_success": null,
+   "name": "Ntfy",
+   "on_ai_failure_detection": false,
+   "on_aito_payment_received": false,
+   "on_ams_drying_suspended": true,
+   "on_ams_ht_humidity_high": false,
+   "on_ams_ht_temperature_high": false,
+   "on_ams_humidity_high": false,
+   "on_ams_temperature_high": false,
+   "on_app_message": false,
+   "on_bed_cooled": false,
+   "on_billing_charge_failed": true,
+   "on_filament_low": false,
+   "on_first_layer_complete": false,
+   "on_ha_sensor_alert": false,
+   "on_location_ha_sensor_alert": false,
+   "on_maintenance_due": false,
+   "on_plate_clear_required": false,
+   "on_plate_not_empty": true,
+   "on_print_complete": true,
+   "on_print_confirm_request": true,
+   "on_print_failed": true,
+   "on_print_missing_spool_assignment": false,
+   "on_print_pause_upcoming": false,
+   "on_print_progress": false,
+   "on_print_start": true,
+   "on_print_stopped": true,
+   "on_printer_error": false,
+   "on_printer_offline": false,
+   "on_queue_completed": false,
+   "on_queue_job_added": false,
+   "on_queue_job_assigned": false,
+   "on_queue_job_failed": true,
+   "on_queue_job_skipped": true,
+   "on_queue_job_started": false,
+   "on_queue_job_waiting": true,
+   "on_stock_break_alert": false,
+   "on_stock_reorder_alert": false,
+   "printer_id": null,
+   "provider_type": "ntfy",
+   "quiet_hours_enabled": true,
+   "quiet_hours_end": "07:00",
+   "quiet_hours_start": "22:00",
+   "telegram_verdict_mode": "buttons",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "A17-get-ntfy",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Notification provider not found"
+  },
+  "status": 404,
+  "step": "A18-get-404",
+  "wire": []
+ },
+ {
+  "body": {
+   "attach_photo": true,
+   "config": {
+    "auth_token": "********",
+    "server": "https://ntfy.example.test",
+    "topic": "fenrir"
+   },
+   "created_at": "<ts>",
+   "daily_digest_enabled": false,
+   "daily_digest_time": null,
+   "enabled": false,
+   "id": 2,
+   "last_error": null,
+   "last_error_at": null,
+   "last_success": null,
+   "name": "Ntfy 2",
+   "on_ai_failure_detection": false,
+   "on_aito_payment_received": false,
+   "on_ams_drying_suspended": true,
+   "on_ams_ht_humidity_high": false,
+   "on_ams_ht_temperature_high": false,
+   "on_ams_humidity_high": false,
+   "on_ams_temperature_high": false,
+   "on_app_message": false,
+   "on_bed_cooled": false,
+   "on_billing_charge_failed": true,
+   "on_filament_low": false,
+   "on_first_layer_complete": false,
+   "on_ha_sensor_alert": false,
+   "on_location_ha_sensor_alert": false,
+   "on_maintenance_due": false,
+   "on_plate_clear_required": false,
+   "on_plate_not_empty": true,
+   "on_print_complete": false,
+   "on_print_confirm_request": true,
+   "on_print_failed": true,
+   "on_print_missing_spool_assignment": false,
+   "on_print_pause_upcoming": false,
+   "on_print_progress": false,
+   "on_print_start": true,
+   "on_print_stopped": true,
+   "on_printer_error": false,
+   "on_printer_offline": false,
+   "on_queue_completed": false,
+   "on_queue_job_added": false,
+   "on_queue_job_assigned": false,
+   "on_queue_job_failed": true,
+   "on_queue_job_skipped": true,
+   "on_queue_job_started": false,
+   "on_queue_job_waiting": true,
+   "on_stock_break_alert": false,
+   "on_stock_reorder_alert": false,
+   "printer_id": null,
+   "provider_type": "ntfy",
+   "quiet_hours_enabled": true,
+   "quiet_hours_end": "07:00",
+   "quiet_hours_start": "22:00",
+   "telegram_verdict_mode": "buttons",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "A19-patch-flags",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Enter app_token again: server changed"
+  },
+  "status": 400,
+  "step": "A20-patch-config-keeps-masked-secret",
+  "wire": []
+ },
+ {
+  "body": {
+   "attach_photo": true,
+   "config": {
+    "app_token": "********",
+    "server": "https://gotify2.example.test"
+   },
+   "created_at": "<ts>",
+   "daily_digest_enabled": false,
+   "daily_digest_time": null,
+   "enabled": true,
+   "id": 3,
+   "last_error": null,
+   "last_error_at": null,
+   "last_success": null,
+   "name": "Gotify",
+   "on_ai_failure_detection": false,
+   "on_aito_payment_received": false,
+   "on_ams_drying_suspended": true,
+   "on_ams_ht_humidity_high": false,
+   "on_ams_ht_temperature_high": false,
+   "on_ams_humidity_high": false,
+   "on_ams_temperature_high": false,
+   "on_app_message": false,
+   "on_bed_cooled": false,
+   "on_billing_charge_failed": true,
+   "on_filament_low": false,
+   "on_first_layer_complete": false,
+   "on_ha_sensor_alert": false,
+   "on_location_ha_sensor_alert": false,
+   "on_maintenance_due": false,
+   "on_plate_clear_required": false,
+   "on_plate_not_empty": true,
+   "on_print_complete": true,
+   "on_print_confirm_request": true,
+   "on_print_failed": true,
+   "on_print_missing_spool_assignment": false,
+   "on_print_pause_upcoming": false,
+   "on_print_progress": false,
+   "on_print_start": false,
+   "on_print_stopped": true,
+   "on_printer_error": false,
+   "on_printer_offline": false,
+   "on_queue_completed": false,
+   "on_queue_job_added": false,
+   "on_queue_job_assigned": false,
+   "on_queue_job_failed": true,
+   "on_queue_job_skipped": true,
+   "on_queue_job_started": false,
+   "on_queue_job_waiting": true,
+   "on_stock_break_alert": false,
+   "on_stock_reorder_alert": false,
+   "printer_id": null,
+   "provider_type": "gotify",
+   "quiet_hours_enabled": false,
+   "quiet_hours_end": null,
+   "quiet_hours_start": null,
+   "telegram_verdict_mode": "buttons",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "A21-patch-config-new-secret",
+  "wire": []
+ },
+ {
+  "body": {
+   "attach_photo": true,
+   "config": {
+    "auth_token": "********",
+    "server": "https://ntfy.example.test",
+    "topic": "fenrir"
+   },
+   "created_at": "<ts>",
+   "daily_digest_enabled": false,
+   "daily_digest_time": null,
+   "enabled": false,
+   "id": 2,
+   "last_error": null,
+   "last_error_at": null,
+   "last_success": null,
+   "name": "Ntfy 2",
+   "on_ai_failure_detection": false,
+   "on_aito_payment_received": false,
+   "on_ams_drying_suspended": true,
+   "on_ams_ht_humidity_high": false,
+   "on_ams_ht_temperature_high": false,
+   "on_ams_humidity_high": false,
+   "on_ams_temperature_high": false,
+   "on_app_message": false,
+   "on_bed_cooled": false,
+   "on_billing_charge_failed": true,
+   "on_filament_low": false,
+   "on_first_layer_complete": false,
+   "on_ha_sensor_alert": false,
+   "on_location_ha_sensor_alert": false,
+   "on_maintenance_due": false,
+   "on_plate_clear_required": false,
+   "on_plate_not_empty": true,
+   "on_print_complete": false,
+   "on_print_confirm_request": true,
+   "on_print_failed": true,
+   "on_print_missing_spool_assignment": false,
+   "on_print_pause_upcoming": false,
+   "on_print_progress": false,
+   "on_print_start": true,
+   "on_print_stopped": true,
+   "on_printer_error": false,
+   "on_printer_offline": false,
+   "on_queue_completed": false,
+   "on_queue_job_added": false,
+   "on_queue_job_assigned": false,
+   "on_queue_job_failed": true,
+   "on_queue_job_skipped": true,
+   "on_queue_job_started": false,
+   "on_queue_job_waiting": true,
+   "on_stock_break_alert": false,
+   "on_stock_reorder_alert": false,
+   "printer_id": null,
+   "provider_type": "ntfy",
+   "quiet_hours_enabled": true,
+   "quiet_hours_end": "07:00",
+   "quiet_hours_start": "22:00",
+   "telegram_verdict_mode": "buttons",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "A22-patch-null-required",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Notification provider not found"
+  },
+  "status": 404,
+  "step": "A23-patch-404",
+  "wire": []
+ },
+ {
+  "body": {
+   "attach_photo": true,
+   "config": {
+    "server": "https://n.example.test",
+    "topic": "t"
+   },
+   "created_at": "<ts>",
+   "daily_digest_enabled": false,
+   "daily_digest_time": null,
+   "enabled": true,
+   "id": 1,
+   "last_error": null,
+   "last_error_at": null,
+   "last_success": null,
+   "name": "Hook",
+   "on_ai_failure_detection": false,
+   "on_aito_payment_received": false,
+   "on_ams_drying_suspended": true,
+   "on_ams_ht_humidity_high": false,
+   "on_ams_ht_temperature_high": false,
+   "on_ams_humidity_high": false,
+   "on_ams_temperature_high": false,
+   "on_app_message": false,
+   "on_bed_cooled": false,
+   "on_billing_charge_failed": true,
+   "on_filament_low": false,
+   "on_first_layer_complete": false,
+   "on_ha_sensor_alert": false,
+   "on_location_ha_sensor_alert": false,
+   "on_maintenance_due": false,
+   "on_plate_clear_required": false,
+   "on_plate_not_empty": true,
+   "on_print_complete": true,
+   "on_print_confirm_request": true,
+   "on_print_failed": true,
+   "on_print_missing_spool_assignment": false,
+   "on_print_pause_upcoming": false,
+   "on_print_progress": false,
+   "on_print_start": false,
+   "on_print_stopped": true,
+   "on_printer_error": false,
+   "on_printer_offline": false,
+   "on_queue_completed": false,
+   "on_queue_job_added": false,
+   "on_queue_job_assigned": false,
+   "on_queue_job_failed": true,
+   "on_queue_job_skipped": true,
+   "on_queue_job_started": false,
+   "on_queue_job_waiting": true,
+   "on_stock_break_alert": false,
+   "on_stock_reorder_alert": false,
+   "printer_id": null,
+   "provider_type": "ntfy",
+   "quiet_hours_enabled": false,
+   "quiet_hours_end": null,
+   "quiet_hours_start": null,
+   "telegram_verdict_mode": "buttons",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "A24-patch-type-change",
+  "wire": []
+ },
+ {
+  "body": {
+   "attach_photo": true,
+   "config": {
+    "auth_header": "********",
+    "payload_format": "json",
+    "webhook_url": "********"
+   },
+   "created_at": "<ts>",
+   "daily_digest_enabled": false,
+   "daily_digest_time": null,
+   "enabled": true,
+   "id": 1,
+   "last_error": null,
+   "last_error_at": null,
+   "last_success": null,
+   "name": "Hook",
+   "on_ai_failure_detection": false,
+   "on_aito_payment_received": false,
+   "on_ams_drying_suspended": true,
+   "on_ams_ht_humidity_high": false,
+   "on_ams_ht_temperature_high": false,
+   "on_ams_humidity_high": false,
+   "on_ams_temperature_high": false,
+   "on_app_message": false,
+   "on_bed_cooled": false,
+   "on_billing_charge_failed": true,
+   "on_filament_low": false,
+   "on_first_layer_complete": false,
+   "on_ha_sensor_alert": false,
+   "on_location_ha_sensor_alert": false,
+   "on_maintenance_due": false,
+   "on_plate_clear_required": false,
+   "on_plate_not_empty": true,
+   "on_print_complete": true,
+   "on_print_confirm_request": true,
+   "on_print_failed": true,
+   "on_print_missing_spool_assignment": false,
+   "on_print_pause_upcoming": false,
+   "on_print_progress": false,
+   "on_print_start": false,
+   "on_print_stopped": true,
+   "on_printer_error": false,
+   "on_printer_offline": false,
+   "on_queue_completed": false,
+   "on_queue_job_added": false,
+   "on_queue_job_assigned": false,
+   "on_queue_job_failed": true,
+   "on_queue_job_skipped": true,
+   "on_queue_job_started": false,
+   "on_queue_job_waiting": true,
+   "on_stock_break_alert": false,
+   "on_stock_reorder_alert": false,
+   "printer_id": null,
+   "provider_type": "webhook",
+   "quiet_hours_enabled": false,
+   "quiet_hours_end": null,
+   "quiet_hours_start": null,
+   "telegram_verdict_mode": "buttons",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "A25-patch-type-back",
+  "wire": []
+ },
+ {
+  "body": {
+   "message": "Webhook delivered successfully",
+   "success": true
+  },
+  "status": 200,
+  "step": "B01-test-config-webhook",
+  "wire": [
+   {
+    "body": {
+     "event": "test",
+     "image": "<13448 chars sha256=67565f39f3af25b3>",
+     "message": "This is a test notification. If you see this, notifications are working!",
+     "source": "Fenrir",
+     "timestamp": "<ts>",
+     "title": "Fenrir Test"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "method": "POST",
+    "url": "https://hooks.example.test/t"
+   }
+  ]
+ },
+ {
+  "body": {
+   "message": "Webhook delivered successfully",
+   "success": true
+  },
+  "status": 200,
+  "step": "B02-test-config-webhook-get",
+  "wire": [
+   {
+    "body": {
+     "event": "test",
+     "image": "<13448 chars sha256=67565f39f3af25b3>",
+     "source": "Fenrir",
+     "subject": "Fenrir Test",
+     "text": "This is a test notification. If you see this, notifications are working!",
+     "timestamp": "<ts>"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "method": "POST",
+    "url": "https://hooks.example.test/t?x=1"
+   }
+  ]
+ },
+ {
+  "body": {
+   "message": "Message sent successfully",
+   "success": true
+  },
+  "status": 200,
+  "step": "B03-test-config-ntfy",
+  "wire": [
+   {
+    "body": "<9754 chars sha256=455dbf952613d764>",
+    "headers": {
+     "authorization": "Bearer tk",
+     "filename": "photo.jpg",
+     "title": "Fenrir Test"
+    },
+    "method": "PUT",
+    "url": "https://ntfy.example.test/fenrir"
+   }
+  ]
+ },
+ {
+  "body": {
+   "message": "Message sent successfully",
+   "success": true
+  },
+  "status": 200,
+  "step": "B04-test-config-gotify",
+  "wire": [
+   {
+    "body": {
+     "message": "This is a test notification. If you see this, notifications are working!",
+     "priority": 8,
+     "title": "Fenrir Test"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "method": "POST",
+    "url": "https://gotify.example.test/message"
+   }
+  ]
+ },
+ {
+  "body": {
+   "message": "Message sent successfully",
+   "success": true
+  },
+  "status": 200,
+  "step": "B05-test-config-telegram",
+  "wire": [
+   {
+    "body": [
+     {
+      "head": "Content-Disposition: form-data; name=\"chat_id\"",
+      "size": 2,
+      "text": "42"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"caption\"",
+      "size": 86,
+      "text": "*Fenrir Test*\nThis is a test notification. If you see this, notifications are working!"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"parse_mode\"",
+      "size": 8,
+      "text": "Markdown"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"photo\"; filename=\"photo.jpg\"\r\nContent-Type: image/jpeg",
+      "size": 9754,
+      "text": null
+     }
+    ],
+    "headers": {
+     "content-type": "multipart/form-data; boundary=<boundary>"
+    },
+    "method": "POST",
+    "url": "https://api.telegram.org/bot123456:ABC/sendPhoto"
+   }
+  ]
+ },
+ {
+  "body": {
+   "message": "Message sent successfully",
+   "success": true
+  },
+  "status": 200,
+  "step": "B06-test-config-discord",
+  "wire": [
+   {
+    "body": [
+     {
+      "head": "Content-Disposition: form-data; name=\"payload_json\"",
+      "size": 189,
+      "text": "{\"embeds\": [{\"title\": \"Fenrir Test\", \"description\": \"This is a test notification. If you see this, notifications are wor"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"files[0]\"; filename=\"photo.jpg\"\r\nContent-Type: image/jpeg",
+      "size": 9754,
+      "text": null
+     }
+    ],
+    "headers": {
+     "content-type": "multipart/form-data; boundary=<boundary>"
+    },
+    "method": "POST",
+    "url": "https://discord.com/api/webhooks/1/abc"
+   }
+  ]
+ },
+ {
+  "body": {
+   "message": "Message sent successfully",
+   "success": true
+  },
+  "status": 200,
+  "step": "B07-test-config-pushover",
+  "wire": [
+   {
+    "body": [
+     {
+      "head": "Content-Disposition: form-data; name=\"token\"",
+      "size": 30,
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"user\"",
+      "size": 30,
+      "text": "uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"title\"",
+      "size": 11,
+      "text": "Fenrir Test"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"message\"",
+      "size": 72,
+      "text": "This is a test notification. If you see this, notifications are working!"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"priority\"",
+      "size": 1,
+      "text": "1"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"attachment\"; filename=\"photo.jpg\"\r\nContent-Type: image/jpeg",
+      "size": 9754,
+      "text": null
+     }
+    ],
+    "headers": {
+     "content-type": "multipart/form-data; boundary=<boundary>"
+    },
+    "method": "POST",
+    "url": "https://api.pushover.net/1/messages.json"
+   }
+  ]
+ },
+ {
+  "body": {
+   "message": "Message sent successfully",
+   "success": true
+  },
+  "status": 200,
+  "step": "B08-test-config-bark",
+  "wire": [
+   {
+    "body": {
+     "body": "This is a test notification. If you see this, notifications are working!",
+     "device_key": "key1",
+     "group": "fenrir",
+     "level": "timeSensitive",
+     "title": "Fenrir Test"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "method": "POST",
+    "url": "https://bark.example.test/push"
+   }
+  ]
+ },
+ {
+  "body": {
+   "message": "Home Assistant is not configured. Please set HA URL and token in Settings \u2192 Network \u2192 Home Assistant.",
+   "success": false
+  },
+  "status": 200,
+  "step": "B09-test-config-homeassistant",
+  "wire": []
+ },
+ {
+  "body": {
+   "message": "Message sent successfully",
+   "success": true
+  },
+  "status": 200,
+  "step": "B10-test-config-callmebot",
+  "wire": [
+   {
+    "body": "",
+    "headers": {},
+    "method": "GET",
+    "url": "https://api.callmebot.com/whatsapp.php?phone=%2B68987000000&text=Fenrir%20Test%0AThis%20is%20a%20test%20notification.%20If%20you%20see%20this%2C%20notifications%20are%20working%21&apikey=123456"
+   }
+  ]
+ },
+ {
+  "body": {
+   "message": "Notify! did not confirm notification delivery",
+   "success": false
+  },
+  "status": 200,
+  "step": "B11-test-config-notify",
+  "wire": [
+   {
+    "body": {
+     "groupType": "fenrir",
+     "text": "This is a test notification. If you see this, notifications are working!",
+     "title": "Fenrir Test"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "method": "POST",
+    "url": "https://push.getnotifyapp.com/notify-json/ABCDEFGH1234?token=tok"
+   }
+  ]
+ },
+ {
+  "body": {
+   "message": "Webhook URL must not point to a cloud metadata endpoint",
+   "success": false
+  },
+  "status": 200,
+  "step": "B12-test-config-private-url-refused",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Enter the secret values; nothing is stored for this provider yet"
+  },
+  "status": 400,
+  "step": "B13-test-config-placeholder-no-id",
+  "wire": []
+ },
+ {
+  "body": {
+   "message": "Message sent successfully",
+   "success": true
+  },
+  "status": 200,
+  "step": "B14-test-config-placeholder-with-id",
+  "wire": [
+   {
+    "body": {
+     "message": "This is a test notification. If you see this, notifications are working!",
+     "priority": 5,
+     "title": "Fenrir Test"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "method": "POST",
+    "url": "https://gotify2.example.test/message"
+   }
+  ]
+ },
+ {
+  "body": {
+   "detail": "Notification provider not found"
+  },
+  "status": 404,
+  "step": "B15-test-config-with-unknown-id",
+  "wire": []
+ },
+ {
+  "body": {
+   "message": "Message sent successfully",
+   "success": true
+  },
+  "status": 200,
+  "step": "B16-test-provider-ntfy",
+  "wire": [
+   {
+    "body": "<9754 chars sha256=455dbf952613d764>",
+    "headers": {
+     "authorization": "Bearer tk_abc",
+     "filename": "photo.jpg",
+     "title": "Fenrir Test"
+    },
+    "method": "PUT",
+    "url": "https://ntfy.example.test/fenrir"
+   }
+  ]
+ },
+ {
+  "body": {
+   "message": "Message sent successfully",
+   "success": true
+  },
+  "status": 200,
+  "step": "B17-test-provider-telegram",
+  "wire": [
+   {
+    "body": [
+     {
+      "head": "Content-Disposition: form-data; name=\"chat_id\"",
+      "size": 7,
+      "text": "-100123"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"caption\"",
+      "size": 86,
+      "text": "*Fenrir Test*\nThis is a test notification. If you see this, notifications are working!"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"parse_mode\"",
+      "size": 8,
+      "text": "Markdown"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"photo\"; filename=\"photo.jpg\"\r\nContent-Type: image/jpeg",
+      "size": 9754,
+      "text": null
+     }
+    ],
+    "headers": {
+     "content-type": "multipart/form-data; boundary=<boundary>"
+    },
+    "method": "POST",
+    "url": "https://api.telegram.org/bot123456:ABC-DEF/sendPhoto"
+   }
+  ]
+ },
+ {
+  "body": {
+   "detail": "Notification provider not found"
+  },
+  "status": 404,
+  "step": "B18-test-provider-404",
+  "wire": []
+ },
+ {
+  "body": {
+   "failed": 1,
+   "results": [
+    {
+     "message": "Webhook delivered successfully",
+     "provider_id": 1,
+     "provider_name": "Hook",
+     "provider_type": "webhook",
+     "success": true
+    },
+    {
+     "message": "Message sent successfully",
+     "provider_id": 3,
+     "provider_name": "Gotify",
+     "provider_type": "gotify",
+     "success": true
+    },
+    {
+     "message": "Message sent successfully",
+     "provider_id": 4,
+     "provider_name": "TG",
+     "provider_type": "telegram",
+     "success": true
+    },
+    {
+     "message": "Email sent successfully",
+     "provider_id": 5,
+     "provider_name": "Mail",
+     "provider_type": "email",
+     "success": true
+    },
+    {
+     "message": "Notify! did not confirm notification delivery",
+     "provider_id": 6,
+     "provider_name": "Notify",
+     "provider_type": "notify",
+     "success": false
+    }
+   ],
+   "success": 4,
+   "tested": 5
+  },
+  "status": 200,
+  "step": "B19-test-all",
+  "wire": [
+   {
+    "body": {
+     "event": "test",
+     "image": "<13448 chars sha256=67565f39f3af25b3>",
+     "message": "This is a test notification. If you see this, notifications are working!",
+     "source": "Fenrir",
+     "timestamp": "<ts>",
+     "title": "Fenrir Test"
+    },
+    "headers": {
+     "authorization": "Bearer secret-1",
+     "content-type": "application/json"
+    },
+    "method": "POST",
+    "url": "https://hooks.example.test/fenrir"
+   },
+   {
+    "body": {
+     "message": "This is a test notification. If you see this, notifications are working!",
+     "priority": 5,
+     "title": "Fenrir Test"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "method": "POST",
+    "url": "https://gotify2.example.test/message"
+   },
+   {
+    "body": [
+     {
+      "head": "Content-Disposition: form-data; name=\"chat_id\"",
+      "size": 7,
+      "text": "-100123"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"caption\"",
+      "size": 86,
+      "text": "*Fenrir Test*\nThis is a test notification. If you see this, notifications are working!"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"parse_mode\"",
+      "size": 8,
+      "text": "Markdown"
+     },
+     {
+      "head": "Content-Disposition: form-data; name=\"photo\"; filename=\"photo.jpg\"\r\nContent-Type: image/jpeg",
+      "size": 9754,
+      "text": null
+     }
+    ],
+    "headers": {
+     "content-type": "multipart/form-data; boundary=<boundary>"
+    },
+    "method": "POST",
+    "url": "https://api.telegram.org/bot123456:ABC-DEF/sendPhoto"
+   },
+   {
+    "smtp": "FakeSMTP smtp.example.test:587 timeout=30.0"
+   },
+   {
+    "args": [],
+    "smtp": "starttls"
+   },
+   {
+    "args": [
+     "u",
+     "pw"
+    ],
+    "smtp": "login"
+   },
+   {
+    "args": [
+     "a@example.test",
+     "b@example.test",
+     {
+      "from": "a@example.test",
+      "parts": [
+       [
+        "multipart/mixed",
+        1
+       ],
+       [
+        "text/plain",
+        72
+       ]
+      ],
+      "subject": "[Fenrir] Fenrir Test",
+      "to": "b@example.test"
+     }
+    ],
+    "smtp": "sendmail"
+   },
+   {
+    "args": [],
+    "smtp": "quit"
+   },
+   {
+    "body": {
+     "groupType": "fenrir",
+     "text": "This is a test notification. If you see this, notifications are working!",
+     "title": "Fenrir Test"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "method": "POST",
+    "url": "https://push.getnotifyapp.com/notify-json/ABCDEFGH1234?token=tok"
+   }
+  ]
+ },
+ {
+  "body": [],
+  "status": 200,
+  "step": "C01-logs",
+  "wire": []
+ },
+ {
+  "body": [],
+  "status": 200,
+  "step": "C02-logs-filter-provider",
+  "wire": []
+ },
+ {
+  "body": 0,
+  "status": 200,
+  "step": "C03-logs-filter-event",
+  "wire": []
+ },
+ {
+  "body": 0,
+  "status": 200,
+  "step": "C04-logs-filter-success",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "ge": 1
+     },
+     "input": "0",
+     "loc": [
+      "query",
+      "limit"
+     ],
+     "msg": "Input should be greater than or equal to 1",
+     "type": "greater_than_equal"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "C05-logs-bad-limit",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "le": 90
+     },
+     "input": "91",
+     "loc": [
+      "query",
+      "days"
+     ],
+     "msg": "Input should be less than or equal to 90",
+     "type": "less_than_equal"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "C06-logs-bad-days",
+  "wire": []
+ },
+ {
+  "body": {
+   "by_event_type": {},
+   "by_provider": {},
+   "failure_count": 0,
+   "success_count": 0,
+   "total": 0
+  },
+  "status": 200,
+  "step": "C07-logs-stats",
+  "wire": []
+ },
+ {
+  "body": {
+   "by_event_type": {},
+   "by_provider": {},
+   "failure_count": 0,
+   "success_count": 0,
+   "total": 0
+  },
+  "status": 200,
+  "step": "C08-logs-stats-days",
+  "wire": []
+ },
+ {
+  "body": {
+   "deleted": 0,
+   "message": "Deleted 0 logs older than 30 days"
+  },
+  "status": 200,
+  "step": "C09-logs-clear-old",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "ge": 1
+     },
+     "input": "0",
+     "loc": [
+      "query",
+      "older_than_days"
+     ],
+     "msg": "Input should be greater than or equal to 1",
+     "type": "greater_than_equal"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "C10-logs-clear-all",
+  "wire": []
+ },
+ {
+  "body": 0,
+  "status": 200,
+  "step": "C11-logs-after-clear",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Photo not found"
+  },
+  "status": 404,
+  "step": "C12-photo-404",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Not found"
+  },
+  "status": 404,
+  "step": "C13-photo-traversal",
+  "wire": []
+ },
+ {
+  "body": [
+   {
+    "body_template": "{printer}: {filename}\nEstimated: {estimated_time}",
+    "created_at": "<ts>",
+    "event_type": "print_start",
+    "is_default": true,
+    "name": "Print Started",
+    "title_template": "Print Started",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: {filename}\nTime: {duration}\nFilament: {filament_grams}g",
+    "created_at": "<ts>",
+    "event_type": "print_complete",
+    "is_default": true,
+    "name": "Print Completed",
+    "title_template": "Print Completed",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: {filename}\nTime: {duration}\nReason: {reason}",
+    "created_at": "<ts>",
+    "event_type": "print_failed",
+    "is_default": true,
+    "name": "Print Failed",
+    "title_template": "Print Failed",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: {filename}\nTime: {duration}",
+    "created_at": "<ts>",
+    "event_type": "print_stopped",
+    "is_default": true,
+    "name": "Print Stopped",
+    "title_template": "Print Stopped",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: {filename}\nRemaining: {remaining_time}",
+    "created_at": "<ts>",
+    "event_type": "print_progress",
+    "is_default": true,
+    "name": "Print Progress",
+    "title_template": "Print {progress}% Complete",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: {filename}\nConfirm: {confirm_url}",
+    "created_at": "<ts>",
+    "event_type": "print_confirm_request",
+    "is_default": true,
+    "name": "Print Outcome Confirmation",
+    "title_template": "How did your print come out?",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: print started with missing spool assignments\nSlots: {missing_slots}\nExpected profile:\n{missing_slot_details}",
+    "created_at": "<ts>",
+    "event_type": "print_missing_spool_assignment",
+    "is_default": true,
+    "name": "Missing Spool Assignment",
+    "title_template": "Missing Spool Assignment",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: {filename}\nThe print charge could not be recorded. The budget reservation was retained.\nArchive: {archive_id}",
+    "created_at": "<ts>",
+    "event_type": "billing_charge_failed",
+    "is_default": true,
+    "name": "Billing Charge Failed",
+    "title_template": "Billing Charge Failed",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer} has disconnected",
+    "created_at": "<ts>",
+    "event_type": "printer_offline",
+    "is_default": true,
+    "name": "Printer Offline",
+    "title_template": "Printer Offline",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}\n{error_detail}",
+    "created_at": "<ts>",
+    "event_type": "printer_error",
+    "is_default": true,
+    "name": "Printer Error",
+    "title_template": "Printer Error: {error_type}",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: {task_name}\nProvider: {provider}\nPrint quality: {print_quality}\nConfidence: {confidence}\nAction taken: {action}",
+    "created_at": "<ts>",
+    "event_type": "ai_failure_detection",
+    "is_default": true,
+    "name": "AI Failure Detection",
+    "title_template": "Possible Print Failure Detected",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: Objects detected on build plate. Print has been paused. Clear plate and resume.",
+    "created_at": "<ts>",
+    "event_type": "plate_not_empty",
+    "is_default": true,
+    "name": "Plate Not Empty",
+    "title_template": "Plate Not Empty - Print Paused",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: print finished. Confirm the build plate is clear before the queue continues.",
+    "created_at": "<ts>",
+    "event_type": "plate_clear_required",
+    "is_default": true,
+    "name": "Plate Clear Required",
+    "title_template": "Plate Clear Required",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: Slot {slot} at {remaining_percent}%",
+    "created_at": "<ts>",
+    "event_type": "filament_low",
+    "is_default": true,
+    "name": "Filament Low",
+    "title_template": "Filament Low",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}:\n{items}",
+    "created_at": "<ts>",
+    "event_type": "maintenance_due",
+    "is_default": true,
+    "name": "Maintenance Due",
+    "title_template": "Maintenance Due",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer} {ams_label}: Humidity {humidity}% exceeds {threshold}% threshold",
+    "created_at": "<ts>",
+    "event_type": "ams_humidity_high",
+    "is_default": true,
+    "name": "AMS Humidity High",
+    "title_template": "AMS Humidity Alert",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer} {ams_label}: Temperature {temperature}\u00b0C exceeds {threshold}\u00b0C threshold",
+    "created_at": "<ts>",
+    "event_type": "ams_temperature_high",
+    "is_default": true,
+    "name": "AMS Temperature High",
+    "title_template": "AMS Temperature Alert",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer} {ams_label}: stopped automatic drying after {cycles} cycles left humidity at {humidity}%, still above the {threshold}% threshold. An AMS reads higher while it is warm, so raise the threshold or dry the spools off the printer.",
+    "created_at": "<ts>",
+    "event_type": "ams_drying_suspended",
+    "is_default": true,
+    "name": "Auto-Drying Suspended",
+    "title_template": "Auto-Drying Suspended",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: Bed cooled to {bed_temp}\u00b0C (threshold: {threshold}\u00b0C)",
+    "created_at": "<ts>",
+    "event_type": "bed_cooled",
+    "is_default": true,
+    "name": "Bed Cooled",
+    "title_template": "Bed Cooled",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: {sensor} is {state}",
+    "created_at": "<ts>",
+    "event_type": "ha_sensor_alert",
+    "is_default": true,
+    "name": "Printer Sensor Alert",
+    "title_template": "Sensor Alert",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{location}: {sensor} is {state}",
+    "created_at": "<ts>",
+    "event_type": "location_ha_sensor_alert",
+    "is_default": true,
+    "name": "Storage Location Sensor Alert",
+    "title_template": "Sensor Alert",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: {filename}\nLayer 1/{total_layers} done",
+    "created_at": "<ts>",
+    "event_type": "first_layer_complete",
+    "is_default": true,
+    "name": "First Layer Complete",
+    "title_template": "First Layer Complete",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: {filename}\nPauses in {time_to_pause} (about {eta}), at layer {layer}/{total_layers}",
+    "created_at": "<ts>",
+    "event_type": "print_pause_upcoming",
+    "is_default": true,
+    "name": "Pause Coming Up",
+    "title_template": "Pause Coming Up",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "This is a test notification. If you see this, notifications are working!",
+    "created_at": "<ts>",
+    "event_type": "test",
+    "is_default": true,
+    "name": "Test Notification",
+    "title_template": "Fenrir Test",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{job_name} added to queue for {target}",
+    "created_at": "<ts>",
+    "event_type": "queue_job_added",
+    "is_default": true,
+    "name": "Queue Job Added",
+    "title_template": "Job Queued",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{job_name} assigned to {printer} (from Any {target_model} queue)",
+    "created_at": "<ts>",
+    "event_type": "queue_job_assigned",
+    "is_default": true,
+    "name": "Queue Job Assigned",
+    "title_template": "Job Assigned",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: {job_name}\nEstimated: {estimated_time}",
+    "created_at": "<ts>",
+    "event_type": "queue_job_started",
+    "is_default": true,
+    "name": "Queue Job Started",
+    "title_template": "Queue Job Started",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{job_name} waiting for {target_model}\n{waiting_reason}",
+    "created_at": "<ts>",
+    "event_type": "queue_job_waiting",
+    "is_default": true,
+    "name": "Queue Job Waiting",
+    "title_template": "Queue Job Waiting",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: {job_name}\nReason: {reason}",
+    "created_at": "<ts>",
+    "event_type": "queue_job_skipped",
+    "is_default": true,
+    "name": "Queue Job Skipped",
+    "title_template": "Job Skipped",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{printer}: {job_name}\nReason: {reason}",
+    "created_at": "<ts>",
+    "event_type": "queue_job_failed",
+    "is_default": true,
+    "name": "Queue Job Failed",
+    "title_template": "Job Failed to Start",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "All {completed_count} queued jobs have finished",
+    "created_at": "<ts>",
+    "event_type": "queue_completed",
+    "is_default": true,
+    "name": "Queue Completed",
+    "title_template": "Queue Complete",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "Welcome {username}!\n\nYour {app_name} account has been created. Please change your password after your first login.\n\nLogin at: {login_url}\n\nYour login details:",
+    "created_at": "<ts>",
+    "event_type": "user_created",
+    "is_default": true,
+    "name": "Welcome Email",
+    "title_template": "Welcome to {app_name}",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "Hello {username},\n\nA password reset was requested for your {app_name} account. If you did not request it, you can ignore this email: your password has not been changed.\n\nSet a new password with the link below (valid for 1 hour, usable once):",
+    "created_at": "<ts>",
+    "event_type": "password_reset",
+    "is_default": true,
+    "name": "Password Reset",
+    "title_template": "{app_name} - Password Reset",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{material} {subtype} {color} ({brand}) has reached the reorder point.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Days left: {days_left}d\nReorder now to avoid a stock break.",
+    "created_at": "<ts>",
+    "event_type": "stock_reorder_alert",
+    "is_default": true,
+    "name": "Stock Reorder Alert",
+    "title_template": "Reorder Alert: {material}",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{material} {subtype} {color} ({brand}) will run out before replenishment arrives.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Lead time: {lead_time_days}d\nOnly {days_left}d of stock remaining \u2014 order immediately.",
+    "created_at": "<ts>",
+    "event_type": "stock_break_alert",
+    "is_default": true,
+    "name": "Stock Break Alert",
+    "title_template": "Stock Break Risk: {material}",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "Hello {username},\n\nYour print job has started on {printer}.\n\nFile: {filename}\n\nYou will be notified when it completes.",
+    "created_at": "<ts>",
+    "event_type": "user_print_start",
+    "is_default": true,
+    "name": "User Print Started Email",
+    "title_template": "Your Print Has Started",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "Hello {username},\n\nYour print job has completed on {printer}.\n\nFile: {filename}",
+    "created_at": "<ts>",
+    "event_type": "user_print_complete",
+    "is_default": true,
+    "name": "User Print Completed Email",
+    "title_template": "Your Print Is Complete",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "Hello {username},\n\nYour print job has failed on {printer}.\n\nFile: {filename}",
+    "created_at": "<ts>",
+    "event_type": "user_print_failed",
+    "is_default": true,
+    "name": "User Print Failed Email",
+    "title_template": "Your Print Has Failed",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "Hello {username},\n\nYour print job was stopped on {printer}.\n\nFile: {filename}",
+    "created_at": "<ts>",
+    "event_type": "user_print_stopped",
+    "is_default": true,
+    "name": "User Print Stopped Email",
+    "title_template": "Your Print Has Been Stopped",
+    "updated_at": "<ts>"
+   },
+   {
+    "body_template": "{client_name} paid {amount} {currency} ({source})\nProject #{project_id}",
+    "created_at": "<ts>",
+    "event_type": "aito_payment_received",
+    "is_default": true,
+    "name": "Aito Payment Received",
+    "title_template": "Payment received \u2014 {reference}",
+    "updated_at": "<ts>"
+   }
+  ],
+  "status": 200,
+  "step": "D01-templates",
+  "wire": []
+ },
+ {
+  "body": 40,
+  "status": 200,
+  "step": "D02-templates-slash",
+  "wire": []
+ },
+ {
+  "body": [
+   {
+    "event_name": "Print Outcome Confirmation",
+    "event_type": "print_confirm_request",
+    "supports_photo": true,
+    "variables": [
+     "printer",
+     "filename",
+     "confirm_url",
+     "good_url",
+     "reject_url",
+     "archive_id",
+     "finish_photo_url",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Print Started",
+    "event_type": "print_start",
+    "supports_photo": true,
+    "variables": [
+     "printer",
+     "filename",
+     "estimated_time",
+     "eta",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Print Completed",
+    "event_type": "print_complete",
+    "supports_photo": true,
+    "variables": [
+     "printer",
+     "filename",
+     "duration",
+     "filament_grams",
+     "filament_details",
+     "archive_id",
+     "run_id",
+     "finish_photo_url",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Print Failed",
+    "event_type": "print_failed",
+    "supports_photo": true,
+    "variables": [
+     "printer",
+     "filename",
+     "duration",
+     "filament_grams",
+     "filament_details",
+     "progress",
+     "reason",
+     "archive_id",
+     "run_id",
+     "finish_photo_url",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Print Stopped",
+    "event_type": "print_stopped",
+    "supports_photo": true,
+    "variables": [
+     "printer",
+     "filename",
+     "duration",
+     "filament_grams",
+     "filament_details",
+     "progress",
+     "archive_id",
+     "run_id",
+     "finish_photo_url",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Print Progress",
+    "event_type": "print_progress",
+    "supports_photo": true,
+    "variables": [
+     "printer",
+     "filename",
+     "progress",
+     "remaining_time",
+     "eta",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Missing Spool Assignment",
+    "event_type": "print_missing_spool_assignment",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "missing_slots",
+     "missing_slot_details",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Billing Charge Failed",
+    "event_type": "billing_charge_failed",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "filename",
+     "archive_id",
+     "error",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Printer Offline",
+    "event_type": "printer_offline",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Printer Error",
+    "event_type": "printer_error",
+    "supports_photo": true,
+    "variables": [
+     "printer",
+     "error_type",
+     "error_detail",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "AI Failure Detection",
+    "event_type": "ai_failure_detection",
+    "supports_photo": true,
+    "variables": [
+     "printer",
+     "task_name",
+     "provider",
+     "confidence",
+     "print_quality",
+     "action",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Plate Not Empty",
+    "event_type": "plate_not_empty",
+    "supports_photo": true,
+    "variables": [
+     "printer",
+     "difference_percent",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Plate Clear Required",
+    "event_type": "plate_clear_required",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Filament Low",
+    "event_type": "filament_low",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "slot",
+     "remaining_percent",
+     "color",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Maintenance Due",
+    "event_type": "maintenance_due",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "items",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "AMS Humidity High",
+    "event_type": "ams_humidity_high",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "ams_label",
+     "humidity",
+     "threshold",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "AMS Temperature High",
+    "event_type": "ams_temperature_high",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "ams_label",
+     "temperature",
+     "threshold",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Auto-Drying Suspended",
+    "event_type": "ams_drying_suspended",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "ams_label",
+     "humidity",
+     "threshold",
+     "cycles",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Bed Cooled",
+    "event_type": "bed_cooled",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "bed_temp",
+     "threshold",
+     "filename",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Printer Sensor Alert",
+    "event_type": "ha_sensor_alert",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "sensor",
+     "state",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Storage Location Sensor Alert",
+    "event_type": "location_ha_sensor_alert",
+    "supports_photo": false,
+    "variables": [
+     "location",
+     "sensor",
+     "state",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "First Layer Complete",
+    "event_type": "first_layer_complete",
+    "supports_photo": true,
+    "variables": [
+     "printer",
+     "filename",
+     "total_layers",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Pause Coming Up",
+    "event_type": "print_pause_upcoming",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "filename",
+     "time_to_pause",
+     "eta",
+     "layer",
+     "total_layers",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Test Notification",
+    "event_type": "test",
+    "supports_photo": true,
+    "variables": [
+     "app_name",
+     "timestamp"
+    ]
+   },
+   {
+    "event_name": "Queue Job Added",
+    "event_type": "queue_job_added",
+    "supports_photo": false,
+    "variables": [
+     "job_name",
+     "target",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Queue Job Assigned",
+    "event_type": "queue_job_assigned",
+    "supports_photo": false,
+    "variables": [
+     "job_name",
+     "printer",
+     "target_model",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Queue Job Started",
+    "event_type": "queue_job_started",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "job_name",
+     "estimated_time",
+     "eta",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Queue Job Waiting",
+    "event_type": "queue_job_waiting",
+    "supports_photo": false,
+    "variables": [
+     "job_name",
+     "target_model",
+     "waiting_reason",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Queue Job Skipped",
+    "event_type": "queue_job_skipped",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "job_name",
+     "reason",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Queue Job Failed",
+    "event_type": "queue_job_failed",
+    "supports_photo": false,
+    "variables": [
+     "printer",
+     "job_name",
+     "reason",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Queue Completed",
+    "event_type": "queue_completed",
+    "supports_photo": false,
+    "variables": [
+     "completed_count",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Stock Reorder Alert",
+    "event_type": "stock_reorder_alert",
+    "supports_photo": false,
+    "variables": [
+     "material",
+     "subtype",
+     "brand",
+     "color",
+     "stock_g",
+     "rate_g_day",
+     "days_left",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Stock Break Alert",
+    "event_type": "stock_break_alert",
+    "supports_photo": false,
+    "variables": [
+     "material",
+     "subtype",
+     "brand",
+     "color",
+     "stock_g",
+     "rate_g_day",
+     "days_left",
+     "lead_time_days",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Welcome Email",
+    "event_type": "user_created",
+    "supports_photo": false,
+    "variables": [
+     "username",
+     "login_url",
+     "app_name",
+     "timestamp"
+    ]
+   },
+   {
+    "event_name": "Password Reset",
+    "event_type": "password_reset",
+    "supports_photo": false,
+    "variables": [
+     "username",
+     "app_name",
+     "timestamp"
+    ]
+   },
+   {
+    "event_name": "User Print Started Email",
+    "event_type": "user_print_start",
+    "supports_photo": false,
+    "variables": [
+     "username",
+     "printer",
+     "filename",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "User Print Completed Email",
+    "event_type": "user_print_complete",
+    "supports_photo": true,
+    "variables": [
+     "username",
+     "printer",
+     "filename",
+     "finish_photo_url",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "User Print Failed Email",
+    "event_type": "user_print_failed",
+    "supports_photo": true,
+    "variables": [
+     "username",
+     "printer",
+     "filename",
+     "finish_photo_url",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "User Print Stopped Email",
+    "event_type": "user_print_stopped",
+    "supports_photo": true,
+    "variables": [
+     "username",
+     "printer",
+     "filename",
+     "finish_photo_url",
+     "timestamp",
+     "app_name"
+    ]
+   },
+   {
+    "event_name": "Aito Payment Received",
+    "event_type": "aito_payment_received",
+    "supports_photo": false,
+    "variables": [
+     "client_name",
+     "reference",
+     "amount",
+     "currency",
+     "source",
+     "project_id"
+    ]
+   }
+  ],
+  "status": 200,
+  "step": "D03-variables",
+  "wire": []
+ },
+ {
+  "body": {
+   "body_template": "{printer}: {filename}\nTime: {duration}\nFilament: {filament_grams}g",
+   "created_at": "<ts>",
+   "event_type": "print_complete",
+   "is_default": true,
+   "name": "Print Completed",
+   "title_template": "Print Completed",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "D04-get",
+  "wire": []
+ },
+ {
+  "body": {
+   "body_template": "{file_name} en {duration} {unknown}",
+   "created_at": "<ts>",
+   "event_type": "print_complete",
+   "is_default": true,
+   "name": "Print Completed",
+   "title_template": "{printer_name} fini",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "D05-put",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "min_length": 1
+     },
+     "input": "",
+     "loc": [
+      "body",
+      "title_template"
+     ],
+     "msg": "String should have at least 1 character",
+     "type": "string_too_short"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "D06-put-empty-title",
+  "wire": []
+ },
+ {
+  "body": {
+   "body_template": "{printer}: {filename}\nTime: {duration}\nFilament: {filament_grams}g",
+   "created_at": "<ts>",
+   "event_type": "print_complete",
+   "is_default": true,
+   "name": "Print Completed",
+   "title_template": "Print Completed",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "D07-reset",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Template not found"
+  },
+  "status": 404,
+  "step": "D08-get-404",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Template not found"
+  },
+  "status": 404,
+  "step": "D09-put-404",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Template not found"
+  },
+  "status": 404,
+  "step": "D10-reset-404",
+  "wire": []
+ },
+ {
+  "body": {
+   "body": "1h 18m   {Upper}",
+   "title": ": "
+  },
+  "status": 200,
+  "step": "D11-preview",
+  "wire": []
+ },
+ {
+  "body": {
+   "body": "b",
+   "title": ""
+  },
+  "status": 200,
+  "step": "D12-preview-unknown-event",
+  "wire": []
+ },
+ {
+  "body": {
+   "notify_print_complete": true,
+   "notify_print_failed": true,
+   "notify_print_start": true,
+   "notify_print_stopped": true
+  },
+  "status": 200,
+  "step": "E01-prefs-get",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Authentication must be enabled to save user notification preferences"
+  },
+  "status": 400,
+  "step": "E02-prefs-put",
+  "wire": []
+ },
+ {
+  "body": {
+   "notify_print_complete": true,
+   "notify_print_failed": true,
+   "notify_print_start": true,
+   "notify_print_stopped": true
+  },
+  "status": 200,
+  "step": "E03-prefs-get-again",
+  "wire": []
+ },
+ {
+  "body": [],
+  "status": 200,
+  "step": "F01-app-message-channels",
+  "wire": []
+ },
+ {
+  "body": {
+   "channels": 0
+  },
+  "status": 200,
+  "step": "F02-app-message-send-no-provider",
+  "wire": []
+ },
+ {
+  "body": {
+   "attach_photo": true,
+   "config": {
+    "auth_header": "********",
+    "payload_format": "json",
+    "webhook_url": "********"
+   },
+   "created_at": "<ts>",
+   "daily_digest_enabled": false,
+   "daily_digest_time": null,
+   "enabled": true,
+   "id": 1,
+   "last_error": null,
+   "last_error_at": null,
+   "last_success": "<ts>",
+   "name": "Hook",
+   "on_ai_failure_detection": false,
+   "on_aito_payment_received": false,
+   "on_ams_drying_suspended": true,
+   "on_ams_ht_humidity_high": false,
+   "on_ams_ht_temperature_high": false,
+   "on_ams_humidity_high": false,
+   "on_ams_temperature_high": false,
+   "on_app_message": true,
+   "on_bed_cooled": false,
+   "on_billing_charge_failed": true,
+   "on_filament_low": false,
+   "on_first_layer_complete": false,
+   "on_ha_sensor_alert": false,
+   "on_location_ha_sensor_alert": false,
+   "on_maintenance_due": false,
+   "on_plate_clear_required": false,
+   "on_plate_not_empty": true,
+   "on_print_complete": true,
+   "on_print_confirm_request": true,
+   "on_print_failed": true,
+   "on_print_missing_spool_assignment": false,
+   "on_print_pause_upcoming": false,
+   "on_print_progress": false,
+   "on_print_start": false,
+   "on_print_stopped": true,
+   "on_printer_error": false,
+   "on_printer_offline": false,
+   "on_queue_completed": false,
+   "on_queue_job_added": false,
+   "on_queue_job_assigned": false,
+   "on_queue_job_failed": true,
+   "on_queue_job_skipped": true,
+   "on_queue_job_started": false,
+   "on_queue_job_waiting": true,
+   "on_stock_break_alert": false,
+   "on_stock_reorder_alert": false,
+   "printer_id": null,
+   "provider_type": "webhook",
+   "quiet_hours_enabled": false,
+   "quiet_hours_end": null,
+   "quiet_hours_start": null,
+   "telegram_verdict_mode": "buttons",
+   "updated_at": "<ts>"
+  },
+  "status": 200,
+  "step": "F03-enable-app-message-on-hook",
+  "wire": []
+ },
+ {
+  "body": [
+   {
+    "name": "Hook",
+    "provider_type": "webhook"
+   }
+  ],
+  "status": 200,
+  "step": "F04-app-message-channels-again",
+  "wire": []
+ },
+ {
+  "body": {
+   "channels": 1
+  },
+  "status": 200,
+  "step": "F05-app-message-send",
+  "wire": [
+   {
+    "body": {
+     "event": "app:app",
+     "message": "from a probe",
+     "source": "Fenrir",
+     "timestamp": "<ts>",
+     "title": "Hello"
+    },
+    "headers": {
+     "authorization": "Bearer secret-1",
+     "content-type": "application/json"
+    },
+    "method": "POST",
+    "url": "https://hooks.example.test/fenrir"
+   }
+  ]
+ },
+ {
+  "body": {
+   "detail": [
+    {
+     "ctx": {
+      "min_length": 1
+     },
+     "input": "",
+     "loc": [
+      "body",
+      "title"
+     ],
+     "msg": "String should have at least 1 character",
+     "type": "string_too_short"
+    },
+    {
+     "input": {
+      "title": ""
+     },
+     "loc": [
+      "body",
+      "message"
+     ],
+     "msg": "Field required",
+     "type": "missing"
+    }
+   ]
+  },
+  "status": 422,
+  "step": "F06-app-message-bad",
+  "wire": []
+ },
+ {
+  "body": {
+   "message": "Notification provider 'Mail' deleted"
+  },
+  "status": 200,
+  "step": "A26-delete",
+  "wire": []
+ },
+ {
+  "body": {
+   "detail": "Notification provider not found"
+  },
+  "status": 404,
+  "step": "A27-delete-404",
+  "wire": []
+ },
+ {
+  "body": [
+   "Notify",
+   "TG",
+   "Gotify",
+   "Ntfy 2",
+   "Hook"
+  ],
+  "status": 200,
+  "step": "A28-list-after-delete",
+  "wire": []
+ },
+ {
+  "gate": {
+   "DELETE /api/v1/notifications/6": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:delete"
+    ],
+    "read": [
+     403,
+     "Missing required permissions: notifications:delete"
+    ]
+   },
+   "DELETE /api/v1/notifications/logs": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:delete"
+    ],
+    "read": [
+     403,
+     "Missing required permissions: notifications:delete"
+    ]
+   },
+   "GET /api/v1/notification-templates": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notification_templates:read"
+    ],
+    "read": [
+     200,
+     "ok"
+    ]
+   },
+   "GET /api/v1/notification-templates/2": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notification_templates:read"
+    ],
+    "read": [
+     200,
+     "ok"
+    ]
+   },
+   "GET /api/v1/notification-templates/variables": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notification_templates:read"
+    ],
+    "read": [
+     200,
+     "ok"
+    ]
+   },
+   "GET /api/v1/notifications/": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:read"
+    ],
+    "read": [
+     200,
+     "ok"
+    ]
+   },
+   "GET /api/v1/notifications/1": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:read"
+    ],
+    "read": [
+     200,
+     "ok"
+    ]
+   },
+   "GET /api/v1/notifications/app-message/channels": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:update"
+    ],
+    "read": [
+     403,
+     "Missing required permissions: notifications:update"
+    ]
+   },
+   "GET /api/v1/notifications/logs": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:read"
+    ],
+    "read": [
+     200,
+     "ok"
+    ]
+   },
+   "GET /api/v1/notifications/logs/stats": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:read"
+    ],
+    "read": [
+     200,
+     "ok"
+    ]
+   },
+   "GET /api/v1/notifications/photos/x.jpg": {
+    "bad token": [
+     404,
+     "Photo not found"
+    ],
+    "full": [
+     404,
+     "Photo not found"
+    ],
+    "no token": [
+     404,
+     "Photo not found"
+    ],
+    "none": [
+     404,
+     "Photo not found"
+    ],
+    "read": [
+     404,
+     "Photo not found"
+    ]
+   },
+   "GET /api/v1/user-notifications/preferences": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:user_email"
+    ],
+    "read": [
+     403,
+     "Missing required permissions: notifications:user_email"
+    ]
+   },
+   "PATCH /api/v1/notifications/1": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:update"
+    ],
+    "read": [
+     403,
+     "Missing required permissions: notifications:update"
+    ]
+   },
+   "POST /api/v1/notification-templates/2/reset": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notification_templates:update"
+    ],
+    "read": [
+     403,
+     "Missing required permissions: notification_templates:update"
+    ]
+   },
+   "POST /api/v1/notification-templates/preview": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notification_templates:read"
+    ],
+    "read": [
+     200,
+     "ok"
+    ]
+   },
+   "POST /api/v1/notifications/": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:create"
+    ],
+    "read": [
+     403,
+     "Missing required permissions: notifications:create"
+    ]
+   },
+   "POST /api/v1/notifications/1/test": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:update"
+    ],
+    "read": [
+     403,
+     "Missing required permissions: notifications:update"
+    ]
+   },
+   "POST /api/v1/notifications/app-message": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:update"
+    ],
+    "read": [
+     403,
+     "Missing required permissions: notifications:update"
+    ]
+   },
+   "POST /api/v1/notifications/test-all": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:update"
+    ],
+    "read": [
+     403,
+     "Missing required permissions: notifications:update"
+    ]
+   },
+   "POST /api/v1/notifications/test-config": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:create"
+    ],
+    "read": [
+     403,
+     "Missing required permissions: notifications:create"
+    ]
+   },
+   "PUT /api/v1/notification-templates/2": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     200,
+     "ok"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notification_templates:update"
+    ],
+    "read": [
+     403,
+     "Missing required permissions: notification_templates:update"
+    ]
+   },
+   "PUT /api/v1/user-notifications/preferences": {
+    "bad token": [
+     401,
+     "Invalid token"
+    ],
+    "full": [
+     400,
+     "User must have an email address to receive notifications"
+    ],
+    "no token": [
+     401,
+     "Authentication required"
+    ],
+    "none": [
+     403,
+     "Missing required permissions: notifications:user_email"
+    ],
+    "read": [
+     403,
+     "Missing required permissions: notifications:user_email"
+    ]
+   }
+  },
+  "step": "G01-permission-gate"
+ }
+]
+
+### stderr:
+
