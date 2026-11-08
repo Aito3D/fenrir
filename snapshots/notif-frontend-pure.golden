@@ -1,0 +1,123 @@
+### exit: 0
+### stdout:
+{
+ "kindsExports": [
+  "NOTIFICATION_KINDS",
+  "UNKNOWN_KIND",
+  "kindFamily"
+ ],
+ "kinds": {
+  "aito.overdue": {
+   "icon": "Clock",
+   "tone": "text-red-400 bg-red-400/10",
+   "family": "aito",
+   "titleKey": "aitoOverdue"
+  },
+  "aito.paid": {
+   "icon": "Banknote",
+   "tone": "text-emerald-400 bg-emerald-400/10",
+   "family": "aito",
+   "titleKey": "aitoPaid"
+  },
+  "aito.quote_accepted": {
+   "icon": "CircleCheck",
+   "tone": "text-bambu-green bg-bambu-green/10",
+   "family": "aito",
+   "titleKey": "aitoQuoteAccepted"
+  },
+  "aito.quote_declined": {
+   "icon": "CircleX",
+   "tone": "text-rose-400 bg-rose-400/10",
+   "family": "aito",
+   "titleKey": "aitoQuoteDeclined"
+  },
+  "aito.quote_viewed": {
+   "icon": "Eye",
+   "tone": "text-sky-400 bg-sky-400/10",
+   "family": "aito",
+   "titleKey": "aitoQuoteViewed"
+  },
+  "hours.readings_due": {
+   "icon": "Timer",
+   "tone": "text-amber-400 bg-amber-400/10",
+   "family": "printer",
+   "titleKey": "hoursReadingsDue"
+  },
+  "printer.failed": {
+   "icon": "TriangleAlert",
+   "tone": "text-amber-400 bg-amber-400/10",
+   "family": "printer",
+   "titleKey": "printerFailed"
+  },
+  "printer.finished": {
+   "icon": "CheckCheck",
+   "tone": "text-bambu-green bg-bambu-green/10",
+   "family": "printer",
+   "titleKey": "printerFinished"
+  },
+  "printer.job_sent": {
+   "icon": "Send",
+   "tone": "text-violet-400 bg-violet-400/10",
+   "family": "printer",
+   "titleKey": "printerJobSent"
+  }
+ },
+ "kindFamily": {
+  "aito.paid": "aito",
+  "printer.job_sent": "printer",
+  "nope": "nope",
+  "": "",
+  "undefined": {
+   "__threw__": "TypeError: Cannot read properties of undefined (reading 'split')"
+  }
+ },
+ "unknownKind": {
+  "icon": "Bell",
+  "tone": "text-bambu-gray-light bg-bambu-dark-tertiary"
+ },
+ "notifyExports": [
+  "isNotifyPhotoUnsupported",
+  "isNotifyPushOnlyTarget"
+ ],
+ "notify": {
+  "isNotifyPhotoUnsupported": {
+   "42": {
+    "__threw__": "TypeError: deviceId.trim is not a function"
+   },
+   "ABCDEFGH1234": false,
+   "WB123456": true,
+   "wb123456": true,
+   "GRP12345": true,
+   "MC123456": false,
+   " WB1 ": true,
+   "": false,
+   "null": {
+    "__threw__": "TypeError: Cannot read properties of null (reading 'trim')"
+   },
+   "undefined": {
+    "__threw__": "TypeError: Cannot read properties of undefined (reading 'trim')"
+   }
+  },
+  "isNotifyPushOnlyTarget": {
+   "42": {
+    "__threw__": "TypeError: deviceId.trim is not a function"
+   },
+   "ABCDEFGH1234": false,
+   "WB123456": true,
+   "wb123456": true,
+   "GRP12345": true,
+   "MC123456": true,
+   " WB1 ": true,
+   "": false,
+   "null": {
+    "__threw__": "TypeError: Cannot read properties of null (reading 'trim')"
+   },
+   "undefined": {
+    "__threw__": "TypeError: Cannot read properties of undefined (reading 'trim')"
+   }
+  }
+ }
+}
+
+### stderr:
+

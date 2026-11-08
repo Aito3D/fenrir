@@ -1,0 +1,3310 @@
+### exit: 0
+### stdout:
+{
+ "operations": {
+  "DELETE /api/v1/notifications/logs": {
+   "description": "Clear old notification logs.",
+   "operationId": "clear_notification_logs_api_v1_notifications_logs_delete",
+   "parameters": [
+    {
+     "description": "Delete logs older than N days",
+     "in": "query",
+     "name": "older_than_days",
+     "required": false,
+     "schema": {
+      "default": 30,
+      "description": "Delete logs older than N days",
+      "minimum": 1,
+      "title": "Older Than Days",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Clear Notification Logs",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "DELETE /api/v1/notifications/{provider_id}": {
+   "description": "Delete a notification provider.",
+   "operationId": "delete_notification_provider_api_v1_notifications__provider_id__delete",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "provider_id",
+     "required": true,
+     "schema": {
+      "title": "Provider Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Delete Notification Provider",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "GET /api/v1/notification-templates": {
+   "description": "Get all notification templates.",
+   "operationId": "get_templates_api_v1_notification_templates_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/NotificationTemplateResponse"
+        },
+        "title": "Response Get Templates Api V1 Notification Templates Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Templates",
+   "tags": [
+    "notification-templates"
+   ]
+  },
+  "GET /api/v1/notification-templates/": {
+   "description": "Get all notification templates.",
+   "operationId": "get_templates_api_v1_notification_templates__get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/NotificationTemplateResponse"
+        },
+        "title": "Response Get Templates Api V1 Notification Templates  Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Templates",
+   "tags": [
+    "notification-templates"
+   ]
+  },
+  "GET /api/v1/notification-templates/variables": {
+   "description": "Get available variables for each event type.",
+   "operationId": "get_variables_api_v1_notification_templates_variables_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/EventVariablesResponse"
+        },
+        "title": "Response Get Variables Api V1 Notification Templates Variables Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Variables",
+   "tags": [
+    "notification-templates"
+   ]
+  },
+  "GET /api/v1/notification-templates/{template_id}": {
+   "description": "Get a single notification template.",
+   "operationId": "get_template_api_v1_notification_templates__template_id__get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "template_id",
+     "required": true,
+     "schema": {
+      "title": "Template Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NotificationTemplateResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Template",
+   "tags": [
+    "notification-templates"
+   ]
+  },
+  "GET /api/v1/notifications/": {
+   "description": "List all notification providers.",
+   "operationId": "list_notification_providers_api_v1_notifications__get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/NotificationProviderResponse"
+        },
+        "title": "Response List Notification Providers Api V1 Notifications  Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Notification Providers",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "GET /api/v1/notifications/app-message/channels": {
+   "description": "The enabled channels that deliver app messages: names and types only,\nso an app can tell its user where its messages will arrive.",
+   "operationId": "app_message_channels_api_v1_notifications_app_message_channels_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/AppMessageChannel"
+        },
+        "title": "Response App Message Channels Api V1 Notifications App Message Channels Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "App Message Channels",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "GET /api/v1/notifications/logs": {
+   "description": "Get notification logs with optional filters.",
+   "operationId": "get_notification_logs_api_v1_notifications_logs_get",
+   "parameters": [
+    {
+     "in": "query",
+     "name": "limit",
+     "required": false,
+     "schema": {
+      "default": 100,
+      "maximum": 500,
+      "minimum": 1,
+      "title": "Limit",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "query",
+     "name": "offset",
+     "required": false,
+     "schema": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Offset",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "query",
+     "name": "provider_id",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Provider Id"
+     }
+    },
+    {
+     "in": "query",
+     "name": "event_type",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Event Type"
+     }
+    },
+    {
+     "in": "query",
+     "name": "success",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Success"
+     }
+    },
+    {
+     "description": "Filter logs from the last N days",
+     "in": "query",
+     "name": "days",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "maximum": 90,
+        "minimum": 1,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": 7,
+      "description": "Filter logs from the last N days",
+      "title": "Days"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/NotificationLogResponse"
+        },
+        "title": "Response Get Notification Logs Api V1 Notifications Logs Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Notification Logs",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "GET /api/v1/notifications/logs/stats": {
+   "description": "Get notification log statistics.",
+   "operationId": "get_notification_log_stats_api_v1_notifications_logs_stats_get",
+   "parameters": [
+    {
+     "description": "Statistics for the last N days",
+     "in": "query",
+     "name": "days",
+     "required": false,
+     "schema": {
+      "default": 7,
+      "description": "Statistics for the last N days",
+      "maximum": 90,
+      "minimum": 1,
+      "title": "Days",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NotificationLogStats"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Notification Log Stats",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "GET /api/v1/notifications/photos/{filename}": {
+   "description": "Serve an ad-hoc notification snapshot to HA, Bark or Slack.\n\nThey fetch this URL themselves with no session, so the unguessable\nfilename is the credential and opens this one photo only -- see\nbackend/app/utils/notification_photos.py. Anything that isn't a live\nphoto of exactly that shape is a 404.",
+   "operationId": "get_notification_photo_api_v1_notifications_photos__filename__get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "filename",
+     "required": true,
+     "schema": {
+      "title": "Filename",
+      "type": "string"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "summary": "Get Notification Photo",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "GET /api/v1/notifications/{provider_id}": {
+   "description": "Get a specific notification provider.",
+   "operationId": "get_notification_provider_api_v1_notifications__provider_id__get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "provider_id",
+     "required": true,
+     "schema": {
+      "title": "Provider Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NotificationProviderResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Notification Provider",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "GET /api/v1/user-notifications/preferences": {
+   "description": "Get the current user's email notification preferences.\n\nReturns defaults (all enabled) if no preferences are saved yet.",
+   "operationId": "get_user_email_preferences_api_v1_user_notifications_preferences_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UserEmailPreferenceResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get User Email Preferences",
+   "tags": [
+    "user-notifications"
+   ]
+  },
+  "PATCH /api/v1/notifications/{provider_id}": {
+   "description": "Update a notification provider.",
+   "operationId": "update_notification_provider_api_v1_notifications__provider_id__patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "provider_id",
+     "required": true,
+     "schema": {
+      "title": "Provider Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/NotificationProviderUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NotificationProviderResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Update Notification Provider",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "POST /api/v1/notification-templates/preview": {
+   "description": "Preview a template with sample data.",
+   "operationId": "preview_template_api_v1_notification_templates_preview_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/TemplatePreviewRequest"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TemplatePreviewResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Preview Template",
+   "tags": [
+    "notification-templates"
+   ]
+  },
+  "POST /api/v1/notification-templates/{template_id}/reset": {
+   "description": "Reset a notification template to its default values.",
+   "operationId": "reset_template_api_v1_notification_templates__template_id__reset_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "template_id",
+     "required": true,
+     "schema": {
+      "title": "Template Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NotificationTemplateResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Reset Template",
+   "tags": [
+    "notification-templates"
+   ]
+  },
+  "POST /api/v1/notifications/": {
+   "description": "Create a new notification provider.",
+   "operationId": "create_notification_provider_api_v1_notifications__post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/NotificationProviderCreate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NotificationProviderResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Create Notification Provider",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "POST /api/v1/notifications/app-message": {
+   "description": "Send a message through every enabled channel that has \"Messages from\nconnected apps\" on. For other applications, e.g. Bambuddy Orders; an API\nkey needs the \"Send notifications\" permission. A caller limited to some\nprinters reaches only the channels of those printers.",
+   "operationId": "send_app_message_api_v1_notifications_app_message_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AppMessage"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AppMessageResult"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Send App Message",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "POST /api/v1/notifications/test-all": {
+   "description": "Send a test notification to all enabled providers.",
+   "operationId": "test_all_notification_providers_api_v1_notifications_test_all_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Test All Notification Providers",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "POST /api/v1/notifications/test-config": {
+   "description": "Test notification configuration before saving.\n\nWith provider_id (an edited provider), the stored secrets fill in the\nplaceholders, for those who may edit providers.",
+   "operationId": "test_notification_config_api_v1_notifications_test_config_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/NotificationTestRequest"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NotificationTestResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Test Notification Config",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "POST /api/v1/notifications/{provider_id}/test": {
+   "description": "Send a test notification using an existing provider.",
+   "operationId": "test_notification_provider_api_v1_notifications__provider_id__test_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "provider_id",
+     "required": true,
+     "schema": {
+      "title": "Provider Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NotificationTestResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Test Notification Provider",
+   "tags": [
+    "notifications"
+   ]
+  },
+  "PUT /api/v1/notification-templates/{template_id}": {
+   "description": "Update a notification template.",
+   "operationId": "update_template_api_v1_notification_templates__template_id__put",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "template_id",
+     "required": true,
+     "schema": {
+      "title": "Template Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/NotificationTemplateUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NotificationTemplateResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Update Template",
+   "tags": [
+    "notification-templates"
+   ]
+  },
+  "PUT /api/v1/user-notifications/preferences": {
+   "description": "Update the current user's email notification preferences.",
+   "operationId": "update_user_email_preferences_api_v1_user_notifications_preferences_put",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/UserEmailPreferenceUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UserEmailPreferenceResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Update User Email Preferences",
+   "tags": [
+    "user-notifications"
+   ]
+  }
+ },
+ "schemas": {
+  "AppMessage": {
+   "description": "A message another application sends through Fenrir's notification channels.",
+   "properties": {
+    "message": {
+     "maxLength": 2000,
+     "minLength": 1,
+     "title": "Message",
+     "type": "string"
+    },
+    "title": {
+     "maxLength": 120,
+     "minLength": 1,
+     "title": "Title",
+     "type": "string"
+    },
+    "url": {
+     "anyOf": [
+      {
+       "maxLength": 500,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "A link the message points to (http or https)",
+     "title": "Url"
+    }
+   },
+   "required": [
+    "title",
+    "message"
+   ],
+   "title": "AppMessage",
+   "type": "object"
+  },
+  "AppMessageChannel": {
+   "properties": {
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "provider_type": {
+     "title": "Provider Type",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "provider_type"
+   ],
+   "title": "AppMessageChannel",
+   "type": "object"
+  },
+  "AppMessageResult": {
+   "properties": {
+    "channels": {
+     "description": "How many channels the message was handed to",
+     "title": "Channels",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "channels"
+   ],
+   "title": "AppMessageResult",
+   "type": "object"
+  },
+  "EventVariablesResponse": {
+   "description": "Response for available variables per event type.",
+   "properties": {
+    "event_name": {
+     "title": "Event Name",
+     "type": "string"
+    },
+    "event_type": {
+     "title": "Event Type",
+     "type": "string"
+    },
+    "supports_photo": {
+     "default": false,
+     "title": "Supports Photo",
+     "type": "boolean"
+    },
+    "variables": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Variables",
+     "type": "array"
+    }
+   },
+   "required": [
+    "event_type",
+    "event_name",
+    "variables"
+   ],
+   "title": "EventVariablesResponse",
+   "type": "object"
+  },
+  "HTTPValidationError": {
+   "properties": {
+    "detail": {
+     "items": {
+      "$ref": "#/components/schemas/ValidationError"
+     },
+     "title": "Detail",
+     "type": "array"
+    }
+   },
+   "title": "HTTPValidationError",
+   "type": "object"
+  },
+  "NotificationLogResponse": {
+   "description": "Schema for notification log API responses.",
+   "properties": {
+    "created_at": {
+     "format": "date-time",
+     "title": "Created At",
+     "type": "string"
+    },
+    "error_message": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Error Message"
+    },
+    "event_type": {
+     "title": "Event Type",
+     "type": "string"
+    },
+    "id": {
+     "title": "Id",
+     "type": "integer"
+    },
+    "message": {
+     "title": "Message",
+     "type": "string"
+    },
+    "printer_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Printer Id"
+    },
+    "printer_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Printer Name"
+    },
+    "provider_id": {
+     "title": "Provider Id",
+     "type": "integer"
+    },
+    "provider_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Provider Name"
+    },
+    "provider_type": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Provider Type"
+    },
+    "success": {
+     "title": "Success",
+     "type": "boolean"
+    },
+    "title": {
+     "title": "Title",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "provider_id",
+    "event_type",
+    "title",
+    "message",
+    "success",
+    "created_at"
+   ],
+   "title": "NotificationLogResponse",
+   "type": "object"
+  },
+  "NotificationLogStats": {
+   "description": "Statistics for notification logs.",
+   "properties": {
+    "by_event_type": {
+     "additionalProperties": {
+      "type": "integer"
+     },
+     "title": "By Event Type",
+     "type": "object"
+    },
+    "by_provider": {
+     "additionalProperties": {
+      "type": "integer"
+     },
+     "title": "By Provider",
+     "type": "object"
+    },
+    "failure_count": {
+     "title": "Failure Count",
+     "type": "integer"
+    },
+    "success_count": {
+     "title": "Success Count",
+     "type": "integer"
+    },
+    "total": {
+     "title": "Total",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "total",
+    "success_count",
+    "failure_count",
+    "by_event_type",
+    "by_provider"
+   ],
+   "title": "NotificationLogStats",
+   "type": "object"
+  },
+  "NotificationProviderCreate": {
+   "description": "Schema for creating a notification provider.",
+   "properties": {
+    "attach_photo": {
+     "default": true,
+     "description": "Attach a camera snapshot to this provider's notifications when one is available",
+     "title": "Attach Photo",
+     "type": "boolean"
+    },
+    "config": {
+     "additionalProperties": true,
+     "description": "Provider-specific configuration",
+     "title": "Config",
+     "type": "object"
+    },
+    "daily_digest_enabled": {
+     "default": false,
+     "description": "Batch notifications into daily digest",
+     "title": "Daily Digest Enabled",
+     "type": "boolean"
+    },
+    "daily_digest_time": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "Time to send digest in HH:MM format",
+     "title": "Daily Digest Time"
+    },
+    "enabled": {
+     "default": true,
+     "description": "Whether notifications are enabled",
+     "title": "Enabled",
+     "type": "boolean"
+    },
+    "name": {
+     "description": "User-defined name",
+     "maxLength": 100,
+     "minLength": 1,
+     "title": "Name",
+     "type": "string"
+    },
+    "on_ai_failure_detection": {
+     "default": false,
+     "description": "Notify when AI failure detection identifies a possible print failure (spaghetti)",
+     "title": "On Ai Failure Detection",
+     "type": "boolean"
+    },
+    "on_aito_payment_received": {
+     "default": false,
+     "description": "Notify when an Aito quote is paid online or by a covering deposit",
+     "title": "On Aito Payment Received",
+     "type": "boolean"
+    },
+    "on_ams_drying_suspended": {
+     "default": true,
+     "description": "Notify when automatic drying gives up on an AMS unit",
+     "title": "On Ams Drying Suspended",
+     "type": "boolean"
+    },
+    "on_ams_ht_humidity_high": {
+     "default": false,
+     "description": "Notify when AMS-HT humidity exceeds threshold",
+     "title": "On Ams Ht Humidity High",
+     "type": "boolean"
+    },
+    "on_ams_ht_temperature_high": {
+     "default": false,
+     "description": "Notify when AMS-HT temperature exceeds threshold",
+     "title": "On Ams Ht Temperature High",
+     "type": "boolean"
+    },
+    "on_ams_humidity_high": {
+     "default": false,
+     "description": "Notify when AMS humidity exceeds threshold",
+     "title": "On Ams Humidity High",
+     "type": "boolean"
+    },
+    "on_ams_temperature_high": {
+     "default": false,
+     "description": "Notify when AMS temperature exceeds threshold",
+     "title": "On Ams Temperature High",
+     "type": "boolean"
+    },
+    "on_app_message": {
+     "default": false,
+     "description": "Deliver messages other applications send",
+     "title": "On App Message",
+     "type": "boolean"
+    },
+    "on_bed_cooled": {
+     "default": false,
+     "description": "Notify when bed cools after print",
+     "title": "On Bed Cooled",
+     "type": "boolean"
+    },
+    "on_billing_charge_failed": {
+     "default": true,
+     "description": "Notify when a print charge cannot be recorded",
+     "title": "On Billing Charge Failed",
+     "type": "boolean"
+    },
+    "on_filament_low": {
+     "default": false,
+     "description": "Notify when filament is running low",
+     "title": "On Filament Low",
+     "type": "boolean"
+    },
+    "on_first_layer_complete": {
+     "default": false,
+     "description": "Notify when first layer completes",
+     "title": "On First Layer Complete",
+     "type": "boolean"
+    },
+    "on_ha_sensor_alert": {
+     "default": false,
+     "description": "Notify when a bound Home Assistant sensor enters its alert state",
+     "title": "On Ha Sensor Alert",
+     "type": "boolean"
+    },
+    "on_location_ha_sensor_alert": {
+     "default": false,
+     "description": "Notify when a Home Assistant sensor bound to a storage location enters its alert state",
+     "title": "On Location Ha Sensor Alert",
+     "type": "boolean"
+    },
+    "on_maintenance_due": {
+     "default": false,
+     "description": "Notify when maintenance is due",
+     "title": "On Maintenance Due",
+     "type": "boolean"
+    },
+    "on_plate_clear_required": {
+     "default": false,
+     "description": "Notify when a finished print is waiting for plate-clear confirmation",
+     "title": "On Plate Clear Required",
+     "type": "boolean"
+    },
+    "on_plate_not_empty": {
+     "default": true,
+     "description": "Notify when objects detected on plate before print",
+     "title": "On Plate Not Empty",
+     "type": "boolean"
+    },
+    "on_print_complete": {
+     "default": true,
+     "description": "Notify on print complete",
+     "title": "On Print Complete",
+     "type": "boolean"
+    },
+    "on_print_confirm_request": {
+     "default": true,
+     "description": "Notify with one-tap verdict links when a print that opted in asks for its outcome",
+     "title": "On Print Confirm Request",
+     "type": "boolean"
+    },
+    "on_print_failed": {
+     "default": true,
+     "description": "Notify on print failed",
+     "title": "On Print Failed",
+     "type": "boolean"
+    },
+    "on_print_missing_spool_assignment": {
+     "default": false,
+     "description": "Notify when a print starts with required trays missing spool assignments",
+     "title": "On Print Missing Spool Assignment",
+     "type": "boolean"
+    },
+    "on_print_pause_upcoming": {
+     "default": false,
+     "description": "Notify before a pause in the print",
+     "title": "On Print Pause Upcoming",
+     "type": "boolean"
+    },
+    "on_print_progress": {
+     "default": false,
+     "description": "Notify at 25%, 50%, 75% progress",
+     "title": "On Print Progress",
+     "type": "boolean"
+    },
+    "on_print_start": {
+     "default": false,
+     "description": "Notify on print start",
+     "title": "On Print Start",
+     "type": "boolean"
+    },
+    "on_print_stopped": {
+     "default": true,
+     "description": "Notify when print is stopped/cancelled",
+     "title": "On Print Stopped",
+     "type": "boolean"
+    },
+    "on_printer_error": {
+     "default": false,
+     "description": "Notify on printer errors (AMS, etc.)",
+     "title": "On Printer Error",
+     "type": "boolean"
+    },
+    "on_printer_offline": {
+     "default": false,
+     "description": "Notify when printer goes offline",
+     "title": "On Printer Offline",
+     "type": "boolean"
+    },
+    "on_queue_completed": {
+     "default": false,
+     "description": "Notify when all queue jobs finish",
+     "title": "On Queue Completed",
+     "type": "boolean"
+    },
+    "on_queue_job_added": {
+     "default": false,
+     "description": "Notify when job is added to queue",
+     "title": "On Queue Job Added",
+     "type": "boolean"
+    },
+    "on_queue_job_assigned": {
+     "default": false,
+     "description": "Notify when model-based job is assigned to printer",
+     "title": "On Queue Job Assigned",
+     "type": "boolean"
+    },
+    "on_queue_job_failed": {
+     "default": true,
+     "description": "Notify when job fails to start",
+     "title": "On Queue Job Failed",
+     "type": "boolean"
+    },
+    "on_queue_job_skipped": {
+     "default": true,
+     "description": "Notify when job is skipped",
+     "title": "On Queue Job Skipped",
+     "type": "boolean"
+    },
+    "on_queue_job_started": {
+     "default": false,
+     "description": "Notify when queue job starts printing",
+     "title": "On Queue Job Started",
+     "type": "boolean"
+    },
+    "on_queue_job_waiting": {
+     "default": true,
+     "description": "Notify when job is waiting for filament or printer",
+     "title": "On Queue Job Waiting",
+     "type": "boolean"
+    },
+    "on_stock_break_alert": {
+     "default": false,
+     "description": "Notify when stock will run out before replenishment arrives",
+     "title": "On Stock Break Alert",
+     "type": "boolean"
+    },
+    "on_stock_reorder_alert": {
+     "default": false,
+     "description": "Notify when an inventory SKU hits its reorder point",
+     "title": "On Stock Reorder Alert",
+     "type": "boolean"
+    },
+    "printer_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "Specific printer ID or null for all",
+     "title": "Printer Id"
+    },
+    "provider_type": {
+     "$ref": "#/components/schemas/backend__app__schemas__notification__ProviderType",
+     "description": "Type of notification provider"
+    },
+    "quiet_hours_enabled": {
+     "default": false,
+     "description": "Enable quiet hours",
+     "title": "Quiet Hours Enabled",
+     "type": "boolean"
+    },
+    "quiet_hours_end": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "End time in HH:MM format",
+     "title": "Quiet Hours End"
+    },
+    "quiet_hours_start": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "Start time in HH:MM format",
+     "title": "Quiet Hours Start"
+    },
+    "telegram_verdict_mode": {
+     "default": "buttons",
+     "description": "Telegram only: answer the outcome prompt via inline buttons, a thumbs reaction, or both",
+     "enum": [
+      "buttons",
+      "reactions",
+      "both"
+     ],
+     "title": "Telegram Verdict Mode",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "provider_type",
+    "config"
+   ],
+   "title": "NotificationProviderCreate",
+   "type": "object"
+  },
+  "NotificationProviderResponse": {
+   "description": "Schema for notification provider API responses.",
+   "properties": {
+    "attach_photo": {
+     "default": true,
+     "description": "Attach a camera snapshot to this provider's notifications when one is available",
+     "title": "Attach Photo",
+     "type": "boolean"
+    },
+    "config": {
+     "additionalProperties": true,
+     "description": "Provider-specific configuration",
+     "title": "Config",
+     "type": "object"
+    },
+    "created_at": {
+     "format": "date-time",
+     "title": "Created At",
+     "type": "string"
+    },
+    "daily_digest_enabled": {
+     "default": false,
+     "description": "Batch notifications into daily digest",
+     "title": "Daily Digest Enabled",
+     "type": "boolean"
+    },
+    "daily_digest_time": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "Time to send digest in HH:MM format",
+     "title": "Daily Digest Time"
+    },
+    "enabled": {
+     "default": true,
+     "description": "Whether notifications are enabled",
+     "title": "Enabled",
+     "type": "boolean"
+    },
+    "id": {
+     "title": "Id",
+     "type": "integer"
+    },
+    "last_error": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Last Error"
+    },
+    "last_error_at": {
+     "anyOf": [
+      {
+       "format": "date-time",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Last Error At"
+    },
+    "last_success": {
+     "anyOf": [
+      {
+       "format": "date-time",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Last Success"
+    },
+    "name": {
+     "description": "User-defined name",
+     "maxLength": 100,
+     "minLength": 1,
+     "title": "Name",
+     "type": "string"
+    },
+    "on_ai_failure_detection": {
+     "default": false,
+     "description": "Notify when AI failure detection identifies a possible print failure (spaghetti)",
+     "title": "On Ai Failure Detection",
+     "type": "boolean"
+    },
+    "on_aito_payment_received": {
+     "default": false,
+     "description": "Notify when an Aito quote is paid online or by a covering deposit",
+     "title": "On Aito Payment Received",
+     "type": "boolean"
+    },
+    "on_ams_drying_suspended": {
+     "default": true,
+     "description": "Notify when automatic drying gives up on an AMS unit",
+     "title": "On Ams Drying Suspended",
+     "type": "boolean"
+    },
+    "on_ams_ht_humidity_high": {
+     "default": false,
+     "description": "Notify when AMS-HT humidity exceeds threshold",
+     "title": "On Ams Ht Humidity High",
+     "type": "boolean"
+    },
+    "on_ams_ht_temperature_high": {
+     "default": false,
+     "description": "Notify when AMS-HT temperature exceeds threshold",
+     "title": "On Ams Ht Temperature High",
+     "type": "boolean"
+    },
+    "on_ams_humidity_high": {
+     "default": false,
+     "description": "Notify when AMS humidity exceeds threshold",
+     "title": "On Ams Humidity High",
+     "type": "boolean"
+    },
+    "on_ams_temperature_high": {
+     "default": false,
+     "description": "Notify when AMS temperature exceeds threshold",
+     "title": "On Ams Temperature High",
+     "type": "boolean"
+    },
+    "on_app_message": {
+     "default": false,
+     "description": "Deliver messages other applications send",
+     "title": "On App Message",
+     "type": "boolean"
+    },
+    "on_bed_cooled": {
+     "default": false,
+     "description": "Notify when bed cools after print",
+     "title": "On Bed Cooled",
+     "type": "boolean"
+    },
+    "on_billing_charge_failed": {
+     "default": true,
+     "description": "Notify when a print charge cannot be recorded",
+     "title": "On Billing Charge Failed",
+     "type": "boolean"
+    },
+    "on_filament_low": {
+     "default": false,
+     "description": "Notify when filament is running low",
+     "title": "On Filament Low",
+     "type": "boolean"
+    },
+    "on_first_layer_complete": {
+     "default": false,
+     "description": "Notify when first layer completes",
+     "title": "On First Layer Complete",
+     "type": "boolean"
+    },
+    "on_ha_sensor_alert": {
+     "default": false,
+     "description": "Notify when a bound Home Assistant sensor enters its alert state",
+     "title": "On Ha Sensor Alert",
+     "type": "boolean"
+    },
+    "on_location_ha_sensor_alert": {
+     "default": false,
+     "description": "Notify when a Home Assistant sensor bound to a storage location enters its alert state",
+     "title": "On Location Ha Sensor Alert",
+     "type": "boolean"
+    },
+    "on_maintenance_due": {
+     "default": false,
+     "description": "Notify when maintenance is due",
+     "title": "On Maintenance Due",
+     "type": "boolean"
+    },
+    "on_plate_clear_required": {
+     "default": false,
+     "description": "Notify when a finished print is waiting for plate-clear confirmation",
+     "title": "On Plate Clear Required",
+     "type": "boolean"
+    },
+    "on_plate_not_empty": {
+     "default": true,
+     "description": "Notify when objects detected on plate before print",
+     "title": "On Plate Not Empty",
+     "type": "boolean"
+    },
+    "on_print_complete": {
+     "default": true,
+     "description": "Notify on print complete",
+     "title": "On Print Complete",
+     "type": "boolean"
+    },
+    "on_print_confirm_request": {
+     "default": true,
+     "description": "Notify with one-tap verdict links when a print that opted in asks for its outcome",
+     "title": "On Print Confirm Request",
+     "type": "boolean"
+    },
+    "on_print_failed": {
+     "default": true,
+     "description": "Notify on print failed",
+     "title": "On Print Failed",
+     "type": "boolean"
+    },
+    "on_print_missing_spool_assignment": {
+     "default": false,
+     "description": "Notify when a print starts with required trays missing spool assignments",
+     "title": "On Print Missing Spool Assignment",
+     "type": "boolean"
+    },
+    "on_print_pause_upcoming": {
+     "default": false,
+     "description": "Notify before a pause in the print",
+     "title": "On Print Pause Upcoming",
+     "type": "boolean"
+    },
+    "on_print_progress": {
+     "default": false,
+     "description": "Notify at 25%, 50%, 75% progress",
+     "title": "On Print Progress",
+     "type": "boolean"
+    },
+    "on_print_start": {
+     "default": false,
+     "description": "Notify on print start",
+     "title": "On Print Start",
+     "type": "boolean"
+    },
+    "on_print_stopped": {
+     "default": true,
+     "description": "Notify when print is stopped/cancelled",
+     "title": "On Print Stopped",
+     "type": "boolean"
+    },
+    "on_printer_error": {
+     "default": false,
+     "description": "Notify on printer errors (AMS, etc.)",
+     "title": "On Printer Error",
+     "type": "boolean"
+    },
+    "on_printer_offline": {
+     "default": false,
+     "description": "Notify when printer goes offline",
+     "title": "On Printer Offline",
+     "type": "boolean"
+    },
+    "on_queue_completed": {
+     "default": false,
+     "description": "Notify when all queue jobs finish",
+     "title": "On Queue Completed",
+     "type": "boolean"
+    },
+    "on_queue_job_added": {
+     "default": false,
+     "description": "Notify when job is added to queue",
+     "title": "On Queue Job Added",
+     "type": "boolean"
+    },
+    "on_queue_job_assigned": {
+     "default": false,
+     "description": "Notify when model-based job is assigned to printer",
+     "title": "On Queue Job Assigned",
+     "type": "boolean"
+    },
+    "on_queue_job_failed": {
+     "default": true,
+     "description": "Notify when job fails to start",
+     "title": "On Queue Job Failed",
+     "type": "boolean"
+    },
+    "on_queue_job_skipped": {
+     "default": true,
+     "description": "Notify when job is skipped",
+     "title": "On Queue Job Skipped",
+     "type": "boolean"
+    },
+    "on_queue_job_started": {
+     "default": false,
+     "description": "Notify when queue job starts printing",
+     "title": "On Queue Job Started",
+     "type": "boolean"
+    },
+    "on_queue_job_waiting": {
+     "default": true,
+     "description": "Notify when job is waiting for filament or printer",
+     "title": "On Queue Job Waiting",
+     "type": "boolean"
+    },
+    "on_stock_break_alert": {
+     "default": false,
+     "description": "Notify when stock will run out before replenishment arrives",
+     "title": "On Stock Break Alert",
+     "type": "boolean"
+    },
+    "on_stock_reorder_alert": {
+     "default": false,
+     "description": "Notify when an inventory SKU hits its reorder point",
+     "title": "On Stock Reorder Alert",
+     "type": "boolean"
+    },
+    "printer_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "Specific printer ID or null for all",
+     "title": "Printer Id"
+    },
+    "provider_type": {
+     "$ref": "#/components/schemas/ProviderType-Output",
+     "description": "Type of notification provider"
+    },
+    "quiet_hours_enabled": {
+     "default": false,
+     "description": "Enable quiet hours",
+     "title": "Quiet Hours Enabled",
+     "type": "boolean"
+    },
+    "quiet_hours_end": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "End time in HH:MM format",
+     "title": "Quiet Hours End"
+    },
+    "quiet_hours_start": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "Start time in HH:MM format",
+     "title": "Quiet Hours Start"
+    },
+    "telegram_verdict_mode": {
+     "default": "buttons",
+     "description": "Telegram only: answer the outcome prompt via inline buttons, a thumbs reaction, or both",
+     "enum": [
+      "buttons",
+      "reactions",
+      "both"
+     ],
+     "title": "Telegram Verdict Mode",
+     "type": "string"
+    },
+    "updated_at": {
+     "format": "date-time",
+     "title": "Updated At",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "provider_type",
+    "config",
+    "id",
+    "created_at",
+    "updated_at"
+   ],
+   "title": "NotificationProviderResponse",
+   "type": "object"
+  },
+  "NotificationProviderUpdate": {
+   "description": "Schema for updating a notification provider (all fields optional).",
+   "properties": {
+    "attach_photo": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Attach Photo"
+    },
+    "config": {
+     "anyOf": [
+      {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Config"
+    },
+    "daily_digest_enabled": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Daily Digest Enabled"
+    },
+    "daily_digest_time": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Daily Digest Time"
+    },
+    "enabled": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Enabled"
+    },
+    "name": {
+     "anyOf": [
+      {
+       "maxLength": 100,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Name"
+    },
+    "on_ai_failure_detection": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Ai Failure Detection"
+    },
+    "on_aito_payment_received": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Aito Payment Received"
+    },
+    "on_ams_drying_suspended": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Ams Drying Suspended"
+    },
+    "on_ams_ht_humidity_high": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Ams Ht Humidity High"
+    },
+    "on_ams_ht_temperature_high": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Ams Ht Temperature High"
+    },
+    "on_ams_humidity_high": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Ams Humidity High"
+    },
+    "on_ams_temperature_high": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Ams Temperature High"
+    },
+    "on_app_message": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On App Message"
+    },
+    "on_bed_cooled": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Bed Cooled"
+    },
+    "on_billing_charge_failed": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Billing Charge Failed"
+    },
+    "on_filament_low": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Filament Low"
+    },
+    "on_first_layer_complete": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On First Layer Complete"
+    },
+    "on_ha_sensor_alert": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Ha Sensor Alert"
+    },
+    "on_location_ha_sensor_alert": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Location Ha Sensor Alert"
+    },
+    "on_maintenance_due": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Maintenance Due"
+    },
+    "on_plate_clear_required": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Plate Clear Required"
+    },
+    "on_plate_not_empty": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Plate Not Empty"
+    },
+    "on_print_complete": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Print Complete"
+    },
+    "on_print_confirm_request": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Print Confirm Request"
+    },
+    "on_print_failed": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Print Failed"
+    },
+    "on_print_missing_spool_assignment": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Print Missing Spool Assignment"
+    },
+    "on_print_pause_upcoming": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Print Pause Upcoming"
+    },
+    "on_print_progress": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Print Progress"
+    },
+    "on_print_start": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Print Start"
+    },
+    "on_print_stopped": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Print Stopped"
+    },
+    "on_printer_error": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Printer Error"
+    },
+    "on_printer_offline": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Printer Offline"
+    },
+    "on_queue_completed": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Queue Completed"
+    },
+    "on_queue_job_added": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Queue Job Added"
+    },
+    "on_queue_job_assigned": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Queue Job Assigned"
+    },
+    "on_queue_job_failed": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Queue Job Failed"
+    },
+    "on_queue_job_skipped": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Queue Job Skipped"
+    },
+    "on_queue_job_started": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Queue Job Started"
+    },
+    "on_queue_job_waiting": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Queue Job Waiting"
+    },
+    "on_stock_break_alert": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Stock Break Alert"
+    },
+    "on_stock_reorder_alert": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "On Stock Reorder Alert"
+    },
+    "printer_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Printer Id"
+    },
+    "provider_type": {
+     "anyOf": [
+      {
+       "$ref": "#/components/schemas/backend__app__schemas__notification__ProviderType"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "quiet_hours_enabled": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Quiet Hours Enabled"
+    },
+    "quiet_hours_end": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Quiet Hours End"
+    },
+    "quiet_hours_start": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Quiet Hours Start"
+    },
+    "telegram_verdict_mode": {
+     "anyOf": [
+      {
+       "enum": [
+        "buttons",
+        "reactions",
+        "both"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Telegram Verdict Mode"
+    }
+   },
+   "title": "NotificationProviderUpdate",
+   "type": "object"
+  },
+  "NotificationTemplateResponse": {
+   "description": "Schema for notification template API responses.",
+   "properties": {
+    "body_template": {
+     "maxLength": 2000,
+     "minLength": 1,
+     "title": "Body Template",
+     "type": "string"
+    },
+    "created_at": {
+     "format": "date-time",
+     "title": "Created At",
+     "type": "string"
+    },
+    "event_type": {
+     "title": "Event Type",
+     "type": "string"
+    },
+    "id": {
+     "title": "Id",
+     "type": "integer"
+    },
+    "is_default": {
+     "title": "Is Default",
+     "type": "boolean"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "title_template": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Title Template",
+     "type": "string"
+    },
+    "updated_at": {
+     "format": "date-time",
+     "title": "Updated At",
+     "type": "string"
+    }
+   },
+   "required": [
+    "title_template",
+    "body_template",
+    "id",
+    "event_type",
+    "name",
+    "is_default",
+    "created_at",
+    "updated_at"
+   ],
+   "title": "NotificationTemplateResponse",
+   "type": "object"
+  },
+  "NotificationTemplateUpdate": {
+   "description": "Schema for updating a notification template.",
+   "properties": {
+    "body_template": {
+     "anyOf": [
+      {
+       "maxLength": 2000,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Body Template"
+    },
+    "title_template": {
+     "anyOf": [
+      {
+       "maxLength": 200,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Title Template"
+    }
+   },
+   "title": "NotificationTemplateUpdate",
+   "type": "object"
+  },
+  "NotificationTestRequest": {
+   "description": "Schema for testing notification configuration.",
+   "properties": {
+    "attach_photo": {
+     "default": true,
+     "description": "Include a sample photo in the test, mirroring the provider's own toggle",
+     "title": "Attach Photo",
+     "type": "boolean"
+    },
+    "config": {
+     "additionalProperties": true,
+     "title": "Config",
+     "type": "object"
+    },
+    "provider_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "The saved provider being edited: its stored secrets fill in the placeholders",
+     "title": "Provider Id"
+    },
+    "provider_type": {
+     "$ref": "#/components/schemas/backend__app__schemas__notification__ProviderType"
+    }
+   },
+   "required": [
+    "provider_type",
+    "config"
+   ],
+   "title": "NotificationTestRequest",
+   "type": "object"
+  },
+  "NotificationTestResponse": {
+   "description": "Schema for test notification response.",
+   "properties": {
+    "message": {
+     "title": "Message",
+     "type": "string"
+    },
+    "success": {
+     "title": "Success",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "success",
+    "message"
+   ],
+   "title": "NotificationTestResponse",
+   "type": "object"
+  },
+  "ProviderType-Output": {
+   "description": "Supported notification provider types.",
+   "enum": [
+    "callmebot",
+    "ntfy",
+    "pushover",
+    "telegram",
+    "email",
+    "discord",
+    "webhook",
+    "homeassistant",
+    "bark",
+    "gotify",
+    "notify"
+   ],
+   "title": "ProviderType",
+   "type": "string"
+  },
+  "TemplatePreviewRequest": {
+   "description": "Request to preview a template with sample data.",
+   "properties": {
+    "body_template": {
+     "title": "Body Template",
+     "type": "string"
+    },
+    "event_type": {
+     "title": "Event Type",
+     "type": "string"
+    },
+    "title_template": {
+     "title": "Title Template",
+     "type": "string"
+    }
+   },
+   "required": [
+    "event_type",
+    "title_template",
+    "body_template"
+   ],
+   "title": "TemplatePreviewRequest",
+   "type": "object"
+  },
+  "TemplatePreviewResponse": {
+   "description": "Response with rendered template preview.",
+   "properties": {
+    "body": {
+     "title": "Body",
+     "type": "string"
+    },
+    "title": {
+     "title": "Title",
+     "type": "string"
+    }
+   },
+   "required": [
+    "title",
+    "body"
+   ],
+   "title": "TemplatePreviewResponse",
+   "type": "object"
+  },
+  "UserEmailPreferenceResponse": {
+   "description": "Response schema for user email notification preferences.",
+   "properties": {
+    "notify_print_complete": {
+     "title": "Notify Print Complete",
+     "type": "boolean"
+    },
+    "notify_print_failed": {
+     "title": "Notify Print Failed",
+     "type": "boolean"
+    },
+    "notify_print_start": {
+     "title": "Notify Print Start",
+     "type": "boolean"
+    },
+    "notify_print_stopped": {
+     "title": "Notify Print Stopped",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "notify_print_start",
+    "notify_print_complete",
+    "notify_print_failed",
+    "notify_print_stopped"
+   ],
+   "title": "UserEmailPreferenceResponse",
+   "type": "object"
+  },
+  "UserEmailPreferenceUpdate": {
+   "description": "Update schema for user email notification preferences.",
+   "properties": {
+    "notify_print_complete": {
+     "title": "Notify Print Complete",
+     "type": "boolean"
+    },
+    "notify_print_failed": {
+     "title": "Notify Print Failed",
+     "type": "boolean"
+    },
+    "notify_print_start": {
+     "title": "Notify Print Start",
+     "type": "boolean"
+    },
+    "notify_print_stopped": {
+     "title": "Notify Print Stopped",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "notify_print_start",
+    "notify_print_complete",
+    "notify_print_failed",
+    "notify_print_stopped"
+   ],
+   "title": "UserEmailPreferenceUpdate",
+   "type": "object"
+  },
+  "ValidationError": {
+   "properties": {
+    "ctx": {
+     "title": "Context",
+     "type": "object"
+    },
+    "input": {
+     "title": "Input"
+    },
+    "loc": {
+     "items": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "integer"
+       }
+      ]
+     },
+     "title": "Location",
+     "type": "array"
+    },
+    "msg": {
+     "title": "Message",
+     "type": "string"
+    },
+    "type": {
+     "title": "Error Type",
+     "type": "string"
+    }
+   },
+   "required": [
+    "loc",
+    "msg",
+    "type"
+   ],
+   "title": "ValidationError",
+   "type": "object"
+  },
+  "backend__app__schemas__notification__ProviderType": {
+   "description": "Supported notification provider types.",
+   "enum": [
+    "callmebot",
+    "ntfy",
+    "pushover",
+    "telegram",
+    "email",
+    "discord",
+    "webhook",
+    "homeassistant",
+    "bark",
+    "gotify",
+    "notify"
+   ],
+   "title": "ProviderType",
+   "type": "string"
+  }
+ }
+}
+
+### stderr:
+

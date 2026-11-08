@@ -4,6 +4,7 @@ Tests event-based notifications and toggle behavior.
 """
 
 import json
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -260,39 +261,42 @@ class TestNotificationService:
     # Tests for quiet hours
     # ========================================================================
 
-    def test_is_in_quiet_hours_during_quiet_period(self, service, mock_provider):
-        """Verify notifications are blocked during quiet hours."""
+    @pytest.mark.parametrize(
+        ("start", "end", "hour", "minute", "expected"),
+        [
+            # Overnight window: start inclusive, end exclusive
+            ("22:00", "07:00", 21, 59, False),
+            ("22:00", "07:00", 22, 0, True),
+            ("22:00", "07:00", 23, 0, True),
+            ("22:00", "07:00", 23, 30, True),
+            ("22:00", "07:00", 3, 0, True),
+            ("22:00", "07:00", 6, 59, True),
+            ("22:00", "07:00", 7, 0, False),
+            ("22:00", "07:00", 7, 1, False),
+            ("22:00", "07:00", 12, 0, False),
+            # Same-day window
+            ("09:00", "17:00", 8, 59, False),
+            ("09:00", "17:00", 9, 0, True),
+            ("09:00", "17:00", 12, 0, True),
+            ("09:00", "17:00", 17, 0, False),
+            # start == end is an empty window
+            ("09:00", "09:00", 9, 0, False),
+            ("09:00", "09:00", 12, 0, False),
+        ],
+    )
+    def test_is_in_quiet_hours_window_boundaries(self, service, mock_provider, start, end, hour, minute, expected):
+        """Quiet-hours window is [start, end) and wraps midnight; checked on a real datetime."""
         mock_provider.quiet_hours_enabled = True
-        mock_provider.quiet_hours_start = "22:00"
-        mock_provider.quiet_hours_end = "07:00"
+        mock_provider.quiet_hours_start = start
+        mock_provider.quiet_hours_end = end
 
-        with patch("backend.app.services.notification_service.datetime") as mock_datetime:
-            # Test during quiet hours (23:00)
-            mock_now = MagicMock()
-            mock_now.hour = 23
-            mock_now.minute = 0
-            mock_datetime.now.return_value = mock_now
+        class FixedDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 1, 1, hour, minute)
 
-            result = service._is_in_quiet_hours(mock_provider)
-
-            assert result is True
-
-    def test_is_in_quiet_hours_outside_quiet_period(self, service, mock_provider):
-        """Verify notifications are allowed outside quiet hours."""
-        mock_provider.quiet_hours_enabled = True
-        mock_provider.quiet_hours_start = "22:00"
-        mock_provider.quiet_hours_end = "07:00"
-
-        with patch("backend.app.services.notification_service.datetime") as mock_datetime:
-            # Test outside quiet hours (12:00)
-            mock_now = MagicMock()
-            mock_now.hour = 12
-            mock_now.minute = 0
-            mock_datetime.now.return_value = mock_now
-
-            result = service._is_in_quiet_hours(mock_provider)
-
-            assert result is False
+        with patch("backend.app.services.notification_service.datetime", FixedDatetime):
+            assert service._is_in_quiet_hours(mock_provider) is expected
 
     def test_is_in_quiet_hours_disabled(self, service, mock_provider):
         """Verify quiet hours check returns False when disabled."""
@@ -301,23 +305,6 @@ class TestNotificationService:
         result = service._is_in_quiet_hours(mock_provider)
 
         assert result is False
-
-    def test_is_in_quiet_hours_early_morning(self, service, mock_provider):
-        """Verify quiet hours work across midnight (early morning)."""
-        mock_provider.quiet_hours_enabled = True
-        mock_provider.quiet_hours_start = "22:00"
-        mock_provider.quiet_hours_end = "07:00"
-
-        with patch("backend.app.services.notification_service.datetime") as mock_datetime:
-            # Test early morning (03:00) - should be in quiet hours
-            mock_now = MagicMock()
-            mock_now.hour = 3
-            mock_now.minute = 0
-            mock_datetime.now.return_value = mock_now
-
-            result = service._is_in_quiet_hours(mock_provider)
-
-            assert result is True
 
     # ========================================================================
     # Tests for AMS alarms
@@ -3086,3 +3073,156 @@ class TestEmailProvider:
         # contain BOTH the escaped URL AND the cid img (we swapped, not duplicated).
         # The plain-text part still has the URL; check it's there at least once.
         assert self.PHOTO_URL in raw
+
+
+class _FailedCommitSession:
+    """Session double: one commit fails, then every statement raises until rollback()."""
+
+    def __init__(self):
+        self.commits_to_fail = 1
+        self.needs_rollback = False
+        self.rollbacks = 0
+        self.commits = 0
+
+    def add(self, _obj):
+        pass
+
+    async def execute(self, _stmt):
+        if self.needs_rollback:
+            raise RuntimeError("PendingRollbackError")
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = MagicMock()
+        return result
+
+    async def commit(self):
+        if self.needs_rollback:
+            raise RuntimeError("PendingRollbackError")
+        if self.commits_to_fail:
+            self.commits_to_fail -= 1
+            self.needs_rollback = True
+            raise RuntimeError("database is locked")
+        self.commits += 1
+
+    async def rollback(self):
+        self.rollbacks += 1
+        self.needs_rollback = False
+
+
+class TestFanOutSurvivesFailedBookkeeping:
+    @pytest.mark.asyncio
+    async def test_second_provider_is_sent_and_session_usable_after_failed_commit(self):
+        service = NotificationService()
+        providers = []
+        for i in (1, 2):
+            p = MagicMock()
+            p.id = i
+            p.name = f"P{i}"
+            p.daily_digest_enabled = False
+            p.daily_digest_time = None
+            providers.append(p)
+        db = _FailedCommitSession()
+
+        with patch.object(service, "_send_to_provider", new_callable=AsyncMock, return_value=(True, None)) as send:
+            await service._send_to_providers(providers=providers, title="t", message="m", db=db, event_type="e")
+
+        assert send.await_count == 2
+        assert db.rollbacks >= 1
+        assert not db.needs_rollback
+        await db.commit()  # the caller's next commit works
+
+
+class TestFanOutSurvivesFailedFlushRealSession:
+    """Real aiosqlite session: a rollback expires loaded rows, which must stay readable."""
+
+    @pytest.mark.asyncio
+    async def test_all_providers_sent_and_session_usable_after_failed_flush(self):
+        from sqlalchemy import event, select
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from backend.app.models.notification import NotificationLog
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda c: NotificationProvider.__table__.create(c))
+            await conn.run_sync(lambda c: NotificationLog.__table__.create(c))
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as db:
+            for i in (1, 2, 3):
+                db.add(NotificationProvider(name=f"P{i}", provider_type="ntfy", config="{}"))
+            await db.commit()
+        async with sessions() as db:
+            providers = list((await db.execute(select(NotificationProvider))).scalars())
+            calls = {"n": 0}
+
+            @event.listens_for(db.sync_session, "after_flush")
+            def fail_first_flush(*_args):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise RuntimeError("database is locked")
+
+            service = NotificationService()
+            with patch.object(service, "_send_to_provider", new_callable=AsyncMock, return_value=(True, None)) as send:
+                await service._send_to_providers(providers, "t", "m", db, event_type="e")
+
+            assert send.await_count == 3
+            logs = list((await db.execute(select(NotificationLog))).scalars())
+            assert len(logs) == 3
+            await db.commit()
+        await engine.dispose()
+
+
+class TestSharedHttpResult:
+    """CallMeBot, Pushover and Discord share the opaque failure wording (T-004, user-approved)."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @staticmethod
+    def _client(status_code: int, text: str = "leaky-remote-body"):
+        response = MagicMock()
+        response.status_code = status_code
+        response.text = text
+        response.json = MagicMock(side_effect=ValueError("not json"))
+        client = AsyncMock()
+        client.get = AsyncMock(return_value=response)
+        client.post = AsyncMock(return_value=response)
+        return client
+
+    async def _call(self, service, name, client, *args):
+        with patch.object(service, "_get_client", new_callable=AsyncMock, return_value=client):
+            return await getattr(service, name)(*args)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("name", "args", "label"),
+        [
+            ("_send_callmebot", ({"phone": "+1", "apikey": "k"}, "M"), "CallMeBot"),
+            ("_send_pushover", ({"user_key": "u" * 30, "app_token": "a" * 30}, "T", "M"), "Pushover"),
+            (
+                "_send_discord",
+                ({"webhook_url": "https://discord.com/api/webhooks/1/abc"}, "T", "M"),
+                "Discord webhook",
+            ),
+        ],
+    )
+    async def test_failure_is_opaque(self, service, name, args, label):
+        success, message = await self._call(service, name, self._client(403), *args)
+
+        assert success is False
+        assert message == f"HTTP 403 from the configured {label} (see server logs at debug level for details)"
+        assert "leaky-remote-body" not in message
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("name", "args"),
+        [
+            ("_send_callmebot", ({"phone": "+1", "apikey": "k"}, "M")),
+            ("_send_pushover", ({"user_key": "u" * 30, "app_token": "a" * 30}, "T", "M")),
+            ("_send_discord", ({"webhook_url": "https://discord.com/api/webhooks/1/abc"}, "T", "M")),
+        ],
+    )
+    async def test_success_text_unchanged(self, service, name, args):
+        success, message = await self._call(service, name, self._client(200), *args)
+
+        assert (success, message) == (True, "Message sent successfully")

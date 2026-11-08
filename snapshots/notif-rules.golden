@@ -1,0 +1,1731 @@
+### exit: 0
+### stdout:
+{
+ "assert_safe_provider_url": {
+  "": "Webhook must use http or https",
+  "ftp://example.com/x": "Webhook must use http or https",
+  "http://0.0.0.0/hook": "Webhook must not point to a multicast or unspecified address",
+  "http://10.0.0.5/hook": "__None__",
+  "http://127.0.0.1:8123/hook": "__None__",
+  "http://169.254.169.254/latest": "Webhook must not point to a cloud metadata endpoint",
+  "http://192.168.1.10/hook": "__None__",
+  "http://[::1]/x": "__None__",
+  "http://localhost/hook": "__None__",
+  "not a url": "Webhook must use http or https"
+ },
+ "clean_filename": {
+  "": "",
+  "/cache/\u00e9.3mf": "\u00e9",
+  "/data/Metadata/plate_1.gcode": "plate_1",
+  "Benchy.3MF": "Benchy.3MF",
+  "a.b.c.d.gcode.3mf": "a.b.c.d",
+  "cat.gcode.3mf": "cat",
+  "dir/sub/file": "file",
+  "noext": "noext",
+  "weird name (1).3mf": "weird name (1)"
+ },
+ "default_templates": [
+  {
+   "body_template": "{printer}: {filename}\nEstimated: {estimated_time}",
+   "event_type": "print_start",
+   "name": "Print Started",
+   "title_template": "Print Started"
+  },
+  {
+   "body_template": "{printer}: {filename}\nTime: {duration}\nFilament: {filament_grams}g",
+   "event_type": "print_complete",
+   "name": "Print Completed",
+   "title_template": "Print Completed"
+  },
+  {
+   "body_template": "{printer}: {filename}\nTime: {duration}\nReason: {reason}",
+   "event_type": "print_failed",
+   "name": "Print Failed",
+   "title_template": "Print Failed"
+  },
+  {
+   "body_template": "{printer}: {filename}\nTime: {duration}",
+   "event_type": "print_stopped",
+   "name": "Print Stopped",
+   "title_template": "Print Stopped"
+  },
+  {
+   "body_template": "{printer}: {filename}\nRemaining: {remaining_time}",
+   "event_type": "print_progress",
+   "name": "Print Progress",
+   "title_template": "Print {progress}% Complete"
+  },
+  {
+   "body_template": "{printer}: {filename}\nConfirm: {confirm_url}",
+   "event_type": "print_confirm_request",
+   "name": "Print Outcome Confirmation",
+   "title_template": "How did your print come out?"
+  },
+  {
+   "body_template": "{printer}: print started with missing spool assignments\nSlots: {missing_slots}\nExpected profile:\n{missing_slot_details}",
+   "event_type": "print_missing_spool_assignment",
+   "name": "Missing Spool Assignment",
+   "title_template": "Missing Spool Assignment"
+  },
+  {
+   "body_template": "{printer}: {filename}\nThe print charge could not be recorded. The budget reservation was retained.\nArchive: {archive_id}",
+   "event_type": "billing_charge_failed",
+   "name": "Billing Charge Failed",
+   "title_template": "Billing Charge Failed"
+  },
+  {
+   "body_template": "{printer} has disconnected",
+   "event_type": "printer_offline",
+   "name": "Printer Offline",
+   "title_template": "Printer Offline"
+  },
+  {
+   "body_template": "{printer}\n{error_detail}",
+   "event_type": "printer_error",
+   "name": "Printer Error",
+   "title_template": "Printer Error: {error_type}"
+  },
+  {
+   "body_template": "{printer}: {task_name}\nProvider: {provider}\nPrint quality: {print_quality}\nConfidence: {confidence}\nAction taken: {action}",
+   "event_type": "ai_failure_detection",
+   "name": "AI Failure Detection",
+   "title_template": "Possible Print Failure Detected"
+  },
+  {
+   "body_template": "{printer}: Objects detected on build plate. Print has been paused. Clear plate and resume.",
+   "event_type": "plate_not_empty",
+   "name": "Plate Not Empty",
+   "title_template": "Plate Not Empty - Print Paused"
+  },
+  {
+   "body_template": "{printer}: print finished. Confirm the build plate is clear before the queue continues.",
+   "event_type": "plate_clear_required",
+   "name": "Plate Clear Required",
+   "title_template": "Plate Clear Required"
+  },
+  {
+   "body_template": "{printer}: Slot {slot} at {remaining_percent}%",
+   "event_type": "filament_low",
+   "name": "Filament Low",
+   "title_template": "Filament Low"
+  },
+  {
+   "body_template": "{printer}:\n{items}",
+   "event_type": "maintenance_due",
+   "name": "Maintenance Due",
+   "title_template": "Maintenance Due"
+  },
+  {
+   "body_template": "{printer} {ams_label}: Humidity {humidity}% exceeds {threshold}% threshold",
+   "event_type": "ams_humidity_high",
+   "name": "AMS Humidity High",
+   "title_template": "AMS Humidity Alert"
+  },
+  {
+   "body_template": "{printer} {ams_label}: Temperature {temperature}\u00b0C exceeds {threshold}\u00b0C threshold",
+   "event_type": "ams_temperature_high",
+   "name": "AMS Temperature High",
+   "title_template": "AMS Temperature Alert"
+  },
+  {
+   "body_template": "{printer} {ams_label}: stopped automatic drying after {cycles} cycles left humidity at {humidity}%, still above the {threshold}% threshold. An AMS reads higher while it is warm, so raise the threshold or dry the spools off the printer.",
+   "event_type": "ams_drying_suspended",
+   "name": "Auto-Drying Suspended",
+   "title_template": "Auto-Drying Suspended"
+  },
+  {
+   "body_template": "{printer}: Bed cooled to {bed_temp}\u00b0C (threshold: {threshold}\u00b0C)",
+   "event_type": "bed_cooled",
+   "name": "Bed Cooled",
+   "title_template": "Bed Cooled"
+  },
+  {
+   "body_template": "{printer}: {sensor} is {state}",
+   "event_type": "ha_sensor_alert",
+   "name": "Printer Sensor Alert",
+   "title_template": "Sensor Alert"
+  },
+  {
+   "body_template": "{location}: {sensor} is {state}",
+   "event_type": "location_ha_sensor_alert",
+   "name": "Storage Location Sensor Alert",
+   "title_template": "Sensor Alert"
+  },
+  {
+   "body_template": "{printer}: {filename}\nLayer 1/{total_layers} done",
+   "event_type": "first_layer_complete",
+   "name": "First Layer Complete",
+   "title_template": "First Layer Complete"
+  },
+  {
+   "body_template": "{printer}: {filename}\nPauses in {time_to_pause} (about {eta}), at layer {layer}/{total_layers}",
+   "event_type": "print_pause_upcoming",
+   "name": "Pause Coming Up",
+   "title_template": "Pause Coming Up"
+  },
+  {
+   "body_template": "This is a test notification. If you see this, notifications are working!",
+   "event_type": "test",
+   "name": "Test Notification",
+   "title_template": "Fenrir Test"
+  },
+  {
+   "body_template": "{job_name} added to queue for {target}",
+   "event_type": "queue_job_added",
+   "name": "Queue Job Added",
+   "title_template": "Job Queued"
+  },
+  {
+   "body_template": "{job_name} assigned to {printer} (from Any {target_model} queue)",
+   "event_type": "queue_job_assigned",
+   "name": "Queue Job Assigned",
+   "title_template": "Job Assigned"
+  },
+  {
+   "body_template": "{printer}: {job_name}\nEstimated: {estimated_time}",
+   "event_type": "queue_job_started",
+   "name": "Queue Job Started",
+   "title_template": "Queue Job Started"
+  },
+  {
+   "body_template": "{job_name} waiting for {target_model}\n{waiting_reason}",
+   "event_type": "queue_job_waiting",
+   "name": "Queue Job Waiting",
+   "title_template": "Queue Job Waiting"
+  },
+  {
+   "body_template": "{printer}: {job_name}\nReason: {reason}",
+   "event_type": "queue_job_skipped",
+   "name": "Queue Job Skipped",
+   "title_template": "Job Skipped"
+  },
+  {
+   "body_template": "{printer}: {job_name}\nReason: {reason}",
+   "event_type": "queue_job_failed",
+   "name": "Queue Job Failed",
+   "title_template": "Job Failed to Start"
+  },
+  {
+   "body_template": "All {completed_count} queued jobs have finished",
+   "event_type": "queue_completed",
+   "name": "Queue Completed",
+   "title_template": "Queue Complete"
+  },
+  {
+   "body_template": "Welcome {username}!\n\nYour {app_name} account has been created. Please change your password after your first login.\n\nLogin at: {login_url}\n\nYour login details:",
+   "event_type": "user_created",
+   "name": "Welcome Email",
+   "title_template": "Welcome to {app_name}"
+  },
+  {
+   "body_template": "Hello {username},\n\nA password reset was requested for your {app_name} account. If you did not request it, you can ignore this email: your password has not been changed.\n\nSet a new password with the link below (valid for 1 hour, usable once):",
+   "event_type": "password_reset",
+   "name": "Password Reset",
+   "title_template": "{app_name} - Password Reset"
+  },
+  {
+   "body_template": "{material} {subtype} {color} ({brand}) has reached the reorder point.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Days left: {days_left}d\nReorder now to avoid a stock break.",
+   "event_type": "stock_reorder_alert",
+   "name": "Stock Reorder Alert",
+   "title_template": "Reorder Alert: {material}"
+  },
+  {
+   "body_template": "{material} {subtype} {color} ({brand}) will run out before replenishment arrives.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Lead time: {lead_time_days}d\nOnly {days_left}d of stock remaining \u2014 order immediately.",
+   "event_type": "stock_break_alert",
+   "name": "Stock Break Alert",
+   "title_template": "Stock Break Risk: {material}"
+  },
+  {
+   "body_template": "Hello {username},\n\nYour print job has started on {printer}.\n\nFile: {filename}\n\nYou will be notified when it completes.",
+   "event_type": "user_print_start",
+   "name": "User Print Started Email",
+   "title_template": "Your Print Has Started"
+  },
+  {
+   "body_template": "Hello {username},\n\nYour print job has completed on {printer}.\n\nFile: {filename}",
+   "event_type": "user_print_complete",
+   "name": "User Print Completed Email",
+   "title_template": "Your Print Is Complete"
+  },
+  {
+   "body_template": "Hello {username},\n\nYour print job has failed on {printer}.\n\nFile: {filename}",
+   "event_type": "user_print_failed",
+   "name": "User Print Failed Email",
+   "title_template": "Your Print Has Failed"
+  },
+  {
+   "body_template": "Hello {username},\n\nYour print job was stopped on {printer}.\n\nFile: {filename}",
+   "event_type": "user_print_stopped",
+   "name": "User Print Stopped Email",
+   "title_template": "Your Print Has Been Stopped"
+  },
+  {
+   "body_template": "{client_name} paid {amount} {currency} ({source})\nProject #{project_id}",
+   "event_type": "aito_payment_received",
+   "name": "Aito Payment Received",
+   "title_template": "Payment received \u2014 {reference}"
+  }
+ ],
+ "digest_retry_hours": 48,
+ "event_names": {
+  "ai_failure_detection": "AI Failure Detection",
+  "aito_payment_received": "Aito Payment Received",
+  "ams_drying_suspended": "Auto-Drying Suspended",
+  "ams_humidity_high": "AMS Humidity High",
+  "ams_temperature_high": "AMS Temperature High",
+  "bed_cooled": "Bed Cooled",
+  "billing_charge_failed": "Billing Charge Failed",
+  "filament_low": "Filament Low",
+  "first_layer_complete": "First Layer Complete",
+  "ha_sensor_alert": "Printer Sensor Alert",
+  "location_ha_sensor_alert": "Storage Location Sensor Alert",
+  "maintenance_due": "Maintenance Due",
+  "password_reset": "Password Reset",
+  "plate_clear_required": "Plate Clear Required",
+  "plate_not_empty": "Plate Not Empty",
+  "print_complete": "Print Completed",
+  "print_confirm_request": "Print Outcome Confirmation",
+  "print_failed": "Print Failed",
+  "print_missing_spool_assignment": "Missing Spool Assignment",
+  "print_pause_upcoming": "Pause Coming Up",
+  "print_progress": "Print Progress",
+  "print_start": "Print Started",
+  "print_stopped": "Print Stopped",
+  "printer_error": "Printer Error",
+  "printer_offline": "Printer Offline",
+  "queue_completed": "Queue Completed",
+  "queue_job_added": "Queue Job Added",
+  "queue_job_assigned": "Queue Job Assigned",
+  "queue_job_failed": "Queue Job Failed",
+  "queue_job_skipped": "Queue Job Skipped",
+  "queue_job_started": "Queue Job Started",
+  "queue_job_waiting": "Queue Job Waiting",
+  "stock_break_alert": "Stock Break Alert",
+  "stock_reorder_alert": "Stock Reorder Alert",
+  "test": "Test Notification",
+  "user_created": "Welcome Email",
+  "user_print_complete": "User Print Completed Email",
+  "user_print_failed": "User Print Failed Email",
+  "user_print_start": "User Print Started Email",
+  "user_print_stopped": "User Print Stopped Email"
+ },
+ "event_priority_level": {
+  "[{\"event_priorities\": \"nope\"}, \"print_complete\"]": "__None__",
+  "[{\"event_priorities\": {\"print_complete\": \"4\"}}, \"print_complete\"]": 4,
+  "[{\"event_priorities\": {\"print_complete\": \"x\"}}, \"print_complete\"]": "__None__",
+  "[{\"event_priorities\": {\"print_complete\": 0}}, \"print_complete\"]": "__None__",
+  "[{\"event_priorities\": {\"print_complete\": 3}}, null]": "__None__",
+  "[{\"event_priorities\": {\"print_complete\": 5}}, \"print_complete\"]": 5,
+  "[{\"event_priorities\": {\"print_complete\": 9}}, \"print_complete\"]": "__None__",
+  "[{\"event_priorities\": {\"print_failed\": 2}}, \"print_complete\"]": "__None__",
+  "[{}, \"print_complete\"]": "__None__"
+ },
+ "event_types": [
+  "print_start",
+  "print_complete",
+  "print_failed",
+  "print_stopped",
+  "print_progress",
+  "print_missing_spool_assignment",
+  "billing_charge_failed",
+  "printer_offline",
+  "printer_error",
+  "ai_failure_detection",
+  "filament_low",
+  "maintenance_due",
+  "ams_humidity_high",
+  "ams_temperature_high",
+  "ams_drying_suspended",
+  "bed_cooled",
+  "ha_sensor_alert",
+  "test"
+ ],
+ "event_variables": {
+  "ai_failure_detection": [
+   "printer",
+   "task_name",
+   "provider",
+   "confidence",
+   "print_quality",
+   "action",
+   "timestamp",
+   "app_name"
+  ],
+  "aito_payment_received": [
+   "client_name",
+   "reference",
+   "amount",
+   "currency",
+   "source",
+   "project_id"
+  ],
+  "ams_drying_suspended": [
+   "printer",
+   "ams_label",
+   "humidity",
+   "threshold",
+   "cycles",
+   "timestamp",
+   "app_name"
+  ],
+  "ams_humidity_high": [
+   "printer",
+   "ams_label",
+   "humidity",
+   "threshold",
+   "timestamp",
+   "app_name"
+  ],
+  "ams_temperature_high": [
+   "printer",
+   "ams_label",
+   "temperature",
+   "threshold",
+   "timestamp",
+   "app_name"
+  ],
+  "bed_cooled": [
+   "printer",
+   "bed_temp",
+   "threshold",
+   "filename",
+   "timestamp",
+   "app_name"
+  ],
+  "billing_charge_failed": [
+   "printer",
+   "filename",
+   "archive_id",
+   "error",
+   "timestamp",
+   "app_name"
+  ],
+  "filament_low": [
+   "printer",
+   "slot",
+   "remaining_percent",
+   "color",
+   "timestamp",
+   "app_name"
+  ],
+  "first_layer_complete": [
+   "printer",
+   "filename",
+   "total_layers",
+   "timestamp",
+   "app_name"
+  ],
+  "ha_sensor_alert": [
+   "printer",
+   "sensor",
+   "state",
+   "timestamp",
+   "app_name"
+  ],
+  "location_ha_sensor_alert": [
+   "location",
+   "sensor",
+   "state",
+   "timestamp",
+   "app_name"
+  ],
+  "maintenance_due": [
+   "printer",
+   "items",
+   "timestamp",
+   "app_name"
+  ],
+  "password_reset": [
+   "username",
+   "app_name",
+   "timestamp"
+  ],
+  "plate_clear_required": [
+   "printer",
+   "timestamp",
+   "app_name"
+  ],
+  "plate_not_empty": [
+   "printer",
+   "difference_percent",
+   "timestamp",
+   "app_name"
+  ],
+  "print_complete": [
+   "printer",
+   "filename",
+   "duration",
+   "filament_grams",
+   "filament_details",
+   "archive_id",
+   "run_id",
+   "finish_photo_url",
+   "timestamp",
+   "app_name"
+  ],
+  "print_confirm_request": [
+   "printer",
+   "filename",
+   "confirm_url",
+   "good_url",
+   "reject_url",
+   "archive_id",
+   "finish_photo_url",
+   "timestamp",
+   "app_name"
+  ],
+  "print_failed": [
+   "printer",
+   "filename",
+   "duration",
+   "filament_grams",
+   "filament_details",
+   "progress",
+   "reason",
+   "archive_id",
+   "run_id",
+   "finish_photo_url",
+   "timestamp",
+   "app_name"
+  ],
+  "print_missing_spool_assignment": [
+   "printer",
+   "missing_slots",
+   "missing_slot_details",
+   "timestamp",
+   "app_name"
+  ],
+  "print_pause_upcoming": [
+   "printer",
+   "filename",
+   "time_to_pause",
+   "eta",
+   "layer",
+   "total_layers",
+   "timestamp",
+   "app_name"
+  ],
+  "print_progress": [
+   "printer",
+   "filename",
+   "progress",
+   "remaining_time",
+   "eta",
+   "timestamp",
+   "app_name"
+  ],
+  "print_start": [
+   "printer",
+   "filename",
+   "estimated_time",
+   "eta",
+   "timestamp",
+   "app_name"
+  ],
+  "print_stopped": [
+   "printer",
+   "filename",
+   "duration",
+   "filament_grams",
+   "filament_details",
+   "progress",
+   "archive_id",
+   "run_id",
+   "finish_photo_url",
+   "timestamp",
+   "app_name"
+  ],
+  "printer_error": [
+   "printer",
+   "error_type",
+   "error_detail",
+   "timestamp",
+   "app_name"
+  ],
+  "printer_offline": [
+   "printer",
+   "timestamp",
+   "app_name"
+  ],
+  "queue_completed": [
+   "completed_count",
+   "timestamp",
+   "app_name"
+  ],
+  "queue_job_added": [
+   "job_name",
+   "target",
+   "timestamp",
+   "app_name"
+  ],
+  "queue_job_assigned": [
+   "job_name",
+   "printer",
+   "target_model",
+   "timestamp",
+   "app_name"
+  ],
+  "queue_job_failed": [
+   "printer",
+   "job_name",
+   "reason",
+   "timestamp",
+   "app_name"
+  ],
+  "queue_job_skipped": [
+   "printer",
+   "job_name",
+   "reason",
+   "timestamp",
+   "app_name"
+  ],
+  "queue_job_started": [
+   "printer",
+   "job_name",
+   "estimated_time",
+   "eta",
+   "timestamp",
+   "app_name"
+  ],
+  "queue_job_waiting": [
+   "job_name",
+   "target_model",
+   "waiting_reason",
+   "timestamp",
+   "app_name"
+  ],
+  "stock_break_alert": [
+   "material",
+   "subtype",
+   "brand",
+   "color",
+   "stock_g",
+   "rate_g_day",
+   "days_left",
+   "lead_time_days",
+   "timestamp",
+   "app_name"
+  ],
+  "stock_reorder_alert": [
+   "material",
+   "subtype",
+   "brand",
+   "color",
+   "stock_g",
+   "rate_g_day",
+   "days_left",
+   "timestamp",
+   "app_name"
+  ],
+  "test": [
+   "app_name",
+   "timestamp"
+  ],
+  "user_created": [
+   "username",
+   "login_url",
+   "app_name",
+   "timestamp"
+  ],
+  "user_print_complete": [
+   "username",
+   "printer",
+   "filename",
+   "finish_photo_url",
+   "timestamp",
+   "app_name"
+  ],
+  "user_print_failed": [
+   "username",
+   "printer",
+   "filename",
+   "finish_photo_url",
+   "timestamp",
+   "app_name"
+  ],
+  "user_print_start": [
+   "username",
+   "printer",
+   "filename",
+   "timestamp",
+   "app_name"
+  ],
+  "user_print_stopped": [
+   "username",
+   "printer",
+   "filename",
+   "finish_photo_url",
+   "timestamp",
+   "app_name"
+  ]
+ },
+ "format_duration": {
+  "-5": "59m",
+  "0": "0m",
+  "1": "0m",
+  "12.7": "0.0m",
+  "3599": "59m",
+  "3600": "1h 0m",
+  "3661": "1h 1m",
+  "59": "0m",
+  "60": "1m",
+  "61": "1m",
+  "86399": "23h 59m",
+  "86400": "24h 0m",
+  "90061": "25h 1m",
+  "None": "Unknown"
+ },
+ "gotify_priority_by_level": {
+  "1": 0,
+  "2": 2,
+  "3": 5,
+  "4": 8,
+  "5": 10
+ },
+ "is_in_quiet_hours": {
+  "09:00-09:00 @ 09:00": false,
+  "09:00-17:00 @ 08:59": false,
+  "09:00-17:00 @ 12:00": true,
+  "09:00-17:00 @ 17:00": false,
+  "22:00-07:00 @ 06:59": true,
+  "22:00-07:00 @ 07:00": false,
+  "22:00-07:00 @ 12:00": false,
+  "22:00-07:00 @ 23:30": true,
+  "22:00-None @ 23:00": false,
+  "None-None @ 12:00": false,
+  "bad-07:00 @ 12:00": false,
+  "disabled": false
+ },
+ "looks_like_cloudflare_challenge": {
+  "200 ok": false,
+  "401 empty": false,
+  "403 cf challenge": true,
+  "403 cf mitigated": true,
+  "403 plain": false,
+  "429 text": false,
+  "500 json": false,
+  "503 cf": false
+ },
+ "notification_photos": {
+  "find": {
+   "": "__None__",
+   "../etc/passwd": "__None__",
+   "PRINT_COMPLETE_<stamp><token>.JPG": "__None__",
+   "a/b.jpg": "__None__",
+   "event_<stamp><token>.jpg": "found",
+   "nope.jpg": "__None__",
+   "print_complete_<stamp><token>.jpg": "found",
+   "print_complete_<stamp><token>.jpg.png": "__None__",
+   "print_failed_<stamp><token>.jpg": "found",
+   "weirdevent_<stamp><token>.jpg": "found"
+  },
+  "save_errors": {},
+  "saved_name_shapes": [
+   "event_<stamp><token>.jpg",
+   "print_complete_<stamp><token>.jpg",
+   "print_failed_<stamp><token>.jpg",
+   "weirdevent_<stamp><token>.jpg"
+  ]
+ },
+ "notify_credentials": {
+  "{\"device_id\": \" ABCDEFGH1234 \", \"token\": \" t \"}": [
+   "ABCDEFGH1234",
+   "t"
+  ],
+  "{\"device_id\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"token\": \"t\"}": {
+   "__raised__": "NotifyError: Notify! requires a valid device or group ID (8\u201332 letters and digits)"
+  },
+  "{\"device_id\": \"ABCDEFGH1234\", \"token\": \"\"}": {
+   "__raised__": "NotifyError: Notify! requires a device or group token"
+  },
+  "{\"device_id\": \"ABCDEFGH1234\", \"token\": \"t\", \"button\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}": [
+   "ABCDEFGH1234",
+   "t"
+  ],
+  "{\"device_id\": \"ABCDEFGH1234\", \"token\": \"t\", \"live_activities\": true}": [
+   "ABCDEFGH1234",
+   "t"
+  ],
+  "{\"device_id\": \"ABCDEFGH1234\", \"token\": \"t\", \"metrics\": [\"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\"]}": [
+   "ABCDEFGH1234",
+   "t"
+  ],
+  "{\"device_id\": \"ABCDEFGH1234\", \"token\": \"t\", \"symbol\": \"a\\u0000b\"}": [
+   "ABCDEFGH1234",
+   "t"
+  ],
+  "{\"device_id\": \"ABCDEFGH1234\", \"token\": \"t\", \"tint\": \"#12345\"}": [
+   "ABCDEFGH1234",
+   "t"
+  ],
+  "{\"device_id\": \"ABCDEFGH1234\", \"token\": \"t\", \"tint\": \"#AABBCC\"}": [
+   "ABCDEFGH1234",
+   "t"
+  ],
+  "{\"device_id\": \"ABCDEFGH1234\", \"token\": \"t\"}": [
+   "ABCDEFGH1234",
+   "t"
+  ],
+  "{\"device_id\": \"GRP12345\", \"token\": \"t\", \"lock_screen_widgets\": true}": {
+   "__raised__": "NotifyError: Notify! Lock Screen widgets require an iOS device ID"
+  },
+  "{\"device_id\": \"GRP12345\", \"token\": \"t\"}": [
+   "GRP12345",
+   "t"
+  ],
+  "{\"device_id\": \"MC123456\", \"token\": \"t\", \"live_activities\": true}": {
+   "__raised__": "NotifyError: Notify! Live Activities require an iOS device ID"
+  },
+  "{\"device_id\": \"WB123456\", \"token\": \"t\"}": [
+   "WB123456",
+   "t"
+  ],
+  "{\"device_id\": \"short\", \"token\": \"t\"}": {
+   "__raised__": "NotifyError: Notify! requires a valid device or group ID (8\u201332 letters and digits)"
+  },
+  "{\"device_id\": 12, \"token\": \"t\"}": {
+   "__raised__": "NotifyError: Notify! requires a valid device or group ID (8\u201332 letters and digits)"
+  },
+  "{\"token\": \"t\"}": {
+   "__raised__": "NotifyError: Notify! requires a valid device or group ID (8\u201332 letters and digits)"
+  },
+  "{}": {
+   "__raised__": "NotifyError: Notify! requires a valid device or group ID (8\u201332 letters and digits)"
+  }
+ },
+ "notify_supports_photos": {
+  "": true,
+  " WB": false,
+  "5": false,
+  "ABC": true,
+  "GRP1": false,
+  "None": false,
+  "grp": false,
+  "wb1": false
+ },
+ "opaque_http_failure": {
+  "200 ok": "HTTP 200 from the configured Webhook (see server logs at debug level for details)",
+  "401 empty": "HTTP 401 from the configured Webhook (see server logs at debug level for details)",
+  "403 cf challenge": "HTTP 403 from the configured Webhook (see server logs at debug level for details)",
+  "403 cf mitigated": "HTTP 403 from the configured Webhook (see server logs at debug level for details)",
+  "403 plain": "HTTP 403 from the configured Webhook (see server logs at debug level for details)",
+  "429 text": "HTTP 429 from the configured Webhook (see server logs at debug level for details)",
+  "500 json": "HTTP 500 from the configured Webhook (see server logs at debug level for details)",
+  "503 cf": "HTTP 503 from the configured Webhook (see server logs at debug level for details)"
+ },
+ "photo_capable_events": [
+  "ai_failure_detection",
+  "first_layer_complete",
+  "plate_not_empty",
+  "print_complete",
+  "print_confirm_request",
+  "print_failed",
+  "print_progress",
+  "print_start",
+  "print_stopped",
+  "printer_error",
+  "test",
+  "user_print_complete",
+  "user_print_failed",
+  "user_print_stopped"
+ ],
+ "print_snapshot": {
+  "failed": {
+   "connected": true,
+   "content": {
+    "body": "Print",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 0,
+    "status": "Failed",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "content_cfg": {
+    "body": "Print",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 0,
+    "status": "Failed",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "fault": null,
+   "filename": "Print",
+   "job_key": null,
+   "key": "file:e3b0c44298fc1c149afbf4c8996fb924",
+   "layer": 0,
+   "layers": 0,
+   "progress": 0,
+   "remaining_seconds": 0,
+   "stage": -1,
+   "state": "FAILED",
+   "temperatures": []
+  },
+  "finished": {
+   "connected": true,
+   "content": {
+    "body": "done.3mf",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 100,
+    "status": "Complete",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "content_cfg": {
+    "body": "done.3mf",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 100,
+    "status": "Complete",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "fault": null,
+   "filename": "done.3mf",
+   "job_key": null,
+   "key": "file:7f6cef9ccdb1360c927e6bb9db20ceaf",
+   "layer": 0,
+   "layers": 0,
+   "progress": 100,
+   "remaining_seconds": 0,
+   "stage": -1,
+   "state": "FINISH",
+   "temperatures": []
+  },
+  "hms_advisory_only": {
+   "connected": true,
+   "content": {
+    "body": "Print",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 5.0,
+    "status": "Printing",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "content_cfg": {
+    "body": "Print",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 5.0,
+    "status": "Printing",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "fault": null,
+   "filename": "Print",
+   "job_key": null,
+   "key": "file:e3b0c44298fc1c149afbf4c8996fb924",
+   "layer": 0,
+   "layers": 0,
+   "progress": 5.0,
+   "remaining_seconds": 0,
+   "stage": -1,
+   "state": "RUNNING",
+   "temperatures": []
+  },
+  "idle": {
+   "connected": true,
+   "content": {
+    "body": "Print",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 0,
+    "status": "Finished",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "content_cfg": {
+    "body": "Print",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 0,
+    "status": "Finished",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "fault": null,
+   "filename": "Print",
+   "job_key": null,
+   "key": "file:e3b0c44298fc1c149afbf4c8996fb924",
+   "layer": 0,
+   "layers": 0,
+   "progress": 0,
+   "remaining_seconds": 0,
+   "stage": -1,
+   "state": "IDLE",
+   "temperatures": []
+  },
+  "long_name": {
+   "connected": true,
+   "content": {
+    "body": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 1.0,
+    "status": "Printing",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "content_cfg": {
+    "body": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 1.0,
+    "status": "Printing",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "fault": null,
+   "filename": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+   "job_key": null,
+   "key": "file:230b077491957fb486227d8d66cc84eb",
+   "layer": 0,
+   "layers": 0,
+   "progress": 1.0,
+   "remaining_seconds": 0,
+   "stage": -1,
+   "state": "RUNNING",
+   "temperatures": [
+    [
+     "nozzle",
+     220.4
+    ],
+    [
+     "bed",
+     60
+    ]
+   ]
+  },
+  "not_connected": {
+   "connected": false,
+   "content": {
+    "body": "Print",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 0,
+    "status": "Printer offline",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "content_cfg": {
+    "body": "Print",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 0,
+    "status": "Printer offline",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "fault": null,
+   "filename": "Print",
+   "job_key": null,
+   "key": "file:e3b0c44298fc1c149afbf4c8996fb924",
+   "layer": 0,
+   "layers": 0,
+   "progress": 0,
+   "remaining_seconds": 0,
+   "stage": -1,
+   "state": "UNKNOWN",
+   "temperatures": []
+  },
+  "paused": {
+   "connected": true,
+   "content": {
+    "body": "y.3mf",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 10.0,
+    "status": "Paused",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "content_cfg": {
+    "body": "y.3mf",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 10.0,
+    "status": "Paused",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "fault": null,
+   "filename": "y.3mf",
+   "job_key": null,
+   "key": "file:5b420a7156c9a7f61096de2fb9ab37ca",
+   "layer": 0,
+   "layers": 0,
+   "progress": 10.0,
+   "remaining_seconds": 300,
+   "stage": -1,
+   "state": "PAUSE",
+   "temperatures": []
+  },
+  "preparing": {
+   "connected": true,
+   "content": {
+    "body": "warm",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 0,
+    "status": "Preparing",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "content_cfg": {
+    "body": "warm",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 0,
+    "status": "Preparing",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "fault": null,
+   "filename": "warm",
+   "job_key": null,
+   "key": "file:0f0aa408c1832abefd06bced5378aa79",
+   "layer": 0,
+   "layers": 0,
+   "progress": 0,
+   "remaining_seconds": 0,
+   "stage": 2,
+   "state": "PREPARE",
+   "temperatures": []
+  },
+  "printing": {
+   "connected": true,
+   "content": {
+    "body": "cat.3mf \u00b7 Layer 12/240",
+    "button": null,
+    "endsIn": 5700,
+    "metrics": null,
+    "progress": 42.5,
+    "status": "Printing",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "content_cfg": {
+    "body": "cat.3mf \u00b7 Layer 12/240",
+    "button": null,
+    "endsIn": 5700,
+    "metrics": null,
+    "progress": 42.5,
+    "status": "Printing",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "fault": null,
+   "filename": "cat.3mf",
+   "job_key": null,
+   "key": "file:f58f52d6c1ce262bbd28ff5aaeb9999e",
+   "layer": 12,
+   "layers": 240,
+   "progress": 42.5,
+   "remaining_seconds": 5700,
+   "stage": -1,
+   "state": "RUNNING",
+   "temperatures": []
+  },
+  "printing_no_layers": {
+   "connected": true,
+   "content": {
+    "body": "x",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 100,
+    "status": "Printing",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "content_cfg": {
+    "body": "x",
+    "button": null,
+    "endsIn": null,
+    "metrics": null,
+    "progress": 100,
+    "status": "Printing",
+    "step": null,
+    "steps": null,
+    "symbol": "printer.fill",
+    "tint": "#00AE42",
+    "title": "X1C",
+    "trailing": null
+   },
+   "fault": null,
+   "filename": "x",
+   "job_key": null,
+   "key": "file:2d711642b726b04401627ca9fbac32f5",
+   "layer": 0,
+   "layers": 0,
+   "progress": 100,
+   "remaining_seconds": 0,
+   "stage": -1,
+   "state": "RUNNING",
+   "temperatures": []
+  }
+ },
+ "provider_types": [
+  "callmebot",
+  "ntfy",
+  "pushover",
+  "telegram",
+  "email",
+  "discord",
+  "webhook",
+  "homeassistant",
+  "bark",
+  "gotify",
+  "notify"
+ ],
+ "render_template": {
+  "[\"\", {\"a\": \"b\"}]": "",
+  "[\"no placeholders\", {}]": "no placeholders",
+  "[\"{none}\", {\"none\": null}]": "",
+  "[\"{ok} {Mixed_Case} {with-dash} {{double}}\", {\"ok\": 1, \"Mixed_Case\": \"m\"}]": "1 m {with-dash} {}",
+  "[\"{printer_name} {missing} {printer_name}\", {\"printer_name\": \"P1S\"}]": "P1S  P1S",
+  "[\"{printer_name}: {file_name} done in {duration}\", {\"printer_name\": \"X1C\", \"file_name\": \"cat.3mf\", \"duration\": \"1h 2m\"}]": "X1C: cat.3mf done in 1h 2m"
+ },
+ "sample_data": {
+  "ai_failure_detection": {
+   "action": "pause",
+   "app_name": "Fenrir",
+   "confidence": "N/A",
+   "print_quality": "2/10",
+   "printer": "Bambu X1C",
+   "provider": "OctoEverywhere",
+   "task_name": "Benchy.3mf",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "aito_payment_received": {
+   "amount": "120.00",
+   "client_name": "Atelier Dupont",
+   "currency": "XPF",
+   "project_id": "42",
+   "reference": "DEV-2638",
+   "source": "link"
+  },
+  "ams_drying_suspended": {
+   "ams_label": "AMS-A",
+   "app_name": "Fenrir",
+   "cycles": "2",
+   "humidity": "16",
+   "printer": "Bambu X1C",
+   "threshold": "14",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "ams_humidity_high": {
+   "ams_label": "AMS-A",
+   "app_name": "Fenrir",
+   "humidity": "75",
+   "printer": "Bambu X1C",
+   "threshold": "60",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "ams_temperature_high": {
+   "ams_label": "AMS-A",
+   "app_name": "Fenrir",
+   "printer": "Bambu X1C",
+   "temperature": "42",
+   "threshold": "35",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "bed_cooled": {
+   "app_name": "Fenrir",
+   "bed_temp": "34",
+   "filename": "Benchy",
+   "printer": "Bambu X1C",
+   "threshold": "35",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "billing_charge_failed": {
+   "app_name": "Fenrir",
+   "archive_id": "123",
+   "error": "The transaction could not be persisted",
+   "filename": "Benchy.3mf",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 15:48"
+  },
+  "filament_low": {
+   "app_name": "Fenrir",
+   "color": "Black PLA",
+   "printer": "Bambu X1C",
+   "remaining_percent": "15",
+   "slot": "1",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "first_layer_complete": {
+   "app_name": "Fenrir",
+   "filename": "Benchy.3mf",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 14:35",
+   "total_layers": "184"
+  },
+  "ha_sensor_alert": {
+   "app_name": "Fenrir",
+   "printer": "Bambu X1C",
+   "sensor": "Enclosure Door",
+   "state": "open",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "location_ha_sensor_alert": {
+   "app_name": "Fenrir",
+   "location": "Drybox 1",
+   "sensor": "Drybox 1 Humidity",
+   "state": "68.00 %",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "maintenance_due": {
+   "app_name": "Fenrir",
+   "items": "\u2022 Nozzle cleaning (OVERDUE)\n\u2022 Carbon rod lubrication (Soon)",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "password_reset": {
+   "app_name": "Fenrir",
+   "timestamp": "2024-01-15 14:30",
+   "username": "john_doe"
+  },
+  "plate_clear_required": {
+   "app_name": "Fenrir",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 15:48"
+  },
+  "plate_not_empty": {
+   "app_name": "Fenrir",
+   "difference_percent": "12.4",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 09:00"
+  },
+  "print_complete": {
+   "app_name": "Fenrir",
+   "archive_id": "123",
+   "duration": "1h 18m",
+   "filament_details": "AMS-A T1 PLA: 12.4g | AMS-A T3 PETG: 2.8g",
+   "filament_grams": "15.2",
+   "filename": "Benchy.3mf",
+   "finish_photo_url": "/api/v1/archives/123/photos/finish_20240115_154800_abc12345.jpg",
+   "printer": "Bambu X1C",
+   "run_id": "456",
+   "timestamp": "2024-01-15 15:48"
+  },
+  "print_confirm_request": {
+   "app_name": "Fenrir",
+   "archive_id": "42",
+   "confirm_url": "http://bambuddy.local:8000/archives?confirm=42",
+   "filename": "Benchy",
+   "finish_photo_url": "/api/v1/archives/42/photos/finish_20240115_143500_abc12345.jpg",
+   "good_url": "http://bambuddy.local:8000/api/v1/archives/confirm/sample-token/good",
+   "printer": "Bambu X1C",
+   "reject_url": "http://bambuddy.local:8000/api/v1/archives/confirm/sample-token/reject",
+   "timestamp": "2024-01-15 14:35"
+  },
+  "print_failed": {
+   "app_name": "Fenrir",
+   "archive_id": "123",
+   "duration": "0h 45m",
+   "filament_details": "AMS-A T1 PLA: 7.6g",
+   "filament_grams": "7.6",
+   "filename": "Benchy.3mf",
+   "finish_photo_url": "/api/v1/archives/123/photos/finish_20240115_151500_def67890.jpg",
+   "printer": "Bambu X1C",
+   "progress": "50",
+   "reason": "Filament runout",
+   "run_id": "456",
+   "timestamp": "2024-01-15 15:15"
+  },
+  "print_missing_spool_assignment": {
+   "app_name": "Fenrir",
+   "missing_slot_details": "- A1: PLA Basic\n- A3: PETG HF",
+   "missing_slots": "A1, A3",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "print_pause_upcoming": {
+   "app_name": "Fenrir",
+   "eta": "16:05",
+   "filename": "Wifi_QR_NFC.3mf",
+   "layer": "42",
+   "printer": "Bambu X1C",
+   "time_to_pause": "5m",
+   "timestamp": "2024-01-15 16:00",
+   "total_layers": "120"
+  },
+  "print_progress": {
+   "app_name": "Fenrir",
+   "eta": "15:41",
+   "filename": "Benchy.3mf",
+   "printer": "Bambu X1C",
+   "progress": "50",
+   "remaining_time": "0h 41m",
+   "timestamp": "2024-01-15 15:00"
+  },
+  "print_start": {
+   "app_name": "Fenrir",
+   "estimated_time": "1h 23m",
+   "eta": "15:53",
+   "filename": "Benchy.3mf",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "print_stopped": {
+   "app_name": "Fenrir",
+   "archive_id": "123",
+   "duration": "0h 30m",
+   "filament_details": "AMS-A T2 PLA: 4.6g",
+   "filament_grams": "4.6",
+   "filename": "Benchy.3mf",
+   "finish_photo_url": "/api/v1/archives/123/photos/finish_20240115_150000_ghi11223.jpg",
+   "printer": "Bambu X1C",
+   "progress": "30",
+   "run_id": "456",
+   "timestamp": "2024-01-15 15:00"
+  },
+  "printer_error": {
+   "app_name": "Fenrir",
+   "error_detail": "Filament slot 1 jammed",
+   "error_type": "AMS Error",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "printer_offline": {
+   "app_name": "Fenrir",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "queue_completed": {
+   "app_name": "Fenrir",
+   "completed_count": "5",
+   "timestamp": "2024-01-15 18:30"
+  },
+  "queue_job_added": {
+   "app_name": "Fenrir",
+   "job_name": "Benchy.3mf",
+   "target": "Bambu X1C",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "queue_job_assigned": {
+   "app_name": "Fenrir",
+   "job_name": "Benchy.3mf",
+   "printer": "Bambu X1C #1",
+   "target_model": "X1C",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "queue_job_failed": {
+   "app_name": "Fenrir",
+   "job_name": "Benchy.3mf",
+   "printer": "Bambu X1C",
+   "reason": "Upload failed: connection timeout",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "queue_job_skipped": {
+   "app_name": "Fenrir",
+   "job_name": "Benchy.3mf",
+   "printer": "Bambu X1C",
+   "reason": "Previous print failed",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "queue_job_started": {
+   "app_name": "Fenrir",
+   "estimated_time": "1h 23m",
+   "eta": "15:53",
+   "job_name": "Benchy.3mf",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "queue_job_waiting": {
+   "app_name": "Fenrir",
+   "job_name": "Benchy.3mf",
+   "target_model": "X1C",
+   "timestamp": "2024-01-15 14:30",
+   "waiting_reason": "Printer1 (needs PLA)"
+  },
+  "stock_break_alert": {
+   "app_name": "Fenrir",
+   "brand": "Bambu Lab",
+   "color": "Charcoal",
+   "days_left": "8",
+   "lead_time_days": "14",
+   "material": "PLA",
+   "rate_g_day": "18.5",
+   "stock_g": "160",
+   "subtype": "Matte",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "stock_reorder_alert": {
+   "app_name": "Fenrir",
+   "brand": "Bambu Lab",
+   "color": "Charcoal",
+   "days_left": "22",
+   "material": "PLA",
+   "rate_g_day": "18.5",
+   "stock_g": "420",
+   "subtype": "Matte",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "test": {
+   "app_name": "Fenrir",
+   "timestamp": "2024-01-15 14:30"
+  },
+  "user_created": {
+   "app_name": "Fenrir",
+   "login_url": "https://bambuddy.example.com/login",
+   "timestamp": "2024-01-15 14:30",
+   "username": "john_doe"
+  },
+  "user_print_complete": {
+   "app_name": "Fenrir",
+   "filename": "Benchy.3mf",
+   "finish_photo_url": "/api/v1/archives/123/photos/finish_20240115_154800_abc12345.jpg",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 15:48",
+   "username": "john_doe"
+  },
+  "user_print_failed": {
+   "app_name": "Fenrir",
+   "filename": "Benchy.3mf",
+   "finish_photo_url": "/api/v1/archives/123/photos/finish_20240115_151500_def67890.jpg",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 15:15",
+   "username": "john_doe"
+  },
+  "user_print_start": {
+   "app_name": "Fenrir",
+   "filename": "Benchy.3mf",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 14:30",
+   "username": "john_doe"
+  },
+  "user_print_stopped": {
+   "app_name": "Fenrir",
+   "filename": "Benchy.3mf",
+   "finish_photo_url": "/api/v1/archives/123/photos/finish_20240115_150000_ghi11223.jpg",
+   "printer": "Bambu X1C",
+   "timestamp": "2024-01-15 15:15",
+   "username": "john_doe"
+  }
+ },
+ "telegram_markdown_escape": {
+  "": "",
+  "100% done \u2014 \u00e9t\u00e9.3mf": "100% done \u2014 \u00e9t\u00e9.3mf",
+  "\\already\\escaped_": "\\already\\escaped_",
+  "a_b*c[d]e(f)~g`h>i#j+k-l=m|n{o}p.q!r": "a_b*c[d]e(f)~g`h>i#j+k-l=m|n{o}p.q!r",
+  "plain": "plain"
+ },
+ "telegram_reaction_hint": "React with \ud83d\udc4d or \ud83d\udc4e to record the outcome.",
+ "template_schema_public": [
+  "BaseModel",
+  "EVENT_VARIABLES",
+  "EventType",
+  "EventVariablesResponse",
+  "Field",
+  "IgnoresNullForRequiredColumns",
+  "NotificationTemplateBase",
+  "NotificationTemplateResponse",
+  "NotificationTemplateUpdate",
+  "PHOTO_CAPABLE_EVENTS",
+  "SAMPLE_DATA",
+  "StrEnum",
+  "TemplatePreviewRequest",
+  "TemplatePreviewResponse"
+ ],
+ "widget_content": {
+  "disconnected": {
+   "detail": "Printer is not connected",
+   "progress": null,
+   "symbol": "printer.fill",
+   "tint": "#00AE42",
+   "title": "X1C",
+   "unit": null,
+   "value": "Offline"
+  },
+  "failed": {
+   "detail": "Print failed",
+   "progress": null,
+   "symbol": "printer.fill",
+   "tint": "#E5484D",
+   "title": "X1C",
+   "unit": null,
+   "value": "Failed"
+  },
+  "finished": {
+   "detail": "Print completed",
+   "progress": 100,
+   "symbol": "printer.fill",
+   "tint": "#00AE42",
+   "title": "Fenrir",
+   "unit": null,
+   "value": "Complete"
+  },
+  "hms_advisory_only": {
+   "detail": "Printing",
+   "progress": 5.0,
+   "symbol": "printer.fill",
+   "tint": "#00AE42",
+   "title": "X1C",
+   "unit": "%",
+   "value": "5"
+  },
+  "idle": {
+   "detail": "Ready to print",
+   "progress": null,
+   "symbol": "printer.fill",
+   "tint": "#00AE42",
+   "title": "Printer Name",
+   "unit": null,
+   "value": "Idle"
+  },
+  "long_name": {
+   "detail": "Printing",
+   "progress": 1.0,
+   "symbol": "printer.fill",
+   "tint": "#00AE42",
+   "title": "X1C",
+   "unit": "%",
+   "value": "1"
+  },
+  "not_connected": {
+   "detail": "Printer is not connected",
+   "progress": null,
+   "symbol": "printer.fill",
+   "tint": "#00AE42",
+   "title": "X1C",
+   "unit": null,
+   "value": "Offline"
+  },
+  "paused": {
+   "detail": "Print paused at 10%",
+   "progress": null,
+   "symbol": "printer.fill",
+   "tint": "#00AE42",
+   "title": "X1C",
+   "unit": null,
+   "value": "Paused"
+  },
+  "preparing": {
+   "detail": "Preparing",
+   "progress": 0,
+   "symbol": "printer.fill",
+   "tint": "#00AE42",
+   "title": "X1C",
+   "unit": "%",
+   "value": "0"
+  },
+  "printing": {
+   "detail": "Printing \u00b7 Layer 12/240 \u00b7 About 1h 35m left",
+   "progress": 42.5,
+   "symbol": "printer.fill",
+   "tint": "#00AE42",
+   "title": "X1C",
+   "unit": "%",
+   "value": "42"
+  },
+  "printing_no_layers": {
+   "detail": "Printing",
+   "progress": 100,
+   "symbol": "printer.fill",
+   "tint": "#00AE42",
+   "title": "X1C",
+   "unit": "%",
+   "value": "100"
+  }
+ }
+}
+
+### stderr:
+

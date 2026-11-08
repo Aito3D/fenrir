@@ -1,0 +1,809 @@
+### exit: 0
+### stdout:
+=== routes
+GET /api/v1/notifications/  -> list_notification_providers  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notifications:read']"}; get_printer_scope_if_auth_enabled]
+POST /api/v1/notifications/  -> create_notification_provider  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notifications:create']"}; get_printer_scope_if_auth_enabled]
+POST /api/v1/notifications/test-config  -> test_notification_config  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notifications:create']"}; probe_permissions_if_auth_enabled.<locals>.checker; get_printer_scope_if_auth_enabled]
+POST /api/v1/notifications/test-all  -> test_all_notification_providers  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notifications:update']"}; get_printer_scope_if_auth_enabled]
+GET /api/v1/notifications/logs  -> get_notification_logs  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notifications:read']"}; get_printer_scope_if_auth_enabled]
+GET /api/v1/notifications/logs/stats  -> get_notification_log_stats  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notifications:read']"}; get_printer_scope_if_auth_enabled]
+DELETE /api/v1/notifications/logs  -> clear_notification_logs  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notifications:delete']"}; get_printer_scope_if_auth_enabled]
+GET /api/v1/notifications/photos/{filename}  -> get_notification_photo  []
+POST /api/v1/notifications/app-message  -> send_app_message  [get_db; require_api_key_scope.<locals>.permission_checker{'owner_needs_permission': 'True', 'scope_attr': 'can_send_notifications', 'scope_name': 'send_notifications', 'user_permission': 'notifications:update'}; get_printer_scope_if_auth_enabled]
+GET /api/v1/notifications/app-message/channels  -> app_message_channels  [get_db; require_api_key_scope.<locals>.permission_checker{'owner_needs_permission': 'True', 'scope_attr': 'can_send_notifications', 'scope_name': 'send_notifications', 'user_permission': 'notifications:update'}; get_printer_scope_if_auth_enabled]
+GET /api/v1/notifications/{provider_id}  -> get_notification_provider  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notifications:read']"}; get_printer_scope_if_auth_enabled]
+PATCH /api/v1/notifications/{provider_id}  -> update_notification_provider  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notifications:update']"}; get_printer_scope_if_auth_enabled]
+DELETE /api/v1/notifications/{provider_id}  -> delete_notification_provider  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notifications:delete']"}; get_printer_scope_if_auth_enabled]
+POST /api/v1/notifications/{provider_id}/test  -> test_notification_provider  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notifications:update']"}; get_printer_scope_if_auth_enabled]
+GET /api/v1/notification-templates/  -> get_templates  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notification_templates:read']"}]
+GET /api/v1/notification-templates  -> get_templates  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notification_templates:read']"}]
+GET /api/v1/notification-templates/variables  -> get_variables  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notification_templates:read']"}]
+GET /api/v1/notification-templates/{template_id}  -> get_template  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notification_templates:read']"}]
+PUT /api/v1/notification-templates/{template_id}  -> update_template  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notification_templates:update']"}]
+POST /api/v1/notification-templates/{template_id}/reset  -> reset_template  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notification_templates:update']"}]
+POST /api/v1/notification-templates/preview  -> preview_template  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notification_templates:read']"}]
+GET /api/v1/user-notifications/preferences  -> get_user_email_preferences  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notifications:user_email']"}; get_db]
+PUT /api/v1/user-notifications/preferences  -> update_user_email_preferences  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['notifications:user_email']"}; get_db]
+=== schemas
+## backend.app.schemas.notification
+class AppMessage(BaseModel)
+    title: <class 'str'>  required
+    message: <class 'str'>  required
+    url: str | None  default=None
+class AppMessageChannel(BaseModel)
+    name: <class 'str'>  required
+    provider_type: <class 'str'>  required
+class AppMessageResult(BaseModel)
+    channels: <class 'int'>  required
+class NotificationLogResponse(BaseModel)
+    id: <class 'int'>  required
+    provider_id: <class 'int'>  required
+    provider_name: str | None  default=None
+    provider_type: str | None  default=None
+    event_type: <class 'str'>  required
+    title: <class 'str'>  required
+    message: <class 'str'>  required
+    success: <class 'bool'>  required
+    error_message: str | None  default=None
+    printer_id: int | None  default=None
+    printer_name: str | None  default=None
+    created_at: <class 'datetime.datetime'>  required
+class NotificationLogStats(BaseModel)
+    total: <class 'int'>  required
+    success_count: <class 'int'>  required
+    failure_count: <class 'int'>  required
+    by_event_type: dict[str, int]  required
+    by_provider: dict[str, int]  required
+class NotificationProviderBase(BaseModel)
+    name: <class 'str'>  required
+    provider_type: <enum 'ProviderType'>  required
+    enabled: <class 'bool'>  default=True
+    config: dict[str, typing.Any]  required
+    attach_photo: <class 'bool'>  default=True
+    on_print_start: <class 'bool'>  default=False
+    on_print_complete: <class 'bool'>  default=True
+    on_print_failed: <class 'bool'>  default=True
+    on_print_stopped: <class 'bool'>  default=True
+    on_print_progress: <class 'bool'>  default=False
+    on_print_missing_spool_assignment: <class 'bool'>  default=False
+    on_billing_charge_failed: <class 'bool'>  default=True
+    on_aito_payment_received: <class 'bool'>  default=False
+    on_printer_offline: <class 'bool'>  default=False
+    on_printer_error: <class 'bool'>  default=False
+    on_ai_failure_detection: <class 'bool'>  default=False
+    on_filament_low: <class 'bool'>  default=False
+    on_maintenance_due: <class 'bool'>  default=False
+    on_ams_humidity_high: <class 'bool'>  default=False
+    on_ams_temperature_high: <class 'bool'>  default=False
+    on_ams_drying_suspended: <class 'bool'>  default=True
+    on_ams_ht_humidity_high: <class 'bool'>  default=False
+    on_ams_ht_temperature_high: <class 'bool'>  default=False
+    on_ha_sensor_alert: <class 'bool'>  default=False
+    on_location_ha_sensor_alert: <class 'bool'>  default=False
+    on_plate_not_empty: <class 'bool'>  default=True
+    on_plate_clear_required: <class 'bool'>  default=False
+    on_print_confirm_request: <class 'bool'>  default=True
+    telegram_verdict_mode: typing.Literal['buttons', 'reactions', 'both']  default='buttons'
+    on_bed_cooled: <class 'bool'>  default=False
+    on_first_layer_complete: <class 'bool'>  default=False
+    on_print_pause_upcoming: <class 'bool'>  default=False
+    on_app_message: <class 'bool'>  default=False
+    on_stock_reorder_alert: <class 'bool'>  default=False
+    on_stock_break_alert: <class 'bool'>  default=False
+    on_queue_job_added: <class 'bool'>  default=False
+    on_queue_job_assigned: <class 'bool'>  default=False
+    on_queue_job_started: <class 'bool'>  default=False
+    on_queue_job_waiting: <class 'bool'>  default=True
+    on_queue_job_skipped: <class 'bool'>  default=True
+    on_queue_job_failed: <class 'bool'>  default=True
+    on_queue_completed: <class 'bool'>  default=False
+    quiet_hours_enabled: <class 'bool'>  default=False
+    quiet_hours_start: str | None  default=None
+    quiet_hours_end: str | None  default=None
+    daily_digest_enabled: <class 'bool'>  default=False
+    daily_digest_time: str | None  default=None
+    printer_id: int | None  default=None
+class NotificationProviderCreate(NotificationProviderBase)
+    name: <class 'str'>  required
+    provider_type: <enum 'ProviderType'>  required
+    enabled: <class 'bool'>  default=True
+    config: dict[str, typing.Any]  required
+    attach_photo: <class 'bool'>  default=True
+    on_print_start: <class 'bool'>  default=False
+    on_print_complete: <class 'bool'>  default=True
+    on_print_failed: <class 'bool'>  default=True
+    on_print_stopped: <class 'bool'>  default=True
+    on_print_progress: <class 'bool'>  default=False
+    on_print_missing_spool_assignment: <class 'bool'>  default=False
+    on_billing_charge_failed: <class 'bool'>  default=True
+    on_aito_payment_received: <class 'bool'>  default=False
+    on_printer_offline: <class 'bool'>  default=False
+    on_printer_error: <class 'bool'>  default=False
+    on_ai_failure_detection: <class 'bool'>  default=False
+    on_filament_low: <class 'bool'>  default=False
+    on_maintenance_due: <class 'bool'>  default=False
+    on_ams_humidity_high: <class 'bool'>  default=False
+    on_ams_temperature_high: <class 'bool'>  default=False
+    on_ams_drying_suspended: <class 'bool'>  default=True
+    on_ams_ht_humidity_high: <class 'bool'>  default=False
+    on_ams_ht_temperature_high: <class 'bool'>  default=False
+    on_ha_sensor_alert: <class 'bool'>  default=False
+    on_location_ha_sensor_alert: <class 'bool'>  default=False
+    on_plate_not_empty: <class 'bool'>  default=True
+    on_plate_clear_required: <class 'bool'>  default=False
+    on_print_confirm_request: <class 'bool'>  default=True
+    telegram_verdict_mode: typing.Literal['buttons', 'reactions', 'both']  default='buttons'
+    on_bed_cooled: <class 'bool'>  default=False
+    on_first_layer_complete: <class 'bool'>  default=False
+    on_print_pause_upcoming: <class 'bool'>  default=False
+    on_app_message: <class 'bool'>  default=False
+    on_stock_reorder_alert: <class 'bool'>  default=False
+    on_stock_break_alert: <class 'bool'>  default=False
+    on_queue_job_added: <class 'bool'>  default=False
+    on_queue_job_assigned: <class 'bool'>  default=False
+    on_queue_job_started: <class 'bool'>  default=False
+    on_queue_job_waiting: <class 'bool'>  default=True
+    on_queue_job_skipped: <class 'bool'>  default=True
+    on_queue_job_failed: <class 'bool'>  default=True
+    on_queue_completed: <class 'bool'>  default=False
+    quiet_hours_enabled: <class 'bool'>  default=False
+    quiet_hours_start: str | None  default=None
+    quiet_hours_end: str | None  default=None
+    daily_digest_enabled: <class 'bool'>  default=False
+    daily_digest_time: str | None  default=None
+    printer_id: int | None  default=None
+class NotificationProviderResponse(NotificationProviderBase)
+    name: <class 'str'>  required
+    provider_type: <enum 'ProviderType'>  required
+    enabled: <class 'bool'>  default=True
+    config: dict[str, typing.Any]  required
+    attach_photo: <class 'bool'>  default=True
+    on_print_start: <class 'bool'>  default=False
+    on_print_complete: <class 'bool'>  default=True
+    on_print_failed: <class 'bool'>  default=True
+    on_print_stopped: <class 'bool'>  default=True
+    on_print_progress: <class 'bool'>  default=False
+    on_print_missing_spool_assignment: <class 'bool'>  default=False
+    on_billing_charge_failed: <class 'bool'>  default=True
+    on_aito_payment_received: <class 'bool'>  default=False
+    on_printer_offline: <class 'bool'>  default=False
+    on_printer_error: <class 'bool'>  default=False
+    on_ai_failure_detection: <class 'bool'>  default=False
+    on_filament_low: <class 'bool'>  default=False
+    on_maintenance_due: <class 'bool'>  default=False
+    on_ams_humidity_high: <class 'bool'>  default=False
+    on_ams_temperature_high: <class 'bool'>  default=False
+    on_ams_drying_suspended: <class 'bool'>  default=True
+    on_ams_ht_humidity_high: <class 'bool'>  default=False
+    on_ams_ht_temperature_high: <class 'bool'>  default=False
+    on_ha_sensor_alert: <class 'bool'>  default=False
+    on_location_ha_sensor_alert: <class 'bool'>  default=False
+    on_plate_not_empty: <class 'bool'>  default=True
+    on_plate_clear_required: <class 'bool'>  default=False
+    on_print_confirm_request: <class 'bool'>  default=True
+    telegram_verdict_mode: typing.Literal['buttons', 'reactions', 'both']  default='buttons'
+    on_bed_cooled: <class 'bool'>  default=False
+    on_first_layer_complete: <class 'bool'>  default=False
+    on_print_pause_upcoming: <class 'bool'>  default=False
+    on_app_message: <class 'bool'>  default=False
+    on_stock_reorder_alert: <class 'bool'>  default=False
+    on_stock_break_alert: <class 'bool'>  default=False
+    on_queue_job_added: <class 'bool'>  default=False
+    on_queue_job_assigned: <class 'bool'>  default=False
+    on_queue_job_started: <class 'bool'>  default=False
+    on_queue_job_waiting: <class 'bool'>  default=True
+    on_queue_job_skipped: <class 'bool'>  default=True
+    on_queue_job_failed: <class 'bool'>  default=True
+    on_queue_completed: <class 'bool'>  default=False
+    quiet_hours_enabled: <class 'bool'>  default=False
+    quiet_hours_start: str | None  default=None
+    quiet_hours_end: str | None  default=None
+    daily_digest_enabled: <class 'bool'>  default=False
+    daily_digest_time: str | None  default=None
+    printer_id: int | None  default=None
+    id: <class 'int'>  required
+    last_success: datetime.datetime | None  default=None
+    last_error: str | None  default=None
+    last_error_at: datetime.datetime | None  default=None
+    created_at: <class 'datetime.datetime'>  required
+    updated_at: <class 'datetime.datetime'>  required
+class NotificationProviderUpdate(IgnoresNullForRequiredColumns)
+    name: str | None  default=None
+    provider_type: backend.app.schemas.notification.ProviderType | None  default=None
+    enabled: bool | None  default=None
+    config: dict[str, typing.Any] | None  default=None
+    attach_photo: bool | None  default=None
+    on_print_start: bool | None  default=None
+    on_print_complete: bool | None  default=None
+    on_print_failed: bool | None  default=None
+    on_print_stopped: bool | None  default=None
+    on_print_progress: bool | None  default=None
+    on_print_missing_spool_assignment: bool | None  default=None
+    on_billing_charge_failed: bool | None  default=None
+    on_aito_payment_received: bool | None  default=None
+    on_printer_offline: bool | None  default=None
+    on_printer_error: bool | None  default=None
+    on_ai_failure_detection: bool | None  default=None
+    on_filament_low: bool | None  default=None
+    on_maintenance_due: bool | None  default=None
+    on_ams_humidity_high: bool | None  default=None
+    on_ams_temperature_high: bool | None  default=None
+    on_ams_drying_suspended: bool | None  default=None
+    on_ams_ht_humidity_high: bool | None  default=None
+    on_ams_ht_temperature_high: bool | None  default=None
+    on_ha_sensor_alert: bool | None  default=None
+    on_location_ha_sensor_alert: bool | None  default=None
+    on_plate_not_empty: bool | None  default=None
+    on_plate_clear_required: bool | None  default=None
+    on_print_confirm_request: bool | None  default=None
+    telegram_verdict_mode: typing.Optional[typing.Literal['buttons', 'reactions', 'both']]  default=None
+    on_bed_cooled: bool | None  default=None
+    on_first_layer_complete: bool | None  default=None
+    on_print_pause_upcoming: bool | None  default=None
+    on_app_message: bool | None  default=None
+    on_stock_reorder_alert: bool | None  default=None
+    on_stock_break_alert: bool | None  default=None
+    on_queue_job_added: bool | None  default=None
+    on_queue_job_assigned: bool | None  default=None
+    on_queue_job_started: bool | None  default=None
+    on_queue_job_waiting: bool | None  default=None
+    on_queue_job_skipped: bool | None  default=None
+    on_queue_job_failed: bool | None  default=None
+    on_queue_completed: bool | None  default=None
+    quiet_hours_enabled: bool | None  default=None
+    quiet_hours_start: str | None  default=None
+    quiet_hours_end: str | None  default=None
+    daily_digest_enabled: bool | None  default=None
+    daily_digest_time: str | None  default=None
+    printer_id: int | None  default=None
+class NotificationTestRequest(BaseModel)
+    provider_type: <enum 'ProviderType'>  required
+    config: dict[str, typing.Any]  required
+    attach_photo: <class 'bool'>  default=True
+    provider_id: int | None  default=None
+class NotificationTestResponse(BaseModel)
+    success: <class 'bool'>  required
+    message: <class 'str'>  required
+
+## backend.app.schemas.notification_template
+class EventVariablesResponse(BaseModel)
+    event_type: <class 'str'>  required
+    event_name: <class 'str'>  required
+    variables: list[str]  required
+    supports_photo: <class 'bool'>  default=False
+class NotificationTemplateBase(BaseModel)
+    title_template: <class 'str'>  required
+    body_template: <class 'str'>  required
+class NotificationTemplateResponse(NotificationTemplateBase)
+    title_template: <class 'str'>  required
+    body_template: <class 'str'>  required
+    id: <class 'int'>  required
+    event_type: <class 'str'>  required
+    name: <class 'str'>  required
+    is_default: <class 'bool'>  required
+    created_at: <class 'datetime.datetime'>  required
+    updated_at: <class 'datetime.datetime'>  required
+class NotificationTemplateUpdate(IgnoresNullForRequiredColumns)
+    title_template: str | None  default=None
+    body_template: str | None  default=None
+class TemplatePreviewRequest(BaseModel)
+    event_type: <class 'str'>  required
+    title_template: <class 'str'>  required
+    body_template: <class 'str'>  required
+class TemplatePreviewResponse(BaseModel)
+    title: <class 'str'>  required
+    body: <class 'str'>  required
+
+## backend.app.schemas.user_notifications
+class UserEmailPreferenceResponse(BaseModel)
+    notify_print_start: <class 'bool'>  required
+    notify_print_complete: <class 'bool'>  required
+    notify_print_failed: <class 'bool'>  required
+    notify_print_stopped: <class 'bool'>  required
+class UserEmailPreferenceUpdate(IgnoresNullForRequiredColumns)
+    notify_print_start: <class 'bool'>  required
+    notify_print_complete: <class 'bool'>  required
+    notify_print_failed: <class 'bool'>  required
+    notify_print_stopped: <class 'bool'>  required
+
+=== ddl
+-- sqlite
+CREATE TABLE aito_watches (
+	id INTEGER NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	project_id INTEGER NOT NULL, 
+	kinds_json JSON, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_aito_watch_user_project UNIQUE (user_id, project_id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_aito_watches_project_id ON aito_watches (project_id);
+CREATE INDEX ix_aito_watches_user_id ON aito_watches (user_id);
+-- postgresql
+CREATE TABLE aito_watches (
+	id SERIAL NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	project_id INTEGER NOT NULL, 
+	kinds_json JSON, 
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_aito_watch_user_project UNIQUE (user_id, project_id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_aito_watches_project_id ON aito_watches (project_id);
+CREATE INDEX ix_aito_watches_user_id ON aito_watches (user_id);
+
+-- sqlite
+CREATE TABLE notification_digest_queue (
+	id INTEGER NOT NULL, 
+	provider_id INTEGER NOT NULL, 
+	event_type VARCHAR(50) NOT NULL, 
+	title VARCHAR(255) NOT NULL, 
+	message TEXT NOT NULL, 
+	printer_id INTEGER, 
+	printer_name VARCHAR(100), 
+	created_at DATETIME, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE, 
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE SET NULL
+);
+CREATE INDEX ix_notification_digest_queue_created_at ON notification_digest_queue (created_at);
+CREATE INDEX ix_notification_digest_queue_id ON notification_digest_queue (id);
+-- postgresql
+CREATE TABLE notification_digest_queue (
+	id SERIAL NOT NULL, 
+	provider_id INTEGER NOT NULL, 
+	event_type VARCHAR(50) NOT NULL, 
+	title VARCHAR(255) NOT NULL, 
+	message TEXT NOT NULL, 
+	printer_id INTEGER, 
+	printer_name VARCHAR(100), 
+	created_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE, 
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE SET NULL
+);
+CREATE INDEX ix_notification_digest_queue_created_at ON notification_digest_queue (created_at);
+CREATE INDEX ix_notification_digest_queue_id ON notification_digest_queue (id);
+
+-- sqlite
+CREATE TABLE notification_live_activities (
+	id INTEGER NOT NULL, 
+	provider_id INTEGER NOT NULL, 
+	printer_id INTEGER NOT NULL, 
+	print_key VARCHAR(200) NOT NULL, 
+	job_key VARCHAR(160), 
+	print_name VARCHAR(255) NOT NULL, 
+	eta_seconds INTEGER, 
+	eta_deadline DATETIME, 
+	credential_key VARCHAR(64) NOT NULL, 
+	activity_id VARCHAR(16), 
+	state VARCHAR(20) NOT NULL, 
+	end_reason VARCHAR(40), 
+	failures INTEGER NOT NULL, 
+	content TEXT NOT NULL, 
+	expires_at DATETIME, 
+	next_attempt_at DATETIME, 
+	last_sent_at DATETIME, 
+	created_at DATETIME NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (provider_id, printer_id, print_key), 
+	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_notification_live_activities_printer_id ON notification_live_activities (printer_id);
+CREATE INDEX ix_notification_live_activities_provider_id ON notification_live_activities (provider_id);
+-- postgresql
+CREATE TABLE notification_live_activities (
+	id SERIAL NOT NULL, 
+	provider_id INTEGER NOT NULL, 
+	printer_id INTEGER NOT NULL, 
+	print_key VARCHAR(200) NOT NULL, 
+	job_key VARCHAR(160), 
+	print_name VARCHAR(255) NOT NULL, 
+	eta_seconds INTEGER, 
+	eta_deadline TIMESTAMP WITHOUT TIME ZONE, 
+	credential_key VARCHAR(64) NOT NULL, 
+	activity_id VARCHAR(16), 
+	state VARCHAR(20) NOT NULL, 
+	end_reason VARCHAR(40), 
+	failures INTEGER NOT NULL, 
+	content TEXT NOT NULL, 
+	expires_at TIMESTAMP WITHOUT TIME ZONE, 
+	next_attempt_at TIMESTAMP WITHOUT TIME ZONE, 
+	last_sent_at TIMESTAMP WITHOUT TIME ZONE, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (provider_id, printer_id, print_key), 
+	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_notification_live_activities_printer_id ON notification_live_activities (printer_id);
+CREATE INDEX ix_notification_live_activities_provider_id ON notification_live_activities (provider_id);
+
+-- sqlite
+CREATE TABLE notification_lock_screen_widgets (
+	id INTEGER NOT NULL, 
+	provider_id INTEGER NOT NULL, 
+	printer_id INTEGER NOT NULL, 
+	credential_key VARCHAR(64) NOT NULL, 
+	widget_id VARCHAR(16), 
+	state VARCHAR(20) NOT NULL, 
+	content TEXT NOT NULL, 
+	failures INTEGER NOT NULL, 
+	next_attempt_at DATETIME, 
+	last_sent_at DATETIME, 
+	created_at DATETIME NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (provider_id, printer_id), 
+	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_notification_lock_screen_widgets_printer_id ON notification_lock_screen_widgets (printer_id);
+CREATE INDEX ix_notification_lock_screen_widgets_provider_id ON notification_lock_screen_widgets (provider_id);
+-- postgresql
+CREATE TABLE notification_lock_screen_widgets (
+	id SERIAL NOT NULL, 
+	provider_id INTEGER NOT NULL, 
+	printer_id INTEGER NOT NULL, 
+	credential_key VARCHAR(64) NOT NULL, 
+	widget_id VARCHAR(16), 
+	state VARCHAR(20) NOT NULL, 
+	content TEXT NOT NULL, 
+	failures INTEGER NOT NULL, 
+	next_attempt_at TIMESTAMP WITHOUT TIME ZONE, 
+	last_sent_at TIMESTAMP WITHOUT TIME ZONE, 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (provider_id, printer_id), 
+	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_notification_lock_screen_widgets_printer_id ON notification_lock_screen_widgets (printer_id);
+CREATE INDEX ix_notification_lock_screen_widgets_provider_id ON notification_lock_screen_widgets (provider_id);
+
+-- sqlite
+CREATE TABLE notification_logs (
+	id INTEGER NOT NULL, 
+	provider_id INTEGER NOT NULL, 
+	event_type VARCHAR(50) NOT NULL, 
+	title VARCHAR(255) NOT NULL, 
+	message TEXT NOT NULL, 
+	success BOOLEAN, 
+	error_message TEXT, 
+	printer_id INTEGER, 
+	printer_name VARCHAR(100), 
+	created_at DATETIME, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE, 
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE SET NULL
+);
+CREATE INDEX ix_notification_logs_created_at ON notification_logs (created_at);
+CREATE INDEX ix_notification_logs_id ON notification_logs (id);
+-- postgresql
+CREATE TABLE notification_logs (
+	id SERIAL NOT NULL, 
+	provider_id INTEGER NOT NULL, 
+	event_type VARCHAR(50) NOT NULL, 
+	title VARCHAR(255) NOT NULL, 
+	message TEXT NOT NULL, 
+	success BOOLEAN, 
+	error_message TEXT, 
+	printer_id INTEGER, 
+	printer_name VARCHAR(100), 
+	created_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE, 
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE SET NULL
+);
+CREATE INDEX ix_notification_logs_created_at ON notification_logs (created_at);
+CREATE INDEX ix_notification_logs_id ON notification_logs (id);
+
+-- sqlite
+CREATE TABLE notification_providers (
+	id INTEGER NOT NULL, 
+	name VARCHAR(100) NOT NULL, 
+	provider_type VARCHAR(50) NOT NULL, 
+	enabled BOOLEAN, 
+	config TEXT NOT NULL, 
+	attach_photo BOOLEAN DEFAULT 1, 
+	on_print_start BOOLEAN, 
+	on_print_complete BOOLEAN, 
+	on_print_failed BOOLEAN, 
+	on_print_stopped BOOLEAN, 
+	on_print_progress BOOLEAN, 
+	on_print_missing_spool_assignment BOOLEAN, 
+	on_billing_charge_failed BOOLEAN DEFAULT 1, 
+	on_aito_payment_received BOOLEAN, 
+	on_printer_offline BOOLEAN, 
+	on_printer_error BOOLEAN, 
+	on_ai_failure_detection BOOLEAN DEFAULT 0, 
+	on_filament_low BOOLEAN, 
+	on_maintenance_due BOOLEAN, 
+	on_ams_humidity_high BOOLEAN, 
+	on_ams_temperature_high BOOLEAN, 
+	on_ams_drying_suspended BOOLEAN DEFAULT 1, 
+	on_ams_ht_humidity_high BOOLEAN, 
+	on_ams_ht_temperature_high BOOLEAN, 
+	on_ha_sensor_alert BOOLEAN DEFAULT 0, 
+	on_location_ha_sensor_alert BOOLEAN DEFAULT 0, 
+	on_plate_not_empty BOOLEAN, 
+	on_plate_clear_required BOOLEAN DEFAULT 0, 
+	on_print_confirm_request BOOLEAN DEFAULT 1, 
+	telegram_verdict_mode VARCHAR(16) DEFAULT 'buttons', 
+	on_bed_cooled BOOLEAN, 
+	on_first_layer_complete BOOLEAN, 
+	on_print_pause_upcoming BOOLEAN DEFAULT 0, 
+	on_app_message BOOLEAN DEFAULT 0, 
+	on_stock_reorder_alert BOOLEAN DEFAULT 0, 
+	on_stock_break_alert BOOLEAN DEFAULT 0, 
+	on_queue_job_added BOOLEAN, 
+	on_queue_job_assigned BOOLEAN, 
+	on_queue_job_started BOOLEAN, 
+	on_queue_job_waiting BOOLEAN, 
+	on_queue_job_skipped BOOLEAN, 
+	on_queue_job_failed BOOLEAN, 
+	on_queue_completed BOOLEAN, 
+	quiet_hours_enabled BOOLEAN, 
+	quiet_hours_start VARCHAR(5), 
+	quiet_hours_end VARCHAR(5), 
+	daily_digest_enabled BOOLEAN, 
+	daily_digest_time VARCHAR(5), 
+	printer_id INTEGER, 
+	last_success DATETIME, 
+	last_error TEXT, 
+	last_error_at DATETIME, 
+	created_at DATETIME, 
+	updated_at DATETIME, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_notification_providers_id ON notification_providers (id);
+-- postgresql
+CREATE TABLE notification_providers (
+	id SERIAL NOT NULL, 
+	name VARCHAR(100) NOT NULL, 
+	provider_type VARCHAR(50) NOT NULL, 
+	enabled BOOLEAN, 
+	config TEXT NOT NULL, 
+	attach_photo BOOLEAN DEFAULT true, 
+	on_print_start BOOLEAN, 
+	on_print_complete BOOLEAN, 
+	on_print_failed BOOLEAN, 
+	on_print_stopped BOOLEAN, 
+	on_print_progress BOOLEAN, 
+	on_print_missing_spool_assignment BOOLEAN, 
+	on_billing_charge_failed BOOLEAN DEFAULT true, 
+	on_aito_payment_received BOOLEAN, 
+	on_printer_offline BOOLEAN, 
+	on_printer_error BOOLEAN, 
+	on_ai_failure_detection BOOLEAN DEFAULT false, 
+	on_filament_low BOOLEAN, 
+	on_maintenance_due BOOLEAN, 
+	on_ams_humidity_high BOOLEAN, 
+	on_ams_temperature_high BOOLEAN, 
+	on_ams_drying_suspended BOOLEAN DEFAULT true, 
+	on_ams_ht_humidity_high BOOLEAN, 
+	on_ams_ht_temperature_high BOOLEAN, 
+	on_ha_sensor_alert BOOLEAN DEFAULT false, 
+	on_location_ha_sensor_alert BOOLEAN DEFAULT false, 
+	on_plate_not_empty BOOLEAN, 
+	on_plate_clear_required BOOLEAN DEFAULT false, 
+	on_print_confirm_request BOOLEAN DEFAULT true, 
+	telegram_verdict_mode VARCHAR(16) DEFAULT 'buttons', 
+	on_bed_cooled BOOLEAN, 
+	on_first_layer_complete BOOLEAN, 
+	on_print_pause_upcoming BOOLEAN DEFAULT false, 
+	on_app_message BOOLEAN DEFAULT false, 
+	on_stock_reorder_alert BOOLEAN DEFAULT false, 
+	on_stock_break_alert BOOLEAN DEFAULT false, 
+	on_queue_job_added BOOLEAN, 
+	on_queue_job_assigned BOOLEAN, 
+	on_queue_job_started BOOLEAN, 
+	on_queue_job_waiting BOOLEAN, 
+	on_queue_job_skipped BOOLEAN, 
+	on_queue_job_failed BOOLEAN, 
+	on_queue_completed BOOLEAN, 
+	quiet_hours_enabled BOOLEAN, 
+	quiet_hours_start VARCHAR(5), 
+	quiet_hours_end VARCHAR(5), 
+	daily_digest_enabled BOOLEAN, 
+	daily_digest_time VARCHAR(5), 
+	printer_id INTEGER, 
+	last_success TIMESTAMP WITHOUT TIME ZONE, 
+	last_error TEXT, 
+	last_error_at TIMESTAMP WITHOUT TIME ZONE, 
+	created_at TIMESTAMP WITHOUT TIME ZONE, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_notification_providers_id ON notification_providers (id);
+
+-- sqlite
+CREATE TABLE notification_templates (
+	id INTEGER NOT NULL, 
+	event_type VARCHAR(50) NOT NULL, 
+	name VARCHAR(100) NOT NULL, 
+	title_template TEXT NOT NULL, 
+	body_template TEXT NOT NULL, 
+	is_default BOOLEAN NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (event_type)
+);
+CREATE INDEX ix_notification_templates_id ON notification_templates (id);
+-- postgresql
+CREATE TABLE notification_templates (
+	id SERIAL NOT NULL, 
+	event_type VARCHAR(50) NOT NULL, 
+	name VARCHAR(100) NOT NULL, 
+	title_template TEXT NOT NULL, 
+	body_template TEXT NOT NULL, 
+	is_default BOOLEAN NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (event_type)
+);
+CREATE INDEX ix_notification_templates_id ON notification_templates (id);
+
+-- sqlite
+CREATE TABLE notifications (
+	id INTEGER NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	kind VARCHAR(40) NOT NULL, 
+	family VARCHAR(16) NOT NULL, 
+	title VARCHAR(200) NOT NULL, 
+	body VARCHAR(500) NOT NULL, 
+	target_type VARCHAR(32), 
+	target_id INTEGER, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	read_at DATETIME, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_notifications_user_id ON notifications (user_id);
+-- postgresql
+CREATE TABLE notifications (
+	id SERIAL NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	kind VARCHAR(40) NOT NULL, 
+	family VARCHAR(16) NOT NULL, 
+	title VARCHAR(200) NOT NULL, 
+	body VARCHAR(500) NOT NULL, 
+	target_type VARCHAR(32), 
+	target_id INTEGER, 
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	read_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_notifications_user_id ON notifications (user_id);
+
+-- sqlite
+CREATE TABLE telegram_pending_verdicts (
+	id INTEGER NOT NULL, 
+	provider_id INTEGER NOT NULL, 
+	chat_id VARCHAR(64) NOT NULL, 
+	message_id INTEGER NOT NULL, 
+	archive_id INTEGER NOT NULL, 
+	confirm_token VARCHAR(64), 
+	has_caption BOOLEAN, 
+	message_text TEXT, 
+	created_at DATETIME, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE, 
+	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_telegram_pending_verdicts_created_at ON telegram_pending_verdicts (created_at);
+CREATE INDEX ix_telegram_pending_verdicts_id ON telegram_pending_verdicts (id);
+-- postgresql
+CREATE TABLE telegram_pending_verdicts (
+	id SERIAL NOT NULL, 
+	provider_id INTEGER NOT NULL, 
+	chat_id VARCHAR(64) NOT NULL, 
+	message_id INTEGER NOT NULL, 
+	archive_id INTEGER NOT NULL, 
+	confirm_token VARCHAR(64), 
+	has_caption BOOLEAN, 
+	message_text TEXT, 
+	created_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE, 
+	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_telegram_pending_verdicts_created_at ON telegram_pending_verdicts (created_at);
+CREATE INDEX ix_telegram_pending_verdicts_id ON telegram_pending_verdicts (id);
+
+-- sqlite
+CREATE TABLE user_inbox_preferences (
+	id INTEGER NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	kinds_json JSON NOT NULL, 
+	sound_kinds_json JSON NOT NULL, 
+	auto_watch BOOLEAN NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (user_id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+-- postgresql
+CREATE TABLE user_inbox_preferences (
+	id SERIAL NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	kinds_json JSON NOT NULL, 
+	sound_kinds_json JSON NOT NULL, 
+	auto_watch BOOLEAN NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (user_id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+=== permissions
+{
+ "apikey_denied": [
+  "notifications:create",
+  "notifications:update",
+  "notifications:delete",
+  "notifications:user_email",
+  "notification_templates:update"
+ ],
+ "apikey_scope": {
+  "notification_templates:read": "can_read_status",
+  "notification_templates:update": "None",
+  "notifications:create": "None",
+  "notifications:delete": "None",
+  "notifications:read": "can_read_status",
+  "notifications:update": "None",
+  "notifications:user_email": "None"
+ },
+ "categories": {
+  "Notifications": [
+   "notifications:read",
+   "notifications:create",
+   "notifications:update",
+   "notifications:delete",
+   "notifications:user_email",
+   "notification_templates:read",
+   "notification_templates:update"
+  ]
+ },
+ "groups": {
+  "Administrators": [
+   "notifications:read",
+   "notifications:create",
+   "notifications:update",
+   "notifications:delete",
+   "notifications:user_email",
+   "notification_templates:read",
+   "notification_templates:update"
+  ],
+  "Operators": [
+   "notifications:read",
+   "notifications:create",
+   "notifications:update",
+   "notifications:delete",
+   "notifications:user_email",
+   "notification_templates:read",
+   "notification_templates:update"
+  ],
+  "Viewers": [
+   "notifications:read",
+   "notification_templates:read"
+  ]
+ },
+ "values": [
+  "notifications:read",
+  "notifications:create",
+  "notifications:update",
+  "notifications:delete",
+  "notifications:user_email",
+  "notification_templates:read",
+  "notification_templates:update"
+ ]
+}
+
+### stderr:
+

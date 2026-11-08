@@ -371,7 +371,9 @@ def test_user_supplied_host_providers_use_the_opaque_path(provider_label: str):
     its HTTP failure through _opaque_http_failure rather than formatting the
     body inline."""
     src = inspect.getsource(ns)
-    assert f'_opaque_http_failure(response, label="{provider_label}")' in src
+    # T-004: the plain status-check senders do it through the shared _http_result helper.
+    shared = re.search(rf'_http_result\(\s*response,[^"]*"{provider_label}"', src)
+    assert f'_opaque_http_failure(response, label="{provider_label}")' in src or shared
 
 
 def test_no_user_supplied_host_provider_formats_the_body_inline():

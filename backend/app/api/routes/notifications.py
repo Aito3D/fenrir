@@ -102,6 +102,10 @@ async def after_providers_deleted(*, notify: bool) -> None:
     await _resync_reaction_poller()
 
 
+# Every on_* event toggle, derived once from the schema: the response dict and the create kwargs loop over it.
+_EVENT_FLAG_FIELDS = tuple(name for name in NotificationProviderCreate.model_fields if name.startswith("on_"))
+
+
 def _stored_config(provider: NotificationProvider) -> dict:
     return json.loads(provider.config) if isinstance(provider.config, str) else provider.config
 
@@ -118,62 +122,13 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         "enabled": provider.enabled,
         "config": mask_config(_stored_config(provider)),
         "attach_photo": provider.attach_photo,
-        # Print lifecycle events
-        "on_print_start": provider.on_print_start,
-        "on_print_complete": provider.on_print_complete,
-        "on_print_failed": provider.on_print_failed,
-        "on_print_stopped": provider.on_print_stopped,
-        "on_print_progress": provider.on_print_progress,
-        "on_print_missing_spool_assignment": provider.on_print_missing_spool_assignment,
-        "on_billing_charge_failed": provider.on_billing_charge_failed,
-        "on_aito_payment_received": provider.on_aito_payment_received,
-        # Printer status events
-        "on_printer_offline": provider.on_printer_offline,
-        "on_printer_error": provider.on_printer_error,
+        **{name: getattr(provider, name) for name in _EVENT_FLAG_FIELDS},
         "printer_error_max_level": provider.printer_error_max_level,
-        "on_ai_failure_detection": provider.on_ai_failure_detection,
-        "on_filament_low": provider.on_filament_low,
-        "on_maintenance_due": provider.on_maintenance_due,
-        # Home Assistant sensor alerts (#1148, #2824). Both directions of this
-        # file are hand-maintained field maps, so a column missing here reads
-        # back as the schema default (False) no matter what the row holds.
-        "on_ha_sensor_alert": provider.on_ha_sensor_alert,
-        "on_location_ha_sensor_alert": provider.on_location_ha_sensor_alert,
-        # AMS environmental alarms (regular AMS)
-        "on_ams_humidity_high": provider.on_ams_humidity_high,
-        "on_ams_temperature_high": provider.on_ams_temperature_high,
-        "on_ams_drying_suspended": provider.on_ams_drying_suspended,
-        # AMS-HT environmental alarms
-        "on_ams_ht_humidity_high": provider.on_ams_ht_humidity_high,
-        "on_ams_ht_temperature_high": provider.on_ams_ht_temperature_high,
-        # Build plate detection
-        "on_plate_not_empty": provider.on_plate_not_empty,
-        "on_plate_clear_required": provider.on_plate_clear_required,
-        # Post-print outcome confirmation (#1898)
-        "on_print_confirm_request": provider.on_print_confirm_request,
         # Rows from before #3046 hold NULL here; "buttons" is what they did.
         "telegram_verdict_mode": provider.telegram_verdict_mode or "buttons",
-        # Bed cooled
-        "on_bed_cooled": provider.on_bed_cooled,
-        # First layer complete
-        "on_first_layer_complete": provider.on_first_layer_complete,
-        # A slicer pause coming up (#2984)
+        # NULL on rows from before these columns existed: read as off.
         "on_print_pause_upcoming": bool(provider.on_print_pause_upcoming),
-        # Messages from connected apps
         "on_app_message": bool(provider.on_app_message),
-        # Inventory stock alerts. Absent here, the toggles above always read
-        # back off no matter what the row holds — the same hand-maintained
-        # field map the Home Assistant comment warns about.
-        "on_stock_reorder_alert": provider.on_stock_reorder_alert,
-        "on_stock_break_alert": provider.on_stock_break_alert,
-        # Print queue events
-        "on_queue_job_added": provider.on_queue_job_added,
-        "on_queue_job_assigned": provider.on_queue_job_assigned,
-        "on_queue_job_started": provider.on_queue_job_started,
-        "on_queue_job_waiting": provider.on_queue_job_waiting,
-        "on_queue_job_skipped": provider.on_queue_job_skipped,
-        "on_queue_job_failed": provider.on_queue_job_failed,
-        "on_queue_completed": provider.on_queue_completed,
         # Quiet hours
         "quiet_hours_enabled": provider.quiet_hours_enabled,
         "quiet_hours_start": provider.quiet_hours_start,
@@ -279,55 +234,9 @@ async def create_notification_provider(
         enabled=provider_data.enabled,
         config=json.dumps(provider_data.config),
         attach_photo=provider_data.attach_photo,
-        # Print lifecycle events
-        on_print_start=provider_data.on_print_start,
-        on_print_complete=provider_data.on_print_complete,
-        on_print_failed=provider_data.on_print_failed,
-        on_print_stopped=provider_data.on_print_stopped,
-        on_print_progress=provider_data.on_print_progress,
-        on_print_missing_spool_assignment=provider_data.on_print_missing_spool_assignment,
-        on_billing_charge_failed=provider_data.on_billing_charge_failed,
-        on_aito_payment_received=provider_data.on_aito_payment_received,
-        # Printer status events
-        on_printer_offline=provider_data.on_printer_offline,
-        on_printer_error=provider_data.on_printer_error,
+        **{name: getattr(provider_data, name) for name in _EVENT_FLAG_FIELDS},
         printer_error_max_level=provider_data.printer_error_max_level,
-        on_ai_failure_detection=provider_data.on_ai_failure_detection,
-        on_filament_low=provider_data.on_filament_low,
-        on_maintenance_due=provider_data.on_maintenance_due,
-        # Home Assistant sensor alerts (#1148, #2824)
-        on_ha_sensor_alert=provider_data.on_ha_sensor_alert,
-        on_location_ha_sensor_alert=provider_data.on_location_ha_sensor_alert,
-        # AMS environmental alarms (regular AMS)
-        on_ams_humidity_high=provider_data.on_ams_humidity_high,
-        on_ams_temperature_high=provider_data.on_ams_temperature_high,
-        on_ams_drying_suspended=provider_data.on_ams_drying_suspended,
-        # AMS-HT environmental alarms
-        on_ams_ht_humidity_high=provider_data.on_ams_ht_humidity_high,
-        on_ams_ht_temperature_high=provider_data.on_ams_ht_temperature_high,
-        # Build plate detection
-        on_plate_not_empty=provider_data.on_plate_not_empty,
-        on_plate_clear_required=provider_data.on_plate_clear_required,
-        # Post-print outcome confirmation (#1898)
-        on_print_confirm_request=provider_data.on_print_confirm_request,
         telegram_verdict_mode=provider_data.telegram_verdict_mode,
-        # Bed cooled
-        on_bed_cooled=provider_data.on_bed_cooled,
-        # First layer complete
-        on_first_layer_complete=provider_data.on_first_layer_complete,
-        on_print_pause_upcoming=provider_data.on_print_pause_upcoming,
-        on_app_message=provider_data.on_app_message,
-        # Inventory stock alerts
-        on_stock_reorder_alert=provider_data.on_stock_reorder_alert,
-        on_stock_break_alert=provider_data.on_stock_break_alert,
-        # Print queue events
-        on_queue_job_added=provider_data.on_queue_job_added,
-        on_queue_job_assigned=provider_data.on_queue_job_assigned,
-        on_queue_job_started=provider_data.on_queue_job_started,
-        on_queue_job_waiting=provider_data.on_queue_job_waiting,
-        on_queue_job_skipped=provider_data.on_queue_job_skipped,
-        on_queue_job_failed=provider_data.on_queue_job_failed,
-        on_queue_completed=provider_data.on_queue_completed,
         # Quiet hours
         quiet_hours_enabled=provider_data.quiet_hours_enabled,
         quiet_hours_start=provider_data.quiet_hours_start,
