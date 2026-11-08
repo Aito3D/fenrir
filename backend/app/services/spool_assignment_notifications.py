@@ -217,6 +217,9 @@ async def notify_missing_spool_assignments_on_print_complete(
     """
     if not missing_global_trays:
         return
+    # The caller's debits are still pending and the notification path commits and rolls back this session, so a
+    # failure there would discard them. Make them durable first; a failure here is the debit's own and propagates.
+    await db.commit()
     try:
         printer = await db.get(Printer, printer_id)
         printer_name = printer.name if printer else f"Printer {printer_id}"

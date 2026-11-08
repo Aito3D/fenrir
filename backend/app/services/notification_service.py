@@ -1768,6 +1768,38 @@ class NotificationService:
                     printer_name=printer_name,
                 )
 
+    async def _notify_event(
+        self,
+        db: AsyncSession,
+        event: str,
+        variables: dict,
+        printer_id: int | None = None,
+        printer_name: str | None = None,
+        *,
+        template: str | None = None,
+        fleet_wide: bool = False,
+        **send_kwargs,
+    ) -> None:
+        """Shared skeleton of the on_* events: providers -> early return -> template -> send.
+
+        ``event`` is the template/send key; the provider column is ``on_<event>``. ``template``
+        overrides the template key (AMS-HT reuses the AMS templates). Fleet-wide events pass no
+        printer to the send.
+        """
+        if fleet_wide:
+            providers = await self._get_providers_for_event(db, f"on_{event}", fleet_wide=True)
+        else:
+            providers = await self._get_providers_for_event(db, f"on_{event}", printer_id)
+        if not providers:
+            return
+        title, message = await self._build_message_from_template(db, template or event, variables)
+        if fleet_wide:
+            await self._send_to_providers(providers, title, message, db, event, variables=variables, **send_kwargs)
+        else:
+            await self._send_to_providers(
+                providers, title, message, db, event, printer_id, printer_name, variables=variables, **send_kwargs
+            )
+
     async def on_app_message(
         self,
         db: AsyncSession,
@@ -2144,27 +2176,13 @@ class NotificationService:
         db: AsyncSession,
     ) -> None:
         """Notify providers that a terminal print could not be charged."""
-        providers = await self._get_providers_for_event(db, "on_billing_charge_failed", printer_id)
-        if not providers:
-            return
-
         variables = {
             "printer": printer_name,
             "filename": self._clean_filename(filename),
             "archive_id": str(archive_id) if archive_id is not None else "Unknown",
             "error": error,
         }
-        title, message = await self._build_message_from_template(db, "billing_charge_failed", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "billing_charge_failed",
-            printer_id,
-            printer_name,
-            variables=variables,
-        )
+        await self._notify_event(db, "billing_charge_failed", variables, printer_id, printer_name)
 
     async def on_aito_payment_received(
         self,
@@ -2197,16 +2215,9 @@ class NotificationService:
 
     async def on_printer_offline(self, printer_id: int, printer_name: str, db: AsyncSession):
         """Handle printer offline event."""
-        providers = await self._get_providers_for_event(db, "on_printer_offline", printer_id)
-        if not providers:
-            return
-
         variables = {"printer": printer_name}
 
-        title, message = await self._build_message_from_template(db, "printer_offline", variables)
-        await self._send_to_providers(
-            providers, title, message, db, "printer_offline", printer_id, printer_name, variables=variables
-        )
+        await self._notify_event(db, "printer_offline", variables, printer_id, printer_name)
 
     async def on_printer_error(
         self,
@@ -2218,28 +2229,13 @@ class NotificationService:
         image_data: bytes | None = None,
     ):
         """Handle printer error event (AMS issues, etc.)."""
-        providers = await self._get_providers_for_event(db, "on_printer_error", printer_id)
-        if not providers:
-            return
-
         variables = {
             "printer": printer_name,
             "error_type": error_type,
             "error_detail": error_detail or "No details available",
         }
 
-        title, message = await self._build_message_from_template(db, "printer_error", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "printer_error",
-            printer_id,
-            printer_name,
-            image_data=image_data,
-            variables=variables,
-        )
+        await self._notify_event(db, "printer_error", variables, printer_id, printer_name, image_data=image_data)
 
     async def on_ai_failure_detection(
         self,
@@ -2257,10 +2253,6 @@ class NotificationService:
         Split out of on_printer_error (#1794) so a user can subscribe to AI
         alerts without also being paged for every HMS hardware code.
         """
-        providers = await self._get_providers_for_event(db, "on_ai_failure_detection", printer_id)
-        if not providers:
-            return
-
         variables = {
             "printer": printer_name,
             "task_name": task_name or "current job",
@@ -2270,18 +2262,7 @@ class NotificationService:
             "print_quality": f"{print_quality}/10" if print_quality is not None else "N/A",
         }
 
-        title, message = await self._build_message_from_template(db, "ai_failure_detection", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "ai_failure_detection",
-            printer_id,
-            printer_name,
-            image_data=image_data,
-            variables=variables,
-        )
+        await self._notify_event(db, "ai_failure_detection", variables, printer_id, printer_name, image_data=image_data)
 
     async def on_plate_not_empty(
         self,
@@ -2292,27 +2273,12 @@ class NotificationService:
         image_data: bytes | None = None,
     ):
         """Handle plate not empty event - objects detected on build plate before print."""
-        providers = await self._get_providers_for_event(db, "on_plate_not_empty", printer_id)
-        if not providers:
-            return
-
         variables = {
             "printer": printer_name,
             "difference_percent": f"{difference_percent:.1f}" if difference_percent else "N/A",
         }
 
-        title, message = await self._build_message_from_template(db, "plate_not_empty", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "plate_not_empty",
-            printer_id,
-            printer_name,
-            image_data=image_data,
-            variables=variables,
-        )
+        await self._notify_event(db, "plate_not_empty", variables, printer_id, printer_name, image_data=image_data)
 
     async def on_plate_clear_required(
         self,
@@ -2329,23 +2295,9 @@ class NotificationService:
         free. Off by default on every provider: it lands at the same moment as the
         print-complete notification, so opting in is a deliberate choice.
         """
-        providers = await self._get_providers_for_event(db, "on_plate_clear_required", printer_id)
-        if not providers:
-            return
-
         variables = {"printer": printer_name}
 
-        title, message = await self._build_message_from_template(db, "plate_clear_required", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "plate_clear_required",
-            printer_id,
-            printer_name,
-            variables=variables,
-        )
+        await self._notify_event(db, "plate_clear_required", variables, printer_id, printer_name)
 
     async def on_filament_low(
         self,
@@ -2357,10 +2309,6 @@ class NotificationService:
         color: str | None = None,
     ):
         """Handle low filament event."""
-        providers = await self._get_providers_for_event(db, "on_filament_low", printer_id)
-        if not providers:
-            return
-
         variables = {
             "printer": printer_name,
             "slot": slot,
@@ -2368,10 +2316,7 @@ class NotificationService:
             "color": color or "",
         }
 
-        title, message = await self._build_message_from_template(db, "filament_low", variables)
-        await self._send_to_providers(
-            providers, title, message, db, "filament_low", printer_id, printer_name, variables=variables
-        )
+        await self._notify_event(db, "filament_low", variables, printer_id, printer_name)
 
     async def on_maintenance_due(
         self,
@@ -2417,10 +2362,6 @@ class NotificationService:
         db: AsyncSession,
     ):
         """Handle AMS high humidity alarm event. Sent immediately, and also in the daily digest if enabled."""
-        providers = await self._get_providers_for_event(db, "on_ams_humidity_high", printer_id)
-        if not providers:
-            return
-
         variables = {
             "printer": printer_name,
             "ams_label": ams_label,
@@ -2428,17 +2369,7 @@ class NotificationService:
             "threshold": f"{threshold:.0f}",
         }
 
-        title, message = await self._build_message_from_template(db, "ams_humidity_high", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "ams_humidity_high",
-            printer_id,
-            printer_name,
-            variables=variables,
-        )
+        await self._notify_event(db, "ams_humidity_high", variables, printer_id, printer_name)
 
     async def on_ams_temperature_high(
         self,
@@ -2450,10 +2381,6 @@ class NotificationService:
         db: AsyncSession,
     ):
         """Handle AMS high temperature alarm event. Sent immediately, and also in the daily digest if enabled."""
-        providers = await self._get_providers_for_event(db, "on_ams_temperature_high", printer_id)
-        if not providers:
-            return
-
         variables = {
             "printer": printer_name,
             "ams_label": ams_label,
@@ -2461,17 +2388,7 @@ class NotificationService:
             "threshold": f"{threshold:.1f}",
         }
 
-        title, message = await self._build_message_from_template(db, "ams_temperature_high", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "ams_temperature_high",
-            printer_id,
-            printer_name,
-            variables=variables,
-        )
+        await self._notify_event(db, "ams_temperature_high", variables, printer_id, printer_name)
 
     async def on_ams_drying_suspended(
         self,
@@ -2490,10 +2407,6 @@ class NotificationService:
         Fenrir has STOPPED doing something, and a report of inaction that
         arrives with tomorrow's summary has already cost the user a day.
         """
-        providers = await self._get_providers_for_event(db, "on_ams_drying_suspended", printer_id)
-        if not providers:
-            return
-
         variables = {
             "printer": printer_name,
             "ams_label": ams_label,
@@ -2502,17 +2415,7 @@ class NotificationService:
             "cycles": str(cycles),
         }
 
-        title, message = await self._build_message_from_template(db, "ams_drying_suspended", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "ams_drying_suspended",
-            printer_id,
-            printer_name,
-            variables=variables,
-        )
+        await self._notify_event(db, "ams_drying_suspended", variables, printer_id, printer_name)
 
     async def on_ams_ht_humidity_high(
         self,
@@ -2524,10 +2427,6 @@ class NotificationService:
         db: AsyncSession,
     ):
         """Handle AMS-HT high humidity alarm event. Sent immediately, and also in the daily digest if enabled."""
-        providers = await self._get_providers_for_event(db, "on_ams_ht_humidity_high", printer_id)
-        if not providers:
-            return
-
         variables = {
             "printer": printer_name,
             "ams_label": ams_label,
@@ -2536,16 +2435,8 @@ class NotificationService:
         }
 
         # Use the same template as regular AMS (can create separate templates later if needed)
-        title, message = await self._build_message_from_template(db, "ams_humidity_high", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "ams_ht_humidity_high",
-            printer_id,
-            printer_name,
-            variables=variables,
+        await self._notify_event(
+            db, "ams_ht_humidity_high", variables, printer_id, printer_name, template="ams_humidity_high"
         )
 
     async def on_ams_ht_temperature_high(
@@ -2558,10 +2449,6 @@ class NotificationService:
         db: AsyncSession,
     ):
         """Handle AMS-HT high temperature alarm event. Sent immediately, and also in the daily digest if enabled."""
-        providers = await self._get_providers_for_event(db, "on_ams_ht_temperature_high", printer_id)
-        if not providers:
-            return
-
         variables = {
             "printer": printer_name,
             "ams_label": ams_label,
@@ -2570,16 +2457,8 @@ class NotificationService:
         }
 
         # Use the same template as regular AMS (can create separate templates later if needed)
-        title, message = await self._build_message_from_template(db, "ams_temperature_high", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "ams_ht_temperature_high",
-            printer_id,
-            printer_name,
-            variables=variables,
+        await self._notify_event(
+            db, "ams_ht_temperature_high", variables, printer_id, printer_name, template="ams_temperature_high"
         )
 
     async def on_bed_cooled(
@@ -2592,10 +2471,6 @@ class NotificationService:
         db: AsyncSession,
     ):
         """Handle bed cooled event - bed temperature dropped below threshold after print."""
-        providers = await self._get_providers_for_event(db, "on_bed_cooled", printer_id)
-        if not providers:
-            return
-
         variables = {
             "printer": printer_name,
             "bed_temp": f"{bed_temp:.0f}",
@@ -2603,10 +2478,7 @@ class NotificationService:
             "filename": self._clean_filename(filename) if filename else "Unknown",
         }
 
-        title, message = await self._build_message_from_template(db, "bed_cooled", variables)
-        await self._send_to_providers(
-            providers, title, message, db, "bed_cooled", printer_id, printer_name, variables=variables
-        )
+        await self._notify_event(db, "bed_cooled", variables, printer_id, printer_name)
 
     async def on_ha_sensor_alert(
         self,
@@ -2623,27 +2495,13 @@ class NotificationService:
         for is an enclosure door left open, which is only worth telling someone
         about while they can still act on it.
         """
-        providers = await self._get_providers_for_event(db, "on_ha_sensor_alert", printer_id)
-        if not providers:
-            return
-
         variables = {
             "printer": printer_name,
             "sensor": sensor_name,
             "state": state,
         }
 
-        title, message = await self._build_message_from_template(db, "ha_sensor_alert", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "ha_sensor_alert",
-            printer_id,
-            printer_name,
-            variables=variables,
-        )
+        await self._notify_event(db, "ha_sensor_alert", variables, printer_id, printer_name)
 
     async def on_location_ha_sensor_alert(
         self,
@@ -2662,25 +2520,13 @@ class NotificationService:
         # a single printer via provider.printer_id, and a location alert has no
         # printer to scope by, so sharing it would leak drybox alerts to a
         # provider narrowed to one printer's sensors.
-        providers = await self._get_providers_for_event(db, "on_location_ha_sensor_alert", fleet_wide=True)
-        if not providers:
-            return
-
         variables = {
             "location": location_name,
             "sensor": sensor_name,
             "state": state,
         }
 
-        title, message = await self._build_message_from_template(db, "location_ha_sensor_alert", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "location_ha_sensor_alert",
-            variables=variables,
-        )
+        await self._notify_event(db, "location_ha_sensor_alert", variables, fleet_wide=True)
 
     async def on_first_layer_complete(
         self,
@@ -2692,28 +2538,13 @@ class NotificationService:
         image_data: bytes | None = None,
     ):
         """Handle first layer complete event."""
-        providers = await self._get_providers_for_event(db, "on_first_layer_complete", printer_id)
-        if not providers:
-            return
-
         variables = {
             "printer": printer_name,
             "filename": self._clean_filename(filename),
             "total_layers": str(total_layers),
         }
 
-        title, message = await self._build_message_from_template(db, "first_layer_complete", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "first_layer_complete",
-            printer_id,
-            printer_name,
-            image_data=image_data,
-            variables=variables,
-        )
+        await self._notify_event(db, "first_layer_complete", variables, printer_id, printer_name, image_data=image_data)
 
     async def on_print_pause_upcoming(
         self,
@@ -2891,20 +2722,13 @@ class NotificationService:
         printer_name: str | None = None,
     ):
         """Handle queue job added event."""
-        providers = await self._get_providers_for_event(db, "on_queue_job_added", printer_id)
-        if not providers:
-            return
-
         variables = {
             "job_name": job_name,
             "target": target,  # e.g., "Printer1" or "Any X1C"
             "printer": printer_name or target,
         }
 
-        title, message = await self._build_message_from_template(db, "queue_job_added", variables)
-        await self._send_to_providers(
-            providers, title, message, db, "queue_job_added", printer_id, printer_name, variables=variables
-        )
+        await self._notify_event(db, "queue_job_added", variables, printer_id, printer_name)
 
     async def on_queue_job_assigned(
         self,
@@ -2915,20 +2739,13 @@ class NotificationService:
         db: AsyncSession,
     ):
         """Handle model-based job assigned to printer event."""
-        providers = await self._get_providers_for_event(db, "on_queue_job_assigned", printer_id)
-        if not providers:
-            return
-
         variables = {
             "job_name": job_name,
             "printer": printer_name,
             "target_model": target_model,
         }
 
-        title, message = await self._build_message_from_template(db, "queue_job_assigned", variables)
-        await self._send_to_providers(
-            providers, title, message, db, "queue_job_assigned", printer_id, printer_name, variables=variables
-        )
+        await self._notify_event(db, "queue_job_assigned", variables, printer_id, printer_name)
 
     async def on_queue_job_started(
         self,
@@ -2992,20 +2809,13 @@ class NotificationService:
         db: AsyncSession,
     ):
         """Handle job skipped event (e.g., previous print failed)."""
-        providers = await self._get_providers_for_event(db, "on_queue_job_skipped", printer_id)
-        if not providers:
-            return
-
         variables = {
             "job_name": job_name,
             "printer": printer_name,
             "reason": reason,
         }
 
-        title, message = await self._build_message_from_template(db, "queue_job_skipped", variables)
-        await self._send_to_providers(
-            providers, title, message, db, "queue_job_skipped", printer_id, printer_name, variables=variables
-        )
+        await self._notify_event(db, "queue_job_skipped", variables, printer_id, printer_name)
 
     async def on_queue_job_failed(
         self,
@@ -3016,20 +2826,13 @@ class NotificationService:
         db: AsyncSession,
     ):
         """Handle job failed to start event (upload error, etc.)."""
-        providers = await self._get_providers_for_event(db, "on_queue_job_failed", printer_id)
-        if not providers:
-            return
-
         variables = {
             "job_name": job_name,
             "printer": printer_name or "Unknown",
             "reason": reason,
         }
 
-        title, message = await self._build_message_from_template(db, "queue_job_failed", variables)
-        await self._send_to_providers(
-            providers, title, message, db, "queue_job_failed", printer_id, printer_name, variables=variables
-        )
+        await self._notify_event(db, "queue_job_failed", variables, printer_id, printer_name)
 
     async def on_queue_completed(
         self,
@@ -3037,16 +2840,11 @@ class NotificationService:
         db: AsyncSession,
     ):
         """Handle all queue jobs completed event."""
-        providers = await self._get_providers_for_event(db, "on_queue_completed", fleet_wide=True)
-        if not providers:
-            return
-
         variables = {
             "completed_count": str(completed_count),
         }
 
-        title, message = await self._build_message_from_template(db, "queue_completed", variables)
-        await self._send_to_providers(providers, title, message, db, "queue_completed", variables=variables)
+        await self._notify_event(db, "queue_completed", variables, fleet_wide=True)
 
     # ==================== Inventory Stock Alerts ====================
 
@@ -3108,10 +2906,6 @@ class NotificationService:
 
         ``subtype`` and ``color`` as for :meth:`on_stock_reorder_alert`.
         """
-        providers = await self._get_providers_for_event(db, "on_stock_break_alert", fleet_wide=True)
-        if not providers:
-            return
-
         variables = {
             "material": material,
             "subtype": subtype or "",
@@ -3123,8 +2917,7 @@ class NotificationService:
             "lead_time_days": str(lead_time_days),
         }
 
-        title, message = await self._build_message_from_template(db, "stock_break_alert", variables)
-        await self._send_to_providers(providers, title, message, db, "stock_break_alert", variables=variables)
+        await self._notify_event(db, "stock_break_alert", variables, fleet_wide=True)
 
     async def _queue_for_digest(
         self,

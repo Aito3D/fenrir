@@ -79,7 +79,12 @@ async def test_the_fleet_events_are_marked_so():
         "on_stock_reorder_alert",
         "on_stock_break_alert",
     ):
-        line = next(text for text in source.splitlines() if f'_get_providers_for_event(db, "{event}"' in text)
+        # Converted events go through _notify_event, which forwards fleet_wide to the lookup.
+        line = next(
+            text
+            for text in source.splitlines()
+            if f'_get_providers_for_event(db, "{event}"' in text or f'_notify_event(db, "{event[3:]}"' in text
+        )
         assert "fleet_wide=True" in line, event
     scheduler = inspect.getsource(print_scheduler)
     for event in ("on_filament_low", "on_stock_reorder_alert", "on_stock_break_alert"):

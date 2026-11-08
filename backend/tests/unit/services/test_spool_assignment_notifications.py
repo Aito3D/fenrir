@@ -207,3 +207,42 @@ async def test_built_in_mode_reads_the_built_in_table():
 
     mock_ws.assert_not_awaited()
     mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_completion_notification_failure_keeps_the_callers_pending_debits():
+    """#T-026: the caller's uncommitted debits survive a notification path that rolls back and raises."""
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from backend.app.models.notification import NotificationProvider
+    from backend.app.models.printer import Printer
+    from backend.app.services.spool_assignment_notifications import notify_missing_spool_assignments_on_print_complete
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda c: Printer.__table__.create(c))
+        await conn.run_sync(lambda c: NotificationProvider.__table__.create(c))
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def failing_commit_path(*, db, **_kwargs):
+        await db.rollback()  # what a failed bookkeeping commit leaves behind
+        raise RuntimeError("database is locked")
+
+    async with sessions() as db:
+        db.add(NotificationProvider(name="pending-debit", provider_type="ntfy", config="{}"))  # stands in for a debit
+        with (
+            patch("backend.app.services.spool_assignment_notifications.ws_manager") as ws,
+            patch("backend.app.services.spool_assignment_notifications.printer_manager") as pm,
+            patch(
+                "backend.app.services.spool_assignment_notifications.notification_service.on_print_missing_spool_assignment",
+                side_effect=failing_commit_path,
+            ),
+        ):
+            ws.send_missing_spool_assignment = AsyncMock()
+            pm.get_status.return_value = None
+            await notify_missing_spool_assignments_on_print_complete(1, [0], db, logging.getLogger("t"))
+        await db.commit()
+        names = [p.name for p in (await db.execute(select(NotificationProvider))).scalars()]
+        assert names == ["pending-debit"]
+    await engine.dispose()
