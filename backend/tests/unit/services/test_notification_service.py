@@ -4,6 +4,7 @@ Tests event-based notifications and toggle behavior.
 """
 
 import json
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -260,39 +261,42 @@ class TestNotificationService:
     # Tests for quiet hours
     # ========================================================================
 
-    def test_is_in_quiet_hours_during_quiet_period(self, service, mock_provider):
-        """Verify notifications are blocked during quiet hours."""
+    @pytest.mark.parametrize(
+        ("start", "end", "hour", "minute", "expected"),
+        [
+            # Overnight window: start inclusive, end exclusive
+            ("22:00", "07:00", 21, 59, False),
+            ("22:00", "07:00", 22, 0, True),
+            ("22:00", "07:00", 23, 0, True),
+            ("22:00", "07:00", 23, 30, True),
+            ("22:00", "07:00", 3, 0, True),
+            ("22:00", "07:00", 6, 59, True),
+            ("22:00", "07:00", 7, 0, False),
+            ("22:00", "07:00", 7, 1, False),
+            ("22:00", "07:00", 12, 0, False),
+            # Same-day window
+            ("09:00", "17:00", 8, 59, False),
+            ("09:00", "17:00", 9, 0, True),
+            ("09:00", "17:00", 12, 0, True),
+            ("09:00", "17:00", 17, 0, False),
+            # start == end is an empty window
+            ("09:00", "09:00", 9, 0, False),
+            ("09:00", "09:00", 12, 0, False),
+        ],
+    )
+    def test_is_in_quiet_hours_window_boundaries(self, service, mock_provider, start, end, hour, minute, expected):
+        """Quiet-hours window is [start, end) and wraps midnight; checked on a real datetime."""
         mock_provider.quiet_hours_enabled = True
-        mock_provider.quiet_hours_start = "22:00"
-        mock_provider.quiet_hours_end = "07:00"
+        mock_provider.quiet_hours_start = start
+        mock_provider.quiet_hours_end = end
 
-        with patch("backend.app.services.notification_service.datetime") as mock_datetime:
-            # Test during quiet hours (23:00)
-            mock_now = MagicMock()
-            mock_now.hour = 23
-            mock_now.minute = 0
-            mock_datetime.now.return_value = mock_now
+        class FixedDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 1, 1, hour, minute)
 
-            result = service._is_in_quiet_hours(mock_provider)
-
-            assert result is True
-
-    def test_is_in_quiet_hours_outside_quiet_period(self, service, mock_provider):
-        """Verify notifications are allowed outside quiet hours."""
-        mock_provider.quiet_hours_enabled = True
-        mock_provider.quiet_hours_start = "22:00"
-        mock_provider.quiet_hours_end = "07:00"
-
-        with patch("backend.app.services.notification_service.datetime") as mock_datetime:
-            # Test outside quiet hours (12:00)
-            mock_now = MagicMock()
-            mock_now.hour = 12
-            mock_now.minute = 0
-            mock_datetime.now.return_value = mock_now
-
-            result = service._is_in_quiet_hours(mock_provider)
-
-            assert result is False
+        with patch("backend.app.services.notification_service.datetime", FixedDatetime):
+            assert service._is_in_quiet_hours(mock_provider) is expected
 
     def test_is_in_quiet_hours_disabled(self, service, mock_provider):
         """Verify quiet hours check returns False when disabled."""
@@ -301,23 +305,6 @@ class TestNotificationService:
         result = service._is_in_quiet_hours(mock_provider)
 
         assert result is False
-
-    def test_is_in_quiet_hours_early_morning(self, service, mock_provider):
-        """Verify quiet hours work across midnight (early morning)."""
-        mock_provider.quiet_hours_enabled = True
-        mock_provider.quiet_hours_start = "22:00"
-        mock_provider.quiet_hours_end = "07:00"
-
-        with patch("backend.app.services.notification_service.datetime") as mock_datetime:
-            # Test early morning (03:00) - should be in quiet hours
-            mock_now = MagicMock()
-            mock_now.hour = 3
-            mock_now.minute = 0
-            mock_datetime.now.return_value = mock_now
-
-            result = service._is_in_quiet_hours(mock_provider)
-
-            assert result is True
 
     # ========================================================================
     # Tests for AMS alarms
