@@ -3504,3 +3504,72 @@ class TestRenderTemplateOnePass:
     def test_missing_and_none_become_empty_and_ordinary_rendering_unchanged(self):
         svc = NotificationService()
         assert svc._render_template("a {x} {none} {missing} b", {"x": 1, "none": None}) == "a 1   b"
+
+
+class TestSenderConfigNonStringValues:
+    """T-032: stored config values that are not strings are read, not an AttributeError."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @staticmethod
+    def _http_client():
+        response = MagicMock(status_code=200, text="ok")
+        response.json.return_value = {"ok": True}
+        client = MagicMock()
+        client.post = AsyncMock(return_value=response)
+        return client
+
+    @pytest.mark.asyncio
+    async def test_telegram_numeric_chat_id_is_sent_to(self, service):
+        client = self._http_client()
+        with patch.object(service, "_get_client", new_callable=AsyncMock, return_value=client):
+            ok, _ = await service._send_telegram({"bot_token": "123:abc", "chat_id": -1001234567890}, "M")
+
+        assert ok is True
+        assert client.post.call_args.kwargs["json"]["chat_id"] == "-1001234567890"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("auth_enabled", "expect_login"),
+        [(True, True), (False, False), ("false", False), ("true", True), (None, True)],
+    )
+    async def test_email_auth_enabled_bool_and_text(self, service, auth_enabled, expect_login):
+        captured: dict = {}
+        config = {
+            "smtp_server": "smtp.example.com",
+            "smtp_port": 587,
+            "username": "alice",
+            "password": "secret",
+            "from_email": "fenrir@example.com",
+            "to_email": "alice@example.com",
+            "security": "starttls",
+            "auth_enabled": auth_enabled,
+        }
+        smtp = TestEmailProvider._fake_smtp_class(captured)
+        with patch("backend.app.services.notification_service.smtplib.SMTP", smtp):
+            ok, _ = await service._send_email(config, "T", "M")
+
+        assert ok is True
+        assert ("login" in captured) is expect_login
+
+    @pytest.mark.asyncio
+    async def test_ntfy_null_optional_field_behaves_as_missing(self, service):
+        client = self._http_client()
+        with patch.object(service, "_get_client", new_callable=AsyncMock, return_value=client):
+            ok, _ = await service._send_ntfy({"topic": "fenrir", "auth_token": None}, "T", "M")
+
+        assert ok is True
+        assert "Authorization" not in client.post.call_args.kwargs["headers"]
+
+    @pytest.mark.asyncio
+    async def test_webhook_null_auth_header_behaves_as_missing(self, service):
+        client = self._http_client()
+        with patch.object(service, "_get_client", new_callable=AsyncMock, return_value=client):
+            ok, _ = await service._send_webhook(
+                {"webhook_url": "https://example.com/hook", "auth_header": None}, "T", "M"
+            )
+
+        assert ok is True
+        assert "Authorization" not in (client.post.call_args.kwargs.get("headers") or {})

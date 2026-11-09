@@ -130,6 +130,18 @@ def _assert_safe_provider_url(url: str, *, label: str) -> str | None:
     return None
 
 
+def _config_str(config: dict, key: str, default: str = "") -> str:
+    """Read a stored config field as a stripped string; None or missing gives the default."""
+    value = config.get(key, default)
+    return default.strip() if value is None else str(value).strip()
+
+
+def _config_flag(config: dict, key: str, default: str) -> bool:
+    """Read a stored config flag: true only for a real True or the text "true" (any case)."""
+    value = config.get(key, default)
+    return str(default if value is None else value).lower() == "true"
+
+
 def _event_priority_level(config: dict, event_type: str | None) -> int | None:
     """The 1-5 priority level mapped to this event in config.event_priorities.
 
@@ -493,8 +505,8 @@ class NotificationService:
 
     async def _send_callmebot(self, config: dict, message: str) -> tuple[bool, str]:
         """Send notification via CallMeBot (WhatsApp)."""
-        phone = config.get("phone", "").strip()
-        apikey = config.get("apikey", "").strip()
+        phone = _config_str(config, "phone")
+        apikey = _config_str(config, "apikey")
 
         if not phone or not apikey:
             return False, "Phone number and API key are required"
@@ -637,8 +649,8 @@ class NotificationService:
         one-tap Good/Reject buttons directly into the push notification.
         """
         server = (config.get("server") or "https://ntfy.sh").rstrip("/")
-        topic = config.get("topic", "").strip()
-        auth_token = config.get("auth_token", "").strip()
+        topic = _config_str(config, "topic")
+        auth_token = _config_str(config, "auth_token")
 
         if not topic:
             return False, "Topic is required"
@@ -724,8 +736,8 @@ class NotificationService:
             url: Optional supplementary URL shown under the message
             url_title: Optional label for that URL
         """
-        user_key = config.get("user_key", "").strip()
-        app_token = config.get("app_token", "").strip()
+        user_key = _config_str(config, "user_key")
+        app_token = _config_str(config, "app_token")
         try:
             priority = int(config.get("priority", 0))
         except (TypeError, ValueError):
@@ -816,8 +828,8 @@ class NotificationService:
         ``message_id`` from it to recognise the reaction later; every other
         caller goes through ``_send_telegram`` and ignores it.
         """
-        bot_token = config.get("bot_token", "").strip()
-        chat_id = config.get("chat_id", "").strip()
+        bot_token = _config_str(config, "bot_token")
+        chat_id = _config_str(config, "chat_id")
 
         if not bot_token or not chat_id:
             return False, "Bot token and chat ID are required", None
@@ -1002,19 +1014,19 @@ class NotificationService:
         original single-part text shape is used — no attachment, no surprise
         inline image (#1792).
         """
-        smtp_server = config.get("smtp_server", "").strip()
+        smtp_server = _config_str(config, "smtp_server")
         try:
             smtp_port = int(config.get("smtp_port") or 587)
         except (TypeError, ValueError):
             return False, "SMTP port must be a number"
-        username = config.get("username", "").strip()
-        password = config.get("password", "").strip()
-        from_email = config.get("from_email", "").strip()
-        to_email = config.get("to_email", "").strip()
+        username = _config_str(config, "username")
+        password = _config_str(config, "password")
+        from_email = _config_str(config, "from_email")
+        to_email = _config_str(config, "to_email")
         # Security: "starttls" (port 587), "ssl" (port 465), "none" (port 25)
         security = config.get("security", "starttls")
         # Authentication: "true" or "false"
-        auth_enabled = config.get("auth_enabled", "true").lower() == "true"
+        auth_enabled = _config_flag(config, "auth_enabled", "true")
 
         if not all([smtp_server, from_email, to_email]):
             return False, "SMTP server, from email, and to email are required"
@@ -1129,7 +1141,7 @@ class NotificationService:
         self, config: dict, title: str, message: str, image_data: bytes | None = None
     ) -> tuple[bool, str]:
         """Send notification via Discord webhook."""
-        webhook_url = config.get("webhook_url", "").strip()
+        webhook_url = _config_str(config, "webhook_url")
 
         if not webhook_url:
             return False, "Webhook URL is required"
@@ -1179,9 +1191,9 @@ class NotificationService:
         - generic: Custom field names with timestamp/source metadata + structured event data
         - slack: Slack/Mattermost compatible format (just {"text": "..."})
         """
-        webhook_url = config.get("webhook_url", "").strip()
-        auth_header = config.get("auth_header", "").strip()
-        payload_format = config.get("payload_format", "generic").strip()
+        webhook_url = _config_str(config, "webhook_url")
+        auth_header = _config_str(config, "auth_header")
+        payload_format = _config_str(config, "payload_format", "generic")
 
         if not webhook_url:
             return False, "Webhook URL is required"
@@ -1214,8 +1226,8 @@ class NotificationService:
                 data["attachments"] = [{"fallback": title, "image_url": image_url}]
         else:
             # Generic format with custom field names
-            custom_field_title = config.get("field_title", "title").strip() or "title"
-            custom_field_message = config.get("field_message", "message").strip() or "message"
+            custom_field_title = _config_str(config, "field_title", "title") or "title"
+            custom_field_message = _config_str(config, "field_message", "message") or "message"
             data = {
                 custom_field_title: title,
                 custom_field_message: message,
