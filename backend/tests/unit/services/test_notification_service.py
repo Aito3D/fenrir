@@ -3,6 +3,7 @@
 Tests event-based notifications and toggle behavior.
 """
 
+import contextlib
 import json
 import smtplib
 from datetime import datetime
@@ -3136,6 +3137,9 @@ class _FailedCommitSession:
     def add(self, _obj):
         pass
 
+    def begin_nested(self):
+        return contextlib.nullcontext()
+
     async def execute(self, _stmt):
         if self.needs_rollback:
             raise RuntimeError("PendingRollbackError")
@@ -3217,6 +3221,51 @@ class TestFanOutSurvivesFailedFlushRealSession:
             logs = list((await db.execute(select(NotificationLog))).scalars())
             assert len(logs) == 3
             await db.commit()
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_failed_bookkeeping_flush_keeps_the_callers_pending_row_and_loaded_rows(self):
+        from sqlalchemy import event, select
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from backend.app.models.notification import NotificationLog
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda c: NotificationProvider.__table__.create(c))
+            await conn.run_sync(lambda c: NotificationLog.__table__.create(c))
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as db:
+            db.add(NotificationProvider(name="P1", provider_type="ntfy", config="{}"))
+            db.add(NotificationProvider(name="Caller", provider_type="ntfy", config="{}"))
+            await db.commit()
+        async with sessions() as db:
+            providers = list(
+                (await db.execute(select(NotificationProvider).where(NotificationProvider.name == "P1"))).scalars()
+            )
+            callers_loaded = (
+                await db.execute(select(NotificationProvider).where(NotificationProvider.name == "Caller"))
+            ).scalar_one()
+            callers_pending = NotificationProvider(name="CallerPending", provider_type="ntfy", config="{}")
+            db.add(callers_pending)
+
+            failed = []
+
+            @event.listens_for(db.sync_session, "after_flush")
+            def fail_status_flush(session, _ctx):
+                if not failed and any(isinstance(o, NotificationProvider) and o.last_success for o in session.dirty):
+                    failed.append(True)
+                    raise RuntimeError("database is locked")
+
+            service = NotificationService()
+            with patch.object(service, "_send_to_provider", new_callable=AsyncMock, return_value=(True, None)):
+                await service._send_to_providers(providers, "t", "m", db, event_type="e")
+
+            assert failed
+            assert callers_loaded.name == "Caller"  # still readable, not expired
+            await db.commit()
+            names = {p.name for p in (await db.execute(select(NotificationProvider))).scalars()}
+            assert "CallerPending" in names
         await engine.dispose()
 
 

@@ -6,7 +6,8 @@ import json
 import logging
 import re
 import smtplib
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -15,7 +16,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-from sqlalchemy import delete, select
+from sqlalchemy import delete, inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.logging_filters import redact_refused_headers
@@ -243,12 +244,18 @@ def _load_sample_notification_image() -> bytes | None:
     return _sample_notification_image
 
 
+@dataclass(frozen=True)
+class _CachedTemplate:
+    title_template: str
+    body_template: str
+
+
 class NotificationService:
     """Service for sending notifications through various providers."""
 
     def __init__(self):
         self._http_client: httpx.AsyncClient | None = None
-        self._template_cache: dict[str, NotificationTemplate] = {}
+        self._template_cache: dict[str, _CachedTemplate] = {}
         self._digest_scheduler_task: asyncio.Task | None = None
         self._last_digest_check: str = ""  # "HH:MM" to avoid duplicate checks
         self._last_log_prune = None  # date of the last delivery-log prune
@@ -306,7 +313,7 @@ class NotificationService:
             logger.warning("Invalid quiet hours format for provider %s", provider.name)
             return False
 
-    async def _get_template(self, db: AsyncSession, event_type: str) -> NotificationTemplate | None:
+    async def _get_template(self, db: AsyncSession, event_type: str) -> _CachedTemplate | None:
         """Get a notification template by event type.
 
         ``no_autoflush`` for the same reason as ``_get_providers_for_event``:
@@ -319,11 +326,13 @@ class NotificationService:
 
         with db.no_autoflush:
             result = await db.execute(select(NotificationTemplate).where(NotificationTemplate.event_type == event_type))
-        template = result.scalar_one_or_none()
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
 
-        if template:
-            self._template_cache[event_type] = template
-
+        # Plain values: a cached ORM row would be expired by any rollback on the loading session.
+        template = _CachedTemplate(row.title_template, row.body_template)
+        self._template_cache[event_type] = template
         return template
 
     def _render_template(self, template_str: str, variables: dict[str, Any]) -> str:
@@ -1637,33 +1646,55 @@ class NotificationService:
         result = await db.execute(select(NotificationProvider).where(NotificationProvider.id == provider_id))
         provider = result.scalar_one_or_none()
         if provider:
-            if success:
-                provider.last_success = datetime.now(timezone.utc)
-            else:
-                # Read by every notification reader: no refused header's value.
-                provider.last_error = redact_refused_headers(error)
-                provider.last_error_at = datetime.now(timezone.utc)
-            try:
-                await db.commit()
-            except Exception:
-                await self._rollback_quietly(db)
-                raise
 
-    @staticmethod
-    async def _rollback_quietly(db: AsyncSession):
+            def write():
+                if success:
+                    provider.last_success = datetime.now(timezone.utc)
+                else:
+                    # Read by every notification reader: no refused header's value.
+                    provider.last_error = redact_refused_headers(error)
+                    provider.last_error_at = datetime.now(timezone.utc)
+
+            await self._write_and_commit(db, write)
+
+    @classmethod
+    async def _write_and_commit(cls, db: AsyncSession, write):
+        """Run a bookkeeping write in a SAVEPOINT, then commit.
+
+        A failed flush rolls back only the savepoint, so the caller's pending rows survive; a
+        failed COMMIT needs a full rollback. Either way the rows that got expired are reloaded.
+        """
+        try:
+            async with db.begin_nested():
+                write()
+        except Exception:
+            await cls._reload_expired(db)
+            raise
+        try:
+            await db.commit()
+        except Exception:
+            await cls._rollback_quietly(db)
+            raise
+
+    @classmethod
+    async def _rollback_quietly(cls, db: AsyncSession):
         """Clear a session whose commit failed so the next statement on it works."""
         try:
             await db.rollback()
         except Exception:
             logger.warning("Rollback after a failed commit also failed", exc_info=True)
             return
-        # Rollback expires every loaded row and an async session cannot lazy-load: reload the
-        # providers the fan-out still reads (a row deleted meanwhile is simply skipped).
-        for obj in [o for o in db.sync_session.identity_map.values() if isinstance(o, NotificationProvider)]:
+        await cls._reload_expired(db)
+
+    @staticmethod
+    async def _reload_expired(db: AsyncSession):
+        """Reload every loaded row a rollback expired: an async session cannot lazy-load them."""
+        for obj in list(db.sync_session.identity_map.values()):
             try:
-                await db.refresh(obj)
-            except Exception:
-                logger.debug("Could not reload provider after rollback", exc_info=True)
+                if sa_inspect(obj).expired_attributes:
+                    await db.refresh(obj)
+            except Exception:  # a row deleted meanwhile is simply skipped
+                logger.debug("Could not reload row after rollback", exc_info=True)
 
     async def _get_providers_for_event(
         self,
@@ -1733,11 +1764,9 @@ class NotificationService:
                 printer_id=printer_id,
                 printer_name=printer_name,
             )
-            db.add(log)
-            await db.commit()
+            await self._write_and_commit(db, lambda: db.add(log))
         except Exception as e:
             logger.warning("Failed to log notification: %s", e)
-            await self._rollback_quietly(db)
             # Don't fail the notification just because logging failed
 
     async def _send_to_providers(
@@ -1823,12 +1852,13 @@ class NotificationService:
         self,
         db: AsyncSession,
         event: str,
-        variables: dict,
+        variables: dict | None,
         printer_id: int | None = None,
         printer_name: str | None = None,
         *,
         template: str | None = None,
         fleet_wide: bool = False,
+        variables_factory: Callable[[], Awaitable[dict]] | None = None,
         **send_kwargs,
     ) -> None:
         """Shared skeleton of the on_* events: providers -> early return -> template -> send.
@@ -1836,6 +1866,8 @@ class NotificationService:
         ``event`` is the template/send key; the provider column is ``on_<event>``. ``template``
         overrides the template key (AMS-HT reuses the AMS templates). Fleet-wide events pass no
         printer to the send.
+        ``variables_factory`` (with ``variables=None``) builds the variables only once providers were
+        found, for events whose variables need an awaited DB read.
         """
         if fleet_wide:
             providers = await self._get_providers_for_event(db, f"on_{event}", fleet_wide=True)
@@ -1843,6 +1875,8 @@ class NotificationService:
             providers = await self._get_providers_for_event(db, f"on_{event}", printer_id)
         if not providers:
             return
+        if variables_factory is not None:
+            variables = await variables_factory()
         title, message = await self._build_message_from_template(db, template or event, variables)
         if fleet_wide:
             await self._send_to_providers(providers, title, message, db, event, variables=variables, **send_kwargs)
@@ -2097,10 +2131,6 @@ class NotificationService:
         provider in reaction mode (#3046) tie the sent message to the archive,
         and run_id to the run whose token the links carry.
         """
-        providers = await self._get_providers_for_event(db, "on_print_confirm_request", printer_id)
-        if not providers:
-            return
-
         subtask_name = data.get("subtask_name")
         if subtask_name:
             filename = subtask_name.replace("_", " ")
@@ -2125,17 +2155,8 @@ class NotificationService:
                 variables["finish_photo_url"] = archive_data["finish_photo_url"]
             image_data = archive_data.get("image_data")
 
-        title, message = await self._build_message_from_template(db, "print_confirm_request", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "print_confirm_request",
-            printer_id,
-            printer_name,
-            image_data=image_data,
-            variables=variables,
+        await self._notify_event(
+            db, "print_confirm_request", variables, printer_id, printer_name, image_data=image_data
         )
 
     async def on_print_progress(
@@ -2149,31 +2170,24 @@ class NotificationService:
         image_data: bytes | None = None,
     ):
         """Handle print progress milestone (25%, 50%, 75%)."""
-        providers = await self._get_providers_for_event(db, "on_print_progress", printer_id)
-        if not providers:
-            return
 
-        eta_str = await self._format_eta(remaining_time, db)
+        async def variables():
+            return {
+                "printer": printer_name,
+                "filename": self._clean_filename(filename),
+                "progress": str(progress),
+                "remaining_time": self._format_duration(remaining_time) if remaining_time else "Unknown",
+                "eta": await self._format_eta(remaining_time, db),
+            }
 
-        variables = {
-            "printer": printer_name,
-            "filename": self._clean_filename(filename),
-            "progress": str(progress),
-            "remaining_time": self._format_duration(remaining_time) if remaining_time else "Unknown",
-            "eta": eta_str,
-        }
-
-        title, message = await self._build_message_from_template(db, "print_progress", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
+        await self._notify_event(
             db,
             "print_progress",
+            None,
             printer_id,
             printer_name,
             image_data=image_data,
-            variables=variables,
+            variables_factory=variables,
         )
 
     async def on_print_missing_spool_assignment(
@@ -2185,10 +2199,6 @@ class NotificationService:
     ):
         """Handle print-start event when required trays are missing spool assignments."""
         if not missing_slots:
-            return
-
-        providers = await self._get_providers_for_event(db, "on_print_missing_spool_assignment", printer_id)
-        if not providers:
             return
 
         missing_slot_names = ", ".join(slot.get("slot", "Unknown") for slot in missing_slots)
@@ -2205,17 +2215,7 @@ class NotificationService:
             "missing_slot_details": missing_profile_details,
         }
 
-        title, message = await self._build_message_from_template(db, "print_missing_spool_assignment", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "print_missing_spool_assignment",
-            printer_id,
-            printer_name,
-            variables=variables,
-        )
+        await self._notify_event(db, "print_missing_spool_assignment", variables, printer_id, printer_name)
 
     async def on_billing_charge_failed(
         self,
@@ -2374,11 +2374,6 @@ class NotificationService:
         if not maintenance_items:
             return
 
-        providers = await self._get_providers_for_event(db, "on_maintenance_due", printer_id)
-        if not providers:
-            logger.info("No notification providers configured for maintenance_due event on printer %s", printer_id)
-            return
-
         # Format maintenance items list
         items_list = []
         for item in maintenance_items:
@@ -2391,11 +2386,7 @@ class NotificationService:
             "items": items_str,
         }
 
-        logger.info("Found %s providers for maintenance_due: %s", len(providers), [p.name for p in providers])
-        title, message = await self._build_message_from_template(db, "maintenance_due", variables)
-        await self._send_to_providers(
-            providers, title, message, db, "maintenance_due", printer_id, printer_name, variables=variables
-        )
+        await self._notify_event(db, "maintenance_due", variables, printer_id, printer_name)
 
     async def on_ams_humidity_high(
         self,
@@ -2603,30 +2594,20 @@ class NotificationService:
         db: AsyncSession,
     ):
         """A pause the slicer put into the print is coming up (#2984)."""
-        providers = await self._get_providers_for_event(db, "on_print_pause_upcoming", printer_id)
-        if not providers:
-            return
 
-        variables = {
-            "printer": printer_name,
-            "filename": self._clean_filename(filename),
-            # At least a minute: a pause seconds away still reads as "1m".
-            "time_to_pause": self._format_duration(max(minutes, 1) * 60),
-            "eta": await self._format_eta(max(minutes * 60, 1), db),
-            "layer": str(layer),
-            "total_layers": str(total_layers),
-        }
+        async def variables():
+            return {
+                "printer": printer_name,
+                "filename": self._clean_filename(filename),
+                # At least a minute: a pause seconds away still reads as "1m".
+                "time_to_pause": self._format_duration(max(minutes, 1) * 60),
+                "eta": await self._format_eta(max(minutes * 60, 1), db),
+                "layer": str(layer),
+                "total_layers": str(total_layers),
+            }
 
-        title, message = await self._build_message_from_template(db, "print_pause_upcoming", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "print_pause_upcoming",
-            printer_id,
-            printer_name,
-            variables=variables,
+        await self._notify_event(
+            db, "print_pause_upcoming", None, printer_id, printer_name, variables_factory=variables
         )
 
     def clear_template_cache(self):
@@ -2801,23 +2782,16 @@ class NotificationService:
         estimated_time: int | None = None,
     ):
         """Handle queue job started printing event."""
-        providers = await self._get_providers_for_event(db, "on_queue_job_started", printer_id)
-        if not providers:
-            return
 
-        eta_str = await self._format_eta(estimated_time, db)
+        async def variables():
+            return {
+                "job_name": job_name,
+                "printer": printer_name,
+                "estimated_time": self._format_duration(estimated_time),
+                "eta": await self._format_eta(estimated_time, db),
+            }
 
-        variables = {
-            "job_name": job_name,
-            "printer": printer_name,
-            "estimated_time": self._format_duration(estimated_time),
-            "eta": eta_str,
-        }
-
-        title, message = await self._build_message_from_template(db, "queue_job_started", variables)
-        await self._send_to_providers(
-            providers, title, message, db, "queue_job_started", printer_id, printer_name, variables=variables
-        )
+        await self._notify_event(db, "queue_job_started", None, printer_id, printer_name, variables_factory=variables)
 
     async def on_queue_job_waiting(
         self,
@@ -2984,12 +2958,10 @@ class NotificationService:
                 printer_id=printer_id,
                 printer_name=printer_name,
             )
-            db.add(queue_entry)
-            await db.commit()
+            await self._write_and_commit(db, lambda: db.add(queue_entry))
             logger.info("Queued notification for digest: %s for provider %s", event_type, provider.name)
         except Exception as e:
             logger.warning("Failed to queue notification for digest: %s", e)
-            await self._rollback_quietly(db)
 
     async def send_digest(self, provider_id: int):
         """Send all queued notifications as a single digest for a provider."""
