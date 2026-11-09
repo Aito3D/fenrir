@@ -25,6 +25,21 @@ class ProviderType(StrEnum):
     NOTIFY = "notify"
 
 
+def _normalize_time_field(v: str | None) -> str | None:
+    if v is None:
+        return v
+    try:
+        parts = v.split(":")
+        if len(parts) != 2:
+            raise ValueError("Invalid time format")
+        hour, minute = int(parts[0]), int(parts[1])
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError("Invalid time range")
+        return f"{hour:02d}:{minute:02d}"
+    except (ValueError, TypeError):
+        raise ValueError("Time must be in HH:MM format (e.g., 22:00)")
+
+
 class NotificationProviderBase(BaseModel):
     """Base schema for notification providers."""
 
@@ -151,18 +166,7 @@ class NotificationProviderBase(BaseModel):
     @field_validator("quiet_hours_start", "quiet_hours_end", "daily_digest_time")
     @classmethod
     def validate_time_format(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        try:
-            parts = v.split(":")
-            if len(parts) != 2:
-                raise ValueError("Invalid time format")
-            hour, minute = int(parts[0]), int(parts[1])
-            if not (0 <= hour <= 23 and 0 <= minute <= 59):
-                raise ValueError("Invalid time range")
-            return f"{hour:02d}:{minute:02d}"
-        except (ValueError, TypeError):
-            raise ValueError("Time must be in HH:MM format (e.g., 22:00)")
+        return _normalize_time_field(v)
 
 
 class NotificationProviderCreate(NotificationProviderBase):
@@ -258,6 +262,11 @@ class NotificationProviderUpdate(IgnoresNullForRequiredColumns):
 
     # Printer filter
     printer_id: int | None = None
+
+    @field_validator("quiet_hours_start", "quiet_hours_end", "daily_digest_time")
+    @classmethod
+    def validate_time_format(cls, v: str | None) -> str | None:
+        return _normalize_time_field(v)
 
 
 class NotificationProviderResponse(NotificationProviderBase):

@@ -3276,3 +3276,89 @@ class TestSettingsReadsDoNotAutoflush:
                 await service._send_homeassistant({}, "t", "m", db)
             assert flushes == []
         await engine.dispose()
+
+
+class TestDigestCatchUp:
+    """check_and_send_digests selects daily_digest_time in (last processed minute, now] (T-029)."""
+
+    @staticmethod
+    async def _run(test_engine, times_by_pass, extra=()):
+        """Run one pass per clock time; return the "HH:MM" of each digest sent, in order."""
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        factory = async_sessionmaker(test_engine, expire_on_commit=False)
+        service = NotificationService()
+        sent: list[str] = []
+        sched: dict[int, str] = {}
+
+        async with factory() as db:
+            for t in ("08:00", "08:01", "08:02", "08:03", "00:00", "00:01", "23:59", "bad", *extra):
+                p = NotificationProvider(
+                    name=f"p-{t}",
+                    provider_type="webhook",
+                    enabled=True,
+                    config="{}",
+                    daily_digest_enabled=True,
+                    daily_digest_time=t,
+                )
+                db.add(p)
+                await db.flush()
+                sched[p.id] = t
+            await db.commit()
+
+        async def fake_send(pid):
+            sent.append(sched[pid])
+
+        for hh, mm in times_by_pass:
+
+            class FixedDatetime(datetime):
+                @classmethod
+                def now(cls, tz=None, _h=hh, _m=mm):
+                    return datetime(2026, 1, 1, _h, _m)
+
+            with (
+                patch("backend.app.services.notification_service.datetime", FixedDatetime),
+                patch("backend.app.core.database.async_session", factory),
+                patch.object(service, "send_digest", side_effect=fake_send),
+            ):
+                await service.check_and_send_digests()
+        return sent
+
+    @pytest.mark.asyncio
+    async def test_catches_up_stepped_over_minutes_once_each(self, test_engine):
+        sent = await self._run(test_engine, [(8, 0), (8, 2), (8, 2), (8, 3)])
+        assert sorted(sent) == ["08:00", "08:01", "08:02", "08:03"]
+
+    @pytest.mark.asyncio
+    async def test_no_double_send_across_consecutive_passes(self, test_engine):
+        sent = await self._run(test_engine, [(8, 0), (8, 1), (8, 2)])
+        assert sorted(sent) == ["08:00", "08:01", "08:02"]
+
+    @pytest.mark.asyncio
+    async def test_midnight_wrap(self, test_engine):
+        sent = await self._run(test_engine, [(23, 59), (0, 1)])
+        assert sorted(sent) == ["00:00", "00:01", "23:59"]
+
+    @pytest.mark.asyncio
+    async def test_first_pass_sends_only_current_minute(self, test_engine):
+        assert await self._run(test_engine, [(8, 2)]) == ["08:02"]
+
+    @pytest.mark.asyncio
+    async def test_malformed_time_never_matches(self, test_engine):
+        sent = await self._run(test_engine, [(0, 0), (23, 59)])
+        assert "bad" not in sent
+
+    @pytest.mark.asyncio
+    async def test_backward_clock_step_sends_only_current_minute(self, test_engine):
+        sent = await self._run(test_engine, [(8, 0), (7, 59)], extra=["07:59"])
+        assert sorted(sent) == ["07:59", "08:00"]
+
+    @pytest.mark.asyncio
+    async def test_gap_at_cap_is_caught_up(self, test_engine):
+        sent = await self._run(test_engine, [(8, 0), (9, 0)], extra=["08:30", "09:00"])
+        assert sorted(sent) == ["08:00", "08:01", "08:02", "08:03", "08:30", "09:00"]
+
+    @pytest.mark.asyncio
+    async def test_gap_past_cap_sends_only_current_minute(self, test_engine):
+        sent = await self._run(test_engine, [(8, 0), (9, 1)], extra=["08:30", "09:01"])
+        assert sorted(sent) == ["08:00", "09:01"]

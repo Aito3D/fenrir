@@ -142,6 +142,7 @@ class NotificationProviderBase(BaseModel)
 class NotificationProviderCreate(NotificationProviderBase)
 class NotificationProviderResponse(NotificationProviderBase)
 class NotificationProviderUpdate(IgnoresNullForRequiredColumns)
+    def validate_time_format(cls, v: str | None) -> str | None
 class NotificationTestRequest(BaseModel)
 class NotificationTestResponse(BaseModel)
 class ProviderType(StrEnum)

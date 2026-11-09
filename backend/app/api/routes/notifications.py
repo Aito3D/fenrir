@@ -314,10 +314,14 @@ async def test_all_notification_providers(
     failed_count = 0
 
     for provider in providers:
-        config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
-        success, message = await notification_service.send_test_notification(
-            provider.provider_type, config, db, attach_photo=provider.attach_photo
-        )
+        try:
+            config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
+        except (json.JSONDecodeError, TypeError):
+            success, message = False, "Stored configuration is not valid JSON"
+        else:
+            success, message = await notification_service.send_test_notification(
+                provider.provider_type, config, db, attach_photo=provider.attach_photo
+            )
 
         # Update provider status
         if success:
@@ -337,8 +341,8 @@ async def test_all_notification_providers(
                 "message": message,
             }
         )
-
-    await db.commit()
+        # Release the write transaction before the next provider's network send.
+        await db.commit()
 
     return {
         "tested": len(providers),

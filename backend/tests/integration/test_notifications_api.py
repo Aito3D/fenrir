@@ -825,3 +825,70 @@ class TestNotificationTestAll:
         assert (data["tested"], data["success"], data["failed"]) == (1, 1, 0)
         assert [r["provider_id"] for r in data["results"]] == [ids["ours"]]
         assert send.await_count == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_status_is_committed_before_the_next_provider_send(
+        self, async_client: AsyncClient, notification_provider_factory, test_engine
+    ):
+        """Provider 1's stamp must be visible to another session before provider 2's send starts."""
+        from unittest.mock import AsyncMock, patch
+
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+        from backend.app.models.notification import NotificationProvider
+
+        first = await notification_provider_factory(name="First")
+        await notification_provider_factory(name="Second", provider_type="webhook", config={"url": "https://x.test"})
+        first_id = first.id
+        seen: dict[str, object] = {}
+
+        async def fake_send(provider_type, config, db, attach_photo=False):
+            if provider_type == "webhook":
+                async with async_sessionmaker(test_engine, class_=AsyncSession)() as other:
+                    row = (
+                        await other.execute(select(NotificationProvider).where(NotificationProvider.id == first_id))
+                    ).scalar_one()
+                    seen["last_success"] = row.last_success
+            return True, "sent"
+
+        with patch(_SEND_TEST, new=AsyncMock(side_effect=fake_send)):
+            response = await async_client.post("/api/v1/notifications/test-all")
+
+        assert response.status_code == 200
+        assert seen["last_success"] is not None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_corrupt_stored_config_is_a_failed_result_not_a_500(
+        self, async_client: AsyncClient, notification_provider_factory, db_session
+    ):
+        from unittest.mock import AsyncMock, patch
+
+        from backend.app.models.notification import NotificationProvider
+
+        bad = await notification_provider_factory(name="Corrupt")
+        good = await notification_provider_factory(
+            name="Fine", provider_type="webhook", config={"url": "https://x.test"}
+        )
+        bad_id, good_id = bad.id, good.id
+        bad.config = "{not json"
+        await db_session.commit()
+
+        with patch(_SEND_TEST, new=AsyncMock(return_value=(True, "sent"))) as send:
+            response = await async_client.post("/api/v1/notifications/test-all")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert (data["tested"], data["success"], data["failed"]) == (2, 1, 1)
+        by_id = {r["provider_id"]: r for r in data["results"]}
+        assert by_id[bad_id]["success"] is False
+        assert by_id[bad_id]["message"] == "Stored configuration is not valid JSON"
+        assert by_id[good_id]["success"] is True
+        assert send.await_count == 1
+
+        db_session.expire_all()
+        row = (
+            await db_session.execute(select(NotificationProvider).where(NotificationProvider.id == bad_id))
+        ).scalar_one()
+        assert row.last_error == "Stored configuration is not valid JSON"

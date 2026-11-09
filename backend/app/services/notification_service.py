@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 # How long a digest event is kept for: through one failed daily digest, so it
 # goes out with the next one, then dropped (FO-C4).
 DIGEST_RETRY_HOURS = 48
+# A longer gap between digest passes is a suspend or clock jump, not a stepped-over minute.
+_DIGEST_CATCHUP_MAX_MINUTES = 60
 
 # Honest User-Agent — matches the convention used by every other outbound
 # httpx client in the codebase (bambu_cloud, makerworld, firmware_check,
@@ -3064,6 +3066,15 @@ class NotificationService:
         # Avoid duplicate checks within the same minute
         if current_time == self._last_digest_check:
             return
+        # Every minute in (last processed, now]: the 60 s loop can step over a minute, and the
+        # half-open window keeps a scheduled minute from being sent twice. First pass: now only.
+        due_times = {current_time}
+        if self._last_digest_check:
+            minute = int(self._last_digest_check[:2]) * 60 + int(self._last_digest_check[3:])
+            now_minute = int(current_time[:2]) * 60 + int(current_time[3:])
+            gap = (now_minute - minute) % 1440  # modular, so the midnight wrap is a small gap
+            if gap <= _DIGEST_CATCHUP_MAX_MINUTES:
+                due_times = {f"{(minute + i) // 60 % 24:02d}:{(minute + i) % 60:02d}" for i in range(1, gap + 1)}
         self._last_digest_check = current_time
 
         async with async_session() as db:
@@ -3072,7 +3083,7 @@ class NotificationService:
                 select(NotificationProvider).where(
                     NotificationProvider.enabled.is_(True),
                     NotificationProvider.daily_digest_enabled.is_(True),
-                    NotificationProvider.daily_digest_time == current_time,
+                    NotificationProvider.daily_digest_time.in_(due_times),
                 )
             )
             providers = result.scalars().all()
