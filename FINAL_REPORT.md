@@ -1,58 +1,180 @@
-# Refactor-loop campaign 32 — final report
+# FINAL REPORT — refactor-loop campaign N1: the notifications stack
 
-Scope: the Aito BOARD page + the Aito backend it calls. Branch `auto-refactor-loop-aito`, BASE tag `refactor-base-aito`
-(cut from main 484da88b5). 2026-11-05 → 2026-11-06.
+## Campaign
+- Campaign 1 on branch `auto-refactor-loop`, worktree `/Users/paultheis/Documents/Code/bambuddy-refactor`, cut from main `624a84769` (UPSTREAM, 2026-11-07). BASE `refactor-base` = `f3d56a4e2` (setup commit).
+- Iterations run: 12 (loop-1 … loop-12), MAX_ITER raised by the user 8 → 10 (during iteration 7) → 12 (after the round-2 sweep). Survey rounds completed: 2 of 3 (exit on MAX_ITER before round 3).
+- Commits: 12 squashed iteration commits on top of BASE (one per iteration, COMMIT_STYLE grouped) plus this report. Tags: `refactor-base`, `loop-1` … `loop-12`.
+- Verifier verdicts: 12 PASS; 3 iterations needed a fix first (loop-1 T-025 rollback expired ORM rows; loop-7 T-029 backward clock step; loop-12 T-045 path caught failed-send bookkeeping errors).
+- Parameters: SCOPE notifications stack (routes notifications/notification_templates/user_notifications; models/schemas notification*; services notification_service, notify_*, spool_assignment_notifications; utils/notification_photos; frontend Notification* components, NotificationsPage, notificationKinds, utils/notify); TRIAGE P2,P3 lowered to P3 by the user at the setup sweep; BATCH 3; MODE auto; COMMIT_STYLE grouped; MERGE_CADENCE at-exit.
+- Why the loop ended: MAX_ITER (12) reached with 8 workable tasks still OPEN after round 2.
 
-## Summary
-- Iterations run: 12 (loopA-1 … loopA-12), one squashed commit + tag each. Survey rounds: 2.
-- Exit reason: **MAX_ITER** (12). Round 2 filed new workable tasks, but iteration 13 exceeds the cap.
-- Tasks: 51 filed, 35 DONE, 16 OPEN (all round-2 leftovers, two of them user-approved behavior changes).
-- Diff BASE..HEAD: 66 files, +1490 / −797.
-- Blind verifier: every iteration PASS; two iterations failed first (loopA-1: T-584 import slowdown + T-583 unapproved;
-  loopA-6: T-587 unapproved) and passed after a fix-up / user approval.
+## Coverage, goldens, surface
+- Scoped statement coverage (full suites, the ratchet): backend 2858/3370 = 84.81% → 3110/3385 = 91.88% (branches 75.48% → 85.53%); frontend 408/605 = 67.43% → 505/530 = 95.28%. Scoped totals moved because refactors removed duplicated statements and T-007 moved the event-flag table into `notificationEventFlags.ts`, which the frozen FE_INCLUDES list does not cover; coverage settings are byte-identical to BASE.
+- Full suites at loop-12: backend 26496 passed / 1 failed (known_broken) / 10 skipped; frontend 10972 passed / 1 skipped (loop-8 run; no frontend change since).
+- known_broken: before 1, after 1 — `backend/tests/unit/test_printer_hours_migrations.py::test_migration_backfills_calibrated_at_from_offset`, out of scope, fails only while the local day (UTC-10) differs from the UTC day. Not touched.
+- Snapshot probes: 7/7 matching at every PASS. Re-recorded under approval: notif-rules (T-022 Telegram escaping), notif-http (campaign re-baseline: the Telegram poller's getUpdates long-poll held open and kept off the recorded wire — its timing flipped the golden under machine load).
+- SURFACE.md: regenerated three times under approval — T-007 (−92 translation-key literals moved into notificationEventFlags.ts), T-033 (+1 settings key `notification_log_retention_days`), T-030/T-047 (+1 method line each, `validate_time_format` on the Update and Response schemas). Otherwise unchanged.
+- Diff since BASE: 31 files, +3644/−1463. Production code: 8 files, +753/−1275 (net −522 lines). Tests: 18 files, +2862/−79 (~150 new tests).
 
-## Gates at exit (loopA-12 verifier)
-- Coverage (scoped statements): backend 98.82% (7619/7710 → 7630/7721) · frontend 94.38% (6015/6373) → 94.60% (6028/6372)
-- Known-broken tests: none before → none after
-- Snapshot probes: 35/35 match · SURFACE.md: changed only by sanctioned additive exports / one count change (below)
-- Backend 25886 passed / 10 skipped; frontend 10695 passed. Lint, typecheck (tsc + basedpyright lock), knip, i18n, build clean.
-
-## User-approved behavior changes (BASELINE-CHANGELOG.md)
-- T-581 hand-made cards (no quote_id) ignore client-supplied quote number/total/url/date (no 422)
-- T-583 board cards refresh due badge / age / heat on a minute tick and on tab-visible
-- T-584 project version bump computed SQL-side (no lost update between background writer and PATCH)
-- T-585 Extend quote no longer waits on a busy background payment-link pass
-- T-588 TabletBoard uses useSnapPager (tablet WebKit check still owed)
-- T-582 login `?next=` refuses backslash and control characters
-- T-586 extend-quote failure toast carries the server reason on 409/502; 409 refreshes the board
-- T-587 a repeated `?card=` link to the same card refetches board + trash before deciding
-Re-baselines (additive internal exports): BoardColumnBody, moreMenuViewItems, useColumnSummaries (T-589), useHoverReveal
-(T-592), useCardUrlMirror, useCardResolver, useNewFromProject (T-593); Permission.AITO_READ count 21→22 (T-604).
-
-## Work done by iteration
-1 T-581 T-583 T-584 · 2 T-585 T-588 T-589 · 3 T-590 T-605 T-606 · 4 T-607 T-609 T-612 · 5 T-613 T-582 T-586 ·
-6 T-587 T-591 T-592 · 7 T-593 T-594 T-595 · 8 T-596 T-597 T-598 · 9 T-599 T-600 T-601 · 10 T-602 T-603 T-604 ·
-11 T-608 T-610 T-611 · 12 T-614 T-615
-
-## Findings by auditor (filed / DONE / OPEN; no BLOCKED or WONTFIX-AUTO)
-- audit-security: 3 / 2 / 1 · audit-robustness: 7 / 5 / 2 · audit-cleanliness: 26 / 17 / 9 · audit-tests: 14 / 10 / 4
-- verifier lead: 1 / 1 / 0. Triaged: 0 (TRIAGE: none).
+## User-approved behavior changes (BASELINE-CHANGELOG.md, 17 entries this campaign)
+- T-004 callmebot/pushover(fallback)/discord failures use the opaque wording via a shared `_http_result`.
+- T-007 SURFACE regeneration: event toggles driven by one `EVENT_FLAGS` table (modal + card), key literals moved.
+- re-baseline: notif-http probe holds the Telegram getUpdates long-poll open and never records it.
+- T-021 `_send_email` checks smtp_server against the LAN-service host policy; SMTP/socket failures return fixed wording.
+- T-028 test-all commits status per provider; a corrupt stored config is a per-provider failed result, not a 500.
+- T-029 digest scheduler catches up minutes the 60 s loop stepped over, window bounded at 60 min, backward clock step resets.
+- T-030 PATCH validates/normalises quiet_hours_start/end and daily_digest_time like create.
+- T-031 blank ntfy server → https://ntfy.sh, blank SMTP port → 587, non-numeric port → fixed message.
+- T-033 notification_logs pruned daily by the scheduler (setting `notification_log_retention_days`, default 90, min 1).
+- T-034 provider card update/delete failures show an error toast.
+- T-022 Telegram legacy-Markdown escaping of `_ * \` [` in title and body (golden re-recorded).
+- T-023 one-pass template rendering in the service and the preview route (values never rescanned).
+- T-024 Aito payment notifications delivered again (stale `force_immediate` kwarg dropped; masking test fixed).
+- T-032 sender config reads through `_config_str` / `_config_flag` tolerate numeric/boolean/null stored values.
+- T-045 a bookkeeping failure after a successful send no longer logs the delivery as a DB-error failure.
+- T-046 test-all survives a failed per-provider commit and still reports every result.
+- T-047 provider responses read an unparsable legacy stored time as null instead of failing response validation.
 
 ## Resurvey rounds
-- Round 1 (setup): 35 tasks (6 behavior changes approved at setup).
-- Round 2 (after loopA-12): 16 new — cleanliness 9, tests 4, robustness 2 (1 behavior change), security 1 (behavior change).
+- Round 1 (setup): 36 findings — security 4 (all behavior changes), robustness 12, cleanliness 9, tests 11; 15 filed, 21 triaged under P2,P3; after the user lowered TRIAGE to P3 and approved all 11 behavior changes, 28 OPEN.
+- Round 2 (after loop-10): 25 findings — security 2 (both approved), robustness 6 (1 high: template cache detaches after a rollback; 3 approved), cleanliness 6 (1 filed, 5 triaged), tests 11 (5 filed, 6 triaged). Dedup suppressed nothing. The round was productive → iterations 11–12.
+- Round 3: not run (MAX_ITER).
 
-## Left OPEN for humans / a later campaign
-- T-630 [P2, user-approved] apply_retainers() folds a Books 429/timeout into "applied 0" (force sync says "refused", sweep keeps calling)
-- T-629 [P3, user-approved] zoho `_seg` lets a client_id of "."/".." re-target Books contact paths
-- T-631 [P3] extend_quote_expiry `_pass_lock.locked()` pre-check is racy (await before the lock) — follow-up to T-585
-- T-625 [P2] useNewFromProject refusal branch untested · T-627 [P2] NotificationBell tests read rows before render (likely the loopA-11 flake)
-- T-626 settleProject({refetchBoard}) unpinned · T-628 AitoDialogShell test no longer pins flex-col
-- T-616 useDuplicateProject re-declares two queries · T-617 terminal_payment setQueryData written twice (+ PaymentLinkModal replaceBoardRow)
-- T-618 startViewTransition recipe ×3 · T-619 NewProjectDrawer double onCreate (tests pin 6 args) · T-620 rating spec mentions removed GOOD_MIN_SETTLED
-- T-621 record_manual_payment · T-622 _build_task · T-623 rate_invoices/read_client_rating · T-624 update_project — oversized
+## Findings by auditor (plan.py stats by_source)
+| auditor | filed in PLAN | DONE | OPEN | BLOCKED | WONTFIX-AUTO |
+|---|---|---|---|---|---|
+| audit-security | 6 | 4 | 2 | 0 | 0 |
+| audit-robustness | 16 | 15 | 1 | 0 | 0 |
+| audit-cleanliness | 5 | 5 | 0 | 0 | 0 |
+| audit-tests | 15 | 10 | 5 | 0 | 0 |
+| survey (hand-added) | 0 | 0 | 0 | 0 | 0 |
 
-## Notes
-- T-610 partial: AitoAiTextField negative tests still use 20 ms real sleeps (they wait on msw round-trips).
-- Owed manual checks: tablet WebKit snapping (T-588); a live Books force sync to watch T-584's SQL version bump.
-- Full loop state (PLAN.md, VERDICTS.log, BASELINE.md, findings JSON) copied to plans/refactor-campaign32/ in the main repo.
+Triaged this campaign, by source auditor (per-round ingest counts; TRIAGE.md currently holds 19 after 13 round-1 P2s were promoted): round 1 — cleanliness 8, tests 9, robustness 4 (21); round 2 — cleanliness 5, tests 6 (11). 32 diverted in total, 13 promoted and worked. TRIAGE.md holds every remaining entry with full evidence; promote one with `python tools/plan.py promote <id> --iteration N` (the flag is required).
+
+## Before/after metrics
+- notification_service.py: 3,283 → 3,157 lines (duplication removed, hardening + helpers added); `_notify_event` behind 35 on_* methods, `_http_result`, `_config_str`/`_config_flag`, `_write_and_commit` savepoint helper, plain-value template cache.
+- routes/notifications.py: `_EVENT_FLAG_FIELDS` derived from the schema (−91 lines).
+- NotificationProviderCard.tsx 836 → 375 lines; AddNotificationModal.tsx state from 21 useState hooks to one record; both driven by `notificationEventFlags.ts`.
+- Lint: ruff clean throughout; eslint 0 errors (5 pre-existing warnings outside scope); knip and i18n parity clean.
+- Audit findings: 61 filed over two rounds (42 into PLAN.md, 19 standing in TRIAGE.md); 34 DONE.
+
+## Left for humans — OPEN in PLAN.md (8)
+
+### T-048 [P2] check_and_send_digests advances _last_digest_check before its provider query, so a failed pass loses the due minutes
+- source: audit-robustness · files: backend/app/services/notification_service.py · status: OPEN
+- evidence: backend/app/services/notification_service.py:3103 · self._last_digest_check = current_time async with async_session() as db: result = await db.execute(select(NotificationProvider).where(... daily_digest_time.in_(due_times))) # the cursor moves before the query runs. If opening the session or the SELECT raises (database is locked during a busy print completion), _digest_scheduler_loop logs 'Error in digest scheduler'. The next pass computes its catch-up window from the already-advanced cursor, so a digest scheduled for that minute is never sent that day. The queued events wait for tomorrow's digest (or expire after DIGEST_RETRY_HOURS if that one also fails) · fix: assign self._last_digest_check = current_time only after the provider query has succeeded
+
+### T-049 [P2] _send_webhook, _send_test_notification and _send_to_provider echo raw httpx exception text (banner read / port-scan channel) for user-supplied hosts
+- source: audit-security · files: backend/app/services/notification_service.py · status: OPEN
+- evidence: backend/app/services/notification_service.py:1269 · _send_webhook: `except Exception as e: return False, f"Webhook error: {str(e)}"` (line 1269); _send_test_notification: `except Exception as e: ... return False, str(e)` (line 473); _send_to_provider: same `return False, str(e)` (line 1631), which is stored in provider.last_error and NotificationLog.error_message. Reproduced locally: a TCP listener on 127.0.0.1 sending `220 internal-mail.corp ESMTP Postfix (Ubuntu)\r\n\r\n`, reached through _send_test_notification, returned for webhook `"Webhook error: illegal status line: bytearray(b'220 internal-mail.corp ESMTP Postfix (Ubuntu)')"` and for ntfy/gotify/bark `"illegal status line: bytearray(b'220 internal-mail.corp ESMTP Postfix (Ubuntu)')"`. A closed port returns `All connection attempts failed` and a listener that closes returns `Server disconnected without sending a response.`. POST /notifications/test-config accepts the URL from the request body with only NOTIFICATIONS_CREATE (default Operators group). That makes it an authenticated banner reader and port scanner against any LAN host Fenrir can reach. It is the same read primitive _opaque_http_failure and the round-1 SMTP fix closed for HTTP bodies and SMTP errors, still open on transport and protocol exceptions. · fix: Catch httpx.HTTPError (and the generic Exception) in these three places and return fixed wording, e.g. "Could not reach the configured <label> (see server logs at debug level for details)". Log str(e) at debug level only, as _opaque_http_failure does. Keep the existing provider-specific validation messages, which are raised before any network I/O. · user-visible change: Failed webhook/ntfy/Gotify/Bark tests, provider cards and delivery-log entries would show a generic 'could not reach the configured server' message instead of httpx's raw error text such as 'All connection attempts failed' or 'illegal status line: ...'.
+
+### T-050 [P2] _send_homeassistant lets a NOTIFICATIONS_CREATE holder invoke any Home Assistant service domain with the admin-configured HA token
+- source: audit-security · files: backend/app/services/notification_service.py · status: OPEN
+- evidence: backend/app/services/notification_service.py:1330 · `service = (config.get("service") or "").strip()` ... `if not re.match(r"^api/services/[a-zA-Z0-9_]+/[a-zA-Z0-9_]+$", endpoint):` then `response = await client.post(url, json=payload, headers={"Authorization": f"Bearer {ha_token}", ...})` with `payload["data"] = data_payload` taken straight from config["data"]. ha_url/ha_token are global settings that only SETTINGS_UPDATE can set. The service name and data come from the provider config, which POST /notifications/test-config accepts in the request body with only NOTIFICATIONS_CREATE. The comment in _opaque_http_failure treats that permission as a separate trust boundary that does not imply SETTINGS_UPDATE. The regex allows any domain, so config {"service": "script.open_garage"} or {"service": "shell_command.x", "data": {...}} is POSTed to /api/services/script/open_garage with the long-lived admin token. HA services whose schema allows extra keys (script.*, shell_command.*, rest_command.*, python_script.*) run despite the extra title/message keys. An Operator thereby drives home automation through Fenrir's stored credential. · fix: Allow only the notification domains (notify.*, persistent_notification.*) for the custom service, and reject any other domain with a validation message, both in _send_homeassistant and at provider create/update time. Alternatively, require SETTINGS_UPDATE in the routes to save or test a homeassistant provider whose service is outside those domains. · user-visible change: Home Assistant providers configured with a non-notify service (e.g. script.* or tts.*) would be refused on save and test, and existing ones would fail delivery with a validation message until the service is changed to notify.* or persistent_notification.*.
+
+### T-051 [P2] send_user_print_email runs plain SELECTs on the caller's session with no no_autoflush test
+- source: audit-tests · files: backend/app/services/notification_service.py · status: OPEN
+- evidence: backend/app/services/notification_service.py:2636 · send_user_print_email (2636-2759) runs `await db.execute(select(Settings)...)`, then `select(User)`, `select(UserEmailPreference)` and `get_smtp_settings(db)` on the caller's session. None are under `db.no_autoflush`. T-027 did that for _format_eta, _get_or_build_photo_url and _send_homeassistant. The `flushes == []` guard in test_notification_service.py (~3300-3309) covers only those three paths. backend/tests/unit/services/test_notification_user_print_email.py (164 lines, `world` fixture and `patch(SEND_EMAIL)`) has no test that the caller's pending writes stay unflushed. · fix: In backend/tests/unit/services/test_notification_user_print_email.py, add a case that adds a pending object to db_session and wraps flush to record calls. Call send_user_print_email and assert no flush happened. Then wrap the SELECTs in `with db.no_autoflush:`; the production change is for the worker. The lead is also production-side.
+
+### T-052 [P2] send_user_print_email preference branches for user_print_failed and user_print_stopped are never run
+- source: audit-tests · files: backend/app/services/notification_service.py · status: OPEN
+- evidence: backend/app/services/notification_service.py:2713 · coverage (test_notification_user_print_email.py run): `2713, 2717, 2719` missing. These are `elif event_type == "user_print_failed"`, `elif ... "user_print_stopped"` and the should_send assignments. `grep user_print_failed|user_print_stopped` in backend/tests hits only test_user_notifications.py (preferences API) and a migration test. The new test file has only a `user_print_complete` event, plus an unknown event. A wrong flag mapping, such as stopped using notify_print_failed, would pass. · fix: In backend/tests/unit/services/test_notification_user_print_email.py, parametrize over the four events. Add a UserEmailPreference with only that event's flag off and the others on. Assert no send for that event and a send for the others. Add NotificationTemplate rows for the other three events in the `world` fixture.
+
+### T-053 [P2] _digest_scheduler_loop and the per-provider error isolation in check_and_send_digests are untested
+- source: audit-tests · files: backend/app/services/notification_service.py · status: OPEN
+- evidence: backend/app/services/notification_service.py:3157 · coverage: `3119-3120, 3124-3126, 3130-3133, 3148-3149, 3159-3170` missing. 3159-3170 is the `while True` loop with its two try/excepts and `asyncio.sleep(60)`. 3130-3133 is `except Exception as e: logger.error("Error sending digest for provider %s"...)`. TestDigestCatchUp always patches send_digest with a fake that never raises. No test references `_digest_scheduler_loop`. The reason to test it is that a failing digest check must still run the log prune, and one failing provider must not stop the others. · fix: In backend/tests/unit/services/test_notification_service.py, add two tests. (1) In check_and_send_digests with two due providers, make send_digest raise for the first and assert the second is still sent. (2) For the loop, patch check_and_send_digests to raise, patch asyncio.sleep to raise CancelledError after the first iteration, and assert _prune_notification_logs was still awaited. Run it under asyncio.wait_for so a spinning loop fails instead of hanging.
+
+### T-054 [P2] Telegram retry without inline buttons after a refused keyboard is untested
+- source: audit-tests · files: backend/app/services/notification_service.py · status: OPEN
+- evidence: backend/app/services/notification_service.py:901 · coverage (reaction, confirm and digest test files together): `901-903, 906` missing, namely `logger.warning("Telegram refused the message with inline buttons (%s); retrying without them"...); response = await _post(False); failure = _failure(response)` and the `return False, failure, None` below it. The comment calls this the only way an install without external_url still delivers the #1898 verdict prompt. test_telegram_outcome_buttons_1898.py only sends buttons that succeed (lines 53-99). Also uncovered: 989-993, the `except Exception` that rolls back when recording TelegramPendingVerdict fails. This is a fast-subset figure and may understate the full suite. · fix: In backend/tests/unit/test_telegram_outcome_buttons_1898.py, add a case where the mocked Telegram answers 400 when `reply_markup` is present and 200 otherwise. Assert two posts, a second payload without reply_markup, and ok=True. Add a case where both posts fail and assert `(False, <HTTP 400...>)`. Add a case where db.commit raises in _send_telegram_confirm_request and assert the send still reports ok.
+
+### T-058 [P2] NotificationsPage never exercises saving per-user email preferences
+- source: audit-tests · files: frontend/src/pages/NotificationsPage.tsx · status: OPEN
+- evidence: frontend/src/pages/NotificationsPage.tsx:44 · vitest scoped coverage: `NotificationsPage.tsx 75.6% stmts | 46.15% funcs | Uncovered 44,62-74,173-247`. 62-74 is saveMutation, whose onSuccess invalidates the query and toasts, and whose onError toasts `err.message`. 173-247 are the failed and stopped toggle rows and the save button. Existing tests (NotificationsPage.test.tsx 68-130) are: renders heading, four toggles, save button, spinner, 'toggles switch state when clicked', and no redirect. No test clicks Save, asserts the `api.updateUserEmailPreferences` payload, or covers a failed save. Line 44 is the preferences-hydration branch and also has no test. · fix: In frontend/src/__tests__/pages/NotificationsPage.test.tsx, mock updateUserEmailPreferences. Toggle each of the four switches, click Save, and assert the payload has all four flags with the expected values and that a success toast appears. Add a rejecting mock that asserts the error toast. Add a case where the user has no email and Save is disabled.
+
+
+## Left for humans — TRIAGE.md (19, full evidence)
+
+### T-002 [P3] on_ams_ht_humidity_high / on_ams_ht_temperature_high are line-for-line copies of the regular AMS methods
+- source: audit-cleanliness · files: backend/app/services/notification_service.py · status: TRIAGED
+- evidence: backend/app/services/notification_service.py:2492 · Both HT methods build the same variables dict and call `_build_message_from_template(db, "ams_humidity_high", variables)` or `"ams_temperature_high"`. They differ from on_ams_humidity_high (2385) and on_ams_temperature_high (2418) only in the event column and event key, with the comment '# Use the same template as regular AMS'. · fix: Have the HT methods delegate to a shared private `_ams_env_alert(kind, ht, ...)`, or fold both into the generic event helper with a `template=` override.
+
+### T-005 [P3] Provider config JSON decoding is re-implemented in 9 places across the stack
+- source: audit-cleanliness · files: backend/app/services/notification_service.py · status: TRIAGED
+- evidence: backend/app/services/notification_service.py:1414 · `json.loads(provider.config) if isinstance(provider.config, str) else provider.config` appears at notification_service.py:1414, notify_worker.py:41, notify_widgets.py:166, routes/notifications.py:87, 106, 408 and 830, and telegram_reactions.py:72. notify_live_activities.py:50 has a `_config(provider)` variant that adds `or {}`, so the None handling differs between copies. routes/notifications.py already has `_stored_config`, which is the same thing. · fix: Put one `provider_config(provider) -> dict` helper on the NotificationProvider model (or in a shared util) and use it at every site. Choose one None policy.
+
+### T-006 [P3] notify_widgets re-implements credential fingerprinting, and the widget and live-activity workers share little beyond _now and PrintSnapshot
+- source: audit-cleanliness · files: backend/app/services/notify_widgets.py · status: TRIAGED
+- evidence: backend/app/services/notify_widgets.py:30 · notify_widgets.py:30 `def _credential_key(config): return _fingerprint({"device_id": str(config.get("device_id", "")).strip(), "token": ...})` wraps notify_live_activities._credential_key, which is imported as `_fingerprint`. `_now` is imported from the sibling worker module. Both modules keep their own `json.loads(provider.config)` decoding. The two modules also define their own `_RUNNING`/`_TERMINAL`-style state sets (a state-name set at notify_widgets.py:~56, `_RUNNING` at notify_live_activities.py:28). · fix: Move `_now`, `_credential_key`, the provider-config decode and the printer state-set constants into notify_worker.py or notify_client.py. Both workers then import them from there, and private underscore names are no longer imported across sibling modules.
+
+### T-008 [P3] notification_service.py (3,283 lines) mixes 11 provider senders, event fan-out, digest scheduling and per-user email in one class
+- source: audit-cleanliness · files: backend/app/services/notification_service.py · status: TRIAGED
+- evidence: backend/app/services/notification_service.py:1 · `grep -n 'async def '` shows _send_* senders (463-1342), _send_to_provider at 1390 (about 190 lines of provider dispatch), 35 on_* methods (1746-3100), send_user_print_email (2735, about 125 lines) and the digest scheduler (3104-3283), all in one NotificationService class. · fix: Split into modules: senders (one module or function per provider), events (the on_* methods on the shared helper), digest, and user email. Keep `notification_service` as a thin facade with the same public callables, because SURFACE.md lists its public signatures.
+
+### T-009 [P3] try/except-pass left where contextlib.suppress is the project convention (ruff SIM105)
+- source: audit-cleanliness · files: backend/app/services/notify_worker.py · status: TRIAGED
+- evidence: backend/app/services/notify_worker.py:118 · ruff SIM105 reports notify_worker.py:118 (`except asyncio.CancelledError: pass`) and notify_worker.py:187 (`except TimeoutError: pass`) in the scoped files. The scoped files produced 48 findings in total, of which most are the B008 FastAPI Depends defaults. · fix: Replace both with `with contextlib.suppress(...)`.
+
+### T-020 [P3] Log-listing and photo route error branches uncovered
+- source: audit-tests · files: backend/app/api/routes/notifications.py · status: TRIAGED
+- evidence: backend/app/api/routes/notifications.py:637 · Coverage: notifications.py missing 62-63, 74-75, 218, 631, 637-640, 647, 743, 766, 839-840. Line 218 is the printer-scoped _log_scope_clause 'return None' path. These are error and edge branches of the scoped log and photo routes. The fast subset understates. · fix: In backend/tests/integration/test_notification_scope.py and test_notifications_api.py add cases for each missing line. These cover scoped log filtering with a non-null printer_ids, the 404 and invalid-id branches of the photo route, and pagination edges. Assert the status code and the body.
+
+### T-035 [P3] A stale test result can be shown against edited config or a different provider type
+- source: audit-robustness · files: frontend/src/components/AddNotificationModal.tsx · status: TRIAGED
+- evidence: frontend/src/components/AddNotificationModal.tsx:159 · const testMutation = useMutation({ mutationFn: () => api.testNotificationConfig({ provider_type: providerType, config: configForRequest(), ... }), onSuccess: (result) => { setTestResult(result); setError(null); }, — The type-change handler calls setTestResult(null), but a test already in flight still lands in onSuccess afterwards. If the user starts a test (which can take 35 s+ against an unreachable host), then edits a field or switches provider type, the earlier config's 'success' or failure banner appears under the new settings. The user can then save config that was never tested. · fix: Snapshot the provider type and config when mutate() is called (pass them as mutation variables), and ignore the result in onSuccess/onError if they no longer match current state, or call testMutation.reset() on type/config change.
+
+### T-036 [P3] _eligible lets one provider's unparsable or non-object config stall the Notify! worker for all providers
+- source: audit-robustness · files: backend/app/services/notify_worker.py · status: TRIAGED
+- evidence: backend/app/services/notify_worker.py:41 · config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config return bool(provider.enabled and config.get(self.feature_field) is True ...) — _run evaluates `any(self._eligible(provider) for provider in providers)` across every notify provider. A row whose config is not valid JSON, or decodes to null or a list (legacy or hand-edited rows), raises here. The run loop logs 'reconciliation failed', sets _providers_dirty and retries with backoff forever, so Live Activities and lock-screen widgets stop updating for every other Notify! provider. tick() in notify_live_activities/notify_widgets repeats the same unguarded parse. · fix: Parse the config defensively (catch ValueError, treat a non-dict as {}) in _eligible and in the ticks' config reads, so one bad provider counts as not eligible.
+
+### T-038 [P3] on_stock_reorder_alert and on_stock_break_alert build the same 7-key variables dict
+- source: audit-cleanliness · files: backend/app/services/notification_service.py · status: TRIAGED
+- evidence: backend/app/services/notification_service.py:2896 · on_stock_reorder_alert: `variables = {"material": material, "subtype": subtype or "", "brand": brand or "", "color": color or "", "stock_g": f"{stock_g:.0f}", "rate_g_day": f"{rate_g_day:.1f}", "days_left": str(days_left)}`. on_stock_break_alert (2937) is the same dict plus lead_time_days. The break variant already uses _notify_event, but the reorder variant keeps the long form because it filters `providers` for skip_break_subscribers. A change to the formatting (for example the rounding of stock_g) has to be made twice. · fix: Extract a small module-level `_stock_variables(material, brand, subtype, color, stock_g, rate_g_day, days_left)` helper and have both methods use it. Optionally give _notify_event a `provider_filter` argument so reorder can use it too.
+
+### T-039 [P3] Bark, Gotify, Notify!, Telegram and HA senders still strip config by hand instead of _config_str
+- source: audit-cleanliness · files: backend/app/services/notification_service.py · status: TRIAGED
+- evidence: backend/app/services/notification_service.py:537 · The ntfy, Pushover, Discord, webhook and CallMeBot senders use _config_str(config, key) (defined at line 133), but these still use inline reads: `(config.get("device_key") or "").strip()` (537), `group`/`sound`/`level` (551-557), `(config.get("server") or "").strip().rstrip("/")` (602), `app_token` (606), `str(config.get("group_type") or "").strip()` (488), `str(config.get("message_thread_id") or "").strip()` (842), `(config.get("service") or "").strip()` (1312). Even within _send_ntfy, `server` is read raw with `config.get("server") or ...` while `topic` uses _config_str. There are two conventions for the same job in one file. · fix: Use _config_str for these reads, for example `_config_str(config, "server") or "https://api.day.app"`. Do the same for the other sites listed.
+
+### T-040 [P3] Success text "Message sent successfully" is a literal at 5 return sites although _http_result owns it as a default
+- source: audit-cleanliness · files: backend/app/services/notification_service.py · status: TRIAGED
+- evidence: backend/app/services/notification_service.py:502 · `return True, "Message sent successfully"` appears at 502 (_send_notify), 583 (_send_bark), 708 (_send_ntfy), 788 (_send_pushover) and 908 (telegram, 3-tuple). _http_result declares `success: str = "Message sent successfully"` at line 203. The text is the same, but there is no single constant, so a wording change misses sites. Both Bark and Pushover also repeat the long form `if status == 200: ... else:` instead of using the helper. · fix: Add a module constant `_SENT_OK = "Message sent successfully"`. Use it as the _http_result default and at these return sites.
+
+### T-041 [P3] _provider_to_dict re-lists on_print_pause_upcoming and on_app_message that the _EVENT_FLAG_FIELDS comprehension already emits
+- source: audit-cleanliness · files: backend/app/api/routes/notifications.py · status: TRIAGED
+- evidence: backend/app/api/routes/notifications.py:129 · Line 125 is `**{name: getattr(provider, name) for name in _EVENT_FLAG_FIELDS}`. Lines 129-130 then set `"on_print_pause_upcoming": bool(provider.on_print_pause_upcoming), "on_app_message": bool(provider.on_app_message),`. Both keys are on_* schema fields, so they are in the tuple, and the later dict key silently overrides the loop. This is the hand-enumerated leftover the _EVENT_FLAG_FIELDS refactor was meant to remove. The NULL-as-off coercion is the real intent, and it applies to only 2 of the ~45 flags. · fix: Either coerce every flag in the comprehension (`bool(getattr(...))`, if no flag column can legitimately be NULL-vs-False distinct) or keep a named `_NULLABLE_FLAGS = (...)` tuple and drop the stray literal keys.
+
+### T-042 [P3] Five test files each copy the full NotificationProvider fixture builder
+- source: audit-cleanliness · files: frontend/src/__tests__/components/NotificationProviderCardFlows.test.tsx · status: TRIAGED
+- evidence: frontend/src/__tests__/components/NotificationProviderCardFlows.test.tsx:21 · `function buildProvider(overrides: Partial<NotificationProvider> = {}): NotificationProvider { return { id: ..., provider_type: 'ntfy', enabled: true, config: {...}, on_print_start: false, on_print_complete: false, on_print_failed: false, on_print_stopped: false, ...` appears in NotificationProviderCardFlows.test.tsx:21, NotificationProviderCardStockAlerts.test.tsx:25, NotificationProviderCardAiFailureDetection.test.tsx:26 and NotificationPauseUpcoming.test.tsx:21. NotificationProviderCard.test.tsx:47 has a fifth, `createMockProvider`. Each is a full ~45-flag literal, so adding a provider flag needs five edits. The only differences are id, name and config. · fix: Create one shared `frontend/src/__tests__/fixtures/notificationProvider.ts` exporting buildProvider(overrides). Import it in the five files and pass the file-specific defaults as overrides. Better still, derive the flag defaults from EVENT_FLAGS.
+
+### T-055 [P3] Pushover print_confirm_request supplementary URL branch has no test
+- source: audit-tests · files: backend/app/services/notification_service.py · status: TRIAGED
+- evidence: backend/app/services/notification_service.py:1508 · coverage: `1508-1514` missing: `if event_type == "print_confirm_request" and _confirm_url and _confirm_url.startswith("http"): supplement_url = _confirm_url; supplement_url_title = "Confirm print outcome"`. `grep supplement|url_title` in backend/tests has no Pushover hit. The only place a Pushover user gets the confirm link is untested, including the guard against a non-http confirm_url. · fix: In backend/tests/unit/services/test_notification_service.py, call _send_to_provider with a pushover provider and event_type print_confirm_request, once with an http confirm_url in variables and once with a non-http or empty one. Patch only _send_pushover and assert the url and url_title kwargs.
+
+### T-056 [P3] on_print_pause_upcoming send path (2606-2621) is not covered by the notification test set
+- source: audit-tests · files: backend/app/services/notification_service.py · status: TRIAGED
+- evidence: backend/app/services/notification_service.py:2606 · coverage: `2606-2621` missing in the scoped runs. The method is only exercised in backend/tests/unit/test_pause_eta_2984.py and test_pause_warning_2984.py, which are outside the notif-named subset. The notification-scope tests do not assert the `time_to_pause` and `layer` variables or the `minutes=0` clamp (`max(minutes, 1) * 60`). · fix: In backend/tests/unit/services/test_notification_service.py, add a case that calls on_print_pause_upcoming with minutes=0 and asserts the rendered message contains '1m'. Patch only the providers lookup and the sender. Alternatively, confirm test_pause_eta_2984.py already asserts the clamp and the variables, and add the missing assertion there.
+
+### T-057 [P3] New TestDigestCatchUp re-uses the module-datetime patch that round 1 flagged for quiet hours
+- source: audit-tests · files: backend/app/services/notification_service.py · status: TRIAGED
+- evidence: backend/app/services/notification_service.py:3085 · `class FixedDatetime(datetime): @classmethod def now(cls, tz=None, _h=hh, _m=mm): return datetime(2026, 1, 1, _h, _m)` with `patch("backend.app.services.notification_service.datetime", FixedDatetime)` and `patch.object(service, "send_digest", side_effect=fake_send)`. It is deterministic. But it swaps the module's datetime, so any other datetime use in check_and_send_digests during the patch gets the frozen class. The test is also coupled to the `datetime.now()` call shape. T-014 moved quiet hours to a real clock, but these tests did not. · fix: In backend/tests/unit/services/test_notification_service.py, either inject the clock through a small helper such as `_now()` on the service, or limit the patch to that helper. The 60-minute-cap and midnight-wrap assertions can stay as they are.
+
+### T-059 [P3] NotificationLogViewer pagination and error-detail branches remain uncovered
+- source: audit-tests · files: frontend/src/components/NotificationLogViewer.tsx · status: TRIAGED
+- evidence: frontend/src/components/NotificationLogViewer.tsx:149 · vitest scoped coverage: `NotificationLogViewer.tsx 90.47% stmts | 85.1% branch | Uncovered 69-75,149-164,238`. Likewise NotificationTemplateEditor.tsx `99,238-266`, and NotificationProviderCard.tsx has several uncovered branch lines. The viewer test is new this round (191 lines). · fix: In frontend/src/__tests__/components/NotificationLogViewer.test.tsx, add cases for the filter and clear paths at 69-75 and the paging controls at 149-164. Add a template-editor reset or preview error case in NotificationTemplateEditor.test.tsx for 238-266.
+
+### T-060 [P3] Remaining untested route lines: forget_app_senders and the provider-changed and reaction-resync error swallowing
+- source: audit-tests · files: backend/app/api/routes/notifications.py · status: TRIAGED
+- evidence: backend/app/api/routes/notifications.py:544 · coverage: `routes/notifications.py 62-63, 74-75, 173, 379, 381, 383, 550-553, 560, 656, 679, 752-753` missing. 62-63 is `except Exception: logger.exception("Could not refresh Notify worker configuration")`. 74-75 is `except Exception as e: logger.warning("Telegram reaction poller resync failed"...)`. 550-553 is the `forget_app_senders` loop that resets app-message throttling for deleted keys and users. The first two exist so a provider save never fails because a worker raised. The third is the app-message rate-limit bookkeeping. · fix: In backend/tests/integration/test_notifications_api.py, patch notify_live_activities.providers_changed and telegram_reaction_poller.sync to raise, then POST or PATCH a provider and assert 2xx and that the row is saved. In test_notification_app_message.py, call forget_app_senders directly and assert the sender is no longer throttled.
+
+### T-061 [P3] Live-activity provider-change cleanup failure and fallback key-matching branches untested
+- source: audit-tests · files: backend/app/services/notify_live_activities.py · status: TRIAGED
+- evidence: backend/app/services/notify_live_activities.py:542 · coverage: `notify_live_activities.py 43-46, 218-222, 350-353, 422, 427, 447, 509, 536, 542-550, 564, 608, 624, 629, 650-651, 662-663, 744-745` missing. 542-550 is `await (await self._api()).end_activity(...)` with `except NotifyError: logger.warning("Notify Live Activity cleanup failed ...")`. 350-353 is lazy construction of the httpx client. 536-547 are the `_new_fallbacks` and 'restart after firmware supplied its job ID' branches of the row-to-print matching. A mis-match here ends or keeps the wrong lock-screen activity. · fix: In backend/tests/unit/services/test_notify_live_activities.py, add a provider-change test where end_activity raises NotifyError and assert the sweep continues and the row is still cleaned. Add a matching test for a row with print_key 'file:x' and no job_key meeting a snapshot with key 'job:..' and the same filename.
+
+
+## Notes for landing
+- Main has UNCOMMITTED notification edits in the primary checkout (26 files, the provider change) that touch the same files this campaign refactored (notifications.py, notification_service.py, models/schemas notification, AddNotificationModal, NotificationProviderCard): expect merge conflicts; resolve toward this branch's helpers.
+- T-033 deletes notification_logs older than 90 days on the first scheduler pass after deploy; the setting `notification_log_retention_days` has no Settings UI yet.
+- T-022: Telegram templates that deliberately used Markdown in the body now render it literally.
+- T-050 (HA service-domain restriction) and T-049 (opaque transport errors) were approved by the user but not worked; both are security findings and the natural first tasks of a follow-up campaign.
+- Preserved copy of PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log, the 8 findings JSON, the ALREADY_FILED lists and both briefs: `/Users/paultheis/Documents/Code/bambuddy/plans/refactor-campaign-notif-n1/`.
