@@ -999,6 +999,7 @@ CREATE TABLE user_inbox_preferences (
 Settings.key == "advanced_auth_enabled"
 Settings.key == "user_notifications_enabled"
 get_setting(db, "external_url"
+get_setting(db, "notification_log_retention_days"
 get_setting(db, "time_format"
 env vars:
 os.environ.get("HA_TOKEN", "")

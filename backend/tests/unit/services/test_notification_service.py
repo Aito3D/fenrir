@@ -753,6 +753,17 @@ class TestNtfyPriority:
         assert headers.get("Priority") == "5"
 
     @pytest.mark.asyncio
+    async def test_blank_server_falls_back_to_ntfy_sh(self, service):
+        """T-031: a blank server posts to https://ntfy.sh instead of failing."""
+        mock_client = self._mock_client(service)
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_client
+            success, _ = await service._send_ntfy({"server": "", "topic": "fenrir"}, "Title", "Body")
+
+        assert success is True
+        assert mock_client.post.call_args.args[0] == "https://ntfy.sh/fenrir"
+
+    @pytest.mark.asyncio
     async def test_priority_header_set_for_bare_key(self, service):
         """A map keyed by the bare event name resolves too, so a config written
         by hand (or by any future caller that drops the prefix) still works."""
@@ -3067,6 +3078,26 @@ class TestEmailProvider:
         smtp_ssl.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_blank_smtp_port_falls_back_to_587(self, service, smtp_config):
+        """T-031: a blank port connects on 587 instead of raising."""
+        captured: dict = {}
+        with patch("backend.app.services.notification_service.smtplib.SMTP", self._fake_smtp_class(captured)):
+            ok, _ = await service._send_email({**smtp_config, "smtp_port": ""}, "s", "b")
+        assert ok is True
+        assert captured["port"] == 587
+
+    @pytest.mark.asyncio
+    async def test_non_numeric_smtp_port_returns_fixed_error_without_connecting(self, service, smtp_config):
+        with (
+            patch("backend.app.services.notification_service.smtplib.SMTP") as smtp,
+            patch("backend.app.services.notification_service.smtplib.SMTP_SSL") as smtp_ssl,
+        ):
+            result = await service._send_email({**smtp_config, "smtp_port": "abc"}, "s", "b")
+        assert result == (False, "SMTP port must be a number")
+        smtp.assert_not_called()
+        smtp_ssl.assert_not_called()
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("exc", "expected"),
         [
@@ -3362,3 +3393,68 @@ class TestDigestCatchUp:
     async def test_gap_past_cap_sends_only_current_minute(self, test_engine):
         sent = await self._run(test_engine, [(8, 0), (9, 1)], extra=["08:30", "09:01"])
         assert sorted(sent) == ["08:00", "09:01"]
+
+
+class TestNotificationLogPrune:
+    """The scheduler prunes delivery-log rows past the retention window once a day (T-033)."""
+
+    @staticmethod
+    async def _run(test_engine, setting, ages, passes=1):
+        from datetime import timedelta
+
+        from sqlalchemy import select
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        from backend.app.models.notification import NotificationLog
+        from backend.app.models.settings import Settings
+        from backend.app.utils.local_time import utcnow_naive
+
+        factory = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with factory() as db:
+            if setting is not None:
+                db.add(Settings(key="notification_log_retention_days", value=setting))
+            prov = NotificationProvider(name="p", provider_type="webhook", enabled=True, config="{}")
+            db.add(prov)
+            await db.flush()
+            for age in ages:
+                db.add(
+                    NotificationLog(
+                        provider_id=prov.id,
+                        event_type="e",
+                        title=f"age-{age}",
+                        message="m",
+                        success=True,
+                        created_at=utcnow_naive() - timedelta(days=age),
+                    )
+                )
+            await db.commit()
+        service = NotificationService()
+        with patch("backend.app.core.database.async_session", factory):
+            for _ in range(passes):
+                await service._prune_notification_logs()
+        async with factory() as db:
+            return sorted((await db.execute(select(NotificationLog.title))).scalars().all())
+
+    @pytest.mark.asyncio
+    async def test_default_90_days(self, test_engine):
+        assert await self._run(test_engine, None, [10, 89, 91, 200]) == ["age-10", "age-89"]
+
+    @pytest.mark.asyncio
+    async def test_setting_overrides_default(self, test_engine):
+        assert await self._run(test_engine, "5", [1, 4, 6, 50]) == ["age-1", "age-4"]
+
+    @pytest.mark.asyncio
+    async def test_setting_clamped_to_one_day(self, test_engine):
+        assert await self._run(test_engine, "0", [0, 2]) == ["age-0"]
+
+    @pytest.mark.asyncio
+    async def test_runs_at_most_once_per_day(self, test_engine):
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        factory = async_sessionmaker(test_engine, expire_on_commit=False)
+        opened = MagicMock(side_effect=factory)
+        with patch("backend.app.core.database.async_session", opened):
+            service = NotificationService()
+            await service._prune_notification_logs()
+            await service._prune_notification_logs()
+        assert opened.call_count == 1

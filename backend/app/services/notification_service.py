@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.logging_filters import redact_refused_headers
@@ -30,6 +30,7 @@ from backend.app.models.notification_template import NotificationTemplate
 from backend.app.services.email_service import add_required_headers
 from backend.app.services.notify_client import NotifyClient, NotifyError, notify_credentials, notify_supports_photos
 from backend.app.services.print_confirmation import one_tap_url
+from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.notification_photos import save_notification_photo
 
 logger = logging.getLogger(__name__)
@@ -229,6 +230,7 @@ class NotificationService:
         self._template_cache: dict[str, NotificationTemplate] = {}
         self._digest_scheduler_task: asyncio.Task | None = None
         self._last_digest_check: str = ""  # "HH:MM" to avoid duplicate checks
+        self._last_log_prune = None  # date of the last delivery-log prune
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client.
@@ -620,7 +622,7 @@ class NotificationService:
         format), used by the outcome-confirmation event (#1898) to put
         one-tap Good/Reject buttons directly into the push notification.
         """
-        server = config.get("server", "https://ntfy.sh").rstrip("/")
+        server = (config.get("server") or "https://ntfy.sh").rstrip("/")
         topic = config.get("topic", "").strip()
         auth_token = config.get("auth_token", "").strip()
 
@@ -987,7 +989,10 @@ class NotificationService:
         inline image (#1792).
         """
         smtp_server = config.get("smtp_server", "").strip()
-        smtp_port = int(config.get("smtp_port", 587))
+        try:
+            smtp_port = int(config.get("smtp_port") or 587)
+        except (TypeError, ValueError):
+            return False, "SMTP port must be a number"
         username = config.get("username", "").strip()
         password = config.get("password", "").strip()
         from_email = config.get("from_email", "").strip()
@@ -3107,6 +3112,28 @@ class NotificationService:
             self._digest_scheduler_task = None
             logger.info("Notification digest scheduler stopped")
 
+    async def _prune_notification_logs(self):
+        """Delete delivery-log rows past notification_log_retention_days (default 90, min 1), once a day."""
+        from backend.app.api.routes.settings import get_setting
+        from backend.app.core.database import async_session
+
+        today = utcnow_naive().date()
+        if self._last_log_prune == today:
+            return
+        self._last_log_prune = today  # a failure retries tomorrow, not every minute
+        async with async_session() as db:
+            stored = await get_setting(db, "notification_log_retention_days")
+            try:
+                days = max(1, int(stored)) if stored is not None else 90
+            except (TypeError, ValueError):
+                days = 90
+            result = await db.execute(
+                delete(NotificationLog).where(NotificationLog.created_at < utcnow_naive() - timedelta(days=days))
+            )
+            await db.commit()
+            if result.rowcount > 0:
+                logger.info("Pruned %s notification log entries older than %s days", result.rowcount, days)
+
     async def _digest_scheduler_loop(self):
         """Background loop that checks for scheduled digests every minute."""
         while True:
@@ -3114,6 +3141,10 @@ class NotificationService:
                 await self.check_and_send_digests()
             except Exception as e:
                 logger.error("Error in digest scheduler: %s", e)
+            try:
+                await self._prune_notification_logs()
+            except Exception as e:
+                logger.error("Error pruning notification logs: %s", e)
 
             # Wait until the next minute
             await asyncio.sleep(60)

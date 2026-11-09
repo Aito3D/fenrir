@@ -322,4 +322,31 @@ describe('NotificationProviderCard — toggles and edit', () => {
 
     expect(await screen.findByText('Flow Provider')).toBeInTheDocument();
   });
+
+  it('shows an error toast when the update fails', async () => {
+    server.use(
+      http.patch('*/api/v1/notifications/7', () => HttpResponse.json({ detail: 'Update exploded' }, { status: 500 })),
+    );
+    const user = userEvent.setup();
+    render(<NotificationProviderCard provider={buildProvider()} onEdit={vi.fn()} />);
+    await expand(user);
+
+    await user.click(switchFor('Print Started'));
+
+    expect(await screen.findByText('Update exploded')).toBeInTheDocument();
+  });
+
+  it('shows an error toast when the delete fails', async () => {
+    server.use(
+      http.delete('*/api/v1/notifications/:id', () => HttpResponse.json({ detail: 'Delete exploded' }, { status: 500 })),
+    );
+    const user = userEvent.setup();
+    render(<NotificationProviderCard provider={buildProvider()} onEdit={vi.fn()} />);
+    await expand(user);
+
+    await user.click(screen.getByRole('button', { name: /edit/i }).nextElementSibling as HTMLElement);
+    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByText('Delete exploded')).toBeInTheDocument();
+  });
 });
