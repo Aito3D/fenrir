@@ -96,6 +96,30 @@ class TestNotificationsAPI:
         assert single.status_code == 200
         assert all(single.json()[flag] is False for flag in flags)
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_row_with_malformed_stored_times_is_still_listable(
+        self, async_client: AsyncClient, notification_provider_factory, db_session
+    ):
+        """A time saved before create/update validated it reads as null, not a 500."""
+        provider = await notification_provider_factory(name="Legacy Times")
+        await db_session.execute(
+            text(
+                "UPDATE notification_providers SET quiet_hours_start = '', quiet_hours_end = '8:00', "
+                "daily_digest_time = 'abc' WHERE id = :id"
+            ),
+            {"id": provider.id},
+        )
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/notifications/")
+
+        assert response.status_code == 200
+        listed = next(p for p in response.json() if p["name"] == "Legacy Times")
+        assert listed["quiet_hours_start"] is None
+        assert listed["quiet_hours_end"] == "08:00"
+        assert listed["daily_digest_time"] is None
+
     # ========================================================================
     # Create endpoints
     # ========================================================================
@@ -785,6 +809,62 @@ class TestNotificationTestAll:
         assert rows[bad_id].last_success is None
         assert rows[off_id].last_success is None
         assert rows[off_id].last_error is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_status_commit_failure_keeps_results_and_continues(
+        self, async_client: AsyncClient, notification_provider_factory, db_session
+    ):
+        from unittest.mock import AsyncMock, patch
+
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from backend.app.models.notification import NotificationProvider
+
+        first = await notification_provider_factory(name="First")
+        second = await notification_provider_factory(
+            name="Second", provider_type="webhook", config={"url": "https://x"}
+        )
+        third = await notification_provider_factory(name="Third", provider_type="discord", config={"w": "https://y"})
+        ids = [first.id, second.id, third.id]
+
+        real_commit = AsyncSession.commit
+        state = {"failed": False}
+
+        async def flaky_commit(self):
+            # Fail the first commit that carries pending provider changes (the first provider's status stamp).
+            if not state["failed"] and any(isinstance(o, NotificationProvider) for o in self.dirty):
+                state["failed"] = True
+                raise RuntimeError("disk full")
+            await real_commit(self)
+
+        async def fake_send(provider_type, config, db, attach_photo=False):
+            return (True, "sent") if provider_type == "ntfy" else (False, "boom")
+
+        with (
+            patch(_SEND_TEST, new=AsyncMock(side_effect=fake_send)) as send,
+            patch.object(AsyncSession, "commit", flaky_commit),
+        ):
+            response = await async_client.post("/api/v1/notifications/test-all")
+
+        assert state["failed"]
+        assert response.status_code == 200
+        data = response.json()
+        assert (data["tested"], data["success"], data["failed"]) == (3, 1, 2)
+        assert [r["provider_id"] for r in data["results"]] == ids
+        assert [r["provider_name"] for r in data["results"]] == ["First", "Second", "Third"]
+        assert [(r["success"], r["message"]) for r in data["results"]] == [
+            (True, "sent"),
+            (False, "boom"),
+            (False, "boom"),
+        ]
+        assert send.await_count == 3
+
+        db_session.expire_all()
+        rows = {p.id: p for p in (await db_session.execute(select(NotificationProvider))).scalars()}
+        assert rows[ids[0]].last_success is None  # its stamp was rolled back
+        assert rows[ids[1]].last_error == "boom"
+        assert rows[ids[2]].last_error == "boom"
 
     @pytest.mark.asyncio
     @pytest.mark.integration

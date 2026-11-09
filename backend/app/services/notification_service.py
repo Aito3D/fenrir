@@ -1813,7 +1813,18 @@ class NotificationService:
                         printer_id=printer_id,
                         printer_name=printer_name,
                     )
-                await self._update_provider_status(db, provider.id, success, error if not success else None)
+                if success:
+                    # The send outcome is final: a bookkeeping failure must not turn it into a failure.
+                    for attempt in (1, 2):
+                        try:
+                            await self._update_provider_status(db, provider.id, True, None)
+                            break
+                        except Exception:
+                            logger.warning(
+                                "Could not store the status of %s (attempt %d)", provider.name, attempt, exc_info=True
+                            )
+                else:
+                    await self._update_provider_status(db, provider.id, False, error)
                 await self._log_notification(
                     db=db,
                     provider_id=provider.id,

@@ -3268,6 +3268,83 @@ class TestFanOutSurvivesFailedFlushRealSession:
             assert "CallerPending" in names
         await engine.dispose()
 
+    @pytest.mark.asyncio
+    async def test_failed_status_write_after_successful_send_still_logs_success(self):
+        from sqlalchemy import event, select
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from backend.app.models.notification import NotificationLog
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda c: NotificationProvider.__table__.create(c))
+            await conn.run_sync(lambda c: NotificationLog.__table__.create(c))
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as db:
+            db.add(NotificationProvider(name="P1", provider_type="ntfy", config="{}"))
+            await db.commit()
+        async with sessions() as db:
+            providers = list((await db.execute(select(NotificationProvider))).scalars())
+            failed = []
+
+            @event.listens_for(db.sync_session, "after_flush")
+            def fail_status_flush(session, _ctx):
+                if not failed and any(isinstance(o, NotificationProvider) and o.last_success for o in session.dirty):
+                    failed.append(True)
+                    raise RuntimeError("database is locked")
+
+            service = NotificationService()
+            with patch.object(service, "_send_to_provider", new_callable=AsyncMock, return_value=(True, None)):
+                await service._send_to_providers(providers, "t", "m", db, event_type="e")
+
+            assert failed
+            logs = list((await db.execute(select(NotificationLog))).scalars())
+            assert [(entry.success, entry.error_message) for entry in logs] == [(True, None)]
+            provider = (await db.execute(select(NotificationProvider))).scalar_one()
+            assert provider.last_error is None
+            assert provider.last_success is not None  # the one retry stored it
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_failed_status_write_after_failed_send_keeps_the_database_error(self):
+        from sqlalchemy import event, select
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from backend.app.models.notification import NotificationLog
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda c: NotificationProvider.__table__.create(c))
+            await conn.run_sync(lambda c: NotificationLog.__table__.create(c))
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as db:
+            db.add(NotificationProvider(name="P1", provider_type="ntfy", config="{}"))
+            await db.commit()
+        async with sessions() as db:
+            providers = list((await db.execute(select(NotificationProvider))).scalars())
+            failed = []
+
+            @event.listens_for(db.sync_session, "after_flush")
+            def fail_status_flush(session, _ctx):
+                if not failed and any(isinstance(o, NotificationProvider) and o.last_error for o in session.dirty):
+                    failed.append(True)
+                    raise RuntimeError("database is locked")
+
+            service = NotificationService()
+            with patch.object(
+                service, "_send_to_provider", new_callable=AsyncMock, return_value=(False, "send refused")
+            ):
+                await service._send_to_providers(providers, "t", "m", db, event_type="e")
+
+            assert failed
+            logs = list((await db.execute(select(NotificationLog))).scalars())
+            assert len(logs) == 1
+            assert logs[0].success is False
+            assert "database is locked" in logs[0].error_message
+            provider = (await db.execute(select(NotificationProvider))).scalar_one()
+            assert "database is locked" in provider.last_error
+        await engine.dispose()
+
 
 class TestSharedHttpResult:
     """CallMeBot, Pushover and Discord share the opaque failure wording (T-004, user-approved)."""

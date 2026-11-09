@@ -308,6 +308,20 @@ class NotificationProviderResponse(NotificationProviderBase):
             data = {**data, **{name: False for name in flags if data.get(name, False) is None}}
         return data
 
+    @field_validator("quiet_hours_start", "quiet_hours_end", "daily_digest_time")
+    @classmethod
+    def validate_time_format(cls, v: str | None) -> str | None:
+        """Normalise a stored time when possible, read it as null otherwise.
+
+        A value saved before create/update validated times ("" or "8:00") must not
+        fail the whole response -- that 500s the list route and every provider
+        disappears. Create/Update keep the strict base validator.
+        """
+        try:
+            return _normalize_time_field(v)
+        except ValueError:
+            return None
+
     id: int
     last_success: datetime | None = None
     last_error: str | None = None
