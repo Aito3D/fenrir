@@ -53,17 +53,26 @@ _USER_AGENT = "Fenrir/1.0 (+https://github.com/maziggy/bambuddy)"
 TELEGRAM_REACTION_HINT = "React with \U0001f44d or \U0001f44e to record the outcome."
 
 
+def _escape_legacy_markdown(text: str) -> str:
+    # Backslashes are left alone: legacy Markdown has no escape for them.
+    for ch in ("_", "*", "`", "["):
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
 def telegram_markdown_escape(message: str) -> str:
-    """Escape underscores in the message body so Telegram Markdown parsing
-    doesn't break on job names like "A1_plate_8" or error codes like
-    "0300_0001". The title is already wrapped in *bold* markers, so only
-    escape after the first newline. Shared with the reaction poller, which
-    re-sends the stored body when it edits the prompt (#3046)."""
-    if "\n" in message:
-        title_part, body_part = message.split("\n", 1)
-        body_part = body_part.replace("_", "\\_")
-        return f"{title_part}\n{body_part}"
-    return message
+    """Escape the legacy-Markdown control characters (_ * ` [) in the user text
+    so job names like "A1_plate_8", "Benchy [v2]" or "a*b" render literally and
+    Telegram doesn't reject the message. The first line is the title wrapped in
+    *bold* markers by the caller: those two framing asterisks stay, the text
+    inside is escaped. Shared with the reaction poller, which re-sends the
+    stored body when it edits the prompt (#3046)."""
+    title_part, sep, body_part = message.partition("\n")
+    if len(title_part) >= 2 and title_part.startswith("*") and title_part.endswith("*"):
+        title_part = f"*{_escape_legacy_markdown(title_part[1:-1])}*"
+    else:
+        title_part = _escape_legacy_markdown(title_part)
+    return f"{title_part}{sep}{_escape_legacy_markdown(body_part)}"
 
 
 def _looks_like_cloudflare_challenge(response: httpx.Response) -> bool:
@@ -307,12 +316,17 @@ class NotificationService:
 
     def _render_template(self, template_str: str, variables: dict[str, Any]) -> str:
         """Render a template string with variables. Missing variables become empty."""
-        result = template_str
-        for key, value in variables.items():
-            result = result.replace("{" + key + "}", str(value) if value is not None else "")
-        # Remove any remaining unreplaced placeholders
-        result = re.sub(r"\{[a-z_]+\}", "", result)
-        return result
+
+        def repl(m: re.Match[str]) -> str:
+            key = m.group(1)
+            if key in variables:
+                value = variables[key]
+                return str(value) if value is not None else ""
+            # Unknown lowercase placeholders are removed; anything else stays literal.
+            return "" if re.fullmatch(r"[a-z_]+", key) else m.group(0)
+
+        # One pass: substituted values are never rescanned for placeholders.
+        return re.sub(r"\{([^{}]+)\}", repl, template_str)
 
     async def _format_eta(self, seconds: int | None, db: AsyncSession) -> str:
         """Format ETA as wall-clock time, respecting user's time_format setting."""
@@ -2222,9 +2236,6 @@ class NotificationService:
     ) -> None:
         """An Aito quote was paid — online link or covering retainer. No
         printer: fan out to every enabled provider with the flag on."""
-        providers = await self._get_providers_for_event(db, "on_aito_payment_received")
-        if not providers:
-            return
         variables = {
             "project_id": project_id,
             "client_name": client_name or "",
@@ -2233,10 +2244,7 @@ class NotificationService:
             "currency": currency,
             "source": source,
         }
-        title, message = await self._build_message_from_template(db, "aito_payment_received", variables)
-        await self._send_to_providers(
-            providers, title, message, db, "aito_payment_received", force_immediate=True, variables=variables
-        )
+        await self._notify_event(db, "aito_payment_received", variables)
 
     async def on_printer_offline(self, printer_id: int, printer_name: str, db: AsyncSession):
         """Handle printer offline event."""

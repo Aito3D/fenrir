@@ -3458,3 +3458,49 @@ class TestNotificationLogPrune:
             await service._prune_notification_logs()
             await service._prune_notification_logs()
         assert opened.call_count == 1
+
+
+class TestTelegramMarkdownEscape:
+    """Legacy Telegram Markdown control characters (_ * ` [) are literal in user text."""
+
+    def test_title_and_body_escape_all_control_characters(self):
+        from backend.app.services.notification_service import telegram_markdown_escape
+
+        out = telegram_markdown_escape("*Benchy [v2] a*b*\nx_y `z` [l](u)")
+        assert out == "*Benchy \\[v2] a\\*b*\nx\\_y \\`z\\` \\[l](u)"
+
+    def test_title_link_injection_is_neutralised(self):
+        from backend.app.services.notification_service import telegram_markdown_escape
+
+        assert telegram_markdown_escape("*[Confirm](https://e.x)*\nb") == "*\\[Confirm](https://e.x)*\nb"
+
+    def test_bold_framing_and_plain_text_stay(self):
+        from backend.app.services.notification_service import telegram_markdown_escape
+
+        assert telegram_markdown_escape("*Title*\nplain body.") == "*Title*\nplain body."
+        assert telegram_markdown_escape("plain") == "plain"
+
+    def test_underscores_still_escaped_and_backslashes_untouched(self):
+        from backend.app.services.notification_service import telegram_markdown_escape
+
+        assert (
+            telegram_markdown_escape("*T*\nA1_plate_8 \\already\\escaped_")
+            == "*T*\nA1\\_plate\\_8 \\already\\escaped\\_"
+        )
+
+
+class TestRenderTemplateOnePass:
+    """T-023: substituted values are never rescanned for placeholders."""
+
+    def test_value_placeholder_stays_literal(self):
+        svc = NotificationService()
+        out = svc._render_template("{filename} {good_url}", {"filename": "{good_url}", "good_url": "https://secret/ok"})
+        assert out == "{good_url} https://secret/ok"
+
+    def test_unknown_word_in_value_is_not_deleted(self):
+        svc = NotificationService()
+        assert svc._render_template("{printer}", {"printer": "my {word} printer"}) == "my {word} printer"
+
+    def test_missing_and_none_become_empty_and_ordinary_rendering_unchanged(self):
+        svc = NotificationService()
+        assert svc._render_template("a {x} {none} {missing} b", {"x": 1, "none": None}) == "a 1   b"

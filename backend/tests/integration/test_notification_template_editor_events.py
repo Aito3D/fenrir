@@ -41,3 +41,24 @@ async def test_the_confirmation_request_previews_its_link(async_client: AsyncCli
     body = response.json()["body"]
     assert SAMPLE_DATA["print_confirm_request"]["printer"] in body
     assert SAMPLE_DATA["print_confirm_request"]["confirm_url"] in body
+
+
+async def test_preview_does_not_expand_placeholders_inside_sample_values(async_client: AsyncClient, monkeypatch):
+    # SAMPLE_DATA has no brace values, so inject one (the route reads the module-level dict).
+    monkeypatch.setitem(
+        SAMPLE_DATA,
+        "print_start",
+        {**SAMPLE_DATA["print_start"], "printer": "{filename}", "filename": "Benchy.3mf"},
+    )
+
+    response = await async_client.post(
+        "/api/v1/notification-templates/preview",
+        json={
+            "event_type": "print_start",
+            "title_template": "{printer} {nope}",
+            "body_template": "{printer}|{filename}",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"title": "{filename} ", "body": "{filename}|Benchy.3mf"}
