@@ -290,6 +290,10 @@ class AitoProject(Base):
     # tracking site to link it to. Rides on the shipment: cleared with the
     # other six columns when the shipment is detached, never set without one.
     shipping_lta: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # The Books tax on every line of this card's quote; NULL = the services tax from settings
+    # (zoho_service_tax_id). `tax_pct` is its rate when set, so prices rescale without a Books read.
+    tax_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    tax_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
     # Content-fields revision, backing the detail panel's optimistic-
@@ -323,6 +327,7 @@ VERSIONED_FIELDS: frozenset[str] = frozenset(
         "shipping_phone",
         "shipping_price",
         "shipping_lta",
+        "tax_id",
     }
 )
 

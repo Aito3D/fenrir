@@ -6948,6 +6948,8 @@ async def _run_migrations(conn):
     # existing cards are backfilled once from the numbers their timeline
     # already recorded (see the function).
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN document_numbers TEXT")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN tax_id VARCHAR(50)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN tax_pct FLOAT")
     await _migrate_backfill_aito_document_numbers(conn)
 
     # Migration: a settled terminal charge whose event/acceptance failed is

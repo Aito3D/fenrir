@@ -5396,6 +5396,10 @@ export interface HeimdallStatus {
 
 export type AitoFlag = 'urgent' | 'sav' | 'pause' | 'fiverr';
 
+/** A Books sales tax a card may use (GET /aito/taxes). */
+export interface AitoTax { tax_id: string; name: string; pct: number }
+export interface AitoTaxes { default_tax_id: string; taxes: AitoTax[]; customer_tax_id: string | null }
+
 export interface AitoProject {
   id: number;
   description: string;
@@ -5557,6 +5561,9 @@ export interface AitoProject {
   shipping_price: number | null;
   /** Air waybill (LTA) number, null until the parcel is handed to Air Tahiti. */
   shipping_lta: string | null;
+  /** The card's Books tax; null = the default services tax (PUT /aito/{id}/tax). */
+  tax_id?: string | null;
+  tax_pct?: number | null;
   /** The Books item's display name; null when the catalogue never resolved. */
   shipping_service_name: string | null;
   /** Task titles, colours and step notes, one per line, capped at 2,000
@@ -9747,6 +9754,10 @@ export const api = {
     }),
   /** Give an expired quote 15 more days from today (written to Books first). */
   extendAitoQuote: (id: number) => request<AitoProject>(`/aito/${id}/quote-extend`, { method: 'POST' }),
+  getAitoTaxes: (clientId?: string | null) =>
+    request<AitoTaxes>(`/aito/taxes${clientId ? `?client_id=${encodeURIComponent(clientId)}` : ''}`),
+  setAitoProjectTax: (id: number, body: { tax_id: string; keep_price_before_tax: boolean; remember: boolean; expected_version?: number }) =>
+    request<AitoProject>(`/aito/${id}/tax`, { method: 'PUT', body: JSON.stringify(body) }),
   /** What Books would send if this quote were emailed now — preview only.
    *  The POST re-reads it server-side rather than trusting anything sent
    *  back, so this is safe to treat as display data. */

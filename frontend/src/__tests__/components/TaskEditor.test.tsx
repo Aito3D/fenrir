@@ -16,6 +16,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ToastProvider } from '../../contexts/ToastContext';
+import { CardTaxContext } from '../../components/aito/cardTax';
 import { TaskRow } from '../../components/aito/TaskRow';
 import { TaskEditor, reorderedTasks } from '../../components/aito/TaskEditor';
 import { computeImpressionCost, emptyTaskDraft, roundUpTo50, rowKey, taskTotal } from '../../utils/taskDraft';
@@ -1065,6 +1066,30 @@ describe('TaskRow', () => {
     grid.getByLabelText('Printing Discount');
     grid.getByRole('combobox', { name: /material/i });
     grid.getByLabelText('Colour');
+  });
+
+  it("printing: the calculator prices with the card's own tax rate (tax-free card)", async () => {
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 400, timeMin: 600, quantity: 1, color: 'Noir' },
+      impressionCost: 1,
+    };
+    const computed = async () => {
+      await waitFor(() => expect(screen.getByTestId('impression-computed')).not.toHaveTextContent('—'));
+      return Number(screen.getByTestId('impression-computed').textContent!.replace(/[^\d.]/g, ''));
+    };
+    const { unmount } = render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+    const at13 = await computed();
+    unmount();
+    render(
+      <CardTaxContext.Provider value={0}>
+        <ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />
+      </CardTaxContext.Provider>,
+    );
+    const taxFree = await computed();
+    // Both are rounded up to the next 50, so the tax-free price is the 13% one without its tax, give or take a tier.
+    expect(taxFree).toBeLessThan(at13);
+    expect(Math.abs(taxFree - at13 / 1.13)).toBeLessThanOrEqual(50);
   });
 
   it('printing: the band shows the line total and the cost split when a price can be computed', async () => {

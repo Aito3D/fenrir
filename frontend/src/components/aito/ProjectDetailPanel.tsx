@@ -18,6 +18,7 @@ import { ProjectDoneAction } from './ProjectDoneAction';
 import { footerCaptionKey, footerHasAction } from './panelFooter';
 import { ProjectProgress } from './ProjectProgress';
 import { BillingCard } from './BillingCard';
+import { CardTaxContext } from './cardTax';
 import { CreateInvoiceButton } from './CreateInvoiceButton';
 import { PanelCard } from './PanelCard';
 import { QuoteStatusActions } from './QuoteStatusActions';
@@ -695,6 +696,7 @@ function PanelHeader({
             {t('aito.amountDone', { amount: formatMoney(valueDone, currency) })}
             {' · '}
             {t('aito.stepsCount', { done: stepsDone, total: stepsTotal })}
+            {project.tax_id && ` · ${project.tax_pct === 0 ? t('aito.tax.free') : t('aito.tax.headerRate', { pct: `${project.tax_pct ?? 0}%` })}`}
           </span>
         </div>
       </div>
@@ -1429,6 +1431,7 @@ export function ProjectDetailPanel({
                   </span>
                 </div>
               </div>
+              <CardTaxContext.Provider value={project.tax_id ? project.tax_pct ?? null : null}>
               <TaskEditor
                 value={tasks}
                 onChange={onTasksChange}
@@ -1459,6 +1462,7 @@ export function ProjectDetailPanel({
                 // project data, so they need projects:read on top of aito:read.
                 orderId={hasPermission('projects:read') ? project.id : undefined}
               />
+              </CardTaxContext.Provider>
             </div>
 
             <div className="min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide px-5 py-4">

@@ -504,6 +504,30 @@ class AitoTaskTransfer(BaseModel):
         return value
 
 
+class AitoTax(BaseModel):
+    tax_id: str
+    name: str
+    pct: float
+
+
+class AitoTaxesResponse(BaseModel):
+    """GET /aito/taxes: the sales taxes a card may use, the default one, and the customer account's default."""
+
+    default_tax_id: str
+    taxes: list[AitoTax]
+    customer_tax_id: str | None = None
+
+
+class AitoTaxUpdate(BaseModel):
+    """PUT /aito/{id}/tax: the card's Books tax; the price before tax is kept (prices rescale) or the price the
+    client pays is kept (nothing moves). ``remember`` makes it the customer account's default for its next cards."""
+
+    tax_id: str = Field(min_length=1, max_length=50)
+    keep_price_before_tax: bool = True
+    remember: bool = False
+    expected_version: int | None = None
+
+
 class AitoClientTransfer(BaseModel, _OptionalClientContactChecks):
     """PUT /aito/{id}/transfer-client — the card changes hands. Same caps and
     phone/email checks as AitoProjectCreate's client fields; the social pair
@@ -859,6 +883,9 @@ class AitoProjectResponse(BaseModel):
     shipping_price: float | None
     # Air waybill number, None until the parcel is handed to the carrier.
     shipping_lta: str | None
+    # The card's Books tax; None = the default services tax.
+    tax_id: str | None = None
+    tax_pct: float | None = None
     # The Books item's display name, resolved from the cached catalogue so the
     # board list does not force the frontend to join every card against the
     # services endpoint. None when the catalogue has never resolved; the panel

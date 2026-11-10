@@ -72,6 +72,8 @@
       }
     ],
     "tasks_total": 0.0,
+    "tax_id": null,
+    "tax_pct": null,
     "terminal_payment": null,
     "tracking_configured": false,
     "version": 0
@@ -137,6 +139,8 @@
     "task_services": [],
     "task_steps": [],
     "tasks_total": 0.0,
+    "tax_id": null,
+    "tax_pct": null,
     "terminal_payment": null,
     "tracking_configured": false,
     "version": 0
@@ -214,6 +218,8 @@
       }
     ],
     "tasks_total": 3000.0,
+    "tax_id": null,
+    "tax_pct": null,
     "terminal_payment": null,
     "tracking_configured": false,
     "version": 0
@@ -304,6 +310,8 @@
       }
     ],
     "tasks_total": 8400.0,
+    "tax_id": null,
+    "tax_pct": null,
     "terminal_payment": null,
     "tracking_configured": false,
     "version": 0
@@ -381,6 +389,8 @@
       }
     ],
     "tasks_total": 0.0,
+    "tax_id": null,
+    "tax_pct": null,
     "terminal_payment": null,
     "tracking_configured": false,
     "version": 0

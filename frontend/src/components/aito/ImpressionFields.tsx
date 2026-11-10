@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef } from 'react';
+import { useContext, useEffect, useId, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
@@ -8,6 +8,7 @@ import { ImpressionCostBand } from './ImpressionCostBand';
 import { Money } from '../calculator/shared';
 import { inputCls, focusRingCls } from '../formStyles';
 import { CalcInput } from '../CalcInput';
+import { CardTaxContext } from './cardTax';
 import { useCurrency } from '../../hooks/useCurrency';
 import { IMPRESSION_COLOR_MAX, computeImpressionCost, roundUpTo50 } from '../../utils/taskDraft';
 import type { ImpressionDraft } from '../../utils/taskDraft';
@@ -169,7 +170,13 @@ export function ImpressionFields({
   });
   const filaments = filamentsQuery.data ?? [];
   const printers = printersQuery.data ?? [];
-  const defaults = defaultsQuery.data;
+  // The card's own tax rate replaces the calculator's, so a linked price follows PUT /aito/{id}/tax.
+  const cardTax = useContext(CardTaxContext);
+  const baseDefaults = defaultsQuery.data;
+  const defaults = useMemo(
+    () => (baseDefaults && cardTax !== null ? { ...baseDefaults, tax_pct: cardTax } : baseDefaults),
+    [baseDefaults, cardTax],
+  );
   const referenceDataLoading = filamentsQuery.isLoading || printersQuery.isLoading || defaultsQuery.isLoading;
   // `isLoading` (`isPending && isFetching`) goes FALSE the moment a query
   // settles into its error state — it is not "still loading OR failed", just

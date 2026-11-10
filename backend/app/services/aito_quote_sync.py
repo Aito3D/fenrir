@@ -36,7 +36,7 @@ import contextlib
 import logging
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from sqlalchemy import and_, case, or_, select, update
@@ -577,13 +577,18 @@ def _apply_estimate(project: AitoProject, estimate: dict, *, requeue_marker: int
     project.quote_sync_failures = 0
 
 
+def _with_card_tax(catalogue, project: AitoProject):
+    """The catalogue with the card's own Books tax on every line, when it has one (PUT /aito/{id}/tax)."""
+    return replace(catalogue, tax_id=project.tax_id) if project.tax_id else catalogue
+
+
 async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
     # Captured before the first read that decides what gets pushed (see
     # _requeue_marker's own comment), so _apply_estimate below can tell
     # whether an edit landed anywhere in the window this function is about to
     # open with its own network calls.
     requeue_marker = _requeue_marker_for(project.id)
-    catalogue = await zoho_service.get_catalogue(db)
+    catalogue = _with_card_tax(await zoho_service.get_catalogue(db), project)
     tasks = await load_export_tasks(db, project.id)
     # Captured in the same breath as `tasks` above, before ANY of this
     # function's own network calls (including the orphan lookup below) can
@@ -1200,7 +1205,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
             reset_failures=True,
         )
         return
-    catalogue = await zoho_service.get_catalogue(db)
+    catalogue = _with_card_tax(await zoho_service.get_catalogue(db), project)
     tasks = await load_export_tasks(db, project.id)
     # Captured in the same breath as `tasks` above, before this function's own
     # update_estimate_lines round trip below can open a window for a

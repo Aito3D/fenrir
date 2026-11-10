@@ -93,6 +93,9 @@ from backend.app.schemas.aito import (
     AitoTaskTransfer,
     AitoTaskTransferResponse,
     AitoTaskUpdate,
+    AitoTax,
+    AitoTaxesResponse,
+    AitoTaxUpdate,
     AitoTerminalPaymentView,
     AitoTrackingLinkResponse,
     AitoTrackingResponse,
@@ -102,6 +105,7 @@ from backend.app.schemas.aito import (
 from backend.app.services import (
     aito_payment_links,
     aito_quote_sync,
+    aito_tax,
     aito_tracking as tracking_service,
     project_print_trace,
 )
@@ -600,6 +604,8 @@ def _to_response(
         shipping_phone=p.shipping_phone,
         shipping_price=p.shipping_price,
         shipping_lta=p.shipping_lta,
+        tax_id=p.tax_id,
+        tax_pct=p.tax_pct,
         shipping_service_name=shipping_names.get(p.shipping_service or ""),
         search_text=search_text,
         document_numbers=document_numbers_of(p),
@@ -1916,6 +1922,11 @@ async def create_project(
     # away status. Never for a bare draft — it has not left the shop.
     if payload.quote_status in AWAY_STATUSES or payload.quote_status in ("accepted", "declined"):
         project.quote_sent_at = created_at or utc_now_naive()
+    # A new card starts with its customer account's tax; an imported quote keeps the one Books has.
+    if payload.client_id and not payload.quote_id:
+        default_tax = (await aito_tax.customer_defaults(db)).get(payload.client_id)
+        if default_tax:
+            project.tax_id, project.tax_pct = default_tax.get("tax_id"), default_tax.get("pct")
     for task_payload in payload.tasks:
         _reject_ticks_without_acceptance(payload.quote_status, task_payload.model_dump())
     db.add(project)
@@ -2156,6 +2167,25 @@ async def proofread_field(
         logger.warning("Aito proofread failed upstream: %s", e)
         raise HTTPException(status_code=502, detail=str(e)) from e
     return AitoProofreadResponse(text=corrected, model=model)
+
+
+@router.get("/taxes", response_model=AitoTaxesResponse)
+async def list_taxes(
+    client_id: str | None = Query(default=None, max_length=50),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """The sales taxes a card may use, from Books. Registered before /{project_id} (see /shipping/services)."""
+    try:
+        default_id, taxes = await aito_tax.sales_taxes(db)
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    customer = (await aito_tax.customer_defaults(db)).get(client_id or "") if client_id else None
+    return AitoTaxesResponse(
+        default_tax_id=default_id,
+        taxes=[AitoTax(**t) for t in taxes],
+        customer_tax_id=(customer or {}).get("tax_id"),
+    )
 
 
 @router.get("/shipping/services", response_model=AitoShippingServicesResponse)
@@ -4429,6 +4459,59 @@ async def update_project(
     return await _project_response(db, project)
 
 
+@router.put("/{project_id}/tax", response_model=AitoProjectResponse)
+async def set_project_tax(
+    project_id: int,
+    payload: AitoTaxUpdate,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Change the Books tax of every line of the card's quote, then push it. Refused once invoiced: the invoice
+    keeps its tax."""
+    project = await _get_active_project_or_404(db, project_id)
+    if payload.expected_version is not None and payload.expected_version != (project.version or 0):
+        raise _version_conflict()
+    _reject_task_change_if_invoiced(project)
+    try:
+        default_id, taxes = await aito_tax.sales_taxes(db)
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    by_id = {t["tax_id"]: t for t in taxes}
+    tax, default = by_id.get(payload.tax_id), by_id.get(default_id)
+    if tax is None or default is None:  # a stale or forged id, or Books lost the services tax
+        raise HTTPException(status_code=422, detail="Unknown tax")
+    # Re-claimed after the Books read above, as update_project does.
+    if payload.expected_version is not None and not await _claim_expected_version(
+        db, project, payload.expected_version
+    ):
+        raise _version_conflict()
+    before = {"tax_id": project.tax_id, "tax_pct": project.tax_pct}
+    tasks = (await _tasks_by_project(db, [project.id])).get(project.id, [])
+    aito_tax.apply_tax(project, tasks, tax, default, keep_price_before_tax=payload.keep_price_before_tax)
+    if payload.remember and project.client_id:
+        await aito_tax.remember_for_customer(db, project.client_id, None if tax is default else tax)
+    changed = before != {"tax_id": project.tax_id, "tax_pct": project.tax_pct}
+    was_pending = project.quote_sync_state == "pending"
+    if changed:
+        _mark_pending_if_ours(project)
+        await record(
+            db,
+            project.id,
+            "project.updated",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project.id,
+            changes=[{"field": "tax_id", "from": before["tax_id"], "to": project.tax_id}],
+        )
+    await _record_sync_queued_on_transition(db, project, was_pending)
+    await _commit_and_wake(db, project.quote_sync_state == "pending", project.id)
+    if changed:
+        await _broadcast_changed("update", project.id, _actor(current_user))
+    await db.refresh(project)
+    return await _project_response(db, project)
+
+
 @router.put("/{project_id}/transfer-client", response_model=AitoProjectResponse)
 async def transfer_client(
     project_id: int,
@@ -5730,6 +5813,8 @@ async def transfer_tasks(
             position=(highest_card + 1) if highest_card is not None else 0,
             status="active",
             client_id=source.client_id,
+            tax_id=source.tax_id,
+            tax_pct=source.tax_pct,
             client_name=source.client_name,
             client_phone=source.client_phone,
             client_email=source.client_email,

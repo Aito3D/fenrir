@@ -63,6 +63,7 @@ NOT_A_ROW_UPDATE = {
     "OrderBoardSettingsBody": "Fenrir: stored as settings, every field required",
     "LinesBody": "a Zoho Books order edit, not a database row",
     "ParcelEditBody": "a Zoho Books parcel edit, not a database row",
+    "AitoTaxUpdate": "Fenrir: a tax choice applied through its own rules, every field required or defaulted",
 }
 
 

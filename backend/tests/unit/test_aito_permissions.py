@@ -155,10 +155,11 @@ WRITE_ROUTES = [
     ("post_task_project", "post", f"/api/v1/aito/tasks/{_MISSING_ID}/project", {"name": "X"}),
     ("put_task_deliveries", "put", f"/api/v1/aito/tasks/{_MISSING_ID}/deliveries", {"revision_ids": []}),
     ("drop_task_files", "post", f"/api/v1/aito/tasks/{_MISSING_ID}/files", None),
+    ("set_project_tax", "put", f"/api/v1/aito/{_MISSING_ID}/tax", {"tax_id": "t1"}),
 ]
 
-assert len(WRITE_ROUTES) == 42, (
-    "WRITE_ROUTES must cover exactly the 42 gated write routes aito.py and aito_payments.py declare"
+assert len(WRITE_ROUTES) == 43, (
+    "WRITE_ROUTES must cover exactly the 43 gated write routes aito.py and aito_payments.py declare"
 )
 
 
@@ -199,6 +200,7 @@ _READ_ONLY_ROUTE_NAMES = {
     "get_client_rating",
     "get_client_quote_rating",
     "list_shipping_services",
+    "list_taxes",
     "list_tasks",
     "list_events",
     "get_invoice",
@@ -229,7 +231,7 @@ def test_every_aito_route_declares_a_permission_gate_or_is_the_public_tracking_r
     fails HERE, instead of silently escaping both this sweep and the
     hand-maintained WRITE_ROUTES parametrization below (T-037)."""
     aito_routes = _aito_routes()
-    assert len(aito_routes) == 67, (
+    assert len(aito_routes) == 69, (
         "aito.py + aito_payments.py grew or shrank a route — update this count, "
         "WRITE_ROUTES, and _READ_ONLY_ROUTE_NAMES/_PUBLIC_ROUTE_NAMES together"
     )

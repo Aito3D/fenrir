@@ -701,6 +701,10 @@ class ZohoService:
         payload = await self._request(db, "GET", "/estimates", params=params)
         return [_map_estimate_summary(e) for e in payload.get("estimates", [])]
 
+    async def list_taxes(self, db: AsyncSession) -> list[dict]:
+        """Every tax of the organisation (``tax_id``, ``tax_name``, ``tax_percentage``, ``status``)."""
+        return (await self._request(db, "GET", "/settings/taxes")).get("taxes") or []
+
     async def get_estimate(self, db: AsyncSession, estimate_id: str) -> dict:
         """The full estimate, line items included."""
         return (await self._request(db, "GET", f"/estimates/{_seg(estimate_id)}")).get("estimate", {})

@@ -23,6 +23,7 @@ import { RETAINER_STATUS_TEXT_TONE_CLASSES, retainerStatusLabelKey, retainerStat
 import { deriveQuoteSync } from './quoteSync';
 import { useAitoInvoice } from './useAitoInvoice';
 import { useAitoRetainers } from './useAitoRetainers';
+import { TaxRow } from './TaxRow';
 import { formatMoney } from '../../utils/pricing';
 
 /** Every Zoho document of the project — the quote, each retainer (deposit)
@@ -167,6 +168,7 @@ export function BillingCard({
             download={<QuoteDownloadButton project={project} variant="icon" />}
             send={canUpdate && project.quote_number ? <SendQuoteButton project={project} variant="icon" /> : undefined}
           />
+          <TaxRow project={project} canUpdate={canUpdate} currency={currency} />
           <RetainerRows project={project} canUpdate={canUpdate} currency={currency} />
           <InvoiceCard project={project} canUpdate={canUpdate} />
         </div>
