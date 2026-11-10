@@ -3,7 +3,9 @@
 Tests event-based notifications and toggle behavior.
 """
 
+import contextlib
 import json
+import smtplib
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -750,6 +752,17 @@ class TestNtfyPriority:
         assert success is True
         headers = mock_client.post.call_args.kwargs["headers"]
         assert headers.get("Priority") == "5"
+
+    @pytest.mark.asyncio
+    async def test_blank_server_falls_back_to_ntfy_sh(self, service):
+        """T-031: a blank server posts to https://ntfy.sh instead of failing."""
+        mock_client = self._mock_client(service)
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_client
+            success, _ = await service._send_ntfy({"server": "", "topic": "fenrir"}, "Title", "Body")
+
+        assert success is True
+        assert mock_client.post.call_args.args[0] == "https://ntfy.sh/fenrir"
 
     @pytest.mark.asyncio
     async def test_priority_header_set_for_bare_key(self, service):
@@ -3074,6 +3087,66 @@ class TestEmailProvider:
         # The plain-text part still has the URL; check it's there at least once.
         assert self.PHOTO_URL in raw
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("host", ["169.254.169.254", "0.0.0.0", "metadata.google.internal"])
+    async def test_refuses_dangerous_smtp_host_without_connecting(self, service, smtp_config, host):
+        """T-021: the LAN-service host policy applies before smtplib is touched."""
+        with (
+            patch("backend.app.services.notification_service.smtplib.SMTP") as smtp,
+            patch("backend.app.services.notification_service.smtplib.SMTP_SSL") as smtp_ssl,
+        ):
+            ok, detail = await service._send_email({**smtp_config, "smtp_server": host}, "s", "b")
+        assert ok is False
+        assert "SMTP server" in detail
+        smtp.assert_not_called()
+        smtp_ssl.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_blank_smtp_port_falls_back_to_587(self, service, smtp_config):
+        """T-031: a blank port connects on 587 instead of raising."""
+        captured: dict = {}
+        with patch("backend.app.services.notification_service.smtplib.SMTP", self._fake_smtp_class(captured)):
+            ok, _ = await service._send_email({**smtp_config, "smtp_port": ""}, "s", "b")
+        assert ok is True
+        assert captured["port"] == 587
+
+    @pytest.mark.asyncio
+    async def test_non_numeric_smtp_port_returns_fixed_error_without_connecting(self, service, smtp_config):
+        with (
+            patch("backend.app.services.notification_service.smtplib.SMTP") as smtp,
+            patch("backend.app.services.notification_service.smtplib.SMTP_SSL") as smtp_ssl,
+        ):
+            result = await service._send_email({**smtp_config, "smtp_port": "abc"}, "s", "b")
+        assert result == (False, "SMTP port must be a number")
+        smtp.assert_not_called()
+        smtp_ssl.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("exc", "expected"),
+        [
+            (
+                smtplib.SMTPConnectError(-1, b"SSH-2.0-OpenSSH internal-secret-banner"),
+                "SMTP error: could not complete the SMTP exchange (see server logs at debug level for details)",
+            ),
+            (
+                ConnectionRefusedError("Connection refused to 10.0.0.9"),
+                "Email error: could not send the email (see server logs at debug level for details)",
+            ),
+        ],
+    )
+    async def test_connection_failure_returns_fixed_wording(self, service, smtp_config, exc, expected):
+        with patch("backend.app.services.notification_service.smtplib.SMTP", side_effect=exc):
+            ok, detail = await service._send_email(smtp_config, "s", "b")
+        assert ok is False
+        assert detail == expected
+        assert "banner" not in detail and "10.0.0.9" not in detail
+
+    @pytest.mark.asyncio
+    async def test_success_text_unchanged(self, service, smtp_config):
+        with patch("backend.app.services.notification_service.smtplib.SMTP", self._fake_smtp_class({})):
+            assert await service._send_email(smtp_config, "s", "b") == (True, "Email sent successfully")
+
 
 class _FailedCommitSession:
     """Session double: one commit fails, then every statement raises until rollback()."""
@@ -3086,6 +3159,9 @@ class _FailedCommitSession:
 
     def add(self, _obj):
         pass
+
+    def begin_nested(self):
+        return contextlib.nullcontext()
 
     async def execute(self, _stmt):
         if self.needs_rollback:
@@ -3170,6 +3246,128 @@ class TestFanOutSurvivesFailedFlushRealSession:
             await db.commit()
         await engine.dispose()
 
+    @pytest.mark.asyncio
+    async def test_failed_bookkeeping_flush_keeps_the_callers_pending_row_and_loaded_rows(self):
+        from sqlalchemy import event, select
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from backend.app.models.notification import NotificationLog
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda c: NotificationProvider.__table__.create(c))
+            await conn.run_sync(lambda c: NotificationLog.__table__.create(c))
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as db:
+            db.add(NotificationProvider(name="P1", provider_type="ntfy", config="{}"))
+            db.add(NotificationProvider(name="Caller", provider_type="ntfy", config="{}"))
+            await db.commit()
+        async with sessions() as db:
+            providers = list(
+                (await db.execute(select(NotificationProvider).where(NotificationProvider.name == "P1"))).scalars()
+            )
+            callers_loaded = (
+                await db.execute(select(NotificationProvider).where(NotificationProvider.name == "Caller"))
+            ).scalar_one()
+            callers_pending = NotificationProvider(name="CallerPending", provider_type="ntfy", config="{}")
+            db.add(callers_pending)
+
+            failed = []
+
+            @event.listens_for(db.sync_session, "after_flush")
+            def fail_status_flush(session, _ctx):
+                if not failed and any(isinstance(o, NotificationProvider) and o.last_success for o in session.dirty):
+                    failed.append(True)
+                    raise RuntimeError("database is locked")
+
+            service = NotificationService()
+            with patch.object(service, "_send_to_provider", new_callable=AsyncMock, return_value=(True, None)):
+                await service._send_to_providers(providers, "t", "m", db, event_type="e")
+
+            assert failed
+            assert callers_loaded.name == "Caller"  # still readable, not expired
+            await db.commit()
+            names = {p.name for p in (await db.execute(select(NotificationProvider))).scalars()}
+            assert "CallerPending" in names
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_failed_status_write_after_successful_send_still_logs_success(self):
+        from sqlalchemy import event, select
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from backend.app.models.notification import NotificationLog
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda c: NotificationProvider.__table__.create(c))
+            await conn.run_sync(lambda c: NotificationLog.__table__.create(c))
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as db:
+            db.add(NotificationProvider(name="P1", provider_type="ntfy", config="{}"))
+            await db.commit()
+        async with sessions() as db:
+            providers = list((await db.execute(select(NotificationProvider))).scalars())
+            failed = []
+
+            @event.listens_for(db.sync_session, "after_flush")
+            def fail_status_flush(session, _ctx):
+                if not failed and any(isinstance(o, NotificationProvider) and o.last_success for o in session.dirty):
+                    failed.append(True)
+                    raise RuntimeError("database is locked")
+
+            service = NotificationService()
+            with patch.object(service, "_send_to_provider", new_callable=AsyncMock, return_value=(True, None)):
+                await service._send_to_providers(providers, "t", "m", db, event_type="e")
+
+            assert failed
+            logs = list((await db.execute(select(NotificationLog))).scalars())
+            assert [(entry.success, entry.error_message) for entry in logs] == [(True, None)]
+            provider = (await db.execute(select(NotificationProvider))).scalar_one()
+            assert provider.last_error is None
+            assert provider.last_success is not None  # the one retry stored it
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_failed_status_write_after_failed_send_keeps_the_database_error(self):
+        from sqlalchemy import event, select
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from backend.app.models.notification import NotificationLog
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda c: NotificationProvider.__table__.create(c))
+            await conn.run_sync(lambda c: NotificationLog.__table__.create(c))
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as db:
+            db.add(NotificationProvider(name="P1", provider_type="ntfy", config="{}"))
+            await db.commit()
+        async with sessions() as db:
+            providers = list((await db.execute(select(NotificationProvider))).scalars())
+            failed = []
+
+            @event.listens_for(db.sync_session, "after_flush")
+            def fail_status_flush(session, _ctx):
+                if not failed and any(isinstance(o, NotificationProvider) and o.last_error for o in session.dirty):
+                    failed.append(True)
+                    raise RuntimeError("database is locked")
+
+            service = NotificationService()
+            with patch.object(
+                service, "_send_to_provider", new_callable=AsyncMock, return_value=(False, "send refused")
+            ):
+                await service._send_to_providers(providers, "t", "m", db, event_type="e")
+
+            assert failed
+            logs = list((await db.execute(select(NotificationLog))).scalars())
+            assert len(logs) == 1
+            assert logs[0].success is False
+            assert "database is locked" in logs[0].error_message
+            provider = (await db.execute(select(NotificationProvider))).scalar_one()
+            assert "database is locked" in provider.last_error
+        await engine.dispose()
+
 
 class TestSharedHttpResult:
     """CallMeBot, Pushover and Discord share the opaque failure wording (T-004, user-approved)."""
@@ -3226,3 +3424,301 @@ class TestSharedHttpResult:
         success, message = await self._call(service, name, self._client(200), *args)
 
         assert (success, message) == (True, "Message sent successfully")
+
+
+class TestSettingsReadsDoNotAutoflush:
+    """Settings reads ahead of a network send must not flush the caller's pending rows (T-027, #2770)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("path", ["eta", "photo_url", "homeassistant"])
+    async def test_no_flush_before_send(self, path):
+        from sqlalchemy import event
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from backend.app.models.notification import NotificationLog
+        from backend.app.models.settings import Settings
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda c: Settings.__table__.create(c))
+            await conn.run_sync(lambda c: NotificationLog.__table__.create(c))
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as db:
+            flushes = []
+            event.listen(db.sync_session, "before_flush", lambda *_a: flushes.append(1))
+            db.add(NotificationLog(provider_id=1, event_type="e", title="t", message="m", success=True))
+            service = NotificationService()
+            if path == "eta":
+                await service._format_eta(60, db)
+            elif path == "photo_url":
+                await service._get_or_build_photo_url(db, b"img", "e")
+            else:
+                await service._send_homeassistant({}, "t", "m", db)
+            assert flushes == []
+        await engine.dispose()
+
+
+class TestDigestCatchUp:
+    """check_and_send_digests selects daily_digest_time in (last processed minute, now] (T-029)."""
+
+    @staticmethod
+    async def _run(test_engine, times_by_pass, extra=()):
+        """Run one pass per clock time; return the "HH:MM" of each digest sent, in order."""
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        factory = async_sessionmaker(test_engine, expire_on_commit=False)
+        service = NotificationService()
+        sent: list[str] = []
+        sched: dict[int, str] = {}
+
+        async with factory() as db:
+            for t in ("08:00", "08:01", "08:02", "08:03", "00:00", "00:01", "23:59", "bad", *extra):
+                p = NotificationProvider(
+                    name=f"p-{t}",
+                    provider_type="webhook",
+                    enabled=True,
+                    config="{}",
+                    daily_digest_enabled=True,
+                    daily_digest_time=t,
+                )
+                db.add(p)
+                await db.flush()
+                sched[p.id] = t
+            await db.commit()
+
+        async def fake_send(pid):
+            sent.append(sched[pid])
+
+        for hh, mm in times_by_pass:
+
+            class FixedDatetime(datetime):
+                @classmethod
+                def now(cls, tz=None, _h=hh, _m=mm):
+                    return datetime(2026, 1, 1, _h, _m)
+
+            with (
+                patch("backend.app.services.notification_service.datetime", FixedDatetime),
+                patch("backend.app.core.database.async_session", factory),
+                patch.object(service, "send_digest", side_effect=fake_send),
+            ):
+                await service.check_and_send_digests()
+        return sent
+
+    @pytest.mark.asyncio
+    async def test_catches_up_stepped_over_minutes_once_each(self, test_engine):
+        sent = await self._run(test_engine, [(8, 0), (8, 2), (8, 2), (8, 3)])
+        assert sorted(sent) == ["08:00", "08:01", "08:02", "08:03"]
+
+    @pytest.mark.asyncio
+    async def test_no_double_send_across_consecutive_passes(self, test_engine):
+        sent = await self._run(test_engine, [(8, 0), (8, 1), (8, 2)])
+        assert sorted(sent) == ["08:00", "08:01", "08:02"]
+
+    @pytest.mark.asyncio
+    async def test_midnight_wrap(self, test_engine):
+        sent = await self._run(test_engine, [(23, 59), (0, 1)])
+        assert sorted(sent) == ["00:00", "00:01", "23:59"]
+
+    @pytest.mark.asyncio
+    async def test_first_pass_sends_only_current_minute(self, test_engine):
+        assert await self._run(test_engine, [(8, 2)]) == ["08:02"]
+
+    @pytest.mark.asyncio
+    async def test_malformed_time_never_matches(self, test_engine):
+        sent = await self._run(test_engine, [(0, 0), (23, 59)])
+        assert "bad" not in sent
+
+    @pytest.mark.asyncio
+    async def test_backward_clock_step_sends_only_current_minute(self, test_engine):
+        sent = await self._run(test_engine, [(8, 0), (7, 59)], extra=["07:59"])
+        assert sorted(sent) == ["07:59", "08:00"]
+
+    @pytest.mark.asyncio
+    async def test_gap_at_cap_is_caught_up(self, test_engine):
+        sent = await self._run(test_engine, [(8, 0), (9, 0)], extra=["08:30", "09:00"])
+        assert sorted(sent) == ["08:00", "08:01", "08:02", "08:03", "08:30", "09:00"]
+
+    @pytest.mark.asyncio
+    async def test_gap_past_cap_sends_only_current_minute(self, test_engine):
+        sent = await self._run(test_engine, [(8, 0), (9, 1)], extra=["08:30", "09:01"])
+        assert sorted(sent) == ["08:00", "09:01"]
+
+
+class TestNotificationLogPrune:
+    """The scheduler prunes delivery-log rows past the retention window once a day (T-033)."""
+
+    @staticmethod
+    async def _run(test_engine, setting, ages, passes=1):
+        from datetime import timedelta
+
+        from sqlalchemy import select
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        from backend.app.models.notification import NotificationLog
+        from backend.app.models.settings import Settings
+        from backend.app.utils.local_time import utcnow_naive
+
+        factory = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with factory() as db:
+            if setting is not None:
+                db.add(Settings(key="notification_log_retention_days", value=setting))
+            prov = NotificationProvider(name="p", provider_type="webhook", enabled=True, config="{}")
+            db.add(prov)
+            await db.flush()
+            for age in ages:
+                db.add(
+                    NotificationLog(
+                        provider_id=prov.id,
+                        event_type="e",
+                        title=f"age-{age}",
+                        message="m",
+                        success=True,
+                        created_at=utcnow_naive() - timedelta(days=age),
+                    )
+                )
+            await db.commit()
+        service = NotificationService()
+        with patch("backend.app.core.database.async_session", factory):
+            for _ in range(passes):
+                await service._prune_notification_logs()
+        async with factory() as db:
+            return sorted((await db.execute(select(NotificationLog.title))).scalars().all())
+
+    @pytest.mark.asyncio
+    async def test_default_90_days(self, test_engine):
+        assert await self._run(test_engine, None, [10, 89, 91, 200]) == ["age-10", "age-89"]
+
+    @pytest.mark.asyncio
+    async def test_setting_overrides_default(self, test_engine):
+        assert await self._run(test_engine, "5", [1, 4, 6, 50]) == ["age-1", "age-4"]
+
+    @pytest.mark.asyncio
+    async def test_setting_clamped_to_one_day(self, test_engine):
+        assert await self._run(test_engine, "0", [0, 2]) == ["age-0"]
+
+    @pytest.mark.asyncio
+    async def test_runs_at_most_once_per_day(self, test_engine):
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        factory = async_sessionmaker(test_engine, expire_on_commit=False)
+        opened = MagicMock(side_effect=factory)
+        with patch("backend.app.core.database.async_session", opened):
+            service = NotificationService()
+            await service._prune_notification_logs()
+            await service._prune_notification_logs()
+        assert opened.call_count == 1
+
+
+class TestTelegramMarkdownEscape:
+    """Legacy Telegram Markdown control characters (_ * ` [) are literal in user text."""
+
+    def test_title_and_body_escape_all_control_characters(self):
+        from backend.app.services.notification_service import telegram_markdown_escape
+
+        out = telegram_markdown_escape("*Benchy [v2] a*b*\nx_y `z` [l](u)")
+        assert out == "*Benchy \\[v2] a\\*b*\nx\\_y \\`z\\` \\[l](u)"
+
+    def test_title_link_injection_is_neutralised(self):
+        from backend.app.services.notification_service import telegram_markdown_escape
+
+        assert telegram_markdown_escape("*[Confirm](https://e.x)*\nb") == "*\\[Confirm](https://e.x)*\nb"
+
+    def test_bold_framing_and_plain_text_stay(self):
+        from backend.app.services.notification_service import telegram_markdown_escape
+
+        assert telegram_markdown_escape("*Title*\nplain body.") == "*Title*\nplain body."
+        assert telegram_markdown_escape("plain") == "plain"
+
+    def test_underscores_still_escaped_and_backslashes_untouched(self):
+        from backend.app.services.notification_service import telegram_markdown_escape
+
+        assert (
+            telegram_markdown_escape("*T*\nA1_plate_8 \\already\\escaped_")
+            == "*T*\nA1\\_plate\\_8 \\already\\escaped\\_"
+        )
+
+
+class TestRenderTemplateOnePass:
+    """T-023: substituted values are never rescanned for placeholders."""
+
+    def test_value_placeholder_stays_literal(self):
+        svc = NotificationService()
+        out = svc._render_template("{filename} {good_url}", {"filename": "{good_url}", "good_url": "https://secret/ok"})
+        assert out == "{good_url} https://secret/ok"
+
+    def test_unknown_word_in_value_is_not_deleted(self):
+        svc = NotificationService()
+        assert svc._render_template("{printer}", {"printer": "my {word} printer"}) == "my {word} printer"
+
+    def test_missing_and_none_become_empty_and_ordinary_rendering_unchanged(self):
+        svc = NotificationService()
+        assert svc._render_template("a {x} {none} {missing} b", {"x": 1, "none": None}) == "a 1   b"
+
+
+class TestSenderConfigNonStringValues:
+    """T-032: stored config values that are not strings are read, not an AttributeError."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @staticmethod
+    def _http_client():
+        response = MagicMock(status_code=200, text="ok")
+        response.json.return_value = {"ok": True}
+        client = MagicMock()
+        client.post = AsyncMock(return_value=response)
+        return client
+
+    @pytest.mark.asyncio
+    async def test_telegram_numeric_chat_id_is_sent_to(self, service):
+        client = self._http_client()
+        with patch.object(service, "_get_client", new_callable=AsyncMock, return_value=client):
+            ok, _ = await service._send_telegram({"bot_token": "123:abc", "chat_id": -1001234567890}, "M")
+
+        assert ok is True
+        assert client.post.call_args.kwargs["json"]["chat_id"] == "-1001234567890"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("auth_enabled", "expect_login"),
+        [(True, True), (False, False), ("false", False), ("true", True), (None, True)],
+    )
+    async def test_email_auth_enabled_bool_and_text(self, service, auth_enabled, expect_login):
+        captured: dict = {}
+        config = {
+            "smtp_server": "smtp.example.com",
+            "smtp_port": 587,
+            "username": "alice",
+            "password": "secret",
+            "from_email": "fenrir@example.com",
+            "to_email": "alice@example.com",
+            "security": "starttls",
+            "auth_enabled": auth_enabled,
+        }
+        smtp = TestEmailProvider._fake_smtp_class(captured)
+        with patch("backend.app.services.notification_service.smtplib.SMTP", smtp):
+            ok, _ = await service._send_email(config, "T", "M")
+
+        assert ok is True
+        assert ("login" in captured) is expect_login
+
+    @pytest.mark.asyncio
+    async def test_ntfy_null_optional_field_behaves_as_missing(self, service):
+        client = self._http_client()
+        with patch.object(service, "_get_client", new_callable=AsyncMock, return_value=client):
+            ok, _ = await service._send_ntfy({"topic": "fenrir", "auth_token": None}, "T", "M")
+
+        assert ok is True
+        assert "Authorization" not in client.post.call_args.kwargs["headers"]
+
+    @pytest.mark.asyncio
+    async def test_webhook_null_auth_header_behaves_as_missing(self, service):
+        client = self._http_client()
+        with patch.object(service, "_get_client", new_callable=AsyncMock, return_value=client):
+            ok, _ = await service._send_webhook(
+                {"webhook_url": "https://example.com/hook", "auth_header": None}, "T", "M"
+            )
+
+        assert ok is True
+        assert "Authorization" not in (client.post.call_args.kwargs.get("headers") or {})

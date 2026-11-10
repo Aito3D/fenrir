@@ -9,6 +9,7 @@ import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
 import { Toggle } from './Toggle';
+import { useToast } from '../contexts/ToastContext';
 import { EVENT_FLAGS, CARD_BADGES_BEFORE_VERDICT, CARD_BADGES_AFTER_VERDICT, CARD_SECTIONS, type CardFlag } from './notificationEventFlags';
 import { isNotifyPushOnlyTarget, isNotifyPhotoUnsupported } from '../utils/notify';
 
@@ -34,11 +35,16 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
   const linkedPrinter = printers?.find(p => p.id === provider.printer_id);
 
+  const { showToast } = useToast();
+
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: (data: NotificationProviderUpdate) => api.updateNotificationProvider(provider.id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notification-providers'] });
+    },
+    onError: (err: Error) => {
+      showToast(err.message, 'error');
     },
   });
 
@@ -47,6 +53,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
     mutationFn: () => api.deleteNotificationProvider(provider.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notification-providers'] });
+    },
+    onError: (err: Error) => {
+      showToast(err.message, 'error');
     },
   });
 

@@ -1994,6 +1994,14 @@
      "title": "On Stock Reorder Alert",
      "type": "boolean"
     },
+    "printer_error_max_level": {
+     "default": 2,
+     "description": "Highest Bambu alert level to notify: 1 errors, 2 +warnings, 3 +notices",
+     "maximum": 3.0,
+     "minimum": 1.0,
+     "title": "Printer Error Max Level",
+     "type": "integer"
+    },
     "printer_id": {
      "anyOf": [
       {
@@ -2365,6 +2373,14 @@
      "description": "Notify when an inventory SKU hits its reorder point",
      "title": "On Stock Reorder Alert",
      "type": "boolean"
+    },
+    "printer_error_max_level": {
+     "default": 2,
+     "description": "Highest Bambu alert level to notify: 1 errors, 2 +warnings, 3 +notices",
+     "maximum": 3.0,
+     "minimum": 1.0,
+     "title": "Printer Error Max Level",
+     "type": "integer"
     },
     "printer_id": {
      "anyOf": [
@@ -2907,6 +2923,19 @@
       }
      ],
      "title": "On Stock Reorder Alert"
+    },
+    "printer_error_max_level": {
+     "anyOf": [
+      {
+       "maximum": 3.0,
+       "minimum": 1.0,
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Printer Error Max Level"
     },
     "printer_id": {
      "anyOf": [

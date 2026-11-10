@@ -1603,8 +1603,8 @@
  "telegram_markdown_escape": {
   "": "",
   "100% done \u2014 \u00e9t\u00e9.3mf": "100% done \u2014 \u00e9t\u00e9.3mf",
-  "\\already\\escaped_": "\\already\\escaped_",
-  "a_b*c[d]e(f)~g`h>i#j+k-l=m|n{o}p.q!r": "a_b*c[d]e(f)~g`h>i#j+k-l=m|n{o}p.q!r",
+  "\\already\\escaped_": "\\already\\escaped\\_",
+  "a_b*c[d]e(f)~g`h>i#j+k-l=m|n{o}p.q!r": "a\\_b\\*c\\[d]e(f)~g\\`h>i#j+k-l=m|n{o}p.q!r",
   "plain": "plain"
  },
  "telegram_reaction_hint": "React with \ud83d\udc4d or \ud83d\udc4e to record the outcome.",

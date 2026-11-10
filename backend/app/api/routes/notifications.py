@@ -314,12 +314,20 @@ async def test_all_notification_providers(
     results = []
     success_count = 0
     failed_count = 0
+    # Snapshot what the loop reads: a rollback after a failed commit expires every loaded row.
+    snapshots = [(p.id, p.name, p.provider_type, p.config, p.attach_photo) for p in providers]
 
-    for provider in providers:
-        config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
-        success, message = await notification_service.send_test_notification(
-            provider.provider_type, config, db, attach_photo=provider.attach_photo
-        )
+    for provider, (provider_id, provider_name, provider_type, raw_config, attach_photo) in zip(
+        providers, snapshots, strict=True
+    ):
+        try:
+            config = json.loads(raw_config) if isinstance(raw_config, str) else raw_config
+        except (json.JSONDecodeError, TypeError):
+            success, message = False, "Stored configuration is not valid JSON"
+        else:
+            success, message = await notification_service.send_test_notification(
+                provider_type, config, db, attach_photo=attach_photo
+            )
 
         # Update provider status
         if success:
@@ -332,15 +340,19 @@ async def test_all_notification_providers(
 
         results.append(
             {
-                "provider_id": provider.id,
-                "provider_name": provider.name,
-                "provider_type": provider.provider_type,
+                "provider_id": provider_id,
+                "provider_name": provider_name,
+                "provider_type": provider_type,
                 "success": success,
                 "message": message,
             }
         )
-
-    await db.commit()
+        # Release the write transaction before the next provider's network send.
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.warning("test-all: could not store the test status for provider %s", provider_id, exc_info=True)
 
     return {
         "tested": len(providers),

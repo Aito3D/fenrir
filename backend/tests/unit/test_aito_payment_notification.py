@@ -70,21 +70,12 @@ async def test_accept_from_a_payment_notifies_subscribed_providers(db_session, m
     await db_session.refresh(p)
     sent = []
 
-    async def capture(
-        providers,
-        title,
-        message,
-        db,
-        event_type="unknown",
-        printer_id=None,
-        printer_name=None,
-        force_immediate=False,
-        image_data=None,
-        variables=None,
-    ):
-        sent.append((title, message, event_type, variables))
+    # Patch the single-provider layer so the real _send_to_providers signature is exercised.
+    async def capture(provider, title, message, db=None, **kw):
+        sent.append((title, message, kw["event_type"], kw["variables"]))
+        return True, ""
 
-    monkeypatch.setattr(notification_service, "_send_to_providers", capture)
+    monkeypatch.setattr(notification_service, "_send_to_provider", capture)
     await accept_quote(db_session, p, source="payment_link", detail={"amount": 12500, "reference": "DEV-1"})
     assert len(sent) == 1
     title, message, event_type, variables = sent[0]
@@ -138,3 +129,36 @@ async def test_accept_quote_with_user_source_does_not_notify(db_session, monkeyp
     result = await accept_quote(db_session, p, source="user", actor_name="paul")
     assert result is True
     assert called == []
+
+
+@pytest.mark.asyncio
+async def test_payment_notification_reaches_provider_through_real_fan_out(db_session, monkeypatch):
+    """Regression: on_aito_payment_received used to pass a removed force_immediate kwarg
+    to _send_to_providers (TypeError on every call, so nothing was ever delivered)."""
+    db_session.add(
+        NotificationProvider(
+            name="hook",
+            provider_type="webhook",
+            enabled=True,
+            config=json.dumps({"webhook_url": "https://example.com/x"}),
+            on_aito_payment_received=True,
+        )
+    )
+    await db_session.commit()
+    got = []
+
+    async def capture(provider, title, message, db=None, **kw):
+        got.append((provider.name, title, message))
+        return True, ""
+
+    monkeypatch.setattr(notification_service, "_send_to_provider", capture)
+    await notification_service.on_aito_payment_received(
+        db_session,
+        project_id=7,
+        client_name="ACME",
+        reference="DEV-1",
+        amount=100,
+        currency="XPF",
+        source="payment_link",
+    )
+    assert len(got) == 1 and got[0][0] == "hook"

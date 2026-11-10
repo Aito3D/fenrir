@@ -141,7 +141,9 @@ class NotificationProviderBase(BaseModel)
     def validate_time_format(cls, v: str | None) -> str | None
 class NotificationProviderCreate(NotificationProviderBase)
 class NotificationProviderResponse(NotificationProviderBase)
+    def validate_time_format(cls, v: str | None) -> str | None
 class NotificationProviderUpdate(IgnoresNullForRequiredColumns)
+    def validate_time_format(cls, v: str | None) -> str | None
 class NotificationTestRequest(BaseModel)
 class NotificationTestResponse(BaseModel)
 class ProviderType(StrEnum)
@@ -188,7 +190,7 @@ class NotificationService(object)
     async def on_print_pause_upcoming(self, printer_id: int, printer_name: str, filename: str, *, minutes: int, layer: int, total_layers: int, db: sqlalchemy.ext.asyncio.session.AsyncSession)
     async def on_print_progress(self, printer_id: int, printer_name: str, filename: str, progress: int, db: sqlalchemy.ext.asyncio.session.AsyncSession, remaining_time: int | None = None, image_data: bytes | None = None)
     async def on_print_start(self, printer_id: int, printer_name: str, data: dict, db: sqlalchemy.ext.asyncio.session.AsyncSession, archive_data: dict | None = None)
-    async def on_printer_error(self, printer_id: int | None, printer_name: str, error_type: str, db: sqlalchemy.ext.asyncio.session.AsyncSession, error_detail: str | None = None, image_data: bytes | None = None)
+    async def on_printer_error(self, printer_id: int | None, printer_name: str, error_type: str, db: sqlalchemy.ext.asyncio.session.AsyncSession, error_detail: str | None = None, image_data: bytes | None = None, severity: int | None = None)
     async def on_printer_offline(self, printer_id: int, printer_name: str, db: sqlalchemy.ext.asyncio.session.AsyncSession)
     async def on_queue_completed(self, completed_count: int, db: sqlalchemy.ext.asyncio.session.AsyncSession)
     async def on_queue_job_added(self, job_name: str, target: str, db: sqlalchemy.ext.asyncio.session.AsyncSession, printer_id: int | None = None, printer_name: str | None = None)
@@ -315,6 +317,7 @@ class NotificationProviderBase(BaseModel)
     on_aito_payment_received: <class 'bool'>  default=False
     on_printer_offline: <class 'bool'>  default=False
     on_printer_error: <class 'bool'>  default=False
+    printer_error_max_level: <class 'int'>  default=2
     on_ai_failure_detection: <class 'bool'>  default=False
     on_filament_low: <class 'bool'>  default=False
     on_maintenance_due: <class 'bool'>  default=False
@@ -364,6 +367,7 @@ class NotificationProviderCreate(NotificationProviderBase)
     on_aito_payment_received: <class 'bool'>  default=False
     on_printer_offline: <class 'bool'>  default=False
     on_printer_error: <class 'bool'>  default=False
+    printer_error_max_level: <class 'int'>  default=2
     on_ai_failure_detection: <class 'bool'>  default=False
     on_filament_low: <class 'bool'>  default=False
     on_maintenance_due: <class 'bool'>  default=False
@@ -413,6 +417,7 @@ class NotificationProviderResponse(NotificationProviderBase)
     on_aito_payment_received: <class 'bool'>  default=False
     on_printer_offline: <class 'bool'>  default=False
     on_printer_error: <class 'bool'>  default=False
+    printer_error_max_level: <class 'int'>  default=2
     on_ai_failure_detection: <class 'bool'>  default=False
     on_filament_low: <class 'bool'>  default=False
     on_maintenance_due: <class 'bool'>  default=False
@@ -468,6 +473,7 @@ class NotificationProviderUpdate(IgnoresNullForRequiredColumns)
     on_aito_payment_received: bool | None  default=None
     on_printer_offline: bool | None  default=None
     on_printer_error: bool | None  default=None
+    printer_error_max_level: int | None  default=None
     on_ai_failure_detection: bool | None  default=None
     on_filament_low: bool | None  default=None
     on_maintenance_due: bool | None  default=None
@@ -763,6 +769,7 @@ CREATE TABLE notification_providers (
 	on_aito_payment_received BOOLEAN, 
 	on_printer_offline BOOLEAN, 
 	on_printer_error BOOLEAN, 
+	printer_error_max_level INTEGER DEFAULT '2' NOT NULL, 
 	on_ai_failure_detection BOOLEAN DEFAULT 0, 
 	on_filament_low BOOLEAN, 
 	on_maintenance_due BOOLEAN, 
@@ -823,6 +830,7 @@ CREATE TABLE notification_providers (
 	on_aito_payment_received BOOLEAN, 
 	on_printer_offline BOOLEAN, 
 	on_printer_error BOOLEAN, 
+	printer_error_max_level INTEGER DEFAULT '2' NOT NULL, 
 	on_ai_failure_detection BOOLEAN DEFAULT false, 
 	on_filament_low BOOLEAN, 
 	on_maintenance_due BOOLEAN, 
@@ -998,6 +1006,7 @@ CREATE TABLE user_inbox_preferences (
 Settings.key == "advanced_auth_enabled"
 Settings.key == "user_notifications_enabled"
 get_setting(db, "external_url"
+get_setting(db, "notification_log_retention_days"
 get_setting(db, "time_format"
 env vars:
 os.environ.get("HA_TOKEN", "")
@@ -1277,63 +1286,64 @@ backend/app/models/__init__.py: from backend.app.models.notification_template im
 4572:            "ALTER TABLE notification_providers ADD COLUMN on_billing_charge_failed BOOLEAN DEFAULT TRUE",
 4579:            "ALTER TABLE notification_providers ADD COLUMN on_aito_payment_received BOOLEAN DEFAULT 0",
 4584:        await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_aito_payment_received BOOLEAN")
-5457:    # Migration: Add inventory stock alert columns to notification_providers.
-5461:            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_reorder_alert BOOLEAN DEFAULT 0"
-5464:            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT 0"
-5468:            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_reorder_alert BOOLEAN DEFAULT false"
-5471:            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT false"
-5476:    # on an install whose notification_providers table was (re)created from
-5490:                "UPDATE notification_providers SET on_stock_reorder_alert = :off WHERE on_stock_reorder_alert IS NULL"
-5495:            text("UPDATE notification_providers SET on_stock_break_alert = :off WHERE on_stock_break_alert IS NULL"),
-5500:        logger.info("Backfilled %s NULL inventory stock alert flag(s) on notification_providers", repaired)
-5898:    # Migration: Add on_ai_failure_detection column to notification_providers (#1794).
-5905:            "ALTER TABLE notification_providers ADD COLUMN on_ai_failure_detection BOOLEAN DEFAULT 0",
-5910:            "ALTER TABLE notification_providers ADD COLUMN on_ai_failure_detection BOOLEAN DEFAULT false",
-6704:            conn, "ALTER TABLE notification_providers ADD COLUMN on_plate_clear_required BOOLEAN DEFAULT 0"
-6708:            conn, "ALTER TABLE notification_providers ADD COLUMN on_plate_clear_required BOOLEAN DEFAULT false"
-6745:    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_ha_sensor_alert BOOLEAN DEFAULT FALSE")
-6752:        conn, "ALTER TABLE notification_providers ADD COLUMN on_ams_drying_suspended BOOLEAN DEFAULT TRUE"
-6771:        conn, "ALTER TABLE notification_providers ADD COLUMN on_location_ha_sensor_alert BOOLEAN DEFAULT FALSE"
-6797:        conn, "ALTER TABLE notification_providers ADD COLUMN on_print_confirm_request BOOLEAN DEFAULT TRUE"
-6817:        conn, "ALTER TABLE notification_providers ADD COLUMN telegram_verdict_mode VARCHAR(16) DEFAULT 'buttons'"
-6822:        CREATE TABLE IF NOT EXISTS telegram_pending_verdicts (
-6824:            provider_id INTEGER NOT NULL REFERENCES notification_providers(id) ON DELETE CASCADE,
-6836:        CREATE TABLE IF NOT EXISTS telegram_pending_verdicts (
-6838:            provider_id INTEGER NOT NULL REFERENCES notification_providers(id) ON DELETE CASCADE,
-6851:        "CREATE INDEX IF NOT EXISTS ix_telegram_pending_verdicts_created_at ON telegram_pending_verdicts (created_at)",
-6975:    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_app_message BOOLEAN DEFAULT FALSE")
-6979:            text("UPDATE notification_providers SET on_app_message = :off WHERE on_app_message IS NULL"), {"off": False}
-6995:    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN attach_photo BOOLEAN DEFAULT TRUE")
-6998:            text("UPDATE notification_providers SET attach_photo = :on WHERE attach_photo IS NULL"), {"on": True}
-7188:        conn, "ALTER TABLE notification_providers ADD COLUMN on_print_pause_upcoming BOOLEAN DEFAULT FALSE"
-7193:                "UPDATE notification_providers SET on_print_pause_upcoming = :off WHERE on_print_pause_upcoming IS NULL"
+4588:        conn, "ALTER TABLE notification_providers ADD COLUMN printer_error_max_level INTEGER DEFAULT 2 NOT NULL"
+5462:    # Migration: Add inventory stock alert columns to notification_providers.
+5466:            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_reorder_alert BOOLEAN DEFAULT 0"
+5469:            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT 0"
+5473:            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_reorder_alert BOOLEAN DEFAULT false"
+5476:            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT false"
+5481:    # on an install whose notification_providers table was (re)created from
+5495:                "UPDATE notification_providers SET on_stock_reorder_alert = :off WHERE on_stock_reorder_alert IS NULL"
+5500:            text("UPDATE notification_providers SET on_stock_break_alert = :off WHERE on_stock_break_alert IS NULL"),
+5505:        logger.info("Backfilled %s NULL inventory stock alert flag(s) on notification_providers", repaired)
+5903:    # Migration: Add on_ai_failure_detection column to notification_providers (#1794).
+5910:            "ALTER TABLE notification_providers ADD COLUMN on_ai_failure_detection BOOLEAN DEFAULT 0",
+5915:            "ALTER TABLE notification_providers ADD COLUMN on_ai_failure_detection BOOLEAN DEFAULT false",
+6709:            conn, "ALTER TABLE notification_providers ADD COLUMN on_plate_clear_required BOOLEAN DEFAULT 0"
+6713:            conn, "ALTER TABLE notification_providers ADD COLUMN on_plate_clear_required BOOLEAN DEFAULT false"
+6750:    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_ha_sensor_alert BOOLEAN DEFAULT FALSE")
+6757:        conn, "ALTER TABLE notification_providers ADD COLUMN on_ams_drying_suspended BOOLEAN DEFAULT TRUE"
+6776:        conn, "ALTER TABLE notification_providers ADD COLUMN on_location_ha_sensor_alert BOOLEAN DEFAULT FALSE"
+6802:        conn, "ALTER TABLE notification_providers ADD COLUMN on_print_confirm_request BOOLEAN DEFAULT TRUE"
+6822:        conn, "ALTER TABLE notification_providers ADD COLUMN telegram_verdict_mode VARCHAR(16) DEFAULT 'buttons'"
+6827:        CREATE TABLE IF NOT EXISTS telegram_pending_verdicts (
+6829:            provider_id INTEGER NOT NULL REFERENCES notification_providers(id) ON DELETE CASCADE,
+6841:        CREATE TABLE IF NOT EXISTS telegram_pending_verdicts (
+6843:            provider_id INTEGER NOT NULL REFERENCES notification_providers(id) ON DELETE CASCADE,
+6856:        "CREATE INDEX IF NOT EXISTS ix_telegram_pending_verdicts_created_at ON telegram_pending_verdicts (created_at)",
+6982:    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_app_message BOOLEAN DEFAULT FALSE")
+6986:            text("UPDATE notification_providers SET on_app_message = :off WHERE on_app_message IS NULL"), {"off": False}
+7002:    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN attach_photo BOOLEAN DEFAULT TRUE")
+7005:            text("UPDATE notification_providers SET attach_photo = :on WHERE attach_photo IS NULL"), {"on": True}
+7195:        conn, "ALTER TABLE notification_providers ADD COLUMN on_print_pause_upcoming BOOLEAN DEFAULT FALSE"
+7200:                "UPDATE notification_providers SET on_print_pause_upcoming = :off WHERE on_print_pause_upcoming IS NULL"
 725:    await seed_notification_templates()
-7262:    await _migrate_notification_providers_go_with_their_printer(conn)
-7406:    ("notification_providers", "attach_photo"),
-7407:    ("notification_providers", "on_ai_failure_detection"),
-7408:    ("notification_providers", "on_ams_drying_suspended"),
-7409:    ("notification_providers", "on_app_message"),
-7410:    ("notification_providers", "on_billing_charge_failed"),
-7411:    ("notification_providers", "on_ha_sensor_alert"),
-7412:    ("notification_providers", "on_location_ha_sensor_alert"),
-7413:    ("notification_providers", "on_plate_clear_required"),
-7414:    ("notification_providers", "on_print_confirm_request"),
-7415:    ("notification_providers", "on_print_pause_upcoming"),
-7416:    ("notification_providers", "on_stock_break_alert"),
-7417:    ("notification_providers", "on_stock_reorder_alert"),
-7418:    ("notification_providers", "telegram_verdict_mode"),
-7626:async def _migrate_notification_providers_go_with_their_printer(conn) -> None:
-7627:    """notification_providers / smart_plugs.printer_id: ON DELETE CASCADE, as the models say (PostgreSQL).
-7635:        await _pg_set_fk_ondelete(conn, "notification_providers", "printer_id", "printers", "CASCADE")
-8193:        text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
-8537:        text("UPDATE notification_templates SET name = :new WHERE event_type = :et AND name = :old"),
-8565:                "UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"
-8587:        text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
-8608:        text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
-8621:        text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
-9223:    routes/notification_templates.py already uses ("User Print Completed Email").
-9234:                text("UPDATE notification_templates SET name = :new WHERE event_type = :et AND name = :old"),
-9252:async def seed_notification_templates():
+7269:    await _migrate_notification_providers_go_with_their_printer(conn)
+7413:    ("notification_providers", "attach_photo"),
+7414:    ("notification_providers", "on_ai_failure_detection"),
+7415:    ("notification_providers", "on_ams_drying_suspended"),
+7416:    ("notification_providers", "on_app_message"),
+7417:    ("notification_providers", "on_billing_charge_failed"),
+7418:    ("notification_providers", "on_ha_sensor_alert"),
+7419:    ("notification_providers", "on_location_ha_sensor_alert"),
+7420:    ("notification_providers", "on_plate_clear_required"),
+7421:    ("notification_providers", "on_print_confirm_request"),
+7422:    ("notification_providers", "on_print_pause_upcoming"),
+7423:    ("notification_providers", "on_stock_break_alert"),
+7424:    ("notification_providers", "on_stock_reorder_alert"),
+7425:    ("notification_providers", "telegram_verdict_mode"),
+7633:async def _migrate_notification_providers_go_with_their_printer(conn) -> None:
+7634:    """notification_providers / smart_plugs.printer_id: ON DELETE CASCADE, as the models say (PostgreSQL).
+7642:        await _pg_set_fk_ondelete(conn, "notification_providers", "printer_id", "printers", "CASCADE")
+8200:        text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
+8544:        text("UPDATE notification_templates SET name = :new WHERE event_type = :et AND name = :old"),
+8572:                "UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"
+8594:        text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
+8615:        text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
+8628:        text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
+9230:    routes/notification_templates.py already uses ("User Print Completed Email").
+9241:                text("UPDATE notification_templates SET name = :new WHERE event_type = :et AND name = :old"),
+9259:async def seed_notification_templates():
 ```
 
 ## Frontend exported symbols, per file
@@ -1374,6 +1384,7 @@ export interface NotificationProvider {
   on_aito_payment_received: boolean;
   on_printer_offline: boolean;
   on_printer_error: boolean;
+  printer_error_max_level: number;
   on_ai_failure_detection: boolean;
   on_filament_low: boolean;
   on_maintenance_due: boolean;
@@ -1429,6 +1440,7 @@ export interface NotificationProviderCreate {
   on_aito_payment_received?: boolean;
   on_printer_offline?: boolean;
   on_printer_error?: boolean;
+  printer_error_max_level?: number;
   on_ai_failure_detection?: boolean;
   on_filament_low?: boolean;
   on_maintenance_due?: boolean;
@@ -1479,6 +1491,7 @@ export interface NotificationProviderUpdate {
   on_aito_payment_received?: boolean;
   on_printer_offline?: boolean;
   on_printer_error?: boolean;
+  printer_error_max_level?: number;
   on_ai_failure_detection?: boolean;
   on_filament_low?: boolean;
   on_maintenance_due?: boolean;
@@ -1910,7 +1923,7 @@ request(`/notifications/logs?${searchParams}`
 ## Translation keys of the notifications, notificationLog, notificationTemplates and inbox namespaces (en; placeholders after the key)
 ```regen: mkdir -p /tmp/fenrir-refactor-notif-probe && frontend/node_modules/.bin/rolldown tools/probe_notif_i18n_entry.ts --format cjs --file /tmp/fenrir-refactor-notif-probe/notifI18n.cjs >/dev/null 2>&1 && node tools/probe_notif_i18n.cjs | sed -n '/^--- en notifications/,/^--- es notifications/p' | grep -v '^--- es ' | sed -E 's/ = .*  placeholders=(.*)$/  \1/; s/ = .*//'```
 ```
---- en notifications (363 keys)
+--- en notifications (366 keys)
 notifications.add
 notifications.addTitle
 notifications.aiFailureDetection
@@ -2112,6 +2125,9 @@ notifications.printStarted
 notifications.printStopped
 notifications.printer
 notifications.printerError
+notifications.printerErrorLevel1
+notifications.printerErrorLevel2
+notifications.printerErrorLevel3
 notifications.printerFilter
 notifications.printerOffline
 notifications.printerStatus
@@ -2399,6 +2415,10 @@ nav.notifications
 'notifications.photoPreviewNoteEmailOnly'
 'notifications.photoPreviewNoteWithEmail'
 'notifications.printer'
+'notifications.printerError'
+'notifications.printerErrorLevel1'
+'notifications.printerErrorLevel2'
+'notifications.printerErrorLevel3'
 'notifications.printerFilter'
 'notifications.progress'
 'notifications.providerTypeLabel'

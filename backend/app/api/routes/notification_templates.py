@@ -184,14 +184,17 @@ async def preview_template(
 
     # Safe template rendering - replace missing vars with empty string
     def safe_format(template: str, data: dict) -> str:
-        result = template
-        for key, value in data.items():
-            result = result.replace("{" + key + "}", str(value))
-        # Remove any remaining unreplaced placeholders
         import re
 
-        result = re.sub(r"\{[a-z_]+\}", "", result)
-        return result
+        def repl(m: re.Match[str]) -> str:
+            key = m.group(1)
+            if key in data:
+                return str(data[key])
+            # Unknown lowercase placeholders are removed; anything else stays literal.
+            return "" if re.fullmatch(r"[a-z_]+", key) else m.group(0)
+
+        # One pass: substituted values are never rescanned for placeholders.
+        return re.sub(r"\{([^{}]+)\}", repl, template)
 
     return TemplatePreviewResponse(
         title=safe_format(request.title_template, sample),

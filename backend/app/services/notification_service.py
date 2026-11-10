@@ -6,7 +6,8 @@ import json
 import logging
 import re
 import smtplib
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -15,7 +16,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import delete, inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.logging_filters import redact_refused_headers
@@ -30,6 +31,7 @@ from backend.app.models.notification_template import NotificationTemplate
 from backend.app.services.email_service import add_required_headers
 from backend.app.services.notify_client import NotifyClient, NotifyError, notify_credentials, notify_supports_photos
 from backend.app.services.print_confirmation import one_tap_url
+from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.notification_photos import save_notification_photo
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,8 @@ logger = logging.getLogger(__name__)
 # How long a digest event is kept for: through one failed daily digest, so it
 # goes out with the next one, then dropped (FO-C4).
 DIGEST_RETRY_HOURS = 48
+# A longer gap between digest passes is a suspend or clock jump, not a stepped-over minute.
+_DIGEST_CATCHUP_MAX_MINUTES = 60
 
 # Honest User-Agent — matches the convention used by every other outbound
 # httpx client in the codebase (bambu_cloud, makerworld, firmware_check,
@@ -50,17 +54,26 @@ _USER_AGENT = "Fenrir/1.0 (+https://github.com/maziggy/bambuddy)"
 TELEGRAM_REACTION_HINT = "React with \U0001f44d or \U0001f44e to record the outcome."
 
 
+def _escape_legacy_markdown(text: str) -> str:
+    # Backslashes are left alone: legacy Markdown has no escape for them.
+    for ch in ("_", "*", "`", "["):
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
 def telegram_markdown_escape(message: str) -> str:
-    """Escape underscores in the message body so Telegram Markdown parsing
-    doesn't break on job names like "A1_plate_8" or error codes like
-    "0300_0001". The title is already wrapped in *bold* markers, so only
-    escape after the first newline. Shared with the reaction poller, which
-    re-sends the stored body when it edits the prompt (#3046)."""
-    if "\n" in message:
-        title_part, body_part = message.split("\n", 1)
-        body_part = body_part.replace("_", "\\_")
-        return f"{title_part}\n{body_part}"
-    return message
+    """Escape the legacy-Markdown control characters (_ * ` [) in the user text
+    so job names like "A1_plate_8", "Benchy [v2]" or "a*b" render literally and
+    Telegram doesn't reject the message. The first line is the title wrapped in
+    *bold* markers by the caller: those two framing asterisks stay, the text
+    inside is escaped. Shared with the reaction poller, which re-sends the
+    stored body when it edits the prompt (#3046)."""
+    title_part, sep, body_part = message.partition("\n")
+    if len(title_part) >= 2 and title_part.startswith("*") and title_part.endswith("*"):
+        title_part = f"*{_escape_legacy_markdown(title_part[1:-1])}*"
+    else:
+        title_part = _escape_legacy_markdown(title_part)
+    return f"{title_part}{sep}{_escape_legacy_markdown(body_part)}"
 
 
 def _looks_like_cloudflare_challenge(response: httpx.Response) -> bool:
@@ -116,6 +129,18 @@ def _assert_safe_provider_url(url: str, *, label: str) -> str | None:
     except ValueError as exc:
         return str(exc)
     return None
+
+
+def _config_str(config: dict, key: str, default: str = "") -> str:
+    """Read a stored config field as a stripped string; None or missing gives the default."""
+    value = config.get(key, default)
+    return default.strip() if value is None else str(value).strip()
+
+
+def _config_flag(config: dict, key: str, default: str) -> bool:
+    """Read a stored config flag: true only for a real True or the text "true" (any case)."""
+    value = config.get(key, default)
+    return str(default if value is None else value).lower() == "true"
 
 
 def _event_priority_level(config: dict, event_type: str | None) -> int | None:
@@ -219,14 +244,21 @@ def _load_sample_notification_image() -> bytes | None:
     return _sample_notification_image
 
 
+@dataclass(frozen=True)
+class _CachedTemplate:
+    title_template: str
+    body_template: str
+
+
 class NotificationService:
     """Service for sending notifications through various providers."""
 
     def __init__(self):
         self._http_client: httpx.AsyncClient | None = None
-        self._template_cache: dict[str, NotificationTemplate] = {}
+        self._template_cache: dict[str, _CachedTemplate] = {}
         self._digest_scheduler_task: asyncio.Task | None = None
         self._last_digest_check: str = ""  # "HH:MM" to avoid duplicate checks
+        self._last_log_prune = None  # date of the last delivery-log prune
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client.
@@ -281,7 +313,7 @@ class NotificationService:
             logger.warning("Invalid quiet hours format for provider %s", provider.name)
             return False
 
-    async def _get_template(self, db: AsyncSession, event_type: str) -> NotificationTemplate | None:
+    async def _get_template(self, db: AsyncSession, event_type: str) -> _CachedTemplate | None:
         """Get a notification template by event type.
 
         ``no_autoflush`` for the same reason as ``_get_providers_for_event``:
@@ -294,21 +326,28 @@ class NotificationService:
 
         with db.no_autoflush:
             result = await db.execute(select(NotificationTemplate).where(NotificationTemplate.event_type == event_type))
-        template = result.scalar_one_or_none()
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
 
-        if template:
-            self._template_cache[event_type] = template
-
+        # Plain values: a cached ORM row would be expired by any rollback on the loading session.
+        template = _CachedTemplate(row.title_template, row.body_template)
+        self._template_cache[event_type] = template
         return template
 
     def _render_template(self, template_str: str, variables: dict[str, Any]) -> str:
         """Render a template string with variables. Missing variables become empty."""
-        result = template_str
-        for key, value in variables.items():
-            result = result.replace("{" + key + "}", str(value) if value is not None else "")
-        # Remove any remaining unreplaced placeholders
-        result = re.sub(r"\{[a-z_]+\}", "", result)
-        return result
+
+        def repl(m: re.Match[str]) -> str:
+            key = m.group(1)
+            if key in variables:
+                value = variables[key]
+                return str(value) if value is not None else ""
+            # Unknown lowercase placeholders are removed; anything else stays literal.
+            return "" if re.fullmatch(r"[a-z_]+", key) else m.group(0)
+
+        # One pass: substituted values are never rescanned for placeholders.
+        return re.sub(r"\{([^{}]+)\}", repl, template_str)
 
     async def _format_eta(self, seconds: int | None, db: AsyncSession) -> str:
         """Format ETA as wall-clock time, respecting user's time_format setting."""
@@ -318,7 +357,8 @@ class NotificationService:
         from backend.app.api.routes.settings import get_setting
 
         eta_time = datetime.now() + timedelta(seconds=seconds)
-        time_format = await get_setting(db, "time_format")
+        with db.no_autoflush:  # don't flush the caller's pending rows before a send (#2770)
+            time_format = await get_setting(db, "time_format")
 
         if time_format == "12h":
             return eta_time.strftime("%I:%M %p").lstrip("0")
@@ -474,8 +514,8 @@ class NotificationService:
 
     async def _send_callmebot(self, config: dict, message: str) -> tuple[bool, str]:
         """Send notification via CallMeBot (WhatsApp)."""
-        phone = config.get("phone", "").strip()
-        apikey = config.get("apikey", "").strip()
+        phone = _config_str(config, "phone")
+        apikey = _config_str(config, "apikey")
 
         if not phone or not apikey:
             return False, "Phone number and API key are required"
@@ -617,9 +657,9 @@ class NotificationService:
         format), used by the outcome-confirmation event (#1898) to put
         one-tap Good/Reject buttons directly into the push notification.
         """
-        server = config.get("server", "https://ntfy.sh").rstrip("/")
-        topic = config.get("topic", "").strip()
-        auth_token = config.get("auth_token", "").strip()
+        server = (config.get("server") or "https://ntfy.sh").rstrip("/")
+        topic = _config_str(config, "topic")
+        auth_token = _config_str(config, "auth_token")
 
         if not topic:
             return False, "Topic is required"
@@ -705,8 +745,8 @@ class NotificationService:
             url: Optional supplementary URL shown under the message
             url_title: Optional label for that URL
         """
-        user_key = config.get("user_key", "").strip()
-        app_token = config.get("app_token", "").strip()
+        user_key = _config_str(config, "user_key")
+        app_token = _config_str(config, "app_token")
         try:
             priority = int(config.get("priority", 0))
         except (TypeError, ValueError):
@@ -797,8 +837,8 @@ class NotificationService:
         ``message_id`` from it to recognise the reaction later; every other
         caller goes through ``_send_telegram`` and ignores it.
         """
-        bot_token = config.get("bot_token", "").strip()
-        chat_id = config.get("chat_id", "").strip()
+        bot_token = _config_str(config, "bot_token")
+        chat_id = _config_str(config, "chat_id")
 
         if not bot_token or not chat_id:
             return False, "Bot token and chat ID are required", None
@@ -983,22 +1023,31 @@ class NotificationService:
         original single-part text shape is used — no attachment, no surprise
         inline image (#1792).
         """
-        smtp_server = config.get("smtp_server", "").strip()
-        smtp_port = int(config.get("smtp_port", 587))
-        username = config.get("username", "").strip()
-        password = config.get("password", "").strip()
-        from_email = config.get("from_email", "").strip()
-        to_email = config.get("to_email", "").strip()
+        smtp_server = _config_str(config, "smtp_server")
+        try:
+            smtp_port = int(config.get("smtp_port") or 587)
+        except (TypeError, ValueError):
+            return False, "SMTP port must be a number"
+        username = _config_str(config, "username")
+        password = _config_str(config, "password")
+        from_email = _config_str(config, "from_email")
+        to_email = _config_str(config, "to_email")
         # Security: "starttls" (port 587), "ssl" (port 465), "none" (port 25)
         security = config.get("security", "starttls")
         # Authentication: "true" or "false"
-        auth_enabled = config.get("auth_enabled", "true").lower() == "true"
+        auth_enabled = _config_flag(config, "auth_enabled", "true")
 
         if not all([smtp_server, from_email, to_email]):
             return False, "SMTP server, from email, and to email are required"
 
         if auth_enabled and not all([username, password]):
             return False, "Username and password are required when authentication is enabled"
+
+        # Same LAN-service host policy as the HTTP providers (a bare IPv6 literal needs brackets in a URL).
+        host_part = f"[{smtp_server}]" if ":" in smtp_server and not smtp_server.startswith("[") else smtp_server
+        url_error = _assert_safe_provider_url(f"http://{host_part}:{smtp_port}", label="SMTP server")
+        if url_error:
+            return False, url_error
 
         # Template-driven: only inline-embed when the user's template explicitly
         # referenced {finish_photo_url} (so the URL appears in the rendered body)
@@ -1087,15 +1136,21 @@ class NotificationService:
         except smtplib.SMTPAuthenticationError:
             return False, "SMTP authentication failed - check username/password"
         except smtplib.SMTPException as e:
-            return False, f"SMTP error: {str(e)}"
+            # Raw server/socket text is a banner-read and port-scan channel; keep it in the log only.
+            logger.debug("SMTP error sending email: %s", e)
+            return (
+                False,
+                "SMTP error: could not complete the SMTP exchange (see server logs at debug level for details)",
+            )
         except Exception as e:
-            return False, f"Email error: {str(e)}"
+            logger.debug("Email error: %s", e)
+            return False, "Email error: could not send the email (see server logs at debug level for details)"
 
     async def _send_discord(
         self, config: dict, title: str, message: str, image_data: bytes | None = None
     ) -> tuple[bool, str]:
         """Send notification via Discord webhook."""
-        webhook_url = config.get("webhook_url", "").strip()
+        webhook_url = _config_str(config, "webhook_url")
 
         if not webhook_url:
             return False, "Webhook URL is required"
@@ -1145,9 +1200,9 @@ class NotificationService:
         - generic: Custom field names with timestamp/source metadata + structured event data
         - slack: Slack/Mattermost compatible format (just {"text": "..."})
         """
-        webhook_url = config.get("webhook_url", "").strip()
-        auth_header = config.get("auth_header", "").strip()
-        payload_format = config.get("payload_format", "generic").strip()
+        webhook_url = _config_str(config, "webhook_url")
+        auth_header = _config_str(config, "auth_header")
+        payload_format = _config_str(config, "payload_format", "generic")
 
         if not webhook_url:
             return False, "Webhook URL is required"
@@ -1180,8 +1235,8 @@ class NotificationService:
                 data["attachments"] = [{"fallback": title, "image_url": image_url}]
         else:
             # Generic format with custom field names
-            custom_field_title = config.get("field_title", "title").strip() or "title"
-            custom_field_message = config.get("field_message", "message").strip() or "message"
+            custom_field_title = _config_str(config, "field_title", "title") or "title"
+            custom_field_message = _config_str(config, "field_message", "message") or "message"
             data = {
                 custom_field_title: title,
                 custom_field_message: message,
@@ -1244,7 +1299,8 @@ class NotificationService:
             from backend.app.api.routes.settings import get_homeassistant_settings
 
             try:
-                ha_settings = await get_homeassistant_settings(db)
+                with db.no_autoflush:  # don't flush the caller's pending rows before a send (#2770)
+                    ha_settings = await get_homeassistant_settings(db)
                 ha_url = ha_settings.get("ha_url", "")
                 ha_token = ha_settings.get("ha_token", "")
             except Exception as e:
@@ -1375,7 +1431,8 @@ class NotificationService:
 
         from backend.app.api.routes.settings import get_setting
 
-        external_url = (await get_setting(db, "external_url") or "").strip()
+        with db.no_autoflush:  # don't flush the caller's pending rows before a send (#2770)
+            external_url = (await get_setting(db, "external_url") or "").strip()
         if not external_url:
             return None
 
@@ -1589,33 +1646,55 @@ class NotificationService:
         result = await db.execute(select(NotificationProvider).where(NotificationProvider.id == provider_id))
         provider = result.scalar_one_or_none()
         if provider:
-            if success:
-                provider.last_success = datetime.now(timezone.utc)
-            else:
-                # Read by every notification reader: no refused header's value.
-                provider.last_error = redact_refused_headers(error)
-                provider.last_error_at = datetime.now(timezone.utc)
-            try:
-                await db.commit()
-            except Exception:
-                await self._rollback_quietly(db)
-                raise
 
-    @staticmethod
-    async def _rollback_quietly(db: AsyncSession):
+            def write():
+                if success:
+                    provider.last_success = datetime.now(timezone.utc)
+                else:
+                    # Read by every notification reader: no refused header's value.
+                    provider.last_error = redact_refused_headers(error)
+                    provider.last_error_at = datetime.now(timezone.utc)
+
+            await self._write_and_commit(db, write)
+
+    @classmethod
+    async def _write_and_commit(cls, db: AsyncSession, write):
+        """Run a bookkeeping write in a SAVEPOINT, then commit.
+
+        A failed flush rolls back only the savepoint, so the caller's pending rows survive; a
+        failed COMMIT needs a full rollback. Either way the rows that got expired are reloaded.
+        """
+        try:
+            async with db.begin_nested():
+                write()
+        except Exception:
+            await cls._reload_expired(db)
+            raise
+        try:
+            await db.commit()
+        except Exception:
+            await cls._rollback_quietly(db)
+            raise
+
+    @classmethod
+    async def _rollback_quietly(cls, db: AsyncSession):
         """Clear a session whose commit failed so the next statement on it works."""
         try:
             await db.rollback()
         except Exception:
             logger.warning("Rollback after a failed commit also failed", exc_info=True)
             return
-        # Rollback expires every loaded row and an async session cannot lazy-load: reload the
-        # providers the fan-out still reads (a row deleted meanwhile is simply skipped).
-        for obj in [o for o in db.sync_session.identity_map.values() if isinstance(o, NotificationProvider)]:
+        await cls._reload_expired(db)
+
+    @staticmethod
+    async def _reload_expired(db: AsyncSession):
+        """Reload every loaded row a rollback expired: an async session cannot lazy-load them."""
+        for obj in list(db.sync_session.identity_map.values()):
             try:
-                await db.refresh(obj)
-            except Exception:
-                logger.debug("Could not reload provider after rollback", exc_info=True)
+                if sa_inspect(obj).expired_attributes:
+                    await db.refresh(obj)
+            except Exception:  # a row deleted meanwhile is simply skipped
+                logger.debug("Could not reload row after rollback", exc_info=True)
 
     async def _get_providers_for_event(
         self,
@@ -1685,11 +1764,9 @@ class NotificationService:
                 printer_id=printer_id,
                 printer_name=printer_name,
             )
-            db.add(log)
-            await db.commit()
+            await self._write_and_commit(db, lambda: db.add(log))
         except Exception as e:
             logger.warning("Failed to log notification: %s", e)
-            await self._rollback_quietly(db)
             # Don't fail the notification just because logging failed
 
     async def _send_to_providers(
@@ -1736,7 +1813,18 @@ class NotificationService:
                         printer_id=printer_id,
                         printer_name=printer_name,
                     )
-                await self._update_provider_status(db, provider.id, success, error if not success else None)
+                if success:
+                    # The send outcome is final: a bookkeeping failure must not turn it into a failure.
+                    for attempt in (1, 2):
+                        try:
+                            await self._update_provider_status(db, provider.id, True, None)
+                            break
+                        except Exception:
+                            logger.warning(
+                                "Could not store the status of %s (attempt %d)", provider.name, attempt, exc_info=True
+                            )
+                else:
+                    await self._update_provider_status(db, provider.id, False, error)
                 await self._log_notification(
                     db=db,
                     provider_id=provider.id,
@@ -1775,13 +1863,14 @@ class NotificationService:
         self,
         db: AsyncSession,
         event: str,
-        variables: dict,
+        variables: dict | None,
         printer_id: int | None = None,
         printer_name: str | None = None,
         *,
         template: str | None = None,
         fleet_wide: bool = False,
         keep: Callable[[NotificationProvider], bool] | None = None,
+        variables_factory: Callable[[], Awaitable[dict]] | None = None,
         **send_kwargs,
     ) -> None:
         """Shared skeleton of the on_* events: providers -> early return -> template -> send.
@@ -1789,6 +1878,8 @@ class NotificationService:
         ``event`` is the template/send key; the provider column is ``on_<event>``. ``template``
         overrides the template key (AMS-HT reuses the AMS templates). Fleet-wide events pass no
         printer to the send. ``keep`` drops subscribed providers the event does not apply to.
+        ``variables_factory`` (with ``variables=None``) builds the variables only once providers were
+        found, for events whose variables need an awaited DB read.
         """
         if fleet_wide:
             providers = await self._get_providers_for_event(db, f"on_{event}", fleet_wide=True)
@@ -1798,6 +1889,8 @@ class NotificationService:
             providers = [p for p in providers if keep(p)]
         if not providers:
             return
+        if variables_factory is not None:
+            variables = await variables_factory()
         title, message = await self._build_message_from_template(db, template or event, variables)
         if fleet_wide:
             await self._send_to_providers(providers, title, message, db, event, variables=variables, **send_kwargs)
@@ -2052,10 +2145,6 @@ class NotificationService:
         provider in reaction mode (#3046) tie the sent message to the archive,
         and run_id to the run whose token the links carry.
         """
-        providers = await self._get_providers_for_event(db, "on_print_confirm_request", printer_id)
-        if not providers:
-            return
-
         subtask_name = data.get("subtask_name")
         if subtask_name:
             filename = subtask_name.replace("_", " ")
@@ -2080,17 +2169,8 @@ class NotificationService:
                 variables["finish_photo_url"] = archive_data["finish_photo_url"]
             image_data = archive_data.get("image_data")
 
-        title, message = await self._build_message_from_template(db, "print_confirm_request", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "print_confirm_request",
-            printer_id,
-            printer_name,
-            image_data=image_data,
-            variables=variables,
+        await self._notify_event(
+            db, "print_confirm_request", variables, printer_id, printer_name, image_data=image_data
         )
 
     async def on_print_progress(
@@ -2104,31 +2184,24 @@ class NotificationService:
         image_data: bytes | None = None,
     ):
         """Handle print progress milestone (25%, 50%, 75%)."""
-        providers = await self._get_providers_for_event(db, "on_print_progress", printer_id)
-        if not providers:
-            return
 
-        eta_str = await self._format_eta(remaining_time, db)
+        async def variables():
+            return {
+                "printer": printer_name,
+                "filename": self._clean_filename(filename),
+                "progress": str(progress),
+                "remaining_time": self._format_duration(remaining_time) if remaining_time else "Unknown",
+                "eta": await self._format_eta(remaining_time, db),
+            }
 
-        variables = {
-            "printer": printer_name,
-            "filename": self._clean_filename(filename),
-            "progress": str(progress),
-            "remaining_time": self._format_duration(remaining_time) if remaining_time else "Unknown",
-            "eta": eta_str,
-        }
-
-        title, message = await self._build_message_from_template(db, "print_progress", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
+        await self._notify_event(
             db,
             "print_progress",
+            None,
             printer_id,
             printer_name,
             image_data=image_data,
-            variables=variables,
+            variables_factory=variables,
         )
 
     async def on_print_missing_spool_assignment(
@@ -2140,10 +2213,6 @@ class NotificationService:
     ):
         """Handle print-start event when required trays are missing spool assignments."""
         if not missing_slots:
-            return
-
-        providers = await self._get_providers_for_event(db, "on_print_missing_spool_assignment", printer_id)
-        if not providers:
             return
 
         missing_slot_names = ", ".join(slot.get("slot", "Unknown") for slot in missing_slots)
@@ -2160,17 +2229,7 @@ class NotificationService:
             "missing_slot_details": missing_profile_details,
         }
 
-        title, message = await self._build_message_from_template(db, "print_missing_spool_assignment", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "print_missing_spool_assignment",
-            printer_id,
-            printer_name,
-            variables=variables,
-        )
+        await self._notify_event(db, "print_missing_spool_assignment", variables, printer_id, printer_name)
 
     async def on_billing_charge_failed(
         self,
@@ -2203,9 +2262,6 @@ class NotificationService:
     ) -> None:
         """An Aito quote was paid — online link or covering retainer. No
         printer: fan out to every enabled provider with the flag on."""
-        providers = await self._get_providers_for_event(db, "on_aito_payment_received")
-        if not providers:
-            return
         variables = {
             "project_id": project_id,
             "client_name": client_name or "",
@@ -2214,10 +2270,7 @@ class NotificationService:
             "currency": currency,
             "source": source,
         }
-        title, message = await self._build_message_from_template(db, "aito_payment_received", variables)
-        await self._send_to_providers(
-            providers, title, message, db, "aito_payment_received", force_immediate=True, variables=variables
-        )
+        await self._notify_event(db, "aito_payment_received", variables)
 
     async def on_printer_offline(self, printer_id: int, printer_name: str, db: AsyncSession):
         """Handle printer offline event."""
@@ -2349,11 +2402,6 @@ class NotificationService:
         if not maintenance_items:
             return
 
-        providers = await self._get_providers_for_event(db, "on_maintenance_due", printer_id)
-        if not providers:
-            logger.info("No notification providers configured for maintenance_due event on printer %s", printer_id)
-            return
-
         # Format maintenance items list
         items_list = []
         for item in maintenance_items:
@@ -2366,11 +2414,7 @@ class NotificationService:
             "items": items_str,
         }
 
-        logger.info("Found %s providers for maintenance_due: %s", len(providers), [p.name for p in providers])
-        title, message = await self._build_message_from_template(db, "maintenance_due", variables)
-        await self._send_to_providers(
-            providers, title, message, db, "maintenance_due", printer_id, printer_name, variables=variables
-        )
+        await self._notify_event(db, "maintenance_due", variables, printer_id, printer_name)
 
     async def on_ams_humidity_high(
         self,
@@ -2578,30 +2622,20 @@ class NotificationService:
         db: AsyncSession,
     ):
         """A pause the slicer put into the print is coming up (#2984)."""
-        providers = await self._get_providers_for_event(db, "on_print_pause_upcoming", printer_id)
-        if not providers:
-            return
 
-        variables = {
-            "printer": printer_name,
-            "filename": self._clean_filename(filename),
-            # At least a minute: a pause seconds away still reads as "1m".
-            "time_to_pause": self._format_duration(max(minutes, 1) * 60),
-            "eta": await self._format_eta(max(minutes * 60, 1), db),
-            "layer": str(layer),
-            "total_layers": str(total_layers),
-        }
+        async def variables():
+            return {
+                "printer": printer_name,
+                "filename": self._clean_filename(filename),
+                # At least a minute: a pause seconds away still reads as "1m".
+                "time_to_pause": self._format_duration(max(minutes, 1) * 60),
+                "eta": await self._format_eta(max(minutes * 60, 1), db),
+                "layer": str(layer),
+                "total_layers": str(total_layers),
+            }
 
-        title, message = await self._build_message_from_template(db, "print_pause_upcoming", variables)
-        await self._send_to_providers(
-            providers,
-            title,
-            message,
-            db,
-            "print_pause_upcoming",
-            printer_id,
-            printer_name,
-            variables=variables,
+        await self._notify_event(
+            db, "print_pause_upcoming", None, printer_id, printer_name, variables_factory=variables
         )
 
     def clear_template_cache(self):
@@ -2776,23 +2810,16 @@ class NotificationService:
         estimated_time: int | None = None,
     ):
         """Handle queue job started printing event."""
-        providers = await self._get_providers_for_event(db, "on_queue_job_started", printer_id)
-        if not providers:
-            return
 
-        eta_str = await self._format_eta(estimated_time, db)
+        async def variables():
+            return {
+                "job_name": job_name,
+                "printer": printer_name,
+                "estimated_time": self._format_duration(estimated_time),
+                "eta": await self._format_eta(estimated_time, db),
+            }
 
-        variables = {
-            "job_name": job_name,
-            "printer": printer_name,
-            "estimated_time": self._format_duration(estimated_time),
-            "eta": eta_str,
-        }
-
-        title, message = await self._build_message_from_template(db, "queue_job_started", variables)
-        await self._send_to_providers(
-            providers, title, message, db, "queue_job_started", printer_id, printer_name, variables=variables
-        )
+        await self._notify_event(db, "queue_job_started", None, printer_id, printer_name, variables_factory=variables)
 
     async def on_queue_job_waiting(
         self,
@@ -2959,12 +2986,10 @@ class NotificationService:
                 printer_id=printer_id,
                 printer_name=printer_name,
             )
-            db.add(queue_entry)
-            await db.commit()
+            await self._write_and_commit(db, lambda: db.add(queue_entry))
             logger.info("Queued notification for digest: %s for provider %s", event_type, provider.name)
         except Exception as e:
             logger.warning("Failed to queue notification for digest: %s", e)
-            await self._rollback_quietly(db)
 
     async def send_digest(self, provider_id: int):
         """Send all queued notifications as a single digest for a provider."""
@@ -3066,6 +3091,15 @@ class NotificationService:
         # Avoid duplicate checks within the same minute
         if current_time == self._last_digest_check:
             return
+        # Every minute in (last processed, now]: the 60 s loop can step over a minute, and the
+        # half-open window keeps a scheduled minute from being sent twice. First pass: now only.
+        due_times = {current_time}
+        if self._last_digest_check:
+            minute = int(self._last_digest_check[:2]) * 60 + int(self._last_digest_check[3:])
+            now_minute = int(current_time[:2]) * 60 + int(current_time[3:])
+            gap = (now_minute - minute) % 1440  # modular, so the midnight wrap is a small gap
+            if gap <= _DIGEST_CATCHUP_MAX_MINUTES:
+                due_times = {f"{(minute + i) // 60 % 24:02d}:{(minute + i) % 60:02d}" for i in range(1, gap + 1)}
         self._last_digest_check = current_time
 
         async with async_session() as db:
@@ -3074,7 +3108,7 @@ class NotificationService:
                 select(NotificationProvider).where(
                     NotificationProvider.enabled.is_(True),
                     NotificationProvider.daily_digest_enabled.is_(True),
-                    NotificationProvider.daily_digest_time == current_time,
+                    NotificationProvider.daily_digest_time.in_(due_times),
                 )
             )
             providers = result.scalars().all()
@@ -3098,6 +3132,28 @@ class NotificationService:
             self._digest_scheduler_task = None
             logger.info("Notification digest scheduler stopped")
 
+    async def _prune_notification_logs(self):
+        """Delete delivery-log rows past notification_log_retention_days (default 90, min 1), once a day."""
+        from backend.app.api.routes.settings import get_setting
+        from backend.app.core.database import async_session
+
+        today = utcnow_naive().date()
+        if self._last_log_prune == today:
+            return
+        self._last_log_prune = today  # a failure retries tomorrow, not every minute
+        async with async_session() as db:
+            stored = await get_setting(db, "notification_log_retention_days")
+            try:
+                days = max(1, int(stored)) if stored is not None else 90
+            except (TypeError, ValueError):
+                days = 90
+            result = await db.execute(
+                delete(NotificationLog).where(NotificationLog.created_at < utcnow_naive() - timedelta(days=days))
+            )
+            await db.commit()
+            if result.rowcount > 0:
+                logger.info("Pruned %s notification log entries older than %s days", result.rowcount, days)
+
     async def _digest_scheduler_loop(self):
         """Background loop that checks for scheduled digests every minute."""
         while True:
@@ -3105,6 +3161,10 @@ class NotificationService:
                 await self.check_and_send_digests()
             except Exception as e:
                 logger.error("Error in digest scheduler: %s", e)
+            try:
+                await self._prune_notification_logs()
+            except Exception as e:
+                logger.error("Error pruning notification logs: %s", e)
 
             # Wait until the next minute
             await asyncio.sleep(60)

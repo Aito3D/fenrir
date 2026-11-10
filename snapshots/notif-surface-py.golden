@@ -70,6 +70,7 @@ class NotificationProviderBase(BaseModel)
     on_aito_payment_received: <class 'bool'>  default=False
     on_printer_offline: <class 'bool'>  default=False
     on_printer_error: <class 'bool'>  default=False
+    printer_error_max_level: <class 'int'>  default=2
     on_ai_failure_detection: <class 'bool'>  default=False
     on_filament_low: <class 'bool'>  default=False
     on_maintenance_due: <class 'bool'>  default=False
@@ -119,6 +120,7 @@ class NotificationProviderCreate(NotificationProviderBase)
     on_aito_payment_received: <class 'bool'>  default=False
     on_printer_offline: <class 'bool'>  default=False
     on_printer_error: <class 'bool'>  default=False
+    printer_error_max_level: <class 'int'>  default=2
     on_ai_failure_detection: <class 'bool'>  default=False
     on_filament_low: <class 'bool'>  default=False
     on_maintenance_due: <class 'bool'>  default=False
@@ -168,6 +170,7 @@ class NotificationProviderResponse(NotificationProviderBase)
     on_aito_payment_received: <class 'bool'>  default=False
     on_printer_offline: <class 'bool'>  default=False
     on_printer_error: <class 'bool'>  default=False
+    printer_error_max_level: <class 'int'>  default=2
     on_ai_failure_detection: <class 'bool'>  default=False
     on_filament_low: <class 'bool'>  default=False
     on_maintenance_due: <class 'bool'>  default=False
@@ -223,6 +226,7 @@ class NotificationProviderUpdate(IgnoresNullForRequiredColumns)
     on_aito_payment_received: bool | None  default=None
     on_printer_offline: bool | None  default=None
     on_printer_error: bool | None  default=None
+    printer_error_max_level: int | None  default=None
     on_ai_failure_detection: bool | None  default=None
     on_filament_low: bool | None  default=None
     on_maintenance_due: bool | None  default=None
@@ -514,6 +518,7 @@ CREATE TABLE notification_providers (
 	on_aito_payment_received BOOLEAN, 
 	on_printer_offline BOOLEAN, 
 	on_printer_error BOOLEAN, 
+	printer_error_max_level INTEGER DEFAULT '2' NOT NULL, 
 	on_ai_failure_detection BOOLEAN DEFAULT 0, 
 	on_filament_low BOOLEAN, 
 	on_maintenance_due BOOLEAN, 
@@ -574,6 +579,7 @@ CREATE TABLE notification_providers (
 	on_aito_payment_received BOOLEAN, 
 	on_printer_offline BOOLEAN, 
 	on_printer_error BOOLEAN, 
+	printer_error_max_level INTEGER DEFAULT '2' NOT NULL, 
 	on_ai_failure_detection BOOLEAN DEFAULT false, 
 	on_filament_low BOOLEAN, 
 	on_maintenance_due BOOLEAN, 

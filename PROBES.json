@@ -15,7 +15,7 @@
  },
  {
   "id": "notif-http",
-  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_notif_api.py 2>/dev/null; rm -f bambuddy.db",
+  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_notif_api.py 2>/dev/null",
   "timeout": 600,
   "scrub": ["\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"],
   "files": []
