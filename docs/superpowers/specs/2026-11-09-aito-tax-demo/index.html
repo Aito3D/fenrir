@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aito card tax · mockup</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  bg: '#0c1016', surf: '#141b23', surf2: '#10161d', line: '#212c37', ink: '#e9eff6', sub: '#93a4b6', acc: '#14b8a6', warn: '#f5b03c',
+} } } };
+</script>
+<style>
+  html { font-size: 14.4px; }
+  body { background: #0c1016; color: #e9eff6; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  [data-lucide] { width: 1em; height: 1em; }
+  .seg[aria-pressed=true] { background: #1d2a35; color: #e9eff6; }
+  .pop { animation: open .14s ease-out; } @keyframes open { from { opacity: 0; transform: translateY(-4px); } }
+  .flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: rgba(20,184,166,.28); } }
+  .toast { animation: toast .2s ease-out; } @keyframes toast { from { opacity: 0; transform: translateY(8px); } }
+  .spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .pop, .flash, .toast { animation: none; } }
+  .num { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- mockup controls: not part of the app -->
+<div class="sticky top-0 z-20 border-b border-line bg-surf">
+  <div class="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 text-xs">
+    <span class="text-sm"><b>Card tax</b> <span class="text-sub">· mockup, made-up data, nothing goes to Zoho</span></span>
+    <label class="ml-auto inline-flex items-center gap-1.5 text-sub"><input id="lock" type="checkbox" class="accent-teal-500"> Quote already invoiced</label>
+    <button id="newcard" class="rounded-md border border-line px-2.5 py-1.5 text-sub hover:text-ink">Next card for COJ TAHITI 2027</button>
+    <button id="reset" class="rounded-md border border-line px-2.5 py-1.5 text-sub hover:text-ink">Reset</button>
+  </div>
+</div>
+
+<div class="mx-auto max-w-[1400px] p-4">
+  <div class="overflow-hidden rounded-xl border border-line bg-surf2">
+
+    <!-- masthead -->
+    <div class="flex flex-wrap items-start gap-6 border-b border-line bg-surf px-5 py-3.5">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 text-[11px] uppercase tracking-wide text-sub">
+          <span id="projno">Project #415</span> <span class="text-acc">DEV26-3002</span>
+          <span class="rounded bg-line px-1.5 py-0.5 normal-case tracking-normal">Draft</span>
+        </div>
+        <div class="mt-1 text-xl font-semibold">COJ TAHITI 2027</div>
+        <div class="mt-1 flex flex-wrap gap-4 text-xs text-sub">
+          <span><i data-lucide="user"></i> Pierre DEHAINAULT</span><span><i data-lucide="phone"></i> (+689) 87.05.28.47</span><span><i data-lucide="mail"></i> pdehainault@tahiti2027.pf</span>
+        </div>
+      </div>
+      <div class="text-right">
+        <div class="flex items-center justify-end gap-2">
+          <span id="headChip" class="hidden rounded-md px-1.5 py-0.5 text-[11px] font-semibold"></span>
+          <span id="headTotal" class="num text-2xl font-semibold">9 500 FCFP</span>
+        </div>
+        <div id="headSub" class="num mt-0.5 text-xs text-sub">incl. TVA 13% · 0/2 steps</div>
+      </div>
+    </div>
+
+    <div class="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+
+      <!-- work -->
+      <div class="space-y-3">
+        <div class="text-[11px] uppercase tracking-wide text-sub">Work</div>
+        <div class="rounded-lg border border-line bg-surf">
+          <div class="flex items-center justify-between border-b border-line px-4 py-3 text-sm">
+            <span>Support pour DJI Mic 2 <span class="text-xs text-sub">0/2 steps</span></span>
+          </div>
+          <div id="lines" class="divide-y divide-line"></div>
+          <div class="flex items-baseline justify-between border-t border-line px-4 py-3 text-sm">
+            <span class="text-sub">Task total</span>
+            <span class="text-right"><span id="taskTotal" class="num font-semibold">9 500 FCFP</span><span id="taskSub" class="num block text-[11px] text-sub"></span></span>
+          </div>
+        </div>
+        <p class="text-xs text-sub">Unit costs are still typed as today. A line total shows the price with the card's tax.</p>
+      </div>
+
+      <!-- details: billing -->
+      <div class="space-y-3">
+        <div class="flex gap-4 text-[11px] uppercase tracking-wide"><span class="border-b border-acc pb-1">Details</span><span class="text-sub">Activity</span></div>
+        <div class="relative rounded-lg border border-line bg-surf p-4 text-xs">
+          <div class="mb-3 text-[11px] uppercase tracking-wide text-sub">Billing</div>
+          <div class="flex justify-between"><span>Quote<span class="block text-sub">Draft</span></span><span class="text-right">DEV26-3002</span></div>
+
+          <!-- the new row -->
+          <div class="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+            <span>Tax<span id="taxHint" class="block text-sub">Default rate</span></span>
+            <button id="taxBtn" aria-haspopup="dialog" aria-expanded="false" class="inline-flex items-center gap-1.5 rounded-md border border-line bg-surf2 px-2.5 py-1.5 font-semibold hover:border-acc/60 disabled:cursor-not-allowed disabled:opacity-60">
+              <i data-lucide="percent" class="text-sub"></i><span id="taxLabel">TVA 13%</span><i data-lucide="chevron-down" class="text-sub"></i>
+            </button>
+          </div>
+          <div id="lockNote" class="mt-2 hidden rounded-md bg-warn/10 px-2.5 py-1.5 text-warn"><i data-lucide="lock"></i> Invoiced: the invoice keeps its tax. Change it in Zoho Books with a credit note.</div>
+
+          <!-- popover -->
+          <div id="pop" role="dialog" aria-label="Tax for this card" class="pop mt-3 hidden space-y-3 rounded-lg border border-acc/30 bg-surf2 p-3">
+            <div class="text-[11px] uppercase tracking-wide text-sub">Tax for this card</div>
+            <div id="rates" role="radiogroup" aria-label="Tax rate" class="space-y-1.5"></div>
+            <div class="space-y-1.5">
+              <div class="text-[11px] uppercase tracking-wide text-sub">What stays the same</div>
+              <div role="group" class="grid grid-cols-2 gap-0.5 rounded-md border border-line bg-surf2 p-0.5">
+                <button class="seg rounded px-2 py-1.5 text-sub" data-keep="ht" aria-pressed="true">Price excl. tax</button>
+                <button class="seg rounded px-2 py-1.5 text-sub" data-keep="ttc" aria-pressed="false">Price the client pays</button>
+              </div>
+              <div id="keepHint" class="text-sub"></div>
+            </div>
+            <label class="flex items-center gap-2"><input id="remember" type="checkbox" class="mt-0.5 self-start accent-teal-500"> Use for COJ TAHITI 2027's next cards<span class="block text-sub">Every contact of this customer account</span></label>
+            <div id="preview" class="num space-y-1 rounded-md border border-line bg-surf2 px-2.5 py-2"></div>
+            <div class="flex justify-end gap-2">
+              <button id="cancel" class="rounded-md px-2.5 py-1 text-sub hover:text-ink">Cancel</button>
+              <button id="apply" class="inline-flex items-center gap-1.5 rounded-md bg-acc px-3 py-1 font-semibold text-bg"><i data-lucide="check"></i><span>Apply to the quote</span></button>
+            </div>
+          </div>
+
+          <div class="mt-3 border-t border-line pt-3">
+            <div id="breakdown" class="num space-y-1"></div>
+          </div>
+          <div class="mt-3 flex justify-between border-t border-line pt-3"><span>Deposit due<span class="block text-sub">Online payment</span></span><span id="deposit" class="num">9 500 FCFP</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast fixed bottom-5 right-5 hidden rounded-lg border border-acc/40 bg-[#10241f] px-4 py-2.5 text-xs text-[#c8f2e6]"></div>
+
+<script>
+const RATES = [
+  { id: 'std', label: 'TVA 13%', note: 'Standard', pct: 13 },
+  { id: 'red', label: 'TVA 1%', note: 'Reduced', pct: 1 },
+  { id: 'free', label: 'Tax-free', note: 'Exempt client · 0%', pct: 0 },
+];
+const LINES = [ { name: 'Modeling', ttc13: 5000 }, { name: 'Printing', ttc13: 4500 } ]; // typed today, incl. 13%
+const fmt = n => Math.round(n).toLocaleString('fr-FR').replace(/ | /g, ' ') + ' FCFP';
+const $ = id => document.getElementById(id);
+
+let applied = { rate: 'std', keep: 'ht' }, draft = null, clientDefault = null;
+
+// keep = 'ht': the price before tax stays, the client pays that plus the new tax.
+// keep = 'ttc': the client pays the same total, the tax is carved out of it.
+function line(l, s) {
+  const pct = RATES.find(r => r.id === s.rate).pct;
+  const ht = s.keep === 'ht' ? l.ttc13 / 1.13 : l.ttc13 / (1 + pct / 100);
+  return { ht: Math.round(ht), ttc: Math.round(ht * (1 + pct / 100)) };
+}
+function totals(s) {
+  const ls = LINES.map(l => line(l, s));
+  const ht = ls.reduce((a, l) => a + l.ht, 0), ttc = ls.reduce((a, l) => a + l.ttc, 0);
+  return { ls, ht, ttc, tax: ttc - ht, rate: RATES.find(r => r.id === s.rate) };
+}
+function rows(t) {
+  return `<div class="flex justify-between"><span class="text-sub">Excl. tax</span><span>${fmt(t.ht)}</span></div>
+    <div class="flex justify-between"><span class="text-sub">${t.rate.pct ? t.rate.label : 'Tax'}</span><span>${t.rate.pct ? fmt(t.tax) : '—'}</span></div>
+    <div class="flex justify-between border-t border-line pt-1 font-semibold"><span>Total</span><span>${fmt(t.ttc)}</span></div>`;
+}
+
+function render(flash) {
+  const t = totals(applied);
+  const isStd = applied.rate === 'std';
+  $('lines').innerHTML = t.ls.map((l, i) => `
+    <div class="flex items-center justify-between px-4 py-3 text-sm ${flash ? 'flash' : ''}">
+      <span>${LINES[i].name}<span class="block text-xs text-sub">Unit cost ${fmt(LINES[i].ttc13)} · qty 1</span></span>
+      <span class="text-right"><span class="num font-semibold text-acc">${fmt(l.ttc)}</span><span class="num block text-[11px] text-sub">${t.rate.pct ? 'incl. ' + t.rate.label : 'tax-free'}</span></span>
+    </div>`).join('');
+  $('taskTotal').textContent = fmt(t.ttc);
+  $('taskSub').textContent = t.rate.pct ? `incl. ${t.rate.label} · ${fmt(t.tax)}` : 'tax-free';
+  $('headTotal').textContent = fmt(t.ttc);
+  $('headSub').textContent = (t.rate.pct ? `incl. ${t.rate.label}` : 'tax-free') + ' · 0/2 steps';
+  const chip = $('headChip');
+  chip.classList.toggle('hidden', isStd);
+  chip.textContent = t.rate.label;
+  chip.className = `${isStd ? 'hidden ' : ''}rounded-md px-1.5 py-0.5 text-[11px] font-semibold ` + (applied.rate === 'free' ? 'bg-sky-500/15 text-sky-300' : 'bg-amber-500/15 text-amber-300');
+  $('taxLabel').textContent = t.rate.label;
+  $('taxHint').textContent = isStd ? 'Default rate' : (clientDefault === applied.rate ? 'COJ TAHITI 2027 default' : 'This card only');
+  $('breakdown').innerHTML = rows(t);
+  $('deposit').textContent = fmt(t.ttc);
+  lucide.createIcons();
+}
+
+function renderPop() {
+  const t = totals(draft);
+  $('rates').innerHTML = RATES.map(r => {
+    const on = draft.rate === r.id, tt = totals({ ...draft, rate: r.id });
+    return `<label class="flex cursor-pointer items-center gap-2.5 rounded-md border px-2.5 py-2 ${on ? 'border-acc/60 bg-acc/5' : 'border-line'}">
+      <input type="radio" name="rate" value="${r.id}" ${on ? 'checked' : ''} class="accent-teal-500">
+      <span class="flex-1"><span class="block font-semibold">${r.label}</span><span class="text-sub">${r.note}</span></span>
+      <span class="num">${fmt(tt.ttc)}</span></label>`;
+  }).join('');
+  document.querySelectorAll('[data-keep]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.keep === draft.keep)));
+  const before = totals(applied).ttc;
+  $('keepHint').textContent = draft.keep === 'ht'
+    ? 'The client pays the price before tax plus the new tax. Tax-free: the client pays less.'
+    : 'The client pays the same total; the tax is taken out of it.';
+  const diff = t.ttc - before;
+  $('preview').innerHTML = rows(t) + (diff ? `<div class="text-right text-[11px] ${diff < 0 ? 'text-sky-300' : 'text-amber-300'}">${diff < 0 ? '−' : '+'}${fmt(Math.abs(diff))} vs now</div>` : '');
+  document.querySelectorAll('input[name=rate]').forEach(i => i.onchange = () => { draft.rate = i.value; renderPop(); });
+}
+
+function openPop() { draft = { ...applied }; $('remember').checked = clientDefault === applied.rate && applied.rate !== 'std'; $('pop').classList.remove('hidden'); $('taxBtn').setAttribute('aria-expanded', 'true'); renderPop(); }
+function closePop() { $('pop').classList.add('hidden'); $('taxBtn').setAttribute('aria-expanded', 'false'); }
+
+$('taxBtn').onclick = () => $('pop').classList.contains('hidden') ? openPop() : closePop();
+$('cancel').onclick = closePop;
+document.querySelectorAll('[data-keep]').forEach(b => b.onclick = () => { draft.keep = b.dataset.keep; renderPop(); });
+$('apply').onclick = () => {
+  const btn = $('apply');
+  btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i><span>Saving to Zoho…</span>'; lucide.createIcons();
+  setTimeout(() => {
+    applied = { ...draft };
+    if ($('remember').checked) clientDefault = applied.rate;
+    btn.disabled = false; btn.innerHTML = '<i data-lucide="check"></i><span>Apply to the quote</span>';
+    closePop(); render(true);
+    const toast = $('toast');
+    toast.textContent = `DEV26-3002 updated in Zoho Books · ${totals(applied).rate.label} · ${fmt(totals(applied).ttc)}` + ($('remember').checked ? ' · default for COJ TAHITI 2027' : '');
+    toast.classList.remove('hidden'); setTimeout(() => toast.classList.add('hidden'), 3200);
+  }, 900);
+};
+$('lock').onchange = e => { $('taxBtn').disabled = e.target.checked; $('lockNote').classList.toggle('hidden', !e.target.checked); closePop(); };
+$('newcard').onclick = () => {
+  applied = { rate: clientDefault ?? 'std', keep: 'ht' };
+  $('projno').textContent = 'Project #416';
+  render(true);
+  if (!clientDefault) { const t = $('toast'); t.textContent = 'No default for COJ TAHITI 2027 yet: tick "Use for COJ TAHITI 2027\'s next cards" first.'; t.classList.remove('hidden'); setTimeout(() => t.classList.add('hidden'), 2600); }
+};
+$('reset').onclick = () => { applied = { rate: 'std', keep: 'ht' }; clientDefault = null; $('projno').textContent = 'Project #415'; $('lock').checked = false; $('lock').onchange({ target: $('lock') }); render(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); });
+render();
+</script>
+</body>
+</html>
