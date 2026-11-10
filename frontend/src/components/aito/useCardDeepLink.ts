@@ -75,6 +75,16 @@ export function useCardResolver({
   // moment ago, which a board cache up to a minute old does not hold yet. So
   // the first miss refetches both lists once, and the answer comes from that.
   const cardRefetchedFor = useRef<string | null>(null);
+  // That refetch's own answer. The query flags reach this hook a tick after
+  // refetch(), so a render in between still sees the old lists; the miss is
+  // decided from this, keyed by a token so an earlier link's answer never counts.
+  const refetchToken = useRef<object | null>(null);
+  const [refetched, setRefetched] = useState<{
+    token: object;
+    board: AitoProject[] | undefined;
+    trash: AitoProject[] | undefined;
+    failed: boolean;
+  } | null>(null);
   const refetchBoard = aitoQuery.refetch;
   const refetchTrash = trashQuery.refetch;
   // The plain `setExpandedId`, not `openCard`: the morph needs a source card
@@ -111,28 +121,32 @@ export function useCardResolver({
     if (aitoQuery.isFetching || trashQuery.isFetching || trashQuery.isPending) return;
     if (cardRefetchedFor.current !== cardParam) {
       cardRefetchedFor.current = cardParam;
-      void refetchBoard();
-      void refetchTrash();
+      const token = {};
+      refetchToken.current = token;
+      void Promise.all([refetchBoard(), refetchTrash()]).then(([board, trash]) =>
+        setRefetched({ token, board: board.data, trash: trash.data, failed: board.isError || trash.isError }),
+      );
       return;
     }
+    if (!refetched || refetched.token !== refetchToken.current) return;
+    // The fresh board holds it: the branch above opens it once that data renders.
+    if (refetched.board?.some((p) => p.id === id)) return;
     clearCardParam();
     // A list that could not be read cannot say the card is gone.
-    if (aitoQuery.isError || trashQuery.isError) {
+    if (refetched.failed) {
       showToast(t('aito.cardLookupFailed'), 'error');
       return;
     }
-    const inTrash = trashQuery.data?.some((p) => p.id === id) ?? false;
+    const inTrash = refetched.trash?.some((p) => p.id === id) ?? false;
     showToast(t(inTrash ? 'aito.cardInTrash' : 'aito.cardGone'), inTrash ? 'info' : 'error');
   }, [
     cardParam,
     expandedId,
     aitoQuery.data,
     aitoQuery.isFetching,
-    aitoQuery.isError,
     trashQuery.isFetching,
     trashQuery.isPending,
-    trashQuery.isError,
-    trashQuery.data,
+    refetched,
     refetchBoard,
     refetchTrash,
     clearCardParam,
