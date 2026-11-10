@@ -59,7 +59,8 @@ async def test_every_queue_write_route_notifies():
     routes = Path(__file__).resolve().parents[3] / "backend" / "app" / "api" / "routes"
     for file, notifier, skip in (
         ("print_queue.py", "notify_queue_changed", {"_refresh_batches_after_delete"}),
-        ("pending_uploads.py", "notify_pending_uploads_changed", set()),
+        # _store_pending is a helper; both routes calling it notify after it.
+        ("pending_uploads.py", "notify_pending_uploads_changed", {"_store_pending"}),
     ):
         src = (routes / file).read_text()
         current = None
@@ -86,6 +87,8 @@ async def test_virtual_printer_upload_notifies(test_engine, tmp_path):
     instance.name = "vp-test"
     instance._session_factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     instance._pending_files = {}
+    instance.id = None
+    instance.upload_dir = tmp_path / "uploads"  # a review upload keeps its own copy here
     upload = tmp_path / "part.3mf"
     upload.write_bytes(b"not a real archive")
 

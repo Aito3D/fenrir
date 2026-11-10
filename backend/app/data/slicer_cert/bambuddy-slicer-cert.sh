@@ -58,7 +58,8 @@ cert_block() {
 }
 
 cert_subject() {
-	openssl x509 -noout -subject -nameopt RFC2253 2>/dev/null
+	# LibreSSL (macOS) prints "subject= CN=...", OpenSSL "subject=CN=...".
+	openssl x509 -noout -subject -nameopt RFC2253 2>/dev/null | sed 's/^subject= */subject=/'
 }
 
 find_cert_files() {

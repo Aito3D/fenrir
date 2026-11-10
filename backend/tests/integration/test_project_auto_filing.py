@@ -269,7 +269,7 @@ async def test_auto_file_copy_from_path_creates_new_item(async_client: AsyncClie
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_virtual_printer_archive_also_files_a_copy(async_client: AsyncClient, db_session, test_engine, tmp_path):
+async def test_virtual_printer_upload_also_files_a_copy(async_client: AsyncClient, db_session, test_engine, tmp_path):
     from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
 
     project, item_id = await _project_with_support_item(async_client, db_session)
@@ -279,7 +279,7 @@ async def test_virtual_printer_archive_also_files_a_copy(async_client: AsyncClie
     inst = VirtualPrinterInstance(
         vp_id=41,
         name="AutoFile",
-        mode="archive",
+        mode="library",
         model="C12",
         access_code="12345678",
         serial_suffix="391800041",
@@ -289,11 +289,12 @@ async def test_virtual_printer_archive_also_files_a_copy(async_client: AsyncClie
     received = vp_dir / f"{project['code']}_support.3mf"
     received.write_bytes(_3mf("vp"))
 
-    with patch.object(inst, "_broadcast_archive_created", new_callable=AsyncMock):
-        await inst._archive_file(received, "192.168.1.50")
+    with patch.object(inst, "_broadcast_library_files_changed", new_callable=AsyncMock):
+        await inst._store_in_library(received, "192.168.1.50")
 
-    archives = list((await db_session.execute(select(PrintArchive))).scalars())
-    assert [a.filename for a in archives] == [received.name]
+    assert list((await db_session.execute(select(PrintArchive))).scalars()) == []
+    stored = list((await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id.is_(None)))).scalars())
+    assert [f.filename for f in stored] == [received.name]  # the File Manager file stays
     revisions = await _revisions(db_session, item_id)
     assert [r.number for r in revisions] == [1, 2]
     copies = list(
@@ -538,14 +539,13 @@ async def _revision_added_events(db, order_id: int) -> list:
 
 
 async def _assert_pending_archive_not_filed(db, run: dict) -> None:
-    """The archive succeeded but nothing was filed: the "support" item stays at R1, no
+    """The approval succeeded but nothing was filed: the "support" item stays at R1, no
     library copy carries the project, and the linked order gets no revision event."""
     response = run["response"]
     assert response.status_code == 200, response.text
-    assert set(response.json()) == {"id", "print_name", "filename"}
+    assert set(response.json()) == {"id", "filename", "folder_id"}
     assert response.json()["filename"] == run["filename"]
-    archives = list((await db.execute(select(PrintArchive))).scalars())
-    assert [a.filename for a in archives] == [run["filename"]]
+    assert list((await db.execute(select(PrintArchive))).scalars()) == []  # it goes to the File Manager
 
     revisions = await _revisions(db, run["item_id"])
     assert [r.number for r in revisions] == [1]
@@ -558,15 +558,14 @@ async def _assert_pending_archive_not_filed(db, run: dict) -> None:
 
 
 async def _assert_pending_archive_filed_a_copy(db, run: dict) -> None:
-    """The archive succeeded AND a copy was filed as R2 of the "support" item, with
+    """The approval succeeded AND a copy was filed as R2 of the "support" item, with
     a ``project.revision_added`` event attributed to the archiving user (none for a key)."""
     from backend.app.api.routes.library import to_absolute_path
 
     response = run["response"]
     assert response.status_code == 200, response.text
     assert response.json()["filename"] == run["filename"]
-    archives = list((await db.execute(select(PrintArchive))).scalars())
-    assert [a.filename for a in archives] == [run["filename"]]
+    assert list((await db.execute(select(PrintArchive))).scalars()) == []  # it goes to the File Manager
 
     revisions = await _revisions(db, run["item_id"])
     assert [r.number for r in revisions] == [1, 2]
@@ -607,7 +606,9 @@ async def test_pending_archive_without_projects_update_is_not_filed(async_client
     (test_uploader_without_projects_update_is_not_auto_filed)."""
     from backend.app.core.permissions import Permission
 
-    run = await _archive_pending_as(async_client, db_session, [Permission.QUEUE_CREATE.value], tmp_path)
+    run = await _archive_pending_as(
+        async_client, db_session, [Permission.QUEUE_CREATE.value, Permission.LIBRARY_UPLOAD.value], tmp_path
+    )
     await _assert_pending_archive_not_filed(db_session, run)
 
 
@@ -618,7 +619,11 @@ async def test_pending_archive_by_api_key_without_project_scope_is_not_filed(
 ):
     """T-321: an API key's effective scopes gate auto-filing as a user's permissions do."""
     run = await _archive_pending_as(
-        async_client, db_session, None, tmp_path, api_key_flags={"can_queue": True, "can_manage_projects": False}
+        async_client,
+        db_session,
+        None,
+        tmp_path,
+        api_key_flags={"can_queue": True, "can_manage_library": True, "can_manage_projects": False},
     )
     await _assert_pending_archive_not_filed(db_session, run)
 
@@ -630,7 +635,11 @@ async def test_pending_archive_by_api_key_with_project_scope_files_a_copy(
 ):
     """T-321: a key with can_manage_projects files the copy; no user, so no event actor."""
     run = await _archive_pending_as(
-        async_client, db_session, None, tmp_path, api_key_flags={"can_queue": True, "can_manage_projects": True}
+        async_client,
+        db_session,
+        None,
+        tmp_path,
+        api_key_flags={"can_queue": True, "can_manage_library": True, "can_manage_projects": True},
     )
     await _assert_pending_archive_filed_a_copy(db_session, run)
 
@@ -642,7 +651,10 @@ async def test_pending_archive_with_projects_update_files_a_copy(async_client: A
     from backend.app.core.permissions import Permission
 
     run = await _archive_pending_as(
-        async_client, db_session, [Permission.QUEUE_CREATE.value, Permission.PROJECTS_UPDATE.value], tmp_path
+        async_client,
+        db_session,
+        [Permission.QUEUE_CREATE.value, Permission.PROJECTS_UPDATE.value, Permission.LIBRARY_UPLOAD.value],
+        tmp_path,
     )
     await _assert_pending_archive_filed_a_copy(db_session, run)
 

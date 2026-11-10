@@ -237,8 +237,8 @@ class TestPendingUploadsAPI:
     async def test_archive_pending_upload_succeeds(
         self, async_client: AsyncClient, db_session, mock_pending_uploads, archive_paths
     ):
-        """Archiving a real pending upload creates the archive, applies the
-        supplied tags/notes/project, marks the pending row archived, and
+        """Approving a real pending upload stores it in the File Manager with the
+        supplied tags/notes/project, marks the pending row approved, and
         cleans up the temp file."""
         from sqlalchemy import select
 
@@ -262,24 +262,21 @@ class TestPendingUploadsAPI:
         result = response.json()
         assert "id" in result
         assert result["filename"] == "benchy.3mf"
-        assert result["print_name"]
 
-        # The archive itself got the tags/notes/project.
-        from backend.app.models.archive import PrintArchive
+        # The File Manager file got the tags/notes/project.
+        from backend.app.models.library import LibraryFile
 
-        archive = (await db_session.execute(select(PrintArchive).where(PrintArchive.id == result["id"]))).scalar_one()
-        assert archive.tags == "benchy,test"
-        assert archive.notes == "from review queue"
-        assert archive.project_id == project.id
+        stored = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == result["id"]))).scalar_one()
+        assert stored.notes == "from review queue"
+        assert stored.project_id == project.id
 
-        # The pending row is now archived and points at the new archive.
+        # The pending row is now approved.
         # `pending` was loaded (and committed) by this same session, so its
         # identity-mapped object needs an explicit refresh to see the write
         # the route made on a different session — a bare re-select would
         # just hand back the same cached (stale) instance.
         await db_session.refresh(pending)
-        assert pending.status == "archived"
-        assert pending.archived_id == result["id"]
+        assert pending.status == "approved"
         assert pending.tags == "benchy,test"
         assert pending.notes == "from review queue"
         assert pending.project_id == project.id
@@ -389,12 +386,11 @@ class TestPendingUploadsAPI:
 
         assert response.status_code == 200, response.text
         result = response.json()
-        assert result["archived"] == 1
+        assert result["stored"] == 1
         assert result["failed"] == 1
 
         await db_session.refresh(good)
-        assert good.status == "archived"
-        assert good.archived_id is not None
+        assert good.status == "approved"
         assert not Path(good.file_path).exists()
 
         await db_session.refresh(missing)
