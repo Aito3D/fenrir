@@ -2523,3 +2523,83 @@ async def test_a_rate_limited_prefill_in_the_preview_opens_the_window_and_leaves
     preview = await actions.handover_preview(db_session, "so1", "pk1")
     assert (preview["available"], preview["to_invoice"]) == (False, False)
     _assert_window_open()
+
+
+# --- Invoice now: packed units or the whole order, before the hand-over ------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_invoice_packed_bills_the_parcel_before_it_ships_and_the_hand_over_bills_nothing_more(db_session, books):
+    await _ready(db_session, books, qty=3, box=2)
+    outcome = await actions.invoice_shipped(db_session, "so1", apply_credit=False, scope="packed")
+    (payload,) = _calls(books, "create_invoice")[0]
+    assert [(line["salesorder_item_id"], line["quantity"]) for line in payload["line_items"]] == [("l1", 2)]
+    assert (outcome["invoice"], outcome["invoice_number"], outcome["shipment"]) == ("created", "INV-1", "skipped")
+    assert "create_shipment" not in _names(books)
+    books.log.clear()
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
+    assert (outcome["shipment"], outcome["invoice"]) == ("done", "none")
+    assert "create_invoice" not in _names(books)
+
+
+@pytest.mark.asyncio
+async def test_invoice_whole_bills_every_unit_not_invoiced_yet(db_session, books):
+    await _ready(db_session, books, qty=3, box=2, invoiced=1)
+    await actions.invoice_shipped(db_session, "so1", apply_credit=False, scope="whole")
+    (payload,) = _calls(books, "create_invoice")[0]
+    assert [(line["salesorder_item_id"], line["quantity"]) for line in payload["line_items"]] == [("l1", 2)]
+
+
+@pytest.mark.asyncio
+async def test_invoice_shipped_still_ignores_a_parcel_waiting_to_go_out(db_session, books):
+    await _ready(db_session, books, qty=3, box=2)
+    outcome = await actions.invoice_shipped(db_session, "so1", apply_credit=False)
+    assert outcome["invoice"] == "none"
+    assert "get_package" not in _names(books)
+
+
+@pytest.mark.asyncio
+async def test_invoice_packed_reports_a_books_failure_reading_the_parcel(db_session, books):
+    await _ready(db_session, books, qty=3, box=2)
+    books.errors["get_package"] = ZohoUpstreamError("down")
+    outcome = await actions.invoice_shipped(db_session, "so1", apply_credit=False, scope="packed")
+    assert (outcome["invoice"], outcome["failed_step"]) == ("failed", "invoice")
+    assert "create_invoice" not in _names(books)
+
+
+@pytest.mark.asyncio
+async def test_invoice_preview_totals_packed_and_whole(db_session, books):
+    await _ready(db_session, books, qty=3, box=2, advance=600)
+    preview = await actions.invoice_preview(db_session, "so1")
+    assert preview == {
+        "available": True,
+        "credit": 600.0,
+        "drafts": [],
+        "packed": {"units": 2.0, "invoice_total": 1000.0, "manual_reason": None},
+        "whole": {"units": 3.0, "invoice_total": 1500.0, "manual_reason": None},
+    }
+    assert _names(books) == ["get_package", "invoice_prefill"]
+
+
+@pytest.mark.asyncio
+async def test_invoice_preview_with_nothing_to_invoice_does_not_ask_for_a_prefill(db_session, books):
+    await _ready(db_session, books, qty=3, box=2, invoiced=3)
+    preview = await actions.invoice_preview(db_session, "so1")
+    assert preview["available"] is True
+    assert preview["packed"]["units"] == preview["whole"]["units"] == 0
+    assert "invoice_prefill" not in _names(books)
+
+
+@pytest.mark.asyncio
+async def test_invoice_preview_names_a_blocking_draft_and_survives_books(db_session, books):
+    doc = handover_order(books)
+    doc["invoices"] = [{"invoice_id": "d1", "invoice_number": "INV-0", "status": "draft"}]
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    preview = await actions.invoice_preview(db_session, "so1")
+    assert (preview["available"], preview["drafts"]) == (True, ["INV-0"])
+    books.orders["so1"]["invoices"] = []
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    books.errors["get_package"] = ZohoUpstreamError("down")
+    assert (await actions.invoice_preview(db_session, "so1"))["available"] is False

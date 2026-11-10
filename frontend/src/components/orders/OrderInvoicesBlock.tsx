@@ -9,12 +9,20 @@ import { PdfDownloadButton } from '../aito/PdfDownloadButton';
 import { PdfPrintButton } from '../aito/PdfPrintButton';
 import { DOC_ICON_BUTTON_CLS, LINK_ICON_CLS } from '../aito/linkActionHelpers';
 import { OrderInvoiceEmailModal } from './OrderInvoiceEmailModal';
+import { OrderInvoiceNow } from './OrderInvoiceNow';
 import { daysPastDue, parseDay } from './orderBoard';
 import { TONE } from './orderStatus';
 
-/** The invoices of one order, one entry each, and the way to invoice what was handed over without one.
+/** The invoices of one order, one entry each, the way to invoice what was handed over without one, and
+ *  `onInvoiceNow` to invoice what is packed or the whole order before the hand-over.
  *  `canEmail` (the caller's orders:update) adds the send-by-mail button of the Aito card's invoice. */
-export function OrderInvoicesBlock({ row, onCreateInvoice, busy = false, canEmail = false }: { row: Pick<OrderBoardRow, 'currency' | 'payment' | 'unbilled_units'>; onCreateInvoice?: () => void; busy?: boolean; canEmail?: boolean }) {
+export function OrderInvoicesBlock({ row, onCreateInvoice, onInvoiceNow, busy = false, canEmail = false }: {
+  row: Pick<OrderBoardRow, 'currency' | 'payment' | 'unbilled_units'> & Partial<Pick<OrderBoardRow, 'id' | 'lines'>>;
+  onCreateInvoice?: () => void;
+  onInvoiceNow?: (scope: 'packed' | 'whole', applyCredit: boolean) => void;
+  busy?: boolean;
+  canEmail?: boolean;
+}) {
   const { t } = useTranslation();
   const money = (n: number) => formatMoney(n, row.currency);
   const shortDay = (day: string) => parseDay(day).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
@@ -23,10 +31,14 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, busy = false, canEmai
   const [seen, setSeen] = useState(() => new Set(invoices.map(i => i.id)));
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [emailing, setEmailing] = useState<OrderInvoice | null>(null);
+  const [now, setNow] = useState(false);
   if (invoices.some(i => !seen.has(i.id))) {
     setFresh(new Set(invoices.filter(i => !seen.has(i.id)).map(i => i.id)));
     setSeen(new Set(invoices.map(i => i.id)));
+    setNow(false); // the new invoice is the answer
   }
+  // Units not handed over and not invoiced: something an invoice could bill ahead of the hand-over.
+  const ahead = !!onInvoiceNow && !!row.id && row.unbilled_units <= 0 && (row.lines ?? []).some(l => l.remaining > l.invoiced);
 
   const state = (i: OrderInvoice) => {
     if (i.status === 'draft') return <span className="text-bambu-gray">{t('orders.inv.draft')}</span>;
@@ -55,9 +67,19 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, busy = false, canEmai
           </button>
         </div>
       )}
+      {now && onInvoiceNow && row.id ? (
+        <OrderInvoiceNow row={{ id: row.id, currency: row.currency }} busy={busy} onCreate={onInvoiceNow} onClose={() => setNow(false)} />
+      ) : ahead && (
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <span className="text-bambu-gray">{invoices.length === 0 ? t('orders.inv.emptyNow') : ''}</span>
+          <button type="button" disabled={busy} onClick={() => setNow(true)} className="shrink-0 rounded-md border border-bambu-green/50 px-2.5 py-1 font-semibold text-bambu-green hover:bg-bambu-green/10 disabled:opacity-50">
+            {t('orders.inv.now')}
+          </button>
+        </div>
+      )}
       <div className="mt-1.5 divide-y divide-bambu-dark-tertiary/60">
         {invoices.length === 0 ? (
-          <div className="py-1.5 text-bambu-gray">{t('orders.inv.empty')}</div>
+          !ahead && !now && <div className="py-1.5 text-bambu-gray">{t('orders.inv.empty')}</div>
         ) : (
           invoices.map(i => (
             <div key={i.id} data-fresh={fresh.has(i.id) || undefined} className={`px-1 py-1.5 ${fresh.has(i.id) ? 'rounded-md bg-bambu-green/10 motion-safe:animate-[pulse_1s_ease-in-out_2]' : ''}`}>

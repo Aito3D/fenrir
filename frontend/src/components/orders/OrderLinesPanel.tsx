@@ -529,6 +529,11 @@ export function OrderLinesPanel({
             invoiceSent.current = true;
             createInvoice.mutate({ id: row.id, applyCredit: (row.payment?.advance ?? 0) > 0 }, { onSettled: () => { invoiceSent.current = false; } });
           } : undefined}
+          onInvoiceNow={canUpdate ? (scope, applyCredit) => {
+            if (createInvoice.isPending || invoiceSent.current) return;
+            invoiceSent.current = true;
+            createInvoice.mutate({ id: row.id, applyCredit, scope }, { onSettled: () => { invoiceSent.current = false; } });
+          } : undefined}
         />
       </div>
     </div>

@@ -1,6 +1,6 @@
 import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
-import type { OrderActionResult, OrderBoardResponse, OrderBoardRow, OrderEditLine } from '../../api/client';
+import type { OrderActionResult, OrderBoardResponse, OrderBoardRow, OrderEditLine, OrderInvoiceScope } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { isRefused } from './orderErrors';
 
@@ -8,7 +8,7 @@ const BOARD_KEY = ['order-board'] as const;
 
 type Callbacks<R, V> = { onSuccess?: (result: R, variables: V) => void; onError?: (error: unknown) => void };
 type HandOverVars = { id: string; packageId: string; mode: 'pickup' | 'delivery'; applyCredit: boolean };
-type InvoiceVars = { id: string; applyCredit: boolean };
+type InvoiceVars = { id: string; applyCredit: boolean; scope?: OrderInvoiceScope };
 
 const HANDOVER_KEY = ['order-hand-over'] as const;
 
@@ -42,7 +42,10 @@ export function useOrderActions(callbacks?: {
   };
 
   // What a hand-over preview showed is stale once the order was written, or refused because it moved.
-  const dropPreviews = (id: string) => queryClient.removeQueries({ queryKey: ['order-handover', id] });
+  const dropPreviews = (id: string) => {
+    queryClient.removeQueries({ queryKey: ['order-handover', id] });
+    queryClient.removeQueries({ queryKey: ['order-invoice', id] });
+  };
   const refused = (id: string, e: unknown) => {
     if (!isRefused(e)) return;
     dropPreviews(id);
@@ -115,7 +118,7 @@ export function useOrderActions(callbacks?: {
     },
   });
   const createInvoice = useMutation({
-    mutationFn: ({ id, applyCredit }: InvoiceVars) => api.createOrderInvoice(id, { apply_credit: applyCredit }),
+    mutationFn: ({ id, applyCredit, scope }: InvoiceVars) => api.createOrderInvoice(id, { apply_credit: applyCredit, scope }),
     onSuccess: async (r, v) => {
       await take(r.board);
       dropPreviews(v.id);

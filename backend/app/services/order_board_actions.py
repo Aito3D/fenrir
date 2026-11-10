@@ -477,6 +477,48 @@ def _service_line_ids(order: dict) -> set[str]:
     }
 
 
+InvoiceScope = Literal["shipped", "packed", "whole"]
+
+
+async def _unshipped_boxes(db: AsyncSession, order: dict) -> dict[str, float]:
+    """Units per order line in the parcels still waiting to go out (Books' order detail does not say which line is
+    in which parcel, so each one is read)."""
+    result: dict[str, float] = {}
+    for stored in order.get("packages") or []:
+        if stored.get("status") != "not_shipped" or not stored.get("package_id"):
+            continue
+        package = await zoho_service.get_package(db, stored["package_id"])
+        if package.get("status") not in _PACKAGE_STATUSES:
+            raise ValueError("unexpected package status")
+        if package.get("status") == "not_shipped":  # a shipped parcel is already in quantity_shipped
+            for line_id, units in _boxed(package).items():
+                result[line_id] = result.get(line_id, 0.0) + units
+    return result
+
+
+async def _scope_units(db: AsyncSession, order: dict, scope: InvoiceScope) -> dict[str, float]:
+    """Units per order line an invoice of ``scope`` bills: what left, plus what is packed, or the whole order."""
+    if scope == "whole":
+        return units_to_invoice(
+            order, service_line_ids={line.get("line_item_id") or "" for line in order.get("line_items") or []}
+        )
+    extra = await _unshipped_boxes(db, order) if scope == "packed" else None
+    return units_to_invoice(order, extra_shipped=extra, service_line_ids=_service_line_ids(order))
+
+
+def _printed_total(payload: dict | None) -> float | None:
+    """The total Books would print for this body, only when it is plain: tax included, no discount and no
+    order-level money to add."""
+    if (
+        payload
+        and payload.get("is_inclusive_tax")
+        and not any(_nonzero(line.get("discount")) for line in payload["line_items"])
+        and not any(_nonzero(payload.get(k)) for k in _ORDER_MONEY)
+    ):
+        return round(sum(_num(line.get("rate")) * line["quantity"] for line in payload["line_items"]), 2)
+    return None
+
+
 def _drafts(order: dict) -> list[str]:
     # Books may not count a draft in quantity_invoiced (unverified): a draft on the order blocks a second invoice.
     return [i.get("invoice_number") or "" for i in order.get("invoices") or [] if i.get("status") == "draft"]
@@ -529,6 +571,7 @@ async def _finish(
     row: dict | None,
     deliver: str | None,
     apply_credit: bool,
+    scope: InvoiceScope = "shipped",
 ) -> dict:
     """Steps 2 to 6 of a hand-over (``deliver`` is the shipment to mark delivered). Never raises: a failure stops
     the sequence and is reported in the outcome. ``row`` is the board row read before the first write."""
@@ -542,7 +585,7 @@ async def _finish(
             outcome["delivered"] = "done"
         step = "invoice"
         fresh = await zoho_service.get_salesorder(db, salesorder_id)
-        keep = units_to_invoice(fresh, service_line_ids=_service_line_ids(fresh))
+        keep = await _scope_units(db, fresh, scope)
         if not keep:
             return outcome
         drafts = _drafts(fresh)
@@ -1061,13 +1104,18 @@ async def edit_parcel(
         return {}  # the edit took it off the board; the write is done
 
 
-async def invoice_shipped(db: AsyncSession, salesorder_id: str, *, apply_credit: bool) -> dict:
-    """Invoice what is shipped and not invoiced yet, for any stored order (a finished one has no board row)."""
+async def invoice_shipped(
+    db: AsyncSession, salesorder_id: str, *, apply_credit: bool, scope: InvoiceScope = "shipped"
+) -> dict:
+    """Invoice what is not invoiced yet, for any stored order (a finished one has no board row): what is shipped,
+    also what is packed (before the hand-over, which then invoices nothing more), or the whole order."""
     with writing(salesorder_id):
         doc = await confirm_stored_copy(db, salesorder_id)
         row = await sync.find_board_row(db, salesorder_id)
         number = doc.header.get("salesorder_number") or ""
-        return await _finish(db, salesorder_id, number, _outcome(), row=row, deliver=None, apply_credit=apply_credit)
+        return await _finish(
+            db, salesorder_id, number, _outcome(), row=row, deliver=None, apply_credit=apply_credit, scope=scope
+        )
 
 
 async def handover_preview(db: AsyncSession, salesorder_id: str, package_id: str) -> dict:
@@ -1119,16 +1167,47 @@ async def handover_preview(db: AsyncSession, salesorder_id: str, package_id: str
         ]
         return result
     result.update(to_invoice=True, manual=payload is None, manual_reason=reason)
-    # Only a total Books would print as is: tax included, no discount and no order-level money to add.
-    if (
-        payload
-        and payload.get("is_inclusive_tax")
-        and not any(_nonzero(line.get("discount")) for line in payload["line_items"])
-        and not any(_nonzero(payload.get(k)) for k in _ORDER_MONEY)
-    ):
-        total = round(sum(_num(line.get("rate")) * line["quantity"] for line in payload["line_items"]), 2)
+    total = _printed_total(payload)
+    if total is not None:
         result["invoice_total"] = total
         result["credit"] = min(total, _num(((row or {}).get("payment") or {}).get("advance")))
+    return result
+
+
+async def invoice_preview(db: AsyncSession, salesorder_id: str) -> dict:
+    """What an invoice made now would bill, for what is packed and for the whole order, from the stored order and
+    Books' own prefill. Reads only. ``credit`` is the advance a hand-over would apply, capped by each total."""
+    order = await _stored_order(db, salesorder_id)
+    row = await sync.find_board_row(db, salesorder_id)
+    empty = {"units": 0.0, "invoice_total": None, "manual_reason": None}
+    result = {
+        "available": False,
+        "credit": _num(((row or {}).get("payment") or {}).get("advance")),
+        "drafts": [],
+        "packed": dict(empty),
+        "whole": dict(empty),
+    }
+    if sync.zoho_busy():
+        return result
+    try:
+        keeps = {scope: await _scope_units(db, order, scope) for scope in ("packed", "whole")}
+        drafts = _drafts(order)
+        prefill = await zoho_service.invoice_prefill(db, salesorder_id) if keeps["whole"] and not drafts else None
+        if keeps["whole"] and not drafts and prefill is None:
+            return result  # Books refused although units are owed an invoice: unknown, not "nothing to invoice"
+        today = date.today().isoformat()
+        for scope, keep in keeps.items():
+            payload, reason = invoice_payload(prefill or {}, keep, today) if keep and prefill else (None, None)
+            result[scope] = {
+                "units": _r(sum(keep.values())) if payload or reason else 0.0,
+                "invoice_total": _printed_total(payload),
+                "manual_reason": reason,
+            }
+    except (ZohoUpstreamError, AttributeError, KeyError, TypeError, ValueError) as e:  # a malformed Books answer
+        if isinstance(e, ZohoRateLimited):
+            sync.open_rate_limit_window(e)
+        return result
+    result.update(available=True, drafts=drafts)
     return result
 
 

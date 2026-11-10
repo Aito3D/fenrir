@@ -181,6 +181,7 @@ NEW_ROUTES = [
     ("post", f"{BASE}/orders/so1/packages", PARCEL, True),
     ("get", f"{BASE}/orders/so1/packages/p1/handover", None, False),
     ("post", f"{BASE}/orders/so1/packages/p1/handover", HAND, True),
+    ("get", f"{BASE}/orders/so1/invoice", None, False),
     ("post", f"{BASE}/orders/so1/invoice", INVOICE, True),
     ("post", f"{BASE}/orders/so1/cancel", None, True),
     ("get", f"{BASE}/items?q=pla", None, False),
@@ -324,8 +325,8 @@ async def test_handover_and_invoice_return_board_and_outcome(async_client, token
         calls.append(("hand", so, pkg, mode, apply_credit))
         return {"invoice": "created"}
 
-    async def fake_inv(db, so, *, apply_credit):
-        calls.append(("inv", so, apply_credit))
+    async def fake_inv(db, so, *, apply_credit, scope):
+        calls.append(("inv", so, apply_credit, scope))
         return {"invoice": "none"}
 
     async def fake_preview(db, so, pkg):
@@ -339,9 +340,14 @@ async def test_handover_and_invoice_return_board_and_outcome(async_client, token
     assert r.json()["outcome"] == {"invoice": "created"} and "rows" in r.json()["board"]
     r = await async_client.post(f"{BASE}/orders/so1/invoice", headers=h, json=INVOICE)
     assert r.json()["outcome"] == {"invoice": "none"} and "rows" in r.json()["board"]
+    r = await async_client.post(f"{BASE}/orders/so1/invoice", headers=h, json={**INVOICE, "scope": "packed"})
     r = await async_client.get(f"{BASE}/orders/so1/packages/p1/handover", headers=tokens["read"])
     assert r.json() == {"package": "p1"}
-    assert calls == [("hand", "so1", "p1", "pickup", False), ("inv", "so1", True)]
+    assert calls == [
+        ("hand", "so1", "p1", "pickup", False),
+        ("inv", "so1", True, "shipped"),
+        ("inv", "so1", True, "packed"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -360,6 +366,7 @@ async def test_handover_and_invoice_return_board_and_outcome(async_client, token
         ("orders/so1/packages/p1/handover", {"mode": "teleport", "apply_credit": False}),
         ("orders/so1/packages/p1/handover", {"mode": "pickup"}),
         ("orders/so1/invoice", {}),
+        ("orders/so1/invoice", {"apply_credit": True, "scope": "everything"}),
     ],
 )
 async def test_bodies_are_validated(async_client, tokens, url, body):
@@ -394,6 +401,7 @@ async def test_action_errors_map_to_statuses(async_client, tokens, monkeypatch):
             "hand_over",
             "invoice_shipped",
             "handover_preview",
+            "invoice_preview",
             "stamp_print",
             "create_picklist",
             "picklist_preview",
@@ -415,6 +423,7 @@ async def test_action_errors_map_to_statuses(async_client, tokens, monkeypatch):
             ("post", "orders/so1/invoice", INVOICE),
             ("post", "orders/so1/cancel", None),
             ("get", "orders/so1/packages/p1/handover", None),
+            ("get", "orders/so1/invoice", None),
             ("post", "orders/so1/prep-sheet", None),
             ("get", "items?q=pla", None),
             ("put", "orders/so1/lines", LINES),

@@ -91,6 +91,51 @@ describe('OrderInvoicesBlock', () => {
     expect(onCreateInvoice).toHaveBeenCalledTimes(1);
   });
 
+  it('Invoice now previews packed vs whole, applies the credit and sends the chosen scope', async () => {
+    server.use(
+      http.get('*/order-board/orders/so1/invoice', () =>
+        HttpResponse.json({
+          available: true, credit: 60000, drafts: [],
+          packed: { units: 6, invoice_total: 40000, manual_reason: null },
+          whole: { units: 10, invoice_total: 60955, manual_reason: null },
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    const onInvoiceNow = vi.fn();
+    const lines = [{ remaining: 10, invoiced: 0 }] as OrderBoardRow['lines'];
+    const { unmount } = render(<OrderInvoicesBlock row={row([], { lines: [{ remaining: 2, invoiced: 2 }] as OrderBoardRow['lines'] })} onInvoiceNow={onInvoiceNow} />);
+    expect(screen.queryByRole('button', { name: 'Invoice now' })).not.toBeInTheDocument(); // nothing left to bill ahead
+    unmount();
+    render(<OrderInvoicesBlock row={row([], { lines })} onInvoiceNow={onInvoiceNow} />);
+    await user.click(screen.getByRole('button', { name: 'Invoice now' }));
+    const packed = await screen.findByRole('radio', { name: /What is packed/ });
+    expect(packed).toBeChecked();
+    expect(screen.getByText('Invoice settled')).toBeInTheDocument(); // 40 000 fully covered by the 60 000 credit
+    await user.click(screen.getByRole('radio', { name: /The whole order/ }));
+    expect(screen.getByText(/Still due/)).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(screen.getByRole('button', { name: 'Create in Zoho Books' }));
+    expect(onInvoiceNow).toHaveBeenCalledWith('whole', false);
+  });
+
+  it('Invoice now says why it cannot invoice when a draft waits in Books', async () => {
+    server.use(
+      http.get('*/order-board/orders/so1/invoice', () =>
+        HttpResponse.json({
+          available: true, credit: 0, drafts: ['INV-0'],
+          packed: { units: 0, invoice_total: null, manual_reason: null },
+          whole: { units: 0, invoice_total: null, manual_reason: null },
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<OrderInvoicesBlock row={row([], { lines: [{ remaining: 1, invoiced: 0 }] as OrderBoardRow['lines'] })} onInvoiceNow={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Invoice now' }));
+    expect(await screen.findByText(/A draft invoice \(INV-0\)/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create in Zoho Books' })).not.toBeInTheDocument();
+  });
+
   it('download asks the order-board invoice endpoint', async () => {
     const user = userEvent.setup();
     let hit = false;

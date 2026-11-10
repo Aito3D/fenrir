@@ -5167,6 +5167,17 @@ export interface OrderHandoverPreview {
   credit: number;
   covered_by: string[];
 }
+/** What invoicing now would bill (`invoice_preview` in order_board_actions.py). */
+export type OrderInvoiceScope = 'shipped' | 'packed' | 'whole';
+export interface OrderInvoiceScopePreview { units: number; invoice_total: number | null; manual_reason: OrderManualReason | null }
+export interface OrderInvoicePreview {
+  available: boolean;
+  /** The customer's advance, capped by each total when applied. */
+  credit: number;
+  drafts: string[];
+  packed: OrderInvoiceScopePreview;
+  whole: OrderInvoiceScopePreview;
+}
 /** What a hand-over or an invoice call did, step by step (`_outcome` in the same service). */
 export interface OrderHandoverOutcome {
   package_number: string;
@@ -9916,7 +9927,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  createOrderInvoice: (id: string, body: { apply_credit: boolean }) =>
+  getOrderInvoicePreview: (id: string) => request<OrderInvoicePreview>(`/order-board/orders/${encodeURIComponent(id)}/invoice`),
+  createOrderInvoice: (id: string, body: { apply_credit: boolean; scope?: OrderInvoiceScope }) =>
     request<OrderActionResult>(`/order-board/orders/${encodeURIComponent(id)}/invoice`, { method: 'POST', body: JSON.stringify(body) }),
   cancelOrder: (id: string) => request<{ board: OrderBoardResponse }>(`/order-board/orders/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
   getOrderInvoicePdf: (invoiceId: string): Promise<Blob> => orderBoardBlob(`/order-board/invoices/${encodeURIComponent(invoiceId)}/pdf`),

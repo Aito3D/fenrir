@@ -187,6 +187,7 @@ class HandoverBody(BaseModel):
 
 class InvoiceBody(BaseModel):
     apply_credit: bool
+    scope: Literal["shipped", "packed", "whole"] = "shipped"
 
 
 class InvoiceEmailBody(BaseModel):
@@ -386,6 +387,15 @@ async def hand_over_parcel(
     return {"board": await order_board_sync.read_board(db), "outcome": outcome}
 
 
+@router.get("/orders/{salesorder_id}/invoice")
+async def get_invoice_preview(
+    salesorder_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+) -> dict:
+    return await _run(order_board_actions.invoice_preview(db, salesorder_id))
+
+
 @router.post("/orders/{salesorder_id}/invoice")
 async def invoice_order(
     salesorder_id: str,
@@ -393,7 +403,9 @@ async def invoice_order(
     db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ) -> dict:
-    outcome = await _run(order_board_actions.invoice_shipped(db, salesorder_id, apply_credit=body.apply_credit))
+    outcome = await _run(
+        order_board_actions.invoice_shipped(db, salesorder_id, apply_credit=body.apply_credit, scope=body.scope)
+    )
     _logged(user, salesorder_id, "invoice")
     return {"board": await order_board_sync.read_board(db), "outcome": outcome}
 
