@@ -78,6 +78,7 @@ from backend.app.models.user import User
 from backend.app.models.user_email_pref import UserEmailPreference
 from backend.app.models.user_otp_code import UserOTPCode
 from backend.app.models.user_totp import UserTOTP
+from backend.app.models.virtual_printer import VirtualPrinter
 
 __all__ = [
     "AitoClientQuoteRating",
@@ -134,6 +135,7 @@ __all__ = [
     "LabelTemplate",
     "Location",
     "User",
+    "VirtualPrinter",
     "Group",
     "user_groups",
     "group_locations",

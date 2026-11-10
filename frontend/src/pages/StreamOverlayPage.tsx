@@ -258,8 +258,19 @@ export function StreamOverlayPage() {
   ].filter(Boolean).join(' · ');
   const status = kiosk ? overlay : statusData;
   const { imageKey, closing, imgRef, handleStreamError } = useOverlayCameraRecovery(id > 0 && config.showCamera && status != null);
+  // The classic artwork feeds `streamUrl` below to both renderers (canvas via
+  // useMjpegStream when logged in, plain <img> in kiosk mode). Version 2
+  // (#3183) draws its camera as a plain <img> in both modes, and an <img>
+  // cannot carry the JWT, so its URL is signed the way upstream signs it:
+  // the kiosk token when there is one, otherwise a stream token. A load
+  // error retries after 3 s by changing the URL, and a healthy connection is
+  // renewed every minute too, since an MJPEG <img> can stall without an
+  // error event (#3213) — both via useOverlayCameraRecovery above.
+  const camPath = `/api/v1/printers/${id}/camera/stream?fps=${config.fps}&t=${imageKey}`;
+  const overlayCameraUrl = kiosk && token ? `${camPath}&token=${encodeURIComponent(token)}` : withStreamToken(camPath);
   // Every <img> the overlay drops (re-keyed by a renewal) has its stream closed.
-  const attachImg = useStreamImgRef(imgRef);
+  // The kiosk img gets its src from here, at commit, never from a prop (#3431).
+  const attachImg = useStreamImgRef(imgRef, kiosk && !closing ? overlayCameraUrl : undefined);
   const timeFormat: TimeFormat = (kiosk ? overlay?.time_format : settings?.time_format) || 'system';
 
   // WebSocket for real-time updates (JWT-authenticated; skipped in kiosk mode,
@@ -440,17 +451,6 @@ export function StreamOverlayPage() {
       });
     }
   }
-  // The classic artwork feeds `streamUrl` above to both renderers (canvas via
-  // useMjpegStream when logged in, plain <img> in kiosk mode). Version 2
-  // (#3183) draws its camera as a plain <img> in both modes, and an <img>
-  // cannot carry the JWT, so its URL is signed the way upstream signs it:
-  // the kiosk token when there is one, otherwise a stream token. A load
-  // error retries after 3 s by changing the URL, and a healthy connection is
-  // renewed every minute too, since an MJPEG <img> can stall without an
-  // error event (#3213) — both via useOverlayCameraRecovery above.
-  const camPath = `/api/v1/printers/${id}/camera/stream?fps=${config.fps}&t=${imageKey}`;
-  const overlayCameraUrl = kiosk && token ? `${camPath}&token=${encodeURIComponent(token)}` : withStreamToken(camPath);
-
   if (config.updatedArtwork) {
     const active = status.connected && isPrinting;
     const remainingTime = status.remaining_time;
@@ -461,7 +461,7 @@ export function StreamOverlayPage() {
       customLogo={customLogo}
       progressBackground={progressBackground}
       size={config.size}
-      camera={config.showCamera ? { url: closing ? undefined : overlayCameraUrl, rotation: printer?.camera_rotation ?? 0, onError: handleStreamError, imgRef: attachImg } : null}
+      camera={config.showCamera ? { url: closing ? undefined : overlayCameraUrl, rotation: printer?.camera_rotation ?? 0, onError: handleStreamError, imgRef } : null}
       name={config.showPrinter ? printer?.name ?? null : null}
       model={config.showModel ? mapModelCode(printer?.model ?? null) || null : null}
       filename={config.showFilename && status.current_print ? formatPrintName(status.current_print.replace(/\.gcode\.3mf$|\.3mf$|\.gcode$/i, ''), status.gcode_file, t) : null}
@@ -502,7 +502,6 @@ export function StreamOverlayPage() {
           <img
             ref={attachImg}
             key={imageKey}
-            src={closing ? undefined : overlayCameraUrl}
             onError={handleStreamError}
             alt="Camera stream"
             className="absolute inset-0 w-full h-full object-contain"

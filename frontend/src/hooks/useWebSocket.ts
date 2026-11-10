@@ -479,6 +479,14 @@ export function useWebSocket() {
         break;
       }
 
+      case 'library_files_changed': {
+        // A virtual printer stored an upload in the File Manager.
+        debouncedInvalidate('library-files');
+        debouncedInvalidate('library-folders');
+        debouncedInvalidate('library-stats');
+        break;
+      }
+
       case 'pong':
         // Keepalive response, ignore
         break;

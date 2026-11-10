@@ -93,7 +93,6 @@ import { BatchTagModal } from '../components/BatchTagModal';
 import { BatchProjectModal } from '../components/BatchProjectModal';
 import { CalendarView } from '../components/CalendarView';
 import { CompareArchivesModal } from '../components/CompareArchivesModal';
-import { PendingUploadsPanel } from '../components/PendingUploadsPanel';
 import { TagManagementModal } from '../components/TagManagementModal';
 import { useArchiveActions } from '../components/archives/useArchiveActions';
 import { buildArchiveMenuSections } from '../components/archives/archiveMenuItems';
@@ -3404,9 +3403,6 @@ export function ArchivesPage() {
           )}
         </CardContent>
       </Card>}
-
-      {/* Pending Uploads Panel (visible when in queue mode with pending files) */}
-      <PendingUploadsPanel />
 
       {!isLoading && showLoadingOlder && viewMode !== 'log' && (
         <div

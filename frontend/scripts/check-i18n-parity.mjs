@@ -276,6 +276,7 @@ const FR_COGNATES = [
   'Total {{amount}}',  // aito.summaryTotal — same word in French
   'Suggestions',  // projectsPdm.suggestionsLabel — same word in French
   'Page {{page}}',  // Manyfold model list pager (#1471) — "page" is the same word in French
+  'Alternatives',  // #3462 multi-file print mode label — same word in French
 ];
 
 // Italian cognates.

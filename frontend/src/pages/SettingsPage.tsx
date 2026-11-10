@@ -1,5 +1,5 @@
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Pencil, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, PackageCheck, Workflow, UploadCloud, MonitorPlay, Info, FolderKanban } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Pencil, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, PackageCheck, Workflow, UploadCloud, MonitorPlay, Info, FolderKanban, Lightbulb } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -56,6 +56,7 @@ import { HeimdallSettings } from '../components/HeimdallSettings';
 import { ProjectsSettingsCard, canManageProjectsSettings } from '../components/projects/filing/ProjectsSettingsCard'; // Fenrir: Projects tab
 import { OrdersSettingsCard } from '../components/orders/OrdersSettingsCard'; // Fenrir: Orders tab
 import { FailureDetectionSettings } from '../components/FailureDetectionSettings';
+import { WLEDSettings } from '../components/WLEDSettings';
 import { EmailSettings } from '../components/EmailSettings';
 import { LDAPSettings } from '../components/LDAPSettings';
 import { PrinterAccessSettings } from '../components/PrinterAccessSettings';
@@ -81,7 +82,7 @@ import { UsbCameraDevicePicker } from '../components/UsbCameraDevicePicker';
 import { MobileTabs } from '../components/mobile/MobileTabs';
 import { useIsMobile } from '../hooks/useIsMobile';
 
-const validTabs = ['general', 'plugs', 'sensors', 'notifications', 'queue', 'filament', 'camera', 'network', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup', 'zoho', 'orders', 'projects'] as const; // Fenrir: + orders, projects
+const validTabs = ['general', 'plugs', 'sensors', 'notifications', 'queue', 'filament', 'camera', 'network', 'wled', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup', 'zoho', 'orders', 'projects'] as const; // Fenrir: + orders, projects
 type TabType = typeof validTabs[number];
 interface SettingsTabEntry { tab: TabType; icon: LucideIcon; label: string; extra?: ReactNode }
 
@@ -333,6 +334,7 @@ export function SettingsPage() {
   // Fenrir: the Projects tab holds one card, gated like it (settings:update + projects:update).
   const canSeeProjectsTab = canManageProjectsSettings(hasPermission);
   const canSeeOrdersTab = hasPermission('orders:update'); // Fenrir: Orders tab
+  const canManageWled = !authLoading && hasPermission('printers:update');
   const isLegacyCameraLink = tabParam === 'apikeys'
     && ['#card-camera-tokens', '#card-stream-overlay'].includes(window.location.hash);
   const activeTab: TabType = isLegacyEmailTab ? 'users'
@@ -388,8 +390,9 @@ export function SettingsPage() {
   // Waits for the session so a permission not loaded yet doesn't count as none.
   useEffect(() => {
     if (!authLoading && activeTab === 'apikeys' && !canSeeApiKeysTab) handleTabChange('camera');
+    if (!authLoading && activeTab === 'wled' && !canManageWled) handleTabChange('general');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, activeTab, canSeeApiKeysTab]);
+  }, [authLoading, activeTab, canSeeApiKeysTab, canManageWled]);
 
   // Fenrir: a Projects link for a user who may not see that tab opens General.
   useEffect(() => {
@@ -1677,7 +1680,7 @@ export function SettingsPage() {
 
   // Cross-tab search is powered by the module-level registry in lib/settingsSearch.
   // Resolve i18n labels here so language changes take effect without re-registering.
-  const searchIndex = getSettingsSearchEntries().map(e => ({
+  const searchIndex = getSettingsSearchEntries().filter(e => e.tab !== 'wled' || canManageWled).map(e => ({
     ...e,
     label: t(e.labelKey, e.labelFallback ?? e.labelKey),
   }));
@@ -1745,6 +1748,7 @@ export function SettingsPage() {
     { tab: 'filament', icon: Cylinder, label: t('settings.tabs.filament') },
     { tab: 'camera', icon: Video, label: t('settings.tabs.camera') },
     { tab: 'network', icon: Wifi, label: t('settings.tabs.network'), extra: statusDot(!!mqttStatus?.enabled) },
+    ...(canManageWled ? [{ tab: 'wled', icon: Lightbulb, label: t('settings.tabs.wled') }] : []),
     // API Keys holds API keys, webhooks, the API browser and Connected Apps;
     // a user who may see none of them would land on an empty tab.
     ...(canSeeApiKeysTab
@@ -4395,6 +4399,8 @@ export function SettingsPage() {
           </div>
         </div>
       )}
+
+      {activeTab === 'wled' && canManageWled && <WLEDSettings />}
 
       {/* API Keys Tab */}
       {tab === 'camera' && (
