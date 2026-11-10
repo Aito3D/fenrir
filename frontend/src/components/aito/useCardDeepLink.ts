@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { api, type AitoProject } from '../../api/client';
@@ -65,7 +65,12 @@ export function useCardResolver({
 }: CardResolverArgs) {
   const { showToast } = useToast();
   const { t } = useTranslation();
-  // The parameter value the resolver has already acted on. The mirror writes
+  // A link is the parameter on one history entry, not the parameter's text:
+  // the router renders a navigation in a transition, so a second link to the
+  // same card can land before the clear of the first one ever rendered.
+  const { key: locationKey } = useLocation();
+  const link = cardParam === null ? null : `${locationKey}|${cardParam}`;
+  // The link the resolver has already acted on. The mirror writes
   // the same parameter for a card opened from the board, and a board refetch
   // re-runs the resolver with it still there; neither may reopen or
   // re-scroll. Reset when the parameter leaves, so the same link works twice.
@@ -90,23 +95,23 @@ export function useCardResolver({
   // The plain `setExpandedId`, not `openCard`: the morph needs a source card
   // on screen, and a link arrives with nothing clicked.
   useEffect(() => {
-    if (cardParam === null) {
+    if (cardParam === null || link === null) {
       cardResolved.current = null;
       cardRefetchedFor.current = null;
       return;
     }
-    if (cardResolved.current === cardParam) return;
+    if (cardResolved.current === link) return;
     // A panel already up wrote this parameter itself (the mirror above): the
     // link is not a request, it is a reflection.
     if (expandedId !== null) {
-      cardResolved.current = cardParam;
+      cardResolved.current = link;
       return;
     }
     if (!aitoQuery.data) return;
     const id = Number(cardParam);
     const card = aitoQuery.data.find((p) => p.id === id);
     if (card) {
-      cardResolved.current = cardParam;
+      cardResolved.current = link;
       setExpandedId(id);
       // A done card has no column on the board: bring the archive up behind
       // the panel instead, so the card is on screen when the panel closes.
@@ -119,8 +124,8 @@ export function useCardResolver({
       return;
     }
     if (aitoQuery.isFetching || trashQuery.isFetching || trashQuery.isPending) return;
-    if (cardRefetchedFor.current !== cardParam) {
-      cardRefetchedFor.current = cardParam;
+    if (cardRefetchedFor.current !== link) {
+      cardRefetchedFor.current = link;
       const token = {};
       refetchToken.current = token;
       void Promise.all([refetchBoard(), refetchTrash()]).then(([board, trash]) =>
@@ -141,6 +146,7 @@ export function useCardResolver({
     showToast(t(inTrash ? 'aito.cardInTrash' : 'aito.cardGone'), inTrash ? 'info' : 'error');
   }, [
     cardParam,
+    link,
     expandedId,
     aitoQuery.data,
     aitoQuery.isFetching,
