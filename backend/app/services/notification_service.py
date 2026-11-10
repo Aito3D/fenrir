@@ -12,11 +12,11 @@ from datetime import datetime, timedelta, timezone
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 
 import httpx
-from sqlalchemy import delete, inspect as sa_inspect, select
+from sqlalchemy import CursorResult, delete, inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.logging_filters import redact_refused_headers
@@ -1692,7 +1692,7 @@ class NotificationService:
         """Reload every loaded row a rollback expired: an async session cannot lazy-load them."""
         for obj in list(db.sync_session.identity_map.values()):
             try:
-                if sa_inspect(obj).expired_attributes:
+                if sa_inspect(obj, raiseerr=True).expired_attributes:
                     await db.refresh(obj)
             except Exception:  # a row deleted meanwhile is simply skipped
                 logger.debug("Could not reload row after rollback", exc_info=True)
@@ -1892,7 +1892,7 @@ class NotificationService:
             return
         if variables_factory is not None:
             variables = await variables_factory()
-        title, message = await self._build_message_from_template(db, template or event, variables)
+        title, message = await self._build_message_from_template(db, template or event, variables or {})
         if fleet_wide:
             await self._send_to_providers(providers, title, message, db, event, variables=variables, **send_kwargs)
         else:
@@ -3161,8 +3161,11 @@ class NotificationService:
                 days = max(1, int(stored)) if stored is not None else 90
             except (TypeError, ValueError):
                 days = 90
-            result = await db.execute(
-                delete(NotificationLog).where(NotificationLog.created_at < utcnow_naive() - timedelta(days=days))
+            result = cast(
+                CursorResult,
+                await db.execute(
+                    delete(NotificationLog).where(NotificationLog.created_at < utcnow_naive() - timedelta(days=days))
+                ),
             )
             await db.commit()
             if result.rowcount > 0:

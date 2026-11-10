@@ -326,7 +326,7 @@ async def test_all_notification_providers(
             success, message = False, "Stored configuration is not valid JSON"
         else:
             success, message = await notification_service.send_test_notification(
-                provider_type, config, db, attach_photo=attach_photo
+                provider_type, config, db, attach_photo=bool(attach_photo)
             )
 
         # Update provider status
