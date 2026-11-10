@@ -29,7 +29,10 @@ from backend.app.schemas.aito import (
     AitoProjectResponse,
     AitoTerminalPaymentCreate,
     AitoTerminalPaymentView,
+    AitoUnlinkedRetainer,
 )
+from backend.app.services import aito_payment_links, aito_quote_sync
+from backend.app.services.aito_customer_credit import unlinked_retainers
 from backend.app.services.aito_events import utc_now_naive as _now
 from backend.app.services.aito_manual_payments import (
     AmountAboveBalance,
@@ -38,6 +41,7 @@ from backend.app.services.aito_manual_payments import (
     ManualPaymentPartial,
     ManualPaymentUnrecorded,
     record_manual_payment,
+    refresh_after_payment,
 )
 from backend.app.services.aito_payment_documents import DocumentMismatch, resolve_document
 from backend.app.services.aito_payment_links import (
@@ -46,6 +50,7 @@ from backend.app.services.aito_payment_links import (
     cancel_invoice_link,
     create_invoice_link,
     current_link,
+    reconcile_payment_links,
 )
 from backend.app.services.aito_terminal_payments import (
     TerminalInProgress,
@@ -62,7 +67,7 @@ from backend.app.services.heimdall import (
     HeimdallRateLimited,
     HeimdallUpstreamError,
 )
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 logger = logging.getLogger(__name__)
 
@@ -321,5 +326,67 @@ async def cancel_invoice_payment_link(
         raise _refuse(502, "not_configured", str(e)) from e
     except HeimdallUpstreamError as e:
         raise _heimdall_refusal(e) from e
+    project = await _get_active_project_or_404(db, project_id)
+    return await _project_response(db, project)
+
+
+async def _unlinked_retainers(db: AsyncSession, project) -> list[dict]:
+    try:
+        return await unlinked_retainers(db, project.client_id)
+    except ZohoRateLimited as e:
+        aito_quote_sync._arm_rate_limit_throttle(e)
+        raise _refuse(429, "rate_limited", str(e)) from e
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        raise _refuse(502, "upstream", str(e)) from e
+
+
+@router.get("/{project_id}/unlinked-retainers", response_model=list[AitoUnlinkedRetainer])
+async def get_unlinked_retainers(
+    project_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """The customer's paid deposits that name no quote, so the panel can warn
+    that they do not count toward this quote's deposit. Live from Books."""
+    project = await _get_active_project_or_404(db, project_id)
+    return await _unlinked_retainers(db, project)
+
+
+@router.post("/{project_id}/unlinked-retainers/{retainer_id}/link", response_model=AitoProjectResponse)
+async def link_retainer(
+    project_id: int,
+    retainer_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Tie an unlinked deposit to this quote by writing the quote number into
+    the retainer's reference in Books, then re-sync the card so the deposit
+    due, the payment link and the auto-accept see it at once."""
+    _check_counter_payment_rate_limit(request, current_user)
+    project = await _get_active_project_or_404(db, project_id)
+    if not project.quote_number:
+        raise _refuse(409, "no_quote", "This card has no quote to link a deposit to")
+    # Re-read rather than trust the id: only a deposit of THIS customer that
+    # still names no quote may be re-pointed.
+    if retainer_id not in {row["id"] for row in await _unlinked_retainers(db, project)}:
+        raise _refuse(409, "not_unlinked", "This deposit is not an unlinked deposit of this customer")
+    try:
+        await zoho_service.set_retainer_reference(db, retainer_id, project.quote_number)
+    except ZohoRateLimited as e:
+        aito_quote_sync._arm_rate_limit_throttle(e)
+        raise _refuse(429, "rate_limited", str(e)) from e
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        raise _refuse(502, "upstream", str(e)) from e
+    await refresh_after_payment(db, project_id, "quote")
+    # The deposit may now be covered: cancel the online link now rather than
+    # at the loop's next pass, so the customer is not offered it meanwhile
+    # (same pattern as the quote-extend route).
+    if not aito_payment_links._pass_lock.locked():
+        try:
+            await reconcile_payment_links(db, only_project_id=project_id, force=True)
+        except Exception:
+            logger.exception("Aito retainer link: payment link reconcile failed for project %s", project_id)
+            await db.rollback()
     project = await _get_active_project_or_404(db, project_id)
     return await _project_response(db, project)

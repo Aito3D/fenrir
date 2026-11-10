@@ -339,6 +339,11 @@ export default {
       saved: "Налог изменён: {{name}}",
     },
     depositAvailable: 'Доступный аванс',
+    unlinkedRetainer: {
+      hint: "Оплаченный аванс не привязан ни к одной смете: он не учитывается в этом авансе.",
+      link: "Привязать к {{quote}}",
+      linked: "Аванс привязан к {{quote}}",
+    },
     descriptionShowMore: 'Показать больше',
     descriptionShowLess: 'Свернуть',
     panelTabAttention: 'Требует внимания',

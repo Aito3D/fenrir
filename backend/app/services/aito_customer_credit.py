@@ -90,3 +90,38 @@ async def read_customer_credit(
     if cache is not None:
         cache[customer_id] = total
     return total
+
+
+async def unlinked_retainers(db: AsyncSession, customer_id: str | None) -> list[dict]:
+    """The customer's deposits that belong to no quote: paid retainers with
+    money still on account whose ``reference_number`` AND ``estimate_number``
+    are both blank (raised by hand in Books). They count toward "deposit
+    available" but never toward any quote's ``retainer_paid_total``, so the
+    panel offers to link them. A retainer already spent shows nothing unused
+    and is left out. Two list reads; raises like the zoho_service calls do.
+    """
+    if not customer_id:
+        return []
+    unused: dict[str, float] = {}
+    for payment in await zoho_service.list_customer_payments(db, customer_id):
+        retainer_id = str(payment.get("retainerinvoice_id") or "")
+        if retainer_id:
+            unused[retainer_id] = unused.get(retainer_id, 0.0) + unused_credit_total([payment])
+    if not any(amount > 0 for amount in unused.values()):
+        return []
+    rows = []
+    for retainer in await zoho_service.list_customer_retainers(db, customer_id):
+        retainer_id = str(retainer.get("retainerinvoice_id") or "")
+        if unused.get(retainer_id, 0.0) <= 0:
+            continue
+        if str(retainer.get("reference_number") or "").strip() or str(retainer.get("estimate_number") or "").strip():
+            continue
+        rows.append(
+            {
+                "id": retainer_id,
+                "number": str(retainer.get("retainerinvoice_number") or retainer_id),
+                "date": str(retainer.get("date") or "") or None,
+                "unused": unused[retainer_id],
+            }
+        )
+    return rows

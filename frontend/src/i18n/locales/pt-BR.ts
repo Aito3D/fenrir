@@ -339,6 +339,11 @@ export default {
       saved: "Imposto alterado: {{name}}",
     },
     depositAvailable: 'Sinal disponível',
+    unlinkedRetainer: {
+      hint: "Sinal pago sem orçamento vinculado: não conta para este sinal.",
+      link: "Vincular a {{quote}}",
+      linked: "Sinal vinculado a {{quote}}",
+    },
     descriptionShowMore: 'Ver mais',
     descriptionShowLess: 'Ver menos',
     panelTabAttention: 'Requer atenção',

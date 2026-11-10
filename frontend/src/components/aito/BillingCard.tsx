@@ -10,6 +10,7 @@ import { InvoiceCard } from './InvoiceCard';
 import { PanelCard } from './PanelCard';
 import { DocumentRow } from './DocumentRow';
 import { PaymentBlock } from './payment/PaymentBlock';
+import { UnlinkedRetainers } from './payment/UnlinkedRetainers';
 import { invoiceDocument, quoteDocument } from './payment/paymentDocument';
 import { derivePaymentState, terminalFor } from './payment/paymentState';
 import { QuoteDownloadButton } from './QuoteDownloadButton';
@@ -191,6 +192,9 @@ export function BillingCard({
                 {formatMoney(project.customer_credit_total as number, currency)}
               </dd>
             </dl>
+          )}
+          {quotePay?.due != null && hasCredit && !project.quote_invoiced && (
+            <UnlinkedRetainers project={project} canUpdate={canUpdate} currency={currency} />
           )}
           {quotePay && (
             <PaymentBlock

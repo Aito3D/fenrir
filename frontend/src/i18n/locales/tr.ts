@@ -339,6 +339,11 @@ export default {
       saved: "Vergi değişti: {{name}}",
     },
     depositAvailable: 'Kullanılabilir ön ödeme',
+    unlinkedRetainer: {
+      hint: "Hiçbir teklife bağlı olmayan ödenmiş kapora: bu kaporaya sayılmaz.",
+      link: "{{quote}} ile ilişkilendir",
+      linked: "Kapora {{quote}} ile ilişkilendirildi",
+    },
     descriptionShowMore: 'Daha fazla göster',
     descriptionShowLess: 'Daha az göster',
     panelTabAttention: 'Dikkat gerekli',

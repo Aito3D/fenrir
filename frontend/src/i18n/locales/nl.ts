@@ -9470,6 +9470,11 @@ export default {
       saved: "Belasting gewijzigd: {{name}}",
     },
     depositAvailable: 'Beschikbare aanbetaling',
+    unlinkedRetainer: {
+      hint: "Betaalde aanbetaling zonder offerte: telt niet mee voor deze aanbetaling.",
+      link: "Koppelen aan {{quote}}",
+      linked: "Aanbetaling gekoppeld aan {{quote}}",
+    },
     descriptionShowMore: 'Meer weergeven',
     descriptionShowLess: 'Minder weergeven',
     panelTabAttention: 'Aandacht vereist',

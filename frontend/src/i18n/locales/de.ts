@@ -339,6 +339,11 @@ export default {
       saved: "Steuer geändert: {{name}}",
     },
     depositAvailable: 'Verfügbare Anzahlung',
+    unlinkedRetainer: {
+      hint: "Bezahlte Anzahlung ohne Angebotsbezug: Sie wird auf diese Anzahlung nicht angerechnet.",
+      link: "Mit {{quote}} verknüpfen",
+      linked: "Anzahlung mit {{quote}} verknüpft",
+    },
     descriptionShowMore: 'Mehr anzeigen',
     descriptionShowLess: 'Weniger anzeigen',
     panelTabAttention: 'Aufmerksamkeit erforderlich',

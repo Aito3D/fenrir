@@ -67,6 +67,31 @@ describe('BillingCard deposit row', () => {
   });
 });
 
+describe('BillingCard unlinked deposits', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  // A retainer raised by hand in Books names no quote: it counts in "Deposit
+  // available" but never against this quote's deposit due (live DEV26-2896 /
+  // RET26-00361), so the panel flags it and offers to link it.
+  it('warns about a deposit naming no quote and links it to this quote', async () => {
+    vi.spyOn(api, 'getAitoUnlinkedRetainers').mockResolvedValue([
+      { id: 'r9', number: 'RET26-00361', date: '2026-10-29', unused: 10000 },
+    ]);
+    const link = vi.spyOn(api, 'linkAitoRetainer').mockResolvedValue(project({ retainer_paid_total: 110100 }));
+    renderCard(project({ customer_credit_total: 15500, retainer_paid_total: 5500 }));
+
+    expect(await screen.findByText('RET26-00361')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Link to DEV-2026-1234' }));
+    await waitFor(() => expect(link).toHaveBeenCalledWith(12, 'r9'));
+  });
+
+  it('does not ask Books when no deposit is due', () => {
+    const read = vi.spyOn(api, 'getAitoUnlinkedRetainers').mockResolvedValue([]);
+    renderCard(project({ customer_credit_total: 15500, retainer_paid_total: 110100 }));
+    expect(read).not.toHaveBeenCalled();
+  });
+});
+
 /** The Force sync control, and the label it sits under.
  *
  *  A card can be 'locked' for two unrelated reasons (see quoteSync.ts's

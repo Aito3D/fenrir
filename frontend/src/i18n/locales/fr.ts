@@ -339,6 +339,11 @@ export default {
       saved: "Taxe modifiée : {{name}}",
     },
     depositAvailable: 'Acompte disponible',
+    unlinkedRetainer: {
+      hint: "Acompte payé rattaché à aucun devis : il ne compte pas dans cet acompte.",
+      link: "Rattacher à {{quote}}",
+      linked: "Acompte rattaché à {{quote}}",
+    },
     descriptionShowMore: 'Voir plus',
     descriptionShowLess: 'Voir moins',
     panelTabAttention: 'Attention requise',

@@ -342,6 +342,11 @@ export default {
       saved: "Tax changed: {{name}}",
     },
     depositAvailable: 'Deposit available',
+    unlinkedRetainer: {
+      hint: "Paid deposit not linked to any quote: it does not count toward this deposit.",
+      link: "Link to {{quote}}",
+      linked: "Deposit linked to {{quote}}",
+    },
     descriptionShowMore: 'Show more',
     descriptionShowLess: 'Show less',
     panelTabAttention: 'Needs attention',

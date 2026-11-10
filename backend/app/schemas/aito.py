@@ -1089,6 +1089,16 @@ class AitoDepositCredit(BaseModel):
     total: float
 
 
+class AitoUnlinkedRetainer(BaseModel):
+    """A paid deposit of the customer's that names no quote (see
+    aito_customer_credit.unlinked_retainers)."""
+
+    id: str
+    number: str
+    date: str | None
+    unused: float
+
+
 class AitoInvoiceDepositsInvoice(BaseModel):
     id: str
     number: str

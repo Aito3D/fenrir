@@ -5706,6 +5706,13 @@ export interface AitoDepositCredit {
   applicable: number;
   total: number;
 }
+/** A paid deposit of the customer's that names no quote (GET unlinked-retainers). */
+export interface AitoUnlinkedRetainer {
+  id: string;
+  number: string;
+  date: string | null;
+  unused: number;
+}
 export interface AitoInvoiceDeposits {
   invoice: { id: string; number: string; balance: number; currency_code: string } | null;
   deposits: AitoDepositCredit[];
@@ -10096,6 +10103,10 @@ export const api = {
   ) => request<AitoTerminalPayment>(`/aito/${projectId}/terminal-payment`, { method: 'POST', body: JSON.stringify(body) }),
   getAitoTerminalPayment: (projectId: number, paymentId: number) =>
     request<AitoTerminalPayment>(`/aito/${projectId}/terminal-payment/${paymentId}`),
+  getAitoUnlinkedRetainers: (projectId: number) =>
+    request<AitoUnlinkedRetainer[]>(`/aito/${projectId}/unlinked-retainers`),
+  linkAitoRetainer: (projectId: number, retainerId: string) =>
+    request<AitoProject>(`/aito/${projectId}/unlinked-retainers/${encodeURIComponent(retainerId)}/link`, { method: 'POST' }),
   recordAitoManualPayment: (
     projectId: number,
     body: { document_kind: 'quote' | 'invoice'; document_id: string; mode: AitoManualPaymentMode; amount: number; reference: string | null },

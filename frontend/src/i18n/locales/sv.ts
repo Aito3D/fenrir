@@ -9503,6 +9503,11 @@ errors: {
       saved: "Skatt ändrad: {{name}}",
     },
     depositAvailable: 'Förskott tillgängligt',
+    unlinkedRetainer: {
+      hint: "Betald handpenning utan kopplad offert: räknas inte in i denna handpenning.",
+      link: "Koppla till {{quote}}",
+      linked: "Handpenning kopplad till {{quote}}",
+    },
     descriptionShowMore: 'Visa mer',
     descriptionShowLess: 'Visa mindre',
     panelTabAttention: 'Behöver uppmärksamhet',

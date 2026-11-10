@@ -1621,6 +1621,18 @@ class ZohoService:
         payload = await self._request(db, "GET", "/retainerinvoices", params={"customer_id": customer_id})
         return list(payload.get("retainerinvoices") or [])
 
+    async def set_retainer_reference(self, db: AsyncSession, retainer_invoice_id: str, reference_number: str) -> dict:
+        """Write a retainer invoice's ``reference_number`` — how the panel ties
+        a deposit raised by hand to a quote, the same link Heimdall's and the
+        counter's retainers carry (see aito_invoice_sweep.linked_credits)."""
+        payload = await self._request(
+            db,
+            "PUT",
+            f"/retainerinvoices/{_seg(retainer_invoice_id)}",
+            json={"reference_number": reference_number},
+        )
+        return payload.get("retainerinvoice", {})
+
     async def create_retainer_invoice(
         self, db: AsyncSession, *, customer_id: str, reference_number: str, description: str, amount: int, today: str
     ) -> dict:

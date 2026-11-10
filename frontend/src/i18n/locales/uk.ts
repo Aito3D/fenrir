@@ -340,6 +340,11 @@ export default {
       saved: "Податок змінено: {{name}}",
     },
     depositAvailable: 'Доступний аванс',
+    unlinkedRetainer: {
+      hint: "Сплачений аванс не прив'язаний до жодного кошторису: він не враховується в цьому авансі.",
+      link: "Прив'язати до {{quote}}",
+      linked: "Аванс прив'язано до {{quote}}",
+    },
     descriptionShowMore: 'Показати більше',
     descriptionShowLess: 'Згорнути',
     panelTabAttention: 'Потребує уваги',

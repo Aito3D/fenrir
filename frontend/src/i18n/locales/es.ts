@@ -339,6 +339,11 @@ export default {
       saved: "Impuesto cambiado: {{name}}",
     },
     depositAvailable: 'Anticipo disponible',
+    unlinkedRetainer: {
+      hint: "Anticipo pagado sin presupuesto vinculado: no cuenta para este anticipo.",
+      link: "Vincular a {{quote}}",
+      linked: "Anticipo vinculado a {{quote}}",
+    },
     descriptionShowMore: 'Ver más',
     descriptionShowLess: 'Ver menos',
     panelTabAttention: 'Requiere atención',

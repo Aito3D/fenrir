@@ -9469,6 +9469,11 @@ export default {
       saved: "Zmieniono podatek: {{name}}",
     },
     depositAvailable: 'Dostępna zaliczka',
+    unlinkedRetainer: {
+      hint: "Opłacona zaliczka bez powiązanej oferty: nie wlicza się do tej zaliczki.",
+      link: "Powiąż z {{quote}}",
+      linked: "Zaliczka powiązana z {{quote}}",
+    },
     descriptionShowMore: 'Pokaż więcej',
     descriptionShowLess: 'Pokaż mniej',
     panelTabAttention: 'Wymaga uwagi',

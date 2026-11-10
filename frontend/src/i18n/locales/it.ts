@@ -339,6 +339,11 @@ export default {
       saved: "Imposta modificata: {{name}}",
     },
     depositAvailable: 'Acconto disponibile',
+    unlinkedRetainer: {
+      hint: "Acconto pagato non collegato ad alcun preventivo: non conta per questo acconto.",
+      link: "Collega a {{quote}}",
+      linked: "Acconto collegato a {{quote}}",
+    },
     descriptionShowMore: 'Mostra altro',
     descriptionShowLess: 'Mostra meno',
     panelTabAttention: 'Richiede attenzione',

@@ -339,6 +339,11 @@ export default {
       saved: "税を変更しました：{{name}}",
     },
     depositAvailable: '利用可能な前受金',
+    unlinkedRetainer: {
+      hint: "見積に紐付いていない支払済みの前払金です。この前払金には計上されません。",
+      link: "{{quote}} に紐付ける",
+      linked: "前払金を {{quote}} に紐付けました",
+    },
     descriptionShowMore: 'もっと見る',
     descriptionShowLess: '閉じる',
     panelTabAttention: '要確認',

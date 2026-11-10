@@ -339,6 +339,11 @@ export default {
       saved: "稅已變更：{{name}}",
     },
     depositAvailable: '可用訂金',
+    unlinkedRetainer: {
+      hint: "已付訂金未連結任何報價單：不計入此訂金。",
+      link: "連結到 {{quote}}",
+      linked: "訂金已連結到 {{quote}}",
+    },
     descriptionShowMore: '展開',
     descriptionShowLess: '收合',
     panelTabAttention: '需要注意',

@@ -339,6 +339,11 @@ export default {
       saved: "税已更改：{{name}}",
     },
     depositAvailable: '可用定金',
+    unlinkedRetainer: {
+      hint: "已付定金未关联任何报价单：不计入此定金。",
+      link: "关联到 {{quote}}",
+      linked: "定金已关联到 {{quote}}",
+    },
     descriptionShowMore: '展开',
     descriptionShowLess: '收起',
     panelTabAttention: '需要注意',

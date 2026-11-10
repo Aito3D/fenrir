@@ -339,6 +339,11 @@ export default {
       saved: "세금 변경됨: {{name}}",
     },
     depositAvailable: '사용 가능한 선금',
+    unlinkedRetainer: {
+      hint: "견적에 연결되지 않은 결제된 선금입니다. 이 선금에 포함되지 않습니다.",
+      link: "{{quote}}에 연결",
+      linked: "선금이 {{quote}}에 연결됨",
+    },
     descriptionShowMore: '더 보기',
     descriptionShowLess: '접기',
     panelTabAttention: '확인 필요',
