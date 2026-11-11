@@ -14,6 +14,7 @@ from backend.app.services import order_board_sync as sync
 from backend.app.services.zoho import (
     ModifiedSinceRows,
     ZohoNotConfiguredError,
+    ZohoRateLimited,
     ZohoService,
     ZohoUpstreamError,
     zoho_service,
@@ -1161,6 +1162,21 @@ async def test_retainer_fetch_failure_keeps_previous(db_session, zoho):
     doc = (await db_session.execute(sync._stored_query("so1"))).scalar_one()
     assert doc.detail["quantity"] == 2 and doc.detail["_retainers"] == [{**_retainer(300.0), "unused": 300.0}]
     assert zoho.calls["retainers"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_retainer_read_stops_the_pass(db_session, zoho):
+    zoho.retainers["e1"] = [_retainer(300.0)]
+    zoho.customer_payments = [_retainer_payment("r1", 300.0)]
+    await _synced(db_session, zoho, order(1, estimate_id="e1"), order(2, estimate_id="e2"))
+    zoho.fail_retainers = ZohoRateLimited("slow down", retry_after=60)
+    for n in (1, 2):
+        zoho.orders[f"so{n}"] = {**order(n, estimate_id=f"e{n}"), "last_modified_time": "2026-11-02T08:00:00-1000"}
+    before = zoho.calls["retainers"]
+    await sync.run_pass(db_session)
+    assert zoho.calls["retainers"] == before + 1  # the second order sends nothing into the back-off
+    assert sync.zoho_busy()
+    assert (await sync.read_board(db_session))["sync"]["last_error"]
 
 
 @pytest.mark.asyncio

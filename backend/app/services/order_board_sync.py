@@ -735,7 +735,7 @@ def _kept_retainers(detail: dict | None) -> dict:
 async def _retainers(db: AsyncSession, detail: dict, previous: dict | None, payments: dict[str, list[dict]]) -> dict:
     """``{"_retainers": [...]}`` for an order made from a quote, else ``{}``: the quote's retainers, each with its
     ``unused`` money (the sum of its customer payments' ``unused_amount``). ``payments`` caches each customer's
-    payments for the pass. A Zoho failure keeps the previous retainers."""
+    payments for the pass. A Zoho failure keeps the previous retainers; a 429 opens the back-off and is re-raised."""
     if not detail.get("estimate_id"):
         return {}
     customer_id = str(detail.get("customer_id") or "")
@@ -751,6 +751,7 @@ async def _retainers(db: AsyncSession, detail: dict, previous: dict | None, paym
     except ZohoUpstreamError as e:
         if isinstance(e, ZohoRateLimited):
             open_rate_limit_window(e)
+            raise  # the pass stops here rather than sending its next call into the back-off
         logger.warning("Order board: retainers of quote %s not read, the previous ones stay: %s", quote.quote_id, e)
         return _kept_retainers(previous)
     unused: dict[str, float] = {}
