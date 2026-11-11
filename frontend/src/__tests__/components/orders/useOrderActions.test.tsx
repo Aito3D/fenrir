@@ -119,6 +119,23 @@ describe('useOrderActions', () => {
     await waitFor(() => expect(client.getQueryState(['order-board'])?.isInvalidated).toBe(true));
   });
 
+  it('every write and the sheet print refresh the order history an open Activity tab shows', async () => {
+    server.use(
+      http.post('*/order-board/orders/so1/packages/p1/handover', () => HttpResponse.json({ board, outcome })),
+      http.post('*/order-board/orders/so1/prep-sheet', () => new HttpResponse(new Blob(['%PDF-']), { headers: { 'Content-Type': 'application/pdf' } })),
+    );
+    const { client, result } = setup();
+    const history = ['order-events', 'so1'];
+    client.setQueryData(history, { events: [] });
+    await act(async () => {
+      await result.current.handOver.mutateAsync({ id: 'so1', packageId: 'p1', mode: 'pickup', applyCredit: false });
+    });
+    expect(client.getQueryState(history)?.isInvalidated).toBe(true);
+    client.setQueryData(history, { events: [] });
+    await result.current.printSheet('so1', 'pl1')();
+    expect(client.getQueryState(history)?.isInvalidated).toBe(true);
+  });
+
   it('a board poll in flight when the answer lands does not put the old board back', async () => {
     server.use(http.post('*/order-board/orders/so1/packages/p1/handover', () => HttpResponse.json({ board, outcome })));
     const { client, result } = setup();

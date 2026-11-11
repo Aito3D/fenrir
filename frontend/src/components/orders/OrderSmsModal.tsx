@@ -45,6 +45,7 @@ export function OrderSmsModal({ row, phone, onClose }: { row: OrderPanelRow; pho
       return record.catch(() => null);
     },
     onSuccess: (fresh) => {
+      void queryClient.invalidateQueries({ queryKey: ['order-events', row.id] });
       if (fresh) {
         queryClient.setQueryData<OrderBoardResponse>(['order-board'], (board) =>
           board ? { ...board, rows: board.rows.map((r) => (r.id === fresh.id ? fresh : r)) } : board,

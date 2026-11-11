@@ -39,6 +39,8 @@ export function useOrderActions(callbacks?: {
     queryClient.setQueryData(BOARD_KEY, board);
     void queryClient.invalidateQueries({ queryKey: [...BOARD_KEY, 'finished'], exact: true });
     void queryClient.invalidateQueries({ queryKey: ['order-board-finished-order'] });
+    // Every write here records a history line: an open Activité tab shows it (an emailed invoice names no order).
+    void queryClient.invalidateQueries({ queryKey: ['order-events'] });
   };
 
   // What a hand-over preview showed is stale once the order was written, or refused because it moved.
@@ -163,6 +165,7 @@ export function useOrderActions(callbacks?: {
     printSheet: (id: string, picklistId: string) => async () => {
       const blob = await api.printOrderPrepSheet(id, picklistId);
       void queryClient.invalidateQueries({ queryKey: BOARD_KEY, exact: true });
+      void queryClient.invalidateQueries({ queryKey: ['order-events', id] });
       return blob;
     },
   };
