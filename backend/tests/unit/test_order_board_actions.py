@@ -2354,6 +2354,41 @@ async def test_a_picklist_boxed_in_part_on_purpose_is_not_pending_and_a_save_kee
 
 
 @pytest.mark.asyncio
+async def test_lowering_a_parcel_keeps_the_picks_waiting_for_another_parcel(db_session, parcels):
+    # pl1 picked 5 of l1, p1 holds 2, nothing else boxed: 3 picks wait for a second parcel.
+    await _board(db_session, parcels, _packed(parcels, qty=5, picked=5))
+    await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert _labels(parcels) == ["parcel", "picklist"]
+    assert parcels.bodies["picklist"]["line_items"] == [
+        {"line_item_id": "r1", "quantity_to_be_picked": 4, "quantity_picked": 4}
+    ]  # only the unit taken out of the parcel leaves the pick
+
+
+@pytest.mark.asyncio
+async def test_a_picklist_step_books_took_behind_a_timeout_is_not_taken_twice(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels, qty=5, picked=5))
+    real = zoho_service.update_picklist
+
+    async def applied_then_timed_out(db, picklist_id, body):
+        await real(db, picklist_id, body)
+        raise ZohoUpstreamError("timeout")
+
+    monkeypatch.setattr(zoho_service, "update_picklist", applied_then_timed_out)
+    with pytest.raises(ZohoUpstreamError):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 4
+    monkeypatch.setattr(zoho_service, "update_picklist", real)
+    parcels.steps.clear()
+    content = await actions.package_content(db_session, "so1", "p1")
+    assert content["pending"] is False  # Books already shows the step
+    version = content["version"]
+    await actions.edit_parcel(db_session, "so1", "p1", version, {"l1": 2}, {"l1": 1})  # the same request again
+    assert parcels.steps == []
+    assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 4
+    assert await _marker_rows(db_session) == []
+
+
+@pytest.mark.asyncio
 async def test_a_line_taken_out_by_a_failed_edit_is_trimmed_when_the_edit_is_finished(db_session, parcels):
     doc = _packed(parcels)
     doc["line_items"][1].update(quantity_picked=1, quantity_packed=1)  # l2: one unit picked and boxed in p1

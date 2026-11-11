@@ -107,7 +107,8 @@ async def _parcel(db: AsyncSession, salesorder_id: str, package_id: str, order: 
 # --- What the operator meant, while a lowering edit's last step (picklist down) is not done -----------------------
 # Books cannot tell a picklist-down step that failed from a picklist boxed in part on purpose (units picked and
 # waiting for a second parcel): only this marker, written before the package step and dropped after the picklist
-# step, says a step is owed, and which units the edit was going from and to.
+# step, says a step is owed, which units the edit was going from and to, and once the picklist step is worked out,
+# the row units it sends (``down``): a picklist step that went through behind a timeout is then not taken twice.
 
 
 def _marker_query(package_id: str):
@@ -115,18 +116,18 @@ def _marker_query(package_id: str):
 
 
 async def _marker(db: AsyncSession, package_id: str) -> dict | None:
-    """``{"old", "new"}`` of a lowering edit of this package whose picklist step is still owed."""
+    """``{"old", "new", "down"?}`` of a lowering edit of this package whose picklist step is still owed."""
     doc = (await db.execute(_marker_query(package_id))).scalar_one_or_none()
     return doc.header if doc is not None else None
 
 
-async def _mark(db: AsyncSession, package_id: str, old: dict[str, float], new: dict[str, float]) -> None:
+async def _mark(db: AsyncSession, package_id: str, header: dict) -> None:
     doc = (await db.execute(_marker_query(package_id))).scalar_one_or_none()
     if doc is None:
-        db.add(OrderBoardDoc(kind="parcel_edit", zoho_id=package_id, header={"old": old, "new": new}))
+        db.add(OrderBoardDoc(kind="parcel_edit", zoho_id=package_id, header=header))
     else:
-        doc.header = {"old": old, "new": new}
-    await db.commit()  # before the package write: it must outlive a failure after it
+        doc.header = header
+    await db.commit()  # before the Books write: it must outlive a failure after it
 
 
 async def _unmark(db: AsyncSession, package_id: str) -> None:
@@ -143,11 +144,32 @@ async def _unmark(db: AsyncSession, package_id: str) -> None:
 
 def _owed(marker: dict | None, picklist: dict, package: dict, boxed: Mapping[str, float], salesorder_id: str) -> bool:
     """Whether the marked edit still owes its picklist step: the package holds what it asked, the picklist does not."""
-    return (
-        marker is not None
-        and _same(boxed, marker["new"])
-        and not _picklist_rows(picklist, package, marker["old"], marker["new"], False, salesorder_id)[2]
-    )
+    if marker is None or not _same(boxed, marker["new"]):
+        return False
+    return not _rows_at(picklist, _down(marker, picklist, package, marker["old"], marker["new"], salesorder_id))[1]
+
+
+def _down(
+    marker: dict | None, picklist: dict, package: dict, old: dict[str, float], new: dict[str, float], salesorder_id: str
+) -> dict[str, float]:
+    """The units per changed line the picklist-down step sets: the marker's when it already worked them out for this
+    same edit, else counted from what Books shows now."""
+    if marker and marker.get("down") is not None and _same(marker["old"], old) and _same(marker["new"], new):
+        return marker["down"]
+    units = _picklist_rows(picklist, package, old, new, False, salesorder_id)[1]
+    return {line_id: q for line_id, q in units.items() if abs(old.get(line_id, 0.0) - new.get(line_id, 0.0)) > 1e-9}
+
+
+def _rows_at(picklist: dict, down: Mapping[str, float]) -> tuple[list[dict], bool]:
+    """The picklist rows with the changed lines at ``down`` (the others as they are), and whether Books shows that."""
+    rows, same = [], True
+    for r in picklist.get("line_items") or []:
+        picked = _num(r.get("quantity_picked"))
+        target = down.get(r.get("so_line_item_id") or "", picked)
+        same = same and abs(target - picked) <= 1e-9
+        if target > 0:  # Books removes the rows left out
+            rows.append({"line_item_id": r["line_item_id"], "quantity_to_be_picked": target, "quantity_picked": target})
+    return rows, same
 
 
 async def package_content(db: AsyncSession, salesorder_id: str, package_id: str) -> dict:
@@ -184,8 +206,9 @@ def _picklist_rows(
     """The picklist rows to send, the units per order line, and whether Books already shows them.
 
     A line this edit changes holds the units the other parcels boxed from its row plus this parcel's: the larger of
-    its old and new units while rising (never under what is picked), its new units otherwise. Every other row stays
-    as it is. Counted from what Books shows now, so the same request repeated finds a done step done.
+    its old and new units while rising (never under what is picked). Going down, it gives up only the units taken out
+    of this parcel, so units picked and waiting for another parcel keep their pick, never below what is boxed. Every
+    other row stays as it is. Counted from what Books shows now, so the same request repeated finds a done step done.
     """
     in_parcel = _boxed(package)
     rows, units, same = [], {}, True
@@ -196,7 +219,8 @@ def _picklist_rows(
         before, after = old.get(line_id, 0.0), new.get(line_id, 0.0)
         if abs(before - after) > 1e-9:
             others = max(0.0, _num(r.get("quantity_packed")) - in_parcel.get(line_id, 0.0))
-            target = max(picked, others + max(before, after)) if rising else others + after
+            boxed_now = others + after
+            target = max(picked, others + max(before, after)) if rising else max(boxed_now, picked - (before - after))
         target = round(target, 6)
         same = same and abs(target - picked) <= 1e-9
         units[line_id] = target
@@ -311,8 +335,10 @@ async def _rewrite_parcel(
         if not same:
             picklist = await update_picklist("picklist_up", rows)
     lowering = any(q > new.get(line_id, 0.0) + 1e-9 for line_id, q in old.items())
-    if new and lowering:
-        await _mark(db, package_id, old, new)
+    marker = await _marker(db, package_id) if new and lowering else None
+    if new and lowering and not (marker and _same(marker["old"], old) and _same(marker["new"], new)):
+        marker = {"old": old, "new": new}
+        await _mark(db, package_id, marker)
     if new and not _same(_boxed(package), new):  # B: the package
         parcel = {"date": package.get("date") or date.today().isoformat(), "line_items": _package_lines(picklist, new)}
         await _write(
@@ -321,7 +347,11 @@ async def _rewrite_parcel(
         package = await _package(db, package_id)
         picklist = await _picklist(db, order, picklist_id)
     if lowering:  # C: picklist down
-        rows, _, same = _picklist_rows(picklist, package, old, new, False, salesorder_id)
+        down = _down(marker, picklist, package, old, new, salesorder_id)
+        if marker is not None and marker.get("down") is None:
+            marker = {**marker, "down": down}
+            await _mark(db, package_id, marker)
+        rows, same = _rows_at(picklist, down)
         if not same:
             await update_picklist("picklist_down", rows)
         if new:
