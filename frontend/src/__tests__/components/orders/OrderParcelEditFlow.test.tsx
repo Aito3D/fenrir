@@ -197,6 +197,31 @@ describe('editing a parcel', () => {
     expect(screen.queryByRole('columnheader', { name: 'In the parcel' })).not.toBeInTheDocument(); // what it showed is stale
   });
 
+  it('a parcel whose picklist step is pending offers Finish the update with no change and sends the parcel as it is', async () => {
+    const user = userEvent.setup();
+    let body: unknown;
+    server.use(
+      http.get(`${BASE}/packages/p1`, () => HttpResponse.json({ id: 'p1', number: 'PKG-00031', version: 'v2', picklist_id: 'pl1', lines: [{ line_id: 'l1', quantity: 2, max: 3 }], pending: true })),
+      http.put(`${BASE}/packages/p1`, async ({ request }) => { body = await request.json(); return HttpResponse.json({ board, row: null }); }),
+    );
+    render(<OrderLinesPanel row={panelRow()} />);
+    await openParcel(user);
+    expect(screen.queryByRole('button', { name: 'Save the parcel' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Finish the update' }));
+    expect(await screen.findByText('Parcel PKG-00031 updated in Zoho Books · 2 units')).toBeInTheDocument();
+    expect(body).toEqual({ version: 'v2', was: [{ line_id: 'l1', quantity: 2 }], lines: [{ line_id: 'l1', quantity: 2 }] });
+  });
+
+  it('a 400 refusal the server names reads as its own message, not the generic one', async () => {
+    const user = userEvent.setup();
+    server.use(content, http.put(`${BASE}/packages/p1`, () => HttpResponse.json({ detail: 'picklist_shared' }, { status: 400 })));
+    render(<OrderLinesPanel row={panelRow()} />);
+    await openParcel(user);
+    await user.click(less());
+    await user.click(screen.getByRole('button', { name: 'Save the parcel' }));
+    expect(await screen.findByText('Parcel edit failed: the picklist is shared with other rows, finish it in Books')).toBeInTheDocument();
+  });
+
   it('while the parcel is read from Books, Edit is disabled and a hand-over opened meanwhile wins', async () => {
     const user = userEvent.setup();
     let answer: () => void = () => {};

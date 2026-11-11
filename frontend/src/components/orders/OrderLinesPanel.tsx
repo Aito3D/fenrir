@@ -123,7 +123,7 @@ export function OrderLinesPanel({
       if (barOpen.current) return;
       const was = Object.fromEntries(c.lines.filter(l => l.quantity > 0).map(l => [l.line_id, l.quantity]));
       const picklist = (row.picklists ?? []).find(p => p.id === c.picklist_id)?.number ?? c.picklist_id;
-      setParcel({ packageId, number: c.number, picklist, version: c.version, was, max: Object.fromEntries(c.lines.map(l => [l.line_id, l.max])), qty: Object.fromEntries(c.lines.map(l => [l.line_id, l.quantity])) });
+      setParcel({ packageId, number: c.number, picklist, version: c.version, pending: c.pending, was, max: Object.fromEntries(c.lines.map(l => [l.line_id, l.max])), qty: Object.fromEntries(c.lines.map(l => [l.line_id, l.quantity])) });
     } catch (e) {
       showToast(t('orders.parcelEdit.failed', { reason: errorReason(t, e) }), 'error');
       if (isRefused(e)) void queryClient.invalidateQueries({ queryKey: ['order-board'], exact: true });

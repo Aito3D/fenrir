@@ -29,11 +29,12 @@ export function OrderParcelEditBar({ row, parcel, onClose, onBusy }: { row: Orde
   const busy = editParcel.isPending;
   useEffect(() => onBusy(busy), [busy, onBusy]);
   const changed = d.added + d.removed > 0;
+  const finish = !changed && !!parcel.pending; // nothing to change, but Books still owes the last step
   const empty = d.units <= 0;
 
   const sent = useRef(false); // a ref, so two clicks in one tick send one request
   const save = () => {
-    if (busy || sent.current || !changed) return;
+    if (busy || sent.current || !(changed || finish)) return;
     sent.current = true;
     editParcel.mutate(
       { id: row.id, packageId: parcel.packageId, version: parcel.version, was: parcelWas(parcel), lines: parcelLines(parcel) },
@@ -63,12 +64,12 @@ export function OrderParcelEditBar({ row, parcel, onClose, onBusy }: { row: Orde
           </button>
           <button
             type="button"
-            disabled={busy || !changed}
+            disabled={busy || !(changed || finish)}
             onClick={save}
             className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 font-semibold text-white disabled:opacity-50 ${empty ? 'bg-red-500 hover:bg-red-400' : 'bg-blue-500 hover:bg-blue-400'}`}
           >
             {busy ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : empty ? <Trash2 aria-hidden="true" className="h-3.5 w-3.5" /> : <Check aria-hidden="true" className="h-3.5 w-3.5" />}
-            {t(busy ? 'orders.parcelEdit.saving' : empty ? 'orders.parcelEdit.delete' : 'orders.parcelEdit.save')}
+            {t(busy ? 'orders.parcelEdit.saving' : empty ? 'orders.parcelEdit.delete' : finish ? 'orders.parcelEdit.finish' : 'orders.parcelEdit.save')}
           </button>
         </span>
       </div>

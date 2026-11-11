@@ -5173,7 +5173,8 @@ export interface OrderBoardRow {
 
 export interface OrderItemHit { id: string; name: string; sku: string; rate: number; stock_on_hand: number | null; product_type: string }
 export type OrderEditLine = { line_id: string; quantity: number } | { item_id: string; quantity: number };
-export interface OrderPackageContent { id: string; number: string; version: string; picklist_id: string; lines: { line_id: string; quantity: number; max: number }[] }
+/** `pending`: the parcel matches but its picklist rows are still above it (a failed last step a save finishes). */
+export interface OrderPackageContent { id: string; number: string; version: string; picklist_id: string; lines: { line_id: string; quantity: number; max: number }[]; pending: boolean }
 /** `row` is null when the edit took the order off the board. */
 export type OrderEditResult = { board: OrderBoardResponse; row: OrderBoardRow | null };
 

@@ -249,7 +249,7 @@ export const editTotal = (row: Pick<OrderBoardRow, 'lines' | 'estimable'>, edit:
 
 /** An edit of a waiting parcel: per line, the units it held when opened, the most it may hold (its units plus what
  *  the shelf still covers) and the units chosen. `picklist` is the number of the picklist the parcel was made from. */
-export interface ParcelEdit { packageId: string; number: string; picklist: string; version: string; was: Record<string, number>; max: Record<string, number>; qty: Record<string, number> }
+export interface ParcelEdit { packageId: string; number: string; picklist: string; version: string; was: Record<string, number>; max: Record<string, number>; qty: Record<string, number>; pending?: boolean }
 
 const parcelQty = (p: ParcelEdit, id: string) => round2(Math.min(p.qty[id] ?? 0, p.max[id]));
 
