@@ -1903,9 +1903,9 @@ async def test_email_invoice_records_the_recipient(db_session, zoho, monkeypatch
         return None
 
     monkeypatch.setattr(zoho_service, "email_invoice", email)
-    await actions.email_invoice(db_session, "so1", "SO-1", "inv1", "a@b.c", by="paul")
+    await actions.email_invoice(db_session, "so1", "SO-1", "inv1", "a@b.c", by="paul", invoice_number="INV-7")
     events = await events_of(db_session, "so1")
-    assert [e.kind for e in events] == ["invoice.emailed"] and events[0].detail == {"invoice": "SO-1", "to": "a@b.c"}
+    assert [e.kind for e in events] == ["invoice.emailed"] and events[0].detail == {"invoice": "INV-7", "to": "a@b.c"}
 
 
 @pytest.mark.asyncio

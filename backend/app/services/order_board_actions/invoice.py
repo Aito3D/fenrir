@@ -317,11 +317,18 @@ async def invoice_preview(db: AsyncSession, salesorder_id: str) -> dict:
 
 
 async def email_invoice(
-    db: AsyncSession, salesorder_id: str, number: str, invoice_id: str, to: str, *, by: str | None = None
+    db: AsyncSession,
+    salesorder_id: str,
+    number: str,
+    invoice_id: str,
+    to: str,
+    *,
+    by: str | None = None,
+    invoice_number: str = "",
 ) -> None:
     """Email one of the order's invoices through Books, then re-read the order: Books marks a draft invoice sent."""
     with writing(salesorder_id):
         logger.info("Order board write: order=%s step=invoice_email", number)
         await zoho_service.email_invoice(db, invoice_id, to_mail_ids=[to])
-        await _log(db, salesorder_id, "invoice.emailed", by, invoice=number, to=to)
+        await _log(db, salesorder_id, "invoice.emailed", by, invoice=invoice_number or invoice_id, to=to)
         await _best_effort_refresh(db, salesorder_id, number)

@@ -625,7 +625,13 @@ async def send_invoice_email(
     async def send() -> None:
         try:
             await order_board_actions.email_invoice(
-                db, salesorder_id, order.get("salesorder_number") or salesorder_id, invoice_id, to, by=_by(user)
+                db,
+                salesorder_id,
+                order.get("salesorder_number") or salesorder_id,
+                invoice_id,
+                to,
+                by=_by(user),
+                invoice_number=content["invoice_number"],
             )
         except ZohoUnreachable:
             raise  # Books may have sent it all the same: the guard stays armed
