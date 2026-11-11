@@ -48,6 +48,7 @@ from backend.app.models.notification_template import NotificationTemplate
 from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
 from backend.app.models.orca_base_cache import OrcaBaseProfile
 from backend.app.models.order_board_doc import OrderBoardDoc
+from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.models.pending_upload import PendingUpload
 from backend.app.models.pipeline_run import PipelineJob, PipelineRun
 from backend.app.models.print_batch import PrintBatch, PrintBatchPlate
@@ -147,6 +148,7 @@ __all__ = [
     "UserOIDCLink",
     "OrcaBaseProfile",
     "OrderBoardDoc",
+    "OrderBoardEvent",
     "PipelineJob",
     "PipelineRun",
     "SlicerPipeline",
