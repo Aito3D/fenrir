@@ -117,8 +117,9 @@ export const isBoardReady = (r: OrderBoardResponse | undefined): boolean =>
 export const pollMs = (r: OrderBoardResponse | undefined): number => {
   if (!r) return 4000;
   if (r.sync.running || r.sync.pending > 0) return 4000;
-  // Never computed: fast, unless nothing is going to compute it.
-  return !r.computed_at && r.sync.enabled && r.sync.configured ? 4000 : 60000;
+  // Never computed: fast, unless nothing is going to compute it. Otherwise a slow fallback: a change to the board
+  // arrives as an order_board_updated WebSocket ping.
+  return !r.computed_at && r.sync.enabled && r.sync.configured ? 4000 : 180000;
 };
 
 export const ageTone = (days: number): 'neutral' | 'warning' | 'danger' =>

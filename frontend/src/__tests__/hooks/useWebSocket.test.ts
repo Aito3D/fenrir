@@ -1179,6 +1179,17 @@ describe('useWebSocket hook', () => {
       return { ws, invalidateSpy };
     }
 
+    it('refreshes the Order Board and its finished list at once on order_board_updated', async () => {
+      vi.useFakeTimers();
+      const { ws, invalidateSpy } = await openSocket();
+      act(() => {
+        ws.simulateMessage({ type: 'order_board_updated' });
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['order-board'], exact: true });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['order-board', 'finished'], exact: true });
+      vi.useRealTimers();
+    });
+
     it.each(['queue_changed', 'queue_item_acked', 'queue_item_failed', 'print_start', 'print_complete'])(
       'refreshes the queue on %s',
       async (type) => {

@@ -154,12 +154,12 @@ describe('readiness and polling', () => {
     expect(pollMs(board({}, { running: true }))).toBe(4000);
     expect(pollMs(board({}, { pending: 3 }))).toBe(4000);
     expect(pollMs(board({ computed_at: null }))).toBe(4000);
-    expect(pollMs(board())).toBe(60000);
+    expect(pollMs(board())).toBe(180000);
   });
 
   it('does not poll fast for a board that cannot arrive', () => {
-    expect(pollMs(board({ computed_at: null }, { enabled: false }))).toBe(60000);
-    expect(pollMs(board({ computed_at: null }, { configured: false }))).toBe(60000);
+    expect(pollMs(board({ computed_at: null }, { enabled: false }))).toBe(180000);
+    expect(pollMs(board({ computed_at: null }, { configured: false }))).toBe(180000);
   });
 });
 

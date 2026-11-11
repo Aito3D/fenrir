@@ -1024,3 +1024,50 @@ async def test_a_write_that_begins_while_a_pass_stores_its_copy_leaves_the_order
     ).scalar_one()
     assert fetched == ["so1", "written"]
     assert doc.pending is True
+
+
+@pytest.fixture
+def pings(monkeypatch):
+    """The live-update broadcasts sent to open pages."""
+    sent: list[dict] = []
+
+    async def broadcast(message, **_):
+        sent.append(message)
+
+    monkeypatch.setattr(sync.ws_manager, "broadcast", broadcast)
+    return sent
+
+
+@pytest.mark.asyncio
+async def test_a_pass_that_changes_the_board_pings_the_open_pages_once(db_session, zoho, pings):
+    zoho.add(order(1, qty=2))
+    await sync.run_pass(db_session)
+    assert pings == [{"type": "order_board_updated"}]  # the first computed board
+    await sync.run_pass(db_session)
+    assert len(pings) == 1  # nothing changed: no ping
+    zoho.orders["so1"] = order(1, qty=2, packed=2)
+    await sync.run_pass(db_session)
+    assert len(pings) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_failed_broadcast_never_fails_the_pass(db_session, zoho, monkeypatch):
+    async def broken(message, **_):
+        raise RuntimeError("socket gone")
+
+    monkeypatch.setattr(sync.ws_manager, "broadcast", broken)
+    zoho.add(order(1))
+    await sync.run_pass(db_session)
+    assert len((await sync.read_board(db_session))["rows"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_reread_after_a_write_pings_when_the_row_changed(db_session, zoho, pings):
+    zoho.add(order(1, qty=2))
+    await sync.run_pass(db_session)
+    pings.clear()
+    await sync.refresh_order(db_session, "so1")
+    assert pings == []  # Books shows the same order
+    zoho.orders["so1"] = order(1, qty=2, packed=2)
+    await sync.refresh_order(db_session, "so1")
+    assert pings == [{"type": "order_board_updated"}]

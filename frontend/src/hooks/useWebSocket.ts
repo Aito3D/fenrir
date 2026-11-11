@@ -720,6 +720,11 @@ export function useWebSocket() {
       case 'pending_uploads_changed':
         queryClient.invalidateQueries({ queryKey: ['pending-uploads'] });
         break;
+      // The Order Board changed (a sync pass or a write): the page's poll is only the fallback.
+      case 'order_board_updated':
+        queryClient.invalidateQueries({ queryKey: ['order-board'], exact: true });
+        queryClient.invalidateQueries({ queryKey: ['order-board', 'finished'], exact: true });
+        break;
       // Slicer Pipeline runs (#1425 PR C). State transitions on the run
       // refresh both the dashboard list AND the per-pipeline "Last run"
       // chip in Settings → Pipelines.

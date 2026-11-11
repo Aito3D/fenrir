@@ -104,6 +104,7 @@ async def stamp_print(db: AsyncSession, salesorder_id: str, by: str) -> dict:
         doc = (await db.execute(_prep_query(salesorder_id))).scalar_one()
         doc.header = stamp
         await db.commit()
+    await sync.announce_board_change()
     return await _row(db, salesorder_id)
 
 
@@ -118,6 +119,8 @@ async def stamp_contact(db: AsyncSession, salesorder_id: str, by: str) -> dict:
             await db.commit()
         except IntegrityError:  # a simultaneous first stamp won the unique key: keep theirs
             await db.rollback()
+        else:
+            await sync.announce_board_change()
     return await _row(db, salesorder_id)
 
 

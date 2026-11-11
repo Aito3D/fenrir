@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
 from backend.app.core.tasks import spawn_background_task
+from backend.app.core.websocket import ws_manager
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services.aito_poll_watermark import format_books_time
 from backend.app.services.order_board import age_days, compute_board, order_row
@@ -130,8 +131,10 @@ async def save_settings(db: AsyncSession, settings: OrderBoardSettings) -> None:
     await set_setting(db, "order_board_sync_minutes", str(settings.sync_minutes))
     await set_setting(db, "order_board_max_age_days", str(settings.max_age_days))
     await set_setting(db, "order_board_core_brands", json.dumps(settings.core_brands))
-    await recompute(db)
+    changed = await recompute(db)
     await db.commit()
+    if changed:
+        await announce_board_change()
     # Sync switched on, or the age limit raised: run a pass now rather than
     # leave the page loading until the interval ends.
     if _wake is not None:
@@ -234,9 +237,20 @@ async def refresh_order(db: AsyncSession, salesorder_id: str) -> None:
     _written_at[salesorder_id] = time.monotonic()
     doc.detail = {**fetched, "_fetched_at": _now()}
     doc.pending = True  # the next pass re-reads it once the list row has caught up
-    await recompute(db)
+    changed = await recompute(db)
     await db.commit()
     _unconfirmed.discard(salesorder_id)
+    if changed:
+        await announce_board_change()
+
+
+async def announce_board_change() -> None:
+    """Tell the open Order Board pages to refetch: a bare ping, the board itself stays behind its permission.
+    Best effort: polling is the fallback."""
+    try:
+        await ws_manager.broadcast({"type": "order_board_updated"})
+    except Exception:
+        logger.warning("Order board: the live update broadcast failed", exc_info=True)
 
 
 async def read_board(db: AsyncSession) -> dict:
@@ -408,8 +422,8 @@ async def _fetch_finished_detail(db: AsyncSession, doc: OrderBoardDoc) -> None:
         await _store_quote_number(db, doc)
 
 
-async def recompute(db: AsyncSession) -> None:
-    """Rebuild the board from the local copy.
+async def recompute(db: AsyncSession) -> bool:
+    """Rebuild the board from the local copy; True when its rows changed (the caller announces it after its commit).
 
     Does nothing until the first complete load: a board built from half the
     documents, or against no stock, would read as fact and be wrong.
@@ -417,9 +431,9 @@ async def recompute(db: AsyncSession) -> None:
     state = await _find_state(db)
     current = (state.detail if state else None) or {}
     if state is None or not current.get("stock_loaded_at"):
-        return
+        return False
     if not current.get("computed_at") and await _pending_count(db):
-        return
+        return False
     settings = await load_settings(db)
     docs = (
         (
@@ -440,6 +454,7 @@ async def recompute(db: AsyncSession) -> None:
     )
     await _add_links(db, rows)
     state.detail = {**current, "rows": rows, "computed_at": _now()}
+    return rows != current.get("rows")
 
 
 def _is_finished(header: dict) -> bool:
@@ -595,9 +610,11 @@ async def _reload_stock(
     state = await _state(db)
     state.detail = {**(state.detail or {}), "stock_loaded_at": _now()}
     await db.flush()
-    await recompute(db)
+    changed = await recompute(db)
     state.detail = {**(state.detail or {}), "last_success_at": _now(), "last_error": None, "last_error_at": None}
     await db.commit()
+    if changed:
+        await announce_board_change()
 
 
 async def _sync(db: AsyncSession) -> None:

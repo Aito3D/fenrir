@@ -289,6 +289,21 @@ async def test_stamp_is_on_the_row_and_survives_a_sync_pass(db_session, zoho):
 
 
 @pytest.mark.asyncio
+async def test_a_stamp_pings_the_open_pages(db_session, zoho, monkeypatch):
+    await _board(db_session, zoho, order(1))
+    sent = []
+
+    async def broadcast(message, **_):
+        sent.append(message)
+
+    monkeypatch.setattr(sync.ws_manager, "broadcast", broadcast)
+    await actions.stamp_print(db_session, "so1", "paul")
+    await actions.stamp_contact(db_session, "so1", "paul")
+    await actions.stamp_contact(db_session, "so1", "paul")  # the first stamp is kept: nothing changed
+    assert sent == [{"type": "order_board_updated"}] * 2
+
+
+@pytest.mark.asyncio
 async def test_stamp_on_an_order_off_the_board_is_refused(db_session, zoho):
     await _board(db_session, zoho, order(1))
     with pytest.raises(actions.OrderNotOnBoard):
