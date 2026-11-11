@@ -915,6 +915,10 @@ async def package_content(db: AsyncSession, salesorder_id: str, package_id: str)
     if sync.zoho_busy():
         raise sync.ZohoBusy(salesorder_id)
     package, picklist, boxed, ceiling = await _parcel(db, salesorder_id, package_id, order, row)
+    # A picklist-down step left undone by a failure: the parcel matches, its picklist rows are still above it.
+    pending = (
+        not _PARCEL_EDIT_REPLACES and not _picklist_rows(picklist, package, boxed, boxed, False, salesorder_id, True)[2]
+    )
     return {
         "id": package_id,
         "number": package.get("package_number") or "",
@@ -923,6 +927,7 @@ async def package_content(db: AsyncSession, salesorder_id: str, package_id: str)
         "lines": [
             {"line_id": line_id, "quantity": boxed.get(line_id, 0.0), "max": q} for line_id, q in ceiling.items()
         ],
+        "pending": pending,
     }
 
 
@@ -940,8 +945,9 @@ def _picklist_rows(
     A line this edit changes holds the units the other parcels boxed from its row plus this parcel's: the larger of
     its old and new units while rising (never under what is picked), its new units otherwise. Every other row stays
     as it is. Counted from what Books shows now, so the same request repeated finds a done step done. ``settle``
-    (the package already holds what is asked) brings every row down to what the parcels hold, never up: it
-    finishes a picklist-down step that failed after the package step.
+    (the package already holds what is asked) brings the rows of the parcel's own lines down to what the parcels
+    hold, never up: it finishes a picklist-down step that failed after the package step, and leaves the units
+    picked for another parcel on the other rows alone.
     """
     in_parcel = _boxed(package)
     rows, units, same = [], {}, True
@@ -950,7 +956,7 @@ def _picklist_rows(
         picked = _num(r.get("quantity_picked"))
         target = picked
         before, after = old.get(line_id, 0.0), new.get(line_id, 0.0)
-        if settle or abs(before - after) > 1e-9:
+        if (settle and line_id in in_parcel) or abs(before - after) > 1e-9:
             others = max(0.0, _num(r.get("quantity_packed")) - in_parcel.get(line_id, 0.0))
             if settle:
                 target = min(picked, others + after)

@@ -2183,6 +2183,7 @@ async def test_content_lists_the_parcel_lines_with_their_ceiling_and_the_shelf_l
         "version": VERSION,
         "picklist_id": "pl1",
         "lines": [{"line_id": "l1", "quantity": 2, "max": 3}, {"line_id": "l2", "quantity": 0, "max": 4}],
+        "pending": False,
     }
     with pytest.raises(actions.OrderActionRefused, match="unknown_package"):
         await actions.package_content(db_session, "so1", "nope")
@@ -2299,6 +2300,7 @@ async def test_reopened_after_a_picklist_down_failure_the_save_runs_only_that_st
     parcels.steps.clear()
     content = await actions.package_content(db_session, "so1", "p1")  # what the operator sees on reopening
     assert content["version"] != VERSION and content["lines"][0]["quantity"] == 1
+    assert content["pending"] is True  # the bar offers "Finish the update" with no change
     await actions.edit_parcel(db_session, "so1", "p1", content["version"], {"l1": 1}, {"l1": 1})
     assert parcels.steps == [
         (
@@ -2310,9 +2312,31 @@ async def test_reopened_after_a_picklist_down_failure_the_save_runs_only_that_st
         )
     ]
     assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 1
-    version = (await actions.package_content(db_session, "so1", "p1"))["version"]
+    content = await actions.package_content(db_session, "so1", "p1")
+    assert content["pending"] is False
     with pytest.raises(actions.OrderActionRefused, match="nothing_changed"):  # now nothing is left to do
-        await actions.edit_parcel(db_session, "so1", "p1", version, {"l1": 1}, {"l1": 1})
+        await actions.edit_parcel(db_session, "so1", "p1", content["version"], {"l1": 1}, {"l1": 1})
+
+
+@pytest.mark.asyncio
+async def test_a_no_change_save_leaves_units_picked_for_another_parcel_on_other_rows(db_session, parcels):
+    doc = _packed(parcels)
+    doc["line_items"][1].update(quantity_picked=1)  # l2: one unit picked on pl1, waiting for its own parcel
+    parcels.picklists["pl1"]["line_items"].append(
+        {
+            "line_item_id": "r2",
+            "salesorder_id": "so1",
+            "so_line_item_id": "l2",
+            "quantity_to_be_picked": 1,
+            "quantity_picked": 1,
+            "quantity_packed": 0,
+        }
+    )
+    await _board(db_session, parcels, doc)
+    assert (await actions.package_content(db_session, "so1", "p1"))["pending"] is False
+    with pytest.raises(actions.OrderActionRefused, match="nothing_changed"):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 2})
+    assert parcels.steps == []
 
 
 def _ship(zoho):
