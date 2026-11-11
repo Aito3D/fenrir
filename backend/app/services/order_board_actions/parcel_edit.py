@@ -220,7 +220,11 @@ def _picklist_rows(
         if abs(before - after) > 1e-9:
             others = max(0.0, _num(r.get("quantity_packed")) - in_parcel.get(line_id, 0.0))
             boxed_now = others + after
-            target = max(picked, others + max(before, after)) if rising else max(boxed_now, picked - (before - after))
+            target = (
+                max(picked, others + max(before, after))
+                if rising
+                else max(boxed_now, picked - max(0.0, before - after))
+            )
         target = round(target, 6)
         same = same and abs(target - picked) <= 1e-9
         units[line_id] = target

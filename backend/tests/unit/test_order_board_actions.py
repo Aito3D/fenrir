@@ -2389,6 +2389,31 @@ async def test_a_picklist_step_books_took_behind_a_timeout_is_not_taken_twice(db
 
 
 @pytest.mark.asyncio
+async def test_an_edit_raising_one_line_and_lowering_another_does_not_raise_twice(db_session, parcels):
+    doc = _packed(parcels)
+    doc["line_items"][1].update(quantity_picked=1, quantity_packed=1)  # l2: one unit picked and boxed in p1
+    parcels.picklists["pl1"]["line_items"].append(
+        {
+            "line_item_id": "r2",
+            "salesorder_id": "so1",
+            "so_line_item_id": "l2",
+            "quantity_to_be_picked": 1,
+            "quantity_picked": 1,
+            "quantity_packed": 1,
+        }
+    )
+    parcels.packages["p1"]["line_items"].append({"so_line_item_id": "l2", "quantity": 1, "picklist_item_id": "r2"})
+    await _board(db_session, parcels, doc)
+    await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2, "l2": 1}, {"l1": 3})
+    assert _labels(parcels) == ["picklist", "parcel", "picklist"]
+    assert parcels.steps[2][1]["line_items"] == [
+        {"line_item_id": "r1", "quantity_to_be_picked": 3, "quantity_picked": 3}
+    ]  # l1 stays at the 3 step A raised it to; l2 leaves the picklist
+    assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 3
+    assert await _marker_rows(db_session) == []
+
+
+@pytest.mark.asyncio
 async def test_a_line_taken_out_by_a_failed_edit_is_trimmed_when_the_edit_is_finished(db_session, parcels):
     doc = _packed(parcels)
     doc["line_items"][1].update(quantity_picked=1, quantity_packed=1)  # l2: one unit picked and boxed in p1
