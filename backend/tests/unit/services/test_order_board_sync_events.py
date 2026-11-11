@@ -207,3 +207,24 @@ async def test_retainers_read_for_the_first_time_are_not_a_payment(db_session, z
     await sync.run_pass(db_session)
     assert (await sync.read_board(db_session))["rows"][0]["payment"]["retainer"] == 400.0
     assert await events(db_session, "payment.received") == []
+
+
+@pytest.mark.asyncio
+async def test_an_undrawn_deposit_drawn_after_the_invoice_is_not_a_payment(db_session, zoho):
+    """Deposit 400 on the quote, an invoice for the whole order raised without it, then drawn: one payment only."""
+    zoho.retainers["e1"] = [RETAINER]
+    zoho.customer_payments = [{"payment_id": "p1", "retainerinvoice_id": "r1", "unused_amount": 400.0}]
+    zoho.add(order(1, estimate_id="e1"))
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    raised = {"invoice_id": "i1", "invoice_number": "INV-1", "total": 1000.0, "balance": 1000.0, "status": "sent"}
+    zoho.orders["so1"] = edited(1, "2026-11-02T08:00:00-1000", estimate_id="e1", invoices=[raised])
+    await sync.run_pass(db_session)
+    payment = (await sync.read_board(db_session))["rows"][0]["payment"]
+    assert (payment["retainer"], payment["paid"], payment["left"]) == (400.0, 400.0, 600.0)
+    zoho.customer_payments = [{"payment_id": "p1", "retainerinvoice_id": "r1", "unused_amount": 0.0}]
+    zoho.orders["so1"] = {**_paid(400.0), "estimate_id": "e1", "last_modified_time": "2026-11-03T08:00:00-1000"}
+    await sync.run_pass(db_session)
+    payment = (await sync.read_board(db_session))["rows"][0]["payment"]
+    assert (payment["retainer"], payment["invoice_paid"], payment["left"]) == (0.0, 400.0, 600.0)
+    assert await events(db_session, "payment.received") == []

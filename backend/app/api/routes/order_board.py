@@ -7,6 +7,7 @@ endpoints, not the general settings API, because Operators hold
 """
 
 import logging
+import math
 import time
 from collections.abc import Awaitable
 from dataclasses import asdict
@@ -33,6 +34,7 @@ from backend.app.services.aito_events import utc_now_naive
 from backend.app.services.aito_payment_documents import DocumentMismatch, resolve_order_document
 from backend.app.services.aito_payment_links import (
     InvoiceLinkExists,
+    cancel_order_link,
     create_order_invoice_link,
     current_link,
     link_view,
@@ -406,6 +408,11 @@ class OrderPaymentBody(BaseModel):
     amount: int = Field(ge=1, le=999_999_999_999)
 
 
+class OrderTerminalBody(OrderPaymentBody):
+    # A pending payment link refuses the terminal (409 link_open) unless this asks to cancel it first.
+    cancel_link: bool = False
+
+
 class OrderPaymentLinkView(AitoPaymentLinkView):
     document_number: str | None
 
@@ -460,8 +467,21 @@ def _link_out(link: AitoPaymentLink | None) -> OrderPaymentLinkView | None:
     return OrderPaymentLinkView(**view.model_dump(), document_number=link.document_number)
 
 
+def _order_left(row: dict) -> int | None:
+    """What is left to pay on the order, rounded like the dialogs' prefill; None for an order without a payment."""
+    payment = row.get("payment")
+    if not payment:
+        return None
+    return max(0, math.floor(_balance({"balance": payment.get("left")}) + 0.5))
+
+
 async def _payment_document(db: AsyncSession, salesorder_id: str, amount: int):
-    _, detail = await _order_for_payment(db, salesorder_id)
+    """The document a charge goes on, and the money guard: never more than its balance, nor than the order has left
+    to pay (an invoice raised without drawing the quote's deposit has a balance above what the order still owes)."""
+    row, detail = await _order_for_payment(db, salesorder_id)
+    left = _order_left(row)
+    if left is not None and amount > left:
+        raise _refuse(422, "amount_above_left", f"Amount exceeds what is left to pay on the order ({left})")
     target = _target(detail)
     if target is None:
         raise _refuse(409, "no_document", "This order has no invoice or quote retainer left to pay")
@@ -532,17 +552,64 @@ async def create_order_payment_link(
     return view
 
 
+def _open_link(link: AitoPaymentLink | None) -> bool:
+    return link is not None and link.heimdall_id is not None and link.status == "pending"
+
+
+async def _cancel_link(db: AsyncSession, link: AitoPaymentLink, user: User | None) -> None:
+    """The operator's cancel of the order's open link; 409 `link_paid` when it turned out paid instead."""
+    try:
+        paid = await cancel_order_link(
+            db, link, actor_class="user", actor_name=_by(user), reason="operator", now=utc_now_naive()
+        )
+    except HeimdallNotConfigured as e:
+        raise _refuse(502, "not_configured", str(e)) from e
+    except HeimdallUpstreamError as e:
+        raise _heimdall_refusal(e) from e
+    if paid:
+        raise _refuse(409, "link_paid", "The payment link has just been paid")
+
+
+@router.post("/orders/{salesorder_id}/payment-link/cancel", response_model=OrderPaymentLinkView)
+async def cancel_order_payment_link(
+    salesorder_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> OrderPaymentLinkView:
+    """Cancel the order's open payment link (Aito's invoice-link cancel, with the order's history line)."""
+    _check_counter_payment_rate_limit(request, user)
+    link = await current_link(db, ("order", salesorder_id), kind=None)
+    if link is None:
+        raise HTTPException(status_code=404, detail="Payment link not found")
+    if not _open_link(link):  # dead, or an unminted reservation with nothing at Heimdall to cancel
+        raise _refuse(409, "not_cancellable", "This payment link is not open and cannot be cancelled")
+    await _cancel_link(db, link, user)
+    _logged(user, salesorder_id, "payment_link_cancel")
+    await db.refresh(link)
+    view = _link_out(link)
+    assert view is not None  # a row always has a view
+    return view
+
+
 @router.post("/orders/{salesorder_id}/terminal-payment", response_model=AitoTerminalPaymentView, status_code=201)
 async def start_order_terminal_payment_route(
     salesorder_id: str,
-    body: OrderPaymentBody,
+    body: OrderTerminalBody,
     request: Request,
     db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ):
-    """Fire the counter terminal on the order's document. 201 with the row (`processing`); poll the GET below."""
+    """Fire the counter terminal on the order's document. 201 with the row (`processing`); poll the GET below.
+    A pending payment link answers 409 `link_open` (the client could pay twice) unless `cancel_link` cancels it first."""
     _check_counter_payment_rate_limit(request, user)
     document = await _payment_document(db, salesorder_id, body.amount)
+    link = await current_link(db, ("order", salesorder_id), kind=None)
+    if _open_link(link):
+        if not body.cancel_link:
+            raise _refuse(409, "link_open", "A payment link is open for this order")
+        assert link is not None
+        await _cancel_link(db, link, user)
     try:
         row = await start_order_terminal_payment(
             db, salesorder_id, document=document, amount=body.amount, actor_name=_by(user), now=utc_now_naive()

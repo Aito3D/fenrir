@@ -39,6 +39,7 @@ def order_payment(order: dict, today: date, credit: float = 0.0) -> dict | None:
 
     ``retainer`` is the unspent money of the order's quote's retainers (each ``_retainers`` row's ``unused``, read
     from the retainer's customer payments by the sync): a retainer drawn on an invoice counts through that invoice.
+    Open invoice balances never shrink it (the deposit may still be drawn on them); only settled invoices cap it.
     ``retainer_known`` is False for an order made from a quote whose retainers were never read.
     """
     total = _num(order.get("total"))
@@ -54,8 +55,9 @@ def order_payment(order: dict, today: date, credit: float = 0.0) -> dict | None:
     settled = sum(_num(i.get("total")) - _num(i.get("balance")) for i in invoices)
     invoice_paid = max(0.0, min(total - due - overdue, settled))
     room = max(0.0, total - invoice_paid - due - overdue)
-    retainer = min(room, sum(_num(r.get("unused")) for r in order.get("_retainers") or []))
-    advance = min(_num(credit), room - retainer)
+    # An open invoice raised without drawing the deposit does not use it up: capped by what invoices have not settled.
+    retainer = min(total - invoice_paid, sum(_num(r.get("unused")) for r in order.get("_retainers") or []))
+    advance = max(0.0, min(_num(credit), room - retainer))
     paid = min(total, invoice_paid + retainer + advance)
     next_due = min((i["due_date"] for i in invoices if _num(i.get("balance")) > 0 and i.get("due_date")), default=None)
     return {

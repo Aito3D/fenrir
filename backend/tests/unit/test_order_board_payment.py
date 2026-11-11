@@ -181,6 +181,23 @@ def test_retainer_counts_its_unused_money_whatever_its_status():
     assert order_payment({**so(1, 300), "_retainers": [ret(500)]}, TODAY)["retainer"] == 300  # capped by the order
 
 
+def test_an_undrawn_retainer_survives_an_invoice_for_the_whole_order():
+    """Total 100, deposit 30 paid on the quote: an invoice raised for 100 without drawing it still leaves 70 to pay."""
+    before = order_payment({**so(1, 100), "_retainers": [ret(30)]}, TODAY)
+    assert (before["retainer"], before["paid"], before["left"]) == (30, 30, 70)
+    raised = {**so(1, 100, invoices=[inv(100, 100)], credit=80), "_retainers": [ret(30)]}
+    p = board_payments([raised], TODAY)["so1"]
+    assert (p["retainer"], p["invoice_paid"], p["advance"], p["paid"], p["left"], p["rest"]) == (30, 0, 0, 30, 70, 0)
+    # Drawn later (in Books, or by Aito's sweep): the 30 moves from the retainer to the invoice; nothing new is paid.
+    drawn = order_payment({**so(1, 100, invoices=[inv(100, 70)]), "_retainers": [ret(30, unused=0)]}, TODAY)
+    assert (drawn["retainer"], drawn["invoice_paid"], drawn["paid"], drawn["left"]) == (0, 30, 30, 70)
+
+
+def test_retainer_capped_by_what_invoices_have_not_settled():
+    p = order_payment({**so(1, 100, invoices=[inv(100, 20)]), "_retainers": [ret(50)]}, TODAY)
+    assert (p["invoice_paid"], p["retainer"], p["paid"], p["left"], p["advance"]) == (80, 20, 100, 0, 0)
+
+
 def test_retainer_known_only_once_read():
     assert order_payment({**so(1, 1000), "estimate_id": "e1"}, TODAY)["retainer_known"] is False
     assert order_payment({**so(1, 1000), "estimate_id": "e1", "_retainers": []}, TODAY)["retainer_known"] is True
