@@ -554,7 +554,10 @@ async def start_order_terminal_payment_route(
     except HeimdallUpstreamError as e:
         raise _heimdall_refusal(e) from e
     view = terminal_view(row)
-    await _log(db, salesorder_id, "terminal.started", _by(user), amount=row.amount, document=row.document_number)
+    try:  # the terminal is already asking for the card: a lost history line must not read as a failed start
+        await _log(db, salesorder_id, "terminal.started", _by(user), amount=row.amount, document=row.document_number)
+    except Exception:
+        logger.exception("Order board: recording terminal.started failed for %s", salesorder_id)
     _logged(user, salesorder_id, "terminal_payment")
     return view
 

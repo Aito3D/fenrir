@@ -11284,6 +11284,7 @@ export default {
       legendOverdue: 'Überfällig',
       legendRest: 'Noch zu zahlen, nicht in Rechnung gestellt',
       advanceNote: 'Vorauszahlung: das ungenutzte Guthaben des Kunden in Zoho, das auf die nächste Rechnung wartet.',
+      retainerHint: 'Anzahlungsrechnung zum Angebot: mit dem Restbetrag vorausgefüllt, begrenzt auf ihren Saldo.',
       terminal: 'Kartenterminal',
       invDue: 'Fällig {{date}}',
       invOverdue: '{{n}} T. überfällig',

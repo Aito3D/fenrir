@@ -11269,6 +11269,7 @@ export default {
       legendOverdue: 'Vencido',
       legendRest: 'Falta pagar, não faturado',
       advanceNote: 'Adiantamento: o crédito não utilizado do cliente no Zoho, aguardando a próxima fatura.',
+      retainerHint: 'Fatura de sinal do orçamento: preenchida com o que falta pagar, limitada ao seu saldo.',
       terminal: 'Maquininha',
       invDue: 'Vence {{date}}',
       invOverdue: 'Vencida há {{n}} d',

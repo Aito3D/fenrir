@@ -11269,6 +11269,7 @@ export default {
       legendOverdue: 'Scaduto',
       legendRest: 'Ancora da pagare, non fatturato',
       advanceNote: 'Anticipo: il credito inutilizzato del cliente in Zoho, in attesa della prossima fattura.',
+      retainerHint: 'Fattura di acconto del preventivo: precompilata con quanto resta da pagare, limitata al suo saldo.',
       terminal: 'Terminale POS',
       invDue: 'Scade {{date}}',
       invOverdue: 'Scaduta da {{n}} g',

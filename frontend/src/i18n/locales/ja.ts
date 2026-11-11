@@ -11283,6 +11283,7 @@ export default {
       legendOverdue: '期限超過',
       legendRest: '未払い、未請求',
       advanceNote: '前払い: Zoho にある顧客の未使用クレジットで、次の請求書を待っています。',
+      retainerHint: '見積の前受金請求書：残りの支払額を入力済み、その残高が上限です。',
       terminal: 'カード端末',
       invDue: '期限 {{date}}',
       invOverdue: '{{n}} 日超過',

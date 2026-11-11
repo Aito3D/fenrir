@@ -11340,6 +11340,7 @@ export default {
       legendOverdue: 'Overdue',
       legendRest: 'Still to pay, not invoiced',
       advanceNote: 'Advance: the customer\'s unused credit in Zoho, waiting for the next invoice.',
+      retainerHint: 'Deposit invoice on the quote: prefilled with what is left to pay, capped at its balance.',
       terminal: 'Card terminal',
       invDue: 'Due {{date}}',
       invOverdue: 'Overdue {{n}} d',

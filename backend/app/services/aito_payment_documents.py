@@ -123,12 +123,19 @@ async def resolve_order_document(db: AsyncSession, order_detail: dict, kind: str
             raise DocumentMismatch("That retainer is not one of this order's quote")
         if _num(listed.get("balance")) <= 0:
             raise DocumentMismatch("That retainer has nothing left to pay")
+        # The stored row can be a sync behind: re-read it live, as the invoice branch does.
+        raw = await zoho_service.get_retainer_raw(db, document_id)
+        balance = int(round(_num(raw.get("balance"))))
+        if raw.get("status") == "void":
+            raise DocumentMismatch("That retainer is void")
+        if balance <= 0:
+            raise DocumentMismatch("That retainer has nothing left to pay")
         return PaymentDocument(
             kind="retainer",
             id=document_id,
-            number=str(listed.get("number") or document_id),
-            customer_id=customer_id,
-            balance=int(round(_num(listed.get("balance")))),
+            number=str(raw.get("retainerinvoice_number") or listed.get("number") or document_id),
+            customer_id=str(raw.get("customer_id") or customer_id),
+            balance=balance,
         )
     raise DocumentMismatch(f"Unknown document kind {kind!r}")
 

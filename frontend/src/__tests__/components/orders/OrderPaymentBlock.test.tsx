@@ -61,6 +61,15 @@ describe('OrderPaymentBlock payment buttons', () => {
     expect(await screen.findByLabelText('Amount')).toHaveValue('5000');
   });
 
+  it('a retainer target uses the deposit wording, not the invoice one', async () => {
+    vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target({ kind: 'retainer', document_id: 'ret-1', number: 'RET-1' }));
+    vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(null);
+    render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+    await userEvent.click(await screen.findByRole('button', { name: /Card terminal/ }));
+    expect(await screen.findByText(/Deposit invoice on the quote/)).toBeInTheDocument();
+    expect(screen.queryByText(/Heimdall caps it at the balance/)).not.toBeInTheDocument();
+  });
+
   it('a charge still in flight reopens on its waiting screen', async () => {
     vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
     vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(tpe());

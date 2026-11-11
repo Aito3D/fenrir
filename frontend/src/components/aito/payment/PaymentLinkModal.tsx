@@ -70,8 +70,10 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
  *  with the link it got: the dialog then stays open on it and shows what that
  *  link holds (a replayed reservation keeps its own document and amount), with
  *  a note when that is not what was typed. Answering nothing closes it. */
-export function PaymentLinkDialog({ document, link, onClose, onCreate, onCancel, onRetry }: {
+export function PaymentLinkDialog({ document, link, onClose, onCreate, onCancel, onRetry, hint }: {
   document: PaymentDocument;
+  /** Replaces the invoice hint under the amount. */
+  hint?: string;
   link: AitoPaymentLink | null;
   onClose: () => void;
   onCreate: (amount: number) => Promise<(AitoPaymentLink & { document_number?: string | null }) | void>;
@@ -271,7 +273,7 @@ export function PaymentLinkDialog({ document, link, onClose, onCreate, onCancel,
     body = (
       <div className="space-y-4">
         <AmountField id="link-amount" value={amount} onChange={setAmount} currency={document.currency} label={t('aito.payment.amountLabel')} />
-        <p className="text-xs text-bambu-gray">{t('aito.payment.linkHintInvoice')}</p>
+        <p className="text-xs text-bambu-gray">{hint ?? t('aito.payment.linkHintInvoice')}</p>
         {reservation?.sync_error && <p className="text-xs text-bambu-gray">{reservation.sync_error}</p>}
         {error && <p className="text-status-error text-sm" role="alert">{error}</p>}
       </div>

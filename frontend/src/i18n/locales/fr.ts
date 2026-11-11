@@ -11269,6 +11269,7 @@ export default {
       legendOverdue: 'En retard',
       legendRest: 'Reste à payer, non facturé',
       advanceNote: 'Acompte : le crédit inutilisé du client dans Zoho, en attente de la prochaine facture.',
+      retainerHint: 'Facture d\'acompte du devis : préremplie avec le reste à payer, plafonnée à son solde.',
       terminal: 'TPE',
       invDue: 'Échéance {{date}}',
       invOverdue: 'En retard de {{n}} j',

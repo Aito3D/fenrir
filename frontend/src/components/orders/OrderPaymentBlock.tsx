@@ -96,7 +96,7 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
     placeholderData: keepPreviousData,
   });
   // What a dialog opened on, kept here so a payment that empties the target never unmounts the dialog showing it.
-  const [open, setOpen] = useState<{ document: PaymentDocument; link?: OrderPaymentLink | null; terminal?: AitoTerminalPayment | null } | null>(null);
+  const [open, setOpen] = useState<{ document: PaymentDocument; hint?: string; link?: OrderPaymentLink | null; terminal?: AitoTerminalPayment | null } | null>(null);
   const [opening, setOpening] = useState(false);
   const data = target.data;
   const due = data?.max_amount == null ? 0 : Math.min(Math.max(0, Math.round(data.left)), data.max_amount);
@@ -105,6 +105,8 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
     data?.kind && data.document_id && data.max_amount !== null
       ? { kind: 'invoice', id: data.document_id, number: data.number ?? '', due: due > 0 ? due : null, currency }
       : null;
+  // A retainer is not an invoice balance: its own hint, not the invoice one.
+  const hint = data?.kind === 'retainer' ? t('orders.pay.retainerHint') : undefined;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['order-payment-target', orderId] });
     void queryClient.invalidateQueries({ queryKey: ['order-board'], exact: true });
@@ -115,14 +117,14 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
     // A charge still in flight reopens on its waiting screen rather than offering a second one.
     const current = await api.getOrderTerminalPayment(orderId).catch(() => null);
     setOpening(false);
-    setOpen({ document: doc, terminal: isTerminalOpen(current) ? current : null });
+    setOpen({ document: doc, hint, terminal: isTerminalOpen(current) ? current : null });
   };
   if (!document && !open) return null;
   return (
     <div className="mt-2.5 flex flex-wrap gap-2">
       {document && (
         <>
-          <button type="button" className={BUTTON} onClick={() => setOpen({ document, link: data?.link ?? null })}>
+          <button type="button" className={BUTTON} onClick={() => setOpen({ document, hint, link: data?.link ?? null })}>
             <Link2 aria-hidden="true" className="h-3.5 w-3.5" />
             {t('aito.payment.linkTitle')}
           </button>
@@ -135,6 +137,7 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
       {open && open.terminal === undefined && (
         <PaymentLinkDialog
           document={open.document}
+          hint={open.hint}
           link={open.link ?? null}
           onClose={() => setOpen(null)}
           onCreate={async (amount) => {
@@ -147,6 +150,7 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
       {open && open.terminal !== undefined && (
         <TerminalPaymentDialog
           document={open.document}
+          hint={open.hint}
           initialPayment={open.terminal}
           onClose={() => setOpen(null)}
           pollKey={['order-terminal-payment', orderId]}

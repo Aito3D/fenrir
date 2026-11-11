@@ -10905,6 +10905,7 @@ export default {
       legendOverdue: '기한 초과',
       legendRest: '남은 금액, 미청구',
       advanceNote: '선금: Zoho에 있는 고객의 미사용 크레딧으로, 다음 청구서를 기다립니다.',
+      retainerHint: '견적의 선금 청구서: 남은 결제 금액으로 미리 채워지며, 잔액을 넘을 수 없습니다.',
       terminal: '카드 단말기',
       invDue: '기한 {{date}}',
       invOverdue: '{{n}}일 초과',

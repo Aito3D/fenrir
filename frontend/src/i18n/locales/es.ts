@@ -11292,6 +11292,7 @@ export default {
       legendOverdue: 'Vencido',
       legendRest: 'Pendiente de pago, sin facturar',
       advanceNote: 'Anticipo: el crédito sin usar del cliente en Zoho, a la espera de la próxima factura.',
+      retainerHint: 'Factura de anticipo del presupuesto: rellenada con lo que queda por pagar, limitada a su saldo.',
       terminal: 'Terminal de tarjeta',
       invDue: 'Vence {{date}}',
       invOverdue: 'Vencida hace {{n}} d',

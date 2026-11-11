@@ -427,7 +427,11 @@ async def test_resolve_order_document_refuses_foreign_invoice(db_session, monkey
     async def raw(db, invoice_id):
         return {"invoice_number": "FA-26-0900", "customer_id": "c1", "balance": 23000}
 
+    async def retainer_raw(db, retainer_id):
+        return {"retainerinvoice_number": "RET-0001", "customer_id": "c1", "balance": 4000, "status": "sent"}
+
     monkeypatch.setattr(zoho_service, "get_invoice_raw", raw)
+    monkeypatch.setattr(zoho_service, "get_retainer_raw", retainer_raw)
     for kind, doc_id in (
         ("invoice", "inv-other"),  # not this order's
         ("invoice", "inv-void"),  # void
@@ -562,6 +566,32 @@ async def test_resolve_order_document_refuses_live_void_invoice_and_spent_retain
     spent = {**ORDER, "_retainers": [{"id": "ret-1", "number": "RET-0001", "balance": 0, "status": "paid"}]}
     with pytest.raises(DocumentMismatch):
         await resolve_order_document(db_session, spent, "retainer", "ret-1")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("live", [{"balance": 0, "status": "paid"}, {"balance": 4000, "status": "void"}])
+async def test_resolve_order_document_refuses_a_retainer_paid_or_voided_since_the_sync(db_session, monkeypatch, live):
+    async def retainer_raw(db, retainer_id):
+        return {"retainerinvoice_number": "RET-0001", "customer_id": "c1", **live}
+
+    monkeypatch.setattr(zoho_service, "get_retainer_raw", retainer_raw)
+    with pytest.raises(DocumentMismatch):
+        await resolve_order_document(db_session, ORDER, "retainer", "ret-1")  # stored balance 4000
+
+
+@pytest.mark.asyncio
+async def test_resolve_order_document_caps_a_retainer_at_its_live_balance(db_session, monkeypatch):
+    async def retainer_raw(db, retainer_id):
+        return {
+            "retainerinvoice_number": "RET-0001",
+            "customer_id": "c1",
+            "balance": 1500.4,
+            "status": "partially_paid",
+        }
+
+    monkeypatch.setattr(zoho_service, "get_retainer_raw", retainer_raw)
+    ret = await resolve_order_document(db_session, ORDER, "retainer", "ret-1")
+    assert ret.balance == 1500
 
 
 @pytest.mark.asyncio

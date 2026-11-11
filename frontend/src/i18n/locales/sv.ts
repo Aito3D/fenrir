@@ -11341,6 +11341,7 @@ errors: {
       legendOverdue: 'Förfallen',
       legendRest: 'Kvar att betala, ej fakturerat',
       advanceNote: 'Förskott: kundens oanvända tillgodohavande i Zoho, i väntan på nästa faktura.',
+      retainerHint: 'Förskottsfaktura för offerten: förifylld med det som återstår att betala, begränsad till dess saldo.',
       terminal: 'Kortterminal',
       invDue: 'Förfaller {{date}}',
       invOverdue: 'Förfallen {{n}} d',

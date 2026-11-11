@@ -232,6 +232,7 @@ async def test_terminal_start_charges_the_target_and_records_started(
 @pytest.mark.asyncio
 async def test_terminal_retainer_row_reads_back(async_client, tokens, order, terminal, db_session, monkeypatch):  # noqa: F811
     await order({"invoices": [], "estimate_id": "est-1", "_retainers": [RETAINER]})
+    monkeypatch.setattr(zoho_service, "get_retainer_raw", _live_retainer(8000))
     r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 8000}, headers=tokens["both"])
     assert r.status_code == 201 and r.json()["document_kind"] == "retainer"
 
@@ -241,6 +242,45 @@ async def test_terminal_retainer_row_reads_back(async_client, tokens, order, ter
     monkeypatch.setattr(routes, "refresh_terminal_payment", no_refresh)
     got = await async_client.get(f"{BASE}/terminal-payment", headers=tokens["both"])
     assert got.status_code == 200 and got.json()["id"] == r.json()["id"]
+
+
+def _live_retainer(balance):
+    async def raw(db, retainer_id):
+        return {"retainerinvoice_number": "RET-1", "customer_id": "c1", "balance": balance, "status": "sent"}
+
+    return raw
+
+
+@pytest.mark.asyncio
+async def test_retainer_charge_capped_at_the_live_balance(async_client, tokens, order, terminal, monkeypatch):  # noqa: F811
+    await order({"invoices": [], "estimate_id": "est-1", "_retainers": [RETAINER]})  # stored balance 8000
+    monkeypatch.setattr(zoho_service, "get_retainer_raw", _live_retainer(2000))
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 2001}, headers=tokens["both"])
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "amount_above_balance"
+    monkeypatch.setattr(zoho_service, "get_retainer_raw", _live_retainer(0))
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 100}, headers=tokens["both"])
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "document_mismatch"
+    assert terminal.calls == []
+
+
+@pytest.mark.asyncio
+async def test_a_failing_started_log_still_returns_the_started_charge(
+    async_client,
+    tokens,  # noqa: F811
+    order,
+    live_invoice,
+    terminal,
+    monkeypatch,
+):
+    await order({"invoices": [INVOICE_NEW]})
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("history write failed")
+
+    monkeypatch.setattr(routes, "_log", boom)
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 12000}, headers=tokens["both"])
+    assert r.status_code == 201 and r.json()["status"] == "processing"
+    assert terminal.calls == [("inv-2", 12000)]
 
 
 @pytest.mark.asyncio

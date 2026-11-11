@@ -11308,6 +11308,7 @@ export default {
       legendOverdue: 'Achterstallig',
       legendRest: 'Nog te betalen, niet gefactureerd',
       advanceNote: 'Voorschot: het ongebruikte tegoed van de klant in Zoho, in afwachting van de volgende factuur.',
+      retainerHint: 'Aanbetalingsfactuur van de offerte: vooraf ingevuld met het resterende bedrag, begrensd op het saldo.',
       terminal: 'Pinautomaat',
       invDue: 'Vervalt {{date}}',
       invOverdue: '{{n}} d achterstallig',

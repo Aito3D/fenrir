@@ -11211,6 +11211,7 @@ export default {
       legendOverdue: 'Gecikmiş',
       legendRest: 'Ödenecek, faturalanmadı',
       advanceNote: 'Avans: müşterinin Zoho\'daki kullanılmamış bakiyesi, sonraki faturayı bekliyor.',
+      retainerHint: 'Teklifin avans faturası: kalan ödeme tutarıyla dolduruldu, bakiyesiyle sınırlı.',
       terminal: 'Kart terminali',
       invDue: 'Vade {{date}}',
       invOverdue: '{{n}} gün gecikmiş',

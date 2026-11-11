@@ -1478,6 +1478,12 @@ class ZohoService:
         """
         return (await self._request(db, "GET", f"/invoices/{_seg(invoice_id)}")).get("invoice", {})
 
+    async def get_retainer_raw(self, db: AsyncSession, retainer_invoice_id: str) -> dict:
+        """One retainer invoice as Books states it, unmapped (live balance and status before a charge)."""
+        return (await self._request(db, "GET", f"/retainerinvoices/{_seg(retainer_invoice_id)}")).get(
+            "retainerinvoice", {}
+        )
+
     async def link_invoice_to_estimate(self, db: AsyncSession, invoice_id: str, estimate_id: str) -> None:
         """Attach an already-raised invoice to the estimate it was billed from.
 

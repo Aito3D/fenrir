@@ -11267,6 +11267,7 @@ export default {
       legendOverdue: '已逾期',
       legendRest: '待付款，未开票',
       advanceNote: '预付款：客户在 Zoho 中未使用的余额，等待下一张发票。',
+      retainerHint: '报价的预付款发票：已填入剩余应付金额，上限为其余额。',
       terminal: '刷卡终端',
       invDue: '到期 {{date}}',
       invOverdue: '逾期 {{n}} 天',

@@ -11489,6 +11489,7 @@ export default {
       legendOverdue: 'Po terminie',
       legendRest: 'Do zapłaty, niezafakturowane',
       advanceNote: 'Zaliczka: niewykorzystane środki klienta w Zoho, czekające na kolejną fakturę.',
+      retainerHint: 'Faktura zaliczkowa do oferty: wstępnie wypełniona pozostałą kwotą, ograniczona do jej salda.',
       terminal: 'Terminal płatniczy',
       invDue: 'Termin {{date}}',
       invOverdue: 'Po terminie {{n}} d',

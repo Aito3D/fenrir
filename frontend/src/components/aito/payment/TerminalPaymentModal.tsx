@@ -59,8 +59,10 @@ export function TerminalPaymentModal({ project, document, initialPayment, onClos
  *  re-reads a charge (polled under `[...pollKey, id]`), and `onSeen` gets every
  *  read that is paid or settled. The screens show what the returned row says,
  *  with a note when it is not what was typed (a replayed reservation). */
-export function TerminalPaymentDialog({ document, initialPayment, onClose, pollKey, onStart, fetchPayment, onSeen }: {
+export function TerminalPaymentDialog({ document, initialPayment, onClose, pollKey, onStart, fetchPayment, onSeen, hint }: {
   document: PaymentDocument;
+  /** Replaces the quote / invoice hint under the amount. */
+  hint?: string;
   initialPayment: AitoTerminalPayment | null;
   onClose: () => void;
   pollKey: readonly unknown[];
@@ -130,7 +132,7 @@ export function TerminalPaymentDialog({ document, initialPayment, onClose, pollK
       <div className="space-y-4">
         <AmountField id="terminal-amount" value={amount} onChange={setAmount} currency={document.currency} label={t('aito.payment.amountLabel')} />
         <p className="text-xs text-bambu-gray">
-          {t(document.kind === 'quote' ? 'aito.payment.terminalHintQuote' : 'aito.payment.terminalHintInvoice')}
+          {hint ?? t(document.kind === 'quote' ? 'aito.payment.terminalHintQuote' : 'aito.payment.terminalHintInvoice')}
         </p>
         {error && <p className="text-status-error text-sm" role="alert">{error}</p>}
       </div>
