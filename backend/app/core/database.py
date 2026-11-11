@@ -7022,6 +7022,12 @@ async def _run_migrations(conn):
     # rows read NULL, i.e. nothing owed.
     await _safe_execute(conn, f"ALTER TABLE aito_terminal_payments ADD COLUMN effects_pending_at {_timestamp_type()}")
 
+    # Migration: Order Board payments share the two Heimdall ledgers (2026-11-11). Nullable, no backfill:
+    # existing rows read NULL, i.e. an Aito card's.
+    for table in ("aito_payment_links", "aito_terminal_payments"):
+        await _safe_execute(conn, f"ALTER TABLE {table} ADD COLUMN salesorder_id VARCHAR(64)")
+        await _safe_execute(conn, f"CREATE INDEX IF NOT EXISTS ix_{table}_salesorder_id ON {table}(salesorder_id)")
+
     await _migrate_unlock_retainer_locked_quotes(conn)
 
     # Data migration: printer locations as the locations API stores them (#2962).

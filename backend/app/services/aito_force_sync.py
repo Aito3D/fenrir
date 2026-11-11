@@ -143,7 +143,9 @@ async def _link_rows(db: AsyncSession, project_id: int) -> list[tuple]:
     rows = (
         await db.execute(
             select(AitoPaymentLink).where(
-                AitoPaymentLink.project_id == project_id, AitoPaymentLink.superseded_at.is_(None)
+                AitoPaymentLink.project_id == project_id,
+                AitoPaymentLink.salesorder_id.is_(None),
+                AitoPaymentLink.superseded_at.is_(None),
             )
         )
     ).scalars()

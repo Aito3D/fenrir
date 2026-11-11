@@ -22,6 +22,8 @@ class AitoPaymentLink(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # An Order Board payment: the Books sales order it is for (`project_id` is 0 then). NULL = an Aito card's.
+    salesorder_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # `aito:{project_id}:{n}`, sent verbatim as Heimdall's Idempotency-Key.
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     # NULL while the create is in flight. Many NULLs may coexist under the
@@ -55,4 +57,5 @@ class AitoPaymentLink(Base):
     __table_args__ = (
         Index("ix_aito_payment_links_project_id", "project_id"),
         Index("ix_aito_payment_links_status", "status"),
+        Index("ix_aito_payment_links_salesorder_id", "salesorder_id"),
     )

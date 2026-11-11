@@ -17,7 +17,14 @@ from sqlalchemy.orm.attributes import set_committed_value
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_terminal_payment import AitoTerminalPayment
 from backend.app.services.aito_events import record, utc_now_naive as _now
-from backend.app.services.aito_payment_documents import PaymentDocument
+from backend.app.services.aito_payment_documents import (
+    PaymentDocument,
+    Scope,
+    record_order_payment,
+    refresh_order_after_payment,
+    scope_columns,
+    scope_where,
+)
 from backend.app.services.heimdall import (
     HeimdallAmbiguous,
     HeimdallNotConfigured,
@@ -87,10 +94,11 @@ _start_lock = asyncio.Lock()
 _in_flight: set[int] = set()
 
 
-async def current_terminal_payment(db: AsyncSession, project_id: int) -> AitoTerminalPayment | None:
+async def current_terminal_payment(db: AsyncSession, scope: Scope) -> AitoTerminalPayment | None:
+    """The newest row of a project id, or of `("order", salesorder_id)`."""
     stmt = (
         select(AitoTerminalPayment)
-        .where(AitoTerminalPayment.project_id == project_id)
+        .where(scope_where(AitoTerminalPayment, scope))
         .order_by(AitoTerminalPayment.id.desc())
         .limit(1)
     )
@@ -102,7 +110,7 @@ async def current_terminal_payments(db: AsyncSession, project_ids: list[int]) ->
         return {}
     stmt = (
         select(AitoTerminalPayment)
-        .where(AitoTerminalPayment.project_id.in_(project_ids))
+        .where(AitoTerminalPayment.project_id.in_(project_ids), AitoTerminalPayment.salesorder_id.is_(None))
         .order_by(AitoTerminalPayment.project_id, AitoTerminalPayment.id.desc())
     )
     out: dict[int, AitoTerminalPayment] = {}
@@ -140,20 +148,22 @@ class TerminalInProgress(Exception):
     `BLOCKING_STATUSES`."""
 
 
-async def _blocking_row(db: AsyncSession, project_id: int) -> AitoTerminalPayment | None:
+async def _blocking_row(db: AsyncSession, scope: Scope) -> AitoTerminalPayment | None:
     stmt = select(AitoTerminalPayment).where(
-        AitoTerminalPayment.project_id == project_id, AitoTerminalPayment.status.in_(BLOCKING_STATUSES)
+        scope_where(AitoTerminalPayment, scope), AitoTerminalPayment.status.in_(BLOCKING_STATUSES)
     )
     return (await db.execute(stmt)).scalars().first()
 
 
-async def _next_key(db: AsyncSession, project_id: int) -> str:
+async def _next_key(db: AsyncSession, scope: Scope) -> str:
     count = len(
-        (await db.execute(select(AitoTerminalPayment.id).where(AitoTerminalPayment.project_id == project_id)))
+        (await db.execute(select(AitoTerminalPayment.id).where(scope_where(AitoTerminalPayment, scope))))
         .scalars()
         .all()
     )
-    return f"aito-tpe:{project_id}:{count + 1}"
+    if isinstance(scope, tuple):
+        return f"order-tpe:{scope[1]}:{count + 1}"
+    return f"aito-tpe:{scope}:{count + 1}"
 
 
 def _adopt(row: AitoTerminalPayment, view: LinkView, now: datetime) -> None:
@@ -215,9 +225,37 @@ async def start_terminal_payment(
       already made (200);
     * a different document or amount → the reservation is abandoned (marked
       `failed`, never re-sent) and a fresh one takes its place."""
-    project_id = project.id
+    return await _start(db, project.id, document=document, amount=amount, actor_name=actor_name, now=now)
+
+
+async def start_order_terminal_payment(
+    db: AsyncSession,
+    salesorder_id: str,
+    *,
+    document: PaymentDocument,
+    amount: int,
+    actor_name: str | None,
+    now: datetime,
+) -> AitoTerminalPayment:
+    """`start_terminal_payment` for an Order Board order: the same lock,
+    in-flight set, replay rule and row lifecycle, on a row with
+    `project_id = 0` and `salesorder_id` set (no Aito event)."""
+    return await _start(db, ("order", salesorder_id), document=document, amount=amount, actor_name=actor_name, now=now)
+
+
+async def _start(
+    db: AsyncSession,
+    scope: Scope,
+    *,
+    document: PaymentDocument,
+    amount: int,
+    actor_name: str | None,
+    now: datetime,
+) -> AitoTerminalPayment:
+    """The body of `start_terminal_payment`, for either scope."""
+    project_id = scope if isinstance(scope, int) else None
     async with _start_lock:
-        blocking = await _blocking_row(db, project_id)
+        blocking = await _blocking_row(db, scope)
         row: AitoTerminalPayment | None = None
         if blocking is not None:
             # `_in_flight`: a reservation whose OWN start is still between its
@@ -243,11 +281,11 @@ async def start_terminal_payment(
                 await db.commit()
         if row is None:
             row = AitoTerminalPayment(
-                project_id=project_id,
+                **scope_columns(scope),
                 document_kind=document.kind,
                 document_id=document.id,
                 document_number=document.number,
-                idempotency_key=await _next_key(db, project_id),
+                idempotency_key=await _next_key(db, scope),
                 amount=int(amount),
                 created_by=actor_name,
                 created_at=now,
@@ -311,7 +349,7 @@ async def start_terminal_payment(
             await db.commit()
             raise TerminalInProgress(f"Heimdall already holds this charge (payment {view.id})")
         _adopt(row, view, now)
-        if record_started:
+        if record_started and project_id is not None:  # an order row tells no Aito timeline
             await record(
                 db,
                 project_id,
@@ -393,7 +431,11 @@ async def _settle_effects(db: AsyncSession, row: AitoTerminalPayment) -> None:
     commit below does when nothing is accepted). A failure before that commit
     leaves the marker set for the sweep's re-drive. Then, for a paid charge,
     the best-effort figures refresh. Shared by the first settle and the
-    re-drive; each runs only for the caller holding the claim."""
+    re-drive; each runs only for the caller holding the claim. An order row
+    takes `_settle_order_effects` instead: no project, no acceptance."""
+    if row.salesorder_id is not None:
+        await _settle_order_effects(db, row)
+        return
     project_id = row.project_id
     status = row.status
     document_kind = row.document_kind
@@ -444,6 +486,28 @@ async def _settle_effects(db: AsyncSession, row: AitoTerminalPayment) -> None:
     # MissingGreenlet on the implicit reload. Cheap and correct either way:
     # a no-op re-read when nothing rolled back.
     await db.refresh(row)
+
+
+async def _settle_order_effects(db: AsyncSession, row: AitoTerminalPayment) -> None:
+    """`_settle_effects` for an order row: a paid charge records the order's
+    `payment.received` in the same commit that clears `effects_pending_at`
+    (the once-only marker the settle claim and the re-drive share), then the
+    order is refreshed, best effort."""
+    salesorder_id = row.salesorder_id or ""
+    paid = row.status == "paid"
+    try:
+        if paid:
+            amount = row.amount_confirmed if row.amount_confirmed is not None else row.amount
+            await record_order_payment(db, salesorder_id, amount=amount, method="terminal")
+        row.effects_pending_at = None
+        await db.commit()
+        await broadcast_pending(db)
+    except Exception:
+        await db.rollback()
+        raise
+    if paid:
+        await refresh_order_after_payment(db, salesorder_id)
+        await db.refresh(row)
 
 
 async def _redrive_settle_effects(db: AsyncSession, *, now: datetime, limit: int) -> int:
@@ -591,6 +655,9 @@ async def _refresh_terminal_payment(db: AsyncSession, row: AitoTerminalPayment, 
         # instead of a failed row with no timeline entry nothing re-selects.
         row.status = "failed"
         row.settled_at = now
+        if row.salesorder_id is not None:  # an order row: no Aito timeline to tell
+            await db.commit()
+            return False
         await record(
             db,
             row.project_id,
@@ -684,6 +751,10 @@ async def _age_out_abandoned_reservations(db: AsyncSession, *, now: datetime, li
             # The write-off and its event share ONE commit: a failed event
             # write rolls the row back to `pending`, so the next pass ages it
             # out again rather than leaving a failed row with no event.
+            if row.salesorder_id is not None:  # an order row: no Aito timeline to tell
+                await db.commit()
+                aged += 1
+                continue
             await record(
                 db,
                 row.project_id,

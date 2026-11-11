@@ -21,7 +21,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_events import record, utc_now_naive as _now
-from backend.app.services.aito_payment_documents import PaymentDocument
+from backend.app.services.aito_payment_documents import (
+    PaymentDocument,
+    Scope,
+    record_order_payment,
+    refresh_order_after_payment,
+    scope_columns,
+    scope_where,
+)
 from backend.app.services.heimdall import (
     HeimdallConflict,
     HeimdallNotConfigured,
@@ -295,20 +302,16 @@ def _in_backoff(row: AitoPaymentLink, now: datetime) -> bool:
     return now - row.checked_at < wait
 
 
-async def current_link(db: AsyncSession, project_id: int, *, kind: str = "quote") -> AitoPaymentLink | None:
+async def current_link(db: AsyncSession, scope: Scope, *, kind: str | None = "quote") -> AitoPaymentLink | None:
     """The newest un-superseded link of one kind. The reconciler, the
     tracking page and the board all mean the QUOTE link; invoice links are
-    reached only by the block that created them (`kind="invoice"`)."""
-    stmt = (
-        select(AitoPaymentLink)
-        .where(
-            AitoPaymentLink.project_id == project_id,
-            AitoPaymentLink.superseded_at.is_(None),
-            AitoPaymentLink.document_kind == kind,
-        )
-        .order_by(AitoPaymentLink.id.desc())
-        .limit(1)
-    )
+    reached only by the block that created them (`kind="invoice"`). `scope`
+    is a project id or `("order", salesorder_id)`; `kind=None` is any kind
+    (an order has one link slot, whatever document it is for)."""
+    stmt = select(AitoPaymentLink).where(scope_where(AitoPaymentLink, scope), AitoPaymentLink.superseded_at.is_(None))
+    if kind is not None:
+        stmt = stmt.where(AitoPaymentLink.document_kind == kind)
+    stmt = stmt.order_by(AitoPaymentLink.id.desc()).limit(1)
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
@@ -320,6 +323,7 @@ async def current_links(db: AsyncSession, project_ids: list[int], *, kind: str =
         select(AitoPaymentLink)
         .where(
             AitoPaymentLink.project_id.in_(project_ids),
+            AitoPaymentLink.salesorder_id.is_(None),
             AitoPaymentLink.superseded_at.is_(None),
             AitoPaymentLink.document_kind == kind,
         )
@@ -331,11 +335,11 @@ async def current_links(db: AsyncSession, project_ids: list[int], *, kind: str =
     return out
 
 
-async def _next_key(db: AsyncSession, project_id: int) -> str:
-    count = (
-        (await db.execute(select(AitoPaymentLink.id).where(AitoPaymentLink.project_id == project_id))).scalars().all()
-    )
-    return f"aito:{project_id}:{len(count) + 1}"
+async def _next_key(db: AsyncSession, scope: Scope) -> str:
+    count = (await db.execute(select(AitoPaymentLink.id).where(scope_where(AitoPaymentLink, scope)))).scalars().all()
+    if isinstance(scope, tuple):
+        return f"order:{scope[1]}:{len(count) + 1}"
+    return f"aito:{scope}:{len(count) + 1}"
 
 
 async def _after_invoice_paid(db: AsyncSession, project_id: int) -> None:
@@ -362,7 +366,24 @@ async def _became_paid(db: AsyncSession, row: AitoPaymentLink, *, now: datetime)
     `status` included, since the caller's `_adopt` is not committed yet — so
     the link is still `pending` and the pass's poll credits it again on a
     later tick, instead of a paid row the poll never revisits and a quote
-    that is never accepted."""
+    that is never accepted.
+
+    An ORDER row (`salesorder_id` set) loads no project and accepts nothing:
+    its paid state commits with the order's `payment.received` (the status
+    transition is the once-only marker: a rollback leaves it `pending`, so
+    the poll credits it again), then the order is refreshed, best effort."""
+    if row.salesorder_id is not None:
+        salesorder_id = row.salesorder_id
+        row.paid_at = now
+        try:
+            await record_order_payment(db, salesorder_id, amount=row.amount, method="link")
+            await db.commit()
+            await broadcast_pending(db)
+        except Exception:
+            await db.rollback()
+            raise
+        await refresh_order_after_payment(db, salesorder_id)
+        return
     project_id = row.project_id
     kind = row.document_kind or "quote"
     amount = row.amount
@@ -875,7 +896,7 @@ async def _age_out_abandoned_invoice_reservations(db: AsyncSession, *, now: date
     stmt = (
         select(AitoPaymentLink.id)
         .where(
-            AitoPaymentLink.document_kind == "invoice",
+            (AitoPaymentLink.document_kind == "invoice") | AitoPaymentLink.salesorder_id.is_not(None),
             AitoPaymentLink.status == "pending",
             AitoPaymentLink.heimdall_id.is_(None),
             AitoPaymentLink.superseded_at.is_(None),
@@ -894,6 +915,9 @@ async def _age_out_abandoned_invoice_reservations(db: AsyncSession, *, now: date
             row.sync_error = "reservation abandoned"
             row.checked_at = now
             await db.commit()
+            if row.salesorder_id is not None:  # an order row: no Aito timeline to tell
+                aged += 1
+                continue
             await record(
                 db,
                 row.project_id,
@@ -1118,12 +1142,14 @@ async def _run_pass(
                     break
                 project_id: int | None = None
                 row_kind = "quote"
+                is_order = False
                 try:
                     row = await db.get(AitoPaymentLink, rid)
                     if row is None or (not force and _in_backoff(row, now)):
                         continue
                     project_id = row.project_id
                     row_kind = row.document_kind or "quote"
+                    is_order = row.salesorder_id is not None
                     if await poll_link(db, row, now=now):
                         stood_down = True
                         logger.warning("payment link poll: Heimdall unreachable, standing down for this pass")
@@ -1135,7 +1161,7 @@ async def _run_pass(
                     await db.rollback()
                     if project_id is None:
                         continue
-                    if row_kind == "invoice":
+                    if row_kind == "invoice" or is_order:
                         # Nothing to replace: the block offers "create a new
                         # link" once this one reads as failed.
                         lost = await db.get(AitoPaymentLink, rid)
@@ -1318,6 +1344,74 @@ async def create_invoice_link(
         },
     )
     await db.commit()
+    return row
+
+
+async def create_order_invoice_link(
+    db: AsyncSession,
+    salesorder_id: str,
+    *,
+    document: PaymentDocument,
+    amount: int,
+    actor_name: str | None,
+    now: datetime,
+) -> AitoPaymentLink:
+    """`create_invoice_link` for an Order Board order (an invoice or a quote
+    retainer, `resolve_order_document`): the same reservation lock, replay of
+    an unminted reservation under its own key (typed amount ignored), refusal
+    of a second open link, on a row with `project_id = 0` and `salesorder_id`
+    set. One link slot per order, whatever the document. No Aito event."""
+    scope: Scope = ("order", salesorder_id)
+    today = now.date()
+
+    async def _reserve() -> AitoPaymentLink:
+        existing = await current_link(db, scope, kind=None)
+        if existing is not None and existing.heimdall_id is None and existing.status == "pending":
+            return existing  # replay the reservation under its own key
+        if existing is not None and existing.status == "pending":
+            raise InvoiceLinkExists("A payment link is already open for this order")
+        fresh = AitoPaymentLink(
+            **scope_columns(scope),
+            idempotency_key=await _next_key(db, scope),
+            reference=document.number,
+            amount=int(amount),
+            expires_on=(today + QUOTE_VALIDITY).isoformat(),
+            created_at=now,
+            document_kind=document.kind,
+            document_number=document.number,
+        )
+        db.add(fresh)
+        await db.commit()
+        return fresh
+
+    async with _reserve_lock:
+        try:
+            row = await _reserve()
+        except IntegrityError as exc:
+            await db.rollback()
+            winner = await current_link(db, scope, kind=None)
+            if winner is not None and winner.status == "pending":
+                raise InvoiceLinkExists("A payment link is already open for this order") from exc
+            raise
+    try:
+        view = await heimdall_service.create_link(
+            db,
+            idempotency_key=row.idempotency_key,
+            reference=row.reference,
+            amount=row.amount,
+            expires_in_days=expires_in_days(row.expires_on, row.created_at.date()),
+        )
+    except (HeimdallUpstreamError, HeimdallNotConfigured) as exc:
+        _fail(row, exc, now)
+        await db.commit()
+        raise
+    _adopt(row, view, now)
+    if row.status == "paid":
+        # A replay answered with a link the client already paid: the poll only
+        # visits pending rows, so credit it here (commits with the event).
+        await _became_paid(db, row, now=now)
+    else:
+        await db.commit()
     return row
 
 

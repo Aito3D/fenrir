@@ -21,6 +21,8 @@ class AitoTerminalPayment(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # An Order Board payment: the Books sales order it is for (`project_id` is 0 then). NULL = an Aito card's.
+    salesorder_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # quote | invoice — which Books document Heimdall books the money against.
     document_kind: Mapped[str] = mapped_column(String(10), nullable=False)
     # Zoho's own document id (never the human number) and the number for display.
@@ -53,4 +55,5 @@ class AitoTerminalPayment(Base):
     __table_args__ = (
         Index("ix_aito_terminal_payments_project_id", "project_id"),
         Index("ix_aito_terminal_payments_status", "status"),
+        Index("ix_aito_terminal_payments_salesorder_id", "salesorder_id"),
     )
