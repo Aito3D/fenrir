@@ -5158,6 +5158,8 @@ export interface OrderBoardRow {
   unbilled_units: number;
   /** When and by whom the prep sheet was printed. */
   prep: { at: string; by: string } | null;
+  /** The first pickup SMS sent for the order (admins, from the contact card). */
+  contacted: { at: string; by: string } | null;
   lines: OrderBoardLine[];
   zoho_url: string | null;
   customer_id: string;
@@ -9969,6 +9971,13 @@ export const api = {
   getFinishedOrder: (id: string) => request<FinishedOrderDetail>(`/order-board/finished/${encodeURIComponent(id)}`),
   printOrderPrepSheet: (id: string, picklistId: string): Promise<Blob> =>
     orderBoardBlob(`/order-board/orders/${encodeURIComponent(id)}/prep-sheet?picklist_id=${encodeURIComponent(picklistId)}`, 'POST'),
+  /** The pickup SMS text for an order (admins only). */
+  getOrderSmsDraft: (id: string) =>
+    request<{ message: string; kind: 'filaments' | 'printer_filaments' | 'printer' | 'other'; partial: boolean; due: number }>(
+      `/order-board/orders/${encodeURIComponent(id)}/sms-draft`,
+    ),
+  /** Marks the order contacted once the browser sent the SMS through the local relay; returns the row. */
+  recordOrderSms: (id: string) => request<OrderBoardRow>(`/order-board/orders/${encodeURIComponent(id)}/sms`, { method: 'POST' }),
   getOrderPicklistPreview: (id: string) => request<OrderPickLines>(`/order-board/orders/${encodeURIComponent(id)}/picklist`),
   createOrderPicklist: (id: string, lines: OrderPickLines['lines']) =>
     request<{ board: OrderBoardResponse; picklist: { id: string; number: string } }>(`/order-board/orders/${encodeURIComponent(id)}/picklists`, {

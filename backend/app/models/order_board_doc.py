@@ -8,7 +8,8 @@ once fetched; an item keeps its whole document in ``header``). The single
 rebuild it from Books. The one exception is a ``prep`` row (``zoho_id`` = the
 sales order id): it holds the print stamp ``{"at", "by"}`` of that order's
 preparation sheet in ``header``, exists only here, and is dropped once a parcel
-is created for the order.
+is created for the order. A ``contact`` row (same key) holds the stamp
+``{"at", "by"}`` of the first pickup SMS sent for the order; it exists only here.
 """
 
 from sqlalchemy import Boolean, Integer, String, UniqueConstraint

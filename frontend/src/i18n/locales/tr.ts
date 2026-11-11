@@ -11254,6 +11254,13 @@ export default {
       busyRetrying: 'Zoho meşgul, yeniden deneniyor…',
       loadFailed: 'Bu sipariş Zoho\'dan yüklenemedi.',
     },
+    sms: {
+      sent: 'SMS gönderildi — {{number}} siparişi iletişim kuruldu olarak işaretlendi',
+      contactedBy: 'SMS: {{by}}, {{date}}. Yeniden göndermek için tıklayın.',
+      length: '{{chars}} karakter · {{parts}} SMS',
+      lengthSpecial: '{{chars}} karakter · {{parts}} SMS · özel karakterler, SMS başına 70',
+      reset: 'Metni geri al',
+    },
     contact: {
       title: 'İletişim',
       noPhone: 'Zoho\'da telefon yok',

@@ -11327,6 +11327,13 @@ export default {
       busyRetrying: 'Zoho ist ausgelastet, neuer Versuch…',
       loadFailed: 'Dieser Auftrag konnte nicht aus Zoho geladen werden.',
     },
+    sms: {
+      sent: 'SMS gesendet — Bestellung {{number}} als kontaktiert markiert',
+      contactedBy: 'SMS von {{by}}, {{date}}. Klicken, um erneut zu senden.',
+      length: '{{chars}} Zeichen · {{parts}} SMS',
+      lengthSpecial: '{{chars}} Zeichen · {{parts}} SMS · Sonderzeichen, 70 pro SMS',
+      reset: 'Text zurücksetzen',
+    },
     contact: {
       title: 'Kontakt',
       noPhone: 'Kein Telefon in Zoho',

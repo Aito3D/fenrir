@@ -11532,6 +11532,13 @@ export default {
       busyRetrying: 'Zoho jest zajęte, ponawianie…',
       loadFailed: 'Nie udało się wczytać tego zamówienia z Zoho.',
     },
+    sms: {
+      sent: 'SMS wysłany — zamówienie {{number}} oznaczone jako powiadomione',
+      contactedBy: 'SMS od {{by}}, {{date}}. Kliknij, aby wysłać ponownie.',
+      length: 'Znaki: {{chars}} · SMS: {{parts}}',
+      lengthSpecial: 'Znaki: {{chars}} · SMS: {{parts}} · znaki specjalne, 70 na SMS',
+      reset: 'Przywróć tekst',
+    },
     contact: {
       title: 'Kontakt',
       noPhone: 'Brak telefonu w Zoho',

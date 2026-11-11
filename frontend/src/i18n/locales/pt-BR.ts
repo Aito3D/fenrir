@@ -11312,6 +11312,13 @@ export default {
       busyRetrying: 'O Zoho está ocupado, tentando de novo…',
       loadFailed: 'Não foi possível carregar este pedido do Zoho.',
     },
+    sms: {
+      sent: 'SMS enviado — pedido {{number}} marcado como contatado',
+      contactedBy: 'SMS de {{by}}, {{date}}. Clique para enviar de novo.',
+      length: '{{chars}} caracteres · {{parts}} SMS',
+      lengthSpecial: '{{chars}} caracteres · {{parts}} SMS · caracteres especiais, 70 por SMS',
+      reset: 'Restaurar o texto',
+    },
     contact: {
       title: 'Contato',
       noPhone: 'Sem telefone no Zoho',

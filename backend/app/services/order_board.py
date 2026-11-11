@@ -257,6 +257,7 @@ def _row(order: dict, age: int, lines: list[dict], status: str, items: dict[str,
             )
         ),
         "prep": None,
+        "contacted": None,
         "lines": [{k: v for k, v in line.items() if not k.startswith("_")} for line in lines],
         "payment": None,
         "contact": order_contact(order),

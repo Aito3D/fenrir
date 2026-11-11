@@ -9,41 +9,10 @@ import { api, type AitoProject } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useToast } from '../../contexts/ToastContext';
 import { settleProject } from './settleProject';
+import { SmsRelayError, sendThroughRelay } from '../../utils/smsRelay';
 
 /** A beat past .animate-modal-out's 150ms — same margin SendQuoteModal gives. */
 const MODAL_OUT_MS = 170;
-
-/** The relay on the operator's own Mac (scripts/sms_relay_mac.py). Reached
- *  from the browser, so the server never needs the Mac's address, and only
- *  the Mac running it can send.
- *  shortcut: fixed port matching the script's default; make it a setting if the relay ever moves. */
-const SMS_RELAY_URL = 'http://localhost:8765/send';
-
-/** unreachable: no relay on this machine (or the browser blocked the call),
- *  nothing sent. maybe: Messages timed out, the SMS may have gone. failed:
- *  the relay or Messages refused, nothing sent. */
-class SmsRelayError extends Error {
-  readonly outcome: 'unreachable' | 'maybe' | 'failed';
-  constructor(outcome: SmsRelayError['outcome']) {
-    super(outcome);
-    this.outcome = outcome;
-  }
-}
-
-async function sendThroughRelay(phone: string, text: string): Promise<void> {
-  let res: Response;
-  try {
-    res = await fetch(SMS_RELAY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, text }),
-    });
-  } catch {
-    throw new SmsRelayError('unreachable');
-  }
-  if (res.status === 504) throw new SmsRelayError('maybe');
-  if (!res.ok) throw new SmsRelayError('failed');
-}
 
 /** Draft, edit and relay the "come and collect your part" SMS.
  *

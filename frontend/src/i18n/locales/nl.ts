@@ -11351,6 +11351,13 @@ export default {
       busyRetrying: 'Zoho is bezet, opnieuw proberen…',
       loadFailed: 'Deze bestelling kon niet uit Zoho worden geladen.',
     },
+    sms: {
+      sent: 'Sms verstuurd — bestelling {{number}} gemarkeerd als gecontacteerd',
+      contactedBy: 'Sms door {{by}}, {{date}}. Klik om opnieuw te versturen.',
+      length: '{{chars}} tekens · {{parts}} sms',
+      lengthSpecial: '{{chars}} tekens · {{parts}} sms · speciale tekens, 70 per sms',
+      reset: 'Tekst herstellen',
+    },
     contact: {
       title: 'Contact',
       noPhone: 'Geen telefoon in Zoho',

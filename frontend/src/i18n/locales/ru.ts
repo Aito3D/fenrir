@@ -10931,6 +10931,13 @@ export default {
       busyRetrying: 'Zoho занят, повторная попытка…',
       loadFailed: 'Не удалось загрузить заказ из Zoho.',
     },
+    sms: {
+      sent: 'SMS отправлено — заказ {{number}} отмечен как уведомлённый',
+      contactedBy: 'SMS от {{by}}, {{date}}. Нажмите, чтобы отправить снова.',
+      length: 'Символов: {{chars}} · SMS: {{parts}}',
+      lengthSpecial: 'Символов: {{chars}} · SMS: {{parts}} · спецсимволы, 70 на SMS',
+      reset: 'Вернуть текст',
+    },
     contact: {
       title: 'Контакт',
       noPhone: 'В Zoho нет телефона',

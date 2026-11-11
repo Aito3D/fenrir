@@ -19,12 +19,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.aito import _EMAIL_GUARD, _check_zoho_email_rate_limit, _email_guard_key_or_409
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequireAdminIfAuthEnabled, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.user import User
-from backend.app.services import aito_tracking, order_board_actions, order_board_sync
+from backend.app.services import aito_tracking, order_board_actions, order_board_sms, order_board_sync
 from backend.app.services.order_board_payment import order_contact
 from backend.app.services.order_board_prep_sheet import render_prep_sheet
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUnreachable, ZohoUpstreamError, zoho_service
@@ -250,6 +250,29 @@ async def print_prep_sheet(
     )
     _logged(user, salesorder_id, "prep_sheet")
     return _pdf(pdf, "bon-de-preparation.pdf")
+
+
+@router.get("/orders/{salesorder_id}/sms-draft")
+async def get_pickup_sms_draft(
+    salesorder_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequireAdminIfAuthEnabled(),
+) -> dict:
+    """The pickup SMS text for this order, from a fixed template (no AI, no Zoho call). Admins only."""
+    return await _run(order_board_sms.draft(db, salesorder_id))
+
+
+@router.post("/orders/{salesorder_id}/sms")
+async def record_pickup_sms(
+    salesorder_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequireAdminIfAuthEnabled(),
+) -> dict:
+    """Mark the order as contacted after the browser sent the pickup SMS through the relay on the
+    operator's Mac (scripts/sms_relay_mac.py); the server never sends it. Admins only. Returns the row."""
+    row = await _run(order_board_actions.stamp_contact(db, salesorder_id, user.username if user else ""))
+    _logged(user, salesorder_id, "pickup_sms")
+    return row
 
 
 @router.get("/orders/{salesorder_id}/picklist")

@@ -11383,6 +11383,13 @@ export default {
       busyRetrying: 'Zoho is busy, trying again…',
       loadFailed: 'Could not load this order from Zoho.',
     },
+    sms: {
+      sent: 'SMS sent — order {{number}} marked as contacted',
+      contactedBy: 'SMS by {{by}}, {{date}}. Click to send again.',
+      length: '{{chars}} characters · {{parts}} SMS',
+      lengthSpecial: '{{chars}} characters · {{parts}} SMS · special characters, 70 per SMS',
+      reset: 'Reset text',
+    },
     contact: {
       title: 'Contact',
       noPhone: 'No phone in Zoho',

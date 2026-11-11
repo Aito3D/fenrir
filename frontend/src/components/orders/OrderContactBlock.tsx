@@ -1,22 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Copy, Mail, MailX, Phone, PhoneOff, Smartphone, UserRound } from 'lucide-react';
+import { Check, CheckCircle2, Copy, Mail, MailX, MessageSquareText, Phone, PhoneOff, Smartphone, UserRound } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { OrderContact } from '../../api/client';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { Card } from '../Card';
 
-/** The contact person on the order: phone and email as links, each with a copy button. */
+/** The contact person on the order: phone and email as links, each with a copy button.
+ *  With `sms` (admins, live orders with something ready) the header carries the pickup-SMS pill,
+ *  which turns into "Contacted" once an SMS went out. */
 export function OrderContactBlock({
   contact,
   orderNumber,
   others,
   onGoto,
+  sms,
 }: {
   contact: OrderContact | null;
   orderNumber: string;
   others: { id: string; number: string }[];
   onGoto?: (id: string) => void;
+  sms?: { contacted: { at: string; by: string } | null; onOpen: (phone: string) => void };
 }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState<string | null>(null);
@@ -55,12 +59,47 @@ export function OrderContactBlock({
     </div>
   );
   const tel = (v: string) => `tel:${v.replace(/\s+/g, '')}`;
+  const smsPhone = mobile || phone;
+  const pill = 'inline-flex items-center gap-1 whitespace-nowrap rounded-[.4rem] border px-2 py-0.5 text-[11px] font-semibold transition-colors focus:outline-none focus-visible:ring-2';
+  const contactedAt = sms?.contacted ? new Date(sms.contacted.at) : null;
 
   return (
     <Card className="p-3 text-xs">
       <div className="flex items-center gap-2">
         <UserRound aria-hidden="true" className="h-3.5 w-3.5 text-bambu-gray" />
         <span className="font-semibold uppercase tracking-wide text-white">{t('orders.contact.title')}</span>
+        {sms && contactedAt && (
+          <button
+            type="button"
+            onClick={() => smsPhone && sms.onOpen(smsPhone)}
+            disabled={!smsPhone}
+            title={t('orders.sms.contactedBy', {
+              by: sms.contacted?.by || '–',
+              date: contactedAt.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
+            })}
+            className={`${pill} ml-auto border-green-400/30 bg-green-400/[0.14] text-green-400 hover:bg-green-400/25 focus-visible:ring-green-400/40`}
+          >
+            <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
+            {t('aito.contacted')} · {contactedAt.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+          </button>
+        )}
+        {sms && !contactedAt && (
+          <button
+            type="button"
+            onClick={() => smsPhone && sms.onOpen(smsPhone)}
+            disabled={!smsPhone}
+            aria-label={t('aito.smsPickup')}
+            title={t(smsPhone ? 'aito.smsPickup' : 'aito.smsNoPhone')}
+            className={`${pill} ml-auto ${
+              smsPhone
+                ? 'border-violet-400/30 bg-violet-400/[0.14] text-violet-400 hover:bg-violet-400/25 focus-visible:ring-violet-400/40'
+                : 'cursor-not-allowed border-bambu-dark-tertiary bg-bambu-dark text-bambu-gray'
+            }`}
+          >
+            <MessageSquareText aria-hidden="true" className="h-3.5 w-3.5" />
+            {t('aito.smsPickupShort')}
+          </button>
+        )}
       </div>
       {contact ? (
         <>

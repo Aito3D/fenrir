@@ -11384,6 +11384,13 @@ errors: {
       busyRetrying: 'Zoho är upptaget, försöker igen…',
       loadFailed: 'Kunde inte hämta den här ordern från Zoho.',
     },
+    sms: {
+      sent: 'Sms skickat — order {{number}} markerad som kontaktad',
+      contactedBy: 'Sms av {{by}}, {{date}}. Klicka för att skicka igen.',
+      length: '{{chars}} tecken · {{parts}} sms',
+      lengthSpecial: '{{chars}} tecken · {{parts}} sms · specialtecken, 70 per sms',
+      reset: 'Återställ texten',
+    },
     contact: {
       title: 'Kontakt',
       noPhone: 'Ingen telefon i Zoho',

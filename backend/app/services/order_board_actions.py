@@ -107,6 +107,20 @@ async def stamp_print(db: AsyncSession, salesorder_id: str, by: str) -> dict:
     return await _row(db, salesorder_id)
 
 
+async def stamp_contact(db: AsyncSession, salesorder_id: str, by: str) -> dict:
+    """Record that the client got the pickup SMS. The first stamp is kept, so a resend does not reset
+    how long the client has been waiting."""
+    await _row(db, salesorder_id)
+    query = select(OrderBoardDoc).where(OrderBoardDoc.kind == "contact", OrderBoardDoc.zoho_id == salesorder_id)
+    if (await db.execute(query)).scalar_one_or_none() is None:
+        db.add(OrderBoardDoc(kind="contact", zoho_id=salesorder_id, header={"at": sync._now(), "by": by}))
+        try:
+            await db.commit()
+        except IntegrityError:  # a simultaneous first stamp won the unique key: keep theirs
+            await db.rollback()
+    return await _row(db, salesorder_id)
+
+
 async def _best_effort_refresh(db: AsyncSession, salesorder_id: str, number: str) -> None:
     try:
         await sync.refresh_order(db, salesorder_id)

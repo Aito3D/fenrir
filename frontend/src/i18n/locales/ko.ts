@@ -10948,6 +10948,13 @@ export default {
       busyRetrying: 'Zoho가 바쁩니다. 다시 시도하는 중…',
       loadFailed: 'Zoho에서 이 주문을 불러오지 못했습니다.',
     },
+    sms: {
+      sent: 'SMS를 보냈습니다 — 주문 {{number}}을(를) 연락 완료로 표시했습니다',
+      contactedBy: '{{by}}님이 {{date}}에 SMS 발송. 클릭하면 다시 보냅니다.',
+      length: '{{chars}}자 · SMS {{parts}}건',
+      lengthSpecial: '{{chars}}자 · SMS {{parts}}건 · 특수 문자로 건당 70자',
+      reset: '텍스트 되돌리기',
+    },
     contact: {
       title: '연락처',
       noPhone: 'Zoho에 전화번호 없음',

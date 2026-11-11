@@ -6,10 +6,12 @@ import type { LucideIcon } from 'lucide-react';
 import { api } from '../../api/client';
 import type { OrderBoardLine, OrderPanelRow, OrderPicklist } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { HoldButton } from '../aito/HoldButton';
 import { usePrintBlob } from '../aito/usePrintBlob';
 import { errorReason, isRefused } from './orderErrors';
 import { OrderContactBlock } from './OrderContactBlock';
+import { OrderSmsModal } from './OrderSmsModal';
 import { OrderEditBar } from './OrderEditBar';
 import { OrderHandoverBar } from './OrderHandoverBar';
 import { OrderInvoicesBlock } from './OrderInvoicesBlock';
@@ -76,6 +78,10 @@ export function OrderLinesPanel({
   });
   // The parcel whose hand-over bar is open.
   const [handover, setHandover] = useState<string | null>(null);
+  // The pickup SMS: admins, on a live order with something ready (a finished order has nothing to collect).
+  const { isAdmin } = useAuth();
+  const smsAllowed = isAdmin && (row as { status?: string }).status !== 'finished' && row.ready_ratio > 0;
+  const [smsPhone, setSmsPhone] = useState<string | null>(null);
   // While a hand-over of this order is in flight, the bar on screen stays as it is.
   const handingOver = useHandOverPending(row.id);
   const pendingNow = useRef(handingOver);
@@ -518,7 +524,14 @@ export function OrderLinesPanel({
       </div>
       </div>
       <div className="space-y-3 lg:self-start">
-        <OrderContactBlock contact={row.contact} orderNumber={row.number} others={others} onGoto={onGoto} />
+        <OrderContactBlock
+          contact={row.contact}
+          orderNumber={row.number}
+          others={others}
+          onGoto={onGoto}
+          sms={smsAllowed ? { contacted: row.contacted ?? null, onOpen: setSmsPhone } : undefined}
+        />
+        {smsPhone && <OrderSmsModal row={row} phone={smsPhone} onClose={() => setSmsPhone(null)} />}
         {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} />}
         <OrderInvoicesBlock
           row={row}

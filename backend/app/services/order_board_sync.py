@@ -181,12 +181,15 @@ def zoho_busy() -> bool:
 
 
 async def _rows_with_prep(db: AsyncSession, state: dict) -> list[dict]:
-    """The stored rows, each with its print stamp (``{"at", "by"}``) or None."""
-    stamps = {
-        d.zoho_id: d.header
-        for d in (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "prep"))).scalars()
-    }
-    return [{**r, "prep": stamps.get(r["id"])} for r in state.get("rows") or []]
+    """The stored rows, each with its print stamp and its pickup-SMS stamp (``{"at", "by"}`` or None)."""
+    stamps: dict[str, dict[str, dict]] = {"prep": {}, "contact": {}}
+    query = select(OrderBoardDoc).where(OrderBoardDoc.kind.in_(stamps))
+    for d in (await db.execute(query)).scalars():
+        stamps[d.kind][d.zoho_id] = d.header
+    return [
+        {**r, "prep": stamps["prep"].get(r["id"]), "contacted": stamps["contact"].get(r["id"])}
+        for r in state.get("rows") or []
+    ]
 
 
 async def find_board_row(db: AsyncSession, salesorder_id: str) -> dict | None:

@@ -11310,6 +11310,13 @@ export default {
       busyRetrying: 'Zoho 正忙，正在重试…',
       loadFailed: '无法从 Zoho 加载此订单。',
     },
+    sms: {
+      sent: '短信已发送 — 订单 {{number}} 已标记为已联系',
+      contactedBy: '{{by}} 于 {{date}} 发送短信。点击可重新发送。',
+      length: '{{chars}} 个字符 · {{parts}} 条短信',
+      lengthSpecial: '{{chars}} 个字符 · {{parts}} 条短信 · 含特殊字符，每条 70 字',
+      reset: '恢复文本',
+    },
     contact: {
       title: '联系人',
       noPhone: 'Zoho 中没有电话',

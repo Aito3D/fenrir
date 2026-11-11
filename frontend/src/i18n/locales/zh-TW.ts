@@ -11310,6 +11310,13 @@ export default {
       busyRetrying: 'Zoho 正忙，正在重試…',
       loadFailed: '無法從 Zoho 載入此訂單。',
     },
+    sms: {
+      sent: '簡訊已傳送 — 訂單 {{number}} 已標記為已聯絡',
+      contactedBy: '{{by}} 於 {{date}} 傳送簡訊。點擊可重新傳送。',
+      length: '{{chars}} 個字元 · {{parts}} 則簡訊',
+      lengthSpecial: '{{chars}} 個字元 · {{parts}} 則簡訊 · 含特殊字元，每則 70 字',
+      reset: '還原文字',
+    },
     contact: {
       title: '聯絡人',
       noPhone: 'Zoho 中沒有電話',

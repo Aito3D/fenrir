@@ -70,6 +70,7 @@ export function OrderCard({
               {parseDay(row.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
               <span className="lg:hidden"> · {age}</span>
               {(row.prep || (row.picklists ?? []).some(p => p.status !== 'completed')) && <span className={TONE.success.text}> · {t('orders.prep.inProgress')}</span>}
+              {row.contacted && <span className={TONE.success.text}> · {t('aito.contacted')}</span>}
             </span>
           </span>
           <span className={`hidden justify-self-start rounded-md px-2 py-0.5 text-xs lg:inline-block ${AGE[ageTone(row.age_days)]}`}>{age}</span>

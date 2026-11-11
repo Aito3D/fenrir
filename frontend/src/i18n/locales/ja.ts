@@ -11326,6 +11326,13 @@ export default {
       busyRetrying: 'Zoho が混み合っています。再試行中…',
       loadFailed: 'Zoho からこの注文を読み込めませんでした。',
     },
+    sms: {
+      sent: 'SMSを送信しました — 注文 {{number}} を連絡済みにしました',
+      contactedBy: '{{by}} が {{date}} にSMSを送信。クリックで再送信します。',
+      length: '{{chars}} 文字 · SMS {{parts}} 通',
+      lengthSpecial: '{{chars}} 文字 · SMS {{parts}} 通 · 特殊文字のため1通70文字',
+      reset: 'テキストを元に戻す',
+    },
     contact: {
       title: '連絡先',
       noPhone: 'Zoho に電話番号がありません',
