@@ -104,6 +104,21 @@ async def test_payment_received_delta(db_session, zoho):
 
 
 @pytest.mark.asyncio
+async def test_credit_shifting_between_a_customers_orders_is_not_a_payment(db_session, zoho):
+    credit = {"contact": {"unused_customer_credits": 300.0}}
+    zoho.add({**order(1, age=9), **credit}, {**order(2, age=5), **credit})
+    await sync.run_pass(db_session)
+    # Order 1's invoice is paid in full: its credit share is freed and moves to order 2.
+    zoho.orders["so1"] = {**_paid(1000.0), "date": order(1, age=9)["date"], **credit}
+    await sync.run_pass(db_session)
+    rows = {r["id"]: r["payment"] for r in (await sync.read_board(db_session))["rows"]}
+    assert (rows["so2"]["paid"], rows["so2"]["invoice_paid"]) == (300.0, 0.0)
+    assert [(e.salesorder_id, e.detail["amount"]) for e in await events(db_session, "payment.received")] == [
+        ("so1", 1000.0)
+    ]
+
+
+@pytest.mark.asyncio
 async def test_payment_already_logged_by_a_terminal_is_not_logged_again(db_session, zoho):
     zoho.add(order(1))
     await sync.run_pass(db_session)

@@ -526,15 +526,17 @@ async def _record_board_events(db: AsyncSession, current: dict, rows: list[dict]
             continue
         if was["status"] != "to_ship" and row["status"] == "to_ship":
             await order_board_events.record(db, salesorder_id, "order.ready", actor_class="system")
-        paid, paid_before = (row.get("payment") or {}).get("paid") or 0, (was.get("payment") or {}).get("paid") or 0
+        payment = row.get("payment") or {}
+        # Invoice payments only: shared customer credit moving between orders, or applied at hand-over, is not new money.
+        delta = (payment.get("invoice_paid") or 0) - ((was.get("payment") or {}).get("invoice_paid") or 0)
         # A terminal or link payment settled here records itself: skip what it already logged since the last board.
-        if paid > paid_before and not await _has_event(db, salesorder_id, "payment.received", computed_at):
+        if delta > 0 and not await _has_event(db, salesorder_id, "payment.received", computed_at):
             await order_board_events.record(
                 db,
                 salesorder_id,
                 "payment.received",
                 actor_class="system",
-                detail={"amount": round(paid - paid_before, 2), "paid": paid, "total": row.get("total")},
+                detail={"amount": round(delta, 2), "paid": payment.get("paid"), "total": row.get("total")},
             )
     for salesorder_id in before.keys() - after.keys():
         if _is_finished(headers.get(salesorder_id) or {}) and not await _has_event(db, salesorder_id, "order.finished"):
