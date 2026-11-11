@@ -217,6 +217,7 @@ async def _finish(
     the sequence and is reported in the outcome. ``row`` is the board row read before the first write."""
     advance = _on_account(row)
     step = "delivered"
+    invoice: dict = {}  # the Books invoice once created; read by the finally only when it exists
     try:
         if deliver is not None:
             if not deliver:

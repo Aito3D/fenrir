@@ -448,7 +448,7 @@ async def _order_for_payment(db: AsyncSession, salesorder_id: str) -> tuple[dict
     return row, doc.detail
 
 
-def _target(detail: dict) -> tuple[str, dict] | None:
+def _target(detail: dict) -> tuple[Literal["invoice", "retainer"], dict] | None:
     """Design §3: the newest invoice with a balance; else, for an order made from a quote, its open retainer."""
     invoice = _payable(detail.get("invoices"))
     if invoice is not None:
