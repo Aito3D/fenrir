@@ -435,7 +435,7 @@ describe('Create invoice on the invoices card', () => {
     const user = userEvent.setup();
     const bodies: unknown[] = [];
     server.use(http.post('/api/v1/order-board/orders/so1/invoice', async ({ request }) => { bodies.push(await request.json()); return HttpResponse.json(answer({ package_number: '' })); }));
-    const payment = { state: 'partial', pct: 40, paid: 0, invoice_paid: 0, advance: 5000, due: 0, overdue: 0, rest: 0, left: 0, next_due: null, invoices: [] } as OrderPanelRow['payment'];
+    const payment = { state: 'partial', pct: 40, paid: 0, invoice_paid: 0, retainer: 0, advance: 5000, due: 0, overdue: 0, rest: 0, left: 0, next_due: null, invoices: [] } as OrderPanelRow['payment'];
     render(<OrderLinesPanel row={panelRow({ unbilled_units: 2, packages: [], payment })} />);
     await user.click(screen.getByRole('button', { name: 'Create invoice' }));
     await waitFor(() => expect(bodies).toEqual([{ apply_credit: true }]));

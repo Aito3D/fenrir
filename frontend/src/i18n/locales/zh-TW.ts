@@ -11261,6 +11261,7 @@ export default {
       legendPaid: '已付款',
       legendInvoice: '已依發票付款',
       legendAdvance: '已預付',
+      legendRetainer: '報價單 {{number}} 的訂金',
       legendDue: '已開立發票，等待付款',
       legendOverdue: '已逾期',
       legendRest: '待付款，未開立發票',

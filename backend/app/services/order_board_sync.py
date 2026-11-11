@@ -24,6 +24,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+from types import SimpleNamespace
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +36,7 @@ from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_events
 from backend.app.services.aito_poll_watermark import format_books_time
+from backend.app.services.aito_retainers import list_project_retainers
 from backend.app.services.inbox import broadcast_pending
 from backend.app.services.order_board import age_days, compute_board, finished_is_core, order_row
 from backend.app.services.order_board_payment import order_facts, order_payment, quote_number_missing
@@ -242,7 +244,7 @@ async def refresh_order(db: AsyncSession, salesorder_id: str) -> None:
         raise OrderNotStored(salesorder_id)
     fetched = await zoho_service.get_salesorder(db, salesorder_id)
     _written_at[salesorder_id] = time.monotonic()
-    doc.detail = {**fetched, "_fetched_at": _now()}
+    doc.detail = {**fetched, "_fetched_at": _now(), **_kept_retainers(doc.detail)}
     doc.pending = True  # the next pass re-reads it once the list row has caught up
     changed = await recompute(db)
     await db.commit()
@@ -566,8 +568,11 @@ async def _record_board_events(db: AsyncSession, current: dict, rows: list[dict]
         if was["status"] != "to_ship" and row["status"] == "to_ship":
             await order_board_events.record(db, salesorder_id, "order.ready", actor_class="system")
         payment = row.get("payment") or {}
-        # Invoice payments only: shared customer credit moving between orders, or applied at hand-over, is not new money.
-        delta = (payment.get("invoice_paid") or 0) - ((was.get("payment") or {}).get("invoice_paid") or 0)
+        # Invoice and retainer payments only: shared customer credit moving between orders, or applied at hand-over, is
+        # not new money. A retainer drawn on the order's invoice moves from one figure to the other: no delta.
+        old = was.get("payment") or {}
+        delta = (payment.get("invoice_paid") or 0) + (payment.get("retainer") or 0)
+        delta -= (old.get("invoice_paid") or 0) + (old.get("retainer") or 0)
         # A terminal or link payment settled here records itself: skip what it already logged since the last board.
         if delta > 0 and not await _has_event(db, salesorder_id, "payment.received", computed_at):
             await order_board_events.record(
@@ -711,6 +716,28 @@ async def _mark_payment_changes(
     await db.commit()
 
 
+def _kept_retainers(detail: dict | None) -> dict:
+    return {"_retainers": detail["_retainers"]} if detail and "_retainers" in detail else {}
+
+
+async def _retainers(db: AsyncSession, detail: dict, previous: dict | None) -> dict:
+    """``{"_retainers": [...]}`` for an order made from a quote, else ``{}``. A Zoho failure keeps the previous ones."""
+    if not detail.get("estimate_id"):
+        return {}
+    quote = SimpleNamespace(
+        quote_id=str(detail["estimate_id"]),
+        quote_number=order_facts(detail)["quote_number"] or (previous or {}).get("estimate_number") or "",
+        client_id=str(detail.get("customer_id") or ""),
+    )
+    try:
+        return {"_retainers": await list_project_retainers(db, quote)}
+    except ZohoUpstreamError as e:
+        if isinstance(e, ZohoRateLimited):
+            open_rate_limit_window(e)
+        logger.warning("Order board: retainers of quote %s not read, the previous ones stay: %s", quote.quote_id, e)
+        return _kept_retainers(previous)
+
+
 async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str], OrderBoardDoc]) -> None:
     # Oldest sales orders first: they are served first, so they matter most.
     pending = sorted(
@@ -730,7 +757,8 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
             await db.refresh(doc)  # a write here is newer than this copy: keep it, and the pending mark
             continue
         previous = doc.detail
-        doc.detail = {**fetched, "_fetched_at": _now()}
+        retainers = await _retainers(db, fetched, previous) if doc.kind == "salesorder" else {}
+        doc.detail = {**fetched, "_fetched_at": _now(), **retainers}
         doc.pending = False
         if doc.kind == "salesorder":
             await _observe(db, doc.zoho_id, _record_fetch_events, doc.zoho_id, previous, fetched)

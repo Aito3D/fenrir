@@ -11302,6 +11302,7 @@ export default {
       legendPaid: 'Betaald',
       legendInvoice: 'Betaald op factuur',
       legendAdvance: 'Vooraf betaald',
+      legendRetainer: 'Aanbetaling op offerte {{number}}',
       legendDue: 'Gefactureerd, wacht op betaling',
       legendOverdue: 'Achterstallig',
       legendRest: 'Nog te betalen, niet gefactureerd',

@@ -11205,6 +11205,7 @@ export default {
       legendPaid: 'Ödendi',
       legendInvoice: 'Faturada ödendi',
       legendAdvance: 'Peşin ödendi',
+      legendRetainer: '{{number}} teklifi için kapora',
       legendDue: 'Faturalandı, ödeme bekleniyor',
       legendOverdue: 'Gecikmiş',
       legendRest: 'Ödenecek, faturalanmadı',

@@ -11,23 +11,25 @@ const HATCH = {
 };
 
 /** Payment of one order: left to pay, the bar with its legend. `total` replaces the order total while an edit is open:
- *  what is left (or the credit left over) and the uninvoiced rest follow it. */
-export function OrderPaymentBlock({ payment, currency, total }: { payment: OrderPayment; currency: string; total?: number }) {
+ *  what is left (or the credit left over) and the uninvoiced rest follow it. A paid retainer on the order's quote
+ *  (`quoteNumber`) is its own part. */
+export function OrderPaymentBlock({ payment, currency, total, quoteNumber = '' }: { payment: OrderPayment; currency: string; total?: number; quoteNumber?: string }) {
   const { t } = useTranslation();
   const money = (n: number) => formatMoney(n, currency);
   const p = total === undefined ? payment : {
     ...payment,
     left: Math.round((total - payment.paid) * 100) / 100,
-    rest: Math.max(0, Math.round((total - payment.invoice_paid - payment.advance - payment.due - payment.overdue) * 100) / 100),
+    rest: Math.max(0, Math.round((total - payment.invoice_paid - payment.retainer - payment.advance - payment.due - payment.overdue) * 100) / 100),
   };
   // Parts never add up to more than the bar, even when invoices exceed the order total.
-  const whole = p.invoice_paid + p.advance + p.due + p.overdue + p.rest;
+  const whole = p.invoice_paid + p.retainer + p.advance + p.due + p.overdue + p.rest;
   const parts = [
-    { id: 'invoice_paid', n: p.invoice_paid, cls: TONE.success.bar, dot: TONE.success.bar, label: p.advance > 0 ? 'orders.pay.legendInvoice' : 'orders.pay.legendPaid' },
-    { id: 'advance', n: p.advance, cls: '', dot: '', label: 'orders.pay.legendAdvance' },
-    { id: 'due', n: p.due, cls: TONE.warning.bar, dot: TONE.warning.bar, label: 'orders.pay.legendDue' },
-    { id: 'overdue', n: p.overdue, cls: TONE.danger.bar, dot: TONE.danger.bar, label: 'orders.pay.legendOverdue' },
-    { id: 'rest', n: p.rest, cls: '', dot: 'bg-bambu-dark ring-1 ring-bambu-dark-tertiary', label: 'orders.pay.legendRest' },
+    { id: 'invoice_paid', n: p.invoice_paid, cls: TONE.success.bar, dot: TONE.success.bar, label: t(p.advance > 0 || p.retainer > 0 ? 'orders.pay.legendInvoice' : 'orders.pay.legendPaid') },
+    { id: 'retainer', n: p.retainer, cls: TONE.success.bar, dot: TONE.success.bar, label: t('orders.pay.legendRetainer', { number: quoteNumber }).trim() },
+    { id: 'advance', n: p.advance, cls: '', dot: '', label: t('orders.pay.legendAdvance') },
+    { id: 'due', n: p.due, cls: TONE.warning.bar, dot: TONE.warning.bar, label: t('orders.pay.legendDue') },
+    { id: 'overdue', n: p.overdue, cls: TONE.danger.bar, dot: TONE.danger.bar, label: t('orders.pay.legendOverdue') },
+    { id: 'rest', n: p.rest, cls: '', dot: 'bg-bambu-dark ring-1 ring-bambu-dark-tertiary', label: t('orders.pay.legendRest') },
   ];
 
   return (
@@ -60,7 +62,7 @@ export function OrderPaymentBlock({ payment, currency, total }: { payment: Order
         {parts.filter(x => x.n > 0).map(x => (
           <span key={x.id} className="inline-flex items-center gap-1.5">
             <span className={`h-2 w-2 rounded-full ${x.dot}`} style={x.id === 'advance' ? HATCH : undefined} />
-            <span className="text-bambu-gray">{t(x.label)}</span>
+            <span className="text-bambu-gray">{x.label}</span>
             <span className="tabular-nums text-white">{money(x.n)}</span>
           </span>
         ))}

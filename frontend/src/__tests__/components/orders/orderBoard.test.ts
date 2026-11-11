@@ -210,7 +210,7 @@ describe('panelGroups', () => {
 });
 
 const pay = (o: Partial<OrderPayment> = {}): OrderPayment => ({
-  state: 'unpaid', pct: 0, paid: 0, invoice_paid: 0, advance: 0, due: 0, overdue: 0, rest: 0, left: 0, next_due: null,
+  state: 'unpaid', pct: 0, paid: 0, invoice_paid: 0, retainer: 0, advance: 0, due: 0, overdue: 0, rest: 0, left: 0, next_due: null,
   invoices: [], ...o,
 });
 

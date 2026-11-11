@@ -10923,6 +10923,7 @@ export default {
       legendPaid: 'Сплачено',
       legendInvoice: 'Сплачено за рахунком',
       legendAdvance: 'Сплачено наперед',
+      legendRetainer: 'Аванс за кошторисом {{number}}',
       legendDue: 'Виставлено рахунок, очікує оплати',
       legendOverdue: 'Прострочено',
       legendRest: 'Залишилось сплатити, рахунок не виставлено',

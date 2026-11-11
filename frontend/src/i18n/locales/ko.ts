@@ -10899,6 +10899,7 @@ export default {
       legendPaid: '결제 완료',
       legendInvoice: '청구서로 결제됨',
       legendAdvance: '선결제됨',
+      legendRetainer: '견적 {{number}} 선수금',
       legendDue: '청구됨, 결제 대기 중',
       legendOverdue: '기한 초과',
       legendRest: '남은 금액, 미청구',

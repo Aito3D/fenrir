@@ -10882,6 +10882,7 @@ export default {
       legendPaid: 'Оплачено',
       legendInvoice: 'Оплачено по счёту',
       legendAdvance: 'Оплачено заранее',
+      legendRetainer: 'Аванс по смете {{number}}',
       legendDue: 'Выставлен счёт, ожидает оплаты',
       legendOverdue: 'Просрочено',
       legendRest: 'Осталось оплатить, счёт не выставлен',

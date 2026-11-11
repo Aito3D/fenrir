@@ -5,7 +5,8 @@ Two facts about what Zoho Books gives us shape this module:
 * A sales order carries its invoices, so what is invoiced and what is settled on those invoices is exact.
 * A customer's advance payments are one pool (``contact.unused_customer_credits``) that Books does not
   attribute to any order. ``board_payments`` therefore shares each customer's pool between their orders,
-  oldest first. It is the one function to replace once payments get linked to orders.
+  oldest first, after setting aside the paid retainer invoices of each order's quote (``_retainers``, stored
+  by the sync): a retainer counts on its own order.
 """
 
 from datetime import date
@@ -33,8 +34,22 @@ def _overdue(invoice: dict, today: date) -> bool:
         return False
 
 
-def order_payment(order: dict, today: date, credit: float = 0.0) -> dict | None:
-    """Payment state of one order; ``credit`` is the advance available to it. None without a total."""
+def _retainer(order: dict, room: float, pool: float | None) -> float:
+    """Paid retainers of the order's quote, within what is left to pay and the customer's unused credit.
+
+    Books still reads a retainer drawn on an invoice as ``paid`` at its full total; its money then counts through
+    that invoice. Unused retainer money is part of the customer's credit pool, so ``pool`` bounds the retainers to
+    what is still unspent: a drawn retainer is not counted twice.
+    shortcut: a drawn retainer can still count while the customer holds other unused credit; upgrade by reading
+    each retainer's payments (unused amount) if that ever shows.
+    """
+    paid = sum(_num(r.get("total")) for r in order.get("_retainers") or [] if r.get("status") == "paid")
+    return min(paid, room, paid if pool is None else max(0.0, pool))
+
+
+def order_payment(order: dict, today: date, credit: float = 0.0, retainer_pool: float | None = None) -> dict | None:
+    """Payment state of one order; ``credit`` is the advance available to it, ``retainer_pool`` the customer's
+    credit able to back its retainers (None: no limit). None without a total."""
     total = _num(order.get("total"))
     if total <= 0:
         return None
@@ -47,18 +62,21 @@ def order_payment(order: dict, today: date, credit: float = 0.0) -> dict | None:
     due = sum(_num(i.get("balance")) for i in invoices if i not in overdue_invoices)
     settled = sum(_num(i.get("total")) - _num(i.get("balance")) for i in invoices)
     invoice_paid = max(0.0, min(total - due - overdue, settled))
-    advance = min(_num(credit), max(0.0, total - invoice_paid - due - overdue))
-    paid = min(total, invoice_paid + advance)
+    room = max(0.0, total - invoice_paid - due - overdue)
+    retainer = _retainer(order, room, retainer_pool)
+    advance = min(_num(credit), room - retainer)
+    paid = min(total, invoice_paid + retainer + advance)
     next_due = min((i["due_date"] for i in invoices if _num(i.get("balance")) > 0 and i.get("due_date")), default=None)
     return {
         "state": "paid" if paid >= total else "partial" if paid > 0 else "unpaid",
         "pct": int(paid * 100 // total),
         "paid": _r(paid),
         "invoice_paid": _r(invoice_paid),
+        "retainer": _r(retainer),
         "advance": _r(advance),
         "due": _r(due),
         "overdue": _r(overdue),
-        "rest": _r(max(0.0, total - invoiced - advance)),
+        "rest": _r(max(0.0, total - invoiced - retainer - advance)),
         "left": _r(total - paid),
         "next_due": next_due,
         "invoices": [
@@ -78,17 +96,25 @@ def order_payment(order: dict, today: date, credit: float = 0.0) -> dict | None:
 
 
 def board_payments(orders: list[dict], today: date) -> dict[str, dict | None]:
-    """Payment per ``salesorder_id``; ``orders`` in board sequence share each customer's advance pool."""
+    """Payment per ``salesorder_id``; ``orders`` in board sequence share each customer's advance pool, once each
+    order's own retainers are taken out of it."""
     pools: dict[str, tuple[str, float]] = {}
     for order in orders:
         customer = order.get("customer_id")
         stamp = order.get("_fetched_at") or ""
         if customer and (customer not in pools or stamp >= pools[customer][0]):
             pools[customer] = (stamp, _num((order.get("contact") or {}).get("unused_customer_credits")))
-    result: dict[str, dict | None] = {}
-    for order in orders:
+    retainers: dict[int, float] = {}
+    for i, order in enumerate(orders):
         customer = order.get("customer_id")
-        payment = order_payment(order, today, pools[customer][1] if customer else 0.0)
+        payment = order_payment(order, today, 0.0, pools[customer][1] if customer else None)
+        retainers[i] = payment["retainer"] if payment else 0.0
+        if customer:
+            pools[customer] = (pools[customer][0], pools[customer][1] - retainers[i])
+    result: dict[str, dict | None] = {}
+    for i, order in enumerate(orders):
+        customer = order.get("customer_id")
+        payment = order_payment(order, today, pools[customer][1] if customer else 0.0, retainers[i])
         if customer and payment:
             pools[customer] = (pools[customer][0], pools[customer][1] - payment["advance"])
         result[order.get("salesorder_id") or ""] = payment

@@ -11277,6 +11277,7 @@ export default {
       legendPaid: '支払い済み',
       legendInvoice: '請求書で支払い済み',
       legendAdvance: '前払い済み',
+      legendRetainer: '見積 {{number}} の前受金',
       legendDue: '請求済み、入金待ち',
       legendOverdue: '期限超過',
       legendRest: '未払い、未請求',

@@ -22,7 +22,7 @@ const day = (offset: number) => {
 };
 
 const pay = (invoices: OrderInvoice[]): OrderPayment => ({
-  state: 'partial', pct: 40, paid: 0, invoice_paid: 0, advance: 0, due: 0, overdue: 0, rest: 0, left: 0, next_due: null, invoices,
+  state: 'partial', pct: 40, paid: 0, invoice_paid: 0, retainer: 0, advance: 0, due: 0, overdue: 0, rest: 0, left: 0, next_due: null, invoices,
 });
 
 const row = (invoices: OrderInvoice[] | null, o: Partial<OrderBoardRow> = {}) =>

@@ -11278,6 +11278,7 @@ export default {
       legendPaid: 'Bezahlt',
       legendInvoice: 'Per Rechnung bezahlt',
       legendAdvance: 'Im Voraus bezahlt',
+      legendRetainer: 'Anzahlung auf Angebot {{number}}',
       legendDue: 'In Rechnung gestellt, Zahlung ausstehend',
       legendOverdue: 'Überfällig',
       legendRest: 'Noch zu zahlen, nicht in Rechnung gestellt',

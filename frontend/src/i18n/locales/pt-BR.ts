@@ -11263,6 +11263,7 @@ export default {
       legendPaid: 'Pago',
       legendInvoice: 'Pago na fatura',
       legendAdvance: 'Pago antecipadamente',
+      legendRetainer: 'Sinal do orçamento {{number}}',
       legendDue: 'Faturado, aguardando pagamento',
       legendOverdue: 'Vencido',
       legendRest: 'Falta pagar, não faturado',

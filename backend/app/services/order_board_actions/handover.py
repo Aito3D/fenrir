@@ -13,6 +13,7 @@ from backend.app.services.order_board_actions._common import (
     _best_effort_refresh,
     _log,
     _num,
+    _on_account,
     _stored_order,
     _write,
     confirm_stored_copy,
@@ -158,5 +159,5 @@ async def handover_preview(db: AsyncSession, salesorder_id: str, package_id: str
     total = _printed_total(payload)
     if total is not None:
         result["invoice_total"] = total
-        result["credit"] = min(total, _num(((row or {}).get("payment") or {}).get("advance")))
+        result["credit"] = min(total, _on_account(row))
     return result

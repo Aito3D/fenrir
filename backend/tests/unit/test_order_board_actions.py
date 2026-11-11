@@ -1386,6 +1386,24 @@ async def test_credit_is_capped_by_the_orders_advance_and_by_the_invoice(db_sess
 
 
 @pytest.mark.asyncio
+async def test_the_quotes_retainer_is_drawn_as_credit(db_session, books):
+    """The retainer counts as the order's own payment, not as advance: the hand-over still draws it."""
+    books.retainers["e1"] = [{"id": "r1", "number": "RET-1", "total": 600.0, "balance": 0.0, "status": "paid"}]
+    books.orders.clear()
+    doc = handover_order(books, advance=600)
+    doc["estimate_id"] = "e1"
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    payment = (await sync.find_board_row(db_session, "so1"))["payment"]
+    assert (payment["retainer"], payment["advance"]) == (600, 0)
+    books.log.clear()
+    books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 900}]
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert _calls(books, "apply_invoice_credits") == [("inv-1", [{"payment_id": "p1", "amount_applied": 600}])]
+    assert outcome["credit_applied"] == 600
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("advance", "apply_credit"), [(600, False), (0, True)])
 async def test_no_credit_call_when_unticked_or_no_advance(db_session, books, advance, apply_credit):
     await _ready(db_session, books, advance=advance)

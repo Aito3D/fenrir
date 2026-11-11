@@ -76,7 +76,7 @@ const serve = (payload: OrderBoardResponse) =>
   server.use(http.get('/api/v1/order-board', () => HttpResponse.json(payload)));
 
 const pay = (o: Partial<OrderPayment> = {}): OrderPayment => ({
-  state: 'unpaid', pct: 0, paid: 0, invoice_paid: 0, advance: 0, due: 0, overdue: 0, rest: 100, left: 100, next_due: null, invoices: [], ...o,
+  state: 'unpaid', pct: 0, paid: 0, invoice_paid: 0, retainer: 0, advance: 0, due: 0, overdue: 0, rest: 100, left: 100, next_due: null, invoices: [], ...o,
 });
 
 const fin = (n: number, o: Partial<FinishedOrderRow> = {}): FinishedOrderRow => ({
@@ -300,7 +300,7 @@ describe('OrderBoardPage', () => {
   });
 
   it('shows a payment pill per row: Unpaid, 40% paid, Paid, and a dash without a total', async () => {
-    const p = (o: Partial<OrderPayment>): OrderPayment => ({ state: 'unpaid', pct: 0, paid: 0, invoice_paid: 0, advance: 0, due: 0, overdue: 0, rest: 100, left: 100, next_due: null, invoices: [], ...o });
+    const p = (o: Partial<OrderPayment>): OrderPayment => ({ state: 'unpaid', pct: 0, paid: 0, invoice_paid: 0, retainer: 0, advance: 0, due: 0, overdue: 0, rest: 100, left: 100, next_due: null, invoices: [], ...o });
     serve(board({ rows: [
       row({ id: 'a', number: 'SO-A', payment: p({}) }),
       row({ id: 'b', number: 'SO-B', payment: p({ state: 'partial', pct: 40, paid: 40, left: 60 }) }),
@@ -320,7 +320,7 @@ describe('OrderBoardPage', () => {
     const user = userEvent.setup();
     serve(board({ rows: [row({
       contact: { name: 'Intendance', email: '', phone: '40 54 71 00', mobile: '' },
-      payment: { state: 'unpaid', pct: 0, paid: 0, invoice_paid: 0, advance: 0, due: 0, overdue: 0, rest: 13600, left: 13600, next_due: null, invoices: [] },
+      payment: { state: 'unpaid', pct: 0, paid: 0, invoice_paid: 0, retainer: 0, advance: 0, due: 0, overdue: 0, rest: 13600, left: 13600, next_due: null, invoices: [] },
     })] }));
     render(<OrderBoardPage />);
     await user.click(await screen.findByRole('button', { name: /SO-00412/ }));

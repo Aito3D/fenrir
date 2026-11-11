@@ -14,6 +14,7 @@ from backend.app.services.order_board_actions._common import (
     _boxed,
     _log,
     _num,
+    _on_account,
     _stored_order,
     _write,
     confirm_stored_copy,
@@ -202,7 +203,7 @@ async def _finish(
 ) -> dict:
     """Steps 2 to 6 of a hand-over (``deliver`` is the shipment to mark delivered). Never raises: a failure stops
     the sequence and is reported in the outcome. ``row`` is the board row read before the first write."""
-    advance = _num(((row or {}).get("payment") or {}).get("advance"))
+    advance = _on_account(row)
     step = "delivered"
     try:
         if deliver is not None:
@@ -287,7 +288,7 @@ async def invoice_preview(db: AsyncSession, salesorder_id: str) -> dict:
     empty = {"units": 0.0, "invoice_total": None, "manual_reason": None}
     result = {
         "available": False,
-        "credit": _num(((row or {}).get("payment") or {}).get("advance")),
+        "credit": _on_account(row),
         "drafts": [],
         "packed": dict(empty),
         "whole": dict(empty),

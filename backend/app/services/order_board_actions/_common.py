@@ -111,6 +111,12 @@ def _num(value) -> float:
         return 0.0
 
 
+def _on_account(row: dict | None) -> float:
+    """The customer credit an invoice of this board row may draw: its quote's retainers, then its advance."""
+    payment = (row or {}).get("payment") or {}
+    return _num(payment.get("retainer")) + _num(payment.get("advance"))
+
+
 async def _write(salesorder_id: str, number: str, step: str, call):
     """One Books write: logged, and fenced so that no sync pass stores a copy fetched while it ran."""
     logger.info("Order board write: order=%s step=%s", number, step)

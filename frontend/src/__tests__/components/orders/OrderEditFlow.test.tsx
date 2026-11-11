@@ -43,7 +43,7 @@ const panelRow = (o: Partial<OrderPanelRow> = {}, lines = [line()]): OrderPanelR
   zoho_url: null, ...o,
 });
 const payment = (o: Partial<OrderPayment> = {}): OrderPayment => ({
-  state: 'partial', pct: 42, paid: 5000, invoice_paid: 0, advance: 5000, due: 0, overdue: 0, rest: 6800, left: 6800, next_due: null, invoices: [], ...o,
+  state: 'partial', pct: 42, paid: 5000, invoice_paid: 0, retainer: 0, advance: 5000, due: 0, overdue: 0, rest: 6800, left: 6800, next_due: null, invoices: [], ...o,
 });
 
 const BASE = '/api/v1/order-board/orders/so1';

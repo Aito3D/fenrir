@@ -561,7 +561,7 @@ export function OrderLinesPanel({
                 sms={smsAllowed ? { contacted: row.contacted ?? null, onOpen: setSmsPhone } : undefined}
               />
               {smsPhone && <OrderSmsModal row={row} phone={smsPhone} onClose={() => setSmsPhone(null)} />}
-              {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} />}
+              {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} quoteNumber={row.facts.quote_number} />}
               <OrderInvoicesBlock
                 row={row}
                 canEmail={canUpdate}
@@ -569,7 +569,7 @@ export function OrderLinesPanel({
                 onCreateInvoice={canUpdate ? () => {
                   if (createInvoice.isPending || invoiceSent.current) return;
                   invoiceSent.current = true;
-                  createInvoice.mutate({ id: row.id, applyCredit: (row.payment?.advance ?? 0) > 0 }, { onSettled: () => { invoiceSent.current = false; } });
+                  createInvoice.mutate({ id: row.id, applyCredit: (row.payment?.advance ?? 0) + (row.payment?.retainer ?? 0) > 0 }, { onSettled: () => { invoiceSent.current = false; } });
                 } : undefined}
                 onInvoiceNow={canUpdate ? (scope, applyCredit) => {
                   if (createInvoice.isPending || invoiceSent.current) return;

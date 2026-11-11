@@ -11335,6 +11335,7 @@ errors: {
       legendPaid: 'Betald',
       legendInvoice: 'Betald på faktura',
       legendAdvance: 'Betald i förskott',
+      legendRetainer: 'Handpenning på offert {{number}}',
       legendDue: 'Fakturerad, väntar på betalning',
       legendOverdue: 'Förfallen',
       legendRest: 'Kvar att betala, ej fakturerat',

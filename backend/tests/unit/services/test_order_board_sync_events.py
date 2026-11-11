@@ -168,3 +168,23 @@ async def test_a_failing_event_write_never_breaks_the_pass(db_session, zoho, mon
     board = await sync.read_board(db_session)
     assert board["sync"]["last_error"] is None
     assert board["rows"][0]["lines"][0]["quantity"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_retainer_paid_on_the_quote_is_a_payment_and_drawing_it_is_not(db_session, zoho):
+    retainer = {"id": "r1", "number": "RET-1", "total": 400.0, "balance": 0.0, "status": "paid"}
+    zoho.add(order(1, estimate_id="e1"))
+    await sync.run_pass(db_session)
+    zoho.retainers["e1"] = [retainer]
+    zoho.orders["so1"] = {
+        **edited(1, "2026-11-02T08:00:00-1000", estimate_id="e1"),
+        "contact": {"unused_customer_credits": 400.0},
+    }
+    await sync.run_pass(db_session)
+    assert [e.detail["amount"] for e in await events(db_session, "payment.received")] == [400.0]
+    # Drawn on the order's invoice: the credit is spent, the invoice is settled by it.
+    zoho.orders["so1"] = {**_paid(400.0), "estimate_id": "e1", "last_modified_time": "2026-11-03T08:00:00-1000"}
+    await sync.run_pass(db_session)
+    assert [e.detail for e in await events(db_session, "payment.received")] == [
+        {"amount": 400.0, "paid": 400.0, "total": 1000.0}
+    ]

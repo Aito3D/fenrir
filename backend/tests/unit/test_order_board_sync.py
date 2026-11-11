@@ -105,6 +105,8 @@ class FakeZoho:
         self.payment_since: list[str] = []
         self.truncated = False
         self.fail_detail_once = False
+        self.retainers: dict[str, list[dict]] = {}
+        self.fail_retainers: Exception | None = None
 
     def add(self, *docs: dict):
         for doc in docs:
@@ -128,6 +130,12 @@ class FakeZoho:
     async def get_estimate(self, db, estimate_id):
         self.calls["estimate"] += 1
         return {"estimate_id": estimate_id, "estimate_number": f"DEV26-{estimate_id}"}
+
+    async def list_project_retainers(self, db, quote):
+        self.calls["retainers"] += 1
+        if self.fail_retainers:
+            raise self.fail_retainers
+        return self.retainers.get(quote.quote_id, [])
 
     async def get_salesorder(self, db, salesorder_id):
         self.calls["detail"] += 1
@@ -203,6 +211,7 @@ def zoho(monkeypatch):
         "calls_in_last_minute",
     ):
         monkeypatch.setattr(zoho_service, name, getattr(fake, name))
+    monkeypatch.setattr(sync, "list_project_retainers", fake.list_project_retainers)
     return fake
 
 
@@ -1085,3 +1094,44 @@ async def test_a_finished_order_says_whether_it_is_core_when_its_items_are_known
     )
     rows = {r["id"]: r["is_core"] for r in (await sync.read_finished(db_session))["rows"]}
     assert rows == {"so2": False, "so3": None}
+
+
+def _retainer(total: float) -> dict:
+    return {
+        "id": "r1",
+        "number": "RET-1",
+        "date": "",
+        "total": total,
+        "balance": 0.0,
+        "currency_code": "XPF",
+        "status": "paid",
+    }
+
+
+@pytest.mark.asyncio
+async def test_no_estimate_no_retainer_call(db_session, zoho):
+    await _synced(db_session, zoho, order(1))
+    assert zoho.calls["retainers"] == 0
+    assert "_retainers" not in (await db_session.execute(sync._stored_query("so1"))).scalar_one().detail
+
+
+@pytest.mark.asyncio
+async def test_a_paid_retainer_on_the_quote_pays_the_order(db_session, zoho):
+    zoho.retainers["e1"] = [_retainer(300.0)]
+    credit = {"contact": {"unused_customer_credits": 300.0}}
+    await _synced(db_session, zoho, {**order(1, age=5, estimate_id="e1"), **credit}, {**order(2, age=9), **credit})
+    rows = {r["id"]: r["payment"] for r in (await sync.read_board(db_session))["rows"]}
+    assert (rows["so1"]["retainer"], rows["so1"]["paid"]) == (300.0, 300.0)
+    assert rows["so2"]["advance"] == 0
+
+
+@pytest.mark.asyncio
+async def test_retainer_fetch_failure_keeps_previous(db_session, zoho):
+    zoho.retainers["e1"] = [_retainer(300.0)]
+    await _synced(db_session, zoho, order(1, estimate_id="e1"))
+    zoho.fail_retainers = ZohoUpstreamError("retainers boom")
+    zoho.orders["so1"] = {**order(1, estimate_id="e1", qty=2), "last_modified_time": "2026-11-02T08:00:00-1000"}
+    await sync.run_pass(db_session)
+    doc = (await db_session.execute(sync._stored_query("so1"))).scalar_one()
+    assert doc.detail["quantity"] == 2 and doc.detail["_retainers"] == [_retainer(300.0)]
+    assert zoho.calls["retainers"] == 2

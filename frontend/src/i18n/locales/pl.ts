@@ -11483,6 +11483,7 @@ export default {
       legendPaid: 'Opłacone',
       legendInvoice: 'Opłacone na fakturze',
       legendAdvance: 'Opłacone z góry',
+      legendRetainer: 'Zaliczka do oferty {{number}}',
       legendDue: 'Zafakturowane, czeka na płatność',
       legendOverdue: 'Po terminie',
       legendRest: 'Do zapłaty, niezafakturowane',

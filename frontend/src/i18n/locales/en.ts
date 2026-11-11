@@ -11334,6 +11334,7 @@ export default {
       legendPaid: 'Paid',
       legendInvoice: 'Paid on invoice',
       legendAdvance: 'Paid in advance',
+      legendRetainer: 'Deposit on quote {{number}}',
       legendDue: 'Invoiced, awaiting payment',
       legendOverdue: 'Overdue',
       legendRest: 'Still to pay, not invoiced',

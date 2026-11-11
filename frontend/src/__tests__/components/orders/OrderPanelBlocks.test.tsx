@@ -11,7 +11,7 @@ import { PaymentPill } from '../../../components/orders/PaymentPill';
 import { OrderLinesPanel } from '../../../components/orders/OrderLinesPanel';
 
 const pay = (o: Partial<OrderPayment> = {}): OrderPayment => ({
-  state: 'partial', pct: 40, paid: 250000, invoice_paid: 250000, advance: 0, due: 180000, overdue: 0, rest: 182000, left: 362000,
+  state: 'partial', pct: 40, paid: 250000, invoice_paid: 250000, retainer: 0, advance: 0, due: 180000, overdue: 0, rest: 182000, left: 362000,
   next_due: '2026-11-11',
   invoices: [
     { id: 'i1', number: 'FAC-0001', date: '2026-10-01', due_date: '2026-10-01', total: 250000, balance: 0, status: 'paid', url: 'https://books.example/inv/i1' },
@@ -43,6 +43,14 @@ describe('OrderPaymentBlock', () => {
     expect(screen.getByText('Paid on invoice')).toBeInTheDocument();
     expect(screen.getByText('Paid in advance')).toBeInTheDocument();
     expect(screen.getByText(/the customer's unused credit in Zoho/)).toBeInTheDocument();
+  });
+
+  it('a retainer on the quote is its own part, named by the quote', () => {
+    render(<OrderPaymentBlock payment={pay({ retainer: 40000, paid: 290000 })} currency="XPF" quoteNumber="DEV26-0042" />);
+    expect(screen.getByText('Deposit on quote DEV26-0042')).toBeInTheDocument();
+    expect(screen.getByText('Paid on invoice')).toBeInTheDocument();
+    expect(screen.getByTestId('pay-seg-retainer')).toBeInTheDocument();
+    expect(screen.queryByText('Paid in advance')).not.toBeInTheDocument();
   });
 
   it('segments never exceed the bar', () => {

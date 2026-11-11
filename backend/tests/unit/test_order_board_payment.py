@@ -140,6 +140,33 @@ def test_orders_without_a_customer_id_share_nothing():
     assert pays["so1"]["advance"] == 0 and pays["so2"]["advance"] == 0
 
 
+def ret(total, *, status="paid"):
+    return {"id": "r1", "number": "RET-1", "total": total, "balance": 0, "status": status}
+
+
+def test_retainer_counts_on_its_order():
+    a = {**so(1, 1000, credit=100), "_retainers": [ret(100)]}
+    pays = board_payments([so(2, 1000, credit=100), a], TODAY)
+    assert (pays["so1"]["retainer"], pays["so1"]["paid"], pays["so1"]["advance"]) == (100, 100, 0)
+    assert (pays["so2"]["advance"], pays["so2"]["paid"]) == (0, 0)
+
+
+def test_leftover_credit_still_shared():
+    a = {**so(1, 100, credit=150), "_retainers": [ret(100)]}
+    pays = board_payments([a, so(2, 1000, credit=150)], TODAY)
+    assert (pays["so1"]["retainer"], pays["so1"]["state"], pays["so1"]["advance"]) == (100, "paid", 0)
+    assert pays["so2"]["advance"] == 50
+
+
+def test_unpaid_or_drawn_retainers_do_not_count():
+    unpaid = {**so(1, 1000, credit=500), "_retainers": [ret(100, status="sent")]}
+    assert board_payments([unpaid], TODAY)["so1"]["retainer"] == 0
+    # Drawn on the order's invoice: Books still says paid, but the money left the credit pool for the invoice.
+    drawn = {**so(1, 1000, invoices=[inv(300, 200)], credit=0), "_retainers": [ret(100)]}
+    p = board_payments([drawn], TODAY)["so1"]
+    assert (p["retainer"], p["invoice_paid"], p["paid"]) == (0, 100, 100)
+
+
 def test_contact_and_its_phone_fallback():
     order = {
         "contact_person_details": [
