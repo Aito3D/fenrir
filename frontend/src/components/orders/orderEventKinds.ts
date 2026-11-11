@@ -19,6 +19,7 @@ const LABEL_KEY: Record<string, string> = {
   'note.added': 'orders.history.noteAdded',
   'sms.sent': 'orders.history.smsSent',
   'payment_link.sent': 'orders.history.paymentLinkSent',
+  'payment_link.cancelled': 'orders.history.paymentLinkCancelled',
   'terminal.started': 'orders.history.terminalStarted',
   'prep.printed': 'orders.history.prepPrinted',
   'tracking.viewed': 'orders.history.trackingViewed',
@@ -43,6 +44,7 @@ export const SHORT_LABEL_KEY: Record<string, string> = {
   'note.added': 'orders.history.short.note',
   'sms.sent': 'orders.history.short.sms',
   'payment_link.sent': 'orders.history.short.paymentLink',
+  'payment_link.cancelled': 'orders.history.short.paymentLinkCancelled',
   'terminal.started': 'orders.history.short.terminal',
   'prep.printed': 'orders.history.short.prepPrinted',
   'tracking.viewed': 'orders.history.short.trackingViewed',
@@ -117,6 +119,7 @@ export function orderEventDetail(event: Pick<OrderEvent, 'kind' | 'detail'>, cur
       return str(d.picklist);
     case 'terminal.started':
     case 'payment_link.sent':
+    case 'payment_link.cancelled':
       return join([money(d.amount), str(d.document)]);
   }
   return null;

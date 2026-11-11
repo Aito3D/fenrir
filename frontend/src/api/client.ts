@@ -10029,8 +10029,14 @@ export const api = {
   getOrderPaymentTarget: (id: string) => request<OrderPaymentTarget>(`/order-board/orders/${encodeURIComponent(id)}/payment-target`),
   createOrderPaymentLink: (id: string, amount: number) =>
     request<OrderPaymentLink>(`/order-board/orders/${encodeURIComponent(id)}/payment-link`, { method: 'POST', body: JSON.stringify({ amount }) }),
-  startOrderTerminalPayment: (id: string, amount: number) =>
-    request<AitoTerminalPayment>(`/order-board/orders/${encodeURIComponent(id)}/terminal-payment`, { method: 'POST', body: JSON.stringify({ amount }) }),
+  /** `cancelLink` cancels the order's open payment link first; without it an open link answers 409 `link_open`. */
+  startOrderTerminalPayment: (id: string, amount: number, cancelLink = false) =>
+    request<AitoTerminalPayment>(`/order-board/orders/${encodeURIComponent(id)}/terminal-payment`, {
+      method: 'POST',
+      body: JSON.stringify(cancelLink ? { amount, cancel_link: true } : { amount }),
+    }),
+  cancelOrderPaymentLink: (id: string) =>
+    request<OrderPaymentLink>(`/order-board/orders/${encodeURIComponent(id)}/payment-link/cancel`, { method: 'POST' }),
   /** The order's newest terminal charge, refreshed from Heimdall while open; null if none. */
   getOrderTerminalPayment: (id: string) =>
     request<AitoTerminalPayment | null>(`/order-board/orders/${encodeURIComponent(id)}/terminal-payment`),

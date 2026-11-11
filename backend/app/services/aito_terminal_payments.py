@@ -506,8 +506,28 @@ async def _settle_order_effects(db: AsyncSession, row: AitoTerminalPayment) -> N
         await db.rollback()
         raise
     if paid:
+        await _cancel_open_order_link(db, salesorder_id)
         await refresh_order_after_payment(db, salesorder_id)
         await db.refresh(row)
+
+
+async def _cancel_open_order_link(db: AsyncSession, salesorder_id: str) -> None:
+    """Best effort, after a paid order charge committed: the order's still-open
+    payment link (SMSed earlier, say) must not take the same money twice. A
+    failure is logged; the settle stands."""
+    from backend.app.services.aito_payment_links import cancel_order_link, current_link
+
+    try:
+        link = await current_link(db, ("order", salesorder_id), kind=None)
+        if link is None or link.heimdall_id is None or link.status != "pending":
+            return
+        if await cancel_order_link(
+            db, link, actor_class="system", actor_name=None, reason="paid_at_terminal", now=_now()
+        ):
+            logger.warning("order %s: the open payment link was paid too, beside the terminal charge", salesorder_id)
+    except Exception:
+        logger.exception("order %s: cancelling the open payment link after a terminal charge failed", salesorder_id)
+        await db.rollback()
 
 
 async def _redrive_settle_effects(db: AsyncSession, *, now: datetime, limit: int) -> int:

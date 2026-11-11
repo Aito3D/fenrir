@@ -515,7 +515,7 @@ async def _complete(
 
 async def _cancel(
     db: AsyncSession,
-    project: AitoProject,
+    project: AitoProject | None,
     row: AitoPaymentLink,
     *,
     now: datetime,
@@ -550,6 +550,7 @@ async def _cancel(
                 await db.commit()
             return True  # money wins over the cancel we were attempting
     if record_event:
+        assert project is not None  # an order row (no project) always passes record_event=False
         await record(
             db,
             project.id,
@@ -1414,6 +1415,39 @@ async def create_order_invoice_link(
     else:
         await db.commit()
     return row
+
+
+async def cancel_order_link(
+    db: AsyncSession,
+    row: AitoPaymentLink,
+    *,
+    actor_class: str,
+    actor_name: str | None,
+    reason: str,
+    now: datetime,
+) -> bool:
+    """`cancel_invoice_link` for an Order Board link (`salesorder_id` set): no
+    Aito event, the order's `payment_link.cancelled` instead. Returns True when
+    the link turned out PAID (money wins, `_became_paid` recorded the order's
+    payment). The cancel is committed before the history line, whose failure is
+    logged, never raised. Heimdall errors propagate, like `cancel_invoice_link`."""
+    from backend.app.services import order_board_events
+
+    salesorder_id = row.salesorder_id
+    assert salesorder_id is not None
+    detail = {"amount": row.amount, "document": row.document_number, "reason": reason, "heimdall_id": row.heimdall_id}
+    if await _cancel(db, None, row, now=now, reason=reason, record_event=False):
+        return True
+    try:
+        await order_board_events.record(
+            db, salesorder_id, "payment_link.cancelled", actor_class=actor_class, actor_name=actor_name, detail=detail
+        )
+        await db.commit()
+        await broadcast_pending(db)
+    except Exception:
+        logger.exception("order %s: recording payment_link.cancelled failed", salesorder_id)
+        await db.rollback()
+    return False
 
 
 async def cancel_invoice_link(

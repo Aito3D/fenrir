@@ -40,6 +40,7 @@ KINDS: dict[str, str] = {
             "invoice.emailed",
             "sms.sent",
             "payment_link.sent",
+            "payment_link.cancelled",
             "terminal.started",
         ),
         "detail",

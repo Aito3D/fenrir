@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link2, Smartphone, Wallet } from 'lucide-react';
-import { api } from '../../api/client';
+import { ApiError, api } from '../../api/client';
 import type { AitoTerminalPayment, OrderPayment, OrderPaymentLink } from '../../api/client';
 import { PaymentLinkDialog } from '../aito/payment/PaymentLinkModal';
 import { TerminalPaymentDialog } from '../aito/payment/TerminalPaymentModal';
@@ -143,7 +143,12 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
           onCreate={async (amount) => {
             const link = await api.createOrderPaymentLink(orderId, amount);
             void queryClient.invalidateQueries({ queryKey: ['order-payment-target', orderId] });
+            void queryClient.invalidateQueries({ queryKey: ['order-events', orderId] });
             return link;
+          }}
+          onCancel={async () => {
+            await api.cancelOrderPaymentLink(orderId);
+            refresh();
           }}
         />
       )}
@@ -155,6 +160,20 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
           onClose={() => setOpen(null)}
           pollKey={['order-terminal-payment', orderId]}
           onStart={(amount) => api.startOrderTerminalPayment(orderId, amount)}
+          // An open payment link could take the same money twice: the server refuses until it is cancelled.
+          recover={(e) =>
+            e instanceof ApiError && e.code === 'link_open'
+              ? {
+                  message: t('orders.pay.linkOpen'),
+                  label: t('orders.pay.cancelLinkAndCharge'),
+                  start: async (amount) => {
+                    const row = await api.startOrderTerminalPayment(orderId, amount, true);
+                    refresh();
+                    return row;
+                  },
+                }
+              : null
+          }
           fetchPayment={async () => {
             const row = await api.getOrderTerminalPayment(orderId);
             if (!row) throw new Error(t('common.errorLoading'));

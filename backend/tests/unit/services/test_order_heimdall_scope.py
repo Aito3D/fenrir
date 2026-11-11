@@ -628,3 +628,85 @@ def test_scope_helpers_refuse_a_malformed_tuple():
         docs.scope_columns(("project", "1"))
     with pytest.raises(AssertionError):
         docs.scope_where(AitoTerminalPayment, ("order", 7))
+
+
+# --- a terminal charge cancels the order's open link -----------------------------------------------------------
+
+
+def _order_link(**over) -> AitoPaymentLink:
+    base = {
+        "project_id": 0,
+        "salesorder_id": SO,
+        "idempotency_key": f"order:{SO}:1",
+        "heimdall_id": "h-link",
+        "reference": "FA-26-0900",
+        "document_kind": "invoice",
+        "document_number": "FA-26-0900",
+        "amount": 23000,
+        "expires_on": "2026-12-11",
+        "status": "pending",
+        "created_at": NOW,
+    }
+    base.update(over)
+    return AitoPaymentLink(**base)
+
+
+@pytest.mark.asyncio
+async def test_a_paid_terminal_charge_cancels_the_open_link(db_session, monkeypatch, refreshed, no_aito):
+    db_session.add_all([_order_charge(), _order_link()])
+    await db_session.commit()
+    cancelled: list[str] = []
+
+    async def fake_get(db, payment_id):
+        return _view()
+
+    async def fake_cancel(db, payment_id):
+        cancelled.append(payment_id)
+        return _view(id="h-link", status="cancelled", native_state="cancelled")
+
+    monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
+    monkeypatch.setattr(heimdall_service, "cancel_link", fake_cancel)
+    await tpe.poll_open_terminal_payments(db_session, now=NOW)
+    link = (await db_session.execute(select(AitoPaymentLink))).scalar_one()
+    assert cancelled == ["h-link"] and link.status == "cancelled"
+    [event] = await _order_events(db_session, "payment_link.cancelled")
+    assert event.actor_class == "system" and event.detail["reason"] == "paid_at_terminal"
+    assert [e.detail for e in await _order_events(db_session)] == [{"amount": 23000, "method": "terminal"}]
+    assert await _aito_events(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_a_failed_link_cancel_never_undoes_the_settle(db_session, monkeypatch, refreshed, no_aito):
+    db_session.add_all([_order_charge(), _order_link()])
+    await db_session.commit()
+
+    async def fake_get(db, payment_id):
+        return _view()
+
+    async def fake_cancel(db, payment_id):
+        raise HeimdallUnreachable("down")
+
+    monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
+    monkeypatch.setattr(heimdall_service, "cancel_link", fake_cancel)
+    await tpe.poll_open_terminal_payments(db_session, now=NOW)
+    charge = (await db_session.execute(select(AitoTerminalPayment))).scalar_one()
+    link = (await db_session.execute(select(AitoPaymentLink))).scalar_one()
+    assert (charge.status, charge.effects_pending_at, link.status) == ("paid", None, "pending")
+    assert len(await _order_events(db_session)) == 1 and refreshed == [SO]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_terminal_charge_leaves_the_link_open(db_session, monkeypatch, refreshed, no_aito):
+    db_session.add_all([_order_charge(), _order_link()])
+    await db_session.commit()
+
+    async def fake_get(db, payment_id):
+        return _view(status="failed", native_state="declined", amount_confirmed=None)
+
+    async def fake_cancel(db, payment_id):
+        raise AssertionError("a failed charge cancelled the link")
+
+    monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
+    monkeypatch.setattr(heimdall_service, "cancel_link", fake_cancel)
+    await tpe.poll_open_terminal_payments(db_session, now=NOW)
+    assert (await db_session.execute(select(AitoPaymentLink))).scalar_one().status == "pending"

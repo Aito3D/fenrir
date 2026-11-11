@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { api } from '../../../api/client';
+import { ApiError, api } from '../../../api/client';
 import type { AitoTerminalPayment, OrderPayment, OrderPaymentLink, OrderPaymentTarget } from '../../../api/client';
 import { render } from '../../utils';
 import { OrderPaymentBlock } from '../../../components/orders/OrderPaymentBlock';
@@ -89,5 +89,31 @@ describe('OrderPaymentBlock payment buttons', () => {
     expect(await screen.findByText(/An earlier attempt was resumed: this is on FA-OLD/)).toBeInTheDocument();
     expect(screen.getByText('FA-OLD')).toBeInTheDocument();
     expect(screen.getByText('https://pay.example/x')).toBeInTheDocument();
+  });
+
+  it('an open link can be cancelled from its dialog', async () => {
+    vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target({ link: link() }));
+    const cancel = vi.spyOn(api, 'cancelOrderPaymentLink').mockResolvedValue(link({ state: 'cancelled' }));
+    render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+    await userEvent.click(await screen.findByRole('button', { name: /Payment link/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel the link' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel this link?' }));
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledWith('so1'));
+  });
+
+  it('a terminal refused for an open link offers to cancel it and charge', async () => {
+    vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
+    vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(null);
+    const start = vi.spyOn(api, 'startOrderTerminalPayment')
+      .mockRejectedValueOnce(new ApiError('A payment link is open for this order', 409, 'link_open'))
+      .mockResolvedValueOnce(tpe());
+    render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+    await userEvent.click(await screen.findByRole('button', { name: /Card terminal/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Start the terminal' }));
+    expect(await screen.findByText(/A payment link is open for this order: the client could pay it as well/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel the link and charge the terminal' }));
+    expect(await screen.findByText('Waiting for the card on the terminal…')).toBeInTheDocument();
+    expect(start).toHaveBeenNthCalledWith(1, 'so1', 12000);
+    expect(start).toHaveBeenNthCalledWith(2, 'so1', 12000, true);
   });
 });

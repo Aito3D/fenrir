@@ -13,7 +13,13 @@ from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_sync
 from backend.app.services.aito_terminal_payments import TerminalInProgress
-from backend.app.services.heimdall import HeimdallConflict, HeimdallNotConfigured, HeimdallUnreachable
+from backend.app.services.heimdall import (
+    HeimdallConflict,
+    HeimdallNotConfigured,
+    HeimdallUnreachable,
+    LinkView,
+    heimdall_service,
+)
 from backend.app.services.zoho import zoho_service
 from backend.tests.unit.test_order_board_routes import tokens  # noqa: F401
 
@@ -200,6 +206,7 @@ async def test_amount_over_balance_422(async_client, tokens, order, live_invoice
         ("post", "payment-link"),
         ("post", "terminal-payment"),
         ("get", "terminal-payment"),
+        ("post", "payment-link/cancel"),
     ],
 )
 async def test_link_and_terminal_need_orders_update(async_client, tokens, method, path):  # noqa: F811
@@ -365,6 +372,187 @@ async def test_link_replay_answers_the_old_document_and_amount(
     # A minted open link is refused before Heimdall is asked again.
     again = await async_client.post(f"{BASE}/payment-link", json={"amount": 100}, headers=tokens["both"])
     assert again.status_code == 409 and again.json()["detail"]["code"] == "link_exists"
+
+
+# --- the order's left to pay caps every charge --------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["terminal-payment", "payment-link"])
+async def test_amount_over_the_orders_left_422(async_client, tokens, order, live_invoice, terminal, path):  # noqa: F811
+    """An invoice raised for the whole order without drawing the paid deposit: its balance is above what is left."""
+    await order({"invoices": [INVOICE_NEW], "estimate_id": "est-1"}, left=7000)
+    target = (await async_client.get(f"{BASE}/payment-target", headers=tokens["both"])).json()
+    assert (target["max_amount"], target["left"]) == (12000, 7000)  # the dialogs prefill min(balance, left)
+    r = await async_client.post(f"{BASE}/{path}", json={"amount": 7001}, headers=tokens["both"])
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "amount_above_left"
+    assert terminal.calls == []
+
+
+@pytest.mark.asyncio
+async def test_the_orders_left_is_chargeable(async_client, tokens, order, live_invoice, terminal):  # noqa: F811
+    await order({"invoices": [INVOICE_NEW]}, left=7000)
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 7000}, headers=tokens["both"])
+    assert r.status_code == 201 and terminal.calls == [("inv-2", 7000)]
+
+
+# --- cancelling the order's link ----------------------------------------------------------------------------
+
+
+def _pending_link(**over) -> AitoPaymentLink:
+    base = {
+        "project_id": 0,
+        "salesorder_id": "so1",
+        "idempotency_key": "order:so1:1",
+        "heimdall_id": "h-9",
+        "reference": "FA-2",
+        "document_kind": "invoice",
+        "document_number": "FA-2",
+        "amount": 7000,
+        "expires_on": "2026-12-11",
+        "url": "https://pay.example/x",
+        "status": "pending",
+        "created_at": NOW,
+    }
+    base.update(over)
+    return AitoPaymentLink(**base)
+
+
+def _link_view(status: str) -> LinkView:
+    return LinkView(
+        id="h-9",
+        status=status,
+        amount=7000,
+        currency="XPF",
+        reference="FA-2",
+        url="https://pay.example/x",
+        expires_at=None,
+    )
+
+
+@pytest.fixture
+def heimdall_cancel(monkeypatch):
+    """Heimdall's link cancel stubbed: answers `cancelled`, or raises `Cancel.error`."""
+
+    class Cancel:
+        error: Exception | None = None
+        calls: list[str] = []
+
+    async def cancel(db, payment_id):
+        Cancel.calls.append(payment_id)
+        if Cancel.error is not None:
+            raise Cancel.error
+        return _link_view("cancelled")
+
+    monkeypatch.setattr(heimdall_service, "cancel_link", cancel)
+    Cancel.calls = []
+    return Cancel
+
+
+@pytest.mark.asyncio
+async def test_cancel_the_orders_link(async_client, tokens, db_session, heimdall_cancel):  # noqa: F811
+    db_session.add(_pending_link())
+    await db_session.commit()
+    r = await async_client.post(f"{BASE}/payment-link/cancel", headers=tokens["both"])
+    assert r.status_code == 200 and r.json()["state"] == "cancelled"
+    assert heimdall_cancel.calls == ["h-9"]
+    [event] = await _events(db_session, "payment_link.cancelled")
+    assert (event.actor_class, event.actor_name) == ("user", "orders-both")
+    assert {k: event.detail[k] for k in ("amount", "document", "reason")} == {
+        "amount": 7000,
+        "document": "FA-2",
+        "reason": "operator",
+    }
+    again = await async_client.post(f"{BASE}/payment-link/cancel", headers=tokens["both"])
+    assert again.status_code == 409 and again.json()["detail"]["code"] == "not_cancellable"
+
+
+@pytest.mark.asyncio
+async def test_cancel_without_a_link_404_and_unminted_409(async_client, tokens, db_session, heimdall_cancel):  # noqa: F811
+    assert (await async_client.post(f"{BASE}/payment-link/cancel", headers=tokens["both"])).status_code == 404
+    db_session.add(_pending_link(heimdall_id=None))
+    await db_session.commit()
+    r = await async_client.post(f"{BASE}/payment-link/cancel", headers=tokens["both"])
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "not_cancellable"
+    assert heimdall_cancel.calls == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_finds_the_link_paid(async_client, tokens, db_session, heimdall_cancel, monkeypatch):  # noqa: F811
+    db_session.add(_pending_link())
+    await db_session.commit()
+    heimdall_cancel.error = HeimdallConflict("settled", "conflict")
+
+    async def get_payment(db, payment_id):
+        return _link_view("paid")
+
+    async def no_refresh(db, salesorder_id):
+        return None
+
+    monkeypatch.setattr(heimdall_service, "get_payment", get_payment)
+    monkeypatch.setattr(order_board_sync, "refresh_order", no_refresh)
+    r = await async_client.post(f"{BASE}/payment-link/cancel", headers=tokens["both"])
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "link_paid"
+    assert [e.detail for e in await _events(db_session, "payment.received")] == [{"amount": 7000, "method": "link"}]
+    assert await _events(db_session, "payment_link.cancelled") == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_heimdall_down_keeps_the_link(async_client, tokens, db_session, heimdall_cancel):  # noqa: F811
+    db_session.add(_pending_link())
+    await db_session.commit()
+    heimdall_cancel.error = HeimdallUnreachable("timeout")
+    r = await async_client.post(f"{BASE}/payment-link/cancel", headers=tokens["both"])
+    assert r.status_code == 502 and r.json()["detail"]["code"] == "upstream"
+    assert (await db_session.execute(select(AitoPaymentLink))).scalar_one().status == "pending"
+    assert await _events(db_session, "payment_link.cancelled") == []
+
+
+@pytest.mark.asyncio
+async def test_terminal_refused_while_a_link_is_open(
+    async_client,
+    tokens,  # noqa: F811
+    order,
+    live_invoice,
+    terminal,
+    db_session,
+    heimdall_cancel,
+):
+    await order({"invoices": [INVOICE_NEW]})
+    db_session.add(_pending_link())
+    await db_session.commit()
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 7000}, headers=tokens["both"])
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "link_open"
+    assert (terminal.calls, heimdall_cancel.calls) == ([], [])
+    r = await async_client.post(
+        f"{BASE}/terminal-payment", json={"amount": 7000, "cancel_link": True}, headers=tokens["both"]
+    )
+    assert r.status_code == 201 and terminal.calls == [("inv-2", 7000)]
+    assert heimdall_cancel.calls == ["h-9"]
+    link = (await db_session.execute(select(AitoPaymentLink))).scalar_one()
+    await db_session.refresh(link)
+    assert link.status == "cancelled"
+    assert len(await _events(db_session, "payment_link.cancelled")) == 1
+
+
+@pytest.mark.asyncio
+async def test_terminal_not_started_when_the_link_cancel_fails(
+    async_client,
+    tokens,  # noqa: F811
+    order,
+    live_invoice,
+    terminal,
+    db_session,
+    heimdall_cancel,
+):
+    await order({"invoices": [INVOICE_NEW]})
+    db_session.add(_pending_link())
+    await db_session.commit()
+    heimdall_cancel.error = HeimdallUnreachable("timeout")
+    r = await async_client.post(
+        f"{BASE}/terminal-payment", json={"amount": 7000, "cancel_link": True}, headers=tokens["both"]
+    )
+    assert r.status_code == 502 and terminal.calls == []
 
 
 # --- the SMS carries the link -------------------------------------------------------------------------------

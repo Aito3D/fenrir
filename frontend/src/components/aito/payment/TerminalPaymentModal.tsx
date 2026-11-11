@@ -15,6 +15,8 @@ import { isTerminalOpen, settleTerminalPaymentInCache, useTerminalPoll } from '.
 
 const MODAL_OUT_MS = 170;
 
+type TerminalRecovery = { message: string; label: string; start: (amount: number) => Promise<AitoTerminalPayment> };
+
 /** Card payment taken at the counter terminal on an Aito card: `TerminalPaymentDialog` wired to the project.
  *  `initialPayment` lets the payment block reopen this modal on a charge already in flight. */
 export function TerminalPaymentModal({ project, document, initialPayment, onClose }: {
@@ -58,8 +60,9 @@ export function TerminalPaymentModal({ project, document, initialPayment, onClos
  *  the modal never stops the charge. `onStart` fires the terminal, `fetchPayment`
  *  re-reads a charge (polled under `[...pollKey, id]`), and `onSeen` gets every
  *  read that is paid or settled. The screens show what the returned row says,
- *  with a note when it is not what was typed (a replayed reservation). */
-export function TerminalPaymentDialog({ document, initialPayment, onClose, pollKey, onStart, fetchPayment, onSeen, hint }: {
+ *  with a note when it is not what was typed (a replayed reservation). `recover` may turn a refused start into a
+ *  second way to start it (its message replaces the error, its button starts with its own `start`). */
+export function TerminalPaymentDialog({ document, initialPayment, onClose, pollKey, onStart, fetchPayment, onSeen, hint, recover }: {
   document: PaymentDocument;
   /** Replaces the quote / invoice hint under the amount. */
   hint?: string;
@@ -69,6 +72,7 @@ export function TerminalPaymentDialog({ document, initialPayment, onClose, pollK
   onStart: (amount: number) => Promise<AitoTerminalPayment>;
   fetchPayment: (paymentId: number) => Promise<AitoTerminalPayment>;
   onSeen: (payment: AitoTerminalPayment) => void;
+  recover?: (error: unknown) => TerminalRecovery | null;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -78,14 +82,20 @@ export function TerminalPaymentDialog({ document, initialPayment, onClose, pollK
   const [paymentId, setPaymentId] = useState<number | null>(initialPayment?.id ?? null);
   const poll = useTerminalPoll(pollKey, fetchPayment, paymentId, initialPayment);
   const payment = paymentId === null ? null : (poll.data ?? initialPayment);
+  const [recovery, setRecovery] = useState<TerminalRecovery | null>(null);
   const start = useMutation({
-    mutationFn: onStart,
+    mutationFn: ({ value, run }: { value: number; run: (amount: number) => Promise<AitoTerminalPayment> }) => run(value),
     onSuccess: (row) => {
       setError(null);
+      setRecovery(null);
       queryClient.setQueryData([...pollKey, row.id], row);
       setPaymentId(row.id);
     },
-    onError: (e: unknown) => setError(e instanceof Error && e.message ? e.message : t('common.errorLoading')),
+    onError: (e: unknown) => {
+      const next = recover?.(e) ?? null;
+      setRecovery(next);
+      setError(next ? next.message : e instanceof Error && e.message ? e.message : t('common.errorLoading'));
+    },
   });
   const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, {
     animationMs: MODAL_OUT_MS,
@@ -110,8 +120,9 @@ export function TerminalPaymentDialog({ document, initialPayment, onClose, pollK
       return;
     }
     setError(null);
+    setRecovery(null);
     setRequested(parsed);
-    start.mutate(parsed);
+    start.mutate({ value: parsed, run: onStart });
   };
   const retry = () => {
     setPaymentId(null);
@@ -135,6 +146,11 @@ export function TerminalPaymentDialog({ document, initialPayment, onClose, pollK
           {hint ?? t(document.kind === 'quote' ? 'aito.payment.terminalHintQuote' : 'aito.payment.terminalHintInvoice')}
         </p>
         {error && <p className="text-status-error text-sm" role="alert">{error}</p>}
+        {recovery && requested !== null && (
+          <Button variant="secondary" onClick={() => start.mutate({ value: requested, run: recovery.start })} disabled={start.isPending}>
+            {recovery.label}
+          </Button>
+        )}
       </div>
     );
     footer = (
