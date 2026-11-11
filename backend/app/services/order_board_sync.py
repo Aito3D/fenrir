@@ -33,7 +33,7 @@ from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services.aito_poll_watermark import format_books_time
-from backend.app.services.order_board import age_days, compute_board, order_row
+from backend.app.services.order_board import age_days, compute_board, finished_is_core, order_row
 from backend.app.services.order_board_payment import order_payment, quote_number_missing
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
@@ -346,6 +346,11 @@ async def read_finished(db: AsyncSession) -> dict:
     except ZohoNotConfiguredError:
         base = None
     today = date.today()
+    core = {brand.casefold() for brand in (await load_settings(db)).core_brands}
+    items = {
+        d.zoho_id: d.header
+        for d in (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "item"))).scalars().all()
+    }
     docs = sorted(
         await _finished_docs(db),
         key=lambda d: (d.header.get("date") or "", d.header.get("salesorder_number") or ""),
@@ -362,6 +367,7 @@ async def read_finished(db: AsyncSession) -> dict:
             "reference": d.header.get("reference_number") or "",
             "paid_flag": _PAID_FLAGS.get(d.header.get("paid_status") or ""),
             "payment": order_payment(d.detail, today) if d.detail and not _is_stale(d) else None,
+            "is_core": finished_is_core(d.detail, items, core),
             "zoho_url": f"{base}{d.zoho_id}" if base else None,
         }
         for d in docs

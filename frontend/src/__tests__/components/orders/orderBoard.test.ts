@@ -257,7 +257,7 @@ describe('payment', () => {
 
 const fin = (o: Partial<FinishedOrderRow> = {}): FinishedOrderRow => ({
   id: 'f1', number: 'SO-00009', customer: 'Lycée Taaone', date: '2026-09-01', total: 100, currency: 'XPF',
-  reference: 'REF-Été', paid_flag: null, payment: null, zoho_url: null, ...o,
+  reference: 'REF-Été', paid_flag: null, payment: null, is_core: null, zoho_url: null, ...o,
 });
 
 describe('finished', () => {

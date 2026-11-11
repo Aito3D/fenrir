@@ -1071,3 +1071,17 @@ async def test_a_reread_after_a_write_pings_when_the_row_changed(db_session, zoh
     zoho.orders["so1"] = order(1, qty=2, packed=2)
     await sync.refresh_order(db_session, "so1")
     assert pings == [{"type": "order_board_updated"}]
+
+
+@pytest.mark.asyncio
+async def test_a_finished_order_says_whether_it_is_core_when_its_items_are_known(db_session, zoho):
+    await _synced(db_session, zoho, order(1), order(2, shipped=1), order(3, shipped=1, item="Z"))
+    rows = {r["id"]: r["is_core"] for r in (await sync.read_finished(db_session))["rows"]}
+    assert rows == {"so2": True, "so3": None}  # Z is on no open order: not in the items copy, cannot be told
+    current = await sync.load_settings(db_session)
+    await sync.save_settings(
+        db_session,
+        sync.OrderBoardSettings(current.sync_enabled, current.sync_minutes, current.max_age_days, ["Marlow"]),
+    )
+    rows = {r["id"]: r["is_core"] for r in (await sync.read_finished(db_session))["rows"]}
+    assert rows == {"so2": False, "so3": None}

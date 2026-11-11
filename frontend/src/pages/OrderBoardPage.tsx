@@ -19,6 +19,7 @@ import {
   byStatus,
   countByPayment,
   countByStatus,
+  finishedByBrand,
   isBoardReady,
   otherOpenOrders,
   paidPct,
@@ -184,8 +185,8 @@ export function OrderBoardPage() {
   const branded = byBrand(all, coreOnly);
   const searched = bySearch(branded, query);
   // Finished orders have no live status: they only join the list under All.
-  // shortcut: finished rows carry no brand, so "3D only" does not filter them; add is_core to the finished endpoint if that matters.
-  const finishedFound = hideFinished || status !== 'all' ? [] : searchFinished(finishedQuery.data?.rows ?? [], query);
+  const finishedSearched = hideFinished ? [] : searchFinished(finishedByBrand(finishedQuery.data?.rows ?? [], coreOnly), query);
+  const finishedFound = status !== 'all' ? [] : finishedSearched;
   const payCounts = countByPayment(searched);
   for (const f of PAY_CHIPS) payCounts[f] += byFinishedPayment(finishedFound, f).length;
   payCounts.all += finishedFound.length;
@@ -200,7 +201,7 @@ export function OrderBoardPage() {
   );
   const tileCounts = countByStatus(branded);
   const chipCounts = countByStatus(searched);
-  chipCounts.all += hideFinished ? 0 : searchFinished(finishedQuery.data?.rows ?? [], query).length;
+  chipCounts.all += finishedSearched.length;
   const hidden = all.length - branded.length;
   const syncing = !!data && (data.sync.running || data.sync.pending > 0);
 

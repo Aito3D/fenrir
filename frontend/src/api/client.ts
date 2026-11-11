@@ -5181,7 +5181,8 @@ export type OrderEditResult = { board: OrderBoardResponse; row: OrderBoardRow | 
 /** What the opened panel needs: a board row, or a finished order fetched on demand. */
 export type OrderPanelRow = Omit<OrderBoardRow, 'status'>;
 export type FinishedOrderDetail = OrderPanelRow & { status: 'finished' };
-export interface FinishedOrderRow { id: string; number: string; customer: string; date: string; total: number | null; currency: string; reference: string; paid_flag: OrderPayState | null; payment: OrderPayment | null; zoho_url: string | null }
+/** `is_core`: null when the stored copy cannot tell (no detail, or an item no open order holds). */
+export interface FinishedOrderRow { id: string; number: string; customer: string; date: string; total: number | null; currency: string; reference: string; paid_flag: OrderPayState | null; payment: OrderPayment | null; is_core: boolean | null; zoho_url: string | null }
 
 export interface OrderBoardResponse {
   rows: OrderBoardRow[];

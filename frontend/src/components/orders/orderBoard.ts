@@ -29,6 +29,10 @@ export const foldText = (s: string | null | undefined): string =>
 export const byBrand = (rows: OrderBoardRow[], coreOnly: boolean): OrderBoardRow[] =>
   coreOnly ? rows.filter(r => r.is_core) : rows;
 
+/** A finished order the stored copy cannot place (`is_core` null) stays: hiding it would lose it for good. */
+export const finishedByBrand = (rows: FinishedOrderRow[], coreOnly: boolean): FinishedOrderRow[] =>
+  coreOnly ? rows.filter(r => r.is_core !== false) : rows;
+
 export const bySearch = (rows: OrderBoardRow[], query: string): OrderBoardRow[] => {
   const q = foldText(query).trim();
   if (!q) return rows;

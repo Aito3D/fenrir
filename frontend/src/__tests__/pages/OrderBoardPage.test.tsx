@@ -80,7 +80,7 @@ const pay = (o: Partial<OrderPayment> = {}): OrderPayment => ({
 
 const fin = (n: number, o: Partial<FinishedOrderRow> = {}): FinishedOrderRow => ({
   id: `f${n}`, number: `SO-F${String(n).padStart(3, '0')}`, customer: `Client ${n}`, date: '2026-08-01', total: 5000, currency: 'XPF',
-  reference: '', paid_flag: null, payment: null, zoho_url: null, ...o,
+  reference: '', paid_flag: null, payment: null, is_core: null, zoho_url: null, ...o,
 });
 
 const serveFinished = (rows: FinishedOrderRow[], detail?: () => Response | Promise<Response>) =>
@@ -480,6 +480,19 @@ describe('OrderBoardPage', () => {
     await screen.findByText('SO-F002');
     await user.type(screen.getByPlaceholderText('Order number, customer, product, SKU…'), 'zorglub');
     expect(screen.getAllByTestId('order-number').map(n => n.textContent)).toEqual(['SO-F001']);
+  });
+
+  it('3D only filters finished orders too, keeping the ones the server cannot place', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    serveFinished([fin(1, { is_core: true }), fin(2, { is_core: false }), fin(3, { is_core: null })]);
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-F001');
+    expect(screen.getByText('SO-F003')).toBeInTheDocument();
+    expect(screen.queryByText('SO-F002')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All 4' })).toBeInTheDocument(); // 2 open + 2 finished
+    await user.click(screen.getByRole('button', { name: /3D only/ }));
+    expect(screen.getByText('SO-F002')).toBeInTheDocument();
   });
 
   it('a finished row shows the Zoho flag until opened, then the percentage', async () => {

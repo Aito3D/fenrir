@@ -267,6 +267,23 @@ def _row(order: dict, age: int, lines: list[dict], status: str, items: dict[str,
     }
 
 
+def finished_is_core(order: dict | None, items: dict[str, dict], core: set[str]) -> bool | None:
+    """``is_core`` of a finished order from its stored lines and the items copy (which only holds the items of open
+    orders): None when that cannot be told, for want of a detail or of a goods line's item."""
+    if not order:
+        return None
+    goods = [
+        raw["item_id"]
+        for raw in order.get("line_items") or []
+        if raw.get("item_id") and not (raw.get("product_type") or "").endswith("service")
+    ]
+    if any(
+        ((items.get(i) or {}).get("brand") or "").casefold() in core for i in goods if (items.get(i) or {}).get("brand")
+    ):
+        return True
+    return False if all(i in items for i in goods) else None
+
+
 def order_row(order: dict, items: dict[str, dict], today: date) -> dict:
     """The row for one order outside the allocation (a finished order): no stock, no incoming goods."""
     lines = [_line(raw, items) for raw in order.get("line_items") or []]
