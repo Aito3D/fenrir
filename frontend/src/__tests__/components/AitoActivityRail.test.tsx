@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { render } from '../utils';
 import { ActivityRail } from '../../components/aito/history/ActivityRail';
+import { aitoEventSource } from '../../components/aito/history/aitoEventSource';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { api } from '../../api/client';
 import type { AitoEvent, AitoEventPage } from '../../api/client';
@@ -65,7 +66,7 @@ describe('ActivityRail', () => {
       events: [event({ actor_name: 'paul', kind: 'task.added', subject_label: 'Socle' })],
       has_more: false,
     });
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     expect(await screen.findByText(/paul/)).toBeInTheDocument();
     expect(screen.getByText(/added a task/i)).toBeInTheDocument();
@@ -73,7 +74,7 @@ describe('ActivityRail', () => {
 
   it('sits the depth control on the title\'s row, not underneath it', async () => {
     vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     // The heading and the control that decides what the heading lists share
     // one flex row. Stacking them spent a whole line of a 22rem column on a
@@ -90,7 +91,7 @@ describe('ActivityRail', () => {
   it('defaults to detail depth and refetches when the depth changes', async () => {
     const spy = vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
     const user = userEvent.setup();
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     await waitFor(() =>
       expect(spy).toHaveBeenCalledWith(12, expect.objectContaining({ depth: 'detail' })),
@@ -109,7 +110,7 @@ describe('ActivityRail', () => {
       ],
       has_more: false,
     });
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     expect(await screen.findByText(/4200/)).toBeInTheDocument();
     expect(screen.getByText(/5600/)).toBeInTheDocument();
@@ -129,7 +130,7 @@ describe('ActivityRail', () => {
       has_more: false,
     });
     const user = userEvent.setup();
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     const toggle = await screen.findByRole('button', { name: /3 changes/i });
     expect(screen.queryByText(/impression_quantity|quantity/i)).not.toBeInTheDocument();
@@ -145,7 +146,7 @@ describe('ActivityRail', () => {
     vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
     const add = vi.spyOn(api, 'addAitoNote').mockResolvedValue(event({ kind: 'note.added', note: 'Called client' }));
     const user = userEvent.setup();
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     const box = await screen.findByPlaceholderText(/add a note/i);
     await user.type(box, 'Called client');
@@ -162,7 +163,7 @@ describe('ActivityRail', () => {
       () => new Promise((resolve) => { release = resolve; }),
     );
     const user = userEvent.setup();
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     const box = await screen.findByPlaceholderText(/add a note/i);
     await user.type(box, 'called the client');
@@ -179,7 +180,7 @@ describe('ActivityRail', () => {
     const longNote = 'a'.repeat(2000);
     const add = vi.spyOn(api, 'addAitoNote').mockResolvedValue(event({ kind: 'note.added', note: longNote }));
     const user = userEvent.setup();
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     const box = await screen.findByPlaceholderText(/add a note/i);
     expect(box).toHaveAttribute('maxLength', '2000');
@@ -197,7 +198,7 @@ describe('ActivityRail', () => {
     vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
     vi.spyOn(api, 'addAitoNote').mockRejectedValue(new Error('nope'));
     const user = userEvent.setup();
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     const box = await screen.findByPlaceholderText(/add a note/i);
     await user.type(box, 'called the client');
@@ -215,7 +216,7 @@ describe('ActivityRail', () => {
       () => new Promise((_resolve, rej) => { reject = rej; }),
     );
     const user = userEvent.setup();
-    const { queryClient } = renderWithClient(<ActivityRail projectId={12} />);
+    const { queryClient } = renderWithClient(<ActivityRail source={aitoEventSource(12)} />);
 
     // Default depth is 'detail' (confirmed by the sibling test above).
     await waitFor(() => expect(queryClient.getQueryData(['aito-events', 12, 'detail'])).toBeTruthy());
@@ -275,7 +276,7 @@ describe('ActivityRail', () => {
       ],
       has_more: false,
     });
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     expect(await screen.findByText(/set expiration est exécutée/)).toBeInTheDocument();
   });
@@ -295,14 +296,14 @@ describe('ActivityRail', () => {
       ],
       has_more: false,
     });
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     expect(await screen.findByText(/duplicate reference number/)).toBeInTheDocument();
   });
 
   it('says so when there is nothing to show', async () => {
     vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
     expect(await screen.findByText(/nothing recorded yet/i)).toBeInTheDocument();
   });
 
@@ -311,7 +312,7 @@ describe('ActivityRail', () => {
       .mockRejectedValueOnce(new Error('network down'))
       .mockResolvedValueOnce({ events: [event({})], has_more: false });
     const user = userEvent.setup();
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     expect(await screen.findByText(/could not load the board/i)).toBeInTheDocument();
     expect(screen.queryByText(/nothing recorded yet/i)).not.toBeInTheDocument();
@@ -325,7 +326,7 @@ describe('ActivityRail', () => {
 
   it('offers load-more only when the server says there is more', async () => {
     vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [event({})], has_more: false });
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
     await screen.findByText(/paul/);
     expect(screen.queryByRole('button', { name: /load more/i })).not.toBeInTheDocument();
   });
@@ -344,7 +345,7 @@ describe('ActivityRail', () => {
       has_more: false,
     });
     const user = userEvent.setup();
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     await screen.findByText(/oldest-event/);
 
@@ -374,7 +375,7 @@ describe('ActivityRail', () => {
       has_more: false,
     });
     const user = userEvent.setup();
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     await screen.findByText(/first-event/);
 
@@ -411,7 +412,7 @@ describe('ActivityRail', () => {
       has_more: false,
     });
     const user = userEvent.setup();
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     await screen.findByText(/oldest-event/);
 
@@ -440,7 +441,7 @@ describe('ActivityRail', () => {
       ],
       has_more: false,
     });
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     expect(await screen.findByText('Paid online')).toBeInTheDocument();
     expect(screen.queryByText('payment_link.paid')).not.toBeInTheDocument();
@@ -465,7 +466,7 @@ describe('ActivityRail', () => {
       ],
       has_more: false,
     });
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
 
     expect(await screen.findByText(/renumbered/)).toBeInTheDocument();
   });
@@ -515,7 +516,7 @@ describe('ActivityRail', () => {
       const older = event({ id: 1, occurred_at: isoNoZ(BASE_EPOCH - gapSeconds), actor_name: 'older-row' });
       const spy = vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [newer, older], has_more: false });
       const user = userEvent.setup();
-      const { container } = render(<ActivityRail projectId={12} />);
+      const { container } = render(<ActivityRail source={aitoEventSource(12)} />);
 
       await waitFor(() => expect(spy).toHaveBeenCalledWith(12, expect.objectContaining({ depth: 'detail' })));
       await user.click(screen.getByRole('button', { name: /story/i }));
@@ -625,7 +626,7 @@ describe('ActivityRail — menu and overdue kinds', () => {
       events: [event({ subject_type: 'project', subject_id: 58, ...over })],
       has_more: false,
     });
-    render(<ActivityRail projectId={12} />);
+    render(<ActivityRail source={aitoEventSource(12)} />);
     const line = (await screen.findByText(label)).parentElement;
     // The whole line is actor + label: no raw kind, no repeated subject.
     expect(line?.textContent).toBe(over.actor_name === null ? label : `paul ${label}`);

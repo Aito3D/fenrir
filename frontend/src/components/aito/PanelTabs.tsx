@@ -30,12 +30,15 @@ export function PanelTabs<T extends string>({
   selected,
   onSelect,
   attentionLabel,
+  scope,
 }: {
   tabs: readonly PanelTab<T>[];
   selected: T;
   onSelect: (id: T) => void;
   /** aria-label for the attention dot; the dot itself is a bare glyph. */
   attentionLabel: string;
+  /** Prefix for the tab ids; see panelTabIds. */
+  scope?: string;
 }) {
   const move = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let next: number | null = null;
@@ -47,7 +50,7 @@ export function PanelTabs<T extends string>({
     e.preventDefault();
     const target = tabs[next];
     onSelect(target.id);
-    document.getElementById(panelTabId(target.id))?.focus();
+    document.getElementById(panelTabId(target.id, scope))?.focus();
   };
 
   return (
@@ -59,9 +62,9 @@ export function PanelTabs<T extends string>({
             key={tab.id}
             type="button"
             role="tab"
-            id={panelTabId(tab.id)}
+            id={panelTabId(tab.id, scope)}
             aria-selected={isSelected}
-            aria-controls={panelTabPanelId(tab.id)}
+            aria-controls={panelTabPanelId(tab.id, scope)}
             tabIndex={isSelected ? 0 : -1}
             onClick={() => onSelect(tab.id)}
             onKeyDown={(e) => move(e, index)}

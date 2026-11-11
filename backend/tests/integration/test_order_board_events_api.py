@@ -76,3 +76,27 @@ async def test_note_needs_orders_update(async_client, tokens, order):  # noqa: F
 async def test_unknown_order_404(async_client, tokens):  # noqa: F811
     assert (await async_client.get(BASE, headers=tokens["read"])).status_code == 404
     assert (await async_client.post(BASE, json={"note": "x"}, headers=tokens["both"])).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_board_rows_carry_last_event(async_client, tokens, db_session):  # noqa: F811
+    rows = [{"id": "so1"}, {"id": "so2"}]
+    db_session.add(OrderBoardDoc(kind="state", zoho_id="board", header={}, detail={"rows": rows}))
+    # Inserted newest first: the latest is picked by occurred_at, not by id.
+    await record(
+        db_session,
+        "so1",
+        "sms.sent",
+        actor_class="user",
+        actor_name="Marie",
+        detail={"to": "0612"},
+        occurred_at=datetime(2026, 1, 2),
+    )
+    await record(db_session, "so1", "order.received", actor_class="system", occurred_at=datetime(2026, 1, 1))
+    await db_session.commit()
+    r = await async_client.get("/api/v1/order-board", headers=tokens["read"])
+    by_id = {row["id"]: row for row in r.json()["rows"]}
+    last = by_id["so1"]["last_event"]
+    assert last["kind"] == "sms.sent" and last["actor_name"] == "Marie" and last["detail"] == {"to": "0612"}
+    assert last["occurred_at"].startswith("2026-01-02")
+    assert by_id["so2"]["last_event"] is None

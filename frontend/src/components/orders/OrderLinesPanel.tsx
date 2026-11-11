@@ -8,6 +8,10 @@ import type { OrderBoardLine, OrderPanelRow, OrderPicklist } from '../../api/cli
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { HoldButton } from '../aito/HoldButton';
+import { PanelTabs } from '../aito/PanelTabs';
+import { panelTabId, panelTabPanelId } from '../aito/panelTabIds';
+import { usePanelTab } from '../../hooks/usePanelTab';
+import { OrderActivity } from './OrderActivity';
 import { usePrintBlob } from '../aito/usePrintBlob';
 import { errorReason, isRefused } from './orderErrors';
 import { OrderContactBlock } from './OrderContactBlock';
@@ -30,6 +34,8 @@ import { FIT_VIEWPORT, TONE } from './orderStatus';
 import type { Tone } from './orderStatus';
 import { useHandOverPending, useOrderActions } from './useOrderActions';
 import { useOrderOutcomeToasts } from './useOrderOutcomeToasts';
+
+const SIDE_TABS = ['details', 'activity'] as const;
 
 const GROUP: Record<PanelGroup['id'], { label: string; icon: LucideIcon; tone: Tone; band: string; name: string; dim: boolean }> = {
   todo: { label: 'orders.group.todo', icon: ClipboardList, tone: 'neutral', band: 'bg-bambu-green/10', name: 'text-white', dim: false },
@@ -73,6 +79,8 @@ export function OrderLinesPanel({
   onHandoverOpen?: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const [sideTab, setSideTab] = usePanelTab(SIDE_TABS, 'orders.panel.tab');
+  const tabScope = `order-${row.id}-`;
   const toasts = useOrderOutcomeToasts();
   const { showToast } = useToast();
   const { canUpdate, createInvoice, cancelOrder, printSheet } = useOrderActions({
@@ -530,31 +538,50 @@ export function OrderLinesPanel({
         </table>
       </div>
       </div>
-      <div className="space-y-3 lg:self-start">
-        <OrderContactBlock
-          contact={row.contact}
-          orderNumber={row.number}
-          others={others}
-          onGoto={onGoto}
-          sms={smsAllowed ? { contacted: row.contacted ?? null, onOpen: setSmsPhone } : undefined}
+      <div className="min-w-0 lg:self-start">
+        <PanelTabs
+          tabs={[
+            { id: 'details', label: t('aito.panelTabDetails') },
+            { id: 'activity', label: t('aito.history.title') },
+          ]}
+          selected={sideTab}
+          onSelect={setSideTab}
+          attentionLabel={t('aito.panelTabAttention')}
+          scope={tabScope}
         />
-        {smsPhone && <OrderSmsModal row={row} phone={smsPhone} onClose={() => setSmsPhone(null)} />}
-        {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} />}
-        <OrderInvoicesBlock
-          row={row}
-          canEmail={canUpdate}
-          busy={createInvoice.isPending}
-          onCreateInvoice={canUpdate ? () => {
-            if (createInvoice.isPending || invoiceSent.current) return;
-            invoiceSent.current = true;
-            createInvoice.mutate({ id: row.id, applyCredit: (row.payment?.advance ?? 0) > 0 }, { onSettled: () => { invoiceSent.current = false; } });
-          } : undefined}
-          onInvoiceNow={canUpdate ? (scope, applyCredit) => {
-            if (createInvoice.isPending || invoiceSent.current) return;
-            invoiceSent.current = true;
-            createInvoice.mutate({ id: row.id, applyCredit, scope }, { onSettled: () => { invoiceSent.current = false; } });
-          } : undefined}
-        />
+        {/* Only the selected panel mounts, so the history query never runs behind a closed tab. */}
+        <div role="tabpanel" id={panelTabPanelId(sideTab, tabScope)} aria-labelledby={panelTabId(sideTab, tabScope)}>
+          {sideTab === 'details' ? (
+            <div className="space-y-3">
+              <OrderContactBlock
+                contact={row.contact}
+                orderNumber={row.number}
+                others={others}
+                onGoto={onGoto}
+                sms={smsAllowed ? { contacted: row.contacted ?? null, onOpen: setSmsPhone } : undefined}
+              />
+              {smsPhone && <OrderSmsModal row={row} phone={smsPhone} onClose={() => setSmsPhone(null)} />}
+              {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} />}
+              <OrderInvoicesBlock
+                row={row}
+                canEmail={canUpdate}
+                busy={createInvoice.isPending}
+                onCreateInvoice={canUpdate ? () => {
+                  if (createInvoice.isPending || invoiceSent.current) return;
+                  invoiceSent.current = true;
+                  createInvoice.mutate({ id: row.id, applyCredit: (row.payment?.advance ?? 0) > 0 }, { onSettled: () => { invoiceSent.current = false; } });
+                } : undefined}
+                onInvoiceNow={canUpdate ? (scope, applyCredit) => {
+                  if (createInvoice.isPending || invoiceSent.current) return;
+                  invoiceSent.current = true;
+                  createInvoice.mutate({ id: row.id, applyCredit, scope }, { onSettled: () => { invoiceSent.current = false; } });
+                } : undefined}
+              />
+            </div>
+          ) : (
+            <OrderActivity soId={row.id} currency={row.currency} />
+          )}
+        </div>
       </div>
     </div>
   );

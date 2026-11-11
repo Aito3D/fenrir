@@ -259,8 +259,10 @@ async def read_board(db: AsyncSession) -> dict:
     """The stored board and the sync status: one local read, no Zoho call."""
     row = await _find_state(db)
     state = (row.detail if row else None) or {}
+    rows = await _rows_with_prep(db, state)
+    latest = await _latest_events(db, [r["id"] for r in rows])
     return {
-        "rows": await _rows_with_prep(db, state),
+        "rows": [{**r, "last_event": latest.get(r["id"])} for r in rows],
         "computed_at": state.get("computed_at"),
         "stock_loaded_at": state.get("stock_loaded_at"),
         "sync": {
@@ -272,6 +274,26 @@ async def read_board(db: AsyncSession) -> dict:
             "last_error_at": state.get("last_error_at"),
             "last_success_at": state.get("last_success_at"),
         },
+    }
+
+
+async def _latest_events(db: AsyncSession, salesorder_ids: list[str]) -> dict[str, dict]:
+    """Each order's newest event (by occurred_at, then id), in one windowed query."""
+    if not salesorder_ids:
+        return {}
+    e = OrderBoardEvent
+    rank = (
+        func.row_number().over(partition_by=e.salesorder_id, order_by=(e.occurred_at.desc(), e.id.desc())).label("rank")
+    )
+    ranked = (
+        select(e.salesorder_id, e.kind, e.actor_name, e.occurred_at, e.detail, rank)
+        .where(e.salesorder_id.in_(salesorder_ids))
+        .subquery()
+    )
+    result = await db.execute(select(ranked).where(ranked.c.rank == 1))
+    return {
+        r.salesorder_id: {"kind": r.kind, "actor_name": r.actor_name, "occurred_at": r.occurred_at, "detail": r.detail}
+        for r in result
     }
 
 

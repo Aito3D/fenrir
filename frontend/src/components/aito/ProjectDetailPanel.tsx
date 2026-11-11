@@ -11,6 +11,7 @@ import { useCardActions } from './useCardActions';
 import { ProjectActionsMenu } from './ProjectActionsMenu';
 import { TrashConfirmModal } from './TrashConfirmModal';
 import { ActivityRail } from './history/ActivityRail';
+import { aitoEventSource } from './history/aitoEventSource';
 import { PanelAgeStat } from './PanelAgeStat';
 import { UnacceptHoldPill } from './UnacceptHoldPill';
 import { eyebrowCls, headerPillCls } from './panelTypography';
@@ -1518,7 +1519,7 @@ export function ProjectDetailPanel({
                     <ShippingCard project={project} currency={currency} onWrite={markExternalWrite} />
                   </>
                 ) : (
-                  <ActivityRail projectId={project.id} showTitle={false} />
+                  <ActivityRail source={aitoEventSource(project.id)} showTitle={false} />
                 )}
               </div>
             </div>

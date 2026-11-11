@@ -3,13 +3,25 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { EventItem } from './EventItem';
-import { useProjectEvents } from '../../../hooks/useProjectEvents';
-import { api, type AitoEvent, type AitoEventPage, type AitoHistoryDepth } from '../../../api/client';
+import { useEvents } from '../../../hooks/useProjectEvents';
+import type { AitoEvent, AitoEventCursor, AitoEventPage, AitoHistoryDepth } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
 import { nextPlaceholderId } from '../../../utils/aitoOptimistic';
 import { Button } from '../../Button';
 
-const DEPTH_STORAGE_KEY = 'aito.history.depth';
+/** Where a rail's events come from: the Aito card's or an order's. */
+export interface EventSource {
+  /** Query key prefix; the depth is appended. */
+  key: readonly unknown[];
+  fetchPage: (depth: AitoHistoryDepth, cursor: AitoEventCursor | undefined) => Promise<AitoEventPage>;
+  /** Absent when the viewer may not write: the note box hides. */
+  addNote?: (body: string) => Promise<AitoEvent>;
+  label: (event: AitoEvent) => { key: string; params?: Record<string, unknown> } | null;
+  /** localStorage key remembering the depth control. */
+  depthKey: string;
+  /** Footer suffix on system rows; Aito's "automatic" when absent. */
+  systemKey?: string;
+}
 
 // Explicit map rather than a template literal key: the i18n gate scans for
 // literal t('...') calls, and a dynamic key is invisible to it.
@@ -20,9 +32,9 @@ const DEPTH_LABEL_KEY: Record<AitoHistoryDepth, string> = {
 };
 const DEPTHS: AitoHistoryDepth[] = ['story', 'detail', 'everything'];
 
-function initialDepth(): AitoHistoryDepth {
+function initialDepth(depthKey: string): AitoHistoryDepth {
   try {
-    const stored = localStorage.getItem(DEPTH_STORAGE_KEY);
+    const stored = localStorage.getItem(depthKey);
     if (stored === 'story' || stored === 'detail' || stored === 'everything') return stored;
   } catch {
     // Private mode, or storage disabled. The default is fine.
@@ -36,10 +48,10 @@ function initialDepth(): AitoHistoryDepth {
  *  owns the kind-to-depth registry, so the three levels are different result
  *  sets and paging them separately is what keeps the cursor honest. */
 export function ActivityRail({
-  projectId,
+  source,
   showTitle = true,
 }: {
-  projectId: number;
+  source: EventSource;
   /** Off when the rail sits behind a tab already labelled "Activity" — the
    *  word would otherwise appear twice within a centimetre. The depth control
    *  keeps its row either way. */
@@ -48,7 +60,7 @@ export function ActivityRail({
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [depth, setDepth] = useState<AitoHistoryDepth>(initialDepth);
+  const [depth, setDepth] = useState<AitoHistoryDepth>(() => initialDepth(source.depthKey));
   const [note, setNote] = useState('');
 
   // Which rows have already been on screen, so an arrival can be told from a
@@ -59,14 +71,14 @@ export function ActivityRail({
   const seenIds = useRef<Set<number>>(new Set());
   const shouldAnimateIn = (id: number) => !seenIds.current.has(id);
 
-  const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useProjectEvents(
-    projectId,
+  const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useEvents(
+    source,
     depth,
   );
 
   const addNote = useMutation({
     mutationFn: ({ body }: { body: string; optimistic: AitoEvent; depth: AitoHistoryDepth }) =>
-      api.addAitoNote(projectId, body),
+      source.addNote!(body),
     // Prepends into the FIRST page only. The list runs newest-first and the
     // cursor keysets on (occurred_at, id), so a row at the head cannot shift
     // any page boundary — an optimistic note is invisible to paging.
@@ -80,7 +92,7 @@ export function ActivityRail({
     onMutate: ({ optimistic, depth: mutationDepth }) => {
       setNote('');
       queryClient.setQueryData<{ pages: AitoEventPage[]; pageParams: unknown[] }>(
-        ['aito-events', projectId, mutationDepth],
+        [...source.key, mutationDepth],
         (prev) =>
           prev
             ? {
@@ -99,11 +111,11 @@ export function ActivityRail({
       // as already seen BEFORE that data can render is what stops the note
       // fading in a second time, a beat after it first appeared.
       seenIds.current.add(created.id);
-      queryClient.invalidateQueries({ queryKey: ['aito-events', projectId] });
+      queryClient.invalidateQueries({ queryKey: [...source.key] });
     },
     onError: (_error, { body, optimistic, depth: mutationDepth }) => {
       queryClient.setQueryData<{ pages: AitoEventPage[]; pageParams: unknown[] }>(
-        ['aito-events', projectId, mutationDepth],
+        [...source.key, mutationDepth],
         (prev) =>
           prev
             ? {
@@ -124,7 +136,7 @@ export function ActivityRail({
   const chooseDepth = (next: AitoHistoryDepth) => {
     setDepth(next);
     try {
-      localStorage.setItem(DEPTH_STORAGE_KEY, next);
+      localStorage.setItem(source.depthKey, next);
     } catch {
       // Not worth surfacing — the choice simply will not persist.
     }
@@ -165,47 +177,49 @@ export function ActivityRail({
         </div>
       </div>
 
-      <form
-        className="mb-3 flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const body = note.trim();
-          if (!body) return;
-          addNote.mutate({
-            body,
-            depth,
-            optimistic: {
-              id: nextPlaceholderId(),
-              occurred_at: new Date().toISOString(),
-              occurred_until: null,
-              kind: 'note.added',
-              actor_class: 'user',
-              actor_name: null,
-              subject_type: null,
-              subject_id: null,
-              subject_label: null,
-              changes: null,
-              detail: null,
-              note: body,
-            },
-          });
-        }}
-      >
-        <input
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder={t('aito.history.notePlaceholder')}
-          maxLength={2000}
-          className="flex-1 min-w-0 rounded-md bg-bambu-dark-tertiary/40 border border-bambu-dark-tertiary px-2 py-1 text-sm text-white placeholder:text-bambu-gray focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
-        />
-        <button
-          type="submit"
-          disabled={!note.trim() || addNote.isPending}
-          className="text-xs text-bambu-green hover:text-bambu-green/80 disabled:opacity-40"
+      {source.addNote && (
+        <form
+          className="mb-3 flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const body = note.trim();
+            if (!body) return;
+            addNote.mutate({
+              body,
+              depth,
+              optimistic: {
+                id: nextPlaceholderId(),
+                occurred_at: new Date().toISOString(),
+                occurred_until: null,
+                kind: 'note.added',
+                actor_class: 'user',
+                actor_name: null,
+                subject_type: null,
+                subject_id: null,
+                subject_label: null,
+                changes: null,
+                detail: null,
+                note: body,
+              },
+            });
+          }}
         >
-          {t('aito.history.noteSubmit')}
-        </button>
-      </form>
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={t('aito.history.notePlaceholder')}
+            maxLength={2000}
+            className="flex-1 min-w-0 rounded-md bg-bambu-dark-tertiary/40 border border-bambu-dark-tertiary px-2 py-1 text-sm text-white placeholder:text-bambu-gray focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
+          />
+          <button
+            type="submit"
+            disabled={!note.trim() || addNote.isPending}
+            className="text-xs text-bambu-green hover:text-bambu-green/80 disabled:opacity-40"
+          >
+            {t('aito.history.noteSubmit')}
+          </button>
+        </form>
+      )}
 
       {isLoading ? (
         <Loader2 className="w-4 h-4 text-bambu-gray animate-spin" />
@@ -236,6 +250,8 @@ export function ActivityRail({
             <EventItem
               key={event.id}
               event={event}
+              label={source.label(event)}
+              systemKey={source.systemKey}
               // The next entry down the list is the next-older one, because
               // the list runs newest-first.
               previous={events[index + 1]}

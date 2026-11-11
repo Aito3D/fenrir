@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown } from 'lucide-react';
-import type { OrderBoardRow } from '../../api/client';
+import { ChevronDown, History } from 'lucide-react';
+import type { OrderBoardRow, OrderLastEvent } from '../../api/client';
+import { parseUTCDate } from '../../utils/date';
+import { elapsedBucket } from '../aito/history/eventKinds';
+import { SHORT_LABEL_KEY } from './orderEventKinds';
 import { formatMoney } from '../../utils/pricing';
 import { Card } from '../Card';
 import { useAuth } from '../../contexts/AuthContext';
@@ -16,6 +19,26 @@ const AGE = {
   warning: `${TONE.warning.soft} ${TONE.warning.text}`,
   danger: `${TONE.danger.soft} ${TONE.danger.text}`,
 };
+
+/** "Marie · SMS de retrait · il y a 2 h": who did the last thing, what, and how long ago. */
+function LastActivity({ event }: { event: OrderLastEvent }) {
+  const { t, i18n } = useTranslation();
+  const at = parseUTCDate(event.occurred_at);
+  // Under a minute reads as "1 minute ago" rather than needing a key of its own.
+  const ago = at && elapsedBucket(Math.max(60, (Date.now() - at.getTime()) / 1000));
+  const shortKey = SHORT_LABEL_KEY[event.kind];
+  const parts = [
+    event.actor_name,
+    shortKey ? t(shortKey) : event.kind,
+    ago && new Intl.RelativeTimeFormat(i18n.language, { numeric: 'always' }).format(-ago.value, ago.unit),
+  ].filter(Boolean);
+  return (
+    <span data-testid="order-last-activity" className="inline-flex items-center gap-1">
+      <History aria-hidden="true" className="h-3 w-3" />
+      {parts.join(' · ')}
+    </span>
+  );
+}
 
 /** One order: the collapsed row is the button that opens its lines. */
 export function OrderCard({
@@ -74,6 +97,7 @@ export function OrderCard({
               <span className="lg:hidden"> · {age}</span>
               {(row.prep || (row.picklists ?? []).some(p => p.status !== 'completed')) && <span className={TONE.success.text}> · {t('orders.prep.inProgress')}</span>}
               {row.contacted && <span className={TONE.success.text}> · {t('aito.contacted')}</span>}
+              {row.last_event && <> · <LastActivity event={row.last_event} /></>}
             </span>
           </span>
           <span className={`hidden justify-self-start rounded-md px-2 py-0.5 text-xs lg:inline-block ${AGE[ageTone(row.age_days)]}`}>{age}</span>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { eventLabelKey, dotClass, detailText, formatValue, elapsedBucket, labelParams } from './eventKinds';
+import { dotClass, detailText, formatValue, elapsedBucket } from './eventKinds';
 import type { AitoEvent } from '../../../api/client';
 import { parseUTCDate } from '../../../utils/date';
 
@@ -35,11 +35,17 @@ function ElapsedGutter({ from, to, lang }: { from: Date; to: Date; lang: string 
  *  entry would be worse than an ugly one. */
 export function EventItem({
   event,
+  label: labelSpec,
+  systemKey = 'aito.history.automatic',
   previous,
   showElapsed = false,
   animateIn = false,
 }: {
   event: AitoEvent;
+  /** The sentence's i18n key and values, from the rail's source; null for a kind this build does not know. */
+  label: { key: string; params?: Record<string, unknown> } | null;
+  /** Footer suffix on system rows. */
+  systemKey?: string;
   /** The next-older event, for the elapsed gutter. Undefined on the last row. */
   previous?: AitoEvent;
   showElapsed?: boolean;
@@ -52,9 +58,8 @@ export function EventItem({
   const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
-  const labelKey = eventLabelKey(event);
-  const params = labelParams(event);
-  const label = labelKey ? t(labelKey, params ?? undefined) : event.kind;
+  const params = labelSpec?.params;
+  const label = labelSpec ? t(labelSpec.key, params) : event.kind;
   const at = parseUTCDate(event.occurred_at);
   const previousAt = previous ? parseUTCDate(previous.occurred_at) : null;
   const until = event.occurred_until ? parseUTCDate(event.occurred_until) : null;
@@ -118,7 +123,7 @@ export function EventItem({
         {at ? at.toLocaleString(i18n.language) : '—'}
         {until && at && until.getTime() !== at.getTime() && ` – ${until.toLocaleTimeString(i18n.language)}`}
         {event.actor_class === 'client' && ` · ${t('aito.history.fromZoho')}`}
-        {event.actor_class === 'system' && ` · ${t('aito.history.automatic')}`}
+        {event.actor_class === 'system' && ` · ${t(systemKey)}`}
       </p>
 
       {showElapsed && previousAt && at && (

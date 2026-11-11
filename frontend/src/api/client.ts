@@ -5169,7 +5169,19 @@ export interface OrderBoardRow {
   /** Changes whenever the order changes in Books; sent back with an edit. */
   version: string;
   estimable: boolean;
+  /** The order's newest history event; finished orders and edit results omit it. */
+  last_event?: OrderLastEvent | null;
 }
+
+export interface OrderLastEvent {
+  kind: string;
+  actor_name: string | null;
+  occurred_at: string;
+  detail: Record<string, unknown> | null;
+}
+
+/** One row of an order's history; the Aito event without its subject fields. */
+export type OrderEvent = Omit<AitoEvent, 'occurred_until' | 'subject_type' | 'subject_id' | 'subject_label'>;
 
 export interface OrderItemHit { id: string; name: string; sku: string; rate: number; stock_on_hand: number | null; product_type: string }
 export type OrderEditLine = { line_id: string; quantity: number } | { item_id: string; quantity: number };
@@ -9968,6 +9980,17 @@ export const api = {
     }),
   // Order Board: one local read; refresh runs one bounded Zoho sync pass.
   getOrderBoard: () => request<OrderBoardResponse>('/order-board'),
+  getOrderEvents: (soId: string, params: { depth: AitoHistoryDepth; cursor?: AitoEventCursor; limit?: number }) => {
+    const search = new URLSearchParams({ depth: params.depth });
+    if (params.cursor) {
+      search.set('before', String(params.cursor.id));
+      search.set('before_at', params.cursor.occurredAt);
+    }
+    if (params.limit !== undefined) search.set('limit', String(params.limit));
+    return request<{ events: OrderEvent[]; has_more: boolean }>(`/order-board/orders/${encodeURIComponent(soId)}/events?${search}`);
+  },
+  addOrderNote: (soId: string, note: string) =>
+    request<OrderEvent>(`/order-board/orders/${encodeURIComponent(soId)}/events`, { method: 'POST', body: JSON.stringify({ note }) }),
   refreshOrderBoard: () => request<OrderBoardResponse>('/order-board/refresh', { method: 'POST' }),
   getFinishedOrders: () => request<{ rows: FinishedOrderRow[] }>('/order-board/finished'),
   getFinishedOrder: (id: string) => request<FinishedOrderDetail>(`/order-board/finished/${encodeURIComponent(id)}`),
