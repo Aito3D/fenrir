@@ -139,6 +139,7 @@ export default {
     smsRegenerate: '다시 생성',
     smsSend: 'SMS 보내기',
     smsSent: 'SMS를 보냈습니다',
+    smsSentContacted: 'SMS를 보냈습니다 — 고객을 연락 완료로 표시했습니다',
     smsSendFailed: 'SMS를 보낼 수 없습니다',
     smsRelayUnreachable: 'SMS 릴레이에 연결할 수 없습니다 — 릴레이가 실행 중인 Mac에서 보내세요',
     smsMaybeSent: '릴레이가 확인하지 않았습니다 — SMS가 이미 발송되었을 수 있습니다. 다시 보내기 전에 메시지 앱을 확인하세요',

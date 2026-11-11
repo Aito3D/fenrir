@@ -6,7 +6,7 @@ Two endpoints are pinned here:
    sends anything.
 2. /pickup-sms — records an SMS the browser already sent through the relay
    on the operator's Mac; requires a phone number, writes a timeline event,
-   and deliberately does NOT set the contacted mark.
+   and sets the contacted mark on a finished card.
 """
 
 import asyncio
@@ -213,16 +213,38 @@ async def _sms_kinds(db_session, project_id):
 
 
 @pytest.mark.asyncio
-async def test_record_writes_the_event_but_never_the_contact(async_client, db_session):
-    """The timeline gains project.sms.sent, and client_contacted_at stays NULL:
-    the user records the contact by hand."""
+async def test_record_writes_the_event_and_marks_a_finished_card_contacted(async_client, db_session):
+    """The SMS is the contact: project.sms.sent plus the same contacted event
+    and stamp the manual control writes, and the response is the card."""
     project = await _create_finished(async_client)
     r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms")
     assert r.status_code == 200
-    assert r.json() == {"sent": True}
-    assert "project.sms.sent" in await _sms_kinds(db_session, project["id"])
-    board = (await async_client.get("/api/v1/aito/")).json()
-    assert next(p for p in board if p["id"] == project["id"])["client_contacted_at"] is None
+    assert r.json()["id"] == project["id"]
+    assert r.json()["client_contacted_at"] is not None
+    kinds = await _sms_kinds(db_session, project["id"])
+    assert "project.sms.sent" in kinds
+    assert kinds.count("project.contacted.set") == 1
+
+
+@pytest.mark.asyncio
+async def test_a_second_sms_keeps_the_first_contact_stamp(async_client, db_session):
+    """An existing mark is not restamped: the waiting clock must not reset."""
+    project = await _create_finished(async_client)
+    first = (await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms")).json()["client_contacted_at"]
+    second = (await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms")).json()["client_contacted_at"]
+    assert second == first
+    kinds = await _sms_kinds(db_session, project["id"])
+    assert kinds.count("project.sms.sent") == 2
+    assert kinds.count("project.contacted.set") == 1
+
+
+@pytest.mark.asyncio
+async def test_an_sms_on_unfinished_work_never_opens_the_done_gate(async_client, db_session):
+    project = (await _create(async_client)).json()
+    r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms")
+    assert r.status_code == 200
+    assert r.json()["client_contacted_at"] is None
+    assert "project.contacted.set" not in await _sms_kinds(db_session, project["id"])
 
 
 @pytest.mark.asyncio

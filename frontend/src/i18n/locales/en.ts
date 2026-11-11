@@ -139,6 +139,7 @@ export default {
     smsRegenerate: 'Regenerate',
     smsSend: 'Send SMS',
     smsSent: 'SMS sent',
+    smsSentContacted: 'SMS sent — client marked as contacted',
     smsSendFailed: 'Could not send the SMS',
     smsRelayUnreachable: 'SMS relay not reachable — send from the Mac that runs the relay',
     smsMaybeSent: 'The relay did not confirm — the SMS may already have gone; check Messages before sending again',

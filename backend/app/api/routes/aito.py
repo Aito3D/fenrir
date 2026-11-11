@@ -63,7 +63,6 @@ from backend.app.schemas.aito import (
     AitoNoteCreate,
     AitoPaymentLinkView,
     AitoPickupMessageResponse,
-    AitoPickupSmsResponse,
     AitoProjectCreate,
     AitoProjectImport,
     AitoProjectMove,
@@ -5239,7 +5238,7 @@ async def generate_pickup_message(
     return AitoPickupMessageResponse(message=message, model=model)
 
 
-@router.post("/{project_id}/pickup-sms", response_model=AitoPickupSmsResponse)
+@router.post("/{project_id}/pickup-sms", response_model=AitoProjectResponse)
 async def send_pickup_sms(
     project_id: int,
     request: Request,
@@ -5251,8 +5250,9 @@ async def send_pickup_sms(
     operator's Mac (scripts/sms_relay_mac.py, reached at localhost from the
     page). The server never sends the SMS itself.
 
-    Admin only. Deliberately does NOT set the contacted mark: the user
-    records the contact by hand.
+    Admin only. On a finished card the SMS is the contact, so it also sets
+    the contacted mark (same stamp and event as set_project_contacted) when
+    the card has none yet. Returns the card.
     """
     # T-025: bounds a loop to a handful of timeline events.
     _check_rate_limit(
@@ -5266,18 +5266,39 @@ async def send_pickup_sms(
     phone = (project.client_phone or "").strip()
     if not phone:
         raise HTTPException(status_code=409, detail="The project's client has no phone number")
+    actor = _actor(current_user)
     await record(
         db,
         project.id,
         "project.sms.sent",
         actor_class="user",
-        actor_name=_actor(current_user),
+        actor_name=actor,
         subject_type="project",
         subject_id=project.id,
         detail={"phone": phone},
     )
+    # Same gate as set_project_contacted (the DERIVED column): the mark opens
+    # the Done gate, so it is never stamped on unfinished work, and an existing
+    # stamp is kept so the "how long have they waited" clock is not reset.
+    summary = await _summary_for(db, project.id)
+    column, _ = evaluate(project.quote_status, project.board_column, summary.pending)
+    mark_contacted = column in _FINISHED_COLUMNS and project.client_contacted_at is None
+    if mark_contacted:
+        project.client_contacted_at = utc_now_naive()
+        await record(
+            db,
+            project.id,
+            contact_mark_kind(project.shipping_island is not None, cleared=False),
+            actor_class="user",
+            actor_name=actor,
+            subject_type="project",
+            subject_id=project.id,
+        )
     await db.commit()
-    return AitoPickupSmsResponse()
+    if mark_contacted:
+        await _broadcast_changed("contacted", project.id, actor)
+    await db.refresh(project)
+    return await _project_response(db, project)
 
 
 @router.post("/{project_id}/sync", response_model=AitoProjectResponse)

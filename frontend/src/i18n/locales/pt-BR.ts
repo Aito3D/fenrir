@@ -139,6 +139,7 @@ export default {
     smsRegenerate: 'Regenerar',
     smsSend: 'Enviar SMS',
     smsSent: 'SMS enviado',
+    smsSentContacted: 'SMS enviado — cliente marcado como contatado',
     smsSendFailed: 'Não foi possível enviar o SMS',
     smsRelayUnreachable: 'Relé de SMS inacessível — envie do Mac que executa o relé',
     smsMaybeSent: 'O relé não confirmou — o SMS pode já ter sido enviado; confira o Mensagens antes de enviar de novo',

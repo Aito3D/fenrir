@@ -137,9 +137,9 @@ KINDS: dict[str, str] = {
     "project.shipped.set": "story",
     "project.shipped.cleared": "story",
     # The pickup SMS went out through the relay on the operator's Mac
-    # (Messages accepted it) — not proof it reached the client's phone, which is why sending
-    # one does NOT set the contacted mark. Story depth for the same reason
-    # the contacted pair has it: it is part of "who told them, and when".
+    # (Messages accepted it). On a finished card it also sets the contacted
+    # mark, which writes its own contacted event beside this one. Story depth
+    # for the same reason the contacted pair has it: "who told them, and when".
     "project.sms.sent": "story",
     # The online payment link's life (services/aito_payment_links.py). Story
     # depth: "the client paid" is the narrative, and a link cancelled because

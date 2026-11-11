@@ -9267,6 +9267,7 @@ export default {
     smsRegenerate: 'Wygeneruj ponownie',
     smsSend: 'Wyślij SMS',
     smsSent: 'SMS wysłany',
+    smsSentContacted: 'SMS wysłany — klient oznaczony jako powiadomiony',
     smsSendFailed: 'Nie udało się wysłać SMS-a',
     smsRelayUnreachable: 'Przekaźnik SMS jest nieosiągalny — wyślij z Maca, na którym działa przekaźnik',
     smsMaybeSent: 'Przekaźnik nie potwierdził — SMS mógł już zostać wysłany; sprawdź Wiadomości przed ponownym wysłaniem',

@@ -1293,10 +1293,6 @@ class AitoPickupMessageResponse(BaseModel):
     model: str
 
 
-class AitoPickupSmsResponse(BaseModel):
-    sent: bool = True
-
-
 class AitoStatsStage(BaseModel):
     column: AitoColumn
     count: int

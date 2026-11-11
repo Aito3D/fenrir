@@ -139,6 +139,7 @@ export default {
     smsRegenerate: '重新產生',
     smsSend: '傳送簡訊',
     smsSent: '簡訊已傳送',
+    smsSentContacted: '簡訊已傳送 — 已將客戶標記為已聯絡',
     smsSendFailed: '無法傳送簡訊',
     smsRelayUnreachable: '無法連線簡訊中繼 — 請在執行中繼的 Mac 上傳送',
     smsMaybeSent: '中繼未確認 — 簡訊可能已經送出；再次傳送前請先查看「訊息」',

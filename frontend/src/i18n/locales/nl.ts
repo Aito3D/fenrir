@@ -9267,6 +9267,7 @@ export default {
     smsRegenerate: 'Opnieuw genereren',
     smsSend: 'Sms versturen',
     smsSent: 'Sms verstuurd',
+    smsSentContacted: 'Sms verstuurd — klant gemarkeerd als gecontacteerd',
     smsSendFailed: 'Kon de sms niet versturen',
     smsRelayUnreachable: 'Sms-relay niet bereikbaar — verstuur vanaf de Mac waarop de relay draait',
     smsMaybeSent: 'De relay heeft niet bevestigd — de sms is misschien al verstuurd; controleer Berichten voordat je opnieuw verstuurt',

@@ -139,6 +139,7 @@ export default {
     smsRegenerate: 'Yeniden oluştur',
     smsSend: 'SMS gönder',
     smsSent: 'SMS gönderildi',
+    smsSentContacted: 'SMS gönderildi — müşteri iletişim kuruldu olarak işaretlendi',
     smsSendFailed: 'SMS gönderilemedi',
     smsRelayUnreachable: 'SMS aktarıcısına ulaşılamıyor — aktarıcının çalıştığı Mac’ten gönderin',
     smsMaybeSent: 'Aktarıcı onaylamadı — SMS zaten gönderilmiş olabilir; tekrar göndermeden önce Mesajlar’ı kontrol edin',

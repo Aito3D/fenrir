@@ -94,10 +94,12 @@ async function openAndSend() {
 describe('SmsPickupModal', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('sends the EDITED text through the local relay, then records it', async () => {
+  it('sends the EDITED text through the local relay, then records it and marks the client contacted', async () => {
     vi.spyOn(api, 'generateAitoPickupMessage').mockResolvedValue(DRAFT);
     const posted = relayAnswers(() => new HttpResponse('sent'));
-    const record = vi.spyOn(api, 'recordAitoPickupSms').mockResolvedValue({ sent: true });
+    const record = vi
+      .spyOn(api, 'recordAitoPickupSms')
+      .mockResolvedValue({ ...project, client_contacted_at: '2026-11-11T08:00:00' } as AitoProject);
     const user = userEvent.setup();
     render(<SmsPickupModal project={project} onClose={() => {}} />);
 
@@ -106,13 +108,13 @@ describe('SmsPickupModal', () => {
     await user.type(textarea, 'Ia Ora na, c’est prêt. Aito3D');
     await user.click(screen.getByRole('button', { name: /send sms/i }));
 
-    expect(await screen.findByText('SMS sent')).toBeInTheDocument();
+    expect(await screen.findByText('SMS sent — client marked as contacted')).toBeInTheDocument();
     expect(posted).toEqual([{ phone: '87 12 34 56', text: 'Ia Ora na, c’est prêt. Aito3D' }]);
     expect(record).toHaveBeenCalledWith(12);
   });
 
-  it('a failed record after a real send still reports the SMS as sent', async () => {
-    // A retry would text the client twice; only the timeline entry is lost.
+  it('a failed record after a real send still reports the SMS as sent, without claiming the contact', async () => {
+    // A retry would text the client twice; only the timeline entry and the mark are lost.
     relayAnswers(() => new HttpResponse('sent'));
     vi.spyOn(api, 'recordAitoPickupSms').mockRejectedValue(new ApiError('boom', 500));
     await openAndSend();

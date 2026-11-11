@@ -8,6 +8,7 @@ import { inputCls, labelCls } from '../formStyles';
 import { api, type AitoProject } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useToast } from '../../contexts/ToastContext';
+import { settleProject } from './settleProject';
 
 /** A beat past .animate-modal-out's 150ms — same margin SendQuoteModal gives. */
 const MODAL_OUT_MS = 170;
@@ -49,9 +50,9 @@ async function sendThroughRelay(phone: string, text: string): Promise<void> {
  *  The draft comes from the server's AI endpoint and lands in an EDITABLE
  *  textarea — what goes to the phone is whatever this box holds when Send is
  *  pressed, never the raw model answer. Send posts to the relay on this Mac,
- *  which sends it through Messages, then asks the server to record it. Sending here does not touch the
- *  contacted mark: the panel's ContactedControl stays the deliberate act it
- *  already is.
+ *  which sends it through Messages, then asks the server to record it. On a
+ *  finished card the server also sets the contacted mark: the SMS is the
+ *  contact.
  */
 export function SmsPickupModal({
   project,
@@ -89,15 +90,20 @@ export function SmsPickupModal({
   const send = useMutation({
     mutationFn: async () => {
       await sendThroughRelay((project.client_phone ?? '').trim(), message.trim());
-      // The SMS is already out: a failed record only loses the timeline
-      // entry, and must not read as a failed send (a retry would text twice).
-      await api.recordAitoPickupSms(project.id).catch(() => undefined);
+      // The SMS is already out: a failed record only loses the timeline entry
+      // and the contacted mark, and must not read as a failed send (a retry
+      // would text the client twice).
+      return api.recordAitoPickupSms(project.id).catch(() => null);
     },
-    onSuccess: () => {
-      showToast(t('aito.smsSent'), 'success');
-      // The send wrote a timeline event; the open panel's rail must not show
-      // a history missing the thing that just happened.
-      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
+    onSuccess: (row) => {
+      if (row) {
+        // The server's row carries the contacted mark; adopting it flips the
+        // card (and drops this pill) without waiting for a refetch.
+        settleProject(queryClient, project.id, row);
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
+      }
+      showToast(t(row?.client_contacted_at ? 'aito.smsSentContacted' : 'aito.smsSent'), 'success');
       requestClose();
     },
     onError: (error: unknown) => {

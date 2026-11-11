@@ -5915,10 +5915,6 @@ export interface AitoPickupMessageResponse {
   model: string;
 }
 
-export interface AitoPickupSmsResponse {
-  sent: boolean;
-}
-
 // Zoho Books integration
 export interface ZohoContact {
   id: string;
@@ -9746,9 +9742,10 @@ export const api = {
     request<AitoPickupMessageResponse>(`/aito/${id}/pickup-message`, {
       method: 'POST',
     }),
-  // Records an SMS the browser already sent through the local relay.
+  // Records an SMS the browser already sent through the local relay; marks a
+  // finished card as contacted and returns it.
   recordAitoPickupSms: (id: number) =>
-    request<AitoPickupSmsResponse>(`/aito/${id}/pickup-sms`, { method: 'POST' }),
+    request<AitoProject>(`/aito/${id}/pickup-sms`, { method: 'POST' }),
   getAitoProjectCodes: () => request<Record<string, string[]>>('/aito/project-codes'),
   getOrderProjectLinks: (orderId: number) => request<OrderProjectLinks>(`/aito/${orderId}/project-links`),
   getTaskProjectSuggestions: (taskId: number) =>

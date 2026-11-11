@@ -139,6 +139,7 @@ export default {
     smsRegenerate: '再生成',
     smsSend: 'SMSを送信',
     smsSent: 'SMSを送信しました',
+    smsSentContacted: 'SMSを送信しました — 顧客を連絡済みにしました',
     smsSendFailed: 'SMSを送信できませんでした',
     smsRelayUnreachable: 'SMSリレーに接続できません — リレーが動作しているMacから送信してください',
     smsMaybeSent: 'リレーから確認がありません — SMSはすでに送信された可能性があります。再送信する前にメッセージアプリを確認してください',

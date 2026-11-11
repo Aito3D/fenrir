@@ -9300,6 +9300,7 @@ errors: {
     smsRegenerate: 'Generera på nytt',
     smsSend: 'Skicka sms',
     smsSent: 'Sms skickat',
+    smsSentContacted: 'Sms skickat — kunden markerad som kontaktad',
     smsSendFailed: 'Kunde inte skicka sms:et',
     smsRelayUnreachable: 'Sms-reläet går inte att nå — skicka från den Mac där reläet körs',
     smsMaybeSent: 'Reläet bekräftade inte — sms:et kan redan ha skickats; kontrollera Meddelanden innan du skickar igen',
