@@ -7,7 +7,7 @@ import { SmsPickupModal } from './SmsPickupModal';
 
 /** Temporary kill switch: while false the pill still shows but is disabled
  *  for every card. Flip back to true to re-enable sending pickup SMS. */
-export const SMS_PICKUP_ENABLED = false;
+export const SMS_PICKUP_ENABLED = true;
 
 /** Open the pickup-SMS modal, from the panel header's fact row.
  *
