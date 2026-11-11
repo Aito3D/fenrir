@@ -16,6 +16,7 @@ class InboxItem(BaseModel):
     body: str
     target_type: str | None
     target_id: int | None
+    target_ref: str | None = None
     created_at: datetime
     read_at: datetime | None
 

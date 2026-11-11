@@ -70,8 +70,10 @@ async def test_kind_mapping():
         "aito.quote_declined",
         "aito.paid",
         "hours.readings_due",
+        "orders.ready",
+        "orders.new",
     }
-    assert set(inbox.SOUND_DEFAULT_KINDS) == set(inbox.DEFAULT_KINDS) - {"hours.readings_due"}
+    assert set(inbox.SOUND_DEFAULT_KINDS) == set(inbox.DEFAULT_KINDS) - {"hours.readings_due", "orders.new"}
 
 
 def test_hours_kind_is_available_and_default_on_without_sound():

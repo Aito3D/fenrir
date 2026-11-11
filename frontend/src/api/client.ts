@@ -6609,6 +6609,8 @@ export interface InboxItem {
   body: string;
   target_type: string | null;
   target_id: number | null;
+  /** A string target (the Zoho sales-order id of an `order` row). */
+  target_ref: string | null;
   created_at: string;
   read_at: string | null;
 }

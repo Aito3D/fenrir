@@ -6,7 +6,9 @@ import {
   CheckCircle2,
   Clock,
   Eye,
+  PackageCheck,
   Send,
+  ShoppingBag,
   Timer,
   XCircle,
   type LucideIcon,
@@ -16,7 +18,7 @@ export interface NotificationKindMeta {
   icon: LucideIcon;
   /** Icon colour + tinted tile background. */
   tone: string;
-  family: 'aito' | 'printer';
+  family: 'aito' | 'orders' | 'printer';
   /** The `inbox.kind.*` key holding the row title. */
   titleKey: string;
 }
@@ -37,6 +39,13 @@ export const NOTIFICATION_KINDS: Record<string, NotificationKindMeta> = {
   },
   'aito.paid': { icon: Banknote, tone: 'text-emerald-400 bg-emerald-400/10', family: 'aito', titleKey: 'aitoPaid' },
   'aito.overdue': { icon: Clock, tone: 'text-red-400 bg-red-400/10', family: 'aito', titleKey: 'aitoOverdue' },
+  'orders.ready': {
+    icon: PackageCheck,
+    tone: 'text-bambu-green bg-bambu-green/10',
+    family: 'orders',
+    titleKey: 'ordersReady',
+  },
+  'orders.new': { icon: ShoppingBag, tone: 'text-sky-400 bg-sky-400/10', family: 'orders', titleKey: 'ordersNew' },
   'printer.job_sent': {
     icon: Send,
     tone: 'text-violet-400 bg-violet-400/10',

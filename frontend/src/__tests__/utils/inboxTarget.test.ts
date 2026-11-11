@@ -10,6 +10,7 @@ const item = (patch: Partial<InboxItem>): InboxItem => ({
   body: '',
   target_type: 'aito_project',
   target_id: 41,
+  target_ref: null,
   created_at: '2026-10-01T10:00:00Z',
   read_at: null,
   ...patch,
@@ -30,6 +31,15 @@ describe('inboxTarget', () => {
     expect(
       inboxTarget(item({ kind: 'hours.readings_due', family: 'printer', target_type: 'hours', target_id: null })),
     ).toBe('/maintenance?tab=hours&pass=1');
+  });
+
+  it('order target links to the order', () => {
+    expect(
+      inboxTarget(
+        item({ kind: 'orders.ready', family: 'orders', target_type: 'order', target_id: null, target_ref: '66407000001' }),
+      ),
+    ).toBe('/orders?order=66407000001');
+    expect(inboxTarget(item({ family: 'orders', target_type: 'order', target_id: null }))).toBe('/orders');
   });
 
   it('falls back to the family page when the target is gone', () => {

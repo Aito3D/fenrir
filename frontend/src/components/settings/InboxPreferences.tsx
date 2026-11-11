@@ -14,6 +14,7 @@ const PREFS_KEY = ['inbox-preferences'];
 const SAVE_DELAY_MS = 400;
 const FAMILIES = [
   { family: 'aito', labelKey: 'inbox.familyAito' },
+  { family: 'orders', labelKey: 'inbox.familyOrders' },
   { family: 'printer', labelKey: 'inbox.familyPrinters' },
 ];
 

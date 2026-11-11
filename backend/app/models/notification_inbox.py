@@ -27,6 +27,8 @@ class Notification(Base):
     body: Mapped[str] = mapped_column(String(500))
     target_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # A string target (a Zoho sales-order id) where an int id does not fit.
+    target_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

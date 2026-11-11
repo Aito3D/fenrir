@@ -6,7 +6,7 @@ import type { InboxItem } from '../api/client';
 import { formatRelativeTime } from '../utils/date';
 import { NOTIFICATION_KINDS, UNKNOWN_KIND } from './notificationKinds';
 
-type Filter = 'all' | 'aito' | 'printer';
+type Filter = 'all' | 'aito' | 'orders' | 'printer';
 
 interface NotificationPanelProps {
   items: InboxItem[];
@@ -25,6 +25,7 @@ interface NotificationPanelProps {
 const FILTER_LABEL: Record<Filter, string> = {
   all: 'inbox.filterAll',
   aito: 'inbox.filterAito',
+  orders: 'inbox.filterOrders',
   printer: 'inbox.filterPrinters',
 };
 
@@ -99,7 +100,7 @@ export function NotificationPanel({
         </header>
         {showChips && (
           <div className="flex gap-1 px-4 pb-2">
-            {(['all', 'aito', 'printer'] as const)
+            {(['all', 'aito', 'orders', 'printer'] as const)
               .filter((f) => f === 'all' || families.includes(f))
               .map((f) => (
                 <button

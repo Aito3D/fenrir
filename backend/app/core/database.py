@@ -7112,6 +7112,9 @@ async def _run_migrations(conn):
             "FOREIGN KEY (revision_id) REFERENCES project_revisions(id) ON DELETE SET NULL",
         )
 
+    # Order Board bell alerts: a string target (the Zoho sales-order id).
+    await _safe_execute(conn, "ALTER TABLE notifications ADD COLUMN target_ref VARCHAR(64)")
+
     # Projects as a PDM, phase 3 (spec §1.6): task -> project link.
     # aito_task_deliveries comes from create_all.
     await _safe_execute(conn, "ALTER TABLE aito_tasks ADD COLUMN linked_project_id INTEGER")

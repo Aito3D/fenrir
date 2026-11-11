@@ -35,6 +35,7 @@ from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_events
 from backend.app.services.aito_poll_watermark import format_books_time
+from backend.app.services.inbox import broadcast_pending
 from backend.app.services.order_board import age_days, compute_board, finished_is_core, order_row
 from backend.app.services.order_board_payment import order_facts, order_payment, quote_number_missing
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
@@ -135,6 +136,7 @@ async def save_settings(db: AsyncSession, settings: OrderBoardSettings) -> None:
     await set_setting(db, "order_board_core_brands", json.dumps(settings.core_brands))
     changed = await recompute(db)
     await db.commit()
+    await broadcast_pending(db)
     if changed:
         await announce_board_change()
     # Sync switched on, or the age limit raised: run a pass now rather than
@@ -244,6 +246,7 @@ async def refresh_order(db: AsyncSession, salesorder_id: str) -> None:
     doc.pending = True  # the next pass re-reads it once the list row has caught up
     changed = await recompute(db)
     await db.commit()
+    await broadcast_pending(db)
     _unconfirmed.discard(salesorder_id)
     if changed:
         await announce_board_change()
@@ -514,17 +517,24 @@ def _line_changes(previous: dict, fetched: dict) -> list[dict]:
     return changes
 
 
-async def _record_fetch_events(db: AsyncSession, salesorder_id: str, previous: dict | None, fetched: dict) -> None:
-    """What a freshly stored sales-order detail shows: a new order, or an edit made in Books (not by Fenrir)."""
+async def _record_fetch_events(
+    db: AsyncSession, salesorder_id: str, previous: dict | None, fetched: dict, last_success: datetime | None = None
+) -> None:
+    """What a freshly stored sales-order detail shows: a new order, or an edit made in Books (not by Fenrir).
+
+    ``last_success`` is the previous pass's success: only an order created after it rings the bell, so the first
+    re-read of orders that were already open (and a first load) records history without alerting."""
     if not await _has_event(db, salesorder_id, "order.received"):
         facts = order_facts(fetched)
         source = "quote" if facts["estimate_id"] else "shopify" if facts["shopify_order"] else "direct"
+        created = _naive_utc(fetched.get("created_time") or "")
         await order_board_events.record(
             db,
             salesorder_id,
             "order.received",
             actor_class="system",
-            occurred_at=_naive_utc(fetched.get("created_time") or "") or _naive_utc(fetched.get("date") or ""),
+            occurred_at=created or _naive_utc(fetched.get("date") or ""),
+            alert=last_success is not None and created is not None and created > last_success,
             detail={
                 "source": source,
                 "reference": facts["reference"],
@@ -688,6 +698,8 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
         (d for d in stored.values() if d.pending),
         key=lambda d: (d.kind != "salesorder", d.header.get("date") or "", d.zoho_id),
     )
+    # Read before this pass sets its own: the bell's "new order" line.
+    last_success = _naive_utc(((await _state(db)).detail or {}).get("last_success_at") or "")
     fetched_count = 0
     for doc in pending[:MAX_DETAILS_PER_PASS]:
         if zoho_service.calls_in_last_minute() >= CALL_CEILING:
@@ -704,8 +716,9 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
         doc.detail = {**fetched, "_fetched_at": _now()}
         doc.pending = False
         if doc.kind == "salesorder":
-            await _observe(db, doc.zoho_id, _record_fetch_events, doc.zoho_id, previous, fetched)
+            await _observe(db, doc.zoho_id, _record_fetch_events, doc.zoho_id, previous, fetched, last_success)
         await db.commit()  # a later failure must not lose what was fetched
+        await broadcast_pending(db)
         if _written_at.get(doc.zoho_id, -1.0) >= began and doc.kind == "salesorder":
             doc.pending = True  # a write began while this copy was being stored: it may predate the write
             await db.commit()
@@ -765,6 +778,7 @@ async def _reload_stock(
     changed = await recompute(db)
     state.detail = {**(state.detail or {}), "last_success_at": _now(), "last_error": None, "last_error_at": None}
     await db.commit()
+    await broadcast_pending(db)
     if changed:
         await announce_board_change()
 
@@ -825,6 +839,11 @@ async def run_loop() -> None:
     """
     global _wake
     _wake = asyncio.Event()
+    try:
+        async with async_session() as db:
+            await order_board_events.backfill_alert_kinds(db)
+    except Exception:
+        logger.warning("Order board: inbox kind backfill failed", exc_info=True)
     while True:
         delay = float(PENDING_PAUSE_SECONDS)
         try:

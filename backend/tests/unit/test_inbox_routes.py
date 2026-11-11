@@ -75,6 +75,7 @@ async def test_inbox_lists_own_rows_newest_first_with_unread_count(async_client,
         "body",
         "target_type",
         "target_id",
+        "target_ref",
         "created_at",
         "read_at",
     }

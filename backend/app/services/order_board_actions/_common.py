@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_events, order_board_sync as sync
+from backend.app.services.inbox import broadcast_pending
 from backend.app.services.order_board_payment import _r
 from backend.app.services.zoho import ZohoNotFound, ZohoRateLimited, zoho_service
 
@@ -95,6 +96,7 @@ async def _log(
             db, salesorder_id, kind, actor_class="user", actor_name=by, changes=changes, detail=detail or None
         )
         await db.commit()
+        await broadcast_pending(db)
     except Exception as e:
         logger.warning("Order board: recording %s failed for %s (%s)", kind, salesorder_id, type(e).__name__)
         with contextlib.suppress(Exception):
