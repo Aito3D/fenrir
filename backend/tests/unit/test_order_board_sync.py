@@ -1161,3 +1161,12 @@ async def test_retainer_fetch_failure_keeps_previous(db_session, zoho):
     doc = (await db_session.execute(sync._stored_query("so1"))).scalar_one()
     assert doc.detail["quantity"] == 2 and doc.detail["_retainers"] == [{**_retainer(300.0), "unused": 300.0}]
     assert zoho.calls["retainers"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_sloppy_unused_amount_reads_as_zero(db_session, zoho):
+    zoho.retainers["e1"] = [_retainer(300.0)]
+    zoho.customer_payments = [_retainer_payment("r1", "n/a"), _retainer_payment("r1", 100.0)]
+    await _synced(db_session, zoho, order(1, estimate_id="e1"))
+    doc = (await db_session.execute(sync._stored_query("so1"))).scalar_one()
+    assert [r["unused"] for r in doc.detail["_retainers"]] == [100.0]

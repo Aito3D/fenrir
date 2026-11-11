@@ -174,12 +174,20 @@ def _outcome(package_number: str = "") -> dict:
 
 async def _credit(db: AsyncSession, salesorder_id: str, number: str, invoice: dict, customer_id: str, cap: float):
     """Apply the customer's unused payments up to ``cap``: the order's own retainers first (the board counts them as
-    this order's payment), then the rest oldest first. Returns the amount applied."""
+    this order's payment), then plain advances, then other orders' retainers. Returns the amount applied."""
     own = {str(r.get("id") or "") for r in (await _stored_order(db, salesorder_id)).get("_retainers") or []}
     own.discard("")
     payments = await zoho_service.list_customer_payments(db, customer_id)
     applied, left = [], round(cap, 2)
-    ranked = sorted(payments, key=lambda p: (str(p.get("retainerinvoice_id") or "") not in own, p.get("date") or ""))
+    # Own retainers, then plain advances, then other orders' retainers (the board counts those as theirs), oldest first.
+    ranked = sorted(
+        payments,
+        key=lambda p: (
+            str(p.get("retainerinvoice_id") or "") not in own,
+            bool(p.get("retainerinvoice_id")),
+            p.get("date") or "",
+        ),
+    )
     for payment in ranked:
         amount = round(min(_num(payment.get("unused_amount")), left), 2)
         if amount > 0 and payment.get("payment_id"):

@@ -1411,6 +1411,61 @@ async def test_the_orders_own_retainer_is_drawn_before_older_payments(db_session
 
 
 @pytest.mark.asyncio
+async def test_plain_advances_go_before_another_orders_retainer(db_session, books):
+    """A's cap is above its own retainer: the rest comes from plain credit, never from B's (older) retainer."""
+    ret = {"total": 0.0, "balance": 0.0, "status": "paid"}
+    books.retainers = {"eA": [{**ret, "id": "rA", "number": "RET-A"}], "eB": [{**ret, "id": "rB", "number": "RET-B"}]}
+    books.unused = [
+        {"payment_id": "pB", "date": "2026-07-01", "retainerinvoice_id": "rB", "unused_amount": 300},
+        {"payment_id": "p0", "date": "2026-09-01", "unused_amount": 200},
+        {"payment_id": "pA", "date": "2026-10-01", "retainerinvoice_id": "rA", "unused_amount": 500},
+    ]
+    books.orders.clear()
+    doc = handover_order(books, advance=1000)
+    doc["estimate_id"] = "eA"
+    books.add({**order(2, age=30, estimate_id="eB", qty=1), "total": 300.0, "contact": doc["contact"]})
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    payment = (await sync.find_board_row(db_session, "so1"))["payment"]
+    assert (payment["retainer"], payment["advance"]) == (500, 200)
+    books.log.clear()
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert _calls(books, "apply_invoice_credits") == [
+        ("inv-1", [{"payment_id": "pA", "amount_applied": 500}, {"payment_id": "p0", "amount_applied": 200}])
+    ]
+    assert outcome["credit_applied"] == 700
+
+
+@pytest.mark.asyncio
+async def test_a_retainer_spent_at_hand_over_is_not_a_payment(db_session, books, monkeypatch):
+    """The re-read after the hand-over reads the retainer fresh: its money moved to the invoice, nothing new came in."""
+    books.retainers = {"eA": [{"id": "rA", "number": "RET-A", "total": 500.0, "balance": 0.0, "status": "paid"}]}
+    books.unused = [{"payment_id": "pA", "date": "2026-10-01", "retainerinvoice_id": "rA", "unused_amount": 500}]
+    books.orders.clear()
+    doc = handover_order(books, advance=500)
+    doc["estimate_id"] = "eA"
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    assert (await sync.find_board_row(db_session, "so1"))["payment"]["retainer"] == 500
+    apply = zoho_service.apply_invoice_credits
+
+    async def apply_and_settle(db, invoice_id, invoice_payments):  # Books lowers the invoice balance too
+        await apply(db, invoice_id, invoice_payments)
+        for invoice in books.orders["so1"]["invoices"]:
+            if invoice["invoice_id"] == invoice_id:
+                invoice["total"] = 1000.0  # the two boxed units at 500
+                invoice["balance"] = 1000.0 - sum(p["amount_applied"] for p in invoice_payments)
+
+    monkeypatch.setattr(zoho_service, "apply_invoice_credits", apply_and_settle)
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert (outcome["credit_applied"], outcome["error"]) == (500, None)
+    payment = (await sync.find_board_row(db_session, "so1"))["payment"]
+    assert (payment["retainer"], payment["invoice_paid"]) == (0, 500)
+    received = select(OrderBoardEvent).where(OrderBoardEvent.kind == "payment.received")
+    assert (await db_session.execute(received)).scalars().all() == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("advance", "apply_credit"), [(600, False), (0, True)])
 async def test_no_credit_call_when_unticked_or_no_advance(db_session, books, advance, apply_credit):
     await _ready(db_session, books, advance=advance)

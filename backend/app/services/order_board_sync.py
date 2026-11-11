@@ -244,7 +244,8 @@ async def refresh_order(db: AsyncSession, salesorder_id: str) -> None:
         raise OrderNotStored(salesorder_id)
     fetched = await zoho_service.get_salesorder(db, salesorder_id)
     _written_at[salesorder_id] = time.monotonic()
-    doc.detail = {**fetched, "_fetched_at": _now(), **_kept_retainers(doc.detail)}
+    # Fresh retainers: a write here (hand-over, invoice) may just have spent one; a stale unused amount would count twice.
+    doc.detail = {**fetched, "_fetched_at": _now(), **await _retainers(db, fetched, doc.detail, {})}
     doc.pending = True  # the next pass re-reads it once the list row has caught up
     changed = await recompute(db)
     await db.commit()
@@ -746,7 +747,11 @@ async def _retainers(db: AsyncSession, detail: dict, previous: dict | None, paym
     unused: dict[str, float] = {}
     for p in payments.get(customer_id) or []:
         key = str(p.get("retainerinvoice_id") or "")
-        unused[key] = unused.get(key, 0.0) + float(p.get("unused_amount") or 0)
+        try:
+            amount = float(p.get("unused_amount") or 0)
+        except (TypeError, ValueError):  # one sloppy row must not abort the pass
+            amount = 0.0
+        unused[key] = unused.get(key, 0.0) + amount
     return {"_retainers": [{**r, "unused": round(unused.get(r["id"], 0.0), 2)} for r in retainers]}
 
 
