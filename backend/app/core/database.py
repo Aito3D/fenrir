@@ -4497,7 +4497,8 @@ async def _run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_region VARCHAR(10)")
 
     # Cleanup: Remove obsolete settings keys that are no longer used
-    obsolete_keys = ["slicer_binary_path"]
+    # Fork: pushcut_sms_url held a Pushcut token; the browser now sends through a local Mac relay.
+    obsolete_keys = ["slicer_binary_path", "pushcut_sms_url"]
     for key in obsolete_keys:
         await conn.execute(text("DELETE FROM settings WHERE key = :key"), {"key": key})
 

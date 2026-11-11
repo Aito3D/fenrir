@@ -23,7 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.api.routes import auth as auth_routes
 from backend.app.api.routes.auth import _get_client_ip
 from backend.app.core import database as core_database
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_any_permission_if_auth_enabled
+from backend.app.core.auth import (
+    RequireAdminIfAuthEnabled,
+    RequirePermissionIfAuthEnabled,
+    require_any_permission_if_auth_enabled,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.websocket import ws_manager
@@ -59,7 +63,6 @@ from backend.app.schemas.aito import (
     AitoNoteCreate,
     AitoPaymentLinkView,
     AitoPickupMessageResponse,
-    AitoPickupSmsRequest,
     AitoPickupSmsResponse,
     AitoProjectCreate,
     AitoProjectImport,
@@ -177,12 +180,6 @@ from backend.app.services.openrouter import (
     pickup_message,
     proofread_text,
     summarize_tasks,
-)
-from backend.app.services.pushcut import (
-    PushcutNotConfiguredError,
-    PushcutUnreachable,
-    PushcutUpstreamError,
-    send_sms_notification,
 )
 from backend.app.services.zoho import (
     ZohoNotConfiguredError,
@@ -2025,11 +2022,9 @@ _FORCE_SYNC_DETAIL = "Too many force syncs. Please wait a moment and try again."
 # far past any human pace while still bounding an id-scanning loop.
 _CLIENT_RATING_MAX_CALLS = 60
 _CLIENT_RATING_DETAIL = "Too many client rating requests. Please wait a moment and try again."
-# T-025: the pickup SMS relay. The draft above it is throttled because it is
-# billed; the SEND is throttled because it pushes a caller-supplied body to
-# Pushcut and from there to a real phone. A handful an hour is the human
-# pace, so ten a minute leaves room for a retry or two and nothing like a
-# flood.
+# T-025: the draft above is throttled because it is billed; recording a sent
+# pickup SMS is throttled to bound timeline spam. Ten a minute is far past
+# the human pace.
 _PICKUP_SMS_MAX_CALLS = 10
 _PICKUP_SMS_DETAIL = "Too many pickup SMS sends. Please wait a moment and try again."
 # T-064: the quote and invoice emails. Each send mails the client from the
@@ -3155,8 +3150,7 @@ async def get_invoice_email(
     )
 
 
-# T-064: the quote and invoice emails' duplicate-send guard, the pickup SMS's
-# (_recent_sms, T-025/T-043/T-044) applied to Books' email. A second tap — or
+# T-064: the quote and invoice emails' duplicate-send guard. A second tap — or
 # the reflex retry after an answer the operator read as a failure — must not
 # mail the client the same document twice. Same one-minute window, same
 # lifecycle: armed before the send, kept on success and on ZohoUnreachable
@@ -3187,7 +3181,7 @@ def _email_guard_key_or_409(kind: str, project_id: int, document_id: str, recipi
     """Prune the guard and return this send's key, raising 409 if the same
     document already went (or may have gone) to the same address inside the
     window. Reads the clock through the module's own `time` name, like
-    _sms_guard_key_or_409, so a test can rebind it to a fake clock."""
+    _check_rate_limit, so a test can rebind it to a fake clock."""
     now = time.monotonic()
     key = (kind, project_id, document_id, recipient.lower())
     if _EMAIL_GUARD.is_recent(key, now):
@@ -5245,98 +5239,22 @@ async def generate_pickup_message(
     return AitoPickupMessageResponse(message=message, model=model)
 
 
-# T-030: the two ways the push below can fail are NOT the same answer, and
-# send_pickup_sms reports them differently. A refusal Pushcut actually gave
-# (no URL configured, a non-2xx) is a clean failure — nothing was pushed, so
-# retry freely. A transport failure (PushcutUnreachable: read timeout, connect
-# refused) says nothing about what Pushcut did, and a POST it received but did
-# not answer within its 8s timeout has already put the notification on the
-# phone; that case answers 502 with _SMS_UNREACHABLE_DETAIL ("may already have
-# been pushed") instead of the raw error and writes NO project.sms.sent event,
-# because no event may claim a send nobody confirmed.
-#
-# Kept out of the docstring on purpose: FastAPI publishes that as the
-# endpoint's OpenAPI description, and this is how the handler works rather
-# than what a caller must know.
-#
-# And a second tap must not push a second real SMS to the client. The
-# window is deliberately short — a minute is long enough to cover the reflex
-# retry after an answer the operator read as a failure, and short enough that
-# a genuine "send it again, they never got it" a moment later is only delayed,
-# never blocked.
-_SMS_DUPLICATE_WINDOW_S = 60.0
-# (project_id, stripped message) -> time.monotonic() of the last push that MAY
-# have reached the phone: one still in flight, a confirmed success, or a
-# transport failure that says nothing about what Pushcut did. A clean refusal
-# (not configured, non-2xx) drops the key again, so an honest retry after a
-# real failure still goes through.
-# Pruned on every call (aito_manual_payments' sibling guard does the same):
-# this key carries a caller-supplied message, so an unevicted dict would grow
-# with every distinct body ever sent.
-_SMS_GUARD = DuplicateSendGuard(_SMS_DUPLICATE_WINDOW_S)
-_recent_sms = _SMS_GUARD.entries
-# Plain-string details, the module's shape for a message with no client-side
-# branching to do — except for their LEADING words, which SmsPickupModal
-# matches to pick its toast. Reword them with the modal, not alone.
-_SMS_DUPLICATE_DETAIL = (
-    "Already sent — this message went to the phone less than a minute ago; check it before sending again"
-)
-_SMS_UNREACHABLE_DETAIL = (
-    "Pushcut did not answer in time — the notification may already have been pushed; "
-    "check the phone before sending again"
-)
-
-
-def _reset_recent_sms() -> None:
-    """Test hook: the guard is module state, so a test that fills it must be
-    able to empty it again (the suite's own fixtures call this)."""
-    _SMS_GUARD.clear()
-
-
-def _sms_guard_key_or_409(project_id: int, message: str) -> tuple[int, str]:
-    """Prune the guard and return this send's key, raising 409 if the same
-    message already went (or may have gone) to the phone inside the window.
-
-    Reads the clock through the module's own `time` name for the same reason
-    _check_rate_limit does — so a test can rebind it to a fake clock.
-    """
-    now = time.monotonic()
-    key = (project_id, message.strip())
-    if _SMS_GUARD.is_recent(key, now):
-        raise HTTPException(status_code=409, detail=_SMS_DUPLICATE_DETAIL)
-    return key
-
-
 @router.post("/{project_id}/pickup-sms", response_model=AitoPickupSmsResponse)
 async def send_pickup_sms(
     project_id: int,
-    payload: AitoPickupSmsRequest,
     request: Request,
     db: AsyncSession = Depends(get_db, scope="function"),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    # Admins only (user decision 2026-11-11): it records an SMS sent from the shop's number.
+    current_user: User | None = RequireAdminIfAuthEnabled(),
 ):
-    """Relay the (possibly edited) pickup SMS to the user's phone via Pushcut.
+    """Record a pickup SMS the browser already sent through the relay on the
+    operator's Mac (scripts/sms_relay_mac.py, reached at localhost from the
+    page). The server never sends the SMS itself.
 
-    Deliberately does NOT set the contacted mark: Pushcut accepting the
-    notification proves it reached the phone, not that the SMS left it — the
-    user still has to tap accept there, and they record the contact by hand
-    once it truly went out. The event is written all the same, because "we
-    pushed an SMS to the phone at 14:02" is exactly what the timeline is for.
-
-    Mirrors send_invoice_email's guard on the record()+commit() pair: by the
-    time that runs, Pushcut has already pushed the notification to the
-    phone, so a SQLAlchemyError there (e.g. "database is locked" from the
-    aito_quote_sync worker writing the same SQLite file) must never 500 —
-    that would read as the send having failed and invite a duplicate tap
-    that pushes a second real SMS. project.id is read as a local (project_pk)
-    before this, not after: Session.rollback() expires every attribute on
-    project regardless of expire_on_commit, and reading one afterwards from
-    async code raises MissingGreenlet rather than lazily re-fetching.
+    Admin only. Deliberately does NOT set the contacted mark: the user
+    records the contact by hand.
     """
-    # T-025: its own bucket, checked before any lookup — like the draft
-    # sibling's AI limiter and the counter-payment routes'. Past the cap
-    # nothing is pushed to Pushcut, so a loop cannot turn into a stream of
-    # real SMS.
+    # T-025: bounds a loop to a handful of timeline events.
     _check_rate_limit(
         request,
         current_user,
@@ -5345,101 +5263,20 @@ async def send_pickup_sms(
         detail=_PICKUP_SMS_DETAIL,
     )
     project = await _get_active_project_or_404(db, project_id)
-    await _finished_or_409(db, project)
     phone = (project.client_phone or "").strip()
     if not phone:
         raise HTTPException(status_code=409, detail="The project's client has no phone number")
-    project_pk = project.id
-    key = _sms_guard_key_or_409(project_pk, payload.message)
-    # T-043: armed BEFORE the push, not after it. Pushcut's POST runs at an 8s
-    # timeout, and a key written only on the way out leaves that whole window
-    # unguarded: the operator whose request hangs — or whose browser or proxy
-    # drops the answer — taps Send again, passes the check above, and a SECOND
-    # real SMS lands on the client's phone, the exact reflex retry this guard
-    # exists to refuse. No lock is needed even though the handler is async: the
-    # guard is single-process module state and nothing is awaited between the
-    # check and this assignment, so no other request can interleave there.
-    # Everything that can refuse the send outright (the rate limit, the 404,
-    # the unfinished-work 409, the no-phone 409) runs above, so a request that
-    # never reaches Pushcut never arms the key. Un-armed again below on a clean
-    # refusal, or on any other exception the send itself raises (T-044);
-    # success and the ambiguous PushcutUnreachable keep it.
-    _SMS_GUARD.arm(key, time.monotonic())
-    try:
-        await send_sms_notification(
-            db,
-            phone=phone,
-            text=payload.message,
-            title=f"SMS — {project.client_name}" if project.client_name else "SMS client",
-        )
-    except PushcutNotConfiguredError:
-        # A clean refusal Pushcut itself gave: nothing was pushed, so the key
-        # armed above is dropped again and an honest retry — once the URL is
-        # configured — goes straight through.
-        _SMS_GUARD.release(key)
-        raise HTTPException(status_code=409, detail="Pushcut is not configured") from None
-    except PushcutUnreachable as e:
-        # Caught BEFORE its PushcutUpstreamError parent below — the ambiguous
-        # case. The key stays armed (from before the push) so an immediate
-        # identical retry is refused, but the send is deliberately unrecorded
-        # in the timeline: no event may claim a send nobody confirmed.
-        logger.warning(
-            "Aito pickup SMS for project %s got no answer from Pushcut — the notification may "
-            "already be on the phone, so no project.sms.sent event was written: %s",
-            project_id,
-            e,
-        )
-        raise HTTPException(status_code=502, detail=_SMS_UNREACHABLE_DETAIL) from e
-    except PushcutUpstreamError as e:
-        # Pushcut answered and refused: nothing was pushed, so the key armed
-        # above is dropped and an honest retry is allowed straight away.
-        _SMS_GUARD.release(key)
-        raise HTTPException(status_code=502, detail=str(e)) from e
-    except Exception:
-        # T-044: anything else raised by the send itself (a bug, a DB error
-        # building the title argument above, ...) is not one of Pushcut's own
-        # answers, so it carries none of PushcutUnreachable's ambiguity about
-        # whether the phone got it — nothing here is known to have reached
-        # Pushcut. Un-arm the key and let the exception propagate unchanged
-        # (still a 500), so an operator's honest retry after that 500 isn't
-        # refused as "Already sent" for the rest of the window. Scoped to this
-        # call only: an exception raised AFTER a successful send (recording
-        # the event, the commit below) must NOT land here and must NOT un-arm
-        # the key, because the SMS really did go out.
-        _SMS_GUARD.release(key)
-        raise
-    # No re-arm here: the key written before the push already covers the
-    # success path, and the window is deliberately measured from the moment
-    # the push started rather than the moment it came back.
-    try:
-        await record(
-            db,
-            project_pk,
-            "project.sms.sent",
-            actor_class="user",
-            actor_name=_actor(current_user),
-            subject_type="project",
-            subject_id=project_pk,
-            detail={"phone": phone},
-        )
-        await db.commit()
-    except SQLAlchemyError as e:
-        # The SMS is already on the phone through Pushcut, so nothing past
-        # this point may 500 — see the docstring. Logged loudly because this
-        # is the one path where a real send leaves no project.sms.sent row.
-        logger.error(
-            "Aito pickup SMS for project %s WAS SENT via Pushcut but recording the local "
-            "project.sms.sent event failed — no event exists for this send: %s",
-            project_id,
-            e,
-        )
-        # Guarded, not a bare `await db.rollback()`: if the rollback itself
-        # raises (SQLite lock, cancelled task, whatever), letting that
-        # propagate would 500 anyway and defeat the point of catching
-        # SQLAlchemyError above it. Swallowing it is safe — the only risk of
-        # an unrolled-back session is get_db's own trailing commit raising
-        # PendingRollbackError, which this already prevents.
-        await _rollback_quietly(db)
+    await record(
+        db,
+        project.id,
+        "project.sms.sent",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+        detail={"phone": phone},
+    )
+    await db.commit()
     return AitoPickupSmsResponse()
 
 

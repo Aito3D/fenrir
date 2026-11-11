@@ -79,6 +79,9 @@ async def aito_tokens(db_session):
 # json_body). `route_name` is the FastAPI route name (the handler's function
 # name), used only in assertion failure messages here — unlike
 # test_aito_routes.py's per-route helpers, nothing is overridden by name.
+# Gated on RequireAdminIfAuthEnabled instead of an aito permission.
+_ADMIN_ONLY_ROUTE_NAMES = {"send_pickup_sms"}
+
 WRITE_ROUTES = [
     ("create_project", "post", "/api/v1/aito/", {"description": "x", "client_id": "c1", "client_name": "C"}),
     ("summarize_project", "post", "/api/v1/aito/summarize", {"tasks": [{"title": "t"}]}),
@@ -174,8 +177,13 @@ def _is_permission_gate(dep_call) -> bool:
     imported from there: that file imports `aito_tokens` FROM this one, and
     importing back would just be a needless coupling for one tiny helper)."""
     qualname = getattr(dep_call, "__qualname__", "")
-    return qualname.startswith("require_permission_if_auth_enabled.") or qualname.startswith(
-        "require_any_permission_if_auth_enabled."
+    return qualname.startswith(
+        (
+            "require_permission_if_auth_enabled.",
+            "require_any_permission_if_auth_enabled.",
+            # send_pickup_sms is admin-only.
+            "require_admin_if_auth_enabled.",
+        )
     )
 
 
@@ -314,7 +322,8 @@ async def test_write_route_rejects_a_caller_with_no_aito_permission(
         kwargs["json"] = body
     r = await getattr(async_client, method)(url, **kwargs)
     assert r.status_code == 403, f"{route_name} ({method.upper()} {url}) as {token_key}: got {r.status_code}"
-    assert "Missing required permissions" in r.json()["detail"]
+    expected = "Requires admin role" if route_name in _ADMIN_ONLY_ROUTE_NAMES else "Missing required permissions"
+    assert expected in r.json()["detail"]
 
 
 # ------------------------------------------------------ no outbound calls
@@ -356,23 +365,27 @@ async def test_send_invoice_email_makes_no_outbound_call_when_rejected(async_cli
 
 
 @pytest.mark.asyncio
-async def test_send_pickup_sms_makes_no_outbound_call_when_rejected(async_client, aito_tokens, monkeypatch):
-    from backend.app.api.routes import aito as aito_routes
+async def test_send_pickup_sms_refuses_a_non_admin_with_aito_update(async_client, db_session):
+    """Recording a sent SMS is admin-only: aito:update (an operator) is not enough."""
+    from backend.app.core.auth import create_access_token, get_password_hash
+    from backend.app.models.group import Group
+    from backend.app.models.settings import Settings
+    from backend.app.models.user import User
 
-    calls = []
-
-    async def fake_send_sms(*a, **k):
-        calls.append("send_sms_notification")
-
-    monkeypatch.setattr(aito_routes, "send_sms_notification", fake_send_sms)
-
+    db_session.add(Settings(key="auth_enabled", value="true"))
+    group = Group(name="sms-operator", permissions=[Permission.AITO_UPDATE.value], is_system=False)
+    db_session.add(group)
+    await db_session.flush()
+    user = User(username="sms-operator", password_hash=get_password_hash("password"), is_active=True)
+    user.groups.append(group)
+    db_session.add(user)
+    await db_session.commit()
     r = await async_client.post(
         f"/api/v1/aito/{_MISSING_ID}/pickup-sms",
         json={"message": "hello"},
-        headers={"Authorization": f"Bearer {aito_tokens['none']}"},
+        headers={"Authorization": f"Bearer {create_access_token(data={'sub': user.username})}"},
     )
     assert r.status_code == 403
-    assert calls == []
 
 
 @pytest.mark.asyncio

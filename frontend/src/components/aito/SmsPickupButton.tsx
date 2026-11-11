@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MessageSquareText } from 'lucide-react';
 import { type AitoProject } from '../../api/client';
+import { useAuth } from '../../contexts/AuthContext';
 import { headerPillRadiusCls } from './panelTypography';
 import { SmsPickupModal } from './SmsPickupModal';
 
@@ -23,12 +24,16 @@ export const SMS_PICKUP_ENABLED = true;
  *
  *  Disabled — not hidden — without a phone number: hiding it would make "why
  *  is there no SMS button on this card" a support question, while a disabled
- *  pill with its hint in the title says exactly what is missing. */
+ *  pill with its hint in the title says exactly what is missing.
+ *
+ *  Hidden for non-admins: the backend only lets admins send the SMS. */
 export function SmsPickupButton({ project }: { project: AitoProject }) {
   const { t } = useTranslation();
+  const { isAdmin } = useAuth();
   const [open, setOpen] = useState(false);
   const hasPhone = (project.client_phone ?? '').trim() !== '';
   const enabled = SMS_PICKUP_ENABLED && hasPhone;
+  if (!isAdmin) return null;
 
   return (
     <>

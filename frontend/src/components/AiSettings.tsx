@@ -36,9 +36,6 @@ export function AiSettings() {
 
   // Write-only secret fields — always start empty (server returns "").
   const [apiKey, setApiKey] = useState('');
-  // The Pushcut webhook URL embeds its secret token, so it gets the same
-  // write-only treatment as the API key beside it.
-  const [pushcutUrl, setPushcutUrl] = useState('');
 
   // Follow-up thresholds — prefilled from settings, kept as strings for the inputs.
   const [quoteDays, setQuoteDays] = useState('5');
@@ -72,7 +69,6 @@ export function AiSettings() {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       showToast(t('settings.toast.settingsSaved'), 'success');
       setApiKey('');
-      setPushcutUrl('');
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -84,7 +80,6 @@ export function AiSettings() {
       openrouter_model: model.trim() || DEFAULT_MODEL,
       // Omit an untouched secret so saving never wipes the stored one.
       ...(apiKey.trim() ? { openrouter_api_key: apiKey.trim() } : {}),
-      ...(pushcutUrl.trim() ? { pushcut_sms_url: pushcutUrl.trim() } : {}),
       aito_followup_quote_days: clampDays(quoteDays, settings?.aito_followup_quote_days ?? 5),
       aito_followup_pickup_days: clampDays(pickupDays, settings?.aito_followup_pickup_days ?? 7),
       aito_followup_link_days: clampDays(linkDays, settings?.aito_followup_link_days ?? 3),
@@ -133,18 +128,6 @@ export function AiSettings() {
         </div>
 
         <p className="text-sm text-bambu-gray">{t('settings.openrouterModelHint')}</p>
-
-        <div>
-          <label className="block text-sm text-bambu-gray mb-1">{t('settings.pushcutUrl')}</label>
-          <input
-            type="password"
-            value={pushcutUrl}
-            onChange={(e) => setPushcutUrl(e.target.value)}
-            placeholder={t('settings.pushcutUrlHint')}
-            className={INPUT}
-          />
-          <p className="text-sm text-bambu-gray mt-1">{t('settings.pushcutUrlDescription')}</p>
-        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>

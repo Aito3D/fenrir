@@ -136,8 +136,8 @@ KINDS: dict[str, str] = {
     # pair — see `contact_mark_kind`.
     "project.shipped.set": "story",
     "project.shipped.cleared": "story",
-    # The pickup SMS was handed to the user's phone (Pushcut accepted the
-    # notification) — not proof the SMS left the phone, which is why sending
+    # The pickup SMS went out through the relay on the operator's Mac
+    # (Messages accepted it) — not proof it reached the client's phone, which is why sending
     # one does NOT set the contacted mark. Story depth for the same reason
     # the contacted pair has it: it is part of "who told them, and when".
     "project.sms.sent": "story",

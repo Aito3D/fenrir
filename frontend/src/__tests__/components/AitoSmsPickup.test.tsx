@@ -4,7 +4,9 @@ import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { SmsPickupButton, SMS_PICKUP_ENABLED } from '../../components/aito/SmsPickupButton';
 import { SmsPickupModal } from '../../components/aito/SmsPickupModal';
-import { api, ApiError } from '../../api/client';
+import { http, HttpResponse } from 'msw';
+import { server } from '../mocks/server';
+import { api, ApiError, setAuthToken } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
 const project = {
@@ -23,7 +25,26 @@ const DRAFT = {
 };
 
 describe('SmsPickupButton', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    setAuthToken(null);
+  });
+
+  it('is hidden from a non-admin, who the backend would refuse anyway', async () => {
+    setAuthToken('test-token', 'session');
+    server.use(
+      http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+      http.get('*/api/v1/auth/me', () =>
+        HttpResponse.json({ id: 2, username: 'operator', is_admin: false, permissions: ['aito:read', 'aito:update'] }),
+      ),
+    );
+    const meLoaded = new Promise<void>((resolve) => server.events.on('response:mocked', ({ request }) => {
+      if (request.url.includes('/auth/me')) resolve();
+    }));
+    render(<SmsPickupButton project={project} />);
+    await meLoaded;
+    await waitFor(() => expect(screen.queryByRole('button', { name: /pickup sms/i })).not.toBeInTheDocument());
+  });
 
   it('is disabled — with the reason in its title — when the client has no phone', () => {
     render(<SmsPickupButton project={{ ...project, client_phone: null } as unknown as AitoProject} />);
@@ -48,22 +69,54 @@ describe('SmsPickupButton', () => {
   });
 });
 
+const RELAY = 'http://localhost:8765/send';
+
+/** Stands in for scripts/sms_relay_mac.py; records what the page posted. */
+function relayAnswers(response: () => Response) {
+  const posted: unknown[] = [];
+  server.use(
+    http.post(RELAY, async ({ request }) => {
+      posted.push(await request.json());
+      return response();
+    }),
+  );
+  return posted;
+}
+
+async function openAndSend() {
+  vi.spyOn(api, 'generateAitoPickupMessage').mockResolvedValue(DRAFT);
+  const user = userEvent.setup();
+  render(<SmsPickupModal project={project} onClose={() => {}} />);
+  await screen.findByDisplayValue(DRAFT.message);
+  await user.click(screen.getByRole('button', { name: /send sms/i }));
+}
+
 describe('SmsPickupModal', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('sends the EDITED text, not the generated draft', async () => {
+  it('sends the EDITED text through the local relay, then records it', async () => {
     vi.spyOn(api, 'generateAitoPickupMessage').mockResolvedValue(DRAFT);
-    const send = vi.spyOn(api, 'sendAitoPickupSms').mockResolvedValue({ sent: true });
+    const posted = relayAnswers(() => new HttpResponse('sent'));
+    const record = vi.spyOn(api, 'recordAitoPickupSms').mockResolvedValue({ sent: true });
     const user = userEvent.setup();
     render(<SmsPickupModal project={project} onClose={() => {}} />);
 
     const textarea = await screen.findByLabelText(/message/i);
     await user.clear(textarea);
     await user.type(textarea, 'Ia Ora na, c’est prêt. Aito3D');
-    await user.click(screen.getByRole('button', { name: /send to phone/i }));
+    await user.click(screen.getByRole('button', { name: /send sms/i }));
 
-    await waitFor(() => expect(send).toHaveBeenCalledWith(12, 'Ia Ora na, c’est prêt. Aito3D'));
-    expect(await screen.findByText(/notification sent to your phone/i)).toBeInTheDocument();
+    expect(await screen.findByText('SMS sent')).toBeInTheDocument();
+    expect(posted).toEqual([{ phone: '87 12 34 56', text: 'Ia Ora na, c’est prêt. Aito3D' }]);
+    expect(record).toHaveBeenCalledWith(12);
+  });
+
+  it('a failed record after a real send still reports the SMS as sent', async () => {
+    // A retry would text the client twice; only the timeline entry is lost.
+    relayAnswers(() => new HttpResponse('sent'));
+    vi.spyOn(api, 'recordAitoPickupSms').mockRejectedValue(new ApiError('boom', 500));
+    await openAndSend();
+    expect(await screen.findByText('SMS sent')).toBeInTheDocument();
   });
 
   it('regenerate asks for a fresh draft and replaces the text', async () => {
@@ -93,75 +146,33 @@ describe('SmsPickupModal', () => {
     expect(await screen.findByText(/could not draft the message/i)).toBeInTheDocument();
   });
 
-  // T-030: a failed Send is no longer one outcome. The backend tells a refusal
-  // Pushcut gave apart from a transport failure that may already have put the
-  // notification on the phone, and from a refused duplicate — and each gets its
-  // own toast, because "it failed" and "it may have gone twice" are different
-  // things to do next.
-  it('a push Pushcut never answered warns that the SMS may already have gone', async () => {
-    vi.spyOn(api, 'generateAitoPickupMessage').mockResolvedValue(DRAFT);
-    vi.spyOn(api, 'sendAitoPickupSms').mockRejectedValue(
-      new ApiError(
-        'Pushcut did not answer in time — the notification may already have been pushed; check the phone before sending again',
-        502,
-      ),
-    );
-    const user = userEvent.setup();
-    render(<SmsPickupModal project={project} onClose={() => {}} />);
-
-    await screen.findByDisplayValue(DRAFT.message);
-    await user.click(screen.getByRole('button', { name: /send to phone/i }));
-
-    expect(await screen.findByText(/the sms may already have gone/i)).toBeInTheDocument();
-    expect(screen.queryByText(/could not send the notification/i)).not.toBeInTheDocument();
-    // The modal stays open with the text, so the sender can check the phone
-    // and decide — not lose what they were about to send.
+  it('no relay on this machine says so, records nothing, and keeps the text', async () => {
+    relayAnswers(() => HttpResponse.error());
+    const record = vi.spyOn(api, 'recordAitoPickupSms');
+    await openAndSend();
+    expect(await screen.findByText(/sms relay not reachable/i)).toBeInTheDocument();
+    expect(record).not.toHaveBeenCalled();
     expect(screen.getByDisplayValue(DRAFT.message)).toBeInTheDocument();
   });
 
-  it('a refused duplicate says the message already went, not that sending failed', async () => {
-    vi.spyOn(api, 'generateAitoPickupMessage').mockResolvedValue(DRAFT);
-    vi.spyOn(api, 'sendAitoPickupSms').mockRejectedValue(
-      new ApiError(
-        'Already sent — this message went to the phone less than a minute ago; check it before sending again',
-        409,
-      ),
-    );
-    const user = userEvent.setup();
-    render(<SmsPickupModal project={project} onClose={() => {}} />);
-
-    await screen.findByDisplayValue(DRAFT.message);
-    await user.click(screen.getByRole('button', { name: /send to phone/i }));
-
-    expect(await screen.findByText(/already went to the phone/i)).toBeInTheDocument();
-    expect(screen.queryByText(/could not send the notification/i)).not.toBeInTheDocument();
+  it('a Messages timeout warns that the SMS may already have gone', async () => {
+    relayAnswers(() => new HttpResponse('Messages did not answer', { status: 504 }));
+    const record = vi.spyOn(api, 'recordAitoPickupSms');
+    await openAndSend();
+    expect(await screen.findByText(/the sms may already have gone/i)).toBeInTheDocument();
+    expect(screen.queryByText(/could not send the sms/i)).not.toBeInTheDocument();
+    // No event may claim a send nobody confirmed.
+    expect(record).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue(DRAFT.message)).toBeInTheDocument();
   });
 
-  it('another 409 on this route keeps the generic failure toast', async () => {
-    // Only the guard's own detail means "already sent" — the route's other
-    // 409s (no phone, not finished, Pushcut unconfigured) must not read as it.
-    vi.spyOn(api, 'generateAitoPickupMessage').mockResolvedValue(DRAFT);
-    vi.spyOn(api, 'sendAitoPickupSms').mockRejectedValue(new ApiError('Pushcut is not configured', 409));
-    const user = userEvent.setup();
-    render(<SmsPickupModal project={project} onClose={() => {}} />);
-
-    await screen.findByDisplayValue(DRAFT.message);
-    await user.click(screen.getByRole('button', { name: /send to phone/i }));
-
-    expect(await screen.findByText(/could not send the notification/i)).toBeInTheDocument();
+  it('a refusal from Messages keeps the generic failure toast and the text', async () => {
+    relayAnswers(() => new HttpResponse('Messages refused: no SMS account', { status: 502 }));
+    const record = vi.spyOn(api, 'recordAitoPickupSms');
+    await openAndSend();
+    expect(await screen.findByText(/could not send the sms/i)).toBeInTheDocument();
     expect(screen.queryByText(/may already have gone/i)).not.toBeInTheDocument();
-  });
-
-  it('a Send that fails keeps the modal open with the text intact', async () => {
-    vi.spyOn(api, 'generateAitoPickupMessage').mockResolvedValue(DRAFT);
-    vi.spyOn(api, 'sendAitoPickupSms').mockRejectedValue(new Error('502'));
-    const user = userEvent.setup();
-    render(<SmsPickupModal project={project} onClose={() => {}} />);
-
-    await screen.findByDisplayValue(DRAFT.message);
-    await user.click(screen.getByRole('button', { name: /send to phone/i }));
-
-    expect(await screen.findByText(/could not send the notification/i)).toBeInTheDocument();
+    expect(record).not.toHaveBeenCalled();
     expect(screen.getByDisplayValue(DRAFT.message)).toBeInTheDocument();
   });
 });

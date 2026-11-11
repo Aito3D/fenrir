@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Keeps scripts/sms_relay_mac.py running on the shop Mac (starts at login, restarts on crash).
+  1. Copy scripts/sms_relay_mac.py to ~/Library/Application Support/FenrirSmsRelay/
+     (launchd cannot read ~/Documents) and replace CHANGE_ME below with your user name.
+  2. cp scripts/sms_relay_mac.plist ~/Library/LaunchAgents/fr.aito3d.smsrelay.plist
+  3. launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/fr.aito3d.smsrelay.plist
+  Logs: /tmp/fr.aito3d.smsrelay.log. It must be a LaunchAgent (user session), not a
+  LaunchDaemon: Messages only runs inside a logged-in user's session.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>fr.aito3d.smsrelay</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/CHANGE_ME/Library/Application Support/FenrirSmsRelay/sms_relay_mac.py</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/tmp/fr.aito3d.smsrelay.log</string>
+  <key>StandardErrorPath</key><string>/tmp/fr.aito3d.smsrelay.log</string>
+</dict>
+</plist>

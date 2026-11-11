@@ -127,8 +127,6 @@ SETTINGS_SECRETS: dict[str, tuple[str, ...]] = {
     "zoho_client_secret": ("zoho_accounts_url", "zoho_base_url"),
     "zoho_refresh_token": ("zoho_accounts_url", "zoho_base_url"),
     "openrouter_api_key": (),
-    # A Pushcut webhook URL carries its secret in the URL itself.
-    "pushcut_sms_url": (),
     "heimdall_api_token": ("heimdall_base_url",),
 }
 

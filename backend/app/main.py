@@ -13616,6 +13616,8 @@ async def security_headers_middleware(request, call_next):
     # Notes:
     #   - 'unsafe-inline' for style-src: React and UI libs inject inline styles at runtime.
     #   - connect-src ws:/wss:: MQTT/printer WebSocket connections.
+    #   - connect-src http://localhost:8765: fork — the Aito pickup SMS relay on the
+    #     operator's Mac (scripts/sms_relay_mac.py), called from the page.
     #   - img-src data: / blob:: base64 thumbnails and Blob-URL timelapse previews.
     #   - media-src blob:: timelapse video player uses Blob URLs.
     #   - font-src data:: some icon fonts are embedded as data URIs.
@@ -13697,7 +13699,7 @@ async def security_headers_middleware(request, call_next):
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: blob:; "
             "media-src 'self' blob:; "
-            "connect-src 'self' ws: wss:; "
+            "connect-src 'self' ws: wss: http://localhost:8765; "
             "font-src 'self' data:; "
             "object-src 'none'; "
             "base-uri 'self'; "

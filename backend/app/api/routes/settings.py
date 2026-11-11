@@ -346,9 +346,6 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False, m
     # OpenRouter API key is write-only — never returned to any caller.
     settings_dict["openrouter_api_key"] = ""
 
-    # The Pushcut URL embeds its secret token — write-only, like the above.
-    settings_dict["pushcut_sms_url"] = ""
-
     # The Heimdall API token is the whole credential — write-only, like the above.
     settings_dict["heimdall_api_token"] = ""
 

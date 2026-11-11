@@ -1833,8 +1833,6 @@ export interface AppSettings {
   // OpenRouter AI integration
   openrouter_api_key: string;
   openrouter_model: string;
-  // Pushcut pickup-SMS relay (write-only — the URL embeds its secret token)
-  pushcut_sms_url: string;
   // Heimdall payment bridge (token is write-only)
   heimdall_base_url: string;
   heimdall_api_token: string;
@@ -9748,11 +9746,9 @@ export const api = {
     request<AitoPickupMessageResponse>(`/aito/${id}/pickup-message`, {
       method: 'POST',
     }),
-  sendAitoPickupSms: (id: number, message: string) =>
-    request<AitoPickupSmsResponse>(`/aito/${id}/pickup-sms`, {
-      method: 'POST',
-      body: JSON.stringify({ message }),
-    }),
+  // Records an SMS the browser already sent through the local relay.
+  recordAitoPickupSms: (id: number) =>
+    request<AitoPickupSmsResponse>(`/aito/${id}/pickup-sms`, { method: 'POST' }),
   getAitoProjectCodes: () => request<Record<string, string[]>>('/aito/project-codes'),
   getOrderProjectLinks: (orderId: number) => request<OrderProjectLinks>(`/aito/${orderId}/project-links`),
   getTaskProjectSuggestions: (taskId: number) =>

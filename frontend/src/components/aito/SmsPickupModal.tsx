@@ -5,32 +5,53 @@ import { Loader2, RefreshCw, Send } from 'lucide-react';
 import { Card, CardContent } from '../Card';
 import { Button } from '../Button';
 import { inputCls, labelCls } from '../formStyles';
-import { api, ApiError, type AitoProject } from '../../api/client';
+import { api, type AitoProject } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useToast } from '../../contexts/ToastContext';
 
 /** A beat past .animate-modal-out's 150ms — same margin SendQuoteModal gives. */
 const MODAL_OUT_MS = 170;
 
-/** The leading words of the two plain-string details send_pickup_sms returns
- *  for the outcomes that are NOT a clean failure (backend/app/api/routes/
- *  aito.py's _SMS_DUPLICATE_DETAIL and _SMS_UNREACHABLE_DETAIL). Matched by
- *  prefix so the sentence's tail can be reworded, and paired with the status
- *  so another 409/502 on this route (no phone, not finished, Pushcut refused)
- *  still gets the generic toast. Both strings are pinned by
- *  backend/tests/unit/test_aito_pickup_sms.py — reword them together. */
-const SMS_ALREADY_SENT_MARKER = 'Already sent —';
-const SMS_MAYBE_SENT_MARKER = 'Pushcut did not answer in time';
+/** The relay on the operator's own Mac (scripts/sms_relay_mac.py). Reached
+ *  from the browser, so the server never needs the Mac's address, and only
+ *  the Mac running it can send.
+ *  shortcut: fixed port matching the script's default; make it a setting if the relay ever moves. */
+const SMS_RELAY_URL = 'http://localhost:8765/send';
+
+/** unreachable: no relay on this machine (or the browser blocked the call),
+ *  nothing sent. maybe: Messages timed out, the SMS may have gone. failed:
+ *  the relay or Messages refused, nothing sent. */
+class SmsRelayError extends Error {
+  readonly outcome: 'unreachable' | 'maybe' | 'failed';
+  constructor(outcome: SmsRelayError['outcome']) {
+    super(outcome);
+    this.outcome = outcome;
+  }
+}
+
+async function sendThroughRelay(phone: string, text: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(SMS_RELAY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, text }),
+    });
+  } catch {
+    throw new SmsRelayError('unreachable');
+  }
+  if (res.status === 504) throw new SmsRelayError('maybe');
+  if (!res.ok) throw new SmsRelayError('failed');
+}
 
 /** Draft, edit and relay the "come and collect your part" SMS.
  *
  *  The draft comes from the server's AI endpoint and lands in an EDITABLE
  *  textarea — what goes to the phone is whatever this box holds when Send is
- *  pressed, never the raw model answer. Send posts to Pushcut, which raises a
- *  notification on the user's iPhone; the SMS itself only leaves once they
- *  accept it there. That is also why sending here does not touch the
+ *  pressed, never the raw model answer. Send posts to the relay on this Mac,
+ *  which sends it through Messages, then asks the server to record it. Sending here does not touch the
  *  contacted mark: the panel's ContactedControl stays the deliberate act it
- *  already is, made once the SMS truly went out.
+ *  already is.
  */
 export function SmsPickupModal({
   project,
@@ -66,7 +87,12 @@ export function SmsPickupModal({
   }
 
   const send = useMutation({
-    mutationFn: () => api.sendAitoPickupSms(project.id, message.trim()),
+    mutationFn: async () => {
+      await sendThroughRelay((project.client_phone ?? '').trim(), message.trim());
+      // The SMS is already out: a failed record only loses the timeline
+      // entry, and must not read as a failed send (a retry would text twice).
+      await api.recordAitoPickupSms(project.id).catch(() => undefined);
+    },
     onSuccess: () => {
       showToast(t('aito.smsSent'), 'success');
       // The send wrote a timeline event; the open panel's rail must not show
@@ -75,16 +101,12 @@ export function SmsPickupModal({
       requestClose();
     },
     onError: (error: unknown) => {
-      // Three outcomes, not one: a refused duplicate (the same text went to
-      // the phone moments ago), a push whose fate is unknown (Pushcut never
-      // answered — it may well be on the phone, so this is a WARNING telling
-      // the sender to check before trying again), and every other failure,
-      // which stays the plain error it has always been.
-      const status = error instanceof ApiError ? error.status : 0;
-      const detail = error instanceof ApiError ? error.message : '';
-      if (status === 409 && detail.startsWith(SMS_ALREADY_SENT_MARKER)) {
-        showToast(t('aito.smsAlreadySent'), 'error');
-      } else if (status === 502 && detail.startsWith(SMS_MAYBE_SENT_MARKER)) {
+      // A send whose fate is unknown is a WARNING (check Messages before
+      // retrying); no relay here and a plain refusal are errors.
+      const outcome = error instanceof SmsRelayError ? error.outcome : 'failed';
+      if (outcome === 'unreachable') {
+        showToast(t('aito.smsRelayUnreachable'), 'error');
+      } else if (outcome === 'maybe') {
         showToast(t('aito.smsMaybeSent'), 'warning');
       } else {
         showToast(t('aito.smsSendFailed'), 'error');
