@@ -15,7 +15,7 @@ from typing import Literal, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.aito import _EMAIL_GUARD, _check_zoho_email_rate_limit, _email_guard_key_or_409
@@ -23,8 +23,11 @@ from backend.app.core.auth import RequireAdminIfAuthEnabled, RequirePermissionIf
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.order_board_doc import OrderBoardDoc
+from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.models.user import User
+from backend.app.schemas.aito import AitoNoteCreate
 from backend.app.services import aito_tracking, order_board_actions, order_board_sms, order_board_sync
+from backend.app.services.order_board_events import kinds_for_depth, record
 from backend.app.services.order_board_payment import order_contact
 from backend.app.services.order_board_prep_sheet import render_prep_sheet
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUnreachable, ZohoUpstreamError, zoho_service
@@ -228,6 +231,91 @@ def _pdf(content: bytes, filename: str) -> Response:
 
 def _logged(user: User | None, salesorder_id: str, action: str) -> None:
     logger.info("Order board: user=%s order=%s action=%s", user.id if user else "-", salesorder_id, action)
+
+
+class OrderEventResponse(BaseModel):
+    id: int
+    occurred_at: datetime
+    kind: str
+    actor_class: str
+    actor_name: str | None
+    changes: list[dict] | None
+    detail: dict | None
+    note: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class OrderEventPage(BaseModel):
+    events: list[OrderEventResponse]
+    has_more: bool
+
+
+async def _require_order(db: AsyncSession, salesorder_id: str) -> None:
+    """On the board, or a stored finished order; anything else is unknown."""
+    if await order_board_sync.find_board_row(db, salesorder_id) is not None:
+        return
+    stored = await db.execute(
+        select(OrderBoardDoc.id).where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id)
+    )
+    if stored.first() is None:
+        raise HTTPException(status_code=404, detail="Order not found.")
+
+
+@router.get("/orders/{salesorder_id}/events", response_model=OrderEventPage)
+async def list_order_events(
+    salesorder_id: str,
+    depth: Literal["story", "detail", "everything"] = "detail",
+    before: int | None = None,
+    before_at: datetime | None = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+) -> OrderEventPage:
+    """The order's timeline, newest first; the cursor is the pair (occurred_at, id), as on Aito."""
+    await _require_order(db, salesorder_id)
+    if (before is None) != (before_at is None):
+        raise HTTPException(status_code=422, detail="The cursor needs both 'before' and 'before_at'")
+    limit = max(1, min(limit, 200))
+    query = (
+        select(OrderBoardEvent)
+        .where(OrderBoardEvent.salesorder_id == salesorder_id, OrderBoardEvent.kind.in_(kinds_for_depth(depth)))
+        .order_by(OrderBoardEvent.occurred_at.desc(), OrderBoardEvent.id.desc())
+        .limit(limit + 1)  # one extra row answers has_more without a count
+    )
+    if before is not None:
+        query = query.where(
+            or_(
+                OrderBoardEvent.occurred_at < before_at,
+                and_(OrderBoardEvent.occurred_at == before_at, OrderBoardEvent.id < before),
+            )
+        )
+    rows = list((await db.execute(query)).scalars().all())
+    return OrderEventPage(
+        events=[OrderEventResponse.model_validate(r) for r in rows[:limit]], has_more=len(rows) > limit
+    )
+
+
+@router.post("/orders/{salesorder_id}/events", response_model=OrderEventResponse, status_code=201)
+async def add_order_note(
+    salesorder_id: str,
+    payload: AitoNoteCreate,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> OrderEventResponse:
+    """Append a local note; kind and actor are fixed here so a client cannot fabricate other events."""
+    await _require_order(db, salesorder_id)
+    event = await record(
+        db,
+        salesorder_id,
+        "note.added",
+        actor_class="user",
+        actor_name=current_user.username if current_user is not None else "Admin",
+        note=payload.note,
+    )
+    await db.commit()
+    await db.refresh(event)
+    return OrderEventResponse.model_validate(event)
 
 
 @router.post("/orders/{salesorder_id}/prep-sheet")
