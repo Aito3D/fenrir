@@ -8,6 +8,7 @@ from sqlalchemy import select
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_events, order_board_sync as sync
 from backend.app.services.aito_events import utc_now_naive
+from backend.app.services.zoho import ZohoUpstreamError
 from backend.tests.unit.test_order_board_sync import (  # noqa: F401 (fixtures)
     no_back_off_left_over,
     order,
@@ -170,21 +171,39 @@ async def test_a_failing_event_write_never_breaks_the_pass(db_session, zoho, mon
     assert board["rows"][0]["lines"][0]["quantity"] == 2
 
 
+RETAINER = {"id": "r1", "number": "RET-1", "total": 400.0, "balance": 0.0, "status": "paid"}
+
+
 @pytest.mark.asyncio
 async def test_a_retainer_paid_on_the_quote_is_a_payment_and_drawing_it_is_not(db_session, zoho):
-    retainer = {"id": "r1", "number": "RET-1", "total": 400.0, "balance": 0.0, "status": "paid"}
     zoho.add(order(1, estimate_id="e1"))
     await sync.run_pass(db_session)
-    zoho.retainers["e1"] = [retainer]
-    zoho.orders["so1"] = {
-        **edited(1, "2026-11-02T08:00:00-1000", estimate_id="e1"),
-        "contact": {"unused_customer_credits": 400.0},
-    }
+    zoho.retainers["e1"] = [RETAINER]
+    zoho.customer_payments = [{"payment_id": "p1", "retainerinvoice_id": "r1", "unused_amount": 400.0}]
+    zoho.orders["so1"] = edited(1, "2026-11-02T08:00:00-1000", estimate_id="e1")
     await sync.run_pass(db_session)
     assert [e.detail["amount"] for e in await events(db_session, "payment.received")] == [400.0]
-    # Drawn on the order's invoice: the credit is spent, the invoice is settled by it.
+    # Drawn on the order's invoice: the retainer's payment has nothing unused left, the invoice is settled by it.
+    zoho.customer_payments = [{"payment_id": "p1", "retainerinvoice_id": "r1", "unused_amount": 0.0}]
     zoho.orders["so1"] = {**_paid(400.0), "estimate_id": "e1", "last_modified_time": "2026-11-03T08:00:00-1000"}
     await sync.run_pass(db_session)
     assert [e.detail for e in await events(db_session, "payment.received")] == [
         {"amount": 400.0, "paid": 400.0, "total": 1000.0}
     ]
+
+
+@pytest.mark.asyncio
+async def test_retainers_read_for_the_first_time_are_not_a_payment(db_session, zoho):
+    """An order stored before retainers were read (an upgrade, or every read failed): its old deposit is not news."""
+    zoho.retainers["e1"] = [RETAINER]
+    zoho.customer_payments = [{"payment_id": "p1", "retainerinvoice_id": "r1", "unused_amount": 400.0}]
+    zoho.fail_retainers = ZohoUpstreamError("retainers boom")
+    zoho.add(order(1, estimate_id="e1"))
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    assert (await sync.read_board(db_session))["rows"][0]["payment"]["retainer_known"] is False
+    zoho.fail_retainers = None
+    zoho.orders["so1"] = edited(1, "2026-11-02T08:00:00-1000", estimate_id="e1")
+    await sync.run_pass(db_session)
+    assert (await sync.read_board(db_session))["rows"][0]["payment"]["retainer"] == 400.0
+    assert await events(db_session, "payment.received") == []

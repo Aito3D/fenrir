@@ -570,9 +570,11 @@ async def _record_board_events(db: AsyncSession, current: dict, rows: list[dict]
         payment = row.get("payment") or {}
         # Invoice and retainer payments only: shared customer credit moving between orders, or applied at hand-over, is
         # not new money. A retainer drawn on the order's invoice moves from one figure to the other: no delta.
+        # Retainers never read before (an order stored before they were, or every read failed so far) are not new money.
         old = was.get("payment") or {}
-        delta = (payment.get("invoice_paid") or 0) + (payment.get("retainer") or 0)
-        delta -= (old.get("invoice_paid") or 0) + (old.get("retainer") or 0)
+        delta = (payment.get("invoice_paid") or 0) - (old.get("invoice_paid") or 0)
+        if old.get("retainer_known") and payment.get("retainer_known"):
+            delta += (payment.get("retainer") or 0) - (old.get("retainer") or 0)
         # A terminal or link payment settled here records itself: skip what it already logged since the last board.
         if delta > 0 and not await _has_event(db, salesorder_id, "payment.received", computed_at):
             await order_board_events.record(
@@ -720,22 +722,32 @@ def _kept_retainers(detail: dict | None) -> dict:
     return {"_retainers": detail["_retainers"]} if detail and "_retainers" in detail else {}
 
 
-async def _retainers(db: AsyncSession, detail: dict, previous: dict | None) -> dict:
-    """``{"_retainers": [...]}`` for an order made from a quote, else ``{}``. A Zoho failure keeps the previous ones."""
+async def _retainers(db: AsyncSession, detail: dict, previous: dict | None, payments: dict[str, list[dict]]) -> dict:
+    """``{"_retainers": [...]}`` for an order made from a quote, else ``{}``: the quote's retainers, each with its
+    ``unused`` money (the sum of its customer payments' ``unused_amount``). ``payments`` caches each customer's
+    payments for the pass. A Zoho failure keeps the previous retainers."""
     if not detail.get("estimate_id"):
         return {}
+    customer_id = str(detail.get("customer_id") or "")
     quote = SimpleNamespace(
         quote_id=str(detail["estimate_id"]),
         quote_number=order_facts(detail)["quote_number"] or (previous or {}).get("estimate_number") or "",
-        client_id=str(detail.get("customer_id") or ""),
+        client_id=customer_id,
     )
     try:
-        return {"_retainers": await list_project_retainers(db, quote)}
+        retainers = await list_project_retainers(db, quote)
+        if retainers and customer_id not in payments:
+            payments[customer_id] = await zoho_service.list_customer_payments(db, customer_id)
     except ZohoUpstreamError as e:
         if isinstance(e, ZohoRateLimited):
             open_rate_limit_window(e)
         logger.warning("Order board: retainers of quote %s not read, the previous ones stay: %s", quote.quote_id, e)
         return _kept_retainers(previous)
+    unused: dict[str, float] = {}
+    for p in payments.get(customer_id) or []:
+        key = str(p.get("retainerinvoice_id") or "")
+        unused[key] = unused.get(key, 0.0) + float(p.get("unused_amount") or 0)
+    return {"_retainers": [{**r, "unused": round(unused.get(r["id"], 0.0), 2)} for r in retainers]}
 
 
 async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str], OrderBoardDoc]) -> None:
@@ -745,6 +757,7 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
         key=lambda d: (d.kind != "salesorder", d.header.get("date") or "", d.zoho_id),
     )
     fetched_count = 0
+    payments: dict[str, list[dict]] = {}  # each customer's payments, read once this pass
     for doc in pending[:MAX_DETAILS_PER_PASS]:
         if zoho_service.calls_in_last_minute() >= CALL_CEILING:
             logger.info("Order board: Zoho call ceiling reached, the remaining details wait for the next pass")
@@ -757,7 +770,7 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
             await db.refresh(doc)  # a write here is newer than this copy: keep it, and the pending mark
             continue
         previous = doc.detail
-        retainers = await _retainers(db, fetched, previous) if doc.kind == "salesorder" else {}
+        retainers = await _retainers(db, fetched, previous, payments) if doc.kind == "salesorder" else {}
         doc.detail = {**fetched, "_fetched_at": _now(), **retainers}
         doc.pending = False
         if doc.kind == "salesorder":

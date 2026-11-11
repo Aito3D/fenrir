@@ -140,8 +140,16 @@ def test_orders_without_a_customer_id_share_nothing():
     assert pays["so1"]["advance"] == 0 and pays["so2"]["advance"] == 0
 
 
-def ret(total, *, status="paid"):
-    return {"id": "r1", "number": "RET-1", "total": total, "balance": 0, "status": status}
+def ret(total, *, unused=None, status="paid"):
+    """A quote's retainer as the sync stores it: ``unused`` is what its payments still hold."""
+    return {
+        "id": "r1",
+        "number": "RET-1",
+        "total": total,
+        "balance": 0,
+        "status": status,
+        "unused": total if unused is None else unused,
+    }
 
 
 def test_retainer_counts_on_its_order():
@@ -158,13 +166,25 @@ def test_leftover_credit_still_shared():
     assert pays["so2"]["advance"] == 50
 
 
-def test_unpaid_or_drawn_retainers_do_not_count():
-    unpaid = {**so(1, 1000, credit=500), "_retainers": [ret(100, status="sent")]}
-    assert board_payments([unpaid], TODAY)["so1"]["retainer"] == 0
-    # Drawn on the order's invoice: Books still says paid, but the money left the credit pool for the invoice.
-    drawn = {**so(1, 1000, invoices=[inv(300, 200)], credit=0), "_retainers": [ret(100)]}
+def test_a_drawn_retainer_counts_through_its_invoice_only():
+    # Order 1000, retainer 500, 300 of other credit; package 1 invoiced at 600 with the 500 applied.
+    drawn = {**so(1, 1000, invoices=[inv(600, 100)], credit=300), "_retainers": [ret(500, unused=0)]}
     p = board_payments([drawn], TODAY)["so1"]
-    assert (p["retainer"], p["invoice_paid"], p["paid"]) == (0, 100, 100)
+    assert (p["retainer"], p["invoice_paid"], p["paid"], p["left"]) == (0, 500, 800, 200)  # the 300 is advance
+    alone = order_payment(drawn, TODAY)
+    assert (alone["retainer"], alone["paid"], alone["left"]) == (0, 500, 500)
+
+
+def test_retainer_counts_its_unused_money_whatever_its_status():
+    p = order_payment({**so(1, 1000), "_retainers": [ret(500, unused=200, status="partially_paid")]}, TODAY)
+    assert (p["retainer"], p["paid"]) == (200, 200)
+    assert order_payment({**so(1, 300), "_retainers": [ret(500)]}, TODAY)["retainer"] == 300  # capped by the order
+
+
+def test_retainer_known_only_once_read():
+    assert order_payment({**so(1, 1000), "estimate_id": "e1"}, TODAY)["retainer_known"] is False
+    assert order_payment({**so(1, 1000), "estimate_id": "e1", "_retainers": []}, TODAY)["retainer_known"] is True
+    assert order_payment(so(1, 1000), TODAY)["retainer_known"] is True
 
 
 def test_contact_and_its_phone_fallback():
