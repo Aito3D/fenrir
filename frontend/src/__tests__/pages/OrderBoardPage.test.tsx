@@ -6,6 +6,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import { Link } from 'react-router-dom';
 import { server } from '../mocks/server';
 import type { FinishedOrderDetail, FinishedOrderRow, OrderPayment, OrderBoardLine, OrderBoardResponse, OrderBoardRow } from '../../api/client';
 
@@ -218,6 +219,37 @@ describe('OrderBoardPage', () => {
     expect(screen.getByRole('button', { name: /^Value/ })).toHaveTextContent('↑');
     expect(screen.getByRole('button', { name: /^Any payment/ })).toHaveAttribute('aria-pressed', 'true'); // an unknown value is the default
     expect(new URLSearchParams(window.location.search).get('pay')).toBeNull();
+  });
+
+  it('a link to bare /orders clears the filters instead of writing them back', async () => {
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/orders?status=partial&q=moana');
+    serve(board());
+    render(<><Link to="/orders">Orders link</Link><OrderBoardPage /></>);
+    await screen.findByText('SO-00418');
+    await user.click(screen.getByRole('link', { name: 'Orders link' }));
+    expect(await screen.findByText('SO-00412')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Order number, customer, product, SKU…')).toHaveValue('');
+    expect(screen.getByRole('button', { name: /^All/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(window.location.search).toBe('');
+  });
+
+  it('back and forward bring the filters of that history entry back', async () => {
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/orders?status=partial');
+    serve(board());
+    render(<><Link to="/orders?sort=value">Sorted link</Link><OrderBoardPage /></>);
+    await screen.findByText('SO-00418');
+    await user.click(screen.getByRole('link', { name: 'Sorted link' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Value/ })).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.getByText('SO-00412')).toBeInTheDocument();
+    act(() => window.history.back());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Partial 1' })).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.queryByText('SO-00412')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Age/ })).toHaveAttribute('aria-pressed', 'true');
+    act(() => window.history.forward());
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Value/ })).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.getByText('SO-00412')).toBeInTheDocument();
   });
 
   it('shows the failure notice over the last board', async () => {
