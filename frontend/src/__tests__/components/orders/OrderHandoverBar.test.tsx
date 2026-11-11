@@ -206,7 +206,7 @@ describe('the hand-over bar', () => {
 
 describe('the hand-over bar, answers and refusals', () => {
   const confirmText = 'Handed to the customer';
-  it.each([[400, 'too_many'], [409, 'busy']])('a %i refusal says the order changed and keeps the bar open', async (status, detail) => {
+  it.each([[400, 'unknown_package'], [409, 'busy']])('a %i refusal says the order changed and keeps the bar open', async (status, detail) => {
     const user = userEvent.setup();
     servePreview(preview());
     post(() => HttpResponse.json({ detail }, { status }));
@@ -368,6 +368,21 @@ describe('the Emballé band', () => {
     render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
     expect(screen.queryByRole('button', { name: 'Hand over the parcel' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Handed to the customer' })).not.toBeInTheDocument();
+  });
+
+  it('hides the prep actions while the bar is open and tells the card', async () => {
+    const user = userEvent.setup();
+    servePreview(preview());
+    const onHandoverOpen = vi.fn();
+    render(<OrderLinesPanel row={panelRow({ lines: [line(), line({ id: 'l2', packed_waiting: 0, packable: 1, remaining: 1, quantity: 1 })] })} onHandoverOpen={onHandoverOpen} />);
+    expect(screen.getByRole('button', { name: 'Prepare' })).toBeInTheDocument();
+    expect(onHandoverOpen).toHaveBeenLastCalledWith(false);
+    await open(user);
+    expect(screen.queryByRole('button', { name: 'Prepare' })).not.toBeInTheDocument();
+    expect(onHandoverOpen).toHaveBeenLastCalledWith(true);
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('button', { name: 'Prepare' })).toBeInTheDocument();
+    expect(onHandoverOpen).toHaveBeenLastCalledWith(false);
   });
 
   it('cancelling closes the bar, and a new request for the same parcel opens it again', async () => {

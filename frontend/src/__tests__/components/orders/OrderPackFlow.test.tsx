@@ -198,12 +198,12 @@ describe('choosing what to pick', () => {
     expect(screen.queryByTestId('pack-qty-l1')).not.toBeInTheDocument();
   });
 
-  it('a refused opening says the order changed', async () => {
+  it('a refused opening says why', async () => {
     const user = userEvent.setup();
     server.use(http.get(`${BASE}/picklist`, () => HttpResponse.json({ detail: 'picklist_open' }, { status: 400 })));
     render(<OrderLinesPanel row={panelRow()} />);
     await user.click(screen.getByRole('button', { name: 'Prepare' }));
-    expect(await screen.findByText('The picklist could not be created: The order changed, check the quantities.')).toBeInTheDocument();
+    expect(await screen.findByText('The picklist could not be created: a picklist is still open on this order, finish it first')).toBeInTheDocument();
     expect(screen.queryByTestId('pack-qty-l1')).not.toBeInTheDocument();
   });
 
@@ -306,7 +306,7 @@ describe('the parcel check', () => {
   });
 
   it.each([
-    [400, 'too_many', 'The order changed, check the quantities.'],
+    [400, 'too_many', 'The parcel could not be created: more units than the order still allows'],
     [409, 'busy', 'The order changed, check the quantities.'],
     [503, 'unavailable', 'Zoho is busy, try again in a moment.'],
     [502, 'Books said no', 'The parcel could not be created: Books said no'],
