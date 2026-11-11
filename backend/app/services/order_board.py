@@ -102,9 +102,11 @@ def _line(raw: dict, items: dict[str, dict]) -> dict:
         "shortfall": 0.0,
         "covered_by_po": 0.0,
         "po_numbers": [],
-        # A line with no item is a service. So is a known item Books does not
-        # track. An item id missing from the local copy stays tracked, stock 0.
-        "_tracked": bool(item_id) and (item is None or bool(item.get("track_inventory", True))),
+        # A line with no item is a service. So is a line Books calls a service, and a known item Books does not
+        # track. Any other item id missing from the local copy stays tracked, stock 0.
+        "_tracked": bool(item_id)
+        and not (raw.get("product_type") or "").endswith("service")
+        and (item is None or bool(item.get("track_inventory", True))),
         "_reserved": 0.0,
     }
 

@@ -134,6 +134,18 @@ def test_service_cancelled_and_shipped_lines():
     (row,) = rows
     assert [ln["state"] for ln in row["lines"]] == ["service", "service", "cancelled", "shipped", "ready"]
     assert row["lines"][0]["stock_available"] is None and row["lines"][1]["stock_available"] is None
+
+
+@pytest.mark.parametrize("product_type", ["service", "digital_service"])
+def test_a_service_line_missing_from_the_items_cache_is_not_live(product_type):
+    rows = compute_board(
+        [so("SO-1", "2026-01-03", [{**line("GONE", 1), "product_type": product_type}, line("A", 1)])],
+        [],
+        {"A": item(1)},
+        TODAY,
+    )
+    (row,) = rows
+    assert [ln["state"] for ln in row["lines"]] == ["service", "ready"]
     assert row["status"] == "to_ship"
 
 
