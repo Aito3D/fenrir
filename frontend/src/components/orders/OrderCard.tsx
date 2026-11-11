@@ -52,7 +52,7 @@ export function OrderCard({
   const next = nextStep(row);
   const step = hasPermission('orders:update') ? next : null;
   const age = t('orders.age', { n: row.age_days });
-  // While the panel's hand-over bar is open, the row icon's prep step would only read Books and do nothing.
+  // While the panel's hand-over bar is open, a prep step on the row icon would only read Books and do nothing.
   const [handingOff, setHandingOff] = useState(false);
 
   return (
@@ -110,7 +110,7 @@ export function OrderCard({
           </span>
           <ChevronDown aria-hidden="true" className={`h-4 w-4 text-bambu-gray transition-transform [grid-area:chev] lg:[grid-area:auto] lg:justify-self-end ${open ? 'rotate-180' : ''}`} />
         </button>
-        {step && !(open && handingOff) && <OrderRowAction row={row} target={step} onStart={onStart} />}
+        {step && !(open && handingOff && !step.startsWith('handover-')) && <OrderRowAction row={row} target={step} onStart={onStart} />}
       </div>
       {open && <OrderLinesPanel row={row} others={others} onGoto={onGoto} start={start} startTick={startTick} onHandoverOpen={setHandingOff} />}
     </Card>
