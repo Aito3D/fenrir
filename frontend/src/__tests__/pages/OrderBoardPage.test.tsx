@@ -39,6 +39,7 @@ import { OrderBoardPage } from '../../pages/OrderBoardPage';
 afterEach(() => {
   server.resetHandlers();
   localStorage.clear();
+  window.history.replaceState({}, '', '/'); // the filters live in the URL: never carry them into the next test
   mockUseAuth.hasPermission.mockImplementation(() => true);
 });
 
@@ -181,6 +182,42 @@ describe('OrderBoardPage', () => {
     expect(numbers()).toEqual(['SO-00418', 'SO-00412']);
     await user.click(screen.getByRole('button', { name: /^Value/ }));
     expect(numbers()).toEqual(['SO-00418', 'SO-00412']); // 24 750 before 13 600
+  });
+
+  it('the filters are mirrored into the URL with replace, defaults left out and ?order= kept', async () => {
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/orders?order=nope');
+    const entries = window.history.length;
+    serve(board());
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    expect(window.location.search).toBe('?order=nope');
+    await user.type(screen.getByPlaceholderText('Order number, customer, product, SKU…'), 'moana');
+    await user.click(screen.getByRole('button', { name: 'Partial 1' }));
+    await user.click(screen.getByRole('button', { name: /^Value/ }));
+    await user.click(screen.getByRole('button', { name: /^Value/ }));
+    await user.click(screen.getByRole('button', { name: /^Unpaid/ }));
+    const params = new URLSearchParams(window.location.search);
+    expect(Object.fromEntries(params)).toEqual({ order: 'nope', q: 'moana', status: 'partial', sort: 'value', flip: '1', pay: 'unpaid' });
+    expect(window.history.length).toBe(entries); // replace: typing does not fill the history
+    await user.clear(screen.getByPlaceholderText('Order number, customer, product, SKU…'));
+    await user.click(screen.getByRole('button', { name: /^All/ }));
+    await user.click(screen.getByRole('button', { name: /^Age/ }));
+    await user.click(screen.getByRole('button', { name: /^Any payment/ }));
+    expect(window.location.search).toBe('?order=nope');
+  });
+
+  it('a URL with filters opens the board with them set', async () => {
+    window.history.pushState({}, '', '/orders?q=moana&status=partial&sort=value&flip=1&pay=bogus');
+    serve(board());
+    render(<OrderBoardPage />);
+    expect(await screen.findByText('SO-00418')).toBeInTheDocument();
+    expect(screen.queryByText('SO-00412')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Order number, customer, product, SKU…')).toHaveValue('moana');
+    expect(screen.getByRole('button', { name: 'Partial 1' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^Value/ })).toHaveTextContent('↑');
+    expect(screen.getByRole('button', { name: /^Any payment/ })).toHaveAttribute('aria-pressed', 'true'); // an unknown value is the default
+    expect(new URLSearchParams(window.location.search).get('pay')).toBeNull();
   });
 
   it('shows the failure notice over the last board', async () => {

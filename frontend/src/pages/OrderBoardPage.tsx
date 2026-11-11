@@ -28,7 +28,8 @@ import {
   totalValue,
   withFinished,
 } from '../components/orders/orderBoard';
-import type { PayFilter, SortKey, StatusFilter } from '../components/orders/orderBoard';
+import type { PayFilter, StatusFilter } from '../components/orders/orderBoard';
+import { SORTS, useOrderFilters } from '../components/orders/useOrderFilters';
 import { STATUSES, STATUS_META, TONE } from '../components/orders/orderStatus';
 import type { Tone } from '../components/orders/orderStatus';
 import { useAuth } from '../contexts/AuthContext';
@@ -42,7 +43,6 @@ const PAGE = 50;
 const PAY_CHIPS: Exclude<PayFilter, 'all' | 'overdue'>[] = ['unpaid', 'partial', 'paid'];
 const CORE_ONLY_KEY = 'orders.coreOnly';
 const HIDE_FINISHED_KEY = 'orders.hideFinished';
-const SORTS: SortKey[] = ['age', 'value', 'customer', 'ready'];
 
 const chipCls = (active: boolean) =>
   `rounded-full border px-3 py-1.5 text-xs ${active ? 'border-bambu-green bg-bambu-green/15 text-white' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`;
@@ -109,13 +109,10 @@ export function OrderBoardPage() {
     onError: () => showToast(t('orders.refreshFailed'), 'error'),
   });
 
-  const [query, setQuery] = useState('');
-  const [status, setStatus] = useState<StatusFilter>('all');
-  const [sort, setSort] = useState<{ key: SortKey; flipped: boolean }>({ key: 'age', flipped: false });
+  const { query, setQuery, status, setStatus, payFilter, setPayFilter, sort, setSort } = useOrderFilters();
   const [coreOnly, setCoreOnly] = useState(readCoreOnly);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [hideFinished, setHideFinished] = useState(readHideFinished);
-  const [payFilter, setPayFilter] = useState<PayFilter>('all');
   const [shown, setShown] = useState(PAGE);
   const [start, setStart] = useState<{ id: string; target: string; tick: number } | null>(null);
   const scrollTarget = useRef<string | null>(null);
