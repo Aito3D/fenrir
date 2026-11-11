@@ -5126,6 +5126,17 @@ export interface OrderBoardLine {
 
 export type OrderPayState = 'unpaid' | 'partial' | 'paid';
 export interface OrderInvoice { id: string; number: string; date: string; due_date: string; total: number; balance: number; status: string; url: string | null }
+/** An Order Board payment link: the link plus the document it is on (a replayed reservation keeps its own). */
+export interface OrderPaymentLink extends AitoPaymentLink { document_number: string | null }
+/** What the order's payment buttons charge: the newest invoice with a balance, else its quote's open retainer. */
+export interface OrderPaymentTarget {
+  kind: 'invoice' | 'retainer' | null;
+  document_id: string | null;
+  number: string | null;
+  max_amount: number | null;
+  left: number;
+  link: OrderPaymentLink | null;
+}
 export interface OrderPayment { state: OrderPayState; pct: number; paid: number; invoice_paid: number; retainer: number; advance: number; due: number; overdue: number; rest: number; left: number; next_due: string | null; invoices: OrderInvoice[] }
 export interface OrderContact { name: string; email: string; phone: string; mobile: string }
 export interface OrderFacts { channel: string; reference: string; shopify_order: string; quote_number: string; delivery_method: string; payment_terms: string; shopify_url: string | null; quote_url: string | null }
@@ -5423,7 +5434,8 @@ export type AitoTerminalPaymentStatus =
 
 export interface AitoTerminalPayment {
   id: number;
-  document_kind: 'quote' | 'invoice';
+  /** `retainer`: an Order Board charge on its quote's retainer invoice. */
+  document_kind: 'quote' | 'invoice' | 'retainer';
   document_number: string;
   status: AitoTerminalPaymentStatus;
   amount: number;
@@ -10000,11 +10012,28 @@ export const api = {
     orderBoardBlob(`/order-board/orders/${encodeURIComponent(id)}/prep-sheet?picklist_id=${encodeURIComponent(picklistId)}`, 'POST'),
   /** The pickup SMS text for an order (admins only). */
   getOrderSmsDraft: (id: string) =>
-    request<{ message: string; kind: 'filaments' | 'printer_filaments' | 'printer' | 'other'; partial: boolean; due: number }>(
-      `/order-board/orders/${encodeURIComponent(id)}/sms-draft`,
-    ),
-  /** Marks the order contacted once the browser sent the SMS through the local relay; returns the row. */
-  recordOrderSms: (id: string) => request<OrderBoardRow>(`/order-board/orders/${encodeURIComponent(id)}/sms`, { method: 'POST' }),
+    request<{
+      message: string;
+      kind: 'filaments' | 'printer_filaments' | 'printer' | 'other';
+      partial: boolean;
+      due: number;
+      payment_link: { id: number; url: string; amount: number } | null;
+    }>(`/order-board/orders/${encodeURIComponent(id)}/sms-draft`),
+  /** Marks the order contacted once the browser sent the SMS through the local relay; returns the row.
+   *  `paymentLinkId`: the draft's payment link, when the text that went out still holds it. */
+  recordOrderSms: (id: string, paymentLinkId?: number) =>
+    request<OrderBoardRow>(`/order-board/orders/${encodeURIComponent(id)}/sms`, {
+      method: 'POST',
+      ...(paymentLinkId === undefined ? {} : { body: JSON.stringify({ payment_link_id: paymentLinkId }) }),
+    }),
+  getOrderPaymentTarget: (id: string) => request<OrderPaymentTarget>(`/order-board/orders/${encodeURIComponent(id)}/payment-target`),
+  createOrderPaymentLink: (id: string, amount: number) =>
+    request<OrderPaymentLink>(`/order-board/orders/${encodeURIComponent(id)}/payment-link`, { method: 'POST', body: JSON.stringify({ amount }) }),
+  startOrderTerminalPayment: (id: string, amount: number) =>
+    request<AitoTerminalPayment>(`/order-board/orders/${encodeURIComponent(id)}/terminal-payment`, { method: 'POST', body: JSON.stringify({ amount }) }),
+  /** The order's newest terminal charge, refreshed from Heimdall while open; null if none. */
+  getOrderTerminalPayment: (id: string) =>
+    request<AitoTerminalPayment | null>(`/order-board/orders/${encodeURIComponent(id)}/terminal-payment`),
   getOrderPicklistPreview: (id: string) => request<OrderPickLines>(`/order-board/orders/${encodeURIComponent(id)}/picklist`),
   createOrderPicklist: (id: string, lines: OrderPickLines['lines']) =>
     request<{ board: OrderBoardResponse; picklist: { id: string; number: string } }>(`/order-board/orders/${encodeURIComponent(id)}/picklists`, {

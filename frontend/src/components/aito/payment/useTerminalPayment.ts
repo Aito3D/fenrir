@@ -29,9 +29,19 @@ export function isTerminalOpen(p: AitoTerminalPayment | null | undefined): boole
 /** One terminal payment, re-read every 3 s while it is open (spec §3.4).
  *  The backend GET refreshes from Heimdall itself, throttled to 2 s. */
 export function useTerminalPayment(projectId: number, paymentId: number | null, initial?: AitoTerminalPayment | null) {
+  return useTerminalPoll(['aito-terminal-payment', projectId], (id) => api.getAitoTerminalPayment(projectId, id), paymentId, initial);
+}
+
+/** `useTerminalPayment` for any owner of a charge: `key` prefixes the payment id, `fetch` reads one payment. */
+export function useTerminalPoll(
+  key: readonly unknown[],
+  fetch: (paymentId: number) => Promise<AitoTerminalPayment>,
+  paymentId: number | null,
+  initial?: AitoTerminalPayment | null,
+) {
   return useQuery({
-    queryKey: ['aito-terminal-payment', projectId, paymentId],
-    queryFn: () => api.getAitoTerminalPayment(projectId, paymentId as number),
+    queryKey: [...key, paymentId],
+    queryFn: () => fetch(paymentId as number),
     enabled: paymentId !== null,
     initialData: initial ?? undefined,
     refetchInterval: (query) => (isTerminalOpen(query.state.data) ? TERMINAL_POLL_MS : false),

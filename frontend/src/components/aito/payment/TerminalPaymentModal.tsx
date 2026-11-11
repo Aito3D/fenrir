@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, Loader2, X } from 'lucide-react';
@@ -11,34 +11,76 @@ import { formatMoney } from '../../../utils/pricing';
 import { AmountField } from './AmountField';
 import { parseAmount } from './amount';
 import type { PaymentDocument } from './paymentDocument';
-import { isTerminalOpen, settleTerminalPaymentInCache, useTerminalPayment } from './useTerminalPayment';
+import { isTerminalOpen, settleTerminalPaymentInCache, useTerminalPoll } from './useTerminalPayment';
 
 const MODAL_OUT_MS = 170;
 
-/** Card payment taken at the counter terminal: form → waiting → paid / failed
- *  / needs-attention (spec §3.4). `initialPayment` lets the payment block
- *  reopen this modal on a charge already in flight — it opens straight on
- *  the waiting screen, which has no cancel button because closing the modal
- *  never stops the charge. */
+/** Card payment taken at the counter terminal on an Aito card: `TerminalPaymentDialog` wired to the project.
+ *  `initialPayment` lets the payment block reopen this modal on a charge already in flight. */
 export function TerminalPaymentModal({ project, document, initialPayment, onClose }: {
   project: AitoProject;
   document: PaymentDocument;
   initialPayment: AitoTerminalPayment | null;
   onClose: () => void;
 }) {
+  const queryClient = useQueryClient();
+  return (
+    <TerminalPaymentDialog
+      document={document}
+      initialPayment={initialPayment}
+      onClose={onClose}
+      pollKey={['aito-terminal-payment', project.id]}
+      onStart={(amount) =>
+        api.startAitoTerminalPayment(project.id, { document_kind: document.kind, document_id: document.id, amount })}
+      fetchPayment={(id) => api.getAitoTerminalPayment(project.id, id)}
+      // Every settled read seeds the board row so the block's state line moves
+      // without waiting for the next board fetch. Once it is paid but its
+      // booking is still pending, seed only — it is still "open"
+      // (`isTerminalOpen`) so there is nothing to invalidate yet; once it is no
+      // longer open at all, `settleTerminalPaymentInCache` does both (shared
+      // with `PaymentBlock`'s own poll, which reaches this same fully-settled
+      // case once the operator has left this modal).
+      onSeen={(payment) => {
+        if (isTerminalOpen(payment)) {
+          queryClient.setQueryData<AitoProject[]>(['aito-projects'], (rows) =>
+            rows?.map((r) => (r.id === project.id ? { ...r, terminal_payment: payment } : r)));
+          return;
+        }
+        settleTerminalPaymentInCache(queryClient, project.id, payment);
+      }}
+    />
+  );
+}
+
+/** Card payment taken at the counter terminal: form → waiting → paid / failed
+ *  / needs-attention (spec §3.4). Opened with `initialPayment` it starts
+ *  straight on the waiting screen, which has no cancel button because closing
+ *  the modal never stops the charge. `onStart` fires the terminal, `fetchPayment`
+ *  re-reads a charge (polled under `[...pollKey, id]`), and `onSeen` gets every
+ *  read that is paid or settled. The screens show what the returned row says,
+ *  with a note when it is not what was typed (a replayed reservation). */
+export function TerminalPaymentDialog({ document, initialPayment, onClose, pollKey, onStart, fetchPayment, onSeen }: {
+  document: PaymentDocument;
+  initialPayment: AitoTerminalPayment | null;
+  onClose: () => void;
+  pollKey: readonly unknown[];
+  onStart: (amount: number) => Promise<AitoTerminalPayment>;
+  fetchPayment: (paymentId: number) => Promise<AitoTerminalPayment>;
+  onSeen: (payment: AitoTerminalPayment) => void;
+}) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [amount, setAmount] = useState(document.due !== null ? String(document.due) : '');
+  const [requested, setRequested] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<number | null>(initialPayment?.id ?? null);
-  const poll = useTerminalPayment(project.id, paymentId, initialPayment);
+  const poll = useTerminalPoll(pollKey, fetchPayment, paymentId, initialPayment);
   const payment = paymentId === null ? null : (poll.data ?? initialPayment);
   const start = useMutation({
-    mutationFn: (value: number) =>
-      api.startAitoTerminalPayment(project.id, { document_kind: document.kind, document_id: document.id, amount: value }),
+    mutationFn: onStart,
     onSuccess: (row) => {
       setError(null);
-      queryClient.setQueryData(['aito-terminal-payment', project.id, row.id], row);
+      queryClient.setQueryData([...pollKey, row.id], row);
       setPaymentId(row.id);
     },
     onError: (e: unknown) => setError(e instanceof Error && e.message ? e.message : t('common.errorLoading')),
@@ -50,24 +92,14 @@ export function TerminalPaymentModal({ project, document, initialPayment, onClos
     },
   });
 
-  // Every settled read seeds the board row so the block's state line moves
-  // without waiting for the next board fetch. Bail out early while there is
-  // no payment yet, or while it is still open and not yet paid (nothing to
-  // seed); once it is paid but its booking is still pending, seed only — it
-  // is still "open" (`isTerminalOpen`) so there is nothing to invalidate
-  // yet; once it is no longer open at all, `settleTerminalPaymentInCache`
-  // does both (shared with `PaymentBlock`'s own poll, which reaches this
-  // same fully-settled case once the operator has left this modal).
+  // The latest `onSeen`, so a caller passing a fresh closure each render never re-runs the effect.
+  const seen = useRef(onSeen);
+  seen.current = onSeen;
   useEffect(() => {
     const stillOpenAndUnpaid = isTerminalOpen(payment) && payment?.status !== 'paid';
     if (!payment || stillOpenAndUnpaid) return;
-    if (isTerminalOpen(payment)) {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (rows) =>
-        rows?.map((r) => (r.id === project.id ? { ...r, terminal_payment: payment } : r)));
-      return;
-    }
-    settleTerminalPaymentInCache(queryClient, project.id, payment);
-  }, [payment, project.id, queryClient]);
+    seen.current(payment);
+  }, [payment]);
 
   const submit = () => {
     const parsed = parseAmount(amount);
@@ -76,6 +108,7 @@ export function TerminalPaymentModal({ project, document, initialPayment, onClos
       return;
     }
     setError(null);
+    setRequested(parsed);
     start.mutate(parsed);
   };
   const retry = () => {
@@ -83,6 +116,12 @@ export function TerminalPaymentModal({ project, document, initialPayment, onClos
     setError(null);
   };
   const shown = payment ? formatMoney(payment.amount_confirmed ?? payment.amount, document.currency) : '';
+  const replayed = payment && requested !== null && (payment.amount !== requested || payment.document_number !== document.number);
+  const replayNote = replayed && (
+    <p className="text-xs text-status-warning" role="status">
+      {t('aito.payment.replayNote', { number: payment.document_number, amount: formatMoney(payment.amount, document.currency) })}
+    </p>
+  );
 
   let body: React.ReactNode;
   let footer: React.ReactNode;
@@ -126,6 +165,7 @@ export function TerminalPaymentModal({ project, document, initialPayment, onClos
           <p>{t('aito.payment.terminalWaitingHint')}</p>
         </div>
         {payment.sync_error && <p className="text-xs text-status-warning">{payment.sync_error}</p>}
+        {replayNote}
       </div>
     );
     footer = <Button variant="secondary" onClick={requestClose} className="flex-1">{t('aito.payment.terminalLeave')}</Button>;
@@ -146,6 +186,7 @@ export function TerminalPaymentModal({ project, document, initialPayment, onClos
         <p className={`text-xs ${payment.booking_status === 'failed' ? 'text-status-warning' : 'text-bambu-gray'}`}>
           {t(`aito.payment.${booking}`)}
         </p>
+        {replayNote}
       </div>
     );
     footer = <Button onClick={requestClose} className="flex-1">{t('common.close')}</Button>;

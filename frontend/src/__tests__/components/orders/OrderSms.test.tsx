@@ -91,6 +91,30 @@ describe('OrderSmsModal', () => {
     expect(record).toHaveBeenCalledWith('so264');
   });
 
+  const url = 'https://pay.example/x';
+  const linkDraft = { message: `${DRAFT.replace('\nAito3D', '')}\nLien de paiement : ${url}\nAito3D`, kind: 'filaments' as const, partial: false, due: 0, payment_link: { id: 4, url, amount: 3000 } };
+
+  it('a draft holding the payment link records it as sent', async () => {
+    vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue(linkDraft);
+    relayAnswers(() => new HttpResponse('sent'));
+    const record = vi.spyOn(api, 'recordOrderSms').mockResolvedValue(row as unknown as OrderBoardRow);
+    await openAndSend();
+    await waitFor(() => expect(record).toHaveBeenCalledWith('so264', 4));
+  });
+
+  it('a payment link edited out of the text is not recorded as sent', async () => {
+    vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue(linkDraft);
+    relayAnswers(() => new HttpResponse('sent'));
+    const record = vi.spyOn(api, 'recordOrderSms').mockResolvedValue(row as unknown as OrderBoardRow);
+    render(<OrderSmsModal row={row} phone="+689-89530560" onClose={() => {}} />);
+    const user = userEvent.setup();
+    const box = await screen.findByDisplayValue(/Lien de paiement/);
+    await user.clear(box);
+    await user.type(box, 'Bonjour');
+    await user.click(screen.getByRole('button', { name: /send sms/i }));
+    await waitFor(() => expect(record).toHaveBeenCalledWith('so264'));
+  });
+
   it('no relay on this machine records nothing and keeps the text', async () => {
     vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue({ message: DRAFT, kind: 'filaments', partial: false, due: 0 });
     relayAnswers(() => HttpResponse.error());

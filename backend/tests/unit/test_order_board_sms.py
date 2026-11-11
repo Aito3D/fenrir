@@ -86,6 +86,14 @@ def test_a_partly_ready_order_says_part_of_it_is_there():
     )
 
 
+def test_an_open_payment_link_gets_its_own_line_before_the_signature():
+    out = compose(_row(_line("fil"), left=3050), NATURES, "https://pay.aito3d.fr/p/abc")
+    assert out["message"].endswith(
+        " Reste à régler : 3 050 FCFP.\nLien de paiement : https://pay.aito3d.fr/p/abc\nAito3D"
+    )
+    assert set(out["message"]) <= _GSM
+
+
 @pytest.mark.parametrize("left", [0, 3050, 1234567])
 def test_every_variant_stays_in_the_sms_alphabet(left):
     for lines, ready in (

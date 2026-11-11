@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_actions as actions
+from backend.app.services.aito_payment_links import current_link
 
 FILAMENTS = "Filaments"
 PRINTERS = "3D Printers"
@@ -32,8 +33,9 @@ def _goods(row: dict) -> list[dict]:
     ]
 
 
-def compose(row: dict, natures: dict[str, str]) -> dict:
-    """The draft for one board row. ``natures`` maps item id to its Zoho nature."""
+def compose(row: dict, natures: dict[str, str], link_url: str | None = None) -> dict:
+    """The draft for one board row. ``natures`` maps item id to its Zoho nature; ``link_url`` is the order's open
+    payment link, if any."""
     goods = _goods(row)
     kinds = [natures.get(line["item_id"] or "", "") for line in goods]
     printers = [line for line, kind in zip(goods, kinds, strict=True) if kind == PRINTERS]
@@ -65,6 +67,8 @@ def compose(row: dict, natures: dict[str, str]) -> dict:
     message = f"Ia Ora na, {opening}. Tu peux venir {pronoun} récupérer à notre boutique à Arue."
     if due > 0:
         message += f" Reste à régler : {_amount(due, row.get('currency') or '')}."
+    if link_url:
+        message += f"\nLien de paiement : {link_url}"
     return {"message": f"{message}\n{SIGNATURE}", "kind": kind, "partial": partial, "due": due}
 
 
@@ -76,4 +80,8 @@ async def draft(db: AsyncSession, salesorder_id: str) -> dict:
         await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "item", OrderBoardDoc.zoho_id.in_(ids)))
     ).scalars()
     natures = {d.zoho_id: (d.header or {}).get("cf_nature_du_produit") or "" for d in docs}
-    return compose(row, natures)
+    link = await current_link(db, ("order", salesorder_id), kind=None)
+    live = link if link is not None and link.heimdall_id and link.status == "pending" and link.url else None
+    out = compose(row, natures, live.url if live else None)
+    out["payment_link"] = {"id": live.id, "url": live.url, "amount": live.amount} if live else None
+    return out

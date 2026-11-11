@@ -19,14 +19,33 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.aito import _EMAIL_GUARD, _check_zoho_email_rate_limit, _email_guard_key_or_409
+from backend.app.api.routes.aito_payments import _check_counter_payment_rate_limit, _heimdall_refusal, _refuse
 from backend.app.core.auth import RequireAdminIfAuthEnabled, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.models.user import User
-from backend.app.schemas.aito import AitoNoteCreate
+from backend.app.schemas.aito import AitoNoteCreate, AitoPaymentLinkView, AitoTerminalPaymentView
 from backend.app.services import aito_tracking, order_board_actions, order_board_sms, order_board_sync
+from backend.app.services.aito_events import utc_now_naive
+from backend.app.services.aito_payment_documents import DocumentMismatch, resolve_order_document
+from backend.app.services.aito_payment_links import (
+    InvoiceLinkExists,
+    create_order_invoice_link,
+    current_link,
+    link_view,
+)
+from backend.app.services.aito_terminal_payments import (
+    TerminalInProgress,
+    current_terminal_payment,
+    refresh_terminal_payment,
+    start_order_terminal_payment,
+    terminal_view,
+)
+from backend.app.services.heimdall import HeimdallNotConfigured, HeimdallRateLimited, HeimdallUpstreamError
+from backend.app.services.order_board_actions._common import _log
 from backend.app.services.order_board_events import kinds_for_depth, record
 from backend.app.services.order_board_payment import order_contact
 from backend.app.services.order_board_prep_sheet import render_prep_sheet
@@ -358,17 +377,203 @@ async def get_pickup_sms_draft(
     return await _run(order_board_sms.draft(db, salesorder_id))
 
 
+class SmsSentBody(BaseModel):
+    # The draft's payment link, sent only when the text that went out still holds its URL.
+    payment_link_id: int | None = None
+
+
 @router.post("/orders/{salesorder_id}/sms")
 async def record_pickup_sms(
     salesorder_id: str,
+    body: SmsSentBody | None = None,
     db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequireAdminIfAuthEnabled(),
 ) -> dict:
     """Mark the order as contacted after the browser sent the pickup SMS through the relay on the
     operator's Mac (scripts/sms_relay_mac.py); the server never sends it. Admins only. Returns the row."""
     row = await _run(order_board_actions.stamp_contact(db, salesorder_id, _by(user) or ""))
+    link = await db.get(AitoPaymentLink, body.payment_link_id) if body and body.payment_link_id else None
+    if link is not None and link.salesorder_id == salesorder_id and link.heimdall_id and link.status == "pending":
+        await _log(db, salesorder_id, "payment_link.sent", _by(user), amount=link.amount, document=link.document_number)
     _logged(user, salesorder_id, "pickup_sms")
     return row
+
+
+# --- Payments: a payment link or the counter terminal, on the order's invoice or its quote's retainer ---------
+
+
+class OrderPaymentBody(BaseModel):
+    amount: int = Field(ge=1, le=999_999_999_999)
+
+
+class OrderPaymentLinkView(AitoPaymentLinkView):
+    document_number: str | None
+
+
+class OrderPaymentTarget(BaseModel):
+    kind: Literal["invoice", "retainer"] | None
+    document_id: str | None
+    number: str | None
+    max_amount: int | None
+    left: float
+    link: OrderPaymentLinkView | None
+
+
+def _balance(doc: dict) -> float:
+    try:
+        return float(doc.get("balance") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _payable(docs: list[dict] | None) -> dict | None:
+    """The newest document with something left to pay; void and draft ones cannot take a payment."""
+    open_docs = [d for d in docs or [] if d.get("status") not in ("void", "draft") and _balance(d) > 0]
+    return max(open_docs, key=lambda d: str(d.get("date") or ""), default=None)
+
+
+async def _order_for_payment(db: AsyncSession, salesorder_id: str) -> tuple[dict, dict]:
+    """The board row and the stored sales order; an order off the board takes no payment from here."""
+    row = await order_board_sync.find_board_row(db, salesorder_id)
+    doc = (await db.execute(order_board_sync._stored_query(salesorder_id))).scalar_one_or_none()
+    if row is None or doc is None or not doc.detail:
+        raise HTTPException(status_code=404, detail="Order not found.")
+    return row, doc.detail
+
+
+def _target(detail: dict) -> tuple[str, dict] | None:
+    """Design §3: the newest invoice with a balance; else, for an order made from a quote, its open retainer."""
+    invoice = _payable(detail.get("invoices"))
+    if invoice is not None:
+        return "invoice", {**invoice, "id": invoice.get("invoice_id"), "number": invoice.get("invoice_number")}
+    if detail.get("estimate_id"):
+        retainer = _payable(detail.get("_retainers"))
+        if retainer is not None:
+            return "retainer", retainer
+    return None
+
+
+def _link_out(link: AitoPaymentLink | None) -> OrderPaymentLinkView | None:
+    view = link_view(link)
+    if view is None or link is None:
+        return None
+    return OrderPaymentLinkView(**view.model_dump(), document_number=link.document_number)
+
+
+async def _payment_document(db: AsyncSession, salesorder_id: str, amount: int):
+    _, detail = await _order_for_payment(db, salesorder_id)
+    target = _target(detail)
+    if target is None:
+        raise _refuse(409, "no_document", "This order has no invoice or quote retainer left to pay")
+    kind, doc = target
+    try:
+        document = await resolve_order_document(db, detail, kind, str(doc.get("id") or ""))
+    except DocumentMismatch as e:
+        raise _refuse(422, "document_mismatch", str(e)) from e
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        raise _refuse(502, "upstream", str(e)) from e
+    if document.balance is not None and amount > document.balance:
+        raise _refuse(422, "amount_above_balance", f"Amount exceeds the balance of {document.balance}")
+    return document
+
+
+@router.get("/orders/{salesorder_id}/payment-target", response_model=OrderPaymentTarget)
+async def get_payment_target(
+    salesorder_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> OrderPaymentTarget:
+    """What the payment buttons would charge (from the stored order, no Zoho call), and the order's current link."""
+    row, detail = await _order_for_payment(db, salesorder_id)
+    target = _target(detail)
+    link = _link_out(await current_link(db, ("order", salesorder_id), kind=None))
+    left = float((row.get("payment") or {}).get("left") or 0)
+    if target is None:
+        return OrderPaymentTarget(kind=None, document_id=None, number=None, max_amount=None, left=left, link=link)
+    kind, doc = target
+    return OrderPaymentTarget(
+        kind=kind,
+        document_id=str(doc.get("id") or ""),
+        number=str(doc.get("number") or doc.get("id") or ""),
+        max_amount=int(round(_balance(doc))),
+        left=left,
+        link=link,
+    )
+
+
+@router.post("/orders/{salesorder_id}/payment-link", response_model=OrderPaymentLinkView)
+async def create_order_payment_link(
+    salesorder_id: str,
+    body: OrderPaymentBody,
+    request: Request,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> OrderPaymentLinkView:
+    """An online payment link on the order's document. One link slot per order: a stranded reservation is
+    replayed as it was (its document and amount, not this request's), so the answer says what it holds."""
+    _check_counter_payment_rate_limit(request, user)
+    document = await _payment_document(db, salesorder_id, body.amount)
+    existing = await current_link(db, ("order", salesorder_id), kind=None)
+    if existing is not None and existing.heimdall_id is not None and existing.status == "pending":
+        raise _refuse(409, "link_exists", "A payment link is already open for this order")
+    try:
+        link = await create_order_invoice_link(
+            db, salesorder_id, document=document, amount=body.amount, actor_name=_by(user), now=utc_now_naive()
+        )
+    except InvoiceLinkExists as e:
+        raise _refuse(409, "link_exists", str(e)) from e
+    except HeimdallNotConfigured as e:
+        raise _refuse(502, "not_configured", str(e)) from e
+    except HeimdallUpstreamError as e:
+        raise _heimdall_refusal(e, invalid_code="invalid") from e
+    _logged(user, salesorder_id, "payment_link")
+    view = _link_out(link)
+    assert view is not None  # a row always has a view
+    return view
+
+
+@router.post("/orders/{salesorder_id}/terminal-payment", response_model=AitoTerminalPaymentView, status_code=201)
+async def start_order_terminal_payment_route(
+    salesorder_id: str,
+    body: OrderPaymentBody,
+    request: Request,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+):
+    """Fire the counter terminal on the order's document. 201 with the row (`processing`); poll the GET below."""
+    _check_counter_payment_rate_limit(request, user)
+    document = await _payment_document(db, salesorder_id, body.amount)
+    try:
+        row = await start_order_terminal_payment(
+            db, salesorder_id, document=document, amount=body.amount, actor_name=_by(user), now=utc_now_naive()
+        )
+    except TerminalInProgress as e:
+        raise _refuse(409, "terminal_in_progress", str(e)) from e
+    except HeimdallNotConfigured as e:
+        raise _refuse(502, "not_configured", str(e)) from e
+    except HeimdallUpstreamError as e:
+        raise _heimdall_refusal(e) from e
+    view = terminal_view(row)
+    await _log(db, salesorder_id, "terminal.started", _by(user), amount=row.amount, document=row.document_number)
+    _logged(user, salesorder_id, "terminal_payment")
+    return view
+
+
+@router.get("/orders/{salesorder_id}/terminal-payment", response_model=AitoTerminalPaymentView | None)
+async def get_order_terminal_payment(
+    salesorder_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+):
+    """The order's newest terminal charge, refreshed from Heimdall while it is open (throttled); null if none."""
+    row = await current_terminal_payment(db, ("order", salesorder_id))
+    if row is None:
+        return None
+    try:
+        row = await refresh_terminal_payment(db, row, now=utc_now_naive())
+    except HeimdallRateLimited as e:
+        raise _refuse(429, "rate_limited", str(e)) from e
+    return terminal_view(row)
 
 
 @router.get("/orders/{salesorder_id}/picklist")

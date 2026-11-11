@@ -35,10 +35,14 @@ export function OrderSmsModal({ row, phone, onClose }: { row: OrderPanelRow; pho
 
   const send = useMutation({
     mutationFn: async () => {
-      await sendThroughRelay(phone, message.trim());
+      const text = message.trim();
+      await sendThroughRelay(phone, text);
+      // The payment link counts as sent only if the text that went out still holds it.
+      const link = draft.data?.payment_link;
+      const record = link && text.includes(link.url) ? api.recordOrderSms(row.id, link.id) : api.recordOrderSms(row.id);
       // The SMS is already out: a failed record only loses the contacted mark, and must not read as a
       // failed send (a retry would text the client twice).
-      return api.recordOrderSms(row.id).catch(() => null);
+      return record.catch(() => null);
     },
     onSuccess: (fresh) => {
       if (fresh) {

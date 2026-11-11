@@ -29,49 +29,79 @@ function isLiveLink(link: AitoPaymentLink | null): link is AitoPaymentLink & { u
   return !!link && link.state === 'pending' && link.minted && !!link.url;
 }
 
-/** Create, view or cancel the online payment link for a quote's deposit or
- *  an invoice's balance (spec §3.4). Three views: a live link (open / copy /
- *  cancel), an invoice with no live link (a form that creates one), or a
- *  quote with no live link — read-only, since the reconciler is the only
- *  thing that mints a quote's link. */
+/** The online payment link of an Aito card's quote deposit or invoice balance:
+ *  `PaymentLinkDialog` wired to the project. Only an invoice link can be
+ *  cancelled; only a quote link (minted by the reconciler) can be retried. */
 export function PaymentLinkModal({ project, document, link, onClose }: {
   project: AitoProject;
   document: PaymentDocument;
   link: AitoPaymentLink | null;
   onClose: () => void;
 }) {
-  const { t, i18n } = useTranslation();
-  const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [copied, flashCopied] = useCopiedFlash();
-  const [confirmingCancel, setConfirmingCancel] = useState(false);
-  const [amount, setAmount] = useState(document.due !== null ? String(document.due) : '');
-  const [error, setError] = useState<string | null>(null);
-
   const replaceBoardRow = (fresh: AitoProject) => {
     queryClient.setQueryData<AitoProject[]>(['aito-projects'], (rows) => replaceProject(rows, fresh));
     queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
   };
-
-  const settle = (fresh: AitoProject, toastKey: string) => {
+  const settle = (fresh: AitoProject) => {
     replaceBoardRow(fresh);
     queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
-    showToast(t(toastKey), 'success');
-    requestClose();
   };
+  return (
+    <PaymentLinkDialog
+      document={document}
+      link={link}
+      onClose={onClose}
+      onCreate={async (amount) => {
+        settle(await api.createAitoInvoicePaymentLink(project.id, { document_id: document.id, amount }));
+      }}
+      // `link` is only null here if the caller opened the modal without one —
+      // the cancel button never renders in that case.
+      onCancel={async () => settle(await api.cancelAitoPaymentLink(project.id, (link as AitoPaymentLink).id))}
+      onRetry={async () => replaceBoardRow(await api.refreshAitoPaymentLink(project.id))}
+    />
+  );
+}
+
+/** Create, view or cancel an online payment link (spec §3.4). Three views: a
+ *  live link (open / copy / cancel), an invoice with no live link (a
+ *  form that creates one), or a quote with no live link — read-only, since the
+ *  reconciler is the only thing that mints a quote's link. `onCreate` may answer
+ *  with the link it got: the dialog then stays open on it and shows what that
+ *  link holds (a replayed reservation keeps its own document and amount), with
+ *  a note when that is not what was typed. Answering nothing closes it. */
+export function PaymentLinkDialog({ document, link, onClose, onCreate, onCancel, onRetry }: {
+  document: PaymentDocument;
+  link: AitoPaymentLink | null;
+  onClose: () => void;
+  onCreate: (amount: number) => Promise<(AitoPaymentLink & { document_number?: string | null }) | void>;
+  onCancel?: () => Promise<void>;
+  onRetry?: () => Promise<void>;
+}) {
+  const { t, i18n } = useTranslation();
+  const { showToast } = useToast();
+  const [copied, flashCopied] = useCopiedFlash();
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [amount, setAmount] = useState(document.due !== null ? String(document.due) : '');
+  const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<{ link: AitoPaymentLink & { document_number?: string | null }; requested: number } | null>(null);
 
   const create = useMutation({
-    mutationFn: (value: number) => api.createAitoInvoicePaymentLink(project.id, { document_id: document.id, amount: value }),
-    onSuccess: (fresh) => settle(fresh, 'aito.payment.linkDone'),
+    mutationFn: async (value: number) => ({ result: await onCreate(value), requested: value }),
+    onSuccess: ({ result, requested }) => {
+      showToast(t('aito.payment.linkDone'), 'success');
+      if (result) setCreated({ link: result, requested });
+      else requestClose();
+    },
     onError: (e: unknown) => setError(e instanceof Error && e.message ? e.message : t('common.errorLoading')),
   });
 
   const cancel = useMutation({
-    // `link` is only null here if the caller opened the modal without one —
-    // the cancel button never renders in that case, so this mutation never
-    // fires without a live link's id.
-    mutationFn: () => api.cancelAitoPaymentLink(project.id, (link as AitoPaymentLink).id),
-    onSuccess: (fresh) => settle(fresh, 'aito.payment.linkCancelled'),
+    mutationFn: () => (onCancel as () => Promise<void>)(),
+    onSuccess: () => {
+      showToast(t('aito.payment.linkCancelled'), 'success');
+      requestClose();
+    },
     onError: (e: unknown) => setError(e instanceof Error && e.message ? e.message : t('common.errorLoading')),
   });
 
@@ -81,8 +111,7 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
   // otherwise a dead end until the next 5-minute tick. An invoice link never
   // shows it: its own create/cancel buttons are the way back.
   const retry = useMutation({
-    mutationFn: () => api.refreshAitoPaymentLink(project.id),
-    onSuccess: replaceBoardRow,
+    mutationFn: () => (onRetry as () => Promise<void>)(),
     onError: (e: unknown) => setError(e instanceof Error && e.message ? e.message : t('common.errorLoading')),
   });
 
@@ -97,8 +126,9 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
   });
 
   const copy = async () => {
-    if (!link?.url) return;
-    if (await copyTextToClipboard(link.url)) {
+    const url = (created?.link ?? link)?.url;
+    if (!url) return;
+    if (await copyTextToClipboard(url)) {
       flashCopied();
     } else {
       showToast(t('common.errorLoading'), 'error');
@@ -124,9 +154,12 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
     cancel.mutate();
   };
 
-  const live = isLiveLink(link) ? link : null;
+  const current = created?.link ?? link;
+  const live = isLiveLink(current) ? current : null;
+  const number = created?.link.document_number || document.number;
+  const replayed = created !== null && (created.link.amount !== created.requested || number !== document.number);
 
-  const syncError = document.kind === 'quote' && link?.sync_error ? link.sync_error : null;
+  const syncError = document.kind === 'quote' && onRetry && link?.sync_error ? link.sync_error : null;
   const retryBlock = syncError && (
     <div className="space-y-2">
       <p className="text-xs text-bambu-gray" role="status">{syncError}</p>
@@ -190,12 +223,17 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
             <dd className="text-white" title={expiry.title}>{expiry.text}</dd>
           </div>
         </dl>
+        {replayed && (
+          <p className="text-xs text-status-warning" role="status">
+            {t('aito.payment.replayNote', { number, amount: formatMoney(live.amount, live.currency) })}
+          </p>
+        )}
         {retryBlock}
         {error && <p className="text-status-error text-sm" role="alert">{error}</p>}
       </div>
     );
     footer =
-      document.kind === 'invoice' ? (
+      document.kind === 'invoice' && onCancel ? (
         <>
           <Button variant="secondary" onClick={clickCancel} className="flex-1" disabled={pending}>
             {cancel.isPending ? (
@@ -225,11 +263,11 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
     // heimdall_id), so "Link being created…" with no button was a dead end.
     // Submitting replays that same reservation under its own key on the
     // backend, so the label stays the plain "Create the link", not "again".
-    const reservation = link && link.state === 'pending' ? link : null;
+    const reservation = current && current.state === 'pending' ? current : null;
     // A non-null, non-reservation link here is dead (paid/expired/failed/
     // cancelled) — the create button reads "a new one" rather than "the
     // link" so it is clear the old one is gone for good.
-    const dead = !!link && !reservation;
+    const dead = !!current && !reservation;
     body = (
       <div className="space-y-4">
         <AmountField id="link-amount" value={amount} onChange={setAmount} currency={document.currency} label={t('aito.payment.amountLabel')} />
@@ -306,7 +344,7 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
       >
         <CardContent className="p-6 flex flex-col min-h-0">
           <h3 className="text-lg font-semibold text-white mb-1">{t('aito.payment.linkTitle')}</h3>
-          <p className="text-sm text-bambu-gray mb-4">{document.number}</p>
+          <p className="text-sm text-bambu-gray mb-4">{number}</p>
           {body}
           <div className="flex gap-3 mt-6">{footer}</div>
         </CardContent>

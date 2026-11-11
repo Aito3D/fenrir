@@ -115,6 +115,9 @@ export function orderEventDetail(event: Pick<OrderEvent, 'kind' | 'detail'>, cur
       return str(d.to);
     case 'prep.printed':
       return str(d.picklist);
+    case 'terminal.started':
+    case 'payment_link.sent':
+      return join([money(d.amount), str(d.document)]);
   }
   return null;
 }
