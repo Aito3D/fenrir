@@ -1436,20 +1436,11 @@ async def test_plain_advances_go_before_another_orders_retainer(db_session, book
     assert outcome["credit_applied"] == 700
 
 
-@pytest.mark.asyncio
-async def test_a_retainer_spent_at_hand_over_is_not_a_payment(db_session, books, monkeypatch):
-    """The re-read after the hand-over reads the retainer fresh: its money moved to the invoice, nothing new came in."""
-    books.retainers = {"eA": [{"id": "rA", "number": "RET-A", "total": 500.0, "balance": 0.0, "status": "paid"}]}
-    books.unused = [{"payment_id": "pA", "date": "2026-10-01", "retainerinvoice_id": "rA", "unused_amount": 500}]
-    books.orders.clear()
-    doc = handover_order(books, advance=500)
-    doc["estimate_id"] = "eA"
-    await sync.run_pass(db_session)
-    await sync.run_pass(db_session)
-    assert (await sync.find_board_row(db_session, "so1"))["payment"]["retainer"] == 500
+def _settling_credits(books, monkeypatch):
+    """Books lowers the invoice balance as credit is applied to it (the shared fake only spends the payment)."""
     apply = zoho_service.apply_invoice_credits
 
-    async def apply_and_settle(db, invoice_id, invoice_payments):  # Books lowers the invoice balance too
+    async def apply_and_settle(db, invoice_id, invoice_payments):
         await apply(db, invoice_id, invoice_payments)
         for invoice in books.orders["so1"]["invoices"]:
             if invoice["invoice_id"] == invoice_id:
@@ -1457,12 +1448,63 @@ async def test_a_retainer_spent_at_hand_over_is_not_a_payment(db_session, books,
                 invoice["balance"] = 1000.0 - sum(p["amount_applied"] for p in invoice_payments)
 
     monkeypatch.setattr(zoho_service, "apply_invoice_credits", apply_and_settle)
+
+
+async def _payments_received(db) -> list:
+    return (await db.execute(select(OrderBoardEvent).where(OrderBoardEvent.kind == "payment.received"))).scalars().all()
+
+
+async def _retainer_order(db, books):
+    books.retainers = {"eA": [{"id": "rA", "number": "RET-A", "total": 500.0, "balance": 0.0, "status": "paid"}]}
+    books.unused = [{"payment_id": "pA", "date": "2026-10-01", "retainerinvoice_id": "rA", "unused_amount": 500}]
+    books.orders.clear()
+    doc = handover_order(books, advance=500)
+    doc["estimate_id"] = "eA"
+    await sync.run_pass(db)
+    await sync.run_pass(db)
+    assert (await sync.find_board_row(db, "so1"))["payment"]["retainer"] == 500
+
+
+@pytest.mark.asyncio
+async def test_a_retainer_spent_at_hand_over_is_not_a_payment(db_session, books, monkeypatch):
+    """The re-read after the hand-over reads the retainer fresh: its money moved to the invoice, nothing new came in."""
+    await _retainer_order(db_session, books)
+    _settling_credits(books, monkeypatch)
     outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
     assert (outcome["credit_applied"], outcome["error"]) == (500, None)
     payment = (await sync.find_board_row(db_session, "so1"))["payment"]
     assert (payment["retainer"], payment["invoice_paid"]) == (0, 500)
-    received = select(OrderBoardEvent).where(OrderBoardEvent.kind == "payment.received")
-    assert (await db_session.execute(received)).scalars().all() == []
+    assert await _payments_received(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_a_failed_retainer_reread_after_a_hand_over_logs_no_payment(db_session, books, monkeypatch):
+    """The re-read keeps the stale retainer; the refreshed row records nothing, and the next pass sees only a drop."""
+    await _retainer_order(db_session, books)
+    _settling_credits(books, monkeypatch)
+    books.fail_retainers = ZohoUpstreamError("retainers boom")
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert outcome["credit_applied"] == 500
+    payment = (await sync.find_board_row(db_session, "so1"))["payment"]
+    assert (payment["retainer"], payment["invoice_paid"]) == (500, 500)  # stale until the next pass
+    assert await _payments_received(db_session) == []
+    books.fail_retainers = None
+    await sync.run_pass(db_session)
+    assert (await sync.find_board_row(db_session, "so1"))["payment"]["retainer"] == 0
+    assert await _payments_received(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_plain_credit_applied_at_hand_over_is_not_a_payment(db_session, books, monkeypatch):
+    await _ready(db_session, books, advance=600)
+    books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 600}]
+    _settling_credits(books, monkeypatch)
+    outcome = await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
+    assert outcome["credit_applied"] == 600
+    assert (await sync.find_board_row(db_session, "so1"))["payment"]["invoice_paid"] == 600
+    assert await _payments_received(db_session) == []
+    await sync.run_pass(db_session)
+    assert await _payments_received(db_session) == []
 
 
 @pytest.mark.asyncio

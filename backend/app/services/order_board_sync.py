@@ -247,7 +247,8 @@ async def refresh_order(db: AsyncSession, salesorder_id: str) -> None:
     # Fresh retainers: a write here (hand-over, invoice) may just have spent one; a stale unused amount would count twice.
     doc.detail = {**fetched, "_fetched_at": _now(), **await _retainers(db, fetched, doc.detail, {})}
     doc.pending = True  # the next pass re-reads it once the list row has caught up
-    changed = await recompute(db)
+    # A write here only moves credit onto an invoice: the refreshed row is the next pass's baseline, not a payment.
+    changed = await recompute(db, quiet={salesorder_id})
     await db.commit()
     await broadcast_pending(db)
     _unconfirmed.discard(salesorder_id)
@@ -557,8 +558,11 @@ async def _record_fetch_events(db: AsyncSession, salesorder_id: str, previous: d
             await order_board_events.record(db, salesorder_id, "zoho.edited", actor_class="system", changes=changes)
 
 
-async def _record_board_events(db: AsyncSession, current: dict, rows: list[dict], headers: dict[str, dict]) -> None:
-    """Ready, paid and finished, read off the difference between the previous board and the new one."""
+async def _record_board_events(
+    db: AsyncSession, current: dict, rows: list[dict], headers: dict[str, dict], quiet: frozenset[str] | set[str]
+) -> None:
+    """Ready, paid and finished, read off the difference between the previous board and the new one. Orders in
+    ``quiet`` record no payment."""
     before = {r["id"]: r for r in current.get("rows") or []}
     after = {r["id"]: r for r in rows}
     computed_at = _naive_utc(current["computed_at"])
@@ -577,7 +581,11 @@ async def _record_board_events(db: AsyncSession, current: dict, rows: list[dict]
         if old.get("retainer_known") and payment.get("retainer_known"):
             delta += (payment.get("retainer") or 0) - (old.get("retainer") or 0)
         # A terminal or link payment settled here records itself: skip what it already logged since the last board.
-        if delta > 0 and not await _has_event(db, salesorder_id, "payment.received", computed_at):
+        if (
+            delta > 0
+            and salesorder_id not in quiet
+            and not await _has_event(db, salesorder_id, "payment.received", computed_at)
+        ):
             await order_board_events.record(
                 db,
                 salesorder_id,
@@ -590,8 +598,9 @@ async def _record_board_events(db: AsyncSession, current: dict, rows: list[dict]
             await order_board_events.record(db, salesorder_id, "order.finished", actor_class="system")
 
 
-async def recompute(db: AsyncSession) -> bool:
+async def recompute(db: AsyncSession, *, quiet: frozenset[str] | set[str] = frozenset()) -> bool:
     """Rebuild the board from the local copy; True when its rows changed (the caller announces it after its commit).
+    Orders in ``quiet`` (just re-read after a write here) record no ``payment.received``.
 
     Does nothing until the first complete load: a board built from half the
     documents, or against no stock, would read as fact and be wrong.
@@ -624,7 +633,7 @@ async def recompute(db: AsyncSession) -> bool:
     state.detail = {**current, "rows": rows, "computed_at": _now()}
     if current.get("computed_at"):  # the first computation has nothing to compare with
         headers = {d.zoho_id: d.header for d in docs if d.kind == "salesorder"}
-        await _observe(db, "board", _record_board_events, current, rows, headers)
+        await _observe(db, "board", _record_board_events, current, rows, headers, quiet)
     return rows != current.get("rows")
 
 
