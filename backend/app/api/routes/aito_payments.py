@@ -170,7 +170,7 @@ async def get_terminal_payment(
     """The row, refreshed from Heimdall when it is still open (throttled)."""
     await _get_active_project_or_404(db, project_id)
     row = await db.get(AitoTerminalPayment, payment_id)
-    if row is None or row.project_id != project_id:
+    if row is None or row.project_id != project_id or row.salesorder_id is not None:
         raise HTTPException(status_code=404, detail="Terminal payment not found")
     try:
         row = await refresh_terminal_payment(db, row, now=_now())
@@ -310,7 +310,7 @@ async def cancel_invoice_payment_link(
     _check_counter_payment_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
     row = await db.get(AitoPaymentLink, link_id)
-    if row is None or row.project_id != project_id:
+    if row is None or row.project_id != project_id or row.salesorder_id is not None:
         raise HTTPException(status_code=404, detail="Payment link not found")
     # Only a live link can be cancelled. A dead one (paid, expired, already
     # cancelled) would answer Heimdall's own 409 as an opaque `conflict`, and

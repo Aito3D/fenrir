@@ -472,3 +472,129 @@ async def test_migration_adds_salesorder_id_to_both_ledgers(test_engine):
             assert "salesorder_id" in {r[1] for r in (await conn.execute(text(f"PRAGMA table_info({table})"))).all()}
             indexes = {r[1] for r in (await conn.execute(text(f"PRAGMA index_list({table})"))).all()}
             assert f"ix_{table}_salesorder_id" in indexes
+
+
+# --- review rulings -------------------------------------------------------------
+
+
+def _board_event(occurred_at, amount=23000) -> OrderBoardEvent:
+    """What a board pass records when it sees Books' paid figure rise: no `method`."""
+    return OrderBoardEvent(
+        salesorder_id=SO,
+        occurred_at=occurred_at,
+        kind="payment.received",
+        actor_class="system",
+        detail={"amount": amount, "paid": amount, "total": 23000},
+    )
+
+
+@pytest.mark.asyncio
+async def test_board_first_then_terminal_settle_annotates_one_event(db_session, monkeypatch, refreshed, no_aito):
+    db_session.add(_board_event(NOW - timedelta(minutes=5), amount=999))  # before the charge: another payment
+    db_session.add(_order_charge())
+    db_session.add(_board_event(NOW + timedelta(seconds=30), amount=22000))
+    await db_session.commit()
+
+    async def fake_get(db, payment_id):
+        return _view(amount_confirmed=23000)
+
+    monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
+    await tpe.poll_open_terminal_payments(db_session, now=NOW + timedelta(minutes=1))
+    events = await _order_events(db_session)
+    assert [e.detail.get("method") for e in events] == [None, "terminal"]
+    assert events[1].detail["amount"] == 22000  # the board's amount stays
+
+
+@pytest.mark.asyncio
+async def test_board_first_then_link_settle_annotates_one_event(db_session, monkeypatch, refreshed, no_aito):
+    db_session.add(
+        AitoPaymentLink(
+            project_id=0,
+            salesorder_id=SO,
+            idempotency_key=f"order:{SO}:1",
+            heimdall_id="h-1",
+            reference="FA-26-0900",
+            document_kind="invoice",
+            amount=23000,
+            expires_on="2026-12-11",
+            status="pending",
+            created_at=NOW,
+        )
+    )
+    db_session.add(_board_event(NOW + timedelta(seconds=30)))
+    await db_session.commit()
+
+    async def fake_get(db, payment_id):
+        return _view()
+
+    monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
+    await links.reconcile_payment_links(db_session, now=NOW + timedelta(minutes=1))
+    events = await _order_events(db_session)
+    assert len(events) == 1 and events[0].detail["method"] == "link" and events[0].detail["amount"] == 23000
+
+
+@pytest.mark.asyncio
+async def test_paid_replay_with_failing_refresh_leaves_a_readable_row(db_session, monkeypatch, no_aito):
+    async def fake_create(db, **kw):
+        return _view()
+
+    async def broken_refresh(db, salesorder_id):
+        await db.execute(select(AitoPaymentLink.id))  # a transaction is open, so the rollback expires `row`
+        raise RuntimeError("Books down")
+
+    monkeypatch.setattr(heimdall_service, "create_link", fake_create)
+    monkeypatch.setattr("backend.app.services.order_board_sync.refresh_order", broken_refresh)
+    row = await links.create_order_invoice_link(
+        db_session, SO, document=INVOICE, amount=23000, actor_name=None, now=NOW
+    )
+    assert row.status == "paid" and row.paid_at == NOW and row.salesorder_id == SO
+    assert len(await _order_events(db_session)) == 1
+
+
+@pytest.mark.asyncio
+async def test_resolve_order_document_refuses_live_void_invoice_and_spent_retainer(db_session, monkeypatch):
+    async def raw(db, invoice_id):
+        return {"invoice_number": "FA-26-0900", "customer_id": "c1", "balance": 23000, "status": "void"}
+
+    monkeypatch.setattr(zoho_service, "get_invoice_raw", raw)
+    with pytest.raises(DocumentMismatch):
+        await resolve_order_document(db_session, ORDER, "invoice", "inv-9")
+    spent = {**ORDER, "_retainers": [{"id": "ret-1", "number": "RET-0001", "balance": 0, "status": "paid"}]}
+    with pytest.raises(DocumentMismatch):
+        await resolve_order_document(db_session, spent, "retainer", "ret-1")
+
+
+@pytest.mark.asyncio
+async def test_aito_id_routes_404_on_order_rows(async_client, db_session):
+    from backend.app.api.routes import aito as aito_routes
+
+    aito_routes._ai_rate_limit_calls.clear()
+    r = await async_client.post(
+        "/api/v1/aito/",
+        json={"description": "d", "client_id": "c1", "client_name": "ACME", "client_phone": "+689 87 00 00 01"},
+    )
+    assert r.status_code == 201, r.text
+    pid = r.json()["id"]
+    charge = _order_charge(project_id=pid)
+    link = AitoPaymentLink(
+        project_id=pid,
+        salesorder_id=SO,
+        idempotency_key=f"order:{SO}:1",
+        heimdall_id="h-2",
+        reference="FA-26-0900",
+        document_kind="invoice",
+        amount=1,
+        expires_on="2026-12-11",
+        status="pending",
+    )
+    db_session.add_all([charge, link])
+    await db_session.commit()
+    assert (await async_client.get(f"/api/v1/aito/{pid}/terminal-payment/{charge.id}")).status_code == 404
+    assert (await async_client.post(f"/api/v1/aito/{pid}/payment-link/{link.id}/cancel")).status_code == 404
+
+
+def test_scope_helpers_refuse_a_malformed_tuple():
+    with pytest.raises(AssertionError):
+        docs.scope_columns(("project", "1"))
+    with pytest.raises(AssertionError):
+        docs.scope_where(AitoTerminalPayment, ("order", 7))

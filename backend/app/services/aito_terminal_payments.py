@@ -498,7 +498,7 @@ async def _settle_order_effects(db: AsyncSession, row: AitoTerminalPayment) -> N
     try:
         if paid:
             amount = row.amount_confirmed if row.amount_confirmed is not None else row.amount
-            await record_order_payment(db, salesorder_id, amount=amount, method="terminal")
+            await record_order_payment(db, salesorder_id, amount=amount, method="terminal", since=row.created_at)
         row.effects_pending_at = None
         await db.commit()
         await broadcast_pending(db)

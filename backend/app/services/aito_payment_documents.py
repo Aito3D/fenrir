@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 
-from sqlalchemy import and_
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_project import AitoProject
@@ -72,6 +73,7 @@ Scope = int | tuple[str, str]
 def scope_where(model, scope: Scope):
     """The ledger rows of one scope (`model` is either ledger class)."""
     if isinstance(scope, tuple):
+        assert scope[0] == "order" and isinstance(scope[1], str), scope
         return model.salesorder_id == scope[1]
     return and_(model.project_id == scope, model.salesorder_id.is_(None))
 
@@ -79,6 +81,7 @@ def scope_where(model, scope: Scope):
 def scope_columns(scope: Scope) -> dict:
     """`project_id` / `salesorder_id` for a new row of this scope."""
     if isinstance(scope, tuple):
+        assert scope[0] == "order" and isinstance(scope[1], str), scope
         return {"project_id": 0, "salesorder_id": scope[1]}
     return {"project_id": scope, "salesorder_id": None}
 
@@ -103,6 +106,8 @@ async def resolve_order_document(db: AsyncSession, order_detail: dict, kind: str
             raise DocumentMismatch("That invoice is not an open invoice of this order")
         raw = await zoho_service.get_invoice_raw(db, document_id)
         balance = int(round(_num(raw.get("balance"))))
+        if raw.get("status") == "void":
+            raise DocumentMismatch("That invoice is void")
         if balance <= 0:
             raise DocumentMismatch("That invoice has nothing left to pay")
         return PaymentDocument(
@@ -116,6 +121,8 @@ async def resolve_order_document(db: AsyncSession, order_detail: dict, kind: str
         listed = next((r for r in order_detail.get("_retainers") or [] if str(r.get("id") or "") == document_id), None)
         if listed is None or listed.get("status") == "void":
             raise DocumentMismatch("That retainer is not one of this order's quote")
+        if _num(listed.get("balance")) <= 0:
+            raise DocumentMismatch("That retainer has nothing left to pay")
         return PaymentDocument(
             kind="retainer",
             id=document_id,
@@ -133,11 +140,34 @@ def _num(value) -> float:
         return 0.0
 
 
-async def record_order_payment(db: AsyncSession, salesorder_id: str, *, amount: int, method: str) -> None:
+async def record_order_payment(
+    db: AsyncSession, salesorder_id: str, *, amount: int, method: str, since: datetime | None
+) -> None:
     """The order's `payment.received` for one settled ledger row. Flushes only:
-    the caller commits it with the settle (that commit is the once-only marker)."""
+    the caller commits it with the settle (that commit is the once-only marker).
+
+    Heimdall books the money in Books itself, so a board pass may already have
+    recorded this payment (a board event: no `method`) after the row was created
+    (`since`). Then the newest such event is annotated with `method` (its amount
+    stays the board's) instead of telling the same payment twice."""
+    from backend.app.models.order_board_event import OrderBoardEvent
     from backend.app.services import order_board_events
 
+    if since is not None:
+        stmt = (
+            select(OrderBoardEvent)
+            .where(
+                OrderBoardEvent.salesorder_id == salesorder_id,
+                OrderBoardEvent.kind == "payment.received",
+                OrderBoardEvent.occurred_at > since,
+            )
+            .order_by(OrderBoardEvent.occurred_at.desc(), OrderBoardEvent.id.desc())
+        )
+        for event in (await db.execute(stmt)).scalars():
+            if "method" not in (event.detail or {}):
+                event.detail = {**(event.detail or {}), "method": method}  # a new dict: JSON change tracking
+                await db.flush()
+                return
     await order_board_events.record(
         db, salesorder_id, "payment.received", actor_class="system", detail={"amount": amount, "method": method}
     )

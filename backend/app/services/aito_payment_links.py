@@ -376,13 +376,14 @@ async def _became_paid(db: AsyncSession, row: AitoPaymentLink, *, now: datetime)
         salesorder_id = row.salesorder_id
         row.paid_at = now
         try:
-            await record_order_payment(db, salesorder_id, amount=row.amount, method="link")
+            await record_order_payment(db, salesorder_id, amount=row.amount, method="link", since=row.created_at)
             await db.commit()
             await broadcast_pending(db)
         except Exception:
             await db.rollback()
             raise
         await refresh_order_after_payment(db, salesorder_id)
+        await db.refresh(row)  # a failed refresh rolls back and expires `row`; callers read it after this
         return
     project_id = row.project_id
     kind = row.document_kind or "quote"
