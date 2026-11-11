@@ -227,7 +227,8 @@ describe('NotificationBell', () => {
     );
     render(<NotificationBell />);
     const dialog = await openPanel();
-    fireEvent.click(within(dialog).getByTestId('notification-dot-12'));
+    // The inbox list loads after the panel opens: wait for the row (slow CI shards lost this race).
+    fireEvent.click(await within(dialog).findByTestId('notification-dot-12'));
     // Optimistic: the badge drops while the request is still held open.
     await waitFor(() => expect(screen.getByTestId('notification-badge')).toHaveTextContent('1'));
     await waitFor(() => expect(calls).toEqual(['read:12']));
