@@ -10,6 +10,9 @@ sales order id): it holds the print stamp ``{"at", "by"}`` of that order's
 preparation sheet in ``header``, exists only here, and is dropped once a parcel
 is created for the order. A ``contact`` row (same key) holds the stamp
 ``{"at", "by"}`` of the first pickup SMS sent for the order; it exists only here.
+A ``parcel_edit`` row (``zoho_id`` = the package id) holds ``{"old", "new"}``, the
+units per line of a lowering parcel edit, from before its package write until its
+picklist step is done: it is what says a "Finish the update" save is owed.
 """
 
 from sqlalchemy import Boolean, Integer, String, UniqueConstraint

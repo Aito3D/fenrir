@@ -1,11 +1,14 @@
 """Edit a packed parcel in Books, its picklist kept in step."""
 
+import logging
 import math
 from collections.abc import Mapping
 from datetime import date
 
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
 from backend.app.services.order_board import picked_waiting
 from backend.app.services.order_board_actions._common import (
@@ -32,6 +35,8 @@ from backend.app.services.zoho import (
     ZohoUpstreamError,
     zoho_service,
 )
+
+logger = logging.getLogger(__name__)
 
 # False: edit the package and its completed picklist in place. True: the spec's fallback (delete the package, fix
 # the picklist, create the package again), for when the first live run shows Books refuses a completed picklist.
@@ -99,6 +104,52 @@ async def _parcel(db: AsyncSession, salesorder_id: str, package_id: str, order: 
     return package, picklist, boxed, {line_id: q for line_id, q in ceiling.items() if q > 0}
 
 
+# --- What the operator meant, while a lowering edit's last step (picklist down) is not done -----------------------
+# Books cannot tell a picklist-down step that failed from a picklist boxed in part on purpose (units picked and
+# waiting for a second parcel): only this marker, written before the package step and dropped after the picklist
+# step, says a step is owed, and which units the edit was going from and to.
+
+
+def _marker_query(package_id: str):
+    return select(OrderBoardDoc).where(OrderBoardDoc.kind == "parcel_edit", OrderBoardDoc.zoho_id == package_id)
+
+
+async def _marker(db: AsyncSession, package_id: str) -> dict | None:
+    """``{"old", "new"}`` of a lowering edit of this package whose picklist step is still owed."""
+    doc = (await db.execute(_marker_query(package_id))).scalar_one_or_none()
+    return doc.header if doc is not None else None
+
+
+async def _mark(db: AsyncSession, package_id: str, old: dict[str, float], new: dict[str, float]) -> None:
+    doc = (await db.execute(_marker_query(package_id))).scalar_one_or_none()
+    if doc is None:
+        db.add(OrderBoardDoc(kind="parcel_edit", zoho_id=package_id, header={"old": old, "new": new}))
+    else:
+        doc.header = {"old": old, "new": new}
+    await db.commit()  # before the package write: it must outlive a failure after it
+
+
+async def _unmark(db: AsyncSession, package_id: str) -> None:
+    # Books is done: a marker left behind only offers a save that finds nothing to do.
+    try:
+        await db.execute(
+            delete(OrderBoardDoc).where(OrderBoardDoc.kind == "parcel_edit", OrderBoardDoc.zoho_id == package_id)
+        )
+        await db.commit()
+    except Exception as e:
+        logger.warning("Order board: clearing a parcel edit marker failed for %s (%s)", package_id, type(e).__name__)
+        await db.rollback()
+
+
+def _owed(marker: dict | None, picklist: dict, package: dict, boxed: Mapping[str, float], salesorder_id: str) -> bool:
+    """Whether the marked edit still owes its picklist step: the package holds what it asked, the picklist does not."""
+    return (
+        marker is not None
+        and _same(boxed, marker["new"])
+        and not _picklist_rows(picklist, package, marker["old"], marker["new"], False, salesorder_id)[2]
+    )
+
+
 async def package_content(db: AsyncSession, salesorder_id: str, package_id: str) -> dict:
     """What a packed parcel holds and may hold, for its editor. Reads only."""
     order = await _stored_order(db, salesorder_id)
@@ -106,9 +157,9 @@ async def package_content(db: AsyncSession, salesorder_id: str, package_id: str)
     if sync.zoho_busy():
         raise sync.ZohoBusy(salesorder_id)
     package, picklist, boxed, ceiling = await _parcel(db, salesorder_id, package_id, order, row)
-    # A picklist-down step left undone by a failure: the parcel matches, its picklist rows are still above it.
-    pending = (
-        not _PARCEL_EDIT_REPLACES and not _picklist_rows(picklist, package, boxed, boxed, False, salesorder_id, True)[2]
+    # A picklist-down step left undone by a failure: a save with no change finishes it.
+    pending = not _PARCEL_EDIT_REPLACES and _owed(
+        await _marker(db, package_id), picklist, package, boxed, salesorder_id
     )
     return {
         "id": package_id,
@@ -129,16 +180,12 @@ def _picklist_rows(
     new: Mapping[str, float],
     rising: bool,
     salesorder_id: str,
-    settle: bool = False,
 ) -> tuple[list[dict], dict[str, float], bool]:
     """The picklist rows to send, the units per order line, and whether Books already shows them.
 
     A line this edit changes holds the units the other parcels boxed from its row plus this parcel's: the larger of
     its old and new units while rising (never under what is picked), its new units otherwise. Every other row stays
-    as it is. Counted from what Books shows now, so the same request repeated finds a done step done. ``settle``
-    (the package already holds what is asked) brings the rows of the parcel's own lines down to what the parcels
-    hold, never up: it finishes a picklist-down step that failed after the package step, and leaves the units
-    picked for another parcel on the other rows alone.
+    as it is. Counted from what Books shows now, so the same request repeated finds a done step done.
     """
     in_parcel = _boxed(package)
     rows, units, same = [], {}, True
@@ -147,12 +194,9 @@ def _picklist_rows(
         picked = _num(r.get("quantity_picked"))
         target = picked
         before, after = old.get(line_id, 0.0), new.get(line_id, 0.0)
-        if (settle and line_id in in_parcel) or abs(before - after) > 1e-9:
+        if abs(before - after) > 1e-9:
             others = max(0.0, _num(r.get("quantity_packed")) - in_parcel.get(line_id, 0.0))
-            if settle:
-                target = min(picked, others + after)
-            else:
-                target = max(picked, others + max(before, after)) if rising else others + after
+            target = max(picked, others + max(before, after)) if rising else others + after
         target = round(target, 6)
         same = same and abs(target - picked) <= 1e-9
         units[line_id] = target
@@ -256,6 +300,7 @@ async def _rewrite_parcel(
 
     if not new:
         await _write(salesorder_id, number, "delete_package", zoho_service.delete_package(db, package_id))
+        await _unmark(db, package_id)  # no parcel left to finish an edit of
         picklist = await _picklist(db, order, picklist_id)
         if not any(_num(r.get("quantity_packed")) > 0 for r in picklist.get("line_items") or []):
             await _write(salesorder_id, number, "delete_picklist", zoho_service.delete_picklist(db, picklist_id))
@@ -265,6 +310,9 @@ async def _rewrite_parcel(
         rows, _, same = _picklist_rows(picklist, package, old, new, True, salesorder_id)
         if not same:
             picklist = await update_picklist("picklist_up", rows)
+    lowering = any(q > new.get(line_id, 0.0) + 1e-9 for line_id, q in old.items())
+    if new and lowering:
+        await _mark(db, package_id, old, new)
     if new and not _same(_boxed(package), new):  # B: the package
         parcel = {"date": package.get("date") or date.today().isoformat(), "line_items": _package_lines(picklist, new)}
         await _write(
@@ -272,11 +320,12 @@ async def _rewrite_parcel(
         )
         package = await _package(db, package_id)
         picklist = await _picklist(db, order, picklist_id)
-    settle = _same(old, new)  # the package step is done; only a picklist-down step that failed is left
-    if settle or any(q > new.get(line_id, 0.0) + 1e-9 for line_id, q in old.items()):  # C: picklist down
-        rows, _, same = _picklist_rows(picklist, package, old, new, False, salesorder_id, settle)
+    if lowering:  # C: picklist down
+        rows, _, same = _picklist_rows(picklist, package, old, new, False, salesorder_id)
         if not same:
             await update_picklist("picklist_down", rows)
+        if new:
+            await _unmark(db, package_id)
 
 
 async def edit_parcel(
@@ -298,11 +347,14 @@ async def edit_parcel(
         if not _same(boxed, old) and not _same(boxed, new):
             raise OrderActionRefused("package_changed")
         _within(new, ceiling, {line["id"] for line in row["lines"]})
-        # The parcel already holding what is asked is a done package step; the picklist may still be above it.
-        if _same(old, new) and (
-            _PARCEL_EDIT_REPLACES or _picklist_rows(picklist, package, old, new, False, salesorder_id, True)[2]
-        ):
-            raise OrderActionRefused("nothing_changed")
+        if _same(old, new):
+            # No change asked: only a marked edit whose picklist step is still owed has something to finish.
+            marker = None if _PARCEL_EDIT_REPLACES else await _marker(db, package_id)
+            if marker is None or not _owed(marker, picklist, package, boxed, salesorder_id):
+                if marker is not None:
+                    await _unmark(db, package_id)  # done or out of date
+                raise OrderActionRefused("nothing_changed")
+            old, new = marker["old"], marker["new"]
         try:
             await _rewrite_parcel(db, salesorder_id, number, detail, package, picklist, old, new)
         except Exception:

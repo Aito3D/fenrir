@@ -2314,6 +2314,7 @@ async def test_reopened_after_a_picklist_down_failure_the_save_runs_only_that_st
     with pytest.raises(ZohoUpstreamError):
         await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
     parcels.steps.clear()
+    assert await _marker_rows(db_session) == ["p1"]  # the step C timeout leaves the marker
     content = await actions.package_content(db_session, "so1", "p1")  # what the operator sees on reopening
     assert content["version"] != VERSION and content["lines"][0]["quantity"] == 1
     assert content["pending"] is True  # the bar offers "Finish the update" with no change
@@ -2328,10 +2329,57 @@ async def test_reopened_after_a_picklist_down_failure_the_save_runs_only_that_st
         )
     ]
     assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 1
+    assert await _marker_rows(db_session) == []
     content = await actions.package_content(db_session, "so1", "p1")
     assert content["pending"] is False
     with pytest.raises(actions.OrderActionRefused, match="nothing_changed"):  # now nothing is left to do
         await actions.edit_parcel(db_session, "so1", "p1", content["version"], {"l1": 1}, {"l1": 1})
+
+
+async def _marker_rows(db):
+    docs = (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "parcel_edit"))).scalars().all()
+    return [d.zoho_id for d in docs]
+
+
+@pytest.mark.asyncio
+async def test_a_picklist_boxed_in_part_on_purpose_is_not_pending_and_a_save_keeps_its_units(db_session, parcels):
+    # pl1 picked 5 of l1, "Créer le colis" boxed 2 into p1: 3 units wait for a second parcel.
+    await _board(db_session, parcels, _packed(parcels, qty=5, picked=5))
+    content = await actions.package_content(db_session, "so1", "p1")
+    assert content["pending"] is False
+    with pytest.raises(actions.OrderActionRefused, match="nothing_changed"):
+        await actions.edit_parcel(db_session, "so1", "p1", content["version"], {"l1": 2}, {"l1": 2})
+    assert parcels.steps == []
+    assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 5
+
+
+@pytest.mark.asyncio
+async def test_a_line_taken_out_by_a_failed_edit_is_trimmed_when_the_edit_is_finished(db_session, parcels):
+    doc = _packed(parcels)
+    doc["line_items"][1].update(quantity_picked=1, quantity_packed=1)  # l2: one unit picked and boxed in p1
+    parcels.picklists["pl1"]["line_items"].append(
+        {
+            "line_item_id": "r2",
+            "salesorder_id": "so1",
+            "so_line_item_id": "l2",
+            "quantity_to_be_picked": 1,
+            "quantity_picked": 1,
+            "quantity_packed": 1,
+        }
+    )
+    parcels.packages["p1"]["line_items"].append({"so_line_item_id": "l2", "quantity": 1, "picklist_item_id": "r2"})
+    await _board(db_session, parcels, doc)
+    parcels.fail_step = "picklist"
+    with pytest.raises(ZohoUpstreamError):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2, "l2": 1}, {"l1": 2})
+    parcels.steps.clear()
+    content = await actions.package_content(db_session, "so1", "p1")  # reopened: l2 is no longer in the parcel
+    assert content["pending"] is True
+    await actions.edit_parcel(db_session, "so1", "p1", content["version"], {"l1": 2}, {"l1": 2})
+    assert parcels.steps[0][1]["line_items"] == [
+        {"line_item_id": "r1", "quantity_to_be_picked": 2, "quantity_picked": 2}
+    ]  # r2 left out: Books drops it
+    assert await _marker_rows(db_session) == []
 
 
 @pytest.mark.asyncio
