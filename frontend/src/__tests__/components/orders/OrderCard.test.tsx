@@ -17,8 +17,11 @@ vi.mock('../../../contexts/AuthContext', async importOriginal => {
 });
 const print = vi.fn((produce: () => Promise<Blob>) => produce());
 vi.mock('../../../components/aito/usePrintBlob', () => ({ usePrintBlob: () => ({ print, busy: false }) }));
-const panel = vi.fn((_props: { start?: string }) => <div data-testid="panel" />);
-vi.mock('../../../components/orders/OrderLinesPanel', () => ({ OrderLinesPanel: (p: { start?: string }) => panel(p) }));
+type PanelProps = { start?: string; onHandoverOpen?: (open: boolean) => void };
+const panel = vi.fn((p: PanelProps) => (
+  <div data-testid="panel"><button type="button" onClick={() => p.onHandoverOpen?.(true)}>open hand-over</button></div>
+));
+vi.mock('../../../components/orders/OrderLinesPanel', () => ({ OrderLinesPanel: (p: PanelProps) => panel(p) }));
 
 import { render } from '../../utils';
 import { OrderCard } from '../../../components/orders/OrderCard';
@@ -103,6 +106,14 @@ describe('the row icon', () => {
     render(<OrderCard row={row(waiting)} open={false} onToggle={vi.fn()} onStart={onStart} />);
     await user.click(screen.getByRole('button', { name: 'Hand over the parcel' }));
     expect(onStart).toHaveBeenCalledWith('handover-p9');
+  });
+
+  it('hides while the open panel shows a hand-over bar', async () => {
+    const user = userEvent.setup();
+    render(<OrderCard row={row()} open onToggle={vi.fn()} onStart={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Prepare' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'open hand-over' }));
+    expect(screen.queryByRole('button', { name: 'Prepare' })).not.toBeInTheDocument();
   });
 
   it('hands the step down to the panel', () => {

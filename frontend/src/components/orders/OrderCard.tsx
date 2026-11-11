@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown } from 'lucide-react';
 import type { OrderBoardRow } from '../../api/client';
@@ -51,6 +52,8 @@ export function OrderCard({
   const next = nextStep(row);
   const step = hasPermission('orders:update') ? next : null;
   const age = t('orders.age', { n: row.age_days });
+  // While the panel's hand-over bar is open, the row icon's prep step would only read Books and do nothing.
+  const [handingOff, setHandingOff] = useState(false);
 
   return (
     <Card id={`order-${row.id}`} className="overflow-clip">
@@ -107,9 +110,9 @@ export function OrderCard({
           </span>
           <ChevronDown aria-hidden="true" className={`h-4 w-4 text-bambu-gray transition-transform [grid-area:chev] lg:[grid-area:auto] lg:justify-self-end ${open ? 'rotate-180' : ''}`} />
         </button>
-        {step && <OrderRowAction row={row} target={step} onStart={onStart} />}
+        {step && !(open && handingOff) && <OrderRowAction row={row} target={step} onStart={onStart} />}
       </div>
-      {open && <OrderLinesPanel row={row} others={others} onGoto={onGoto} start={start} startTick={startTick} />}
+      {open && <OrderLinesPanel row={row} others={others} onGoto={onGoto} start={start} startTick={startTick} onHandoverOpen={setHandingOff} />}
     </Card>
   );
 }

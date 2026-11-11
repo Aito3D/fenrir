@@ -60,6 +60,7 @@ export function OrderLinesPanel({
   onGoto,
   start,
   startTick,
+  onHandoverOpen,
 }: {
   row: OrderPanelRow;
   others?: { id: string; number: string }[];
@@ -68,6 +69,8 @@ export function OrderLinesPanel({
   start?: string;
   /** Changes with every click on the row icon, so a second click reopens a bar that was cancelled. */
   startTick?: number;
+  /** Told when a hand-over bar opens or closes (and closed on unmount): the row icon hides meanwhile. */
+  onHandoverOpen?: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
   const toasts = useOrderOutcomeToasts();
@@ -146,6 +149,10 @@ export function OrderLinesPanel({
   }, [start, startTick, canUpdate]);
   const invoiceSent = useRef(false);
   const handoverOpen = !!handover && waitingPackages(row).some(p => p.id === handover);
+  useEffect(() => {
+    onHandoverOpen?.(handoverOpen);
+    return () => onHandoverOpen?.(false);
+  }, [handoverOpen, onHandoverOpen]);
   // A choice of what to pick only exists while the shelf holds something, the parcel check of a picklist while
   // units are left to box; a refetch that ends either closes it for good.
   const packable = checkState?.kind === 'pack' ? panelGroups(row).some(g => g.id === 'todo') : packableUnits(row) > 0;
@@ -312,7 +319,7 @@ export function OrderLinesPanel({
                           ))}
                         </span>
                       )}
-                      {group.id === 'todo' && !check && !edit && !parcel && (editLead || canPick(row) || boxablePicklists(row).length > 0) && (
+                      {group.id === 'todo' && !check && !edit && !parcel && !handoverOpen && (editLead || canPick(row) || boxablePicklists(row).length > 0) && (
                         <OrderPrepActions
                           row={row}
                           lead={editLead}
