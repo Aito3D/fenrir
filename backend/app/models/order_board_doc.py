@@ -13,6 +13,8 @@ is created for the order. A ``contact`` row (same key) holds the stamp
 A ``parcel_edit`` row (``zoho_id`` = the package id) holds ``{"old", "new"}``, the
 units per line of a lowering parcel edit, from before its package write until its
 picklist step is done: it is what says a "Finish the update" save is owed.
+An ``alert_new`` row (``zoho_id`` = the sales order id) marks an order first listed
+after a successful pass: its ``order.received`` rings the bell, and the row goes.
 """
 
 from sqlalchemy import Boolean, Integer, String, UniqueConstraint

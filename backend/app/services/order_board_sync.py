@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
@@ -517,24 +517,26 @@ def _line_changes(previous: dict, fetched: dict) -> list[dict]:
     return changes
 
 
-async def _record_fetch_events(
-    db: AsyncSession, salesorder_id: str, previous: dict | None, fetched: dict, last_success: datetime | None = None
-) -> None:
+async def _record_fetch_events(db: AsyncSession, salesorder_id: str, previous: dict | None, fetched: dict) -> None:
     """What a freshly stored sales-order detail shows: a new order, or an edit made in Books (not by Fenrir).
 
-    ``last_success`` is the previous pass's success: only an order created after it rings the bell, so the first
-    re-read of orders that were already open (and a first load) records history without alerting."""
+    The new order rings the bell only when ``_reconcile_listings`` marked it (``alert_new``): orders already open
+    before, and a first load, record history without alerting. The marker goes with the event."""
     if not await _has_event(db, salesorder_id, "order.received"):
         facts = order_facts(fetched)
         source = "quote" if facts["estimate_id"] else "shopify" if facts["shopify_order"] else "direct"
-        created = _naive_utc(fetched.get("created_time") or "")
+        marker = (
+            await db.execute(
+                select(OrderBoardDoc).where(OrderBoardDoc.kind == "alert_new", OrderBoardDoc.zoho_id == salesorder_id)
+            )
+        ).scalar_one_or_none()
         await order_board_events.record(
             db,
             salesorder_id,
             "order.received",
             actor_class="system",
-            occurred_at=created or _naive_utc(fetched.get("date") or ""),
-            alert=last_success is not None and created is not None and created > last_success,
+            occurred_at=_naive_utc(fetched.get("created_time") or "") or _naive_utc(fetched.get("date") or ""),
+            alert=marker is not None,
             detail={
                 "source": source,
                 "reference": facts["reference"],
@@ -543,6 +545,8 @@ async def _record_fetch_events(
                 "pickup": facts["delivery_method"].upper() == "PICK UP",
             },
         )
+        if marker is not None:
+            await db.delete(marker)
     # An order Fenrir wrote whose re-read has not landed yet: the difference is ours, not an outside edit.
     if previous is not None and not needs_refresh(salesorder_id):
         changes = _line_changes(previous, fetched)
@@ -647,6 +651,13 @@ async def _reconcile_listings(db: AsyncSession, settings: OrderBoardSettings) ->
         .scalars()
         .all()
     }
+    # A sales order first listed after a successful pass is news: marked here, it rings when its detail lands, however
+    # many passes that takes. No previous success (first load, reset): no marker, no bell.
+    state = await _find_state(db)
+    mark_new = bool(((state.detail if state else None) or {}).get("last_success_at"))
+    marked = set(
+        (await db.execute(select(OrderBoardDoc.zoho_id).where(OrderBoardDoc.kind == "alert_new"))).scalars().all()
+    )
     listed: set[tuple[str, str]] = set()
     for kind, id_field, fields, headers in listings:
         for header in headers:
@@ -657,6 +668,8 @@ async def _reconcile_listings(db: AsyncSession, settings: OrderBoardSettings) ->
             if doc is None:
                 doc = stored[key] = OrderBoardDoc(kind=kind, zoho_id=key[1], header=header, pending=candidate)
                 db.add(doc)
+                if kind == "salesorder" and mark_new and key[1] not in marked:
+                    db.add(OrderBoardDoc(kind="alert_new", zoho_id=key[1], header={}))
                 continue
             if not candidate:
                 if not (kind == "salesorder" and _is_finished(header)):
@@ -665,8 +678,14 @@ async def _reconcile_listings(db: AsyncSession, settings: OrderBoardSettings) ->
             elif doc.detail is None or any(doc.header.get(f) != header.get(f) for f in fields):
                 doc.pending = True
             doc.header = header
-    for key in set(stored) - listed:  # deleted in Zoho
+    gone = set(stored) - listed  # deleted in Zoho
+    for key in gone:
         await db.delete(stored.pop(key))
+    gone_orders = [zoho_id for kind, zoho_id in gone if kind == "salesorder"]
+    if gone_orders:  # never fetched, never news
+        await db.execute(
+            delete(OrderBoardDoc).where(OrderBoardDoc.kind == "alert_new", OrderBoardDoc.zoho_id.in_(gone_orders))
+        )
     await db.commit()
     return stored
 
@@ -698,8 +717,6 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
         (d for d in stored.values() if d.pending),
         key=lambda d: (d.kind != "salesorder", d.header.get("date") or "", d.zoho_id),
     )
-    # Read before this pass sets its own: the bell's "new order" line.
-    last_success = _naive_utc(((await _state(db)).detail or {}).get("last_success_at") or "")
     fetched_count = 0
     for doc in pending[:MAX_DETAILS_PER_PASS]:
         if zoho_service.calls_in_last_minute() >= CALL_CEILING:
@@ -716,7 +733,7 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
         doc.detail = {**fetched, "_fetched_at": _now()}
         doc.pending = False
         if doc.kind == "salesorder":
-            await _observe(db, doc.zoho_id, _record_fetch_events, doc.zoho_id, previous, fetched, last_success)
+            await _observe(db, doc.zoho_id, _record_fetch_events, doc.zoho_id, previous, fetched)
         await db.commit()  # a later failure must not lose what was fetched
         await broadcast_pending(db)
         if _written_at.get(doc.zoho_id, -1.0) >= began and doc.kind == "salesorder":

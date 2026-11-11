@@ -1,9 +1,9 @@
 """Bell alerts for the Order Board: a ready order, and a new one (not old history read for the first time)."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 
 from backend.app.models.notification_inbox import Notification, UserInboxPreference
 from backend.app.models.order_board_doc import OrderBoardDoc
@@ -107,22 +107,74 @@ async def test_first_load_sends_no_new_alerts(db_session, zoho, pushes):  # noqa
     assert await rows(db_session, "orders.new") == []
 
 
+async def markers(db) -> list[str]:
+    query = select(OrderBoardDoc.zoho_id).where(OrderBoardDoc.kind == "alert_new")
+    return list((await db.execute(query)).scalars())
+
+
+async def new_alerts(db) -> list[str]:
+    return [r.target_ref for r in await rows(db, "orders.new")]
+
+
 @pytest.mark.asyncio
-async def test_new_order_after_last_success_alerts(db_session, zoho, pushes):  # noqa: F811
+async def test_order_created_during_a_pass_alerts_once_next_pass(db_session, zoho, pushes):  # noqa: F811
     reader = await _user(db_session, "reader", perms=("orders:read",))
     zoho.add(order(1))
+    created_mid_pass = datetime.now(timezone.utc).isoformat()  # before the pass stamps its success
     await sync.run_pass(db_session)
     pushes.clear()
-    now = datetime.now(timezone.utc)
-    zoho.add({**order(2), "created_time": (now + timedelta(minutes=1)).isoformat()})
-    # Already open before the last pass, read for the first time now (the deploy case): history, no bell.
-    zoho.add({**order(3), "created_time": (now - timedelta(days=3)).isoformat()})
+    zoho.add({**order(2), "created_time": created_mid_pass})
     await sync.run_pass(db_session)
 
     (row,) = await rows(db_session, "orders.new")
     assert (row.user_id, row.target_ref, row.body) == (reader.id, "so2", "SO-00002 · Customer 2")
-    assert len(await order_board_events_of(db_session, "order.received")) == 3
+    assert await markers(db_session) == []
     assert pushes == [(reader.id, {"type": "inbox_changed", "user_ids": [reader.id]})]
+    zoho.orders["so2"] = {**zoho.orders["so2"], "last_modified_time": "2026-11-02T08:00:00-1000"}
+    await sync.run_pass(db_session)
+    assert await new_alerts(db_session) == ["so2"]
+
+
+@pytest.mark.asyncio
+async def test_order_deferred_by_the_cap_alerts_when_fetched(db_session, zoho, monkeypatch):
+    await _user(db_session, "reader", perms=("orders:read",))
+    zoho.add(order(1))
+    await sync.run_pass(db_session)
+    monkeypatch.setattr(sync, "MAX_DETAILS_PER_PASS", 1)
+    zoho.add(order(2, age=1), order(3, age=9), order(4, age=8))  # oldest first: so2 waits two passes
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    assert await new_alerts(db_session) == ["so3", "so4"]
+    assert await markers(db_session) == ["so2"]
+    await sync.run_pass(db_session)
+    assert await new_alerts(db_session) == ["so3", "so4", "so2"]
+    assert await markers(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_reset_sends_no_alert(db_session, zoho):
+    await _user(db_session, "reader", perms=("orders:read",))
+    zoho.add(order(1))
+    await sync.run_pass(db_session)
+    await db_session.execute(delete(OrderBoardDoc))  # the disposable copy, state row included
+    await db_session.commit()
+    zoho.add(order(2))
+    await sync.run_pass(db_session)
+    assert await rows(db_session) == [] and await markers(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_order_gone_before_its_detail_leaves_no_marker(db_session, zoho, monkeypatch):
+    await _user(db_session, "reader", perms=("orders:read",))
+    zoho.add(order(1))
+    await sync.run_pass(db_session)
+    monkeypatch.setattr(sync, "MAX_DETAILS_PER_PASS", 0)
+    zoho.add(order(2))
+    await sync.run_pass(db_session)
+    assert await markers(db_session) == ["so2"]
+    del zoho.orders["so2"]
+    await sync.run_pass(db_session)
+    assert await markers(db_session) == [] and await rows(db_session) == []
 
 
 async def order_board_events_of(db, kind: str) -> list[OrderBoardEvent]:
