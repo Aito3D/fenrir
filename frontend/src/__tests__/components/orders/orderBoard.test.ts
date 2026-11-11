@@ -104,6 +104,14 @@ describe('scopes', () => {
     expect(countByStatus(bySearch(byBrand(rows, false), 'alpha'))).toMatchObject({ all: 2, to_ship: 2, partial: 0 });
   });
 
+  it('To order also holds a partial order with units to buy and no PO (an X2D not in stock)', () => {
+    const toBuy = { total: 19, shipped: 0, ready: 18, backordered: 0, to_order: 1 };
+    const mixed = [...rows, row({ id: 'partial-x2d', status: 'partial', units: toBuy }), row({ id: 'buy', status: 'to_order' })];
+    expect(byStatus(mixed, 'to_order').map(r => r.id)).toEqual(['partial-x2d', 'buy']);
+    expect(byStatus(mixed, 'partial').map(r => r.id)).toEqual(['core-partial', 'partial-x2d']);
+    expect(countByStatus(mixed)).toEqual({ all: 5, to_ship: 2, partial: 2, incoming: 0, to_order: 2 });
+  });
+
   it('the list follows all three', () => {
     expect(byStatus(bySearch(byBrand(rows, true), 'alpha'), 'to_ship').map(r => r.id)).toEqual(['core-ship']);
     expect(byStatus(rows, 'all')).toHaveLength(3);

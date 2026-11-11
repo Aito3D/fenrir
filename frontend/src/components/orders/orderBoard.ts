@@ -37,12 +37,20 @@ export const bySearch = (rows: OrderBoardRow[], query: string): OrderBoardRow[] 
   );
 };
 
+/** "To order" is every order with units still to buy and no open PO, whatever its status: a Partial
+ *  order whose printer is not in stock must show there too, or nobody orders it. */
+const inStatus = (r: OrderBoardRow, status: StatusFilter): boolean =>
+  status === 'all' || r.status === status || (status === 'to_order' && r.units.to_order > 0);
+
 export const byStatus = (rows: OrderBoardRow[], status: StatusFilter): OrderBoardRow[] =>
-  status === 'all' ? rows : rows.filter(r => r.status === status);
+  rows.filter(r => inStatus(r, status));
 
 export const countByStatus = (rows: OrderBoardRow[]): Record<StatusFilter, number> => {
   const counts: Record<StatusFilter, number> = { all: rows.length, to_ship: 0, partial: 0, incoming: 0, to_order: 0 };
-  for (const r of rows) counts[r.status] += 1;
+  for (const r of rows) {
+    counts[r.status] += 1;
+    if (r.status !== 'to_order' && r.units.to_order > 0) counts.to_order += 1;
+  }
   return counts;
 };
 
