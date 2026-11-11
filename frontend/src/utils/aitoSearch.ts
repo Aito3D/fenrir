@@ -118,7 +118,8 @@ const PREFIXES: { prefix: string; keep: boolean; allow: (f: IndexedField) => boo
   { prefix: '@', keep: true, allow: (f) => f.kind === 'email' || f.field === 'social' },
   { prefix: '#', keep: false, allow: (f) => f.kind === 'number' },
 ];
-const DEFAULT_ALLOW = (f: IndexedField) => f.field !== 'cardId';
+// Every field, card id included: it matches only the exact number (the panel's "Project #339").
+const DEFAULT_ALLOW = () => true;
 
 const PHONE_SHAPED = /^\+?[\d.\-()]+$/;
 

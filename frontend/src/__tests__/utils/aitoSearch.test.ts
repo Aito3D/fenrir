@@ -160,10 +160,12 @@ describe('searchProjects — fields', () => {
     expect(top([p], '12345675')!.field).toBe('lta');
   });
 
-  it('finds the card id only with #', () => {
+  it('finds the card id, bare or with #, by its exact number only', () => {
     const p = card({ id: 41, quote_number: null, description: 'x', client_name: null });
     expect(top([p], '#41')!.field).toBe('cardId');
-    expect(searchProjects([p], '41')).toEqual([]);
+    expect(top([p], '41')!.field).toBe('cardId');
+    expect(searchProjects([p], '4')).toEqual([]);
+    expect(searchProjects([p], '410')).toEqual([]);
   });
 
   it('finds a card by a linked project code', () => {
