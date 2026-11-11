@@ -214,7 +214,7 @@ async def test_prep_sheet_is_a_pdf_and_stamps_with_the_username(async_client, to
 
     seen = {}
 
-    async def fake_stamp(db, salesorder_id, by):
+    async def fake_stamp(db, salesorder_id, by, picklist=None):
         seen.update(id=salesorder_id, by=by)
         return {"number": "SO-1", "lines": [], "customer": "X"}
 
@@ -236,7 +236,7 @@ async def test_prep_sheet_is_a_pdf_and_stamps_with_the_username(async_client, to
 async def test_prep_sheet_renders_a_real_pdf(async_client, tokens, monkeypatch):
     from backend.app.services import order_board_actions as actions
 
-    async def fake_stamp(db, salesorder_id, by):
+    async def fake_stamp(db, salesorder_id, by, picklist=None):
         return {"number": "SO-1", "customer": "X", "lines": [], "printed": None}
 
     monkeypatch.setattr(actions, "stamp_print", fake_stamp)
@@ -250,7 +250,7 @@ async def test_create_parcel_returns_the_board_and_the_number(async_client, toke
 
     seen = {}
 
-    async def fake(db, salesorder_id, picklist_id, quantities):
+    async def fake(db, salesorder_id, picklist_id, quantities, by=None):
         seen["q"] = (picklist_id, quantities)
         return "PKG-7"
 
@@ -268,7 +268,7 @@ async def test_picklist_routes_pass_the_choice_through(async_client, tokens, mon
 
     seen = {}
 
-    async def fake_create(db, salesorder_id, quantities):
+    async def fake_create(db, salesorder_id, quantities, by=None):
         seen["q"] = quantities
         return {"id": "pl1", "number": "PL-00013"}
 
@@ -297,7 +297,7 @@ async def test_prep_sheet_of_a_picklist_prints_its_units_and_number(async_client
 
     seen = {}
 
-    async def fake_stamp(db, salesorder_id, by):
+    async def fake_stamp(db, salesorder_id, by, picklist=None):
         return {"number": "SO-1", "lines": [], "customer": "X"}
 
     async def fake_content(db, salesorder_id, picklist_id):
@@ -321,11 +321,11 @@ async def test_handover_and_invoice_return_board_and_outcome(async_client, token
 
     calls = []
 
-    async def fake_hand(db, so, pkg, *, mode, apply_credit):
+    async def fake_hand(db, so, pkg, *, mode, apply_credit, by=None):
         calls.append(("hand", so, pkg, mode, apply_credit))
         return {"invoice": "created"}
 
-    async def fake_inv(db, so, *, apply_credit, scope):
+    async def fake_inv(db, so, *, apply_credit, scope, by=None):
         calls.append(("inv", so, apply_credit, scope))
         return {"invoice": "none"}
 
@@ -533,7 +533,7 @@ async def test_cancel_returns_the_board(async_client, tokens, monkeypatch):
 
     calls = []
 
-    async def fake_cancel(db, so):
+    async def fake_cancel(db, so, by=None):
         calls.append(so)
 
     monkeypatch.setattr(actions, "cancel_order", fake_cancel)
@@ -716,11 +716,11 @@ async def test_edit_routes_pass_the_choice_through(async_client, tokens, monkeyp
 
     seen = {}
 
-    async def fake_edit(db, salesorder_id, version, lines):
+    async def fake_edit(db, salesorder_id, version, lines, by=None):
         seen.update(v=version, lines=lines)
         return {"number": "SO-1"}
 
-    async def fake_parcel(db, salesorder_id, package_id, version, was, lines):
+    async def fake_parcel(db, salesorder_id, package_id, version, was, lines, by=None):
         seen.update(p=package_id, was=was, plines=lines)
         return {"number": "SO-1"}
 

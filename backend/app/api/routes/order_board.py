@@ -229,6 +229,10 @@ def _pdf(content: bytes, filename: str) -> Response:
     )
 
 
+def _by(user: User | None) -> str | None:
+    return user.username if user else None
+
+
 def _logged(user: User | None, salesorder_id: str, action: str) -> None:
     logger.info("Order board: user=%s order=%s action=%s", user.id if user else "-", salesorder_id, action)
 
@@ -327,7 +331,11 @@ async def print_prep_sheet(
 ) -> Response:
     """Stamp the order as printed and return its prep sheet: the units of one picklist, or everything packable."""
     content = await _run(order_board_actions.picklist_content(db, salesorder_id, picklist_id)) if picklist_id else None
-    row = await _run(order_board_actions.stamp_print(db, salesorder_id, user.username if user else ""))
+    row = await _run(
+        order_board_actions.stamp_print(
+            db, salesorder_id, user.username if user else "", content["number"] if content else None
+        )
+    )
     base = await aito_tracking.external_url(db)
     pdf = render_prep_sheet(
         row,
@@ -358,7 +366,7 @@ async def record_pickup_sms(
 ) -> dict:
     """Mark the order as contacted after the browser sent the pickup SMS through the relay on the
     operator's Mac (scripts/sms_relay_mac.py); the server never sends it. Admins only. Returns the row."""
-    row = await _run(order_board_actions.stamp_contact(db, salesorder_id, user.username if user else ""))
+    row = await _run(order_board_actions.stamp_contact(db, salesorder_id, _by(user) or ""))
     _logged(user, salesorder_id, "pickup_sms")
     return row
 
@@ -381,7 +389,9 @@ async def create_picklist(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ) -> dict:
     picklist = await _run(
-        order_board_actions.create_picklist(db, salesorder_id, {line.line_id: line.quantity for line in body.lines})
+        order_board_actions.create_picklist(
+            db, salesorder_id, {line.line_id: line.quantity for line in body.lines}, by=_by(user)
+        )
     )
     _logged(user, salesorder_id, "create_picklist")
     return {"board": await order_board_sync.read_board(db), "picklist": picklist}
@@ -407,7 +417,7 @@ async def create_parcel(
 ) -> dict:
     number = await _run(
         order_board_actions.create_parcel(
-            db, salesorder_id, body.picklist_id, {line.line_id: line.quantity for line in body.lines}
+            db, salesorder_id, body.picklist_id, {line.line_id: line.quantity for line in body.lines}, by=_by(user)
         )
     )
     _logged(user, salesorder_id, "create_parcel")
@@ -433,7 +443,7 @@ async def edit_order_lines(
 ) -> dict:
     row = await _run(
         order_board_actions.edit_lines(
-            db, salesorder_id, body.version, [line.model_dump(exclude_none=True) for line in body.lines]
+            db, salesorder_id, body.version, [line.model_dump(exclude_none=True) for line in body.lines], by=_by(user)
         )
     )
     _logged(user, salesorder_id, "edit_lines")
@@ -467,6 +477,7 @@ async def edit_parcel(
             body.version,
             {line.line_id: line.quantity for line in body.was},
             {line.line_id: line.quantity for line in body.lines},
+            by=_by(user),
         )
     )
     _logged(user, salesorder_id, "edit_parcel")
@@ -492,7 +503,9 @@ async def hand_over_parcel(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ) -> dict:
     outcome = await _run(
-        order_board_actions.hand_over(db, salesorder_id, package_id, mode=body.mode, apply_credit=body.apply_credit)
+        order_board_actions.hand_over(
+            db, salesorder_id, package_id, mode=body.mode, apply_credit=body.apply_credit, by=_by(user)
+        )
     )
     _logged(user, salesorder_id, "hand_over")
     return {"board": await order_board_sync.read_board(db), "outcome": outcome}
@@ -515,7 +528,9 @@ async def invoice_order(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ) -> dict:
     outcome = await _run(
-        order_board_actions.invoice_shipped(db, salesorder_id, apply_credit=body.apply_credit, scope=body.scope)
+        order_board_actions.invoice_shipped(
+            db, salesorder_id, apply_credit=body.apply_credit, scope=body.scope, by=_by(user)
+        )
     )
     _logged(user, salesorder_id, "invoice")
     return {"board": await order_board_sync.read_board(db), "outcome": outcome}
@@ -527,7 +542,7 @@ async def cancel_order(
     db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ) -> dict:
-    await _run(order_board_actions.cancel_order(db, salesorder_id))
+    await _run(order_board_actions.cancel_order(db, salesorder_id, by=_by(user)))
     _logged(user, salesorder_id, "cancel")
     return {"board": await order_board_sync.read_board(db)}
 
@@ -610,7 +625,7 @@ async def send_invoice_email(
     async def send() -> None:
         try:
             await order_board_actions.email_invoice(
-                db, salesorder_id, order.get("salesorder_number") or salesorder_id, invoice_id, to
+                db, salesorder_id, order.get("salesorder_number") or salesorder_id, invoice_id, to, by=_by(user)
             )
         except ZohoUnreachable:
             raise  # Books may have sent it all the same: the guard stays armed

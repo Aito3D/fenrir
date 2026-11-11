@@ -10,6 +10,7 @@ from backend.app.services.order_board_actions._common import (
     OrderActionRefused,
     _best_effort_refresh,
     _lines,
+    _log,
     _num,
     _open_picklists,
     _row,
@@ -54,7 +55,9 @@ async def picklist_preview(db: AsyncSession, salesorder_id: str) -> dict:
     return {"lines": _lines((await _pickable(db, salesorder_id, row, order))[1])}
 
 
-async def create_picklist(db: AsyncSession, salesorder_id: str, quantities: dict[str, float]) -> dict:
+async def create_picklist(
+    db: AsyncSession, salesorder_id: str, quantities: dict[str, float], *, by: str | None = None
+) -> dict:
     """Create a picklist in Books for the given line quantities; returns its ``id`` and ``number``."""
     with writing(salesorder_id):
         doc = await confirm_stored_copy(db, salesorder_id)
@@ -86,5 +89,13 @@ async def create_picklist(db: AsyncSession, salesorder_id: str, quantities: dict
         except ZohoUpstreamError:
             await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean Books did create it
             raise
+        await _log(
+            db,
+            salesorder_id,
+            "picklist.created",
+            by,
+            picklist=picklist.get("picklist_number") or "",
+            units=_r(sum(wanted.values())),
+        )
         await _best_effort_refresh(db, salesorder_id, number)
     return {"id": picklist.get("picklist_id") or "", "number": picklist.get("picklist_number") or ""}

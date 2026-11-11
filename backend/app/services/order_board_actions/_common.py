@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.order_board_doc import OrderBoardDoc
-from backend.app.services import order_board_sync as sync
+from backend.app.services import order_board_events, order_board_sync as sync
 from backend.app.services.order_board_payment import _r
 from backend.app.services.zoho import ZohoNotFound, ZohoRateLimited, zoho_service
 
@@ -83,6 +83,22 @@ async def _best_effort_refresh(db: AsyncSession, salesorder_id: str, number: str
         except Exception:
             with contextlib.suppress(Exception):
                 await db.rollback()
+
+
+async def _log(
+    db: AsyncSession, salesorder_id: str, kind: str, by: str | None, *, changes: list[dict] | None = None, **detail
+) -> None:
+    """Record one history event and commit it, so a later failed re-read (which rolls back) cannot drop it. The Books
+    write already happened, so a failure here is logged, never raised."""
+    try:
+        await order_board_events.record(
+            db, salesorder_id, kind, actor_class="user", actor_name=by, changes=changes, detail=detail or None
+        )
+        await db.commit()
+    except Exception as e:
+        logger.warning("Order board: recording %s failed for %s (%s)", kind, salesorder_id, type(e).__name__)
+        with contextlib.suppress(Exception):
+            await db.rollback()
 
 
 def _num(value) -> float:

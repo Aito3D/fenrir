@@ -16,6 +16,7 @@ from backend.app.services.order_board_actions._common import (
     OrderNotOnBoard,
     _best_effort_refresh,
     _boxed,
+    _log,
     _num,
     _open_picklists,
     _picklist,
@@ -263,6 +264,7 @@ async def _rewrite_parcel(
     picklist: dict,
     old: dict[str, float],
     new: dict[str, float],
+    landed: list[str],
 ) -> None:
     """The Books writes of a parcel edit, in an order that never shows a package row above its picklist row. Each
     step is skipped when Books already shows its result; a step that ran is followed by a re-read."""
@@ -278,6 +280,7 @@ async def _rewrite_parcel(
 
     if _PARCEL_EDIT_REPLACES:
         await _write(salesorder_id, number, "delete_package", zoho_service.delete_package(db, package_id))
+        landed.append("package")
         picklist = await _picklist(db, order, picklist_id)
         rows, units, same = _picklist_rows(picklist, {}, old, new, False, salesorder_id)
         if not rows:  # no parcel holds anything from it any more
@@ -328,6 +331,7 @@ async def _rewrite_parcel(
 
     if not new:
         await _write(salesorder_id, number, "delete_package", zoho_service.delete_package(db, package_id))
+        landed.append("package")
         await _unmark(db, package_id)  # no parcel left to finish an edit of
         picklist = await _picklist(db, order, picklist_id)
         if not any(_num(r.get("quantity_packed")) > 0 for r in picklist.get("line_items") or []):
@@ -348,6 +352,7 @@ async def _rewrite_parcel(
         await _write(
             salesorder_id, number, "parcel", zoho_service.update_package(db, package_id, salesorder_id, parcel)
         )
+        landed.append("package")
         package = await _package(db, package_id)
         picklist = await _picklist(db, order, picklist_id)
     if lowering:  # C: picklist down
@@ -362,8 +367,27 @@ async def _rewrite_parcel(
             await _unmark(db, package_id)
 
 
+async def _record_edit(db, salesorder_id, by, package, names, old, new) -> None:
+    changes = [
+        {"field": names.get(i) or i, "from": old.get(i, 0.0), "to": new.get(i, 0.0)}
+        for i in {**old, **new}
+        if old.get(i, 0.0) != new.get(i, 0.0)
+    ]
+    extra = {} if new else {"deleted": True}
+    await _log(
+        db, salesorder_id, "package.edited", by, changes=changes, package=package.get("package_number") or "", **extra
+    )
+
+
 async def edit_parcel(
-    db: AsyncSession, salesorder_id: str, package_id: str, version: str, was: dict[str, float], lines: dict[str, float]
+    db: AsyncSession,
+    salesorder_id: str,
+    package_id: str,
+    version: str,
+    was: dict[str, float],
+    lines: dict[str, float],
+    *,
+    by: str | None = None,
 ) -> dict:
     """Set what a packed parcel holds, in Books, its picklist kept in step; returns the recomputed row. ``version``
     is the order's ``last_modified_time`` and ``was`` the parcel's units the operator saw; an empty ``lines`` deletes
@@ -389,11 +413,17 @@ async def edit_parcel(
                     await _unmark(db, package_id)  # done or out of date
                 raise OrderActionRefused("nothing_changed")
             old, new = marker["old"], marker["new"]
+        landed: list[str] = []  # filled once Books has changed the package, the step that makes the edit real
+        names = {line["id"]: line["name"] for line in row["lines"]}
         try:
-            await _rewrite_parcel(db, salesorder_id, number, detail, package, picklist, old, new)
+            await _rewrite_parcel(db, salesorder_id, number, detail, package, picklist, old, new, landed)
         except Exception:
+            if landed:
+                await _record_edit(db, salesorder_id, by, package, names, old, new)
             await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean Books did it
             raise
+        if landed:
+            await _record_edit(db, salesorder_id, by, package, names, old, new)
         await _best_effort_refresh(db, salesorder_id, number)
     try:
         return await _row(db, salesorder_id)

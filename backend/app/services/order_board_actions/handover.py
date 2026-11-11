@@ -11,6 +11,7 @@ from backend.app.services.order_board_actions._common import (
     OrderActionRefused,
     OrderNotOnBoard,
     _best_effort_refresh,
+    _log,
     _num,
     _stored_order,
     _write,
@@ -37,7 +38,13 @@ def _delivery_method(mode: str, order: dict) -> str:
 
 
 async def hand_over(
-    db: AsyncSession, salesorder_id: str, package_id: str, *, mode: Literal["pickup", "delivery"], apply_credit: bool
+    db: AsyncSession,
+    salesorder_id: str,
+    package_id: str,
+    *,
+    mode: Literal["pickup", "delivery"],
+    apply_credit: bool,
+    by: str | None = None,
 ) -> dict:
     """Ship a parcel, mark it delivered on a pick-up, invoice what is shipped and apply the customer's credit.
 
@@ -86,8 +93,17 @@ async def hand_over(
                 raise
             shipment_id = shipment.get("shipment_id") or ""
             outcome["shipment"] = "done"
+            await _log(
+                db,
+                salesorder_id,
+                "handover.delivered" if mode == "pickup" else "handover.shipped",
+                by,
+                package=outcome["package_number"],
+            )
         deliver = shipment_id if mode == "pickup" and status != "delivered" else None
-        return await _finish(db, salesorder_id, number, outcome, row=row, deliver=deliver, apply_credit=apply_credit)
+        return await _finish(
+            db, salesorder_id, number, outcome, row=row, deliver=deliver, apply_credit=apply_credit, by=by
+        )
 
 
 async def handover_preview(db: AsyncSession, salesorder_id: str, package_id: str) -> dict:

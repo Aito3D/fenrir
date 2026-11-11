@@ -12,6 +12,7 @@ from backend.app.services.order_board import _ORDER_MONEY, _nonzero, units_to_in
 from backend.app.services.order_board_actions._common import (
     _best_effort_refresh,
     _boxed,
+    _log,
     _num,
     _stored_order,
     _write,
@@ -197,6 +198,7 @@ async def _finish(
     deliver: str | None,
     apply_credit: bool,
     scope: InvoiceScope = "shipped",
+    by: str | None = None,
 ) -> dict:
     """Steps 2 to 6 of a hand-over (``deliver`` is the shipment to mark delivered). Never raises: a failure stops
     the sequence and is reported in the outcome. ``row`` is the board row read before the first write."""
@@ -248,12 +250,23 @@ async def _finish(
             outcome["invoice"] = "failed"
         outcome.update(failed_step=step, error=str(e)[:300])
     finally:
+        if outcome["invoice"] in ("draft", "created"):  # the invoice exists in Books whatever the credit step did
+            await _log(
+                db,
+                salesorder_id,
+                "invoice.created",
+                by,
+                invoice=outcome["invoice_number"],
+                total=invoice.get("total"),
+                credit_applied=outcome["credit_applied"],
+                scope=scope,
+            )
         await _best_effort_refresh(db, salesorder_id, number)
     return outcome
 
 
 async def invoice_shipped(
-    db: AsyncSession, salesorder_id: str, *, apply_credit: bool, scope: InvoiceScope = "shipped"
+    db: AsyncSession, salesorder_id: str, *, apply_credit: bool, scope: InvoiceScope = "shipped", by: str | None = None
 ) -> dict:
     """Invoice what is not invoiced yet, for any stored order (a finished one has no board row): what is shipped,
     also what is packed (before the hand-over, which then invoices nothing more), or the whole order."""
@@ -262,7 +275,7 @@ async def invoice_shipped(
         row = await sync.find_board_row(db, salesorder_id)
         number = doc.header.get("salesorder_number") or ""
         return await _finish(
-            db, salesorder_id, number, _outcome(), row=row, deliver=None, apply_credit=apply_credit, scope=scope
+            db, salesorder_id, number, _outcome(), row=row, deliver=None, apply_credit=apply_credit, scope=scope, by=by
         )
 
 
@@ -303,9 +316,12 @@ async def invoice_preview(db: AsyncSession, salesorder_id: str) -> dict:
     return result
 
 
-async def email_invoice(db: AsyncSession, salesorder_id: str, number: str, invoice_id: str, to: str) -> None:
+async def email_invoice(
+    db: AsyncSession, salesorder_id: str, number: str, invoice_id: str, to: str, *, by: str | None = None
+) -> None:
     """Email one of the order's invoices through Books, then re-read the order: Books marks a draft invoice sent."""
     with writing(salesorder_id):
         logger.info("Order board write: order=%s step=invoice_email", number)
         await zoho_service.email_invoice(db, invoice_id, to_mail_ids=[to])
+        await _log(db, salesorder_id, "invoice.emailed", by, invoice=number, to=to)
         await _best_effort_refresh(db, salesorder_id, number)

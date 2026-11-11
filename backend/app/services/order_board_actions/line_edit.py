@@ -10,6 +10,7 @@ from backend.app.services.order_board_actions._common import (
     OrderActionRefused,
     OrderNotOnBoard,
     _best_effort_refresh,
+    _log,
     _num,
     _open_picklists,
     _reread,
@@ -46,7 +47,9 @@ async def search_items(db: AsyncSession, query: str) -> list[dict]:
     ][:5]
 
 
-async def edit_lines(db: AsyncSession, salesorder_id: str, version: str, lines: list[dict]) -> dict:
+async def edit_lines(
+    db: AsyncSession, salesorder_id: str, version: str, lines: list[dict], *, by: str | None = None
+) -> dict:
     """Set the quantities of an order's live goods lines, drop the ones left out and add new items, in Books. The
     whole line list is sent back. Only a line the board shows as live (ready, backorder, to order) is editable;
     every other line (service, untracked, cancelled, fully shipped) goes back untouched, and naming one is refused
@@ -133,7 +136,28 @@ async def edit_lines(db: AsyncSession, salesorder_id: str, version: str, lines: 
         except ZohoUpstreamError:
             await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean Books saved it
             raise
+        names = {
+            raw.get("line_item_id"): raw.get("name") or board.get(raw.get("line_item_id"), {}).get("name")
+            for raw in raws
+        }
+        was = {raw.get("line_item_id"): _num(raw.get("quantity")) for raw in raws}
+        changes = [
+            {"field": names.get(i) or i, "from": was.get(i, 0.0), "to": edits.get(i, 0.0)}
+            for i in live
+            if was.get(i, 0.0) != edits.get(i, 0.0)
+        ] + [{"field": items[i].get("name") or i, "from": 0, "to": q} for i, q in new.items()]
+        total_from = detail.get("total")
         await _best_effort_refresh(db, salesorder_id, number)
+        stored = (await db.execute(sync._stored_query(salesorder_id))).scalar_one_or_none()
+        await _log(
+            db,
+            salesorder_id,
+            "order.edited",
+            by,
+            changes=changes,
+            total_from=total_from,
+            total_to=((stored.header or {}).get("total") if stored is not None else None),
+        )
     try:
         return await _row(db, salesorder_id)
     except OrderNotOnBoard:

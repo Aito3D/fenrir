@@ -12,6 +12,7 @@ from backend.app.services.order_board import picked_waiting
 from backend.app.services.order_board_actions._common import (
     _best_effort_refresh,
     _lines,
+    _log,
     _picklist,
     _row,
     _stored_order,
@@ -85,7 +86,9 @@ async def _forget_prep_stamp(db: AsyncSession, salesorder_id: str, number: str) 
         await db.rollback()
 
 
-async def create_parcel(db: AsyncSession, salesorder_id: str, picklist_id: str, quantities: dict[str, float]) -> str:
+async def create_parcel(
+    db: AsyncSession, salesorder_id: str, picklist_id: str, quantities: dict[str, float], *, by: str | None = None
+) -> str:
     """Box what was picked; returns Books' package number.
 
     The picklist is cut down to the confirmed quantities and completed, then its package is created. A step whose
@@ -133,6 +136,15 @@ async def create_parcel(db: AsyncSession, salesorder_id: str, picklist_id: str, 
             await _best_effort_refresh(db, salesorder_id, number)
             raise
         # The parcel exists in Books: nothing below may turn that into an error.
+        await _log(
+            db,
+            salesorder_id,
+            "package.created",
+            by,
+            package=package.get("package_number") or "",
+            picklist=picklist.get("picklist_number") or "",
+            units=sum(wanted.values()),
+        )
         await _forget_prep_stamp(db, salesorder_id, number)
         await _best_effort_refresh(db, salesorder_id, number)
     return package.get("package_number") or ""

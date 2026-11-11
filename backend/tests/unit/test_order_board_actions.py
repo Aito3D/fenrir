@@ -11,6 +11,7 @@ from sqlalchemy import false, select
 from sqlalchemy.exc import OperationalError
 
 from backend.app.models.order_board_doc import OrderBoardDoc
+from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_actions as actions, order_board_sync as sync
 from backend.app.services.order_board_actions import line_edit, parcel_edit, stamps as stamp_module
 from backend.app.services.zoho import (
@@ -27,6 +28,18 @@ from backend.tests.unit.test_order_board_sync import (  # noqa: F401
     order,
     zoho,
 )
+
+
+async def events_of(db, salesorder_id):
+    return list(
+        (
+            await db.execute(
+                select(OrderBoardEvent)
+                .where(OrderBoardEvent.salesorder_id == salesorder_id)
+                .order_by(OrderBoardEvent.id)
+            )
+        ).scalars()
+    )
 
 
 def _rate_limited():
@@ -281,8 +294,11 @@ def _two_lines(n=1, qty=2):
 @pytest.mark.asyncio
 async def test_stamp_is_on_the_row_and_survives_a_sync_pass(db_session, zoho):
     await _board(db_session, zoho, order(1))
-    row = await actions.stamp_print(db_session, "so1", "paul")
+    row = await actions.stamp_print(db_session, "so1", "paul", "PL-1")
     assert row["prep"]["by"] == "paul"
+    printed = await events_of(db_session, "so1")
+    assert [e.kind for e in printed] == ["prep.printed"] and printed[0].detail == {"picklist": "PL-1"}
+    assert (printed[0].actor_class, printed[0].actor_name) == ("user", "paul")
     await sync.run_pass(db_session)
     await sync.run_pass(db_session)
     assert (await sync.read_board(db_session))["rows"][0]["prep"] == row["prep"]
@@ -301,6 +317,11 @@ async def test_a_stamp_pings_the_open_pages(db_session, zoho, monkeypatch):
     await actions.stamp_print(db_session, "so1", "paul")
     await actions.stamp_contact(db_session, "so1", "paul")
     await actions.stamp_contact(db_session, "so1", "paul")  # the first stamp is kept: nothing changed
+    assert [e.kind for e in await events_of(db_session, "so1")] == [
+        "prep.printed",
+        "sms.sent",
+        "sms.sent",
+    ]  # one per send
     assert sent == [{"type": "order_board_updated"}] * 2
 
 
@@ -354,6 +375,9 @@ async def test_create_picklist_sends_the_chosen_units_and_shows_on_the_row(db_se
     assert row["picklists"] == [
         {"id": "pl1", "number": "PL-00001", "status": "yet_to_start", "date": date.today().isoformat()}
     ]
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["picklist.created"]
+    assert events[0].detail == {"picklist": "PL-00001", "units": 2}
 
 
 @pytest.mark.asyncio
@@ -487,6 +511,24 @@ async def test_parcel_completes_the_picklist_then_boxes_its_units(db_session, pa
     ]
     row = (await sync.read_board(db_session))["rows"][0]
     assert (row["picklists"][0]["status"], row["picked"]) == ("completed", 0)
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["picklist.created", "package.created"]  # _pick made the picklist
+    assert events[1].detail == {"package": "PKG-00001", "picklist": "PL-00001", "units": 2}
+    assert events[1].actor_class == "user"
+
+
+@pytest.mark.asyncio
+async def test_failed_write_records_nothing(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1, qty=3))
+    pl = await _pick(db_session, "so1", {"l1": 2})
+
+    async def boom(db, salesorder_id, *, date, line_items):
+        raise ZohoUpstreamError("timeout")
+
+    monkeypatch.setattr(zoho_service, "create_package", boom)
+    with pytest.raises(ZohoUpstreamError):
+        await actions.create_parcel(db_session, "so1", pl, {"l1": 2})
+    assert [e.kind for e in await events_of(db_session, "so1")] == ["picklist.created"]  # from _pick only
 
 
 @pytest.mark.asyncio
@@ -1177,6 +1219,9 @@ async def test_delivery_is_not_marked_delivered_and_uses_the_orders_method_or_ai
     assert _calls(books, "create_shipment") == [("so1", "pk1", TODAY, sent)]
     assert "mark_shipment_delivered" not in _names(books)
     assert (outcome["shipment"], outcome["delivered"], outcome["invoice"]) == ("done", "skipped", "created")
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["handover.shipped", "invoice.created"]
+    assert events[1].detail["invoice"] == "INV-1" and {"total", "credit_applied"} <= set(events[1].detail)
 
 
 @pytest.mark.asyncio
@@ -1464,6 +1509,8 @@ async def test_invoice_shipped_runs_the_invoice_part_alone(db_session, books):
         "mark_invoice_sent",
         "get_salesorder",
     ]
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["invoice.created"] and events[0].detail["scope"] == "shipped"
     assert outcome == {
         "package_number": "",
         "shipment": "skipped",
@@ -1842,9 +1889,23 @@ async def test_cancel_voids_in_books_and_takes_the_order_off_the_board(db_sessio
     await _board(db_session, voids, order(1), order(2))
     await actions.cancel_order(db_session, "so1")
     assert voids.voided == ["so1"]
+    assert [e.kind for e in await events_of(db_session, "so1")] == ["order.cancelled"]
     assert [r["id"] for r in (await sync.read_board(db_session))["rows"]] == ["so2"]
     await sync.run_pass(db_session)
     assert [r["id"] for r in (await sync.read_board(db_session))["rows"]] == ["so2"]
+
+
+@pytest.mark.asyncio
+async def test_email_invoice_records_the_recipient(db_session, zoho, monkeypatch):
+    await _board(db_session, zoho, order(1))
+
+    async def email(db, invoice_id, *, to_mail_ids):
+        return None
+
+    monkeypatch.setattr(zoho_service, "email_invoice", email)
+    await actions.email_invoice(db_session, "so1", "SO-1", "inv1", "a@b.c", by="paul")
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["invoice.emailed"] and events[0].detail == {"invoice": "SO-1", "to": "a@b.c"}
 
 
 @pytest.mark.asyncio
@@ -1956,6 +2017,10 @@ async def test_omitted_line_is_removed(db_session, lines_edit):
     row = await actions.edit_lines(db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 2}])
     assert "l2" not in [line.get("line_item_id") for line in lines_edit.bodies["lines"]["line_items"]]
     assert "l2" not in [line["id"] for line in row["lines"]]
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["order.edited"]
+    assert {c["field"] for c in events[0].changes} >= {c["field"] for c in events[0].changes if c["to"] == 0}
+    assert any(c["to"] == 0 for c in events[0].changes) and "total_from" in events[0].detail
 
 
 @pytest.mark.asyncio
@@ -2219,6 +2284,10 @@ async def test_raising_a_line_writes_picklist_then_package(db_session, parcels):
         "line_items": [{"so_line_item_id": "l1", "quantity": 3, "picklist_item_id": "r1"}],
     }
     assert row["lines"][0]["packed_waiting"] == 3
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["package.edited"]
+    assert events[0].changes[0]["from"] == 2 and events[0].changes[0]["to"] == 3
+    assert "package" in events[0].detail
 
 
 @pytest.mark.asyncio
@@ -2253,6 +2322,8 @@ async def test_emptying_deletes_the_package_then_its_picklist(db_session, parcel
     row = await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 0})
     assert parcels.steps == [("delete_package", "p1"), ("delete_picklist", "pl1")]
     assert (row["packages"], row["picklists"], row["lines"][0]["packed_waiting"]) == ([], [], 0)
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["package.edited"] and events[0].detail["deleted"] is True
 
 
 @pytest.mark.asyncio
