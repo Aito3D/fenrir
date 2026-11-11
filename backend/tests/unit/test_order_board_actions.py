@@ -12,6 +12,7 @@ from sqlalchemy.exc import OperationalError
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_actions as actions, order_board_sync as sync
+from backend.app.services.order_board_actions import line_edit, parcel_edit, stamps as stamp_module
 from backend.app.services.zoho import (
     ZohoNotFound,
     ZohoRateLimited,
@@ -845,14 +846,14 @@ async def test_a_database_error_on_the_stamp_delete_still_returns_the_number(db_
 async def test_a_simultaneous_first_stamp_updates_the_winner_instead_of_failing(file_sessions, zoho, monkeypatch):
     async with file_sessions() as one, file_sessions() as two:
         await _board(one, zoho, order(1))
-        real_query = actions._prep_query
+        real_query = stamp_module._prep_query
         calls = []
 
         def blind_first(salesorder_id):
             calls.append(1)
             return select(OrderBoardDoc).where(false()) if len(calls) == 1 else real_query(salesorder_id)
 
-        monkeypatch.setattr(actions, "_prep_query", blind_first)
+        monkeypatch.setattr(stamp_module, "_prep_query", blind_first)
         await actions.stamp_print(two, "so1", "winner")
         row = await actions.stamp_print(one, "so1", "loser")
         assert row["prep"]["by"] == "loser"
@@ -2397,7 +2398,7 @@ async def test_edit_parcel_refuses_without_writing(db_session, parcels, setup, v
 
 @pytest.mark.asyncio
 async def test_replace_mode_deletes_and_recreates(db_session, parcels, monkeypatch):
-    monkeypatch.setattr(actions, "_PARCEL_EDIT_REPLACES", True)
+    monkeypatch.setattr(parcel_edit, "_PARCEL_EDIT_REPLACES", True)
     await _board(db_session, parcels, _packed(parcels))
     row = await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3})
     assert _labels(parcels) == ["delete_package", "picklist", "create_package"]
@@ -2410,7 +2411,7 @@ async def test_replace_mode_deletes_and_recreates(db_session, parcels, monkeypat
 
 @pytest.mark.asyncio
 async def test_replace_mode_recreates_a_picklist_books_will_not_change(db_session, parcels, monkeypatch):
-    monkeypatch.setattr(actions, "_PARCEL_EDIT_REPLACES", True)
+    monkeypatch.setattr(parcel_edit, "_PARCEL_EDIT_REPLACES", True)
     await _board(db_session, parcels, _packed(parcels))
     parcels.fail_step, parcels.fail_with = "picklist", ZohoRequestRejected
     await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
@@ -2426,7 +2427,7 @@ async def test_replace_mode_recreates_a_picklist_books_will_not_change(db_sessio
 
 @pytest.mark.asyncio
 async def test_replace_mode_emptying_the_only_parcel_deletes_its_picklist(db_session, parcels, monkeypatch):
-    monkeypatch.setattr(actions, "_PARCEL_EDIT_REPLACES", True)
+    monkeypatch.setattr(parcel_edit, "_PARCEL_EDIT_REPLACES", True)
     await _board(db_session, parcels, _packed(parcels))
     await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {})
     assert parcels.steps == [("delete_package", "p1"), ("delete_picklist", "pl1")]
@@ -2434,7 +2435,7 @@ async def test_replace_mode_emptying_the_only_parcel_deletes_its_picklist(db_ses
 
 @pytest.mark.asyncio
 async def test_replace_mode_keeps_a_picklist_a_sibling_parcel_boxed_from(db_session, parcels, monkeypatch):
-    monkeypatch.setattr(actions, "_PARCEL_EDIT_REPLACES", True)
+    monkeypatch.setattr(parcel_edit, "_PARCEL_EDIT_REPLACES", True)
     await _board(db_session, parcels, _packed(parcels, qty=5, picked=5, parcels_=(("p1", 2), ("p2", 3))))
     parcels.fail_step, parcels.fail_with = "picklist", ZohoRequestRejected
     with pytest.raises(ZohoRequestRejected):
@@ -2454,7 +2455,7 @@ async def test_an_edit_that_takes_the_order_off_the_board_returns_nothing(db_ses
         except StopIteration:
             raise actions.OrderNotOnBoard(salesorder_id) from None
 
-    monkeypatch.setattr(actions, "_row", vanishing)
+    monkeypatch.setattr(line_edit, "_row", vanishing)
     lines = [{"line_id": "l1", "quantity": 3}, {"line_id": "l2", "quantity": 1}]
     assert await actions.edit_lines(db_session, "so1", VERSION, lines) == {}
     assert lines_edit.writes.count("update_salesorder") == 1
