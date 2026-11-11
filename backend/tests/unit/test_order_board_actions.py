@@ -31,11 +31,12 @@ from backend.tests.unit.test_order_board_sync import (  # noqa: F401
 
 
 async def events_of(db, salesorder_id):
+    """The writers' events only: the sync's own (order.received and the like) are covered in its tests."""
     return list(
         (
             await db.execute(
                 select(OrderBoardEvent)
-                .where(OrderBoardEvent.salesorder_id == salesorder_id)
+                .where(OrderBoardEvent.salesorder_id == salesorder_id, OrderBoardEvent.actor_class == "user")
                 .order_by(OrderBoardEvent.id)
             )
         ).scalars()
