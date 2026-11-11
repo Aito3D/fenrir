@@ -11056,6 +11056,13 @@ export default {
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
     history: {
+      sub: {
+        pickup: '到店自取',
+        paidOf: '已付 {{paid}} / {{total}}',
+        fromPicklist: '揀貨單 {{picklist}}',
+        total: '總額 {{from}} → {{to}}',
+        credit: '已抵扣餘額 {{amount}}',
+      },
       seenBySync: '由同步偵測到',
       orderReceived: '已收到訂單',
       orderReceivedShopify: '已從 Shopify 收到訂單 {{reference}}',

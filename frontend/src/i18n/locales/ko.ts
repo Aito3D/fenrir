@@ -10694,6 +10694,13 @@ export default {
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
     history: {
+      sub: {
+        pickup: '매장 픽업',
+        paidOf: '결제 {{paid}} / {{total}}',
+        fromPicklist: '피킹 리스트 {{picklist}}',
+        total: '합계 {{from}} → {{to}}',
+        credit: '크레딧 적용 {{amount}}',
+      },
       seenBySync: '동기화에서 감지됨',
       orderReceived: '주문 접수',
       orderReceivedShopify: 'Shopify에서 주문 접수 {{reference}}',

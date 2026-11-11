@@ -199,9 +199,12 @@ async def _rows_with_prep(db: AsyncSession, state: dict) -> list[dict]:
 
 async def find_board_row(db: AsyncSession, salesorder_id: str) -> dict | None:
     row = await _find_state(db)
-    return next(
+    found = next(
         (r for r in await _rows_with_prep(db, (row.detail if row else None) or {}) if r["id"] == salesorder_id), None
     )
+    if found is not None:  # every single-row result carries it, so a replaced row keeps its subtitle
+        found["last_event"] = (await _latest_events(db, [salesorder_id])).get(salesorder_id)
+    return found
 
 
 def note_write(salesorder_id: str) -> None:

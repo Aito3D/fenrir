@@ -11130,6 +11130,13 @@ errors: {
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
     history: {
+      sub: {
+        pickup: 'hämtas i butik',
+        paidOf: 'Betalt {{paid}} av {{total}}',
+        fromPicklist: 'plocklista {{picklist}}',
+        total: 'Summa {{from}} → {{to}}',
+        credit: 'Tillgodo använt {{amount}}',
+      },
       seenBySync: 'upptäckt av synkroniseringen',
       orderReceived: 'Order mottagen',
       orderReceivedShopify: 'Order mottagen från Shopify {{reference}}',

@@ -63,6 +63,27 @@ describe('OrderActivity', () => {
     expect(api.getOrderEvents).toHaveBeenCalledWith('so1', { depth: 'detail', cursor: undefined, limit: 50 });
   });
 
+  it('shows each kind\'s detail line under its sentence', async () => {
+    vi.spyOn(api, 'getOrderEvents').mockResolvedValue({
+      events: [
+        ev({ id: 5, kind: 'sms.sent', detail: { to: '87 22 45 67' } }),
+        ev({ id: 4, kind: 'payment.received', actor_class: 'system', actor_name: null, detail: { amount: 8400, paid: 8400, total: 21640 } }),
+        ev({ id: 3, kind: 'package.created', detail: { package: 'PKG-1', picklist: 'PL-31', units: 6 } }),
+        ev({ id: 2, kind: 'order.edited', changes: [{ field: 'PLA', from: 1, to: 2 }], detail: { total_from: 19200, total_to: 21640 } }),
+        ev({ id: 1, kind: 'order.received', actor_class: 'system', actor_name: null, detail: { source: 'direct', units: 8, total: 19200, pickup: true } }),
+      ],
+      has_more: false,
+    });
+    render(<OrderActivity soId="so1" currency="XPF" />);
+    const items = await screen.findAllByRole('listitem');
+    const flat = (el: HTMLElement) => (el.textContent ?? '').replace(/\s/g, ' ');
+    expect(flat(items[0])).toContain('87 22 45 67');
+    expect(flat(items[1])).toMatch(/Paid 8.400.* of 21.640/);
+    expect(flat(items[2])).toContain('6 units · picklist PL-31');
+    expect(flat(items[3])).toMatch(/Order total 19.200.* → 21.640/);
+    expect(flat(items[4])).toMatch(/8 units · 19.200.* · store pickup/);
+  });
+
   it('depth switch refetches with depth=everything', async () => {
     const spy = vi.spyOn(api, 'getOrderEvents').mockResolvedValue({ events: [], has_more: false });
     render(<OrderActivity soId="so1" currency="XPF" />);

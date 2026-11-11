@@ -83,3 +83,38 @@ export function orderEventLabel(
   const key = LABEL_KEY[event.kind];
   return key ? { key } : null;
 }
+
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+/** The line under an order event's sentence ("8 unités · 192,00 € · retrait en boutique"); null when nothing adds to it.
+ *  A phone or e-mail address is shown, never an SMS body (none is stored). */
+export function orderEventDetail(event: Pick<OrderEvent, 'kind' | 'detail'>, currency: string, t: Translate): string | null {
+  const d = event.detail ?? {};
+  const num = (v: unknown) => (typeof v === 'number' ? v : null);
+  const money = (v: unknown) => (typeof v === 'number' ? formatMoney(v, currency) : null);
+  const units = num(d.units) === null ? null : t('orders.units', { count: d.units });
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+  const join = (parts: (string | null)[]) => parts.filter(Boolean).join(' · ') || null;
+  switch (event.kind) {
+    case 'order.received':
+      return join([units, money(d.total), d.pickup ? t('orders.history.sub.pickup') : null]);
+    case 'picklist.created':
+      return units;
+    case 'package.created':
+      return join([units, str(d.picklist) && t('orders.history.sub.fromPicklist', { picklist: d.picklist })]);
+    case 'invoice.created':
+      return join([money(d.total), num(d.credit_applied) ? t('orders.history.sub.credit', { amount: money(d.credit_applied) }) : null]);
+    case 'payment.received':
+      return money(d.paid) && money(d.total) ? t('orders.history.sub.paidOf', { paid: money(d.paid), total: money(d.total) }) : null;
+    case 'order.edited':
+      return money(d.total_from) && money(d.total_to)
+        ? t('orders.history.sub.total', { from: money(d.total_from), to: money(d.total_to) })
+        : null;
+    case 'sms.sent':
+    case 'invoice.emailed':
+      return str(d.to);
+    case 'prep.printed':
+      return str(d.picklist);
+  }
+  return null;
+}

@@ -17,6 +17,8 @@ export interface EventSource {
   /** Absent when the viewer may not write: the note box hides. */
   addNote?: (body: string) => Promise<AitoEvent>;
   label: (event: AitoEvent) => { key: string; params?: Record<string, unknown> } | null;
+  /** The line under the sentence; Aito's `detailText` when absent. */
+  detail?: (event: AitoEvent) => string | null;
   /** localStorage key remembering the depth control. */
   depthKey: string;
   /** Footer suffix on system rows; Aito's "automatic" when absent. */
@@ -252,6 +254,7 @@ export function ActivityRail({
               event={event}
               label={source.label(event)}
               systemKey={source.systemKey}
+              detailOf={source.detail}
               // The next entry down the list is the next-older one, because
               // the list runs newest-first.
               previous={events[index + 1]}

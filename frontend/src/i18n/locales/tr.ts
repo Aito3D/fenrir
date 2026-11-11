@@ -11000,6 +11000,13 @@ export default {
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
     history: {
+      sub: {
+        pickup: 'mağazadan teslim',
+        paidOf: 'Ödenen {{paid}} / {{total}}',
+        fromPicklist: 'toplama listesi {{picklist}}',
+        total: 'Tutar {{from}} → {{to}}',
+        credit: 'Alacak uygulandı {{amount}}',
+      },
       seenBySync: 'senkronizasyon tarafından görüldü',
       orderReceived: 'Sipariş alındı',
       orderReceivedShopify: 'Shopify\'dan sipariş alındı {{reference}}',

@@ -112,6 +112,13 @@ async def test_contact_stamp_is_on_the_row_and_the_first_one_is_kept(db_session,
 
 
 @pytest.mark.asyncio
+async def test_contact_stamp_row_carries_the_sms_as_last_event(db_session, zoho):  # noqa: F811
+    await _synced(db_session, zoho, order(1))
+    row = await actions.stamp_contact(db_session, "so1", "paul")
+    assert row["last_event"]["kind"] == "sms.sent" and row["last_event"]["actor_name"] == "paul"
+
+
+@pytest.mark.asyncio
 async def test_contact_stamp_on_an_order_off_the_board_is_refused(db_session, zoho):  # noqa: F811
     await _synced(db_session, zoho, order(1))
     with pytest.raises(actions.OrderNotOnBoard):

@@ -11097,6 +11097,13 @@ export default {
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
     history: {
+      sub: {
+        pickup: 'afhalen in de winkel',
+        paidOf: 'Betaald {{paid}} van {{total}}',
+        fromPicklist: 'picklijst {{picklist}}',
+        total: 'Totaal {{from}} → {{to}}',
+        credit: 'Tegoed verrekend {{amount}}',
+      },
       seenBySync: 'gezien door de synchronisatie',
       orderReceived: 'Bestelling ontvangen',
       orderReceivedShopify: 'Bestelling ontvangen van Shopify {{reference}}',

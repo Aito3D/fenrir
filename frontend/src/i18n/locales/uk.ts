@@ -10718,6 +10718,13 @@ export default {
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
     history: {
+      sub: {
+        pickup: 'самовивіз із магазину',
+        paidOf: 'Сплачено {{paid}} з {{total}}',
+        fromPicklist: 'лист комплектації {{picklist}}',
+        total: 'Разом {{from}} → {{to}}',
+        credit: 'Зараховано кредит {{amount}}',
+      },
       seenBySync: 'виявлено синхронізацією',
       orderReceived: 'Замовлення отримано',
       orderReceivedShopify: 'Замовлення отримано з Shopify {{reference}}',

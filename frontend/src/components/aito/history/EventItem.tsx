@@ -37,6 +37,7 @@ export function EventItem({
   event,
   label: labelSpec,
   systemKey = 'aito.history.automatic',
+  detailOf,
   previous,
   showElapsed = false,
   animateIn = false,
@@ -46,6 +47,8 @@ export function EventItem({
   label: { key: string; params?: Record<string, unknown> } | null;
   /** Footer suffix on system rows. */
   systemKey?: string;
+  /** The line under the sentence; Aito's `detailText` when absent. */
+  detailOf?: (event: AitoEvent) => string | null;
   /** The next-older event, for the elapsed gutter. Undefined on the last row. */
   previous?: AitoEvent;
   showElapsed?: boolean;
@@ -67,7 +70,7 @@ export function EventItem({
   const changes = event.changes ?? [];
   const hasMany = changes.length > 1;
   const shown = expanded || !hasMany ? changes : changes.slice(0, 1);
-  const detail = detailText(event.kind, event.detail, t);
+  const detail = detailOf ? detailOf(event) : detailText(event.kind, event.detail, t);
 
   return (
     <li className={`relative pl-4 pb-3 ${animateIn ? 'animate-rise' : ''}`}>
