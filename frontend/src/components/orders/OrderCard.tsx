@@ -71,6 +71,10 @@ export function OrderCard({
   const width = (n: number) => ({ width: units.total > 0 ? `${(n / units.total) * 100}%` : '0%' });
   // A pack or hand-over lands on the next refresh: the segments slide to their new share instead of jumping.
   const seg = 'transition-[width] duration-300 ease-(--ease-signature) motion-reduce:duration-[120ms] motion-reduce:ease-linear';
+  // The bar in words, segment by segment, with the line states' own names: "Shipped 1 · Ready 2 · Backorder 0 · To order 1".
+  const barLabel = (
+    [['shipped', units.shipped], ['ready', units.ready], ['backorder', units.backordered], ['toOrder', units.to_order]] as const
+  ).map(([key, n]) => `${t(`orders.line.${key}`)} ${formatQty(n)}`).join(' · ');
   const { hasPermission } = useAuth();
   const next = nextStep(row);
   const step = hasPermission('orders:update') ? next : null;
@@ -108,7 +112,7 @@ export function OrderCard({
           </span>
           <span className={`hidden justify-self-start rounded-md px-2 py-0.5 text-xs lg:inline-block ${AGE[ageTone(row.age_days)]}`}>{age}</span>
           <span className="[grid-area:bar] lg:[grid-area:auto]">
-            <span className="flex h-2 overflow-hidden rounded-full bg-bambu-dark">
+            <span role="img" aria-label={barLabel} className="flex h-2 overflow-hidden rounded-full bg-bambu-dark">
               <span className={`${TONE.neutral.bar} ${seg}`} style={width(units.shipped)} />
               <span className={`${TONE.success.bar} ${seg}`} style={width(units.ready)} />
               <span className={`${TONE.warning.bar} ${seg}`} style={width(units.backordered)} />

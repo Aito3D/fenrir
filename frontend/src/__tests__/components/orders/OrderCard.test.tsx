@@ -134,3 +134,10 @@ describe('a saved edit', () => {
     expect(band).not.toHaveAttribute('data-fresh');
   });
 });
+
+describe('the progress bar', () => {
+  it('says in words the units its segments show', () => {
+    render(<OrderCard row={row({ units: { total: 6, shipped: 1, ready: 2.5, backordered: 2, to_order: 0.5 } })} open={false} onToggle={vi.fn()} />);
+    expect(screen.getByRole('img', { name: 'Shipped 1 · Ready 2.5 · Backorder 2 · To order 0.5' })).toBeInTheDocument();
+  });
+});
