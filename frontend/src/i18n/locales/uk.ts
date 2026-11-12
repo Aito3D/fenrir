@@ -1451,6 +1451,8 @@ export default {
     },
     temperatures: {
       nozzle: "Сопло",
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: "Сопло {{n}}",
       bed: "Стіл",
       chamber: "Камера",
     },
@@ -1626,6 +1628,7 @@ export default {
     humidityTooltip: "Вологість: {{value}}% — {{status}}",
     temperatureTooltip: "Температура: {{value}}°C — {{status}}",
     clickForHistory: "натисніть для історії",
+    nozzlePrintTime: "Час друку",
     nozzleMaxTemp: "Макс. температура",
     nozzleSerial: "Серійний номер",
     nozzleHardenedSteel: "Загартована сталь",

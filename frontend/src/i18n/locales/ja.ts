@@ -1452,6 +1452,8 @@ export default {
     },
     temperatures: {
       nozzle: 'ノズル',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'ノズル {{n}}',
       bed: 'ベッド',
       chamber: 'チャンバー',
     },
@@ -1638,6 +1640,7 @@ export default {
     humidityTooltip: '湿度: {{value}}% - {{status}}',
     temperatureTooltip: '温度: {{value}}°C - {{status}}',
     clickForHistory: 'クリックで履歴表示',
+    nozzlePrintTime: '印刷時間',
     nozzleMaxTemp: '最高温度',
     nozzleSerial: 'シリアル',
     nozzleHardenedSteel: '焼入れ鋼',

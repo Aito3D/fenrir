@@ -328,6 +328,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Dysza',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Dysza {{n}}',
       bed: 'Stół',
       chamber: 'Komora',
     },
@@ -484,6 +486,7 @@ export default {
     nozzleStatus: 'Status',
     nozzleFilament: 'Filament',
     nozzleWear: 'Zużycie',
+    nozzlePrintTime: 'Czas druku',
     nozzleMaxTemp: 'Maks. temp.',
     nozzleSerial: 'Nr seryjny',
     nozzleHardenedSteel: 'Stal hartowana',

@@ -20,6 +20,7 @@ from collections.abc import AsyncGenerator, Callable
 from dataclasses import field
 from typing import Annotated, Literal
 
+import anyio.lowlevel
 import psutil
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response, StreamingResponse
@@ -2919,6 +2920,10 @@ async def _while_allowed(frames, opener: StreamOpener, printer_id: int):
                     if time.monotonic() < next_check:
                         yield chunk
                         continue
+                    # The re-check is shielded, so a viewer who left while it
+                    # waited is only told now: let that land before a second
+                    # shielded wait, which would keep the stream (#3515).
+                    await anyio.lowlevel.checkpoint()
                     allowed = await _opener_allowed(opener, printer_id)
                 if not allowed:
                     logger.info("Camera stream for printer %s ended: its opener may no longer watch", printer_id)

@@ -403,7 +403,11 @@ function NozzleSlotHoverCard({ slot, index, activeStatus, filamentName, children
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isEmpty = !slot.nozzle_diameter && !slot.nozzle_type;
-  const isMounted = slot.stat === 1;
+  // Mounted = on an extruder: ids below 0x10, rack ids from 0x10 up, as Bambu
+  // Studio tells them apart (DevNozzleSystem). `stat` says whether the nozzle's
+  // info is reliable and normal, not where it is (#3442: an H3C hotend without
+  // RFID reports stat 1 in the rack). Empty rack placeholders have negative ids.
+  const isMounted = slot.id >= 0 && slot.id < 16;
 
   useEffect(() => {
     if (isVisible && triggerRef.current && cardRef.current) {
@@ -505,6 +509,14 @@ function NozzleSlotHoverCard({ slot, index, activeStatus, filamentName, children
                   <div className="flex items-center justify-between">
                     <span className="text-[length:var(--pc-t10,10px)] uppercase tracking-wider text-bambu-gray font-medium">{t('printers.nozzleWear')}</span>
                     <span className="text-xs text-white font-semibold">{slot.wear}%</span>
+                  </div>
+                )}
+
+                {/* Print time (H2C firmware only, hide if not reported) */}
+                {slot.print_time_s != null && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[length:var(--pc-t10,10px)] uppercase tracking-wider text-bambu-gray font-medium">{t('printers.nozzlePrintTime')}</span>
+                    <span className="text-xs text-white font-semibold">{formatDuration(slot.print_time_s)}</span>
                   </div>
                 )}
 
@@ -646,6 +658,12 @@ function DualNozzleHoverCard({ leftSlot, rightSlot, activeNozzle, filamentInfo, 
           <div className="flex items-center justify-between">
             <span className="text-[length:var(--pc-t10,10px)] text-bambu-gray">{t('printers.nozzleWear')}</span>
             <span className="text-xs text-white font-semibold">{slot.wear}%</span>
+          </div>
+        )}
+        {slot.print_time_s != null && (
+          <div className="flex items-center justify-between">
+            <span className="text-[length:var(--pc-t10,10px)] text-bambu-gray">{t('printers.nozzlePrintTime')}</span>
+            <span className="text-xs text-white font-semibold">{formatDuration(slot.print_time_s)}</span>
           </div>
         )}
         {/* Serial and max temp only available on the right (removable) nozzle */}
@@ -4622,6 +4640,11 @@ function PrinterCard({
               const rightNozzleSlot = status.nozzle_rack?.find(s => s.id === 0);
               // Single-nozzle models (H2D, H2C): use the primary nozzle (id 0)
               const singleNozzleSlot = rightNozzleSlot || leftNozzleSlot;
+              // A rack printer (H3C) shows the nozzle on its toolhead, named by its
+              // rack position as in the rack card (#3442).
+              const mountedHotend = trayLayout.rack && singleNozzleSlot?.id === 0 && typeof singleNozzleSlot.addr_id === 'number'
+                ? singleNozzleSlot.addr_id + 1
+                : null;
               const canUseStatusControls = status.connected && hasPermission('printers:control');
               const statusControlTitle = canUseStatusControls ? undefined : t('printers.permission.noControl');
               const statusControlClass = `relative text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center transition-colors ${
@@ -4737,7 +4760,9 @@ function PrinterCard({
                       ) : singleNozzleSlot ? (
                         <NozzleSlotHoverCard slot={singleNozzleSlot} index={0} activeStatus filamentName={singleNozzleSlot.filament_id ? filamentInfo?.[singleNozzleSlot.filament_id]?.name : undefined}>
                           <div className="cursor-default">
-                            <p className="text-[length:var(--pc-t9,9px)] text-bambu-gray">{t('printers.temperatures.nozzle')}</p>
+                            <p data-testid="nozzle-temp-label" className="text-[length:var(--pc-t9,9px)] text-bambu-gray">
+                              {mountedHotend !== null ? t('printers.temperatures.mounted', { n: mountedHotend }) : t('printers.temperatures.nozzle')}
+                            </p>
                             <p className="text-[length:var(--pc-t11,11px)] text-white">
                               {Math.round(status.temperatures.nozzle || 0)}°C
                             </p>

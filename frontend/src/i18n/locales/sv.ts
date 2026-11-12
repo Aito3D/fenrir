@@ -327,6 +327,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Munstycke',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Munstycke {{n}}',
       bed: 'Byggplatta',
       chamber: 'Kammare',
     },
@@ -483,6 +485,7 @@ export default {
     nozzleStatus: 'Status',
     nozzleFilament: 'Filament',
     nozzleWear: 'Slitage',
+    nozzlePrintTime: 'Utskriftstid',
     nozzleMaxTemp: 'Max temp',
     nozzleSerial: 'Serienummer',
     nozzleHardenedSteel: 'Härdat stål',

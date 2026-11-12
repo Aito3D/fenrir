@@ -1453,6 +1453,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Nozul',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Nozul {{n}}',
       bed: 'Tabla',
       chamber: 'Hazne',
     },
@@ -1639,6 +1641,7 @@ export default {
     humidityTooltip: 'Nem: {{value}}% - {{status}}',
     temperatureTooltip: 'Sıcaklık: {{value}}°C - {{status}}',
     clickForHistory: 'geçmiş için tıklayın',
+    nozzlePrintTime: 'Baskı süresi',
     nozzleMaxTemp: 'Maks. Sıcaklık',
     nozzleSerial: 'Seri',
     nozzleHardenedSteel: 'Sertleştirilmiş Çelik',

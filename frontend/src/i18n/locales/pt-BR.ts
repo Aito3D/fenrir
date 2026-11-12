@@ -1453,6 +1453,8 @@ export default {
     },
     temperatures: {
       nozzle: 'Bico',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: 'Bico {{n}}',
       bed: 'Cama',
       chamber: 'Câmara',
     },
@@ -1639,6 +1641,7 @@ export default {
     humidityTooltip: 'Umidade: {{value}}% - {{status}}',
     temperatureTooltip: 'Temperatura: {{value}}°C - {{status}}',
     clickForHistory: 'clique para histórico',
+    nozzlePrintTime: 'Tempo de impressão',
     nozzleMaxTemp: 'Temp Máx',
     nozzleSerial: 'Número de série',
     nozzleHardenedSteel: 'Aço Endurecido',

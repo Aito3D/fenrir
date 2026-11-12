@@ -1453,6 +1453,8 @@ export default {
     },
     temperatures: {
       nozzle: '噴嘴',
+      // The H3C's nozzle on the toolhead, by its rack position (#3442).
+      mounted: '噴嘴 {{n}}',
       bed: '熱床',
       chamber: '腔室',
     },
@@ -1639,6 +1641,7 @@ export default {
     humidityTooltip: '濕度：{{value}}% - {{status}}',
     temperatureTooltip: '溫度：{{value}}°C - {{status}}',
     clickForHistory: '點擊檢視歷史記錄',
+    nozzlePrintTime: '列印時長',
     nozzleMaxTemp: '最高溫度',
     nozzleSerial: '序列號',
     nozzleHardenedSteel: '硬化鋼',
