@@ -1246,7 +1246,10 @@ describe('repeat-client recall', () => {
     await userEvent.click(createButton());
 
     expect(onCreate).not.toHaveBeenCalled();
-    expect(screen.getByText('Labour needs a description')).toBeInTheDocument();
+    // Said twice: under the field, and as the checklist line that explains
+    // the disabled Create button.
+    expect(screen.getAllByText('Labour needs a description')).toHaveLength(2);
+    expect(within(screen.getByTestId('drawer-checklist')).getByText('Labour needs a description')).toBeInTheDocument();
   });
 
   it('creates once the labour step has both a cost and a description', async () => {

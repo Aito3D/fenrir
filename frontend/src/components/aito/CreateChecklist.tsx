@@ -23,6 +23,9 @@ export interface CreateChecklistProps {
   /** The chosen island's display label, passed in from the drawer (which
    *  already has the services list) — this component must never fetch. */
   shippingIslandLabel: string;
+  /** A priced labour step the user has LEFT without a description — the one
+   *  Create gate that had no line here. Absent otherwise, like shipping. */
+  labourDescriptionMissing?: boolean;
 }
 
 /** Shared checklist row (box, `animate-tick-in` tick, 300ms colour transition) consumed by `CreateChecklist` and `ImportQuoteDrawer`. */
@@ -66,6 +69,7 @@ export function CreateChecklist(props: CreateChecklistProps) {
     clientRevealed,
     shipping,
     shippingIslandLabel,
+    labourDescriptionMissing,
   } = props;
 
   const subTask: { state: ChecklistState; text: string } =
@@ -106,6 +110,7 @@ export function CreateChecklist(props: CreateChecklistProps) {
         text={taskCount === 0 ? t('aito.ruleNeedTask') : t('aito.ruleTasksOk', { count: taskCount })}
       />
       <Line state={subTask.state} text={subTask.text} />
+      {labourDescriptionMissing && <Line state="miss" text={t('aito.maindoeuvreDescriptionRequired')} />}
       <Line
         state={summaryState === 'ready' ? 'ok' : 'wait'}
         text={summaryState === 'ready' ? t('aito.summaryTitle') : t('aito.summaryWaiting')}

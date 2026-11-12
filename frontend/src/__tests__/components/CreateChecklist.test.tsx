@@ -19,6 +19,13 @@ function renderChecklist(props: CreateChecklistProps) {
 }
 
 describe('CreateChecklist', () => {
+  it('names the labour description gate only while a left labour step lacks one', () => {
+    const { rerender } = renderChecklist(base);
+    expect(screen.queryByText('Labour needs a description')).not.toBeInTheDocument();
+    rerender(<CreateChecklist {...base} labourDescriptionMissing />);
+    expect(screen.getByText('Labour needs a description').closest('[data-state]')).toHaveAttribute('data-state', 'miss');
+  });
+
   it('names a blur-revealed unpriced task', () => {
     renderChecklist({ ...base, hasUnpriced: true, revealedUnpricedName: 'Support antenne' });
     expect(screen.getByText('"Support antenne" needs at least one priced sub-task')).toBeInTheDocument();

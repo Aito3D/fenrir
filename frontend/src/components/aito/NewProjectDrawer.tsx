@@ -786,6 +786,7 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
                 clientRevealed={clientRevealed}
                 shipping={shipping}
                 shippingIslandLabel={shippingIslandLabel}
+                labourDescriptionMissing={!maindoeuvreValid}
               />
             </div>
 
