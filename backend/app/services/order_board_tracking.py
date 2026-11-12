@@ -211,7 +211,8 @@ async def compute(db: AsyncSession, token: str, now: datetime) -> tuple[str, dic
     payment = row.get("payment")
     left = max(0, round(payment["left"])) if payment else 0
     facts = row.get("facts") or {}
-    updated = max([*moments.values(), *([modified] if modified else [])], default=now)
+    stamps: list[datetime] = [*moments.values(), *([modified] if modified else [])]
+    updated = max(stamps, default=now)
     return salesorder_id, {
         **tracking,
         "reference": f"#{facts['shopify_order']}" if facts.get("shopify_order") else row["number"],

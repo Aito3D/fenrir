@@ -391,3 +391,9 @@ def test_the_tracking_link_comes_after_the_payment_link():
         "\nLien de paiement : https://pay.example/p\nSuivi de ta commande : https://suivi.example/t/o/K7F3XQ\nAito3D"
     )
     assert set(message) <= _GSM
+
+
+def test_the_order_page_is_served_with_the_tracking_pages_noindex_header():
+    from backend.app.main import _is_tracking_page
+
+    assert _is_tracking_page("t/o/K7F3XQ") and _is_tracking_page("T/O/k7f3xq")
