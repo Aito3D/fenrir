@@ -5,10 +5,15 @@ shares its helpers. Spec: docs/superpowers/specs/2026-09-23-aito-counter-payment
 
 from __future__ import annotations
 
+import hmac
+import json
 import logging
+import re
+import time
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.aito import (
@@ -17,6 +22,8 @@ from backend.app.api.routes.aito import (
     _get_active_project_or_404,
     _project_response,
 )
+from backend.app.api.routes.settings import get_setting
+from backend.app.core import database as core_database
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -66,6 +73,7 @@ from backend.app.services.heimdall import (
     HeimdallNotFound,
     HeimdallRateLimited,
     HeimdallUpstreamError,
+    sign,
 )
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
@@ -390,3 +398,114 @@ async def link_retainer(
             await db.rollback()
     project = await _get_active_project_or_404(db, project_id)
     return await _project_response(db, project)
+
+
+# --- Heimdall webhook (payment-links spec §9, "phase 3 — instant") ----------
+
+_WEBHOOK_WINDOW_SECONDS = 300
+_WEBHOOK_MAX_BODY_BYTES = 4096
+_WEBHOOK_MAX_CALLS = 120  # per client IP per minute; Heimdall sends a handful per payment
+_WEBHOOK_NONCE_RE = re.compile(r"[A-Za-z0-9_-]{16,128}")
+_WEBHOOK_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,36}")  # the ledgers' heimdall_id is String(36)
+
+
+def _webhook_signature_ok(request: Request, body: bytes, secret: str) -> bool:
+    """True when the three X-Heimdall-* headers sign this exact request with
+    `secret`, inside the timestamp window. Constant-time on the digest."""
+    timestamp = request.headers.get("x-heimdall-timestamp", "")
+    nonce = request.headers.get("x-heimdall-nonce", "")
+    presented = request.headers.get("x-heimdall-signature", "")
+    if not (timestamp.isascii() and timestamp.isdigit() and len(timestamp) <= 13 and str(int(timestamp)) == timestamp):
+        return False
+    if abs(time.time() - int(timestamp)) > _WEBHOOK_WINDOW_SECONDS:
+        return False
+    if not _WEBHOOK_NONCE_RE.fullmatch(nonce):
+        return False
+    path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    expected = sign("POST", path, body, secret, int(timestamp), nonce)
+    return hmac.compare_digest(expected.encode("utf-8"), presented.encode("utf-8"))
+
+
+async def _wake_payment(heimdall_id: str) -> None:
+    """Re-read one Heimdall payment NOW, through the code the poller uses:
+    the link pass for a ledger link (`reconcile_payment_links`, one row,
+    under its pass lock) and `refresh_terminal_payment` for a terminal
+    payment (whose settle is claimed, so a concurrent poll cannot settle it
+    twice). Order Board rows live in the same two ledgers. Runs after the
+    response, on its own session; an id in neither ledger does nothing."""
+    try:
+        async with core_database.async_session() as db:
+            link_id = (
+                await db.execute(select(AitoPaymentLink.id).where(AitoPaymentLink.heimdall_id == heimdall_id))
+            ).scalar()
+            if link_id is not None:
+                await reconcile_payment_links(db, only_link_id=link_id, force=True)
+            terminal = (
+                await db.execute(select(AitoTerminalPayment).where(AitoTerminalPayment.heimdall_id == heimdall_id))
+            ).scalar()
+            if terminal is not None:
+                await refresh_terminal_payment(db, terminal, now=_now(), force=True)
+    except Exception as exc:  # noqa: BLE001 — a wake is best effort; the poll is the fallback
+        logger.warning("Heimdall webhook: waking payment %s failed: %s", heimdall_id, exc)
+
+
+@router.post("/payments/webhook", status_code=204)
+async def heimdall_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db, scope="function"),
+) -> Response:
+    """Heimdall's "this payment changed" notification. PUBLIC: no session, the
+    signature is the credential. Off (404) until `heimdall_webhook_secret` is
+    saved under Settings → Heimdall.
+
+    The payload is NEVER trusted for money. A valid call only wakes the
+    poller's own code path for that one payment (`_wake_payment`), which
+    reads the status and amount from Heimdall itself; polling stays the
+    fallback, and a webhook racing a poll settles once.
+
+    Signing scheme (identical in heimdall/docs/API.md, "Payment webhook"):
+
+        POST <webhook URL>, Content-Type: application/json
+        X-Heimdall-Timestamp: Unix seconds
+        X-Heimdall-Nonce:     [A-Za-z0-9_-]{16,128}, fresh on every attempt
+        X-Heimdall-Signature: "sha256=" + lowercase hex HMAC-SHA256(secret, signed string)
+
+        signed string = these six fields joined by "\n":
+            POST
+            path of the webhook URL, with its query string, exactly as sent
+            timestamp
+            nonce
+            SHA-256(raw request body), lowercase hex
+            (empty string — there is no Idempotency-Key)
+
+        body = {"id": <Heimdall payment id>, "kind": "link" | "terminal",
+                "status": <Heimdall public status>, "occurred_at": <ISO 8601 UTC>}
+
+    Verified over the raw body bytes, compared in constant time, timestamp
+    within ±300 s. Every refusal — missing or malformed header, stale
+    timestamp, wrong signature, oversized body — is the same 401. A valid
+    call always answers 204, whether or not the id is one of ours: nothing
+    here says which ids exist. No nonce table: a replay inside the window
+    can only repeat a wake, which is idempotent and rate limited (per IP).
+    """
+    _check_rate_limit(
+        request, None, bucket="heimdall_webhook", max_calls=_WEBHOOK_MAX_CALLS, detail="Too many requests"
+    )
+    secret = (await get_setting(db, "heimdall_webhook_secret") or "").strip()
+    if not secret:
+        raise HTTPException(status_code=404, detail="Not Found")
+    refused = HTTPException(status_code=401, detail="Unauthorized")
+    declared = request.headers.get("content-length", "")
+    if not declared.isdigit() or int(declared) > _WEBHOOK_MAX_BODY_BYTES:
+        raise refused
+    body = await request.body()
+    if len(body) > _WEBHOOK_MAX_BODY_BYTES or not _webhook_signature_ok(request, body, secret):
+        raise refused
+    try:
+        heimdall_id = json.loads(body)["id"]
+    except (ValueError, KeyError, TypeError):
+        heimdall_id = None
+    if isinstance(heimdall_id, str) and _WEBHOOK_ID_RE.fullmatch(heimdall_id):
+        background_tasks.add_task(_wake_payment, heimdall_id)
+    return Response(status_code=204)

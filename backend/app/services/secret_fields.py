@@ -128,6 +128,7 @@ SETTINGS_SECRETS: dict[str, tuple[str, ...]] = {
     "zoho_refresh_token": ("zoho_accounts_url", "zoho_base_url"),
     "openrouter_api_key": (),
     "heimdall_api_token": ("heimdall_base_url",),
+    "heimdall_webhook_secret": (),
 }
 
 # Settings rows that hold a credential, by name: a Git backup writes them as

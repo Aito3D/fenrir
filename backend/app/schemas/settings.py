@@ -724,6 +724,11 @@ class AppSettings(BaseModel):
     heimdall_api_token: str = Field(
         default="", description="Heimdall /api/v1 credential hmd_live.<id>.<secret> (write-only)"
     )
+    # Shared with Heimdall's PAYMENT_WEBHOOK_SECRET: keys the signature on
+    # POST /api/v1/aito/payments/webhook. Empty = the route answers 404.
+    heimdall_webhook_secret: str = Field(
+        default="", description="Shared secret for Heimdall's payment webhook (write-only; empty = webhook off)"
+    )
     # 0 = the payment link asks for the full quote total; otherwise the deposit
     # share (ceil). Also the threshold the paid-retainer auto-accept uses.
     aito_deposit_pct: int = Field(default=0, ge=0, le=100, description="Deposit share of the quote, in percent")
@@ -998,6 +1003,7 @@ class AppSettingsUpdate(BaseModel):
     openrouter_model: str | None = None
     heimdall_base_url: str | None = None
     heimdall_api_token: str | None = None
+    heimdall_webhook_secret: str | None = None
     aito_deposit_pct: int | None = Field(default=None, ge=0, le=100)
     aito_payment_mode_card: str | None = None
     aito_payment_mode_cheque: str | None = None

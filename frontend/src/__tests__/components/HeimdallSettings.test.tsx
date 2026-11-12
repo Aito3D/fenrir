@@ -66,6 +66,23 @@ describe('HeimdallSettings', () => {
     await waitFor(() => expect(puts[0]).toMatchObject({ heimdall_api_token: 'hmd_live.84f32b71ac095ed2.secret' }));
   });
 
+  it('shows the webhook address read-only and saves the shared secret only when typed', async () => {
+    render(<HeimdallSettings />);
+    const address = (await screen.findByLabelText('Address to enter in Heimdall')) as HTMLInputElement;
+    expect(address.readOnly).toBe(true);
+    expect(address.value).toBe(`${window.location.origin}/api/v1/aito/payments/webhook`);
+    const secret = screen.getByLabelText('Shared secret') as HTMLInputElement;
+    expect(secret.type).toBe('password');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]).not.toHaveProperty('heimdall_webhook_secret');
+    await userEvent.type(secret, 'whsec-0123456789');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(puts).toHaveLength(2));
+    expect(puts[1]).toMatchObject({ heimdall_webhook_secret: 'whsec-0123456789' });
+    await waitFor(() => expect(secret.value).toBe(''));
+  });
+
   it('says plainly that no quote gets a link while the URL is unset', async () => {
     server.use(
       http.get('/api/v1/settings/', () =>

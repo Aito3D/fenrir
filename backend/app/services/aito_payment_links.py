@@ -970,6 +970,7 @@ async def reconcile_payment_links(
     db: AsyncSession,
     *,
     only_project_id: int | None = None,
+    only_link_id: int | None = None,
     changes_only: bool = False,
     now: datetime | None = None,
     today: date | None = None,
@@ -990,6 +991,11 @@ async def reconcile_payment_links(
     matches the quote Books just confirmed — and skips the poll half, so a
     wake spends nothing of the polling budget. A changed total reaches
     Heimdall within seconds of the push instead of at the next full tick.
+
+    `only_link_id` is the Heimdall webhook's wake (routes/aito_payments.py):
+    no project is reconciled and the poll half reads that ONE ledger row —
+    a quote, invoice or Order Board link alike — if it is still pending.
+    Same lock, same `poll_link`, same lost-link handling as the tick.
 
     Ids are materialised up front and each row/project is re-fetched with
     `db.get()` INSIDE its own loop iteration, never held onto across
@@ -1029,7 +1035,13 @@ async def reconcile_payment_links(
         # concurrent with it: the outer pass is suspended at a row boundary,
         # its previous row committed, and it re-fetches every row by id.
         return await _run_pass(
-            db, only_project_id=only_project_id, changes_only=changes_only, now=now, today=today, force=force
+            db,
+            only_project_id=only_project_id,
+            only_link_id=only_link_id,
+            changes_only=changes_only,
+            now=now,
+            today=today,
+            force=force,
         )
     async with _pass_lock:
         # Re-checked under the lock: the pass we just waited for may have
@@ -1041,6 +1053,7 @@ async def reconcile_payment_links(
             return await _run_pass(
                 db,
                 only_project_id=only_project_id,
+                only_link_id=only_link_id,
                 changes_only=changes_only,
                 now=now,
                 today=today,
@@ -1055,6 +1068,7 @@ async def _run_pass(
     db: AsyncSession,
     *,
     only_project_id: int | None,
+    only_link_id: int | None = None,
     changes_only: bool,
     now: datetime | None,
     today: date | None,
@@ -1083,6 +1097,8 @@ async def _run_pass(
     if only_project_id is not None:
         stmt = stmt.where(AitoProject.id == only_project_id)
     project_ids = list((await db.execute(stmt.order_by(AitoProject.id))).scalars().all())
+    if only_link_id is not None:
+        project_ids = []  # the webhook's wake polls one row and reconciles nothing
     if changes_only:
         have = await current_links(db, project_ids)
         projects = (await db.execute(select(AitoProject).where(AitoProject.id.in_(project_ids)))).scalars()
@@ -1136,6 +1152,8 @@ async def _run_pass(
             )
             if only_project_id is not None:
                 pending = pending.where(AitoPaymentLink.project_id == only_project_id)
+            if only_link_id is not None:
+                pending = pending.where(AitoPaymentLink.id == only_link_id)
             pending_ids = list((await db.execute(pending)).scalars().all())
             for rid in pending_ids:
                 if stood_down:

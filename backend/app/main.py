@@ -13442,6 +13442,9 @@ PUBLIC_API_ROUTES = {
     "/api/v1/overlay-branding/logo",
     # Shop figures for the Shopify storefront: public marketing numbers, cached, no identifying data.
     "/api/v1/showcase/stats",
+    # Heimdall's payment webhook: the HMAC signature over the raw body is the
+    # credential (routes/aito_payments.py); 404 until a secret is configured.
+    "/api/v1/aito/payments/webhook",
 }
 
 # Route prefixes that are public (for routes with dynamic segments)
