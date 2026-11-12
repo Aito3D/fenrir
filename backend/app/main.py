@@ -13452,6 +13452,8 @@ PUBLIC_API_PREFIXES = [
     "/api/v1/auth/oidc/authorize/",
     # Aito client tracking page — the token in the path is the credential.
     "/api/v1/aito/track/",
+    # The same page for a sales order (Order Board): the code in the path is the credential.
+    "/api/v1/order-board/track/",
     # One-tap outcome-verdict links from push notifications (#1898). Tapped on
     # a phone with no session, so no header can carry a JWT — the single-use
     # capability token in the path IS the credential (same reasoning as the

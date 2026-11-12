@@ -21,6 +21,7 @@ from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_tracking_view import AitoTrackingView
+from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.schemas.aito import (
     AitoTrackingBalance,
     AitoTrackingPayment,
@@ -102,10 +103,20 @@ def normalize_token(raw: str) -> str | None:
 async def mint_unique_token(db: AsyncSession) -> str:
     """A fresh code no active-or-trashed card holds. A billion codes against
     a few hundred cards makes a clash a once-a-decade event, but the column
-    is unique-indexed and a clash there would be a 500 on a Copy click."""
+    is unique-indexed and a clash there would be a 500 on a Copy click.
+    Sales orders draw their codes here too (services/order_board_tracking.py,
+    a `track` doc per order), so a code never names both a card and an order."""
     for _ in range(10):
         token = mint_token()
         taken = (await db.execute(select(AitoProject.id).where(AitoProject.tracking_token == token))).first()
+        if taken is None:
+            taken = (
+                await db.execute(
+                    select(OrderBoardDoc.id).where(
+                        OrderBoardDoc.kind == "track", OrderBoardDoc.header["token"].as_string() == token
+                    )
+                )
+            ).first()
         if taken is None:
             return token
     raise RuntimeError("could not mint a unique tracking token")  # pragma: no cover — 32^6 space
