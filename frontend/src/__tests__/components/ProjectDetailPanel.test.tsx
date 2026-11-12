@@ -2414,15 +2414,19 @@ describe('ProjectDetailPanel sync row', () => {
     expect(screen.queryByText(/Books refused/)).not.toBeInTheDocument();
   });
 
-  it('retrying re-saves the unchanged description, which is what re-marks the project pending', async () => {
-    // There is deliberately no dedicated retry endpoint — see _mark_pending in
-    // api/routes/aito.py, which every content PATCH handler calls. Re-saving
-    // the description unchanged IS the retry.
-    let capturedBody: unknown;
+  it('retrying posts to the sync route, which is what re-marks the project pending', async () => {
+    // POST /aito/{id}/sync, the route Force sync uses — not a PATCH re-saving
+    // the description unchanged, which recorded an edit nobody made.
+    let synced = 0;
+    let patched = 0;
     server.use(
-      http.patch('/api/v1/aito/12', async ({ request }) => {
-        capturedBody = await request.json();
+      http.post('/api/v1/aito/12/sync', () => {
+        synced += 1;
         return HttpResponse.json({ ...project, quote_sync_state: 'pending', quote_sync_error: null });
+      }),
+      http.patch('/api/v1/aito/12', () => {
+        patched += 1;
+        return HttpResponse.json(project);
       }),
     );
 
@@ -2430,9 +2434,8 @@ describe('ProjectDetailPanel sync row', () => {
     show({ quote_sync_state: 'error', quote_sync_error: 'Zoho: invalid customer_id' });
     await user.click(await screen.findByRole('button', { name: 'Retry' }));
 
-    await waitFor(() =>
-      expect(capturedBody).toEqual({ description: project.description, expected_version: project.version }),
-    );
+    await waitFor(() => expect(synced).toBe(1));
+    expect(patched).toBe(0);
   });
 });
 

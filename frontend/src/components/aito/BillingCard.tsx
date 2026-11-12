@@ -61,8 +61,8 @@ export function BillingCard({
   /** The shop currency (`useCurrency()`), for the deposit-available row and
    *  for a retainer Books returns without a currency of its own. */
   currency: string;
-  /** Re-marks the project pending for the sync worker (a PATCH carrying the
-   *  unchanged description — see the panel's `updateMutation`). */
+  /** Re-marks the project pending for the sync worker (POST
+   *  /aito/{id}/sync — see the panel's `forceSyncMutation`). */
   onRetrySync: () => void;
   retryPending: boolean;
   /** Queues a locked-but-not-invoiced card for one more push attempt

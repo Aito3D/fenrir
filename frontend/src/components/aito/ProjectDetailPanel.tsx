@@ -911,21 +911,16 @@ export function ProjectDetailPanel({
   const tabSwitchedRef = useRef(false);
   if (rightTab !== openedOnTabRef.current) tabSwitchedRef.current = true;
 
-  // A description edit shows immediately; the retry-sync button sends the
-  // description UNCHANGED (its only job is to re-mark the project pending
-  // for the worker), so it writes the sync state instead. One transform,
-  // branching on which of the two this is.
-  const updateMutation = useProjectPatchMutation(project, (previous, patch: AitoProjectUpdate) => {
-    if (patch.description !== undefined && patch.description !== project.description) {
-      return applyDescription(previous, project.id, patch.description);
-    }
-    return applySyncState(previous, project.id, 'pending');
-  });
+  // A description edit shows immediately.
+  const updateMutation = useProjectPatchMutation(project, (previous, patch: AitoProjectUpdate) =>
+    patch.description !== undefined ? applyDescription(previous, project.id, patch.description) : previous,
+  );
 
-  // The Force sync control on a locked-but-not-invoiced card (see
-  // quoteSync.ts's `canForceSync`). NOT a `useProjectPatchMutation` like the
-  // retry button beside it: a PATCH is an EDIT, and the only edit available
-  // here would be re-saving the unchanged description — which records a
+  // The Retry control on a card whose sync failed, and the Force sync control
+  // on a locked-but-not-invoiced card (see quoteSync.ts's `canForceSync`).
+  // NOT a `useProjectPatchMutation`: a PATCH is an EDIT, and the only edit
+  // available here would be re-saving the unchanged description (what Retry
+  // used to do) — which records a
   // `project.updated` for a write the operator did not make, and carries a
   // version guard that can 409 against a peer for no reason. POST
   // /aito/{id}/sync is the route that exists for exactly this ("queue this
@@ -1499,14 +1494,13 @@ export function ProjectDetailPanel({
               >
                 {rightTab === 'details' ? (
                   <>
-                    {/* The sync retry re-saves the UNCHANGED description: its
-                        only job is to re-mark the project pending for the
-                        worker (see updateMutation's transform). */}
+                    {/* Retry and Force sync are the same request (POST
+                        /aito/{id}/sync), offered in two different states. */}
                     <BillingCard
                       project={project}
                       canUpdate={canUpdate}
-                      onRetrySync={() => updateMutation.mutate({ description: project.description })}
-                      retryPending={updateMutation.isPending}
+                      onRetrySync={() => forceSyncMutation.mutate(undefined)}
+                      retryPending={forceSyncMutation.isPending}
                       onForceSync={() => forceSyncMutation.mutate(undefined)}
                       forcePending={forceSyncMutation.isPending}
                       depositPct={depositPct}

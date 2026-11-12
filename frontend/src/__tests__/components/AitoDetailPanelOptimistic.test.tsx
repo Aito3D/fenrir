@@ -190,15 +190,14 @@ describe('ProjectDetailPanel optimistic writes', () => {
     expect(flash).toHaveBeenCalledWith(1);
   });
 
-  it('flips quote_sync_state to pending the moment retry sync is clicked, before the PATCH resolves', async () => {
-    // The retry-sync button sends the description UNCHANGED — its only job is
-    // to re-mark the project pending for the Zoho worker — so the optimistic
-    // transform must branch to applySyncState rather than applyDescription.
-    // Nothing else in this task covers that branch.
-    let release: (v: unknown) => void = () => {};
-    vi.spyOn(api, 'updateAitoProject').mockImplementation(
+  it('flips quote_sync_state to pending the moment retry sync is clicked, through the sync route and never a PATCH', async () => {
+    // Retry used to re-save the unchanged description just to re-mark the
+    // card pending: an edit nobody made, with a version guard that could 409.
+    let release: (v: AitoProject) => void = () => {};
+    const sync = vi.spyOn(api, 'syncAitoProject').mockImplementation(
       () => new Promise((resolve) => { release = resolve; }),
     );
+    const patch = vi.spyOn(api, 'updateAitoProject');
     const project = makeProject({ id: 1, quote_sync_state: 'error', quote_sync_error: 'boom' });
     const client = renderPanel(project);
 
@@ -207,9 +206,8 @@ describe('ProjectDetailPanel optimistic writes', () => {
     await waitFor(() => {
       expect(client.getQueryData<AitoProject[]>(['aito-projects'])![0].quote_sync_state).toBe('pending');
     });
-    // The description must not have been touched by the branch that fires
-    // for a genuine edit.
-    expect(client.getQueryData<AitoProject[]>(['aito-projects'])![0].description).toBe(project.description);
+    expect(sync).toHaveBeenCalledWith(1);
+    expect(patch).not.toHaveBeenCalled();
     release(makeProject({ id: 1, quote_sync_state: 'pending' }));
   });
 
