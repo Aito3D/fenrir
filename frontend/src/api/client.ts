@@ -1851,6 +1851,8 @@ export interface AppSettings {
   aito_payment_mode_card: string;
   aito_payment_mode_cheque: string;
   aito_payment_mode_cash: string;
+  /** Apply Books-side edits of a quote's lines onto the card's tasks. Off by default. */
+  aito_pull_quote_lines: boolean;
   /** Aito follow-ups strip thresholds, in days. */
   aito_followup_quote_days: number;
   aito_followup_pickup_days: number;

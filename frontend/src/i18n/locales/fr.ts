@@ -7468,6 +7468,8 @@ export default {
     defaultContactId: 'ID du client par défaut',
     defaultContactName: 'Nom du client par défaut',
     defaultContactHint: 'Présélectionné dans la fenêtre de nouveau projet Aito. Le téléphone et l’e-mail ne sont jamais écrits sur ce contact.',
+    pullQuoteLines: 'Appliquer aux cartes les modifications de lignes faites dans Zoho Books',
+    pullQuoteLinesHint: 'Si activé, les modifications apportées aux lignes d\'un devis dans Zoho Books sont appliquées à la carte. Les cartes dont le devis diffère déjà de Books sont mises à jour ou signalées au premier passage.',
     secretSaved: 'Valeur enregistrée — laissez vide pour la conserver',
     save: 'Enregistrer',
     saved: 'Paramètres Zoho enregistrés',

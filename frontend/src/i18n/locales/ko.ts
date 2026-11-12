@@ -7249,6 +7249,8 @@ export default {
     defaultContactId: '기본 고객 ID',
     defaultContactName: '기본 고객 이름',
     defaultContactHint: 'Aito 새 프로젝트 모달에서 미리 선택됩니다. 전화번호와 이메일은 이 연락처에 기록되지 않습니다.',
+    pullQuoteLines: 'Zoho Books의 항목 수정 사항을 카드에 적용',
+    pullQuoteLinesHint: '켜면 Zoho Books에서 견적 항목을 수정한 내용이 카드에 적용됩니다. 견적이 이미 Books와 다른 카드는 처음 실행될 때 업데이트되거나 표시됩니다.',
     secretSaved: '값이 저장되었습니다 — 유지하려면 비워 두세요',
     save: '저장',
     saved: 'Zoho 설정이 저장되었습니다',

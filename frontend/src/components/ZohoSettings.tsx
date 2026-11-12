@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import type { AppSettings, AppSettingsUpdate, ZohoStatus } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
+import { Toggle } from './Toggle';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { settingsInputCls as INPUT } from './formStyles';
@@ -24,6 +25,8 @@ export function ZohoSettings() {
   const [accountsUrl, setAccountsUrl] = useState('');
   const [defaultContactId, setDefaultContactId] = useState('');
   const [defaultContactName, setDefaultContactName] = useState('');
+
+  const [pullQuoteLines, setPullQuoteLines] = useState(false);
 
   // Write-only secret fields — always start empty
   const [clientSecret, setClientSecret] = useState('');
@@ -50,6 +53,7 @@ export function ZohoSettings() {
       setAccountsUrl(settings.zoho_accounts_url ?? '');
       setDefaultContactId(settings.zoho_default_contact_id ?? '');
       setDefaultContactName(settings.zoho_default_contact_name ?? '');
+      setPullQuoteLines(settings.aito_pull_quote_lines ?? false);
       // Secrets are never returned by the API — always leave blank.
       setClientSecret('');
       setRefreshToken('');
@@ -83,6 +87,7 @@ export function ZohoSettings() {
     if (defaultContactId !== (settings?.zoho_default_contact_id ?? '')) payload.zoho_default_contact_id = defaultContactId;
     if (defaultContactName !== (settings?.zoho_default_contact_name ?? ''))
       payload.zoho_default_contact_name = defaultContactName;
+    if (pullQuoteLines !== (settings?.aito_pull_quote_lines ?? false)) payload.aito_pull_quote_lines = pullQuoteLines;
     if (clientSecret) payload.zoho_client_secret = clientSecret;
     if (refreshToken) payload.zoho_refresh_token = refreshToken;
 
@@ -247,6 +252,19 @@ export function ZohoSettings() {
         </div>
 
         <p className="text-sm text-bambu-gray">{t('zoho.defaultContactHint')}</p>
+
+        <div className="flex items-start justify-between gap-4 border-t border-bambu-dark-tertiary pt-4">
+          <div>
+            <p className="text-sm text-white">{t('zoho.pullQuoteLines')}</p>
+            <p className="mt-1 text-sm text-bambu-gray">{t('zoho.pullQuoteLinesHint')}</p>
+          </div>
+          <Toggle
+            checked={pullQuoteLines}
+            onChange={setPullQuoteLines}
+            disabled={!canUpdate}
+            aria-label={t('zoho.pullQuoteLines')}
+          />
+        </div>
 
         {testResult && (
           <div

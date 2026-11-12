@@ -732,6 +732,11 @@ class AppSettings(BaseModel):
     aito_payment_mode_card: str = Field(default="creditcard", description="Zoho payment mode for a card payment")
     aito_payment_mode_cheque: str = Field(default="check", description="Zoho payment mode for a cheque")
     aito_payment_mode_cash: str = Field(default="cash", description="Zoho payment mode for cash")
+    # Off by default: the first run compares every idle quoted card with its
+    # Books quote, so cards that already differ are updated or flagged then.
+    aito_pull_quote_lines: bool = Field(
+        default=False, description="Apply edits made to a quote's lines in Zoho Books onto the card's tasks"
+    )
 
     # Obico AI failure detection (#172)
     obico_enabled: bool = Field(default=False, description="Enable Obico AI print failure detection")
@@ -1002,6 +1007,7 @@ class AppSettingsUpdate(BaseModel):
     aito_payment_mode_card: str | None = None
     aito_payment_mode_cheque: str | None = None
     aito_payment_mode_cash: str | None = None
+    aito_pull_quote_lines: bool | None = None
     obico_enabled: bool | None = None
     obico_ml_url: str | None = None
     fenrir_internal_url: str | None = None

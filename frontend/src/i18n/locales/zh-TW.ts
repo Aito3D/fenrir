@@ -7467,6 +7467,8 @@ export default {
     defaultContactId: '預設客戶 ID',
     defaultContactName: '預設客戶名稱',
     defaultContactHint: '在 Aito 新增專案視窗中預先選取。電話和電子郵件永遠不會寫入此聯絡人。',
+    pullQuoteLines: '將 Zoho Books 中的明細列修改套用到卡片',
+    pullQuoteLinesHint: '開啟後,在 Zoho Books 中對報價單明細列所做的修改會套用到卡片。報價單已與 Books 不一致的卡片會在首次執行時被更新或標記。',
     secretSaved: '值已儲存 — 留空以保留',
     save: '儲存',
     saved: 'Zoho 設定已儲存',

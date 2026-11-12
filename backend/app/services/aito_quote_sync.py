@@ -1896,7 +1896,7 @@ async def _sync_reconcile(
 
     # Last, and after every Books call of this reconcile: it takes the
     # database's write lock, which is then held only until the caller commits.
-    if was_idle:
+    if was_idle and await pull_lines_enabled(db):
         await _pull_lines(db, project_id, estimate)
 
 
@@ -1904,7 +1904,8 @@ async def _pull_lines(db: AsyncSession, project_id: int, estimate: dict) -> None
     """Phase 2, the pull: take a Books-side edit of the quote's lines onto the
     card's tasks. Never raises, and never queues a push.
 
-    Runs once per Books modification: ``quote_synced_at`` is the estimate's
+    Only with ``aito_pull_quote_lines`` on (``pull_lines_enabled``, checked by
+    the caller). Runs once per Books modification: ``quote_synced_at`` is the estimate's
     ``last_modified_time`` as this app last wrote or read it, so an estimate
     that has not moved since is not looked at again — which is also why a
     refused edit is recorded once and not on every reconcile.
@@ -3275,6 +3276,15 @@ async def sync_enabled(db: AsyncSession) -> bool:
 
     raw = await get_setting(db, "aito_quote_sync_enabled")
     return (raw or "true").strip().lower() not in ("false", "0", "no")
+
+
+async def pull_lines_enabled(db: AsyncSession) -> bool:
+    """The pull's switch (Settings > Zoho), off unless switched on: turning it
+    on lets Books change prices on cards, starting with every card whose
+    quote already differs."""
+    from backend.app.api.routes.settings import get_setting
+
+    return ((await get_setting(db, "aito_pull_quote_lines")) or "").strip().lower() == "true"
 
 
 async def _drain_pending(db: AsyncSession, *, fast_retry: bool = False, where: str) -> int:

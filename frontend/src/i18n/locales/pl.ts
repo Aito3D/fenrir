@@ -10489,6 +10489,8 @@ export default {
     defaultContactId: 'Domyślny identyfikator klienta',
     defaultContactName: 'Domyślna nazwa klienta',
     defaultContactHint: 'Wstępnie wybrany w oknie nowego projektu Aito. Telefon i e-mail nigdy nie są zapisywane w tym kontakcie.',
+    pullQuoteLines: 'Stosuj na kartach zmiany pozycji wprowadzone w Zoho Books',
+    pullQuoteLinesHint: 'Po włączeniu zmiany pozycji oferty wprowadzone w Zoho Books są stosowane na karcie. Karty, których oferta już różni się od Books, zostaną zaktualizowane lub oznaczone przy pierwszym uruchomieniu.',
     secretSaved: 'Wartość zapisana — zostaw puste, aby zachować',
     save: 'Zapisz',
     saved: 'Zapisano ustawienia Zoho',

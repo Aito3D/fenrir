@@ -7467,6 +7467,8 @@ export default {
     defaultContactId: 'ID cliente predefinito',
     defaultContactName: 'Nome cliente predefinito',
     defaultContactHint: 'Preselezionato nella finestra di nuovo progetto Aito. Telefono ed e-mail non vengono mai scritti su questo contatto.',
+    pullQuoteLines: 'Applica alle schede le modifiche alle righe fatte in Zoho Books',
+    pullQuoteLinesHint: 'Se attivo, le modifiche apportate alle righe di un preventivo in Zoho Books vengono applicate alla scheda. Le schede il cui preventivo differisce già da Books vengono aggiornate o segnalate alla prima esecuzione.',
     secretSaved: 'Valore salvato — lascia vuoto per mantenerlo',
     save: 'Salva',
     saved: 'Impostazioni Zoho salvate',

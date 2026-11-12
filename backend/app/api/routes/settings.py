@@ -232,6 +232,7 @@ _BOOL_SETTING_KEYS = frozenset(
         "camera_gpu_accel",
         "drying_no_auto_stop",
         "projects_auto_file_by_code",
+        "aito_pull_quote_lines",
     }
 )
 

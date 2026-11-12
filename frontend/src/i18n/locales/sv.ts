@@ -10518,6 +10518,8 @@ errors: {
     defaultContactId: 'Standard-kund-ID',
     defaultContactName: 'Standard-kundnamn',
     defaultContactHint: 'Förvald i Aitos nya-projekt-dialog. Telefon och e-post skrivs aldrig till denna kontakt.',
+    pullQuoteLines: 'Tillämpa radändringar från Zoho Books på korten',
+    pullQuoteLinesHint: 'När det är på tillämpas ändringar av en offerts rader i Zoho Books på kortet. Kort vars offert redan skiljer sig från Books uppdateras eller flaggas första gången det körs.',
     secretSaved: 'Värde sparat — lämna tomt för att behålla',
     save: 'Spara',
     saved: 'Zoho-inställningar sparade',

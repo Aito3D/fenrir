@@ -7481,6 +7481,8 @@ export default {
     defaultContactId: 'デフォルトの顧客ID',
     defaultContactName: 'デフォルトの顧客名',
     defaultContactHint: 'Aitoの新規プロジェクトモーダルで事前選択されます。電話番号とメールアドレスはこの連絡先に書き込まれません。',
+    pullQuoteLines: 'Zoho Booksでの明細の編集をカードに反映',
+    pullQuoteLinesHint: 'オンにすると、Zoho Booksで見積の明細に加えた編集がカードに反映されます。見積がすでにBooksと異なるカードは、初回実行時に更新されるか、フラグが付きます。',
     secretSaved: '値は保存済みです — 変更しない場合は空欄のままにしてください',
     save: '保存',
     saved: 'Zoho設定を保存しました',

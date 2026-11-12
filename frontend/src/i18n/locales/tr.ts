@@ -7457,6 +7457,8 @@ export default {
     defaultContactId: 'Varsayılan müşteri kimliği',
     defaultContactName: 'Varsayılan müşteri adı',
     defaultContactHint: 'Aito yeni proje penceresinde önceden seçilir. Telefon ve e-posta bu kişiye asla yazılmaz.',
+    pullQuoteLines: 'Zoho Books\'taki satır düzenlemelerini kartlara uygula',
+    pullQuoteLinesHint: 'Açıkken, Zoho Books\'ta bir teklifin satırlarında yapılan düzenlemeler karta uygulanır. Teklifi Books\'tan zaten farklı olan kartlar ilk çalıştırmada güncellenir veya işaretlenir.',
     secretSaved: 'Değer kaydedildi — korumak için boş bırakın',
     save: 'Kaydet',
     saved: 'Zoho ayarları kaydedildi',

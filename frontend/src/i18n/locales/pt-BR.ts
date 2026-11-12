@@ -7467,6 +7467,8 @@ export default {
     defaultContactId: 'ID do cliente padrão',
     defaultContactName: 'Nome do cliente padrão',
     defaultContactHint: 'Pré-selecionado na janela de novo projeto do Aito. O telefone e o e-mail nunca são gravados nesse contato.',
+    pullQuoteLines: 'Aplicar aos cartões as edições de linhas feitas no Zoho Books',
+    pullQuoteLinesHint: 'Quando ativado, as edições feitas nas linhas de um orçamento no Zoho Books são aplicadas ao cartão. Cartões cujo orçamento já difere do Books são atualizados ou sinalizados na primeira execução.',
     secretSaved: 'Valor salvo — deixe em branco para manter',
     save: 'Salvar',
     saved: 'Configurações do Zoho salvas',

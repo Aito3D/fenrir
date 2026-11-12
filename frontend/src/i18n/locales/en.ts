@@ -7532,6 +7532,8 @@ export default {
     defaultContactId: 'Default client ID',
     defaultContactName: 'Default client name',
     defaultContactHint: 'Preselected in the Aito new-project modal. Phone and email are never written to this contact.',
+    pullQuoteLines: 'Apply Zoho Books line edits to cards',
+    pullQuoteLinesHint: 'When on, edits made to a quote\'s lines in Zoho Books are applied to the card. Cards whose quote already differs from Books are updated or flagged the first time it runs.',
     secretSaved: 'Value saved — leave empty to keep',
     save: 'Save',
     saved: 'Zoho settings saved',

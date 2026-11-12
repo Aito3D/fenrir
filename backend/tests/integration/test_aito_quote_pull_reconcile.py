@@ -11,11 +11,13 @@ import json
 
 import httpx
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 
+from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.models.settings import Settings
 from backend.app.services import aito_quote_sync
 from backend.app.services.aito_quote_sync import run_sync_once
 from backend.app.services.zoho import zoho_service
@@ -40,8 +42,10 @@ CARD = [
 ]
 
 
-async def _card(db, **fields) -> AitoProject:
-    """A quoted card with nothing left to push, as the last push left it."""
+async def _card(db, *, pull: bool = True, **fields) -> AitoProject:
+    """A quoted card with nothing left to push, as the last push left it.
+    The pull's switch is off by default; these tests turn it on."""
+    await set_setting(db, "aito_pull_quote_lines", "true" if pull else "false")
     project = AitoProject(
         description="Helice et socle",
         board_column="print",
@@ -393,3 +397,31 @@ async def test_an_estimate_the_reader_chokes_on_is_flagged_and_the_reconcile_sur
     assert flag.detail == {"reason": "error"}
     await db_session.refresh(project)
     assert project.quote_total == 99000  # the rest of the reconcile was kept
+
+
+@pytest.mark.parametrize("pull", [False, None])
+async def test_with_the_switch_off_nothing_is_applied_and_nothing_is_recorded(db_session, pull):
+    """Off, or never set: an edit that would apply and one that would be
+    flagged are both left alone, and the estimate is not marked as seen — so
+    switching the pull on later still finds them."""
+    project = await _card(db_session, pull=bool(pull))
+    if pull is None:
+        await db_session.execute(delete(Settings).where(Settings.key == "aito_pull_quote_lines"))
+        await db_session.commit()
+    await _configure_zoho(db_session)
+    seen: list = []
+    _serve(_edited(), seen)
+    await run_sync_once(db_session)
+
+    diverged = books(CARD)
+    diverged["line_items"] = diverged["line_items"][:-2]
+    _serve({**diverged, "last_modified_time": "2026-11-12T09:45:00-1000"}, seen)
+    await run_sync_once(db_session)
+
+    helice, socle = await _tasks(db_session, project.id)
+    assert (helice.scan_cost, helice.impression_quantity, socle.usinage_cost) == (5000, 3, 8000)
+    for kind in ("quote.lines_pulled", "quote.lines_diverged"):
+        assert await _events(db_session, project.id, kind) == []
+    await db_session.refresh(project)
+    assert project.quote_synced_at == PUSHED_AT
+    assert seen == []

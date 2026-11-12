@@ -7481,6 +7481,8 @@ export default {
     defaultContactId: 'Standard-Kunden-ID',
     defaultContactName: 'Standard-Kundenname',
     defaultContactHint: 'Im Aito-Dialog „Neues Projekt“ vorausgewählt. Telefon und E-Mail werden nie in diesen Kontakt geschrieben.',
+    pullQuoteLines: 'Positionsänderungen aus Zoho Books auf Karten anwenden',
+    pullQuoteLinesHint: 'Wenn aktiviert, werden in Zoho Books vorgenommene Änderungen an den Positionen eines Angebots auf die Karte übernommen. Karten, deren Angebot bereits von Books abweicht, werden beim ersten Durchlauf aktualisiert oder markiert.',
     secretSaved: 'Wert gespeichert — zum Beibehalten leer lassen',
     save: 'Speichern',
     saved: 'Zoho-Einstellungen gespeichert',

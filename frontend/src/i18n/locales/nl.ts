@@ -10485,6 +10485,8 @@ export default {
     defaultContactId: 'Standaard klant-ID',
     defaultContactName: 'Standaard klantnaam',
     defaultContactHint: 'Vooraf geselecteerd in het venster voor een nieuw Aito-project. Telefoon en e-mail worden nooit naar dit contact geschreven.',
+    pullQuoteLines: 'Regelwijzigingen uit Zoho Books op kaarten toepassen',
+    pullQuoteLinesHint: 'Indien ingeschakeld worden wijzigingen in de regels van een offerte in Zoho Books op de kaart toegepast. Kaarten waarvan de offerte al afwijkt van Books worden bij de eerste keer bijgewerkt of gemarkeerd.',
     secretSaved: 'Waarde opgeslagen — laat leeg om te behouden',
     save: 'Opslaan',
     saved: 'Zoho-instellingen opgeslagen',
