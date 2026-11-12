@@ -130,6 +130,8 @@ export function OrderLinesPanel({
   // Set while the operator edits a waiting parcel, opened from what Books holds for it now.
   const [parcelState, setParcel] = useState<ParcelEdit | null>(null);
   const [parcelBusy, setParcelBusy] = useState(false);
+  // A saved parcel edit flashes the packed band once, the way a new invoice flashes in its card.
+  const [parcelSaved, setParcelSaved] = useState(false);
   const openParcel = async (packageId: string) => {
     setOpening(`parcel-${packageId}`);
     try {
@@ -292,7 +294,11 @@ export function OrderLinesPanel({
               <tbody key={group.id} className={meta.dim ? 'opacity-60' : ''}>
                 <tr>
                   <th role="rowheader" colSpan={5} className="pt-3 pb-1 text-left font-normal">
-                    <div className={`flex flex-wrap items-center gap-2 rounded-md px-3 py-1.5 text-xs ${meta.band} ${(group.id === 'todo' && edit) || (group.id === 'packed' && parcel) ? `ring-1 ${edit ? 'ring-bambu-green/40' : 'ring-blue-400/40'}` : ''}`}>
+                    <div
+                      data-fresh={(group.id === 'packed' && parcelSaved) || undefined}
+                      onAnimationEnd={e => { if (e.target === e.currentTarget) setParcelSaved(false); }}
+                      className={`flex flex-wrap items-center gap-2 rounded-md px-3 py-1.5 text-xs ${meta.band} ${group.id === 'packed' && parcelSaved ? 'motion-safe:animate-[pulse_1s_ease-in-out_2]' : ''} ${(group.id === 'todo' && edit) || (group.id === 'packed' && parcel) ? `ring-1 ${edit ? 'ring-bambu-green/40' : 'ring-blue-400/40'}` : ''}`}
+                    >
                       <Icon aria-hidden="true" className={`h-3.5 w-3.5 ${meta.name}`} />
                       <span className={`font-semibold uppercase tracking-wide ${meta.name}`}>{t(meta.label)}</span>
                       {group.units !== null && (
@@ -455,7 +461,7 @@ export function OrderLinesPanel({
                 {group.id === 'packed' && parcel && (
                   <tr>
                     <td colSpan={5} className="pt-2 animate-rise-sm">
-                      <OrderParcelEditBar row={row} parcel={parcel} onClose={closeParcel} onBusy={setParcelBusy} />
+                      <OrderParcelEditBar row={row} parcel={parcel} onClose={closeParcel} onBusy={setParcelBusy} onSaved={() => setParcelSaved(true)} />
                     </td>
                   </tr>
                 )}

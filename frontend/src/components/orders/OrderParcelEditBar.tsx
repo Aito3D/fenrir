@@ -10,14 +10,17 @@ import type { ParcelEdit } from './orderBoard';
 import { useOrderActions } from './useOrderActions';
 
 /** The bar under a parcel edit: the units now and before, what came from the shelf and went back, what the save does in Books. */
-export function OrderParcelEditBar({ row, parcel, onClose, onBusy }: { row: OrderPanelRow; parcel: ParcelEdit; onClose: () => void; onBusy: (busy: boolean) => void }) {
+export function OrderParcelEditBar({ row, parcel, onClose, onBusy, onSaved }: { row: OrderPanelRow; parcel: ParcelEdit; onClose: () => void; onBusy: (busy: boolean) => void; onSaved?: () => void }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const d = parcelDiff(parcel);
   const { editParcel } = useOrderActions({
     parcelEdit: {
       onSuccess: () => {
-        showToast(d.units > 0 ? t('orders.parcelEdit.done', { number: parcel.number, units: formatQty(d.units) }) : t('orders.parcelEdit.deleted', { number: parcel.number }));
+        // What moved, in the bar's own words: "+2 from the shelf · −1 back to prepare" (a deleted parcel moved everything back).
+        const moved = d.units > 0 ? [d.added > 0 && t('orders.parcelEdit.added', { n: formatQty(d.added) }), d.removed > 0 && t('orders.parcelEdit.removed', { n: formatQty(d.removed) })].filter(Boolean) : [];
+        showToast([d.units > 0 ? t('orders.parcelEdit.done', { number: parcel.number, units: formatQty(d.units) }) : t('orders.parcelEdit.deleted', { number: parcel.number }), ...moved].join(' · '));
+        onSaved?.();
         onClose();
       },
       onError: e => {

@@ -177,7 +177,12 @@ describe('editing a parcel', () => {
     await user.click(more('Filament B'));
     await user.click(more('Filament B'));
     await user.click(screen.getByRole('button', { name: 'Save the parcel' }));
-    expect(await screen.findByText('Parcel PKG-00031 updated in Zoho Books · 3 units')).toBeInTheDocument();
+    // The toast says what moved, and the packed band flashes once.
+    expect(await screen.findByText('Parcel PKG-00031 updated in Zoho Books · 3 units · +2 from the shelf · −1 back to prepare')).toBeInTheDocument();
+    const band = document.querySelector('[data-fresh]') as HTMLElement;
+    expect(band).toHaveTextContent('Packed, awaiting delivery');
+    fireEvent.animationEnd(band);
+    expect(document.querySelector('[data-fresh]')).toBeNull();
     expect(body).toEqual({ version: 'v1', was: [{ line_id: 'l1', quantity: 2 }], lines: [{ line_id: 'l1', quantity: 1 }, { line_id: 'l2', quantity: 2 }] });
     expect(screen.queryByRole('columnheader', { name: 'In the parcel' })).not.toBeInTheDocument();
   });
