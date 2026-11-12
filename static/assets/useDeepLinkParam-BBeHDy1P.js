@@ -1,1 +1,0 @@
-import{i as e}from"./rolldown-runtime-aKtaBQYM.js";import{Ka as t}from"./icons-BcSr93Ct.js";import{h as n}from"./chunk-62JRHF6Z-BQUIa-DK.js";var r=e(t(),1);function i(e){let[t,i]=n(),a=(0,r.useCallback)(()=>{i(t=>{let n=new URLSearchParams(t);return n.delete(e),n},{replace:!0})},[e,i]);return[t.get(e),a]}export{i as t};
