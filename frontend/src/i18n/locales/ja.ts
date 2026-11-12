@@ -11007,6 +11007,8 @@ export default {
       saveTaskFirst: '先にタスクを保存してください',
       deliveredFiles: '納品ファイル',
       deliveredNone: 'まだ記録がありません',
+      cardWarningOutdated: "納品済みの印刷ファイルが古くなっています",
+      cardWarningNoRevision: "印刷ファイルのない印刷工程があります",
       deliveriesSuggest: '最新の承認済みを提案',
       reuseFromOrder: '注文 #{{order}} のファイルを再利用',
       dropHere: 'ファイルをドロップしてプロジェクトに追加',

@@ -11065,6 +11065,8 @@ errors: {
       saveTaskFirst: 'Spara uppgiften först',
       deliveredFiles: 'Levererade filer',
       deliveredNone: 'Inget registrerat än',
+      cardWarningOutdated: "En levererad utskriftsfil är inaktuell",
+      cardWarningNoRevision: "Utskriftssteg utan utskriftsfil",
       deliveriesSuggest: 'Föreslå senaste godkända',
       reuseFromOrder: 'Återanvänd filerna från order #{{order}}',
       dropHere: 'Släpp filer för att lägga till dem i projektet',

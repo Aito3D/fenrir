@@ -11213,6 +11213,8 @@ export default {
       saveTaskFirst: 'Najpierw zapisz zadanie',
       deliveredFiles: 'Dostarczone pliki',
       deliveredNone: 'Nic jeszcze nie zapisano',
+      cardWarningOutdated: "Dostarczony plik wydruku jest nieaktualny",
+      cardWarningNoRevision: "Etap druku bez pliku wydruku",
       deliveriesSuggest: 'Zaproponuj ostatnie zatwierdzone',
       reuseFromOrder: 'Użyj ponownie plików z zamówienia nr {{order}}',
       dropHere: 'Upuść pliki, aby dodać je do projektu',

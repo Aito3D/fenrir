@@ -1413,6 +1413,15 @@ export interface ProjectFileOut {
 }
 export interface ProjectRevisionOut { id: number; number: number; status: RevisionStatus; note: string | null; derived_from: RevisionRef | null; outdated_by: RevisionRef | null; print_profile: Record<string, unknown> | null; slicer_name: string | null; slicer_version: string | null; has_snapshot: boolean; used: boolean; print_count: number; pipeline_name: string | null; files: ProjectFileOut[]; created_by: string | null; created_at: string; status_changed_at: string | null; slice_status: 'slicing' | 'sliced' | 'failed' | null; slice_error: string | null; slice_job_id: number | null; sliced_file: ProjectFileOut | null }
 export interface ResliceResult { project_id: number; item_id: number; revision_id: number; revision_number: number; file_id: number | null; filename: string }
+export interface RevisionLineage {
+  revision: RevisionRef;
+  /** The derived-from chain, nearest first. */
+  up: RevisionRef[];
+  /** Revisions derived directly from this one. */
+  down: RevisionRef[];
+  prints: { archive_id: number; print_name: string | null; status: string; printer_id: number | null; aito_task_id: number | null; created_at: string; completed_at: string | null }[];
+  deliveries: { task_id: number; task_title: string | null; order_id: number; client_name: string | null }[];
+}
 export interface ProjectItemOut { id: number; section: ProjectSection; name: string; name_key: string; forked_from: RevisionRef | null; revisions: ProjectRevisionOut[] }
 // Fenrir: File Manager bridge (projects PDM phase 5)
 export interface FiledFileOut {
@@ -9785,6 +9794,8 @@ export const api = {
   recordAitoPickupSms: (id: number) =>
     request<AitoProject>(`/aito/${id}/pickup-sms`, { method: 'POST' }),
   getAitoProjectCodes: () => request<Record<string, string[]>>('/aito/project-codes'),
+  getAitoProjectWarnings: () =>
+    request<Record<string, 'outdated' | 'no_revision'>>('/aito/project-warnings'),
   getOrderProjectLinks: (orderId: number) => request<OrderProjectLinks>(`/aito/${orderId}/project-links`),
   getTaskProjectSuggestions: (taskId: number) =>
     request<ProjectSuggestion[]>(`/aito/tasks/${taskId}/project-suggestions`),
@@ -10312,6 +10323,8 @@ export const api = {
     request<ProjectItemOut>(`/projects/items/${itemId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   deleteProjectItem: (itemId: number) => request<void>(`/projects/items/${itemId}`, { method: 'DELETE' }),
   // Notes pinned on a revision's part in the part viewer (2026-10-31).
+  getRevisionLineage: (revisionId: number) =>
+    request<RevisionLineage>(`/projects/revisions/${revisionId}/lineage`),
   getRevisionPins: (revisionId: number) => request<RevisionPin[]>(`/projects/revisions/${revisionId}/pins`),
   createRevisionPin: (revisionId: number, body: { x: number; y: number; z: number; text: string }) =>
     request<RevisionPin>(`/projects/revisions/${revisionId}/pins`, { method: 'POST', body: JSON.stringify(body) }),

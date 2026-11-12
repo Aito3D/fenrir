@@ -11064,6 +11064,8 @@ export default {
       saveTaskFirst: 'Save the task first',
       deliveredFiles: 'Delivered files',
       deliveredNone: 'Nothing recorded yet',
+      cardWarningOutdated: "A delivered print file is outdated",
+      cardWarningNoRevision: "Printing step without a print file",
       deliveriesSuggest: 'Suggest latest approved',
       reuseFromOrder: 'Reuse the files from order #{{order}}',
       dropHere: 'Drop files to add them to the project',

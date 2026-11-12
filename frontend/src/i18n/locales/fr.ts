@@ -10993,6 +10993,8 @@ export default {
       saveTaskFirst: 'Enregistrez d\'abord la tâche',
       deliveredFiles: 'Fichiers livrés',
       deliveredNone: 'Rien d\'enregistré',
+      cardWarningOutdated: "Un fichier d'impression livré est périmé",
+      cardWarningNoRevision: "Étape d'impression sans fichier d'impression",
       deliveriesSuggest: 'Proposer les dernières validées',
       reuseFromOrder: 'Reprendre les fichiers de la commande #{{order}}',
       dropHere: 'Déposez des fichiers pour les ajouter au projet',

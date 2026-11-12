@@ -21,6 +21,9 @@ from starlette.types import Message, Receive, Scope, Send
 from backend.app.api.routes.library import _ensure_library_file_visible, may_modify_library_file
 from backend.app.core import database
 from backend.app.core.auth import (
+    ApiKeyActor,
+    RequestActor,
+    RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
     require_ownership_permission,
     require_permission_if_auth_enabled,
@@ -29,6 +32,9 @@ from backend.app.core.auth import (
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
+from backend.app.core.row_visibility import visible_row_clauses
+from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.project import Project
 from backend.app.models.project_item import SLICE_SLICED, SLICE_SLICING, ProjectRevision
@@ -50,6 +56,7 @@ from backend.app.schemas.project_files import (
     ProjectTreeResponse,
     ResliceBody,
     ResliceStarted,
+    RevisionLineage,
     RevisionPinCreate,
     RevisionPinOut,
     RevisionSliceStarted,
@@ -498,6 +505,30 @@ async def delete_revision(
     with _file_errors():
         revision, item, project = await svc.get_revision_bundle(db, revision_id)
         await svc.delete_revision(db, project, item, revision)
+
+
+@router.get("/revisions/{revision_id}/lineage", response_model=RevisionLineage)
+async def get_revision_lineage(
+    revision_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
+) -> RevisionLineage:
+    """Where the revision comes from and where it went (spec §8): the prints the
+    caller may see, and the deliveries only for callers who may read Aito."""
+    with _file_errors():
+        revision, item, _owner = await svc.get_revision_bundle(db, revision_id)
+    user = actor.owner if isinstance(actor, ApiKeyActor) else actor
+    return await svc.revision_lineage(
+        db,
+        revision,
+        item,
+        archive_clauses=visible_row_clauses(
+            PrintArchive, printer_scope, actor, Permission.ARCHIVES_READ_ALL, Permission.ARCHIVES_READ_OWN
+        ),
+        with_deliveries=user is None or user.has_permission(Permission.AITO_READ.value),
+    )
 
 
 @router.get("/revisions/{revision_id}/pins", response_model=list[RevisionPinOut])

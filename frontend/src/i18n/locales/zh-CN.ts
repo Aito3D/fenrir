@@ -10991,6 +10991,8 @@ export default {
       saveTaskFirst: '请先保存任务',
       deliveredFiles: '已交付文件',
       deliveredNone: '尚无记录',
+      cardWarningOutdated: "已交付的打印文件已过期",
+      cardWarningNoRevision: "打印步骤尚无打印文件",
       deliveriesSuggest: '推荐最新已批准版本',
       reuseFromOrder: '沿用订单 #{{order}} 的文件',
       dropHere: '拖放文件以添加到项目',

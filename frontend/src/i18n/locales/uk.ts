@@ -10653,6 +10653,8 @@ export default {
       saveTaskFirst: 'Спершу збережіть завдання',
       deliveredFiles: 'Передані файли',
       deliveredNone: 'Поки нічого не записано',
+      cardWarningOutdated: "Переданий файл друку застарів",
+      cardWarningNoRevision: "Етап друку без файлу друку",
       deliveriesSuggest: 'Запропонувати останні затверджені',
       reuseFromOrder: 'Взяти файли із замовлення №{{order}}',
       dropHere: 'Перетягніть файли, щоб додати їх до проєкту',

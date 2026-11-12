@@ -10991,6 +10991,8 @@ export default {
       saveTaskFirst: '請先儲存任務',
       deliveredFiles: '已交付檔案',
       deliveredNone: '尚無記錄',
+      cardWarningOutdated: "已交付的列印檔案已過期",
+      cardWarningNoRevision: "列印步驟尚無列印檔案",
       deliveriesSuggest: '建議最新已核准版本',
       reuseFromOrder: '沿用訂單 #{{order}} 的檔案',
       dropHere: '拖放檔案以加入專案',

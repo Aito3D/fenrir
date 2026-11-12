@@ -306,6 +306,47 @@ async def test_virtual_printer_upload_also_files_a_copy(async_client: AsyncClien
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_virtual_printer_queue_mode_also_files_a_copy(
+    async_client: AsyncClient, db_session, test_engine, tmp_path
+):
+    from backend.app.models.print_queue import PrintQueueItem
+    from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+    project, item_id = await _project_with_support_item(async_client, db_session)
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    vp_dir = tmp_path / "vp"
+    vp_dir.mkdir()
+    inst = VirtualPrinterInstance(
+        vp_id=42,
+        name="AutoFileQueue",
+        mode="queue",
+        model="C12",
+        access_code="12345678",
+        serial_suffix="391800042",
+        base_dir=vp_dir,
+        session_factory=factory,
+    )
+    received = vp_dir / f"{project['code']}_support.3mf"
+    received.write_bytes(_3mf("vp-queue"))
+
+    with patch.object(inst, "_broadcast_library_files_changed", new_callable=AsyncMock):
+        await inst._add_to_print_queue(received, "192.168.1.50")
+
+    queued = list((await db_session.execute(select(PrintQueueItem))).scalars())
+    stored = list((await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id.is_(None)))).scalars())
+    assert [f.filename for f in stored] == [received.name]  # the queued File Manager file stays
+    assert [q.library_file_id for q in queued] == [stored[0].id]
+    revisions = await _revisions(db_session, item_id)
+    assert [r.number for r in revisions] == [1, 2]
+    copies = list(
+        (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == revisions[1].id))).scalars()
+    )
+    assert [c.filename for c in copies] == [received.name]
+    assert not received.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_pending_upload_archive_also_files_a_copy(async_client: AsyncClient, db_session, tmp_path):
     project, item_id = await _project_with_support_item(async_client, db_session)
     filename = f"{project['code']}_support.3mf"

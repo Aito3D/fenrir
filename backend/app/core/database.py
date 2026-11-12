@@ -718,6 +718,7 @@ async def init_db():
         printer_sensor_history,
         project,
         project_bom,
+        project_event,
         project_folder,
         project_item,
         project_pin,

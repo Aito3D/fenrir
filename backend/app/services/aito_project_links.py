@@ -17,6 +17,7 @@ from collections.abc import Callable, Collection, Iterable
 from fastapi import UploadFile
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm.exc import StaleDataError
 from starlette.exceptions import HTTPException
 
@@ -25,6 +26,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.project import Project
+from backend.app.models.project_event import ProjectEvent
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.models.user import User
 from backend.app.schemas.aito_project_links import (
@@ -72,6 +74,30 @@ def _revision_label(item: ProjectItem | None, revision: ProjectRevision | None, 
     if item is None or revision is None:
         return f"#{revision_id}"
     return project_files.revision_label(item.name, revision.number)
+
+
+def log_project_event(
+    db: AsyncSession, project_id: int, kind: str, *, actor: str | None, subject_label: str | None, detail: dict | None
+) -> None:
+    """One row of the project's own event log (spec §4.4, the project page's
+    Historique). Added to the session only: it commits or rolls back with the caller."""
+    db.add(
+        ProjectEvent(
+            project_id=project_id,
+            kind=kind,
+            actor=actor,
+            subject_label=(subject_label or "")[:200] or None,
+            detail=detail,
+        )
+    )
+
+
+async def _order_detail(db: AsyncSession, task: AitoTask) -> dict:
+    """The order a task belongs to, snapshotted for the project's event log."""
+    client_name = (
+        await db.execute(select(AitoProject.client_name).where(AitoProject.id == task.project_id))
+    ).scalar_one_or_none()
+    return {"order_id": task.project_id, "task_id": task.id, "client_name": client_name}
 
 
 async def _require_live_task(db: AsyncSession, task_id: int) -> None:
@@ -130,6 +156,11 @@ async def link_task(db: AsyncSession, task: AitoTask, project_id: int | None, *,
     else:
         kind = "task.project_unlinked"
         detail = _project_detail(previous_id, previous)
+    order = await _order_detail(db, task)
+    if previous is not None:
+        log_project_event(db, previous.id, "task.project_unlinked", actor=actor, subject_label=task.title, detail=order)
+    if project is not None:
+        log_project_event(db, project.id, "task.project_linked", actor=actor, subject_label=task.title, detail=order)
     await record_as(
         db,
         task.project_id,
@@ -264,6 +295,10 @@ async def set_deliveries(
         revision, item = source.get(rid, (None, None))
         return _revision_label(item, revision, rid)
 
+    changed = {
+        "added": [label(rid, bundles) for rid in added],
+        "removed": [label(rid, removed_bundles) for rid in removed],
+    }
     await record_as(
         db,
         task.project_id,
@@ -272,10 +307,15 @@ async def set_deliveries(
         subject_type="task",
         subject_id=task.id,
         subject_label=task.title,
-        detail={
-            "added": [label(rid, bundles) for rid in added],
-            "removed": [label(rid, removed_bundles) for rid in removed],
-        },
+        detail=changed,
+    )
+    log_project_event(
+        db,
+        task.linked_project_id,
+        "task.deliveries_changed",
+        actor=actor,
+        subject_label=task.title,
+        detail={**await _order_detail(db, task), **changed},
     )
     return wanted
 
@@ -378,6 +418,51 @@ async def codes_by_order(db: AsyncSession) -> dict[int, list[str]]:
     return dict(codes)
 
 
+async def warnings_by_order(db: AsyncSession) -> dict[int, str]:
+    """The one warning a board card shows per active order (spec §4.6):
+    ``"outdated"`` when a task delivers an outdated print file (§5.3, same rule
+    as ``project_files._outdated_by``), else ``"no_revision"`` when an open
+    Impression step's project has no Impression revision yet."""
+    live_task = (AitoProject.id == AitoTask.project_id) & (AitoProject.status != "deleted")
+    source, newer = aliased(ProjectRevision), aliased(ProjectRevision)
+    outdated = await db.execute(
+        select(AitoTask.project_id)
+        .join(AitoProject, live_task)
+        .join(AitoTaskDelivery, AitoTaskDelivery.task_id == AitoTask.id)
+        .join(ProjectRevision, ProjectRevision.id == AitoTaskDelivery.revision_id)
+        .join(ProjectItem, ProjectItem.id == ProjectRevision.item_id)
+        .join(source, source.id == ProjectRevision.derived_from_id)
+        .join(newer, newer.item_id == source.item_id)
+        .where(
+            ProjectItem.section == "impression",
+            source.item_id != ProjectRevision.item_id,
+            newer.status == "valide",
+            newer.number > source.number,
+        )
+        .distinct()
+    )
+    has_print_file = (
+        select(ProjectItem.id)
+        .join(ProjectRevision, ProjectRevision.item_id == ProjectItem.id)
+        .where(ProjectItem.project_id == AitoTask.linked_project_id, ProjectItem.section == "impression")
+        .exists()
+    )
+    missing = await db.execute(
+        select(AitoTask.project_id)
+        .join(AitoProject, live_task)
+        .where(
+            AitoTask.linked_project_id.is_not(None),
+            AitoTask.impression_cost.is_not(None),
+            AitoTask.impression_done.is_(False),
+            ~has_print_file,
+        )
+        .distinct()
+    )
+    warnings = dict.fromkeys(missing.scalars(), "no_revision")
+    warnings.update(dict.fromkeys(outdated.scalars(), "outdated"))
+    return warnings
+
+
 async def orders_for_project(db: AsyncSession, project_id: int) -> ProjectOrdersResponse:
     """Tasks of non-deleted orders linking to the project, newest order first,
     with the revisions each delivered."""
@@ -433,7 +518,11 @@ async def record_on_linked_orders(
     caller can broadcast to them once committed.
 
     ``subject_type`` stays empty: on the order timeline "project" means the
-    order itself, so the PDM project travels in ``detail`` (id and code)."""
+    order itself, so the PDM project travels in ``detail`` (id and code).
+
+    Also writes the event once to the project's own log (``project_events``),
+    whether or not an order links to it."""
+    log_project_event(db, project_id, kind, actor=actor, subject_label=subject_label, detail=detail)
     order_ids = (
         await db.execute(
             select(AitoTask.project_id)

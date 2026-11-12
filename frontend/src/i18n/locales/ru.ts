@@ -10612,6 +10612,8 @@ export default {
       saveTaskFirst: 'Сначала сохраните задачу',
       deliveredFiles: 'Переданные файлы',
       deliveredNone: 'Пока ничего не записано',
+      cardWarningOutdated: "Переданный файл печати устарел",
+      cardWarningNoRevision: "Этап печати без файла печати",
       deliveriesSuggest: 'Предложить последние утверждённые',
       reuseFromOrder: 'Взять файлы из заказа №{{order}}',
       dropHere: 'Перетащите файлы, чтобы добавить их в проект',

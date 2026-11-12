@@ -564,6 +564,48 @@ async def test_orders_for_project_delivery_ref_is_project_files_revision_ref(db_
     )
 
 
+# --- warnings_by_order (spec §4.6) ---------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_warnings_by_order(db_session):
+    project = await _project(db_session)
+    source_item, source = await _revision(db_session, project, name="Modèle")
+    _, newer = await _revision(db_session, project, source_item)
+    _, derived = await _revision(db_session, project, name="Plaque")
+    derived.derived_from_id = source.id
+    empty_project = await _project(db_session, name="Vide")
+
+    stale = await _order(db_session)
+    stale_task = await _task(db_session, stale, linked_project_id=project.id)
+    current = await _order(db_session)
+    current_task = await _task(db_session, current, linked_project_id=project.id)
+    db_session.add_all(
+        [
+            AitoTaskDelivery(task_id=stale_task.id, revision_id=derived.id),
+            AitoTaskDelivery(task_id=current_task.id, revision_id=newer.id),
+        ]
+    )
+    unsliced = await _order(db_session)
+    (await _task(db_session, unsliced, linked_project_id=empty_project.id)).impression_cost = 1000
+    printed = await _order(db_session)
+    done = await _task(db_session, printed, linked_project_id=empty_project.id)
+    done.impression_cost, done.impression_done = 1000, True
+    no_print_step = await _order(db_session)
+    await _task(db_session, no_print_step, linked_project_id=empty_project.id)
+    trashed = await _order(db_session, status="deleted")
+    (await _task(db_session, trashed, linked_project_id=empty_project.id)).impression_cost = 1000
+    await db_session.flush()
+
+    # The source's item has no newer approved revision yet: nothing is outdated.
+    assert await links.warnings_by_order(db_session) == {unsliced.id: "no_revision"}
+
+    newer.status = "valide"
+    await db_session.flush()
+
+    assert await links.warnings_by_order(db_session) == {stale.id: "outdated", unsliced.id: "no_revision"}
+
+
 # --- record_on_linked_orders -----------------------------------------------
 
 

@@ -227,6 +227,7 @@ _READ_ONLY_ROUTE_NAMES = {
     "get_watch",
     "get_tracking_views",
     "get_project_codes",
+    "get_project_warnings",
     "get_project_links",
     "get_project_suggestions",
 }
