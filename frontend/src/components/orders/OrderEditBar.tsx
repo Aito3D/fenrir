@@ -11,14 +11,18 @@ import type { OrderEdit } from './orderBoard';
 import { useOrderActions } from './useOrderActions';
 
 /** The bar under an order edit: the changes in words, the new total, what the save does, and the way out or through. */
-export function OrderEditBar({ row, edit, onClose, onBusy }: { row: OrderPanelRow; edit: OrderEdit; onClose: () => void; onBusy: (busy: boolean) => void }) {
+export function OrderEditBar({ row, edit, onClose, onBusy, onSaved }: { row: OrderPanelRow; edit: OrderEdit; onClose: () => void; onBusy: (busy: boolean) => void; onSaved?: () => void }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const changes = editChanges(row, edit);
+  const money = (n: number) => formatMoney(n, row.currency);
+  const total = editTotal(row, edit);
   const { editLines } = useOrderActions({
     edit: {
-      onSuccess: () => {
-        showToast(t('orders.edit.done', { number: row.number, count: changes.length }));
+      onSuccess: r => {
+        const saved = r.row?.total ?? total; // the re-read order's total; the estimate when the order left the board
+        showToast(t('orders.edit.done', { number: row.number, count: changes.length }) + (saved === null ? '' : ` · ${t('orders.edit.total')} ${money(saved)}`));
+        onSaved?.();
         onClose();
       },
       onError: e => showToast(t('orders.edit.failed', { reason: errorReason(t, e) }), 'error'),
@@ -26,8 +30,6 @@ export function OrderEditBar({ row, edit, onClose, onBusy }: { row: OrderPanelRo
   });
   const busy = editLines.isPending;
   useEffect(() => onBusy(busy), [busy, onBusy]);
-  const money = (n: number) => formatMoney(n, row.currency);
-  const total = editTotal(row, edit);
   const paid = row.payment?.paid ?? 0;
   const shopify = !!(row.facts.shopify_order || row.facts.shopify_url); // the same test as the Shopify chip
 

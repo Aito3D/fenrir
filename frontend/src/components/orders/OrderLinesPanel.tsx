@@ -67,6 +67,7 @@ export function OrderLinesPanel({
   start,
   startTick,
   onHandoverOpen,
+  onEdited,
 }: {
   row: OrderPanelRow;
   others?: { id: string; number: string }[];
@@ -77,6 +78,8 @@ export function OrderLinesPanel({
   startTick?: number;
   /** Told when a hand-over bar opens or closes (and closed on unmount): the row icon hides meanwhile. */
   onHandoverOpen?: (open: boolean) => void;
+  /** Told once an order edit was saved: the row flashes. */
+  onEdited?: () => void;
 }) {
   const { t } = useTranslation();
   const [sideTab, setSideTab] = usePanelTab(SIDE_TABS, 'orders.panel.tab');
@@ -514,7 +517,7 @@ export function OrderLinesPanel({
                     </tr>
                     <tr>
                       <td colSpan={5} className="pt-2 animate-rise-sm">
-                        <OrderEditBar row={row} edit={edit} onClose={closeEdit} onBusy={setSaving} />
+                        <OrderEditBar row={row} edit={edit} onClose={closeEdit} onBusy={setSaving} onSaved={onEdited} />
                       </td>
                     </tr>
                   </>

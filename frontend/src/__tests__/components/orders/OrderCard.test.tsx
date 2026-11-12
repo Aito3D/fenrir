@@ -1,6 +1,6 @@
 /** The collapsed row's next-step icon. */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { OrderBoardLine, OrderBoardRow } from '../../../api/client';
 
@@ -17,9 +17,9 @@ vi.mock('../../../contexts/AuthContext', async importOriginal => {
 });
 const print = vi.fn((produce: () => Promise<Blob>) => produce());
 vi.mock('../../../components/aito/usePrintBlob', () => ({ usePrintBlob: () => ({ print, busy: false }) }));
-type PanelProps = { start?: string; onHandoverOpen?: (open: boolean) => void };
+type PanelProps = { start?: string; onHandoverOpen?: (open: boolean) => void; onEdited?: () => void };
 const panel = vi.fn((p: PanelProps) => (
-  <div data-testid="panel"><button type="button" onClick={() => p.onHandoverOpen?.(true)}>open hand-over</button></div>
+  <div data-testid="panel"><button type="button" onClick={() => p.onHandoverOpen?.(true)}>open hand-over</button><button type="button" onClick={() => p.onEdited?.()}>saved edit</button></div>
 ));
 vi.mock('../../../components/orders/OrderLinesPanel', () => ({ OrderLinesPanel: (p: PanelProps) => panel(p) }));
 
@@ -119,5 +119,18 @@ describe('the row icon', () => {
   it('hands the step down to the panel', () => {
     render(<OrderCard row={row(waiting)} open onToggle={vi.fn()} start="handover-p9" startTick={3} />);
     expect(panel).toHaveBeenCalledWith(expect.objectContaining({ start: 'handover-p9', startTick: 3 }));
+  });
+});
+
+describe('a saved edit', () => {
+  it('flashes the row once', async () => {
+    const user = userEvent.setup();
+    render(<OrderCard row={row()} open onToggle={vi.fn()} />);
+    const band = screen.getByRole('button', { expanded: true }).parentElement!;
+    expect(band).not.toHaveAttribute('data-fresh');
+    await user.click(screen.getByRole('button', { name: 'saved edit' }));
+    expect(band).toHaveAttribute('data-fresh', 'true');
+    fireEvent.animationEnd(band);
+    expect(band).not.toHaveAttribute('data-fresh');
   });
 });

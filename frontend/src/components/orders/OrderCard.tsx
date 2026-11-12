@@ -77,10 +77,16 @@ export function OrderCard({
   const age = t('orders.age', { n: row.age_days });
   // While the panel's hand-over bar is open, a prep step on the row icon would only read Books and do nothing.
   const [handingOff, setHandingOff] = useState(false);
+  // A saved edit flashes the row once, the way a new invoice flashes in its card.
+  const [edited, setEdited] = useState(false);
 
   return (
     <Card id={`order-${row.id}`} className="overflow-clip">
-      <div className="relative">
+      <div
+        data-fresh={edited || undefined}
+        onAnimationEnd={e => { if (e.target === e.currentTarget) setEdited(false); }}
+        className={`relative ${edited ? 'bg-bambu-green/10 motion-safe:animate-[pulse_1s_ease-in-out_2]' : ''}`}
+      >
         <button
           type="button"
           aria-expanded={open}
@@ -136,7 +142,7 @@ export function OrderCard({
         </button>
         {step && !(open && handingOff && !step.startsWith('handover-')) && <OrderRowAction row={row} target={step} onStart={onStart} />}
       </div>
-      {open && <OrderLinesPanel row={row} others={others} onGoto={onGoto} start={start} startTick={startTick} onHandoverOpen={setHandingOff} />}
+      {open && <OrderLinesPanel row={row} others={others} onGoto={onGoto} start={start} startTick={startTick} onHandoverOpen={setHandingOff} onEdited={() => setEdited(true)} />}
     </Card>
   );
 }

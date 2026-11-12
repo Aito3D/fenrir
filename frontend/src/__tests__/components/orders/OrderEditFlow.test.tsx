@@ -183,16 +183,19 @@ describe('editing the order', () => {
     const bodies: unknown[] = [];
     server.use(hits, http.put(`${BASE}/lines`, async ({ request }) => {
       bodies.push(await request.json());
-      return HttpResponse.json({ board: { rows: [], computed_at: null, stock_loaded_at: null, sync: {} }, row: null });
+      return HttpResponse.json({ board: { rows: [], computed_at: null, stock_loaded_at: null, sync: {} }, row: { total: 12345 } });
     }));
-    render(<OrderLinesPanel row={panelRow({}, two)} />);
+    const onEdited = vi.fn();
+    render(<OrderLinesPanel row={panelRow({}, two)} onEdited={onEdited} />);
     await openEdit(user);
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'One more · Bambu Lab PLA Basic Noir' }));
     await user.click(screen.getByRole('button', { name: 'Remove the line · Filament B' }));
     await addSilk(user);
     await user.dblClick(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText('Order SO-00412 updated in Zoho Books · 3 changes')).toBeInTheDocument();
+    // The toast carries the total Books answered with, not the estimate; the row is told to flash.
+    expect(await screen.findByText(`Order SO-00412 updated in Zoho Books · 3 changes · Total ${money(12345)}`)).toBeInTheDocument();
+    expect(onEdited).toHaveBeenCalledTimes(1);
     expect(bodies).toEqual([{ version: 'v1', lines: [{ line_id: 'l1', quantity: 3 }, { item_id: 'B', quantity: 1 }] }]);
     await waitFor(() => expect(screen.queryByRole('columnheader', { name: 'Ordered' })).not.toBeInTheDocument());
   });
