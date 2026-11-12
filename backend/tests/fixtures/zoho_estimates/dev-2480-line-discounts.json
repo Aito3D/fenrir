@@ -1,0 +1,61 @@
+{
+  "estimate_id": "66407000009400080",
+  "estimate_number": "DEV26-2480",
+  "date": "2026-11-12",
+  "status": "draft",
+  "customer_id": "66407000003700002",
+  "customer_name": "Marie EXEMPLE",
+  "currency_code": "XPF",
+  "is_inclusive_tax": true,
+  "price_precision": 0,
+  "discount": 0,
+  "discount_type": "item_level",
+  "is_discount_before_tax": true,
+  "total": 11160,
+  "line_items": [
+    {
+      "line_item_category": "header",
+      "item_order": 1,
+      "name": "Support moteur",
+      "item_id": "",
+      "rate": 0,
+      "quantity": 1
+    },
+    {
+      "line_item_id": "1",
+      "item_order": 2,
+      "sku": "P3DMOD",
+      "name": "Modelisation3D - Prestation \"AITO 3D\"",
+      "description": "Info: Reprise du plan\n*Fichier non cédé*",
+      "quantity": 1,
+      "rate": 5000,
+      "discount": 500,
+      "item_total": 3982,
+      "line_item_taxes": [{"tax_amount": 518}]
+    },
+    {
+      "line_item_id": "2",
+      "item_order": 3,
+      "sku": "P3DIMP",
+      "name": "Impression3D - Prestation \"AITO 3D\"",
+      "description": "Matériau: PETG\nPoids: 20 gr\nTemps: 1h\nCouleur: Noir",
+      "quantity": 3,
+      "rate": 800,
+      "discount": "10.00%",
+      "item_total": 1912,
+      "line_item_taxes": [{"tax_amount": 248}]
+    },
+    {
+      "line_item_id": "3",
+      "item_order": 4,
+      "sku": "PM-CM-D",
+      "name": "Prestation - Main d'oeuvre - P",
+      "description": "Info: Montage",
+      "quantity": 1,
+      "rate": 6000,
+      "discount": "1500",
+      "item_total": 3982,
+      "line_item_taxes": [{"tax_amount": 518}]
+    }
+  ]
+}

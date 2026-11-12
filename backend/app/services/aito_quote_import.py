@@ -212,8 +212,10 @@ class ParsedLine:
     # "a label carries the title" path.
     header_title: str | None = None
     # The line's percent discount (Books stores "10.00%" on item-level-
-    # discount orgs), or None — including for a flat-amount discount, which
-    # has no field to live in and must not be misread as a percent.
+    # discount orgs), or None. A flat-amount discount arrives here already
+    # converted to its exact percent (`_flat_as_pct`), and only when the
+    # quote's own total confirms the reading (`_lines_match_total`);
+    # otherwise it stays None and `discount_issues` reports the line.
     discount_pct: float | None = None
     # The quote's own `price_precision`, carried here only so `net_amount`
     # below can round the way `_line_amount` rounded `amount`. A quote-level
@@ -243,7 +245,16 @@ def _line_amount(line: dict, *, inclusive: bool, precision: int) -> float:
     `item_total` is the pre-tax figure — so the TTC total is rate x quantity.
     When it is tax-exclusive, `item_total` is the TTC-less total and the line's
     own taxes are added back.
+
+    Clamped at 0: an Aito cost is validated ge=0, and a stray negative (a
+    discount line typed as a service) would otherwise 422 the create request.
     """
+    return round(max(0.0, _raw_amount(line, inclusive=inclusive)), precision)
+
+
+def _raw_amount(line: dict, *, inclusive: bool) -> float:
+    """`_line_amount` before the clamp and the rounding — a negative line
+    counts as Books counts it, which is what `_lines_match_total` needs."""
     quantity = float(line.get("quantity") or 0)
     if inclusive:
         amount = float(line.get("rate") or 0) * quantity
@@ -269,9 +280,7 @@ def _line_amount(line: dict, *, inclusive: bool, precision: int) -> float:
         # wrong corrupts real money in the other direction.
         taxes = sum(float(tax.get("tax_amount") or 0) for tax in (line.get("line_item_taxes") or []))
         amount = float(line.get("item_total") or 0) + taxes
-    # Clamp: an Aito cost is validated ge=0, and a stray negative (a discount
-    # line typed as a service) would otherwise 422 the create request.
-    return round(max(0.0, amount), precision)
+    return amount
 
 
 def _discount_pct(line: dict) -> float | None:
@@ -279,9 +288,9 @@ def _discount_pct(line: dict) -> float | None:
 
     Books writes item-level percent discounts as strings ending in '%'
     ("10.00%"). Anything else — a flat amount (number or bare numeric
-    string), an empty string, "0%" — is None: a flat discount has no percent
-    field to live in, and adopting 0 would put a literal "0%" back on the
-    quote's PDF on the next push.
+    string), an empty string, "0%" — is None: a flat discount is
+    `_flat_discount`'s to read, and adopting 0 would put a literal "0%" back
+    on the quote's PDF on the next push.
     """
     raw = line.get("discount")
     if not isinstance(raw, str) or not raw.strip().endswith("%"):
@@ -291,6 +300,126 @@ def _discount_pct(line: dict) -> float | None:
     except ValueError:
         return None
     return pct if 0 < pct <= 100 else None
+
+
+def _flat_discount(line: dict) -> float | None:
+    """The line's flat-amount discount (a number or a bare numeric string), or
+    None. Also reads the estimate's own `discount`, which has the same shape."""
+    raw = line.get("discount")
+    if isinstance(raw, str):
+        try:
+            raw = float(raw.strip())
+        except ValueError:  # "", "10.00%", garbage
+            return None
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    return float(raw) if 0 < raw < float("inf") else None
+
+
+def _flat_as_pct(flat: float, gross: float) -> float | None:
+    """The percent that IS this flat discount, or None when there is none.
+
+    A task has a percent column and no amount column. Only an exact
+    equivalent is taken: a percent of at most two decimals (what Books shows
+    and echoes, "10.00%") that gives back the same amount. 500 off 5 000 is
+    10%; 150 off 1 600 is 9.375% and is refused, because rounding it would put
+    a different price on the card than on the quote.
+    """
+    if not 0 < flat <= gross:
+        return None
+    pct = round(flat / gross * 100, 2)
+    return pct if pct > 0 and abs(gross * pct / 100 - flat) < 1e-6 else None
+
+
+def _lines_match_total(estimate: dict) -> bool:
+    """True when the quote's own `total` confirms how this module reads its
+    line discounts.
+
+    The sum of every line, each less its own discount, must equal the total
+    Books computed. Nothing else settles what a flat discount means on a
+    tax-inclusive line (TTC or HT, per unit or per line) or whether a
+    tax-exclusive `item_total` is already net of it: no captured estimate
+    carries a discount. A quote with a whole-quote discount, an adjustment or
+    a shipping charge fails this too, and its flat line discounts are then
+    refused rather than guessed.
+
+    Tolerance: one unit of the quote's precision per discounted line, for
+    Books rounding each line where this sums unrounded figures.
+    """
+    if estimate.get("total") is None:
+        return False
+    inclusive = bool(estimate.get("is_inclusive_tax"))
+    net = 0.0
+    discounted = 0
+    for line in estimate.get("line_items") or []:
+        if line.get("line_item_category") == "header":
+            continue
+        amount = _raw_amount(line, inclusive=inclusive)
+        pct, flat = _discount_pct(line), _flat_discount(line)
+        discounted += bool(pct or flat)
+        if inclusive:
+            # Tax-exclusive lines are left as `_raw_amount` reads them: see
+            # the unverified assumption there.
+            amount = amount * (1 - pct / 100) if pct else amount - (flat or 0)
+        net += amount
+    return abs(net - float(estimate["total"])) <= discounted * 10 ** -int(estimate.get("price_precision") or 0)
+
+
+def _quote_discount(estimate: dict) -> str | None:
+    """The whole-quote (entity-level) discount as Books states it, or None."""
+    if estimate.get("discount_type") == "item_level":
+        return None
+    pct = _discount_pct(estimate)
+    if pct:
+        return f"{pct:g}%"
+    flat = _flat_discount(estimate)
+    return f"{flat:g}" if flat else None
+
+
+def discount_issues(estimate: dict, shipping_ids: dict[str, str] | None = None) -> list[dict]:
+    """The discounts on this quote that a card cannot carry exactly.
+
+    Any entry refuses the import (the drawer lists them): the next push
+    rebuilds the quote's lines from the card, so a discount the card does not
+    hold would be wiped from a real quote, and its price would rise.
+
+    - A whole-quote discount: a card has no field for one.
+    - A flat-amount discount on a service line that is not an exact percent
+      of it, or whose meaning the quote's total does not confirm.
+    - Any discount on our shipping line: a shipment is a price, nothing else.
+
+    A foreign line's discount is not listed: the line is echoed back
+    untouched, discount included.
+    """
+    issues: list[dict] = []
+    quote_discount = _quote_discount(estimate)
+    if quote_discount:
+        issues.append({"scope": "quote", "sku": "", "name": "", "discount": quote_discount})
+    inclusive = bool(estimate.get("is_inclusive_tax"))
+    proven = _lines_match_total(estimate)
+    shipping_item_ids = set((shipping_ids or {}).values())
+    for line in sorted(estimate.get("line_items") or [], key=lambda item: item.get("item_order") or 0):
+        if line.get("line_item_category") == "header":
+            continue
+        flat = _flat_discount(line)
+        if line.get("item_id") in shipping_item_ids:
+            lost = bool(flat or _discount_pct(line))
+        elif service_for_sku(line.get("sku")) is None or flat is None:
+            continue
+        else:
+            # Tax-exclusive and proven: `item_total` is net of the discount,
+            # so the cost already is too.
+            lost = not proven or (inclusive and _flat_as_pct(flat, _raw_amount(line, inclusive=True)) is None)
+        if lost:
+            issues.append(
+                {
+                    "scope": "line",
+                    "sku": line.get("sku") or "",
+                    "name": line.get("name") or "",
+                    "discount": str(line.get("discount")),
+                }
+            )
+    return issues
 
 
 @dataclass(frozen=True)
@@ -413,6 +542,9 @@ def parse_lines(
     # below would reconstruct from scratch.
     shipping_id_map = _shipping_id_map(shipping_ids or {})
     shipping_id_values = set(shipping_id_map)
+    # Only a tax-inclusive line's flat discount is converted: there `rate x
+    # quantity` is the gross figure the percent applies to.
+    convert_flat = inclusive and _lines_match_total(estimate)
     for line in sorted(estimate.get("line_items") or [], key=lambda item: item.get("item_order") or 0):
         if line.get("line_item_category") == "header":
             pending_boundary = True
@@ -436,6 +568,10 @@ def parse_lines(
         # look like a header change from another unheadered line.
         header = line.get("header_id") or line.get("header_name") or None
         labels, free_text = parse_description(line.get("description"))
+        discount_pct = _discount_pct(line)
+        flat = _flat_discount(line)
+        if discount_pct is None and flat is not None and convert_flat:
+            discount_pct = _flat_as_pct(flat, _raw_amount(line, inclusive=True))
         recognised.append(
             ParsedLine(
                 service=service,
@@ -445,7 +581,7 @@ def parse_lines(
                 quantity=float(line.get("quantity") or 0),
                 starts_group=pending_boundary or (header is not None and header != previous_header),
                 header_title=(line.get("header_name") or "").strip() or pending_title,
-                discount_pct=_discount_pct(line),
+                discount_pct=discount_pct,
                 precision=precision,
             )
         )
@@ -751,6 +887,7 @@ def build_preview(
         "suggested_description": "\n".join(titles) or number,
         "tasks": tasks,
         "skipped_lines": skipped,
+        "discount_issues": discount_issues(estimate, shipping_ids),
         "shipping": (
             {
                 "island": shipping.island,

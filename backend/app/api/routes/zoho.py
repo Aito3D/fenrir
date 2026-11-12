@@ -437,6 +437,16 @@ class ZohoSkippedLine(BaseModel):
     amount: float
 
 
+class ZohoDiscountIssue(BaseModel):
+    """A discount the card cannot carry exactly (aito_quote_import.discount_issues).
+    Any entry refuses the import. `scope` is 'quote' or 'line'."""
+
+    scope: str
+    sku: str
+    name: str
+    discount: str
+
+
 class ZohoQuoteShipping(BaseModel):
     """The shipment read back off the estimate's shipping line. Unlike
     `tasks`, this is NOT already in the shape POST /aito/ accepts:
@@ -468,6 +478,7 @@ class ZohoQuotePreview(BaseModel):
     suggested_description: str
     tasks: list[AitoTaskCreate]
     skipped_lines: list[ZohoSkippedLine]
+    discount_issues: list[ZohoDiscountIssue]
     shipping: ZohoQuoteShipping | None
     existing_project_id: int | None
 

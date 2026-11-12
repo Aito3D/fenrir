@@ -1708,6 +1708,10 @@ async def _with_books_quote_snapshot(db: AsyncSession, payload: AitoProjectCreat
     except ZohoUpstreamError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     preview = build_preview(estimate, None, quote_url)
+    if preview["discount_issues"]:
+        # The drawer blocks this already; here for a client that skipped it.
+        # The first push would rebuild the lines without the discount.
+        raise HTTPException(status_code=422, detail="This quote carries a discount the card cannot hold exactly")
     quote = preview["quote"]
     books_fields = {
         "quote_number": quote["number"],

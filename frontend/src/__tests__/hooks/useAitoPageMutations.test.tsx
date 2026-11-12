@@ -71,6 +71,7 @@ describe('importMutation — importableShipping gate', () => {
       suggested_description: 'Support de caméra',
       tasks: [],
       skipped_lines: [],
+      discount_issues: [],
       shipping,
       existing_project_id: null,
     };
@@ -476,6 +477,7 @@ describe('importMutation — onError', () => {
       suggested_description: 'Import card',
       tasks: [],
       skipped_lines: [],
+      discount_issues: [],
       shipping: null,
       existing_project_id: null,
     };
