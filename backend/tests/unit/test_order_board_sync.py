@@ -1058,7 +1058,7 @@ def pings(monkeypatch):
 async def test_a_pass_that_changes_the_board_pings_the_open_pages_once(db_session, zoho, pings):
     zoho.add(order(1, qty=2))
     await sync.run_pass(db_session)
-    assert pings == [{"type": "order_board_updated"}]  # the first computed board
+    assert pings == [{"type": "order_board_updated", "finished": True}]  # the first computed board
     await sync.run_pass(db_session)
     assert len(pings) == 1  # nothing changed: no ping
     zoho.orders["so1"] = order(1, qty=2, packed=2)
@@ -1086,7 +1086,10 @@ async def test_a_reread_after_a_write_pings_when_the_row_changed(db_session, zoh
     assert pings == []  # Books shows the same order
     zoho.orders["so1"] = order(1, qty=2, packed=2)
     await sync.refresh_order(db_session, "so1")
-    assert pings == [{"type": "order_board_updated"}]
+    assert pings == [{"type": "order_board_updated", "finished": False}]  # same orders on the board
+    zoho.orders["so1"] = order(1, qty=2, shipped=2)
+    await sync.refresh_order(db_session, "so1")
+    assert pings[-1] == {"type": "order_board_updated", "finished": True}  # it left the board: finished list moves
 
 
 @pytest.mark.asyncio
@@ -1186,3 +1189,61 @@ async def test_a_sloppy_unused_amount_reads_as_zero(db_session, zoho):
     await _synced(db_session, zoho, order(1, estimate_id="e1"))
     doc = (await db_session.execute(sync._stored_query("so1"))).scalar_one()
     assert [r["unused"] for r in doc.detail["_retainers"]] == [100.0]
+
+
+async def _backdate_fetch(db, zoho_id, days):
+    doc = await _doc(db, zoho_id)
+    doc.detail = {**doc.detail, "_fetched_at": f"{days_ago(days)}T00:00:00+00:00"}
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_an_old_paid_finished_order_keeps_only_its_list_row(db_session, zoho):
+    old = sync.FINISHED_DETAIL_DAYS + 10
+    await _synced(db_session, zoho, order(1, age=old, shipped=1, paid_status="paid"), order(2))
+    assert (await _doc(db_session, "so1")).detail is None  # never fetched ahead of an open
+    row = (await sync.read_finished(db_session))["rows"][0]
+    assert (row["id"], row["paid_flag"], row["payment"]) == ("so1", "paid", None)
+    before = zoho.calls["detail"]
+    assert (await sync.read_finished_order(db_session, "so1"))["status"] == "finished"
+    assert zoho.calls["detail"] == before + 1  # read on open
+    await sync.run_pass(db_session)
+    assert (await _doc(db_session, "so1")).detail is not None  # kept a while after the open
+    await _backdate_fetch(db_session, "so1", sync.FINISHED_DETAIL_GRACE_DAYS)
+    await sync.run_pass(db_session)
+    assert (await _doc(db_session, "so1")).detail is None
+
+
+@pytest.mark.asyncio
+async def test_a_recent_or_unpaid_finished_order_keeps_its_detail(db_session, zoho):
+    old = sync.FINISHED_DETAIL_DAYS + 10
+    await _synced(db_session, zoho, order(1, age=old, shipped=1), order(2, age=10, shipped=1, paid_status="paid"))
+    for so in ("so1", "so2"):
+        await _backdate_fetch(db_session, so, 30)
+    await sync.run_pass(db_session)
+    assert (await _doc(db_session, "so1")).detail is not None  # unpaid: still followed
+    assert (await _doc(db_session, "so2")).detail is not None  # recent
+
+
+@pytest.mark.asyncio
+async def test_stock_rows_are_updated_in_place(db_session, zoho):
+    zoho.add(order(1, item="A"), order(2, item="B"))
+    await sync.run_pass(db_session)
+    a = await _doc(db_session, "A")
+    first_id = a.id
+    zoho.stock["A"] = 7
+    zoho.orders["so2"] = order(2, item="B", shipped=1)  # B is no longer needed
+    await sync.run_pass(db_session)
+    a = await _doc(db_session, "A")
+    assert (a.id, a.header["stock_on_hand"]) == (first_id, 7)
+    items = (await db_session.execute(select(OrderBoardDoc.zoho_id).where(OrderBoardDoc.kind == "item"))).scalars()
+    assert list(items) == ["A"]
+
+
+@pytest.mark.asyncio
+async def test_opening_an_order_that_is_not_finished_is_refused(db_session, zoho):
+    await _synced(db_session, zoho, order(1), order(2, shipped=1))
+    with pytest.raises(sync.OrderNotFinished):
+        await sync.read_finished_order(db_session, "so1")
+    with pytest.raises(sync.OrderNotFinished):
+        await sync.read_finished_order(db_session, "nope")

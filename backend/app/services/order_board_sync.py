@@ -25,6 +25,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
+from typing import Literal
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -140,7 +141,7 @@ async def save_settings(db: AsyncSession, settings: OrderBoardSettings) -> None:
     await db.commit()
     await broadcast_pending(db)
     if changed:
-        await announce_board_change()
+        await announce_board_change(finished=True)
     # Sync switched on, or the age limit raised: run a pass now rather than
     # leave the page loading until the interval ends.
     if _wake is not None:
@@ -253,14 +254,15 @@ async def refresh_order(db: AsyncSession, salesorder_id: str) -> None:
     await broadcast_pending(db)
     _unconfirmed.discard(salesorder_id)
     if changed:
-        await announce_board_change()
+        await announce_board_change(finished=changed == "orders")
 
 
-async def announce_board_change() -> None:
+async def announce_board_change(*, finished: bool = False) -> None:
     """Tell the open Order Board pages to refetch: a bare ping, the board itself stays behind its permission.
-    Best effort: polling is the fallback."""
+    ``finished`` also refetches the finished list (a pass, or an order that left the board). Best effort:
+    polling is the fallback."""
     try:
-        await ws_manager.broadcast({"type": "order_board_updated"})
+        await ws_manager.broadcast({"type": "order_board_updated", "finished": finished})
     except Exception:
         logger.warning("Order board: the live update broadcast failed", exc_info=True)
 
@@ -307,15 +309,18 @@ async def _latest_events(db: AsyncSession, salesorder_ids: list[str]) -> dict[st
     }
 
 
-async def _add_links(db: AsyncSession, rows: list[dict]) -> None:
-    """Books deep links on the rows; all None when Zoho is not configured. One lookup per call, not per row."""
+async def _add_links(db: AsyncSession, rows: list[dict], details: list[dict | None] | None = None) -> None:
+    """Books deep links on the rows; all None when Zoho is not configured. One lookup per call, not per row.
+    ``details``: the stored order details already in hand, so the Shopify store handle needs no extra read."""
     try:
         order_base = await zoho_service.books_salesorder_url_base(db)
         invoice_base = await zoho_service.books_invoice_url(db, "")
         quote_base = await zoho_service.books_app_url(db, "")
     except ZohoNotConfiguredError:
         order_base = invoice_base = quote_base = None
-    store = await _shopify_store(db) if any(r["facts"]["shopify_order"] for r in rows) else ""
+    store = ""
+    if any(r["facts"]["shopify_order"] for r in rows):
+        store = _store_handle(details) if details is not None else await _shopify_store(db)
     for row in rows:
         row["zoho_url"] = f"{order_base}{row['id']}" if order_base else None
         facts = row["facts"]
@@ -327,10 +332,42 @@ async def _add_links(db: AsyncSession, rows: list[dict]) -> None:
         facts["quote_url"] = f"{quote_base}{facts['estimate_id']}" if quote_base and facts["estimate_id"] else None
 
 
+def _store_handle(details) -> str:
+    return next((d["account_identifier"] for d in details if d and d.get("account_identifier")), "")
+
+
 async def _shopify_store(db: AsyncSession) -> str:
     """The shop's Shopify store handle, as Books' Shopify sync writes it on the orders it creates."""
-    docs = (await db.execute(select(OrderBoardDoc.detail).where(OrderBoardDoc.kind == "salesorder"))).scalars()
-    return next((d["account_identifier"] for d in docs if d and d.get("account_identifier")), "")
+    return _store_handle(
+        (await db.execute(select(OrderBoardDoc.detail).where(OrderBoardDoc.kind == "salesorder"))).scalars()
+    )
+
+
+# A finished, paid order older than this keeps only its list row; its detail is read again when opened.
+FINISHED_DETAIL_DAYS = 90
+# A detail read on open is kept this long before being dropped again.
+FINISHED_DETAIL_GRACE_DAYS = 7
+
+
+def _archived(header: dict) -> bool:
+    """A finished, paid order old enough that its detail is not kept nor fetched ahead of an open."""
+    return (
+        _is_finished(header)
+        and header.get("paid_status") == "paid"
+        and age_days(header.get("date") or "", date.today()) > FINISHED_DETAIL_DAYS
+    )
+
+
+def _drop_archived_detail(doc: OrderBoardDoc) -> bool:
+    fetched = _naive_utc(str((doc.detail or {}).get("_fetched_at") or ""))
+    return (
+        doc.detail is not None
+        and _archived(doc.header)
+        and (
+            fetched is None
+            or (datetime.now(timezone.utc).replace(tzinfo=None) - fetched).days >= FINISHED_DETAIL_GRACE_DAYS
+        )
+    )
 
 
 _PAID_FLAGS = {"paid": "paid", "partially_paid": "partial", "unpaid": "unpaid"}
@@ -348,7 +385,7 @@ def _snapshot(doc: OrderBoardDoc) -> tuple | None:
     return None if detail is None else (detail.get("_fetched_at"), bool(detail.get("_stale")))
 
 
-async def _finished_docs(db: AsyncSession) -> list[OrderBoardDoc]:
+async def _finished_docs(db: AsyncSession, salesorder_id: str | None = None) -> list[OrderBoardDoc]:
     """Sales orders that count as finished, judged from stored rows only. A candidate with a stored
     detail that the stored board does not show has shipped since the board was computed."""
     state = await _find_state(db)
@@ -357,7 +394,10 @@ async def _finished_docs(db: AsyncSession) -> list[OrderBoardDoc]:
     computed_at: str = current.get("computed_at") or ""
     on_board = {r["id"] for r in current.get("rows") or []} if computed_at else None
     settings = await load_settings(db)
-    docs = (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "salesorder"))).scalars().all()
+    query = select(OrderBoardDoc).where(OrderBoardDoc.kind == "salesorder")
+    if salesorder_id is not None:
+        query = query.where(OrderBoardDoc.zoho_id == salesorder_id)
+    docs = (await db.execute(query)).scalars().all()
     return [
         d
         for d in docs
@@ -411,7 +451,7 @@ async def read_finished(db: AsyncSession) -> dict:
 
 async def read_finished_order(db: AsyncSession, salesorder_id: str) -> dict:
     """One finished order in full. Fetched from Zoho only when no current copy is stored; then kept."""
-    doc = next((d for d in await _finished_docs(db) if d.zoho_id == salesorder_id), None)
+    doc = next(iter(await _finished_docs(db, salesorder_id)), None)
     if doc is None:
         raise OrderNotFinished(salesorder_id)
     await _ensure_finished_detail(db, doc)
@@ -598,8 +638,11 @@ async def _record_board_events(
             await order_board_events.record(db, salesorder_id, "order.finished", actor_class="system")
 
 
-async def recompute(db: AsyncSession, *, quiet: frozenset[str] | set[str] = frozenset()) -> bool:
-    """Rebuild the board from the local copy; True when its rows changed (the caller announces it after its commit).
+async def recompute(
+    db: AsyncSession, *, quiet: frozenset[str] | set[str] = frozenset()
+) -> Literal["", "rows", "orders"]:
+    """Rebuild the board from the local copy. Truthy when its rows changed (the caller announces it after its
+    commit): "orders" when an order joined or left the board, which may change the finished list, else "rows".
     Orders in ``quiet`` (just re-read after a write here) record no ``payment.received``.
 
     Does nothing until the first complete load: a board built from half the
@@ -608,14 +651,16 @@ async def recompute(db: AsyncSession, *, quiet: frozenset[str] | set[str] = froz
     state = await _find_state(db)
     current = (state.detail if state else None) or {}
     if state is None or not current.get("stock_loaded_at"):
-        return False
+        return ""
     if not current.get("computed_at") and await _pending_count(db):
-        return False
+        return ""
     settings = await load_settings(db)
     docs = (
         (
             await db.execute(
-                select(OrderBoardDoc).where(OrderBoardDoc.kind != "state").execution_options(populate_existing=True)
+                select(OrderBoardDoc)
+                .where(OrderBoardDoc.kind.in_(("salesorder", "purchaseorder", "item")))
+                .execution_options(populate_existing=True)
             )
         )
         .scalars()
@@ -629,12 +674,15 @@ async def recompute(db: AsyncSession, *, quiet: frozenset[str] | set[str] = froz
         max_age_days=settings.max_age_days,
         core_brands=settings.core_brands,
     )
-    await _add_links(db, rows)
+    await _add_links(db, rows, [d.detail for d in docs if d.kind == "salesorder"])
     state.detail = {**current, "rows": rows, "computed_at": _now()}
     if current.get("computed_at"):  # the first computation has nothing to compare with
         headers = {d.zoho_id: d.header for d in docs if d.kind == "salesorder"}
         await _observe(db, "board", _record_board_events, current, rows, headers, quiet)
-    return rows != current.get("rows")
+    old = current.get("rows") or []
+    if {r["id"] for r in rows} != {r["id"] for r in old}:
+        return "orders"
+    return "rows" if rows != old else ""
 
 
 def _is_finished(header: dict) -> bool:
@@ -689,7 +737,8 @@ async def _reconcile_listings(db: AsyncSession, settings: OrderBoardSettings) ->
                     db.add(OrderBoardDoc(kind="alert_new", zoho_id=key[1], header={}))
                 continue
             if not candidate:
-                if not (kind == "salesorder" and _is_finished(header)):
+                doc.header = header
+                if not (kind == "salesorder" and _is_finished(header)) or _drop_archived_detail(doc):
                     doc.detail = None
                 doc.pending = False
             elif doc.detail is None or any(doc.header.get(f) != header.get(f) for f in fields):
@@ -802,7 +851,10 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
         (
             d
             for d in stored.values()
-            if d.kind == "salesorder" and _is_finished(d.header) and (d.detail is None or _is_stale(d))
+            if d.kind == "salesorder"
+            and _is_finished(d.header)
+            and not _archived(d.header)
+            and (d.detail is None or _is_stale(d))
         ),
         key=lambda d: (d.header.get("date") or "", d.zoho_id),
         reverse=True,
@@ -840,10 +892,19 @@ async def _reload_stock(
     items: list[dict] = []
     for start in range(0, len(item_ids), ITEM_BATCH):
         items += await zoho_service.list_items_by_ids(db, item_ids[start : start + ITEM_BATCH])
-    for old in (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "item"))).scalars().all():
-        await db.delete(old)
-    await db.flush()
-    db.add_all(OrderBoardDoc(kind="item", zoho_id=str(i.get("item_id") or ""), header=i) for i in items)
+    # Update in place: rewriting every row each pass churns the database for stock that rarely moves.
+    old = {
+        d.zoho_id: d for d in (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "item"))).scalars()
+    }
+    for item in items:
+        item_id = str(item.get("item_id") or "")
+        doc = old.pop(item_id, None)
+        if doc is None:
+            db.add(OrderBoardDoc(kind="item", zoho_id=item_id, header=item))
+        elif doc.header != item:
+            doc.header = item
+    for doc in old.values():
+        await db.delete(doc)
 
     state = await _state(db)
     state.detail = {**(state.detail or {}), "stock_loaded_at": _now()}
@@ -853,7 +914,7 @@ async def _reload_stock(
     await db.commit()
     await broadcast_pending(db)
     if changed:
-        await announce_board_change()
+        await announce_board_change(finished=True)
 
 
 async def _sync(db: AsyncSession) -> None:

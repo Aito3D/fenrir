@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -180,12 +180,20 @@ export function OrderBoardPage() {
     deepLinked.current = id;
     if (data?.rows.some(r => r.id === id)) goto(id);
   });
-  const all = ready && data ? data.rows : [];
+  const all = useMemo(() => (ready && data ? data.rows : []), [ready, data]);
+  // Each customer's open orders, built once per board instead of a scan per card.
+  const byCustomer = useMemo(() => {
+    const map = new Map<string, OrderBoardRow[]>();
+    for (const r of all) if (r.customer_id) map.set(r.customer_id, [...(map.get(r.customer_id) ?? []), r]);
+    return map;
+  }, [all]);
+  // Typing stays responsive: the list follows the search box a beat behind.
+  const searchText = useDeferredValue(query);
   // Tiles follow the brand toggle only; chips add the search; the list adds the status.
   const branded = byBrand(all, coreOnly);
-  const searched = bySearch(branded, query);
+  const searched = bySearch(branded, searchText);
   // Finished orders have no live status: they only join the list under All.
-  const finishedSearched = hideFinished ? [] : searchFinished(finishedByBrand(finishedQuery.data?.rows ?? [], coreOnly), query);
+  const finishedSearched = hideFinished ? [] : searchFinished(finishedByBrand(finishedQuery.data?.rows ?? [], coreOnly), searchText);
   const finishedFound = status !== 'all' ? [] : finishedSearched;
   const payCounts = countByPayment(searched);
   for (const f of PAY_CHIPS) payCounts[f] += byFinishedPayment(finishedFound, f).length;
@@ -262,12 +270,13 @@ export function OrderBoardPage() {
     );
   } else if (listed.length === 0 && all.length === 0) {
     list = <Notice icon={PackageCheck} title={t('orders.empty.none')} hint={t('orders.empty.noneHint')} />;
-  } else if (listed.length === 0 && coreOnly && branded.length === 0 && !query.trim() && status === 'all') {
+  } else if (listed.length === 0 && coreOnly && branded.length === 0 && !searchText.trim() && status === 'all') {
     list = <Notice icon={Box} title={t('orders.empty.core')} hint={t('orders.empty.coreHint')} />;
   } else if (listed.length === 0) {
     list = <Notice icon={SearchX} title={t('orders.empty.noResults')} />;
   } else {
-    list = listed.slice(0, shown).map(({ open: row, fin }) => !row ? (
+    // An opened order always renders, even past the page: a `?order=` link or "Also open" may target one further down.
+    list = listed.filter((e, i) => i < shown || open.has(e.open ? e.open.id : e.fin.id)).map(({ open: row, fin }) => !row ? (
       <FinishedOrderCard key={fin.id} row={fin} open={open.has(fin.id)} onToggle={() => toggleOpen(fin.id)} />
     ) : (
       <OrderCard
@@ -275,7 +284,7 @@ export function OrderBoardPage() {
         row={row}
         open={open.has(row.id)}
         onToggle={() => toggleOpen(row.id)}
-        others={otherOpenOrders(all, row).map(o => ({ id: o.id, number: o.number }))}
+        others={otherOpenOrders(byCustomer.get(row.customer_id) ?? [], row).map(o => ({ id: o.id, number: o.number }))}
         onGoto={goto}
         onStart={target => {
           setOpen(prev => new Set(prev).add(row.id));

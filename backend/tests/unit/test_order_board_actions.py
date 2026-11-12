@@ -323,7 +323,7 @@ async def test_a_stamp_pings_the_open_pages(db_session, zoho, monkeypatch):
         "sms.sent",
         "sms.sent",
     ]  # one per send
-    assert sent == [{"type": "order_board_updated"}] * 2
+    assert sent == [{"type": "order_board_updated", "finished": False}] * 2  # a stamp never moves the finished list
 
 
 @pytest.mark.asyncio

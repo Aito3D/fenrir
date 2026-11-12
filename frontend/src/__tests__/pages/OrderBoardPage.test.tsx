@@ -662,6 +662,18 @@ describe('OrderBoardPage actions', () => {
     await user.click(screen.getAllByRole('button', { name: 'Hand over the parcel' })[0]); // the row icon; the band has one too
     expect(await screen.findByRole('button', { name: 'Handed to the customer' })).toBeInTheDocument();
   });
+  it('a ?order= link to an order past the first page still shows it', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    // 60 older orders sort ahead of the target under the default age sort.
+    const rows = Array.from({ length: 60 }, (_, i) => row({ id: `old${i}`, number: `SO-9${String(i).padStart(4, '0')}`, age_days: 100 + i }));
+    window.history.pushState({}, '', '/orders?order=target');
+    serve(board({ rows: [...rows, row({ id: 'target', number: 'SO-07777', age_days: 1 })] }));
+    render(<OrderBoardPage />);
+    expect(await screen.findByRole('button', { name: /SO-07777/, expanded: true })).toBeInTheDocument();
+    expect(screen.queryByText('SO-90059')).toBeInTheDocument();
+    expect(screen.queryByText('SO-90000')).not.toBeInTheDocument(); // the page itself stays at 50 rows
+    window.history.pushState({}, '', '/');
+  });
   it('a ?order= link that arrives while the board is loading opens the order once it is ready', async () => {
     window.history.pushState({}, '', '/orders?order=so2');
     server.use(http.get('/api/v1/order-board', async () => { await new Promise(r => setTimeout(r, 200)); return HttpResponse.json(board()); }));

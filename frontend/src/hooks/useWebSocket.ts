@@ -38,6 +38,8 @@ interface WebSocketMessage {
   // Spool-assignment read-back verification (#2582).
   slot?: string;
   verified?: boolean;
+  // order_board_updated: the finished-orders list may have changed too.
+  finished?: boolean;
   kprofile_applied?: boolean;
   // Slicer Pipeline run events (#1425 PR C). ``run`` carries the full
   // PipelineRunResponse payload — typed loosely here so the WebSocket hook
@@ -721,9 +723,12 @@ export function useWebSocket() {
         queryClient.invalidateQueries({ queryKey: ['pending-uploads'] });
         break;
       // The Order Board changed (a sync pass or a write): the page's poll is only the fallback.
+      // The finished list is heavier and only moves on a pass or when an order leaves the board.
       case 'order_board_updated':
         queryClient.invalidateQueries({ queryKey: ['order-board'], exact: true });
-        queryClient.invalidateQueries({ queryKey: ['order-board', 'finished'], exact: true });
+        if (message.finished !== false) {
+          queryClient.invalidateQueries({ queryKey: ['order-board', 'finished'], exact: true });
+        }
         break;
       // Slicer Pipeline runs (#1425 PR C). State transitions on the run
       // refresh both the dashboard list AND the per-pipeline "Last run"
