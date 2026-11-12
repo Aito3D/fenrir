@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
+import { server } from '../mocks/server';
 import { render } from '../utils';
+import { useClientRating } from '../../components/aito/useClientRating';
 import { api, ApiError } from '../../api/client';
 import { ManualPaymentModal } from '../../components/aito/payment/ManualPaymentModal';
 import { makeProject } from '../fixtures/aitoProject';
@@ -28,6 +31,25 @@ describe('ManualPaymentModal', () => {
       document_kind: 'invoice', document_id: 'inv-1', mode: 'cheque', amount: 23000, reference: '0004521',
     }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it('re-asks the client rating once the payment is recorded', async () => {
+    vi.spyOn(api, 'recordAitoManualPayment').mockResolvedValue(makeProject({ id: 12, client_id: 'z1' }));
+    const seen: string[] = [];
+    server.use(
+      http.get('/api/v1/aito/clients/:clientId/rating', ({ params }) => {
+        seen.push(String(params.clientId));
+        return HttpResponse.json({ tier: 'unavailable' });
+      }),
+    );
+    function Rated() {
+      useClientRating('z1');
+      return <ManualPaymentModal project={makeProject({ id: 12, client_id: 'z1' })} document={invoice} onClose={vi.fn()} />;
+    }
+    render(<Rated />);
+    await waitFor(() => expect(seen).toEqual(['z1']));
+    await userEvent.click(screen.getByRole('button', { name: 'Record' }));
+    await waitFor(() => expect(seen).toEqual(['z1', 'z1']));
   });
 
   it('rejects a non-integer or zero amount client-side', async () => {

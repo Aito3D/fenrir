@@ -46,6 +46,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
+from sqlalchemy import update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -323,6 +324,21 @@ def _new() -> AitoClientRatingResponse:
 
 def _unavailable() -> AitoClientRatingResponse:
     return AitoClientRatingResponse(tier="unavailable", reason=None, computed_at=None, stale=False)
+
+
+async def expire_client_rating(db: AsyncSession, customer_id: str | None, *, now: datetime | None = None) -> None:
+    """Age the customer's cached rating past CACHE_TTL so the next read asks
+    Books again — called when a payment lands, which is what moves a rating.
+    The row is kept (aged, not deleted): a Books failure on that next read
+    still has the old figures to serve as stale. Never commits."""
+    if not customer_id:
+        return
+    expired = (now or datetime.now(timezone.utc).replace(tzinfo=None)) - CACHE_TTL
+    await db.execute(
+        update(AitoClientRating)
+        .where(AitoClientRating.customer_id == customer_id, AitoClientRating.computed_at > expired)
+        .values(computed_at=expired)
+    )
 
 
 async def read_client_rating(

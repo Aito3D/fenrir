@@ -877,3 +877,34 @@ class TestBalance:
 
     def test_numeric_string_parses(self):
         assert _balance({"balance": "12.5"}) == 12.5
+
+
+@pytest.mark.asyncio
+async def test_a_payment_ages_the_cached_rating_so_the_next_read_asks_books_again(db_session, monkeypatch):
+    """Every payment path (manual, terminal, link) ends in refresh_after_payment;
+    it must expire the cache even when its own Books read fails."""
+    from backend.app.models.aito_project import AitoProject
+    from backend.app.services.aito_manual_payments import refresh_after_payment
+
+    calls: list[str] = []
+    _fake_books(monkeypatch, _paid(4), calls)
+
+    async def books_down(db, quote_id, client_id):
+        raise ZohoUpstreamError("boom")
+
+    monkeypatch.setattr(zoho_service, "list_project_invoices", books_down)
+    project = AitoProject(description="d", client_id="C1", client_name="ACME", board_column="devis", position=0)
+    db_session.add(project)
+    await db_session.commit()
+
+    await read_client_rating(db_session, "C1")
+    await read_client_rating(db_session, "C1")
+    assert calls == ["C1"]
+
+    await refresh_after_payment(db_session, project.id, "invoice")
+
+    again = await read_client_rating(db_session, "C1")
+    assert calls == ["C1", "C1"]
+    assert again.stale is False
+    # Aged, not deleted: one row, so a Books outage would still have figures to serve.
+    assert len((await db_session.execute(select(AitoClientRating))).scalars().all()) == 1

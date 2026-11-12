@@ -43,6 +43,8 @@ export function ManualPaymentModal({ project, document, onClose }: {
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
       queryClient.invalidateQueries({ queryKey: ['aito-invoice', project.id] });
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
+      // The payment may have just cleared the debt the rating was 'Bad' for.
+      queryClient.invalidateQueries({ queryKey: ['aito-client-rating', project.client_id ?? ''] });
       showToast(t('aito.payment.manualDone'), 'success');
       requestClose();
     },

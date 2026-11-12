@@ -348,6 +348,13 @@ async def refresh_after_payment(db: AsyncSession, project_id: int, kind: str) ->
         project = await db.get(AitoProject, project_id)
         if project is None:
             return
+        # A payment is what moves the client's rating: without this the panel
+        # read the pre-payment tier ("Bad") until the hourly cache ran out.
+        # Committed on its own so a failed Books read below cannot drop it.
+        from backend.app.services.aito_client_rating import expire_client_rating
+
+        await expire_client_rating(db, project.client_id)
+        await db.commit()
         if kind == "invoice":
             from backend.app.services.aito_customer_credit import read_customer_credit
 

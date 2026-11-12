@@ -188,6 +188,39 @@ describe('PaymentBlock', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-projects'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-invoice', 12] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-events', 12] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-client-rating', row.client_id ?? ''] });
+  });
+
+  // The rating may be "Bad" for exactly the debt that was just paid.
+  it('re-asks the client rating when a link turns paid on screen, not for a block that mounts paid', () => {
+    const row = makeProject({ id: 12, client_id: 'z1' });
+    const paid = link({ state: 'paid', paid_at: '2026-09-13T10:00:00' });
+    const props = { project: row, document: invoice, terminal: null, canUpdate: true, heimdallConfigured: true };
+    const { queryClient, rerender, unmount } = renderWithClient(<PaymentBlock {...props} link={link()} />);
+    const spy = vi.spyOn(queryClient, 'invalidateQueries');
+    const wrap = (ui: React.ReactElement) => (
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <ToastProvider>{ui}</ToastProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    );
+    rerender(wrap(<PaymentBlock {...props} link={paid} />));
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['aito-client-rating', 'z1'] });
+    unmount();
+
+    const again = renderWithClient(<PaymentBlock {...props} link={paid} />);
+    const quiet = vi.spyOn(again.queryClient, 'invalidateQueries');
+    again.rerender(
+      <QueryClientProvider client={again.queryClient}>
+        <BrowserRouter>
+          <ToastProvider>
+            <PaymentBlock {...props} link={paid} />
+          </ToastProvider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+    expect(quiet).not.toHaveBeenCalled();
   });
 
   it('opens the link modal from its cell', async () => {

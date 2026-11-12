@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Banknote, Check, Copy, Link2, Loader2, Smartphone } from 'lucide-react';
@@ -75,6 +75,17 @@ export function PaymentBlock({ project, document, link, terminal, canUpdate, hei
   }, [openTerminalId, poll.data, project.id, queryClient]);
 
   const state = derivePaymentState(link ?? null, liveTerminal ?? null);
+  // A charge or a link turning `paid` while this block is on screen moves the
+  // client's payment rating: re-ask it (the backend aged its own cache when
+  // the payment landed). Only on the transition, never for a block that
+  // mounts already paid.
+  const lastKind = useRef(state.kind);
+  useEffect(() => {
+    if (state.kind === 'paid' && lastKind.current !== 'paid') {
+      queryClient.invalidateQueries({ queryKey: ['aito-client-rating', project.client_id ?? ''] });
+    }
+    lastKind.current = state.kind;
+  }, [state.kind, project.client_id, queryClient]);
   const due = document.due;
 
   if (!blockVisible(due, state)) return null;
