@@ -10746,7 +10746,6 @@ export default {
     familyAito: 'Aito',
     familyPrinters: '打印机',
     familyOrders: '订单',
-    comingLater: '即将推出',
     ring: '响铃',
     autoWatch: '自动关注我创建的卡片',
     watchTitle: '关注此卡片',

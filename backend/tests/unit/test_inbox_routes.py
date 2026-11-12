@@ -166,7 +166,7 @@ async def test_preferences_roundtrip_and_validation(async_client, db_session, in
     assert list(available) == list(inbox.KINDS)
     assert available["aito.paid"] == {"kind": "aito.paid", "family": "aito", "default_on": True, "available": True}
     assert available["aito.overdue"]["default_on"] is False and available["aito.overdue"]["available"] is True
-    assert all(not a["available"] for k, a in available.items() if k.startswith("printer."))
+    assert all(a["available"] and not a["default_on"] for k, a in available.items() if k.startswith("printer."))
 
     for bad in (
         {"kinds": ["aito.nope"], "sound_kinds": [], "auto_watch": True},

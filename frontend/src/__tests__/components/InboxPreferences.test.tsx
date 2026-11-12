@@ -17,9 +17,9 @@ const AVAILABLE: InboxKindInfo[] = [
   { kind: 'aito.quote_declined', family: 'aito', default_on: true, available: true },
   { kind: 'aito.paid', family: 'aito', default_on: true, available: true },
   { kind: 'aito.overdue', family: 'aito', default_on: false, available: true },
-  { kind: 'printer.job_sent', family: 'printer', default_on: false, available: false },
-  { kind: 'printer.finished', family: 'printer', default_on: false, available: false },
-  { kind: 'printer.failed', family: 'printer', default_on: false, available: false },
+  { kind: 'printer.job_sent', family: 'printer', default_on: false, available: true },
+  { kind: 'printer.finished', family: 'printer', default_on: false, available: true },
+  { kind: 'printer.failed', family: 'printer', default_on: false, available: true },
   { kind: 'hours.readings_due', family: 'printer', default_on: false, available: true },
 ];
 const DEFAULTS = ['aito.quote_viewed', 'aito.quote_accepted', 'aito.quote_declined', 'aito.paid'];
@@ -110,16 +110,16 @@ describe('InboxPreferences', () => {
     expect(sw('Machine hours: readings due')).toBeInTheDocument();
   });
 
-  it('printer kinds are tagged coming later, off and disabled', async () => {
+  it('printer job kinds are off by default and can be switched on', async () => {
     await mount();
-    expect(screen.getAllByText('Coming later')).toHaveLength(3);
+    expect(screen.queryByText('Coming later')).not.toBeInTheDocument();
     for (const name of ['Job sent to printer', 'Print finished', 'Print failed']) {
-      expect(sw(name)).toBeDisabled();
+      expect(sw(name)).toBeEnabled();
       expect(sw(name)).toHaveAttribute('aria-checked', 'false');
-      expect(sw(`Ring: ${name}`)).toBeDisabled();
     }
-    // The hours kind is live, so the family switch is no longer locked.
-    expect(sw('Printers')).toBeEnabled();
+    fireEvent.click(sw('Print failed'));
+    await rerender();
+    expect(sw('Print failed')).toHaveAttribute('aria-checked', 'true');
   });
 
   it('a burst of two kind toggles sends one debounced PUT', async () => {

@@ -10408,7 +10408,6 @@ export default {
     familyAito: 'Aito',
     familyPrinters: 'Принтери',
     familyOrders: 'Замовлення',
-    comingLater: 'Згодом',
     ring: 'Звук',
     autoWatch: 'Автоматично стежити за створеними мною картками',
     watchTitle: 'Стежити за карткою',

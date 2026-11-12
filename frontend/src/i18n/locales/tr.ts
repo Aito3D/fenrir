@@ -10690,7 +10690,6 @@ export default {
     familyAito: 'Aito',
     familyPrinters: 'Yazıcılar',
     familyOrders: 'Siparişler',
-    comingLater: 'Yakında',
     ring: 'Çal',
     autoWatch: 'Oluşturduğum kartları otomatik izle',
     watchTitle: 'Bu kartı izle',

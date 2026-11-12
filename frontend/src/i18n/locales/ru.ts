@@ -10367,7 +10367,6 @@ export default {
     familyAito: 'Aito',
     familyPrinters: 'Принтеры',
     familyOrders: 'Заказы',
-    comingLater: 'Скоро',
     ring: 'Звук',
     autoWatch: 'Автоматически следить за созданными мной карточками',
     watchTitle: 'Следить за карточкой',

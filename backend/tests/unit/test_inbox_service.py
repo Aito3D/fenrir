@@ -85,7 +85,7 @@ def test_hours_kind_is_available_and_default_on_without_sound():
     assert "hours.readings_due" not in inbox.SOUND_DEFAULT_KINDS
     info = {i.kind: i for i in _available()}
     assert info["hours.readings_due"].available
-    assert not info["printer.finished"].available
+    assert info["printer.finished"].available
     assert info["aito.paid"].available
 
 
@@ -631,3 +631,55 @@ async def test_purge_old_deletes_only_rows_strictly_older_than_the_retention_win
 
     titles = {r.title for r in (await db_session.execute(select(Notification))).scalars()}
     assert titles == {"exactly", "just-inside"}
+
+
+async def _printer_rows(db):
+    rows = (await db.execute(select(Notification).where(Notification.family == "printer"))).scalars()
+    return sorted((r.user_id, r.kind, r.target_type, r.target_id, r.body) for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_notify_print_reaches_opted_in_printer_readers_within_their_scope(db_session, pushes):
+    from backend.app.models.group import group_printers
+    from backend.app.models.printer import Printer
+
+    printers = [
+        Printer(name=f"P{i}", serial_number=f"INBOX{i}", ip_address=f"10.0.0.{i}", access_code="x") for i in (1, 2)
+    ]
+    db_session.add_all(printers)
+    alice = await _user(db_session, "alice", perms=("printers:read",))
+    sender = await _user(db_session, "sender", perms=("printers:read",))
+    off = await _user(db_session, "off", perms=("printers:read",))  # kind left off (the default)
+    blind = await _user(db_session, "blind", perms=("aito:read",))  # cannot read printers
+    scoped = await _user(db_session, "scoped", perms=("printers:read",))  # limited to the second printer
+    scoped.groups[0].restrict_printers = True
+    await db_session.execute(group_printers.insert().values(group_id=scoped.groups[0].id, printer_id=printers[1].id))
+    kinds = ["printer.job_sent", "printer.finished", "printer.failed"]
+    db_session.add_all(
+        UserInboxPreference(user_id=u.id, kinds_json=kinds, sound_kinds_json=[], auto_watch=True)
+        for u in (alice, sender, blind, scoped)
+    )
+    await db_session.commit()
+    p1, p2 = printers[0].id, printers[1].id
+    data = {"subtask_name": "benchy", "filename": "/cache/benchy.3mf"}
+
+    assert await inbox.notify_print(db_session, p1, "P1", "started", data, sender.id) == [alice.id]
+    assert sorted(await inbox.notify_print(db_session, p2, "P2", "failed", {"filename": "x.3mf"})) == sorted(
+        [alice.id, sender.id, scoped.id]
+    )
+    assert await inbox.notify_print(db_session, p1, "P1", "aborted", data) == []  # a cancelled print is not news
+    assert off.id not in {r[0] for r in await _printer_rows(db_session)}
+    assert (alice.id, "printer.job_sent", "printer", p1, "P1 · benchy") in await _printer_rows(db_session)
+    assert (scoped.id, "printer.failed", "printer", p2, "P2 · x.3mf") in await _printer_rows(db_session)
+    assert len(await _printer_rows(db_session)) == 4
+    assert sorted(uid for uid, _ in pushes) == sorted([alice.id, alice.id, sender.id, scoped.id])
+
+
+@pytest.mark.asyncio
+async def test_notify_print_swallows_a_failure(db_session, monkeypatch):
+    async def boom(*_a, **_k):
+        raise RuntimeError("no prefs")
+
+    await _user(db_session, "erin", perms=("printers:read",))
+    monkeypatch.setattr(inbox, "preferences_for", boom)
+    assert await inbox.notify_print(db_session, 1, "P1", "completed", {}) == []

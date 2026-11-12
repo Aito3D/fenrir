@@ -123,7 +123,13 @@ from backend.app.core.json_gzip import JsonGZipMiddleware
 from backend.app.core.static_assets import AssetStaticFiles
 from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
-from backend.app.services import kprofile_drift, pause_eta, print_dispatch_context, slot_unlink_grace
+from backend.app.services import (
+    inbox as inbox_service,
+    kprofile_drift,
+    pause_eta,
+    print_dispatch_context,
+    slot_unlink_grace,
+)
 from backend.app.services.ams_assignment_lock import get_ams_assignment_lock
 from backend.app.services.archive import (
     ArchiveService,
@@ -4141,6 +4147,9 @@ async def _send_print_start_notification(
                     archive_data = {}
                 archive_data["image_data"] = image_data
 
+            await inbox_service.notify_print(
+                db, printer_id, printer_name, "started", data, (archive_data or {}).get("created_by_id")
+            )
             await notification_service.on_print_start(printer_id, printer_name, data, db, archive_data=archive_data)
 
             # Send user-specific email notification for print start
@@ -10462,6 +10471,7 @@ async def _close_out_print(printer_id: int, data: dict):
                         "[NOTIFY-BG] Sending notification without archive: printer=%s, status=%s", printer_id, ps
                     )
                     if not await _kill_switch_notification_already_sent(kill_switch_notification_task):
+                        await inbox_service.notify_print(db, printer_id, p_name, ps, data)
                         await notification_service.on_print_complete(
                             printer_id, p_name, ps, data, db, archive_data=no_archive_data
                         )
@@ -11272,6 +11282,7 @@ async def _close_out_print(printer_id: int, data: dict):
                                 archive_data["image_data"] = photo_bytes
 
                 if not await _kill_switch_notification_already_sent(kill_switch_notification_task):
+                    await inbox_service.notify_print(db, printer_id, printer_name, print_status, data)
                     await notification_service.on_print_complete(
                         printer_id, printer_name, print_status, data, db, archive_data=archive_data
                     )

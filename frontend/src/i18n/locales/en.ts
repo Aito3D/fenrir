@@ -10819,7 +10819,6 @@ export default {
     familyAito: 'Aito',
     familyPrinters: 'Printers',
     familyOrders: 'Orders',
-    comingLater: 'Coming later',
     ring: 'Ring',
     autoWatch: 'Auto-watch cards I create',
     watchTitle: 'Watch this card',
