@@ -1090,6 +1090,8 @@ export default {
       syncFailed: 'Zoho’ya gönderim başarısız oldu',
       syncLocked: 'Teklif Zoho’da kilitli',
       syncConflict: 'Zoho ile durum çakışması',
+      quoteLinesPulled: 'Satırlar Zoho Books\'tan güncellendi',
+      quoteLinesDiverged: 'Teklif Zoho Books\'ta düzenlendi: karta uygulanmadı',
       syncStatusRejected: 'Zoho durum değişikliğini reddetti',
       pollReconciled: 'Zoho ile karşılaştırıldı',
     },

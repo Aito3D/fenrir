@@ -1090,6 +1090,8 @@ export default {
       syncFailed: 'Invio a Zoho non riuscito',
       syncLocked: 'Preventivo bloccato in Zoho',
       syncConflict: 'Conflitto di stato con Zoho',
+      quoteLinesPulled: 'Righe aggiornate da Zoho Books',
+      quoteLinesDiverged: 'Preventivo modificato in Zoho Books: non applicato alla scheda',
       syncStatusRejected: 'Zoho ha rifiutato il cambio di stato',
       pollReconciled: 'Verificato con Zoho',
     },

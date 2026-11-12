@@ -1090,6 +1090,8 @@ export default {
       syncFailed: '推送至 Zoho 失败',
       syncLocked: '报价单已在 Zoho 中锁定',
       syncConflict: '与 Zoho 的状态冲突',
+      quoteLinesPulled: '已从 Zoho Books 更新明细行',
+      quoteLinesDiverged: '报价单已在 Zoho Books 中修改:未应用到卡片',
       syncStatusRejected: 'Zoho 拒绝了状态更改',
       pollReconciled: '已与 Zoho 核对',
     },

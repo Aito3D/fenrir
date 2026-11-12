@@ -1090,6 +1090,8 @@ export default {
       syncFailed: 'Falha ao enviar ao Zoho',
       syncLocked: 'Orçamento bloqueado no Zoho',
       syncConflict: 'Conflito de status com o Zoho',
+      quoteLinesPulled: 'Linhas atualizadas a partir do Zoho Books',
+      quoteLinesDiverged: 'Orçamento editado no Zoho Books: não aplicado ao cartão',
       syncStatusRejected: 'O Zoho rejeitou a mudança de status',
       pollReconciled: 'Verificado com o Zoho',
     },

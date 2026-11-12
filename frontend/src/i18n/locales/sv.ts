@@ -10258,6 +10258,8 @@ errors: {
       syncFailed: 'Det gick inte att skicka till Zoho',
       syncLocked: 'Offert låst i Zoho',
       syncConflict: 'Statuskonflikt med Zoho',
+      quoteLinesPulled: 'Rader uppdaterade från Zoho Books',
+      quoteLinesDiverged: 'Offerten ändrad i Zoho Books: inte tillämpad på kortet',
       syncStatusRejected: 'Zoho avvisade statusändringen',
       pollReconciled: 'Kontrollerad mot Zoho',
     },

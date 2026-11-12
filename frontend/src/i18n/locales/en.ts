@@ -1094,6 +1094,8 @@ export default {
       syncFailed: 'Push to Zoho failed',
       syncLocked: 'Quote locked in Zoho',
       syncConflict: 'Status conflict with Zoho',
+      quoteLinesPulled: 'Lines updated from Zoho Books',
+      quoteLinesDiverged: 'Quote edited in Zoho Books: not applied to the card',
       syncStatusRejected: 'Zoho rejected the status change',
       pollReconciled: 'Checked against Zoho',
     },

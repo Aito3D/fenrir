@@ -10229,6 +10229,8 @@ export default {
       syncFailed: 'Wysyłanie do Zoho nie powiodło się',
       syncLocked: 'Wycena zablokowana w Zoho',
       syncConflict: 'Konflikt statusu z Zoho',
+      quoteLinesPulled: 'Pozycje zaktualizowane z Zoho Books',
+      quoteLinesDiverged: 'Oferta zmieniona w Zoho Books: nie zastosowano na karcie',
       syncStatusRejected: 'Zoho odrzuciło zmianę statusu',
       pollReconciled: 'Sprawdzono z Zoho',
     },

@@ -1090,6 +1090,8 @@ export default {
       syncFailed: 'Не удалось отправить в Zoho',
       syncLocked: 'Смета заблокирована в Zoho',
       syncConflict: 'Конфликт статуса с Zoho',
+      quoteLinesPulled: 'Строки обновлены из Zoho Books',
+      quoteLinesDiverged: 'Предложение изменено в Zoho Books: к карточке не применено',
       syncStatusRejected: 'Zoho отклонил изменение статуса',
       pollReconciled: 'Сверено с Zoho',
     },

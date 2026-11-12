@@ -10225,6 +10225,8 @@ export default {
       syncFailed: 'Versturen naar Zoho mislukt',
       syncLocked: 'Offerte vergrendeld in Zoho',
       syncConflict: 'Statusconflict met Zoho',
+      quoteLinesPulled: 'Regels bijgewerkt vanuit Zoho Books',
+      quoteLinesDiverged: 'Offerte gewijzigd in Zoho Books: niet toegepast op de kaart',
       syncStatusRejected: 'Zoho heeft de statuswijziging geweigerd',
       pollReconciled: 'Gecontroleerd bij Zoho',
     },

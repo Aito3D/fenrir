@@ -1090,6 +1090,8 @@ export default {
       syncFailed: 'Zohoへの送信に失敗しました',
       syncLocked: 'Zohoで見積もりがロックされています',
       syncConflict: 'Zohoとのステータスの競合',
+      quoteLinesPulled: 'Zoho Booksから明細を更新',
+      quoteLinesDiverged: 'Zoho Booksで見積が編集されました:カードには未反映',
       syncStatusRejected: 'Zohoがステータス変更を拒否しました',
       pollReconciled: 'Zohoと照合済み',
     },

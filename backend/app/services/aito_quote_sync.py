@@ -27,8 +27,10 @@ cards in error and runs the invoice, contact, payment-link and terminal
 passes. Re-reading every quoted card on every tick, as this module did until
 2026-10-01, cost more calls than Books allows in a minute on a 77-card board.
 
-Phase 1 is push-only. ``quote_synced_at`` is written here and read by the
-Phase 2 poller.
+``quote_synced_at`` is the estimate's ``last_modified_time`` as this module
+last wrote or read it. Phase 2, the pull (``_pull_lines``), rides on the
+reconcile: an estimate that moved since is compared with the card, and a
+Books-side edit of its lines is taken onto the tasks.
 """
 
 import asyncio
@@ -38,8 +40,9 @@ import math
 import time
 from dataclasses import dataclass, replace
 from datetime import datetime
+from typing import cast
 
-from sqlalchemy import and_, case, or_, select, update
+from sqlalchemy import CursorResult, and_, case, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
@@ -52,7 +55,7 @@ from backend.app.models.calculator import CalculatorFilament
 from backend.app.services import aito_change_poll, aito_push_schedule
 from backend.app.services.aito_board_rules import AWAY_STATUSES
 from backend.app.services.aito_customer_credit import read_customer_credit
-from backend.app.services.aito_events import contact_mark_kind, record, utc_now_naive
+from backend.app.services.aito_events import contact_mark_kind, diff_fields, record, utc_now_naive
 from backend.app.services.aito_invoice_sweep import _same_reference, sweep_inbox, sweep_invoices
 from backend.app.services.aito_payment_links import QUOTE_VALIDITY, deposit_pct, required_amount
 from backend.app.services.aito_quote_export import (
@@ -66,6 +69,7 @@ from backend.app.services.aito_quote_export import (
     missing_maindoeuvre_description,
 )
 from backend.app.services.aito_quote_import import client_snapshot
+from backend.app.services.aito_quote_pull import PullPlan, plan_pull
 from backend.app.services.aito_quote_status import accept_quote, adopt_quote_status
 from backend.app.services.aito_search import remember_document_numbers
 from backend.app.services.aito_shipping import island_label
@@ -1765,6 +1769,9 @@ async def _sync_reconcile(
     global _throttled_until
     project = attempt.project
     project_id = attempt.project_id
+    # Read before anything below can settle an 'error' card back to 'idle':
+    # only a card that had nothing left to push may take Books' lines.
+    was_idle = project.quote_sync_state == "idle"
     estimate = await zoho_service.get_estimate(db, project.quote_id)
     # T-028: a read that reaches this point succeeded — Books is
     # reachable, so any throttle recorded by a past ZohoRateLimited is
@@ -1886,6 +1893,143 @@ async def _sync_reconcile(
         project.quote_sync_state = "pending" if project.client_push_pending else "idle"
         project.quote_sync_error = None
     project.quote_sync_failures = 0
+
+    # Last, and after every Books call of this reconcile: it takes the
+    # database's write lock, which is then held only until the caller commits.
+    if was_idle:
+        await _pull_lines(db, project_id, estimate)
+
+
+async def _pull_lines(db: AsyncSession, project_id: int, estimate: dict) -> None:
+    """Phase 2, the pull: take a Books-side edit of the quote's lines onto the
+    card's tasks. Never raises, and never queues a push.
+
+    Runs once per Books modification: ``quote_synced_at`` is the estimate's
+    ``last_modified_time`` as this app last wrote or read it, so an estimate
+    that has not moved since is not looked at again — which is also why a
+    refused edit is recorded once and not on every reconcile.
+
+    Local edits win. The claim below is one UPDATE that only lands on a card
+    still 'idle' in the DATABASE (not in this session's memory of it): an
+    operator's edit committed while Books was being read has already made the
+    card 'pending', the claim misses, and the push that follows overwrites
+    Books as it always did. An invoiced or trashed card misses the same way.
+    Once the claim lands, no request can commit an edit to this card before
+    this reconcile's own commit.
+
+    What is applied and what is refused is ``aito_quote_pull.plan_pull``'s to
+    say. Foreign lines are not read at all, so they stay exactly as they are.
+    """
+    stamp = estimate.get("last_modified_time")
+    if not stamp or estimate.get("is_inclusive_tax") is not True or not isinstance(estimate.get("line_items"), list):
+        # A partial payload is not a quote with no lines, and a tax-exclusive
+        # one cannot be read into tax-inclusive costs.
+        return
+    try:
+        claimed = await db.execute(
+            update(AitoProject)
+            .where(
+                AitoProject.id == project_id,
+                AitoProject.status == "active",
+                AitoProject.quote_sync_state == "idle",
+                AitoProject.quote_invoiced.is_not(True),
+                or_(AitoProject.quote_synced_at.is_(None), AitoProject.quote_synced_at != stamp),
+            )
+            .values(quote_synced_at=stamp)
+            .execution_options(synchronize_session=False)
+        )
+        if cast(CursorResult, claimed).rowcount != 1:
+            return
+        # The rows, not this session's memory of them: see _reconcile_one.
+        project = await db.get(AitoProject, project_id, populate_existing=True)
+        if project is None:
+            return
+        rows = list(
+            (
+                await db.execute(
+                    select(AitoTask)
+                    .where(AitoTask.project_id == project_id)
+                    .order_by(AitoTask.position, AitoTask.id)
+                    .execution_options(populate_existing=True)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        tasks = await load_export_tasks(db, project_id)  # same order as `rows`
+        catalogue = await zoho_service.get_catalogue(db)
+        try:
+            plan = plan_pull(tasks, estimate, catalogue, load_export_shipping(project, catalogue))
+        except ShippingCatalogueUnavailable:
+            plan = PullPlan(refused="shipping")
+        except Exception:
+            # Books data the reader did not expect. Nothing has been written
+            # but the claim, so no rollback: flag it and keep the reconcile.
+            logger.exception("Aito line pull could not read estimate %s", estimate.get("estimate_id"))
+            plan = PullPlan(refused="error")
+        if plan is None:
+            return
+        if plan.refused:
+            # Once per divergence, not once per time the estimate moves (a
+            # view, a comment): the same refusal is not repeated until a push
+            # or a pull has happened in between.
+            last = (
+                await db.execute(
+                    select(AitoEvent)
+                    .where(
+                        AitoEvent.project_id == project_id,
+                        AitoEvent.kind.in_(("quote.lines_diverged", "quote.lines_pulled", "sync.pushed")),
+                    )
+                    .order_by(AitoEvent.id.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if last is None or last.kind != "quote.lines_diverged" or (last.detail or {}).get("reason") != plan.refused:
+                await record(
+                    db,
+                    project_id,
+                    "quote.lines_diverged",
+                    actor_class="system",
+                    subject_type="project",
+                    subject_id=project_id,
+                    detail={"reason": plan.refused},
+                )
+            return
+        for index, patch in plan.task_patches.items():
+            row = rows[index]
+            changes = diff_fields(row, patch)
+            for key, value in patch.items():
+                setattr(row, key, value)
+            await record(
+                db,
+                project_id,
+                "quote.lines_pulled",
+                actor_class="system",
+                subject_type="task",
+                subject_id=row.id,
+                subject_label=row.title,
+                changes=changes,
+            )
+        if plan.shipping:
+            patch = {f"shipping_{key}": value for key, value in plan.shipping.items()}
+            changes = diff_fields(project, patch)
+            for key, value in patch.items():
+                setattr(project, key, value)
+            await record(
+                db,
+                project_id,
+                "quote.lines_pulled",
+                actor_class="system",
+                subject_type="project",
+                subject_id=project_id,
+                changes=changes,
+            )
+    except Exception:
+        # A database failure. Same containment as the comment mirror: a
+        # failed pull must not fail the reconcile it rides on. The rollback
+        # also returns the claim, so the next reconcile looks again.
+        await _rollback_after_terminal_failure(db)
+        logger.warning("Aito line pull failed for project %s", project_id, exc_info=True)
 
 
 async def _apply_deposit_trigger(

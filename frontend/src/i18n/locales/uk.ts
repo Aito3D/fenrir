@@ -1091,6 +1091,8 @@ export default {
       syncFailed: "Не вдалося надіслати в Zoho",
       syncLocked: "Пропозицію заблоковано в Zoho",
       syncConflict: "Конфлікт статусу з Zoho",
+      quoteLinesPulled: "Рядки оновлено із Zoho Books",
+      quoteLinesDiverged: "Пропозицію змінено в Zoho Books: до картки не застосовано",
       syncStatusRejected: "Zoho відхилив зміну статусу",
       pollReconciled: "Звірено з Zoho",
     },

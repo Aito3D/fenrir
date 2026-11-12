@@ -1090,6 +1090,8 @@ export default {
       syncFailed: 'Zoho로 전송 실패',
       syncLocked: 'Zoho에서 견적서가 잠김',
       syncConflict: 'Zoho와 상태 충돌',
+      quoteLinesPulled: 'Zoho Books에서 항목 업데이트됨',
+      quoteLinesDiverged: 'Zoho Books에서 견적이 수정됨: 카드에 반영되지 않음',
       syncStatusRejected: 'Zoho가 상태 변경을 거부했습니다',
       pollReconciled: 'Zoho와 대조 완료',
     },

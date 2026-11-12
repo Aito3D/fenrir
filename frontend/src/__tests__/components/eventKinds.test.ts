@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   detailText,
+  dotClass,
   elapsedBucket,
   EVENT_LABEL_KEY,
   formatValue,
@@ -8,6 +9,15 @@ import {
   eventLabelKey,
 } from '../../components/aito/history/eventKinds';
 import i18n from '../../i18n';
+
+describe('the Books line pull', () => {
+  it('names both outcomes and marks the refused one as a failure', () => {
+    expect(i18n.t(EVENT_LABEL_KEY['quote.lines_pulled'])).toBe('Lines updated from Zoho Books');
+    expect(i18n.t(EVENT_LABEL_KEY['quote.lines_diverged'])).toMatch(/not applied to the card/);
+    expect(dotClass('quote.lines_diverged', 'system')).toBe('bg-status-error');
+    expect(dotClass('quote.lines_pulled', 'system')).toBe('bg-bambu-gray');
+  });
+});
 
 describe('formatValue', () => {
   it('renders an em dash for null and undefined', () => {

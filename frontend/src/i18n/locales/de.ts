@@ -1090,6 +1090,8 @@ export default {
       syncFailed: 'Übertragung an Zoho fehlgeschlagen',
       syncLocked: 'Angebot in Zoho gesperrt',
       syncConflict: 'Statuskonflikt mit Zoho',
+      quoteLinesPulled: 'Positionen aus Zoho Books übernommen',
+      quoteLinesDiverged: 'Angebot in Zoho Books geändert: nicht auf die Karte übernommen',
       syncStatusRejected: 'Zoho hat die Statusänderung abgelehnt',
       pollReconciled: 'Mit Zoho abgeglichen',
     },

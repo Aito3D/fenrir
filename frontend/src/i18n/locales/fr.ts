@@ -1090,6 +1090,8 @@ export default {
       syncFailed: 'Échec de l’envoi vers Zoho',
       syncLocked: 'Devis verrouillé dans Zoho',
       syncConflict: 'Conflit de statut avec Zoho',
+      quoteLinesPulled: 'Lignes mises à jour depuis Zoho Books',
+      quoteLinesDiverged: 'Devis modifié dans Zoho Books : non appliqué à la carte',
       syncStatusRejected: 'Zoho a refusé le changement de statut',
       pollReconciled: 'Vérifié auprès de Zoho',
     },
