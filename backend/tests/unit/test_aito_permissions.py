@@ -192,7 +192,9 @@ def _is_permission_gate(dep_call) -> bool:
 # the credential"), and the auth middleware exempts this prefix. It is the
 # only route in either file with no permission dependency at all, so it is
 # excluded here explicitly rather than silently swallowed by a loose filter.
-_PUBLIC_ROUTE_NAMES = {"get_tracking"}
+# `heimdall_webhook` is the other one: Heimdall has no session, the HMAC
+# signature over the raw body is the credential (routes/aito_payments.py).
+_PUBLIC_ROUTE_NAMES = {"get_tracking", "heimdall_webhook"}
 
 # Genuine reads: gated with AITO_READ (never CREATE/UPDATE/DELETE or the
 # any-of route), so they are not part of the hand-maintained WRITE_ROUTES
@@ -243,7 +245,7 @@ def test_every_aito_route_declares_a_permission_gate_or_is_the_public_tracking_r
     fails HERE, instead of silently escaping both this sweep and the
     hand-maintained WRITE_ROUTES parametrization below (T-037)."""
     aito_routes = _aito_routes()
-    assert len(aito_routes) == 73, (
+    assert len(aito_routes) == 74, (
         "aito.py + aito_payments.py grew or shrank a route — update this count, "
         "WRITE_ROUTES, and _READ_ONLY_ROUTE_NAMES/_PUBLIC_ROUTE_NAMES together"
     )
@@ -258,8 +260,8 @@ def test_every_aito_route_declares_a_permission_gate_or_is_the_public_tracking_r
     # gate, the exclusion above would start silently hiding that it is no
     # longer the sole ungated route — this fails loudly instead.
     public_routes = [r for r in aito_routes if r.name in _PUBLIC_ROUTE_NAMES]
-    assert len(public_routes) == 1
-    assert not any(_is_permission_gate(d.call) for d in public_routes[0].dependant.dependencies)
+    assert len(public_routes) == len(_PUBLIC_ROUTE_NAMES)
+    assert not any(_is_permission_gate(d.call) for r in public_routes for d in r.dependant.dependencies)
 
 
 def test_every_gated_mutation_route_is_covered_by_write_routes():

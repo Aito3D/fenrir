@@ -279,6 +279,8 @@ Failures: `booking_error` on the row, retried each tick with the same backoff; t
 
 **Fenrir**: `POST /api/v1/aito/payments/webhook` — public (added to both public-route allow-lists like `/t/`), rate-limited per IP, verifies the signature against `heimdall_webhook_secret` (write-only setting), looks the `id` up in the ledger, and calls the same `reconcile_link(db, row)` §5.5 uses. The webhook is a trigger, never a source of truth: the GET is still what writes the status. Polling remains as the fallback; an unknown id is a 200 no-op (never a probe oracle).
 
+**As built (2026-11-12).** Heimdall: one webhook for the whole instance, set by environment (`PAYMENT_WEBHOOK_URL` + `PAYMENT_WEBHOOK_SECRET`), not per API key; body `{"id", "kind", "status", "occurred_at"}`; sent for links and terminal payments created through `/api/v1` on `paid` / `failed` / `cancelled` / `needs_attention` (a link's `expired` is derived from the clock and never sent); 4 attempts (1 s, 5 s, 30 s), no delivery log. Fenrir: the route wakes `reconcile_payment_links(only_link_id=…)` for a link and `refresh_terminal_payment` for a terminal payment, after the response; no nonce table (a replay inside the ±300 s window only repeats an idempotent wake). The signing scheme is written out in the route's docstring (`routes/aito_payments.py:heimdall_webhook`) and in Heimdall's `docs/API.md`, "Payment webhook".
+
 ## 10. Testing
 
 - **Signing**: `sign()` against a vector produced with the `openssl` recipe from Heimdall's doc, plus the empty-body case.

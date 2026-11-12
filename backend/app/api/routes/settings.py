@@ -348,6 +348,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False, m
 
     # The Heimdall API token is the whole credential — write-only, like the above.
     settings_dict["heimdall_api_token"] = ""
+    settings_dict["heimdall_webhook_secret"] = ""
 
     # The saved key is write-only, including for authenticated administrators.
     settings_dict["octoeverywhere_api_key_configured"] = bool(settings_dict["octoeverywhere_api_key"].strip())
