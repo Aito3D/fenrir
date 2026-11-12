@@ -10786,7 +10786,6 @@ export default {
     familyAito: 'Aito',
     familyPrinters: 'プリンター',
     familyOrders: '注文',
-    comingLater: '近日対応',
     ring: '音を鳴らす',
     autoWatch: '作成したカードを自動でウォッチ',
     watchTitle: 'このカードをウォッチ',

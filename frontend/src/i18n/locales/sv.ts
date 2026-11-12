@@ -10844,7 +10844,6 @@ errors: {
     familyAito: 'Aito',
     familyPrinters: 'Skrivare',
     familyOrders: 'Beställningar',
-    comingLater: 'Kommer senare',
     ring: 'Ringsignal',
     autoWatch: 'Bevaka kort jag skapar automatiskt',
     watchTitle: 'Bevaka det här kortet',

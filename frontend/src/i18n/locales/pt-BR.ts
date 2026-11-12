@@ -10772,7 +10772,6 @@ export default {
     familyAito: 'Aito',
     familyPrinters: 'Impressoras',
     familyOrders: 'Pedidos',
-    comingLater: 'Em breve',
     ring: 'Tocar',
     autoWatch: 'Acompanhar automaticamente os cartões que eu crio',
     watchTitle: 'Acompanhar este cartão',

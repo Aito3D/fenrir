@@ -10772,7 +10772,6 @@ export default {
     familyAito: 'Aito',
     familyPrinters: 'Stampanti',
     familyOrders: 'Ordini',
-    comingLater: 'In arrivo',
     ring: 'Suona',
     autoWatch: 'Segui automaticamente le schede che creo',
     watchTitle: 'Segui questa scheda',

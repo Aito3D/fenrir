@@ -10787,7 +10787,6 @@ export default {
     familyAito: 'Aito',
     familyPrinters: 'Drucker',
     familyOrders: 'Bestellungen',
-    comingLater: 'Folgt später',
     ring: 'Klingeln',
     autoWatch: 'Von mir erstellte Karten automatisch beobachten',
     watchTitle: 'Diese Karte beobachten',

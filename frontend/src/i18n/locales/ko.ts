@@ -10408,7 +10408,6 @@ export default {
     familyAito: 'Aito',
     familyPrinters: '프린터',
     familyOrders: '주문',
-    comingLater: '추후 지원',
     ring: '소리',
     autoWatch: '내가 만든 카드 자동 관찰',
     watchTitle: '이 카드 관찰',

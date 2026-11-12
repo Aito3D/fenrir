@@ -72,9 +72,10 @@ KINDS: dict[str, InboxKind] = {
         "aito", True, ("payment_link.paid", "payment.terminal.paid", "payment.manual.recorded"), available=True
     ),
     "aito.overdue": InboxKind("aito", False, ("project.due.overdue",), available=True),
-    "printer.job_sent": InboxKind("printer", False, (), available=False),
-    "printer.finished": InboxKind("printer", False, (), available=False),
-    "printer.failed": InboxKind("printer", False, (), available=False),
+    # Print jobs (main.py calls notify_print beside its provider notifications).
+    "printer.job_sent": InboxKind("printer", False, ()),
+    "printer.finished": InboxKind("printer", False, ()),
+    "printer.failed": InboxKind("printer", False, ()),
     "hours.readings_due": InboxKind("printer", True, (), available=True, sound_default=False),
     # Order Board events (order_board_events.record fans these out, not fan_out).
     "orders.ready": InboxKind("orders", True, ("order.ready",)),
@@ -173,6 +174,57 @@ async def fan_out(db: AsyncSession, event: AitoEvent, project: AitoProject | Non
         recipients.append(watch.user_id)
     if recipients:
         db.info.setdefault(_PENDING_KEY, set()).update(recipients)
+    return recipients
+
+
+# Print outcomes that reach the bell. A stopped or cancelled print is somebody's own doing: no row.
+_PRINT_KINDS = {"started": "printer.job_sent", "completed": "printer.finished", "failed": "printer.failed"}
+
+
+async def notify_print(
+    db: AsyncSession, printer_id: int, printer_name: str, status: str, data: dict, sender_id: int | None = None
+) -> list[int]:
+    """One row per active printer reader who enabled the kind and may see this printer.
+
+    Commits and pushes itself, and never raises: the provider notification
+    sent beside it must not depend on the bell. ``sender_id`` (the user who
+    sent the job) is skipped, as an Aito actor is.
+    """
+    kind = _PRINT_KINDS.get(status)
+    if kind is None:
+        return []
+    from backend.app.core.printer_scope import resolve_user_printer_scope  # imports models.group
+
+    body = f"{printer_name} · {data.get('subtask_name') or data.get('filename') or '—'}"[:500]
+    recipients: list[int] = []
+    try:
+        async with db.begin_nested():
+            for user in (await db.execute(select(User).where(User.is_active.is_(True)))).scalars():
+                if user.id == sender_id or not user.has_permission("printers:read"):
+                    continue
+                if kind not in ((await preferences_for(db, user.id)).kinds_json or []):
+                    continue
+                if not (await resolve_user_printer_scope(db, user)).allows(printer_id):
+                    continue
+                db.add(
+                    Notification(
+                        user_id=user.id,
+                        kind=kind,
+                        family="printer",
+                        title=kind,
+                        body=body,
+                        target_type="printer",
+                        target_id=printer_id,
+                    )
+                )
+                recipients.append(user.id)
+        if recipients:
+            db.info.setdefault(_PENDING_KEY, set()).update(recipients)
+            await db.commit()
+            await broadcast_pending(db)
+    except Exception:
+        logger.warning("inbox %s failed for printer %s", kind, printer_id, exc_info=True)
+        return []
     return recipients
 
 

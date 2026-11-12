@@ -10811,7 +10811,6 @@ export default {
     familyAito: 'Aito',
     familyPrinters: 'Printers',
     familyOrders: 'Bestellingen',
-    comingLater: 'Volgt later',
     ring: 'Geluid',
     autoWatch: 'Kaarten die ik maak automatisch volgen',
     watchTitle: 'Deze kaart volgen',

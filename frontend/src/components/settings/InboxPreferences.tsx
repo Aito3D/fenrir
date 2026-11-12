@@ -152,11 +152,6 @@ function InboxPreferencesBlock() {
                             <span className={`text-sm truncate ${info.available ? 'text-white' : 'text-bambu-gray'}`}>
                               {title}
                             </span>
-                            {!info.available && (
-                              <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide bg-bambu-dark-tertiary text-bambu-gray">
-                                {t('inbox.comingLater')}
-                              </span>
-                            )}
                           </div>
                           <div className="flex items-center gap-3">
                             <Toggle

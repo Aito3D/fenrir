@@ -10770,7 +10770,6 @@ export default {
     familyAito: 'Aito',
     familyPrinters: '印表機',
     familyOrders: '訂單',
-    comingLater: '即將推出',
     ring: '響鈴',
     autoWatch: '自動關注我建立的卡片',
     watchTitle: '關注此卡片',
