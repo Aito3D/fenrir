@@ -149,7 +149,9 @@ describe('AitoPage ?card= deep link', () => {
       http.get('/api/v1/aito/trash', () => HttpResponse.json([])),
     );
     act(() => {
-      window.history.pushState({}, '', '/aito?card=40');
+      // Keyed like a router navigation: a bare `{}` state reads as key "default", the first link's key too, and on a
+      // loaded runner the clear and this link can land in one transition render, so the two links looked identical.
+      window.history.pushState({ usr: null, key: 'second-link', idx: 1 }, '', '/aito?card=40');
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
 
