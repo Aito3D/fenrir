@@ -396,15 +396,24 @@ jobs:
       - name: Run tests (shard ${{ matrix.shard }}/3)
         timeout-minutes: 15
         working-directory: frontend
-        # vitest's own --shard, not a hand-rolled file split: it partitions the
-        # collected suite deterministically and covers every file exactly once
-        # across the shards. Three shards, not more — see the concurrency budget
-        # at the top of this file.
+        # Split by recorded duration (frontend/.test_durations.json), not by
+        # vitest's --shard: that one splits by file count and the three shards
+        # ran 202 s, 229 s and 366 s. The script takes the file list from
+        # vitest itself, so every file still runs in exactly one shard.
+        # Refresh the durations occasionally with:
+        #   cd frontend && npx vitest run --reporter=json --outputFile=/tmp/vitest.json
+        #   node scripts/shard-tests.mjs --record /tmp/vitest.json
+        # Three shards, not more — see the concurrency budget at the top of
+        # this file.
         #
         # `npm run test:run` is not used here because it appends the i18n parity
         # check, which must run once per commit rather than once per shard; it
         # now lives in frontend-lint.
-        run: npx vitest run --shard=${{ matrix.shard }}/3
+        run: |
+          set -euo pipefail
+          files=$(node scripts/shard-tests.mjs ${{ matrix.shard }} 3)
+          # shellcheck disable=SC2086  # one argument per file, no spaces in paths
+          npx vitest run $files
 
   frontend-build:
     name: Frontend Build

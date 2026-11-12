@@ -604,6 +604,33 @@ async def _app_engine_released_after_each_test():
     await _release_app_engine()
 
 
+# The SQLite schema as create_all built it, per worker, as one DDL script.
+# create_all for every test (a PRAGMA per table through aiosqlite's thread,
+# then compiling ~300 statements) was the largest fixed cost of a database
+# test; replaying the script is one call.
+_sqlite_schema: dict[str, object] = {}
+
+
+async def _create_sqlite_test_schema(engine) -> None:
+    """The models' schema in a new in-memory database.
+
+    create_all the first time on this worker and whenever a model loaded since
+    adds a table; otherwise the DDL read back from that first database.
+    """
+    tables = frozenset(Base.metadata.tables)
+    async with engine.begin() as conn:
+        if _sqlite_schema.get("tables") == tables:
+            raw = await conn.get_raw_connection()
+            await raw.driver_connection.executescript(_sqlite_schema["script"])
+            return
+        await conn.run_sync(Base.metadata.create_all)
+        rows = await conn.exec_driver_sql(
+            "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY rowid"
+        )
+        _sqlite_schema["script"] = ";\n".join(row[0] for row in rows) + ";"
+        _sqlite_schema["tables"] = tables
+
+
 @pytest.fixture
 async def test_engine():
     """Create a test database engine."""
@@ -629,19 +656,13 @@ async def test_engine():
         await engine.dispose()
         return
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await _create_sqlite_test_schema(engine)
 
     yield engine
     await _release_app_engine()
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    # No drop_all: the in-memory database goes with its only connection.
     await engine.dispose()
-    # Allow aiosqlite's background thread to finish processing the close
-    # response before the per-function event loop shuts down, preventing
-    # "RuntimeError: Event loop is closed" in call_soon_threadsafe.
-    await asyncio.sleep(0.1)
 
 
 @pytest.fixture
