@@ -10606,6 +10606,8 @@ export default {
       saveTaskFirst: '먼저 작업을 저장하세요',
       deliveredFiles: '납품 파일',
       deliveredNone: '아직 기록된 내용이 없습니다',
+      cardWarningOutdated: "납품된 출력 파일이 최신이 아닙니다",
+      cardWarningNoRevision: "출력 파일이 없는 출력 단계가 있습니다",
       deliveriesSuggest: '최신 승인본 제안',
       reuseFromOrder: '주문 #{{order}}의 파일 재사용',
       dropHere: '파일을 놓아 프로젝트에 추가',

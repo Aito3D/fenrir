@@ -10985,6 +10985,8 @@ export default {
       saveTaskFirst: 'Speichern Sie zuerst die Aufgabe',
       deliveredFiles: 'Gelieferte Dateien',
       deliveredNone: 'Noch nichts erfasst',
+      cardWarningOutdated: "Eine gelieferte Druckdatei ist veraltet",
+      cardWarningNoRevision: "Druckschritt ohne Druckdatei",
       deliveriesSuggest: 'Neueste freigegebene vorschlagen',
       reuseFromOrder: 'Dateien aus Auftrag #{{order}} übernehmen',
       dropHere: 'Dateien ablegen, um sie dem Projekt hinzuzufügen',

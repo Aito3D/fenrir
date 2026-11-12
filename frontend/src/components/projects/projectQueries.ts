@@ -22,6 +22,8 @@ export const projectKeys = {
   allProjectLinks: () => ['aito-project-links'] as const,
   /** The project codes of every Aito order (the board's code chips). */
   projectCodes: () => ['aito-project-codes'] as const,
+  /** Under `projectCodes`, so whatever refreshes the card chips refreshes their warning too. */
+  projectWarnings: () => ['aito-project-codes', 'warnings'] as const,
   /** One project's linked File Manager folders (useProjectLinkedFiles); `allLinkedFolders` is every project's. */
   linkedFolders: (projectId: number) => ['project-linked-folders', projectId] as const,
   allLinkedFolders: () => ['project-linked-folders'] as const,

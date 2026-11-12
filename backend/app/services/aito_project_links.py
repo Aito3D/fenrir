@@ -17,6 +17,7 @@ from collections.abc import Callable, Collection, Iterable
 from fastapi import UploadFile
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm.exc import StaleDataError
 from starlette.exceptions import HTTPException
 
@@ -415,6 +416,51 @@ async def codes_by_order(db: AsyncSession) -> dict[int, list[str]]:
     for order_id, code in rows:
         codes[order_id].append(code)
     return dict(codes)
+
+
+async def warnings_by_order(db: AsyncSession) -> dict[int, str]:
+    """The one warning a board card shows per active order (spec §4.6):
+    ``"outdated"`` when a task delivers an outdated print file (§5.3, same rule
+    as ``project_files._outdated_by``), else ``"no_revision"`` when an open
+    Impression step's project has no Impression revision yet."""
+    live_task = (AitoProject.id == AitoTask.project_id) & (AitoProject.status != "deleted")
+    source, newer = aliased(ProjectRevision), aliased(ProjectRevision)
+    outdated = await db.execute(
+        select(AitoTask.project_id)
+        .join(AitoProject, live_task)
+        .join(AitoTaskDelivery, AitoTaskDelivery.task_id == AitoTask.id)
+        .join(ProjectRevision, ProjectRevision.id == AitoTaskDelivery.revision_id)
+        .join(ProjectItem, ProjectItem.id == ProjectRevision.item_id)
+        .join(source, source.id == ProjectRevision.derived_from_id)
+        .join(newer, newer.item_id == source.item_id)
+        .where(
+            ProjectItem.section == "impression",
+            source.item_id != ProjectRevision.item_id,
+            newer.status == "valide",
+            newer.number > source.number,
+        )
+        .distinct()
+    )
+    has_print_file = (
+        select(ProjectItem.id)
+        .join(ProjectRevision, ProjectRevision.item_id == ProjectItem.id)
+        .where(ProjectItem.project_id == AitoTask.linked_project_id, ProjectItem.section == "impression")
+        .exists()
+    )
+    missing = await db.execute(
+        select(AitoTask.project_id)
+        .join(AitoProject, live_task)
+        .where(
+            AitoTask.linked_project_id.is_not(None),
+            AitoTask.impression_cost.is_not(None),
+            AitoTask.impression_done.is_(False),
+            ~has_print_file,
+        )
+        .distinct()
+    )
+    warnings = dict.fromkeys(missing.scalars(), "no_revision")
+    warnings.update(dict.fromkeys(outdated.scalars(), "outdated"))
+    return warnings
 
 
 async def orders_for_project(db: AsyncSession, project_id: int) -> ProjectOrdersResponse:

@@ -9780,6 +9780,8 @@ export const api = {
   recordAitoPickupSms: (id: number) =>
     request<AitoProject>(`/aito/${id}/pickup-sms`, { method: 'POST' }),
   getAitoProjectCodes: () => request<Record<string, string[]>>('/aito/project-codes'),
+  getAitoProjectWarnings: () =>
+    request<Record<string, 'outdated' | 'no_revision'>>('/aito/project-warnings'),
   getOrderProjectLinks: (orderId: number) => request<OrderProjectLinks>(`/aito/${orderId}/project-links`),
   getTaskProjectSuggestions: (taskId: number) =>
     request<ProjectSuggestion[]>(`/aito/tasks/${taskId}/project-suggestions`),

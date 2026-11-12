@@ -104,6 +104,7 @@ _ROUTES = [
     ("POST", "/projects/ai/suggest-tags", {"json": {"title": "Support"}}, [(P.PROJECTS_CREATE, P.PROJECTS_UPDATE)]),
     # aito_project_links.py: router + drop_router
     ("GET", "/aito/project-codes", {}, [(P.AITO_READ,), (P.PROJECTS_READ,)]),
+    ("GET", "/aito/project-warnings", {}, [(P.AITO_READ,), (P.PROJECTS_READ,)]),
     ("GET", "/aito/tasks/987654/project-suggestions", {}, [(P.AITO_READ,), (P.PROJECTS_READ,)]),
     ("PUT", "/aito/tasks/987654/project", {"json": {"project_id": None}}, [(P.AITO_UPDATE,), (P.PROJECTS_READ,)]),
     ("POST", "/aito/tasks/987654/project", {"json": {"name": "p"}}, [(P.AITO_UPDATE,), (P.PROJECTS_CREATE,)]),
@@ -243,6 +244,7 @@ _KEY_MATRIX = {
     "POST /projects/ai/reformulate": (409, _MANAGE),
     "POST /projects/ai/suggest-tags": (409, _MANAGE),
     "GET /aito/project-codes": (None, _NO_KEY),
+    "GET /aito/project-warnings": (None, _NO_KEY),
     "GET /aito/tasks/987654/project-suggestions": (None, _NO_KEY),
     "PUT /aito/tasks/987654/project": (None, _NO_KEY),
     "POST /aito/tasks/987654/project": (None, _NO_KEY),
@@ -309,6 +311,7 @@ _SWEPT_PREFIXES = (
     "/api/v1/projects",
     "/api/v1/aito/tasks",
     "/api/v1/aito/project-codes",
+    "/api/v1/aito/project-warnings",
     "/api/v1/library/files/{file_id}/project-suggestions",
 )
 _SWEPT_SUFFIXES = ("/project-links",)

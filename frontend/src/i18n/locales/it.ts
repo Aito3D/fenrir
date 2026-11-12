@@ -10970,6 +10970,8 @@ export default {
       saveTaskFirst: 'Salva prima l\'attività',
       deliveredFiles: 'File consegnati',
       deliveredNone: 'Ancora nulla registrato',
+      cardWarningOutdated: "Un file di stampa consegnato è obsoleto",
+      cardWarningNoRevision: "Fase di stampa senza file di stampa",
       deliveriesSuggest: 'Proponi le ultime approvate',
       reuseFromOrder: 'Riutilizza i file dell\'ordine #{{order}}',
       dropHere: 'Trascina i file per aggiungerli al progetto',

@@ -101,6 +101,16 @@ async def get_project_codes(
     return await svc.codes_by_order(db)
 
 
+@router.get("/project-warnings")
+async def get_project_warnings(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = _aito_read,
+    __: User | None = _projects_read,
+) -> dict[int, str]:
+    """Per order, the board card's warning chip: ``outdated`` or ``no_revision``."""
+    return await svc.warnings_by_order(db)
+
+
 @router.get("/tasks/{task_id}/project-suggestions")
 async def get_project_suggestions(
     task_id: int,

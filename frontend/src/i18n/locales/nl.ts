@@ -11009,6 +11009,8 @@ export default {
       saveTaskFirst: 'Sla eerst de taak op',
       deliveredFiles: 'Geleverde bestanden',
       deliveredNone: 'Nog niets vastgelegd',
+      cardWarningOutdated: "Een geleverd printbestand is verouderd",
+      cardWarningNoRevision: "Printstap zonder printbestand",
       deliveriesSuggest: 'Laatste goedgekeurde voorstellen',
       reuseFromOrder: 'Bestanden van bestelling #{{order}} hergebruiken',
       dropHere: 'Zet bestanden neer om ze aan het project toe te voegen',

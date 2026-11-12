@@ -121,6 +121,24 @@ describe('card project chips', () => {
     expect(screen.getByTestId('aito-card-elapsed')).toHaveClass('shrink-0');
   });
 
+  it('adds one warning sign for an outdated delivery or a printing step without a file', async () => {
+    codes = { [ORDER]: ['P-0001'] };
+    server.use(http.get('/api/v1/aito/project-warnings', () => HttpResponse.json({ [ORDER]: 'outdated' })));
+    render(<CardView project={project} onExpand={() => {}} />);
+    expect(await screen.findByTestId('aito-card-project-warning')).toHaveAccessibleName(
+      'A delivered print file is outdated',
+    );
+    expect(screen.getByText('P-0001')).toBeInTheDocument();
+  });
+
+  it('shows no warning sign on an order without one', async () => {
+    codes = { [ORDER]: ['P-0001'] };
+    server.use(http.get('/api/v1/aito/project-warnings', () => HttpResponse.json({ 99: 'no_revision' })));
+    render(<CardView project={project} onExpand={() => {}} />);
+    expect(await screen.findByText('P-0001')).toBeInTheDocument();
+    expect(screen.queryByTestId('aito-card-project-warning')).not.toBeInTheDocument();
+  });
+
   it('shows no chips on a placeholder or overlay card', async () => {
     codes = { [ORDER]: ['P-0001'] };
     render(

@@ -10912,6 +10912,8 @@ export default {
       saveTaskFirst: 'Önce görevi kaydedin',
       deliveredFiles: 'Teslim edilen dosyalar',
       deliveredNone: 'Henüz kayıt yok',
+      cardWarningOutdated: "Teslim edilen bir baskı dosyası güncel değil",
+      cardWarningNoRevision: "Baskı dosyası olmayan baskı adımı",
       deliveriesSuggest: 'Son onaylananları öner',
       reuseFromOrder: '#{{order}} numaralı siparişin dosyalarını yeniden kullan',
       dropHere: 'Projeye eklemek için dosyaları bırakın',

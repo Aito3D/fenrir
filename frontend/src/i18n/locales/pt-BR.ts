@@ -10970,6 +10970,8 @@ export default {
       saveTaskFirst: 'Salve a tarefa primeiro',
       deliveredFiles: 'Arquivos entregues',
       deliveredNone: 'Nada registrado ainda',
+      cardWarningOutdated: "Um arquivo de impressão entregue está desatualizado",
+      cardWarningNoRevision: "Etapa de impressão sem arquivo de impressão",
       deliveriesSuggest: 'Sugerir as últimas aprovadas',
       reuseFromOrder: 'Reutilizar os arquivos do pedido #{{order}}',
       dropHere: 'Solte arquivos para adicioná-los ao projeto',
