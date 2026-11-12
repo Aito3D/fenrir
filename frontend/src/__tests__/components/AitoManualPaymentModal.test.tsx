@@ -63,11 +63,16 @@ describe('ManualPaymentModal', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('shows the server message verbatim', async () => {
-    vi.spyOn(api, 'recordAitoManualPayment').mockRejectedValue(new ApiError('Amount exceeds the invoice balance of 23000', 422, 'amount_above_balance'));
+  it('translates a refusal by its code and keeps the server message for a code it has no string for', async () => {
+    const spy = vi.spyOn(api, 'recordAitoManualPayment').mockRejectedValue(new ApiError('Amount exceeds the invoice balance of 23000', 422, 'amount_above_balance'));
     render(<ManualPaymentModal project={makeProject()} document={invoice} onClose={() => {}} />);
     await userEvent.click(screen.getByRole('button', { name: 'Record' }));
-    expect(await screen.findByText('Amount exceeds the invoice balance of 23000')).toBeInTheDocument();
+    expect(await screen.findByText('The amount is higher than the balance due.')).toBeInTheDocument();
+    expect(screen.queryByText('Amount exceeds the invoice balance of 23000')).not.toBeInTheDocument();
+
+    spy.mockRejectedValue(new ApiError('The payment P-9 was recorded in Zoho Books but the local record failed: boom', 502, 'manual_unrecorded'));
+    await userEvent.click(screen.getByRole('button', { name: 'Record' }));
+    expect(await screen.findByText('The payment P-9 was recorded in Zoho Books but the local record failed: boom')).toBeInTheDocument();
   });
 
   it('explains what the quote path writes', () => {

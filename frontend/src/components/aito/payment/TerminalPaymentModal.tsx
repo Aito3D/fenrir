@@ -12,6 +12,7 @@ import { AmountField } from './AmountField';
 import { parseAmount } from './amount';
 import type { PaymentDocument } from './paymentDocument';
 import { isTerminalOpen, settleTerminalPaymentInCache, useTerminalPoll } from './useTerminalPayment';
+import { paymentErrorText } from './paymentErrors';
 
 const MODAL_OUT_MS = 170;
 
@@ -94,7 +95,7 @@ export function TerminalPaymentDialog({ document, initialPayment, onClose, pollK
     onError: (e: unknown) => {
       const next = recover?.(e) ?? null;
       setRecovery(next);
-      setError(next ? next.message : e instanceof Error && e.message ? e.message : t('common.errorLoading'));
+      setError(next ? next.message : paymentErrorText(t, e));
     },
   });
   const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, {

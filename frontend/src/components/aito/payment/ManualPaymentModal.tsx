@@ -14,6 +14,7 @@ import { ACTION_CELL, ACTION_GROUP } from '../quoteActionGroup';
 import { AmountField } from './AmountField';
 import { parseAmount } from './amount';
 import type { PaymentDocument } from './paymentDocument';
+import { paymentErrorText } from './paymentErrors';
 
 /** A beat past .animate-modal-out's 150ms, same margin CreateInvoiceModal gives it. */
 const MODAL_OUT_MS = 170;
@@ -48,7 +49,7 @@ export function ManualPaymentModal({ project, document, onClose }: {
       showToast(t('aito.payment.manualDone'), 'success');
       requestClose();
     },
-    onError: (e: unknown) => setError(e instanceof Error && e.message ? e.message : t('common.errorLoading')),
+    onError: (e: unknown) => setError(paymentErrorText(t, e)),
   });
   const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, {
     animationMs: MODAL_OUT_MS,

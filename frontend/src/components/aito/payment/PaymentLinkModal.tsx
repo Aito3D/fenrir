@@ -18,6 +18,7 @@ import { AmountField } from './AmountField';
 import { parseAmount } from './amount';
 import type { PaymentDocument } from './paymentDocument';
 import { expiryText } from './paymentState';
+import { paymentErrorText } from './paymentErrors';
 
 /** A beat past .animate-modal-out's 150ms, same margin CreateInvoiceModal gives it. */
 const MODAL_OUT_MS = 170;
@@ -95,7 +96,7 @@ export function PaymentLinkDialog({ document, link, onClose, onCreate, onCancel,
       if (result) setCreated({ link: result, requested });
       else requestClose();
     },
-    onError: (e: unknown) => setError(e instanceof Error && e.message ? e.message : t('common.errorLoading')),
+    onError: (e: unknown) => setError(paymentErrorText(t, e)),
   });
 
   const cancel = useMutation({
@@ -104,7 +105,7 @@ export function PaymentLinkDialog({ document, link, onClose, onCreate, onCancel,
       showToast(t('aito.payment.linkCancelled'), 'success');
       requestClose();
     },
-    onError: (e: unknown) => setError(e instanceof Error && e.message ? e.message : t('common.errorLoading')),
+    onError: (e: unknown) => setError(paymentErrorText(t, e)),
   });
 
   // The quote link's manual Retry (spec §6.2): `POST …/payment-link/refresh`
@@ -114,7 +115,7 @@ export function PaymentLinkDialog({ document, link, onClose, onCreate, onCancel,
   // shows it: its own create/cancel buttons are the way back.
   const retry = useMutation({
     mutationFn: () => (onRetry as () => Promise<void>)(),
-    onError: (e: unknown) => setError(e instanceof Error && e.message ? e.message : t('common.errorLoading')),
+    onError: (e: unknown) => setError(paymentErrorText(t, e)),
   });
 
   const pending = create.isPending || cancel.isPending || retry.isPending;

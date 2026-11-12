@@ -119,7 +119,7 @@ describe('TerminalPaymentModal', () => {
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 
-  it('reopens on a charge in flight and shows the server message on a refused start', async () => {
+  it('reopens on a charge in flight and translates a refused start by its code', async () => {
     vi.spyOn(api, 'getAitoTerminalPayment').mockResolvedValue(tpe());
     const { unmount } = render(<TerminalPaymentModal project={makeProject({ id: 12 })} document={invoice} initialPayment={tpe()} onClose={() => {}} />);
     expect(await screen.findByText('Waiting for the card on the terminal…')).toBeInTheDocument();
@@ -128,6 +128,7 @@ describe('TerminalPaymentModal', () => {
     vi.spyOn(api, 'startAitoTerminalPayment').mockRejectedValue(new ApiError('Heimdall HTTP 409 terminal_busy: busy', 409, 'terminal_busy'));
     render(<TerminalPaymentModal project={makeProject({ id: 12 })} document={invoice} initialPayment={null} onClose={() => {}} />);
     await userEvent.click(screen.getByRole('button', { name: 'Start the terminal' }));
-    expect(await screen.findByText('Heimdall HTTP 409 terminal_busy: busy')).toBeInTheDocument();
+    // The refusal's code is translated; Heimdall's raw sentence is not shown.
+    expect(await screen.findByText('The terminal is busy with another payment.')).toBeInTheDocument();
   });
 });
