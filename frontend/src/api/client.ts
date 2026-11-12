@@ -1846,6 +1846,8 @@ export interface AppSettings {
   // Heimdall payment bridge (token is write-only)
   heimdall_base_url: string;
   heimdall_api_token: string;
+  /** Shared with Heimdall's PAYMENT_WEBHOOK_SECRET (write-only; empty = webhook off). */
+  heimdall_webhook_secret: string;
   /** 0 = payment links ask for the full quote; otherwise the deposit share. */
   aito_deposit_pct: number;
   aito_payment_mode_card: string;

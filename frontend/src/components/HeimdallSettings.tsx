@@ -30,6 +30,7 @@ export function HeimdallSettings() {
 
   const [baseUrl, setBaseUrl] = useState('');
   const [token, setToken] = useState('');
+  const [webhookSecret, setWebhookSecret] = useState('');
   const [depositPct, setDepositPct] = useState('0');
   const [paymentModeCard, setPaymentModeCard] = useState('');
   const [paymentModeCheque, setPaymentModeCheque] = useState('');
@@ -60,6 +61,7 @@ export function HeimdallSettings() {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       showToast(t('heimdall.saved'), 'success');
       setToken('');
+      setWebhookSecret('');
       setTestResult(null);
     },
     onError: (error: Error) => showToast(error.message, 'error'),
@@ -70,6 +72,7 @@ export function HeimdallSettings() {
       heimdall_base_url: baseUrl.trim(),
       // Omit an untouched token so saving never wipes the stored one.
       ...(token.trim() ? { heimdall_api_token: token.trim() } : {}),
+      ...(webhookSecret.trim() ? { heimdall_webhook_secret: webhookSecret.trim() } : {}),
       aito_deposit_pct: clampInt(depositPct, settings?.aito_deposit_pct ?? 0, 0, 100),
       aito_payment_mode_card: paymentModeCard.trim(),
       aito_payment_mode_cheque: paymentModeCheque.trim(),
@@ -213,6 +216,39 @@ export function HeimdallSettings() {
                 type="text"
                 value={paymentModeCash}
                 onChange={(e) => setPaymentModeCash(e.target.value)}
+                className={INPUT}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="pt-4 border-t border-bambu-dark-tertiary">
+          <h4 className="text-sm font-semibold text-white mb-1">{t('heimdall.webhookTitle')}</h4>
+          <p className="text-sm text-bambu-gray mb-4">{t('heimdall.webhookHint')}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="heimdall-webhook-url" className="block text-sm text-bambu-gray mb-1">
+                {t('heimdall.webhookUrl')}
+              </label>
+              <input
+                id="heimdall-webhook-url"
+                type="text"
+                readOnly
+                value={`${window.location.origin}/api/v1/aito/payments/webhook`}
+                onFocus={(e) => e.currentTarget.select()}
+                className={INPUT}
+              />
+            </div>
+            <div>
+              <label htmlFor="heimdall-webhook-secret" className="block text-sm text-bambu-gray mb-1">
+                {t('heimdall.webhookSecret')}
+              </label>
+              <input
+                id="heimdall-webhook-secret"
+                type="password"
+                value={webhookSecret}
+                onChange={(e) => setWebhookSecret(e.target.value)}
+                placeholder={t('heimdall.webhookSecretHint')}
+                autoComplete="off"
                 className={INPUT}
               />
             </div>
