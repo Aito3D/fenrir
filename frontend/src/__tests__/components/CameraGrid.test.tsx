@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '../utils';
 import { server } from '../mocks/server';
 import { CameraGrid } from '../../components/CameraGrid';
@@ -670,5 +671,37 @@ describe('CameraGrid rendering', () => {
         window.innerHeight = origInnerHeight;
       }
     });
+  });
+});
+
+describe('CameraGrid spotlight chamber light', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('enlarging a tile lights its chamber; shrinking it, or enlarging another, turns off only a light it turned on', async () => {
+    const user = userEvent.setup();
+    const set = vi.spyOn(api, 'setChamberLight').mockResolvedValue({ success: true, message: '' });
+    const client = new QueryClient();
+    client.setQueryData(['printerStatus', 1], { chamber_light: false });
+    client.setQueryData(['printerStatus', 2], { chamber_light: true });
+    render(
+      <QueryClientProvider client={client}>
+        <CameraGrid printers={[makePrinter(), makePrinter({ id: 2, name: 'Printer 2' })]} layout="default" />
+      </QueryClientProvider>,
+    );
+    const tile = async (name: string) => (await screen.findAllByLabelText(name)).find(el => el.tabIndex === 0)!;
+
+    await user.click(await tile('Printer 1'));
+    expect(set).toHaveBeenLastCalledWith(1, true);
+    await user.click(await tile('Printer 1'));
+    expect(set).toHaveBeenLastCalledWith(1, false);
+
+    set.mockClear();
+    await user.click(await tile('Printer 2')); // already on: left alone, both ways
+    await user.click(await tile('Printer 2'));
+    expect(set).not.toHaveBeenCalled();
+
+    await user.click(await tile('Printer 1'));
+    await user.click(await tile('Printer 2')); // the spotlight moves: printer 1 goes back off
+    expect(set.mock.calls).toEqual([[1, true], [1, false]]);
   });
 });

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { WifiOff } from 'lucide-react';
 
 import { api } from '../api/client';
-import type { HMSError, CameraQuality } from '../api/client';
+import type { HMSError, CameraQuality, PrinterStatus } from '../api/client';
 import type { TimeFormat } from '../utils/date';
 import { ConfirmModal } from './ConfirmModal';
 import { useAuth } from '../contexts/AuthContext';
@@ -181,9 +181,32 @@ export function CameraGrid({
   const handleDismissError = useCallback((id: number, description: string) => {
     setDismissedErrors(prev => new Map(prev).set(id, description));
   }, []);
-  const handleSpotlight = useCallback((id: number) => {
-    setSpotlightId(prev => (prev === id ? null : id));
+  // Enlarging a tile lights its chamber; shrinking it (or enlarging another) puts the light back the way it was.
+  // Only a light the spotlight switched on is switched off again: one that was already on is left alone.
+  const spotlightRef = useRef<number | null>(null);
+  const litBySpotlight = useRef<number | null>(null);
+  const setLight = useCallback((id: number, on: boolean) => {
+    // Best effort: a printer without a chamber light, or an offline one, just stays as it is.
+    api.setChamberLight(id, on).catch(() => {});
   }, []);
+  const handleSpotlight = useCallback((id: number) => {
+    const next = spotlightRef.current === id ? null : id;
+    const lit = litBySpotlight.current;
+    if (lit !== null && lit !== next) {
+      setLight(lit, false);
+      litBySpotlight.current = null;
+    }
+    if (next !== null && canControl && queryClient.getQueryData<PrinterStatus>(['printerStatus', next])?.chamber_light === false) {
+      setLight(next, true);
+      litBySpotlight.current = next;
+    }
+    spotlightRef.current = next;
+    setSpotlightId(next);
+  }, [canControl, queryClient, setLight]);
+  // Leaving the wall with a tile enlarged restores its light too.
+  useEffect(() => () => {
+    if (litBySpotlight.current !== null) setLight(litBySpotlight.current, false);
+  }, [setLight]);
 
   // One stable bundle for every tile — halves the per-card prop surface while
   // data props stay flat primitives so memo comparisons remain cheap.
