@@ -21,6 +21,7 @@ from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_tracking_view import AitoTrackingView
+from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.schemas.aito import (
     AitoTrackingBalance,
     AitoTrackingPayment,
@@ -102,10 +103,20 @@ def normalize_token(raw: str) -> str | None:
 async def mint_unique_token(db: AsyncSession) -> str:
     """A fresh code no active-or-trashed card holds. A billion codes against
     a few hundred cards makes a clash a once-a-decade event, but the column
-    is unique-indexed and a clash there would be a 500 on a Copy click."""
+    is unique-indexed and a clash there would be a 500 on a Copy click.
+    Sales orders draw their codes here too (services/order_board_tracking.py,
+    a `track` doc per order), so a code never names both a card and an order."""
     for _ in range(10):
         token = mint_token()
         taken = (await db.execute(select(AitoProject.id).where(AitoProject.tracking_token == token))).first()
+        if taken is None:
+            taken = (
+                await db.execute(
+                    select(OrderBoardDoc.id).where(
+                        OrderBoardDoc.kind == "track", OrderBoardDoc.header["token"].as_string() == token
+                    )
+                )
+            ).first()
         if taken is None:
             return token
     raise RuntimeError("could not mint a unique tracking token")  # pragma: no cover — 32^6 space
@@ -289,6 +300,24 @@ async def _shown_link(db: AsyncSession, project: AitoProject) -> AitoPaymentLink
     if row.status == "pending" and project.quote_status not in PAYABLE_QUOTE_STATUSES:
         return None
     return row
+
+
+async def invoice_pay_url(db: AsyncSession, project: AitoProject, now: datetime) -> str | None:
+    """The checkout URL of the invoice link the operator created from the
+    card, while it can still be paid: the invoice is open, the link is
+    minted and pending, and its last day (`expires_on`, UTC like `now`) has
+    not passed — the ledger may not have polled the expiry yet. Read off the
+    ledger only, like `payment_state`; the page never mints a link."""
+    from backend.app.services.aito_payment_links import current_link
+
+    if invoice_state(project.invoice_status) not in ("unpaid", "overdue"):
+        return None
+    row = await current_link(db, project.id, kind="invoice")
+    if row is None or row.heimdall_id is None or row.status != "pending":
+        return None
+    if row.expires_on < now.date().isoformat():
+        return None
+    return row.url or None
 
 
 def tracking_balance(
@@ -483,6 +512,7 @@ async def compute_tracking(
         reference=project.quote_number or None,
         updated_at=updated_at,
         payment=await payment_state(db, project),
+        invoice_pay_url=await invoice_pay_url(db, project, now),
         accepted=project.quote_status == "accepted",
         balance=await balance_state(db, project),
     )

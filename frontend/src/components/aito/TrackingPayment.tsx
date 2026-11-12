@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { AitoTrackingBalance, AitoTrackingPayment } from '../../api/client';
-import { FOCUS } from '../../utils/trackingShell';
-import { TrackingPaidRow, TrackingUnpaidCard } from './trackingShell';
+import { TrackingPaidRow, TrackingPayLink, TrackingUnpaidCard } from './trackingShell';
 import { TrackingBalance } from './TrackingBalance';
 
 /** What a card needs to drive one of the page's side panels: whether it is
@@ -60,7 +59,6 @@ export function TrackingPayment({
   if (!payment.url) return null;
 
   const partly = !!balance && balance.paid > 0 && balance.due > 0;
-  const button = `inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] px-[16px] text-[13.5px] font-semibold transition-[color,background-color,border-color,transform,filter] duration-150 active:scale-[0.97] ${FOCUS} min-[400px]:w-auto`;
   return (
     <TrackingUnpaidCard
       data-testid="track-payment"
@@ -83,9 +81,7 @@ export function TrackingPayment({
       balance={balance && <TrackingBalance balance={balance} depositDue={payment.deposit && !partly} />}
       terms={terms}
     >
-      <a href={payment.url} target="_blank" rel="noopener noreferrer" className={`${button} bg-aito-cyan text-aito-midnight hover:brightness-110`}>
-        {t('aito.track.payment.pay')}
-      </a>
+      <TrackingPayLink href={payment.url} />
     </TrackingUnpaidCard>
   );
 }

@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { AitoTrackingBalance, AitoTrackingInvoice } from '../../api/client';
 import type { PanelTrigger } from './TrackingPayment';
-import { TrackingPaidRow, TrackingUnpaidCard } from './trackingShell';
+import { TrackingPaidRow, TrackingPayLink, TrackingUnpaidCard } from './trackingShell';
 import { TrackingBalance } from './TrackingBalance';
 
 const DOT: Record<AitoTrackingInvoice, string> = { paid: 'bg-green-500', unpaid: 'bg-amber-500', overdue: 'bg-red-500' };
@@ -13,16 +13,20 @@ const DOT: Record<AitoTrackingInvoice, string> = { paid: 'bg-green-500', unpaid:
  *  share already settled (2026-10-13).
  *  Unpaid/overdue are a bordered secondary card with an outlined button
  *  that opens the page's payment panel (`terms`), so the line is an action
- *  and not a dead end. `flipped`: this state arrived by a refetch while the
+ *  and not a dead end. `payUrl`: the shop opened an online payment link for
+ *  this invoice — the same filled pay button the quote link's card carries
+ *  sits before the terms button, and goes when the link does. `flipped`: this state arrived by a refetch while the
  *  page was open — the paid row pops its dot (the page rises the block). */
 export function TrackingInvoice({
   state,
   terms,
   flipped = false,
   balance = null,
+  payUrl = null,
 }: {
   state: AitoTrackingInvoice;
   balance?: AitoTrackingBalance | null;
+  payUrl?: string | null;
   terms: PanelTrigger;
   flipped?: boolean;
 }) {
@@ -46,6 +50,8 @@ export function TrackingInvoice({
       sub={sub}
       balance={balance && <TrackingBalance balance={balance} />}
       terms={terms}
-    />
+    >
+      {payUrl && <TrackingPayLink href={payUrl} />}
+    </TrackingUnpaidCard>
   );
 }

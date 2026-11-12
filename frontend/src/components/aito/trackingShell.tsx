@@ -83,6 +83,20 @@ export function TrackingPaidRow({
   );
 }
 
+const PAY_LINK = `inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] bg-aito-cyan px-[16px] text-[13.5px] font-semibold text-aito-midnight transition-[color,background-color,border-color,transform,filter] duration-150 hover:brightness-110 active:scale-[0.97] ${FOCUS} min-[400px]:w-auto`;
+
+/** The one filled button on an unpaid card: OSB's checkout, in a new tab so
+ *  the tracking page stays open behind it. Shared by the quote link
+ *  (TrackingPayment) and the invoice link (TrackingInvoice). */
+export function TrackingPayLink({ href }: { href: string }) {
+  const { t } = useTranslation();
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={PAY_LINK}>
+      {t('aito.track.payment.pay')}
+    </a>
+  );
+}
+
 /** The bordered unpaid/overdue card TrackingInvoice and TrackingPayment both
  *  render: dot, title and sub-line, the `balance` node (already built by the
  *  caller, since each passes its own props), any per-card `children` (the pay
@@ -137,12 +151,12 @@ export function TrackingUnpaidCard({
 /** Drops in from above once the content has landed (`at` ms after the
  *  page's clock starts); mounted only when there is something above it,
  *  so it never plays over the skeleton and then again over the content. */
-export function Footer({ at, shop }: { at: number; shop?: PanelTrigger }) {
+export function Footer({ at, shop, question }: { at: number; shop?: PanelTrigger; question?: string }) {
   const { t } = useTranslation();
   const linkCls = `inline-flex min-h-[44px] items-center text-aito-muted transition-colors duration-150 hover:text-aito-ink ${FOCUS} focus-visible:text-aito-ink`;
   return (
     <footer className="animate-track-drop mt-[32px] border-t border-aito-line/60 pt-[24px] text-center text-[13.5px]" style={delayAt(at)} data-testid="track-footer">
-      <p className="text-aito-ink">{t('aito.track.footerQuestion')}</p>
+      <p className="text-aito-ink">{question ?? t('aito.track.footerQuestion')}</p>
       <p className="mt-[8px]">
         <a className={linkCls} href={SHOP_TEL_HREF}>
           {AITO3D_SENDER.phone}

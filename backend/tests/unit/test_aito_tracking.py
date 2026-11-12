@@ -265,6 +265,7 @@ async def test_public_shape_titles_fallback_due_date_and_shipping(async_client, 
         "reference",
         "updated_at",
         "payment",
+        "invoice_pay_url",
         "accepted",
         "balance",
     }

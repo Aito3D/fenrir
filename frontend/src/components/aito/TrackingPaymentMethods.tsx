@@ -43,7 +43,18 @@ function tabTarget(key: string, index: number, last: number): number {
  *  pane, a "message" row in the app panes, nowhere in the shop pane. Values
  *  come from `aitoBankDetails` and `AITO3D_SENDER` verbatim; only the labels
  *  are translated — IBAN, BIC and RIB are acronyms in every language. */
-export function TrackingPaymentMethods({ open, reference, onFindShop }: { open: boolean; reference: string | null; onFindShop?: (from: HTMLElement) => void }) {
+export function TrackingPaymentMethods({
+  open,
+  reference,
+  onFindShop,
+  appHintKey = 'aito.track.paymentMethods.appHint',
+}: {
+  open: boolean;
+  reference: string | null;
+  onFindShop?: (from: HTMLElement) => void;
+  /** The order page says "the amount", not "the quote's amount". */
+  appHintKey?: string;
+}) {
   const { t } = useTranslation();
   const [method, setMethod] = useState<Method>('transfer');
   const [copied, setCopied] = useState<string | null>(null);
@@ -161,7 +172,7 @@ export function TrackingPaymentMethods({ open, reference, onFindShop }: { open: 
   // the facts above it.
   let hint = t('aito.track.paymentMethods.shopHint');
   if (method === 'transfer') hint = t('aito.track.paymentMethods.transferDelay');
-  else if (app) hint = t('aito.track.paymentMethods.appHint', { app: app.name });
+  else if (app) hint = t(appHintKey, { app: app.name });
 
   return (
     <div data-testid="track-payment-methods" className={`${open ? 'animate-rise' : ''} mt-[12px] px-[16px] text-[13px] text-aito-muted`}>

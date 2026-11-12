@@ -82,6 +82,8 @@ const StreamOverlayPage = lazyWithReload(() => import('./pages/StreamOverlayPage
 const ExternalLinkPage = lazyWithReload(() => import('./pages/ExternalLinkPage').then(m => ({ default: m.ExternalLinkPage })));
 const loadAitoTrackPage = () => import('./pages/AitoTrackPage').then(m => ({ default: m.AitoTrackPage }));
 const AitoTrackPage = lazyWithReload(loadAitoTrackPage);
+const loadOrderTrackPage = () => import('./pages/OrderTrackPage').then(m => ({ default: m.OrderTrackPage }));
+const OrderTrackPage = lazyWithReload(loadOrderTrackPage);
 
 // The route chunk starts downloading at t=0, beside the auth bootstrap, instead
 // of after it (utils/routePreload.ts). Same loaders as the lazy routes above,
@@ -99,6 +101,7 @@ const ROUTE_PRELOADS: RoutePreloadTable = [
   [/^\/aito(\/|$)/, loadAitoPage],
   [/^\/orders\/?$/, loadOrderBoardPage],
   [/^\/files\/?$/, loadFileManagerPage],
+  [/^\/t\/o\/[^/]+$/, loadOrderTrackPage],
   [/^\/(t|track)\/[^/]+$/, loadAitoTrackPage],
 ];
 if (typeof window !== 'undefined') preloadRoute(window.location.pathname, ROUTE_PRELOADS);
@@ -303,6 +306,8 @@ const router = createBrowserRouter(
       <Route path="/track" element={<TrackingErrorBoundary><AitoTrackEntryPage /></TrackingErrorBoundary>} />
       <Route path="/t/:token" element={<TrackingErrorBoundary><AitoTrackPage /></TrackingErrorBoundary>} />
       <Route path="/track/:token" element={<TrackingErrorBoundary><AitoTrackPage /></TrackingErrorBoundary>} />
+      {/* The same page for a sales order (Order Board): its own path, so the Aito links above stay as sent. */}
+      <Route path="/t/o/:token" element={<TrackingErrorBoundary><OrderTrackPage /></TrackingErrorBoundary>} />
 
       {/* Printable client-facing quote — standalone (light, print-first, no app chrome) */}
       <Route

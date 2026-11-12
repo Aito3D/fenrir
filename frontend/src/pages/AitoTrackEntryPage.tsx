@@ -30,6 +30,19 @@ function classifyFailure(err: unknown): Failure {
   return 'error';
 }
 
+/** What a code names: an Aito card or, when the card route does not know it,
+ *  a sales order. Both draw their codes from one pool (aito_tracking.py's
+ *  mint), so a code is one or the other, never both. The answer is returned
+ *  with the query key and the path of the page that reads it. */
+async function lookup(code: string, signal: AbortSignal) {
+  try {
+    return { key: 'aito-track', path: '/t/', data: await api.getAitoTracking(code, signal) as unknown };
+  } catch (err) {
+    if (classifyFailure(err) !== 'notFound') throw err;
+    return { key: 'order-track', path: '/t/o/', data: await api.getOrderTracking(code, signal) as unknown };
+  }
+}
+
 /** The colour the status line speaks in: red for a refusal, cyan for the
  *  code that worked, muted while the check is still out or nothing has
  *  happened yet. */
@@ -109,12 +122,12 @@ export function AitoTrackEntryPage() {
     controllerRef.current = controller;
     const timeout = window.setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
     try {
-      const data = await api.getAitoTracking(value, controller.signal);
+      const found = await lookup(value, controller.signal);
       if (seq !== sequence.current) return;
-      queryClient.setQueryData(['aito-track', value], data);
+      queryClient.setQueryData([found.key, value], found.data);
       setState('found');
       const wait = prefersReducedMotion() ? 0 : ENTRY_MOTION.leaveAt;
-      leaveTimer.current = window.setTimeout(() => navigate(`/t/${value}`), wait);
+      leaveTimer.current = window.setTimeout(() => navigate(found.path + value), wait);
     } catch (err) {
       if (seq !== sequence.current) return;
       setState('error');

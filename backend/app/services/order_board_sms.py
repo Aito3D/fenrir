@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.order_board_doc import OrderBoardDoc
-from backend.app.services import order_board_actions as actions
+from backend.app.services import order_board_actions as actions, order_board_tracking
 from backend.app.services.aito_payment_links import current_link
 
 FILAMENTS = "Filaments"
@@ -33,9 +33,9 @@ def _goods(row: dict) -> list[dict]:
     ]
 
 
-def compose(row: dict, natures: dict[str, str], link_url: str | None = None) -> dict:
+def compose(row: dict, natures: dict[str, str], link_url: str | None = None, tracking_url: str | None = None) -> dict:
     """The draft for one board row. ``natures`` maps item id to its Zoho nature; ``link_url`` is the order's open
-    payment link, if any."""
+    payment link, if any; ``tracking_url`` its public tracking page, when the external URL is set."""
     goods = _goods(row)
     kinds = [natures.get(line["item_id"] or "", "") for line in goods]
     printers = [line for line, kind in zip(goods, kinds, strict=True) if kind == PRINTERS]
@@ -69,12 +69,16 @@ def compose(row: dict, natures: dict[str, str], link_url: str | None = None) -> 
         message += f" Reste à régler : {_amount(due, row.get('currency') or '')}."
     if link_url:
         message += f"\nLien de paiement : {link_url}"
+    if tracking_url:
+        message += f"\nSuivi de ta commande : {tracking_url}"
     return {"message": f"{message}\n{SIGNATURE}", "kind": kind, "partial": partial, "due": due}
 
 
 async def draft(db: AsyncSession, salesorder_id: str) -> dict:
     """The draft for an order on the board; raises OrderNotOnBoard otherwise."""
     row = await actions._row(db, salesorder_id)
+    # First: minting commits (or rolls back on a lost race), which must not expire rows loaded below.
+    tracking_url = await order_board_tracking.tracking_url(db, salesorder_id)
     ids = [line["item_id"] for line in _goods(row)]
     docs = (
         await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "item", OrderBoardDoc.zoho_id.in_(ids)))
@@ -82,6 +86,6 @@ async def draft(db: AsyncSession, salesorder_id: str) -> dict:
     natures = {d.zoho_id: (d.header or {}).get("cf_nature_du_produit") or "" for d in docs}
     link = await current_link(db, ("order", salesorder_id), kind=None)
     live = link if link is not None and link.heimdall_id and link.status == "pending" and link.url else None
-    out = compose(row, natures, live.url if live else None)
+    out = compose(row, natures, live.url if live else None, tracking_url)
     out["payment_link"] = {"id": live.id, "url": live.url, "amount": live.amount} if live else None
     return out

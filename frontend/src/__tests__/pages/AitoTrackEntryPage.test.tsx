@@ -70,6 +70,7 @@ function renderEntry() {
         <Routes>
           <Route path="/t" element={<AitoTrackEntryPage />} />
           <Route path="/t/:token" element={<Landed />} />
+          <Route path="/t/o/:token" element={<p>order page</p>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -241,6 +242,40 @@ describe('AitoTrackEntryPage', () => {
     // Same key the tracking page reads: it paints from this, no second fetch.
     expect(queryClient.getQueryData(['aito-track', 'K7F3XQ'])).toEqual(FIXTURE);
     expect(await screen.findByText('landed on K7F3XQ', {}, { timeout: 2500 })).toBeInTheDocument();
+  });
+
+  it('a code the card route does not know opens the order page when it names a sales order', async () => {
+    const seen = mockTrack(404);
+    const order = { reference: '#1079', lines: [] };
+    server.use(
+      http.get('/api/v1/order-board/track/:token', ({ params }) => {
+        seen.push(`order:${String(params.token)}`);
+        return HttpResponse.json(order);
+      }),
+    );
+    const { queryClient } = renderEntry();
+    await screen.findByRole('heading', { name: 'Suivre ma commande' });
+    await userEvent.type(input(), 'k7f3xq');
+    await waitFor(() => expect(row()).toHaveAttribute('data-state', 'found'));
+    expect(seen).toEqual(['K7F3XQ', 'order:K7F3XQ']);
+    expect(queryClient.getQueryData(['order-track', 'K7F3XQ'])).toEqual(order);
+    expect(queryClient.getQueryData(['aito-track', 'K7F3XQ'])).toBeUndefined();
+    expect(await screen.findByText('order page', {}, { timeout: 2500 })).toBeInTheDocument();
+  });
+
+  it('a throttled or failed card check never falls through to the order route', async () => {
+    const seen = mockTrack(429);
+    server.use(
+      http.get('/api/v1/order-board/track/:token', () => {
+        seen.push('order');
+        return HttpResponse.json({});
+      }),
+    );
+    renderEntry();
+    await screen.findByRole('heading', { name: 'Suivre ma commande' });
+    await userEvent.type(input(), 'K7F3XQ');
+    await waitFor(() => expect(row()).toHaveAttribute('data-state', 'error'));
+    expect(seen).toEqual(['K7F3XQ']);
   });
 
   it('shakes and says so on an unknown code, keeping what was typed for correction', async () => {
@@ -531,6 +566,7 @@ describe('AitoTrackEntryPage', () => {
             <Routes>
               <Route path="/t" element={<AitoTrackEntryPage />} />
               <Route path="/t/:token" element={<Landed />} />
+          <Route path="/t/o/:token" element={<p>order page</p>} />
               <Route path="/away" element={<p>elsewhere</p>} />
             </Routes>
             <NavigateAway />

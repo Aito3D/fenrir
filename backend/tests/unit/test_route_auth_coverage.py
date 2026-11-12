@@ -120,6 +120,11 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         # configured; it only triggers a re-read of one payment from Heimdall.
         # Listed in PUBLIC_API_ROUTES in main.py.
         ("POST", "/api/v1/aito/payments/webhook"),
+        # The customer's tracking page of a sales order: same reasoning — the
+        # 6-character code is the credential, the route is rate-limited and
+        # returns only what the page shows (OrderTrackingResponse); exempted by
+        # the "/api/v1/order-board/track/" prefix in PUBLIC_API_PREFIXES.
+        ("GET", "/api/v1/order-board/track/{token}"),
         # Shop figures for the Shopify storefront — aggregate marketing numbers only, served from a
         # 5-minute cache; listed in PUBLIC_API_ROUTES in main.py.
         ("GET", "/api/v1/showcase/stats"),
