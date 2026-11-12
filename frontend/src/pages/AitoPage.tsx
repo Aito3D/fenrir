@@ -164,6 +164,9 @@ export function AitoPage() {
   // (CalculatorPage, ImpressionFields, ...), so the cache is shared rather
   // than duplicated.
   const printersQuery = useQuery({ queryKey: ['printers'], queryFn: api.getPrinters, staleTime: 60_000 });
+  // Backlog capacity: a printer switched off for maintenance prints nothing.
+  // Stays `undefined` until the query resolves (the badge then shows hours only).
+  const activePrinterCount = printersQuery.data?.filter((p) => p.is_active).length;
   const calcPrintersQuery = useQuery({
     queryKey: ['calculatorPrinters'],
     queryFn: api.getCalculatorPrinters,
@@ -466,7 +469,7 @@ export function AitoPage() {
       </span>
       <PrintBacklogBadge
         minutes={backlogMinutes}
-        printerCount={printersQuery.data?.length}
+        printerCount={activePrinterCount}
         dailyHours={(calcPrintersQuery.data ?? []).map((p) => p.daily_usage_hours)}
       />
     </>
@@ -567,7 +570,7 @@ export function AitoPage() {
             <span className="vt-aito-backlog inline-flex">
               <PrintBacklogBadge
                 minutes={backlogMinutes}
-                printerCount={printersQuery.data?.length}
+                printerCount={activePrinterCount}
                 dailyHours={(calcPrintersQuery.data ?? []).map((p) => p.daily_usage_hours)}
               />
             </span>

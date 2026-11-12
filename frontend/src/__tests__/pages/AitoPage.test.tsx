@@ -2209,7 +2209,10 @@ describe('print backlog badge', () => {
 
   it('shows the print backlog and drops it when the board empties of accepted work', async () => {
     server.use(
-      http.get('/api/v1/printers/', () => HttpResponse.json([printer(1, 'Printer A'), printer(2, 'Printer B')])),
+      http.get('/api/v1/printers/', () =>
+        // The third is in maintenance (inactive): it is no capacity.
+        HttpResponse.json([printer(1, 'Printer A'), printer(2, 'Printer B'), { ...printer(3, 'Printer C'), is_active: false }]),
+      ),
       http.get('/api/v1/calculator/printers/', () =>
         HttpResponse.json([
           {
