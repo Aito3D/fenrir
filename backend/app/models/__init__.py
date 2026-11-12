@@ -57,6 +57,7 @@ from backend.app.models.printer_ha_sensor import PrinterHASensor
 from backend.app.models.printer_location import PrinterLocation
 from backend.app.models.printer_sensor_history import PrinterSensorHistory
 from backend.app.models.project import Project
+from backend.app.models.project_event import ProjectEvent
 from backend.app.models.project_folder import ProjectFolder
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.models.project_pin import ProjectRevisionPin
@@ -116,6 +117,7 @@ __all__ = [
     "NotificationLiveActivity",
     "NotificationLockScreenWidget",
     "Project",
+    "ProjectEvent",
     "ProjectFolder",
     "ProjectRevisionPin",
     "ProjectTag",

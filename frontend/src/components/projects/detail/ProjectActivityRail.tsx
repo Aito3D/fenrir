@@ -1,6 +1,6 @@
 import { useMemo, useState, type ElementType } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle, History, ListTodo, Loader2, Plus, Printer, XCircle } from 'lucide-react';
+import { CheckCircle, FilePlus, History, Link2, ListTodo, Loader2, PackageCheck, Plus, Printer, Tag, Unlink, XCircle } from 'lucide-react';
 import type { TimelineEvent } from '../../../api/client';
 import { formatDateTime, formatRelativeTime, type TimeFormat } from '../../../utils/date';
 import { ProjectPanel } from './ProjectPanel';
@@ -21,6 +21,12 @@ const EVENT_LOOK: Record<string, { icon: ElementType; cls: string }> = {
   print_started: { icon: Printer, cls: 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400' },
   queued: { icon: ListTodo, cls: NEUTRAL },
   project_created: { icon: Plus, cls: NEUTRAL },
+  // Stored project events (spec §4.4), by their event kind.
+  'project.revision_added': { icon: FilePlus, cls: NEUTRAL },
+  'project.revision_status_changed': { icon: Tag, cls: NEUTRAL },
+  'task.project_linked': { icon: Link2, cls: NEUTRAL },
+  'task.project_unlinked': { icon: Unlink, cls: NEUTRAL },
+  'task.deliveries_changed': { icon: PackageCheck, cls: NEUTRAL },
 };
 
 const DAY_KEYS: Record<TimelineDay, string> = {

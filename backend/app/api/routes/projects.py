@@ -44,6 +44,7 @@ from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem, PrintQueueVariant
 from backend.app.models.project import PROJECT_PRIORITIES, PROJECT_STATUSES, Project
 from backend.app.models.project_bom import ProjectBOMItem
+from backend.app.models.project_event import ProjectEvent
 from backend.app.models.project_item import (  # Fenrir: PDM items go with their project; revisions label archives
     ProjectItem,
     ProjectRevision,
@@ -1070,6 +1071,7 @@ async def delete_project(
     await db.execute(update(Project).where(Project.parent_id == project_id).values(parent_id=project.parent_id))
 
     await db.execute(delete(ProjectTag).where(ProjectTag.project_id == project_id))
+    await db.execute(delete(ProjectEvent).where(ProjectEvent.project_id == project_id))
     await db.delete(project)
 
     # Fenrir: the check above ran before this request held the write lock, so a
@@ -1847,6 +1849,29 @@ def _queue_item_name(item: PrintQueueItem) -> str | None:
     return None
 
 
+# Fenrir: the stored project events (spec §4.4) the timeline shows, by kind.
+_PROJECT_EVENT_TITLES = {
+    "project.revision_added": "Revision added",
+    "project.revision_status_changed": "Revision status changed",
+    "task.project_linked": "Linked to an order",
+    "task.project_unlinked": "Unlinked from an order",
+    "task.deliveries_changed": "Delivered files changed",
+}
+
+
+def _project_event_description(event: ProjectEvent) -> str | None:
+    """The line under a stored event's title: the revision (and its status
+    change), or the order (and the revisions it gained or lost)."""
+    detail = event.detail or {}
+    if not event.kind.startswith("task."):
+        if event.kind == "project.revision_status_changed" and event.subject_label:
+            return f"{event.subject_label}: {detail.get('from')} → {detail.get('to')}"
+        return event.subject_label
+    parts = [f"#{detail.get('order_id')}", detail.get("client_name"), event.subject_label]
+    changes = [f"+{label}" for label in detail.get("added", [])] + [f"−{label}" for label in detail.get("removed", [])]
+    return " · ".join(part for part in parts if part) + (": " + ", ".join(changes) if changes else "")
+
+
 @router.get("/{project_id}/timeline", response_model=list[TimelineEvent])
 async def get_project_timeline(
     project_id: int,
@@ -1956,6 +1981,31 @@ async def get_project_timeline(
                     metadata={"queue_item_id": item.id},
                 )
             )
+
+    # Fenrir: the project's own event log (spec §4.4). Events naming an order
+    # only for callers who may read Aito, like GET /aito/projects/{id}/orders.
+    user = actor.owner if isinstance(actor, ApiKeyActor) else actor
+    kinds = [
+        kind
+        for kind in _PROJECT_EVENT_TITLES
+        if not kind.startswith("task.") or user is None or user.has_permission(Permission.AITO_READ.value)
+    ]
+    stored = await db.execute(
+        select(ProjectEvent)
+        .where(ProjectEvent.project_id == project_id, ProjectEvent.kind.in_(kinds))
+        .order_by(ProjectEvent.occurred_at.desc(), ProjectEvent.id.desc())
+        .limit(limit)
+    )
+    for row in stored.scalars():
+        events.append(
+            TimelineEvent(
+                event_type=row.kind,
+                timestamp=row.occurred_at,
+                title=_PROJECT_EVENT_TITLES[row.kind],
+                description=_project_event_description(row),
+                metadata={**(row.detail or {}), "actor": row.actor},
+            )
+        )
 
     # Sort by timestamp descending
     events.sort(key=lambda e: e.timestamp, reverse=True)
