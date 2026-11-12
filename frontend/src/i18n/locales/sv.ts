@@ -9685,6 +9685,9 @@ errors: {
     trackingNeedsExternalUrl: 'Ange den externa URL:en i Inställningar för att aktivera spårningslänkar',
     trackingSettingsLink: 'Inställningar',
     trackingLabel: 'Spårningslänk',
+    trackingViews_one: '{{count}} visning',
+    trackingViews_other: '{{count}} visningar',
+    trackingLastViewed: 'Senast öppnad av kunden: {{ago}}',
     paymentLink: {
       label: 'Onlinebetalning',
       paid: 'Betald',

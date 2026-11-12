@@ -521,6 +521,9 @@ export default {
     trackingNeedsExternalUrl: '请在设置中填写外部 URL 以启用跟踪链接',
     trackingSettingsLink: '设置',
     trackingLabel: '跟踪链接',
+    trackingViews_one: '查看 {{count}} 次',
+    trackingViews_other: '查看 {{count}} 次',
+    trackingLastViewed: '客户上次打开:{{ago}}',
     paymentLink: {
       label: '在线支付',
       paid: '已付款',

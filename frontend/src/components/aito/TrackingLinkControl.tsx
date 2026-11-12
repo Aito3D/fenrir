@@ -1,11 +1,12 @@
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Check, Copy, ExternalLink } from 'lucide-react';
 import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { copyTextToClipboard, writeClipboardFromPromise } from '../../utils/clipboard';
+import { formatRelativeTime } from '../../utils/date';
 import { LINK_ICON_BUTTON_CLS, LINK_ICON_CLS, openFetchedLink, useCopiedFlash } from './linkActionHelpers';
 import { CopiedLabel } from './linkActions';
 
@@ -32,6 +33,12 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
   const [copied, flashCopied] = useCopiedFlash();
   const configured = project.tracking_configured;
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+  // Read-only and separate from the link endpoint, which mints a token.
+  const { data: viewed } = useQuery({
+    queryKey: ['aito-tracking-views', project.id],
+    queryFn: () => api.getAitoTrackingViews(project.id),
+    enabled: configured,
+  });
 
   const copy = useMutation({
     mutationFn: async ({ link, write }: { link: Promise<string | null>; write: Promise<void> | null }) => {
@@ -87,6 +94,15 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
       {/* Left of the buttons, not after them, so it never pushes the group
           off the card's right edge; the payment row places its own there too. */}
       <CopiedLabel phase={copied} text={t('aito.trackingCopied')} testId="tracking-copied" />
+      {viewed && viewed.views > 0 && (
+        <span
+          className="text-xs text-bambu-gray tabular-nums"
+          title={t('aito.trackingLastViewed', { ago: formatRelativeTime(viewed.last_viewed_at, 'system', t) })}
+          data-testid="tracking-views"
+        >
+          {t('aito.trackingViews', { count: viewed.views })}
+        </span>
+      )}
       <span className="inline-flex items-center gap-0.5">
         <button
           type="button"

@@ -521,6 +521,9 @@ export default {
     trackingNeedsExternalUrl: 'Укажите внешний URL в настройках, чтобы включить ссылки отслеживания',
     trackingSettingsLink: 'Настройки',
     trackingLabel: 'Ссылка отслеживания',
+    trackingViews_one: '{{count}} просмотр',
+    trackingViews_other: '{{count}} просмотров',
+    trackingLastViewed: 'Последнее открытие клиентом: {{ago}}',
     paymentLink: {
       label: 'Онлайн-оплата',
       paid: 'Оплачено',

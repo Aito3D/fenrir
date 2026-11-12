@@ -522,6 +522,9 @@ export default {
     trackingNeedsExternalUrl: 'Вкажіть зовнішню URL-адресу в налаштуваннях, щоб увімкнути посилання відстеження',
     trackingSettingsLink: 'Налаштування',
     trackingLabel: 'Посилання відстеження',
+    trackingViews_one: '{{count}} перегляд',
+    trackingViews_other: '{{count}} переглядів',
+    trackingLastViewed: 'Останнє відкриття клієнтом: {{ago}}',
     paymentLink: {
       label: 'Онлайн-оплата',
       paid: 'Сплачено',

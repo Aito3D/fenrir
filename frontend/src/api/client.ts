@@ -5412,6 +5412,11 @@ export interface AitoTrackingLink {
   tracking_url: string | null;
 }
 
+export interface AitoTrackingViews {
+  views: number;
+  last_viewed_at: string | null;
+}
+
 export type AitoPaymentLinkState = 'pending' | 'paid' | 'failed' | 'cancelled' | 'expired';
 
 /** The project's current online payment link (Heimdall/OSB), or null. `url`
@@ -10113,6 +10118,8 @@ export const api = {
     request<AitoTracking>(`/aito/track/${encodeURIComponent(token)}`, { signal }),
   /** The current tracking link for the project, or null if never generated. */
   getAitoTrackingLink: (id: number) => request<AitoTrackingLink>(`/aito/${id}/tracking-link`),
+  /** How often the client opened the card's tracking page, and when last. */
+  getAitoTrackingViews: (id: number) => request<AitoTrackingViews>(`/aito/${id}/tracking-views`),
   /** Mints (or re-mints) the project's tracking token, invalidating any
    *  previous link. */
   /** Record — or take back — the fact that the client has been told the job is

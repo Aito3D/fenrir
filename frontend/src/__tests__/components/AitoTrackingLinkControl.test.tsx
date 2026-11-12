@@ -258,3 +258,30 @@ describe('TrackingLinkControl in-gesture ClipboardItem write (T-041)', () => {
     expect(screen.queryByTestId('tracking-copied')).not.toBeInTheDocument();
   });
 });
+
+describe('TrackingLinkControl view count', () => {
+  it('shows how often the client opened the page, with the last open as the tooltip', async () => {
+    server.use(
+      http.get('/api/v1/aito/7/tracking-views', () =>
+        HttpResponse.json({ views: 3, last_viewed_at: new Date(Date.now() - 5 * 60_000).toISOString() }),
+      ),
+    );
+    render(<TrackingLinkControl project={project} />);
+    const views = await screen.findByTestId('tracking-views');
+    expect(views).toHaveTextContent('3 views');
+    expect(views).toHaveAttribute('title', expect.stringMatching(/last opened by the client 5m ago/i));
+  });
+
+  it('says nothing for a link nobody has opened', async () => {
+    let asked = false;
+    server.use(
+      http.get('/api/v1/aito/7/tracking-views', () => {
+        asked = true;
+        return HttpResponse.json({ views: 0, last_viewed_at: null });
+      }),
+    );
+    render(<TrackingLinkControl project={project} />);
+    await waitFor(() => expect(asked).toBe(true));
+    expect(screen.queryByTestId('tracking-views')).not.toBeInTheDocument();
+  });
+});

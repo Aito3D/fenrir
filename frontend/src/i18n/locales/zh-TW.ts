@@ -521,6 +521,9 @@ export default {
     trackingNeedsExternalUrl: '請在設定中填寫外部 URL 以啟用追蹤連結',
     trackingSettingsLink: '設定',
     trackingLabel: '追蹤連結',
+    trackingViews_one: '查看 {{count}} 次',
+    trackingViews_other: '查看 {{count}} 次',
+    trackingLastViewed: '客戶上次開啟:{{ago}}',
     paymentLink: {
       label: '線上付款',
       paid: '已付款',

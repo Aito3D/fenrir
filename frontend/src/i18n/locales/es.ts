@@ -521,6 +521,9 @@ export default {
     trackingNeedsExternalUrl: 'Configura la URL externa en Ajustes para activar los enlaces de seguimiento',
     trackingSettingsLink: 'Ajustes',
     trackingLabel: 'Enlace de seguimiento',
+    trackingViews_one: '{{count}} visita',
+    trackingViews_other: '{{count}} visitas',
+    trackingLastViewed: 'Última apertura por el cliente: {{ago}}',
     paymentLink: {
       label: 'Pago en línea',
       paid: 'Pagado',

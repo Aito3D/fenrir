@@ -1435,3 +1435,21 @@ async def test_public_route_releases_the_reserved_miss_when_the_lookup_raises(
     monkeypatch.setattr(aito_routes, "compute_tracking", real)
     assert (await async_client.get(TRACK + "ZZZZZZ")).status_code == 404
     assert sum(len(v) for v in aito_routes._track_rate_ip_misses.values()) == 1
+
+
+@pytest.mark.asyncio
+async def test_tracking_views_route_counts_this_cards_views_and_the_latest(async_client, db_session):
+    pid = await _create(async_client)
+    other = await _create(async_client)
+    empty = (await async_client.get(f"/api/v1/aito/{pid}/tracking-views")).json()
+    assert empty == {"views": 0, "last_viewed_at": None}
+
+    now = datetime(2026, 9, 6, 12, 0, 0)
+    await log_view(db_session, pid, now - timedelta(days=2))
+    await log_view(db_session, pid, now)
+    await log_view(db_session, other, now + timedelta(hours=1))
+    body = (await async_client.get(f"/api/v1/aito/{pid}/tracking-views")).json()
+    assert body["views"] == 2
+    assert body["last_viewed_at"].startswith("2026-09-06T12:00:00")
+    assert _declared_permissions("get_tracking_views") == ["aito:read"]
+    assert (await async_client.get("/api/v1/aito/999999/tracking-views")).status_code == 404

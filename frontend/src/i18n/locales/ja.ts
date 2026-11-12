@@ -521,6 +521,9 @@ export default {
     trackingNeedsExternalUrl: '追跡リンクを有効にするには、設定で外部 URL を指定してください',
     trackingSettingsLink: '設定',
     trackingLabel: '追跡リンク',
+    trackingViews_one: '閲覧 {{count}} 回',
+    trackingViews_other: '閲覧 {{count}} 回',
+    trackingLastViewed: 'お客様の最終閲覧: {{ago}}',
     paymentLink: {
       label: 'オンライン決済',
       paid: '支払済み',

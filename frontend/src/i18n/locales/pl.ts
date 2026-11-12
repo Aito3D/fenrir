@@ -9651,6 +9651,9 @@ export default {
     trackingNeedsExternalUrl: 'Ustaw zewnętrzny adres URL w Ustawieniach, aby włączyć linki śledzenia',
     trackingSettingsLink: 'Ustawienia',
     trackingLabel: 'Link śledzenia',
+    trackingViews_one: '{{count}} wyświetlenie',
+    trackingViews_other: '{{count}} wyświetleń',
+    trackingLastViewed: 'Ostatnio otwarte przez klienta: {{ago}}',
     paymentLink: {
       label: 'Płatność online',
       paid: 'Zapłacono',

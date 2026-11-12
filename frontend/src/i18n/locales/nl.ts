@@ -9652,6 +9652,9 @@ export default {
     trackingNeedsExternalUrl: 'Stel de externe URL in bij Instellingen om volglinks in te schakelen',
     trackingSettingsLink: 'Instellingen',
     trackingLabel: 'Volglink',
+    trackingViews_one: '{{count}} keer bekeken',
+    trackingViews_other: '{{count}} keer bekeken',
+    trackingLastViewed: 'Laatst geopend door de klant: {{ago}}',
     paymentLink: {
       label: 'Online betaling',
       paid: 'Betaald',

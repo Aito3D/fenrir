@@ -35,6 +35,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
+from backend.app.models.aito_tracking_view import AitoTrackingView
 from backend.app.models.notification_inbox import AitoWatch
 from backend.app.models.user import User
 from backend.app.schemas.aito import (
@@ -101,6 +102,7 @@ from backend.app.schemas.aito import (
     AitoTerminalPaymentView,
     AitoTrackingLinkResponse,
     AitoTrackingResponse,
+    AitoTrackingViewsResponse,
     AitoWatchResponse,
     AitoWatchUpdate,
 )
@@ -5080,6 +5082,26 @@ async def get_tracking_link(
     url = await build_tracking_url(db, project)
     await db.commit()
     return AitoTrackingLinkResponse(tracking_url=url)
+
+
+@router.get("/{project_id}/tracking-views", response_model=AitoTrackingViewsResponse)
+async def get_tracking_views(
+    project_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """How often the client opened this card's tracking page, and when last.
+    Counts the view log's rows, so opens inside the dedup window count once
+    and rows past the log's retention are gone."""
+    await _get_active_project_or_404(db, project_id)
+    views, last = (
+        await db.execute(
+            select(func.count(AitoTrackingView.id), func.max(AitoTrackingView.viewed_at)).where(
+                AitoTrackingView.project_id == project_id
+            )
+        )
+    ).one()
+    return AitoTrackingViewsResponse(views=views, last_viewed_at=last)
 
 
 async def _own_watch(db: AsyncSession, project_id: int, user_id: int) -> AitoWatch | None:

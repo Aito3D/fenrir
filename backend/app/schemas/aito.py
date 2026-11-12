@@ -1618,6 +1618,11 @@ class AitoTrackingLinkResponse(BaseModel):
     tracking_url: str | None
 
 
+class AitoTrackingViewsResponse(BaseModel):
+    views: int
+    last_viewed_at: datetime | None
+
+
 class AitoWatchUpdate(BaseModel):
     """The inbox kinds (`aito.*`) to watch this card for; empty = unwatch."""
 

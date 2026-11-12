@@ -521,6 +521,9 @@ export default {
     trackingNeedsExternalUrl: 'Takip bağlantılarını etkinleştirmek için Ayarlar’da dış URL’yi girin',
     trackingSettingsLink: 'Ayarlar',
     trackingLabel: 'Takip bağlantısı',
+    trackingViews_one: '{{count}} görüntüleme',
+    trackingViews_other: '{{count}} görüntüleme',
+    trackingLastViewed: 'Müşterinin son açışı: {{ago}}',
     paymentLink: {
       label: 'Çevrimiçi ödeme',
       paid: 'Ödendi',

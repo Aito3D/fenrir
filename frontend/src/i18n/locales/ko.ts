@@ -521,6 +521,9 @@ export default {
     trackingNeedsExternalUrl: '추적 링크를 사용하려면 설정에서 외부 URL을 지정하세요',
     trackingSettingsLink: '설정',
     trackingLabel: '추적 링크',
+    trackingViews_one: '조회 {{count}}회',
+    trackingViews_other: '조회 {{count}}회',
+    trackingLastViewed: '고객의 마지막 열람: {{ago}}',
     paymentLink: {
       label: '온라인 결제',
       paid: '결제됨',
