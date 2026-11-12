@@ -27,6 +27,7 @@ import { OrderPaymentBlock } from './OrderPaymentBlock';
 import { OrderPrepActions } from './OrderPrepActions';
 import { OrderQtyStepper } from './OrderQtyStepper';
 import { OrderRefChips } from './OrderRefChips';
+import { OrderWatchButton } from './OrderWatchButton';
 import { boxablePicklists, canPick, editTotal, formatQty, packableUnits, panelGroups, parseDay, startEdit, waitingPackages } from './orderBoard';
 import type { OrderCheck, OrderEdit, PanelGroup, ParcelEdit } from './orderBoard';
 import { formatMoney } from '../../utils/pricing';
@@ -93,7 +94,7 @@ export function OrderLinesPanel({
   // The parcel whose hand-over bar is open.
   const [handover, setHandover] = useState<string | null>(null);
   // The pickup SMS: admins, on a live order with something ready (a finished order has nothing to collect).
-  const { isAdmin } = useAuth();
+  const { isAdmin, authEnabled } = useAuth();
   const smsAllowed = isAdmin && (row as { status?: string }).status !== 'finished' && row.ready_ratio > 0;
   const [smsPhone, setSmsPhone] = useState<string | null>(null);
   // While a hand-over of this order is in flight, the bar on screen stays as it is.
@@ -256,6 +257,8 @@ export function OrderLinesPanel({
       className="animate-rise-sm grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_27rem]">
       <div className="order-last min-w-0 lg:order-none">
       <OrderRefChips row={row}>
+        {/* A finished order rings no bell: nothing to watch for. */}
+        {authEnabled && (row as { status?: string }).status !== 'finished' && <OrderWatchButton orderId={row.id} />}
         {canUpdate && (
           <HoldButton
             onHold={() => cancelOrder.mutate(row.id)}

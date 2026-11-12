@@ -11165,6 +11165,11 @@ errors: {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    watch: {
+      off: 'Bevaka',
+      on: 'Bevakas',
+      hint: 'Klockaviseringar för den här ordern, även för typer som är avstängda i dina inställningar',
+    },
     history: {
       sub: {
         pickup: 'hämtas i butik',

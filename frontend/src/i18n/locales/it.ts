@@ -11093,6 +11093,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    watch: {
+      off: 'Segui',
+      on: 'Seguito',
+      hint: 'Avvisi della campanella per questo ordine, anche per i tipi disattivati nelle impostazioni',
+    },
     history: {
       sub: {
         pickup: 'ritiro in negozio',

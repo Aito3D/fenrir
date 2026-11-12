@@ -11035,6 +11035,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    watch: {
+      off: 'İzle',
+      on: 'İzleniyor',
+      hint: 'Bu siparişin zil uyarıları, ayarlarınızda kapattığınız türler dahil',
+    },
     history: {
       sub: {
         pickup: 'mağazadan teslim',

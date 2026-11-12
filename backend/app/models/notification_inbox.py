@@ -54,6 +54,19 @@ class AitoWatch(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, server_default=func.now())
 
 
+class OrderWatch(Base):
+    """A user following one sales order: its bell rows reach them even for order kinds switched off in their
+    preferences. ``salesorder_id`` is a Books id, not a foreign key."""
+
+    __tablename__ = "order_board_watches"
+    __table_args__ = (UniqueConstraint("user_id", "salesorder_id", name="uq_order_watch_user_order"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    salesorder_id: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, server_default=func.now())
+
+
 class UserInboxPreference(Base):
     """Which inbox kinds a user wants (and hears). No row = defaults."""
 

@@ -18,7 +18,7 @@ function Chip({ href, children }: { href?: string | null; children: ReactNode })
 }
 
 /** Where this order comes from: the order in Books, the Shopify order or the quote, then how it ships and is paid.
- *  `children` sits at the right end of the row (the cancel button). */
+ *  `children` sits at the right end of the row (the order's actions: watch, cancel). */
 export function OrderRefChips({ row, children }: { row: OrderPanelRow; children?: ReactNode }) {
   const { t } = useTranslation();
   const f = row.facts;
@@ -35,7 +35,7 @@ export function OrderRefChips({ row, children }: { row: OrderPanelRow; children?
       )}
       {f.delivery_method && <Chip>{f.delivery_method}</Chip>}
       {f.payment_terms && <Chip>{f.payment_terms}</Chip>}
-      {children && <span className="ml-auto">{children}</span>}
+      {children && <span className="ml-auto flex items-center gap-1.5">{children}</span>}
     </div>
   );
 }

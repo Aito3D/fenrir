@@ -41,7 +41,7 @@ from backend.app.models.maintenance import (
     PrinterMaintenance,
 )
 from backend.app.models.notification import NotificationLog
-from backend.app.models.notification_inbox import AitoWatch, Notification, UserInboxPreference
+from backend.app.models.notification_inbox import AitoWatch, Notification, OrderWatch, UserInboxPreference
 from backend.app.models.notification_live_activity import NotificationLiveActivity
 from backend.app.models.notification_lock_screen_widget import NotificationLockScreenWidget
 from backend.app.models.notification_template import NotificationTemplate
@@ -151,6 +151,7 @@ __all__ = [
     "OrcaBaseProfile",
     "OrderBoardDoc",
     "OrderBoardEvent",
+    "OrderWatch",
     "PipelineJob",
     "PipelineRun",
     "SlicerPipeline",

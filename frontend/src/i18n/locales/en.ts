@@ -11164,6 +11164,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    watch: {
+      off: 'Watch',
+      on: 'Watching',
+      hint: 'Bell alerts for this order, even for the kinds switched off in your settings',
+    },
     history: {
       sub: {
         pickup: 'store pickup',

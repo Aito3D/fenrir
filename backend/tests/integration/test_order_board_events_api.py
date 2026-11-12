@@ -100,3 +100,26 @@ async def test_board_rows_carry_last_event(async_client, tokens, db_session):  #
     assert last["kind"] == "sms.sent" and last["actor_name"] == "Marie" and last["detail"] == {"to": "0612"}
     assert last["occurred_at"].startswith("2026-01-02")
     assert by_id["so2"]["last_event"] is None
+
+
+WATCH = "/api/v1/order-board/orders/so1/watch"
+
+
+@pytest.mark.asyncio
+async def test_watch_is_per_user_and_needs_orders_read(async_client, tokens, order):  # noqa: F811
+    for method in ("get", "put", "delete"):
+        assert (await getattr(async_client, method)(WATCH, headers=tokens["none"])).status_code == 403
+    assert (await async_client.get(WATCH, headers=tokens["read"])).json() == {"watching": False}
+    assert (await async_client.put(WATCH, headers=tokens["read"])).json() == {"watching": True}
+    assert (await async_client.put(WATCH, headers=tokens["read"])).json() == {"watching": True}  # twice is once
+    assert (await async_client.get(WATCH, headers=tokens["read"])).json() == {"watching": True}
+    assert (await async_client.get(WATCH, headers=tokens["both"])).json() == {"watching": False}  # someone else's
+    assert (await async_client.delete(WATCH, headers=tokens["read"])).json() == {"watching": False}
+    assert (await async_client.get(WATCH, headers=tokens["read"])).json() == {"watching": False}
+
+
+@pytest.mark.asyncio
+async def test_watch_unknown_order_404(async_client, tokens):  # noqa: F811
+    assert (await async_client.get(WATCH, headers=tokens["read"])).status_code == 404
+    assert (await async_client.put(WATCH, headers=tokens["read"])).status_code == 404
+    assert (await async_client.delete(WATCH, headers=tokens["read"])).json() == {"watching": False}

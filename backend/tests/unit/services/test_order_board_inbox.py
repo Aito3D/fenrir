@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import delete, select, text
 
-from backend.app.models.notification_inbox import Notification, UserInboxPreference
+from backend.app.models.notification_inbox import Notification, OrderWatch, UserInboxPreference
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import inbox, order_board_events, order_board_sync as sync
@@ -73,6 +73,21 @@ async def test_kind_off_in_prefs_skips(db_session):
     await seed_order(db_session)
     await order_board_events.record(db_session, "so1", "order.ready", actor_class="system")
     assert await rows(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_a_watch_beats_a_kind_switched_off_for_that_order_only(db_session):
+    reader = await _user(db_session, "reader", perms=("orders:read",))
+    gone = await _user(db_session, "lost-access", perms=("aito:read",))
+    db_session.add(UserInboxPreference(user_id=reader.id, kinds_json=["aito.paid"], sound_kinds_json=[]))
+    db_session.add_all([OrderWatch(user_id=u.id, salesorder_id="so1") for u in (reader, gone)])
+    await db_session.commit()
+    await seed_order(db_session)
+    await order_board_events.record(db_session, "so1", "order.ready", actor_class="system")
+    await order_board_events.record(db_session, "so2", "order.ready", actor_class="system")  # not watched: prefs rule
+    await order_board_events.record(db_session, "so1", "order.ready", actor_class="user", actor_name=reader.username)
+    # One row: the watched order; a watcher without orders:read gets nothing, nor does the actor.
+    assert [(r.user_id, r.target_ref) for r in await rows(db_session)] == [(reader.id, "so1")]
 
 
 @pytest.mark.asyncio

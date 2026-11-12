@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.notification_inbox import Notification, UserInboxPreference
+from backend.app.models.notification_inbox import Notification, OrderWatch, UserInboxPreference
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.models.user import User
@@ -96,8 +96,8 @@ async def record(
 
 
 async def _alert(db: AsyncSession, event: OrderBoardEvent) -> None:
-    """One bell row per active order reader who wants the event's kind, the actor excepted. In its own savepoint: a
-    failure here drops the rows and keeps the event."""
+    """One bell row per active order reader who wants the event's kind or watches the order, the actor excepted.
+    In its own savepoint: a failure here drops the rows and keeps the event."""
     kind = inbox.inbox_kind_for(event.kind)
     if kind is None or inbox.KINDS[kind].family != "orders":
         return
@@ -112,13 +112,21 @@ async def _alert(db: AsyncSession, event: OrderBoardEvent) -> None:
             ).scalar_one_or_none()
             order = (doc.detail or doc.header or {}) if doc else {}
             body = f"{order.get('salesorder_number') or '—'} · {order.get('customer_name') or '—'}"
+            # A watcher gets this order's rows even for a kind they switched off; nothing else about recipients changes.
+            watchers = set(
+                (
+                    await db.execute(select(OrderWatch.user_id).where(OrderWatch.salesorder_id == event.salesorder_id))
+                ).scalars()
+            )
             recipients: list[int] = []
             for user in (await db.execute(select(User).where(User.is_active.is_(True)))).scalars():
                 if not user.has_permission("orders:read"):
                     continue
                 if event.actor_class == "user" and event.actor_name == user.username:
                     continue
-                if kind not in ((await inbox.preferences_for(db, user.id)).kinds_json or []):
+                if user.id not in watchers and kind not in (
+                    (await inbox.preferences_for(db, user.id)).kinds_json or []
+                ):
                     continue
                 db.add(
                     Notification(

@@ -11108,6 +11108,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    watch: {
+      off: 'Beobachten',
+      on: 'Wird beobachtet',
+      hint: 'Glocken-Hinweise zu dieser Bestellung, auch für die in den Einstellungen abgeschalteten Arten',
+    },
     history: {
       sub: {
         pickup: 'Abholung im Laden',

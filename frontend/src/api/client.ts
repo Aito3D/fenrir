@@ -10026,6 +10026,10 @@ export const api = {
     request<OrderEvent>(`/order-board/orders/${encodeURIComponent(soId)}/events`, { method: 'POST', body: JSON.stringify({ note }) }),
   refreshOrderBoard: () => request<OrderBoardResponse>('/order-board/refresh', { method: 'POST' }),
   getFinishedOrders: () => request<{ rows: FinishedOrderRow[] }>('/order-board/finished'),
+  getOrderWatch: (id: string) => request<{ watching: boolean }>(`/order-board/orders/${encodeURIComponent(id)}/watch`),
+  /** Watch or stop watching an order for the caller's own bell. */
+  setOrderWatch: (id: string, watching: boolean) =>
+    request<{ watching: boolean }>(`/order-board/orders/${encodeURIComponent(id)}/watch`, { method: watching ? 'PUT' : 'DELETE' }),
   getFinishedOrder: (id: string) => request<FinishedOrderDetail>(`/order-board/finished/${encodeURIComponent(id)}`),
   printOrderPrepSheet: (id: string, picklistId: string): Promise<Blob> =>
     orderBoardBlob(`/order-board/orders/${encodeURIComponent(id)}/prep-sheet?picklist_id=${encodeURIComponent(picklistId)}`, 'POST'),

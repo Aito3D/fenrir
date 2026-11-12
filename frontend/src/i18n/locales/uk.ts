@@ -10753,6 +10753,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    watch: {
+      off: 'Стежити',
+      on: 'Відстежується',
+      hint: 'Сповіщення дзвіночка для цього замовлення, навіть для типів, вимкнених у налаштуваннях',
+    },
     history: {
       sub: {
         pickup: 'самовивіз із магазину',

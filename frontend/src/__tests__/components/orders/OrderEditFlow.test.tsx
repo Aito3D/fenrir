@@ -288,4 +288,14 @@ describe('editing the order', () => {
     expect(screen.queryByRole('columnheader', { name: 'Ordered' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit' })).toHaveFocus();
   });
+
+  it('the watch toggle sits with the order actions of a live order, not of a finished one', async () => {
+    server.use(http.get(`${BASE}/watch`, () => HttpResponse.json({ watching: true })));
+    const { unmount } = render(<OrderLinesPanel row={panelRow()} />);
+    expect(await screen.findByRole('button', { name: 'Watching' })).toBeInTheDocument();
+    unmount();
+    render(<OrderLinesPanel row={{ ...panelRow(), status: 'finished' } as OrderPanelRow} />);
+    await waitFor(() => expect(screen.getByRole('columnheader', { name: 'Product' })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Watching' })).not.toBeInTheDocument();
+  });
 });

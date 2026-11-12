@@ -11132,6 +11132,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    watch: {
+      off: 'Volgen',
+      on: 'Gevolgd',
+      hint: 'Belmeldingen voor deze bestelling, ook voor soorten die in je instellingen uit staan',
+    },
     history: {
       sub: {
         pickup: 'afhalen in de winkel',

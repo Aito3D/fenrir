@@ -10729,6 +10729,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    watch: {
+      off: '지켜보기',
+      on: '지켜보는 중',
+      hint: '설정에서 끈 종류까지 포함해 이 주문의 종 알림을 받습니다',
+    },
     history: {
       sub: {
         pickup: '매장 픽업',

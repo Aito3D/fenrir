@@ -11313,6 +11313,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    watch: {
+      off: 'Obserwuj',
+      on: 'Obserwujesz',
+      hint: 'Powiadomienia dzwonka dla tego zamówienia, także dla rodzajów wyłączonych w ustawieniach',
+    },
     history: {
       sub: {
         pickup: 'odbiór w sklepie',

@@ -11107,6 +11107,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    watch: {
+      off: 'ウォッチ',
+      on: 'ウォッチ中',
+      hint: 'この注文のベル通知を、設定でオフにした種類も含めて受け取ります',
+    },
     history: {
       sub: {
         pickup: '店頭受け取り',

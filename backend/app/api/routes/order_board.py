@@ -17,6 +17,7 @@ from typing import Literal, TypeVar
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import and_, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.aito import _EMAIL_GUARD, _check_zoho_email_rate_limit, _email_guard_key_or_409
@@ -25,6 +26,7 @@ from backend.app.core.auth import RequireAdminIfAuthEnabled, RequirePermissionIf
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.aito_payment_link import AitoPaymentLink
+from backend.app.models.notification_inbox import OrderWatch
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.models.user import User
@@ -285,6 +287,61 @@ async def _require_order(db: AsyncSession, salesorder_id: str) -> None:
     )
     if stored.first() is None:
         raise HTTPException(status_code=404, detail="Order not found.")
+
+
+async def _own_watch(db: AsyncSession, salesorder_id: str, user: User | None) -> OrderWatch | None:
+    if user is None:  # auth disabled: no user, no inbox, nothing to watch for
+        return None
+    return (
+        await db.execute(
+            select(OrderWatch).where(OrderWatch.user_id == user.id, OrderWatch.salesorder_id == salesorder_id)
+        )
+    ).scalar_one_or_none()
+
+
+@router.get("/orders/{salesorder_id}/watch")
+async def get_order_watch(
+    salesorder_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+) -> dict:
+    """Whether the caller watches this order."""
+    await _require_order(db, salesorder_id)
+    return {"watching": await _own_watch(db, salesorder_id, current_user) is not None}
+
+
+@router.put("/orders/{salesorder_id}/watch")
+async def watch_order(
+    salesorder_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+) -> dict:
+    """Watch this order: its bell rows reach the caller even for kinds switched off in their preferences.
+    orders:read is enough, a watch only changes the caller's own bell. A no-op with auth disabled."""
+    await _require_order(db, salesorder_id)
+    if current_user is None:
+        return {"watching": False}
+    if await _own_watch(db, salesorder_id, current_user) is None:
+        db.add(OrderWatch(user_id=current_user.id, salesorder_id=salesorder_id))
+        try:
+            await db.commit()
+        except IntegrityError:  # another tab watched it between the read and the insert
+            await db.rollback()
+    return {"watching": True}
+
+
+@router.delete("/orders/{salesorder_id}/watch")
+async def unwatch_order(
+    salesorder_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+) -> dict:
+    """Stop watching; no 404 for an order that has since gone, so a stale watch can always be dropped."""
+    watch = await _own_watch(db, salesorder_id, current_user)
+    if watch is not None:
+        await db.delete(watch)
+        await db.commit()
+    return {"watching": False}
 
 
 @router.get("/orders/{salesorder_id}/events", response_model=OrderEventPage)

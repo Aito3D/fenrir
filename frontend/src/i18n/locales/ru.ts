@@ -10712,6 +10712,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    watch: {
+      off: 'Следить',
+      on: 'Отслеживается',
+      hint: 'Уведомления колокольчика по этому заказу, даже для типов, отключённых в настройках',
+    },
     history: {
       sub: {
         pickup: 'самовывоз из магазина',

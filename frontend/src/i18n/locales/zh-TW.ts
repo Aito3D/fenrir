@@ -11091,6 +11091,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    watch: {
+      off: '關注',
+      on: '已關注',
+      hint: '接收此訂單的鈴鐺提醒，包括在設定中關閉的類型',
+    },
     history: {
       sub: {
         pickup: '到店自取',
