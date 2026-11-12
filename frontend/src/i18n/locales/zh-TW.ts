@@ -1,6 +1,14 @@
 export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
+    peer: {
+      created: '{{actor}} 建立了一張卡片',
+      moved: '{{actor}} 將一張卡片移到了「{{column}}」',
+      trashed: '{{actor}} 將一張卡片移到了垃圾桶',
+      restored: '{{actor}} 還原了一張卡片',
+      many_one: '{{actors}}:看板上有 {{count}} 處變更',
+      many_other: '{{actors}}:看板上有 {{count}} 處變更',
+    },
     title: 'Aito',
     cardInTrash: '此卡片在垃圾桶中',
     cardGone: '此卡片已不存在',

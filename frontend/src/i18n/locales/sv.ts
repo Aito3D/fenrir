@@ -9165,6 +9165,14 @@ errors: {
     noWriteAccess: 'Du har inte behörighet att modifiera prognosinställningar.',
   },
   aito: {
+    peer: {
+      created: '{{actor}} skapade ett kort',
+      moved: '{{actor}} flyttade ett kort till {{column}}',
+      trashed: '{{actor}} flyttade ett kort till papperskorgen',
+      restored: '{{actor}} återställde ett kort',
+      many_one: '{{actors}}: {{count}} ändring på tavlan',
+      many_other: '{{actors}}: {{count}} ändringar på tavlan',
+    },
     title: 'Aito',
     cardInTrash: 'Det här kortet ligger i papperskorgen',
     cardGone: 'Det här kortet finns inte längre',

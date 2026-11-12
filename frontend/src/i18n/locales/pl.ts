@@ -9132,6 +9132,14 @@ export default {
     noWriteAccess: 'Nie masz uprawnień do zmiany ustawień prognozy.',
   },
   aito: {
+    peer: {
+      created: '{{actor}} tworzy kartę',
+      moved: '{{actor}} przenosi kartę do: {{column}}',
+      trashed: '{{actor}} przenosi kartę do kosza',
+      restored: '{{actor}} przywraca kartę',
+      many_one: '{{actors}}: {{count}} zmiana na tablicy',
+      many_other: '{{actors}}: zmiany na tablicy ({{count}})',
+    },
     title: 'Aito',
     cardInTrash: 'Ta karta jest w koszu',
     cardGone: 'Ta karta już nie istnieje',

@@ -2,6 +2,14 @@
 // Key structure mirrors en.ts — the i18n parity gate enforces that.
 export default {
   aito: {
+    peer: {
+      created: '{{actor}}: створено картку',
+      moved: '{{actor}}: картку переміщено до «{{column}}»',
+      trashed: '{{actor}}: картку переміщено до кошика',
+      restored: '{{actor}}: картку відновлено',
+      many_one: '{{actors}}: {{count}} зміна на дошці',
+      many_other: '{{actors}}: змін на дошці — {{count}}',
+    },
     title: "Aito",
     cardInTrash: "Ця картка в кошику",
     cardGone: "Ця картка більше не існує",

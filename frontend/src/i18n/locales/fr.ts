@@ -1,6 +1,14 @@
 export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
+    peer: {
+      created: '{{actor}} a créé une carte',
+      moved: '{{actor}} a déplacé une carte vers {{column}}',
+      trashed: '{{actor}} a mis une carte à la corbeille',
+      restored: '{{actor}} a restauré une carte',
+      many_one: '{{actors}} : {{count}} changement sur le tableau',
+      many_other: '{{actors}} : {{count}} changements sur le tableau',
+    },
     title: 'Aito',
     cardInTrash: 'Cette carte est dans la corbeille',
     cardGone: 'Cette carte n\'existe plus',

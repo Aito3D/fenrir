@@ -1,6 +1,14 @@
 export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
+    peer: {
+      created: '{{actor}} created a card',
+      moved: '{{actor}} moved a card to {{column}}',
+      trashed: '{{actor}} moved a card to the trash',
+      restored: '{{actor}} restored a card',
+      many_one: '{{actors}} made {{count}} change on the board',
+      many_other: '{{actors}} made {{count}} changes on the board',
+    },
     title: 'Aito',
     cardInTrash: 'This card is in the trash',
     cardGone: 'This card no longer exists',

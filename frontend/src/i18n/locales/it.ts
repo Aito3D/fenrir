@@ -1,6 +1,14 @@
 export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
+    peer: {
+      created: '{{actor}} ha creato una scheda',
+      moved: '{{actor}} ha spostato una scheda in {{column}}',
+      trashed: '{{actor}} ha spostato una scheda nel cestino',
+      restored: '{{actor}} ha ripristinato una scheda',
+      many_one: '{{actors}}: {{count}} modifica sulla bacheca',
+      many_other: '{{actors}}: {{count}} modifiche sulla bacheca',
+    },
     title: 'Aito',
     cardInTrash: 'Questa scheda è nel cestino',
     cardGone: 'Questa scheda non esiste più',

@@ -1,6 +1,14 @@
 export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
+    peer: {
+      created: '{{actor}}: создана карточка',
+      moved: '{{actor}}: карточка перемещена в «{{column}}»',
+      trashed: '{{actor}}: карточка перемещена в корзину',
+      restored: '{{actor}}: карточка восстановлена',
+      many_one: '{{actors}}: {{count}} изменение на доске',
+      many_other: '{{actors}}: изменений на доске — {{count}}',
+    },
     title: 'Aito',
     cardInTrash: 'Эта карточка в корзине',
     cardGone: 'Эта карточка больше не существует',

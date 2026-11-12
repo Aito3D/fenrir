@@ -1,6 +1,14 @@
 export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
+    peer: {
+      created: '{{actor}} bir kart oluşturdu',
+      moved: '{{actor}} bir kartı {{column}} sütununa taşıdı',
+      trashed: '{{actor}} bir kartı çöp kutusuna taşıdı',
+      restored: '{{actor}} bir kartı geri yükledi',
+      many_one: '{{actors}}: panoda {{count}} değişiklik',
+      many_other: '{{actors}}: panoda {{count}} değişiklik',
+    },
     title: 'Aito',
     cardInTrash: 'Bu kart çöp kutusunda',
     cardGone: 'Bu kart artık mevcut değil',

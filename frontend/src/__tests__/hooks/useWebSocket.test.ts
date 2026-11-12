@@ -926,6 +926,29 @@ describe('useWebSocket hook', () => {
       vi.useRealTimers();
     });
 
+    it('relays the message to the board as a window event, for its peer toasts', async () => {
+      vi.useFakeTimers();
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const seen: unknown[] = [];
+      const listener = (e: Event) => seen.push((e as CustomEvent).detail);
+      window.addEventListener('aito-peer-change', listener);
+
+      renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
+      await vi.advanceTimersByTimeAsync(0);
+      const ws = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        ws.open();
+      });
+      const message = { type: 'aito_changed', action: 'move', project_id: 3, actor: 'Marie', column: 'print' };
+      act(() => {
+        ws.simulateMessage(message);
+      });
+
+      expect(seen).toEqual([message]);
+      window.removeEventListener('aito-peer-change', listener);
+      vi.useRealTimers();
+    });
+
     it('drops the refetch while an own write is in flight', async () => {
       vi.useFakeTimers();
       const { useWebSocket } = await import('../../hooks/useWebSocket');

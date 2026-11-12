@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
 import { useToast } from '../contexts/ToastContext';
+import { AITO_PEER_CHANGE_EVENT } from './useAitoPeerToasts';
 import { useTranslation } from 'react-i18next';
 import { api, ApiError, bumpArchiveThumbnail } from '../api/client';
 import { inventoryLocationsQueryKey, inventorySuppliersQueryKey } from '../utils/inventoryQueries';
@@ -50,6 +51,8 @@ interface WebSocketMessage {
   action?: string;
   project_id?: number;
   actor?: string | null;
+  // Only on an aito move across columns: the column the card went to.
+  column?: string;
   // Aito presence (multi-user sync). Sent once on connect and again on every
   // presence change, keyed by project id.
   viewers?: Record<string, string[]>;
@@ -746,6 +749,8 @@ export function useWebSocket() {
         break;
 
       case 'aito_changed': {
+        // For the board's peer toasts (useAitoPeerToasts); nobody listens elsewhere.
+        window.dispatchEvent(new CustomEvent(AITO_PEER_CHANGE_EVENT, { detail: message }));
         if (message.action === 'delete' || message.action === 'restore') {
           aitoTrashDirtyRef.current = true;
         }

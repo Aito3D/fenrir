@@ -45,6 +45,20 @@ async def test_move_delete_restore_broadcast(async_client, broadcast):
 
 
 @pytest.mark.asyncio
+async def test_move_names_the_new_column_only_when_the_card_changed_column(async_client, broadcast):
+    """The other operators' toast says where a card went; a reorder inside a
+    column is not a move anyone needs telling about."""
+    from backend.tests.unit.test_aito_done_at import _create_finished
+
+    project_id = (await _create_finished(async_client))["id"]
+    await async_client.patch(f"/api/v1/aito/{project_id}/move", json={"column": "done", "position": 0})
+    await async_client.patch(f"/api/v1/aito/{project_id}/move", json={"column": "done", "position": 0})
+    moves = [c.args[0] for c in broadcast.await_args_list if c.args[0]["action"] == "move"]
+    assert [m.get("column") for m in moves] == ["done", None]
+    assert "column" not in moves[1]
+
+
+@pytest.mark.asyncio
 async def test_no_op_patch_does_not_broadcast(async_client, broadcast):
     project_id = (await _create(async_client)).json()["id"]
     # Same description the create call already stored — diff_fields sees no

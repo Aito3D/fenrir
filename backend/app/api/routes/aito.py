@@ -1088,7 +1088,9 @@ def _actor(user: User | None) -> str | None:
     return user.username if user is not None else None
 
 
-async def _broadcast_changed(action: str, project_id: int | None, actor: str | None) -> None:
+async def _broadcast_changed(
+    action: str, project_id: int | None, actor: str | None, *, column: str | None = None
+) -> None:
     """Fan out one board-changed signal to every connected operator.
 
     Best-effort, after commit: the board must stay correct with the WS layer
@@ -1098,9 +1100,12 @@ async def _broadcast_changed(action: str, project_id: int | None, actor: str | N
     twelve mutations.
     """
     try:
-        await ws_manager.broadcast_aito(
-            {"type": "aito_changed", "action": action, "project_id": project_id, "actor": actor}
-        )
+        message = {"type": "aito_changed", "action": action, "project_id": project_id, "actor": actor}
+        if column is not None:
+            # Only a move ACROSS columns says where the card went: it is what
+            # the other operators' "X moved a card to Print" toast reads.
+            message["column"] = column
+        await ws_manager.broadcast_aito(message)
     except Exception:
         logger.warning("aito_changed broadcast failed for %s on project %s", action, project_id, exc_info=True)
 
@@ -4168,7 +4173,12 @@ async def move_project(
             changes=[{"field": "column", "from": source_column, "to": project.board_column}],
         )
     await db.commit()
-    await _broadcast_changed("move", project.id, _actor(current_user))
+    await _broadcast_changed(
+        "move",
+        project.id,
+        _actor(current_user),
+        column=project.board_column if project.board_column != source_column else None,
+    )
     await db.refresh(project)
     return await _project_response(db, project, summary)
 

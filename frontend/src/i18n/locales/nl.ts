@@ -9132,6 +9132,14 @@ export default {
     noWriteAccess: 'Je hebt geen machtiging om prognose-instellingen te wijzigen.',
   },
   aito: {
+    peer: {
+      created: '{{actor}} heeft een kaart aangemaakt',
+      moved: '{{actor}} heeft een kaart verplaatst naar {{column}}',
+      trashed: '{{actor}} heeft een kaart naar de prullenbak verplaatst',
+      restored: '{{actor}} heeft een kaart hersteld',
+      many_one: '{{actors}}: {{count}} wijziging op het bord',
+      many_other: '{{actors}}: {{count}} wijzigingen op het bord',
+    },
     title: 'Aito',
     cardInTrash: 'Deze kaart staat in de prullenbak',
     cardGone: 'Deze kaart bestaat niet meer',
