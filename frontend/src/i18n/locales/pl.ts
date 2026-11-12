@@ -11495,6 +11495,7 @@ export default {
       legendRest: 'Do zapłaty, niezafakturowane',
       advanceNote: 'Zaliczka: niewykorzystane środki klienta w Zoho, czekające na kolejną fakturę.',
       retainerHint: 'Faktura zaliczkowa do oferty: wstępnie wypełniona pozostałą kwotą, ograniczona do jej salda.',
+      quoteHint: 'Płatność do oferty: Zoho zapisuje ją jako nową fakturę zaliczkową. Wstępnie wypełniona pozostałą kwotą.',
       linkOpen: 'Dla tego zamówienia jest otwarty link do płatności: klient mógłby go również opłacić.',
       cancelLinkAndCharge: 'Anuluj link i pobierz płatność terminalem',
       terminal: 'Terminal płatniczy',

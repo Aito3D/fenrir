@@ -616,3 +616,89 @@ async def test_sms_with_the_link_records_payment_link_sent(admin, async_client, 
     assert (await async_client.post(sms, json={"payment_link_id": link.id}, headers=admin)).status_code == 200
     [event] = await _events(db_session, "payment_link.sent")
     assert event.detail == {"amount": 7000, "document": "FA-2"} and event.actor_name == "pay-admin"
+
+
+# --- the order's quote: paid like Aito's, Heimdall books a new retainer on it --------------------------------
+
+
+def _live_estimate(status="accepted", customer="c1"):
+    async def get(db, estimate_id):
+        return {"estimate_id": estimate_id, "estimate_number": "DEV-1", "status": status, "customer_id": customer}
+
+    return get
+
+
+@pytest.mark.asyncio
+async def test_target_quote_when_nothing_else_is_open(async_client, tokens, order):  # noqa: F811
+    spent = {**RETAINER, "balance": 0}
+    await order(
+        {"invoices": [], "estimate_id": "est-1", "estimate_number": "DEV-1", "_retainers": [spent]}, left=9874.6
+    )
+    body = (await async_client.get(f"{BASE}/payment-target", headers=tokens["both"])).json()
+    assert (body["kind"], body["document_id"], body["number"], body["max_amount"]) == ("quote", "est-1", "DEV-1", 9875)
+
+
+@pytest.mark.asyncio
+async def test_no_quote_target_once_nothing_is_left(async_client, tokens, order):  # noqa: F811
+    await order({"invoices": [], "estimate_id": "est-1"}, left=0)
+    body = (await async_client.get(f"{BASE}/payment-target", headers=tokens["both"])).json()
+    assert body["kind"] is None
+
+
+@pytest.mark.asyncio
+async def test_terminal_on_the_quote(async_client, tokens, order, terminal, monkeypatch):  # noqa: F811
+    await order({"invoices": [], "estimate_id": "est-1"}, left=9000)
+    monkeypatch.setattr(zoho_service, "get_estimate", _live_estimate())
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 9001}, headers=tokens["both"])
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "amount_above_left"
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 9000}, headers=tokens["both"])
+    assert r.status_code == 201
+    assert (r.json()["document_kind"], r.json()["document_number"]) == ("quote", "DEV-1")
+    assert terminal.calls == [("est-1", 9000)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "customer"), [("invoiced", "c1"), ("declined", "c1"), ("void", "c1"), ("accepted", "c2")]
+)
+async def test_a_closed_or_foreign_quote_takes_no_payment(
+    async_client,
+    tokens,  # noqa: F811
+    order,
+    terminal,
+    monkeypatch,
+    status,
+    customer,
+):
+    await order({"invoices": [], "estimate_id": "est-1"}, left=9000)
+    monkeypatch.setattr(zoho_service, "get_estimate", _live_estimate(status, customer))
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 100}, headers=tokens["both"])
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "document_mismatch"
+    assert terminal.calls == []
+
+
+@pytest.mark.asyncio
+async def test_a_quote_link_goes_out_under_the_quote_number(async_client, tokens, order, db_session, monkeypatch):  # noqa: F811
+    """Heimdall resolves a link's reference to its document: the quote number, as Aito's quote links send."""
+    await order({"invoices": [], "estimate_id": "est-1"}, left=9000)
+    monkeypatch.setattr(zoho_service, "get_estimate", _live_estimate())
+    sent = {}
+
+    async def create_link(db, *, idempotency_key, reference, amount, expires_in_days):
+        sent.update(reference=reference, amount=amount)
+        return LinkView(
+            id="h-q",
+            status="pending",
+            amount=amount,
+            currency="XPF",
+            reference=reference,
+            url="https://pay.example/q",
+            expires_at=None,
+        )
+
+    monkeypatch.setattr(heimdall_service, "create_link", create_link)
+    r = await async_client.post(f"{BASE}/payment-link", json={"amount": 9000}, headers=tokens["both"])
+    assert r.status_code == 200 and r.json()["url"] == "https://pay.example/q"
+    assert sent == {"reference": "DEV-1", "amount": 9000}
+    row = (await db_session.execute(select(AitoPaymentLink).where(AitoPaymentLink.salesorder_id == "so1"))).scalar_one()
+    assert (row.document_kind, row.document_number, row.project_id) == ("quote", "DEV-1", 0)

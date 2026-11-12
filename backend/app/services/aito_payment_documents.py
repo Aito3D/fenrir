@@ -89,7 +89,9 @@ def scope_columns(scope: Scope) -> dict:
 async def resolve_order_document(db: AsyncSession, order_detail: dict, kind: str, document_id: str) -> PaymentDocument:
     """`resolve_document` for a stored sales order (`order_board_docs.detail`):
     an invoice must be one of the order's non-void invoices with something
-    left to pay; a retainer must be one of its quote's `_retainers`."""
+    left to pay; a retainer must be one of its quote's `_retainers`; a quote
+    must be the order's own, still open and for the same customer (Heimdall
+    books a quote payment as a new retainer invoice on it)."""
     customer_id = str(order_detail.get("customer_id") or "")
     if not document_id:
         raise DocumentMismatch("No document given")
@@ -137,7 +139,28 @@ async def resolve_order_document(db: AsyncSession, order_detail: dict, kind: str
             customer_id=str(raw.get("customer_id") or customer_id),
             balance=balance,
         )
+    if kind == "quote":
+        if document_id != str(order_detail.get("estimate_id") or ""):
+            raise DocumentMismatch("That quote is not this order's")
+        estimate = await zoho_service.get_estimate(db, document_id)
+        status = str(estimate.get("status") or "")
+        if status in _CLOSED_QUOTE:
+            # Invoiced: collect on the invoice. Declined / void: Books takes no retainer on it.
+            raise DocumentMismatch(f"That quote is {status}")
+        quote_customer = str(estimate.get("customer_id") or "")
+        if customer_id and quote_customer and quote_customer != customer_id:
+            raise DocumentMismatch("That quote belongs to another customer")
+        return PaymentDocument(
+            kind="quote",
+            id=document_id,
+            number=str(estimate.get("estimate_number") or document_id),
+            customer_id=quote_customer or customer_id,
+            balance=None,
+        )
     raise DocumentMismatch(f"Unknown document kind {kind!r}")
+
+
+_CLOSED_QUOTE = frozenset({"invoiced", "declined", "void"})
 
 
 def _num(value) -> float:

@@ -373,6 +373,15 @@ export function OrderBoardPage() {
             </button>
           ))}
         </div>
+        {/* Payment beside status on one line; the divider tells the two groups apart. */}
+        <div className="flex flex-wrap items-center gap-1.5 border-l border-bambu-dark-tertiary pl-2">
+          {(['all', ...PAY_CHIPS, ...(showOverdue ? ['overdue' as const] : [])] as PayFilter[]).map(id => (
+            <button key={id} type="button" aria-pressed={pay === id} onClick={() => setPayFilter(id)} className={chipCls(pay === id)}>
+              {id === 'all' ? t('orders.pay.any') : id === 'overdue' ? t('orders.pay.overdueChip') : t(`orders.pay.${id}`)}{' '}
+              <span className="text-bambu-gray">{payCounts[id]}</span>
+            </button>
+          ))}
+        </div>
         <div className="ml-auto inline-flex items-center gap-1 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1 text-xs">
           <span className="px-2 text-bambu-gray">{t('orders.sort.label')}</span>
           {SORTS.map(key => {
@@ -391,15 +400,6 @@ export function OrderBoardPage() {
             );
           })}
         </div>
-      </div>
-
-      <div className="mb-4 flex flex-wrap items-center gap-1.5">
-        {(['all', ...PAY_CHIPS, ...(showOverdue ? ['overdue' as const] : [])] as PayFilter[]).map(id => (
-          <button key={id} type="button" aria-pressed={pay === id} onClick={() => setPayFilter(id)} className={chipCls(pay === id)}>
-            {id === 'all' ? t('orders.pay.any') : id === 'overdue' ? t('orders.pay.overdueChip') : t(`orders.pay.${id}`)}{' '}
-            <span className="text-bambu-gray">{payCounts[id]}</span>
-          </button>
-        ))}
       </div>
 
       <div data-testid="orders-list" className={`space-y-2 ${ready && entering ? 'orders-rows-enter stagger-children' : ''}`}>{list}</div>

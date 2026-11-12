@@ -11314,6 +11314,7 @@ export default {
       legendRest: 'Nog te betalen, niet gefactureerd',
       advanceNote: 'Voorschot: het ongebruikte tegoed van de klant in Zoho, in afwachting van de volgende factuur.',
       retainerHint: 'Aanbetalingsfactuur van de offerte: vooraf ingevuld met het resterende bedrag, begrensd op het saldo.',
+      quoteHint: 'Betaling op de offerte: Zoho boekt die als een nieuwe aanbetalingsfactuur. Vooraf ingevuld met het resterende bedrag.',
       linkOpen: 'Er staat een betaallink open voor deze order: de klant zou die ook kunnen betalen.',
       cancelLinkAndCharge: 'Link annuleren en via de pinautomaat afrekenen',
       terminal: 'Pinautomaat',

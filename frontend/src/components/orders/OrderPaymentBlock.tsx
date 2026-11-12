@@ -105,8 +105,8 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
     data?.kind && data.document_id && data.max_amount !== null
       ? { kind: 'invoice', id: data.document_id, number: data.number ?? '', due: due > 0 ? due : null, currency }
       : null;
-  // A retainer is not an invoice balance: its own hint, not the invoice one.
-  const hint = data?.kind === 'retainer' ? t('orders.pay.retainerHint') : undefined;
+  // A retainer is not an invoice balance, and a quote payment becomes a new retainer: each has its own hint.
+  const hint = data?.kind === 'retainer' ? t('orders.pay.retainerHint') : data?.kind === 'quote' ? t('orders.pay.quoteHint') : undefined;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['order-payment-target', orderId] });
     void queryClient.invalidateQueries({ queryKey: ['order-board'], exact: true });

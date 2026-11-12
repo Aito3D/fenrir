@@ -49,7 +49,7 @@ from backend.app.services.aito_terminal_payments import (
 from backend.app.services.heimdall import HeimdallNotConfigured, HeimdallRateLimited, HeimdallUpstreamError
 from backend.app.services.order_board_actions._common import _log
 from backend.app.services.order_board_events import kinds_for_depth, record
-from backend.app.services.order_board_payment import order_contact
+from backend.app.services.order_board_payment import order_contact, order_facts
 from backend.app.services.order_board_prep_sheet import render_prep_sheet
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUnreachable, ZohoUpstreamError, zoho_service
 from backend.app.utils.http import build_content_disposition
@@ -418,7 +418,7 @@ class OrderPaymentLinkView(AitoPaymentLinkView):
 
 
 class OrderPaymentTarget(BaseModel):
-    kind: Literal["invoice", "retainer"] | None
+    kind: Literal["invoice", "retainer", "quote"] | None
     document_id: str | None
     number: str | None
     max_amount: int | None
@@ -448,15 +448,21 @@ async def _order_for_payment(db: AsyncSession, salesorder_id: str) -> tuple[dict
     return row, doc.detail
 
 
-def _target(detail: dict) -> tuple[Literal["invoice", "retainer"], dict] | None:
-    """Design §3: the newest invoice with a balance; else, for an order made from a quote, its open retainer."""
+def _target(detail: dict, left: int | None) -> tuple[Literal["invoice", "retainer", "quote"], dict] | None:
+    """Design §3: the newest invoice with a balance; else, for an order made from a quote, its open retainer; else
+    that quote itself, as in Aito: Heimdall books the payment as a new retainer invoice on it. A quote has no balance
+    of its own: it takes at most what the order has left to pay."""
     invoice = _payable(detail.get("invoices"))
     if invoice is not None:
         return "invoice", {**invoice, "id": invoice.get("invoice_id"), "number": invoice.get("invoice_number")}
-    if detail.get("estimate_id"):
+    estimate_id = str(detail.get("estimate_id") or "")
+    if estimate_id:
         retainer = _payable(detail.get("_retainers"))
         if retainer is not None:
             return "retainer", retainer
+        if left:
+            number = order_facts(detail)["quote_number"] or estimate_id
+            return "quote", {"id": estimate_id, "number": number, "balance": left}
     return None
 
 
@@ -482,9 +488,9 @@ async def _payment_document(db: AsyncSession, salesorder_id: str, amount: int):
     left = _order_left(row)
     if left is not None and amount > left:
         raise _refuse(422, "amount_above_left", f"Amount exceeds what is left to pay on the order ({left})")
-    target = _target(detail)
+    target = _target(detail, left)
     if target is None:
-        raise _refuse(409, "no_document", "This order has no invoice or quote retainer left to pay")
+        raise _refuse(409, "no_document", "This order has no invoice or quote left to pay")
     kind, doc = target
     try:
         document = await resolve_order_document(db, detail, kind, str(doc.get("id") or ""))
@@ -505,7 +511,7 @@ async def get_payment_target(
 ) -> OrderPaymentTarget:
     """What the payment buttons would charge (from the stored order, no Zoho call), and the order's current link."""
     row, detail = await _order_for_payment(db, salesorder_id)
-    target = _target(detail)
+    target = _target(detail, _order_left(row))
     link = _link_out(await current_link(db, ("order", salesorder_id), kind=None))
     left = float((row.get("payment") or {}).get("left") or 0)
     if target is None:

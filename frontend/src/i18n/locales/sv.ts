@@ -11347,6 +11347,7 @@ errors: {
       legendRest: 'Kvar att betala, ej fakturerat',
       advanceNote: 'Förskott: kundens oanvända tillgodohavande i Zoho, i väntan på nästa faktura.',
       retainerHint: 'Förskottsfaktura för offerten: förifylld med det som återstår att betala, begränsad till dess saldo.',
+      quoteHint: 'Betalning mot offerten: Zoho bokför den som en ny förskottsfaktura. Förifylld med det som återstår att betala.',
       linkOpen: 'En betallänk är öppen för den här ordern: kunden kan betala den också.',
       cancelLinkAndCharge: 'Avbryt länken och ta betalt i kortterminalen',
       terminal: 'Kortterminal',

@@ -70,6 +70,18 @@ describe('OrderPaymentBlock payment buttons', () => {
     expect(screen.queryByText(/Heimdall caps it at the balance/)).not.toBeInTheDocument();
   });
 
+  it('a quote target offers a link and the terminal, saying a new deposit invoice is made', async () => {
+    vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target({ kind: 'quote', document_id: 'est-1', number: 'DEV26-2681', max_amount: 12000 }));
+    const create = vi.spyOn(api, 'createOrderPaymentLink').mockResolvedValue(link({ document_number: 'DEV26-2681' }));
+    render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+    expect(await screen.findByRole('button', { name: /Card terminal/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Payment link/ }));
+    expect(await screen.findByText(/Zoho records it as a new deposit invoice/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Create the link' }));
+    expect(create).toHaveBeenCalledWith('so1', 12000);
+    expect(await screen.findByText('https://pay.example/x')).toBeInTheDocument();
+  });
+
   it('a charge still in flight reopens on its waiting screen', async () => {
     vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
     vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(tpe());

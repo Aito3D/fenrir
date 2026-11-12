@@ -11289,6 +11289,7 @@ export default {
       legendRest: '未払い、未請求',
       advanceNote: '前払い: Zoho にある顧客の未使用クレジットで、次の請求書を待っています。',
       retainerHint: '見積の前受金請求書：残りの支払額を入力済み、その残高が上限です。',
+      quoteHint: '見積への支払い：Zoho が新しい前受金請求書として記録します。残りの支払額を入力済み。',
       linkOpen: 'この注文には有効な支払いリンクがあります。顧客がそちらでも支払う可能性があります。',
       cancelLinkAndCharge: 'リンクを取り消して端末で決済',
       terminal: 'カード端末',
