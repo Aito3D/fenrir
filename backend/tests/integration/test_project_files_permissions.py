@@ -46,6 +46,7 @@ _ROUTES = [
     ("DELETE", "/projects/revisions/987654", {}, [(P.PROJECTS_DELETE,)]),
     ("GET", "/projects/revisions/987654/download", {}, [(P.PROJECTS_READ,)]),
     # the part viewer's pinned notes (2026-10-31)
+    ("GET", "/projects/revisions/987654/lineage", {}, [(P.PROJECTS_READ,)]),
     ("GET", "/projects/revisions/987654/pins", {}, [(P.PROJECTS_READ,)]),
     (
         "POST",
@@ -221,6 +222,7 @@ _KEY_MATRIX = {
     "PATCH /projects/revisions/987654": (404, _MANAGE),
     "DELETE /projects/revisions/987654": (404, _MANAGE),
     "GET /projects/revisions/987654/download": (404, _READ),
+    "GET /projects/revisions/987654/lineage": (404, _READ),
     "GET /projects/revisions/987654/pins": (404, _READ),
     "POST /projects/revisions/987654/pins": (404, _MANAGE),
     "DELETE /projects/revisions/pins/987654": (404, _MANAGE),

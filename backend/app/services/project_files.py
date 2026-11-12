@@ -45,6 +45,8 @@ from backend.app.api.routes.library import (
     to_relative_path,
 )
 from backend.app.core.config import settings
+from backend.app.models.aito_project import AitoProject
+from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFileTag
@@ -57,11 +59,14 @@ from backend.app.models.project_pin import ProjectRevisionPin
 from backend.app.models.user import User
 from backend.app.schemas.project_files import (
     DuplicateWarning,
+    LineageDelivery,
+    LineagePrint,
     ProjectFileOut,
     ProjectItemOut,
     ProjectRevisionOut,
     ProjectSectionOut,
     ProjectTreeResponse,
+    RevisionLineage,
     RevisionRef,
 )
 from backend.app.services import project_storage
@@ -1784,6 +1789,73 @@ def revision_ref(revision: ProjectRevision, item: ProjectItem) -> RevisionRef:
         section=item.section,
         number=revision.number,
         status=revision.status,
+    )
+
+
+async def revision_lineage(
+    db: AsyncSession,
+    revision: ProjectRevision,
+    item: ProjectItem,
+    *,
+    archive_clauses: list | None,
+    with_deliveries: bool,
+) -> RevisionLineage:
+    """Up (derived-from chain, nearest first), down (direct derivations), the
+    archives printed from the revision (those matching ``archive_clauses``; None
+    for none) and, ``with_deliveries``, the tasks of live orders that delivered it."""
+    up: list[RevisionRef] = []
+    seen, source_id = {revision.id}, revision.derived_from_id
+    while source_id is not None and source_id not in seen:  # derived_from_id is user-editable: stop on a loop
+        seen.add(source_id)
+        bundle = await find_revision_bundle(db, source_id)
+        if bundle is None:
+            break
+        up.append(revision_ref(bundle[0], bundle[1]))
+        source_id = bundle[0].derived_from_id
+    derived = await db.execute(
+        select(ProjectRevision, ProjectItem)
+        .join(ProjectItem, ProjectItem.id == ProjectRevision.item_id)
+        .where(ProjectRevision.derived_from_id == revision.id)
+        .order_by(ProjectItem.name, ProjectRevision.number)
+    )
+    prints: list[LineagePrint] = []
+    if archive_clauses is not None:
+        archives = await db.execute(
+            select(PrintArchive)
+            .where(PrintArchive.revision_id == revision.id, PrintArchive.deleted_at.is_(None), *archive_clauses)
+            .order_by(PrintArchive.created_at.desc(), PrintArchive.id.desc())
+        )
+        prints = [
+            LineagePrint(
+                archive_id=a.id,
+                print_name=a.print_name or a.filename,
+                status=a.status,
+                printer_id=a.printer_id,
+                aito_task_id=a.aito_task_id,
+                created_at=a.created_at,
+                completed_at=a.completed_at,
+            )
+            for a in archives.scalars()
+        ]
+    deliveries: list[LineageDelivery] = []
+    if with_deliveries:
+        tasks = await db.execute(
+            select(AitoTask.id, AitoTask.title, AitoProject.id, AitoProject.client_name)
+            .join(AitoTaskDelivery, AitoTaskDelivery.task_id == AitoTask.id)
+            .join(AitoProject, AitoProject.id == AitoTask.project_id)
+            .where(AitoTaskDelivery.revision_id == revision.id, AitoProject.status != "deleted")
+            .order_by(AitoProject.id.desc(), AitoTask.id)
+        )
+        deliveries = [
+            LineageDelivery(task_id=task_id, task_title=title, order_id=order_id, client_name=client)
+            for task_id, title, order_id, client in tasks
+        ]
+    return RevisionLineage(
+        revision=revision_ref(revision, item),
+        up=up,
+        down=[revision_ref(rev, rev_item) for rev, rev_item in derived],
+        prints=prints,
+        deliveries=deliveries,
     )
 
 

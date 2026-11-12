@@ -31,6 +31,33 @@ class RevisionRef(BaseModel):
     status: str
 
 
+class LineagePrint(BaseModel):
+    archive_id: int
+    print_name: str | None
+    status: str
+    printer_id: int | None
+    aito_task_id: int | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class LineageDelivery(BaseModel):
+    task_id: int
+    task_title: str | None
+    order_id: int
+    client_name: str | None
+
+
+class RevisionLineage(BaseModel):
+    """Where a revision comes from and where it went (spec §5.4, §8)."""
+
+    revision: RevisionRef
+    up: list[RevisionRef]  # the derived-from chain, nearest first
+    down: list[RevisionRef]  # revisions derived directly from this one
+    prints: list[LineagePrint]  # newest first
+    deliveries: list[LineageDelivery]
+
+
 class ProjectFileOut(BaseModel):
     id: int
     filename: str
