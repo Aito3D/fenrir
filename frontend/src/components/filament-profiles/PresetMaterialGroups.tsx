@@ -1,4 +1,5 @@
-import { ChevronRight, Plus } from 'lucide-react';
+import { ChevronRight, Pencil, Plus } from 'lucide-react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { FilamentPreset } from '../../api/client';
@@ -65,11 +66,13 @@ export interface PresetMaterialGroupsProps {
   onOpen: (preset: FilamentPreset) => void;
   /** Duplicates a preset of the row so the new colour starts from its settings; omitted without create permission. */
   onAddColor?: (preset: FilamentPreset) => void;
+  /** Edits the shared settings of a whole line; omitted without update permission. */
+  onEditLine?: (line: Entry[]) => void;
 }
 
-export function PresetMaterialGroups({ presets, onOpen, onAddColor }: PresetMaterialGroupsProps) {
+export function PresetMaterialGroups({ presets, onOpen, onAddColor, onEditLine }: PresetMaterialGroupsProps) {
   const { t } = useTranslation();
-  const groups = groupPresetsByMaterial(presets);
+  const groups = useMemo(() => groupPresetsByMaterial(presets), [presets]);
   return (
     <div className="space-y-3">
       {groups.map((group) => {
@@ -122,7 +125,20 @@ export function PresetMaterialGroups({ presets, onOpen, onAddColor }: PresetMate
                           ) : (
                             <div className="text-xs text-amber-300/80">{t('filamentProfiles.groupVariant')}</div>
                           )}
-                          <SettingChips settings={line[0].settings} />
+                          <div className="flex items-start gap-1">
+                            <SettingChips settings={line[0].settings} />
+                            {onEditLine && line.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => onEditLine(line)}
+                                aria-label={t('filamentProfiles.groupEditLine', { n: line.length })}
+                                title={t('filamentProfiles.groupEditLine', { n: line.length })}
+                                className="rounded p-0.5 text-bambu-gray/60 hover:bg-bambu-dark-tertiary hover:text-white"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <div className="flex flex-wrap content-start gap-1.5">
                           {line.map((entry) => (

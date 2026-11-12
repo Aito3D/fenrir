@@ -428,6 +428,32 @@ class TestFilamentProfilesFilesystem:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_bambu_sync_unwritable_folder_is_a_409(self, async_client, tmp_path, monkeypatch):
+        from backend.app.core.config import settings
+
+        (tmp_path / "blocker").write_text("a file where the folder should go")
+        monkeypatch.setattr(settings, "bambu_studio_user_dirs", [str(tmp_path / "blocker" / "filament")])
+        payload = {"presets": [{"filename": "new.json", "content": "N"}], "dry_run": False}
+        r = await async_client.post("/api/v1/filament-profiles/bambu-sync", json=payload)
+        assert r.status_code == 409
+        assert "Export ZIP" in r.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bambu_sync_preview_without_bambu_studio_is_a_409(self, async_client, tmp_path, monkeypatch):
+        from backend.app.core.config import settings
+
+        missing = tmp_path / "BambuStudio" / "user" / "1" / "filament"
+        monkeypatch.setattr(settings, "bambu_studio_user_dirs", [str(missing)])
+        payload = {"presets": [{"filename": "new.json", "content": "N"}], "dry_run": True}
+        r = await async_client.post("/api/v1/filament-profiles/bambu-sync", json=payload)
+        assert r.status_code == 409
+        payload["dry_run"] = False
+        r = await async_client.post("/api/v1/filament-profiles/bambu-sync", json=payload)
+        assert r.status_code == 409 and not (tmp_path / "BambuStudio").exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_bambu_sync_missing_presets_key_deletes_nothing(self, async_client, bambu_dirs):
         a, _, _ = bambu_dirs
         (a / "precious.json").write_text("P")

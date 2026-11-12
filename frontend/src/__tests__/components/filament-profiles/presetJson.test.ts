@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildJson, buildResolvedParent, computeName, displayMaterial, extractPaK,
   mergeWithParent, parseContentToForm, parsePresetChips, parseNozzleFromCompatible,
-  presetComparator, rewriteCompatibleForNozzle, parseColorFromContent, displayColorLabel,
+  presetComparator, rewriteCompatibleForNozzle, parseColorFromContent, displayColorLabel, applyRowSettings,
 } from '../../../components/filament-profiles/presetJson';
 import { EMPTY_FORM } from '../../../components/filament-profiles/constants';
 import type { BaseFilamentPreset, FilamentPreset } from '../../../api/client';
@@ -136,6 +136,9 @@ describe('card helpers', () => {
     expect(displayMaterial('SUNLU PA12-CF - Black', 'SUNLU', 'PA-CF')).toBe('PA12-CF');
     expect(displayMaterial('', '', 'PETG')).toBe('PETG');
     expect(displayMaterial('', '', '')).toBe('—');
+    // A name without a material never titles its group with the colour.
+    expect(displayMaterial('Inslogic - White', 'Inslogic', 'PLA')).toBe('PLA');
+    expect(displayMaterial('Inslogic - White', 'Inslogic', '')).toBe('—');
   });
   it('rewriteCompatibleForNozzle only touches the four models', () => {
     expect(rewriteCompatibleForNozzle('Bambu Lab H2S 0.4 nozzle, Bambu Lab X1C 0.4 nozzle', '0.6'))
@@ -259,5 +262,28 @@ describe('displayColorLabel', () => {
 
   it('returns empty when the name carries no label', () => {
     expect(displayColorLabel('Generic PLA', '')).toBe('');
+  });
+});
+
+describe('applyRowSettings', () => {
+  it('writes temp, flow and PA, keeping array lengths, other keys and the rest of the start gcode', () => {
+    const content = JSON.stringify({
+      inherits: 'Bambu PETG Basic @BBL H2S',
+      nozzle_temperature: ['246', '246'],
+      filament_start_gcode: ['M900 L1000 M10\nM900 K0.035\nG4 S1'],
+    });
+    const out = JSON.parse(applyRowSettings(content, { temp: '250', flow: '0.98', pa: '0.04' }));
+    expect(out).toEqual({
+      inherits: 'Bambu PETG Basic @BBL H2S',
+      nozzle_temperature: ['250', '250'],
+      filament_flow_ratio: ['0.98'],
+      filament_start_gcode: ['M900 L1000 M10\nM900 K0.04\nG4 S1'],
+    });
+  });
+
+  it('adds the PA lines after an existing start gcode, leaves untouched keys out, and throws on bad JSON', () => {
+    const out = JSON.parse(applyRowSettings(JSON.stringify({ filament_start_gcode: ['G4 S1'] }), { pa: '0.02' }));
+    expect(out).toEqual({ filament_start_gcode: ['G4 S1\nM900 L1000 M10\nM900 K0.02'] });
+    expect(() => applyRowSettings('not json', { temp: '250' })).toThrow();
   });
 });

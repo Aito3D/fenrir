@@ -5495,6 +5495,9 @@ export default {
     groupVariant: "Варіант",
     groupAddColor: "Додати колір із цими налаштуваннями",
     groupLineValue: "Решта рядка: {{value}}",
+    groupEditLine: 'Змінити налаштування цих профілів ({{n}})',
+    bulkSaved: 'Оновлено профілів: {{n}}',
+    duplicateNameHint: 'Профіль із такою назвою вже є. Bambu Studio збереже лише один із них.',
     // Grid
     emptyTitle: "Поки що немає пресетів",
     emptySubtitle: "Створіть пресет вручну або імпортуйте його з папки.",

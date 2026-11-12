@@ -5480,6 +5480,9 @@ export default {
     groupVariant: "Вариант",
     groupAddColor: "Добавить цвет с этими настройками",
     groupLineValue: "Остальные в строке: {{value}}",
+    groupEditLine: 'Изменить настройки этих профилей ({{n}})',
+    bulkSaved: 'Обновлено профилей: {{n}}',
+    duplicateNameHint: 'Профиль с таким именем уже есть. Bambu Studio сохранит только один из них.',
     // Grid
     emptyTitle: "Пока нет пресетов",
     emptySubtitle: "Создайте пресет вручную или импортируйте его из папки.",

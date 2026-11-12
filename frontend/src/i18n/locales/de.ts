@@ -5673,6 +5673,9 @@ export default {
     groupVariant: 'Variante',
     groupAddColor: 'Farbe mit diesen Einstellungen hinzufügen',
     groupLineValue: 'Rest der Zeile: {{value}}',
+    groupEditLine: 'Einstellungen dieser {{n}} Profile bearbeiten',
+    bulkSaved: '{{n}} Profile aktualisiert',
+    duplicateNameHint: 'Ein anderes Profil trägt bereits diesen Namen. Bambu Studio behält nur eines davon.',
     // Grid
     emptyTitle: 'Noch keine Presets',
     emptySubtitle: 'Erstellen Sie ein Preset manuell oder importieren Sie es aus einem Ordner.',

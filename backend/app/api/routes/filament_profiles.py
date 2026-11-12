@@ -157,6 +157,18 @@ async def upload_base_presets(
     return await _collect_and_sync_base(db)
 
 
+_NO_BAMBU_FOLDER = (
+    "This server has no writable Bambu Studio preset folder. Use Export ZIP and import it in Bambu Studio."
+)
+
+
+async def _require_bambu_folder() -> None:
+    """409 when the backend host has no Bambu Studio user folder (a Docker server): the preview says so
+    instead of the confirm, and the sync never creates a folder tree nothing reads."""
+    if not await asyncio.to_thread(lambda: any(d.parent.parent.is_dir() for d in get_user_filament_dirs())):
+        raise HTTPException(409, _NO_BAMBU_FOLDER)
+
+
 def _validate_bambu_sync_presets(presets: list) -> list[dict[str, str]]:
     validated: list[dict[str, str]] = []
     for i, entry in enumerate(presets):
@@ -184,34 +196,26 @@ async def bambu_sync(
     validated = _validate_bambu_sync_presets(payload.presets)
 
     if payload.dry_run:
+        await _require_bambu_folder()
         stats = await asyncio.to_thread(
             lambda: compute_sync_stats(validated, read_disk_state(), get_user_filament_dirs())
         )
     else:
-        # apply_sync mirrors *validated* into every user preset folder,
-        # unlinking anything on disk that isn't in the incoming list — so the
-        # non-dry-run path is destructive in a way the dry-run stats-only
-        # path never is, and needs filaments:delete on top of the route's
-        # filaments:update gate. current_user is None either because auth is
-        # disabled (nothing to check) or because the caller authenticated
-        # with an API key: filaments:update/delete are unmapped in
-        # _APIKEY_SCOPE_BY_PERMISSION, so authorize_api_key() inside the
-        # dependency already 403s any API key before it reaches this line —
-        # the extra check below only ever fires for a JWT user. Same shape
-        # as github_backup.py's per-category restore check.
+        # apply_sync unlinks every on-disk preset that is not in the list, so the real run also needs
+        # filaments:delete. current_user is None with auth disabled; API keys are refused by the dependency.
         if current_user is not None and not current_user.has_all_permissions(Permission.FILAMENTS_DELETE.value):
             raise HTTPException(
                 status_code=403,
                 detail=f"Missing required permissions: {Permission.FILAMENTS_DELETE.value}",
             )
-        # An empty list is a well-formed request that would otherwise wipe
-        # every on-disk preset in every configured Bambu Studio filament
-        # directory (apply_sync removes anything not incoming). Dry-run
-        # already reports that destructively via `stats.removed` without
-        # touching disk, so only the non-dry-run call is rejected here.
+        # An empty list would wipe every on-disk preset; the dry run already reports that harmlessly.
         if not validated:
             raise HTTPException(400, "presets must not be empty for a non-dry-run sync")
-        stats = await asyncio.to_thread(apply_sync, validated)
+        await _require_bambu_folder()
+        try:
+            stats = await asyncio.to_thread(apply_sync, validated)
+        except OSError as exc:
+            raise HTTPException(409, _NO_BAMBU_FOLDER) from exc
 
     return {"stats": stats}
 
@@ -434,16 +438,8 @@ async def update_filament_profile(
     if not row:
         raise HTTPException(404, "Preset not found")
 
-    # T-045: `expected_updated_at` is the `updated_at` the caller's fields
-    # were derived from -- omitted (None) by any pre-T-045 caller, which
-    # keeps this whole-content PATCH unconditional exactly as before. When
-    # present, it must still match the stored row, otherwise a save started
-    # before a concurrent write (e.g. /zoho-sync) landed would silently
-    # clobber that write. `row.updated_at` round-trips through
-    # `FilamentPresetResponse` (a plain FastAPI/pydantic datetime -> ISO
-    # string encode with no timezone normalisation, since the column is
-    # naive UTC), and a compliant caller sends back exactly that string, so
-    # comparing the parsed datetimes directly is safe here.
+    # T-045: optional precondition. A save started before a concurrent write (e.g. /zoho-sync) landed
+    # must not overwrite it; callers that omit the field keep the unconditional PATCH.
     if payload.expected_updated_at is not None and payload.expected_updated_at != row.updated_at:
         raise HTTPException(409, "This preset changed on the server since it was loaded — reload and try again")
 
@@ -484,12 +480,7 @@ async def duplicate_filament_profile(
 
     row = FilamentPreset(**{field: getattr(source, field) for field in DUPLICATE_FIELDS})
     row.name = f"{source.name} (copie)"
-    # T-030: `source.filename` bypassed `_validate_bare_filename` if it was
-    # stored before that check existed (create/update run it; this direct
-    # model construction above does not). Normalising here instead of
-    # rejecting means a legacy path-shaped row can still be duplicated — it
-    # just stops multiplying the bad name. Already-bare filenames pass
-    # through unchanged.
+    # T-030: a legacy path-shaped filename is normalised here, so a duplicate never copies the bad name.
     row.filename = _derive_bare_filename(row.filename, source.id)
     db.add(row)
     await db.commit()

@@ -5673,6 +5673,9 @@ export default {
     groupVariant: 'バリアント',
     groupAddColor: 'この設定で色を追加',
     groupLineValue: 'この行の他の設定: {{value}}',
+    groupEditLine: 'この{{n}}件のプロファイルの設定を編集',
+    bulkSaved: '{{n}}件のプロファイルを更新しました',
+    duplicateNameHint: '同じ名前のプロファイルが既にあります。Bambu Studio はそのうち1つしか保持しません。',
     // Grid
     emptyTitle: 'プリセットはまだありません',
     emptySubtitle: 'プリセットを手動で作成するか、フォルダからインポートしてください。',

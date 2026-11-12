@@ -5668,6 +5668,9 @@ export default {
     groupVariant: 'Varyant',
     groupAddColor: 'Bu ayarlarla renk ekle',
     groupLineValue: 'Satırın geri kalanı: {{value}}',
+    groupEditLine: 'Bu {{n}} profilin ayarlarını düzenle',
+    bulkSaved: '{{n}} profil güncellendi',
+    duplicateNameHint: 'Başka bir profil zaten bu ada sahip. Bambu Studio yalnızca birini tutar.',
     // Grid
     emptyTitle: 'Henüz ön ayar yok',
     emptySubtitle: 'Bir ön ayarı elle oluşturun veya bir klasörden içe aktarın.',

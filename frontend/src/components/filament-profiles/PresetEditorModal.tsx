@@ -795,6 +795,9 @@ export function PresetEditorModal({
               <p className="truncate font-mono text-xs text-bambu-gray/70">{filename}</p>
             )}
             {!computedName && <p className="text-xs text-amber-400">{t('filamentProfiles.nameRequiredHint')}</p>}
+            {computedName && presets.some((p) => p.id !== preset?.id && p.name === computedName) && (
+              <p className="text-xs text-amber-400">{t('filamentProfiles.duplicateNameHint')}</p>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {onDelete && (
