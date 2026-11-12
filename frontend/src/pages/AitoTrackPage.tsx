@@ -13,6 +13,7 @@ import { TrackingShopPanel } from '../components/aito/TrackingShopPanel';
 import { CardSkeleton, Footer, Logo } from '../components/aito/trackingShell';
 import { useI18nSettleDeadline, useTrackingLanguage } from '../hooks/useTrackingLanguage';
 import { useTrackingPanel } from '../hooks/useTrackingPanel';
+import { OrderTrackPage } from './OrderTrackPage';
 import { prefersReducedMotion } from '../utils/motion';
 import { CARD, FOCUS, PAGE, PRESS, delayAt } from '../utils/trackingShell';
 import { TRACK_MOTION, etaCopy, statusCopy, trackStageIndex, trackStateDelay, trackingStage, updatedAt } from '../utils/aitoTracking';
@@ -185,12 +186,24 @@ export function AitoTrackPage() {
     if (entrance) return delayAt(stateAt + TRACK_MOTION.parts + Math.min(i, 7) * TRACK_MOTION.partStep);
     return undefined;
   };
-  const is404 = query.error instanceof ApiError && query.error.status === 404;
+  const aito404 = query.error instanceof ApiError && query.error.status === 404;
+  // Sales orders share this link shape (`/t/<code>`) and the cards' pool of codes: a code no card has is asked
+  // as an order before it is called invalid. The answer lands under the key the order page reads.
+  const order = useQuery({
+    queryKey: ['order-track', token],
+    queryFn: ({ signal }) => api.getOrderTracking(token, signal),
+    enabled: aito404,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const is404 = aito404 && order.error instanceof ApiError && order.error.status === 404;
+  // Found, or failed some other way: the order page shows it, or its own retry.
+  const isOrder = aito404 && !order.isPending && !is404;
   // Past the route's rate limit: say "wait", as the code-entry page does —
   // "cannot load, try again" would only send the client straight back into it.
   const is429 = query.error instanceof ApiError && query.error.status === 429;
   const showContent = data !== undefined && copy !== null && settled;
-  const showError = (query.isError || retrying) && !is404 && data === undefined;
+  const showError = (query.isError || retrying) && !aito404 && data === undefined;
   // The two side panels: payment terms to the right (only while there is
   // something to pay), the shop to the left. One at a time; the card glides
   // the other way so card and panel stay centred (index.css .track-stage).
@@ -217,6 +230,7 @@ export function AitoTrackPage() {
     void query.refetch().finally(() => setRetrying(false));
   };
 
+  if (isOrder) return <OrderTrackPage />;
   if (is404 && settled) {
     return (
       <div className={PAGE}>

@@ -306,7 +306,8 @@ const router = createBrowserRouter(
       <Route path="/track" element={<TrackingErrorBoundary><AitoTrackEntryPage /></TrackingErrorBoundary>} />
       <Route path="/t/:token" element={<TrackingErrorBoundary><AitoTrackPage /></TrackingErrorBoundary>} />
       <Route path="/track/:token" element={<TrackingErrorBoundary><AitoTrackPage /></TrackingErrorBoundary>} />
-      {/* The same page for a sales order (Order Board): its own path, so the Aito links above stay as sent. */}
+      {/* A sales order (Order Board) uses `/t/<code>` too: the page above falls back to it. This path stays
+          for the order links already sent and for the code-entry page. */}
       <Route path="/t/o/:token" element={<TrackingErrorBoundary><OrderTrackPage /></TrackingErrorBoundary>} />
 
       {/* Printable client-facing quote — standalone (light, print-first, no app chrome) */}

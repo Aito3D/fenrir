@@ -174,7 +174,7 @@ async def test_no_link_and_no_code_without_the_external_url(db_session):
     db_session.add(Settings(key="external_url", value="https://suivi.example/"))
     await db_session.commit()
     code = await tracking.ensure_token(db_session, "so1")
-    assert await tracking.tracking_url(db_session, "so1") == f"https://suivi.example/t/o/{code}"
+    assert await tracking.tracking_url(db_session, "so1") == f"https://suivi.example/t/{code}"
 
 
 # --- the public route ------------------------------------------------------------------------------------------
@@ -352,6 +352,17 @@ async def test_misses_are_throttled_with_the_aito_page_and_hits_are_free(async_c
     assert blocked.headers["cache-control"] == "no-store"
 
 
+@pytest.mark.asyncio
+async def test_an_order_code_asked_on_the_aito_route_is_not_a_wrong_guess(async_client, db_session, zoho, monkeypatch):  # noqa: F811
+    """The order's link is ``/t/<code>`` too: the page asks the Aito route first, on every open."""
+    await _synced(db_session, zoho, order(1))
+    code = await tracking.ensure_token(db_session, "so1")
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_IP", 3)
+    for _ in range(5):
+        assert (await async_client.get(f"/api/v1/aito/track/{code}")).status_code == 404
+        assert (await _open(async_client, code)).status_code == 200
+
+
 # --- the operator's side ---------------------------------------------------------------------------------------
 
 
@@ -366,7 +377,7 @@ async def test_link_route_mints_once_and_needs_orders_update(async_client, db_se
     await db_session.commit()
     url = (await async_client.get(path, headers=tokens["both"])).json()["tracking_url"]
     assert url == (await async_client.get(path, headers=tokens["both"])).json()["tracking_url"]
-    assert url == f"https://suivi.example/t/o/{await tracking.ensure_token(db_session, 'so1')}"
+    assert url == f"https://suivi.example/t/{await tracking.ensure_token(db_session, 'so1')}"
     assert (await _open(async_client, url.rsplit("/", 1)[1])).status_code == 200
     unknown = await async_client.get(f"{BASE}/orders/nope/tracking-link", headers=tokens["both"])
     assert unknown.status_code == 404
@@ -380,15 +391,15 @@ async def test_the_sms_draft_carries_the_link_only_when_the_external_url_is_set(
     await db_session.commit()
     message = (await order_board_sms.draft(db_session, "so1"))["message"]
     code = await tracking.ensure_token(db_session, "so1")
-    assert message.endswith(f"\nSuivi de ta commande : https://suivi.example/t/o/{code}\nAito3D")
+    assert message.endswith(f"\nSuivi de ta commande : https://suivi.example/t/{code}\nAito3D")
     assert set(message) <= _GSM, set(message) - _GSM
 
 
 def test_the_tracking_link_comes_after_the_payment_link():
     row = {"number": "SO-1", "lines": [], "ready_ratio": 1, "facts": {}, "payment": {"left": 0}, "currency": "XPF"}
-    message = order_board_sms.compose(row, {}, "https://pay.example/p", "https://suivi.example/t/o/K7F3XQ")["message"]
+    message = order_board_sms.compose(row, {}, "https://pay.example/p", "https://suivi.example/t/K7F3XQ")["message"]
     assert message.endswith(
-        "\nLien de paiement : https://pay.example/p\nSuivi de ta commande : https://suivi.example/t/o/K7F3XQ\nAito3D"
+        "\nLien de paiement : https://pay.example/p\nSuivi de ta commande : https://suivi.example/t/K7F3XQ\nAito3D"
     )
     assert set(message) <= _GSM
 

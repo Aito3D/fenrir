@@ -24,7 +24,7 @@ const LINES_SHOWN = 6;
 // A stalled connection must end in the retryable error, not an endless skeleton (as on the Aito page).
 const TRACK_TIMEOUT_MS = 10_000;
 
-/** The customer's public tracking page of a sales order (`/t/o/<code>`):
+/** The customer's public tracking page of a sales order (`/t/<code>`, the Aito cards' link shape):
  *  the Aito tracking page's shell, motion and side panels around an order's
  *  own story — received, in preparation, ready to collect, handed over —
  *  its lines with a status each, and what is left to pay. Standalone and

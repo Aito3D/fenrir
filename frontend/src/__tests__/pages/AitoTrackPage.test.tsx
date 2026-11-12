@@ -81,6 +81,8 @@ const FIXTURE: AitoTracking = {
 
 function mockTrack(body: AitoTracking | null) {
   server.use(
+    // A code no card has is asked as a sales order next: unknown there too, unless a test says otherwise.
+    http.get('/api/v1/order-board/track/:token', () => HttpResponse.json({ detail: 'Lien introuvable' }, { status: 404 })),
     http.get('/api/v1/aito/track/:token', () =>
       body ? HttpResponse.json(body) : HttpResponse.json({ detail: 'Lien introuvable' }, { status: 404 }),
     ),

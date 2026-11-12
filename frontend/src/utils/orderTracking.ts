@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
 import type { OrderTracking, OrderTrackingLineStatus } from '../api/client';
 
-/** The public tracking page of a sales order (`/t/o/<code>`): the copy and
+/** The public tracking page of a sales order (`/t/<code>`, the Aito cards' link shape): the copy and
  *  the rail, derived from the payload. The state itself is decided by the
  *  server (services/order_board_tracking.py); nothing here guesses. */
 

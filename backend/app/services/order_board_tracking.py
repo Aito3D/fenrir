@@ -139,8 +139,9 @@ async def ensure_token(db: AsyncSession, salesorder_id: str) -> str:
 
 
 def tracking_url_for(base: str, token: str) -> str | None:
-    """``/t/o/<code>``: beside the Aito cards' ``/t/<code>``, whose links stay as they are."""
-    return f"{base}/t/o/{token}" if base and token else None
+    """``/t/<code>``, the Aito cards' link shape: the page there falls back to the order when no card has the
+    code. ``/t/o/<code>`` still opens, for the links already sent."""
+    return f"{base}/t/{token}" if base and token else None
 
 
 async def tracking_url(db: AsyncSession, salesorder_id: str) -> str | None:
@@ -161,23 +162,24 @@ async def _pay_url(db: AsyncSession, salesorder_id: str, now: datetime) -> str |
     return link.url or None
 
 
+async def order_of(db: AsyncSession, token: str) -> str | None:
+    """The sales order a code names, or None. Also asked by the Aito cards' route: both share ``/t/<code>``."""
+    code = aito_tracking.normalize_token(token)
+    if code is None or len(code) != aito_tracking.TOKEN_LENGTH:
+        return None
+    query = select(OrderBoardDoc.zoho_id).where(
+        OrderBoardDoc.kind == TRACK_KIND, OrderBoardDoc.header["token"].as_string() == code
+    )
+    return (await db.execute(query)).scalar_one_or_none()
+
+
 async def compute(db: AsyncSession, token: str, now: datetime) -> tuple[str, dict] | None:
     """The page's payload and the sales order id, or None for an unknown code, a cancelled or void order, an
     order with no stored copy and a handed-over order past its 30 days alike: the caller answers them all with
     the same 404."""
-    code = aito_tracking.normalize_token(token)
-    if code is None or len(code) != aito_tracking.TOKEN_LENGTH:
+    salesorder_id = await order_of(db, token)
+    if salesorder_id is None:
         return None
-    track = (
-        await db.execute(
-            select(OrderBoardDoc).where(
-                OrderBoardDoc.kind == TRACK_KIND, OrderBoardDoc.header["token"].as_string() == code
-            )
-        )
-    ).scalar_one_or_none()
-    if track is None:
-        return None
-    salesorder_id = track.zoho_id
     row = await sync.find_board_row(db, salesorder_id)
     if row is None:  # off the board: only a finished order still has a page
         finished = next(iter(await sync._finished_docs(db, salesorder_id)), None)

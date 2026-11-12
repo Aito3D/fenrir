@@ -111,6 +111,7 @@ from backend.app.services import (
     aito_quote_sync,
     aito_tax,
     aito_tracking as tracking_service,
+    order_board_tracking,
     project_print_trace,
 )
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
@@ -1657,7 +1658,10 @@ async def get_tracking(
         _track_rate_hit(*admitted)
         raise
     if found is None:
-        # The miss reserved at arrival stands.
+        # The miss reserved at arrival stands, unless the code is a sales order's: its link has the same
+        # shape, so the page asks here first and a customer opening their order is no guesser.
+        if await order_board_tracking.order_of(db, token) is not None:
+            _track_rate_hit(*admitted)
         # Not `raise HTTPException`: FastAPI's exception handler builds a
         # fresh JSONResponse that drops the `response` object's headers
         # entirely, so the no-store guarantee would silently vanish on the

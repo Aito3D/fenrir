@@ -5201,7 +5201,7 @@ export interface OrderBoardRow {
 }
 
 export type OrderTrackingLineStatus = 'ready' | 'preparing' | 'to_prepare' | 'waiting' | 'handed_over';
-/** The public tracking page of a sales order (`/t/o/<code>`): only what the page shows. */
+/** The public tracking page of a sales order (`/t/<code>`, the Aito cards' link shape): only what the page shows. */
 export interface OrderTracking {
   /** Shopify « #1079 » when there is one, else the sales order number. */
   reference: string;

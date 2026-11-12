@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import i18n from '../../i18n';
 import { server } from '../mocks/server';
 import { OrderTrackPage } from '../../pages/OrderTrackPage';
+import { AitoTrackPage } from '../../pages/AitoTrackPage';
 import { resetI18nDeadlineForTests } from '../../hooks/useTrackingLanguage';
 import type { OrderTracking } from '../../api/client';
 
@@ -57,6 +58,23 @@ afterAll(() => i18n.changeLanguage('en'));
 afterEach(() => resetI18nDeadlineForTests());
 
 describe('OrderTrackPage', () => {
+  it('opens from the short link shared with the Aito cards, once no card has the code', async () => {
+    mockTrack({});
+    server.use(http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ detail: 'x' }, { status: 404 })));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    rtlRender(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/t/K7F3XQ']}>
+          <Routes>
+            <Route path="/t/:token" element={<AitoTrackPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(await h2('Une partie de ta commande est prête')).toBeInTheDocument();
+    expect(screen.queryByTestId('track-invalid')).not.toBeInTheDocument();
+  });
+
   it('partly ready: header, rail on the third step, counts sentence, pickup address and sorted lines', async () => {
     mockTrack({});
     renderPage();

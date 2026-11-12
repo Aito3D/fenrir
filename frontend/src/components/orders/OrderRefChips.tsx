@@ -22,7 +22,7 @@ function Chip({ href, children }: { href?: string | null; children: ReactNode })
   );
 }
 
-/** Copies the customer's public tracking link (`/t/o/<code>`); the first click mints the order's code.
+/** Copies the customer's public tracking link (`/t/<code>`, the Aito cards' link shape); the first click mints the order's code.
  *  The clipboard write starts inside the click, as on the Aito card: the fetch outlives the gesture. */
 function TrackingLinkChip({ orderId }: { orderId: string }) {
   const { t } = useTranslation();
