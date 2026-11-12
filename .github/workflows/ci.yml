@@ -471,7 +471,10 @@ jobs:
           load: true
           tags: fenrir-backend-test:latest
           cache-from: type=gha,scope=backend-test
-          cache-to: type=gha,scope=backend-test,mode=max
+          # One writer: ten shards exporting the same scope at once raced
+          # ("error writing layer blob: not_found") and failed a shard before
+          # any test ran. ignore-error keeps a cache hiccup from failing tests.
+          cache-to: ${{ matrix.shard == 1 && 'type=gha,scope=backend-test,mode=max,ignore-error=true' || '' }}
 
       # Same as docker-compose.test.yml: some backend tests read the frontend
       # sources and scripts/, and --init reaps the children some tests kill
