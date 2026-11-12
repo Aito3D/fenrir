@@ -27,7 +27,7 @@ export function OrderInvoiceNow({ row, busy, onCreate, onClose }: { row: Pick<Or
   if (preview.isPending) return <Skeleton className="mt-2 h-24 w-full rounded" />;
   const p = preview.data;
   const close = (
-    <button type="button" disabled={busy} onClick={onClose} className="rounded-md px-2.5 py-1 text-bambu-gray hover:text-white disabled:opacity-50">
+    <button type="button" disabled={busy} onClick={onClose} className="btn-press rounded-md px-2.5 py-1 text-bambu-gray hover:text-white disabled:opacity-50">
       {t('common.cancel')}
     </button>
   );
@@ -97,7 +97,7 @@ export function OrderInvoiceNow({ row, busy, onCreate, onClose }: { row: Pick<Or
           type="button"
           disabled={busy || !!chosen.manual_reason}
           onClick={() => onCreate(scope, offered ? credit : true)}
-          className="inline-flex items-center gap-1.5 rounded-md bg-bambu-green px-3 py-1 font-semibold text-black hover:bg-bambu-green-light disabled:opacity-50"
+          className="btn-press inline-flex items-center gap-1.5 rounded-md bg-bambu-green px-3 py-1 font-semibold text-black hover:bg-bambu-green-light disabled:opacity-50"
         >
           {busy ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <Check aria-hidden="true" className="h-3.5 w-3.5" />}
           {t(busy ? 'orders.inv.creating' : 'orders.inv.confirm')}

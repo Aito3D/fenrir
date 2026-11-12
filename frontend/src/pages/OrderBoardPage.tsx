@@ -36,6 +36,7 @@ import type { Tone } from '../components/orders/orderStatus';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { formatDateTime } from '../utils/date';
+import { prefersReducedMotion } from '../utils/motion';
 import { formatMoney } from '../utils/pricing';
 
 const BOARD_KEY = ['order-board'] as const;
@@ -132,7 +133,7 @@ export function OrderBoardPage() {
     const el = id ? document.getElementById(`order-${id}`) : null;
     if (!el) return;
     scrollTarget.current = null;
-    el.scrollIntoView?.({ block: 'start' });
+    el.scrollIntoView?.({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   });
 
   const toggleCoreOnly = () => {
@@ -208,6 +209,9 @@ export function OrderBoardPage() {
     i18n.language,
   );
   const tileCounts = countByStatus(branded);
+  // A count ticks when it moves away from what the board first showed, never on the page's own entrance.
+  const firstCounts = useRef<typeof tileCounts | null>(null);
+  if (ready && !firstCounts.current) firstCounts.current = tileCounts;
   const chipCounts = countByStatus(searched);
   chipCounts.all += finishedSearched.length;
   const hidden = all.length - branded.length;
@@ -224,7 +228,7 @@ export function OrderBoardPage() {
     >
       <span className="block text-xs text-bambu-gray">{label}</span>{' '}
       {ready ? (
-        <span className={`mt-1 block text-2xl font-bold ${id === 'all' ? 'text-white' : TONE[tone].text}`}>{tileCounts[id]}</span>
+        <span key={tileCounts[id]} className={`mt-1 block text-2xl font-bold ${id === 'all' ? 'text-white' : TONE[tone].text} ${tileCounts[id] !== firstCounts.current?.[id] ? 'animate-value-tick' : ''}`}>{tileCounts[id]}</span>
       ) : (
         <Skeleton className="mt-2 h-7 w-12 rounded-md" />
       )}{' '}
@@ -322,7 +326,7 @@ export function OrderBoardPage() {
       </div>
 
       {data?.sync.last_error && (
-        <div className="mb-5 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200" role="alert">
+        <div className="animate-rise-sm mb-5 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200" role="alert">
           <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             {t('orders.syncFailed', { reason: data.sync.last_error, when: formatDateTime(data.sync.last_success_at ?? data.computed_at) || '–' })}

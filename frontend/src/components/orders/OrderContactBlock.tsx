@@ -48,7 +48,7 @@ export function OrderContactBlock({
         onClick={() => copy(value)}
         className="rounded p-1 text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green"
       >
-        {copied === value ? <Check aria-hidden="true" className="h-3.5 w-3.5" /> : <Copy aria-hidden="true" className="h-3.5 w-3.5" />}
+        {copied === value ? <Check aria-hidden="true" className="animate-slice-done h-3.5 w-3.5" /> : <Copy aria-hidden="true" className="h-3.5 w-3.5" />}
       </button>
     </div>
   );

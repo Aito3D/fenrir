@@ -9,8 +9,8 @@ import { useAuth } from '../../contexts/AuthContext';
 /** Local HH:mm of an ISO timestamp. */
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
-const QUIET = 'inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-bambu-green hover:text-bambu-green disabled:opacity-50';
-const STRONG = 'inline-flex items-center gap-1.5 rounded-md bg-bambu-green px-2.5 py-1 text-xs font-semibold text-black hover:bg-bambu-green-light disabled:opacity-50';
+const QUIET = 'btn-press inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-bambu-green hover:text-bambu-green disabled:opacity-50';
+const STRONG = 'btn-press inline-flex items-center gap-1.5 rounded-md bg-bambu-green px-2.5 py-1 text-xs font-semibold text-black hover:bg-bambu-green-light disabled:opacity-50';
 
 /** Right side of the "À préparer" band: who printed the sheet, each picklist with its sheet and the way into
  *  its parcel check, and the way into a new picklist. */

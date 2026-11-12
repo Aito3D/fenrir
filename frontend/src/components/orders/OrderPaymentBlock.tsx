@@ -62,7 +62,7 @@ export function OrderPaymentBlock({ payment, currency, total, quoteNumber = '', 
           <span
             key={x.id}
             data-testid={`pay-seg-${x.id}`}
-            className={x.cls}
+            className={`${x.cls} transition-[width] duration-300 ease-(--ease-signature) motion-reduce:duration-[120ms] motion-reduce:ease-linear`}
             style={{ width: `${whole > 0 ? Math.min(100, (100 * x.n) / whole) : 0}%`, ...(x.id === 'advance' ? HATCH : {}) }}
           />
         ))}
@@ -84,7 +84,7 @@ export function OrderPaymentBlock({ payment, currency, total, quoteNumber = '', 
   );
 }
 
-const BUTTON = 'inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-xs text-white hover:bg-bambu-dark-tertiary disabled:opacity-50';
+const BUTTON = 'btn-press inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-xs text-white hover:bg-bambu-dark-tertiary disabled:opacity-50';
 
 /** "Lien de paiement" and "TPE" on the document the server picks (the newest invoice with a balance, else the quote's
  *  open retainer, else the quote or the sales order itself), prefilled with what is left to pay, capped at that document's balance. Hidden when there is none. */

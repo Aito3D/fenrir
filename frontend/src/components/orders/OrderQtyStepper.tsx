@@ -3,7 +3,7 @@ import { Minus, Plus } from 'lucide-react';
 import { NumberInput } from '../NumberInput';
 import { formatQty } from './orderBoard';
 
-const BTN = 'grid h-6 w-6 place-items-center rounded border border-bambu-dark-tertiary text-bambu-gray hover:text-white disabled:opacity-40';
+const BTN = 'btn-press grid h-6 w-6 place-items-center rounded border border-bambu-dark-tertiary text-bambu-gray hover:text-white disabled:opacity-40';
 
 /** One line of a check: a tick to take the line or leave it, and its units, typed or one a click, kept inside min..max.
  *  Without `max` there is no ceiling (an ordered quantity); `checkbox={false}` drops the tick; `positive` never lets the value

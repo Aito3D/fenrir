@@ -103,14 +103,14 @@ export function OrderHandoverBar({ row, packageId, onClose }: { row: OrderPanelR
         <ReceiptText aria-hidden="true" className={`h-4 w-4 ${TONE.info.text}`} />
         {second}
         <span className="ml-auto flex items-center gap-2">
-          <button type="button" disabled={busy} onClick={onClose} className="rounded-md px-2.5 py-1 text-bambu-gray hover:text-white disabled:opacity-50">
+          <button type="button" disabled={busy} onClick={onClose} className="btn-press rounded-md px-2.5 py-1 text-bambu-gray hover:text-white disabled:opacity-50">
             {t('common.cancel')}
           </button>
           <button
             type="button"
             disabled={busy}
             onClick={confirm}
-            className="inline-flex items-center gap-1.5 rounded-md bg-bambu-green px-3 py-1 font-semibold text-black hover:bg-bambu-green-light disabled:opacity-50"
+            className="btn-press inline-flex items-center gap-1.5 rounded-md bg-bambu-green px-3 py-1 font-semibold text-black hover:bg-bambu-green-light disabled:opacity-50"
           >
             {busy ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <Check aria-hidden="true" className="h-3.5 w-3.5" />}
             {t(busy ? 'orders.handover.sending' : mode === 'pickup' ? 'orders.handover.confirmPickup' : 'orders.handover.confirmDelivery')}

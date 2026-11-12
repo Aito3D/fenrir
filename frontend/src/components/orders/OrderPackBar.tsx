@@ -75,14 +75,14 @@ export function OrderPackBar({
         {units < of && <span className="text-yellow-400"> · {t('orders.parcel.left', { units: formatQty(Math.round((of - units) * 100) / 100) })}</span>}
       </span>
       <span className="ml-auto flex items-center gap-2">
-        <button type="button" disabled={busy} onClick={onClose} className="rounded-md px-2.5 py-1 text-bambu-gray hover:text-white disabled:opacity-50">
+        <button type="button" disabled={busy} onClick={onClose} className="btn-press rounded-md px-2.5 py-1 text-bambu-gray hover:text-white disabled:opacity-50">
           {t('common.cancel')}
         </button>
         <button
           type="button"
           disabled={busy || units <= 0}
           onClick={confirm}
-          className="inline-flex items-center gap-1.5 rounded-md bg-bambu-green px-3 py-1 font-semibold text-black hover:bg-bambu-green-light disabled:opacity-50"
+          className="btn-press inline-flex items-center gap-1.5 rounded-md bg-bambu-green px-3 py-1 font-semibold text-black hover:bg-bambu-green-light disabled:opacity-50"
         >
           {busy ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <Check aria-hidden="true" className="h-3.5 w-3.5" />}
           {t(busy ? 'orders.parcel.creating' : pick ? 'orders.pick.create' : 'orders.parcel.create')}

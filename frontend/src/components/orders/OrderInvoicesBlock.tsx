@@ -62,7 +62,7 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, onInvoiceNow, busy = 
       {row.unbilled_units > 0 && onCreateInvoice && (
         <div className={`mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md px-2.5 py-1.5 ${TONE.warning.soft}`}>
           <span className={TONE.warning.text}>{t('orders.inv.unbilled', { units: t('orders.units', { count: row.unbilled_units }) })}</span>
-          <button type="button" disabled={busy} onClick={onCreateInvoice} className="rounded-md bg-bambu-green px-2.5 py-1 font-semibold text-black hover:bg-bambu-green/90 disabled:opacity-50">
+          <button type="button" disabled={busy} onClick={onCreateInvoice} className="btn-press rounded-md bg-bambu-green px-2.5 py-1 font-semibold text-black hover:bg-bambu-green/90 disabled:opacity-50">
             {t('orders.inv.create')}
           </button>
         </div>
@@ -72,7 +72,7 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, onInvoiceNow, busy = 
       ) : ahead && (
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className="text-bambu-gray">{invoices.length === 0 ? t('orders.inv.emptyNow') : ''}</span>
-          <button type="button" disabled={busy} onClick={() => setNow(true)} className="shrink-0 rounded-md border border-bambu-green/50 px-2.5 py-1 font-semibold text-bambu-green hover:bg-bambu-green/10 disabled:opacity-50">
+          <button type="button" disabled={busy} onClick={() => setNow(true)} className="btn-press shrink-0 rounded-md border border-bambu-green/50 px-2.5 py-1 font-semibold text-bambu-green hover:bg-bambu-green/10 disabled:opacity-50">
             {t('orders.inv.now')}
           </button>
         </div>

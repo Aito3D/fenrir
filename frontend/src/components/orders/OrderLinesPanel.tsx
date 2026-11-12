@@ -54,7 +54,7 @@ const LINE_STATE: Record<OrderBoardLine['state'], { label: string; cls: string }
 };
 
 const dash = <span className="text-bambu-gray">–</span>;
-const EDIT_BTN = 'inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-bambu-green hover:text-bambu-green disabled:opacity-50';
+const EDIT_BTN = 'btn-press inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-bambu-green hover:text-bambu-green disabled:opacity-50';
 const TRASH = 'grid h-7 w-7 place-items-center rounded-md text-bambu-gray hover:bg-red-500/15 hover:text-red-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-bambu-gray';
 
 /** The expanded order: one table, split into what is left to prepare, what is
@@ -318,7 +318,7 @@ export function OrderLinesPanel({
                               type="button"
                               data-opens={`handover-${p.id}`}
                               onClick={() => setHandover(p.id)}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-blue-400 hover:text-blue-400"
+                              className="btn-press inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-blue-400 hover:text-blue-400"
                             >
                               <HandHelping aria-hidden="true" className="h-3.5 w-3.5" />
                               {all.length > 1 ? t('orders.handover.openNumber', { number: p.number }) : t('orders.handover.open')}
@@ -355,7 +355,7 @@ export function OrderLinesPanel({
                   const editing = todo && edit;
                   const gone = !!edit && todo && edit.gone.has(line.id);
                   return (
-                    <tr key={line.id} className={`${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${(todo && check && !(check.max[line.id] > 0)) || gone ? 'opacity-40' : ''}`}>
+                    <tr key={line.id} className={`transition-opacity duration-150 ease-out ${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${(todo && check && !(check.max[line.id] > 0)) || gone ? 'opacity-40' : ''}`}>
                       <td className={`border-l-2 py-2 pl-4 pr-3 ${TONE[meta.tone].rail} ${gone ? 'line-through' : ''}`}>
                         <div className="text-white">{line.name}</div>
                         {line.sku && <div className="font-mono text-xs text-bambu-gray">{line.sku}</div>}

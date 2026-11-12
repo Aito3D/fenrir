@@ -59,14 +59,14 @@ export function OrderParcelEditBar({ row, parcel, onClose, onBusy }: { row: Orde
           {empty ? t('orders.parcelEdit.deletes', { number: parcel.number, picklist: parcel.picklist }) : t('orders.parcelEdit.writes', { picklist: parcel.picklist })}
         </span>
         <span className="ml-auto flex items-center gap-2">
-          <button type="button" disabled={busy} onClick={onClose} className="rounded-md px-2.5 py-1 text-bambu-gray hover:text-white disabled:opacity-50">
+          <button type="button" disabled={busy} onClick={onClose} className="btn-press rounded-md px-2.5 py-1 text-bambu-gray hover:text-white disabled:opacity-50">
             {t('common.cancel')}
           </button>
           <button
             type="button"
             disabled={busy || !(changed || finish)}
             onClick={save}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 font-semibold text-white disabled:opacity-50 ${empty ? 'bg-red-500 hover:bg-red-400' : 'bg-blue-500 hover:bg-blue-400'}`}
+            className={`btn-press inline-flex items-center gap-1.5 rounded-md px-3 py-1 font-semibold text-white disabled:opacity-50 ${empty ? 'bg-red-500 hover:bg-red-400' : 'bg-blue-500 hover:bg-blue-400'}`}
           >
             {busy ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : empty ? <Trash2 aria-hidden="true" className="h-3.5 w-3.5" /> : <Check aria-hidden="true" className="h-3.5 w-3.5" />}
             {t(busy ? 'orders.parcelEdit.saving' : empty ? 'orders.parcelEdit.delete' : finish ? 'orders.parcelEdit.finish' : 'orders.parcelEdit.save')}
