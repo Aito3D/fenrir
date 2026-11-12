@@ -277,6 +277,24 @@ describe('searchProjects — country prefix and pending terms', () => {
     expect(searchProjects([p], q)).toEqual([]);
   });
 
+  // `00689` / `0689` are a country prefix only when typed bare: behind
+  // `#`, `inv:` or `lta:` they are a zero-padded number.
+  it('searches a zero-padded number behind an explicit prefix instead of dropping it as pending', () => {
+    const numbered = card({ id: 689, quote_number: null, document_numbers: ['FA-26-0689'], shipping_lta: '0689' });
+    const other = card({ id: 41, quote_number: null, document_numbers: ['FA-26-0041'] });
+    for (const q of ['#00689', '#0689', 'inv:0689', 'lta:0689']) {
+      expect(isPendingQuery(q)).toBe(false);
+      expect(matchesSearch(numbered, q)).toBe(true);
+      expect(matchesSearch(other, q)).toBe(false);
+    }
+    expect(searchProjects([card({ id: 689, quote_number: null })], '#00689')[0]?.field).toBe('cardId');
+    expect(searchProjects([numbered], 'inv:0689')[0]?.field).toBe('document');
+    // The phone card is not dragged in by its +689 prefix.
+    expect(matchesSearch(p, '#00689')).toBe(false);
+    // `tel:` still means a phone being typed.
+    expect(isPendingQuery('tel:00689')).toBe(true);
+  });
+
   it('drops a pending term but keeps the others', () => {
     expect(searchProjects([p], 'acme +689')[0]?.field).toBe('client');
     expect(matchesSearch(p, 'zzzz +689')).toBe(false);

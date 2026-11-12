@@ -118,6 +118,8 @@ const PREFIXES: { prefix: string; keep: boolean; allow: (f: IndexedField) => boo
   { prefix: '@', keep: true, allow: (f) => f.kind === 'email' || f.field === 'social' },
   { prefix: '#', keep: false, allow: (f) => f.kind === 'number' },
 ];
+/** Prefixes that can only mean an identifier, never a phone. */
+const NUMBER_PREFIXES = new Set(['#', 'inv:', 'lta:']);
 // Every field, card id included: it matches only the exact number (the panel's "Project #339").
 const DEFAULT_ALLOW = () => true;
 
@@ -177,7 +179,9 @@ function parse(query: string): Term[] {
         if (token === prefix) return null;
         if (token.startsWith(prefix)) {
           const text = keep ? token : token.slice(prefix.length);
-          return isPending(text) ? null : { text, allow };
+          // `#00689` / `inv:0689` name a number outright: the zero padding is
+          // not a country prefix still being typed, so never pending.
+          return !NUMBER_PREFIXES.has(prefix) && isPending(text) ? null : { text, allow };
         }
       }
       return isPending(token) ? null : { text: token, allow: DEFAULT_ALLOW };
