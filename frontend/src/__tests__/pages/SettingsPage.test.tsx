@@ -1760,6 +1760,16 @@ describe('SettingsPage', () => {
       render(<SettingsPage />);
       await waitFor(() => expect(screen.getByRole('button', { name: 'Camera' })).toBeInTheDocument());
       expect(screen.queryByRole('button', { name: 'Orders' })).toBeNull();
+      await userEvent.type(screen.getByPlaceholderText(/Search settings/), 'core brands');
+      expect(screen.queryByText('What the board shows')).toBeNull();
+    });
+
+    it('finds the Orders cards from the search box and opens the tab', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+      await user.type(await screen.findByPlaceholderText(/Search settings/), 'core brands');
+      await user.click(await screen.findByText('What the board shows'));
+      await waitFor(() => expect(window.location.search).toContain('tab=orders'));
     });
 
     it('shows Orders to an operator who cannot change other settings', async () => {

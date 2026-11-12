@@ -24,7 +24,8 @@ export type SettingsSearchTab =
   | 'users'
   | 'backup'
   | 'failure-detection'
-  | 'zoho';
+  | 'zoho'
+  | 'orders';
 
 export type SettingsSearchSubTab = 'users' | 'printer-access' | 'email' | 'ldap' | 'oidc' | 'twofa' | 'security';
 

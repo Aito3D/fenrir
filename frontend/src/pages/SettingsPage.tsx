@@ -1680,7 +1680,7 @@ export function SettingsPage() {
 
   // Cross-tab search is powered by the module-level registry in lib/settingsSearch.
   // Resolve i18n labels here so language changes take effect without re-registering.
-  const searchIndex = getSettingsSearchEntries().filter(e => e.tab !== 'wled' || canManageWled).map(e => ({
+  const searchIndex = getSettingsSearchEntries().filter(e => (e.tab !== 'wled' || canManageWled) && (e.tab !== 'orders' || canSeeOrdersTab)).map(e => ({
     ...e,
     label: t(e.labelKey, e.labelFallback ?? e.labelKey),
   }));

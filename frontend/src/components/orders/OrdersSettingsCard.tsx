@@ -10,6 +10,10 @@ import { Toggle } from '../Toggle';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { formatDateTime } from '../../utils/date';
+import { registerSettingsSearch } from '../../lib/settingsSearch';
+
+registerSettingsSearch({ labelKey: 'orders.settings.syncTitle', tab: 'orders', keywords: 'orders order board zoho books sync interval refresh', anchor: 'card-orders-sync' });
+registerSettingsSearch({ labelKey: 'orders.settings.showsTitle', tab: 'orders', keywords: 'orders order board age limit old days core brands 3d only', anchor: 'card-orders-shows' });
 
 const SETTINGS_KEY = ['order-board-settings'] as const;
 const BOARD_KEY = ['order-board'] as const;
