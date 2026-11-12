@@ -116,6 +116,15 @@ const lastName = () => screen.getByLabelText(i18n.t('aito.lastName')) as HTMLInp
 const email = () => screen.getByLabelText(i18n.t('aito.clientEmail')) as HTMLInputElement;
 const phone = () => screen.getByLabelText(i18n.t('aito.clientPhone')) as HTMLInputElement;
 
+// The prefill also moves focus to the first field, in a passive effect. Under
+// load that effect can land after the test has started typing elsewhere and
+// steal the focus mid-keystroke (a cleared phone came back), so wait for it.
+const prefilled = () =>
+  waitFor(() => {
+    expect(firstName().value).toBe('Jean');
+    expect(firstName()).toHaveFocus();
+  });
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -124,7 +133,7 @@ describe('ClientEditor', () => {
   it('prefills a person card from the live Zoho contact, not the card snapshot', async () => {
     mockZoho();
     show();
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     expect(lastName().value).toBe('DUPONT');
     // Zoho's values win over the snapshot's stale ones.
     expect(email().value).toBe('zoho@example.pf');
@@ -142,7 +151,7 @@ describe('ClientEditor', () => {
       }),
     );
     const { onSaved } = show();
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     const user = userEvent.setup();
     await user.clear(firstName());
     await user.type(firstName(), 'jean-pierre');
@@ -174,7 +183,7 @@ describe('ClientEditor', () => {
       ),
     );
     const { onSaved } = show();
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     fireEvent.click(screen.getByRole('button', { name: i18n.t('common.save') }));
     expect(await screen.findByText('Contact name already exists')).toBeInTheDocument();
     expect(onSaved).not.toHaveBeenCalled();
@@ -191,7 +200,7 @@ describe('ClientEditor', () => {
       }),
     );
     const { onSaved } = show();
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     const user = userEvent.setup();
     // Disabled until a network is picked: a handle with no network is not a
     // channel, and the placeholder says what to do first.
@@ -215,7 +224,7 @@ describe('ClientEditor', () => {
       }),
     );
     show({ client_social_network: 'tiktok', client_social_handle: 'jean.tt' });
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     expect(screen.getByRole('radio', { name: 'TikTok' })).toHaveAttribute('aria-checked', 'true');
     const handle = screen.getByLabelText(i18n.t('aito.socialHandleLabel')) as HTMLInputElement;
     expect(handle.value).toBe('jean.tt');
@@ -229,7 +238,7 @@ describe('ClientEditor', () => {
   it('counts the handle typed here as a channel, and a cleared one as gone', async () => {
     mockZoho();
     show({ client_social_network: 'messenger', client_social_handle: 'jean' });
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     const user = userEvent.setup();
     await user.clear(phone());
     await user.clear(email());
@@ -244,7 +253,7 @@ describe('ClientEditor', () => {
     const windowEscape = vi.fn();
     window.addEventListener('keydown', windowEscape);
     const { onCancel } = show();
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     fireEvent.keyDown(firstName(), { key: 'Escape' });
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(windowEscape).not.toHaveBeenCalled();
@@ -260,7 +269,7 @@ describe('ClientEditor', () => {
     mockZoho();
     const onCancel = vi.fn();
     const { rerender } = render(<ClientEditor project={project} onSaved={vi.fn()} onCancel={onCancel} />);
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     expect(screen.getByTestId('client-edit-sheet').className).toMatch(/animate-aito-sheet-in/);
     rerender(<ClientEditor project={project} onSaved={vi.fn()} onCancel={onCancel} closing />);
     const sheet = screen.getByTestId('client-edit-sheet');
@@ -275,7 +284,7 @@ describe('ClientEditor', () => {
   it('names Zoho Books as the destination on a Books contact and this card only on a walk-in', async () => {
     mockZoho();
     show();
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     expect(screen.getByTestId('client-edit-source')).toHaveTextContent(i18n.t('aito.clientEditSourceZoho'));
     expect(screen.getByText(i18n.t('aito.clientEditFanOut'))).toBeInTheDocument();
   });
@@ -301,7 +310,7 @@ describe('ClientEditor', () => {
       http.get('/api/v1/zoho/contacts/:id', () => HttpResponse.json({ detail: 'boom' }, { status: 502 })),
     );
     show();
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     expect(lastName().value).toBe('DUPONT');
     expect(phone().value).toBe('87000001');
     expect(screen.getByText(i18n.t('aito.clientEditZohoReadFailed'))).toBeInTheDocument();
@@ -312,7 +321,7 @@ describe('ClientEditor', () => {
       http.get('/api/v1/zoho/status', () => HttpResponse.json({ detail: 'down' }, { status: 502 })),
     );
     show();
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     expect(screen.getByText(i18n.t('aito.clientEditZohoReadFailed'))).toBeInTheDocument();
   });
 
@@ -348,7 +357,7 @@ describe('ClientEditor', () => {
   it('refuses to save a card left with no phone, email or social handle', async () => {
     mockZoho();
     const { onSaved } = show();
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     const user = userEvent.setup();
     await user.clear(email());
     await user.clear(phone());
@@ -361,7 +370,7 @@ describe('ClientEditor', () => {
   it('cancels without saving', async () => {
     mockZoho();
     const { onCancel, onSaved } = show();
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     fireEvent.click(screen.getByRole('button', { name: i18n.t('common.cancel') }));
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onSaved).not.toHaveBeenCalled();
@@ -373,7 +382,7 @@ describe('ClientEditor', () => {
     const { unmount } = render(
       <ClientEditor project={project} onSaved={vi.fn()} onCancel={vi.fn()} onChangeClient={onChangeClient} />,
     );
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     fireEvent.click(screen.getByRole('button', { name: i18n.t('aito.transferClient') }));
     expect(onChangeClient).toHaveBeenCalledTimes(1);
     unmount();
@@ -385,7 +394,7 @@ describe('ClientEditor', () => {
         onChangeClient={onChangeClient}
       />,
     );
-    await waitFor(() => expect(firstName().value).toBe('Jean'));
+    await prefilled();
     expect(screen.queryByRole('button', { name: i18n.t('aito.transferClient') })).toBeNull();
   });
 });
