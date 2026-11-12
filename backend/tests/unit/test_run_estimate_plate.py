@@ -51,6 +51,8 @@ async def _complete(test_engine, printer_id: int, logged: list | None = None) ->
         patch("backend.app.main.smart_plug_manager") as mock_plug,
         patch("backend.app.main.clear_3mf_cache"),
         patch("backend.app.services.bambu_ftp.delete_file_async", new=AsyncMock(return_value=DeleteResult.DELETED)),
+        # The finish photo would run ffmpeg against the fixture printer's IP and wait out its timeout.
+        patch("backend.app.services.camera.capture_finish_photo", new=AsyncMock(return_value=None)),
     ):
         mock_ws.send_print_complete = AsyncMock()
         mock_ws.broadcast = AsyncMock()

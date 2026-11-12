@@ -180,7 +180,12 @@ async def test_combine_refuses_a_symlinked_revision_file(async_client: AsyncClie
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_combine_reads_a_plain_revision_file(async_client: AsyncClient, db_session, root):
+async def test_combine_reads_a_plain_revision_file(async_client: AsyncClient, db_session, root, monkeypatch):
+    from backend.app.services import stl_thumbnail
+
+    # The plate preview is not what this reads; a first matplotlib render in a
+    # fresh MPLCONFIGDIR builds the font cache (~10 s).
+    monkeypatch.setattr(stl_thumbnail, "render_mesh_png", lambda mesh, **_: b"png")
     file_id = await _stl_revision_file(async_client, db_session, root)
     response = await async_client.post(
         "/api/v1/library/files/combine", json={"items": [{"file_id": file_id}], "filename": "Plate"}

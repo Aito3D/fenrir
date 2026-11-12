@@ -36,6 +36,7 @@ from backend.app.main import (
     register_expected_print,
 )
 from backend.app.models.archive import PrintArchive
+from backend.app.services.bambu_ftp import FileListResult
 
 
 @pytest.fixture(autouse=True)
@@ -239,6 +240,12 @@ async def test_catch_up_creates_fallback_archive_when_none_exists():
         patch("backend.app.main.get_ftp_retry_settings", new=AsyncMock(return_value=(False, 3, 5.0, 10.0))),
         patch("backend.app.main.download_file_async", new=AsyncMock(return_value=False)),
         patch("backend.app.services.bambu_ftp.list_files_async", new=AsyncMock(return_value=[])),
+        # The timelapse baseline read lists the printer's folders; without this
+        # it waits out a real FTP connect timeout.
+        patch(
+            "backend.app.services.bambu_ftp.list_files_result_async",
+            new=AsyncMock(return_value=FileListResult(files=[], available=True)),
+        ),
     ):
         mock_session_maker.return_value = mock_session
         mock_ws.send_archive_created = AsyncMock()
@@ -297,6 +304,10 @@ async def test_stale_expected_print_with_deleted_archive_falls_through():
         patch("backend.app.main.get_ftp_retry_settings", new=AsyncMock(return_value=(False, 3, 5.0, 10.0))),
         patch("backend.app.main.download_file_async", new=AsyncMock(return_value=False)),
         patch("backend.app.services.bambu_ftp.list_files_async", new=AsyncMock(return_value=[])),
+        patch(
+            "backend.app.services.bambu_ftp.list_files_result_async",
+            new=AsyncMock(return_value=FileListResult(files=[], available=True)),
+        ),
     ):
         mock_session_maker.return_value = mock_session
         mock_notif_svc.on_print_start = AsyncMock()

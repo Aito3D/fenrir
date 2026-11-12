@@ -66,7 +66,7 @@ The CI workflow (`.github/workflows/ci.yml`) runs on:
 |-----|---------|-----------------|
 | `backend-lint` | Ruff linting + format check | Yes |
 | `backend-typecheck` | basedpyright against the baseline (pinned env, `requirements-typecheck.lock`) | Yes |
-| `backend-tests` | Unit tests | Yes |
+| `docker-backend-tests` | Backend test suite in the test image (Python 3.13); the 3.11 run is nightly in `python-3-11.yml` | Yes |
 | `frontend-lint` | ESLint | Yes |
 | `frontend-typecheck` | TypeScript compilation | Yes |
 | `frontend-tests` | Vitest unit tests | Yes |

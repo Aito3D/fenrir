@@ -69,21 +69,20 @@ permissions:
 # data dependency exists, so the whole workflow starts in one wave — which
 # means the shard counts ARE the concurrency budget:
 #
-#   backend-tests          5  (main pushes, PRs and dispatch only — see the
-#                              note above that job)
-#   docker-backend-tests   5
-#   frontend-tests         2
-#   single-runner jobs     9  (backend-lint, backend-typecheck, backend-security,
-#                              backend-postgres-upgrade, frontend-lint,
-#                              frontend-typecheck, frontend-security,
-#                              frontend-build, docker-test)
+#   docker-backend-tests  10
+#   frontend-tests         3
+#   single-runner jobs     6  (backend-lint, backend-typecheck, frontend-lint,
+#                              frontend-typecheck, frontend-build, docker-test;
+#                              backend-postgres-upgrade is disabled, and the two
+#                              security audits run as advisory steps inside the
+#                              lint jobs since 2026-11-12)
 #   -------------------------
-#   peak                  21   on main pushes and PRs (upstream's typecheck and
-#                              PostgreSQL-upgrade jobs, 2026-10-17, pushed this
-#                              past the cap; the overflow queues, and CodeQL
-#                              queues behind it).
-#                         16   on a feature-branch push, where the 3.11 matrix
-#                              sits out and CodeQL does not run at all.
+#   peak                  19   on every push and PR (CodeQL adds to it on main
+#                              and may queue briefly).
+#
+# The host-side Python 3.11 backend run left this file on 2026-11-12 for
+# python-3-11.yml (nightly); its 5 slots became 5 more Docker shards and one
+# more frontend shard.
 #
 # Raising any shard count past that budget makes GitHub *queue* a job, and the
 # queued one is arbitrary — quite possibly a long test shard, which costs more
@@ -96,7 +95,7 @@ jobs:
   backend-lint:
     name: Backend Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     steps:
       - uses: actions/checkout@v6
@@ -105,6 +104,8 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
 
       - name: Install ruff
         # Install the exact pin from requirements-dev.txt rather than the latest
@@ -117,6 +118,33 @@ jobs:
 
       - name: Run ruff format check
         run: ruff format --check backend/
+
+      # Was its own Security job; folded in to stay under the Free plan's
+      # 20 concurrent jobs. Still advisory (step-level continue-on-error).
+      - name: Install dependencies
+        continue-on-error: true
+        run: |
+          # Upgrade setuptools too: the runner's Python toolcache ships an old
+          # setuptools that trips pip-audit (PYSEC-2026-3447, fixed in 83.0.0).
+          # A fix exists, so we upgrade rather than --ignore-vuln.
+          python -m pip install --upgrade pip setuptools
+          pip install -r requirements.lock
+          pip install pip-audit
+
+      - name: Run pip-audit
+        continue-on-error: true
+        run: |
+          # CVE-2026-4539: low-severity ReDoS in Pygments AdlLexer (indirect dep via mkdocs-material/pytest/rich).
+          # No fix available yet. Remove --ignore-vuln once Pygments releases a patched version.
+          #
+          # CVE-2025-45768 (PYSEC-2025-183 / GHSA-65pc-fj4g-8rjx): disputed by PyJWT maintainers.
+          # Advisory says "key length is chosen by the application that uses the library" — no
+          # PyJWT fix exists or will exist. Fenrir is safe: backend/app/core/auth.py:184 uses
+          # secrets.token_urlsafe(64) (~86 chars of entropy) for auto-generated secrets and
+          # rejects file-loaded secrets shorter than 32 chars at :177. Keep ignored permanently.
+          pip-audit --desc on \
+            --ignore-vuln CVE-2026-4539 \
+            --ignore-vuln CVE-2025-45768
 
   backend-typecheck:
     name: Backend Type Check
@@ -154,161 +182,6 @@ jobs:
         # Lock mode also fails when a baselined error was fixed but the smaller
         # baseline was not committed.
         run: basedpyright --pythonpath "$(which python)" --baselinemode=lock
-
-  backend-security:
-    name: Backend Security
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: requirements.txt
-
-      - name: Install dependencies
-        run: |
-          # Upgrade setuptools too: the runner's Python toolcache ships an old
-          # setuptools that trips pip-audit (PYSEC-2026-3447, fixed in 83.0.0).
-          # A fix exists, so we upgrade rather than --ignore-vuln.
-          python -m pip install --upgrade pip setuptools
-          pip install -r requirements.lock
-          pip install pip-audit
-
-      - name: Run pip-audit
-        run: |
-          # CVE-2026-4539: low-severity ReDoS in Pygments AdlLexer (indirect dep via mkdocs-material/pytest/rich).
-          # No fix available yet. Remove --ignore-vuln once Pygments releases a patched version.
-          #
-          # CVE-2025-45768 (PYSEC-2025-183 / GHSA-65pc-fj4g-8rjx): disputed by PyJWT maintainers.
-          # Advisory says "key length is chosen by the application that uses the library" — no
-          # PyJWT fix exists or will exist. Fenrir is safe: backend/app/core/auth.py:184 uses
-          # secrets.token_urlsafe(64) (~86 chars of entropy) for auto-generated secrets and
-          # rejects file-loaded secrets shorter than 32 chars at :177. Keep ignored permanently.
-          pip-audit --desc on \
-            --ignore-vuln CVE-2026-4539 \
-            --ignore-vuln CVE-2025-45768
-
-  # Host-side run of the backend suite on Python 3.11 — the oldest interpreter
-  # Fenrir claims to support beyond 3.10 (pyproject: requires-python >=3.10)
-  # and the one bare-metal installs are most likely to be on. It is the same
-  # ~13.6k tests that docker-backend-tests runs on 3.13, so between them they
-  # were ~46 of the workflow's ~59 runner-minutes for one suite.
-  #
-  # The version-parity signal is only load-bearing where code lands, so this
-  # matrix now runs on pushes to main, on pull requests (all of which target
-  # main — see the trigger at the top of the file), and on manual dispatch.
-  # A feature-branch push still runs the whole suite via docker-backend-tests,
-  # on the interpreter the image actually ships. Where it skips, ci-ok counts
-  # "skipped" as OK by design (see the gate at the bottom).
-  #
-  # Be clear-eyed about what this costs. For a contributor PR the 3.11 result
-  # arrives pre-merge as before. For the repo owner's own work it does not:
-  # owner PRs skip CI entirely (the `if` every job carries), so the first 3.11
-  # run for an owner change is the push to main after the merge. The guarantee
-  # that survives is the one that matters for users — docker-publish.yml
-  # refuses to publish any commit without a successful CI run recorded for it,
-  # so a 3.11 regression blocks the deploy channel even though it landed on
-  # main. If you would rather have it pre-merge, add
-  # `|| github.event_name == 'push'` back to the condition below; that returns
-  # this matrix to every branch push and costs ~23 runner-minutes per push.
-  backend-tests:
-    name: Backend Tests (shard ${{ matrix.shard }}/5)
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || (github.event_name == 'pull_request' && github.event.pull_request.user.login != github.repository_owner)
-      || github.event_name == 'workflow_dispatch'
-    # No `needs: backend-lint`. Lint is a 9-second job, so gating on it bought
-    # nothing but a guaranteed ~12s of dead time at the head of every run
-    # (job hand-off included) on the 99% of runs where lint is green. A lint
-    # failure is reported by backend-lint itself and fails the gate either way.
-    strategy:
-      # Don't cancel sibling shards if one fails — we want every shard's
-      # failure list, not just the first one, so a single PR push shows
-      # all broken tests in one go.
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5]
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Cache pip
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/pip
-          # Both requirements files are installed below, so both belong in the
-          # key — a requirements-dev.txt bump used to leave the key untouched
-          # and silently reuse a cache that was missing the new wheels.
-          # restore-keys is kept deliberately: this is a *download* cache, so a
-          # near-miss still saves every unchanged wheel, and pip re-validates
-          # what it reuses against the pinned versions.
-          key: ${{ runner.os }}-py${{ env.PYTHON_VERSION }}-pip-${{ hashFiles('requirements.lock', 'requirements-dev.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-py${{ env.PYTHON_VERSION }}-pip-
-            ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          # The pinned versions that ship (Docker, installers), not whatever is newest.
-          pip install -r requirements.lock
-          pip install -r requirements-dev.txt
-
-      - name: Run tests (shard ${{ matrix.shard }}/5)
-        timeout-minutes: 20
-        run: |
-          cd backend
-          # -v dropped: 5300+ "PASSED foo::bar" lines per worker eat 30-60s
-          # of stdout I/O time on 2-vCPU runners. --tb=short is enough.
-          #
-          # -n logical, not -n auto. `auto` asks psutil for *physical* cores
-          # (psutil is a runtime dependency, so xdist always finds it) and the
-          # GitHub-hosted ubuntu runner reports 2 physical cores behind its
-          # 4 vCPUs — every run to date started exactly "2 workers" on a
-          # 4-vCPU box. `logical` uses the vCPU count instead. It is never
-          # worse than `auto`: on a runner without SMT the two numbers are
-          # equal. Revert to `auto` if the extra contention ever proves to
-          # cost more in per-test slowdown than it wins in throughput.
-          #
-          # --timeout=120, raised from 60. The timeout is a hang detector, and
-          # 60s stopped being a safe margin: the slowest single test
-          # (unit/test_aito_routes.py::test_import_accepts_a_thousand_projects)
-          # records 29.3s in .test_durations on a developer machine, which is
-          # already ~55-60s of runner time before the extra worker contention
-          # from -n logical is counted. 120s still catches a real hang inside
-          # the job's own 20-minute step budget.
-          #
-          # --splits 5 --group N uses pytest-split to slice the collected
-          # test set across the 5 matrix shards, balanced by the recorded
-          # per-test timings in backend/.test_durations. Without that file
-          # the name-hash fallback put ~10 min of integration tests in
-          # shard 1 and 2-4 min in the others, so shard 1 sat on the step
-          # timeout. Refresh it occasionally (or after adding a slow test
-          # module) with:
-          #   cd backend && python -m pytest tests/ -n auto \
-          #     --store-durations --durations-path=.test_durations
-          # Keep the `=` form: pytest scans bare argv tokens for existing
-          # paths when choosing rootdir, and a bare `.test_durations` would
-          # move rootdir (and the config file) from backend/tests to the
-          # repo root, changing every node id.
-          python -m pytest tests/ \
-            --tb=short \
-            --timeout=120 --timeout-method=thread \
-            -n logical \
-            --durations-path=.test_durations \
-            --splits 5 --group ${{ matrix.shard }}
 
   backend-postgres-upgrade:
     # The test suite runs on SQLite only. This builds PostgreSQL databases with
@@ -406,27 +279,10 @@ jobs:
         working-directory: frontend
         run: npm run check:knip
 
-  frontend-security:
-    name: Frontend Security
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm ci
-
+      # Was its own Security job; folded in to stay under the Free plan's
+      # 20 concurrent jobs. Still advisory (step-level continue-on-error).
       - name: Run npm audit
+        continue-on-error: true
         working-directory: frontend
         run: |
           # Only audit production dependencies and filter out npm-internal packages.
@@ -512,7 +368,7 @@ jobs:
         run: npm run typecheck
 
   frontend-tests:
-    name: Frontend Tests (shard ${{ matrix.shard }}/2)
+    name: Frontend Tests (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
@@ -522,7 +378,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v6
 
@@ -537,18 +393,18 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Run tests (shard ${{ matrix.shard }}/2)
+      - name: Run tests (shard ${{ matrix.shard }}/3)
         timeout-minutes: 15
         working-directory: frontend
         # vitest's own --shard, not a hand-rolled file split: it partitions the
         # collected suite deterministically and covers every file exactly once
-        # across the shards. Two shards, not more — see the concurrency budget
+        # across the shards. Three shards, not more — see the concurrency budget
         # at the top of this file.
         #
         # `npm run test:run` is not used here because it appends the i18n parity
         # check, which must run once per commit rather than once per shard; it
         # now lives in frontend-lint.
-        run: npx vitest run --shard=${{ matrix.shard }}/2
+        run: npx vitest run --shard=${{ matrix.shard }}/3
 
   frontend-build:
     name: Frontend Build
@@ -583,21 +439,19 @@ jobs:
   # Docker Tests (matches test_docker.sh)
   # ============================================================================
 
-  # Run the FULL backend test suite inside the test image, sharded 5-way
-  # so wall-clock matches the host-side backend-tests job. Catches the
-  # rare-but-real cases where a test passes on the GHA host but fails in
-  # the python:3.13-slim test image (system-binary version differences,
-  # locale/timezone, container vs host user, cwd assumptions) — the host
-  # job runs Python 3.11, this one runs the interpreter Fenrir ships.
+  # The FULL backend test suite inside the test image (python:3.13-slim, the
+  # interpreter Fenrir ships), sharded 10-way. The only per-push backend run:
+  # the host-side Python 3.11 run moved to python-3-11.yml (nightly) on
+  # 2026-11-12 and its 5 slots went here.
   docker-backend-tests:
-    name: Docker Backend Tests (shard ${{ matrix.shard }}/5)
+    name: Docker Backend Tests (shard ${{ matrix.shard }}/10)
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     steps:
       - uses: actions/checkout@v6
 
@@ -622,10 +476,44 @@ jobs:
       # Same as docker-compose.test.yml: some backend tests read the frontend
       # sources and scripts/, and --init reaps the children some tests kill
       # (with pytest as PID 1 they stay zombies that answer kill(pid, 0)).
-      - name: Run backend tests in Docker (shard ${{ matrix.shard }}/5)
-        # Flags mirror the host-side backend-tests step; see the long comment
-        # there for why -n logical and --timeout=120.
+      - name: Run backend tests in Docker (shard ${{ matrix.shard }}/10)
+        # python-3-11.yml runs the same flags nightly on the host.
         run: |
+          # -v dropped: 5300+ "PASSED foo::bar" lines per worker eat 30-60s
+          # of stdout I/O time on 2-vCPU runners. --tb=short is enough.
+          #
+          # -n logical, not -n auto. `auto` asks psutil for *physical* cores
+          # (psutil is a runtime dependency, so xdist always finds it) and the
+          # GitHub-hosted ubuntu runner reports 2 physical cores behind its
+          # 4 vCPUs — every run to date started exactly "2 workers" on a
+          # 4-vCPU box. `logical` uses the vCPU count instead. It is never
+          # worse than `auto`: on a runner without SMT the two numbers are
+          # equal. Revert to `auto` if the extra contention ever proves to
+          # cost more in per-test slowdown than it wins in throughput.
+          #
+          # --timeout=120, raised from 60. The timeout is a hang detector, and
+          # 60s stopped being a safe margin: the slowest single test
+          # (unit/test_aito_routes.py::test_import_accepts_a_thousand_projects)
+          # records 29.3s in .test_durations on a developer machine, which is
+          # already ~55-60s of runner time before the extra worker contention
+          # from -n logical is counted. 120s still catches a real hang inside
+          # the job's own 20-minute step budget.
+          #
+          # --splits 10 --group N uses pytest-split to slice the collected
+          # test set across the 10 matrix shards, balanced by the recorded
+          # per-test timings in backend/.test_durations. The path is relative
+          # to the cwd, not to rootdir: until 2026-11-12 the file sat in
+          # backend/tests/, was never read, and shards ran 4-18 min.
+          # least_duration gives each test to the lightest shard so far, so
+          # tests missing from the file spread out instead of bunching in one
+          # alphabetical chunk. Refresh it occasionally (or after adding a
+          # slow test module) with:
+          #   cd backend && python -m pytest tests/ -n auto -p no:cacheprovider \
+          #     --store-durations --durations-path=.test_durations
+          # Keep the `=` form: pytest scans bare argv tokens for existing
+          # paths when choosing rootdir, and a bare path would move rootdir
+          # (and the config file) away from backend/tests, changing every
+          # node id the durations file is keyed by.
           docker run --rm --init \
             -v "$PWD/frontend/src:/app/frontend/src:ro" \
             -v "$PWD/scripts:/app/scripts:ro" \
@@ -638,7 +526,8 @@ jobs:
               -p no:cacheprovider \
               -n logical \
               --durations-path=backend/.test_durations \
-              --splits 5 --group ${{ matrix.shard }}
+              --splitting-algorithm=least_duration \
+              --splits 10 --group ${{ matrix.shard }}
 
   docker-test:
     name: Docker Build
@@ -749,9 +638,9 @@ jobs:
 
   # Single status that deploy.yml (and branch protection, if you enable it)
   # can key on. Runs even when upstream jobs are skipped/cancelled so the
-  # workflow always ends with an explicit verdict. backend-security and
-  # frontend-security are advisory (continue-on-error) and stay out of the
-  # gate on purpose.
+  # workflow always ends with an explicit verdict. The pip-audit and npm
+  # audit steps inside the lint jobs are advisory (step continue-on-error),
+  # so they never fail the gate.
   #
   # "skipped" counts as OK: jobs only skip via the owner-PR `if` above (the
   # branch push already ran them) or because a dependency failed — and that
@@ -763,7 +652,6 @@ jobs:
     if: always()
     needs:
       - backend-lint
-      - backend-tests
       - frontend-lint
       - frontend-tests
       - frontend-build

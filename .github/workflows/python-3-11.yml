@@ -1,0 +1,74 @@
+name: Python 3.11
+
+# The whole backend suite on Python 3.11, the oldest interpreter bare-metal
+# installs are likely to run. It used to run in ci.yml on every push to main,
+# beside docker-backend-tests (the same ~27k tests on 3.13, the interpreter the
+# image ships). Moved here on 2026-11-12 so its 5 job slots go to more Docker
+# and frontend shards: CI drops from ~11 to ~6-7 minutes.
+#
+# The cost: a 3.11-only regression is caught the next morning, not before the
+# image is published. The shop runs the Docker image (3.13), so only
+# bare-metal 3.11 installs are exposed for that window. Run it by hand from
+# the Actions tab before tagging a release.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'   # 03:17 UTC nightly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-3-11
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  backend-tests:
+    name: Backend Tests on 3.11 (shard ${{ matrix.shard }}/5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-py${{ env.PYTHON_VERSION }}-pip-${{ hashFiles('requirements.lock', 'requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-py${{ env.PYTHON_VERSION }}-pip-
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # The pinned versions that ship (Docker, installers), not whatever is newest.
+          pip install -r requirements.lock
+          pip install -r requirements-dev.txt
+
+      # Flags match docker-backend-tests in ci.yml; see the comments there.
+      - name: Run tests (shard ${{ matrix.shard }}/5)
+        timeout-minutes: 20
+        run: |
+          cd backend
+          python -m pytest tests/ \
+            --tb=short \
+            --timeout=120 --timeout-method=thread \
+            -p no:cacheprovider \
+            -n logical \
+            --durations-path=.test_durations \
+            --splitting-algorithm=least_duration \
+            --splits 5 --group ${{ matrix.shard }}

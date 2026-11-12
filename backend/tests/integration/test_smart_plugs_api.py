@@ -965,13 +965,20 @@ class TestSmartPlugsAPI:
     @pytest.mark.integration
     async def test_rest_plug_is_controllable(self, async_client: AsyncClient, smart_plug_factory, db_session):
         """Verify REST plugs can be controlled (not monitor-only like MQTT)."""
+        from unittest.mock import AsyncMock, patch
+
+        from backend.app.services.rest_smart_plug import rest_smart_plug_service
+
         plug = await smart_plug_factory(plug_type="rest")
 
-        # REST plugs should NOT return 400 like MQTT plugs
-        response = await async_client.post(
-            f"/api/v1/smart-plugs/{plug.id}/control",
-            json={"action": "on"},
-        )
+        # REST plugs should NOT return 400 like MQTT plugs. The plug URL is not
+        # real: answer as an unreachable plug does instead of waiting out httpx's timeout.
+        with patch.object(rest_smart_plug_service, "_send_request", new=AsyncMock(return_value=None)) as send:
+            response = await async_client.post(
+                f"/api/v1/smart-plugs/{plug.id}/control",
+                json={"action": "on"},
+            )
+        send.assert_awaited()
 
         # Should attempt to send the request (may fail with 503 since URL is not real,
         # but should NOT return 400 "monitor-only")

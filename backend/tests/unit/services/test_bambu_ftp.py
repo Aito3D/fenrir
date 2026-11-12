@@ -656,7 +656,7 @@ class TestUpload:
         assert result is False
         client.disconnect()
 
-    def test_upload_large_chunked(self, ftp_client_factory, ftp_server, tmp_path):
+    def test_upload_large_chunked(self, ftp_client_factory, ftp_server, tmp_path, monkeypatch):
         """Large file upload in chunks completes without error.
 
         Uses 2.5MB to trigger multiple chunks with 64KB CHUNK_SIZE.
@@ -676,6 +676,12 @@ class TestUpload:
 
         client = ftp_client_factory()
         client.connect()
+        # pyftpdlib sometimes misses the data channel's EOF after a multi-chunk
+        # TLS upload and never sends 226; cap upload_file's 60 s wait for it
+        # (the file is complete either way, and upload_file still returns True).
+        sock = client._ftp.sock
+        real_settimeout = sock.settimeout
+        monkeypatch.setattr(sock, "settimeout", lambda t: real_settimeout(min(t, 2) if t else t))
         result = client.upload_file(local, "/cache/large.bin", on_progress)
         assert result is True
         # Verify many chunks were sent (2.5MB / 64KB = 40 chunks)

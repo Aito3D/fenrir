@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from backend.app.services.camera import create_tls_proxy, rewrite_rtsp_request_url
+from backend.app.services.camera import close_tls_proxy, create_tls_proxy, rewrite_rtsp_request_url
 
 
 class TestRewriteRtspRequestUrl:
@@ -140,8 +140,9 @@ class TestCreateTlsProxy:
         except (ConnectionError, TimeoutError):
             pass  # Expected — target is unreachable
 
-        server.close()
-        await server.wait_closed()
+        # close_tls_proxy cancels the handler still dialling the target;
+        # close() + wait_closed() would wait out its 10 s connect timeout.
+        await close_tls_proxy(server)
 
     @pytest.mark.asyncio
     async def test_proxy_cleanup(self):
