@@ -5395,6 +5395,9 @@ export interface AitoTracking {
   done_at: string | null;
   invoice: AitoTrackingInvoice | null;
   payment: AitoTrackingPayment | null;
+  /** The checkout page of an open payment link the shop created for the
+   *  unpaid invoice, else null. Optional only for older payloads. */
+  invoice_pay_url?: string | null;
   reference: string | null;
   updated_at: string;
   /** True once the quote is accepted. Before that, a live payment link is how

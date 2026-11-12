@@ -83,6 +83,20 @@ export function TrackingPaidRow({
   );
 }
 
+const PAY_LINK = `inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] bg-aito-cyan px-[16px] text-[13.5px] font-semibold text-aito-midnight transition-[color,background-color,border-color,transform,filter] duration-150 hover:brightness-110 active:scale-[0.97] ${FOCUS} min-[400px]:w-auto`;
+
+/** The one filled button on an unpaid card: OSB's checkout, in a new tab so
+ *  the tracking page stays open behind it. Shared by the quote link
+ *  (TrackingPayment) and the invoice link (TrackingInvoice). */
+export function TrackingPayLink({ href }: { href: string }) {
+  const { t } = useTranslation();
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={PAY_LINK}>
+      {t('aito.track.payment.pay')}
+    </a>
+  );
+}
+
 /** The bordered unpaid/overdue card TrackingInvoice and TrackingPayment both
  *  render: dot, title and sub-line, the `balance` node (already built by the
  *  caller, since each passes its own props), any per-card `children` (the pay

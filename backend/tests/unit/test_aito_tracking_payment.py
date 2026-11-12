@@ -167,3 +167,69 @@ async def test_legacy_null_deposit_falls_back_to_the_setting(db_session):
     await set_setting(db_session, "aito_deposit_pct", "30")
     await db_session.commit()
     assert (await _track(db_session)).payment.deposit is True
+
+
+# --- the invoice's own link ("Régler la facture") ---------------------------
+
+INVOICE_LINK = {
+    "document_kind": "invoice",
+    "reference": "FA-1",
+    "document_number": "FA-1",
+    "heimdall_id": "I1",
+    "idempotency_key": "aito:inv:1",
+    "url": "https://osb/pay/I1",
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["unpaid", "overdue", "partially_paid"])
+async def test_an_open_invoice_link_is_offered_on_an_open_invoice(db_session, status):
+    p = await _project(db_session, quote_status="accepted", invoice_status=status)
+    await _link(db_session, p.id, **INVOICE_LINK)
+    data = await _track(db_session)
+    assert data.invoice_pay_url == "https://osb/pay/I1"
+    # The quote's block is untouched: the invoice link never poses as the quote link.
+    assert data.payment is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "link",
+    [
+        {"status": "paid"},
+        {"status": "cancelled"},
+        {"status": "expired"},
+        {"status": "failed"},
+        {"heimdall_id": None, "url": None},  # a reservation, not minted yet
+        {"expires_on": "2026-09-11"},  # past its last day, expiry not polled yet
+        {"superseded_at": NOW},
+    ],
+)
+async def test_a_dead_or_unminted_invoice_link_is_not_offered(db_session, link):
+    p = await _project(db_session, quote_status="accepted", invoice_status="unpaid")
+    await _link(db_session, p.id, **{**INVOICE_LINK, **link})
+    assert (await _track(db_session)).invoice_pay_url is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [None, "paid"])
+async def test_no_invoice_pay_link_without_an_open_invoice(db_session, status):
+    p = await _project(db_session, quote_status="accepted", invoice_status=status)
+    await _link(db_session, p.id, **INVOICE_LINK)
+    assert (await _track(db_session)).invoice_pay_url is None
+
+
+@pytest.mark.asyncio
+async def test_a_quote_link_is_never_the_invoice_pay_link(db_session):
+    p = await _project(db_session, quote_status="accepted", invoice_status="unpaid")
+    await _link(db_session, p.id)
+    assert (await _track(db_session)).invoice_pay_url is None
+
+
+@pytest.mark.asyncio
+async def test_the_invoice_link_reaches_the_public_payload_as_a_url_only(db_session):
+    p = await _project(db_session, quote_status="accepted", invoice_status="unpaid")
+    await _link(db_session, p.id, **INVOICE_LINK)
+    body = (await _track(db_session)).model_dump_json()
+    assert "https://osb/pay/I1" in body
+    assert '"I1"' not in body and "aito:inv:1" not in body and "FA-1" not in body

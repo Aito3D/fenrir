@@ -751,6 +751,27 @@ describe('AitoTrackPage — online payment', () => {
     expect(screen.queryByTestId('track-payment')).not.toBeInTheDocument();
   });
 
+  it('an unpaid invoice with an open link carries the pay button beside the terms button', async () => {
+    mockTrack({ ...FIXTURE, invoice: 'overdue', invoice_pay_url: 'https://secure.osb.pf/pay/inv' });
+    renderAt('tok');
+    const box = await screen.findByTestId('track-invoice');
+    const pay = within(box).getByRole('link', { name: 'Payer en ligne' });
+    expect(pay).toHaveAttribute('href', 'https://secure.osb.pf/pay/inv');
+    expect(pay).toHaveAttribute('target', '_blank');
+    expect(pay).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(within(box).getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('no pay button on an invoice without a link, nor on a paid one', async () => {
+    mockTrack({ ...FIXTURE, invoice: 'unpaid', invoice_pay_url: null });
+    const { unmount } = renderAt('tok');
+    expect(within(await screen.findByTestId('track-invoice')).queryByRole('link')).toBeNull();
+    unmount();
+    mockTrack({ ...FIXTURE, invoice: 'paid', invoice_pay_url: 'https://secure.osb.pf/pay/inv' });
+    renderAt('tok2');
+    expect(within(await screen.findByTestId('track-invoice')).queryByRole('link')).toBeNull();
+  });
+
   it('unpaid before acceptance: the card asks the client to validate the quote by paying', async () => {
     mockTrack({ ...FIXTURE, column: 'waiting', payment: { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false } });
     renderAt('tok');
