@@ -4447,6 +4447,8 @@ export interface FilamentPresetZohoSyncResponse {
 export interface CsvImportRow {
   row_number: number;
   status: 'valid' | 'error' | 'skipped';
+  /** The id the spool is created with (#3520); null gets the next free one. */
+  keeps_id?: number | null;
   reason: string | null;
   material: string | null;
   brand: string | null;
