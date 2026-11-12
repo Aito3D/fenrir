@@ -1475,6 +1475,15 @@ class VirtualPrinterInstance:
                     from backend.app.services.queue_announcements import announce_queue_jobs_added
 
                     await announce_queue_jobs_added(db, queue_item_ids)
+            # Fenrir: a "P-0042_…" send also lands in that project as a copy, as in
+            # File Manager mode (spec §6.3); the queued file stays as it is. Never raises.
+            if library_file:
+                from backend.app.services.project_filing import auto_file_by_code
+
+                async with self._session_factory() as db:
+                    await auto_file_by_code(
+                        db, filename=file_path.name, path=file_path, library_file=None, user_id=user_id
+                    )
         except Exception as e:
             logger.error("Error adding to print queue: %s", e)
         finally:
