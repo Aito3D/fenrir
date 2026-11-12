@@ -5487,6 +5487,9 @@ export default {
     groupVariant: '변형',
     groupAddColor: '이 설정으로 색상 추가',
     groupLineValue: '이 줄의 나머지: {{value}}',
+    groupEditLine: '이 프로필 {{n}}개의 설정 편집',
+    bulkSaved: '프로필 {{n}}개를 업데이트했습니다',
+    duplicateNameHint: '같은 이름의 프로필이 이미 있습니다. Bambu Studio는 그중 하나만 유지합니다.',
     // Grid
     emptyTitle: '아직 프리셋이 없습니다',
     emptySubtitle: '프리셋을 직접 만들거나 폴더에서 가져오세요.',

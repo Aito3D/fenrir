@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -18,32 +18,24 @@ import {
 } from 'lucide-react';
 
 import { api, ApiError } from '../api/client';
-import type {
-  BambuScanFile,
-  BaseFilamentPreset,
-  FilamentBaseSyncResult,
-  FilamentPreset,
-  FilamentPresetEditorPayload,
-  FilamentPresetPayload,
-  FilamentPresetZohoSyncAttention,
-  FilamentPresetZohoSyncResponse,
-  FilamentSyncStats,
-} from '../api/client';
+import type { BaseFilamentPreset, FilamentPreset, FilamentPresetEditorPayload } from '../api/client';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { SearchableSelect } from '../components/SearchableSelect';
+import { exportPresetsZip } from '../components/filament-profiles/exportZip';
+import { BulkEditModal } from '../components/filament-profiles/BulkEditModal';
 import { PresetCard } from '../components/filament-profiles/PresetCard';
 import { PresetMaterialGroups } from '../components/filament-profiles/PresetMaterialGroups';
 import { PresetEditorModal } from '../components/filament-profiles/PresetEditorModal';
 import { SyncBaseResultModal } from '../components/filament-profiles/SyncBaseResultModal';
 import { SyncModal } from '../components/filament-profiles/SyncModal';
-import {
-  presetComparator,
-  parseColorFromContent,
-  displayColorLabel,
-} from '../components/filament-profiles/presetJson';
-import { collectPresetFiles } from '../components/filament-profiles/pickedFiles';
+import { ZohoSyncResult } from '../components/filament-profiles/ZohoSyncResult';
+import type { Entry } from '../components/filament-profiles/presetGroups';
+import { applyRowSettings, errorMessage, presetComparator, type RowChanges } from '../components/filament-profiles/presetJson';
 import type { GridSize, SortField } from '../components/filament-profiles/types';
+import { usePresetImport } from '../components/filament-profiles/usePresetImport';
+import { useBaseSync, usePcSync } from '../components/filament-profiles/usePresetSyncs';
+import { useZohoSync } from '../components/filament-profiles/useZohoSync';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import {
@@ -64,20 +56,6 @@ const GRID_CLASSES: Record<GridSize, string> = {
 
 const SORT_FIELDS: SortField[] = ['name', 'brand', 'material', 'color'];
 
-// T-003: exhaustive lookup for zohoResult.attention reason -> i18n key. Keying
-// this on the `reason` union (rather than a ternary/switch fallthrough) means
-// TypeScript errors if the union ever grows another value instead of silently
-// reusing a fallback translation.
-const ZOHO_ATTENTION_REASON_KEYS: Record<FilamentPresetZohoSyncAttention['reason'], string> = {
-  no_match: 'filamentProfiles.syncZohoNoMatch',
-  ambiguous: 'filamentProfiles.syncZohoAmbiguous',
-  unwritable_content: 'filamentProfiles.syncZohoUnwritable',
-  bad_price: 'filamentProfiles.syncZohoBadPrice',
-  weight_unknown: 'filamentProfiles.syncZohoWeightUnknown',
-  content_too_large: 'filamentProfiles.syncZohoContentTooLarge',
-  no_price: 'filamentProfiles.syncZohoNoPrice',
-};
-
 /** Every editor open state the page can be in — drives the PresetEditorModal
  *  rendered below (nothing renders for 'closed'). 'edit' stores only the id:
  *  the preset itself is re-derived from the `presets` query on every render
@@ -85,13 +63,6 @@ const ZOHO_ATTENTION_REASON_KEYS: Record<FilamentPresetZohoSyncAttention['reason
  *  sync completing while the editor is open — feeds the modal fresh data
  *  instead of the pre-sync snapshot captured when it was opened. */
 type EditorState = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; presetId: number };
-
-type SyncBaseModalState = { result?: FilamentBaseSyncResult; error?: string } | null;
-type SyncModalState = { state: 'syncing' | 'preview' | 'done'; stats?: FilamentSyncStats } | null;
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
 
 /**
  * Toasts `errorMessage(error)` at most once per mount when `isError` is
@@ -110,49 +81,6 @@ function useToastOnce(isError: boolean, error: unknown, showToast: (message: str
   }, [isError, error, showToast]);
 }
 
-/**
- * Derives a safe, flat ZIP entry name for a preset's stored `filename`
- * (spec §5.9 / T-029). Legacy rows created before the create/update
- * validator existed can still carry path-shaped or traversal-shaped
- * filenames (e.g. `../../x.json`); writing those straight into the archive
- * would produce entries that escape the extraction directory in extractors
- * that don't sanitise themselves. This takes the last non-empty path
- * segment (splitting on both `/` and `\`, and dropping `.`/`..` segments);
- * if nothing valid remains, it falls back to a name derived from the
- * preset's id. Already-bare filenames pass through unchanged.
- */
-function deriveZipEntryName(filename: string, presetId: number): string {
-  const segments = filename
-    .split(/[/\\]+/)
-    .filter((segment) => segment !== '' && segment !== '.' && segment !== '..');
-  const last = segments[segments.length - 1];
-  return last || `preset-${presetId}.json`;
-}
-
-/**
- * Returns a version of `name` guaranteed not to already be in `usedNames`,
- * suffixing deterministically (`-2`, `-3`, ...) before the extension when
- * flattening two legacy filenames collides. Mutates `usedNames` to record
- * the name it returns.
- */
-function uniqueZipEntryName(name: string, usedNames: Set<string>): string {
-  if (!usedNames.has(name)) {
-    usedNames.add(name);
-    return name;
-  }
-  const dotIndex = name.lastIndexOf('.');
-  const base = dotIndex > 0 ? name.slice(0, dotIndex) : name;
-  const ext = dotIndex > 0 ? name.slice(dotIndex) : '';
-  let suffix = 2;
-  let candidate = `${base}-${suffix}${ext}`;
-  while (usedNames.has(candidate)) {
-    suffix += 1;
-    candidate = `${base}-${suffix}${ext}`;
-  }
-  usedNames.add(candidate);
-  return candidate;
-}
-
 function SkeletonCard() {
   return (
     <div className="min-h-24 animate-pulse rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary" />
@@ -166,7 +94,7 @@ function SkeletonCard() {
  */
 export function FilamentProfilesPage() {
   const { t } = useTranslation();
-  const { showToast, showPersistentToast, dismissToast } = useToast();
+  const { showToast } = useToast();
   const queryClient = useQueryClient();
 
   // Each button/menu item below is gated on the permission its own backend
@@ -231,15 +159,11 @@ export function FilamentProfilesPage() {
     setFrozenEditKey(null);
   }, [editorState]);
   const [confirmDelete, setConfirmDelete] = useState<FilamentPreset | null>(null);
-  const [importing, setImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const baseFileInputRef = useRef<HTMLInputElement>(null);
-  const [zohoSyncing, setZohoSyncing] = useState(false);
-  const [zohoResult, setZohoResult] = useState<FilamentPresetZohoSyncResponse | null>(null);
-  const [syncBaseBusy, setSyncBaseBusy] = useState(false);
-  const [syncBaseModal, setSyncBaseModal] = useState<SyncBaseModalState>(null);
-  const [syncModal, setSyncModal] = useState<SyncModalState>(null);
-  const syncPayloadRef = useRef<{ filename: string; content: string }[]>([]);
+  const { importing, fileInputRef, handleImport, handleFilesSelected, importFiles } = usePresetImport(presets);
+  const { zohoSyncing, zohoResult, handleZohoSync } = useZohoSync();
+  const { syncBaseBusy, syncBaseModal, setSyncBaseModal, baseFileInputRef, handleSyncBase, handleBaseFilesSelected } =
+    useBaseSync();
+  const { syncModal, setSyncModal, handleSyncToPc, handleSyncConfirm } = usePcSync(presets);
 
   const brands = useMemo(
     () =>
@@ -378,312 +302,30 @@ export function FilamentProfilesPage() {
     }
   };
 
-  // ── Import from disk (spec §5.7) ────────────────────────────────────────
-  // Shared import core for both sources of preset files: the server-side
-  // Bambu Studio folder scan and the browser file-picker fallback below.
-  // Dedupe against loaded presets, then strictly sequential POSTs with a
-  // progress toast — semantics must stay identical for both paths.
-  const importPresetFiles = async (files: BambuScanFile[]) => {
-    const existingFilenames = new Set(presets.map((p) => p.filename));
-    const newFiles = files.filter((f) => !existingFilenames.has(f.filename));
-
-    if (newFiles.length === 0) {
-      showToast(t('filamentProfiles.allImported', { n: files.length }));
-      return;
-    }
-
-    showPersistentToast('fp-import', t('filamentProfiles.importing', { current: 0, total: newFiles.length }), 'loading');
+  // ── Bulk edit of a grouped line ──────────────────────────────────────────
+  const [bulkLine, setBulkLine] = useState<Entry[] | null>(null);
+  const handleBulkSave = async (changes: RowChanges) => {
+    let failed = 0;
+    // Sequential, like the import: each PATCH carries its own `expected_updated_at`.
+    for (const { preset } of bulkLine ?? []) {
       try {
-        let ok = 0;
-        let failed = 0;
-        for (let i = 0; i < newFiles.length; i++) {
-          const file = newFiles[i];
-          let payload: FilamentPresetPayload;
-          try {
-            const parsed = JSON.parse(file.content) as Record<string, unknown>;
-            const vendor = Array.isArray(parsed.filament_vendor) ? parsed.filament_vendor[0] : undefined;
-            const type = Array.isArray(parsed.filament_type) ? parsed.filament_type[0] : undefined;
-            // Bambu Studio writes the colour as `default_filament_colour`;
-            // parseColorFromContent reads that (and the older
-            // `filament_colour`) and normalizes it to a CSS hex — the earlier
-            // read of only `filament_colour` is why every imported preset's
-            // swatch came out gray.
-            const name = typeof parsed.name === 'string' && parsed.name ? parsed.name : file.filename.replace(/\.json$/, '');
-            payload = {
-              name,
-              brand: vendor ? String(vendor) : '',
-              material: type ? String(type) : '',
-              // Slicer presets carry no separate label field — the label is
-              // the part of the NAME after ' - ' ("eSUN PETG - Green").
-              color: displayColorLabel(name, ''),
-              color_hex: parseColorFromContent(file.content),
-              filename: file.filename,
-              content: file.content,
-            };
-          } catch {
-            payload = {
-              name: file.filename.replace(/\.json$/, ''),
-              brand: '',
-              material: '',
-              color: '',
-              color_hex: '',
-              filename: file.filename,
-              content: file.content,
-            };
-          }
-
-          try {
-            // Sequential and awaited — each POST must land before the next
-            // starts (dedupe + progress-toast semantics depend on it).
-            await api.createFilamentPreset(payload);
-            ok += 1;
-          } catch {
-            failed += 1;
-          }
-
-          showPersistentToast(
-            'fp-import',
-            t('filamentProfiles.importing', { current: i + 1, total: newFiles.length }),
-            'loading',
-          );
-        }
-
-        if (failed === 0) {
-          showToast(t('filamentProfiles.imported', { n: ok }));
-        } else {
-          showToast(t('filamentProfiles.importPartial', { ok, failed }), 'error');
-        }
-        await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
-      } finally {
-        dismissToast('fp-import');
+        await api.updateFilamentPreset(preset.id, {
+          content: applyRowSettings(preset.content, changes),
+          expected_updated_at: preset.updated_at,
+        });
+      } catch {
+        failed += 1;
       }
+    }
+    const ok = (bulkLine?.length ?? 0) - failed;
+    if (failed === 0) showToast(t('filamentProfiles.bulkSaved', { n: ok }));
+    else showToast(t('filamentProfiles.importPartial', { ok, failed }), 'error');
+    setBulkLine(null);
+    await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
   };
 
-  const handleImport = async () => {
-    if (importing) return;
-    setImporting(true);
-    try {
-      // Only the scan call's failure is a "scanFailed" toast — per-file
-      // create failures are counted and reported separately inside
-      // importPresetFiles, and must never be mislabeled as a folder-read
-      // error.
-      let scanResult: { files: BambuScanFile[] };
-      try {
-        scanResult = await api.scanBambuStudioPresets();
-      } catch (err) {
-        showToast(t('filamentProfiles.scanFailed', { error: errorMessage(err) }), 'error');
-        return;
-      }
-
-      if (scanResult.files.length === 0) {
-        // Remote-deploy case: the backend host has no Bambu Studio install,
-        // so the folder scan legitimately finds nothing. Fall back to a
-        // browser-side file picker so the JSONs can come from the client
-        // machine instead of the server's filesystem.
-        showToast(t('filamentProfiles.noServerPresets'), 'info');
-        fileInputRef.current?.click();
-        return;
-      }
-
-      await importPresetFiles(scanResult.files);
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  // ── Import from browser-picked files (upload fallback) ──────────────────
-  const handleFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
-    // Snapshot the live FileList before resetting the input — clearing
-    // `value` empties `files`, and the reset is what lets picking the same
-    // file(s) again re-fire the change event.
-    const pickedFiles = Array.from(event.target.files ?? []);
-    event.target.value = '';
-    if (pickedFiles.length === 0 || importing) return;
-    setImporting(true);
-    try {
-      const collected = await collectPresetFiles(pickedFiles);
-
-      if (collected.length === 0) {
-        showToast(t('filamentProfiles.noJsonInSelection'), 'error');
-        return;
-      }
-
-      await importPresetFiles(collected);
-    } catch (err) {
-      showToast(errorMessage(err), 'error');
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  // ── Sync prices from Zoho ────────────────────────────────────────────────
-  // T-033: zoho_filaments' own comment documents a ~400s cold-cache worst case
-  // (20 pages x 2 attempts x 10s). 10 minutes gives comfortable headroom above
-  // that so a legitimate sync is never killed, while a connection dropped
-  // without a reset (proxy idle-kill, laptop sleep) still recovers the button
-  // instead of leaving it dead until reload.
-  const ZOHO_SYNC_DEADLINE_MS = 600_000;
-
-  const handleZohoSync = async () => {
-    setZohoSyncing(true);
-    setZohoResult(null);
-    const controller = new AbortController();
-    const deadline = setTimeout(() => controller.abort(), ZOHO_SYNC_DEADLINE_MS);
-    try {
-      const result = await api.syncFilamentPresetsFromZoho(controller.signal);
-      setZohoResult(result);
-      // A run that priced nothing must not read as a success: report the
-      // needs-attention count in the toast text itself (the detail panel with
-      // the full breakdown lives further down the page, off-screen on a
-      // normal viewport) and downgrade the toast color whenever some
-      // profiles couldn't be priced or nothing was priced/unchanged at all.
-      const doneMessage = t('filamentProfiles.syncZohoDone', { priced: result.priced, unchanged: result.unchanged });
-      // T-038: the true count, not the (possibly truncated) attention array's
-      // length — a capped run must not read as "fewer profiles needed
-      // review" than it actually did.
-      const attentionCount = result.attention_total;
-      // T-034: Zoho was unreachable and this catalogue came from fetch_catalogue's
-      // failure-branch stale-cache fallback, with no upper bound on its age — the
-      // sync still ran and wrote (see the route), but the toast must disclose
-      // that instead of reading exactly like a live, fully successful sync.
-      const staleMessage = result.catalogue_stale_since
-        ? t('filamentProfiles.syncZohoStale', { timestamp: new Date(result.catalogue_stale_since).toLocaleString() })
-        : null;
-      const toastMessage = [doneMessage]
-        .concat(attentionCount > 0 ? [t('filamentProfiles.syncZohoAttention', { count: attentionCount })] : [])
-        .concat(staleMessage ? [staleMessage] : [])
-        .join(' — ');
-      const isFullSuccess = attentionCount === 0 && result.priced + result.unchanged > 0 && !staleMessage;
-      showToast(toastMessage, isFullSuccess ? 'success' : 'warning');
-    } catch (error) {
-      setZohoResult(null);
-      // T-047: /zoho-sync commits its write server-side before it responds,
-      // so only a definite HTTP error *response* (an `ApiError` — the server
-      // told us it did NOT apply, e.g. 409/502/503) means the sync really
-      // failed. Every other failure mode here — the client-side deadline's
-      // AbortError, or a network failure (fetch throwing a plain `TypeError`
-      // before any response arrives) — means the response was lost, not
-      // that the write never landed. Those get an "unknown outcome" toast
-      // instead of a definite "failed" one; either way the `finally` below
-      // refetches so the grid/editor stop serving the stale pre-sync cache.
-      const isApiError = error instanceof ApiError;
-      showToast(isApiError ? error.message : t('filamentProfiles.syncZohoUnknown'), 'error');
-    } finally {
-      // T-047: invalidate on every path, not just success — a lost response
-      // doesn't mean the server didn't commit the sync, so the failure/abort
-      // paths must refetch too instead of leaving the grid and any open
-      // editor on the pre-sync snapshot (which a subsequent Save would then
-      // PATCH straight back over the committed price).
-      await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
-      clearTimeout(deadline);
-      setZohoSyncing(false);
-    }
-  };
-
-  // ── Export ZIP (spec §5.9) ──────────────────────────────────────────────
-  const handleExport = async () => {
-    // Belt-and-braces: the Export button is disabled via `canExport` below,
-    // but that guard could drift from this filter, so check again here too.
-    const candidates = presets.filter((p) => p.filename && p.content);
-    if (candidates.length === 0) {
-      showToast(t('filamentProfiles.exportEmpty'), 'error');
-      return;
-    }
-    try {
-      const { default: JSZip } = await import('jszip');
-      const zip = new JSZip();
-      const usedNames = new Set<string>();
-      candidates.forEach((p) => {
-        const entryName = uniqueZipEntryName(deriveZipEntryName(p.filename, p.id), usedNames);
-        zip.file(entryName, p.content);
-      });
-      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = 'filament-presets.zip';
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      showToast(errorMessage(err), 'error');
-    }
-  };
-
-  const canExport = presets.some((p) => p.filename && p.content);
-
-  // ── Sync to PC (spec §5.8, two-phase) ───────────────────────────────────
-  const handleSyncToPc = async () => {
-    syncPayloadRef.current = presets
-      .filter((p) => p.filename && p.content)
-      .map((p) => ({ filename: p.filename, content: p.content }));
-    setSyncModal({ state: 'syncing' });
-    try {
-      const { stats } = await api.syncFilamentPresetsToBambu(syncPayloadRef.current, true);
-      setSyncModal({ state: 'preview', stats });
-    } catch (err) {
-      setSyncModal(null);
-      showToast(t('filamentProfiles.syncPreviewFailed', { error: errorMessage(err) }), 'error');
-    }
-  };
-
-  const handleSyncConfirm = async () => {
-    setSyncModal({ state: 'syncing' });
-    try {
-      const { stats } = await api.syncFilamentPresetsToBambu(syncPayloadRef.current, false);
-      setSyncModal({ state: 'done', stats });
-    } catch (err) {
-      setSyncModal(null);
-      showToast(t('filamentProfiles.syncFailed', { error: errorMessage(err) }), 'error');
-    }
-  };
-
-  // ── Sync base (spec §5.2) ───────────────────────────────────────────────
-  const handleSyncBase = async () => {
-    setSyncBaseBusy(true);
-    try {
-      const result = await api.syncBaseFilamentPresets();
-      if (result.total === 0) {
-        // Remote-deploy case: no Bambu Studio bundle on the backend host.
-        // Fall back to a browser picker so the base preset JSONs (or a ZIP
-        // of the bundle folder) can be uploaded from the client machine.
-        showToast(t('filamentProfiles.noServerBase'), 'info');
-        baseFileInputRef.current?.click();
-        return;
-      }
-      setSyncBaseModal({ result });
-    } catch (err) {
-      setSyncBaseModal({ error: errorMessage(err) });
-    } finally {
-      setSyncBaseBusy(false);
-      await queryClient.invalidateQueries({ queryKey: ['filamentBasePresets'] });
-    }
-  };
-
-  // ── Base presets from browser-picked files (upload fallback) ────────────
-  const handleBaseFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
-    // Snapshot the live FileList before resetting the input — clearing
-    // `value` empties `files` (see handleFilesSelected).
-    const pickedFiles = Array.from(event.target.files ?? []);
-    event.target.value = '';
-    if (pickedFiles.length === 0 || syncBaseBusy) return;
-    setSyncBaseBusy(true);
-    try {
-      const collected = await collectPresetFiles(pickedFiles);
-      if (collected.length === 0) {
-        showToast(t('filamentProfiles.noJsonInSelection'), 'error');
-        return;
-      }
-      const result = await api.uploadBaseFilamentPresets(collected);
-      setSyncBaseModal({ result });
-    } catch (err) {
-      setSyncBaseModal({ error: errorMessage(err) });
-    } finally {
-      setSyncBaseBusy(false);
-      await queryClient.invalidateQueries({ queryKey: ['filamentBasePresets'] });
-    }
-  };
+  const exportable = presets.filter((p) => p.filename && p.content);
+  const handleExport = () => exportPresetsZip(exportable).catch((err) => showToast(errorMessage(err), 'error'));
 
   const total = presets.length;
   const filteredCount = filteredPresets.length;
@@ -698,7 +340,19 @@ export function FilamentProfilesPage() {
     // Same page shell as Inventory/Archives/Statistics: the outer padding and
     // the icon + bold title + subtitle header, so this page reads as part of
     // the same family instead of hugging the viewport edges.
-    <div className="p-4 md:p-8 space-y-6">
+    <div
+      className="p-4 md:p-8 space-y-6"
+      // Preset .json / .zip files dropped anywhere on the page are imported like picked ones.
+      onDragOver={canCreatePreset ? (e) => e.preventDefault() : undefined}
+      onDrop={
+        canCreatePreset
+          ? (e) => {
+              e.preventDefault();
+              void importFiles(Array.from(e.dataTransfer.files));
+            }
+          : undefined
+      }
+    >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between animate-rise-lg vt-page-title">
         <div className="max-md:hidden">
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
@@ -778,7 +432,7 @@ export function FilamentProfilesPage() {
               {t('filamentProfiles.syncToPc')}
             </Button>
           )}
-          <Button variant="secondary" size="sm" onClick={handleExport} disabled={!canExport}>
+          <Button variant="secondary" size="sm" onClick={handleExport} disabled={exportable.length === 0}>
             <Download className="h-4 w-4" />
             {t('filamentProfiles.exportZip')}
           </Button>
@@ -900,49 +554,7 @@ export function FilamentProfilesPage() {
         )}
       </div>
 
-      {zohoResult && (
-        <div className="mb-4 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 text-sm">
-          <div className="text-white">
-            {t('filamentProfiles.syncZohoDone', { priced: zohoResult.priced, unchanged: zohoResult.unchanged })}
-          </div>
-          {zohoResult.catalogue_stale_since && (
-            <div className="mt-2 text-amber-400">
-              {t('filamentProfiles.syncZohoStale', {
-                timestamp: new Date(zohoResult.catalogue_stale_since).toLocaleString(),
-              })}
-            </div>
-          )}
-          {zohoResult.attention.length > 0 && (
-            <>
-              <div className="mt-2 text-bambu-gray-light">
-                {t('filamentProfiles.syncZohoAttention', { count: zohoResult.attention_total })}
-              </div>
-              <ul className="mt-1 space-y-0.5 text-bambu-gray-light">
-                {zohoResult.attention.map((entry) => (
-                  <li key={entry.id}>
-                    <span className="text-white">{entry.name}</span>
-                    {' — '}
-                    {t(ZOHO_ATTENTION_REASON_KEYS[entry.reason])}
-                    {entry.candidates.length > 0 && (
-                      <>
-                        {': '}
-                        {entry.candidates.join(', ')}
-                        {entry.candidates_total > entry.candidates.length &&
-                          ` ${t('common.plusNMore', { count: entry.candidates_total - entry.candidates.length })}`}
-                      </>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {zohoResult.attention_total > zohoResult.attention.length && (
-                <div className="mt-1 text-bambu-gray-light">
-                  {t('common.plusNMore', { count: zohoResult.attention_total - zohoResult.attention.length })}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      {zohoResult && <ZohoSyncResult zohoResult={zohoResult} />}
 
       {presetsQuery.isError && (
         <div className="animate-rise py-8 text-center">
@@ -980,6 +592,7 @@ export function FilamentProfilesPage() {
           presets={filteredPresets}
           onOpen={(preset) => setEditorState({ mode: 'edit', presetId: preset.id })}
           onAddColor={canCreatePreset ? handleDuplicate : undefined}
+          onEditLine={canUpdatePreset ? setBulkLine : undefined}
         />
       )}
 
@@ -1028,6 +641,8 @@ export function FilamentProfilesPage() {
             />
           );
         })()}
+
+      {bulkLine && <BulkEditModal line={bulkLine} onSave={handleBulkSave} onClose={() => setBulkLine(null)} />}
 
       {confirmDelete && (
         <ConfirmModal

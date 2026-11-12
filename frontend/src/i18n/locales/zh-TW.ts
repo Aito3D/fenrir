@@ -5660,6 +5660,9 @@ export default {
     groupVariant: '變體',
     groupAddColor: '以這些設定新增顏色',
     groupLineValue: '本列其他: {{value}}',
+    groupEditLine: '編輯這 {{n}} 個設定檔的設定',
+    bulkSaved: '已更新 {{n}} 個設定檔',
+    duplicateNameHint: '已有同名設定檔。Bambu Studio 只會保留其中一個。',
     // Grid
     emptyTitle: '尚無預設',
     emptySubtitle: '手動建立預設，或從資料夾匯入。',

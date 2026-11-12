@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse, delay } from 'msw';
 import { render } from '../utils';
@@ -1196,6 +1196,28 @@ describe('FilamentProfilesPage upload-fallback import', () => {
 
     await waitFor(() => expect(clickSpy).toHaveBeenCalled());
     expect(screen.queryByText(/all already imported/i)).not.toBeInTheDocument();
+  });
+
+  it('imports files dropped on the page, reading an inherited material from the name', async () => {
+    stubBase();
+    const created: { filename: string; material: string }[] = [];
+    server.use(
+      http.post('*/filament-profiles', async ({ request }) => {
+        const body = (await request.json()) as { filename: string; material: string };
+        created.push({ filename: body.filename, material: body.material });
+        return HttpResponse.json(preset({ id: 300, filename: body.filename }));
+      }),
+    );
+
+    render(<FilamentProfilesPage />);
+    const title = await screen.findByText('White');
+    fireEvent.drop(title, {
+      dataTransfer: {
+        files: [jsonFile('dropped.json', { name: 'SUNLU PETG - Mint', filament_vendor: ['SUNLU'] })],
+      },
+    });
+
+    await waitFor(() => expect(created).toEqual([{ filename: 'dropped.json', material: 'PETG' }]));
   });
 
   it('imports uploaded .json files sequentially, skipping filenames that already exist', async () => {

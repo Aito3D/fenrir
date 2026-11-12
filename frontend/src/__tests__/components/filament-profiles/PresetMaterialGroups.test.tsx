@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen } from '@testing-library/react';
 
 import type { FilamentPreset } from '../../../api/client';
+import { BulkEditModal } from '../../../components/filament-profiles/BulkEditModal';
 import { PresetMaterialGroups } from '../../../components/filament-profiles/PresetMaterialGroups';
 import { groupPresetsByMaterial } from '../../../components/filament-profiles/presetGroups';
 import { render } from '../../utils';
@@ -83,5 +84,33 @@ describe('PresetMaterialGroups', () => {
   it('hides add-colour without create permission', () => {
     render(<PresetMaterialGroups presets={[preset('Prusa', 'PETG', 'Grey')]} onOpen={vi.fn()} />);
     expect(screen.queryByRole('button', { name: 'Add a colour with these settings' })).not.toBeInTheDocument();
+  });
+
+  it('offers the line edit only on lines of 2+ colours, and only with update permission', () => {
+    const onEditLine = vi.fn();
+    const presets = [preset('Polymaker', 'PETG', 'Red'), preset('Polymaker', 'PETG', 'Blue'), preset('Prusa', 'PETG', 'Grey')];
+    const { unmount } = render(<PresetMaterialGroups presets={presets} onOpen={vi.fn()} onEditLine={onEditLine} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit the settings of these 2 profiles' }));
+    expect(onEditLine.mock.calls[0][0].map((e: { color: string }) => e.color)).toEqual(['Blue', 'Red']);
+    unmount();
+    render(<PresetMaterialGroups presets={presets} onOpen={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /Edit the settings/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('BulkEditModal', () => {
+  it('saves only the fields that changed, and nothing while unchanged or invalid', async () => {
+    const line = groupPresetsByMaterial([preset('SUNLU', 'PETG', 'Red'), preset('SUNLU', 'PETG', 'Blue')])[0].brands[0].lines[0];
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<BulkEditModal line={line} onSave={onSave} onClose={vi.fn()} />);
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+
+    const temp = screen.getByDisplayValue('246');
+    fireEvent.change(temp, { target: { value: '25x' } });
+    expect(save).toBeDisabled();
+    fireEvent.change(temp, { target: { value: '250' } });
+    fireEvent.click(save);
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith({ temp: '250' }));
   });
 });

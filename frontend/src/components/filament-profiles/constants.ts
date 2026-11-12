@@ -88,6 +88,8 @@ export const MATERIAL_ALIASES: Record<string, string> = {
   'PC-HT': 'PC',
   'PLA+': 'PLA',
   'PLA Basic': 'PLA',
+  'PLA Pro': 'PLA',
+  'PETG Pro': 'PETG',
   'PLA-ST': 'PLA',
   'PLA-LW': 'PLA-AERO',
   'LW-PLA': 'PLA-AERO',

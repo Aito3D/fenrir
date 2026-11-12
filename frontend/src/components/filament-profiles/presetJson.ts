@@ -49,6 +49,10 @@ function readString(raw: unknown): string {
   return str === NIL ? '' : str;
 }
 
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export function extractPaK(gcode: string): string {
   const match = gcode.match(/M900 K([\d.]+)/);
   return match ? match[1] : '';
@@ -343,6 +347,30 @@ export function parsePresetChips(content: string): { temp?: string; flow?: strin
   return result;
 }
 
+export type RowChanges = Partial<Record<'temp' | 'flow' | 'pa', string>>;
+
+/** Writes the settings a grouped row shows into a preset's JSON, leaving every other key alone. Throws on unparsable content. */
+export function applyRowSettings(content: string, changes: RowChanges): string {
+  const data = JSON.parse(content) as Record<string, unknown>;
+  // Bambu Studio stores one value per extruder variant: keep the array's length.
+  const fill = (key: string, value: string) => {
+    const old = data[key];
+    data[key] = Array.isArray(old) && old.length > 0 ? old.map(() => value) : [value];
+  };
+  if (changes.temp) fill('nozzle_temperature', changes.temp);
+  if (changes.flow) fill('filament_flow_ratio', changes.flow);
+  if (changes.pa) {
+    const gcode = readString(data.filament_start_gcode);
+    const line = `M900 K${changes.pa}`;
+    data.filament_start_gcode = [
+      /M900 K[\d.]+/.test(gcode)
+        ? gcode.replace(/M900 K[\d.]+/, line)
+        : `${gcode ? `${gcode}\n` : ''}M900 L1000 M10\n${line}`,
+    ];
+  }
+  return JSON.stringify(data, null, 4);
+}
+
 export function parseNozzleFromCompatible(content: string): string | null {
   let data: Record<string, unknown>;
   try {
@@ -371,7 +399,10 @@ export function displayMaterial(name: string, brand: string, material: string): 
 
   let working = name;
   if (brand && working.startsWith(brand)) {
-    working = working.slice(brand.length).replace(/^[-\s]+/, '');
+    working = working.slice(brand.length).trimStart();
+    // "Brand - Colour": nothing sits between the brand and the colour, so the name holds no material.
+    if (working.startsWith('- ')) return material || '—';
+    working = working.replace(/^[-\s]+/, '');
   }
 
   const dashIndex = working.indexOf(' - ');

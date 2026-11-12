@@ -1550,6 +1550,29 @@ async def _repair_bare_hex_filament_colors(conn) -> None:
                     )
 
 
+async def _backfill_filament_preset_material(conn) -> None:
+    """Fill an empty ``filament_presets.material`` from the preset name.
+
+    Imported presets inherit ``filament_type`` from their base preset, so the
+    column stayed empty: the material filter missed them and the Zoho price
+    sync, which matches on brand + material, skipped them. The name follows
+    "Brand Material - Colour". Repeatable: it only touches empty values.
+    """
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        rows = (
+            await conn.execute(text("SELECT id, name, brand FROM filament_presets WHERE material = '' AND brand != ''"))
+        ).fetchall()
+        for row_id, name, brand in rows:
+            head, sep, _colour = name.partition(" - ")
+            material = head[len(brand) :].strip() if sep and head.startswith(brand) else ""
+            if material:
+                await conn.execute(
+                    text("UPDATE filament_presets SET material = :m WHERE id = :i"), {"m": material, "i": row_id}
+                )
+
+
 async def _backfill_archive_bed_temperature(conn) -> None:
     """Fill in ``print_archives.bed_temperature`` for archives written before #2989.
 
@@ -6122,6 +6145,9 @@ async def _run_migrations(conn):
     # Repair: archives made without their 3MF stored bare hex colours
     # (FF8800FF); repeatable, see the function.
     await _repair_bare_hex_filament_colors(conn)
+
+    # Backfill: imported filament presets kept an empty material; repeatable, see the function.
+    await _backfill_filament_preset_material(conn)
 
     # Backfill: library rows typed from the filename alone kept a sliced 3MF
     # named `Foo.3mf` filed as a source-only project (#2993). Re-reads the zip
