@@ -440,6 +440,11 @@ async def read_finished(db: AsyncSession) -> dict:
             "total": d.header.get("total"),
             "currency": d.header.get("currency_code"),
             "reference": d.header.get("reference_number") or "",
+            # The list row's own quantities: the "Shipped n/n" caption needs no detail.
+            "units": {
+                "shipped": float(d.header.get("quantity_shipped") or 0),
+                "total": float(d.header.get("quantity") or 0),
+            },
             "paid_flag": _PAID_FLAGS.get(d.header.get("paid_status") or ""),
             "payment": order_payment(d.detail, today) if d.detail and not _is_stale(d) else None,
             "is_core": finished_is_core(d.detail, items, core),

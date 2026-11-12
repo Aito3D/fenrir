@@ -81,7 +81,7 @@ const pay = (o: Partial<OrderPayment> = {}): OrderPayment => ({
 
 const fin = (n: number, o: Partial<FinishedOrderRow> = {}): FinishedOrderRow => ({
   id: `f${n}`, number: `SO-F${String(n).padStart(3, '0')}`, customer: `Client ${n}`, date: '2026-08-01', total: 5000, currency: 'XPF',
-  reference: '', paid_flag: null, payment: null, is_core: null, zoho_url: null, ...o,
+  reference: '', units: { shipped: 3, total: 3 }, paid_flag: null, payment: null, is_core: null, zoho_url: null, ...o,
 });
 
 const serveFinished = (rows: FinishedOrderRow[], detail?: () => Response | Promise<Response>) =>
@@ -502,6 +502,14 @@ describe('OrderBoardPage', () => {
     expect(screen.queryByText('SO-F001')).not.toBeInTheDocument();
     expect(screen.getByText('SO-00412')).toBeInTheDocument();
     expect(localStorage.getItem('orders.hideFinished')).toBe('true');
+  });
+
+  it('a finished row captions its bar with the shipped units', async () => {
+    serve(board());
+    serveFinished([fin(1, { units: { shipped: 2.5, total: 2.5 } })]);
+    render(<OrderBoardPage />);
+    const number = await screen.findByText('SO-F001');
+    expect(within(number.closest('button')!).getByText('2.5/2.5 shipped')).toBeInTheDocument();
   });
 
   it('the search reaches finished orders', async () => {

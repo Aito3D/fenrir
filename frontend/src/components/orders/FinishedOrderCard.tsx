@@ -7,7 +7,7 @@ import { formatMoney } from '../../utils/pricing';
 import { Button } from '../Button';
 import { Card } from '../Card';
 import { Skeleton } from '../Skeleton';
-import { finishedPayState, parseDay } from './orderBoard';
+import { finishedPayState, formatQty, parseDay } from './orderBoard';
 import { OrderLinesPanel } from './OrderLinesPanel';
 import { PaymentPill } from './PaymentPill';
 import { ROW_GRID, TONE } from './orderStatus';
@@ -50,6 +50,9 @@ export function FinishedOrderCard({ row, open, onToggle }: { row: FinishedOrderR
         <span className="[grid-area:bar] lg:[grid-area:auto]">
           <span className="flex h-2 overflow-hidden rounded-full bg-bambu-dark">
             <span className={`${TONE.neutral.bar} w-full`} />
+          </span>
+          <span className="mt-1 block whitespace-nowrap text-[11px] text-bambu-gray">
+            {t('orders.shipped', { shipped: formatQty(row.units.shipped), total: formatQty(row.units.total) })}
           </span>
         </span>
         <span

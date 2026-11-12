@@ -769,6 +769,7 @@ async def test_finished_list_is_newest_first_and_costs_no_zoho_call(db_session, 
     assert rows[0]["number"] == "SO-00002" and rows[0]["customer"] == "Customer 2" and rows[0]["total"] == 1000.0
     assert rows[0]["currency"] == "XPF" and rows[0]["reference"] == "" and rows[0]["payment"] is not None
     assert rows[0]["zoho_url"] == "https://books.example/app/1#/salesorders/so2"
+    assert rows[0]["units"] == {"shipped": 1.0, "total": 1.0}  # the "Shipped n/n" caption, from the list row
     assert sum(zoho.calls.values()) == before
 
 
