@@ -190,6 +190,12 @@ KINDS: dict[str, str] = {
     # exactly the kind of administrative act "detail" already holds — a
     # person editing something about the card rather than the card's story.
     "tracking.regenerated": "detail",
+    # The pull (aito_quote_sync._pull_lines): a Books-side edit of the quote's
+    # lines taken onto the tasks, or seen and refused. Detail, not trace: the
+    # first changes prices on the card, the second says the card and the
+    # quote now disagree.
+    "quote.lines_pulled": "detail",
+    "quote.lines_diverged": "detail",
     # trace: machine traffic. Even debounced to transitions (see
     # aito_quote_sync.reconcile_quote_status), it is still noisier and less
     # legible than anything a person did by hand, which is why it is a

@@ -39,6 +39,8 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'sync.failed': 'aito.history.syncFailed',
   'sync.locked': 'aito.history.syncLocked',
   'sync.conflict': 'aito.history.syncConflict',
+  'quote.lines_pulled': 'aito.history.quoteLinesPulled',
+  'quote.lines_diverged': 'aito.history.quoteLinesDiverged',
   'sync.status_rejected': 'aito.history.syncStatusRejected',
   'poll.reconciled': 'aito.history.pollReconciled',
   'project.urgent.set': 'aito.history.projectUrgentSet',
@@ -148,7 +150,7 @@ export function labelParams(
 
 /** Red overrides the actor colour: a failure is the one thing worth finding
  *  without reading, and its actor (always the system) says nothing useful. */
-const FAILURE_KINDS = new Set(['sync.failed', 'sync.conflict', 'sync.status_rejected']);
+const FAILURE_KINDS = new Set(['sync.failed', 'sync.conflict', 'sync.status_rejected', 'quote.lines_diverged']);
 
 export function dotClass(kind: string, actorClass: string): string {
   if (FAILURE_KINDS.has(kind)) return 'bg-status-error';

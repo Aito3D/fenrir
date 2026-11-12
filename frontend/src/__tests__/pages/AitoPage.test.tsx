@@ -656,6 +656,7 @@ describe('AitoPage (backend board)', () => {
       suggested_description: 'Helice grise',
       tasks: [{ ...emptyTask, title: 'Helice grise', impression_cost: 2400 }],
       skipped_lines: [],
+      discount_issues: [],
       shipping: null,
       existing_project_id: null,
     };
@@ -1287,6 +1288,7 @@ describe('AitoPage (backend board)', () => {
           },
         ],
         skipped_lines: [],
+        discount_issues: [],
         shipping: null,
         existing_project_id: null,
       };

@@ -241,3 +241,12 @@ async def test_a_hand_made_card_drops_a_posted_quote_snapshot(async_client, book
     body = r.json()
     assert (body["quote_number"], body["quote_total"], body["quote_date"], body["quote_url"]) == (None,) * 4
     assert books["calls"] == []
+
+
+async def test_a_quote_with_a_discount_the_card_cannot_hold_is_not_imported(async_client, books, wake):
+    """The drawer blocks this; a client that skips the drawer is refused here.
+    The first push would rebuild the lines and wipe the discount off the quote."""
+    books["estimate"] = {**BOOKS_ESTIMATE, "discount": "10.00%", "discount_type": "entity_level"}
+    r = await async_client.post("/api/v1/aito/", json=_import_body())
+    assert r.status_code == 422
+    assert await _board(async_client) == []

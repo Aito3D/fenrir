@@ -55,6 +55,21 @@ describe('ZohoSettings — save payload and test-connection failure', () => {
     expect(putBodies[0]).not.toHaveProperty('zoho_refresh_token');
   });
 
+  it('saves the Books line pull switch, which starts off', async () => {
+    const user = userEvent.setup();
+    render(<ZohoSettings />);
+
+    const saveButton = await screen.findByRole('button', { name: /^save$/i });
+    const pull = screen.getByRole('switch', { name: /apply zoho books line edits to cards/i });
+    expect(pull).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText(/updated or flagged the first time it runs/i)).toBeInTheDocument();
+    await user.click(pull);
+    await user.click(saveButton);
+
+    await waitFor(() => expect(putBodies.length).toBe(1));
+    expect(putBodies[0]).toEqual({ aito_pull_quote_lines: true });
+  });
+
   it('includes zoho_client_secret when the secret field is filled in', async () => {
     const user = userEvent.setup();
     render(<ZohoSettings />);

@@ -52,6 +52,7 @@ const preview: ZohoQuotePreview = {
     { ...emptyTask, title: 'helice', impression_cost: 200 },
   ],
   skipped_lines: [],
+  discount_issues: [],
   shipping: null,
   existing_project_id: null,
 };
@@ -204,6 +205,29 @@ describe('ImportQuoteDrawer', () => {
 
     expect(await screen.findByText(/livraison/i)).toBeInTheDocument();
     expect(screen.getByTestId('import-receipt-totals')).toBeInTheDocument();
+  });
+
+  it('refuses a quote carrying a discount the card cannot hold', async () => {
+    respondWith({
+      ...preview,
+      discount_issues: [
+        { scope: 'quote', sku: '', name: '', discount: '10%' },
+        { scope: 'line', sku: 'P3DIMP', name: 'Impression3D', discount: '150' },
+      ],
+    });
+    const onImport = vi.fn();
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={onImport} />);
+    await pickTheQuote(user);
+
+    const issues = await screen.findByTestId('import-discount-issues');
+    expect(issues).toHaveTextContent(/whole-quote discount/i);
+    expect(issues).toHaveTextContent('P3DIMP · Impression3D');
+    expect(issues).toHaveTextContent('−150');
+    expect(screen.getByText(/cannot hold exactly/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^import$/i }));
+    expect(onImport).not.toHaveBeenCalled();
   });
 
   it('discounts the impression line in the receipt total', async () => {

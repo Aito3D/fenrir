@@ -115,7 +115,14 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
   // the one that holds when the board cache is stale. Trashed projects free
   // their quote — the preview's existing_project_id counts active only.
   const alreadyImported = preview !== null && preview.existing_project_id !== null;
-  const canImport = Boolean(preview) && hasTasks && !alreadyImported && description.trim().length > 0 && !submitting;
+  const discountIssues = preview?.discount_issues ?? [];
+  const canImport =
+    Boolean(preview) &&
+    hasTasks &&
+    !alreadyImported &&
+    discountIssues.length === 0 &&
+    description.trim().length > 0 &&
+    !submitting;
 
   // The currency-mismatch line renders amber 'miss' for visibility but is
   // NOT part of `canImport` above — that warn never blocks (spec rule);
@@ -140,6 +147,8 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
           ? t('aito.quoteCurrencyMismatch', { code: preview.quote.currency_code, configured: configuredCurrency })
           : t('aito.ruleCurrencyOk'),
     },
+    // Only when there is one: a discount is the exception, not a rule every import passes.
+    ...(discountIssues.length > 0 ? [{ state: 'miss' as const, text: t('aito.quoteDiscountBlocked') }] : []),
     { state: description.trim() ? 'ok' : revealed ? 'miss' : 'wait', text: t('aito.ruleImportDescription') },
   ];
 
@@ -296,6 +305,22 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
                         <p key={`${line.sku}-${line.name}`} className="flex justify-between gap-2 text-xs text-bambu-gray">
                           <span className="truncate">{[line.sku, line.name].filter(Boolean).join(' · ')}</span>
                           <Money currency={currency} value={line.amount} className="flex-shrink-0" />
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {discountIssues.length > 0 && (
+                    <div data-testid="import-discount-issues" className="space-y-1 border-t border-bambu-dark-tertiary p-3">
+                      <p className="text-xs uppercase tracking-wide text-amber-400">{t('aito.quoteDiscountIssues')}</p>
+                      {discountIssues.map((issue, index) => (
+                        <p key={index} className="flex justify-between gap-2 text-xs text-bambu-gray">
+                          <span className="truncate">
+                            {issue.scope === 'quote'
+                              ? t('aito.quoteWholeDiscount')
+                              : [issue.sku, issue.name].filter(Boolean).join(' · ')}
+                          </span>
+                          <span className="flex-shrink-0">−{issue.discount}</span>
                         </p>
                       ))}
                     </div>

@@ -1853,6 +1853,8 @@ export interface AppSettings {
   aito_payment_mode_card: string;
   aito_payment_mode_cheque: string;
   aito_payment_mode_cash: string;
+  /** Apply Books-side edits of a quote's lines onto the card's tasks. Off by default. */
+  aito_pull_quote_lines: boolean;
   /** Aito follow-ups strip thresholds, in days. */
   aito_followup_quote_days: number;
   aito_followup_pickup_days: number;
@@ -6099,6 +6101,10 @@ export interface ZohoQuotePreview {
    *  is exactly what gets created. */
   tasks: AitoTaskCreate[];
   skipped_lines: { sku: string; name: string; amount: number }[];
+  /** Discounts the card cannot carry exactly (a whole-quote discount, a flat
+   *  line discount that is not an exact percentage). Any entry blocks the
+   *  import: the first push would rebuild the lines without it. */
+  discount_issues: { scope: 'quote' | 'line'; sku: string; name: string; discount: string }[];
   /** null when the quote carries no shipping line, or when it carries one
    *  whose island could not be resolved. */
   shipping: ZohoQuoteShipping | null;
