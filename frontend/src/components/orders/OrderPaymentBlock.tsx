@@ -10,6 +10,7 @@ import { isTerminalOpen } from '../aito/payment/useTerminalPayment';
 import type { PaymentDocument } from '../aito/payment/paymentDocument';
 import { formatMoney } from '../../utils/pricing';
 import { Card } from '../Card';
+import { Tooltip } from '../Tooltip';
 import { PaymentPill } from './PaymentPill';
 import { TONE } from './orderStatus';
 
@@ -67,15 +68,17 @@ export function OrderPaymentBlock({ payment, currency, total, quoteNumber = '', 
         ))}
       </div>
       <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
-        {parts.filter(x => x.n > 0).map(x => (
-          <span key={x.id} className="inline-flex items-center gap-1.5">
-            <span className={`h-2 w-2 rounded-full ${x.dot}`} style={x.id === 'advance' ? HATCH : undefined} />
-            <span className="text-bambu-gray">{x.label}</span>
-            <span className="tabular-nums text-white">{money(x.n)}</span>
-          </span>
-        ))}
+        {parts.filter(x => x.n > 0).map(x => {
+          const item = (
+            <span key={x.id} className="inline-flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${x.dot}`} style={x.id === 'advance' ? HATCH : undefined} />
+              <span className="text-bambu-gray">{x.label}</span>
+              <span className="tabular-nums text-white">{money(x.n)}</span>
+            </span>
+          );
+          return x.id === 'advance' ? <Tooltip key={x.id} content={t('orders.pay.advanceNote')} align="start">{item}</Tooltip> : item;
+        })}
       </div>
-      {p.advance > 0 && <div className="mt-1.5 text-[11px] text-bambu-gray">{t('orders.pay.advanceNote')}</div>}
       {orderId && <OrderPaymentActions orderId={orderId} currency={currency} left={payment.left} />}
     </Card>
   );
@@ -84,7 +87,7 @@ export function OrderPaymentBlock({ payment, currency, total, quoteNumber = '', 
 const BUTTON = 'inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-xs text-white hover:bg-bambu-dark-tertiary disabled:opacity-50';
 
 /** "Lien de paiement" and "TPE" on the document the server picks (the newest invoice with a balance, else the quote's
- *  open retainer), prefilled with what is left to pay, capped at that document's balance. Hidden when there is none. */
+ *  open retainer, else the quote or the sales order itself), prefilled with what is left to pay, capped at that document's balance. Hidden when there is none. */
 function OrderPaymentActions({ orderId, currency, left }: { orderId: string; currency: string; left: number }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -106,7 +109,7 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
       ? { kind: 'invoice', id: data.document_id, number: data.number ?? '', due: due > 0 ? due : null, currency }
       : null;
   // A retainer is not an invoice balance, and a quote payment becomes a new retainer: each has its own hint.
-  const hint = data?.kind === 'retainer' ? t('orders.pay.retainerHint') : data?.kind === 'quote' ? t('orders.pay.quoteHint') : undefined;
+  const hint = data?.kind === 'retainer' ? t('orders.pay.retainerHint') : data?.kind === 'quote' ? t('orders.pay.quoteHint') : data?.kind === 'salesorder' ? t('orders.pay.orderHint') : undefined;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['order-payment-target', orderId] });
     void queryClient.invalidateQueries({ queryKey: ['order-board'], exact: true });

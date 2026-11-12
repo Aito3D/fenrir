@@ -702,3 +702,38 @@ async def test_a_quote_link_goes_out_under_the_quote_number(async_client, tokens
     assert sent == {"reference": "DEV-1", "amount": 9000}
     row = (await db_session.execute(select(AitoPaymentLink).where(AitoPaymentLink.salesorder_id == "so1"))).scalar_one()
     assert (row.document_kind, row.document_number, row.project_id) == ("quote", "DEV-1", 0)
+
+
+# --- an order without a quote: paid on the sales order itself (Heimdall raises the retainer once paid) --------
+
+SALES_ORDER = {"invoices": [], "salesorder_id": "so1", "salesorder_number": "SO-00001"}
+
+
+@pytest.mark.asyncio
+async def test_target_sales_order_without_a_quote(async_client, tokens, order):  # noqa: F811
+    await order(SALES_ORDER, left=3050)
+    body = (await async_client.get(f"{BASE}/payment-target", headers=tokens["both"])).json()
+    assert (body["kind"], body["document_id"], body["number"], body["max_amount"]) == (
+        "salesorder",
+        "so1",
+        "SO-00001",
+        3050,
+    )
+
+
+@pytest.mark.asyncio
+async def test_terminal_on_the_sales_order(async_client, tokens, order, terminal):  # noqa: F811
+    await order(SALES_ORDER, left=3050)
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 3051}, headers=tokens["both"])
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "amount_above_left"
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 3050}, headers=tokens["both"])
+    assert r.status_code == 201
+    assert (r.json()["document_kind"], r.json()["document_number"]) == ("salesorder", "SO-00001")
+    assert terminal.calls[-1] == ("so1", 3050)
+
+
+@pytest.mark.asyncio
+async def test_a_void_sales_order_takes_no_payment(async_client, tokens, order, terminal):  # noqa: F811
+    await order({**SALES_ORDER, "status": "void"}, left=3050)
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 100}, headers=tokens["both"])
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "document_mismatch"

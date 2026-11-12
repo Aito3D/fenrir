@@ -11276,6 +11276,7 @@ export default {
       advanceNote: 'Anticipo: il credito inutilizzato del cliente in Zoho, in attesa della prossima fattura.',
       retainerHint: 'Fattura di acconto del preventivo: precompilata con quanto resta da pagare, limitata al suo saldo.',
       quoteHint: 'Pagamento sul preventivo: Zoho lo registra come una nuova fattura di acconto. Precompilato con quanto resta da pagare.',
+      orderHint: 'Pagamento sull\'ordine: Zoho lo registra come una nuova fattura di acconto. Precompilato con quanto resta da pagare.',
       linkOpen: 'Per questo ordine è aperto un link di pagamento: il cliente potrebbe pagarlo comunque.',
       cancelLinkAndCharge: 'Annulla il link e incassa al terminale',
       terminal: 'Terminale POS',

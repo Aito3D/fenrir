@@ -11347,6 +11347,7 @@ export default {
       advanceNote: 'Advance: the customer\'s unused credit in Zoho, waiting for the next invoice.',
       retainerHint: 'Deposit invoice on the quote: prefilled with what is left to pay, capped at its balance.',
       quoteHint: 'Paid on the quote: Zoho records it as a new deposit invoice. Prefilled with what is left to pay.',
+      orderHint: 'Paid on the order: Zoho records it as a new deposit invoice. Prefilled with what is left to pay.',
       linkOpen: 'A payment link is open for this order: the client could pay it as well.',
       cancelLinkAndCharge: 'Cancel the link and charge the terminal',
       terminal: 'Card terminal',

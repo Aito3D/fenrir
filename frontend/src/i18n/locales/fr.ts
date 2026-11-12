@@ -11276,6 +11276,7 @@ export default {
       advanceNote: 'Acompte : le crédit inutilisé du client dans Zoho, en attente de la prochaine facture.',
       retainerHint: 'Facture d\'acompte du devis : préremplie avec le reste à payer, plafonnée à son solde.',
       quoteHint: 'Payé sur le devis : Zoho l\'enregistre comme une nouvelle facture d\'acompte. Prérempli avec le reste à payer.',
+      orderHint: 'Payé sur la commande : Zoho l\'enregistre comme une nouvelle facture d\'acompte. Prérempli avec le reste à payer.',
       linkOpen: 'Un lien de paiement est ouvert pour cette commande : le client pourrait le payer aussi.',
       cancelLinkAndCharge: 'Annuler le lien et encaisser au TPE',
       terminal: 'TPE',

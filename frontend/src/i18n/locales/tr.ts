@@ -11218,6 +11218,7 @@ export default {
       advanceNote: 'Avans: müşterinin Zoho\'daki kullanılmamış bakiyesi, sonraki faturayı bekliyor.',
       retainerHint: 'Teklifin avans faturası: kalan ödeme tutarıyla dolduruldu, bakiyesiyle sınırlı.',
       quoteHint: 'Teklif üzerinden ödeme: Zoho bunu yeni bir avans faturası olarak kaydeder. Kalan ödeme tutarıyla dolduruldu.',
+      orderHint: 'Sipariş üzerinden ödeme: Zoho bunu yeni bir avans faturası olarak kaydeder. Kalan ödeme tutarıyla dolduruldu.',
       linkOpen: 'Bu sipariş için açık bir ödeme bağlantısı var: müşteri onu da ödeyebilir.',
       cancelLinkAndCharge: 'Bağlantıyı iptal et ve POS cihazından tahsil et',
       terminal: 'Kart terminali',

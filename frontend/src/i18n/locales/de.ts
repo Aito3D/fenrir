@@ -11291,6 +11291,7 @@ export default {
       advanceNote: 'Vorauszahlung: das ungenutzte Guthaben des Kunden in Zoho, das auf die nächste Rechnung wartet.',
       retainerHint: 'Anzahlungsrechnung zum Angebot: mit dem Restbetrag vorausgefüllt, begrenzt auf ihren Saldo.',
       quoteHint: 'Zahlung auf das Angebot: Zoho legt dafür eine neue Anzahlungsrechnung an. Mit dem Restbetrag vorausgefüllt.',
+      orderHint: 'Zahlung auf den Auftrag: Zoho legt dafür eine neue Anzahlungsrechnung an. Mit dem Restbetrag vorausgefüllt.',
       linkOpen: 'Für diesen Auftrag ist ein Zahlungslink offen: der Kunde könnte ihn ebenfalls bezahlen.',
       cancelLinkAndCharge: 'Link stornieren und am Kartenterminal kassieren',
       terminal: 'Kartenterminal',

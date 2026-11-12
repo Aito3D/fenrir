@@ -11276,6 +11276,7 @@ export default {
       advanceNote: 'Adiantamento: o crédito não utilizado do cliente no Zoho, aguardando a próxima fatura.',
       retainerHint: 'Fatura de sinal do orçamento: preenchida com o que falta pagar, limitada ao seu saldo.',
       quoteHint: 'Pagamento sobre o orçamento: o Zoho registra como uma nova fatura de sinal. Preenchido com o que falta pagar.',
+      orderHint: 'Pagamento sobre o pedido: o Zoho registra como uma nova fatura de sinal. Preenchido com o que falta pagar.',
       linkOpen: 'Há um link de pagamento aberto para este pedido: o cliente também poderia pagá-lo.',
       cancelLinkAndCharge: 'Cancelar o link e cobrar na maquininha',
       terminal: 'Maquininha',

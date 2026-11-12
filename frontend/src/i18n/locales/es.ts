@@ -11299,6 +11299,7 @@ export default {
       advanceNote: 'Anticipo: el crédito sin usar del cliente en Zoho, a la espera de la próxima factura.',
       retainerHint: 'Factura de anticipo del presupuesto: rellenada con lo que queda por pagar, limitada a su saldo.',
       quoteHint: 'Pago sobre el presupuesto: Zoho lo registra como una nueva factura de anticipo. Rellenado con lo que queda por pagar.',
+      orderHint: 'Pago sobre el pedido: Zoho lo registra como una nueva factura de anticipo. Rellenado con lo que queda por pagar.',
       linkOpen: 'Hay un enlace de pago abierto para este pedido: el cliente también podría pagarlo.',
       cancelLinkAndCharge: 'Cancelar el enlace y cobrar en el terminal',
       terminal: 'Terminal de tarjeta',

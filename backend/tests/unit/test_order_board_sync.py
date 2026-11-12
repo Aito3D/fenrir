@@ -109,6 +109,7 @@ class FakeZoho:
         self.retainers: dict[str, list[dict]] = {}
         self.fail_retainers: Exception | None = None
         self.customer_payments: list[dict] = []
+        self.customer_retainers: list[dict] = []
 
     def add(self, *docs: dict):
         for doc in docs:
@@ -138,6 +139,12 @@ class FakeZoho:
         if self.fail_retainers:
             raise self.fail_retainers
         return self.retainers.get(quote.quote_id, [])
+
+    async def list_customer_retainers(self, db, customer_id):
+        self.calls["customer_retainers"] += 1
+        if self.fail_retainers:
+            raise self.fail_retainers
+        return self.customer_retainers
 
     async def list_customer_payments(self, db, customer_id):
         self.calls["customer_payments"] += 1
@@ -211,6 +218,7 @@ def zoho(monkeypatch):
         "list_items_by_ids",
         "list_customer_payments_modified_since",
         "list_customer_payments",
+        "list_customer_retainers",
         "books_salesorder_url_base",
         "books_invoice_url",
         "books_app_url",
@@ -1123,10 +1131,20 @@ def _retainer_payment(retainer_id: str, unused: float) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_no_estimate_no_retainer_call(db_session, zoho):
-    await _synced(db_session, zoho, order(1))
-    assert (zoho.calls["retainers"], zoho.calls["customer_payments"]) == (0, 0)
-    assert "_retainers" not in (await db_session.execute(sync._stored_query("so1"))).scalar_one().detail
+async def test_no_estimate_reads_the_retainers_under_the_order_number(db_session, zoho):
+    """Heimdall books a payment on a quote-less order as a retainer whose reference is the order number."""
+    number = order(1)["salesorder_number"]
+    zoho.customer_retainers = [
+        {"retainerinvoice_id": "r1", "reference_number": f" {number.lower()} ", "total": 300, "status": "paid"},
+        {"retainerinvoice_id": "r2", "reference_number": "DEV26-1", "total": 900, "status": "paid"},
+    ]
+    zoho.customer_payments = [_retainer_payment("r1", 300.0), _retainer_payment("r2", 900.0)]
+    await _synced(db_session, zoho, {**order(1), "contact": {"unused_customer_credits": 1200.0}})
+    assert (zoho.calls["retainers"], zoho.calls["estimate"]) == (0, 0)
+    stored = (await db_session.execute(sync._stored_query("so1"))).scalar_one().detail
+    assert [(r["id"], r["unused"]) for r in stored["_retainers"]] == [("r1", 300.0)]
+    payment = (await sync.read_board(db_session))["rows"][0]["payment"]
+    assert payment["retainer"] == 300.0
 
 
 @pytest.mark.asyncio

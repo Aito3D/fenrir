@@ -418,7 +418,7 @@ class OrderPaymentLinkView(AitoPaymentLinkView):
 
 
 class OrderPaymentTarget(BaseModel):
-    kind: Literal["invoice", "retainer", "quote"] | None
+    kind: Literal["invoice", "retainer", "quote", "salesorder"] | None
     document_id: str | None
     number: str | None
     max_amount: int | None
@@ -448,10 +448,13 @@ async def _order_for_payment(db: AsyncSession, salesorder_id: str) -> tuple[dict
     return row, doc.detail
 
 
-def _target(detail: dict, left: int | None) -> tuple[Literal["invoice", "retainer", "quote"], dict] | None:
+def _target(
+    detail: dict, left: int | None
+) -> tuple[Literal["invoice", "retainer", "quote", "salesorder"], dict] | None:
     """Design §3: the newest invoice with a balance; else, for an order made from a quote, its open retainer; else
-    that quote itself, as in Aito: Heimdall books the payment as a new retainer invoice on it. A quote has no balance
-    of its own: it takes at most what the order has left to pay."""
+    that quote itself, as in Aito: Heimdall books the payment as a new retainer invoice on it. An order without a
+    quote is paid on the sales order itself, booked the same way (the retainer's reference is the order number).
+    A quote or a sales order has no balance of its own: it takes at most what the order has left to pay."""
     invoice = _payable(detail.get("invoices"))
     if invoice is not None:
         return "invoice", {**invoice, "id": invoice.get("invoice_id"), "number": invoice.get("invoice_number")}
@@ -463,6 +466,8 @@ def _target(detail: dict, left: int | None) -> tuple[Literal["invoice", "retaine
         if left:
             number = order_facts(detail)["quote_number"] or estimate_id
             return "quote", {"id": estimate_id, "number": number, "balance": left}
+    elif left and detail.get("salesorder_id") and detail.get("salesorder_number"):
+        return "salesorder", {"id": detail["salesorder_id"], "number": detail["salesorder_number"], "balance": left}
     return None
 
 

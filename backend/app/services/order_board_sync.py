@@ -36,8 +36,9 @@ from backend.app.core.websocket import ws_manager
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_events
+from backend.app.services.aito_invoice_sweep import _same_reference
 from backend.app.services.aito_poll_watermark import format_books_time
-from backend.app.services.aito_retainers import list_project_retainers
+from backend.app.services.aito_retainers import list_project_retainers, map_retainer
 from backend.app.services.inbox import broadcast_pending
 from backend.app.services.order_board import age_days, compute_board, finished_is_core, order_row
 from backend.app.services.order_board_payment import order_facts, order_payment, quote_number_missing
@@ -782,26 +783,46 @@ def _kept_retainers(detail: dict | None) -> dict:
 
 
 async def _retainers(db: AsyncSession, detail: dict, previous: dict | None, payments: dict[str, list[dict]]) -> dict:
-    """``{"_retainers": [...]}`` for an order made from a quote, else ``{}``: the quote's retainers, each with its
-    ``unused`` money (the sum of its customer payments' ``unused_amount``). ``payments`` caches each customer's
-    payments for the pass. A Zoho failure keeps the previous retainers; a 429 opens the back-off and is re-raised."""
-    if not detail.get("estimate_id"):
-        return {}
+    """``{"_retainers": [...]}``: the retainers of the order's quote or, for an order without a quote, the
+    customer's retainers whose reference is the order number (what Heimdall writes on a sales-order payment), each
+    with its ``unused`` money (the sum of its customer payments' ``unused_amount``). ``payments`` caches each
+    customer's payments for the pass. A Zoho failure keeps the previous retainers; a 429 opens the back-off and is
+    re-raised."""
     customer_id = str(detail.get("customer_id") or "")
+    if not detail.get("estimate_id"):
+        number = str(detail.get("salesorder_number") or "")
+        if not number or not customer_id:
+            return {}
+        return await _with_unused(
+            db, customer_id, previous, payments, f"order {number}", lambda: _order_retainers(db, customer_id, number)
+        )
     quote = SimpleNamespace(
         quote_id=str(detail["estimate_id"]),
         quote_number=order_facts(detail)["quote_number"] or (previous or {}).get("estimate_number") or "",
         client_id=customer_id,
     )
+    return await _with_unused(
+        db, customer_id, previous, payments, f"quote {quote.quote_id}", lambda: list_project_retainers(db, quote)
+    )
+
+
+async def _order_retainers(db: AsyncSession, customer_id: str, number: str) -> list[dict]:
+    rows = await zoho_service.list_customer_retainers(db, customer_id)
+    return [map_retainer(r, "") for r in rows if _same_reference(str(r.get("reference_number") or ""), number)]
+
+
+async def _with_unused(
+    db: AsyncSession, customer_id: str, previous: dict | None, payments: dict, what: str, read
+) -> dict:
     try:
-        retainers = await list_project_retainers(db, quote)
+        retainers = await read()
         if retainers and customer_id not in payments:
             payments[customer_id] = await zoho_service.list_customer_payments(db, customer_id)
     except ZohoUpstreamError as e:
         if isinstance(e, ZohoRateLimited):
             open_rate_limit_window(e)
             raise  # the pass stops here rather than sending its next call into the back-off
-        logger.warning("Order board: retainers of quote %s not read, the previous ones stay: %s", quote.quote_id, e)
+        logger.warning("Order board: retainers of %s not read, the previous ones stay: %s", what, e)
         return _kept_retainers(previous)
     unused: dict[str, float] = {}
     for p in payments.get(customer_id) or []:

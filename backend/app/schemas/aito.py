@@ -723,7 +723,7 @@ class AitoTerminalPaymentView(BaseModel):
     the panel can show a settled/failed attempt instead of nothing."""
 
     id: int
-    document_kind: Literal["quote", "invoice", "retainer"]  # retainer: an Order Board charge only
+    document_kind: Literal["quote", "invoice", "retainer", "salesorder"]  # the last two: Order Board charges only
     document_number: str
     status: Literal["pending", "processing", "paid", "failed", "cancelled", "expired", "needs_attention"]
     amount: int

@@ -11274,6 +11274,7 @@ export default {
       advanceNote: '預付款：客戶在 Zoho 中未使用的餘額，等待下一張發票。',
       retainerHint: '報價的預付款發票：已填入剩餘應付金額，上限為其餘額。',
       quoteHint: '在報價上付款：Zoho 會記為一張新的預付款發票。已填入剩餘應付金額。',
+      orderHint: '在訂單上付款：Zoho 會記為一張新的預付款發票。已填入剩餘應付金額。',
       linkOpen: '此訂單有一個未關閉的付款連結：客戶也可能透過它付款。',
       cancelLinkAndCharge: '取消連結並在刷卡終端收款',
       terminal: '刷卡終端',

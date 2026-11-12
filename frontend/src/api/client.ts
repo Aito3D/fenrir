@@ -5133,7 +5133,7 @@ export interface OrderInvoice { id: string; number: string; date: string; due_da
 export interface OrderPaymentLink extends AitoPaymentLink { document_number: string | null }
 /** What the order's payment buttons charge: the newest invoice with a balance, else its quote's open retainer. */
 export interface OrderPaymentTarget {
-  kind: 'invoice' | 'retainer' | 'quote' | null;
+  kind: 'invoice' | 'retainer' | 'quote' | 'salesorder' | null;
   document_id: string | null;
   number: string | null;
   max_amount: number | null;
@@ -5438,7 +5438,7 @@ export type AitoTerminalPaymentStatus =
 export interface AitoTerminalPayment {
   id: number;
   /** `retainer`: an Order Board charge on its quote's retainer invoice. */
-  document_kind: 'quote' | 'invoice' | 'retainer';
+  document_kind: 'quote' | 'invoice' | 'retainer' | 'salesorder';
   document_number: string;
   status: AitoTerminalPaymentStatus;
   amount: number;

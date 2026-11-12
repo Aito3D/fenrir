@@ -91,7 +91,8 @@ async def resolve_order_document(db: AsyncSession, order_detail: dict, kind: str
     an invoice must be one of the order's non-void invoices with something
     left to pay; a retainer must be one of its quote's `_retainers`; a quote
     must be the order's own, still open and for the same customer (Heimdall
-    books a quote payment as a new retainer invoice on it)."""
+    books a quote payment as a new retainer invoice on it); a sales order
+    must be this order, made without a quote (booked like a quote payment)."""
     customer_id = str(order_detail.get("customer_id") or "")
     if not document_id:
         raise DocumentMismatch("No document given")
@@ -155,6 +156,19 @@ async def resolve_order_document(db: AsyncSession, order_detail: dict, kind: str
             id=document_id,
             number=str(estimate.get("estimate_number") or document_id),
             customer_id=quote_customer or customer_id,
+            balance=None,
+        )
+    if kind == "salesorder":
+        # No Zoho read: the stored order is the document, and Heimdall re-reads it before it books anything.
+        if document_id != str(order_detail.get("salesorder_id") or "") or order_detail.get("estimate_id"):
+            raise DocumentMismatch("That sales order is not this order")
+        if order_detail.get("status") == "void":
+            raise DocumentMismatch("That sales order is void")
+        return PaymentDocument(
+            kind="salesorder",
+            id=document_id,
+            number=str(order_detail.get("salesorder_number") or document_id),
+            customer_id=customer_id,
             balance=None,
         )
     raise DocumentMismatch(f"Unknown document kind {kind!r}")
