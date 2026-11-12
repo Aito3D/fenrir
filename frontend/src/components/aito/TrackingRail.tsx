@@ -102,11 +102,29 @@ function StageMark({ state, finished = false, delay }: { state: StageState; fini
  *  Undefined plays nothing. */
 export function TrackingRail({ column, shipped, animateFrom }: { column: AitoColumnId; shipped: boolean; animateFrom?: number }) {
   const { t } = useTranslation();
+  return <StageRail stages={trackStages(shipped, t)} current={column} finished={column === 'done'} animateFrom={animateFrom} />;
+}
+
+/** The rail itself, for any list of stages (the Aito card's seven, a sales
+ *  order's four): `current` is the id of the stage the order stands on,
+ *  `finished` says that stage is the end of the story. Four stages or fewer
+ *  fit a phone, so they keep the row at every width and have no step list. */
+export function StageRail({
+  stages,
+  current: currentId,
+  finished,
+  animateFrom,
+}: {
+  stages: { id: string; label: string }[];
+  current: string;
+  finished: boolean;
+  animateFrom?: number;
+}) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const stages = trackStages(shipped, t);
-  const current = stages.findIndex((s) => s.id === column);
+  const current = stages.findIndex((s) => s.id === currentId);
   const currentLabel = stages[current]?.label ?? '';
-  const finished = column === 'done';
+  const row = stages.length <= 4;
   const animate = animateFrom !== undefined;
   const origin = animateFrom ?? 0;
   const markDelay = (i: number) => (animate && i >= origin ? trackNodeDelay(i, origin) : undefined);
@@ -117,7 +135,11 @@ export function TrackingRail({ column, shipped, animateFrom }: { column: AitoCol
           of its centre (node radius 14 + 4 px of air). Nodes are opaque and
           above the segments, so a check is never crossed. */}
       <p className="sr-only">{`${t('aito.track.stepOf', { n: current + 1, total: stages.length })} : ${currentLabel}`}</p>
-      <ol className="hidden grid-cols-7 sm:grid" aria-label={t('aito.track.stepsAria')}>
+      <ol
+        className={row ? 'grid' : 'hidden sm:grid'}
+        style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))` }}
+        aria-label={t('aito.track.stepsAria')}
+      >
         {stages.map((stage, i) => {
           const state = stageState(i, current);
           const segment = (on: boolean) => `absolute top-[15px] h-[2px] ${on ? 'bg-aito-cyan/55' : 'bg-aito-line'}`;
@@ -164,7 +186,7 @@ export function TrackingRail({ column, shipped, animateFrom }: { column: AitoCol
           );
         })}
       </ol>
-      <div className="sm:hidden" aria-label={t('aito.track.stepsAria')}>
+      {!row && <div className="sm:hidden" aria-label={t('aito.track.stepsAria')}>
         <div className="mb-[8px] flex justify-between text-[13px]">
           <span>{t('aito.track.stepOf', { n: current + 1, total: stages.length })}</span>
           <b className="font-semibold">{currentLabel}</b>
@@ -205,7 +227,7 @@ export function TrackingRail({ column, shipped, animateFrom }: { column: AitoCol
             })}
           </ol>
         </TrackCollapse>
-      </div>
+      </div>}
     </>
   );
 }

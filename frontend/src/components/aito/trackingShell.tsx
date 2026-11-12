@@ -151,12 +151,12 @@ export function TrackingUnpaidCard({
 /** Drops in from above once the content has landed (`at` ms after the
  *  page's clock starts); mounted only when there is something above it,
  *  so it never plays over the skeleton and then again over the content. */
-export function Footer({ at, shop }: { at: number; shop?: PanelTrigger }) {
+export function Footer({ at, shop, question }: { at: number; shop?: PanelTrigger; question?: string }) {
   const { t } = useTranslation();
   const linkCls = `inline-flex min-h-[44px] items-center text-aito-muted transition-colors duration-150 hover:text-aito-ink ${FOCUS} focus-visible:text-aito-ink`;
   return (
     <footer className="animate-track-drop mt-[32px] border-t border-aito-line/60 pt-[24px] text-center text-[13.5px]" style={delayAt(at)} data-testid="track-footer">
-      <p className="text-aito-ink">{t('aito.track.footerQuestion')}</p>
+      <p className="text-aito-ink">{question ?? t('aito.track.footerQuestion')}</p>
       <p className="mt-[8px]">
         <a className={linkCls} href={SHOP_TEL_HREF}>
           {AITO3D_SENDER.phone}

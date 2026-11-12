@@ -5196,6 +5196,26 @@ export interface OrderBoardRow {
   last_event?: OrderLastEvent | null;
 }
 
+export type OrderTrackingLineStatus = 'ready' | 'preparing' | 'to_prepare' | 'waiting' | 'handed_over';
+/** The public tracking page of a sales order (`/t/o/<code>`): only what the page shows. */
+export interface OrderTracking {
+  /** Shopify « #1079 » when there is one, else the sales order number. */
+  reference: string;
+  date: string | null;
+  state: 'received' | 'preparing' | 'partly_ready' | 'ready' | 'handed_over';
+  stage: 'received' | 'preparing' | 'ready' | 'handed_over';
+  /** Goods only, already sorted: ready, in preparation, waiting for stock, handed over.
+   *  `handed_on` is a day or a naive UTC moment, null when not known for sure. */
+  lines: { name: string; quantity: number; status: OrderTrackingLineStatus; handed_on: string | null }[];
+  /** Lines not handed over yet, and how many of those are ready / waiting for stock. */
+  counts: { open: number; ready: number; waiting: number };
+  pickup: boolean;
+  payment: { currency: string; total: number; paid: number; left: number } | null;
+  /** The checkout page of an open payment link, else null. */
+  pay_url: string | null;
+  updated_at: string;
+}
+
 export interface OrderLastEvent {
   kind: string;
   actor_name: string | null;
@@ -10048,6 +10068,12 @@ export const api = {
       method: 'POST',
       ...(paymentLinkId === undefined ? {} : { body: JSON.stringify({ payment_link_id: paymentLinkId }) }),
     }),
+  /** The public tracking page of an order; no auth, the code is the credential. */
+  getOrderTracking: (token: string, signal?: AbortSignal) =>
+    request<OrderTracking>(`/order-board/track/${encodeURIComponent(token)}`, { signal }),
+  /** The order's public tracking link (mints its code on first use); null while the external URL is not set. */
+  getOrderTrackingLink: (id: string) =>
+    request<{ tracking_url: string | null }>(`/order-board/orders/${encodeURIComponent(id)}/tracking-link`),
   getOrderPaymentTarget: (id: string) => request<OrderPaymentTarget>(`/order-board/orders/${encodeURIComponent(id)}/payment-target`),
   createOrderPaymentLink: (id: string, amount: number) =>
     request<OrderPaymentLink>(`/order-board/orders/${encodeURIComponent(id)}/payment-link`, { method: 'POST', body: JSON.stringify({ amount }) }),
