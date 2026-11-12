@@ -35,8 +35,8 @@ import {
 import { deriveQuoteSync } from './quoteSync';
 import { ShippingCard } from './ShippingCard';
 import { ClientEditor } from './ClientEditor';
-import { useClientRating } from './useClientRating';
-import { ClientRatingRing } from './ClientRatingPill';
+import { useClientQuoteRating, useClientRating } from './useClientRating';
+import { ClientQuoteRatingMark, ClientRatingRing } from './ClientRatingPill';
 import { ClientHistoryModal } from './ClientHistoryModal';
 import { useBoardSync } from '../../hooks/useBoardSync';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
@@ -372,6 +372,7 @@ function PanelHeader({
   // Empty id disables the query: a legacy card with no client has no rating
   // to ask for.
   const rating = useClientRating(project.client_id ?? '');
+  const quoteRating = useClientQuoteRating(project.client_id ?? '');
   // Same query key ShippingCard and the create drawer use, so this shares
   // their cache rather than issuing its own request for a table that rarely
   // changes. Only needed for the LABEL — the pill itself gates on
@@ -583,6 +584,7 @@ function PanelHeader({
             {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}
           </span>
           <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
+          <ClientQuoteRatingMark rating={quoteRating.data} />
           {onOpenHistory && (
             <button
               type="button"

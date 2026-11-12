@@ -736,6 +736,12 @@ export const handlers = [
       computed_at: null, stale: false,
     }),
   ),
+  http.get('/api/v1/aito/clients/:clientId/quote-rating', () =>
+    HttpResponse.json({
+      tier: 'unavailable', accepted_count: 0, declined_count: 0, expired_count: 0, pending_count: 0,
+      score: null, computed_at: null, stale: false,
+    }),
+  ),
   http.get('/api/v1/aito/track/:token', () => HttpResponse.json({ detail: 'Lien introuvable' }, { status: 404 })),
   // The detail panel's task rows read their PDM project links (phase 3). No
   // links by default; tests about the link override this with server.use().

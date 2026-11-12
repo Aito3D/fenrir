@@ -197,6 +197,29 @@ export function ClientQuoteRatingPill({
   );
 }
 
+/** The quote rating on the MASTHEAD: a tier-coloured document glyph after the
+ *  client's name. Not a pill (the band's pill row already carries the quote
+ *  status and the flag) and no taller than the name's own icon buttons, so
+ *  the band cannot grow. Hidden for `new` / `unavailable`, like the ring. */
+export function ClientQuoteRatingMark({ rating }: { rating: AitoClientQuoteRating | undefined }) {
+  const { tip, ariaLabel } = useQuoteRatingText(rating);
+  if (!rating || rating.tier === 'unavailable' || rating.tier === 'new') return null;
+  return (
+    <Tooltip content={tip} align="start" side="bottom">
+      <span
+        data-testid="client-quote-rating-mark"
+        data-tier={rating.tier}
+        role="img"
+        aria-label={ariaLabel}
+        style={{ color: TIER_COLOR[rating.tier] }}
+        className={`animate-fade-in inline-flex flex-shrink-0 ${rating.stale ? 'opacity-55' : ''}`}
+      >
+        <FileText aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2.5} />
+      </span>
+    </Tooltip>
+  );
+}
+
 /** The shared dot-and-word pill both drawer ratings render through. */
 function RatingPill({
   tier,

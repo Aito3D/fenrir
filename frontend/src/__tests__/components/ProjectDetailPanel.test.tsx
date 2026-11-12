@@ -4013,6 +4013,32 @@ describe('client rating on the masthead', () => {
     expect(tip.className).not.toContain('right-0');
   });
 
+  it('marks the quote-acceptance rating after the name, inside the heading, and hides a new one', async () => {
+    const quoteBody = (tier: string) => ({
+      tier, accepted_count: 1, declined_count: 4, expired_count: 0, pending_count: 0,
+      score: 0.36, computed_at: new Date().toISOString(), stale: false,
+    });
+    server.use(http.get('/api/v1/aito/clients/:clientId/quote-rating', () => HttpResponse.json(quoteBody('bad'))));
+    const first = renderPanel();
+    const mark = await screen.findByRole('img', { name: /^Quote rating: Bad\. 1 of 5 quotes accepted/ });
+    expect(mark.closest('h2')).toHaveTextContent(/ACME SARL/);
+    expect(mark).toHaveAttribute('data-tier', 'bad');
+    // A glyph, never a word: the band's pill row is not repeated on the name line.
+    expect(screen.queryByText('Bad')).not.toBeInTheDocument();
+    first.unmount();
+
+    let asked = false;
+    server.use(
+      http.get('/api/v1/aito/clients/:clientId/quote-rating', () => {
+        asked = true;
+        return HttpResponse.json(quoteBody('new'));
+      }),
+    );
+    renderPanel();
+    await waitFor(() => expect(asked).toBe(true));
+    expect(screen.queryByTestId('client-quote-rating-mark')).not.toBeInTheDocument();
+  });
+
   it('hides a new client on the masthead', async () => {
     const seen: string[] = [];
     server.use(
