@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Archive, Box, Loader2, PackageCheck, Plug, PowerOff, RefreshCw, Search, SearchX } from 'lucide-react';
+import { AlertTriangle, Box, Loader2, PackageCheck, Plug, PowerOff, RefreshCw, Search, SearchX } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
 import type { OrderBoardResponse, OrderBoardRow } from '../api/client';
@@ -44,7 +44,6 @@ const FINISHED_KEY = ['order-board', 'finished'] as const;
 const PAGE = 50;
 const PAY_CHIPS: Exclude<PayFilter, 'all' | 'overdue'>[] = ['unpaid', 'partial', 'paid'];
 const CORE_ONLY_KEY = 'orders.coreOnly';
-const HIDE_FINISHED_KEY = 'orders.hideFinished';
 
 const chipCls = (active: boolean) =>
   `rounded-full border px-3 py-1.5 text-xs ${active ? 'border-bambu-green bg-bambu-green/15 text-white' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`;
@@ -56,15 +55,6 @@ function readCoreOnly(): boolean {
     return localStorage.getItem(CORE_ONLY_KEY) !== 'false';
   } catch {
     return true;
-  }
-}
-
-// "Hide finished" is off unless the viewer turned it on.
-function readHideFinished(): boolean {
-  try {
-    return localStorage.getItem(HIDE_FINISHED_KEY) === 'true';
-  } catch {
-    return false;
   }
 }
 
@@ -113,57 +103,68 @@ export function OrderBoardPage() {
 
   const { query, setQuery, status, setStatus, payFilter, setPayFilter, sort, setSort } = useOrderFilters();
   const [coreOnly, setCoreOnly] = useState(readCoreOnly);
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const [hideFinished, setHideFinished] = useState(readHideFinished);
   const [shown, setShown] = useState(PAGE);
   const [start, setStart] = useState<{ id: string; target: string; tick: number } | null>(null);
-  const scrollTarget = useRef<string | null>(null);
-  const [searchParams] = useSearchParams();
+  const scrollTarget = useRef<{ id: string; block: ScrollLogicalPosition } | null>(null);
+  // One order is open at a time and the URL says which (`?order=`): a copied address or Back lands on it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openId = searchParams.get('order');
+  // The `?order=` this page already acted on: its own clicks, or a link it has followed.
   const deepLinked = useRef<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const finishedQuery = useQuery({
-    queryKey: FINISHED_KEY,
-    queryFn: api.getFinishedOrders,
-    enabled: !hideFinished,
-  });
+  const finishedQuery = useQuery({ queryKey: FINISHED_KEY, queryFn: api.getFinishedOrders });
 
-  // After "Also open for this customer" renders the target, bring it into view.
+  // Opening adds a history entry (Back closes it); closing replaces, so Back never reopens what was just closed.
+  const setOrder = (id: string | null, clearFilters = false) => {
+    deepLinked.current = id;
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set('order', id);
+      else next.delete('order');
+      if (clearFilters) for (const key of ['q', 'status', 'pay']) next.delete(key);
+      return next;
+    }, { replace: !id });
+  };
+
+  // `/` goes to the search box, `j` / `k` walk the order rows (Enter opens the focused one, as any button).
   useEffect(() => {
-    const id = scrollTarget.current;
-    const el = id ? document.getElementById(`order-${id}`) : null;
-    if (!el) return;
-    scrollTarget.current = null;
-    el.scrollIntoView?.({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
-  });
+    const onKey = (e: KeyboardEvent) => {
+      const at = e.target instanceof Element ? e.target : null;
+      if (e.ctrlKey || e.metaKey || e.altKey || at?.closest('input, textarea, select, [contenteditable], [role="dialog"]')) return;
+      if (e.key === '/') {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === 'j' || e.key === 'k') {
+        const rows = [...document.querySelectorAll<HTMLElement>('[data-order-row]')];
+        // From inside an opened order, the walk continues from that order's row.
+        const here = document.activeElement?.closest('[id^="order-"]')?.querySelector<HTMLElement>('[data-order-row]');
+        const index = here ? rows.indexOf(here) + (e.key === 'j' ? 1 : -1) : 0;
+        rows[Math.max(0, Math.min(rows.length - 1, index))]?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   const toggleCoreOnly = () => {
     const next = !coreOnly;
     setCoreOnly(next);
     remember(CORE_ONLY_KEY, next);
   };
-  const toggleHideFinished = () => {
-    const next = !hideFinished;
-    setHideFinished(next);
-    remember(HIDE_FINISHED_KEY, next);
-  };
-  const showOpen = (next: StatusFilter) => setStatus(next);
+  // "Also open for this customer": the filters go (in the URL, the filter state follows it) so the target is listed.
   const goto = (id: string) => {
-    setQuery('');
-    setStatus('all');
-    setPayFilter('all');
     // Turned off for this visit only: the saved choice stays as the viewer set it.
     if (coreOnly && !data?.rows.find(r => r.id === id)?.is_core) setCoreOnly(false);
-    setOpen(prev => new Set(prev).add(id));
-    scrollTarget.current = id;
+    setOrder(id, true);
+    scrollTarget.current = { id, block: 'start' };
   };
   const toggleOpen = (id: string) => {
     // A closed order forgets the step it was opened on, so opening it again does not bring the bar back.
-    setStart(s => (s?.id === id ? null : s));
-    setOpen(prev => {
-      const next = new Set(prev);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
+    setStart(null);
+    // The order that was open folds away above: keep the one just opened on screen.
+    if (openId !== id) scrollTarget.current = { id, block: 'nearest' };
+    setOrder(openId === id ? null : id);
   };
 
   const ready = isBoardReady(data);
@@ -174,12 +175,27 @@ export function OrderBoardPage() {
     const id = setTimeout(() => setEntering(false), 700);
     return () => clearTimeout(id);
   }, [ready, entering]);
-  // A `?order=` link opens that order once per id, when the board is ready; the parameter stays in the URL, and an unknown id does nothing.
+  // A `?order=` that came from outside (a link, Back): show what would hide the order, then scroll to it. An unknown id does nothing.
   useEffect(() => {
-    const id = searchParams.get('order');
-    if (deepLinked.current === id || !id || !ready) return;
-    deepLinked.current = id;
-    if (data?.rows.some(r => r.id === id)) goto(id);
+    if (deepLinked.current === openId || !ready) return;
+    const row = openId ? data?.rows.find(r => r.id === openId) : null;
+    const fin = openId && !row ? finishedQuery.data?.rows.find(r => r.id === openId) : null;
+    if (openId && !row && !fin && finishedQuery.isLoading) return; // it may be a finished order: wait for that list
+    deepLinked.current = openId;
+    if (!openId || (!row && !fin)) return;
+    // Turned off for this visit only: the saved choice stays as the viewer set it.
+    if (coreOnly && (row ?? fin)?.is_core === false) setCoreOnly(false);
+    if (fin) setStatus('finished');
+    else if (status === 'finished') setStatus('all');
+    scrollTarget.current = { id: openId, block: 'start' };
+  }, [openId, ready, data, finishedQuery.data, finishedQuery.isLoading, coreOnly, status, setStatus]);
+  // After the target renders, bring it into view. Declared after the effect above, so one pass does both.
+  useEffect(() => {
+    const target = scrollTarget.current;
+    const el = target ? document.getElementById(`order-${target.id}`) : null;
+    if (!target || !el) return;
+    scrollTarget.current = null;
+    el.scrollIntoView?.({ block: target.block, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   });
   const all = useMemo(() => (ready && data ? data.rows : []), [ready, data]);
   // Each customer's open orders, built once per board instead of a scan per card.
@@ -190,13 +206,13 @@ export function OrderBoardPage() {
   }, [all]);
   // Typing stays responsive: the list follows the search box a beat behind.
   const searchText = useDeferredValue(query);
-  // Tiles follow the brand toggle only; chips add the search; the list adds the status.
+  // Tiles follow the brand toggle and the search; the list adds the status tile and the payment chip.
   const branded = byBrand(all, coreOnly);
   const searched = bySearch(branded, searchText);
-  // Finished orders have no live status: they only join the list under All.
-  const finishedSearched = hideFinished ? [] : searchFinished(finishedByBrand(finishedQuery.data?.rows ?? [], coreOnly), searchText);
-  const finishedFound = status !== 'all' ? [] : finishedSearched;
-  const payCounts = countByPayment(searched);
+  // Finished orders have a tile of their own and never mix with the open ones.
+  const finishedSearched = searchFinished(finishedByBrand(finishedQuery.data?.rows ?? [], coreOnly), searchText);
+  const finishedFound = status === 'finished' ? finishedSearched : [];
+  const payCounts = countByPayment(status === 'finished' ? [] : searched);
   for (const f of PAY_CHIPS) payCounts[f] += byFinishedPayment(finishedFound, f).length;
   payCounts.all += finishedFound.length;
   // Overdue only while something open is overdue.
@@ -205,15 +221,17 @@ export function OrderBoardPage() {
   const listed = sortRows(
     withFinished(byPayment(byStatus(searched, status), pay), byFinishedPayment(finishedFound, pay)),
     sort.key,
-    sort.flipped,
+    // Finished orders read newest first by default: the oldest are years old.
+    sort.flipped !== (status === 'finished' && sort.key === 'age'),
     i18n.language,
   );
-  const tileCounts = countByStatus(branded);
+  const tileCounts = countByStatus(searched);
+  tileCounts.finished = finishedSearched.length;
+  // Orders counted under "To order" that sit under Partial: the tiles add up to more than the total because of them.
+  const partialToOrder = searched.filter(r => r.status !== 'to_order' && r.units.to_order > 0).length;
   // A count ticks when it moves away from what the board first showed, never on the page's own entrance.
   const firstCounts = useRef<typeof tileCounts | null>(null);
-  if (ready && !firstCounts.current) firstCounts.current = tileCounts;
-  const chipCounts = countByStatus(searched);
-  chipCounts.all += finishedSearched.length;
+  if (ready && !firstCounts.current && !searchText.trim()) firstCounts.current = tileCounts;
   const hidden = all.length - branded.length;
   const syncing = !!data && (data.sync.running || data.sync.pending > 0);
 
@@ -222,13 +240,13 @@ export function OrderBoardPage() {
       key={id}
       type="button"
       aria-pressed={status === id}
-      title={id === 'all' ? undefined : t(STATUS_META[id].hint)}
-      onClick={() => showOpen(status === id ? 'all' : id)}
+      title={id === 'all' || id === 'finished' ? undefined : t(STATUS_META[id].hint)}
+      onClick={() => setStatus(status === id ? 'all' : id)}
       className={`rounded-xl border border-l-4 border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-3 text-left hover:bg-bambu-dark-tertiary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green ${TONE[tone].edge} ${status === id ? 'ring-2 ring-bambu-green/60' : ''}`}
     >
       <span className="block text-xs text-bambu-gray">{label}</span>{' '}
-      {ready ? (
-        <span key={tileCounts[id]} className={`mt-1 block text-2xl font-bold ${id === 'all' ? 'text-white' : TONE[tone].text} ${tileCounts[id] !== firstCounts.current?.[id] ? 'animate-value-tick' : ''}`}>{tileCounts[id]}</span>
+      {ready && !(id === 'finished' && finishedQuery.isLoading) ? (
+        <span key={tileCounts[id]} className={`mt-1 block text-2xl font-bold ${id === 'all' ? 'text-white' : TONE[tone].text} ${id !== 'finished' && !searchText.trim() && tileCounts[id] !== firstCounts.current?.[id] ? 'animate-value-tick' : ''}`}>{tileCounts[id]}</span>
       ) : (
         <Skeleton className="mt-2 h-7 w-12 rounded-md" />
       )}{' '}
@@ -272,7 +290,9 @@ export function OrderBoardPage() {
         ))}
       </>
     );
-  } else if (listed.length === 0 && all.length === 0) {
+  } else if (status === 'finished' && finishedQuery.isLoading) {
+    list = Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-16 rounded-xl" />);
+  } else if (listed.length === 0 && all.length === 0 && status !== 'finished') {
     list = <Notice icon={PackageCheck} title={t('orders.empty.none')} hint={t('orders.empty.noneHint')} />;
   } else if (listed.length === 0 && coreOnly && branded.length === 0 && !searchText.trim() && status === 'all') {
     list = <Notice icon={Box} title={t('orders.empty.core')} hint={t('orders.empty.coreHint')} />;
@@ -280,18 +300,18 @@ export function OrderBoardPage() {
     list = <Notice icon={SearchX} title={t('orders.empty.noResults')} />;
   } else {
     // An opened order always renders, even past the page: a `?order=` link or "Also open" may target one further down.
-    list = listed.filter((e, i) => i < shown || open.has(e.open ? e.open.id : e.fin.id)).map(({ open: row, fin }) => !row ? (
-      <FinishedOrderCard key={fin.id} row={fin} open={open.has(fin.id)} onToggle={() => toggleOpen(fin.id)} />
+    list = listed.filter((e, i) => i < shown || (e.open ? e.open.id : e.fin.id) === openId).map(({ open: row, fin }) => !row ? (
+      <FinishedOrderCard key={fin.id} row={fin} open={openId === fin.id} onToggle={() => toggleOpen(fin.id)} />
     ) : (
       <OrderCard
         key={row.id}
         row={row}
-        open={open.has(row.id)}
+        open={openId === row.id}
         onToggle={() => toggleOpen(row.id)}
         others={otherOpenOrders(byCustomer.get(row.customer_id) ?? [], row).map(o => ({ id: o.id, number: o.number }))}
         onGoto={goto}
         onStart={target => {
-          setOpen(prev => new Set(prev).add(row.id));
+          if (openId !== row.id) setOrder(row.id);
           setStart(s => ({ id: row.id, target, tick: (s?.tick ?? 0) + 1 }));
         }}
         start={start?.id === row.id ? start.target : undefined}
@@ -334,16 +354,26 @@ export function OrderBoardPage() {
         </div>
       )}
 
-      <div data-testid="orders-tiles" className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-5">
-        {STATUSES.map(id => tile(id, t(STATUS_META[id].label), (id === 'to_ship' && moneyLine(byStatus(branded, id))) || t(STATUS_META[id].hint), STATUS_META[id].tone))}
-        {tile('all', t('orders.status.inProgress'), moneyLine(branded) ?? '–', 'neutral')}
+      <div data-testid="orders-tiles" className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+        {STATUSES.map(id => tile(
+          id,
+          t(STATUS_META[id].label),
+          (id === 'to_ship' && moneyLine(byStatus(searched, id)))
+            || (id === 'to_order' && partialToOrder > 0 && t('orders.hint.toOrderIncl', { n: partialToOrder }))
+            || t(STATUS_META[id].hint),
+          STATUS_META[id].tone,
+        ))}
+        {tile('all', t('orders.status.inProgress'), moneyLine(searched) ?? '–', 'neutral')}
+        {tile('finished', t('orders.status.finished'), t('orders.hint.finished'), 'neutral')}
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative max-w-md grow basis-64">
           <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-bambu-gray/50" />
           <input
+            ref={searchRef}
             type="search"
+            aria-keyshortcuts="/"
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder={t('orders.search')}
@@ -361,24 +391,7 @@ export function OrderBoardPage() {
           {t('orders.coreOnly')}
           {coreOnly && hidden > 0 && <span className="text-xs text-bambu-gray">{t('orders.hidden', { n: hidden })}</span>}
         </button>
-        <button
-          type="button"
-          aria-pressed={hideFinished}
-          onClick={toggleHideFinished}
-          className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${hideFinished ? 'border-bambu-green/50 bg-bambu-green/10 text-bambu-green' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`}
-        >
-          <Archive aria-hidden="true" className="h-4 w-4" />
-          {t('orders.hideFinished')}
-        </button>
         <div className="flex flex-wrap items-center gap-1.5">
-          {(['all', ...STATUSES] as StatusFilter[]).map(id => (
-            <button key={id} type="button" aria-pressed={status === id} onClick={() => showOpen(id)} className={chipCls(status === id)}>
-              {id === 'all' ? t('orders.status.all') : t(STATUS_META[id].label)} <span className="text-bambu-gray">{chipCounts[id]}</span>
-            </button>
-          ))}
-        </div>
-        {/* Payment beside status on one line; the divider tells the two groups apart. */}
-        <div className="flex flex-wrap items-center gap-1.5 border-l border-bambu-dark-tertiary pl-2">
           {(['all', ...PAY_CHIPS, ...(showOverdue ? ['overdue' as const] : [])] as PayFilter[]).map(id => (
             <button key={id} type="button" aria-pressed={pay === id} onClick={() => setPayFilter(id)} className={chipCls(pay === id)}>
               {id === 'all' ? t('orders.pay.any') : id === 'overdue' ? t('orders.pay.overdueChip') : t(`orders.pay.${id}`)}{' '}
@@ -416,7 +429,7 @@ export function OrderBoardPage() {
           {t('orders.showMore')}
         </button>
       )}
-      {ready && !hideFinished && finishedQuery.isError && (
+      {ready && status === 'finished' && finishedQuery.isError && (
         <div className="mt-2 flex items-center justify-center gap-3 text-sm text-bambu-gray">
           {t('orders.finished.loadListFailed')}
           <Button variant="secondary" size="sm" onClick={() => finishedQuery.refetch()}>

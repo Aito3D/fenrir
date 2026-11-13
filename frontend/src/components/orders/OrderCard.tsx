@@ -94,6 +94,7 @@ export function OrderCard({
         <button
           type="button"
           aria-expanded={open}
+          data-order-row
           onClick={onToggle}
           className={`w-full px-4 py-3 text-left hover:bg-bambu-dark-tertiary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green ${ROW_GRID}`}
         >

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import type { PayFilter, SortKey, StatusFilter } from './orderBoard';
 import { STATUSES } from './orderStatus';
 
-const STATUS_VALUES: StatusFilter[] = ['all', ...STATUSES];
+const STATUS_VALUES: StatusFilter[] = ['all', ...STATUSES, 'finished'];
 const PAY_VALUES: PayFilter[] = ['all', 'unpaid', 'partial', 'paid', 'overdue'];
 export const SORTS: SortKey[] = ['age', 'value', 'customer', 'ready'];
 

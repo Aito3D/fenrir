@@ -96,6 +96,8 @@ const serveFinished = (rows: FinishedOrderRow[], detail?: () => Response | Promi
   );
 
 const tile = (name: RegExp) => screen.getByRole('button', { name });
+/** Finished orders live under their own tile: show them once the tile has its count. */
+const showFinished = async () => fireEvent.click(await screen.findByRole('button', { name: /^Finished [1-9]/ }));
 
 describe('OrderBoardPage', () => {
   it('shows skeletons and the first-sync line on a cold start, never an empty board', async () => {
@@ -119,7 +121,7 @@ describe('OrderBoardPage', () => {
     expect(await screen.findByText('Zoho Books is not connected.')).toBeInTheDocument();
   });
 
-  it('lists orders; tiles ignore the search, chips follow it, the list follows both', async () => {
+  it('lists orders; the tiles and the list follow the search', async () => {
     const user = userEvent.setup();
     serve(board());
     render(<OrderBoardPage />);
@@ -131,11 +133,10 @@ describe('OrderBoardPage', () => {
 
     await user.type(screen.getByPlaceholderText('Order number, customer, product, SKU…'), 'moana');
     expect(screen.queryByText('SO-00412')).not.toBeInTheDocument();
-    expect(tile(/^To ship 1 13.600/)).toBeInTheDocument(); // tiles unchanged
-    expect(screen.getByRole('button', { name: 'To ship 0' })).toBeInTheDocument(); // chip follows the search
-    expect(screen.getByRole('button', { name: 'Partial 1' })).toBeInTheDocument();
+    expect(tile(/^To ship 0 everything in stock/)).toBeInTheDocument(); // the tiles count what the search found
+    expect(tile(/^Partial 1 partly/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'To ship 0' }));
+    await user.click(tile(/^To ship 0/));
     expect(await screen.findByText('No results.')).toBeInTheDocument();
   });
 
@@ -194,7 +195,7 @@ describe('OrderBoardPage', () => {
     await screen.findByText('SO-00412');
     expect(window.location.search).toBe('?order=nope');
     await user.type(screen.getByPlaceholderText('Order number, customer, product, SKU…'), 'moana');
-    await user.click(screen.getByRole('button', { name: 'Partial 1' }));
+    await user.click(tile(/^Partial 1 partly/));
     await user.click(screen.getByRole('button', { name: /^Value/ }));
     await user.click(screen.getByRole('button', { name: /^Value/ }));
     await user.click(screen.getByRole('button', { name: /^Unpaid/ }));
@@ -202,7 +203,7 @@ describe('OrderBoardPage', () => {
     expect(Object.fromEntries(params)).toEqual({ order: 'nope', q: 'moana', status: 'partial', sort: 'value', flip: '1', pay: 'unpaid' });
     expect(window.history.length).toBe(entries); // replace: typing does not fill the history
     await user.clear(screen.getByPlaceholderText('Order number, customer, product, SKU…'));
-    await user.click(screen.getByRole('button', { name: /^All/ }));
+    await user.click(tile(/^In progress/));
     await user.click(screen.getByRole('button', { name: /^Age/ }));
     await user.click(screen.getByRole('button', { name: /^Any payment/ }));
     expect(window.location.search).toBe('?order=nope');
@@ -215,7 +216,7 @@ describe('OrderBoardPage', () => {
     expect(await screen.findByText('SO-00418')).toBeInTheDocument();
     expect(screen.queryByText('SO-00412')).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText('Order number, customer, product, SKU…')).toHaveValue('moana');
-    expect(screen.getByRole('button', { name: 'Partial 1' })).toHaveAttribute('aria-pressed', 'true');
+    expect(tile(/^Partial 1 partly/)).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /^Value/ })).toHaveTextContent('↑');
     expect(screen.getByRole('button', { name: /^Any payment/ })).toHaveAttribute('aria-pressed', 'true'); // an unknown value is the default
     expect(new URLSearchParams(window.location.search).get('pay')).toBeNull();
@@ -230,7 +231,7 @@ describe('OrderBoardPage', () => {
     await user.click(screen.getByRole('link', { name: 'Orders link' }));
     expect(await screen.findByText('SO-00412')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Order number, customer, product, SKU…')).toHaveValue('');
-    expect(screen.getByRole('button', { name: /^All/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(tile(/^In progress/)).toHaveAttribute('aria-pressed', 'true');
     expect(window.location.search).toBe('');
   });
 
@@ -244,7 +245,7 @@ describe('OrderBoardPage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /^Value/ })).toHaveAttribute('aria-pressed', 'true'));
     expect(screen.getByText('SO-00412')).toBeInTheDocument();
     act(() => window.history.back());
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Partial 1' })).toHaveAttribute('aria-pressed', 'true'));
+    await waitFor(() => expect(tile(/^Partial 1 partly/)).toHaveAttribute('aria-pressed', 'true'));
     expect(screen.queryByText('SO-00412')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Age/ })).toHaveAttribute('aria-pressed', 'true');
     act(() => window.history.forward());
@@ -432,7 +433,7 @@ describe('OrderBoardPage', () => {
     ] }));
     render(<OrderBoardPage />);
     await screen.findByText('SO-B');
-    const toShip = tile(/^To ship 2 400/); // the chip is only "To ship 2"
+    const toShip = tile(/^To ship 2 400/);
     expect(toShip).toHaveTextContent(/400.*82% paid/);
     expect(toShip).not.toHaveTextContent('5');
     expect(toShip).toHaveAttribute('title', 'everything in stock');
@@ -463,51 +464,103 @@ describe('OrderBoardPage', () => {
     expect(scroll).toHaveBeenCalled();
   });
 
-  it('All mixes finished orders into the list, 50 at a time; a status chip leaves them out', async () => {
+  it('finished orders stay out of the list until their tile is chosen, then show 50 at a time', async () => {
     const user = userEvent.setup();
     serve(board());
     serveFinished(Array.from({ length: 60 }, (_, i) => fin(i + 1)));
     render(<OrderBoardPage />);
-    expect(await screen.findByText('SO-F001')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'All 62' })).toBeInTheDocument();
+    await screen.findByText('SO-00412');
+    await user.click(await screen.findByRole('button', { name: /^Finished 60/ }));
+    expect(screen.getByText('SO-F001')).toBeInTheDocument();
+    expect(screen.queryByText('SO-00412')).not.toBeInTheDocument();
+    expect(tile(/^In progress 2/)).toBeInTheDocument(); // open orders only
     expect(screen.getAllByTestId('order-number')).toHaveLength(50);
     await user.click(screen.getByRole('button', { name: 'Show more' }));
-    expect(screen.getAllByTestId('order-number')).toHaveLength(62);
+    expect(screen.getAllByTestId('order-number')).toHaveLength(60);
     expect(screen.queryByRole('button', { name: 'Show more' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'To ship 1' }));
+    expect(new URLSearchParams(window.location.search).get('status')).toBe('finished');
+    await user.click(tile(/^To ship 1/));
     expect(screen.queryByText('SO-F001')).not.toBeInTheDocument();
     expect(screen.getByText('SO-00412')).toBeInTheDocument();
   });
 
-  it('finished orders take their place in every sort, with no separation', async () => {
+  it('finished orders read newest first; Age flips them', async () => {
     const user = userEvent.setup();
     serve(board());
-    serveFinished([fin(1, { date: '2026-03-01', total: 5000 }), fin(2, { date: new Date().toISOString().slice(0, 10), total: 1 })]);
+    serveFinished([fin(1, { date: '2026-03-01' }), fin(2, { date: new Date().toISOString().slice(0, 10) })]);
     render(<OrderBoardPage />);
-    await screen.findByText('SO-F001');
+    await showFinished();
     const numbers = () => screen.getAllByTestId('order-number').map(n => n.textContent);
-    expect(numbers()[0]).toBe('SO-F001'); // oldest first
-    expect(numbers().at(-1)).toBe('SO-F002');
-    await user.click(screen.getByRole('button', { name: /^Value/ }));
-    expect(numbers().slice(-2)).toEqual(['SO-F001', 'SO-F002']); // 5 000 and 1 sit below the open orders
+    expect(numbers()).toEqual(['SO-F002', 'SO-F001']);
+    await user.click(screen.getByRole('button', { name: /^Age/ }));
+    expect(numbers()).toEqual(['SO-F001', 'SO-F002']);
   });
 
-  it('Hide finished takes them off the list and is remembered', async () => {
+  it('opening an order closes the one that was open and puts it in the URL; closing takes it out', async () => {
     const user = userEvent.setup();
+    Element.prototype.scrollIntoView = vi.fn();
+    serve(board());
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /SO-00412/ }));
+    expect(window.location.search).toBe('?order=so1');
+    await user.click(screen.getByRole('button', { name: /SO-00418/ }));
+    expect(screen.getByRole('button', { name: /SO-00418/, expanded: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /SO-00412/, expanded: false })).toBeInTheDocument();
+    expect(window.location.search).toBe('?order=so2');
+    await user.click(screen.getByRole('button', { name: /SO-00418/ }));
+    expect(screen.queryAllByRole('button', { expanded: true })).toHaveLength(0);
+    expect(window.location.search).toBe('');
+  });
+
+  it('a ?order= link to a finished order shows it under Finished', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    window.history.pushState({}, '', '/orders?order=f1');
     serve(board());
     serveFinished([fin(1)]);
     render(<OrderBoardPage />);
-    await screen.findByText('SO-F001');
-    await user.click(screen.getByRole('button', { name: 'Hide finished' }));
-    expect(screen.queryByText('SO-F001')).not.toBeInTheDocument();
-    expect(screen.getByText('SO-00412')).toBeInTheDocument();
-    expect(localStorage.getItem('orders.hideFinished')).toBe('true');
+    expect(await screen.findByRole('button', { name: /SO-F001/, expanded: true })).toBeInTheDocument();
+    expect(tile(/^Finished 1/)).toHaveAttribute('aria-pressed', 'true');
+    window.history.pushState({}, '', '/');
+  });
+
+  it('/ goes to the search box, j and k walk the rows, and typing in the box moves nothing', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    const first = screen.getByRole('button', { name: /SO-00412/ });
+    const second = screen.getByRole('button', { name: /SO-00418/ });
+    await user.keyboard('j');
+    expect(first).toHaveFocus();
+    await user.keyboard('j');
+    expect(second).toHaveFocus();
+    await user.keyboard('j');
+    expect(second).toHaveFocus(); // the last row stays
+    await user.keyboard('k');
+    expect(first).toHaveFocus();
+    await user.keyboard('/');
+    const box = screen.getByPlaceholderText('Order number, customer, product, SKU…');
+    expect(box).toHaveFocus();
+    await user.keyboard('j/');
+    expect(box).toHaveValue('j/');
+    expect(box).toHaveFocus();
+  });
+
+  it('the To order tile says how many of its orders sit under Partial', async () => {
+    serve(board({ rows: [
+      row({ status: 'to_order' }),
+      row({ id: 'p', number: 'SO-P', status: 'partial', units: { total: 2, shipped: 0, ready: 1, backordered: 0, to_order: 1 } }),
+    ] }));
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-P');
+    expect(tile(/^To order 2 incl\. 1 partial/)).toHaveAttribute('title', 'shortfall with no open PO');
   });
 
   it('a finished row captions its bar with the shipped units', async () => {
     serve(board());
     serveFinished([fin(1, { units: { shipped: 2.5, total: 2.5 } })]);
     render(<OrderBoardPage />);
+    await showFinished();
     const number = await screen.findByText('SO-F001');
     expect(within(number.closest('button')!).getByText('2.5/2.5 shipped')).toBeInTheDocument();
   });
@@ -517,8 +570,9 @@ describe('OrderBoardPage', () => {
     serve(board());
     serveFinished([fin(1, { customer: 'Zorglub' }), fin(2)]);
     render(<OrderBoardPage />);
-    await screen.findByText('SO-F002');
+    await showFinished();
     await user.type(screen.getByPlaceholderText('Order number, customer, product, SKU…'), 'zorglub');
+    expect(tile(/^Finished 1/)).toBeInTheDocument();
     expect(screen.getAllByTestId('order-number').map(n => n.textContent)).toEqual(['SO-F001']);
   });
 
@@ -527,10 +581,11 @@ describe('OrderBoardPage', () => {
     serve(board());
     serveFinished([fin(1, { is_core: true }), fin(2, { is_core: false }), fin(3, { is_core: null })]);
     render(<OrderBoardPage />);
-    await screen.findByText('SO-F001');
+    await showFinished();
+    expect(screen.getByText('SO-F001')).toBeInTheDocument();
     expect(screen.getByText('SO-F003')).toBeInTheDocument();
     expect(screen.queryByText('SO-F002')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'All 4' })).toBeInTheDocument(); // 2 open + 2 finished
+    expect(tile(/^Finished 2/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /3D only/ }));
     expect(screen.getByText('SO-F002')).toBeInTheDocument();
   });
@@ -540,6 +595,7 @@ describe('OrderBoardPage', () => {
     serve(board());
     serveFinished([fin(1, { paid_flag: 'partial' })]);
     render(<OrderBoardPage />);
+    await showFinished();
     const card = await screen.findByRole('button', { name: /SO-F001/ });
     expect(within(card).getByTestId('order-pay')).toHaveTextContent('Partially paid');
     await user.click(card);
@@ -557,6 +613,7 @@ describe('OrderBoardPage', () => {
         payment: pay({ left: 100 }) }), status: 'finished' });
     });
     render(<OrderBoardPage />);
+    await showFinished();
     await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
     expect(screen.getByText('Loading this order from Zoho…')).toBeInTheDocument();
     release();
@@ -580,6 +637,7 @@ describe('OrderBoardPage', () => {
       http.post('/api/v1/order-board/refresh', () => HttpResponse.json(board())),
     );
     render(<OrderBoardPage />);
+    await showFinished();
     await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
     await screen.findByRole('table');
     expect(details).toBe(1);
@@ -596,6 +654,7 @@ describe('OrderBoardPage', () => {
     serveFinished([fin(1)], () => (fail ? HttpResponse.json({ detail: 'down' }, { status: 502 }) : HttpResponse.json({
       ...row({ id: 'f1', number: 'SO-F001' }), status: 'finished' })));
     render(<OrderBoardPage />);
+    await showFinished();
     await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
     expect(await screen.findByText('Could not load this order from Zoho.')).toBeInTheDocument();
     fail = false;
@@ -608,6 +667,7 @@ describe('OrderBoardPage', () => {
     serve(board());
     serveFinished([fin(1)], () => HttpResponse.json({ detail: 'Zoho is busy, try again shortly.' }, { status: 503 }));
     render(<OrderBoardPage />);
+    await showFinished();
     await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
     expect(await screen.findByText('Zoho is busy, trying again…')).toBeInTheDocument();
     expect(screen.queryByText('Could not load this order from Zoho.')).toBeNull();
@@ -744,6 +804,7 @@ describe('OrderBoardPage actions', () => {
       }),
     );
     render(<OrderBoardPage />);
+    await showFinished();
     await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
     await user.click(await screen.findByRole('button', { name: 'Create invoice' }));
     expect(await screen.findByText('Invoice FAC-9 created')).toBeInTheDocument();

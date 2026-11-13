@@ -60,6 +60,16 @@ const board = (o: Partial<OrderBoardResponse> = {}, sync: Partial<OrderBoardResp
 });
 
 describe('search', () => {
+  it('finds an order by its contact, phone however typed, parcel and invoice number', () => {
+    const found = row({
+      contact: { name: 'Hina Teriitahi', email: 'hina@example.pf', phone: '+689 87.12.34.56', mobile: '' },
+      packages: [{ id: 'p', shipment_id: '', number: 'PKG-00042', status: 'not_shipped', date: '2026-10-03' }],
+      payment: { invoices: [{ number: 'FAC-2026-0099' }] } as OrderBoardRow['payment'],
+    });
+    for (const q of ['teriitahi', 'hina@example', '87 12 34', '87123456', 'pkg-00042', 'fac-2026-0099']) expect(bySearch([found, row({ id: 'other' })], q).map(r => r.id)).toEqual(['so1']);
+    expect(bySearch([found], '9999')).toEqual([]);
+  });
+
   const rows = [
     row({ id: 'a', number: 'SO-00412', customer: 'Lycée Polyvalent de Taravao' }),
     row({ id: 'b', number: 'SO-00418', customer: 'Fare Print', lines: [line({ name: 'eSUN PETG Blanc', sku: 'ES-PETG-WH' })] }),
@@ -96,7 +106,7 @@ describe('scopes', () => {
   ];
 
   it('tiles follow the brand toggle only', () => {
-    expect(countByStatus(byBrand(rows, true))).toEqual({ all: 2, to_ship: 1, partial: 1, incoming: 0, to_order: 0 });
+    expect(countByStatus(byBrand(rows, true))).toEqual({ all: 2, to_ship: 1, partial: 1, incoming: 0, to_order: 0, finished: 0 });
     expect(countByStatus(byBrand(rows, false)).all).toBe(3);
   });
 
@@ -109,7 +119,7 @@ describe('scopes', () => {
     const mixed = [...rows, row({ id: 'partial-x2d', status: 'partial', units: toBuy }), row({ id: 'buy', status: 'to_order' })];
     expect(byStatus(mixed, 'to_order').map(r => r.id)).toEqual(['partial-x2d', 'buy']);
     expect(byStatus(mixed, 'partial').map(r => r.id)).toEqual(['core-partial', 'partial-x2d']);
-    expect(countByStatus(mixed)).toEqual({ all: 5, to_ship: 2, partial: 2, incoming: 0, to_order: 2 });
+    expect(countByStatus(mixed)).toEqual({ all: 5, to_ship: 2, partial: 2, incoming: 0, to_order: 2, finished: 0 });
   });
 
   it('the list follows all three', () => {

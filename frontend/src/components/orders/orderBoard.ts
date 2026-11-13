@@ -18,7 +18,8 @@ import type {
   OrderStatus,
 } from '../../api/client';
 
-export type StatusFilter = 'all' | OrderStatus;
+/** 'finished' lists the orders with nothing left to ship: they never mix with the open ones. */
+export type StatusFilter = 'all' | OrderStatus | 'finished';
 export type PayFilter = 'all' | OrderPayState | 'overdue';
 export type SortKey = 'age' | 'value' | 'customer' | 'ready';
 
@@ -33,11 +34,22 @@ export const byBrand = (rows: OrderBoardRow[], coreOnly: boolean): OrderBoardRow
 export const finishedByBrand = (rows: FinishedOrderRow[], coreOnly: boolean): FinishedOrderRow[] =>
   coreOnly ? rows.filter(r => r.is_core !== false) : rows;
 
+const PHONE_NOISE = /[\s.\-()]/g;
+
 export const bySearch = (rows: OrderBoardRow[], query: string): OrderBoardRow[] => {
   const q = foldText(query).trim();
   if (!q) return rows;
+  // A phone number is found however it was typed or stored: "87 12 34" finds "+689 87.12.34.56".
+  const digits = q.replace(PHONE_NOISE, '');
+  const asPhone = digits.length >= 4 && /^\+?\d+$/.test(digits);
   return rows.filter(r =>
-    [r.number, r.customer, r.facts.reference, ...r.lines.flatMap(l => [l.name, l.sku])].some(text => foldText(text).includes(q)),
+    [
+      r.number, r.customer, r.facts.reference, r.contact?.name, r.contact?.email,
+      ...r.packages.map(p => p.number),
+      ...(r.payment?.invoices ?? []).map(i => i.number),
+      ...r.lines.flatMap(l => [l.name, l.sku]),
+    ].some(text => foldText(text).includes(q))
+    || (asPhone && [r.contact?.phone, r.contact?.mobile].some(p => (p ?? '').replace(PHONE_NOISE, '').includes(digits))),
   );
 };
 
@@ -50,7 +62,7 @@ export const byStatus = (rows: OrderBoardRow[], status: StatusFilter): OrderBoar
   rows.filter(r => inStatus(r, status));
 
 export const countByStatus = (rows: OrderBoardRow[]): Record<StatusFilter, number> => {
-  const counts: Record<StatusFilter, number> = { all: rows.length, to_ship: 0, partial: 0, incoming: 0, to_order: 0 };
+  const counts: Record<StatusFilter, number> = { all: rows.length, to_ship: 0, partial: 0, incoming: 0, to_order: 0, finished: 0 };
   for (const r of rows) {
     counts[r.status] += 1;
     if (r.status !== 'to_order' && r.units.to_order > 0) counts.to_order += 1;
