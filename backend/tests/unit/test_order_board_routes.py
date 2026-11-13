@@ -219,7 +219,7 @@ async def test_prep_sheet_is_a_pdf_and_stamps_with_the_username(async_client, to
         return {"number": "SO-1", "lines": [], "customer": "X"}
 
     monkeypatch.setattr(actions, "stamp_print", fake_stamp)
-    monkeypatch.setattr("backend.app.api.routes.order_board.render_prep_sheet", lambda row, **kw: b"%PDF-fake")
+    monkeypatch.setattr("backend.app.api.routes.order_board.board.render_prep_sheet", lambda row, **kw: b"%PDF-fake")
     r = await async_client.post(f"{BASE}/orders/so1/prep-sheet", headers=tokens["read"])
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/pdf"
@@ -309,7 +309,7 @@ async def test_prep_sheet_of_a_picklist_prints_its_units_and_number(async_client
 
     monkeypatch.setattr(actions, "stamp_print", fake_stamp)
     monkeypatch.setattr(actions, "picklist_content", fake_content)
-    monkeypatch.setattr("backend.app.api.routes.order_board.render_prep_sheet", fake_render)
+    monkeypatch.setattr("backend.app.api.routes.order_board.board.render_prep_sheet", fake_render)
     r = await async_client.post(f"{BASE}/orders/so1/prep-sheet?picklist_id=pl1", headers=tokens["read"])
     assert r.status_code == 200
     assert (seen["quantities"], seen["picklist_number"]) == ({"l1": 2}, "PL-00013")

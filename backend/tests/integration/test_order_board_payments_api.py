@@ -6,12 +6,13 @@ from datetime import datetime
 import pytest
 from sqlalchemy import select
 
-from backend.app.api.routes import aito as aito_routes, order_board as routes
+from backend.app.api.routes import aito as aito_routes
+from backend.app.api.routes.order_board import payment as routes
 from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.aito_terminal_payment import AitoTerminalPayment
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
-from backend.app.services import order_board_sync
+from backend.app.services import order_board_actions, order_board_sync
 from backend.app.services.aito_terminal_payments import TerminalInProgress
 from backend.app.services.heimdall import (
     HeimdallConflict,
@@ -608,7 +609,7 @@ async def test_sms_with_the_link_records_payment_link_sent(admin, async_client, 
     async def stamp(db, salesorder_id, by):
         return {"id": salesorder_id}
 
-    monkeypatch.setattr(routes.order_board_actions, "stamp_contact", stamp)
+    monkeypatch.setattr(order_board_actions, "stamp_contact", stamp)
     sms = f"{BASE}/sms"
     assert (await async_client.post(sms, headers=admin)).status_code == 200  # no body: an SMS without the link
     assert (await async_client.post(sms, json={"payment_link_id": other.id}, headers=admin)).status_code == 200
