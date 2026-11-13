@@ -8,7 +8,7 @@ import { SHORT_LABEL_KEY } from './orderEventKinds';
 import { formatMoney } from '../../utils/pricing';
 import { Card } from '../Card';
 import { useAuth } from '../../contexts/AuthContext';
-import { ageTone, formatQty, nextStep, parseDay } from './orderBoard';
+import { ageTone, formatQty, nextStep, packableUnits, parseDay } from './orderBoard';
 import { OrderLinesPanel } from './OrderLinesPanel';
 import { OrderRowAction } from './OrderRowAction';
 import { PaymentPill } from './PaymentPill';
@@ -50,6 +50,8 @@ export function OrderCard({
   onStart,
   start,
   startTick,
+  selected,
+  onSelect,
 }: {
   row: OrderBoardRow;
   open: boolean;
@@ -62,6 +64,9 @@ export function OrderCard({
   start?: string;
   /** Changes with every click on the row icon. */
   startTick?: number;
+  selected?: boolean;
+  /** Given on a list whose rows can be ticked for the batch prep sheet; the box shows only while something is left to prepare. */
+  onSelect?: (on: boolean) => void;
 }) {
   const { t } = useTranslation();
   const meta = STATUS_META[row.status];
@@ -89,14 +94,28 @@ export function OrderCard({
       <div
         data-fresh={edited || undefined}
         onAnimationEnd={e => { if (e.target === e.currentTarget) setEdited(false); }}
-        className={`relative ${edited ? 'bg-bambu-green/10 motion-safe:animate-[pulse_1s_ease-in-out_2]' : ''}`}
+        className={`relative flex items-stretch ${edited ? 'bg-bambu-green/10 motion-safe:animate-[pulse_1s_ease-in-out_2]' : ''}`}
       >
+        {/* Beside the row button, not inside it: ticking must not open the order. The empty slot keeps the columns aligned. */}
+        {onSelect && (
+          <label className="grid w-8 shrink-0 place-items-center pl-3">
+            {packableUnits(row) > 0 && (
+              <input
+                type="checkbox"
+                checked={!!selected}
+                onChange={e => onSelect(e.target.checked)}
+                aria-label={t('orders.prep.select', { number: row.number })}
+                className="h-4 w-4 accent-bambu-green"
+              />
+            )}
+          </label>
+        )}
         <button
           type="button"
           aria-expanded={open}
           data-order-row
           onClick={onToggle}
-          className={`w-full px-4 py-3 text-left hover:bg-bambu-dark-tertiary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green ${ROW_GRID}`}
+          className={`min-w-0 flex-1 px-4 py-3 text-left hover:bg-bambu-dark-tertiary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green ${ROW_GRID}`}
         >
           <span data-testid="order-number" className="font-mono text-sm font-semibold text-white [grid-area:num] lg:[grid-area:auto]">
             {row.number}

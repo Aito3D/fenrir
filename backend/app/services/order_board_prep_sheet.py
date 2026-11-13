@@ -86,12 +86,19 @@ def _grey(c: rl_canvas.Canvas, on: bool = True) -> None:
     c.setFillColorRGB(*(_GREY if on else (0, 0, 0)))
 
 
-def _header(c: rl_canvas.Canvas, row: dict, printed_at: datetime, shop_name: str, picklist: str = "") -> float:
+def _header(
+    c: rl_canvas.Canvas,
+    row: dict,
+    printed_at: datetime,
+    shop_name: str,
+    picklist: str = "",
+    title: str = "BON DE PRÉPARATION",
+) -> float:
     top = _H - _M
     c.setFont("Helvetica-Bold", 22)
     c.drawString(_M, top - 18, shop_name)
     c.setFont("Helvetica-Bold", 15)
-    c.drawRightString(_W - _M, top - 14, "BON DE PRÉPARATION")
+    c.drawRightString(_W - _M, top - 14, title)
     c.setFont("Courier", 14)
     c.drawRightString(_W - _M, top - 32, " · ".join(n for n in (row.get("number") or "", picklist) if n))
     c.setFont("Helvetica", 9)
@@ -153,13 +160,13 @@ def _info(c: rl_canvas.Canvas, row: dict, y: float, order_url: str | None) -> fl
     return min(bottom, y - 58) - 14
 
 
-def _table_head(c: rl_canvas.Canvas, y: float) -> float:
+def _table_head(c: rl_canvas.Canvas, y: float, last: str = "Commandé") -> float:
     c.setFont("Helvetica-Bold", 8)
     _grey(c)
     c.drawRightString(_COLS[1] - 8, y, "Qté")
     c.drawString(_COLS[1], y, "Produit")
     c.drawString(_COLS[2], y, "Référence")
-    c.drawRightString(_COLS[3], y, "Commandé")
+    c.drawRightString(_COLS[3], y, last)
     _grey(c, False)
     c.setLineWidth(0.5)
     c.line(_M, y - 6, _W - _M, y - 6)
@@ -252,6 +259,43 @@ def _footer(c: rl_canvas.Canvas, y: float) -> None:
     c.drawString(_M, y - 70, "Document interne. Le colis est créé dans Zoho Books après contrôle.")
 
 
+def _sheet(
+    c: rl_canvas.Canvas,
+    row: dict,
+    printed_at: datetime,
+    order_url: str | None,
+    shop_name: str,
+    quantities: Mapping[str, float] | None = None,
+    picklist_number: str = "",
+) -> None:
+    lines = row.get("lines") or []
+    take = {
+        ln.get("id"): (ln.get("packable") or 0) if quantities is None else (quantities.get(ln.get("id") or "") or 0)
+        for ln in lines
+    }
+    pick = [ln for ln in lines if take[ln.get("id")] > 0]
+    later = [(ln, (ln.get("remaining") or 0) - (ln.get("packed_waiting") or 0) - take[ln.get("id")]) for ln in lines]
+    later = [(ln, q) for ln, q in later if round(q, 3) > 0]
+
+    y = _table_head(c, _info(c, row, _header(c, row, printed_at, shop_name, picklist_number), order_url))
+    y = _pick_rows(c, pick, take, y)
+    y = _totals(c, len(pick), sum(take[ln.get("id")] for ln in pick), y)
+
+    if later:
+        y = _later_segment(c, later, y, quantities is not None)
+    _footer(c, y)
+    c.showPage()
+
+
+def _totals(c: rl_canvas.Canvas, n: int, units: float, y: float) -> float:
+    units = round(units, 3)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawRightString(
+        _W - _M, y - 16, f"{n} article{'s' if n > 1 else ''} · {_qty(units)} unité{'s' if units > 1 else ''}"
+    )
+    return y - 30
+
+
 def render_prep_sheet(
     row: dict,
     *,
@@ -266,29 +310,102 @@ def render_prep_sheet(
     buf = io.BytesIO()
     c = _Canvas(buf, pagesize=A4)
     c.setTitle(f"Bon de préparation {row.get('number') or ''}")
-    lines = row.get("lines") or []
-    take = {
-        ln.get("id"): (ln.get("packable") or 0) if quantities is None else (quantities.get(ln.get("id") or "") or 0)
-        for ln in lines
-    }
-    pick = [ln for ln in lines if take[ln.get("id")] > 0]
-    later = [(ln, (ln.get("remaining") or 0) - (ln.get("packed_waiting") or 0) - take[ln.get("id")]) for ln in lines]
-    later = [(ln, q) for ln, q in later if round(q, 3) > 0]
+    _sheet(c, row, printed_at, order_url, shop_name, quantities, picklist_number)
+    c.save()
+    return buf.getvalue()
 
-    y = _table_head(c, _info(c, row, _header(c, row, printed_at, shop_name, picklist_number), order_url))
-    y = _pick_rows(c, pick, take, y)
 
-    units = round(sum(take[ln.get("id")] for ln in pick), 3)
-    n = len(pick)
-    c.setFont("Helvetica-Bold", 10)
-    c.drawRightString(
-        _W - _M, y - 16, f"{n} article{'s' if n > 1 else ''} · {_qty(units)} unité{'s' if units > 1 else ''}"
+def combine_picks(rows: list[dict], brands: Mapping[str, str]) -> list[dict]:
+    """Every product the rows' sheets list to pick, once, by brand then SKU (no brand last): the total
+    units and the units per order number. ``brands``: brand per item id."""
+    out: dict[str, dict] = {}
+    for row in rows:
+        number = row.get("number") or ""
+        for ln in row.get("lines") or []:
+            q = ln.get("packable") or 0
+            if q <= 0:
+                continue
+            item_id = ln.get("item_id") or ""
+            p = out.setdefault(
+                item_id or ln.get("sku") or ln.get("name") or "",
+                {
+                    "brand": brands.get(item_id) or "",
+                    "sku": ln.get("sku") or "",
+                    "name": ln.get("name") or "",
+                    "quantity": 0.0,
+                    "orders": {},
+                },
+            )
+            p["quantity"] = round(p["quantity"] + q, 3)
+            p["orders"][number] = round(p["orders"].get(number, 0) + q, 3)
+    return sorted(
+        out.values(), key=lambda p: (not p["brand"], p["brand"].casefold(), p["sku"].casefold(), p["name"].casefold())
     )
-    y -= 30
 
-    if later:
-        y = _later_segment(c, later, y, quantities is not None)
-    _footer(c, y)
+
+def _wrap(c: rl_canvas.Canvas, parts: list[str], font: str, size: float, width: float) -> list[str]:
+    lines = [""]
+    for part in parts:
+        joined = f"{lines[-1]}, {part}" if lines[-1] else part
+        if lines[-1] and c.stringWidth(joined, font, size) > width:
+            lines.append(part)
+        else:
+            lines[-1] = joined
+    return lines
+
+
+def _combined(c: rl_canvas.Canvas, picks: list[dict], orders: int, printed_at: datetime, shop_name: str) -> None:
+    count = {"number": f"{orders} commande{'s' if orders > 1 else ''}"}
+    y = _table_head(c, _header(c, count, printed_at, shop_name, title="LISTE DE PRÉLÈVEMENT") - 22, last="")
+    brand = None
+    for p in picks:
+        wants = _wrap(c, [f"{n} ×{_qty(q)}" for n, q in p["orders"].items()], "Helvetica", 8, _W - _M - _COLS[1])
+        heading = 16 if p["brand"] != brand else 0
+        if y - heading - _ROW_H - 11 * len(wants) < _BOTTOM:
+            c.showPage()
+            y = _table_head(c, _H - _M - 10, last="")
+        if heading:
+            brand = p["brand"]
+            c.setFont("Helvetica-Bold", 9)
+            _grey(c)
+            c.drawString(_M, y - 13, brand or "Sans marque")
+            _grey(c, False)
+            y -= heading
+        base = y - 16
+        c.setLineWidth(1.2)
+        c.rect(_M + 2, base - 2, 10, 10)
+        c.setFont("Helvetica-Bold", 13)
+        c.drawRightString(_COLS[1] - 8, base, _qty(p["quantity"]))
+        c.setFont("Helvetica", 10)
+        c.drawString(_COLS[1], base, _fit(c, p["name"], "Helvetica", 10, _COLS[2] - _COLS[1] - 8))
+        c.setFont("Courier", 9)
+        c.drawString(_COLS[2], base, _fit(c, p["sku"], "Courier", 9, _COLS[3] - _COLS[2]))
+        c.setFont("Helvetica", 8)
+        _grey(c)
+        for i, want in enumerate(wants):
+            c.drawString(_COLS[1], base - 11 * (i + 1), want)
+        _grey(c, False)
+        y -= _ROW_H + 11 * len(wants)
+        c.setLineWidth(0.3)
+        c.line(_M, y, _W - _M, y)
+    _totals(c, len(picks), sum(p["quantity"] for p in picks), y)
     c.showPage()
+
+
+def render_batch_prep_sheet(
+    rows: list[dict],
+    brands: Mapping[str, str],
+    *,
+    printed_at: datetime,
+    order_urls: Mapping[str, str],
+    shop_name: str = "AITO3D",
+) -> bytes:
+    """One document for a round of orders: the combined picking page, then each order's own prep sheet."""
+    buf = io.BytesIO()
+    c = _Canvas(buf, pagesize=A4)
+    c.setTitle("Bons de préparation")
+    _combined(c, combine_picks(rows, brands), len(rows), printed_at, shop_name)
+    for row in rows:
+        _sheet(c, row, printed_at, order_urls.get(row.get("id") or ""), shop_name)
     c.save()
     return buf.getvalue()

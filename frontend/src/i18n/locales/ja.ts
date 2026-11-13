@@ -11303,6 +11303,9 @@ export default {
       printedNoName: '{{time}} に印刷',
       inProgress: '準備中',
       printFailed: '準備票を作成できませんでした。',
+      batch: '{{n}} 件の注文の準備票を印刷',
+      batchClear: '選択を解除',
+      select: '{{number}} を準備票に選択',
     },
     pick: {
       open: '準備する',

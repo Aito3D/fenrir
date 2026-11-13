@@ -11304,6 +11304,9 @@ export default {
       printedNoName: 'Gedruckt um {{time}}',
       inProgress: 'In Vorbereitung',
       printFailed: 'Der Packzettel konnte nicht erstellt werden.',
+      batch: 'Packzettel für {{n}} Bestellungen drucken',
+      batchClear: 'Auswahl aufheben',
+      select: '{{number}} für den Packzettel auswählen',
     },
     pick: {
       open: 'Vorbereiten',

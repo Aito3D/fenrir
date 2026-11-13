@@ -844,4 +844,38 @@ describe('OrderBoardPage actions', () => {
     expect((await screen.findAllByText(/The order changed, check the quantities\./)).length).toBeGreaterThan(0);
     await waitFor(() => expect(boards).toBe(2));
   });
+
+  it('ticked orders show the batch bar with their count, print one sheet for their ids, and the selection clears', async () => {
+    const user = userEvent.setup();
+    let sent: unknown = null;
+    serve(board({ rows: [row(), row({ id: 'so2', number: 'SO-00418' }), row({ id: 'so3', number: 'SO-00421', lines: [line({ packable: 0 })] })] }));
+    server.use(http.post('/api/v1/order-board/prep-sheet/batch', async ({ request }) => {
+      sent = await request.json();
+      return new HttpResponse(new Blob(['%PDF-']), { headers: { 'Content-Type': 'application/pdf' } });
+    }));
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('checkbox', { name: 'Select SO-00412 for the prep sheet' }));
+    // Ticking does not open the order, and an order with nothing to prepare has no box.
+    expect(screen.getByRole('button', { name: /SO-00412/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('checkbox', { name: /SO-00421/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Print prep sheets (1)' })).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: /SO-00418/ }));
+    await user.click(screen.getByRole('button', { name: 'Print prep sheets (2)' }));
+    await waitFor(() => expect(sent).toEqual({ ids: ['so1', 'so2'] }));
+    await waitFor(() => expect(screen.queryByTestId('orders-batch')).not.toBeInTheDocument());
+    expect(screen.getByRole('checkbox', { name: /SO-00412/ })).not.toBeChecked();
+  });
+
+  it('a ticked order that leaves the board leaves the selection; Clear selection empties it', async () => {
+    const user = userEvent.setup();
+    serve(board({ rows: [row(), row({ id: 'so2', number: 'SO-00418' })] }));
+    server.use(http.post('/api/v1/order-board/refresh', () => HttpResponse.json(board({ rows: [row()] }))));
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('checkbox', { name: /SO-00412/ }));
+    await user.click(screen.getByRole('checkbox', { name: /SO-00418/ }));
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByRole('button', { name: 'Print prep sheets (1)' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear selection' }));
+    expect(screen.queryByTestId('orders-batch')).not.toBeInTheDocument();
+  });
 });

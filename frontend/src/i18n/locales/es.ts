@@ -11312,6 +11312,9 @@ export default {
       printedNoName: 'Impreso a las {{time}}',
       inProgress: 'En preparación',
       printFailed: 'No se pudo generar la hoja de preparación.',
+      batch: 'Imprimir la hoja de preparación de {{n}} pedidos',
+      batchClear: 'Borrar la selección',
+      select: 'Seleccionar {{number}} para la hoja de preparación',
     },
     pick: {
       open: 'Preparar',

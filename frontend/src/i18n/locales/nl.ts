@@ -11328,6 +11328,9 @@ export default {
       printedNoName: 'Afgedrukt om {{time}}',
       inProgress: 'In voorbereiding',
       printFailed: 'De voorbereidingsbon kon niet worden gemaakt.',
+      batch: 'Voorbereidingsbon voor {{n}} bestellingen afdrukken',
+      batchClear: 'Selectie wissen',
+      select: '{{number}} selecteren voor de voorbereidingsbon',
     },
     pick: {
       open: 'Voorbereiden',

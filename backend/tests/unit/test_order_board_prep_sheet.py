@@ -3,7 +3,7 @@ from datetime import datetime
 
 import pypdfium2 as pdfium
 
-from backend.app.services.order_board_prep_sheet import render_prep_sheet
+from backend.app.services.order_board_prep_sheet import combine_picks, render_batch_prep_sheet, render_prep_sheet
 
 NOW = datetime(2026, 11, 6, 9, 5)
 
@@ -154,3 +154,57 @@ def test_a_picklist_sheet_prints_its_units_and_number_and_what_stays_behind():
     assert "1 article · 1 unité" in t and "unités" not in t
     assert "Hors de ce prélèvement, reste à livrer" in t and "Pas en stock" not in t
     assert "Boîte à clés" in t  # left for a later picklist, with the two units of SKU-A not taken
+
+
+def _batch_rows():
+    a = _line("PLA-BK", "PLA Noir", packable=2.0)
+    b = _line("ABS-WH", "ABS Blanc", packable=0.1)
+    return [
+        _row(id="so1", lines=[{**a, "item_id": "A"}, {**b, "item_id": "B"}]),
+        _row(
+            id="so2",
+            number="SO-00415",
+            lines=[
+                {**a, "item_id": "A", "packable": 1.0},
+                {**b, "item_id": "B", "packable": 0.2},
+                {**_line("ZZ-1", "Colle"), "item_id": "C"},
+                {**_line("NOPE", "Rupture", packable=0.0), "item_id": "D"},
+            ],
+        ),
+    ]
+
+
+BRANDS = {"A": "eSUN", "B": "Bambu Lab", "D": "eSUN"}
+
+
+def test_combine_totals_each_product_once_by_brand_then_sku_with_no_brand_last():
+    picks = combine_picks(_batch_rows(), BRANDS)
+    assert [(p["brand"], p["sku"], p["quantity"]) for p in picks] == [
+        ("Bambu Lab", "ABS-WH", 0.3),  # 0.1 + 0.2, not 0.30000000000000004
+        ("eSUN", "PLA-BK", 3.0),
+        ("", "ZZ-1", 2.0),
+    ]
+    assert picks[1]["orders"] == {"SO-00412": 2.0, "SO-00415": 1.0}
+
+
+def test_combine_adds_up_two_lines_of_one_item_in_one_order():
+    line = {**_line("PLA-BK"), "item_id": "A"}
+    [pick] = combine_picks([_row(lines=[line, {**line, "id": "other", "packable": 1.5}])], {})
+    assert pick["quantity"] == 3.5 and pick["orders"] == {"SO-00412": 3.5}
+
+
+def test_batch_is_the_combined_page_then_one_sheet_per_order():
+    pdf = render_batch_prep_sheet(_batch_rows(), BRANDS, printed_at=NOW, order_urls={"so1": "https://x.example/o"})
+    assert pages(pdf) == 3
+    first = re.sub(r"\s+", " ", pdfium.PdfDocument(pdf)[0].get_textpage().get_text_range())
+    for s in ("LISTE DE PRÉLÈVEMENT", "2 commandes", "eSUN", "Sans marque", "SO-00412 ×2, SO-00415 ×1", "0.3"):
+        assert s in first
+    assert "3 articles · 5.3 unités" in first
+    assert first.index("Bambu Lab") < first.index("eSUN") < first.index("Sans marque")
+    assert text(pdf).count("BON DE PRÉPARATION") == 2
+
+
+def test_a_long_combined_list_spills_onto_a_second_page():
+    rows = [_row(lines=[{**_line(f"SKU-{i:03d}"), "item_id": str(i)} for i in range(60)])]
+    pdf = render_batch_prep_sheet(rows, {}, printed_at=NOW, order_urls={})
+    assert pages(pdf) >= 4 and text(pdf).count("SKU-059") == 2

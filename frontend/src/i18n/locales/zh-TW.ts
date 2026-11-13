@@ -11287,6 +11287,9 @@ export default {
       printedNoName: '於 {{time}} 列印',
       inProgress: '備貨中',
       printFailed: '無法產生備貨單。',
+      batch: '列印 {{n}} 筆訂單的備貨單',
+      batchClear: '清除選取',
+      select: '選取 {{number}} 加入備貨單',
     },
     pick: {
       open: '備貨',

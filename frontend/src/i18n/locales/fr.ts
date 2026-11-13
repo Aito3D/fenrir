@@ -11289,6 +11289,9 @@ export default {
       printedNoName: 'Imprimé à {{time}}',
       inProgress: 'En préparation',
       printFailed: 'Le bon de préparation n’a pas pu être généré.',
+      batch: 'Imprimer les bons de préparation ({{n}})',
+      batchClear: 'Effacer la sélection',
+      select: 'Sélectionner {{number}} pour le bon de préparation',
     },
     pick: {
       open: 'Préparer',

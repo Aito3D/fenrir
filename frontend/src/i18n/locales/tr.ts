@@ -11231,6 +11231,9 @@ export default {
       printedNoName: '{{time}} saatinde yazdırıldı',
       inProgress: 'Hazırlanıyor',
       printFailed: 'Hazırlık fişi oluşturulamadı.',
+      batch: '{{n}} sipariş için hazırlık fişini yazdır',
+      batchClear: 'Seçimi temizle',
+      select: '{{number}} siparişini hazırlık fişi için seç',
     },
     pick: {
       open: 'Hazırla',

@@ -6816,10 +6816,11 @@ const foldersByArchiveBatch = batched(
 );
 
 /** A PDF from the order board: `request()` parses JSON and an <iframe src> carries no Authorization header. */
-async function orderBoardBlob(path: string, method: 'GET' | 'POST' = 'GET'): Promise<Blob> {
+async function orderBoardBlob(path: string, method: 'GET' | 'POST' = 'GET', body?: unknown): Promise<Blob> {
   const headers: Record<string, string> = {};
   if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-  const response = await fetch(`${API_BASE}${path}`, { method, headers });
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const response = await fetch(`${API_BASE}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   if (!response.ok) await throwApiError(response);
   return response.blob();
 }
@@ -10069,6 +10070,8 @@ export const api = {
   getFinishedOrder: (id: string) => request<FinishedOrderDetail>(`/order-board/finished/${encodeURIComponent(id)}`),
   printOrderPrepSheet: (id: string, picklistId: string): Promise<Blob> =>
     orderBoardBlob(`/order-board/orders/${encodeURIComponent(id)}/prep-sheet?picklist_id=${encodeURIComponent(picklistId)}`, 'POST'),
+  /** One PDF for several orders: a combined picking page, then each order's prep sheet. Prints only; each order is stamped as printed. */
+  printOrderPrepSheetBatch: (ids: string[]): Promise<Blob> => orderBoardBlob('/order-board/prep-sheet/batch', 'POST', { ids }),
   /** The pickup SMS text for an order (admins only). */
   getOrderSmsDraft: (id: string) =>
     request<{

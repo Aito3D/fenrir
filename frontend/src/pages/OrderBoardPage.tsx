@@ -3,12 +3,13 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Box, Loader2, PackageCheck, Plug, PowerOff, RefreshCw, Search, SearchX } from 'lucide-react';
+import { AlertTriangle, Box, Loader2, PackageCheck, Plug, PowerOff, Printer, RefreshCw, Search, SearchX } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
 import type { OrderBoardResponse, OrderBoardRow } from '../api/client';
 import { Button } from '../components/Button';
 import { Skeleton } from '../components/Skeleton';
+import { usePrintBlob } from '../components/aito/usePrintBlob';
 import { FinishedOrderCard } from '../components/orders/FinishedOrderCard';
 import { OrderCard } from '../components/orders/OrderCard';
 import {
@@ -22,6 +23,7 @@ import {
   finishedByBrand,
   isBoardReady,
   otherOpenOrders,
+  packableUnits,
   paidPct,
   pollMs,
   searchFinished,
@@ -198,6 +200,25 @@ export function OrderBoardPage() {
     el.scrollIntoView?.({ block: target.block, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   });
   const all = useMemo(() => (ready && data ? data.rows : []), [ready, data]);
+  // Orders ticked for one batch prep sheet. Only those still on the board with something to prepare count.
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const batch = all.filter(r => ticked.has(r.id) && packableUnits(r) > 0).map(r => r.id);
+  const { print: printBatch, busy: printingBatch } = usePrintBlob({ failureMessage: t('orders.prep.printFailed'), downloadFilename: 'prep-sheets.pdf' });
+  const select = (id: string, on: boolean) => {
+    // Rebuilt from the live selection, so an order that left the board is forgotten for good.
+    const next = new Set(batch);
+    if (on) next.add(id);
+    else next.delete(id);
+    setTicked(next);
+  };
+  const printSelected = () => printBatch(async () => {
+    const blob = await api.printOrderPrepSheetBatch(batch);
+    setTicked(new Set());
+    // The server stamped each order as printed.
+    void queryClient.invalidateQueries({ queryKey: BOARD_KEY, exact: true });
+    void queryClient.invalidateQueries({ queryKey: ['order-events'] });
+    return blob;
+  });
   // Each customer's open orders, built once per board instead of a scan per card.
   const byCustomer = useMemo(() => {
     const map = new Map<string, OrderBoardRow[]>();
@@ -316,6 +337,8 @@ export function OrderBoardPage() {
         }}
         start={start?.id === row.id ? start.target : undefined}
         startTick={start?.id === row.id ? start.tick : undefined}
+        selected={ticked.has(row.id)}
+        onSelect={on => select(row.id, on)}
       />
     ));
   }
@@ -418,6 +441,18 @@ export function OrderBoardPage() {
           })}
         </div>
       </div>
+
+      {batch.length > 0 && (
+        <div data-testid="orders-batch" className="sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-bambu-green/50 bg-bambu-dark-secondary px-3 py-2">
+          <Button size="sm" onClick={printSelected} disabled={printingBatch}>
+            {printingBatch ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Printer aria-hidden="true" className="h-4 w-4" />}
+            {t('orders.prep.batch', { n: batch.length })}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setTicked(new Set())} disabled={printingBatch}>
+            {t('orders.prep.batchClear')}
+          </Button>
+        </div>
+      )}
 
       <div data-testid="orders-list" className={`space-y-2 ${ready && entering ? 'orders-rows-enter stagger-children' : ''}`}>{list}</div>
       {ready && listed.length > shown && (

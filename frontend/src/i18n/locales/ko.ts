@@ -10925,6 +10925,9 @@ export default {
       printedNoName: '{{time}}에 인쇄됨',
       inProgress: '준비 중',
       printFailed: '준비 전표를 생성할 수 없습니다.',
+      batch: '주문 {{n}}건의 준비 전표 인쇄',
+      batchClear: '선택 해제',
+      select: '{{number}}을(를) 준비 전표에 선택',
     },
     pick: {
       open: '준비하기',

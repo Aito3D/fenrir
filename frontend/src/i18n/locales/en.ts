@@ -11360,6 +11360,9 @@ export default {
       printedNoName: 'Printed at {{time}}',
       inProgress: 'Being prepared',
       printFailed: 'The prep sheet could not be generated.',
+      batch: 'Print prep sheets ({{n}})',
+      batchClear: 'Clear selection',
+      select: 'Select {{number}} for the prep sheet',
     },
     pick: {
       open: 'Prepare',

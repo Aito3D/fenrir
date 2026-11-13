@@ -11287,6 +11287,9 @@ export default {
       printedNoName: '于 {{time}} 打印',
       inProgress: '备货中',
       printFailed: '无法生成备货单。',
+      batch: '打印 {{n}} 个订单的备货单',
+      batchClear: '清除选择',
+      select: '选择 {{number}} 加入备货单',
     },
     pick: {
       open: '备货',

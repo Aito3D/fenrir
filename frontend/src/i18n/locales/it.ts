@@ -11289,6 +11289,9 @@ export default {
       printedNoName: 'Stampata alle {{time}}',
       inProgress: 'In preparazione',
       printFailed: 'Impossibile generare la distinta di preparazione.',
+      batch: 'Stampa la distinta di preparazione per {{n}} ordini',
+      batchClear: 'Cancella la selezione',
+      select: 'Seleziona {{number}} per la distinta di preparazione',
     },
     pick: {
       open: 'Prepara',

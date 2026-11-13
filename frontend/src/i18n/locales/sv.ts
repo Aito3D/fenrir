@@ -11361,6 +11361,9 @@ errors: {
       printedNoName: 'Utskriven {{time}}',
       inProgress: 'Under förberedelse',
       printFailed: 'Plocklistan kunde inte skapas.',
+      batch: 'Skriv ut plocklista för {{n}} beställningar',
+      batchClear: 'Rensa markeringen',
+      select: 'Välj {{number}} för plocklistan',
     },
     pick: {
       open: 'Förbered',

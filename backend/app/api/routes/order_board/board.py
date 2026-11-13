@@ -6,10 +6,10 @@ endpoints, not the general settings API, because Operators hold
 
 from dataclasses import asdict
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import Depends, HTTPException, Query, Response
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,7 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.notification_inbox import OrderWatch
+from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.models.user import User
 from backend.app.schemas.aito import AitoNoteCreate
@@ -28,7 +29,7 @@ from backend.app.services import (
     order_board_sync,
 )
 from backend.app.services.order_board_events import kinds_for_depth, record
-from backend.app.services.order_board_prep_sheet import render_prep_sheet
+from backend.app.services.order_board_prep_sheet import render_batch_prep_sheet, render_prep_sheet
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError
 
 
@@ -272,3 +273,38 @@ async def print_prep_sheet(
     )
     _logged(user, salesorder_id, "prep_sheet")
     return _pdf(pdf, "bon-de-preparation.pdf")
+
+
+class PrepSheetBatchBody(BaseModel):
+    ids: list[Annotated[str, StringConstraints(min_length=1, max_length=64)]] = Field(min_length=1, max_length=30)
+
+
+@router.post("/prep-sheet/batch")
+async def print_prep_sheet_batch(
+    body: PrepSheetBatchBody,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+) -> Response:
+    """One PDF for a round of orders: a combined picking page, then each order's prep sheet. It only prints
+    (no picklist, no parcel); each order is stamped as printed. Orders with nothing to pick are left out."""
+    board = {r["id"]: r for r in (await order_board_sync.read_board(db))["rows"]}
+    ids = [
+        i
+        for i in dict.fromkeys(body.ids)
+        if any((ln.get("packable") or 0) > 0 for ln in (board.get(i) or {}).get("lines") or [])
+    ]
+    if not ids:
+        raise HTTPException(status_code=404, detail="No order to prepare.")
+    by = user.username if user else ""
+    rows = [await _run(order_board_actions.stamp_print(db, i, by)) for i in ids]
+    items = (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "item"))).scalars()
+    base = await aito_tracking.external_url(db)
+    pdf = render_batch_prep_sheet(
+        rows,
+        {d.zoho_id: (d.header or {}).get("brand") or "" for d in items},
+        printed_at=datetime.now(),
+        order_urls={i: f"{base}/orders?order={i}" for i in ids} if base else {},
+    )
+    for i in ids:
+        _logged(user, i, "prep_sheet_batch")
+    return _pdf(pdf, "bons-de-preparation.pdf")

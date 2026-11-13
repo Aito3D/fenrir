@@ -11509,6 +11509,9 @@ export default {
       printedNoName: 'Wydrukowano o {{time}}',
       inProgress: 'W przygotowaniu',
       printFailed: 'Nie udało się wygenerować karty kompletacji.',
+      batch: 'Drukuj kartę kompletacji dla {{n}} zamówień',
+      batchClear: 'Wyczyść zaznaczenie',
+      select: 'Zaznacz {{number}} do karty kompletacji',
     },
     pick: {
       open: 'Przygotuj',

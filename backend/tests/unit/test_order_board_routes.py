@@ -183,6 +183,7 @@ PARCEL_EDIT = {"version": "v1", "was": [{"line_id": "l1", "quantity": 2}], "line
 NEW_ROUTES = [
     ("post", f"{BASE}/orders/so1/prep-sheet", None, False),
     ("post", f"{BASE}/orders/so1/prep-sheet?picklist_id=pl1", None, False),
+    ("post", f"{BASE}/prep-sheet/batch", {"ids": ["so1"]}, False),
     ("get", f"{BASE}/orders/so1/picklist", None, False),
     ("post", f"{BASE}/orders/so1/picklists", PICK, True),
     ("get", f"{BASE}/orders/so1/picklists/pl1", None, False),
@@ -753,3 +754,76 @@ async def test_edit_that_takes_the_order_off_the_board_still_answers_200(async_c
     monkeypatch.setattr(actions, "edit_lines", gone)
     r = await async_client.put(f"{BASE}/orders/so1/lines", json=LINES, headers=tokens["both"])
     assert r.status_code == 200 and r.json()["row"] is None and "board" in r.json()
+
+
+@pytest.mark.asyncio
+async def test_batch_prep_sheet_stamps_each_preparable_order_once_and_returns_one_pdf(
+    async_client, tokens, monkeypatch, db_session
+):
+    from backend.app.models.order_board_doc import OrderBoardDoc
+    from backend.app.services import order_board_actions as actions
+
+    def row(i, packable):
+        return {"id": i, "number": i.upper(), "lines": [{"id": "l", "item_id": "A", "sku": "S", "packable": packable}]}
+
+    rows = {"so1": row("so1", 2), "so2": row("so2", 0), "so3": row("so3", 0.5)}
+    stamped, seen = [], {}
+
+    async def fake_board(db):
+        return {"rows": list(rows.values())}
+
+    async def fake_stamp(db, salesorder_id, by, picklist=None):
+        stamped.append((salesorder_id, by, picklist))
+        return rows[salesorder_id]
+
+    def fake_render(got, brands, **kw):
+        seen.update(rows=[r["id"] for r in got], brands=brands)
+        return b"%PDF-fake"
+
+    db_session.add(OrderBoardDoc(kind="item", zoho_id="A", header={"brand": "eSUN"}))
+    await db_session.commit()
+    monkeypatch.setattr(order_board_sync, "read_board", fake_board)
+    monkeypatch.setattr(actions, "stamp_print", fake_stamp)
+    monkeypatch.setattr("backend.app.api.routes.order_board.board.render_batch_prep_sheet", fake_render)
+    # so2 has nothing to pick, "gone" left the board, so3 is sent twice
+    body = {"ids": ["so3", "so2", "gone", "so1", "so3"]}
+    r = await async_client.post(f"{BASE}/prep-sheet/batch", json=body, headers=tokens["read"])
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf" and r.content == b"%PDF-fake"
+    assert "bons-de-preparation.pdf" in r.headers["content-disposition"]
+    assert r.headers["cache-control"] == "no-store"
+    assert stamped == [("so3", "orders-read", None), ("so1", "orders-read", None)]
+    assert seen == {"rows": ["so3", "so1"], "brands": {"A": "eSUN"}}
+
+    stamped.clear()
+    r = await async_client.post(f"{BASE}/prep-sheet/batch", json={"ids": ["so2"]}, headers=tokens["read"])
+    assert r.status_code == 404 and stamped == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ids", [[], [f"so{i}" for i in range(31)], [""], ["x" * 65]])
+async def test_batch_prep_sheet_refuses_no_ids_too_many_and_bad_ids(async_client, tokens, ids):
+    r = await async_client.post(f"{BASE}/prep-sheet/batch", json={"ids": ids}, headers=tokens["read"])
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_batch_prep_sheet_renders_a_real_pdf(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+
+    row = {
+        "id": "so1",
+        "number": "SO-1",
+        "customer": "X",
+        "lines": [{"id": "l", "sku": "S", "name": "N", "packable": 1}],
+    }
+
+    async def fake_board(db):
+        return {"rows": [row]}
+
+    async def fake_stamp(db, salesorder_id, by, picklist=None):
+        return row
+
+    monkeypatch.setattr(order_board_sync, "read_board", fake_board)
+    monkeypatch.setattr(actions, "stamp_print", fake_stamp)
+    r = await async_client.post(f"{BASE}/prep-sheet/batch", json={"ids": ["so1"]}, headers=tokens["read"])
+    assert r.status_code == 200 and r.content.startswith(b"%PDF-")

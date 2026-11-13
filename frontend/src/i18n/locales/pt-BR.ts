@@ -11289,6 +11289,9 @@ export default {
       printedNoName: 'Impressa às {{time}}',
       inProgress: 'Em preparação',
       printFailed: 'Não foi possível gerar a ficha de separação.',
+      batch: 'Imprimir a ficha de separação de {{n}} pedidos',
+      batchClear: 'Limpar a seleção',
+      select: 'Selecionar {{number}} para a ficha de separação',
     },
     pick: {
       open: 'Preparar',
