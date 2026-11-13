@@ -10877,6 +10877,7 @@ export default {
       printerFailed: 'Druck fehlgeschlagen',
       hoursReadingsDue: 'Maschinenstunden: Zählerstände fällig',
       ordersReady: 'Bestellung bereit zum Vorbereiten',
+      ordersPacked: "Bestellung verpackt: Kunden benachrichtigen",
       ordersNew: 'Neue Bestellung',
     },
   },
@@ -11189,6 +11190,7 @@ export default {
       orderReceivedShopify: 'Bestellung von Shopify eingegangen {{reference}}',
       orderReceivedQuote: 'Bestellung aus Angebot {{reference}} erstellt',
       orderReady: 'Ware eingetroffen: die Bestellung ist versandbereit',
+      orderPacked: "Alles ist verpackt: Der Kunde kann benachrichtigt werden",
       picklistCreated: 'hat Kommissionierliste {{picklist}} erstellt',
       packageCreated: 'hat Paket {{package}} erstellt',
       packageEdited: 'hat Paket {{package}} geändert',
@@ -11212,6 +11214,7 @@ export default {
       short: {
         received: 'Bestellung eingegangen',
         ready: 'Versandbereit',
+        packed: "Vollständig verpackt",
         picklist: 'Kommissionierliste',
         package: 'Paket erstellt',
         packageEdited: 'Paket geändert',

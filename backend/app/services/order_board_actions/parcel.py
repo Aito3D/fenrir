@@ -147,4 +147,12 @@ async def create_parcel(
         )
         await _forget_prep_stamp(db, salesorder_id, number)
         await _best_effort_refresh(db, salesorder_id, number)
+        # Everything left on the order is boxed: the bell tells the others the customer can be called.
+        goods = [
+            ln
+            for ln in (await sync.find_board_row(db, salesorder_id) or {}).get("lines", [])
+            if ln.get("state") != "service" and ln.get("remaining", 0) > 0
+        ]
+        if goods and all(ln.get("packed_waiting", 0) >= ln["remaining"] for ln in goods):
+            await _log(db, salesorder_id, "order.packed", by)
     return package.get("package_number") or ""

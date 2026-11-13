@@ -10860,6 +10860,7 @@ export default {
       printerFailed: '列印失敗',
       hoursReadingsDue: '機器時數：需要讀取',
       ordersReady: '訂單可備貨',
+      ordersPacked: "訂單已包裝：通知客戶",
       ordersNew: '新訂單',
     },
   },
@@ -11172,6 +11173,7 @@ export default {
       orderReceivedShopify: '已從 Shopify 收到訂單 {{reference}}',
       orderReceivedQuote: '已從報價 {{reference}} 建立訂單',
       orderReady: '庫存已到：訂單可出貨',
+      orderPacked: "全部已包裝：可以通知客戶",
       picklistCreated: '建立了揀貨單 {{picklist}}',
       packageCreated: '建立了包裹 {{package}}',
       packageEdited: '修改了包裹 {{package}}',
@@ -11195,6 +11197,7 @@ export default {
       short: {
         received: '已收到訂單',
         ready: '可出貨',
+        packed: "已全部包裝",
         picklist: '揀貨單',
         package: '已建立包裹',
         packageEdited: '已修改包裹',

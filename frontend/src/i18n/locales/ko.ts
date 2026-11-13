@@ -10498,6 +10498,7 @@ export default {
       printerFailed: '인쇄 실패',
       hoursReadingsDue: '장비 가동 시간: 판독 필요',
       ordersReady: '준비 가능한 주문',
+      ordersPacked: "주문 포장 완료: 고객에게 알리기",
       ordersNew: '새 주문',
     },
   },
@@ -10810,6 +10811,7 @@ export default {
       orderReceivedShopify: 'Shopify에서 주문 접수 {{reference}}',
       orderReceivedQuote: '견적 {{reference}}에서 주문 생성',
       orderReady: '재고 도착: 주문 출고 준비 완료',
+      orderPacked: "모두 포장됨: 고객에게 알릴 수 있습니다",
       picklistCreated: '피킹 리스트 {{picklist}} 생성',
       packageCreated: '패키지 {{package}} 생성',
       packageEdited: '패키지 {{package}} 수정',
@@ -10833,6 +10835,7 @@ export default {
       short: {
         received: '주문 접수',
         ready: '출고 준비 완료',
+        packed: "포장 완료",
         picklist: '피킹 리스트',
         package: '패키지 생성',
         packageEdited: '패키지 수정',

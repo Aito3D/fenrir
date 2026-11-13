@@ -10885,6 +10885,7 @@ export default {
       printerFailed: 'Impresión fallida',
       hoursReadingsDue: 'Horas de máquina: lecturas pendientes',
       ordersReady: 'Pedido listo para preparar',
+      ordersPacked: "Pedido embalado: avisar al cliente",
       ordersNew: 'Nuevo pedido',
     },
   },
@@ -11197,6 +11198,7 @@ export default {
       orderReceivedShopify: 'Pedido recibido de Shopify {{reference}}',
       orderReceivedQuote: 'Pedido creado desde el presupuesto {{reference}}',
       orderReady: 'Stock recibido: el pedido está listo para enviar',
+      orderPacked: "Todo está embalado: se puede avisar al cliente",
       picklistCreated: 'creó la lista de preparación {{picklist}}',
       packageCreated: 'creó el paquete {{package}}',
       packageEdited: 'modificó el paquete {{package}}',
@@ -11220,6 +11222,7 @@ export default {
       short: {
         received: 'Pedido recibido',
         ready: 'Listo para enviar',
+        packed: "Totalmente embalado",
         picklist: 'Lista de preparación',
         package: 'Paquete creado',
         packageEdited: 'Paquete modificado',

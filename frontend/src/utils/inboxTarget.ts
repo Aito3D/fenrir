@@ -7,7 +7,8 @@ const FAMILY_PAGE: Record<string, string> = { aito: '/aito', orders: '/orders', 
 export function inboxTarget(item: InboxItem): string {
   // The readings-due notice has no id: it opens the reading pass.
   if (item.target_type === 'hours') return '/maintenance?tab=hours&pass=1';
-  if (item.target_type === 'order' && item.target_ref) return `/orders?order=${encodeURIComponent(item.target_ref)}`;
+  // A packed order's row opens it with the pick-up SMS drafted.
+  if (item.target_type === 'order' && item.target_ref) return `/orders?order=${encodeURIComponent(item.target_ref)}${item.kind === 'orders.packed' ? '&sms=1' : ''}`;
   if (item.target_id != null) {
     if (item.target_type === 'aito_project') return `/aito?card=${item.target_id}`;
     if (item.target_type === 'printer') return `/printers?focus=${item.target_id}`;

@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { OrderPanelRow } from '../../api/client';
 import { PanelTabs } from '../aito/PanelTabs';
@@ -36,6 +37,15 @@ export function OrderSidePanel({
   const [sideTab, setSideTab] = usePanelTab(SIDE_TABS, 'orders.panel.tab');
   const tabScope = `order-${row.id}-`;
   const [smsPhone, setSmsPhone] = useState<string | null>(null);
+  // `?sms=1` (the bell's "packed" row): open the pick-up SMS draft once, then drop the flag so a reload does not reopen it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const askedSms = searchParams.get('sms') === '1' && searchParams.get('order') === row.id;
+  const contactPhone = row.contact?.mobile || row.contact?.phone || null;
+  useEffect(() => {
+    if (!askedSms) return;
+    if (smsAllowed && contactPhone) setSmsPhone(contactPhone);
+    setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('sms'); return next; }, { replace: true });
+  }, [askedSms, smsAllowed, contactPhone, setSearchParams]);
   const invoiceSent = useRef(false);
   return (
     <div className="min-w-0 lg:self-start">

@@ -10862,6 +10862,7 @@ export default {
       printerFailed: 'Impression échouée',
       hoursReadingsDue: 'Heures machine : relevés à faire',
       ordersReady: 'Commande prête à préparer',
+      ordersPacked: "Commande emballée : prévenir le client",
       ordersNew: 'Nouvelle commande',
     },
   },
@@ -11174,6 +11175,7 @@ export default {
       orderReceivedShopify: 'Commande reçue de Shopify {{reference}}',
       orderReceivedQuote: 'Commande créée depuis le devis {{reference}}',
       orderReady: 'Stock arrivé : la commande passe en « Prête à expédier »',
+      orderPacked: "Tout est emballé : le client peut être prévenu",
       picklistCreated: 'a créé le prélèvement {{picklist}}',
       packageCreated: 'a créé le colis {{package}}',
       packageEdited: 'a modifié le colis {{package}}',
@@ -11197,6 +11199,7 @@ export default {
       short: {
         received: 'Commande reçue',
         ready: 'Prête à expédier',
+        packed: "Entièrement emballée",
         picklist: 'Prélèvement',
         package: 'Colis créé',
         packageEdited: 'Colis modifié',

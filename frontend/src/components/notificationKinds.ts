@@ -45,6 +45,7 @@ export const NOTIFICATION_KINDS: Record<string, NotificationKindMeta> = {
     family: 'orders',
     titleKey: 'ordersReady',
   },
+  'orders.packed': { icon: PackageCheck, tone: 'text-bambu-green bg-bambu-green/10', family: 'orders', titleKey: 'ordersPacked' },
   'orders.new': { icon: ShoppingBag, tone: 'text-sky-400 bg-sky-400/10', family: 'orders', titleKey: 'ordersNew' },
   'printer.job_sent': {
     icon: Send,

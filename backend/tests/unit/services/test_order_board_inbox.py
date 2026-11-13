@@ -210,11 +210,25 @@ async def test_backfill_adds_order_kinds_once(db_session):
     await db_session.commit()
     assert await order_board_events.backfill_alert_kinds(db_session) == 2
     prefs = {p.user_id: p for p in (await db_session.execute(select(UserInboxPreference))).scalars()}
-    assert prefs[a.id].kinds_json == ["aito.paid", "orders.ready", "orders.new"]
-    assert prefs[a.id].sound_kinds_json == ["aito.paid", "orders.ready"]
+    assert prefs[a.id].kinds_json == ["aito.paid", "orders.ready", "orders.new", "orders.packed"]
+    assert prefs[a.id].sound_kinds_json == ["aito.paid", "orders.ready", "orders.packed"]
     assert prefs[b.id].sound_kinds_json == []
     prefs[a.id].kinds_json = ["aito.paid"]
     await db_session.commit()
+    assert await order_board_events.backfill_alert_kinds(db_session) == 0
+
+
+@pytest.mark.asyncio
+async def test_backfill_offers_only_the_kinds_added_since_the_first_run(db_session):
+    from backend.app.api.routes.settings import set_setting
+
+    a = await _user(db_session, "a", perms=("orders:read",))
+    db_session.add(UserInboxPreference(user_id=a.id, kinds_json=["orders.new"], sound_kinds_json=[]))  # ready: off
+    await set_setting(db_session, "orders_inbox_kinds_backfilled", "1")  # what the first version stored
+    await db_session.commit()
+    assert await order_board_events.backfill_alert_kinds(db_session) == 1
+    pref = (await db_session.execute(select(UserInboxPreference))).scalar_one()
+    assert pref.kinds_json == ["orders.new", "orders.packed"]  # the kind switched off stays off
     assert await order_board_events.backfill_alert_kinds(db_session) == 0
 
 

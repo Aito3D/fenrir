@@ -10934,6 +10934,7 @@ errors: {
       printerFailed: 'Utskrift misslyckades',
       hoursReadingsDue: 'Maskintimmar: avläsningar behövs',
       ordersReady: 'Beställning redo att förberedas',
+      ordersPacked: "Beställningen är packad: meddela kunden",
       ordersNew: 'Ny beställning',
     },
   },
@@ -11246,6 +11247,7 @@ errors: {
       orderReceivedShopify: 'Order mottagen från Shopify {{reference}}',
       orderReceivedQuote: 'Order skapad från offert {{reference}}',
       orderReady: 'Lager inkommet: ordern är redo att skickas',
+      orderPacked: "Allt är packat: kunden kan meddelas",
       picklistCreated: 'skapade plocklistan {{picklist}}',
       packageCreated: 'skapade paketet {{package}}',
       packageEdited: 'ändrade paketet {{package}}',
@@ -11269,6 +11271,7 @@ errors: {
       short: {
         received: 'Order mottagen',
         ready: 'Redo att skickas',
+        packed: "Helt packad",
         picklist: 'Plocklista',
         package: 'Paket skapat',
         packageEdited: 'Paket ändrat',

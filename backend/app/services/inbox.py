@@ -80,6 +80,7 @@ KINDS: dict[str, InboxKind] = {
     # Order Board events (order_board_events.record fans these out, not fan_out).
     "orders.ready": InboxKind("orders", True, ("order.ready",)),
     "orders.new": InboxKind("orders", True, ("order.received",), sound_default=False),
+    "orders.packed": InboxKind("orders", True, ("order.packed",)),
 }
 DEFAULT_KINDS: list[str] = [k for k, v in KINDS.items() if v.default_on]
 SOUND_DEFAULT_KINDS: list[str] = [k for k, v in KINDS.items() if v.default_on and v.sound_default]

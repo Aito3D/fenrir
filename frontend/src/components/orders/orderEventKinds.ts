@@ -5,6 +5,7 @@ import { formatMoney } from '../../utils/pricing';
 const LABEL_KEY: Record<string, string> = {
   'order.received': 'orders.history.orderReceived',
   'order.ready': 'orders.history.orderReady',
+  'order.packed': 'orders.history.orderPacked',
   'picklist.created': 'orders.history.picklistCreated',
   'package.created': 'orders.history.packageCreated',
   'package.edited': 'orders.history.packageEdited',
@@ -30,6 +31,7 @@ const LABEL_KEY: Record<string, string> = {
 export const SHORT_LABEL_KEY: Record<string, string> = {
   'order.received': 'orders.history.short.received',
   'order.ready': 'orders.history.short.ready',
+  'order.packed': 'orders.history.short.packed',
   'picklist.created': 'orders.history.short.picklist',
   'package.created': 'orders.history.short.package',
   'package.edited': 'orders.history.short.packageEdited',

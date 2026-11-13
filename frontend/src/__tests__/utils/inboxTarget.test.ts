@@ -48,3 +48,11 @@ describe('inboxTarget', () => {
     expect(inboxTarget(item({ family: 'printer', target_type: null, target_id: null }))).toBe('/printers');
   });
 });
+
+describe('inboxTarget, packed order', () => {
+  it('opens the order with the pick-up SMS drafted', () => {
+    const packed = { kind: 'orders.packed', family: 'orders', target_type: 'order', target_id: null, target_ref: 'so 1' };
+    expect(inboxTarget(item(packed))).toBe('/orders?order=so%201&sms=1');
+    expect(inboxTarget(item({ ...packed, kind: 'orders.ready' }))).toBe('/orders?order=so%201');
+  });
+});

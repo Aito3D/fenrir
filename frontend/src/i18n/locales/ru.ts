@@ -10481,6 +10481,7 @@ export default {
       printerFailed: 'Ошибка печати',
       hoursReadingsDue: 'Моточасы: нужны показания',
       ordersReady: 'Заказ готов к сборке',
+      ordersPacked: "Заказ упакован: сообщите клиенту",
       ordersNew: 'Новый заказ',
     },
   },
@@ -10793,6 +10794,7 @@ export default {
       orderReceivedShopify: 'Заказ получен из Shopify {{reference}}',
       orderReceivedQuote: 'Заказ создан из предложения {{reference}}',
       orderReady: 'Товар поступил: заказ готов к отправке',
+      orderPacked: "Всё упаковано: клиенту можно сообщить",
       picklistCreated: 'создал(а) лист комплектации {{picklist}}',
       packageCreated: 'создал(а) посылку {{package}}',
       packageEdited: 'изменил(а) посылку {{package}}',
@@ -10816,6 +10818,7 @@ export default {
       short: {
         received: 'Заказ получен',
         ready: 'Готов к отправке',
+        packed: "Полностью упакован",
         picklist: 'Лист комплектации',
         package: 'Посылка создана',
         packageEdited: 'Посылка изменена',

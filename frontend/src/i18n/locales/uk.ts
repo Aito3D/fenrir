@@ -10522,6 +10522,7 @@ export default {
       printerFailed: 'Помилка друку',
       hoursReadingsDue: 'Мотогодини: потрібні показання',
       ordersReady: 'Замовлення готове до комплектації',
+      ordersPacked: "Замовлення спаковано: повідомте клієнта",
       ordersNew: 'Нове замовлення',
     },
   },
@@ -10834,6 +10835,7 @@ export default {
       orderReceivedShopify: 'Замовлення отримано з Shopify {{reference}}',
       orderReceivedQuote: 'Замовлення створено з пропозиції {{reference}}',
       orderReady: 'Товар надійшов: замовлення готове до відправлення',
+      orderPacked: "Усе спаковано: клієнта можна повідомити",
       picklistCreated: 'створив(ла) лист комплектації {{picklist}}',
       packageCreated: 'створив(ла) посилку {{package}}',
       packageEdited: 'змінив(ла) посилку {{package}}',
@@ -10857,6 +10859,7 @@ export default {
       short: {
         received: 'Замовлення отримано',
         ready: 'Готове до відправлення',
+        packed: "Повністю спаковано",
         picklist: 'Лист комплектації',
         package: 'Посилку створено',
         packageEdited: 'Посилку змінено',

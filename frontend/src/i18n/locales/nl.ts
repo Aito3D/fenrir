@@ -10901,6 +10901,7 @@ export default {
       printerFailed: 'Print mislukt',
       hoursReadingsDue: 'Machine-uren: standen opnemen',
       ordersReady: 'Bestelling klaar om voor te bereiden',
+      ordersPacked: "Bestelling ingepakt: klant verwittigen",
       ordersNew: 'Nieuwe bestelling',
     },
   },
@@ -11213,6 +11214,7 @@ export default {
       orderReceivedShopify: 'Bestelling ontvangen van Shopify {{reference}}',
       orderReceivedQuote: 'Bestelling aangemaakt uit offerte {{reference}}',
       orderReady: 'Voorraad binnen: de bestelling is klaar voor verzending',
+      orderPacked: "Alles is ingepakt: de klant kan verwittigd worden",
       picklistCreated: 'maakte picklijst {{picklist}} aan',
       packageCreated: 'maakte pakket {{package}} aan',
       packageEdited: 'wijzigde pakket {{package}}',
@@ -11236,6 +11238,7 @@ export default {
       short: {
         received: 'Bestelling ontvangen',
         ready: 'Klaar voor verzending',
+        packed: "Volledig ingepakt",
         picklist: 'Picklijst',
         package: 'Pakket aangemaakt',
         packageEdited: 'Pakket gewijzigd',

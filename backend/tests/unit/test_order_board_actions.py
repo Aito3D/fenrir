@@ -517,6 +517,9 @@ async def test_parcel_completes_the_picklist_then_boxes_its_units(db_session, pa
     assert [e.kind for e in events] == ["picklist.created", "package.created"]  # _pick made the picklist
     assert events[1].detail == {"package": "PKG-00001", "picklist": "PL-00001", "units": 2}
     assert events[1].actor_class == "user"
+    # The last unit boxed: the order says so once, for the bell.
+    await actions.create_parcel(db_session, "so1", await _pick(db_session, "so1", {"l1": 1}), {"l1": 1})
+    assert [e.kind for e in await events_of(db_session, "so1")][-2:] == ["package.created", "order.packed"]
 
 
 @pytest.mark.asyncio

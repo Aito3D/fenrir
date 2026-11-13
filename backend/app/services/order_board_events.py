@@ -21,6 +21,7 @@ KINDS: dict[str, str] = {
         (
             "order.received",
             "order.ready",
+            "order.packed",
             "package.created",
             "handover.delivered",
             "handover.shipped",
@@ -154,9 +155,13 @@ async def backfill_alert_kinds(db: AsyncSession) -> int:
     printer_hours.backfill_reminder_kind did for its kind)."""
     from backend.app.api.routes.settings import get_setting, set_setting  # the route module imports services
 
-    if await get_setting(db, _ALERT_BACKFILL_KEY) == "1":
+    # The setting lists the kinds already offered; "1" is the first run's two. A kind is offered once, so one a user
+    # switched off stays off.
+    stored = await get_setting(db, _ALERT_BACKFILL_KEY) or ""
+    done = {"orders.ready", "orders.new"} if stored == "1" else {k for k in stored.split(",") if k}
+    new = [k for k, spec in inbox.KINDS.items() if spec.family == "orders" and spec.default_on and k not in done]
+    if not new:
         return 0
-    new = [k for k, spec in inbox.KINDS.items() if spec.family == "orders" and spec.default_on]
     count = 0
     for pref in (await db.execute(select(UserInboxPreference))).scalars():
         missing = [k for k in new if k not in (pref.kinds_json or [])]
@@ -166,6 +171,6 @@ async def backfill_alert_kinds(db: AsyncSession) -> int:
             if sound and pref.sound_kinds_json:  # an empty list is the bell's sound switched off: keep it silent
                 pref.sound_kinds_json = [*(pref.sound_kinds_json or []), *sound]
             count += 1
-    await set_setting(db, _ALERT_BACKFILL_KEY, "1")
+    await set_setting(db, _ALERT_BACKFILL_KEY, ",".join(sorted(done | set(new))))
     await db.commit()
     return count

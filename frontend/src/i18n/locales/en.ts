@@ -10933,6 +10933,7 @@ export default {
       printerFailed: 'Print failed',
       hoursReadingsDue: 'Machine hours: readings due',
       ordersReady: 'Order ready to prepare',
+      ordersPacked: "Order packed: tell the customer",
       ordersNew: 'New order',
     },
   },
@@ -11245,6 +11246,7 @@ export default {
       orderReceivedShopify: 'Order received from Shopify {{reference}}',
       orderReceivedQuote: 'Order created from quote {{reference}}',
       orderReady: 'Stock arrived: the order is ready to ship',
+      orderPacked: "Everything is packed: the customer can be told",
       picklistCreated: 'created picklist {{picklist}}',
       packageCreated: 'created package {{package}}',
       packageEdited: 'edited package {{package}}',
@@ -11268,6 +11270,7 @@ export default {
       short: {
         received: 'Order received',
         ready: 'Ready to ship',
+        packed: "Fully packed",
         picklist: 'Picklist',
         package: 'Package created',
         packageEdited: 'Package edited',

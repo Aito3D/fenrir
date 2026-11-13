@@ -10804,6 +10804,7 @@ export default {
       printerFailed: 'Baskı başarısız',
       hoursReadingsDue: 'Makine saatleri: okumalar bekliyor',
       ordersReady: 'Sipariş hazırlanmaya hazır',
+      ordersPacked: "Sipariş paketlendi: müşteriye haber verin",
       ordersNew: 'Yeni sipariş',
     },
   },
@@ -11116,6 +11117,7 @@ export default {
       orderReceivedShopify: 'Shopify\'dan sipariş alındı {{reference}}',
       orderReceivedQuote: '{{reference}} teklifinden sipariş oluşturuldu',
       orderReady: 'Stok geldi: sipariş gönderime hazır',
+      orderPacked: "Her şey paketlendi: müşteriye haber verilebilir",
       picklistCreated: '{{picklist}} toplama listesini oluşturdu',
       packageCreated: '{{package}} paketini oluşturdu',
       packageEdited: '{{package}} paketini düzenledi',
@@ -11139,6 +11141,7 @@ export default {
       short: {
         received: 'Sipariş alındı',
         ready: 'Gönderime hazır',
+        packed: "Tamamen paketlendi",
         picklist: 'Toplama listesi',
         package: 'Paket oluşturuldu',
         packageEdited: 'Paket düzenlendi',

@@ -10876,6 +10876,7 @@ export default {
       printerFailed: '印刷に失敗しました',
       hoursReadingsDue: '稼働時間：読み取りが必要です',
       ordersReady: '準備可能な注文',
+      ordersPacked: "注文の梱包完了：お客様に連絡",
       ordersNew: '新しい注文',
     },
   },
@@ -11188,6 +11189,7 @@ export default {
       orderReceivedShopify: 'Shopify から注文を受信 {{reference}}',
       orderReceivedQuote: '見積 {{reference}} から注文を作成',
       orderReady: '在庫入荷：注文は出荷準備完了',
+      orderPacked: "すべて梱包済み：お客様に連絡できます",
       picklistCreated: 'ピッキングリスト {{picklist}} を作成',
       packageCreated: '荷物 {{package}} を作成',
       packageEdited: '荷物 {{package}} を編集',
@@ -11211,6 +11213,7 @@ export default {
       short: {
         received: '注文受信',
         ready: '出荷準備完了',
+        packed: "梱包完了",
         picklist: 'ピッキングリスト',
         package: '荷物作成',
         packageEdited: '荷物編集',

@@ -11082,6 +11082,7 @@ export default {
       printerFailed: 'Wydruk nieudany',
       hoursReadingsDue: 'Godziny maszyn: wymagane odczyty',
       ordersReady: 'Zamówienie gotowe do przygotowania',
+      ordersPacked: "Zamówienie spakowane: powiadom klienta",
       ordersNew: 'Nowe zamówienie',
     },
   },
@@ -11394,6 +11395,7 @@ export default {
       orderReceivedShopify: 'Zamówienie otrzymane z Shopify {{reference}}',
       orderReceivedQuote: 'Zamówienie utworzone z oferty {{reference}}',
       orderReady: 'Towar dotarł: zamówienie gotowe do wysyłki',
+      orderPacked: "Wszystko spakowane: można powiadomić klienta",
       picklistCreated: 'utworzył(a) listę kompletacji {{picklist}}',
       packageCreated: 'utworzył(a) paczkę {{package}}',
       packageEdited: 'zmienił(a) paczkę {{package}}',
@@ -11417,6 +11419,7 @@ export default {
       short: {
         received: 'Zamówienie otrzymane',
         ready: 'Gotowe do wysyłki',
+        packed: "W całości spakowane",
         picklist: 'Lista kompletacji',
         package: 'Paczka utworzona',
         packageEdited: 'Paczka zmieniona',
