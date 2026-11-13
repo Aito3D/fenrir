@@ -12,6 +12,7 @@ import { Skeleton } from '../components/Skeleton';
 import { usePrintBlob } from '../components/aito/usePrintBlob';
 import { FinishedOrderCard } from '../components/orders/FinishedOrderCard';
 import { OrderCard } from '../components/orders/OrderCard';
+import { OrderStatsStrip } from '../components/orders/OrderStatsStrip';
 import {
   byBrand,
   byFinishedPayment,
@@ -46,6 +47,7 @@ const FINISHED_KEY = ['order-board', 'finished'] as const;
 const PAGE = 50;
 const PAY_CHIPS: Exclude<PayFilter, 'all' | 'overdue'>[] = ['unpaid', 'partial', 'paid'];
 const CORE_ONLY_KEY = 'orders.coreOnly';
+const STATS_OPEN_KEY = 'orders.statsOpen';
 
 const chipCls = (active: boolean) =>
   `rounded-full border px-3 py-1.5 text-xs ${active ? 'border-bambu-green bg-bambu-green/15 text-white' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`;
@@ -57,6 +59,15 @@ function readCoreOnly(): boolean {
     return localStorage.getItem(CORE_ONLY_KEY) !== 'false';
   } catch {
     return true;
+  }
+}
+
+// The stats strip is closed unless the viewer left it open.
+function readStatsOpen(): boolean {
+  try {
+    return localStorage.getItem(STATS_OPEN_KEY) === 'true';
+  } catch {
+    return false;
   }
 }
 
@@ -105,6 +116,7 @@ export function OrderBoardPage() {
 
   const { query, setQuery, status, setStatus, payFilter, setPayFilter, sort, setSort } = useOrderFilters();
   const [coreOnly, setCoreOnly] = useState(readCoreOnly);
+  const [statsOpen, setStatsOpen] = useState(readStatsOpen);
   const [shown, setShown] = useState(PAGE);
   const [start, setStart] = useState<{ id: string; target: string; tick: number } | null>(null);
   const scrollTarget = useRef<{ id: string; block: ScrollLogicalPosition } | null>(null);
@@ -389,6 +401,18 @@ export function OrderBoardPage() {
         {tile('all', t('orders.status.inProgress'), moneyLine(searched) ?? '–', 'neutral')}
         {tile('finished', t('orders.status.finished'), t('orders.hint.finished'), 'neutral')}
       </div>
+
+      {ready && (
+        <OrderStatsStrip
+          open={statsOpen}
+          onToggle={() => {
+            setStatsOpen(!statsOpen);
+            remember(STATS_OPEN_KEY, !statsOpen);
+          }}
+          rows={branded}
+          finished={finishedQuery.data && finishedByBrand(finishedQuery.data.rows, coreOnly)}
+        />
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative max-w-md grow basis-64">

@@ -11467,6 +11467,17 @@ export default {
     search: 'Numer zamówienia, klient, produkt, SKU…',
     coreOnly: 'Tylko 3D',
     hidden: '+{{n}} ukrytych',
+    stats: {
+      title: 'Liczby',
+      weekly: 'Zamówienia otrzymane tygodniowo, ostatnie 8 tygodni',
+      lead: 'Od zamówienia do wydania, średnio',
+      leadHint: 'wydane w ostatnich 90 dniach: {{n}}',
+      leadNone: 'Brak zapisanej daty wydania z ostatnich 90 dni',
+      blocked: 'Wartość oczekująca na towar',
+      blockedHint: 'zamówienia bez niczego gotowego: {{n}}',
+      ready: 'Gotowe, jeszcze niewydane',
+      readyHint: 'wiek najstarszego zamówienia',
+    },
     showMore: 'Pokaż więcej',
     sort: {
       label: 'Sortuj',

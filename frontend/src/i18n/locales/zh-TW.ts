@@ -11245,6 +11245,17 @@ export default {
     search: '訂單編號、客戶、產品、SKU…',
     coreOnly: '僅 3D',
     hidden: '+{{n}} 筆已隱藏',
+    stats: {
+      title: '數據',
+      weekly: '每週收到的訂單,最近 8 週',
+      lead: '從下單到交付的平均時間',
+      leadHint: '最近 90 天內交付:{{n}} 筆',
+      leadNone: '最近 90 天沒有已儲存的交付日期',
+      blocked: '等待庫存的金額',
+      blockedHint: '沒有任何可出貨商品的訂單:{{n}} 筆',
+      ready: '已備妥,尚未交付',
+      readyHint: '最早訂單的天數',
+    },
     showMore: '顯示更多',
     sort: {
       label: '排序',

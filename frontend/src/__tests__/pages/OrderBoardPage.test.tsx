@@ -878,4 +878,36 @@ describe('OrderBoardPage actions', () => {
     await user.click(screen.getByRole('button', { name: 'Clear selection' }));
     expect(screen.queryByTestId('orders-batch')).not.toBeInTheDocument();
   });
+
+  it('the stats strip is closed until opened, shows the four figures and remembers it was left open', async () => {
+    const day = (ago: number) => new Date(Date.now() - ago * 86_400_000).toISOString().slice(0, 10);
+    serve(board({ rows: [
+      row({ date: day(0), age_days: 54 }),
+      row({ id: 'so2', number: 'SO-00418', status: 'to_order', total: 5000, date: '2026-01-05' }),
+    ] }));
+    serveFinished([fin(1, { date: day(10), handed_over: day(6) }), fin(2, { date: '2026-01-05' })]);
+    render(<OrderBoardPage />);
+    const toggle = await screen.findByRole('button', { name: 'Figures' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('orders-stats')).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    // Eight weeks, this week last: today's order alone in it, the finished one ten days back in an earlier week.
+    const chart = await screen.findByRole('img', { name: /^Orders received per week, last 8 weeks: (\S+ \S+ \d+, ){7}\S+ \S+ 1$/ });
+    expect(chart.getAttribute('aria-label')!.match(/ 1(,|$)/g)).toHaveLength(2);
+    const stats = screen.getByTestId('orders-stats');
+    expect(stats).toHaveTextContent('Order to hand-over, on average4 dhanded over in the last 90 days: 1');
+    expect(stats).toHaveTextContent(/Value waiting on stock5.000.*orders with nothing ready: 1/);
+    expect(stats).toHaveTextContent('Ready, not handed over54 d');
+    expect(localStorage.getItem('orders.statsOpen')).toBe('true');
+  });
+
+  it('the stats strip shows a dash with a reason when no hand-over date is stored', async () => {
+    localStorage.setItem('orders.statsOpen', 'true');
+    serve(board());
+    serveFinished([fin(1)]);
+    render(<OrderBoardPage />);
+    const lead = (await screen.findByText('Order to hand-over, on average')).parentElement!;
+    await waitFor(() => expect(lead).toHaveAttribute('title', 'No hand-over date stored for the last 90 days'));
+    expect(lead).toHaveTextContent(/average–$/);
+  });
 });

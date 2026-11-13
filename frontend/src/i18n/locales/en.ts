@@ -11318,6 +11318,17 @@ export default {
     search: 'Order number, customer, product, SKU…',
     coreOnly: '3D only',
     hidden: '+{{n}} hidden',
+    stats: {
+      title: 'Figures',
+      weekly: 'Orders received per week, last 8 weeks',
+      lead: 'Order to hand-over, on average',
+      leadHint: 'handed over in the last 90 days: {{n}}',
+      leadNone: 'No hand-over date stored for the last 90 days',
+      blocked: 'Value waiting on stock',
+      blockedHint: 'orders with nothing ready: {{n}}',
+      ready: 'Ready, not handed over',
+      readyHint: 'age of the oldest order',
+    },
     showMore: 'Show more',
     sort: {
       label: 'Sort',

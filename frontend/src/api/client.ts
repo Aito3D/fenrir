@@ -5243,7 +5243,9 @@ export type OrderEditResult = { board: OrderBoardResponse; row: OrderBoardRow | 
 export type OrderPanelRow = Omit<OrderBoardRow, 'status'>;
 export type FinishedOrderDetail = OrderPanelRow & { status: 'finished' };
 /** `is_core`: null when the stored copy cannot tell (no detail, or an item no open order holds). */
-export interface FinishedOrderRow { id: string; number: string; customer: string; date: string; total: number | null; currency: string; reference: string; units: { shipped: number; total: number }; paid_flag: OrderPayState | null; payment: OrderPayment | null; is_core: boolean | null; zoho_url: string | null }
+export interface FinishedOrderRow { id: string; number: string; customer: string; date: string; total: number | null; currency: string; reference: string; units: { shipped: number; total: number }; paid_flag: OrderPayState | null; payment: OrderPayment | null; is_core: boolean | null; zoho_url: string | null;
+  /** The day the last parcel left (YYYY-MM-DD); null when the stored copy does not say. */
+  handed_over?: string | null }
 
 export interface OrderBoardResponse {
   rows: OrderBoardRow[];

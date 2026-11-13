@@ -11245,6 +11245,17 @@ export default {
     search: '订单号、客户、产品、SKU…',
     coreOnly: '仅 3D',
     hidden: '+{{n}} 个已隐藏',
+    stats: {
+      title: '数据',
+      weekly: '每周收到的订单,最近 8 周',
+      lead: '从下单到交付的平均时间',
+      leadHint: '最近 90 天内交付:{{n}} 笔',
+      leadNone: '最近 90 天没有已保存的交付日期',
+      blocked: '等待库存的金额',
+      blockedHint: '没有任何可发货商品的订单:{{n}} 笔',
+      ready: '已备好,尚未交付',
+      readyHint: '最早订单的天数',
+    },
     showMore: '显示更多',
     sort: {
       label: '排序',

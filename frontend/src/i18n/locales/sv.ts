@@ -11319,6 +11319,17 @@ errors: {
     search: 'Ordernummer, kund, produkt, SKU…',
     coreOnly: 'Endast 3D',
     hidden: '+{{n}} dolda',
+    stats: {
+      title: 'Nyckeltal',
+      weekly: 'Mottagna beställningar per vecka, senaste 8 veckorna',
+      lead: 'Från beställning till överlämning, i snitt',
+      leadHint: 'överlämnade de senaste 90 dagarna: {{n}}',
+      leadNone: 'Inget överlämningsdatum sparat för de senaste 90 dagarna',
+      blocked: 'Värde som väntar på lager',
+      blockedHint: 'beställningar utan något klart: {{n}}',
+      ready: 'Klara, inte överlämnade',
+      readyHint: 'den äldsta beställningens ålder',
+    },
     showMore: 'Visa fler',
     sort: {
       label: 'Sortera',

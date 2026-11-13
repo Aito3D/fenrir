@@ -11262,6 +11262,17 @@ export default {
     search: 'Bestellnummer, Kunde, Produkt, SKU …',
     coreOnly: 'Nur 3D',
     hidden: '+{{n}} ausgeblendet',
+    stats: {
+      title: 'Kennzahlen',
+      weekly: 'Eingegangene Bestellungen pro Woche, letzte 8 Wochen',
+      lead: 'Von Bestellung bis Übergabe, im Schnitt',
+      leadHint: 'in den letzten 90 Tagen übergeben: {{n}}',
+      leadNone: 'Kein Übergabedatum für die letzten 90 Tage gespeichert',
+      blocked: 'Wert, der auf Lagerbestand wartet',
+      blockedHint: 'Bestellungen ohne versandbereite Artikel: {{n}}',
+      ready: 'Bereit, noch nicht übergeben',
+      readyHint: 'Alter der ältesten Bestellung',
+    },
     showMore: 'Mehr anzeigen',
     sort: {
       label: 'Sortieren',

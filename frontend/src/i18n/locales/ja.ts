@@ -11261,6 +11261,17 @@ export default {
     search: '受注番号、顧客、商品、SKU…',
     coreOnly: '3D のみ',
     hidden: '+{{n}} 件非表示',
+    stats: {
+      title: '数値',
+      weekly: '週ごとの受注件数(直近8週間)',
+      lead: '注文から引き渡しまでの平均',
+      leadHint: '直近90日間の引き渡し: {{n}} 件',
+      leadNone: '直近90日間の引き渡し日が保存されていません',
+      blocked: '在庫待ちの金額',
+      blockedHint: '出荷できる品がない注文: {{n}} 件',
+      ready: '準備済み・未引き渡し',
+      readyHint: '最も古い注文の経過日数',
+    },
     showMore: 'さらに表示',
     sort: {
       label: '並べ替え',

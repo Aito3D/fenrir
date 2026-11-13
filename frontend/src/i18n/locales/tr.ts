@@ -11189,6 +11189,17 @@ export default {
     search: 'Sipariş numarası, müşteri, ürün, SKU…',
     coreOnly: 'Yalnızca 3D',
     hidden: '+{{n}} gizli',
+    stats: {
+      title: 'Rakamlar',
+      weekly: 'Haftalık alınan siparişler, son 8 hafta',
+      lead: 'Siparişten teslime, ortalama',
+      leadHint: 'son 90 günde teslim edilen: {{n}}',
+      leadNone: 'Son 90 gün için kayıtlı teslim tarihi yok',
+      blocked: 'Stok bekleyen tutar',
+      blockedHint: 'hazır ürünü olmayan sipariş: {{n}}',
+      ready: 'Hazır, henüz teslim edilmedi',
+      readyHint: 'en eski siparişin yaşı',
+    },
     showMore: 'Daha fazla göster',
     sort: {
       label: 'Sırala',

@@ -128,6 +128,11 @@ async def read_finished(db: AsyncSession) -> dict:
                 "shipped": float(d.header.get("quantity_shipped") or 0),
                 "total": float(d.header.get("quantity") or 0),
             },
+            # The day the last parcel left, from the stored detail: None once the detail is dropped.
+            "handed_over": max(
+                (p.get("shipment_date") or "" for p in (d.detail or {}).get("packages") or []), default=""
+            )
+            or None,
             "paid_flag": _PAID_FLAGS.get(d.header.get("paid_status") or ""),
             "payment": order_payment(d.detail, today) if d.detail and not _is_stale(d) else None,
             "is_core": finished_is_core(d.detail, items, core),

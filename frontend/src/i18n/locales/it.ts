@@ -11247,6 +11247,17 @@ export default {
     search: 'Numero ordine, cliente, prodotto, SKU…',
     coreOnly: 'Solo 3D',
     hidden: '+{{n}} nascosti',
+    stats: {
+      title: 'Cifre',
+      weekly: 'Ordini ricevuti per settimana, ultime 8 settimane',
+      lead: 'Dall\'ordine alla consegna, in media',
+      leadHint: 'consegnati negli ultimi 90 giorni: {{n}}',
+      leadNone: 'Nessuna data di consegna salvata negli ultimi 90 giorni',
+      blocked: 'Valore in attesa di scorte',
+      blockedHint: 'ordini senza nulla di pronto: {{n}}',
+      ready: 'Pronti, non ancora consegnati',
+      readyHint: 'età dell\'ordine più vecchio',
+    },
     showMore: 'Mostra altri',
     sort: {
       label: 'Ordina',

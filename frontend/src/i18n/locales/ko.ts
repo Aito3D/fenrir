@@ -10883,6 +10883,17 @@ export default {
     search: '주문 번호, 고객, 제품, SKU…',
     coreOnly: '3D만',
     hidden: '+{{n}}건 숨김',
+    stats: {
+      title: '수치',
+      weekly: '주별 접수 주문, 최근 8주',
+      lead: '주문부터 인도까지 평균',
+      leadHint: '최근 90일간 인도: {{n}}건',
+      leadNone: '최근 90일간 저장된 인도 날짜가 없습니다',
+      blocked: '재고 대기 중인 금액',
+      blockedHint: '준비된 품목이 없는 주문: {{n}}건',
+      ready: '준비 완료, 미인도',
+      readyHint: '가장 오래된 주문의 경과 일수',
+    },
     showMore: '더 보기',
     sort: {
       label: '정렬',

@@ -11270,6 +11270,17 @@ export default {
     search: 'Número de pedido, cliente, producto, SKU…',
     coreOnly: 'Solo 3D',
     hidden: '+{{n}} ocultos',
+    stats: {
+      title: 'Cifras',
+      weekly: 'Pedidos recibidos por semana, últimas 8 semanas',
+      lead: 'Del pedido a la entrega, de media',
+      leadHint: 'entregados en los últimos 90 días: {{n}}',
+      leadNone: 'No hay fecha de entrega guardada en los últimos 90 días',
+      blocked: 'Valor a la espera de stock',
+      blockedHint: 'pedidos sin nada listo: {{n}}',
+      ready: 'Listos, sin entregar',
+      readyHint: 'antigüedad del pedido más antiguo',
+    },
     showMore: 'Mostrar más',
     sort: {
       label: 'Ordenar',

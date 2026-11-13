@@ -11247,6 +11247,17 @@ export default {
     search: 'Numéro de commande, client, produit, SKU…',
     coreOnly: '3D seulement',
     hidden: '+{{n}} masquées',
+    stats: {
+      title: 'Chiffres',
+      weekly: 'Commandes reçues par semaine, 8 dernières semaines',
+      lead: 'De la commande à la remise, en moyenne',
+      leadHint: 'remises sur les 90 derniers jours : {{n}}',
+      leadNone: 'Aucune date de remise enregistrée sur les 90 derniers jours',
+      blocked: 'Valeur en attente de stock',
+      blockedHint: 'commandes sans rien de prêt : {{n}}',
+      ready: 'Prêtes, pas encore remises',
+      readyHint: 'âge de la plus ancienne commande',
+    },
     showMore: 'Afficher plus',
     sort: {
       label: 'Trier',

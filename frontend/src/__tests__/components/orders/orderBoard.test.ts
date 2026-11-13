@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import type { FinishedOrderRow, OrderBoardLine, OrderBoardResponse, OrderBoardRow, OrderPayment } from '../../../api/client';
 import {
   ageTone,
+  avgLeadDays,
+  weeklyCounts,
   byBrand,
   byFinishedPayment,
   byPayment,
@@ -416,5 +418,31 @@ describe('parcel edit', () => {
   it('parcelLines keeps each line under its ceiling and drops zeros; parcelWas lists the parcel as opened', () => {
     expect(parcelLines({ ...p, qty: { l1: 9, l2: 2, l3: 0 } })).toEqual([{ line_id: 'l1', quantity: 3 }, { line_id: 'l2', quantity: 2 }]);
     expect(parcelWas(p)).toEqual([{ line_id: 'l1', quantity: 2 }, { line_id: 'l3', quantity: 1 }]);
+  });
+});
+
+describe('stats strip', () => {
+  it('weeklyCounts buckets by Monday-started weeks, empty weeks included, the week of today last', () => {
+    // 2026-11-12 is a Thursday: its week starts Monday 2026-11-09.
+    const weeks = weeklyCounts(['2026-11-09', '2026-11-12', '2026-11-08', '2026-11-02', '2026-09-21', '2026-09-20', '2026-11-16'], '2026-11-12');
+    expect(weeks.map(w => w.start)).toEqual(['2026-09-21', '2026-09-28', '2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26', '2026-11-02', '2026-11-09']);
+    // Sunday the 8th belongs to the week before; the 20th of September and next Monday are outside.
+    expect(weeks.map(w => w.n)).toEqual([1, 0, 0, 0, 0, 0, 2, 2]);
+  });
+
+  it('weeklyCounts on a Monday and on a Sunday keeps the same Monday rule', () => {
+    expect(weeklyCounts([], '2026-11-09', 2).map(w => w.start)).toEqual(['2026-11-02', '2026-11-09']);
+    expect(weeklyCounts([], '2026-11-15', 2).map(w => w.start)).toEqual(['2026-11-02', '2026-11-09']);
+  });
+
+  it('avgLeadDays averages order date to hand-over over the window; null without a hand-over date', () => {
+    expect(avgLeadDays([], '2026-11-12')).toBeNull();
+    expect(avgLeadDays([{ date: '2026-11-01', handed_over: null }, { date: '2026-11-01' }], '2026-11-12')).toBeNull();
+    expect(avgLeadDays([
+      { date: '2026-11-01', handed_over: '2026-11-04' },
+      { date: '2026-10-01', handed_over: '2026-10-09' },
+      { date: '2026-11-05', handed_over: '2026-11-05' },
+      { date: '2026-01-01', handed_over: '2026-01-02' }, // handed over before the 90-day window
+    ], '2026-11-12')).toEqual({ days: 3.7, n: 3 });
   });
 });

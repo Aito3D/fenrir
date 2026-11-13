@@ -779,6 +779,15 @@ async def test_finished_list_is_newest_first_and_costs_no_zoho_call(db_session, 
 
 
 @pytest.mark.asyncio
+async def test_finished_row_says_when_the_last_parcel_left(db_session, zoho):
+    shipped = {**order(1, shipped=1), "packages": [{"shipment_date": "2026-11-02"}, {"shipment_date": "2026-11-04"}]}
+    await _synced(db_session, zoho, shipped, {**order(2, shipped=1), "packages": [{"shipment_date": ""}]})
+    rows = {r["id"]: r for r in (await sync.read_finished(db_session))["rows"]}
+    assert rows["so1"]["handed_over"] == "2026-11-04"
+    assert rows["so2"]["handed_over"] is None  # no date stored: never guessed from another field
+
+
+@pytest.mark.asyncio
 async def test_a_fully_shipped_order_older_than_the_age_limit_is_listed(db_session, zoho):
     await _synced(db_session, zoho, order(1, age=400, shipped=1))
     assert [r["id"] for r in (await sync.read_finished(db_session))["rows"]] == ["so1"]

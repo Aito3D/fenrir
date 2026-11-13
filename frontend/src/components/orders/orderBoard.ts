@@ -105,6 +105,34 @@ export const byFinishedPayment = (rows: FinishedOrderRow[], filter: PayFilter): 
 
 export const totalValue = (rows: OrderBoardRow[]): number => rows.reduce((sum, r) => sum + (r.total ?? 0), 0);
 
+const DAY_MS = 86_400_000;
+const utcMs = (isoDay: string) => Date.parse(`${isoDay}T00:00:00Z`);
+const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+/** Today as the server dates orders: the UTC calendar day. */
+export const utcToday = (): string => isoDay(Date.now());
+
+/** Orders per week over the last `weeks` weeks, oldest first, the week of `today` last. Weeks start on Monday. */
+export const weeklyCounts = (days: string[], today: string, weeks = 8): { start: string; n: number }[] => {
+  const monday = utcMs(today) - ((new Date(utcMs(today)).getUTCDay() + 6) % 7) * DAY_MS;
+  const starts = Array.from({ length: weeks + 1 }, (_, i) => isoDay(monday + (i - weeks + 1) * 7 * DAY_MS));
+  return starts.slice(0, weeks).map((start, i) => ({ start, n: days.filter(d => d >= start && d < starts[i + 1]).length }));
+};
+
+/** Average days from order date to hand-over, over the orders handed over in the last `windowDays`; null without any. */
+export const avgLeadDays = (
+  rows: Pick<FinishedOrderRow, 'date' | 'handed_over'>[],
+  today: string,
+  windowDays = 90,
+): { days: number; n: number } | null => {
+  const since = isoDay(utcMs(today) - windowDays * DAY_MS);
+  const leads = rows
+    .filter(r => r.handed_over && r.handed_over >= since)
+    .map(r => (utcMs(r.handed_over!) - utcMs(r.date)) / DAY_MS)
+    .filter(Number.isFinite);
+  if (!leads.length) return null;
+  return { days: Math.round((leads.reduce((sum, d) => sum + Math.max(0, d), 0) / leads.length) * 10) / 10, n: leads.length };
+};
+
 /** Default directions: age oldest first, value and % ready highest first, customer A to Z. */
 type Sortable = Pick<OrderBoardRow, 'age_days' | 'total' | 'customer' | 'ready_ratio'>;
 export const sortRows = <T extends Sortable>(rows: T[], key: SortKey, flipped: boolean, locale: string): T[] => {

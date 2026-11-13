@@ -11286,6 +11286,17 @@ export default {
     search: 'Ordernummer, klant, product, SKU…',
     coreOnly: 'Alleen 3D',
     hidden: '+{{n}} verborgen',
+    stats: {
+      title: 'Cijfers',
+      weekly: 'Ontvangen bestellingen per week, laatste 8 weken',
+      lead: 'Van bestelling tot overhandiging, gemiddeld',
+      leadHint: 'overhandigd in de laatste 90 dagen: {{n}}',
+      leadNone: 'Geen overhandigingsdatum opgeslagen voor de laatste 90 dagen',
+      blocked: 'Waarde in afwachting van voorraad',
+      blockedHint: 'bestellingen zonder iets gereed: {{n}}',
+      ready: 'Gereed, nog niet overhandigd',
+      readyHint: 'leeftijd van de oudste bestelling',
+    },
     showMore: 'Meer tonen',
     sort: {
       label: 'Sorteren',
