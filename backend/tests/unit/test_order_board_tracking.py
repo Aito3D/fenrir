@@ -1,6 +1,6 @@
 """The customer's tracking page of an order: the derivation, the code, the public route, the link in the SMS."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
@@ -241,7 +241,7 @@ async def test_every_failure_is_the_same_404(async_client, db_session, zoho):  #
 async def test_a_handed_over_order_keeps_its_page_for_thirty_days(async_client, db_session, zoho):  # noqa: F811
     done = order(1, shipped=1, age=40, paid_status="paid", invoiced_status="invoiced")
     done["invoices"] = [{"invoice_id": "i1", "status": "paid", "total": 1000.0, "balance": 0}]
-    handed = (date.today() - timedelta(days=29)).isoformat()
+    handed = (datetime.now(timezone.utc).date() - timedelta(days=29)).isoformat()
     done["packages"] = [{"package_id": "p", "status": "delivered", "shipment_date": handed}]
     await _synced(db_session, zoho, done)
     code = await tracking.ensure_token(db_session, "so1")
@@ -251,7 +251,9 @@ async def test_a_handed_over_order_keeps_its_page_for_thirty_days(async_client, 
     assert body["payment"] == {"currency": "XPF", "total": 1000, "paid": 1000, "left": 0}
 
     stored = (await db_session.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "salesorder"))).scalar_one()
-    packages = [{**done["packages"][0], "shipment_date": (date.today() - timedelta(days=32)).isoformat()}]
+    packages = [
+        {**done["packages"][0], "shipment_date": (datetime.now(timezone.utc).date() - timedelta(days=32)).isoformat()}
+    ]
     stored.detail = {**stored.detail, "packages": packages}
     await db_session.commit()
     assert (await _open(async_client, code)).status_code == 404
