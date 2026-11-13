@@ -14,6 +14,7 @@ from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_actions as actions, order_board_sync as sync
 from backend.app.services.order_board_actions import line_edit, parcel_edit, stamps as stamp_module
+from backend.app.services.order_board_sync import _common as sync_common
 from backend.app.services.zoho import (
     ZohoNotFound,
     ZohoRateLimited,
@@ -48,7 +49,7 @@ def _rate_limited():
 
 
 def _assert_window_open():
-    assert sync._rate_limited_until > time.monotonic() + 20
+    assert sync_common._rate_limited_until > time.monotonic() + 20
 
 
 async def _doc(db, zoho_id):
@@ -475,7 +476,7 @@ async def test_a_picklist_gone_from_books_is_unknown(db_session, parcels, monkey
     with pytest.raises(actions.OrderActionRefused) as e:
         await actions.picklist_content(db_session, "so1", pl)
     assert e.value.args[0] == "unknown_picklist"
-    assert sync._rate_limited_until == 0.0
+    assert sync_common._rate_limited_until == 0.0
 
 
 @pytest.mark.asyncio
@@ -2786,7 +2787,7 @@ async def test_a_429_after_the_shipment_opens_the_window_and_returns_the_outcome
     assert (outcome["failed_step"], outcome["error"], outcome["shipment"]) == (step, "429", "done")
     assert (outcome["delivered"], outcome["invoice"], outcome["credit_applied"]) == (delivered, invoice, 0.0)
     _assert_window_open()
-    sync._rate_limited_until = 0.0  # the retry is what the operator does once the window has passed
+    sync_common._rate_limited_until = 0.0  # the retry is what the operator does once the window has passed
     await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=True)
     assert books.effects["create_shipment"] == 1
     assert books.effects["mark_shipment_delivered"] == 1

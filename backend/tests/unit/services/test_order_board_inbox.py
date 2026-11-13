@@ -9,6 +9,7 @@ from backend.app.models.notification_inbox import Notification, OrderWatch, User
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import inbox, order_board_events, order_board_sync as sync
+from backend.app.services.order_board_sync import _pass as sync_pass
 from backend.tests.unit.test_inbox_service import _user, pushes  # noqa: F401 (fixture)
 from backend.tests.unit.test_order_board_sync import (  # noqa: F401 (fixtures)
     no_back_off_left_over,
@@ -155,7 +156,7 @@ async def test_order_deferred_by_the_cap_alerts_when_fetched(db_session, zoho, m
     await _user(db_session, "reader", perms=("orders:read",))
     zoho.add(order(1))
     await sync.run_pass(db_session)
-    monkeypatch.setattr(sync, "MAX_DETAILS_PER_PASS", 1)
+    monkeypatch.setattr(sync_pass, "MAX_DETAILS_PER_PASS", 1)
     zoho.add(order(2, age=1), order(3, age=9), order(4, age=8))  # oldest first: so2 waits two passes
     await sync.run_pass(db_session)
     await sync.run_pass(db_session)
@@ -183,7 +184,7 @@ async def test_order_gone_before_its_detail_leaves_no_marker(db_session, zoho, m
     await _user(db_session, "reader", perms=("orders:read",))
     zoho.add(order(1))
     await sync.run_pass(db_session)
-    monkeypatch.setattr(sync, "MAX_DETAILS_PER_PASS", 0)
+    monkeypatch.setattr(sync_pass, "MAX_DETAILS_PER_PASS", 0)
     zoho.add(order(2))
     await sync.run_pass(db_session)
     assert await markers(db_session) == ["so2"]

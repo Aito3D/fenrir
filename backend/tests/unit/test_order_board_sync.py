@@ -11,6 +11,11 @@ from sqlalchemy import select
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
+from backend.app.services.order_board_sync import (
+    _common as sync_common,
+    _loop as sync_loop,
+    _retainers as sync_retainers,
+)
 from backend.app.services.zoho import (
     ModifiedSinceRows,
     ZohoNotConfiguredError,
@@ -197,11 +202,11 @@ class FakeZoho:
 @pytest.fixture(autouse=True)
 def no_back_off_left_over():
     """The 429 back-off window is module state; one test must not hand it to the next."""
-    sync._rate_limited_until = 0.0
+    sync_common._rate_limited_until = 0.0
     sync._unconfirmed.clear()
     sync._written_at.clear()
     yield
-    sync._rate_limited_until = 0.0
+    sync_common._rate_limited_until = 0.0
     sync._unconfirmed.clear()
     sync._written_at.clear()
 
@@ -226,7 +231,7 @@ def zoho(monkeypatch):
         "calls_in_last_minute",
     ):
         monkeypatch.setattr(zoho_service, name, getattr(fake, name))
-    monkeypatch.setattr(sync, "list_project_retainers", fake.list_project_retainers)
+    monkeypatch.setattr(sync_retainers, "list_project_retainers", fake.list_project_retainers)
     return fake
 
 
@@ -483,7 +488,7 @@ def passes(monkeypatch):
         calls.append(db)
         return True
 
-    monkeypatch.setattr(sync, "run_pass", fake_pass)
+    monkeypatch.setattr(sync_loop, "run_pass", fake_pass)
     return calls
 
 
@@ -532,8 +537,8 @@ async def test_saving_settings_wakes_the_loop_instead_of_waiting_out_the_interva
         turns.append(1)
         return 3600.0
 
-    monkeypatch.setattr(sync, "_iteration", fake_iteration)
-    monkeypatch.setattr(sync, "async_session", _NoSession)
+    monkeypatch.setattr(sync_loop, "_iteration", fake_iteration)
+    monkeypatch.setattr(sync_loop, "async_session", _NoSession)
     loop_task = asyncio.create_task(sync.run_loop())
     try:
         await asyncio.sleep(0.05)
@@ -554,9 +559,9 @@ async def test_a_loop_turn_that_raises_does_not_end_the_loop(monkeypatch):
         turns.append(1)
         raise RuntimeError("database is locked")
 
-    monkeypatch.setattr(sync, "_iteration", failing_iteration)
-    monkeypatch.setattr(sync, "async_session", _NoSession)
-    monkeypatch.setattr(sync, "PENDING_PAUSE_SECONDS", 0.01)
+    monkeypatch.setattr(sync_loop, "_iteration", failing_iteration)
+    monkeypatch.setattr(sync_loop, "async_session", _NoSession)
+    monkeypatch.setattr(sync_loop, "PENDING_PAUSE_SECONDS", 0.01)
     loop_task = asyncio.create_task(sync.run_loop())
     try:
         await asyncio.sleep(0.1)
@@ -579,7 +584,7 @@ async def test_refresh_during_a_zoho_back_off_sends_nothing(db_session, zoho):
     before = sum(zoho.calls.values())
     assert await sync.run_pass(db_session) is False
     assert sum(zoho.calls.values()) == before
-    sync._rate_limited_until = 0.0  # the window has passed
+    sync_common._rate_limited_until = 0.0  # the window has passed
     assert await sync.run_pass(db_session) is True
     assert sum(zoho.calls.values()) > before
 
@@ -849,10 +854,10 @@ async def test_opening_during_a_back_off_raises_busy_and_sends_nothing(db_sessio
     await _synced(db_session, zoho, order(1, age=10, shipped=1))
     await _forget_detail(db_session, "so1")
     before = sum(zoho.calls.values())
-    sync._rate_limited_until = time.monotonic() + 60
+    sync_common._rate_limited_until = time.monotonic() + 60
     with pytest.raises(sync.ZohoBusy):
         await sync.read_finished_order(db_session, "so1")
-    sync._rate_limited_until = 0.0
+    sync_common._rate_limited_until = 0.0
     zoho.meter = sync.CALL_CEILING
     with pytest.raises(sync.ZohoBusy):
         await sync.read_finished_order(db_session, "so1")
@@ -872,7 +877,7 @@ async def test_a_rate_limited_open_opens_the_back_off_window(db_session, zoho, m
     monkeypatch.setattr(zoho_service, "get_salesorder", limited)
     with pytest.raises(sync.ZohoBusy):
         await sync.read_finished_order(db_session, "so1")
-    assert sync._rate_limited_until > time.monotonic()
+    assert sync_common._rate_limited_until > time.monotonic()
 
 
 @pytest.mark.asyncio
