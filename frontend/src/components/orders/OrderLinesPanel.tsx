@@ -1,62 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Check, CheckCheck, ClipboardList, HandHelping, Loader2, Lock, Package, Pencil, ReceiptText, Trash2, Undo2 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { Lock, Pencil, Trash2 } from 'lucide-react';
 import { api } from '../../api/client';
-import type { OrderBoardLine, OrderPanelRow, OrderPicklist } from '../../api/client';
+import type { OrderPicklist, OrderPanelRow } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { HoldButton } from '../aito/HoldButton';
-import { PanelTabs } from '../aito/PanelTabs';
-import { panelTabId, panelTabPanelId } from '../aito/panelTabIds';
-import { usePanelTab } from '../../hooks/usePanelTab';
-import { OrderActivity } from './OrderActivity';
 import { usePrintBlob } from '../aito/usePrintBlob';
 import { errorReason, isRefused } from './orderErrors';
-import { OrderContactBlock } from './OrderContactBlock';
-import { OrderSmsModal } from './OrderSmsModal';
-import { OrderEditBar } from './OrderEditBar';
-import { OrderHandoverBar } from './OrderHandoverBar';
-import { OrderInvoicesBlock } from './OrderInvoicesBlock';
-import { OrderItemSearch } from './OrderItemSearch';
-import { OrderPackBar } from './OrderPackBar';
-import { OrderParcelEditBar } from './OrderParcelEditBar';
+import { OrderLineRow } from './OrderLineRow';
+import { OrderPackedActions, OrderPackedBars } from './OrderPackedBand';
 import { OrderParcelEditRows } from './OrderParcelEditRows';
-import { OrderPaymentBlock } from './OrderPaymentBlock';
 import { OrderPrepActions } from './OrderPrepActions';
-import { OrderQtyStepper } from './OrderQtyStepper';
 import { OrderRefChips } from './OrderRefChips';
+import { OrderSidePanel } from './OrderSidePanel';
+import { OrderTodoCheckRow, OrderTodoEditRows } from './OrderTodoBand';
 import { OrderWatchButton } from './OrderWatchButton';
-import { boxablePicklists, canPick, editTotal, formatQty, packableUnits, panelGroups, parseDay, startEdit, waitingPackages } from './orderBoard';
+import { boxablePicklists, canPick, editTotal, packableUnits, panelGroups, parseDay, startEdit, waitingPackages } from './orderBoard';
 import type { OrderCheck, OrderEdit, PanelGroup, ParcelEdit } from './orderBoard';
-import { formatMoney } from '../../utils/pricing';
-import { FIT_VIEWPORT, TONE } from './orderStatus';
-import type { Tone } from './orderStatus';
+import { EDIT_BTN, GROUP } from './orderLinesShared';
+import { TONE } from './orderStatus';
 import { useHandOverPending, useOrderActions } from './useOrderActions';
 import { useOrderOutcomeToasts } from './useOrderOutcomeToasts';
 
-const SIDE_TABS = ['details', 'activity'] as const;
-
-const GROUP: Record<PanelGroup['id'], { label: string; icon: LucideIcon; tone: Tone; band: string; name: string; dim: boolean }> = {
-  todo: { label: 'orders.group.todo', icon: ClipboardList, tone: 'neutral', band: 'bg-bambu-green/10', name: 'text-white', dim: false },
-  packed: { label: 'orders.group.packed', icon: Package, tone: 'info', band: TONE.info.soft, name: TONE.info.text, dim: false },
-  shipped: { label: 'orders.group.shipped', icon: CheckCheck, tone: 'neutral', band: TONE.neutral.soft, name: 'text-bambu-gray', dim: true },
-  other: { label: 'orders.group.other', icon: ReceiptText, tone: 'neutral', band: TONE.neutral.soft, name: 'text-bambu-gray', dim: true },
-};
-
-const LINE_STATE: Record<OrderBoardLine['state'], { label: string; cls: string }> = {
-  ready: { label: 'orders.line.ready', cls: TONE.success.text },
-  backorder: { label: 'orders.line.backorder', cls: TONE.warning.text },
-  to_order: { label: 'orders.line.toOrder', cls: TONE.danger.text },
-  shipped: { label: 'orders.line.shipped', cls: 'text-bambu-gray' },
-  cancelled: { label: 'orders.line.cancelled', cls: 'text-bambu-gray' },
-  service: { label: 'orders.line.service', cls: 'text-bambu-gray' },
-};
-
-const dash = <span className="text-bambu-gray">–</span>;
-const EDIT_BTN = 'btn-press inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-bambu-green hover:text-bambu-green disabled:opacity-50';
-const TRASH = 'grid h-7 w-7 place-items-center rounded-md text-bambu-gray hover:bg-red-500/15 hover:text-red-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-bambu-gray';
 
 /** The expanded order: one table, split into what is left to prepare, what is
  *  boxed and waiting, what has gone, and the lines that never ship. A group
@@ -83,8 +50,6 @@ export function OrderLinesPanel({
   onEdited?: () => void;
 }) {
   const { t } = useTranslation();
-  const [sideTab, setSideTab] = usePanelTab(SIDE_TABS, 'orders.panel.tab');
-  const tabScope = `order-${row.id}-`;
   const toasts = useOrderOutcomeToasts();
   const { showToast } = useToast();
   const { canUpdate, createInvoice, cancelOrder, printSheet } = useOrderActions({
@@ -96,7 +61,6 @@ export function OrderLinesPanel({
   // The pickup SMS: admins, on a live order with something ready (a finished order has nothing to collect).
   const { isAdmin, authEnabled } = useAuth();
   const smsAllowed = isAdmin && (row as { status?: string }).status !== 'finished' && row.ready_ratio > 0;
-  const [smsPhone, setSmsPhone] = useState<string | null>(null);
   // While a hand-over of this order is in flight, the bar on screen stays as it is.
   const handingOver = useHandOverPending(row.id);
   const pendingNow = useRef(handingOver);
@@ -161,7 +125,6 @@ export function OrderLinesPanel({
       if (picklist) void starter.current.openCheck(picklist);
     }
   }, [start, startTick, canUpdate]);
-  const invoiceSent = useRef(false);
   const handoverOpen = !!handover && waitingPackages(row).some(p => p.id === handover);
   useEffect(() => {
     onHandoverOpen?.(handoverOpen);
@@ -311,33 +274,7 @@ export function OrderLinesPanel({
                       )}
                       {chips(group.id)}
                       {group.id === 'packed' && canUpdate && !handoverOpen && !edit && !parcel && (
-                        <span className={`flex basis-full flex-wrap items-center gap-2 lg:ml-auto lg:basis-auto ${FIT_VIEWPORT}`}>
-                          {waitingPackages(row).map((p, _i, all) => (
-                            <span key={p.id} className="contents">
-                            {!check && (
-                              <button
-                                type="button"
-                                data-opens={`parcel-${p.id}`}
-                                disabled={opening !== null}
-                                onClick={() => void openParcel(p.id)}
-                                className={EDIT_BTN}
-                              >
-                                {opening === `parcel-${p.id}` ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <Pencil aria-hidden="true" className="h-3.5 w-3.5" />}
-                                {all.length > 1 ? t('orders.parcelEdit.openNumber', { number: p.number }) : t('orders.parcelEdit.open')}
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              data-opens={`handover-${p.id}`}
-                              onClick={() => setHandover(p.id)}
-                              className="btn-press inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-blue-400 hover:text-blue-400"
-                            >
-                              <HandHelping aria-hidden="true" className="h-3.5 w-3.5" />
-                              {all.length > 1 ? t('orders.handover.openNumber', { number: p.number }) : t('orders.handover.open')}
-                            </button>
-                            </span>
-                          ))}
-                        </span>
+                        <OrderPackedActions row={row} showEdit={!check} opening={opening} onOpenParcel={id => void openParcel(id)} onHandover={setHandover} />
                       )}
                       {group.id === 'todo' && !check && !edit && !parcel && !handoverOpen && (editLead || canPick(row) || boxablePicklists(row).length > 0) && (
                         <OrderPrepActions
@@ -361,188 +298,46 @@ export function OrderLinesPanel({
                     busy={parcelBusy}
                     onQty={(id, v) => setParcel({ ...parcel, qty: { ...parcel.qty, [id]: v } })}
                   />
-                ) : group.lines.map(({ line, qty, ofQty }, index) => {
-                  const todo = group.id === 'todo';
-                  const short = todo && (line.state === 'backorder' || line.state === 'to_order');
-                  const editing = todo && edit;
-                  const gone = !!edit && todo && edit.gone.has(line.id);
-                  return (
-                    <tr key={line.id} className={`transition-opacity duration-150 ease-out ${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${(todo && check && !(check.max[line.id] > 0)) || gone ? 'opacity-40' : ''}`}>
-                      <td className={`border-l-2 py-2 pl-4 pr-3 ${TONE[meta.tone].rail} ${gone ? 'line-through' : ''}`}>
-                        <div className="text-white">{line.name}</div>
-                        {line.sku && <div className="font-mono text-xs text-bambu-gray">{line.sku}</div>}
-                      </td>
-                      <td className="whitespace-nowrap text-right tabular-nums text-white">
-                        {editing && gone ? (
-                          <span className="line-through">{formatQty(line.quantity)}</span>
-                        ) : editing ? (
-                          <>
-                            <OrderQtyStepper
-                              id={line.id}
-                              name={line.name}
-                              label={t('orders.edit.ordered')}
-                              value={edit.qty[line.id] ?? line.quantity}
-                              min={line.floor}
-                              positive // removing a line is the trash's job, never a 0
-                              checkbox={false}
-                              disabled={saving}
-                              onChange={v => editQty(line.id, v)}
-                            />
-                            {line.floor > 0 && (
-                              <span title={t('orders.edit.cannotRemove')} className="ml-1.5 text-[10px] text-bambu-gray">{t('orders.edit.min', { n: formatQty(line.floor) })}</span>
-                            )}
-                          </>
-                        ) : todo && check && checkLabel && check.max[line.id] > 0 ? (
-                          <OrderQtyStepper
-                            id={line.id}
-                            name={line.name}
-                            label={t(checkLabel)}
-                            value={Math.min(check.qty[line.id] ?? 0, check.max[line.id])}
-                            max={check.max[line.id]}
-                            disabled={pending}
-                            onChange={v => setCheck({ ...check, qty: { ...check.qty, [line.id]: v } })}
-                          />
-                        ) : (
-                          formatQty(qty)
-                        )}
-                        {ofQty !== null && !editing && <span className="ml-1 text-xs text-bambu-gray">{t('orders.ofOrdered', { n: formatQty(ofQty) })}</span>}
-                        {todo && line.invoiced > 0 && (
-                          <span className={`ml-1.5 rounded px-1.5 py-0.5 text-[10px] ${TONE.info.soft} ${TONE.info.text}`}>{t('orders.line.invoiced')}</span>
-                        )}
-                      </td>
-                      <td className={`text-right tabular-nums ${todo && line.state === 'ready' ? TONE.success.text : 'text-white'}`}>
-                        {todo && line.stock_available !== null ? formatQty(line.stock_available) : dash}
-                      </td>
-                      <td className={`text-right tabular-nums ${short ? LINE_STATE[line.state].cls : ''}`}>
-                        {short ? <>−{formatQty(line.shortfall)}</> : dash}
-                      </td>
-                      {editing ? (
-                        <td className="whitespace-nowrap pl-4">
-                          {gone ? (
-                            <button type="button" disabled={saving} onClick={() => setGone(line.id, false)} className="inline-flex items-center gap-1 text-xs text-bambu-gray hover:text-white disabled:opacity-50">
-                              <Undo2 aria-hidden="true" className="h-3.5 w-3.5" />
-                              {t('orders.edit.restore')}
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              aria-label={`${t('orders.edit.remove')} · ${line.name}`}
-                              title={t(line.floor > 0 ? 'orders.edit.cannotRemove' : 'orders.edit.remove')}
-                              disabled={saving || line.floor > 0}
-                              onClick={() => setGone(line.id, true)}
-                              className={TRASH}
-                            >
-                              <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </td>
-                      ) : (
-                      <td className="whitespace-nowrap pl-4">
-                        {group.id === 'packed' && (
-                          <span className={`inline-flex items-center gap-1 ${TONE.info.text}`}>
-                            <Package aria-hidden="true" className="h-3.5 w-3.5" />
-                            {t('orders.line.packed')}
-                          </span>
-                        )}
-                        {group.id === 'shipped' && (
-                          <span className="inline-flex items-center gap-1 text-bambu-gray">
-                            <Check aria-hidden="true" className="h-3.5 w-3.5" />
-                            {t('orders.line.shipped')}
-                          </span>
-                        )}
-                        {(todo || group.id === 'other') && <span className={LINE_STATE[line.state].cls}>{t(LINE_STATE[line.state].label)}</span>}
-                        {todo && line.covered_by_po > 0 && (
-                          <span className="ml-1.5 text-xs text-bambu-gray">
-                            {line.po_numbers.join(', ')} · +{formatQty(line.covered_by_po)}
-                          </span>
-                        )}
-                      </td>
-                      )}
-                    </tr>
-                  );
-                })}
-                {group.id === 'packed' && parcel && (
-                  <tr>
-                    <td colSpan={5} className="pt-2 animate-rise-sm">
-                      <OrderParcelEditBar row={row} parcel={parcel} onClose={closeParcel} onBusy={setParcelBusy} onSaved={() => setParcelSaved(true)} />
-                    </td>
-                  </tr>
-                )}
-                {group.id === 'packed' && handoverOpen && handover && (
-                  <tr>
-                    <td colSpan={5} className="pt-2 animate-rise-sm">
-                      <OrderHandoverBar key={handover} row={row} packageId={handover} onClose={() => { refocus.current = `handover-${handover}`; setHandover(null); }} />
-                    </td>
-                  </tr>
+                ) : group.lines.map(({ line, qty, ofQty }, index) => (
+                  <OrderLineRow
+                    key={line.id}
+                    groupId={group.id}
+                    line={line}
+                    qty={qty}
+                    ofQty={ofQty}
+                    index={index}
+                    edit={edit}
+                    check={check}
+                    checkLabel={checkLabel}
+                    saving={saving}
+                    pending={pending}
+                    editQty={editQty}
+                    setGone={setGone}
+                    setCheck={setCheck}
+                  />
+                ))}
+                {group.id === 'packed' && (
+                  <OrderPackedBars
+                    row={row}
+                    parcel={parcel}
+                    handover={handoverOpen ? handover : null}
+                    onParcelClose={closeParcel}
+                    onParcelBusy={setParcelBusy}
+                    onParcelSaved={() => setParcelSaved(true)}
+                    onHandoverClose={() => { refocus.current = `handover-${handover}`; setHandover(null); }}
+                  />
                 )}
                 {group.id === 'todo' && edit && (
-                  <>
-                    {edit.added.map(({ item, quantity }) => (
-                      <tr key={`add-${item.id}`} className="border-t border-bambu-dark-tertiary/60">
-                        <td className="border-l-2 border-bambu-green py-2 pl-4 pr-3">
-                          <div className="text-white">{item.name}</div>
-                          {item.sku && <div className="font-mono text-xs text-bambu-gray">{item.sku}</div>}
-                          <span className="mt-0.5 inline-block rounded bg-bambu-green/15 px-1.5 py-0.5 text-[10px] text-bambu-green">
-                            {t('orders.edit.newLine', { price: formatMoney(item.rate, row.currency) })}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap text-right tabular-nums text-white">
-                          <OrderQtyStepper
-                            id={`add-${item.id}`}
-                            name={item.name}
-                            label={t('orders.edit.ordered')}
-                            value={quantity}
-                            positive
-                            checkbox={false}
-                            disabled={saving}
-                            onChange={v => setEdit({ ...edit, added: edit.added.map(a => (a.item.id === item.id ? { ...a, quantity: v } : a)) })}
-                          />
-                        </td>
-                        <td className="text-right tabular-nums text-white">{item.stock_on_hand !== null ? formatQty(item.stock_on_hand) : dash}</td>
-                        <td className="text-right">{dash}</td>
-                        <td className="pl-4">
-                          <button
-                            type="button"
-                            aria-label={`${t('orders.edit.remove')} · ${item.name}`}
-                            title={t('orders.edit.remove')}
-                            disabled={saving}
-                            onClick={() => setEdit({ ...edit, added: edit.added.filter(a => a.item.id !== item.id) })}
-                            className={TRASH}
-                          >
-                            <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    <tr className="border-t border-bambu-dark-tertiary/60">
-                      <td colSpan={5} className="py-2 pl-4">
-                        <OrderItemSearch
-                          orderItemIds={itemIds}
-                          currency={row.currency}
-                          disabled={saving}
-                          onAdd={item => setEdit({ ...edit, added: [...edit.added, { item, quantity: 1 }] })}
-                        />
-                      </td>
-                    </tr>
-                    <tr>
-                      <td colSpan={5} className="pt-2 animate-rise-sm">
-                        <OrderEditBar row={row} edit={edit} onClose={closeEdit} onBusy={setSaving} onSaved={onEdited} />
-                      </td>
-                    </tr>
-                  </>
+                  <OrderTodoEditRows row={row} edit={edit} itemIds={itemIds} saving={saving} setEdit={setEdit} onClose={closeEdit} onBusy={setSaving} onSaved={onEdited} />
                 )}
                 {group.id === 'todo' && check && (
-                  <tr>
-                    <td colSpan={5} className="pt-2 animate-rise-sm">
-                      <OrderPackBar
-                        row={row}
-                        check={check}
-                        onClose={() => { refocus.current = check.picklist ? `pack-${check.picklist.id}` : 'pick'; setCheck(null); setPending(false); }}
-                        onBusy={setPending}
-                        onPicked={p => void print(printSheet(row.id, p.id))}
-                      />
-                    </td>
-                  </tr>
+                  <OrderTodoCheckRow
+                    row={row}
+                    check={check}
+                    onClose={() => { refocus.current = check.picklist ? `pack-${check.picklist.id}` : 'pick'; setCheck(null); setPending(false); }}
+                    onBusy={setPending}
+                    onPicked={p => void print(printSheet(row.id, p.id))}
+                  />
                 )}
               </tbody>
             );
@@ -550,51 +345,15 @@ export function OrderLinesPanel({
         </table>
       </div>
       </div>
-      <div className="min-w-0 lg:self-start">
-        <PanelTabs
-          tabs={[
-            { id: 'details', label: t('aito.panelTabDetails') },
-            { id: 'activity', label: t('aito.history.title') },
-          ]}
-          selected={sideTab}
-          onSelect={setSideTab}
-          attentionLabel={t('aito.panelTabAttention')}
-          scope={tabScope}
-        />
-        {/* Only the selected panel mounts, so the history query never runs behind a closed tab. */}
-        <div role="tabpanel" id={panelTabPanelId(sideTab, tabScope)} aria-labelledby={panelTabId(sideTab, tabScope)}>
-          {sideTab === 'details' ? (
-            <div className="space-y-3">
-              <OrderContactBlock
-                contact={row.contact}
-                orderNumber={row.number}
-                others={others}
-                onGoto={onGoto}
-                sms={smsAllowed ? { contacted: row.contacted ?? null, onOpen: setSmsPhone } : undefined}
-              />
-              {smsPhone && <OrderSmsModal row={row} phone={smsPhone} onClose={() => setSmsPhone(null)} />}
-              {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} quoteNumber={row.facts.quote_number} orderId={canUpdate && (row as { status?: string }).status !== 'finished' ? row.id : undefined} />}
-              <OrderInvoicesBlock
-                row={row}
-                canEmail={canUpdate}
-                busy={createInvoice.isPending}
-                onCreateInvoice={canUpdate ? () => {
-                  if (createInvoice.isPending || invoiceSent.current) return;
-                  invoiceSent.current = true;
-                  createInvoice.mutate({ id: row.id, applyCredit: (row.payment?.advance ?? 0) + (row.payment?.retainer ?? 0) > 0 }, { onSettled: () => { invoiceSent.current = false; } });
-                } : undefined}
-                onInvoiceNow={canUpdate ? (scope, applyCredit) => {
-                  if (createInvoice.isPending || invoiceSent.current) return;
-                  invoiceSent.current = true;
-                  createInvoice.mutate({ id: row.id, applyCredit, scope }, { onSettled: () => { invoiceSent.current = false; } });
-                } : undefined}
-              />
-            </div>
-          ) : (
-            <OrderActivity soId={row.id} currency={row.currency} />
-          )}
-        </div>
-      </div>
+      <OrderSidePanel
+        row={row}
+        others={others}
+        onGoto={onGoto}
+        canUpdate={canUpdate}
+        createInvoice={createInvoice}
+        smsAllowed={smsAllowed}
+        editingTotal={editingTotal}
+      />
     </div>
   );
 }
