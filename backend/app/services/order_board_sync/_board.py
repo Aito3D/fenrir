@@ -42,12 +42,14 @@ async def read_board(db: AsyncSession) -> dict:
     state = (row.detail if row else None) or {}
     rows = await _rows_with_prep(db, state)
     latest = await _latest_events(db, [r["id"] for r in rows])
+    settings = await load_settings(db)
     return {
         "rows": [{**r, "last_event": latest.get(r["id"])} for r in rows],
         "computed_at": state.get("computed_at"),
         "stock_loaded_at": state.get("stock_loaded_at"),
+        "scan": settings.scan_enabled,
         "sync": {
-            "enabled": (await load_settings(db)).sync_enabled,
+            "enabled": settings.sync_enabled,
             "configured": await zoho_service.is_configured(db),
             "running": _pass_lock.locked(),
             "pending": await _pending_count(db),

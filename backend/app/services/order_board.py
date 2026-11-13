@@ -86,6 +86,14 @@ def _line(raw: dict, items: dict[str, dict]) -> dict:
         "item_id": item_id,
         "name": raw.get("name") or "",
         "sku": raw.get("sku") or "",
+        # What a barcode on the product may read.
+        "codes": sorted(
+            {
+                str(v).strip()
+                for v in (raw.get("sku"), *((item or {}).get(k) for k in ("sku", "upc", "ean", "part_number")))
+                if v and str(v).strip()
+            }
+        ),
         "state": "",
         "quantity": _r(quantity),
         "shipped": _r(shipped),

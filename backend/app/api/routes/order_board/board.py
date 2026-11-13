@@ -37,6 +37,7 @@ class OrderBoardSettingsBody(BaseModel):
     sync_minutes: Literal[5, 15, 60]
     max_age_days: int = Field(ge=0, le=3650)
     core_brands: list[str] = Field(max_length=30)
+    scan_enabled: bool = False
 
     @field_validator("core_brands")
     @classmethod

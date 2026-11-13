@@ -11344,6 +11344,12 @@ errors: {
       shipped: 'Skickat',
       other: 'Övriga rader',
     },
+    scan: {
+      setting: "Skanna streckkoder för att fylla ett paket",
+      settingHint: "Med en ansluten skanner börjar paketkontrollen tom och varje skanning lägger till en enhet. Jämför med artikelns SKU, UPC, EAN eller artikelnummer i Zoho.",
+      full: "{{name}} är redan komplett",
+      unknown: "Okänd streckkod: {{code}}",
+    },
     units: '{{count}} enheter',
     units_one: '{{count}} enhet',
     units_other: '{{count}} enheter',

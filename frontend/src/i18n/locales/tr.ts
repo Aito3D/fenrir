@@ -11214,6 +11214,12 @@ export default {
       shipped: 'Gönderildi',
       other: 'Diğer satırlar',
     },
+    scan: {
+      setting: "Koliyi doldurmak için barkod okut",
+      settingHint: "Bir okuyucu takılıyken koli kontrolü boş başlar ve her okutma bir adet ekler. Zoho'daki ürünün SKU, UPC, EAN veya parça numarasıyla eşleştirir.",
+      full: "{{name}} zaten tamam",
+      unknown: "Bilinmeyen barkod: {{code}}",
+    },
     units: '{{count}} adet',
     units_one: '{{count}} adet',
     units_other: '{{count}} adet',

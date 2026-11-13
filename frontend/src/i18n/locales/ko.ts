@@ -10908,6 +10908,12 @@ export default {
       shipped: '출고됨',
       other: '기타 항목',
     },
+    scan: {
+      setting: "바코드를 스캔해 소포 채우기",
+      settingHint: "스캐너를 연결하면 소포 확인이 빈 상태로 시작되고 스캔할 때마다 1개씩 추가됩니다. Zoho 품목의 SKU, UPC, EAN 또는 부품 번호와 대조합니다.",
+      full: "{{name}}은(는) 이미 모두 담겼습니다",
+      unknown: "알 수 없는 바코드: {{code}}",
+    },
     units: '{{count}}개',
     units_one: '{{count}}개',
     units_other: '{{count}}개',

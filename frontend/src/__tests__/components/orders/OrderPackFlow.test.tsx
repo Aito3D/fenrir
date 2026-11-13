@@ -376,3 +376,33 @@ describe('cancel order', () => {
     expect(await screen.findByText('SO-00412 cancelled')).toBeInTheDocument();
   });
 });
+
+describe('scanning into a parcel', () => {
+  const scan = (code: string) => [...code, 'Enter'].forEach(key => fireEvent.keyDown(document.body, { key }));
+
+  it('with the setting on the check starts empty, a scan adds a unit, an unknown code changes nothing', async () => {
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+    const client = new QueryClient();
+    client.setQueryData(['order-board'], { rows: [], scan: true });
+    server.use(content());
+    render(
+      <QueryClientProvider client={client}>
+        <OrderLinesPanel row={picking({ lines: [line({ codes: ['BL-PLA-BK', '6975337030001'] })] })} start="pack-pl1" startTick={1} />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText(/Parcel: 0 of 2 on PL-00013/)).toBeInTheDocument();
+    scan('6975337030001');
+    expect(await screen.findByText(/Parcel: 1 of 2 on PL-00013/)).toBeInTheDocument();
+    scan('0000000');
+    expect(await screen.findByText('Unknown barcode: 0000000')).toBeInTheDocument();
+    expect(screen.getByText(/Parcel: 1 of 2 on PL-00013/)).toBeInTheDocument();
+  });
+
+  it('with the setting off the check starts full and keys are left alone', async () => {
+    server.use(content());
+    render(<OrderLinesPanel row={picking({ lines: [line({ codes: ['BL-PLA-BK'] })] })} start="pack-pl1" startTick={1} />);
+    expect(await screen.findByText(/Parcel: 2 of 2 on PL-00013/)).toBeInTheDocument();
+    scan('BL-PLA-BK');
+    expect(screen.getByText(/Parcel: 2 of 2 on PL-00013/)).toBeInTheDocument();
+  });
+});

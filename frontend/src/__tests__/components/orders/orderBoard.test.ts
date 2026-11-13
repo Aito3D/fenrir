@@ -21,6 +21,7 @@ import {
   boxablePicklists,
   canPick,
   checkLines,
+  scanCheck,
   editChanges,
   editPayload,
   parcelDiff,
@@ -331,6 +332,20 @@ describe('parcel steps', () => {
     expect(canPick(row({ lines: [line({ packable: 0 })] }))).toBe(false);
     expect(boxablePicklists(row({ picklists: [pl('pl1', 'completed'), pl('pl2', 'on_hold')], picked: 0 })).map(p => p.id)).toEqual(['pl2']);
     expect(boxablePicklists(row({ picklists: [pl('pl1', 'completed')], picked: 1 })).map(p => p.id)).toEqual(['pl1']);
+  });
+
+  it('scanCheck adds one unit to the matching line, says full or unknown otherwise', () => {
+    const lines = [{ id: 'a', name: 'Buse', codes: ['NOZ-04', '3760001'] }, { id: 'b', name: 'Corde', codes: ['ROPE'] }];
+    const check = { kind: 'pack' as const, max: { a: 2, b: 1.5 }, qty: {} };
+    const one = scanCheck(check, lines, ' noz-04 ');
+    expect([one.hit, one.check.qty]).toEqual(['added', { a: 1 }]);
+    const two = scanCheck(one.check, lines, '3760001');
+    expect(two.check.qty).toEqual({ a: 2 });
+    expect(scanCheck(two.check, lines, '3760001')).toMatchObject({ hit: 'full', name: 'Buse', check: two.check });
+    expect(scanCheck(check, lines, 'ROPE').check.qty).toEqual({ b: 1 }); // a fraction left: never above the maximum
+    expect(scanCheck({ ...check, qty: { b: 1 } }, lines, 'ROPE').check.qty).toEqual({ b: 1.5 });
+    expect(scanCheck(check, lines, 'nope').hit).toBe('unknown');
+    expect(scanCheck({ ...check, max: { b: 1 } }, lines, 'NOZ-04').hit).toBe('unknown'); // a line this check does not hold
   });
 
   it('checkLines sends the chosen units, never above the maximum, zeros dropped', () => {

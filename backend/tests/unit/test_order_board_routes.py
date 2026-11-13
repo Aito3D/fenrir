@@ -45,7 +45,7 @@ async def test_read_needs_orders_read(async_client, tokens):
     assert (await async_client.get("/api/v1/order-board", headers=tokens["none"])).status_code == 403
     r = await async_client.get("/api/v1/order-board", headers=tokens["read"])
     assert r.status_code == 200
-    assert set(r.json()) == {"rows", "computed_at", "stock_loaded_at", "sync"}
+    assert set(r.json()) == {"rows", "computed_at", "stock_loaded_at", "scan", "sync"}
     assert set(r.json()["sync"]) == {
         "enabled",
         "configured",
@@ -107,12 +107,19 @@ async def test_put_settings_rejects_bad_values(async_client, tokens, patch):
 
 @pytest.mark.asyncio
 async def test_put_settings_cleans_persists_and_returns_the_values(async_client, tokens):
-    body = {"sync_enabled": False, "sync_minutes": 60, "max_age_days": 0, "core_brands": [" eSUN ", "esun", "Marlow"]}
+    body = {
+        "sync_enabled": False,
+        "sync_minutes": 60,
+        "max_age_days": 0,
+        "core_brands": [" eSUN ", "esun", "Marlow"],
+        "scan_enabled": True,
+    }
     r = await async_client.put("/api/v1/order-board/settings", headers=tokens["both"], json=body)
     assert r.status_code == 200
-    expected = {"sync_enabled": False, "sync_minutes": 60, "max_age_days": 0, "core_brands": ["eSUN", "Marlow"]}
+    expected = {**body, "core_brands": ["eSUN", "Marlow"]}
     assert r.json() == expected
     assert (await async_client.get("/api/v1/order-board/settings", headers=tokens["both"])).json() == expected
+    assert (await async_client.get("/api/v1/order-board", headers=tokens["both"])).json()["scan"] is True
 
 
 @pytest.mark.asyncio
@@ -123,6 +130,7 @@ async def test_settings_defaults(async_client, tokens):
         "sync_minutes": 15,
         "max_age_days": 365,
         "core_brands": ["Bambu Lab", "eSUN", "SUNLU", "Polymaker", "Inslogic", "Magigoo"],
+        "scan_enabled": False,  # off until the items carry their barcodes in Zoho
     }
 
 

@@ -11272,6 +11272,12 @@ export default {
       shipped: 'Expédié',
       other: 'Autres lignes',
     },
+    scan: {
+      setting: "Scanner les codes-barres pour remplir un colis",
+      settingHint: "Avec une douchette branchée, le contrôle du colis démarre à zéro et chaque scan ajoute une unité. Compare au SKU, UPC, EAN ou à la référence fabricant de l'article dans Zoho.",
+      full: "{{name}} est déjà complet",
+      unknown: "Code-barres inconnu : {{code}}",
+    },
     units: '{{count}} unités',
     units_one: '{{count}} unité',
     units_other: '{{count}} unités',

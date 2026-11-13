@@ -11492,6 +11492,12 @@ export default {
       shipped: 'Wysłane',
       other: 'Pozostałe pozycje',
     },
+    scan: {
+      setting: "Skanuj kody kreskowe, aby wypełnić paczkę",
+      settingHint: "Z podłączonym skanerem kontrola paczki zaczyna się od zera, a każdy skan dodaje jedną sztukę. Porównuje z SKU, UPC, EAN lub numerem części pozycji w Zoho.",
+      full: "{{name}} jest już w komplecie",
+      unknown: "Nieznany kod kreskowy: {{code}}",
+    },
     units: '{{count}} szt.',
     units_one: '{{count}} szt.',
     units_other: '{{count}} szt.',

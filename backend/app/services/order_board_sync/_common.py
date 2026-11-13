@@ -65,6 +65,7 @@ class OrderBoardSettings:
     sync_minutes: int
     max_age_days: int  # 0 keeps every order
     core_brands: list[str]
+    scan_enabled: bool = False  # a barcode scan fills the parcel check
 
 
 def _now() -> str:
@@ -90,6 +91,7 @@ async def load_settings(db: AsyncSession) -> OrderBoardSettings:
         sync_minutes=await number("order_board_sync_minutes", 15),
         max_age_days=await number("order_board_max_age_days", 365),
         core_brands=brands if isinstance(brands, list) else list(DEFAULT_CORE_BRANDS),
+        scan_enabled=(await get_setting(db, "order_board_scan_enabled") or "").strip().lower() == "true",
     )
 
 

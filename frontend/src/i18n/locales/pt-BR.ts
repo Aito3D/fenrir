@@ -11272,6 +11272,12 @@ export default {
       shipped: 'Enviado',
       other: 'Outras linhas',
     },
+    scan: {
+      setting: "Ler códigos de barras para preencher um pacote",
+      settingHint: "Com um leitor conectado, a conferência do pacote começa vazia e cada leitura adiciona uma unidade. Compara com o SKU, UPC, EAN ou número de peça do item no Zoho.",
+      full: "{{name}} já está completo",
+      unknown: "Código de barras desconhecido: {{code}}",
+    },
     units: '{{count}} unidades',
     units_one: '{{count}} unidade',
     units_other: '{{count}} unidades',

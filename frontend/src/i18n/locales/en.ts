@@ -11343,6 +11343,12 @@ export default {
       shipped: 'Shipped',
       other: 'Other lines',
     },
+    scan: {
+      setting: "Scan barcodes to fill a parcel",
+      settingHint: "With a scanner plugged in, the parcel check starts empty and each scan adds one unit. Matches the item's SKU, UPC, EAN or part number in Zoho.",
+      full: "{{name}} is already complete",
+      unknown: "Unknown barcode: {{code}}",
+    },
     units: '{{count}} units',
     units_one: '{{count}} unit',
     units_other: '{{count}} units',

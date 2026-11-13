@@ -39,6 +39,7 @@ async def save_settings(db: AsyncSession, settings: OrderBoardSettings) -> None:
     await set_setting(db, "order_board_sync_minutes", str(settings.sync_minutes))
     await set_setting(db, "order_board_max_age_days", str(settings.max_age_days))
     await set_setting(db, "order_board_core_brands", json.dumps(settings.core_brands))
+    await set_setting(db, "order_board_scan_enabled", "true" if settings.scan_enabled else "false")
     changed = await recompute(db)
     await db.commit()
     await broadcast_pending(db)

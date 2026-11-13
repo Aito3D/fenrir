@@ -504,3 +504,11 @@ def test_row_version_and_estimable():
     assert row_for({"is_inclusive_tax": True, "shipping_charge": 500})["estimable"] is False
     assert row_for({"is_inclusive_tax": True}, line_discount=10)["estimable"] is False
     assert row_for({"is_inclusive_tax": False})["estimable"] is False
+
+
+def test_a_line_lists_the_codes_a_barcode_may_read():
+    from backend.app.services.order_board import _line
+
+    items = {"i1": {"sku": "NOZ-04", "upc": "792176071068", "ean": " ", "part_number": "P-9"}}
+    assert _line({"item_id": "i1", "sku": "NOZ-04"}, items)["codes"] == ["792176071068", "NOZ-04", "P-9"]
+    assert _line({"item_id": "gone", "sku": ""}, items)["codes"] == []

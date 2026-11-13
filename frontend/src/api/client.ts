@@ -5118,6 +5118,8 @@ export interface OrderBoardLine {
   item_id: string | null;
   name: string;
   sku: string;
+  /** What a barcode on the product may read: the item's SKU, UPC, EAN, part number. */
+  codes?: string[];
   state: OrderLineState;
   quantity: number;
   shipped: number;
@@ -5245,6 +5247,8 @@ export interface FinishedOrderRow { id: string; number: string; customer: string
 
 export interface OrderBoardResponse {
   rows: OrderBoardRow[];
+  /** Settings: a scan fills the parcel check. */
+  scan?: boolean;
   computed_at: string | null;
   stock_loaded_at: string | null;
   sync: {
@@ -5301,6 +5305,7 @@ export interface OrderBoardSettings {
   /** 0 keeps every order. */
   max_age_days: number;
   core_brands: string[];
+  scan_enabled: boolean;
 }
 
 export interface AitoStats {

@@ -13,7 +13,7 @@ import { formatDateTime } from '../../utils/date';
 import { registerSettingsSearch } from '../../lib/settingsSearch';
 
 registerSettingsSearch({ labelKey: 'orders.settings.syncTitle', tab: 'orders', keywords: 'orders order board zoho books sync interval refresh', anchor: 'card-orders-sync' });
-registerSettingsSearch({ labelKey: 'orders.settings.showsTitle', tab: 'orders', keywords: 'orders order board age limit old days core brands 3d only', anchor: 'card-orders-shows' });
+registerSettingsSearch({ labelKey: 'orders.settings.showsTitle', tab: 'orders', keywords: 'orders order board age limit old days core brands 3d only scan barcode scanner', anchor: 'card-orders-shows' });
 
 const SETTINGS_KEY = ['order-board-settings'] as const;
 const BOARD_KEY = ['order-board'] as const;
@@ -208,6 +208,18 @@ function OrdersSettingsBody() {
                 className="w-40 rounded-full border border-dashed border-bambu-dark-tertiary bg-transparent px-3 py-1 text-xs text-white placeholder:text-bambu-gray focus:border-bambu-green focus:outline-none"
               />
             </div>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-white">{t('orders.scan.setting')}</div>
+              <div className="mt-0.5 text-sm text-bambu-gray">{t('orders.scan.settingHint')}</div>
+            </div>
+            <Toggle
+              checked={settings.scan_enabled}
+              onChange={scan_enabled => save.mutate({ ...settings, scan_enabled })}
+              disabled={busy}
+              aria-label={t('orders.scan.setting')}
+            />
           </div>
         </CardContent>
       </Card>

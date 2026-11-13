@@ -11286,6 +11286,12 @@ export default {
       shipped: '出荷済み',
       other: 'その他の明細',
     },
+    scan: {
+      setting: "バーコードをスキャンして荷物に入れる",
+      settingHint: "スキャナーを接続すると、荷物の確認は空の状態から始まり、スキャンごとに1個追加されます。Zohoの商品のSKU、UPC、EAN、部品番号と照合します。",
+      full: "{{name}} はすでに揃っています",
+      unknown: "不明なバーコード: {{code}}",
+    },
     units: '{{count}} 点',
     units_one: '{{count}} 点',
     units_other: '{{count}} 点',

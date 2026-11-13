@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Lock, Pencil, Trash2 } from 'lucide-react';
 import { api } from '../../api/client';
-import type { OrderPicklist, OrderPanelRow } from '../../api/client';
+import type { OrderBoardResponse, OrderPicklist, OrderPanelRow } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { HoldButton } from '../aito/HoldButton';
@@ -17,12 +17,14 @@ import { OrderRefChips } from './OrderRefChips';
 import { OrderSidePanel } from './OrderSidePanel';
 import { OrderTodoCheckRow, OrderTodoEditRows } from './OrderTodoBand';
 import { OrderWatchButton } from './OrderWatchButton';
-import { boxablePicklists, canPick, editTotal, packableUnits, panelGroups, parseDay, startEdit, waitingPackages } from './orderBoard';
+import { boxablePicklists, canPick, editTotal, packableUnits, panelGroups, parseDay, scanCheck, startEdit, waitingPackages } from './orderBoard';
 import type { OrderCheck, OrderEdit, PanelGroup, ParcelEdit } from './orderBoard';
 import { EDIT_BTN, GROUP } from './orderLinesShared';
 import { TONE } from './orderStatus';
 import { useHandOverPending, useOrderActions } from './useOrderActions';
 import { useOrderOutcomeToasts } from './useOrderOutcomeToasts';
+import { useScan } from './useScan';
+import { chime } from '../../utils/chime';
 
 
 /** The expanded order: one table, split into what is left to prepare, what is
@@ -69,6 +71,8 @@ export function OrderLinesPanel({
   const [checkState, setCheck] = useState<OrderCheck | null>(null);
   const [pending, setPending] = useState(false);
   const queryClient = useQueryClient();
+  // Settings switch, read from the board the page already holds (no fetch here).
+  const scan = useQuery<OrderBoardResponse>({ queryKey: ['order-board'], enabled: false }).data?.scan ?? false;
   const { print, busy: printing } = usePrintBlob({ failureMessage: t('orders.prep.printFailed'), downloadFilename: `${row.number}-prep.pdf` });
   // The check being loaded: what a picklist or its parcel may hold is asked from Zoho when the check opens.
   const [opening, setOpening] = useState<string | null>(null);
@@ -81,7 +85,7 @@ export function OrderLinesPanel({
       if (barOpen.current) return;
       const max = Object.fromEntries(lines.map(l => [l.line_id, l.quantity]));
       if (!lines.length) showToast(t(picklist ? 'orders.pick.boxed' : 'orders.pick.nothing'), 'error');
-      else setCheck({ kind: picklist ? 'pack' : 'pick', picklist: picklist ?? undefined, max, qty: { ...max } });
+      else setCheck({ kind: picklist ? 'pack' : 'pick', picklist: picklist ?? undefined, max, qty: scan && picklist ? {} : { ...max } }); // with scanning on, the parcel fills as products are scanned
     } catch (e) {
       showToast(t(picklist ? 'orders.parcel.failed' : 'orders.pick.failed', { reason: errorReason(t, e) }), 'error');
       if (isRefused(e)) void queryClient.invalidateQueries({ queryKey: ['order-board'], exact: true });
@@ -135,6 +139,13 @@ export function OrderLinesPanel({
   const packable = checkState?.kind === 'pack' ? panelGroups(row).some(g => g.id === 'todo') : packableUnits(row) > 0;
   const check = checkState && packable ? checkState : null;
   const checkLabel = check ? (check.kind === 'pick' ? 'orders.pick.toPick' : 'orders.parcel.inParcel') : null;
+  useScan(scan && check?.kind === 'pack' && !pending, code => {
+    if (!check) return;
+    const r = scanCheck(check, row.lines, code);
+    if (r.hit === 'added') return setCheck(r.check);
+    chime(); // the operator looks at the parcel, not the screen
+    showToast(r.hit === 'full' ? t('orders.scan.full', { name: r.name }) : t('orders.scan.unknown', { code }), 'error');
+  });
   useEffect(() => {
     if (checkState && !packable) {
       setCheck(null);

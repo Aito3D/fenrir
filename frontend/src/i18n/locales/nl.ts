@@ -11311,6 +11311,12 @@ export default {
       shipped: 'Verzonden',
       other: 'Overige regels',
     },
+    scan: {
+      setting: "Barcodes scannen om een pakket te vullen",
+      settingHint: "Met een aangesloten scanner begint de pakketcontrole leeg en voegt elke scan één stuk toe. Vergelijkt met de SKU, UPC, EAN of het onderdeelnummer van het artikel in Zoho.",
+      full: "{{name}} is al compleet",
+      unknown: "Onbekende barcode: {{code}}",
+    },
     units: '{{count}} stuks',
     units_one: '{{count}} stuk',
     units_other: '{{count}} stuks',

@@ -11287,6 +11287,12 @@ export default {
       shipped: 'Versendet',
       other: 'Weitere Positionen',
     },
+    scan: {
+      setting: "Barcodes scannen, um ein Paket zu füllen",
+      settingHint: "Mit angeschlossenem Scanner beginnt die Paketkontrolle leer und jeder Scan fügt eine Einheit hinzu. Abgleich mit SKU, UPC, EAN oder Teilenummer des Artikels in Zoho.",
+      full: "{{name}} ist bereits vollständig",
+      unknown: "Unbekannter Barcode: {{code}}",
+    },
     units: '{{count}} Einheiten',
     units_one: '{{count}} Einheit',
     units_other: '{{count}} Einheiten',

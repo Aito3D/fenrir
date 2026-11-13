@@ -11270,6 +11270,12 @@ export default {
       shipped: '已发货',
       other: '其他行',
     },
+    scan: {
+      setting: "扫描条形码装入包裹",
+      settingHint: "接上扫描枪后，包裹核对从零开始，每扫一次增加一件。与 Zoho 中商品的 SKU、UPC、EAN 或零件号比对。",
+      full: "{{name}} 已装齐",
+      unknown: "未知条形码：{{code}}",
+    },
     units: '{{count}} 件',
     units_one: '{{count}} 件',
     units_other: '{{count}} 件',
