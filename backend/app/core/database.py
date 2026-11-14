@@ -686,6 +686,7 @@ async def init_db():
         filament_profile,
         filament_profile_default,
         filament_sku_settings,
+        filament_tree,
         finance,
         github_backup,
         group,

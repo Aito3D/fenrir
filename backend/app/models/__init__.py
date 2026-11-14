@@ -23,6 +23,13 @@ from backend.app.models.filament_profile_default import (
     FilamentProfileDefaultKProfile,
     FilamentProfileDefaultPreset,
 )
+from backend.app.models.filament_tree import (
+    FilamentTree,
+    FilamentTreeColor,
+    FilamentTreeLeaf,
+    FilamentTreeOverride,
+    FilamentTreeSnapshot,
+)
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
 from backend.app.models.group import Group, group_locations, group_printers, user_groups
 from backend.app.models.kprofile_note import KProfileNote
@@ -99,6 +106,11 @@ __all__ = [
     "Filament",
     "BaseFilamentPreset",
     "FilamentPreset",
+    "FilamentTree",
+    "FilamentTreeColor",
+    "FilamentTreeLeaf",
+    "FilamentTreeOverride",
+    "FilamentTreeSnapshot",
     "Settings",
     "SmartPlug",
     "SmartPlugEnergySnapshot",

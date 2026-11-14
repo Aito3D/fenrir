@@ -109,6 +109,12 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         # over its presets and K profiles (#1326).
         ("filament_profile_default_k_profile", "profile_default_id"),
         ("filament_profile_default_preset", "profile_default_id"),
+        # filament trees: their colours, overrides and leaves go with the tree, and a
+        # leaf goes with its preset (the next preset given the id would take it over).
+        ("filament_tree_colors", "tree_id"),
+        ("filament_tree_overrides", "tree_id"),
+        ("filament_tree_leaves", "tree_id"),
+        ("filament_tree_leaves", "preset_id"),
         # external_links: the next link given the id would show the count an
         # app reported for the deleted one.
         ("external_link_badges", "link_id"),
