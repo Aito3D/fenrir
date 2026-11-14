@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import func, select
 
 from backend.app.models.filament_profile import FilamentPreset
-from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor
+from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor, FilamentTreeLeaf
 from backend.app.services import filament_tree_store as store
 
 
@@ -96,3 +96,21 @@ async def test_targets_rejects_bad_nozzle(db_session):
         await store.set_targets(db_session, {"machines": ["H2S"], "nozzles": ["0.40"]})
     with pytest.raises(ValueError):
         await store.set_targets(db_session, {"machines": [], "nozzles": ["0.4"]})
+
+
+async def test_regenerate_never_touches_baseline_content(db_session):
+    tree, _ = await _make_tree(db_session)
+    await store.regenerate_tree(db_session, tree.id)
+    leaf = (
+        await db_session.execute(
+            select(FilamentTreeLeaf).where(FilamentTreeLeaf.machine == "H2S", FilamentTreeLeaf.nozzle == "0.4")
+        )
+    ).scalar_one()
+    assert leaf.baseline_content is None
+    leaf.baseline_content = "synced"
+    await db_session.commit()
+    before = (await db_session.get(FilamentPreset, leaf.preset_id)).content
+    await store.set_node_values(db_session, tree.id, "H2S", "0.4", None, {"filament_start_gcode": ["M900 K0.04"]}, [])
+    await db_session.refresh(leaf)
+    assert leaf.baseline_content == "synced"
+    assert (await db_session.get(FilamentPreset, leaf.preset_id)).content != before

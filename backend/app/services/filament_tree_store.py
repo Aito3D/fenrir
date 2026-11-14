@@ -131,7 +131,6 @@ async def regenerate_tree(db: AsyncSession, tree_id: int) -> dict:
                     nozzle=nozzle,
                     color_id=color_id,
                     preset_id=preset.id,
-                    baseline_content=content,
                 )
             )
             counts["created"] += 1
@@ -139,7 +138,6 @@ async def regenerate_tree(db: AsyncSession, tree_id: int) -> dict:
             preset = await db.get(FilamentPreset, link.preset_id)
             for k, v in fields.items():
                 setattr(preset, k, v)
-            link.baseline_content = content
             counts["updated"] += 1
     for link in existing.values():
         await db.execute(delete(FilamentTreeLeaf).where(FilamentTreeLeaf.id == link.id))
