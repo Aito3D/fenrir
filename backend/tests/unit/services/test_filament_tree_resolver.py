@@ -80,6 +80,26 @@ def test_order_colour_beats_nozzle_beats_machine_beats_root():
     assert resolve_leaf(tree, "H2D", "0.6", BLACK, BASES)["nozzle_temperature"] == ["246"]
 
 
+def test_order_leaf_beats_colourwide_beats_nozzle():
+    ov = {
+        ("H2S", "0.4", 0): {"nozzle_temperature": ["2"]},
+        ("", "", RED): {"nozzle_temperature": ["4"], "pressure_advance": ["9"]},
+        ("H2S", "0.6", RED): {"nozzle_temperature": ["5"]},
+    }
+    tree = replace(TREE, overrides=ov)
+    assert resolve_leaf(tree, "H2S", "0.4", RED, BASES)["nozzle_temperature"] == ["4"]
+    assert resolve_leaf(tree, "H2S", "0.6", RED, BASES)["nozzle_temperature"] == ["5"]
+    assert resolve_leaf(tree, "X2D", "0.8", RED, BASES)["nozzle_temperature"] == ["4"]
+    assert resolve_leaf(tree, "H2S", "0.4", BLACK, BASES)["nozzle_temperature"] == ["2"]
+    # nozzle-bound keys are dropped at colour-wide, like at the root
+    assert "pressure_advance" not in resolve_leaf(tree, "H2S", "0.4", RED, BASES)
+    node = resolve_with_sources(tree, None, None, RED)
+    assert node["nozzle_temperature"] == (["4"], "colorwide")
+    assert node["filament_cost"] == (["1976"], "root")
+    assert "pressure_advance" not in node
+    assert resolve_with_sources(tree, "H2S", "0.4", RED)["nozzle_temperature"] == (["4"], "colorwide")
+
+
 def test_own_value_survives_root_change():
     tree = replace(TREE, overrides={("H2S", "0.4", RED): {"filament_flow_ratio": ["0.9"]}})
     changed = replace(tree, own={**OWN, "filament_flow_ratio": ["1.0"]})

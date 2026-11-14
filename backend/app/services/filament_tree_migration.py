@@ -17,7 +17,6 @@ from backend.app.models.filament_tree import (
     FilamentTreeSnapshot,
 )
 from backend.app.services.filament_tree import (
-    DEFAULT_TARGETS,
     IDENTITY_KEYS,
     NOZZLE_BOUND_KEYS,
     leaf_targets,
@@ -93,7 +92,6 @@ def plan_tree(
     machine: str,
     nozzle: str,
     base_values: Callable[[str], dict],
-    targets: dict = DEFAULT_TARGETS,
 ) -> dict:
     """Split a group into root own values + node/colour overrides; colour keys are preset ids (0 = node)."""
     contents = {p["id"]: json.loads(p["content"]) for p in group_presets}
@@ -116,9 +114,7 @@ def plan_tree(
             return _MISSING
         return base[key]
 
-    # The tree has no colour-only level, so a colour's material values go on every target nozzle's colour leaf.
-    # shortcut: machines/nozzles added to the targets later do not get them; a colour level would fix that.
-    pairs = [(m, n) for m in targets["machines"] for n in targets["nozzles"]]
+    # A colour's material differences go on its colour-wide node ("", "", colour).
     for p in ordered[1:]:
         c = contents[p["id"]]
         own = {k: v for k, v in c.items() if k not in _SKIP and root.get(k, _MISSING) != v}
@@ -127,8 +123,7 @@ def plan_tree(
             if v is not _MISSING and v != root[k]:
                 own[k] = v
         if own:
-            for m, n in pairs:
-                put(m, n, p["id"], own)
+            put("", "", p["id"], own)
 
     def compat(pid: int) -> list[tuple[str, str]]:
         return _compat_pairs(contents[pid]) or [(machine, nozzle)]
@@ -215,7 +210,7 @@ async def apply_migration(db: AsyncSession, choices: list[dict]) -> list[int]:
         tree_ids = []
         for ch, group in picked:
             machine, nozzle, source_id = ch["machine"], ch["nozzle"], ch["source_preset_id"]
-            plan = plan_tree([_row_dict(r) for r in group], source_id, machine, nozzle, reader.values, targets)
+            plan = plan_tree([_row_dict(r) for r in group], source_id, machine, nozzle, reader.values)
             t = plan["tree"]
             tree = FilamentTree(
                 name=t["name"],

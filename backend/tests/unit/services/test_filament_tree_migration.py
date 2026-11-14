@@ -115,9 +115,8 @@ def test_migration_differing_pa_on_colour_leaves():
 def test_migration_colour_missing_root_key_gets_base_value():
     plan = _plan(_group(), base=lambda inherits: {"fan_max_speed": ["80"]})
     ov = plan["overrides"]
-    black = [v for (m, n, c), v in ov.items() if c == 1]
-    assert black and all(v["fan_max_speed"] == ["80"] for v in black)
-    assert ("H2S", "0.4", 1) in ov and ("X2D", "0.2", 1) in ov
+    assert ov[("", "", 1)] == {"fan_max_speed": ["80"]}
+    assert [k for k in ov if k[2] == 1] == [("", "", 1)]  # not copied onto leaves
     assert not [k for k in ov if k[2] == 2]  # Red matches the root
 
 

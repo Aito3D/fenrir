@@ -79,14 +79,20 @@ def parse_inherits(inherits: str) -> tuple[str, str | None, str | None]:
 def resolve_with_sources(
     tree: TreeData, machine: str | None, nozzle: str | None, color_id: int | None
 ) -> dict[str, tuple[object, str]]:
-    """Every key a node receives or owns -> (value, level); the deepest level that sets a key wins."""
+    """Every key a node receives or owns -> (value, level); the deepest level that sets a key wins.
+
+    (None, None, cid) is the colour-wide node: that colour on every machine and nozzle.
+    """
     layers: list[tuple[str, dict]] = [("root", {k: v for k, v in tree.own.items() if k not in NOZZLE_BOUND_KEYS})]
     if machine is not None:
         layers.append(("machine", tree.overrides.get((machine, "", 0), {})))
         if nozzle is not None:
             layers.append(("nozzle", tree.overrides.get((machine, nozzle, 0), {})))
-            if color_id is not None:
-                layers.append(("color", tree.overrides.get((machine, nozzle, color_id), {})))
+    if color_id is not None and (machine is None or nozzle is not None):
+        colorwide = tree.overrides.get(("", "", color_id), {})
+        layers.append(("colorwide", {k: v for k, v in colorwide.items() if k not in NOZZLE_BOUND_KEYS}))
+        if machine is not None:
+            layers.append(("color", tree.overrides.get((machine, nozzle, color_id), {})))
     out: dict[str, tuple[object, str]] = {}
     for level, values in layers:
         for k, v in values.items():

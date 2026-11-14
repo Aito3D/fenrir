@@ -3,7 +3,7 @@
 import json
 import re
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.settings import get_setting, set_setting
@@ -157,13 +157,17 @@ async def set_node_values(
     clear: list[str],
 ) -> None:
     tree = await _get_tree(db, tree_id)
-    if (machine is None and nozzle is not None) or (nozzle is None and color_id is not None):
+    colorwide = machine is None and nozzle is None and color_id is not None
+    if not colorwide and ((machine is None and nozzle is not None) or (nozzle is None and color_id is not None)):
         raise ValueError("a node needs its ancestors: machine, then nozzle, then colour")
     bad = IDENTITY_KEYS & set(set_values)
     if bad:
         raise ValueError(f"identity keys are set by the resolver: {sorted(bad)}")
     if machine is None and NOZZLE_BOUND_KEYS & set(set_values):
-        raise ValueError(f"nozzle-bound keys cannot live on the root: {sorted(NOZZLE_BOUND_KEYS & set(set_values))}")
+        where = "a colour-wide node" if colorwide else "the root"
+        raise ValueError(f"nozzle-bound keys cannot live on {where}: {sorted(NOZZLE_BOUND_KEYS & set(set_values))}")
+    if colorwide and color_id == tree.source_color_id:
+        raise ValueError("the calibration source colour holds no colour-wide values; edit the root instead")
     if color_id is not None and (machine, nozzle, color_id) == (
         tree.source_machine,
         tree.source_nozzle,
@@ -171,7 +175,7 @@ async def set_node_values(
     ):
         raise ValueError("the calibration source leaf holds no colour values; edit the root instead")
 
-    if machine is None:
+    if machine is None and color_id is None:
         values = json.loads(tree.own_values)
         values.update(set_values)
         for k in clear:
@@ -182,7 +186,7 @@ async def set_node_values(
             await db.execute(
                 select(FilamentTreeOverride).where(
                     FilamentTreeOverride.tree_id == tree_id,
-                    FilamentTreeOverride.machine == machine,
+                    FilamentTreeOverride.machine == (machine or ""),
                     FilamentTreeOverride.nozzle == (nozzle or ""),
                     FilamentTreeOverride.color_id == (color_id or 0),
                 )
@@ -196,7 +200,7 @@ async def set_node_values(
             db.add(
                 FilamentTreeOverride(
                     tree_id=tree_id,
-                    machine=machine,
+                    machine=machine or "",
                     nozzle=nozzle or "",
                     color_id=color_id or 0,
                     values=json.dumps(values),
@@ -270,17 +274,25 @@ async def update_tree(db: AsyncSession, tree_id: int, *, skip_02=_UNSET, source=
     if source is not _UNSET:
         machine, nozzle, color_id = source
         clash = (
-            await db.execute(
-                select(FilamentTreeOverride).where(
-                    FilamentTreeOverride.tree_id == tree_id,
-                    FilamentTreeOverride.machine == machine,
-                    FilamentTreeOverride.nozzle == nozzle,
-                    FilamentTreeOverride.color_id == color_id,
+            (
+                await db.execute(
+                    select(FilamentTreeOverride).where(
+                        FilamentTreeOverride.tree_id == tree_id,
+                        FilamentTreeOverride.color_id == color_id,
+                        or_(
+                            (FilamentTreeOverride.machine == machine) & (FilamentTreeOverride.nozzle == nozzle),
+                            (FilamentTreeOverride.machine == "") & (FilamentTreeOverride.nozzle == ""),
+                        ),
+                    )
                 )
             )
-        ).scalar_one_or_none()
+            .scalars()
+            .first()
+        )
         if color_id is not None and clash is not None:
-            raise ValueError("that leaf already has colour values; clear them before making it the source")
+            raise ValueError(
+                "that leaf or its colour already has colour values; clear them before making it the source"
+            )
         tree.source_machine, tree.source_nozzle, tree.source_color_id = machine, nozzle, color_id
     await db.flush()
     await regenerate_tree(db, tree_id)

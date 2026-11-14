@@ -114,3 +114,22 @@ async def test_regenerate_never_touches_baseline_content(db_session):
     await db_session.refresh(leaf)
     assert leaf.baseline_content == "synced"
     assert (await db_session.get(FilamentPreset, leaf.preset_id)).content != before
+
+
+async def test_colourwide_node_values_and_refusals(db_session):
+    tree, color = await _make_tree(db_session, source_machine="H2S", source_nozzle="0.4")
+    blue = await store.add_color(db_session, tree.id, "Blue", "#0000FF")
+    tree.source_color_id = color.id
+    await db_session.commit()
+    with pytest.raises(ValueError, match="root"):
+        await store.set_node_values(db_session, tree.id, None, None, color.id, {"nozzle_temperature": ["250"]}, [])
+    with pytest.raises(ValueError, match="nozzle-bound"):
+        await store.set_node_values(db_session, tree.id, None, None, blue, {"pressure_advance": ["0.1"]}, [])
+    await store.set_node_values(db_session, tree.id, None, None, blue, {"nozzle_temperature": ["250"]}, [])
+    rows = (await db_session.execute(select(FilamentPreset))).scalars().all()
+    temps = {r.name: json.loads(r.content).get("nozzle_temperature") for r in rows}
+    assert all(v == ["250"] for n, v in temps.items() if " - Blue @" in n)
+    assert not any(v == ["250"] for n, v in temps.items() if " - Red @" in n)
+    assert json.loads((await db_session.get(FilamentTree, tree.id)).own_values) == {}
+    with pytest.raises(ValueError, match="colour values"):
+        await store.update_tree(db_session, tree.id, source=("X2D", "0.8", blue))
