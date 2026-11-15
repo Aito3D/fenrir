@@ -132,6 +132,7 @@ async def add_color(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: in
 async def base_names(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> set[str]
 async def create_tree(db: sqlalchemy.ext.asyncio.session.AsyncSession, *, name: str, brand: str, material: str, base_family: str, color_name: str, color_hex: str, machine: str, nozzle: str, own_values: dict | None = None) -> int
 async def duplicate_tree(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int, name: str, brand: str) -> int
+async def get_leaf_preset(db: sqlalchemy.ext.asyncio.session.AsyncSession, link: backend.app.models.filament_tree.FilamentTreeLeaf) -> backend.app.models.filament_profile.FilamentPreset
 async def get_targets(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> dict
 async def load_tree(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int) -> backend.app.services.filament_tree.TreeData
 async def managed_preset_ids(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> set[int]

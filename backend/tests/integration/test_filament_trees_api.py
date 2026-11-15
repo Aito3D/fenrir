@@ -302,6 +302,53 @@ async def test_export_confirm_requires_update_permission(async_client, db_sessio
     assert r.status_code == 200 and r.json() == {"confirmed": 32}
 
 
+async def test_concurrent_migrate_of_one_group_loses_with_400(async_client, db_session, monkeypatch):
+    from backend.app.services import filament_tree_migration as migration
+
+    row = FilamentPreset(
+        name="Polymaker PETG - White",
+        brand="Polymaker",
+        material="PETG",
+        color="White",
+        content=json.dumps(
+            {"name": "Polymaker PETG - White", "inherits": "Bambu PETG Basic @BBL H2S", "nozzle_temperature": ["245"]}
+        ),
+    )
+    db_session.add(row)
+    db_session.add(BaseFilamentPreset(name="Bambu PETG Basic @BBL H2S", filename="b.json"))
+    await db_session.commit()
+    body = {"groups": [{"prefix": "Polymaker PETG", "source_preset_id": row.id, "machine": "H2S", "nozzle": "0.4"}]}
+
+    # both requests read the group as unmanaged; the second only carries on once the first has finished
+    arrived = 0
+    both_in = asyncio.Event()
+    first_done = asyncio.Event()
+    real = migration.managed_preset_ids
+
+    async def gate(db):
+        nonlocal arrived
+        managed = await real(db)
+        arrived += 1
+        mine = arrived
+        if mine == 2:
+            both_in.set()
+        await both_in.wait()
+        if mine == 2:
+            await first_done.wait()
+        return managed
+
+    async def post():
+        r = await async_client.post(f"{API}/migrate", json=body)
+        first_done.set()
+        return r
+
+    monkeypatch.setattr(migration, "managed_preset_ids", gate)
+    first, second = await asyncio.gather(post(), post())
+    assert sorted([first.status_code, second.status_code]) == [200, 400], (first.text, second.text)
+    loser = first if first.status_code == 400 else second
+    assert loser.json()["detail"] == "group already migrated"
+
+
 async def test_migrate_then_list(async_client, db_session):
     ids = {}
     for color in ("White", "Red"):
@@ -907,6 +954,53 @@ async def test_skip_02_removing_a_leaf_needs_delete_permission(async_client, db_
     # turning it back on only adds leaves
     r = await async_client.patch(f"{API}/{tree_id}", json={"skip_02": False}, headers=update_only)
     assert r.status_code == 200, r.text
+    assert await _leaf_count(db_session) == before
+
+
+async def test_rename_that_flips_auto_skip_02_needs_delete_permission(async_client, db_session):
+    tree, _, _ = await _tree(db_session)
+    tree_id = tree.id
+    before = await _leaf_count(db_session)
+    admin = await _setup_admin(async_client, username="ft_ren_admin")
+    update_only = await _perm_headers(async_client, "ft_ren_update", ["filaments:update", "filaments:read"], admin)
+    r = await async_client.patch(f"{API}/{tree_id}", json={"material": "PETG-CF"}, headers=update_only)
+    assert r.status_code == 403 and "filaments:delete" in r.json()["detail"]
+    assert await _leaf_count(db_session) == before
+    await db_session.refresh(tree)
+    assert (tree.material, tree.name) == ("PETG", "Polymaker PETG")
+
+    # a rename that changes no leaf set needs only update
+    r = await async_client.patch(f"{API}/{tree_id}", json={"material": "PLA"}, headers=update_only)
+    assert r.status_code == 200, r.text
+    assert await _leaf_count(db_session) == before
+
+    # skip_02 pinned off: the CF name drops nothing
+    r = await async_client.patch(f"{API}/{tree_id}", json={"skip_02": False}, headers=update_only)
+    assert r.status_code == 200, r.text
+    r = await async_client.patch(f"{API}/{tree_id}", json={"material": "PLA-CF"}, headers=update_only)
+    assert r.status_code == 200, r.text
+    assert await _leaf_count(db_session) == before
+
+    r = await async_client.patch(f"{API}/{tree_id}", json={"skip_02": None}, headers=update_only)
+    assert r.status_code == 403
+    full = await _perm_headers(
+        async_client, "ft_ren_full", ["filaments:update", "filaments:delete", "filaments:read"], admin
+    )
+    r = await async_client.patch(f"{API}/{tree_id}", json={"skip_02": None}, headers=full)
+    assert r.status_code == 200, r.text
+    assert await _leaf_count(db_session) < before
+
+
+async def test_rename_dropping_the_source_leaf_is_400(async_client, db_session):
+    tree, _, _ = await _tree(db_session)
+    tree_id = tree.id
+    r = await async_client.patch(f"{API}/{tree_id}", json={"source_nozzle": "0.2"})
+    assert r.status_code == 200, r.text
+    before = await _leaf_count(db_session)
+    r = await async_client.patch(f"{API}/{tree_id}", json={"material": "PETG-GF"})
+    assert r.status_code == 400 and "not a leaf" in r.json()["detail"]
+    await db_session.refresh(tree)
+    assert tree.material == "PETG"
     assert await _leaf_count(db_session) == before
 
 

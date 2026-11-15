@@ -345,3 +345,18 @@ async def test_first_sight_conflict_kept_absent_in_fenrir(db_session):
 def test_plan_pull_missing_list_is_sorted():
     leaves = [leaf(name=n, baseline={"nozzle_temperature": ["246"]}) for n in ("zeta", "alpha", "mid")]
     assert plan_pull([], leaves, set()).missing == ["alpha", "mid", "zeta"]
+
+
+@pytest.mark.asyncio
+async def test_leaf_preset_missing_preset_names_the_leaf(db_session, monkeypatch):
+    tree = await _tree(db_session)
+    leaves, _ = await pull.collect_leaf_states(db_session)
+    lf = next(x for x in leaves if x.name == "Polymaker PETG - Blue @H2S 0.4")
+    real_get = db_session.get
+
+    async def get(model, *args, **kwargs):
+        return None if model is FilamentPreset else await real_get(model, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "get", get)
+    with pytest.raises(LookupError, match=rf"preset \d+ of leaf H2S 0\.4 \(colour {lf.color_id}\) is missing"):
+        await pull._leaf_preset(db_session, tree.id, "H2S", "0.4", lf.color_id)

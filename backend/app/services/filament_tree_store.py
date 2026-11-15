@@ -180,9 +180,7 @@ async def regenerate_tree(db: AsyncSession, tree_id: int) -> dict:
             )
             counts["created"] += 1
         else:
-            preset = await db.get(FilamentPreset, link.preset_id)
-            if preset is None:
-                raise LookupError(f"preset {link.preset_id} of leaf {machine} {nozzle} (colour {color_id}) is missing")
+            preset = await get_leaf_preset(db, link)
             if preset.content != content:
                 link.export_pending = True
             for k, v in fields.items():
@@ -350,6 +348,15 @@ async def remove_color(db: AsyncSession, tree_id: int, color_id: int) -> None:
     await db.flush()
     await regenerate_tree(db, tree_id)
     await db.commit()
+
+
+async def get_leaf_preset(db: AsyncSession, link: FilamentTreeLeaf) -> FilamentPreset:
+    preset = await db.get(FilamentPreset, link.preset_id)
+    if preset is None:
+        raise LookupError(
+            f"preset {link.preset_id} of leaf {link.machine} {link.nozzle} (colour {link.color_id}) is missing"
+        )
+    return preset
 
 
 async def update_tree(

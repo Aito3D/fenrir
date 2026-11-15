@@ -7,6 +7,7 @@ from dataclasses import asdict, replace
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.cloud import _cloud_api_key_gate, cloud_caller
@@ -336,7 +337,10 @@ async def migrate(
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
     with _mapped():
-        tree_ids = await apply_migration(db, [g.model_dump() for g in payload.groups])
+        try:
+            tree_ids = await apply_migration(db, [g.model_dump() for g in payload.groups])
+        except IntegrityError as e:  # a concurrent migrate of the same group won the leaf-preset unique constraint
+            raise ValueError("group already migrated") from e
     return {"tree_ids": tree_ids}
 
 
@@ -618,26 +622,30 @@ async def patch_tree(
             if "skip_02" in changes:
                 kwargs["skip_02"] = changes["skip_02"]
             kwargs.update({k: changes[k] for k in ("brand", "material") if changes.get(k)})
-            if changes.keys() & {"source_machine", "source_nozzle", "source_color_id"}:
+            source_changed = bool(changes.keys() & {"source_machine", "source_nozzle", "source_color_id"})
+            if source_changed or kwargs:
                 m, n, c = tree.source
                 source = (
                     changes.get("source_machine") or m,
                     changes.get("source_nozzle") or n,
                     changes.get("source_color_id") or c,
                 )
-                # the source must stay a generated leaf, or its calibration has nowhere to live
-                check = replace(tree, skip_02=kwargs.get("skip_02", tree.skip_02))
-                if source not in leaf_targets(check, await store.get_targets(db)):
-                    raise ValueError(f"{source[0]} {source[1]} with that colour is not a leaf of this tree")
-                kwargs["source"] = source
-            if (
-                "skip_02" in kwargs
-                and _lacks_delete(user)
-                and await _would_drop_leaf(
-                    db, tree_id, replace(tree, skip_02=kwargs["skip_02"]), await store.get_targets(db)
+                brand, material = kwargs.get("brand", tree.brand), kwargs.get("material", tree.material)
+                check = replace(
+                    tree,
+                    brand=brand,
+                    material=material,
+                    name=f"{brand} {material}",
+                    skip_02=kwargs.get("skip_02", tree.skip_02),
                 )
-            ):
-                _refuse_missing_delete()
+                targets = await store.get_targets(db)
+                # the source must stay a generated leaf, or its calibration has nowhere to live
+                if source not in leaf_targets(check, targets):
+                    raise ValueError(f"{source[0]} {source[1]} with that colour is not a leaf of this tree")
+                if source_changed:
+                    kwargs["source"] = source
+                if _lacks_delete(user) and await _would_drop_leaf(db, tree_id, check, targets):
+                    _refuse_missing_delete()
             await store.update_tree(db, tree_id, **kwargs)
     return {"success": True}
 

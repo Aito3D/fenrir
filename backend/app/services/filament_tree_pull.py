@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.filament_profile import FilamentPreset
 from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor, FilamentTreeLeaf, FilamentTreeOverride
 from backend.app.services.filament_tree import NOZZLE_BOUND_KEYS, SKIP_KEYS
-from backend.app.services.filament_tree_store import regenerate_tree, set_node_values
+from backend.app.services.filament_tree_store import get_leaf_preset, regenerate_tree, set_node_values
 
 _LEAF_SUFFIX = re.compile(r" @\S+ \d\.\d$")
 
@@ -155,9 +155,7 @@ async def _leaf_preset(
     ).scalar_one_or_none()
     if link is None:
         raise LookupError(f"leaf {machine} {nozzle} (colour {color_id}) of tree {tree_id} not found")
-    preset = await db.get(FilamentPreset, link.preset_id)
-    if preset is None:
-        raise LookupError(f"preset {link.preset_id} of a tree leaf is missing")
+    preset = await get_leaf_preset(db, link)
     await db.refresh(preset)
     return link, preset
 
