@@ -1,5 +1,6 @@
 """Integration tests for /api/v1/filament-trees and the managed-row lock on /filament-profiles."""
 
+import asyncio
 import io
 import json
 import zipfile
@@ -12,6 +13,7 @@ from backend.app.models.filament_profile import BaseFilamentPreset, FilamentPres
 from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor, FilamentTreeLeaf
 from backend.app.schemas.filament_profile import _CONTENT_MAX_LENGTH
 from backend.app.services import filament_tree_store as store
+from backend.app.services.orca_cloud import OrcaCloudAuthError, OrcaCloudError
 from backend.tests.integration.test_filament_profiles_api import _create_user_with_perms, _setup_admin
 
 API = "/api/v1/filament-trees"
@@ -172,6 +174,21 @@ async def test_node_put_root_nozzle_bound_400(async_client, db_session):
 
     r = await async_client.put(f"{API}/{tree.id}/node", json={"color_id": 9999, "set": {"x": ["1"]}})
     assert r.status_code == 404
+
+
+@pytest.mark.parametrize("node", [{}, {"color_id": "red"}, {"machine": "H2S", "nozzle": "0.4", "color_id": "red"}])
+async def test_overlapping_node_puts_keep_both_edits(async_client, db_session, node):
+    """Two saves of the same node racing (NodePanel saves per field) must both survive, also with no override row yet."""
+    tree, _, red = await _tree(db_session)
+    body = {k: red.id if v == "red" else v for k, v in node.items()}
+    keys = ["hot_plate_temp", "cool_plate_temp"]
+    rs = await asyncio.gather(
+        *(async_client.put(f"{API}/{tree.id}/node", json={**body, "set": {k: ["60"]}}) for k in keys)
+    )
+    assert [r.status_code for r in rs] == [200, 200]
+    r = await async_client.get(f"{API}/{tree.id}/node", params=body)
+    own = {row["key"] for row in r.json() if row["own"]}
+    assert set(keys) <= own
 
 
 async def test_sync_applies_and_returns_plan(async_client, db_session, monkeypatch):
@@ -367,6 +384,37 @@ async def test_candidate_becomes_tree(async_client, db_session, monkeypatch):
     assert (await async_client.post(f"{API}/candidates", json=bad)).status_code == 400
 
 
+@pytest.mark.parametrize(
+    ("error", "status", "detail"),
+    [
+        (OrcaCloudAuthError("token expired"), 401, "token expired"),
+        (OrcaCloudError("Profile c1 not found"), 404, "Profile c1 not found"),
+        (OrcaCloudError("boom"), 502, "boom"),
+    ],
+)
+async def test_orca_errors_map_to_http_and_close_service(async_client, monkeypatch, error, status, detail):
+    stub = _stub_orca(monkeypatch, [])
+
+    async def fail(_profile_id):
+        raise error
+
+    stub.get_profile = fail
+    body = {
+        "orca_id": "c1",
+        "name": "eSUN PLA+ - Blue",
+        "brand": "eSUN",
+        "material": "PLA+",
+        "color_name": "Blue",
+        "color_hex": "#0000FF",
+        "machine": "H2S",
+        "nozzle": "0.4",
+    }
+    r = await async_client.post(f"{API}/candidates", json=body)
+    assert r.status_code == status, r.text
+    assert r.json()["detail"] == detail
+    assert stub.closed is True
+
+
 @pytest.mark.parametrize("path", ["", "/targets", "/unmanaged"])
 async def test_reads_need_auth(async_client, path):
     await _setup_admin(async_client, username="ftadmin_r")
@@ -395,6 +443,73 @@ async def test_conflict_value_ill_shaped_422(async_client, db_session):
     tree, _, red = await _tree(db_session)
     body = {"tree_id": tree.id, "machine": "H2S", "nozzle": "0.4", "color_id": red.id, "key": "a", "value": {"x": 1}}
     assert (await async_client.post(f"{API}/conflicts/resolve", json=body)).status_code == 422
+
+
+async def _first_red_leaf(db, tree_id, red_id):
+    return (
+        (
+            await db.execute(
+                select(FilamentTreeLeaf)
+                .where(FilamentTreeLeaf.tree_id == tree_id, FilamentTreeLeaf.color_id == red_id)
+                .order_by(FilamentTreeLeaf.id)
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
+async def test_conflict_resolve_success_writes_value_and_baseline(async_client, db_session):
+    tree, _, red = await _tree(db_session)
+    leaf = await _first_red_leaf(db_session, tree.id, red.id)
+    body = {
+        "tree_id": tree.id,
+        "machine": leaf.machine,
+        "nozzle": leaf.nozzle,
+        "color_id": red.id,
+        "key": "fan_min_speed",
+        "value": ["40"],
+        "orca_value": ["35"],
+    }
+    r = await async_client.post(f"{API}/conflicts/resolve", json=body)
+    assert r.status_code == 200, r.text
+    assert r.json() == {"success": True}
+    await db_session.refresh(leaf)
+    preset = await db_session.get(FilamentPreset, leaf.preset_id)
+    await db_session.refresh(preset)
+    assert json.loads(preset.content)["fan_min_speed"] == ["40"]
+    assert json.loads(leaf.baseline_content)["fan_min_speed"] == ["35"]
+
+
+async def test_conflict_resolve_unknown_tree_404(async_client, db_session):
+    body = {
+        "tree_id": 987654,
+        "machine": "H2S",
+        "nozzle": "0.4",
+        "color_id": 1,
+        "key": "a",
+        "value": ["1"],
+        "orca_value": ["1"],
+    }
+    r = await async_client.post(f"{API}/conflicts/resolve", json=body)
+    assert r.status_code == 404
+    assert r.json()["detail"] == "filament tree 987654 not found"
+
+
+async def test_conflict_resolve_unknown_leaf_404(async_client, db_session):
+    tree, _, red = await _tree(db_session)
+    body = {
+        "tree_id": tree.id,
+        "machine": "NOPE",
+        "nozzle": "0.4",
+        "color_id": red.id,
+        "key": "a",
+        "value": ["1"],
+        "orca_value": ["1"],
+    }
+    r = await async_client.post(f"{API}/conflicts/resolve", json=body)
+    assert r.status_code == 404
+    assert r.json()["detail"] == "No row was found when one was required"  # current text (SQLAlchemy's)
 
 
 async def test_node_put_refuses_orca_metadata_keys(async_client, db_session):

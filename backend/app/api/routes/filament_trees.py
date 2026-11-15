@@ -235,22 +235,23 @@ async def bulk_node(
 ):
     """One write on the same node of several trees; all or nothing."""
     try:
-        with _mapped():
-            for tree_id in dict.fromkeys(payload.tree_ids):
-                _check_node(await store.load_tree(db, tree_id), payload.machine, payload.nozzle, None)
-                await store.set_node_values(
-                    db,
-                    tree_id,
-                    payload.machine,
-                    payload.nozzle,
-                    None,
-                    payload.set_values,
-                    payload.clear,
-                    regenerate=False,
-                    actor=_actor(user),
-                )
-                await store.regenerate_tree(db, tree_id)
-            await db.commit()
+        async with store._tree_write_lock(payload.tree_ids):
+            with _mapped():
+                for tree_id in dict.fromkeys(payload.tree_ids):
+                    _check_node(await store.load_tree(db, tree_id), payload.machine, payload.nozzle, None)
+                    await store.set_node_values(
+                        db,
+                        tree_id,
+                        payload.machine,
+                        payload.nozzle,
+                        None,
+                        payload.set_values,
+                        payload.clear,
+                        regenerate=False,
+                        actor=_actor(user),
+                    )
+                    await store.regenerate_tree(db, tree_id)
+                await db.commit()
     except BaseException:
         await db.rollback()
         raise
@@ -322,10 +323,11 @@ async def sync(
 ):
     """Pull only: fold OrcaSlicer edits into the trees, report conflicts and candidates."""
     entries = await _orca_call(db, current_user, lambda svc: svc.list_profiles())
-    leaves, colour_names = await collect_leaf_states(db)
-    plan = plan_pull(entries, leaves, colour_names)
-    with _mapped():
-        await apply_pull(db, plan)
+    async with store._tree_write_lock((await db.execute(select(FilamentTree.id))).scalars().all()):
+        leaves, colour_names = await collect_leaf_states(db)
+        plan = plan_pull(entries, leaves, colour_names)
+        with _mapped():
+            await apply_pull(db, plan)
     return {k: v for k, v in asdict(plan).items() if k != "baselines"}  # full Orca contents stay server-side
 
 
@@ -335,17 +337,18 @@ async def resolve(
     _: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    with _mapped():
-        await resolve_conflict(
-            db,
-            payload.tree_id,
-            payload.machine,
-            payload.nozzle,
-            payload.color_id,
-            payload.key,
-            payload.value,
-            payload.orca_value,
-        )
+    async with store._tree_write_lock([payload.tree_id]):
+        with _mapped():
+            await resolve_conflict(
+                db,
+                payload.tree_id,
+                payload.machine,
+                payload.nozzle,
+                payload.color_id,
+                payload.key,
+                payload.value,
+                payload.orca_value,
+            )
     return {"success": True}
 
 
@@ -473,18 +476,19 @@ async def put_node(
     user: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    with _mapped():
-        _check_node(await store.load_tree(db, tree_id), payload.machine, payload.nozzle, payload.color_id)
-        await store.set_node_values(
-            db,
-            tree_id,
-            payload.machine,
-            payload.nozzle,
-            payload.color_id,
-            payload.set_values,
-            payload.clear,
-            actor=_actor(user),
-        )
+    async with store._tree_write_lock([tree_id]):
+        with _mapped():
+            _check_node(await store.load_tree(db, tree_id), payload.machine, payload.nozzle, payload.color_id)
+            await store.set_node_values(
+                db,
+                tree_id,
+                payload.machine,
+                payload.nozzle,
+                payload.color_id,
+                payload.set_values,
+                payload.clear,
+                actor=_actor(user),
+            )
     return {"success": True}
 
 
@@ -546,16 +550,17 @@ async def revert_change(
         raise HTTPException(404, f"change {change_id} not found")
     node = (change.machine or None, change.nozzle or None, change.color_id or None)
     old = None if change.old_value is None else json.loads(change.old_value)
-    with _mapped():
-        _check_node(await store.load_tree(db, tree_id), *node)
-        await store.set_node_values(
-            db,
-            tree_id,
-            *node,
-            {} if old is None else {change.key: old},
-            [change.key] if old is None else [],
-            actor=_actor(user),
-        )
+    async with store._tree_write_lock([tree_id]):
+        with _mapped():
+            _check_node(await store.load_tree(db, tree_id), *node)
+            await store.set_node_values(
+                db,
+                tree_id,
+                *node,
+                {} if old is None else {change.key: old},
+                [change.key] if old is None else [],
+                actor=_actor(user),
+            )
     return {"success": True}
 
 

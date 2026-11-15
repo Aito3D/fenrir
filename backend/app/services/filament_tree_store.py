@@ -1,7 +1,11 @@
 """Persistence for filament trees; every mutation regenerates one filament_presets row per leaf."""
 
+import asyncio
 import json
 import re
+import weakref
+from collections.abc import AsyncIterator, Iterable
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import delete, or_, select
@@ -29,6 +33,28 @@ from backend.app.services.filament_tree import (
 
 TARGETS_KEY = "filament_tree_targets"
 _UNSET = object()
+
+# One lock per (event loop, tree): asyncio locks bind to a loop, and each test runs its own.
+_tree_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[int, asyncio.Lock]]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+@asynccontextmanager
+async def _tree_write_lock(tree_ids: Iterable[int]) -> AsyncIterator[None]:
+    """Serialize read-modify-write of tree nodes. Take it in the route, before any read of the tree, never inside
+    set_node_values (not re-entrant). Several ids are taken in sorted order so two callers cannot deadlock."""
+    locks = _tree_locks.setdefault(asyncio.get_running_loop(), {})
+    held: list[asyncio.Lock] = []
+    try:
+        for tree_id in sorted(set(tree_ids)):
+            lock = locks.setdefault(tree_id, asyncio.Lock())
+            await lock.acquire()
+            held.append(lock)
+        yield
+    finally:
+        for lock in reversed(held):
+            lock.release()
 
 
 def _validate_targets(targets: dict) -> dict:
