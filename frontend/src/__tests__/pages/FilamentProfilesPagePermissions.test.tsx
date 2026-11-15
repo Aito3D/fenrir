@@ -53,6 +53,7 @@ const TREE: FilamentTreeSummary = {
 
 function stubBase() {
   vi.spyOn(api, 'getFilamentTrees').mockResolvedValue([TREE]);
+  vi.spyOn(api, 'getFilamentPresets').mockResolvedValue([]);
   vi.spyOn(api, 'getFilamentTreeTargets').mockResolvedValue({ machines: ['X2D'], nozzles: ['0.4'] });
   vi.spyOn(api, 'getUnmanagedFilamentGroups').mockResolvedValue([
     {
@@ -91,6 +92,8 @@ describe('FilamentProfilesPage — permission gating (T-016)', () => {
     expect(screen.queryByRole('button', { name: 'SYNC' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Tree settings' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /not in a tree/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /sync base/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /sync to pc/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /sync prices from zoho/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /use parent/i })).not.toBeInTheDocument();
@@ -104,6 +107,9 @@ describe('FilamentProfilesPage — permission gating (T-016)', () => {
     await renderPage();
     expect(screen.queryByRole('button', { name: 'SYNC' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tree settings' })).toBeInTheDocument();
+    // Sync base and Sync to PC keep their old filaments:update gate.
+    expect(screen.getByRole('button', { name: /sync base/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sync to pc/i })).toBeInTheDocument();
   });
 
   it('shows every mutating control when the user holds every filaments permission and Orca auth', async () => {

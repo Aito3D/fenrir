@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Download, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { api } from '../../api/client';
@@ -11,7 +11,6 @@ import { Button } from '../Button';
 import { ConfirmModal } from '../ConfirmModal';
 import { errorMessage } from './errorMessage';
 import { inputCls } from '../formStyles';
-import { Toggle } from '../Toggle';
 import { downloadTreeExport } from './exportDownload';
 
 const splitList = (text: string) => text.split(',').map((s) => s.trim()).filter(Boolean);
@@ -32,6 +31,12 @@ export function TreeSettingsPanel({ tree, targets }: { tree: FilamentTreeSummary
   const [nozzles, setNozzles] = useState(targets.nozzles.join(', '));
   const [removing, setRemoving] = useState<FilamentTreeColor | null>(null);
   const [busy, setBusy] = useState(false);
+  // Colour pickers fire on every drag step: save each colour 400ms after the last change.
+  const hexTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const timers = hexTimers.current;
+    return () => timers.forEach(clearTimeout);
+  }, []);
 
   // Every write: refused edits come back as 400 with a reason, shown as a toast.
   const run = async (fn: () => Promise<unknown>) => {
@@ -66,16 +71,22 @@ export function TreeSettingsPanel({ tree, targets }: { tree: FilamentTreeSummary
           </div>
 
           {canUpdate && (
-            <div className="flex items-center gap-3">
-              <Toggle
-                checked={tree.abrasive}
-                disabled={busy}
-                onChange={(v) => void run(() => api.updateFilamentTree(tree.id, { skip_02: v }))}
-                aria-label={t('filamentTrees.skip02')}
-              />
+            <label className="flex flex-wrap items-center gap-3">
               <span className="text-sm text-bambu-gray-light">{t('filamentTrees.skip02')}</span>
-              {tree.skip_02 === null && <span className="text-xs text-bambu-gray/60">{t('filamentTrees.automatic')}</span>}
-            </div>
+              <select
+                value={tree.skip_02 === null ? 'auto' : tree.skip_02 ? 'skip' : 'include'}
+                disabled={busy}
+                onChange={(e) => {
+                  const skip_02 = { auto: null, skip: true, include: false }[e.target.value as 'auto' | 'skip' | 'include'];
+                  void run(() => api.updateFilamentTree(tree.id, { skip_02 }));
+                }}
+                className={`${inputCls} w-auto`}
+              >
+                <option value="auto">{t('filamentTrees.skip02Auto')}</option>
+                <option value="skip">{t('filamentTrees.skip02Yes')}</option>
+                <option value="include">{t('filamentTrees.skip02No')}</option>
+              </select>
+            </label>
           )}
 
           <div className="space-y-2">
@@ -94,8 +105,12 @@ export function TreeSettingsPanel({ tree, targets }: { tree: FilamentTreeSummary
                       type="color"
                       aria-label={t('filamentTrees.colourHexOf', { name: c.name })}
                       defaultValue={hexOrBlack(c.hex)}
-                      disabled={!canUpdate || busy}
-                      onBlur={(e) => rename({ hex: e.target.value })}
+                      disabled={!canUpdate}
+                      onChange={(e) => {
+                        const hex = e.target.value;
+                        clearTimeout(hexTimers.current.get(c.id));
+                        hexTimers.current.set(c.id, setTimeout(() => rename({ hex }), 400));
+                      }}
                       className="h-8 w-8 shrink-0 cursor-pointer rounded border border-bambu-dark-tertiary bg-transparent"
                     />
                     <input

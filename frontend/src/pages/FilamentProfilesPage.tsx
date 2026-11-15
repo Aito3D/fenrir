@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Download, Droplets, Loader2, RefreshCw, Settings2 } from 'lucide-react';
+import { AlertTriangle, Database, Download, Droplets, HardDrive, Loader2, RefreshCw, Settings2 } from 'lucide-react';
 
 import { api } from '../api/client';
 import type { FilamentTreePullResult } from '../api/client';
 import { Button } from '../components/Button';
+import { SyncBaseResultModal } from '../components/filament-profiles/SyncBaseResultModal';
+import { SyncModal } from '../components/filament-profiles/SyncModal';
+import { useBaseSync, usePcSync } from '../components/filament-profiles/usePresetSyncs';
 import { ZohoSyncResult } from '../components/filament-profiles/ZohoSyncResult';
 import { errorMessage } from '../components/filament-trees/errorMessage';
 import { useZohoSync } from '../components/filament-profiles/useZohoSync';
@@ -48,8 +51,16 @@ export function FilamentProfilesPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncOutcome, setSyncOutcome] = useState<{ result?: FilamentTreePullResult; error?: unknown } | null>(null);
   const { zohoSyncing, zohoResult, handleZohoSync } = useZohoSync();
-  // Source colour names for the migration modal; only fetched while it is open.
-  const presetsQuery = useQuery({ queryKey: ['filamentPresets'], queryFn: api.getFilamentPresets, enabled: migrateOpen });
+  // The generated rows: source colour names for the migration modal, and what "Sync to PC" writes.
+  const presetsQuery = useQuery({
+    queryKey: ['filamentPresets'],
+    queryFn: api.getFilamentPresets,
+    enabled: migrateOpen || canUpdate,
+  });
+  // Bambu Studio side: refresh the base-preset index (server scan, else browser upload) and mirror the rows to the PC.
+  const { syncBaseBusy, syncBaseModal, setSyncBaseModal, baseFileInputRef, handleSyncBase, handleBaseFilesSelected } =
+    useBaseSync();
+  const { syncModal, setSyncModal, handleSyncToPc, handleSyncConfirm } = usePcSync(presetsQuery.data ?? []);
 
   const trees = treesQuery.data ?? [];
   const groups = unmanagedQuery.data ?? [];
@@ -108,6 +119,33 @@ export function FilamentProfilesPage() {
               {zohoSyncing ? t('filamentProfiles.syncingZoho') : t('filamentProfiles.syncZohoPrices')}
             </Button>
           )}
+          {canUpdate && (
+            <Button variant="secondary" size="sm" onClick={handleSyncBase} disabled={syncBaseBusy}>
+              {syncBaseBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+              {syncBaseBusy ? t('filamentProfiles.syncingBase') : t('filamentProfiles.syncBase')}
+            </Button>
+          )}
+          {/* Upload fallback for Sync base, opened when the server has no Bambu Studio bundle (Docker deploys). */}
+          <input
+            ref={baseFileInputRef}
+            data-testid="fp-base-file-input"
+            type="file"
+            accept=".json,.zip"
+            multiple
+            className="hidden"
+            onChange={handleBaseFilesSelected}
+          />
+          {canUpdate && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleSyncToPc}
+              disabled={!presetsQuery.data || presetsQuery.data.length === 0}
+            >
+              <HardDrive className="h-4 w-4" />
+              {t('filamentProfiles.syncToPc')}
+            </Button>
+          )}
           {(canCreate || canUpdate || canDelete) && (
             <Button
               variant="secondary"
@@ -137,13 +175,17 @@ export function FilamentProfilesPage() {
             {t('common.retry')}
           </Button>
         </div>
-      ) : loading || !targets ? (
+      ) : loading || !targets || (trees.length === 0 && unmanagedQuery.isLoading) ? (
         <p className="text-sm text-bambu-gray">{t('common.loading')}</p>
       ) : trees.length === 0 ? (
         <div className="py-12 text-center">
           <p className="font-medium text-white">{t('filamentTrees.emptyTitle')}</p>
           <p className="mx-auto mt-1 max-w-lg text-sm text-bambu-gray">
-            {groups.length > 0 ? t('filamentTrees.emptyBody') : t('filamentTrees.emptyNone')}
+            {unmanagedQuery.isError
+              ? errorMessage(unmanagedQuery.error)
+              : groups.length > 0
+                ? t('filamentTrees.emptyBody')
+                : t('filamentTrees.emptyNone')}
           </p>
           {groups.length > 0 && canMigrate && (
             <Button onClick={() => setMigrateOpen(true)} className="mx-auto mt-4">
@@ -186,6 +228,25 @@ export function FilamentProfilesPage() {
           presets={presetsQuery.data ?? []}
           targets={targets}
           onClose={() => setMigrateOpen(false)}
+        />
+      )}
+
+      {syncModal && (
+        <SyncModal
+          state={syncModal.state}
+          stats={syncModal.stats}
+          onCancel={() => setSyncModal(null)}
+          onConfirm={handleSyncConfirm}
+          onClose={() => setSyncModal(null)}
+          canConfirm={canDelete}
+        />
+      )}
+
+      {syncBaseModal && (
+        <SyncBaseResultModal
+          result={syncBaseModal.result}
+          error={syncBaseModal.error}
+          onClose={() => setSyncBaseModal(null)}
         />
       )}
 

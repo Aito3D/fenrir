@@ -3,7 +3,7 @@
  * unmanaged presets, SYNC (pull) result handling, Export for Orca and tree settings.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { FilamentProfilesPage } from '../../pages/FilamentProfilesPage';
@@ -234,13 +234,87 @@ describe('FilamentProfilesPage (trees)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add colour' }));
     await waitFor(() => expect(addColor).toHaveBeenCalledWith(1, { name: 'Blue', hex: '#000000' }));
 
-    await userEvent.click(screen.getByRole('switch', { name: 'Skip the 0.2 nozzle' }));
+    const skip = screen.getByLabelText('Skip the 0.2 nozzle');
+    expect(skip).toHaveValue('auto');
+    await userEvent.selectOptions(skip, 'skip');
     await waitFor(() => expect(patch).toHaveBeenCalledWith(1, { skip_02: true }));
+    await userEvent.selectOptions(skip, 'include');
+    await waitFor(() => expect(patch).toHaveBeenCalledWith(1, { skip_02: false }));
+    await userEvent.selectOptions(skip, 'auto');
+    await waitFor(() => expect(patch).toHaveBeenCalledWith(1, { skip_02: null }));
 
     const machines = screen.getByLabelText('Printers');
     await userEvent.clear(machines);
     await userEvent.type(machines, 'X2D, H2D');
     await userEvent.click(screen.getByRole('button', { name: 'Save targets' }));
     await waitFor(() => expect(putTargets).toHaveBeenCalledWith({ machines: ['X2D', 'H2D'], nozzles: ['0.4', '0.6'] }));
+  });
+
+  it('saves a recoloured colour once, 400ms after the last change', async () => {
+    stub();
+    const update = vi.spyOn(api, 'updateFilamentTreeColor').mockResolvedValue({ success: true });
+    render(<FilamentProfilesPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Tree settings' }));
+    const picker = await screen.findByLabelText('Colour of Red');
+    fireEvent.change(picker, { target: { value: '#112233' } });
+    fireEvent.change(picker, { target: { value: '#445566' } });
+    expect(update).not.toHaveBeenCalled();
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update).toHaveBeenCalledWith(1, 11, { name: 'Red', hex: '#445566' });
+  });
+
+  it('empty state waits for the unmanaged groups and shows their error', async () => {
+    stub({ trees: [] });
+    vi.spyOn(api, 'getUnmanagedFilamentGroups').mockRejectedValue(new ApiError('unmanaged scan failed', 500));
+    render(<FilamentProfilesPage />);
+    expect(await screen.findByText('unmanaged scan failed')).toBeInTheDocument();
+    expect(screen.queryByText(/Run SYNC/)).not.toBeInTheDocument();
+  });
+
+  it('Sync base indexes the server bundle and shows the result', async () => {
+    stub();
+    const syncBase = vi
+      .spyOn(api, 'syncBaseFilamentPresets')
+      .mockResolvedValue({ total: 12, added: 2, updated: 1, unchanged: 9 } as Awaited<ReturnType<typeof api.syncBaseFilamentPresets>>);
+    render(<FilamentProfilesPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Sync base' }));
+    await waitFor(() => expect(syncBase).toHaveBeenCalled());
+    expect(await screen.findByText('Base profiles synced')).toBeInTheDocument();
+  });
+
+  it('Sync base falls back to uploading picked files when the server has no bundle', async () => {
+    stub();
+    vi.spyOn(api, 'syncBaseFilamentPresets').mockResolvedValue(
+      { total: 0, added: 0, updated: 0, unchanged: 0 } as Awaited<ReturnType<typeof api.syncBaseFilamentPresets>>,
+    );
+    const upload = vi
+      .spyOn(api, 'uploadBaseFilamentPresets')
+      .mockResolvedValue({ total: 1, added: 1, updated: 0, unchanged: 0 } as Awaited<ReturnType<typeof api.uploadBaseFilamentPresets>>);
+    render(<FilamentProfilesPage />);
+    const input = screen.getByTestId('fp-base-file-input') as HTMLInputElement;
+    const pickerClick = vi.spyOn(input, 'click').mockImplementation(() => {});
+    await userEvent.click(await screen.findByRole('button', { name: 'Sync base' }));
+    await waitFor(() => expect(pickerClick).toHaveBeenCalled());
+
+    const file = new File(['{"name":"Bambu PLA Basic @BBL H2S"}'], 'base.json', { type: 'application/json' });
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() =>
+      expect(upload).toHaveBeenCalledWith([{ filename: 'base.json', content: '{"name":"Bambu PLA Basic @BBL H2S"}' }]),
+    );
+  });
+
+  it('Sync to PC previews with a dry run, then writes the generated rows on confirm', async () => {
+    stub();
+    const stats = { added: 1, updated: 0, removed: 0, unchanged: 1 };
+    const bambuSync = vi
+      .spyOn(api, 'syncFilamentPresetsToBambu')
+      .mockResolvedValue({ stats } as Awaited<ReturnType<typeof api.syncFilamentPresetsToBambu>>);
+    render(<FilamentProfilesPage />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync to PC' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Sync to PC' }));
+    const rows = PRESETS.map((p) => ({ filename: p.filename, content: p.content }));
+    await waitFor(() => expect(bambuSync).toHaveBeenCalledWith(rows, true));
+    await userEvent.click(await screen.findByRole('button', { name: 'Sync' }));
+    await waitFor(() => expect(bambuSync).toHaveBeenCalledWith(rows, false));
   });
 });
