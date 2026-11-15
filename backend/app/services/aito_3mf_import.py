@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import re
+import uuid
 import zipfile
 from typing import Any
 
@@ -217,3 +218,35 @@ def plate_facts(source: bytes, sliced: bytes) -> list[dict[str, Any]]:
                 }
             )
     return sorted(plates, key=lambda p: p["index"])
+
+
+async def slice_source(db, source: bytes, filename: str, job_id: int) -> bytes:
+    """Slice the project file with its own settings, all plates; the slicer's output .3mf.
+
+    The same call as ``project_slice._slice_source``, without a revision to store into."""
+    import asyncio
+
+    from backend.app.api.routes.library import resolve_slicer_api_url
+    from backend.app.services.project_slice import NO_SLICER, _error_status_and_message
+    from backend.app.services.slice_dispatch import slice_dispatch
+    from backend.app.services.slicer_api import SlicerApiService, get_stall_timeout_seconds
+    from backend.app.utils.threemf_tools import sanitize_project_settings_sentinels
+
+    url = await resolve_slicer_api_url(db)
+    if url is None:
+        raise Import3mfError(400, NO_SLICER)
+    timeout = await get_stall_timeout_seconds(db)
+    await db.commit()  # end the read transaction: the slice can take minutes
+    try:
+        async with SlicerApiService(url, timeout_seconds=timeout) as service:
+            result = await service.slice_without_profiles(
+                model_bytes=await asyncio.to_thread(sanitize_project_settings_sentinels, source),
+                model_filename=filename,
+                plate=0,
+                export_3mf=True,
+                request_id=uuid.uuid4().hex,
+                on_progress=lambda snapshot: slice_dispatch.set_progress(job_id, snapshot),
+            )
+    except Exception as exc:
+        raise Import3mfError(*_error_status_and_message(exc)) from exc
+    return result.content

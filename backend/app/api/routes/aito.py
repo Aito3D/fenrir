@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -2176,6 +2176,65 @@ async def proofread_field(
         logger.warning("Aito proofread failed upstream: %s", e)
         raise HTTPException(status_code=502, detail=str(e)) from e
     return AitoProofreadResponse(text=corrected, model=model)
+
+
+@router.post("/import-3mf", status_code=202)
+async def start_3mf_import(
+    file: UploadFile = File(...),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+):
+    """Slice a Bambu Studio project .3mf in the background for the create drawer, which turns
+    each plate into a print task (design 2026-11-14). Nothing is stored. Poll the GET below."""
+    from backend.app.core.config import settings
+    from backend.app.services import aito_3mf_import as importer
+    from backend.app.services.actor import actor_user_id
+    from backend.app.services.slice_dispatch import http_exception_to_job_error, slice_dispatch
+
+    filename = file.filename or ""
+    if not filename.lower().endswith(".3mf"):
+        raise HTTPException(status_code=400, detail="Only .3mf files can be imported")
+    source = await file.read(settings.library_max_upload_bytes + 1)
+    if len(source) > settings.library_max_upload_bytes:
+        raise HTTPException(status_code=413, detail="The .3mf is too large")
+    try:
+        await asyncio.to_thread(importer.check_importable, source)
+    except importer.Import3mfError as exc:
+        raise HTTPException(exc.status_code, exc.detail) from exc
+
+    async def _run(job_id: int) -> dict:
+        try:
+            async with core_database.async_session() as task_db:
+                sliced = await importer.slice_source(task_db, source, filename, job_id)
+            return {"plates": await asyncio.to_thread(importer.plate_facts, source, sliced)}
+        except importer.Import3mfError as exc:
+            raise http_exception_to_job_error(HTTPException(exc.status_code, exc.detail)) from exc
+
+    job = await slice_dispatch.enqueue(
+        kind="aito_import", source_id=0, source_name=filename, owner_id=actor_user_id(current_user), run=_run
+    )
+    return {"job_id": job.id}
+
+
+@router.get("/import-3mf/{job_id}")
+async def get_3mf_import(
+    job_id: int,
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """Progress, then the plate facts, of an import this caller started. 404 for anyone else's."""
+    from backend.app.services.actor import actor_user_id
+    from backend.app.services.slice_dispatch import slice_dispatch
+
+    job = slice_dispatch.get(job_id)
+    if job is None or job.kind != "aito_import" or job.owner_id != actor_user_id(current_user):
+        raise HTTPException(status_code=404, detail="Import not found or expired")
+    percent = (job.progress or {}).get("total_percent")
+    return {
+        "status": job.status,
+        "percent": round(percent) if isinstance(percent, (int, float)) else None,
+        "filename": job.source_name,
+        "plates": (job.result or {}).get("plates") if job.status == "completed" else None,
+        "error": job.error_detail if job.status == "failed" else None,
+    }
 
 
 @router.get("/taxes", response_model=AitoTaxesResponse)
