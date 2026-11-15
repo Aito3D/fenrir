@@ -217,7 +217,7 @@ from backend.app.services.telegram_reactions import telegram_reaction_poller
 from backend.app.services.wled import wled_manager
 from backend.app.utils.ams_drying import has_filament_loaded, is_drying_active, temperature_alarm_suppressed
 from backend.app.utils.ams_humidity import ams_humidity_percent
-from backend.app.utils.filament_types import printer_filament_type
+from backend.app.utils.filament_types import printer_filament_type, support_filament_type
 from backend.app.utils.fts_routing import extruder_for_inlet
 from backend.app.utils.local_time import to_naive_utc, utcnow_naive
 from backend.app.utils.print_jobs import is_internal_printer_job
@@ -2362,6 +2362,12 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                 name=f"printer-offline-notify-{printer_id}",
             )
     elif state.connected:
+        if prev_connected is False:
+            # A printer back from a dropped connection, often a restart, may
+            # take files again: don't hold it to an upload backoff from
+            # before (#3563). Not on Fenrir's own start (no previous state).
+            client = printer_manager.get_client(printer_id)
+            print_scheduler.printer_reconnected(printer_id, client.ip_address if client else None)
         # Kept until the relay can actually send online: with its broker down
         # now, the next status update after the reconnect sends it.
         if printer_id in _printer_offline_published and mqtt_relay.enabled and mqtt_relay.connected:
@@ -3233,6 +3239,17 @@ async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_no
                                 lp_type = await db.scalar(select(_LP.filament_type).where(_LP.id == int(lp_ref)))
                                 if lp_type:
                                     spool_types.add(printer_filament_type(lp_type).upper())
+                            # A support spool went in with the slicer's suffix
+                            # ("PLA-S") that none of the above carries (#3559).
+                            # A spool made from a support RFID tray has its
+                            # material as "Support For PLA", so that counts too.
+                            support_name = (
+                                f"{spool.slicer_filament_name or ''} {spool.material or ''} {spool.subtype or ''}"
+                            )
+                            spool_types |= {
+                                support_filament_type(t, spool.slicer_filament, support_name).upper()
+                                for t in spool_types
+                            }
                             if (
                                 _colors_similar(cur_color, spool_color)
                                 and printer_filament_type(cur_type).upper() in spool_types
