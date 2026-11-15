@@ -741,7 +741,6 @@ export interface FilamentTreeUpdate {
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines  {{color}}
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -802,7 +801,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree  {{n}}
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -961,8 +959,6 @@ filamentTrees.removeColour  {{name}}
 filamentTrees.removeColourBody  {{name}},{{tree}}
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -978,7 +974,6 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle  {{name}}
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor  {{field}}

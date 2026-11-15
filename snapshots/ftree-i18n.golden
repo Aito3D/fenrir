@@ -1,11 +1,10 @@
 ### exit: 0
 ### stdout:
 locale files (16): de.ts en.ts es.ts fr.ts it.ts ja.ts ko.ts nl.ts pl.ts pt-BR.ts ru.ts sv.ts tr.ts uk.ts zh-CN.ts zh-TW.ts
---- en values (245 keys)
+--- en values (240 keys)
 filamentTrees.addColour = "Add colour"
 filamentTrees.addMachine = "Add printer"
 filamentTrees.addNozzle = "Add nozzle"
-filamentTrees.allColours = "Colours — all machines"
 filamentTrees.allMachines = "{{color}} (all machines)"  placeholders={{color}}
 filamentTrees.anyMachine = "All machines"
 filamentTrees.anyNozzle = "All nozzles"
@@ -66,7 +65,6 @@ filamentTrees.newColourHex = "New colour"
 filamentTrees.newColourName = "New colour name"
 filamentTrees.newFilament = "New filament"
 filamentTrees.no02 = "No 0.2 nozzle for this filament"
-filamentTrees.noValues = "No values at this level yet."
 filamentTrees.notInTree = "Not in a tree ({{n}})"  placeholders={{n}}
 filamentTrees.nozzle = "Nozzle"
 filamentTrees.nozzles = "Nozzles"
@@ -225,8 +223,6 @@ filamentTrees.removeColour = "Remove {{name}}"  placeholders={{name}}
 filamentTrees.removeColourBody = "Remove {{name}} from {{tree}}? Its profiles for every printer and nozzle are deleted."  placeholders={{name}},{{tree}}
 filamentTrees.revert = "Revert"
 filamentTrees.saveTargets = "Save targets"
-filamentTrees.selectTree = "Select a tree to edit its colours."
-filamentTrees.settings = "Tree settings"
 filamentTrees.skip02 = "Skip the 0.2 nozzle"
 filamentTrees.skip02Auto = "Automatic (abrasive filaments skip it)"
 filamentTrees.skip02No = "Include 0.2"
@@ -242,20 +238,18 @@ filamentTrees.sync = "SYNC"
 filamentTrees.syncTitle = "Sync result"
 filamentTrees.targetsHint = "Every tree gets a profile for each printer and nozzle."
 filamentTrees.targetsTitle = "Printers and nozzles (all trees)"
-filamentTrees.toggle = "Show or hide {{name}}"  placeholders={{name}}
 filamentTrees.treeCreated = "Tree created"
 filamentTrees.useParent = "Use parent"
 filamentTrees.useParentFor = "Use parent: {{field}}"  placeholders={{field}}
 nav.filamentProfiles = "Filament Profiles"
 
---- de.ts keys=245 values-sha256=589403c2dcb41996
+--- de.ts keys=240 values-sha256=384538e7fa1d9e05
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -316,7 +310,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -475,8 +468,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -492,20 +483,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- en.ts keys=245 values-sha256=62bd48a68026eeb5
+--- en.ts keys=240 values-sha256=09e647e899f0cb0b
 missing=[] extra=[]
 same-as-en=0 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -566,7 +555,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -725,8 +713,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -742,20 +728,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- es.ts keys=245 values-sha256=9f4e144a2486ee8e
+--- es.ts keys=240 values-sha256=297cca985162d588
 missing=[] extra=[]
 same-as-en=3 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -816,7 +800,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -975,8 +958,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -992,20 +973,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- fr.ts keys=245 values-sha256=e0617c1b3e36970f
+--- fr.ts keys=240 values-sha256=f2a06e00dc5230b1
 missing=[] extra=[]
 same-as-en=5 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -1066,7 +1045,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -1225,8 +1203,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -1242,20 +1218,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- it.ts keys=245 values-sha256=431930359ee94159
+--- it.ts keys=240 values-sha256=0068b73a2b772636
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -1316,7 +1290,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -1475,8 +1448,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -1492,20 +1463,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- ja.ts keys=245 values-sha256=cfc78cc7a8596cb5
+--- ja.ts keys=240 values-sha256=90ff04e8833158a9
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -1566,7 +1535,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -1725,8 +1693,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -1742,20 +1708,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- ko.ts keys=245 values-sha256=a61e74b7c89ae988
+--- ko.ts keys=240 values-sha256=6902360cb01ef9e0
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -1816,7 +1780,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -1975,8 +1938,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -1992,20 +1953,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- nl.ts keys=245 values-sha256=39b279f5d1c07df2
+--- nl.ts keys=240 values-sha256=0dda7d531a3d9163
 missing=[] extra=[]
 same-as-en=8 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -2066,7 +2025,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -2225,8 +2183,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -2242,20 +2198,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- pl.ts keys=245 values-sha256=b0bb31a3ecb2aa4e
+--- pl.ts keys=240 values-sha256=26d7d4babfe332cb
 missing=[] extra=[]
 same-as-en=8 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -2316,7 +2270,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -2475,8 +2428,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -2492,20 +2443,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- pt-BR.ts keys=245 values-sha256=d45cd75c5a9dcfcb
+--- pt-BR.ts keys=240 values-sha256=226bcaff466cee3b
 missing=[] extra=[]
 same-as-en=3 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -2566,7 +2515,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -2725,8 +2673,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -2742,20 +2688,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- ru.ts keys=245 values-sha256=4715964d3cee8717
+--- ru.ts keys=240 values-sha256=c2a09ccf574c493f
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -2816,7 +2760,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -2975,8 +2918,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -2992,20 +2933,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- sv.ts keys=245 values-sha256=071bad0a9568c84d
+--- sv.ts keys=240 values-sha256=b7d21d01eb7657d7
 missing=[] extra=[]
 same-as-en=6 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -3066,7 +3005,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -3225,8 +3163,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -3242,20 +3178,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- tr.ts keys=245 values-sha256=97f7505b60c145d3
+--- tr.ts keys=240 values-sha256=b23d0886450f8369
 missing=[] extra=[]
 same-as-en=9 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -3316,7 +3250,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -3475,8 +3408,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -3492,20 +3423,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- uk.ts keys=245 values-sha256=14d4ef99e4506e15
+--- uk.ts keys=240 values-sha256=0dc5d317a3c30d9a
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -3566,7 +3495,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -3725,8 +3653,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -3742,20 +3668,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- zh-CN.ts keys=245 values-sha256=e4483dbd1c7d5dc2
+--- zh-CN.ts keys=240 values-sha256=de10eae0cfcdee7f
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -3816,7 +3740,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -3975,8 +3898,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -3992,20 +3913,18 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- zh-TW.ts keys=245 values-sha256=71ad1fef400eddbf
+--- zh-TW.ts keys=240 values-sha256=fa747af9d4036b41
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
 filamentTrees.addColour
 filamentTrees.addMachine
 filamentTrees.addNozzle
-filamentTrees.allColours
 filamentTrees.allMachines
 filamentTrees.anyMachine
 filamentTrees.anyNozzle
@@ -4066,7 +3985,6 @@ filamentTrees.newColourHex
 filamentTrees.newColourName
 filamentTrees.newFilament
 filamentTrees.no02
-filamentTrees.noValues
 filamentTrees.notInTree
 filamentTrees.nozzle
 filamentTrees.nozzles
@@ -4225,8 +4143,6 @@ filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
 filamentTrees.saveTargets
-filamentTrees.selectTree
-filamentTrees.settings
 filamentTrees.skip02
 filamentTrees.skip02Auto
 filamentTrees.skip02No
@@ -4242,7 +4158,6 @@ filamentTrees.sync
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
-filamentTrees.toggle
 filamentTrees.treeCreated
 filamentTrees.useParent
 filamentTrees.useParentFor

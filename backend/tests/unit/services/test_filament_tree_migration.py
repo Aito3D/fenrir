@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from backend.app.services.filament_tree import IDENTITY_KEYS, NOZZLE_BOUND_KEYS
+from backend.app.services.filament_tree import IDENTITY_KEYS, NOZZLE_BOUND_KEYS, SKIP_KEYS
 from backend.app.services.filament_tree_base import BaseValueReader
 from backend.app.services.filament_tree_migration import plan_tree, propose_groups
 
@@ -106,6 +106,13 @@ def test_migration_root_has_no_identity_or_nozzle_keys():
     assert plan["tree"]["name"] == "Polymaker PETG"
     assert plan["tree"]["base_family"] == "Bambu PETG Basic"
     assert plan["colors"][0] == (3, "White", "#FFFFFF")
+
+
+def test_migration_skips_orca_metadata_keys():
+    meta = dict.fromkeys(SKIP_KEYS - IDENTITY_KEYS, "x")
+    presets = [{**p, "content": json.dumps({**json.loads(p["content"]), **meta})} for p in _group()]
+    own = _plan(presets)["tree"]["own"]
+    assert own == {"nozzle_temperature": ["245"], "fan_max_speed": ["60"]}
 
 
 def test_migration_shared_pa_on_nozzle_nodes():

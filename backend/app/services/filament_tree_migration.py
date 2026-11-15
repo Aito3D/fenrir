@@ -19,8 +19,8 @@ from backend.app.models.filament_tree import (
 )
 from backend.app.services.filament_tree import (
     DEFAULT_TARGETS,
-    IDENTITY_KEYS,
     NOZZLE_BOUND_KEYS,
+    SKIP_KEYS,
     leaf_targets,
     parse_inherits,
 )
@@ -35,7 +35,7 @@ from backend.app.services.filament_tree_store import (
 
 logger = logging.getLogger(__name__)
 _COMPAT = re.compile(r"^Bambu Lab (\S+) (\d\.\d) nozzle$")
-_SKIP = IDENTITY_KEYS | NOZZLE_BOUND_KEYS
+_SKIP = SKIP_KEYS | NOZZLE_BOUND_KEYS
 _MISSING = object()
 
 
