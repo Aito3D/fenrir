@@ -6560,6 +6560,7 @@ async def _archive_downloaded_print(
     from backend.app.models.printer import Printer
 
     temp_path = acquired.temp_path
+    assert temp_path is not None  # the caller takes the fallback-archive branch without a file
     downloaded_filename = acquired.downloaded_filename
     content_verdict = acquired.content_verdict
     subtask_name = acquired.subtask_name

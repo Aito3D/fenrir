@@ -37,6 +37,8 @@ def _clean():
     from backend.app.services.printer_manager import printer_manager
 
     main_module._active_prints.clear()
+    # a queue stop in an earlier test on this worker turns 'failed' into 'cancelled'
+    main_module._user_stopped_printers.clear()
     yield
     main_module._active_prints.clear()
     printer_manager._awaiting_plate_clear.clear()
