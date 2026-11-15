@@ -34,10 +34,9 @@ from backend.app.services.filament_tree import (
 TARGETS_KEY = "filament_tree_targets"
 _UNSET = object()
 
-# One lock per (event loop, tree): asyncio locks bind to a loop, and each test runs its own.
-_tree_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[int, asyncio.Lock]]" = (
-    weakref.WeakKeyDictionary()
-)
+# One [lock, users] entry per (event loop, tree) while someone holds or awaits it: asyncio locks bind to a loop, and
+# each test runs its own. `users` counts holders plus waiters; the entry is dropped when it reaches zero.
+_tree_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[int, list]]" = weakref.WeakKeyDictionary()
 
 
 @asynccontextmanager
@@ -45,16 +44,23 @@ async def _tree_write_lock(tree_ids: Iterable[int]) -> AsyncIterator[None]:
     """Serialize read-modify-write of tree nodes. Take it in the route, before any read of the tree, never inside
     set_node_values (not re-entrant). Several ids are taken in sorted order so two callers cannot deadlock."""
     locks = _tree_locks.setdefault(asyncio.get_running_loop(), {})
-    held: list[asyncio.Lock] = []
+    joined: list[tuple[int, list]] = []
+    acquired: list[asyncio.Lock] = []
     try:
         for tree_id in sorted(set(tree_ids)):
-            lock = locks.setdefault(tree_id, asyncio.Lock())
-            await lock.acquire()
-            held.append(lock)
+            entry = locks.setdefault(tree_id, [asyncio.Lock(), 0])
+            entry[1] += 1
+            joined.append((tree_id, entry))
+            await entry[0].acquire()
+            acquired.append(entry[0])
         yield
     finally:
-        for lock in reversed(held):
+        for lock in reversed(acquired):
             lock.release()
+        for tree_id, entry in joined:
+            entry[1] -= 1
+            if not entry[1]:
+                locks.pop(tree_id, None)
 
 
 def _validate_targets(targets: dict) -> dict:

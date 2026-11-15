@@ -772,3 +772,139 @@ async def test_tree_patch_refuses_explicit_null_source(async_client, db_session)
     assert r.status_code == 200, r.text
     r = await async_client.patch(f"{API}/{tree.id}", json={"source_color_id": red.id})
     assert r.status_code == 200, r.text
+
+
+async def test_colour_removal_waits_for_node_save_in_flight(async_client, db_session, monkeypatch):
+    """put_node holds the tree lock across its check and write; remove_color must queue behind it (no orphan row)."""
+    from backend.app.models.filament_tree import FilamentTreeOverride
+
+    tree, _white, red = await _tree(db_session)
+    tree_id, red_id = tree.id, red.id
+    entered, release = asyncio.Event(), asyncio.Event()
+    real = store.set_node_values
+
+    async def slow(*args, **kwargs):
+        entered.set()
+        await release.wait()
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(store, "set_node_values", slow)
+    save = asyncio.create_task(
+        async_client.put(f"{API}/{tree_id}/node", json={"color_id": red_id, "set": {"nozzle_temperature": ["250"]}})
+    )
+    await entered.wait()
+    remove = asyncio.create_task(async_client.delete(f"{API}/{tree_id}/colors/{red_id}"))
+    await asyncio.sleep(0.05)
+    assert not remove.done()
+    release.set()
+    assert (await save).status_code == 200
+    assert (await remove).status_code == 200
+    db_session.expire_all()
+    orphans = (
+        await db_session.execute(
+            select(func.count()).select_from(FilamentTreeOverride).where(FilamentTreeOverride.color_id == red_id)
+        )
+    ).scalar_one()
+    assert orphans == 0
+    assert (
+        await async_client.post(f"{API}/{tree_id}/duplicate", json={"name": "Copy", "brand": "Polymaker"})
+    ).status_code == 200
+    assert store._tree_locks.get(asyncio.get_running_loop(), {}) == {}
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("patch", "", {"skip_02": True}),
+        ("post", "/colors", {"name": "Blue", "hex": "#0000FF"}),
+        ("patch", "/colors/{red}", {"name": "Crimson"}),
+        ("post", "/duplicate", {"name": "Copy", "brand": "Polymaker"}),
+        ("delete", "", None),
+    ],
+)
+async def test_tree_writers_queue_behind_the_tree_lock(async_client, db_session, method, path, body):
+    tree, _white, red = await _tree(db_session)
+    kw = {} if body is None else {"json": body}
+    async with store._tree_write_lock([tree.id]):
+        task = asyncio.create_task(getattr(async_client, method)(f"{API}/{tree.id}{path.format(red=red.id)}", **kw))
+        await asyncio.sleep(0.05)
+        assert not task.done()
+    assert (await task).status_code == 200
+
+
+async def test_put_targets_queues_behind_the_tree_lock(async_client, db_session):
+    tree, _white, _red = await _tree(db_session)
+    targets = (await async_client.get(f"{API}/targets")).json()
+    async with store._tree_write_lock([tree.id]):
+        task = asyncio.create_task(async_client.put(f"{API}/targets", json=targets))
+        await asyncio.sleep(0.05)
+        assert not task.done()
+    assert (await task).status_code == 200
+
+
+async def _leaf_count(db):
+    db.expire_all()
+    return (await db.execute(select(func.count()).select_from(FilamentTreeLeaf))).scalar_one()
+
+
+async def _perm_headers(async_client, username, permissions, admin=None):
+    admin = admin or await _setup_admin(async_client, username=f"{username}_admin")
+    token = await _create_user_with_perms(async_client, admin, username=username, permissions=permissions)
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def test_targets_removing_a_leaf_needs_delete_permission(async_client, db_session):
+    tree, _, _ = await _tree(db_session)
+    tree_id = tree.id
+    before = await _leaf_count(db_session)
+    targets = (await async_client.get(f"{API}/targets")).json()
+    narrower = {**targets, "nozzles": [n for n in targets["nozzles"] if n != "0.2"]}
+    wider = {**targets, "nozzles": [*targets["nozzles"], "1.0"]}
+    assert len(narrower["nozzles"]) < len(targets["nozzles"])
+
+    admin = await _setup_admin(async_client, username="ft_tg_admin")
+    update_only = await _perm_headers(async_client, "ft_tg_update", ["filaments:update", "filaments:read"], admin)
+    r = await async_client.put(f"{API}/targets", json=narrower, headers=update_only)
+    assert r.status_code == 403 and "filaments:delete" in r.json()["detail"]
+    assert await _leaf_count(db_session) == before
+    assert (await async_client.get(f"{API}/targets", headers=update_only)).json() == targets
+
+    r = await async_client.put(f"{API}/targets", json=wider, headers=update_only)
+    assert r.status_code == 200, r.text
+    assert await _leaf_count(db_session) > before
+
+    full = await _perm_headers(
+        async_client, "ft_tg_full", ["filaments:update", "filaments:delete", "filaments:read"], admin
+    )
+    r = await async_client.put(f"{API}/targets", json=narrower, headers=full)
+    assert r.status_code == 200, r.text
+    assert await _leaf_count(db_session) < before
+    assert tree_id
+
+
+async def test_skip_02_removing_a_leaf_needs_delete_permission(async_client, db_session):
+    tree, _, _ = await _tree(db_session)
+    tree_id = tree.id
+    before = await _leaf_count(db_session)
+    admin = await _setup_admin(async_client, username="ft_skip_admin")
+    update_only = await _perm_headers(async_client, "ft_skip_update", ["filaments:update", "filaments:read"], admin)
+    r = await async_client.patch(f"{API}/{tree_id}", json={"skip_02": True}, headers=update_only)
+    assert r.status_code == 403 and "filaments:delete" in r.json()["detail"]
+    assert await _leaf_count(db_session) == before
+
+    # nothing to remove (already off the current value): update alone is enough
+    r = await async_client.patch(f"{API}/{tree_id}", json={"skip_02": False}, headers=update_only)
+    assert r.status_code == 200, r.text
+
+    full = await _perm_headers(
+        async_client, "ft_skip_full", ["filaments:update", "filaments:delete", "filaments:read"], admin
+    )
+    r = await async_client.patch(f"{API}/{tree_id}", json={"skip_02": True}, headers=full)
+    assert r.status_code == 200, r.text
+    after_skip = await _leaf_count(db_session)
+    assert after_skip < before
+
+    # turning it back on only adds leaves
+    r = await async_client.patch(f"{API}/{tree_id}", json={"skip_02": False}, headers=update_only)
+    assert r.status_code == 200, r.text
+    assert await _leaf_count(db_session) == before

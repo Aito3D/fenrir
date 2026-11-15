@@ -87,6 +87,24 @@ def _mapped():
         raise HTTPException(400, str(e)) from e
 
 
+def _lacks_delete(user: User | None) -> bool:
+    # user is None with auth disabled; API keys go through the dependency like every other route here
+    return user is not None and not user.has_all_permissions(_DELETE.value)
+
+
+async def _would_drop_leaf(db: AsyncSession, tree_id: int, tree, targets: dict) -> bool:
+    """True when regenerating `tree` under `targets` would delete an existing leaf preset."""
+    existing = {
+        (lf.machine, lf.nozzle, lf.color_id)
+        for lf in (await db.execute(select(FilamentTreeLeaf).where(FilamentTreeLeaf.tree_id == tree_id))).scalars()
+    }
+    return bool(existing - set(leaf_targets(tree, targets)))
+
+
+def _refuse_missing_delete() -> None:
+    raise HTTPException(status_code=403, detail=f"Missing required permissions: {_DELETE.value}")
+
+
 async def _orca_call(db: AsyncSession, user: User | None, fn):
     svc = await _build_authenticated_service(db, user)
     try:
@@ -269,27 +287,32 @@ async def get_targets(
 @router.put("/targets", response_model=Targets)
 async def put_targets(
     payload: Targets,
-    _: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
+    user: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
     tree_ids = (await db.execute(select(FilamentTree.id))).scalars().all()
-    with _mapped():
-        clean = store._validate_targets(payload.model_dump())
-        for tree_id in tree_ids:
-            tree = await store.load_tree(db, tree_id)
-            if tree.source not in leaf_targets(tree, clean):
-                raise ValueError(
-                    f"{tree.name}: its calibration source {tree.source[0]} {tree.source[1]} must stay a target"
-                )
-        try:
-            # one transaction: the targets only change if every tree regenerates under them
-            targets = await store.set_targets(db, payload.model_dump(), commit=False)
+    async with store._tree_write_lock(tree_ids):
+        with _mapped():
+            clean = store._validate_targets(payload.model_dump())
+            drops = False
             for tree_id in tree_ids:
-                await store.regenerate_tree(db, tree_id)
-            await db.commit()
-        except BaseException:
-            await db.rollback()
-            raise
+                tree = await store.load_tree(db, tree_id)
+                if tree.source not in leaf_targets(tree, clean):
+                    raise ValueError(
+                        f"{tree.name}: its calibration source {tree.source[0]} {tree.source[1]} must stay a target"
+                    )
+                drops = drops or (_lacks_delete(user) and await _would_drop_leaf(db, tree_id, tree, clean))
+            if drops:
+                _refuse_missing_delete()
+            try:
+                # one transaction: the targets only change if every tree regenerates under them
+                targets = await store.set_targets(db, payload.model_dump(), commit=False)
+                for tree_id in tree_ids:
+                    await store.regenerate_tree(db, tree_id)
+                await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
     return targets
 
 
@@ -512,9 +535,10 @@ async def duplicate_tree(
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
     try:
-        with _mapped():
-            new_id = await store.duplicate_tree(db, tree_id, payload.name, payload.brand)
-            await db.commit()
+        async with store._tree_write_lock([tree_id]):
+            with _mapped():
+                new_id = await store.duplicate_tree(db, tree_id, payload.name, payload.brand)
+                await db.commit()
     except BaseException:
         await db.rollback()
         raise
@@ -580,32 +604,41 @@ async def revert_change(
 async def patch_tree(
     tree_id: int,
     payload: TreeUpdate,
-    _: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
+    user: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
     changes = payload.model_dump(exclude_unset=True)
     kwargs = {}
-    with _mapped():
-        tree = await store.load_tree(db, tree_id)
-        for k in ("source_machine", "source_nozzle", "source_color_id"):
-            if k in changes and changes[k] is None:
-                raise ValueError(f"{k} must not be null")
-        if "skip_02" in changes:
-            kwargs["skip_02"] = changes["skip_02"]
-        kwargs.update({k: changes[k] for k in ("brand", "material") if changes.get(k)})
-        if changes.keys() & {"source_machine", "source_nozzle", "source_color_id"}:
-            m, n, c = tree.source
-            source = (
-                changes.get("source_machine") or m,
-                changes.get("source_nozzle") or n,
-                changes.get("source_color_id") or c,
-            )
-            # the source must stay a generated leaf, or its calibration has nowhere to live
-            check = replace(tree, skip_02=kwargs.get("skip_02", tree.skip_02))
-            if source not in leaf_targets(check, await store.get_targets(db)):
-                raise ValueError(f"{source[0]} {source[1]} with that colour is not a leaf of this tree")
-            kwargs["source"] = source
-        await store.update_tree(db, tree_id, **kwargs)
+    async with store._tree_write_lock([tree_id]):
+        with _mapped():
+            tree = await store.load_tree(db, tree_id)
+            for k in ("source_machine", "source_nozzle", "source_color_id"):
+                if k in changes and changes[k] is None:
+                    raise ValueError(f"{k} must not be null")
+            if "skip_02" in changes:
+                kwargs["skip_02"] = changes["skip_02"]
+            kwargs.update({k: changes[k] for k in ("brand", "material") if changes.get(k)})
+            if changes.keys() & {"source_machine", "source_nozzle", "source_color_id"}:
+                m, n, c = tree.source
+                source = (
+                    changes.get("source_machine") or m,
+                    changes.get("source_nozzle") or n,
+                    changes.get("source_color_id") or c,
+                )
+                # the source must stay a generated leaf, or its calibration has nowhere to live
+                check = replace(tree, skip_02=kwargs.get("skip_02", tree.skip_02))
+                if source not in leaf_targets(check, await store.get_targets(db)):
+                    raise ValueError(f"{source[0]} {source[1]} with that colour is not a leaf of this tree")
+                kwargs["source"] = source
+            if (
+                "skip_02" in kwargs
+                and _lacks_delete(user)
+                and await _would_drop_leaf(
+                    db, tree_id, replace(tree, skip_02=kwargs["skip_02"]), await store.get_targets(db)
+                )
+            ):
+                _refuse_missing_delete()
+            await store.update_tree(db, tree_id, **kwargs)
     return {"success": True}
 
 
@@ -616,8 +649,9 @@ async def add_color(
     _: User | None = RequirePermissionIfAuthEnabled(_CREATE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    with _mapped():
-        return {"id": await store.add_color(db, tree_id, payload.name, payload.hex)}
+    async with store._tree_write_lock([tree_id]):
+        with _mapped():
+            return {"id": await store.add_color(db, tree_id, payload.name, payload.hex)}
 
 
 @router.patch("/{tree_id}/colors/{color_id}")
@@ -628,8 +662,9 @@ async def rename_color(
     _: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    with _mapped():
-        await store.rename_color(db, tree_id, color_id, payload.name, payload.hex)
+    async with store._tree_write_lock([tree_id]):
+        with _mapped():
+            await store.rename_color(db, tree_id, color_id, payload.name, payload.hex)
     return {"success": True}
 
 
@@ -640,8 +675,9 @@ async def remove_color(
     _: User | None = RequirePermissionIfAuthEnabled(_DELETE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    with _mapped():
-        await store.remove_color(db, tree_id, color_id)
+    async with store._tree_write_lock([tree_id]):
+        with _mapped():
+            await store.remove_color(db, tree_id, color_id)
     return {"success": True}
 
 
@@ -651,15 +687,16 @@ async def delete_tree(
     _: User | None = RequirePermissionIfAuthEnabled(_DELETE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    if await db.get(FilamentTree, tree_id) is None:
-        raise HTTPException(404, f"filament tree {tree_id} not found")
-    preset_ids = list(
-        (await db.execute(select(FilamentTreeLeaf.preset_id).where(FilamentTreeLeaf.tree_id == tree_id))).scalars()
-    )
-    # explicit child deletes: don't depend on the database enforcing ON DELETE CASCADE
-    for model in (FilamentTreeLeaf, FilamentTreeOverride, FilamentTreeColor, FilamentTreeChange):
-        await db.execute(delete(model).where(model.tree_id == tree_id))
-    await db.execute(delete(FilamentPreset).where(FilamentPreset.id.in_(preset_ids)))
-    await db.execute(delete(FilamentTree).where(FilamentTree.id == tree_id))
-    await db.commit()
+    async with store._tree_write_lock([tree_id]):
+        if await db.get(FilamentTree, tree_id) is None:
+            raise HTTPException(404, f"filament tree {tree_id} not found")
+        preset_ids = list(
+            (await db.execute(select(FilamentTreeLeaf.preset_id).where(FilamentTreeLeaf.tree_id == tree_id))).scalars()
+        )
+        # explicit child deletes: don't depend on the database enforcing ON DELETE CASCADE
+        for model in (FilamentTreeLeaf, FilamentTreeOverride, FilamentTreeColor, FilamentTreeChange):
+            await db.execute(delete(model).where(model.tree_id == tree_id))
+        await db.execute(delete(FilamentPreset).where(FilamentPreset.id.in_(preset_ids)))
+        await db.execute(delete(FilamentTree).where(FilamentTree.id == tree_id))
+        await db.commit()
     return {"success": True}

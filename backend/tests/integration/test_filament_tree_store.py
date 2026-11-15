@@ -133,3 +133,54 @@ async def test_colourwide_node_values_and_refusals(db_session):
     assert json.loads((await db_session.get(FilamentTree, tree.id)).own_values) == {}
     with pytest.raises(ValueError, match="colour values"):
         await store.update_tree(db_session, tree.id, source=("X2D", "0.8", blue))
+
+
+def _lock_map():
+    import asyncio
+
+    return store._tree_locks.get(asyncio.get_running_loop(), {})
+
+
+async def test_tree_write_lock_map_empty_after_use():
+    async with store._tree_write_lock([999_001, 1, 1]):
+        assert set(_lock_map()) == {1, 999_001}
+    assert _lock_map() == {}
+    with pytest.raises(RuntimeError):
+        async with store._tree_write_lock([5]):
+            raise RuntimeError("boom")
+    assert _lock_map() == {}
+
+
+async def test_tree_write_lock_excludes_three_overlapping_holders():
+    import asyncio
+
+    inside = 0
+    peak = 0
+    seen_locks = []
+
+    async def holder():
+        nonlocal inside, peak
+        async with store._tree_write_lock([7]):
+            seen_locks.append(_lock_map()[7][0])
+            inside += 1
+            peak = max(peak, inside)
+            await asyncio.sleep(0.01)
+            inside -= 1
+
+    await asyncio.gather(holder(), holder(), holder())
+    assert peak == 1
+    assert len({id(lock) for lock in seen_locks}) == 1  # waiters share the holder's lock object
+    assert _lock_map() == {}
+
+
+async def test_tree_write_lock_cancelled_waiter_leaves_no_entry():
+    import asyncio
+
+    async with store._tree_write_lock([3]):
+        waiter = asyncio.create_task(store._tree_write_lock([3]).__aenter__())
+        await asyncio.sleep(0)
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        assert _lock_map()[3][1] == 1
+    assert _lock_map() == {}
