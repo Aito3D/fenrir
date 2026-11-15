@@ -18,6 +18,7 @@ from backend.app.models.filament_profile import FilamentPreset
 from backend.app.models.filament_tree import FilamentTreeLeaf
 from backend.app.services.filament_tree import SKIP_KEYS
 from backend.app.services.orca_cloud import OrcaCloudAuthError, OrcaCloudError
+from backend.app.services.orca_cloud_codec import decode_content, encode_content, is_wire_format
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +109,7 @@ async def push_leaves(db: AsyncSession, svc, entries: list[dict], skip: set[tupl
             continue
         content = json.loads(preset.content)
         entry = by_name.get(preset.name)
-        if entry is None or _differs(content, entry["content"]):
+        if entry is None or not is_wire_format(entry["content"]) or _differs(content, decode_content(entry["content"])):
             todo.append((link, preset.name, content, entry))
     if not todo:
         return out
@@ -125,7 +126,8 @@ async def push_leaves(db: AsyncSession, svc, entries: list[dict], skip: set[tupl
                 await svc.push_profile(
                     profile_id=str(entry["id"]) if entry else str(uuid.uuid4()),
                     name=name,
-                    content={"type": "filament", **content},  # the pull only reads profiles carrying this marker
+                    # the pull only reads profiles carrying the type marker
+                    content=encode_content({"type": "filament", **content}),
                     original_updated_time=entry.get("updated_time") if entry else None,
                 )
             except OrcaCloudAuthError:

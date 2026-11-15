@@ -13,6 +13,7 @@ from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor, Fi
 from backend.app.schemas.filament_profile import _CONTENT_MAX_LENGTH
 from backend.app.services import filament_tree_push as push_service, filament_tree_store as store
 from backend.app.services.orca_cloud import OrcaCloudError
+from backend.app.services.orca_cloud_codec import encode_content
 from backend.tests.integration.test_filament_profiles_api import _create_user_with_perms, _setup_admin
 
 API = "/api/v1/filament-trees"
@@ -246,10 +247,14 @@ async def test_sync_pushes_changed_leaves(async_client, db_session, monkeypatch,
             "id": "same",
             "name": same.name,
             "updated_time": 1,
-            "content": json.loads(same.content) | {"type": "filament"},
+            "content": encode_content(json.loads(same.content) | {"type": "filament"}),
         },
         # first sight with a difference: a conflict, so this leaf must wait for the user
-        {"id": "edit", "name": edited.name, "content": json.loads(edited.content) | {"type": "filament", "x": ["1"]}},
+        {
+            "id": "edit",
+            "name": edited.name,
+            "content": encode_content(json.loads(edited.content) | {"type": "filament", "x": ["1"]}),
+        },
     ]
     # a read-only pairing pushes nothing and says so
     stub = _stub_orca(monkeypatch, entries)
@@ -264,11 +269,20 @@ async def test_sync_pushes_changed_leaves(async_client, db_session, monkeypatch,
     assert {p["name"] for p in stub.pushed} == {preset.name for _, preset in rows} - {same.name, edited.name}
     assert all(p["content"]["type"] == "filament" and p["original_updated_time"] is None for p in stub.pushed)
     assert json.loads((tmp_path / push["snapshot"]).read_text()) == entries  # Orca as it was before the push
+    # Orca Cloud holds one string per setting: a JSON list crashes OrcaSlicer at startup
+    assert all(isinstance(v, str) for p in stub.pushed for v in p["content"].values())
 
     # Orca now holds what was pushed: nothing left to send
     entries += [{"id": p["profile_id"], "name": p["name"], "content": p["content"]} for p in stub.pushed]
     stub = _stub_orca(monkeypatch, entries, scope="sync:write")
     assert (await async_client.post(f"{API}/sync")).json()["push"]["pushed"] == 0 and not stub.pushed
+
+    # a profile the first push release sent as JSON lists is sent again, even though its values match
+    entries[0]["content"] = json.loads(same.content) | {"type": "filament"}
+    stub = _stub_orca(monkeypatch, entries, scope="sync:write")
+    assert (await async_client.post(f"{API}/sync")).json()["push"]["pushed"] == 1
+    assert stub.pushed[0]["profile_id"] == "same"
+    entries[0]["content"] = stub.pushed[0]["content"]
 
     # a Fenrir edit goes out as an update of the existing Orca profiles; the conflict shown earlier and left
     # unanswered no longer holds its leaf back (Fenrir is the master)
