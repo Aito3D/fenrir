@@ -1,6 +1,7 @@
 """Pydantic schemas for /filament-trees."""
 
 import re
+from datetime import datetime
 from typing import Annotated, Any
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr
@@ -35,6 +36,8 @@ class TreeColor(BaseModel):
     id: int
     name: str
     hex: str
+    spools: int = 0  # active inventory spools of this brand + material + colour name
+    price: float | None = None  # filament_cost per kg, as the colour resolves it
 
 
 class TreeSummary(BaseModel):
@@ -48,6 +51,7 @@ class TreeSummary(BaseModel):
     colors: list[TreeColor]
     # "root", "M", "M/N", "M/N/{color_id}", "color:{color_id}" -> number of own values at that node
     own_counts: dict[str, int]
+    export_pending: int = 0  # leaves whose preset changed since the last Export for Orca
 
 
 class Targets(BaseModel):
@@ -89,6 +93,46 @@ class CandidateRequest(BaseModel):
 
 class ExportRequest(BaseModel):
     tree_id: int | None = None
+    changed_only: bool = False
+
+
+class TreeCreate(BaseModel):
+    brand: Name
+    material: Name
+    base_family: Name  # the Bambu preset family the leaves inherit, e.g. "Generic PETG"
+    color_name: Name
+    color_hex: str = Field(default="", max_length=_HEX_MAX)
+    machine: Part
+    nozzle: Part
+
+
+class TreeDuplicate(BaseModel):
+    name: Name
+    brand: Name
+
+
+class BulkNodeUpdate(BaseModel):
+    """The same root / machine / nozzle-level write on several trees (colour ids differ per tree)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    tree_ids: list[int] = Field(min_length=1, max_length=200)
+    machine: Part | None = None
+    nozzle: Part | None = None
+    set_values: dict[PresetKey, PresetValue] = Field(default_factory=dict, alias="set", max_length=200)
+    clear: list[PresetKey] = Field(default_factory=list, max_length=200)
+
+
+class TreeChange(BaseModel):
+    id: int
+    machine: str
+    nozzle: str
+    color_id: int
+    key: str
+    old_value: Any = None
+    new_value: Any = None
+    actor: str
+    created_at: datetime
 
 
 class NodeRow(BaseModel):

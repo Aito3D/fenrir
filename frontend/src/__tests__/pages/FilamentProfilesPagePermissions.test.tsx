@@ -35,6 +35,7 @@ vi.mock('../../contexts/AuthContext', async (importOriginal) => {
 });
 
 import { render } from '../utils';
+import userEvent from '@testing-library/user-event';
 import { FilamentProfilesPage } from '../../pages/FilamentProfilesPage';
 import { api } from '../../api/client';
 import type { FilamentTreeSummary } from '../../api/client';
@@ -81,8 +82,10 @@ afterEach(() => {
 async function renderPage() {
   stubBase();
   render(<FilamentProfilesPage />);
-  // the root's settings row is on screen once trees and node rows have loaded
-  await screen.findByText('nozzle_temperature');
+  // the root's nozzle temperature field is on screen once trees and node rows have loaded
+  await screen.findByRole('textbox', { name: 'Nozzle (Other layers)' });
+  // the sync and export actions live in the header menu
+  await userEvent.click(screen.getByRole('button', { name: /Sync & export/ }));
 }
 
 describe('FilamentProfilesPage — permission gating (T-016)', () => {
@@ -90,12 +93,13 @@ describe('FilamentProfilesPage — permission gating (T-016)', () => {
     await renderPage();
 
     expect(screen.queryByRole('button', { name: 'SYNC' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Tree settings' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /not in a tree/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Printers and nozzles (all trees)' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New filament' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Organise into trees' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /sync base/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /sync to pc/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /sync prices from zoho/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    for (const field of screen.getAllByRole('textbox')) expect(field).toBeDisabled();
     expect(screen.queryByRole('button', { name: /use parent/i })).not.toBeInTheDocument();
 
     // Export only reads, so it stays visible regardless of permission.
@@ -106,7 +110,7 @@ describe('FilamentProfilesPage — permission gating (T-016)', () => {
     permissions.granted = ['filaments:read', 'filaments:update'];
     await renderPage();
     expect(screen.queryByRole('button', { name: 'SYNC' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Tree settings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Printers and nozzles (all trees)' })).toBeInTheDocument();
     // Sync base and Sync to PC keep their old filaments:update gate.
     expect(screen.getByRole('button', { name: /sync base/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sync to pc/i })).toBeInTheDocument();
@@ -117,8 +121,10 @@ describe('FilamentProfilesPage — permission gating (T-016)', () => {
     await renderPage();
 
     expect(screen.getByRole('button', { name: 'SYNC' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Tree settings' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Not in a tree (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Printers and nozzles (all trees)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New filament' })).toBeInTheDocument();
+    expect(screen.getByText('Not in a tree (1)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Organise into trees' })).toBeInTheDocument();
     // T-027: the zoho-sync backend route also requires calculator:update.
     expect(screen.queryByRole('button', { name: /sync prices from zoho/i })).not.toBeInTheDocument();
   });
@@ -148,7 +154,7 @@ describe('FilamentProfilesPage — permission gating (T-016)', () => {
     try {
       await renderPage();
       expect(screen.getByRole('button', { name: 'SYNC' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Tree settings' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Printers and nozzles (all trees)' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /sync prices from zoho/i })).toBeInTheDocument();
     } finally {
       mockUseAuth.authEnabled = true;

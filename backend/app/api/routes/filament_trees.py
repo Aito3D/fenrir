@@ -6,7 +6,7 @@ from dataclasses import asdict, replace
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,9 +16,17 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.filament_profile import FilamentPreset
-from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor, FilamentTreeLeaf, FilamentTreeOverride
+from backend.app.models.filament_tree import (
+    FilamentTree,
+    FilamentTreeChange,
+    FilamentTreeColor,
+    FilamentTreeLeaf,
+    FilamentTreeOverride,
+)
+from backend.app.models.spool import Spool
 from backend.app.models.user import User
 from backend.app.schemas.filament_tree import (
+    BulkNodeUpdate,
     CandidateRequest,
     ColorCreate,
     ColorUpdate,
@@ -28,7 +36,10 @@ from backend.app.schemas.filament_tree import (
     NodeRow,
     NodeUpdate,
     Targets,
+    TreeChange,
     TreeColor,
+    TreeCreate,
+    TreeDuplicate,
     TreeSource,
     TreeSummary,
     TreeUpdate,
@@ -119,6 +130,34 @@ def _own_counts(tree: TreeData) -> dict[str, int]:
     return counts
 
 
+def _actor(user: User | None) -> str:
+    return user.username if user else ""
+
+
+async def _spool_counts(db: AsyncSession) -> dict[tuple[str, str, str], int]:
+    """(brand, material, colour name), casefolded -> active spools; a spool counts under "PLA" and "PLA Matte"."""
+    # shortcut: exact-name matching only (a "Bambu Lab" spool never matches a "Bambu" tree), add an alias map if needed
+    rows = await db.execute(
+        select(Spool.brand, Spool.material, Spool.subtype, Spool.color_name, func.count())
+        .where(Spool.archived_at.is_(None))
+        .group_by(Spool.brand, Spool.material, Spool.subtype, Spool.color_name)
+    )
+    counts: dict[tuple[str, str, str], int] = {}
+    for brand, material, subtype, color, n in rows.all():
+        for mat in {material or "", f"{material or ''} {subtype or ''}".strip()}:
+            key = ((brand or "").casefold(), mat.casefold(), (color or "").casefold())
+            counts[key] = counts.get(key, 0) + n
+    return counts
+
+
+def _price(tree: TreeData, color_id: int) -> float | None:
+    raw = resolve_with_sources(tree, None, None, color_id).get("filament_cost", (None,))[0]
+    try:
+        return float(raw[0] if isinstance(raw, list) else raw)
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
 # --- literal routes, above /{tree_id} ---
 
 
@@ -128,8 +167,21 @@ async def list_trees(
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
     out = []
+    spools = await _spool_counts(db)
+    pending = dict(
+        (
+            await db.execute(
+                select(FilamentTreeLeaf.tree_id, func.count())
+                .where(FilamentTreeLeaf.export_pending)
+                .group_by(FilamentTreeLeaf.tree_id)
+            )
+        )
+        .tuples()
+        .all()
+    )
     for meta in (await db.execute(select(FilamentTree).order_by(FilamentTree.name, FilamentTree.id))).scalars().all():
         tree = await store.load_tree(db, meta.id)
+        stock = (meta.brand.casefold(), meta.material.casefold())
         out.append(
             TreeSummary(
                 id=meta.id,
@@ -141,11 +193,68 @@ async def list_trees(
                 source=TreeSource(
                     machine=meta.source_machine, nozzle=meta.source_nozzle, color_id=meta.source_color_id
                 ),
-                colors=[TreeColor(id=cid, name=name, hex=hex_) for cid, (name, hex_) in tree.colors.items()],
+                colors=[
+                    TreeColor(
+                        id=cid,
+                        name=name,
+                        hex=hex_,
+                        spools=spools.get((*stock, name.casefold()), 0),
+                        price=_price(tree, cid),
+                    )
+                    for cid, (name, hex_) in tree.colors.items()
+                ],
                 own_counts=_own_counts(tree),
+                export_pending=pending.get(meta.id, 0),
             )
         )
     return out
+
+
+@router.post("")
+async def create_tree(
+    payload: TreeCreate,
+    _: User | None = RequirePermissionIfAuthEnabled(_CREATE),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """A new filament from scratch: one colour, no own values, leaves inherit the Bambu family."""
+    try:
+        with _mapped():
+            tree_id = await store.create_tree(db, name=f"{payload.brand} {payload.material}", **payload.model_dump())
+            await db.commit()
+    except BaseException:
+        await db.rollback()
+        raise
+    return {"tree_id": tree_id}
+
+
+@router.post("/bulk")
+async def bulk_node(
+    payload: BulkNodeUpdate,
+    user: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """One write on the same node of several trees; all or nothing."""
+    try:
+        with _mapped():
+            for tree_id in dict.fromkeys(payload.tree_ids):
+                _check_node(await store.load_tree(db, tree_id), payload.machine, payload.nozzle, None)
+                await store.set_node_values(
+                    db,
+                    tree_id,
+                    payload.machine,
+                    payload.nozzle,
+                    None,
+                    payload.set_values,
+                    payload.clear,
+                    regenerate=False,
+                    actor=_actor(user),
+                )
+                await store.regenerate_tree(db, tree_id)
+            await db.commit()
+    except BaseException:
+        await db.rollback()
+        raise
+    return {"success": True}
 
 
 @router.get("/targets", response_model=Targets)
@@ -300,7 +409,7 @@ async def export(
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
     with _mapped():
-        data = await build_export_zip(db, payload.tree_id)
+        data = await build_export_zip(db, payload.tree_id, payload.changed_only)
     return Response(
         content=data,
         media_type="application/zip",
@@ -326,11 +435,16 @@ async def get_node(
     current = resolve_with_sources(tree, machine, nozzle, color_id)
     parent = resolve_with_sources(_without_own(tree, machine, nozzle, color_id), machine, nozzle, color_id)
     level = _node_level(machine, nozzle, color_id)
+    # Above the nozzle level the Bambu preset is the calibration source's: the parent values the tree was built on.
+    base_machine, base_nozzle = machine or tree.source[0], nozzle or tree.source[1]
     base_name, base = None, {}
-    if machine is not None and nozzle is not None:
-        base_name = match_base(tree.base_family, machine, nozzle, await store.base_names(db), tree.fallback_inherits)
+    if base_machine and base_nozzle:
+        base_name = match_base(
+            tree.base_family, base_machine, base_nozzle, await store.base_names(db), tree.fallback_inherits
+        )
         reader = await build_base_reader(db)
-        base = {k: v for k, v in reader.values(base_name).items() if k not in SKIP_KEYS}
+        skip = SKIP_KEYS if nozzle is not None else SKIP_KEYS | NOZZLE_BOUND_KEYS
+        base = {k: v for k, v in reader.values(base_name).items() if k not in skip}
     rows = []
     for key in sorted(current.keys() | base.keys()):
         if key in current:
@@ -344,6 +458,7 @@ async def get_node(
                     own=source == level,
                     inherited_value=inherited[0],
                     inherited_source=inherited[1],
+                    source_label=base_name if inherited[1] == "bambu" else None,
                 )
             )
         else:
@@ -355,13 +470,91 @@ async def get_node(
 async def put_node(
     tree_id: int,
     payload: NodeUpdate,
-    _: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
+    user: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
     with _mapped():
         _check_node(await store.load_tree(db, tree_id), payload.machine, payload.nozzle, payload.color_id)
         await store.set_node_values(
-            db, tree_id, payload.machine, payload.nozzle, payload.color_id, payload.set_values, payload.clear
+            db,
+            tree_id,
+            payload.machine,
+            payload.nozzle,
+            payload.color_id,
+            payload.set_values,
+            payload.clear,
+            actor=_actor(user),
+        )
+    return {"success": True}
+
+
+@router.post("/{tree_id}/duplicate")
+async def duplicate_tree(
+    tree_id: int,
+    payload: TreeDuplicate,
+    _: User | None = RequirePermissionIfAuthEnabled(_CREATE),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    try:
+        with _mapped():
+            new_id = await store.duplicate_tree(db, tree_id, payload.name, payload.brand)
+            await db.commit()
+    except BaseException:
+        await db.rollback()
+        raise
+    return {"tree_id": new_id}
+
+
+@router.get("/{tree_id}/history", response_model=list[TreeChange])
+async def get_history(
+    tree_id: int,
+    _: User | None = RequirePermissionIfAuthEnabled(_READ),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    rows = await db.execute(
+        select(FilamentTreeChange)
+        .where(FilamentTreeChange.tree_id == tree_id)
+        .order_by(FilamentTreeChange.id.desc())
+        .limit(200)
+    )
+    return [
+        TreeChange(
+            id=c.id,
+            machine=c.machine,
+            nozzle=c.nozzle,
+            color_id=c.color_id,
+            key=c.key,
+            old_value=None if c.old_value is None else json.loads(c.old_value),
+            new_value=None if c.new_value is None else json.loads(c.new_value),
+            actor=c.actor,
+            created_at=c.created_at,
+        )
+        for c in rows.scalars().all()
+    ]
+
+
+@router.post("/{tree_id}/history/{change_id}/revert")
+async def revert_change(
+    tree_id: int,
+    change_id: int,
+    user: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Put a node's key back to what it was before that change (itself logged as a new change)."""
+    change = await db.get(FilamentTreeChange, change_id)
+    if change is None or change.tree_id != tree_id:
+        raise HTTPException(404, f"change {change_id} not found")
+    node = (change.machine or None, change.nozzle or None, change.color_id or None)
+    old = None if change.old_value is None else json.loads(change.old_value)
+    with _mapped():
+        _check_node(await store.load_tree(db, tree_id), *node)
+        await store.set_node_values(
+            db,
+            tree_id,
+            *node,
+            {} if old is None else {change.key: old},
+            [change.key] if old is None else [],
+            actor=_actor(user),
         )
     return {"success": True}
 
@@ -443,7 +636,7 @@ async def delete_tree(
         (await db.execute(select(FilamentTreeLeaf.preset_id).where(FilamentTreeLeaf.tree_id == tree_id))).scalars()
     )
     # explicit child deletes: don't depend on the database enforcing ON DELETE CASCADE
-    for model in (FilamentTreeLeaf, FilamentTreeOverride, FilamentTreeColor):
+    for model in (FilamentTreeLeaf, FilamentTreeOverride, FilamentTreeColor, FilamentTreeChange):
         await db.execute(delete(model).where(model.tree_id == tree_id))
     await db.execute(delete(FilamentPreset).where(FilamentPreset.id.in_(preset_ids)))
     await db.execute(delete(FilamentTree).where(FilamentTree.id == tree_id))

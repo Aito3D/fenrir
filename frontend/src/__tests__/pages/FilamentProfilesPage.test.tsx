@@ -1,5 +1,5 @@
 /**
- * Filament Profiles page, tree edition: tree nav + node panel, migration of
+ * Filament Profiles page, tree edition: material cards + node panel, migration of
  * unmanaged presets, SYNC (pull) result handling, Export for Orca and tree settings.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -68,7 +68,17 @@ function stub({ trees = [TREE], groups = [] as FilamentTreeMigrationGroup[] } = 
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  window.history.replaceState({}, '', '/'); // the open node lives in the URL
 });
+
+/** Opens the header's "Sync & export" menu and clicks one entry. */
+async function menu(name: string) {
+  await userEvent.click(await screen.findByRole('button', { name: /Sync & export/ }));
+  await userEvent.click(await screen.findByRole('button', { name }));
+}
+
+/** The node panel's Colours tab: the filament's colours, 0.2 switch, export, duplicate and delete. */
+const openColours = async () => userEvent.click(await screen.findByRole('tab', { name: 'Colours' }));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -120,7 +130,8 @@ describe('FilamentProfilesPage (trees)', () => {
   it('offers unmanaged presets beside existing trees', async () => {
     stub({ groups: [GROUP] });
     render(<FilamentProfilesPage />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Not in a tree (2)' }));
+    expect(await screen.findByText('Not in a tree (2)')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Organise into trees' }));
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
@@ -216,21 +227,21 @@ describe('FilamentProfilesPage (trees)', () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     render(<FilamentProfilesPage />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Export for Orca' }));
+    await menu('Export for Orca');
     await waitFor(() => expect(click).toHaveBeenCalled());
-    expect(exportSpy).toHaveBeenCalledWith(undefined);
+    expect(exportSpy).toHaveBeenCalledWith(undefined, false);
     expect(createUrl).toHaveBeenCalledWith(blob);
     vi.unstubAllGlobals();
   });
 
-  it('tree settings add a colour, switch 0.2 and save the targets', async () => {
+  it('the Colours tab adds a colour and switches 0.2; the menu edits the targets as chips', async () => {
     stub();
     const addColor = vi.spyOn(api, 'addFilamentTreeColor').mockResolvedValue({ id: 12 });
     const patch = vi.spyOn(api, 'updateFilamentTree').mockResolvedValue({ success: true });
     const putTargets = vi.spyOn(api, 'setFilamentTreeTargets').mockResolvedValue(TARGETS);
     render(<FilamentProfilesPage />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Tree settings' }));
+    await openColours();
     await userEvent.type(await screen.findByLabelText('New colour name'), 'Blue');
     await userEvent.click(screen.getByRole('button', { name: 'Add colour' }));
     await waitFor(() => expect(addColor).toHaveBeenCalledWith(1, { name: 'Blue', hex: '#000000' }));
@@ -244,18 +255,33 @@ describe('FilamentProfilesPage (trees)', () => {
     await userEvent.selectOptions(skip, 'auto');
     await waitFor(() => expect(patch).toHaveBeenCalledWith(1, { skip_02: null }));
 
-    const machines = screen.getByLabelText('Printers');
-    await userEvent.clear(machines);
-    await userEvent.type(machines, 'X2D, H2D');
+    await menu('Printers and nozzles (all trees)');
+    const printers = within(await screen.findByRole('group', { name: 'Printers' }));
+    await userEvent.click(printers.getByRole('button', { name: 'Remove H2S' }));
+    await userEvent.type(printers.getByLabelText('Add printer'), 'H2D{Enter}');
     await userEvent.click(screen.getByRole('button', { name: 'Save targets' }));
     await waitFor(() => expect(putTargets).toHaveBeenCalledWith({ machines: ['X2D', 'H2D'], nozzles: ['0.4', '0.6'] }));
+  });
+
+  it('deletes a whole filament only after confirming', async () => {
+    stub();
+    const del = vi.spyOn(api, 'deleteFilamentTree').mockResolvedValue({ success: true });
+    render(<FilamentProfilesPage />);
+
+    await openColours();
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Polymaker PETG' }));
+    expect(del).not.toHaveBeenCalled();
+    expect(await screen.findByText(/cannot be undone/)).toBeInTheDocument();
+    const buttons = screen.getAllByRole('button', { name: 'Delete Polymaker PETG' });
+    await userEvent.click(buttons[buttons.length - 1]);
+    await waitFor(() => expect(del).toHaveBeenCalledWith(1));
   });
 
   it('saves a recoloured colour once, 400ms after the last change', async () => {
     stub();
     const update = vi.spyOn(api, 'updateFilamentTreeColor').mockResolvedValue({ success: true });
     render(<FilamentProfilesPage />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Tree settings' }));
+    await openColours();
     const picker = await screen.findByLabelText('Colour of Red');
     fireEvent.change(picker, { target: { value: '#112233' } });
     fireEvent.change(picker, { target: { value: '#445566' } });
@@ -287,7 +313,7 @@ describe('FilamentProfilesPage (trees)', () => {
     stub();
     const update = vi.spyOn(api, 'updateFilamentTreeColor').mockResolvedValue({ success: true });
     const { unmount } = render(<FilamentProfilesPage />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Tree settings' }));
+    await openColours();
     fireEvent.change(await screen.findByLabelText('Colour of Red'), { target: { value: '#445566' } });
     unmount();
     expect(update).toHaveBeenCalledWith(1, 11, { name: 'Red', hex: '#445566' });
@@ -307,7 +333,7 @@ describe('FilamentProfilesPage (trees)', () => {
       .spyOn(api, 'syncBaseFilamentPresets')
       .mockResolvedValue({ total: 12, added: 2, updated: 1, unchanged: 9 } as Awaited<ReturnType<typeof api.syncBaseFilamentPresets>>);
     render(<FilamentProfilesPage />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Sync base' }));
+    await menu('Sync base');
     await waitFor(() => expect(syncBase).toHaveBeenCalled());
     expect(await screen.findByText('Base profiles synced')).toBeInTheDocument();
   });
@@ -323,7 +349,7 @@ describe('FilamentProfilesPage (trees)', () => {
     render(<FilamentProfilesPage />);
     const input = screen.getByTestId('fp-base-file-input') as HTMLInputElement;
     const pickerClick = vi.spyOn(input, 'click').mockImplementation(() => {});
-    await userEvent.click(await screen.findByRole('button', { name: 'Sync base' }));
+    await menu('Sync base');
     await waitFor(() => expect(pickerClick).toHaveBeenCalled());
 
     const file = new File(['{"name":"Bambu PLA Basic @BBL H2S"}'], 'base.json', { type: 'application/json' });
@@ -340,11 +366,72 @@ describe('FilamentProfilesPage (trees)', () => {
       .spyOn(api, 'syncFilamentPresetsToBambu')
       .mockResolvedValue({ stats } as Awaited<ReturnType<typeof api.syncFilamentPresetsToBambu>>);
     render(<FilamentProfilesPage />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync to PC' })).toBeEnabled());
-    await userEvent.click(screen.getByRole('button', { name: 'Sync to PC' }));
+    await waitFor(() => expect(api.getFilamentPresets).toHaveBeenCalled());
+    await screen.findByRole('navigation', { name: 'Profile path' });
+    await menu('Sync to PC');
     const rows = PRESETS.map((p) => ({ filename: p.filename, content: p.content }));
     await waitFor(() => expect(bambuSync).toHaveBeenCalledWith(rows, true));
     await userEvent.click(await screen.findByRole('button', { name: 'Sync' }));
     await waitFor(() => expect(bambuSync).toHaveBeenCalledWith(rows, false));
+  });
+
+  it('restores the open node from the URL and writes clicks back to it', async () => {
+    stub();
+    window.history.replaceState({}, '', '/?tree=1&color=11&m=H2S&n=0.6');
+    render(<FilamentProfilesPage />);
+    expect(await screen.findByRole('navigation', { name: 'Profile path' })).toHaveTextContent('Polymaker PETG › H2S › 0.6 › Red');
+    await userEvent.click(within(screen.getByRole('group', { name: 'Printer' })).getByRole('button', { name: 'All machines' }));
+    expect(window.location.search).toBe('?tree=1&color=11');
+    expect(await screen.findByRole('navigation', { name: 'Profile path' })).toHaveTextContent('Red (all machines)');
+  });
+
+  it('exports only the changed profiles and creates a filament from scratch', async () => {
+    stub({ trees: [{ ...TREE, export_pending: 3 }] });
+    vi.spyOn(api, 'getBaseFilamentPresets').mockResolvedValue([]);
+    const exportSpy = vi.spyOn(api, 'exportFilamentTrees').mockResolvedValue(new Blob(['zip']));
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} }));
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const create = vi.spyOn(api, 'createFilamentTree').mockResolvedValue({ tree_id: 7 });
+    render(<FilamentProfilesPage />);
+
+    await menu('Export changed only (3)');
+    await waitFor(() => expect(exportSpy).toHaveBeenCalledWith(undefined, true));
+    vi.unstubAllGlobals();
+
+    await userEvent.click(screen.getByRole('button', { name: 'New filament' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    await userEvent.type(dialog.getByLabelText('Brand'), 'eSun');
+    await userEvent.type(dialog.getByLabelText('Material type'), 'PLA');
+    await userEvent.type(dialog.getByLabelText('Bambu base preset'), 'Generic PLA');
+    await userEvent.type(dialog.getByLabelText('Colour name'), 'Black');
+    await userEvent.click(dialog.getByRole('button', { name: 'Create' }));
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith({
+        brand: 'eSun', material: 'PLA', base_family: 'Generic PLA', color_name: 'Black', color_hex: '#000000', machine: 'X2D', nozzle: '0.4',
+      }),
+    );
+    await waitFor(() => expect(window.location.search).toBe('?tree=7'));
+  });
+
+  it('History lists changes and reverts one; own values copy to other filaments', async () => {
+    const other = { ...TREE, id: 2, name: 'SUNLU PETG', brand: 'SUNLU', colors: [] };
+    stub({ trees: [TREE, other] });
+    vi.spyOn(api, 'getFilamentTreeHistory').mockResolvedValue([
+      { id: 9, machine: 'H2S', nozzle: '', color_id: 0, key: 'nozzle_temperature', old_value: ['240'], new_value: ['250'], actor: 'paul', created_at: '2026-11-14T10:00:00' },
+    ]);
+    const revert = vi.spyOn(api, 'revertFilamentTreeChange').mockResolvedValue({ success: true });
+    const bulk = vi.spyOn(api, 'bulkSetFilamentTreeNode').mockResolvedValue({ success: true });
+    render(<FilamentProfilesPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Apply to other filaments' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(dialog.getByRole('checkbox', { name: 'SUNLU PETG' })).toBeChecked(); // same material
+    await userEvent.click(dialog.getByRole('button', { name: 'Apply to 1' }));
+    await waitFor(() => expect(bulk).toHaveBeenCalledWith({ tree_ids: [2], set: { nozzle_temperature: ['240'] } }));
+
+    await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
+    expect(await screen.findByText('240 → 250')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /^Revert/ }));
+    await waitFor(() => expect(revert).toHaveBeenCalledWith(1, 9));
   });
 });

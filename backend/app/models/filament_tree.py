@@ -75,9 +75,31 @@ class FilamentTreeLeaf(Base):
     )
     baseline_content: Mapped[str | None] = mapped_column(Text, nullable=True)  # what Orca holds, set by SYNC
     exported_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # last Export for Orca
+    # the generated preset changed since the last export (exported_at stays: SYNC reads it for "missing")
+    export_pending: Mapped[bool] = mapped_column(default=True, server_default="1", nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class FilamentTreeChange(Base):
+    """One value change at one node (history + revert); old/new are JSON, NULL = no own value."""
+
+    __tablename__ = "filament_tree_changes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tree_id: Mapped[int] = mapped_column(
+        ForeignKey("filament_trees.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    machine: Mapped[str] = mapped_column(String, default="", nullable=False)
+    nozzle: Mapped[str] = mapped_column(String, default="", nullable=False)
+    color_id: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    key: Mapped[str] = mapped_column(String, nullable=False)
+    old_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    new_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actor: Mapped[str] = mapped_column(String, default="", nullable=False)  # username; "" = sync / auth disabled
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class FilamentTreeSnapshot(Base):

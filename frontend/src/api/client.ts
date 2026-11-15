@@ -4404,7 +4404,8 @@ export interface SpoolmanBulkCreateResult {
 
 // ── Filament profile trees ──────────────────────────────────────────────────
 export type FilamentTreePresetValue = string | number | boolean | Array<string | number>;
-export interface FilamentTreeColor { id: number; name: string; hex: string }
+/** spools: active inventory spools of this brand + material + colour name; price: filament cost per kg */
+export interface FilamentTreeColor { id: number; name: string; hex: string; spools?: number; price?: number | null }
 export interface FilamentTreeSummary {
   id: number; name: string; brand: string; material: string;
   skip_02: boolean | null; abrasive: boolean;
@@ -4412,6 +4413,12 @@ export interface FilamentTreeSummary {
   colors: FilamentTreeColor[];
   /** keys: "root", "M", "M/N", "M/N/cid", "color:cid" */
   own_counts: Record<string, number>;
+  /** leaves whose preset changed since the last Export for Orca */
+  export_pending?: number;
+}
+export interface FilamentTreeChange {
+  id: number; machine: string; nozzle: string; color_id: number; key: string;
+  old_value: unknown; new_value: unknown; actor: string; created_at: string;
 }
 export interface FilamentTreeTargets { machines: string[]; nozzles: string[] }
 export interface FilamentTreeNodeRow {
@@ -9209,8 +9216,17 @@ export const api = {
     request<{ success: boolean }>('/filament-trees/conflicts/resolve', { method: 'POST', body: JSON.stringify(data) }),
   createFilamentTreeFromCandidate: (data: { orca_id: string; name: string; brand: string; material: string; color_name: string; color_hex: string; machine: string; nozzle: string }) =>
     request<{ tree_id: number }>('/filament-trees/candidates', { method: 'POST', body: JSON.stringify(data) }),
-  exportFilamentTrees: (treeId?: number): Promise<Blob> =>
-    postForBlob('/filament-trees/export', treeId === undefined ? {} : { tree_id: treeId }),
+  exportFilamentTrees: (treeId?: number, changedOnly = false): Promise<Blob> =>
+    postForBlob('/filament-trees/export', { ...(treeId !== undefined && { tree_id: treeId }), ...(changedOnly && { changed_only: true }) }),
+  createFilamentTree: (data: { brand: string; material: string; base_family: string; color_name: string; color_hex: string; machine: string; nozzle: string }) =>
+    request<{ tree_id: number }>('/filament-trees', { method: 'POST', body: JSON.stringify(data) }),
+  duplicateFilamentTree: (treeId: number, data: { name: string; brand: string }) =>
+    request<{ tree_id: number }>(`/filament-trees/${treeId}/duplicate`, { method: 'POST', body: JSON.stringify(data) }),
+  bulkSetFilamentTreeNode: (data: { tree_ids: number[]; machine?: string; nozzle?: string; set: Record<string, FilamentTreePresetValue> }) =>
+    request<{ success: boolean }>('/filament-trees/bulk', { method: 'POST', body: JSON.stringify(data) }),
+  getFilamentTreeHistory: (treeId: number) => request<FilamentTreeChange[]>(`/filament-trees/${treeId}/history`),
+  revertFilamentTreeChange: (treeId: number, changeId: number) =>
+    request<{ success: boolean }>(`/filament-trees/${treeId}/history/${changeId}/revert`, { method: 'POST' }),
   getFilamentTreeNode: (treeId: number, node: { machine?: string; nozzle?: string; colorId?: number } = {}) => {
     const q = new URLSearchParams();
     if (node.machine !== undefined) q.set('machine', node.machine);

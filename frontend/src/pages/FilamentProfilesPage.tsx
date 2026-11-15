@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Database, Download, Droplets, HardDrive, Loader2, RefreshCw, Settings2 } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Database, Download, Droplets, HardDrive, Loader2, Plus, RefreshCw, Settings2 } from 'lucide-react';
 
 import { api } from '../api/client';
 import type { FilamentTreePullResult } from '../api/client';
 import { Button } from '../components/Button';
+import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
+import { Skeleton } from '../components/Skeleton';
 import { SyncBaseResultModal } from '../components/filament-profiles/SyncBaseResultModal';
 import { SyncModal } from '../components/filament-profiles/SyncModal';
 import { useBaseSync, usePcSync } from '../components/filament-profiles/usePresetSyncs';
@@ -14,16 +17,18 @@ import { errorMessage } from '../components/filament-trees/errorMessage';
 import { useZohoSync } from '../components/filament-profiles/useZohoSync';
 import { downloadTreeExport } from '../components/filament-trees/exportDownload';
 import { MigrateModal } from '../components/filament-trees/MigrateModal';
-import { NodePanel } from '../components/filament-trees/NodePanel';
+import { MaterialCards } from '../components/filament-trees/MaterialCards';
+import { NodePanel, type NodeRef } from '../components/filament-trees/NodePanel';
 import { SyncResultModal } from '../components/filament-trees/SyncResultModal';
-import { TreeNav, type NodeRef } from '../components/filament-trees/TreeNav';
-import { TreeSettingsPanel } from '../components/filament-trees/TreeSettingsPanel';
+import { NewTreeModal } from '../components/filament-trees/NewTreeModal';
+import { TargetsModal } from '../components/filament-trees/TargetsModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 
 /**
- * Filament Profiles: the profile trees (tree left, settings right; stacked on phones),
- * SYNC pull from Orca Cloud, migration of loose presets, Export for Orca and Zoho prices.
+ * Filament Profiles: the profile trees as material cards (cards left, settings right; stacked below xl),
+ * SYNC pull from Orca Cloud, migration of loose presets, and a "Sync & export" menu (Orca export, Zoho prices,
+ * Bambu base, PC, printers and nozzles). The open node lives in the URL: ?tree=&color=&m=&n=.
  */
 export function FilamentProfilesPage() {
   const { t } = useTranslation();
@@ -45,8 +50,11 @@ export function FilamentProfilesPage() {
   const targetsQuery = useQuery({ queryKey: ['filament-trees', 'targets'], queryFn: api.getFilamentTreeTargets });
   const unmanagedQuery = useQuery({ queryKey: ['filament-trees', 'unmanaged'], queryFn: api.getUnmanagedFilamentGroups });
 
-  const [selected, setSelected] = useState<NodeRef | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuButtonRef = useRef<HTMLSpanElement>(null);
+  const [targetsOpen, setTargetsOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
   const [migrateOpen, setMigrateOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncOutcome, setSyncOutcome] = useState<{ result?: FilamentTreePullResult; error?: unknown } | null>(null);
@@ -66,10 +74,68 @@ export function FilamentProfilesPage() {
   const groups = unmanagedQuery.data ?? [];
   const unmanagedCount = groups.reduce((n, g) => n + g.preset_ids.length, 0);
   const targets = targetsQuery.data;
+  const pendingExport = trees.reduce((n, tr) => n + (tr.export_pending ?? 0), 0);
+
+  // One level (machine, nozzle) for every card and the panel; the URL keeps it with the open tree and colour.
+  const machine = params.get('m') ?? '';
+  const nozzle = (machine && params.get('n')) || '';
+  const patchParams = (patch: Record<string, string | undefined>) =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        for (const [k, v] of Object.entries(patch)) {
+          if (v) next.set(k, v);
+          else next.delete(k);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  const select = (node: NodeRef) => patchParams({ tree: String(node.treeId), color: node.colorId?.toString() });
   // Falls back to the first tree's root until the user picks a node (or when the picked tree is gone).
-  const current: NodeRef | null =
-    selected && trees.some((tr) => tr.id === selected.treeId) ? selected : trees[0] ? { treeId: trees[0].id } : null;
-  const currentTree = trees.find((tr) => tr.id === current?.treeId);
+  const currentTree = trees.find((tr) => tr.id === Number(params.get('tree'))) ?? trees[0];
+  const colorId = currentTree?.colors.find((c) => c.id === Number(params.get('color')))?.id;
+  // a colour opens colour-wide (no machine) or as a leaf (machine + nozzle), never at the machine level
+  const current: NodeRef | null = currentTree
+    ? {
+        treeId: currentTree.id,
+        machine: machine || undefined,
+        nozzle: nozzle || undefined,
+        colorId: !machine || nozzle ? colorId : undefined,
+      }
+    : null;
+  const no02 = !!currentTree && nozzle === '0.2' && (currentTree.skip_02 ?? currentTree.abrasive);
+  const exportOrca = (changedOnly: boolean) =>
+    downloadTreeExport(undefined, changedOnly)
+      .then(() => queryClient.invalidateQueries({ queryKey: ['filament-trees'] }))
+      .catch((err) => showToast(errorMessage(err), 'error'));
+
+  const menuItems: ContextMenuItem[] = [
+    { label: t('filamentTrees.exportOrca'), icon: <Download className="h-4 w-4" />, onClick: () => void exportOrca(false), disabled: trees.length === 0 },
+    {
+      label: t('filamentTrees.exportChanged', { n: pendingExport }),
+      icon: <Download className="h-4 w-4" />,
+      onClick: () => void exportOrca(true),
+      disabled: pendingExport === 0,
+    },
+    ...(canSyncZohoPrices
+      ? [{ label: t('filamentProfiles.syncZohoPrices'), icon: <RefreshCw className="h-4 w-4" />, onClick: handleZohoSync, disabled: zohoSyncing }]
+      : []),
+    ...(canUpdate
+      ? [
+          { label: t('filamentProfiles.syncBase'), icon: <Database className="h-4 w-4" />, onClick: handleSyncBase, disabled: syncBaseBusy },
+          {
+            label: t('filamentProfiles.syncToPc'),
+            icon: <HardDrive className="h-4 w-4" />,
+            onClick: handleSyncToPc,
+            disabled: !presetsQuery.data || presetsQuery.data.length === 0,
+          },
+          { label: '', onClick: () => {}, divider: true },
+          { label: t('filamentTrees.targetsTitle'), icon: <Settings2 className="h-4 w-4" />, onClick: () => setTargetsOpen(true) },
+        ]
+      : []),
+  ];
+  const busy = zohoSyncing || syncBaseBusy;
 
   const handleSync = async () => {
     setSyncing(true);
@@ -104,27 +170,29 @@ export function FilamentProfilesPage() {
               {t('filamentTrees.sync')}
             </Button>
           )}
+          {canCreate && targets && (
+            <Button variant="secondary" size="sm" onClick={() => setNewOpen(true)}>
+              <Plus className="h-4 w-4" />
+              {t('filamentTrees.newFilament')}
+            </Button>
+          )}
+          <span ref={menuButtonRef} className="inline-flex">
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => downloadTreeExport().catch((err) => showToast(errorMessage(err), 'error'))}
-            disabled={trees.length === 0}
+            aria-haspopup="menu"
+            aria-expanded={!!menu}
+            onClick={() => {
+              const r = menuButtonRef.current?.getBoundingClientRect();
+              setMenu(menu ? null : { x: r?.left ?? 0, y: (r?.bottom ?? 0) + 4 });
+            }}
           >
-            <Download className="h-4 w-4" />
-            {t('filamentTrees.exportOrca')}
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {t('filamentTrees.moreActions')}
+            {pendingExport > 0 && <span className="h-2 w-2 rounded-full bg-sky-400" aria-hidden />}
+            <ChevronDown className="h-4 w-4" />
           </Button>
-          {canSyncZohoPrices && (
-            <Button variant="secondary" size="sm" onClick={handleZohoSync} disabled={zohoSyncing}>
-              {zohoSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              {zohoSyncing ? t('filamentProfiles.syncingZoho') : t('filamentProfiles.syncZohoPrices')}
-            </Button>
-          )}
-          {canUpdate && (
-            <Button variant="secondary" size="sm" onClick={handleSyncBase} disabled={syncBaseBusy}>
-              {syncBaseBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
-              {syncBaseBusy ? t('filamentProfiles.syncingBase') : t('filamentProfiles.syncBase')}
-            </Button>
-          )}
+          </span>
           {/* Upload fallback for Sync base, opened when the server has no Bambu Studio bundle (Docker deploys). */}
           <input
             ref={baseFileInputRef}
@@ -135,29 +203,6 @@ export function FilamentProfilesPage() {
             className="hidden"
             onChange={handleBaseFilesSelected}
           />
-          {canUpdate && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleSyncToPc}
-              disabled={!presetsQuery.data || presetsQuery.data.length === 0}
-            >
-              <HardDrive className="h-4 w-4" />
-              {t('filamentProfiles.syncToPc')}
-            </Button>
-          )}
-          {(canCreate || canUpdate || canDelete) && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setShowSettings((v) => !v)}
-              aria-pressed={showSettings}
-              disabled={trees.length === 0 && !canUpdate}
-            >
-              <Settings2 className="h-4 w-4" />
-              {t('filamentTrees.settings')}
-            </Button>
-          )}
         </div>
       </div>
 
@@ -176,7 +221,14 @@ export function FilamentProfilesPage() {
           </Button>
         </div>
       ) : loading || !targets || (trees.length === 0 && unmanagedQuery.isLoading) ? (
-        <p className="text-sm text-bambu-gray">{t('common.loading')}</p>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]" aria-busy="true" aria-label={t('common.loading')}>
+          <div className="space-y-3">
+            {[...Array(4)].map((_, i) => (
+              <Skeleton key={i} className="h-28 rounded-xl" />
+            ))}
+          </div>
+          <Skeleton className="h-96 rounded-xl" />
+        </div>
       ) : trees.length === 0 ? (
         <div className="py-12 text-center">
           <p className="font-medium text-white">{t('filamentTrees.emptyTitle')}</p>
@@ -192,35 +244,44 @@ export function FilamentProfilesPage() {
               {t('filamentTrees.organise')}
             </Button>
           )}
-          {showSettings && (
-            <div className="mx-auto mt-6 max-w-lg text-left">
-              <TreeSettingsPanel tree={undefined} targets={targets} />
-            </div>
-          )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(14rem,20rem)_minmax(0,1fr)]">
-          <div className="min-w-0 space-y-2 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 md:max-h-[calc(100vh-12rem)] md:overflow-y-auto">
-            <TreeNav trees={trees} targets={targets} selected={current} onSelect={setSelected} />
-            {unmanagedCount > 0 && canMigrate && (
-              <button
-                type="button"
-                onClick={() => setMigrateOpen(true)}
-                className="text-xs text-sky-400 hover:text-sky-300 hover:underline"
-              >
-                {t('filamentTrees.notInTree', { n: unmanagedCount })}
-              </button>
-            )}
+        <>
+          {unmanagedCount > 0 && canMigrate && (
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-2.5">
+              <span className="text-sm text-sky-200">{t('filamentTrees.notInTree', { n: unmanagedCount })}</span>
+              <Button size="sm" variant="secondary" onClick={() => setMigrateOpen(true)} className="ml-auto">
+                {t('filamentTrees.organise')}
+              </Button>
+            </div>
+          )}
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+            <div className="min-w-0">
+              <MaterialCards
+                trees={trees}
+                targets={targets}
+                selected={current}
+                onSelect={select}
+                machine={machine}
+                nozzle={nozzle}
+                onLevel={(m, n) => patchParams({ m, n })}
+              />
+            </div>
+            <div className="min-w-0 self-start rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-4 xl:sticky xl:top-4">
+              {no02 ? (
+                <p className="text-sm text-amber-300/80">{t('filamentTrees.no02')}</p>
+              ) : (
+                current && <NodePanel key={JSON.stringify(current)} node={current} onCreated={(treeId) => select({ treeId })} />
+              )}
+            </div>
           </div>
-          <div className="min-w-0 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-4">
-            {showSettings ? (
-              <TreeSettingsPanel key={currentTree?.id ?? 0} tree={currentTree} targets={targets} />
-            ) : (
-              current && <NodePanel key={JSON.stringify(current)} node={current} />
-            )}
-          </div>
-        </div>
+        </>
       )}
+
+      {/* outside the header: its entrance animation makes a stacking context the panel would paint over */}
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} anchorRef={menuButtonRef} />}
+      {targetsOpen && targets && <TargetsModal targets={targets} onClose={() => setTargetsOpen(false)} />}
+      {newOpen && targets && <NewTreeModal targets={targets} onClose={() => setNewOpen(false)} onCreated={(treeId) => select({ treeId })} />}
 
       {migrateOpen && targets && (
         <MigrateModal

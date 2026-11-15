@@ -7363,6 +7363,14 @@ async def _run_migrations(conn):
             conn, "ALTER TABLE print_archives ADD COLUMN timelapse_baseline_unread BOOLEAN DEFAULT FALSE"
         )
 
+    # Migration: filament tree leaves whose generated preset changed since the last Export for Orca.
+    # Existing leaves start pending: nothing recorded what the PCs hold.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE filament_tree_leaves ADD COLUMN export_pending BOOLEAN NOT NULL DEFAULT "
+        + ("1" if is_sqlite() else "TRUE"),
+    )
+
     # Migration: the plate each print log run printed. A library file printed
     # again now adds its run to the file's archive, whose plate_id is only the
     # latest run's. Nullable, no default -- identical DDL on SQLite and

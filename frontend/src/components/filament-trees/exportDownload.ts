@@ -1,8 +1,8 @@
 import { api } from '../../api/client';
 
-/** "Export for Orca": fetch the generated leaves as a ZIP (all trees, or one) and save it. */
-export async function downloadTreeExport(treeId?: number) {
-  const blob = await api.exportFilamentTrees(treeId);
+/** "Export for Orca": fetch the generated leaves as a ZIP (all trees, one, or only the leaves changed since the last export) and save it. */
+export async function downloadTreeExport(treeId?: number, changedOnly = false) {
+  const blob = await api.exportFilamentTrees(treeId, changedOnly);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

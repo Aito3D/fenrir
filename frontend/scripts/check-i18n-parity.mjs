@@ -126,7 +126,7 @@ function isAlwaysAllowedIdentical(value) {
   if (/^\d{4,}$/.test(value)) return true;              // digit-only example token, e.g. phone placeholder
   if (/^ON,\s+true,\s+1$/.test(value)) return true;     // literal example "ON, true, 1"
   // Brand / technical names that ship verbatim everywhere.
-  if (/^(Fenrir|Aito|Obico|OctoEverywhere|Zoho|Zoho Books|SpoolBuddy|Bambu Lab|Bambu Studio|Bambu Studio 2\.6\+|Bambu Studio sidecar URL|OrcaSlicer|OrcaSlicer sidecar URL|MakerWorld|Manyfold|Spoolman|\(Spoolman\)|Spoolman URL|Tailscale|GitHub|GitLab|Gitea|Forgejo|Discord|MQTT|FTP|HTTPS?|JSON|YAML|RTSP|TLS|SSL|CSRF|OIDC|SSO|SSO \/ OIDC|LDAP|TOTP|2FA|MFA|API|AMS|CRC|SHA256|SHA-256|kWh|MB|GB|KB|RGBA?|HSL|RGB|UTC|ISO|UI|HTTP|HTTP Method|H2D|H2D Pro|X1C|X1E|P1S|P1P|A1|A1 Mini|H2C|N3F|N3S|PETG|PLA|ABS|PA|TPU|PEI|PA-CF|PVA|HIPS|ASA|PC|PETG-HF|G\.code|G-code|gcode|cm³|°C|°F|GCODE|SOURCE|ntfy|Notify!|Pushover|Bark|Gotify|Telegram|Webhook|Webhook URL|Home Assistant|Home Assistant URL|CallMeBot\/WhatsApp|Fenrir URL|Cool Plate|FFmpeg \(MJPEG\)|go2rtc \(WebRTC\)|Cool Plate SuperTack|Engineering Plate|High Temp Plate|Smooth PEI Plate|Smooth PEI Plate \/ High Temp Plate|Textured PEI Plate|Ext-L|Ext-R|ISO \(YYYY-MM-DD\)|Messenger|Instagram|WhatsApp|TikTok|Fiverr)$/.test(value)) return true;
+  if (/^(Fenrir|Aito|Obico|OctoEverywhere|Zoho|Zoho Books|SpoolBuddy|Bambu Lab|Bambu Studio|Bambu Studio 2\.6\+|Bambu Studio sidecar URL|OrcaSlicer|OrcaSlicer sidecar URL|MakerWorld|Manyfold|Spoolman|\(Spoolman\)|Spoolman URL|Tailscale|GitHub|GitLab|Gitea|Forgejo|Discord|MQTT|FTP|HTTPS?|JSON|YAML|RTSP|TLS|SSL|CSRF|OIDC|SSO|SSO \/ OIDC|LDAP|TOTP|2FA|MFA|API|AMS|CRC|SHA256|SHA-256|kWh|MB|GB|KB|RGBA?|HSL|RGB|UTC|ISO|UI|HTTP|HTTP Method|H2D|H2D Pro|X1C|X1E|P1S|P1P|A1|A1 Mini|H2C|N3F|N3S|PETG|PLA|ABS|PA|TPU|PEI|PA-CF|PVA|HIPS|ASA|PC|PETG-HF|G\.code|G-code|gcode|cm³|°C|°F|GCODE|SOURCE|ntfy|Notify!|Pushover|Bark|Gotify|Telegram|Webhook|Webhook URL|Home Assistant|Home Assistant URL|CallMeBot\/WhatsApp|Fenrir URL|Cool Plate|FFmpeg \(MJPEG\)|go2rtc \(WebRTC\)|Cool Plate SuperTack|Cool Plate \(SuperTack\)|Textured Cool Plate|Engineering Plate|High Temp Plate|Smooth PEI Plate|Smooth PEI Plate \/ High Temp Plate|Textured PEI Plate|Ext-L|Ext-R|ISO \(YYYY-MM-DD\)|Messenger|Instagram|WhatsApp|TikTok|Fiverr)$/.test(value)) return true;
   return false;
 }
 
@@ -142,6 +142,7 @@ function isAlwaysAllowedIdentical(value) {
 // German loanwords / cognates from English are extensive. Most short technical
 // UI labels are identical in DE. List below curates the legitimate ones.
 const DE_COGNATES = [
+  'Multimaterial',  // filamentTrees.orca.tabMultimaterial — the same word in this locale (OrcaSlicer's own tab name)
   'Revision',  // queue.timeline.card.revision — die Revision, same word in German
   'in {{folder}}',  // real words/terms in this locale
   'Scan',  // aito.serviceScan3D — "Scan" is the term in this locale too
@@ -354,6 +355,7 @@ const JA_COGNATES = [
 
 // Portuguese (BR) cognates.
 const PT_BR_COGNATES = [
+  'Multimaterial',  // filamentTrees.orca.tabMultimaterial — the same word in this locale (OrcaSlicer's own tab name)
   'via {{name}}',  // projectsPdm.reslice.viaPipeline
   'manual',  // maintenance.hours.manual — same word in this locale
   '{{hours}} h ≈ {{days}} d',  // aito.backlogShort — hour/day unit abbreviations are the same in this locale
@@ -477,6 +479,7 @@ const KO_COGNATES = [
 
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
 const ES_COGNATES = [
+  'Multimaterial',  // filamentTrees.orca.tabMultimaterial — the same word in this locale (OrcaSlicer's own tab name)
   'manual',  // maintenance.hours.manual — same word in this locale
   '{{hours}} h ≈ {{days}} d',  // aito.backlogShort — hour/day unit abbreviations are the same in this locale
   'Manual',  // aito.priceManual — same word in Spanish (adjetivo « manual »)
@@ -519,6 +522,7 @@ const ES_COGNATES = [
 // Swedish cognates — technical UI labels that Swedish speakers use verbatim
 // from English (loanwords + acronyms + format strings). Curated, not a shortcut.
 const SV_COGNATES = [
+  'Multimaterial',  // filamentTrees.orca.tabMultimaterial — the same word in this locale (OrcaSlicer's own tab name)
   'Revision',  // queue.timeline.card.revision — same word in Swedish (en revision)
   'via {{name}}',  // projectsPdm.reslice.viaPipeline
   '{{hours}} h ≈ {{days}} d',  // aito.backlogShort — hour/day unit abbreviations are the same in this locale

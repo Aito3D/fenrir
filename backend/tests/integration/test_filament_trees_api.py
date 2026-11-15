@@ -80,9 +80,10 @@ async def test_list_trees_shape(async_client, db_session):
     assert (row["brand"], row["material"], row["skip_02"], row["abrasive"]) == ("Polymaker", "PETG", None, False)
     assert row["source"] == {"machine": "H2S", "nozzle": "0.4", "color_id": white.id}
     assert row["colors"] == [
-        {"id": white.id, "name": "White", "hex": "#FFFFFF"},
-        {"id": red.id, "name": "Red", "hex": "#FF0000"},
+        {"id": white.id, "name": "White", "hex": "#FFFFFF", "spools": 0, "price": None},
+        {"id": red.id, "name": "Red", "hex": "#FF0000", "spools": 0, "price": None},
     ]
+    assert row["export_pending"] == 32
     assert row["own_counts"] == {
         "root": 2,
         "H2S": 1,
@@ -135,7 +136,14 @@ async def test_node_get_reports_sources_and_inherited(async_client, db_session, 
     rows = {row["key"]: row for row in r.json()}
     assert rows["hot_plate_temp"]["own"] is True and rows["hot_plate_temp"]["source"] == "colorwide"
     assert (rows["hot_plate_temp"]["inherited_value"], rows["hot_plate_temp"]["inherited_source"]) == (["70"], "root")
-    assert all(row["source"] != "bambu" for row in rows.values())
+    # above the nozzle level the Bambu parent is the calibration source's preset (H2S 0.4)
+    assert (rows["cool_plate_temp"]["source"], rows["cool_plate_temp"]["value"]) == ("bambu", ["35"])
+
+    # root: an own value shows the Bambu parent value it replaces
+    r = await async_client.get(f"{API}/{tree.id}/node")
+    temp = {row["key"]: row for row in r.json()}["nozzle_temperature"]
+    assert (temp["own"], temp["inherited_value"], temp["inherited_source"]) == (True, ["240"], "bambu")
+    assert temp["source_label"] == "Generic PETG @BBL H2S 0.4 nozzle"
 
     # machine node inherits from the root
     r = await async_client.get(f"{API}/{tree.id}/node", params={"machine": "H2S"})
@@ -451,3 +459,67 @@ async def test_node_put_empty_machine_cannot_reach_source_colour(async_client, d
     assert (await async_client.put(f"{API}/{tree.id}/node", json=body)).status_code == 422
     with pytest.raises(ValueError, match="calibration source colour"):
         await store.set_node_values(db_session, tree.id, "", "", white.id, {"hot_plate_temp": ["80"]}, [])
+
+
+async def test_create_duplicate_and_bulk(async_client, db_session):
+    body = {
+        "brand": "eSun",
+        "material": "PLA",
+        "base_family": "Generic PLA",
+        "color_name": "Black",
+        "color_hex": "#000000",
+        "machine": "H2S",
+        "nozzle": "0.4",
+    }
+    r = await async_client.post(API, json=body)
+    assert r.status_code == 200, r.text
+    first = r.json()["tree_id"]
+    assert (await async_client.post(API, json=body)).status_code == 400  # same name
+    assert (await async_client.post(API, json={**body, "brand": "X", "machine": "NOPE"})).status_code == 400
+    assert await db_session.scalar(select(func.count()).select_from(FilamentTree)) == 1  # the refused one rolled back
+
+    await async_client.put(f"{API}/{first}/node", json={"machine": "H2S", "set": {"hot_plate_temp": ["60"]}})
+    r = await async_client.post(f"{API}/{first}/duplicate", json={"name": "Sunlu PLA", "brand": "Sunlu"})
+    assert r.status_code == 200, r.text
+    second = r.json()["tree_id"]
+    rows = (await async_client.get(f"{API}/{second}/node", params={"machine": "H2S"})).json()
+    assert {row["key"]: row["value"] for row in rows}["hot_plate_temp"] == ["60"]
+    trees = {t["id"]: t for t in (await async_client.get(API)).json()}
+    assert (
+        trees[second]["brand"] == "Sunlu" and trees[second]["source"]["color_id"] != trees[first]["source"]["color_id"]
+    )
+
+    r = await async_client.post(f"{API}/bulk", json={"tree_ids": [first, second], "set": {"fan_min_speed": ["30"]}})
+    assert r.status_code == 200, r.text
+    for tid in (first, second):
+        rows = (await async_client.get(f"{API}/{tid}/node")).json()
+        assert {row["key"]: row["value"] for row in rows}["fan_min_speed"] == ["30"]
+    # all or nothing: an unknown tree undoes the write on the first
+    r = await async_client.post(f"{API}/bulk", json={"tree_ids": [first, 9999], "set": {"fan_min_speed": ["99"]}})
+    assert r.status_code == 404
+    rows = (await async_client.get(f"{API}/{first}/node")).json()
+    assert {row["key"]: row["value"] for row in rows}["fan_min_speed"] == ["30"]
+
+
+async def test_history_revert_and_export_changed_only(async_client, db_session):
+    tree, _, _ = await _tree(db_session)
+    await async_client.post(f"{API}/export", json={})
+    assert (await async_client.get(API)).json()[0]["export_pending"] == 0
+
+    await async_client.put(f"{API}/{tree.id}/node", json={"machine": "H2S", "set": {"hot_plate_temp": ["75"]}})
+    await async_client.put(f"{API}/{tree.id}/node", json={"machine": "H2S", "set": {"hot_plate_temp": ["75"]}})  # no-op
+    assert (await async_client.get(API)).json()[0]["export_pending"] == 8  # H2S: 4 nozzles x 2 colours
+    r = await async_client.post(f"{API}/export", json={"changed_only": True})
+    assert len(zipfile.ZipFile(io.BytesIO(r.content)).namelist()) == 8
+    assert (await async_client.get(API)).json()[0]["export_pending"] == 0
+
+    history = (await async_client.get(f"{API}/{tree.id}/history")).json()
+    assert [(c["machine"], c["key"], c["old_value"], c["new_value"]) for c in history] == [
+        ("H2S", "hot_plate_temp", None, ["75"])
+    ]
+    r = await async_client.post(f"{API}/{tree.id}/history/{history[0]['id']}/revert")
+    assert r.status_code == 200, r.text
+    rows = (await async_client.get(f"{API}/{tree.id}/node", params={"machine": "H2S"})).json()
+    assert {row["key"]: row for row in rows}["hot_plate_temp"]["own"] is False
+    assert len((await async_client.get(f"{API}/{tree.id}/history")).json()) == 2
+    assert (await async_client.post(f"{API}/{tree.id}/history/9999/revert")).status_code == 404

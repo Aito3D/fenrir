@@ -25,6 +25,7 @@ from backend.app.models.filament_profile_default import (
 )
 from backend.app.models.filament_tree import (
     FilamentTree,
+    FilamentTreeChange,
     FilamentTreeColor,
     FilamentTreeLeaf,
     FilamentTreeOverride,
@@ -107,6 +108,7 @@ __all__ = [
     "BaseFilamentPreset",
     "FilamentPreset",
     "FilamentTree",
+    "FilamentTreeChange",
     "FilamentTreeColor",
     "FilamentTreeLeaf",
     "FilamentTreeOverride",

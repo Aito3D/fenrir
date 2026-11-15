@@ -1,23 +1,23 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Download, Trash2 } from 'lucide-react';
+import { Copy, Download, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { api } from '../../api/client';
-import type { FilamentTreeColor, FilamentTreeSummary, FilamentTreeTargets } from '../../api/client';
+import type { FilamentTreeColor, FilamentTreeSummary } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { Button } from '../Button';
 import { ConfirmModal } from '../ConfirmModal';
+import { Dialog } from './Dialog';
 import { errorMessage } from './errorMessage';
 import { inputCls } from '../formStyles';
 import { downloadTreeExport } from './exportDownload';
 
-const splitList = (text: string) => text.split(',').map((s) => s.trim()).filter(Boolean);
 const hexOrBlack = (hex: string) => (/^#[0-9a-fA-F]{6}$/.test(hex) ? hex : '#000000');
 
-/** Tree settings: the selected tree's colours, 0.2 switch and export, plus the machine/nozzle targets of every tree. */
-export function TreeSettingsPanel({ tree, targets }: { tree: FilamentTreeSummary | undefined; targets: FilamentTreeTargets }) {
+/** One filament's own settings: its colours, 0.2 switch, export, duplicate and delete. */
+export function TreeSettingsPanel({ tree, onCreated }: { tree: FilamentTreeSummary; onCreated?: (treeId: number) => void }) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
@@ -27,9 +27,9 @@ export function TreeSettingsPanel({ tree, targets }: { tree: FilamentTreeSummary
   const canDelete = hasPermission('filaments:delete');
   const [newName, setNewName] = useState('');
   const [newHex, setNewHex] = useState('#000000');
-  const [machines, setMachines] = useState(targets.machines.join(', '));
-  const [nozzles, setNozzles] = useState(targets.nozzles.join(', '));
+  const [copy, setCopy] = useState<{ name: string; brand: string } | null>(null);
   const [removing, setRemoving] = useState<FilamentTreeColor | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
   // Colour pickers fire on every drag step: save each colour 400ms after the last change (or on unmount).
   const pendingHex = useRef(new Map<number, { timer: ReturnType<typeof setTimeout>; save: () => void }>());
@@ -56,7 +56,6 @@ export function TreeSettingsPanel({ tree, targets }: { tree: FilamentTreeSummary
   const heading = 'text-xs font-semibold uppercase tracking-wide text-bambu-gray/70';
   return (
     <section className="min-w-0 space-y-6">
-      {tree ? (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold text-white">{tree.name}</h2>
@@ -68,6 +67,24 @@ export function TreeSettingsPanel({ tree, targets }: { tree: FilamentTreeSummary
               <Download className="h-4 w-4" />
               {t('filamentTrees.exportTree')}
             </Button>
+            {canCreate && (
+              <Button size="sm" variant="secondary" disabled={busy} onClick={() => setCopy({ name: `${tree.name} copy`, brand: tree.brand })}>
+                <Copy className="h-4 w-4" />
+                {t('common.duplicate')}
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={busy}
+                onClick={() => setDeleting(true)}
+                aria-label={t('filamentTrees.deleteTree', { name: tree.name })}
+              >
+                <Trash2 className="h-4 w-4" />
+                {t('common.delete')}
+              </Button>
+            )}
           </div>
 
           {canUpdate && (
@@ -166,35 +183,41 @@ export function TreeSettingsPanel({ tree, targets }: { tree: FilamentTreeSummary
             )}
           </div>
         </div>
-      ) : (
-        <p className="text-sm text-bambu-gray">{t('filamentTrees.selectTree')}</p>
-      )}
 
-      {canUpdate && (
-        <form
-          className="space-y-2 border-t border-bambu-dark-tertiary pt-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(() => api.setFilamentTreeTargets({ machines: splitList(machines), nozzles: splitList(nozzles) }));
-          }}
+      {copy && (
+        <Dialog
+          title={t('filamentTrees.duplicateTitle', { name: tree.name })}
+          onClose={() => setCopy(null)}
+          footer={
+            <Button
+              disabled={busy || !copy.name.trim() || !copy.brand.trim()}
+              onClick={async () => {
+                let id = 0;
+                const ok = await run(async () => {
+                  id = (await api.duplicateFilamentTree(tree.id, { name: copy.name.trim(), brand: copy.brand.trim() })).tree_id;
+                });
+                if (ok) {
+                  setCopy(null);
+                  onCreated?.(id);
+                }
+              }}
+            >
+              {t('common.duplicate')}
+            </Button>
+          }
         >
-          <h3 className={heading}>{t('filamentTrees.targetsTitle')}</h3>
-          <p className="text-xs text-bambu-gray/70">{t('filamentTrees.targetsHint')}</p>
           <label className="block space-y-1">
-            <span className="text-sm text-bambu-gray-light">{t('filamentTrees.machines')}</span>
-            <input aria-label={t('filamentTrees.machines')} value={machines} onChange={(e) => setMachines(e.target.value)} className={inputCls} />
+            <span className="text-sm text-bambu-gray-light">{t('common.name')}</span>
+            <input aria-label={t('common.name')} value={copy.name} onChange={(e) => setCopy({ ...copy, name: e.target.value })} className={inputCls} />
           </label>
           <label className="block space-y-1">
-            <span className="text-sm text-bambu-gray-light">{t('filamentTrees.nozzles')}</span>
-            <input aria-label={t('filamentTrees.nozzles')} value={nozzles} onChange={(e) => setNozzles(e.target.value)} className={inputCls} />
+            <span className="text-sm text-bambu-gray-light">{t('filamentTrees.brand')}</span>
+            <input aria-label={t('filamentTrees.brand')} value={copy.brand} onChange={(e) => setCopy({ ...copy, brand: e.target.value })} className={inputCls} />
           </label>
-          <Button type="submit" size="sm" disabled={busy}>
-            {t('filamentTrees.saveTargets')}
-          </Button>
-        </form>
+        </Dialog>
       )}
 
-      {removing && tree && (
+      {removing && (
         <ConfirmModal
           title={t('filamentTrees.removeColour', { name: removing.name })}
           message={t('filamentTrees.removeColourBody', { name: removing.name, tree: tree.name })}
@@ -208,6 +231,22 @@ export function TreeSettingsPanel({ tree, targets }: { tree: FilamentTreeSummary
             await run(() => api.deleteFilamentTreeColor(tree.id, color.id));
           }}
           onCancel={() => setRemoving(null)}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmModal
+          title={t('filamentTrees.deleteTree', { name: tree.name })}
+          message={t('filamentTrees.deleteTreeBody', { name: tree.name })}
+          confirmText={t('filamentTrees.deleteTree', { name: tree.name })}
+          cancelText={t('common.cancel')}
+          variant="danger"
+          overlayZIndex="z-[110]"
+          onConfirm={async () => {
+            setDeleting(false);
+            await run(() => api.deleteFilamentTree(tree.id));
+          }}
+          onCancel={() => setDeleting(false)}
         />
       )}
     </section>

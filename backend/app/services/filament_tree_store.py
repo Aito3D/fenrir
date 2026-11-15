@@ -11,6 +11,7 @@ from backend.app.api.routes.settings import get_setting, set_setting
 from backend.app.models.filament_profile import BaseFilamentPreset, FilamentPreset
 from backend.app.models.filament_tree import (
     FilamentTree,
+    FilamentTreeChange,
     FilamentTreeColor,
     FilamentTreeLeaf,
     FilamentTreeOverride,
@@ -146,6 +147,8 @@ async def regenerate_tree(db: AsyncSession, tree_id: int) -> dict:
             counts["created"] += 1
         else:
             preset = await db.get(FilamentPreset, link.preset_id)
+            if preset.content != content:
+                link.export_pending = True
             for k, v in fields.items():
                 setattr(preset, k, v)
             counts["updated"] += 1
@@ -167,8 +170,12 @@ async def set_node_values(
     clear: list[str],
     *,
     regenerate: bool = True,
+    actor: str = "",
 ) -> None:
-    """regenerate=False only flushes: the caller batches several writes, then regenerates and commits once."""
+    """regenerate=False only flushes: the caller batches several writes, then regenerates and commits once.
+
+    Every value that really changes is logged as a FilamentTreeChange (actor "" = sync or auth disabled).
+    """
     machine, nozzle = machine or None, nozzle or None  # "" must not pass as "no machine" past the guards below
     tree = await _get_tree(db, tree_id)
     colorwide = machine is None and nozzle is None and color_id is not None
@@ -189,8 +196,26 @@ async def set_node_values(
     ):
         raise ValueError("the calibration source leaf holds no colour values; edit the root instead")
 
+    def log(before: dict) -> None:
+        for k in [*set_values, *clear]:
+            old, new = before.get(k), None if k in clear else set_values[k]
+            if old != new:
+                db.add(
+                    FilamentTreeChange(
+                        tree_id=tree_id,
+                        machine=machine or "",
+                        nozzle=nozzle or "",
+                        color_id=color_id or 0,
+                        key=k,
+                        old_value=None if old is None else json.dumps(old),
+                        new_value=None if new is None else json.dumps(new),
+                        actor=actor,
+                    )
+                )
+
     if machine is None and color_id is None:
         values = json.loads(tree.own_values)
+        log(values)
         values.update(set_values)
         for k in clear:
             values.pop(k, None)
@@ -207,6 +232,7 @@ async def set_node_values(
             )
         ).scalar_one_or_none()
         values = json.loads(row.values) if row else {}
+        log(values)
         values.update(set_values)
         for k in clear:
             values.pop(k, None)
@@ -312,3 +338,85 @@ async def update_tree(db: AsyncSession, tree_id: int, *, skip_02: Any = _UNSET, 
     await db.flush()
     await regenerate_tree(db, tree_id)
     await db.commit()
+
+
+async def create_tree(
+    db: AsyncSession,
+    *,
+    name: str,
+    brand: str,
+    material: str,
+    base_family: str,
+    color_name: str,
+    color_hex: str,
+    machine: str,
+    nozzle: str,
+    own_values: dict | None = None,
+) -> int:
+    """A new one-colour tree calibrated at (machine, nozzle); flushes and regenerates, the caller commits."""
+    if await db.scalar(select(FilamentTree.id).where(FilamentTree.name == name)) is not None:
+        raise ValueError(f"a filament tree named {name!r} already exists")
+    tree = FilamentTree(
+        name=name,
+        brand=brand,
+        material=material,
+        base_family=base_family,
+        fallback_inherits=f"{base_family} @base",
+        own_values=json.dumps(own_values or {}),
+        source_machine=machine,
+        source_nozzle=nozzle,
+    )
+    db.add(tree)
+    await db.flush()
+    color = FilamentTreeColor(tree_id=tree.id, name=color_name, hex=color_hex)
+    db.add(color)
+    await db.flush()
+    tree.source_color_id = color.id
+    await db.flush()
+    if (machine, nozzle, color.id) not in leaf_targets(await load_tree(db, tree.id), await get_targets(db)):
+        raise ValueError(f"{machine} {nozzle} is not a target leaf")
+    await regenerate_tree(db, tree.id)
+    return tree.id
+
+
+async def duplicate_tree(db: AsyncSession, tree_id: int, name: str, brand: str) -> int:
+    """Copy a tree (values, colours, overrides) under a new name/brand; the caller commits."""
+    src = await _get_tree(db, tree_id)
+    if await db.scalar(select(FilamentTree.id).where(FilamentTree.name == name)) is not None:
+        raise ValueError(f"a filament tree named {name!r} already exists")
+    copy = FilamentTree(
+        name=name,
+        brand=brand,
+        material=src.material,
+        base_family=src.base_family,
+        fallback_inherits=src.fallback_inherits,
+        version=src.version,
+        own_values=src.own_values,
+        source_machine=src.source_machine,
+        source_nozzle=src.source_nozzle,
+        skip_02=src.skip_02,
+    )
+    db.add(copy)
+    await db.flush()
+    color_ids = {0: 0}
+    colors = await db.execute(
+        select(FilamentTreeColor)
+        .where(FilamentTreeColor.tree_id == tree_id)
+        .order_by(FilamentTreeColor.sort, FilamentTreeColor.id)
+    )
+    for c in colors.scalars().all():
+        new = FilamentTreeColor(tree_id=copy.id, name=c.name, hex=c.hex, sort=c.sort)
+        db.add(new)
+        await db.flush()
+        color_ids[c.id] = new.id
+    copy.source_color_id = color_ids.get(src.source_color_id or 0) or None
+    overrides = await db.execute(select(FilamentTreeOverride).where(FilamentTreeOverride.tree_id == tree_id))
+    for o in overrides.scalars().all():
+        db.add(
+            FilamentTreeOverride(
+                tree_id=copy.id, machine=o.machine, nozzle=o.nozzle, color_id=color_ids[o.color_id], values=o.values
+            )
+        )
+    await db.flush()
+    await regenerate_tree(db, copy.id)
+    return copy.id
