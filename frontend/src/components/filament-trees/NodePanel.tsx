@@ -283,7 +283,7 @@ export function NodePanel({ node, onCreated }: { node: NodeRef; onCreated?: (tre
     if (field.key === 'filament_vendor') {
       // Orca's vendor is the tree's brand: editing it renames the tree and its profiles
       const brand = tree?.brand ?? '';
-      return (
+      control = (
         <ValueInput
           key={`${brand}:${tick}`}
           label={label}
@@ -302,8 +302,7 @@ export function NodePanel({ node, onCreated }: { node: NodeRef; onCreated?: (tre
           }
         />
       );
-    }
-    if (field.kind === 'pa') {
+    } else if (field.kind === 'pa') {
       control = (
         <ValueInput
           key={`${gcodeText}:${tick}`}
