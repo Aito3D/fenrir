@@ -6,11 +6,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import select
 
 from backend.app.api.routes.filament_profiles import _MAX_REPORTED_ATTENTION
 from backend.app.models.filament_profile import FilamentPreset
+from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor, FilamentTreeOverride
 from backend.app.schemas.filament_profile import _CONTENT_MAX_LENGTH, FilamentPresetZohoSyncAttention
-from backend.app.services import zoho_filaments
+from backend.app.services import filament_tree_store as store, zoho_filaments
 from backend.app.services.filament_profile_pricing import apply_filament_cost
 from backend.app.services.zoho_filaments import FilamentProduct
 
@@ -802,3 +804,83 @@ def test_attention_reason_rejects_an_unknown_value():
     # Literal must fail closed (ValidationError) instead of silently accepting any string.
     with pytest.raises(ValidationError):
         FilamentPresetZohoSyncAttention(id=1, name="P", reason="matched")
+
+
+async def _zoho_tree(db_session):
+    tree = FilamentTree(
+        name="Polymaker PETG",
+        brand="Polymaker",
+        material="PETG",
+        base_family="Generic PETG",
+        source_machine="H2S",
+        source_nozzle="0.4",
+    )
+    db_session.add(tree)
+    await db_session.flush()
+    colours = [
+        FilamentTreeColor(tree_id=tree.id, name=n, hex="#000000", sort=i) for i, n in enumerate(("White", "Red"))
+    ]
+    db_session.add_all(colours)
+    await db_session.flush()
+    tree.source_color_id = colours[0].id
+    await db_session.commit()
+    await store.regenerate_tree(db_session, tree.id)
+    await db_session.commit()
+    return tree, colours
+
+
+@pytest.mark.asyncio
+async def test_zoho_sync_prices_tree_root(async_client, db_session, monkeypatch):
+    tree, (white, red) = await _zoho_tree(db_session)
+    _configured(monkeypatch, True)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", _catalogue([product(colour="White"), product(colour="Red")]))
+
+    body = (await async_client.post(ENDPOINT)).json()
+
+    # leaves are never priced one by one: both colours share one price -> root
+    assert body["attention"] == []
+    assert body["priced"] == 2
+    await db_session.refresh(tree)
+    assert json.loads(tree.own_values)["filament_cost"] == ["19.90"]
+    leaves = (await db_session.execute(select(FilamentPreset))).scalars().all()
+    assert len(leaves) == 32 and all(json.loads(p.content)["filament_cost"] == ["19.90"] for p in leaves)
+
+    # Red gets dearer and a colour joins with no Zoho item
+    await store.add_color(db_session, tree.id, "Mint", "#00FF88")
+    monkeypatch.setattr(
+        zoho_filaments, "fetch_catalogue", _catalogue([product(colour="White"), product(colour="Red", price=24.5)])
+    )
+    body = (await async_client.post(ENDPOINT)).json()
+    assert [a["name"] for a in body["attention"]] == ["Polymaker PETG - Mint"]
+    assert body["priced"] == 1 and body["unchanged"] == 1
+    row = (
+        await db_session.execute(select(FilamentTreeOverride).where(FilamentTreeOverride.color_id == red.id))
+    ).scalar_one()
+    assert json.loads(row.values) == {"filament_cost": ["24.50"]}
+    await db_session.refresh(tree)
+    assert json.loads(tree.own_values)["filament_cost"] == ["19.90"]
+    red_leaf = (
+        await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG - Red @H2D 0.6"))
+    ).scalar_one()
+    await db_session.refresh(red_leaf)
+    assert json.loads(red_leaf.content)["filament_cost"] == ["24.50"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("red", "reason"),
+    [
+        (product(colour="Red", price=float("inf")), "bad_price"),
+        (product(colour="Red", weight_inferred=True), "weight_unknown"),
+    ],
+)
+async def test_zoho_sync_tree_colour_attention(async_client, db_session, monkeypatch, red, reason):
+    tree, _ = await _zoho_tree(db_session)
+    _configured(monkeypatch, True)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", _catalogue([product(colour="White"), red]))
+
+    body = (await async_client.post(ENDPOINT)).json()
+
+    assert [(a["name"], a["reason"]) for a in body["attention"]] == [("Polymaker PETG - Red", reason)]
+    assert body["priced"] == 1
+    assert (await db_session.execute(select(FilamentTreeOverride))).scalars().all() == []

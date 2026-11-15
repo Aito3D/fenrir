@@ -17,7 +17,7 @@ from backend.app.services.filament_tree_store import set_node_values
 
 _LEAF_SUFFIX = re.compile(r" @\S+ \d\.\d$")
 # Orca-side metadata that is never a tree value
-_SKIP_KEYS = IDENTITY_KEYS | {
+SKIP_KEYS = IDENTITY_KEYS | {
     "type",
     "setting_id",
     "base_id",
@@ -112,11 +112,11 @@ def plan_pull(orca_entries: list[dict], leaves: list[LeafState], tree_colour_nam
 def _plan_leaf(plan: PullPlan, leaf: LeafState, orca: dict) -> None:
     baseline = leaf.baseline if leaf.baseline is not None else leaf.generated
     where = {"tree_id": leaf.tree_id, "machine": leaf.machine, "nozzle": leaf.nozzle, "color_id": leaf.color_id}
-    plan.ignored += sum(1 for k in baseline if k not in _SKIP_KEYS and k not in orca)
+    plan.ignored += sum(1 for k in baseline if k not in SKIP_KEYS and k not in orca)
     grouped: dict[str, dict] = {}
     refresh: list[str] = []
     for key, value in orca.items():
-        if key in _SKIP_KEYS or value == baseline.get(key):
+        if key in SKIP_KEYS or value == baseline.get(key):
             continue
         gen = leaf.generated.get(key)
         if gen == value:  # coincidence: pinning it would block ancestor edits; just move the baseline
@@ -131,7 +131,12 @@ def _plan_leaf(plan: PullPlan, leaf: LeafState, orca: dict) -> None:
         plan.applied.append({**where, "target": target, "values": values})
 
 
-async def _leaf_preset(db: AsyncSession, tree_id: int, machine: str, nozzle: str, color_id: int):
+_NodeKey = tuple[int, str | None, str | None, int | None]  # (tree_id, machine, nozzle, color_id)
+
+
+async def _leaf_preset(
+    db: AsyncSession, tree_id: int, machine: str, nozzle: str, color_id: int
+) -> tuple[FilamentTreeLeaf, FilamentPreset]:
     link = (
         await db.execute(
             select(FilamentTreeLeaf).where(
@@ -143,16 +148,18 @@ async def _leaf_preset(db: AsyncSession, tree_id: int, machine: str, nozzle: str
         )
     ).scalar_one()
     preset = await db.get(FilamentPreset, link.preset_id)
+    if preset is None:
+        raise LookupError(f"preset {link.preset_id} of a tree leaf is missing")
     await db.refresh(preset)
     return link, preset
 
 
 async def apply_pull(db: AsyncSession, plan: PullPlan) -> None:
-    groups: dict[tuple, dict] = {}
-    leaf_keys: dict[tuple, dict[tuple, set[str]]] = {}  # leaf -> {node: keys written there}
+    groups: dict[_NodeKey, dict] = {}
+    leaf_keys: dict[tuple, dict[_NodeKey, set[str]]] = {}  # leaf -> {node: keys written there}
     for e in plan.applied:
         leaf = (e["tree_id"], e["machine"], e["nozzle"], e["color_id"])
-        node = (e["tree_id"], *_node(e["target"], e["machine"], e["nozzle"], e["color_id"]))
+        node: _NodeKey = (e["tree_id"], *_node(e["target"], e["machine"], e["nozzle"], e["color_id"]))
         groups.setdefault(node, {}).update(e["values"])
         leaf_keys.setdefault(leaf, {}).setdefault(node, set()).update(e["values"])
     refresh = {(r["tree_id"], r["machine"], r["nozzle"], r["color_id"]): set(r["keys"]) for r in plan.refresh}

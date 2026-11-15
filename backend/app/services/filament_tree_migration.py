@@ -185,7 +185,7 @@ def plan_tree(
     }
 
 
-def _row_dict(row: FilamentPreset) -> dict:
+def row_dict(row: FilamentPreset) -> dict:
     return {
         "id": row.id,
         "name": row.name,
@@ -224,7 +224,7 @@ async def apply_migration(db: AsyncSession, choices: list[dict]) -> list[int]:
         tree_ids = []
         for ch, group in picked:
             machine, nozzle, source_id = ch["machine"], ch["nozzle"], ch["source_preset_id"]
-            plan = plan_tree([_row_dict(r) for r in group], source_id, machine, nozzle, reader.values)
+            plan = plan_tree([row_dict(r) for r in group], source_id, machine, nozzle, reader.values)
             for warning in plan["warnings"]:
                 logger.warning("filament tree migration %s: %s", ch["prefix"], warning)
             t = plan["tree"]

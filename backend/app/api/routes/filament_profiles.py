@@ -12,6 +12,7 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.filament_profile import BaseFilamentPreset, FilamentPreset
+from backend.app.models.filament_tree import FilamentTree, FilamentTreeLeaf
 from backend.app.models.user import User
 from backend.app.schemas.filament_profile import (
     _CONTENT_MAX_LENGTH,
@@ -42,6 +43,8 @@ from backend.app.services.bambu_studio import (
     scan_user_presets,
 )
 from backend.app.services.filament_profile_pricing import apply_filament_cost
+from backend.app.services.filament_tree import resolve_with_sources
+from backend.app.services.filament_tree_store import load_tree, managed_preset_ids, regenerate_tree, set_node_values
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +60,14 @@ DUPLICATE_FIELDS = ("name", "brand", "material", "color", "color_hex", "filename
 # enough for an operator to act on in one sitting; attention_total on the
 # response carries the true count so the UI can render "and N more".
 _MAX_REPORTED_ATTENTION = 50
+
+_MANAGED = "This profile is managed by a filament tree — edit it on the tree"
+
+
+async def _refuse_managed(db: AsyncSession, preset_id: int) -> None:
+    if preset_id in await managed_preset_ids(db):
+        raise HTTPException(409, _MANAGED)
+
 
 # --- static routes (bambu-scan, base-content, base-presets, sync-base, bambu-sync, zoho-sync) must stay above the /{preset_id} routes, or FastAPI matches "base-presets" etc. as a preset_id path param ---
 
@@ -300,8 +311,10 @@ async def sync_filament_presets_from_zoho(
     if not catalogue:
         raise HTTPException(status_code=502, detail="Zoho returned no filament items")
 
+    managed = await managed_preset_ids(db)
     result = await db.execute(select(FilamentPreset).order_by(FilamentPreset.id))
-    presets = result.scalars().all()
+    # tree leaves are generated: their price is written on the tree below, never on the row
+    presets = [p for p in result.scalars().all() if p.id not in managed]
 
     priced = unchanged = 0
     attention: list[FilamentPresetZohoSyncAttention] = []
@@ -416,6 +429,10 @@ async def sync_filament_presets_from_zoho(
                 )
             )
 
+    tree_priced, tree_unchanged = await _price_trees(db, catalogue_index, attention)
+    priced += tree_priced
+    unchanged += tree_unchanged
+
     await db.commit()
     return FilamentPresetZohoSyncResponse(
         priced=priced,
@@ -424,6 +441,83 @@ async def sync_filament_presets_from_zoho(
         attention_total=len(attention),
         catalogue_stale_since=stale_since,
     )
+
+
+async def _price_trees(db: AsyncSession, catalogue_index, attention: list) -> tuple[int, int]:
+    """Price each tree colour from (tree brand, tree material, colour name).
+
+    The source colour's price goes on the root; another colour gets a colour-wide own value only when its
+    price differs from the root's (and loses it when it matches again). Counts are per colour.
+    """
+    priced = unchanged = 0
+    for meta in (await db.execute(select(FilamentTree).order_by(FilamentTree.id))).scalars().all():
+        tree = await load_tree(db, meta.id)
+        leaf_ids: dict[int, int] = {}
+        for cid, pid in (
+            await db.execute(
+                select(FilamentTreeLeaf.color_id, FilamentTreeLeaf.preset_id)
+                .where(FilamentTreeLeaf.tree_id == meta.id)
+                .order_by(FilamentTreeLeaf.preset_id)
+            )
+        ).tuples():
+            leaf_ids.setdefault(cid, pid)
+        prices: dict[int, list[str]] = {}
+        for cid, (colour, _) in tree.colors.items():
+            match = zoho_filaments.match_profile_indexed(catalogue_index, meta.brand, meta.material, colour)
+            product = match.product
+            if match.outcome != "matched" or product is None:
+                reason, candidates, total = match.outcome, match.candidates, match.candidates_total
+            elif product.weight_inferred:
+                reason, candidates, total = "weight_unknown", [product.name], 1
+            elif apply_filament_cost("{}", product.cost_per_kg)[1] == "bad_price":  # same guard as presets
+                reason, candidates, total = "bad_price", [], 0
+            else:
+                prices[cid] = [f"{product.cost_per_kg:.2f}"]
+                continue
+            attention.append(
+                FilamentPresetZohoSyncAttention.model_validate(
+                    {
+                        "id": leaf_ids.get(cid, 0),
+                        "name": f"{tree.name} - {colour}",
+                        "reason": reason,
+                        "candidates": candidates,
+                        "candidates_total": total,
+                    }
+                )
+            )
+        if not prices:
+            continue
+
+        source = tree.source[2]
+        root_cost = tree.own.get("filament_cost")
+        distinct = {tuple(p) for p in prices.values()}
+        if source in prices:
+            new_root = prices[source]
+        elif len(prices) == len(tree.colors) and len(distinct) == 1:
+            new_root = next(iter(prices.values()))
+        else:
+            new_root = root_cost
+        before = {cid: resolve_with_sources(tree, None, None, cid).get("filament_cost", (None,))[0] for cid in prices}
+        writes = []  # (color_id or None for the root, set, clear)
+        if new_root is not None and new_root != root_cost:
+            writes.append((None, {"filament_cost": new_root}, []))
+        for cid, cost in prices.items():
+            if cid == source:
+                continue
+            own = tree.overrides.get(("", "", cid), {}).get("filament_cost")
+            if cost == new_root:
+                if own is not None:
+                    writes.append((cid, {}, ["filament_cost"]))
+            elif own != cost:
+                writes.append((cid, {"filament_cost": cost}, []))
+        for cid, set_values, clear in writes:
+            await set_node_values(db, meta.id, None, None, cid, set_values, clear, regenerate=False)
+        if writes:
+            await regenerate_tree(db, meta.id)
+        changed = sum(1 for cid, cost in prices.items() if before[cid] != cost)
+        priced += changed
+        unchanged += len(prices) - changed
+    return priced, unchanged
 
 
 @router.patch("/{preset_id}", response_model=FilamentPresetResponse)
@@ -437,6 +531,7 @@ async def update_filament_profile(
     row = result.scalar_one_or_none()
     if not row:
         raise HTTPException(404, "Preset not found")
+    await _refuse_managed(db, preset_id)
 
     # T-045: optional precondition. A save started before a concurrent write (e.g. /zoho-sync) landed
     # must not overwrite it; callers that omit the field keep the unconditional PATCH.
@@ -459,6 +554,7 @@ async def delete_filament_profile(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_DELETE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
+    await _refuse_managed(db, preset_id)
     result = await db.execute(select(FilamentPreset).where(FilamentPreset.id == preset_id))
     row = result.scalar_one_or_none()
     if row:
@@ -477,6 +573,7 @@ async def duplicate_filament_profile(
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(404, "Preset not found")
+    await _refuse_managed(db, preset_id)
 
     row = FilamentPreset(**{field: getattr(source, field) for field in DUPLICATE_FIELDS})
     row.name = f"{source.name} (copie)"

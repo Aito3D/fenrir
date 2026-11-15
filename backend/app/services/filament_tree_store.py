@@ -2,6 +2,7 @@
 
 import json
 import re
+from typing import Any
 
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -155,7 +156,10 @@ async def set_node_values(
     color_id: int | None,
     set_values: dict,
     clear: list[str],
+    *,
+    regenerate: bool = True,
 ) -> None:
+    """regenerate=False only flushes: the caller batches several writes, then regenerates and commits once."""
     tree = await _get_tree(db, tree_id)
     colorwide = machine is None and nozzle is None and color_id is not None
     if not colorwide and ((machine is None and nozzle is not None) or (nozzle is None and color_id is not None)):
@@ -211,8 +215,9 @@ async def set_node_values(
         elif row is not None:
             await db.delete(row)
     await db.flush()
-    await regenerate_tree(db, tree_id)
-    await db.commit()
+    if regenerate:
+        await regenerate_tree(db, tree_id)
+        await db.commit()
 
 
 async def add_color(db: AsyncSession, tree_id: int, name: str, hex: str) -> int:
@@ -266,7 +271,7 @@ async def remove_color(db: AsyncSession, tree_id: int, color_id: int) -> None:
     await db.commit()
 
 
-async def update_tree(db: AsyncSession, tree_id: int, *, skip_02=_UNSET, source=_UNSET) -> None:
+async def update_tree(db: AsyncSession, tree_id: int, *, skip_02: Any = _UNSET, source: Any = _UNSET) -> None:
     """skip_02: True/False/None (auto); source: (machine, nozzle, color_id)."""
     tree = await _get_tree(db, tree_id)
     if skip_02 is not _UNSET:

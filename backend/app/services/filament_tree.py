@@ -92,7 +92,7 @@ def resolve_with_sources(
         colorwide = tree.overrides.get(("", "", color_id), {})
         layers.append(("colorwide", {k: v for k, v in colorwide.items() if k not in NOZZLE_BOUND_KEYS}))
         if machine is not None:
-            layers.append(("color", tree.overrides.get((machine, nozzle, color_id), {})))
+            layers.append(("color", tree.overrides.get((machine, nozzle or "", color_id), {})))
     out: dict[str, tuple[object, str]] = {}
     for level, values in layers:
         for k, v in values.items():

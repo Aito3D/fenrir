@@ -64,6 +64,10 @@ NOT_A_ROW_UPDATE = {
     "LinesBody": "a Zoho Books order edit, not a database row",
     "ParcelEditBody": "a Zoho Books parcel edit, not a database row",
     "AitoTaxUpdate": "Fenrir: a tax choice applied through its own rules, every field required or defaulted",
+    "Targets": "Fenrir: filament-tree targets, stored as a setting, every field required",
+    "NodeUpdate": "Fenrir: a filament-tree node edit, null coordinates pick the node level",
+    "TreeUpdate": "Fenrir: null skip_02 means auto; a null source field keeps the current one",
+    "ColorUpdate": "Fenrir: name required; a null hex keeps the current colour",
 }
 
 
