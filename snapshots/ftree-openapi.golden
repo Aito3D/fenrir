@@ -236,6 +236,57 @@
     "filament-trees"
    ]
   },
+  "GET /api/v1/filament-trees/sync": {
+   "description": "What a SYNC would do, without doing it.",
+   "operationId": "sync_preview_api_v1_filament_trees_sync_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Sync Preview",
+   "tags": [
+    "filament-trees"
+   ]
+  },
   "GET /api/v1/filament-trees/targets": {
    "operationId": "get_targets_api_v1_filament_trees_targets_get",
    "parameters": [

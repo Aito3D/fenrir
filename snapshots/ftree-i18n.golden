@@ -1,7 +1,7 @@
 ### exit: 0
 ### stdout:
 locale files (16): de.ts en.ts es.ts fr.ts it.ts ja.ts ko.ts nl.ts pl.ts pt-BR.ts ru.ts sv.ts tr.ts uk.ts zh-CN.ts zh-TW.ts
---- en values (249 keys)
+--- en values (254 keys)
 filamentTrees.addColour = "Add colour"
 filamentTrees.addMachine = "Add printer"
 filamentTrees.addNozzle = "Add nozzle"
@@ -244,6 +244,11 @@ filamentTrees.stat.missing = "Missing in Orca"
 filamentTrees.stat.pushed = "Pushed"
 filamentTrees.subtitle = "One calibrated profile per filament family, derived for every printer, nozzle and colour"
 filamentTrees.sync = "SYNC"
+filamentTrees.syncPreviewConflicts = "{{n}} conflicting values to settle after the sync."  placeholders={{n}}
+filamentTrees.syncPreviewNothing = "Everything is already in sync."
+filamentTrees.syncPreviewPull = "From Orca Cloud into Fenrir ({{n}})"  placeholders={{n}}
+filamentTrees.syncPreviewPush = "From Fenrir to Orca Cloud ({{n}})"  placeholders={{n}}
+filamentTrees.syncPreviewTitle = "Sync with Orca Cloud"
 filamentTrees.syncTitle = "Sync result"
 filamentTrees.targetsHint = "Every tree gets a profile for each printer and nozzle."
 filamentTrees.targetsTitle = "Printers and nozzles (all trees)"
@@ -252,7 +257,7 @@ filamentTrees.useParent = "Use parent"
 filamentTrees.useParentFor = "Use parent: {{field}}"  placeholders={{field}}
 nav.filamentProfiles = "Filament Profiles"
 
---- de.ts keys=249 values-sha256=57dffee2df8fe488
+--- de.ts keys=254 values-sha256=fc088f50a4177e34
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
@@ -498,6 +503,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -506,7 +516,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- en.ts keys=249 values-sha256=cfdf0c71fc8bedd1
+--- en.ts keys=254 values-sha256=d7e3ab3062f150aa
 missing=[] extra=[]
 same-as-en=0 non-string=[]
 placeholder-drift=[]
@@ -752,6 +762,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -760,7 +775,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- es.ts keys=249 values-sha256=02f299e8ba9a7a22
+--- es.ts keys=254 values-sha256=2b952160bfba169d
 missing=[] extra=[]
 same-as-en=3 non-string=[]
 placeholder-drift=[]
@@ -1006,6 +1021,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -1014,7 +1034,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- fr.ts keys=249 values-sha256=de80ad05e74954d9
+--- fr.ts keys=254 values-sha256=f5b486e4d9604f18
 missing=[] extra=[]
 same-as-en=5 non-string=[]
 placeholder-drift=[]
@@ -1260,6 +1280,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -1268,7 +1293,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- it.ts keys=249 values-sha256=cde8d25b5742e09f
+--- it.ts keys=254 values-sha256=663956bcf2ea6e0e
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -1514,6 +1539,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -1522,7 +1552,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- ja.ts keys=249 values-sha256=ccfdff2f8722ee3e
+--- ja.ts keys=254 values-sha256=844be126bf45aa1c
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -1768,6 +1798,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -1776,7 +1811,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- ko.ts keys=249 values-sha256=35bc191f3ca637a7
+--- ko.ts keys=254 values-sha256=42e63fb13c6bc0a6
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -2022,6 +2057,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -2030,7 +2070,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- nl.ts keys=249 values-sha256=03f7ee2c3899cf68
+--- nl.ts keys=254 values-sha256=e0670c6a02fdf691
 missing=[] extra=[]
 same-as-en=8 non-string=[]
 placeholder-drift=[]
@@ -2276,6 +2316,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -2284,7 +2329,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- pl.ts keys=249 values-sha256=1b2814455687457d
+--- pl.ts keys=254 values-sha256=3da3be97c4e495fa
 missing=[] extra=[]
 same-as-en=8 non-string=[]
 placeholder-drift=[]
@@ -2530,6 +2575,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -2538,7 +2588,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- pt-BR.ts keys=249 values-sha256=637c2672921f4a0c
+--- pt-BR.ts keys=254 values-sha256=e11857070bf8e68f
 missing=[] extra=[]
 same-as-en=3 non-string=[]
 placeholder-drift=[]
@@ -2784,6 +2834,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -2792,7 +2847,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- ru.ts keys=249 values-sha256=61fbc53f068c4f2b
+--- ru.ts keys=254 values-sha256=73954dbfd418fed7
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -3038,6 +3093,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -3046,7 +3106,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- sv.ts keys=249 values-sha256=a2778029f5ba3c0f
+--- sv.ts keys=254 values-sha256=4e79328c24a5f0ff
 missing=[] extra=[]
 same-as-en=6 non-string=[]
 placeholder-drift=[]
@@ -3292,6 +3352,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -3300,7 +3365,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- tr.ts keys=249 values-sha256=8369582c711dc78e
+--- tr.ts keys=254 values-sha256=803d9510fe544c57
 missing=[] extra=[]
 same-as-en=9 non-string=[]
 placeholder-drift=[]
@@ -3546,6 +3611,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -3554,7 +3624,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- uk.ts keys=249 values-sha256=fcce3cc8cbe0ddd9
+--- uk.ts keys=254 values-sha256=b017d19e595863c1
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -3800,6 +3870,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -3808,7 +3883,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- zh-CN.ts keys=249 values-sha256=f5d81c9cda775139
+--- zh-CN.ts keys=254 values-sha256=85b1e4cfc56dbbaa
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -4054,6 +4129,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -4062,7 +4142,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- zh-TW.ts keys=249 values-sha256=c552eff8038c80ba
+--- zh-TW.ts keys=254 values-sha256=1f00224d67035569
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -4308,6 +4388,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull
+filamentTrees.syncPreviewPush
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle

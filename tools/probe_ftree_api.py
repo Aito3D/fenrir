@@ -438,12 +438,14 @@ async def main() -> None:
             held[white_04]["filament_start_gcode"] = ["M900 K0.045"]  # source leaf, nozzle-bound -> node
             held[red_06].pop("filament_cost")  # dropped in Orca: ignored
             orca.entries = entries()
+            await c("K03p sync preview: edits about to be pulled (writes nothing)", "GET", f"{API}/sync")
             await c("K04 sync: edits applied at colour / root / machine / node", "POST", f"{API}/sync")
             await c("K05 node after sync: source nozzle", "GET", f"{API}/{t1}/node", machine="H2S", nozzle="0.4")
             await c("K06 a Fenrir edit of the colour leaf", "PUT", f"{API}/{t1}/node", {"machine": "H2S", "nozzle": "0.4", "color_id": red, "set": {"fan_min_speed": ["50"], "cool_plate_temp": ["33"]}})
             held[red_04]["fan_min_speed"] = ["60"]  # both sides changed, differently -> conflict
             held[red_04]["cool_plate_temp"] = ["33"]  # both sides changed to the same -> refresh
             orca.entries = entries()
+            await c("K06p sync preview: a conflict is counted, not listed", "GET", f"{API}/sync")
             await c("K07 sync: conflict + coincident value", "POST", f"{API}/sync")
             await c("K08 resolve keeping Fenrir's value", "POST", f"{API}/conflicts/resolve",
                     {"tree_id": t1, "machine": "H2S", "nozzle": "0.4", "color_id": red, "key": "fan_min_speed", "value": ["50"], "orca_value": ["60"]})

@@ -25,6 +25,7 @@ WHICH="${1:-both}"
 
 FE_INCLUDES=(
   'src/components/filament-trees/**'
+  'src/components/filament-profiles/**'
   'src/pages/FilamentProfilesPage.tsx'
 )
 BE_GLOBS=(
@@ -43,11 +44,15 @@ ANCHORS=(
   backend/app/services/filament_tree_export.py
   backend/app/services/filament_tree_migration.py
   backend/app/services/filament_tree_pull.py
+  backend/app/services/filament_tree_push.py
   backend/app/services/filament_tree_store.py
   frontend/src/components/filament-trees/NodePanel.tsx
   frontend/src/components/filament-trees/MaterialCards.tsx
   frontend/src/components/filament-trees/TreeSettingsPanel.tsx
   frontend/src/components/filament-trees/SyncResultModal.tsx
+  frontend/src/components/filament-trees/SyncPreviewModal.tsx
+  frontend/src/components/filament-profiles/usePresetSyncs.ts
+  frontend/src/components/filament-profiles/useZohoSync.ts
   frontend/src/components/filament-trees/orcaLayout.ts
   frontend/src/components/filament-trees/paGcode.ts
   frontend/src/pages/FilamentProfilesPage.tsx

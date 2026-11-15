@@ -18,6 +18,7 @@ GET /api/v1/filament-trees/targets  -> get_targets  [require_permission_if_auth_
 PUT /api/v1/filament-trees/targets  -> put_targets  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
 GET /api/v1/filament-trees/unmanaged  -> list_unmanaged  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:read']"} <- (HTTPBearer); get_db]
 POST /api/v1/filament-trees/migrate  -> migrate  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:create', 'filaments:update']"} <- (HTTPBearer); get_db]
+GET /api/v1/filament-trees/sync  -> sync_preview  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update', 'orca_cloud:auth']"} <- (HTTPBearer))]
 POST /api/v1/filament-trees/sync  -> sync  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update', 'orca_cloud:auth']"} <- (HTTPBearer))]
 GET /api/v1/filament-trees/orca-cleanup  -> orca_cleanup_preview  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:delete', 'orca_cloud:auth']"} <- (HTTPBearer))]
 POST /api/v1/filament-trees/orca-cleanup  -> orca_cleanup  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:delete', 'orca_cloud:auth']"} <- (HTTPBearer))]
@@ -48,6 +49,7 @@ backend/app/api/routes/filament_trees.py:@router.get("/targets", response_model=
 backend/app/api/routes/filament_trees.py:@router.put("/targets", response_model=Targets)
 backend/app/api/routes/filament_trees.py:@router.get("/unmanaged")
 backend/app/api/routes/filament_trees.py:@router.post("/migrate")
+backend/app/api/routes/filament_trees.py:@router.get("/sync", dependencies=[Depends(_cloud_api_key_gate)])
 backend/app/api/routes/filament_trees.py:@router.post("/sync", dependencies=[Depends(_cloud_api_key_gate)])
 backend/app/api/routes/filament_trees.py:@router.get("/orca-cleanup", dependencies=[Depends(_cloud_api_key_gate)])
 backend/app/api/routes/filament_trees.py:@router.post("/orca-cleanup", dependencies=[Depends(_cloud_api_key_gate)])
@@ -399,6 +401,7 @@ async def rename_color(tree_id: int, color_id: int, payload: backend.app.schemas
 async def resolve(payload: backend.app.schemas.filament_tree.ConflictResolveRequest, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def revert_change(tree_id: int, change_id: int, user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def sync(db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function cloud_caller.<locals>.resolved>, use_cache=True, scope=None))
+async def sync_preview(db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function cloud_caller.<locals>.resolved>, use_cache=True, scope=None))
 
 ## backend.app.models.filament_tree
 class FilamentTree(Base)
@@ -520,7 +523,7 @@ from backend.app.services.orca_cloud import OrcaCloudAuthError, OrcaCloudError
 ```
 
 ## Permissions the routes require: values, default groups, categories, API keys, and where the frontend checks them
-```regen: ./venv/bin/python3 tools/probe_ftree_surface.py permissions 2>/dev/null; grep -oE "'(filaments|orca_cloud):[a-z_]+'" frontend/src/api/client.ts | sort -u | sed 's/^/frontend Permission union: /'; grep -hoE "hasPermission\('[a-z_]+:[a-z_]+'\)|hasAnyPermission\([^)]*\)" frontend/src/components/filament-trees/*.ts frontend/src/components/filament-trees/*.tsx frontend/src/pages/FilamentProfilesPage.tsx | sort -u```
+```regen: ./venv/bin/python3 tools/probe_ftree_surface.py permissions 2>/dev/null; grep -oE "'(filaments|orca_cloud):[a-z_]+'" frontend/src/api/client.ts | sort -u | sed 's/^/frontend Permission union: /'; grep -hoE "hasPermission\('[a-z_]+:[a-z_]+'\)|hasAnyPermission\([^)]*\)" frontend/src/components/filament-trees/*.ts frontend/src/components/filament-trees/*.tsx frontend/src/components/filament-profiles/*.ts frontend/src/components/filament-profiles/*.tsx frontend/src/pages/FilamentProfilesPage.tsx | sort -u```
 ```
 {
  "apikey_denied": [
@@ -608,8 +611,18 @@ backend/app/models/__init__.py: from backend.app.models.filament_tree import (
 ```
 
 ## Frontend exported symbols, per file
-```regen: grep -HoE '^export (default function|default async function|async function|function|const|type|interface|class|enum) [A-Za-z0-9_]+' frontend/src/components/filament-trees/*.ts frontend/src/components/filament-trees/*.tsx frontend/src/pages/FilamentProfilesPage.tsx | sort```
+```regen: grep -HoE '^export (default function|default async function|async function|function|const|type|interface|class|enum) [A-Za-z0-9_]+' frontend/src/components/filament-trees/*.ts frontend/src/components/filament-trees/*.tsx frontend/src/components/filament-profiles/*.ts frontend/src/components/filament-profiles/*.tsx frontend/src/pages/FilamentProfilesPage.tsx | sort```
 ```
+frontend/src/components/filament-profiles/SyncBaseResultModal.tsx:export function SyncBaseResultModal
+frontend/src/components/filament-profiles/SyncBaseResultModal.tsx:export interface SyncBaseResultModalProps
+frontend/src/components/filament-profiles/SyncModal.tsx:export function SyncModal
+frontend/src/components/filament-profiles/SyncModal.tsx:export interface SyncModalProps
+frontend/src/components/filament-profiles/ZohoSyncResult.tsx:export function ZohoSyncResult
+frontend/src/components/filament-profiles/pickedFiles.ts:export async function collectPresetFiles
+frontend/src/components/filament-profiles/pickedFiles.ts:export function readFileText
+frontend/src/components/filament-profiles/usePresetSyncs.ts:export function useBaseSync
+frontend/src/components/filament-profiles/usePresetSyncs.ts:export function usePcSync
+frontend/src/components/filament-profiles/useZohoSync.ts:export function useZohoSync
 frontend/src/components/filament-trees/BulkApplyModal.tsx:export function BulkApplyModal
 frontend/src/components/filament-trees/Dialog.tsx:export function Dialog
 frontend/src/components/filament-trees/HistoryTab.tsx:export function HistoryTab
@@ -620,6 +633,7 @@ frontend/src/components/filament-trees/MigrateModal.tsx:export function MigrateM
 frontend/src/components/filament-trees/NewTreeModal.tsx:export function NewTreeModal
 frontend/src/components/filament-trees/NodePanel.tsx:export function NodePanel
 frontend/src/components/filament-trees/NodePanel.tsx:export type NodeRef
+frontend/src/components/filament-trees/SyncPreviewModal.tsx:export function SyncPreviewModal
 frontend/src/components/filament-trees/SyncResultModal.tsx:export function SyncResultModal
 frontend/src/components/filament-trees/TargetsModal.tsx:export function TargetsModal
 frontend/src/components/filament-trees/TreeSettingsPanel.tsx:export function TreeSettingsPanel
@@ -691,6 +705,7 @@ export interface FilamentTreePullResult {
   // remaining: leaves still waiting (read-only pairing, or the run stopped after repeated failures)
   push: { pushed: number; failed: Array<{ name: string; detail: string }>; remaining: number; needs_write_scope: boolean; snapshot: string | null };
 }
+export interface FilamentTreeSyncPreview { pull: Array<{ name: string; keys: string[] }>; push: string[]; conflicts: number }
 export interface FilamentTreeNodeUpdate {
   machine?: string | null; nozzle?: string | null; color_id?: number | null;
   set?: Record<string, FilamentTreePresetValue>; clear?: string[];
@@ -711,6 +726,7 @@ export interface FilamentTreeUpdate {
   getUnmanagedFilamentGroups: () => request<FilamentTreeMigrationGroup[]>('/filament-trees/unmanaged'),
   migrateFilamentPresets: (groups: Array<{ prefix: string; source_preset_id: number; machine: string; nozzle: string }>) =>
     request<{ tree_ids: number[] }>('/filament-trees/migrate', { method: 'POST', body: JSON.stringify({ groups }) }),
+  previewFilamentTreeSync: () => request<FilamentTreeSyncPreview>('/filament-trees/sync'),
   syncFilamentTrees: () => request<FilamentTreePullResult>('/filament-trees/sync', { method: 'POST' }),
   // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if the count still matches
   getOrcaCleanupPreview: () => request<{ count: number; names: string[]; writable: boolean }>('/filament-trees/orca-cleanup'),
@@ -1004,6 +1020,11 @@ filamentTrees.stat.missing
 filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
+filamentTrees.syncPreviewConflicts  {{n}}
+filamentTrees.syncPreviewNothing
+filamentTrees.syncPreviewPull  {{n}}
+filamentTrees.syncPreviewPush  {{n}}
+filamentTrees.syncPreviewTitle
 filamentTrees.syncTitle
 filamentTrees.targetsHint
 filamentTrees.targetsTitle
@@ -1014,10 +1035,11 @@ nav.filamentProfiles
 ```
 
 ## Translation keys the filament-tree UI reads (string literals, templates, orcaLayout L(...) labels)
-```regen: grep -hoE "'(filamentTrees|filamentProfiles|nav|common)\.[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*'|\`filamentTrees\.[a-zA-Z0-9_.]*\$\{[^}]*\}[a-zA-Z0-9_.]*\`|L\('[a-zA-Z0-9_]+'\)" frontend/src/components/filament-trees/*.ts frontend/src/components/filament-trees/*.tsx frontend/src/pages/FilamentProfilesPage.tsx | sort -u```
+```regen: grep -hoE "'(filamentTrees|filamentProfiles|nav|common)\.[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*'|\`filamentTrees\.[a-zA-Z0-9_.]*\$\{[^}]*\}[a-zA-Z0-9_.]*\`|L\('[a-zA-Z0-9_]+'\)" frontend/src/components/filament-trees/*.ts frontend/src/components/filament-trees/*.tsx frontend/src/components/filament-profiles/*.ts frontend/src/components/filament-profiles/*.tsx frontend/src/pages/FilamentProfilesPage.tsx | sort -u```
 ```
 'common.cancel'
 'common.close'
+'common.confirm'
 'common.copied'
 'common.copy'
 'common.create'
@@ -1025,17 +1047,49 @@ nav.filamentProfiles
 'common.duplicate'
 'common.loading'
 'common.name'
+'common.plusNMore'
 'common.retry'
 'filamentProfiles.allBrands'
 'filamentProfiles.basePresetLabel'
+'filamentProfiles.baseSyncFailedTitle'
+'filamentProfiles.baseSyncedTitle'
+'filamentProfiles.cancel'
+'filamentProfiles.close'
 'filamentProfiles.extruder'
+'filamentProfiles.filesScanned'
+'filamentProfiles.noJsonInSelection'
 'filamentProfiles.noResults'
+'filamentProfiles.noServerBase'
 'filamentProfiles.primeVolume'
 'filamentProfiles.searchPlaceholder'
+'filamentProfiles.statAdded'
+'filamentProfiles.statNew'
+'filamentProfiles.statRemoved'
+'filamentProfiles.statUnchanged'
+'filamentProfiles.statUpdated'
 'filamentProfiles.syncBase'
+'filamentProfiles.syncConfirm'
+'filamentProfiles.syncConfirmNeedsDelete'
+'filamentProfiles.syncDoneTitle'
+'filamentProfiles.syncFailed'
+'filamentProfiles.syncPreviewFailed'
+'filamentProfiles.syncSubtitle'
+'filamentProfiles.syncTitle'
 'filamentProfiles.syncToPc'
+'filamentProfiles.syncZohoAmbiguous'
+'filamentProfiles.syncZohoAttention'
+'filamentProfiles.syncZohoBadPrice'
+'filamentProfiles.syncZohoContentTooLarge'
+'filamentProfiles.syncZohoDone'
+'filamentProfiles.syncZohoNoMatch'
+'filamentProfiles.syncZohoNoPrice'
 'filamentProfiles.syncZohoPrices'
+'filamentProfiles.syncZohoStale'
+'filamentProfiles.syncZohoUnknown'
+'filamentProfiles.syncZohoUnwritable'
+'filamentProfiles.syncZohoWeightUnknown'
 'filamentProfiles.title'
+'filamentProfiles.upToDate'
 'filamentTrees.addColour'
 'filamentTrees.addMachine'
 'filamentTrees.addNozzle'
@@ -1139,6 +1193,11 @@ nav.filamentProfiles
 'filamentTrees.sourceReadOnly'
 'filamentTrees.subtitle'
 'filamentTrees.sync'
+'filamentTrees.syncPreviewConflicts'
+'filamentTrees.syncPreviewNothing'
+'filamentTrees.syncPreviewPull'
+'filamentTrees.syncPreviewPush'
+'filamentTrees.syncPreviewTitle'
 'filamentTrees.syncTitle'
 'filamentTrees.targetsHint'
 'filamentTrees.targetsTitle'
@@ -1174,9 +1233,11 @@ L('wipeTower')
 ```
 
 ## React Query hooks, keys and invalidations in the filament-tree components
-```regen: grep -hoE 'useQuery|useMutation|useQueryClient|useIsMutating|(query|mutation)Key: [^,}]*|[A-Z_]+_KEY = \[[^]]*\]|(invalidate|remove|cancel|refetch)Queries\([^)]*\)|setQueryData\([^,]*,' frontend/src/components/filament-trees/*.ts frontend/src/components/filament-trees/*.tsx frontend/src/pages/FilamentProfilesPage.tsx | sort -u```
+```regen: grep -hoE 'useQuery|useMutation|useQueryClient|useIsMutating|(query|mutation)Key: [^,}]*|[A-Z_]+_KEY = \[[^]]*\]|(invalidate|remove|cancel|refetch)Queries\([^)]*\)|setQueryData\([^,]*,' frontend/src/components/filament-trees/*.ts frontend/src/components/filament-trees/*.tsx frontend/src/components/filament-profiles/*.ts frontend/src/components/filament-profiles/*.tsx frontend/src/pages/FilamentProfilesPage.tsx | sort -u```
 ```
 invalidateQueries({ queryKey: ['filament-trees'] })
+invalidateQueries({ queryKey: ['filamentBasePresets'] })
+invalidateQueries({ queryKey: ['filamentPresets'] })
 queryKey: ['filament-trees'
 queryKey: ['filament-trees']
 queryKey: ['filamentBasePresets']

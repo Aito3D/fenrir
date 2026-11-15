@@ -17,7 +17,7 @@ export LC_ALL=C PYTHONHASHSEED=0
 
 BE_ROUTES='backend/app/api/routes/filament_trees.py'
 BE_SRC="$BE_ROUTES backend/app/models/filament_tree.py backend/app/schemas/filament_tree.py backend/app/services/filament_tree.py backend/app/services/filament_tree_*.py"
-FE_SRC='frontend/src/components/filament-trees/*.ts frontend/src/components/filament-trees/*.tsx frontend/src/pages/FilamentProfilesPage.tsx'
+FE_SRC='frontend/src/components/filament-trees/*.ts frontend/src/components/filament-trees/*.tsx frontend/src/components/filament-profiles/*.ts frontend/src/components/filament-profiles/*.tsx frontend/src/pages/FilamentProfilesPage.tsx'
 CLIENT='frontend/src/api/client.ts'
 PY='./venv/bin/python3 tools/probe_ftree_surface.py'
 AWK='awk -f tools/probe_ftree_client.awk'

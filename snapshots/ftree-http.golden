@@ -9177,6 +9177,76 @@ POST /api/v1/filament-trees/conflicts/resolve  body={"color_id": 2, "key": "only
 {
  "success": true
 }
+### K03p sync preview: edits about to be pulled (writes nothing)
+GET /api/v1/filament-trees/sync
+-> 200
+{
+ "conflicts": 0,
+ "pull": [
+  {
+   "keys": [
+    "nozzle_temperature"
+   ],
+   "name": "Acme PETG - Red @H2S 0.4"
+  },
+  {
+   "keys": [
+    "fan_cooling_layer_time",
+    "fan_max_speed",
+    "filament_start_gcode"
+   ],
+   "name": "Acme PETG - White @H2S 0.4"
+  }
+ ],
+ "push": [
+  "Acme PETG - Red @H2D 0.2",
+  "Acme PETG - Red @H2D 0.4",
+  "Acme PETG - Red @H2D 0.6",
+  "Acme PETG - Red @H2S 0.2",
+  "Acme PETG - Red @H2S 0.6",
+  "Acme PETG - White @H2D 0.2",
+  "Acme PETG - White @H2D 0.4",
+  "Acme PETG - White @H2D 0.6",
+  "Acme PETG - White @H2S 0.2",
+  "Acme PETG - White @H2S 0.6",
+  "Beta PETG - Red @H2D 0.2",
+  "Beta PETG - Red @H2D 0.4",
+  "Beta PETG - Red @H2D 0.6",
+  "Beta PETG - Red @H2S 0.2",
+  "Beta PETG - Red @H2S 0.4",
+  "Beta PETG - Red @H2S 0.6",
+  "Beta PETG - White @H2D 0.2",
+  "Beta PETG - White @H2D 0.4",
+  "Beta PETG - White @H2D 0.6",
+  "Beta PETG - White @H2S 0.2",
+  "Beta PETG - White @H2S 0.4",
+  "Beta PETG - White @H2S 0.6",
+  "Loose - Colour 7 @H2D 0.2",
+  "Loose - Colour 7 @H2D 0.4",
+  "Loose - Colour 7 @H2D 0.6",
+  "Loose - Colour 7 @H2S 0.2",
+  "Loose - Colour 7 @H2S 0.4",
+  "Loose - Colour 7 @H2S 0.6",
+  "Polymaker PETG - Black @H2D 0.2",
+  "Polymaker PETG - Black @H2D 0.4",
+  "Polymaker PETG - Black @H2D 0.6",
+  "Polymaker PETG - Black @H2S 0.2",
+  "Polymaker PETG - Black @H2S 0.4",
+  "Polymaker PETG - Black @H2S 0.6",
+  "Polymaker PETG - Red @H2D 0.2",
+  "Polymaker PETG - Red @H2D 0.4",
+  "Polymaker PETG - Red @H2D 0.6",
+  "Polymaker PETG - Red @H2S 0.2",
+  "Polymaker PETG - Red @H2S 0.4",
+  "Polymaker PETG - Red @H2S 0.6",
+  "Polymaker PETG - White @H2D 0.2",
+  "Polymaker PETG - White @H2D 0.4",
+  "Polymaker PETG - White @H2D 0.6",
+  "Polymaker PETG - White @H2S 0.2",
+  "Polymaker PETG - White @H2S 0.4",
+  "Polymaker PETG - White @H2S 0.6"
+ ]
+}
 ### K04 sync: edits applied at colour / root / machine / node
 POST /api/v1/filament-trees/sync
 -> 200
@@ -9465,6 +9535,62 @@ PUT /api/v1/filament-trees/1/node  body={"color_id": 2, "machine": "H2S", "nozzl
 -> 200
 {
  "success": true
+}
+### K06p sync preview: a conflict is counted, not listed
+GET /api/v1/filament-trees/sync
+-> 200
+{
+ "conflicts": 1,
+ "pull": [],
+ "push": [
+  "Acme PETG - Red @H2D 0.2",
+  "Acme PETG - Red @H2D 0.4",
+  "Acme PETG - Red @H2D 0.6",
+  "Acme PETG - Red @H2S 0.2",
+  "Acme PETG - Red @H2S 0.6",
+  "Acme PETG - White @H2D 0.2",
+  "Acme PETG - White @H2D 0.4",
+  "Acme PETG - White @H2D 0.6",
+  "Acme PETG - White @H2S 0.2",
+  "Acme PETG - White @H2S 0.4",
+  "Acme PETG - White @H2S 0.6",
+  "Beta PETG - Red @H2D 0.2",
+  "Beta PETG - Red @H2D 0.4",
+  "Beta PETG - Red @H2D 0.6",
+  "Beta PETG - Red @H2S 0.2",
+  "Beta PETG - Red @H2S 0.4",
+  "Beta PETG - Red @H2S 0.6",
+  "Beta PETG - White @H2D 0.2",
+  "Beta PETG - White @H2D 0.4",
+  "Beta PETG - White @H2D 0.6",
+  "Beta PETG - White @H2S 0.2",
+  "Beta PETG - White @H2S 0.4",
+  "Beta PETG - White @H2S 0.6",
+  "Loose - Colour 7 @H2D 0.2",
+  "Loose - Colour 7 @H2D 0.4",
+  "Loose - Colour 7 @H2D 0.6",
+  "Loose - Colour 7 @H2S 0.2",
+  "Loose - Colour 7 @H2S 0.4",
+  "Loose - Colour 7 @H2S 0.6",
+  "Polymaker PETG - Black @H2D 0.2",
+  "Polymaker PETG - Black @H2D 0.4",
+  "Polymaker PETG - Black @H2D 0.6",
+  "Polymaker PETG - Black @H2S 0.2",
+  "Polymaker PETG - Black @H2S 0.4",
+  "Polymaker PETG - Black @H2S 0.6",
+  "Polymaker PETG - Red @H2D 0.2",
+  "Polymaker PETG - Red @H2D 0.4",
+  "Polymaker PETG - Red @H2D 0.6",
+  "Polymaker PETG - Red @H2S 0.2",
+  "Polymaker PETG - Red @H2S 0.4",
+  "Polymaker PETG - Red @H2S 0.6",
+  "Polymaker PETG - White @H2D 0.2",
+  "Polymaker PETG - White @H2D 0.4",
+  "Polymaker PETG - White @H2D 0.6",
+  "Polymaker PETG - White @H2S 0.2",
+  "Polymaker PETG - White @H2S 0.4",
+  "Polymaker PETG - White @H2S 0.6"
+ ]
 }
 ### K07 sync: conflict + coincident value
 POST /api/v1/filament-trees/sync
@@ -14858,7 +14984,7 @@ GET /api/v1/filament-trees/unmanaged
 {"brand": "Bare", "color": "Blue", "color_hex": "#0000FF", "content": "<356 chars sha256=7c2d79b91628>", "filename": "Bare PLA - Blue @H2D 0.4.json", "id": 78, "material": "PLA", "name": "Bare PLA - Blue @H2D 0.4"}
 {"brand": "Bare", "color": "Blue", "color_hex": "#0000FF", "content": "<356 chars sha256=2e4ef8d45537>", "filename": "Bare PLA - Blue @H2D 0.6.json", "id": 79, "material": "PLA", "name": "Bare PLA - Blue @H2D 0.6"}
 -- settings: {"filament_tree_targets": "{\"machines\": [\"H2S\", \"H2D\"], \"nozzles\": [\"0.2\", \"0.4\", \"0.6\"]}"}
-### orca stub calls: ["list_profiles", "close", "introspect", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "list_profiles", "close", "list_profiles", "close", "get_profile(c1)", "close", "get_profile(c1)", "close", "get_profile(c1)", "close", "get_profile(c2)", "close", "get_profile(c3)", "close", "get_profile(zzz)", "close", "get_profile(c4)", "close", "get_profile(c1)", "close", "get_profile(c1)", "close", "get_profile(c1)", "close"]
+### orca stub calls: ["list_profiles", "close", "introspect", "close", "list_profiles", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "list_profiles", "close", "list_profiles", "close", "get_profile(c1)", "close", "get_profile(c1)", "close", "get_profile(c1)", "close", "get_profile(c2)", "close", "get_profile(c3)", "close", "get_profile(zzz)", "close", "get_profile(c4)", "close", "get_profile(c1)", "close", "get_profile(c1)", "close", "get_profile(c1)", "close"]
 
 ### stderr:
 
