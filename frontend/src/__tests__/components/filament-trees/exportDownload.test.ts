@@ -54,4 +54,18 @@ describe('downloadTreeExport', () => {
     vi.spyOn(api, 'confirmFilamentTreeExport').mockRejectedValue(new Error('unknown export token'));
     await expect(downloadTreeExport()).rejects.toThrow('unknown export token');
   });
+
+  it.each([null, ''])('saves the file but confirms nothing when the token is %j', async (token) => {
+    vi.useFakeTimers();
+    try {
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      vi.spyOn(api, 'exportFilamentTrees').mockResolvedValue({ blob: new Blob(['z']), token });
+      const confirm = vi.spyOn(api, 'confirmFilamentTreeExport');
+      await expect(downloadTreeExport()).resolves.toBeUndefined();
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(confirm).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

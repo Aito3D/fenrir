@@ -113,13 +113,13 @@ export function FilamentProfilesPage() {
   const menuItems: ContextMenuItem[] = [
     ...(canUpdate
       ? [
-        { label: t('filamentTrees.exportOrca'), icon: <Download className="h-4 w-4" />, onClick: () => void exportOrca(false), disabled: trees.length === 0 },
-        {
-          label: t('filamentTrees.exportChanged', { n: pendingExport }),
-          icon: <Download className="h-4 w-4" />,
-          onClick: () => void exportOrca(true),
-          disabled: pendingExport === 0,
-        },
+          { label: t('filamentTrees.exportOrca'), icon: <Download className="h-4 w-4" />, onClick: () => void exportOrca(false), disabled: trees.length === 0 },
+          {
+            label: t('filamentTrees.exportChanged', { n: pendingExport }),
+            icon: <Download className="h-4 w-4" />,
+            onClick: () => void exportOrca(true),
+            disabled: pendingExport === 0,
+          },
         ]
       : []),
     ...(canSyncZohoPrices

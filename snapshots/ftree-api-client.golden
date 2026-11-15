@@ -64,9 +64,9 @@ export interface FilamentTreeUpdate {
     request<{ success: boolean }>('/filament-trees/conflicts/resolve', { method: 'POST', body: JSON.stringify(data) }),
   createFilamentTreeFromCandidate: (data: { orca_id: string; name: string; brand: string; material: string; color_name: string; color_hex: string; machine: string; nozzle: string }) =>
     request<{ tree_id: number }>('/filament-trees/candidates', { method: 'POST', body: JSON.stringify(data) }),
-  exportFilamentTrees: async (treeId?: number, changedOnly = false): Promise<{ blob: Blob; token: string }> => {
+  exportFilamentTrees: async (treeId?: number, changedOnly = false): Promise<{ blob: Blob; token: string | null }> => {
     const response = await postForResponse('/filament-trees/export', { ...(treeId !== undefined && { tree_id: treeId }), ...(changedOnly && { changed_only: true }) });
-    return { blob: await response.blob(), token: response.headers.get('X-Export-Token') ?? '' };
+    return { blob: await response.blob(), token: response.headers.get('X-Export-Token') || null };
   },
   confirmFilamentTreeExport: (token: string) =>
     request<{ confirmed: number }>('/filament-trees/export/confirm', { method: 'POST', body: JSON.stringify({ token }) }),
