@@ -85,7 +85,7 @@ export function PhotoGalleryModal(props: PhotoGalleryModalProps) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/90 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 animate-overlay-in"
       onClick={handleBackdropClick}
     >
       <div

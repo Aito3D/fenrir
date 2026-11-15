@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, fireEvent, cleanup } from '@testing-library/react';
+import { screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { ConfirmModal } from '../../components/ConfirmModal';
@@ -34,13 +34,13 @@ describe('ConfirmModal', () => {
       expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     });
 
-    it('isolateEscape: cancels and keeps the key from a host listening on the window', () => {
+    it('isolateEscape: cancels and keeps the key from a host listening on the window', async () => {
       const host = vi.fn();
       window.addEventListener('keydown', host);
       try {
         render(<ConfirmModal {...defaultProps} isolateEscape />);
         fireEvent.keyDown(document.body, { key: 'Escape' });
-        expect(defaultProps.onCancel).toHaveBeenCalledOnce();
+        await waitFor(() => expect(defaultProps.onCancel).toHaveBeenCalledOnce());
         expect(host).not.toHaveBeenCalled();
       } finally {
         window.removeEventListener('keydown', host);
@@ -89,7 +89,7 @@ describe('ConfirmModal', () => {
       render(<ConfirmModal {...defaultProps} onCancel={onCancel} />);
 
       await user.click(screen.getByText('Cancel'));
-      expect(onCancel).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1));
     });
 
     it('calls onCancel when clicking backdrop', async () => {
@@ -103,7 +103,7 @@ describe('ConfirmModal', () => {
       const backdrop = container.querySelector('.fixed');
       if (backdrop) {
         await user.click(backdrop);
-        expect(onCancel).toHaveBeenCalledTimes(1);
+        await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1));
       }
     });
 
@@ -117,12 +117,12 @@ describe('ConfirmModal', () => {
       expect(onCancel).not.toHaveBeenCalled();
     });
 
-    it('calls onCancel when Escape key is pressed', () => {
+    it('calls onCancel when Escape key is pressed', async () => {
       const onCancel = vi.fn();
       render(<ConfirmModal {...defaultProps} onCancel={onCancel} />);
 
       fireEvent.keyDown(window, { key: 'Escape' });
-      expect(onCancel).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1));
     });
   });
 

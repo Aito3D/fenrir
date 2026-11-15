@@ -668,7 +668,7 @@ export function BugReportBubble({ showTrigger = true, open, onOpenChange, onLogg
                   </div>
 
                   {/* Data collection notice */}
-                  <details className="text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                  <details className="fold-details text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
                     <summary className="cursor-pointer font-medium text-amber-700 dark:text-amber-300 hover:text-amber-800 dark:hover:text-amber-200">
                       {t('bugReport.dataCollectedSummary')}
                     </summary>

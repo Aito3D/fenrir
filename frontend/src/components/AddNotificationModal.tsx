@@ -579,7 +579,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                 {notifyLiveActivities && (
                   <>
                     <p className="text-xs text-bambu-gray">{t('notifications.notifyLifecycleHelp')}</p>
-                    <details className="rounded-lg border border-bambu-dark-tertiary p-3">
+                    <details className="fold-details rounded-lg border border-bambu-dark-tertiary p-3">
                       <summary className="cursor-pointer text-sm text-white">{t('notifications.notifyAppearance')}</summary>
                       <div className="mt-3 space-y-3">
                         {renderConfigFields(configFields.filter((field) => field.advanced))}

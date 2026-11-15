@@ -114,7 +114,7 @@ describe('ConfigureAmsSlotModal reset wiring', () => {
     await user.click(await screen.findByRole('button', { name: /Reset Slot/ }));
     await user.click(within(confirmDialog()).getByRole('button', { name: 'Cancel' }));
 
-    expect(screen.queryByText('Reset slot?')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Reset slot?')).toBeNull());
     expect(mocked.resetAmsSlot).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });
@@ -127,7 +127,7 @@ describe('ConfigureAmsSlotModal reset wiring', () => {
     // One key press: it bubbles through document (the slot dialog) to window (the confirm).
     fireEvent.keyDown(document.body, { key: 'Escape' });
 
-    expect(screen.queryByText('Reset slot?')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Reset slot?')).toBeNull());
     expect(onClose).not.toHaveBeenCalled();
     expect(mocked.resetAmsSlot).not.toHaveBeenCalled();
   });

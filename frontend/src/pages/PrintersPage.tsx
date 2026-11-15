@@ -5130,8 +5130,8 @@ function PrinterCard({
               const isPrinting = isRunning || isPaused;
               const isControlBusy = stopPrintMutation.isPending || pausePrintMutation.isPending || resumePrintMutation.isPending;
               const unavailablePrintActionClass = 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed opacity-50';
-              const iconControlClass = 'flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
-              const printControlClass = 'flex h-8 w-20 items-center justify-center gap-1 px-2 rounded-lg text-xs font-medium transition-colors';
+              const iconControlClass = 'btn-press flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed';
+              const printControlClass = 'btn-press flex h-8 w-20 items-center justify-center gap-1 px-2 rounded-lg text-xs font-medium';
 
               return (
                 <div className="mt-3">
@@ -5210,7 +5210,7 @@ function PrinterCard({
                       {(() => {
                         const canControl = hasPermission('printers:control');
                         const disabled = isPrinting || !canControl;
-                        const jogButtonClass = 'flex h-8 w-8 items-center justify-center rounded bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 transition-colors hover:bg-indigo-200 dark:hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50';
+                        const jogButtonClass = 'btn-press flex h-8 w-8 items-center justify-center rounded bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50';
                         // Which part the Z axis moves (#1334). The endpoint takes a signed
                         // nozzle-bed gap that means the same thing on every printer, so the
                         // arrows are ours to interpret: on a bed-slinger "up" lifts the
@@ -8596,7 +8596,7 @@ function FirmwareUpdateModal({
                   </div>
                 )}
                 {displayNotes && (
-                  <details className="mt-3 text-sm" open={!showSecondLine} key={displayVersion ?? 'none'}>
+                  <details className="fold-details mt-3 text-sm" open={!showSecondLine} key={displayVersion ?? 'none'}>
                     <summary className={`cursor-pointer hover:underline ${showSecondLine ? 'text-orange-700 dark:text-orange-400' : 'text-status-ok'}`}>
                       {t('printers.firmwareModal.releaseNotes')}
                     </summary>

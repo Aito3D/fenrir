@@ -317,7 +317,7 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
                 );
               })}
               {uncountedErrors.length > 0 && (
-                <details className="rounded-lg border border-white/10 p-3" data-testid="hms-uncounted">
+                <details className="fold-details rounded-lg border border-white/10 p-3" data-testid="hms-uncounted">
                   <summary className="cursor-pointer text-sm text-bambu-gray">
                     {t('hmsErrors.uncountedSummary', { n: uncountedErrors.length })}
                   </summary>

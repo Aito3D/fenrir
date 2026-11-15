@@ -81,8 +81,8 @@ function FinanceModal({ title, onClose, children, size = 'md' }: FinanceModalPro
   const sizeClass = size === 'sm' ? 'max-w-xl' : size === 'lg' ? 'max-w-6xl' : 'max-w-4xl';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className={`w-full ${sizeClass} overflow-hidden rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary`}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-overlay-in">
+      <div className={`animate-modal-in w-full ${sizeClass} overflow-hidden rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary`}>
         <div className="flex items-center justify-between border-b border-bambu-dark-tertiary px-4 py-3">
           <h3 className="text-lg font-semibold text-white">{title}</h3>
           <Button size="sm" variant="secondary" onClick={onClose}>{t('common.close', 'Close')}</Button>
@@ -690,7 +690,7 @@ export function FinancePage() {
 
   return (
     <div className="p-4 md:p-8 space-y-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between animate-rise-lg vt-page-title">
         <div>
           <div className="flex items-center gap-2">
             <Wallet className="h-6 w-6 text-bambu-green" />

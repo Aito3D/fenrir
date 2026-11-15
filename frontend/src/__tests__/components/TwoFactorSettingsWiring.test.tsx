@@ -213,7 +213,7 @@ describe('TwoFactorSettings wiring', () => {
     const dialog = () => screen.getByText('Unlink account?').closest('div.fixed') as HTMLElement;
     expect(within(dialog()).getByText(/sign in with Beta IdP/)).toBeInTheDocument();
     await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByText('Unlink account?')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Unlink account?')).toBeNull());
     expect(captured.filter((c) => c.method === 'DELETE')).toEqual([]);
 
     await user.click(within(row).getByRole('button'));

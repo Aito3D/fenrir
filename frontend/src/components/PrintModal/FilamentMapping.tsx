@@ -491,17 +491,12 @@ export function FilamentMapping({
                   so a third-party beige reads as "Orange" and the mismatch
                   warning cannot be judged without seeing both swatches.
 
-                  #1722: every loaded slot is offered for every filament row,
-                  regardless of which extruder the slot is wired to. Before that
-                  change a slot was only listed when its extruder matched the
-                  filament's slicer-assigned nozzle (item.nozzle_id), which
-                  locked users out of cross-extruder picks even when they'd
-                  intentionally loaded the required filament into the "other"
-                  AMS. The L/R badge on the filament row still tells the user
-                  what the slicer planned; the picker trusts the user to pick
-                  based on their physical setup. Printer firmware accepts or
-                  rejects the ams_mapping at start-print -- failure is loud,
-                  not silent.
+                  Every loaded slot is listed for every filament row (#1722),
+                  but a slot wired to the other nozzle is greyed and cannot be
+                  chosen (Fenrir): the firmware refuses that ams_mapping at
+                  start-print, which in a shop is a job that silently did not
+                  start. Not greyed when a filament switch is installed (any
+                  slot reaches both nozzles) or the slot's nozzle is unknown.
                 */}
                 <SlotPicker
                   value={item.loaded?.globalTrayId != null ? String(item.loaded.globalTrayId) : ''}
@@ -534,10 +529,22 @@ export function FilamentMapping({
                       // two views agree. Not translated: L and R are the letters on
                       // the machine.
                       const ftsBadge = ftsInlet == null ? '' : ` [${FTS_INLET_SIDE[ftsInlet]}]`;
+                      // Without a switch, the nozzle the slot's AMS is wired to.
+                      const onLeft = f.extruderId === 1;
+                      const nozzleBadge =
+                        ftsInstalled || !isDualNozzle || f.extruderId == null
+                          ? ''
+                          : ` [${onLeft ? t('printModal.leftNozzle') : t('printModal.rightNozzle')}]`;
+                      const wrongNozzle =
+                        nozzleBadge !== '' && item.nozzle_id != null && f.extruderId !== item.nozzle_id;
                       return {
                         value: String(f.globalTrayId),
                         label: `${f.label}: ${f.spoolName || f.traySubBrands || f.type} (${f.colorName})`,
-                        meta: `${remainingLabel}${ftsBadge}`,
+                        meta: `${remainingLabel}${ftsBadge}${nozzleBadge}`,
+                        disabled: wrongNozzle,
+                        disabledReason: onLeft
+                          ? t('printModal.leftNozzleTooltip')
+                          : t('printModal.rightNozzleTooltip'),
                         rgba: f.color,
                         extraColors: f.extraColors,
                         effectType: f.effectType,

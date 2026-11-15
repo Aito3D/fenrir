@@ -47,6 +47,11 @@ export interface SlotPickerOption {
   hex?: string | null;
   /** Marks the row whose colour is exactly the one the slice asked for. */
   exactMatch?: boolean;
+  /** Shown greyed and cannot be chosen — a slot that cannot feed the nozzle
+   *  the slice prints this filament with. */
+  disabled?: boolean;
+  /** Tooltip saying why the row is disabled. */
+  disabledReason?: string;
   /** React key, when `value` is not unique. Model-mode pools filaments across
    *  every printer of a model, so two spools of the same type and colour
    *  collapse to one `TYPE|COLOR` value while still being two rows. */
@@ -178,6 +183,7 @@ export function SlotPicker({
   }, [open, place]);
 
   const choose = (index: number) => {
+    if (rows[index].disabled) return;
     onChange(rows[index].value);
     setOpen(false);
     triggerRef.current?.focus();
@@ -288,10 +294,14 @@ export function SlotPicker({
                 // identity of the choice, separate from how it reads.
                 data-value={row.value}
                 aria-selected={index === selectedIndex}
+                aria-disabled={row.disabled || undefined}
+                title={row.disabled ? row.disabledReason : undefined}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => choose(index)}
                 className={`w-full flex items-center gap-1.5 text-left px-2 py-1.5 rounded-md text-xs ${
-                  index === selectedIndex
+                  row.disabled
+                    ? 'text-white opacity-40 cursor-not-allowed'
+                    : index === selectedIndex
                     ? 'bg-bambu-green/15 text-bambu-green'
                     : index === activeIndex
                       ? 'bg-bambu-dark text-white'

@@ -73,8 +73,8 @@ function CopyField({ label, value }: { label: string; value: string }) {
 function SecretModal({ app, onClose }: { app: ConnectedApp; onClose: () => void }) {
   const { t } = useTranslation();
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
-      <div className="bg-bambu-dark-secondary rounded-lg p-6 max-w-2xl w-full border border-bambu-green/40 space-y-4">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 animate-overlay-in" role="dialog" aria-modal="true">
+      <div className="bg-bambu-dark-secondary rounded-lg p-6 max-w-2xl w-full border border-bambu-green/40 space-y-4 animate-modal-in">
         <div className="flex items-start gap-3">
           <AlertTriangle className="w-6 h-6 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
           <div>

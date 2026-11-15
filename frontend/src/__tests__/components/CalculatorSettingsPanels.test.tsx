@@ -365,7 +365,7 @@ describe('CalculatorFilamentsPanel', () => {
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
-    expect(screen.queryByText('Delete filament')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Delete filament')).not.toBeInTheDocument());
     expect(screen.getByRole('cell', { name: 'PLA' })).toBeInTheDocument();
     expect(deleteSpy).not.toHaveBeenCalled();
   });
@@ -1627,7 +1627,7 @@ describe('CalculatorPrintersPanel', () => {
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
-    expect(screen.queryByText('Delete printer')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Delete printer')).not.toBeInTheDocument());
     expect(screen.getByRole('cell', { name: /H2S/ })).toBeInTheDocument();
     expect(deleteSpy).not.toHaveBeenCalled();
   });

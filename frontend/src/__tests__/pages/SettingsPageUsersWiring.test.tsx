@@ -237,6 +237,7 @@ describe('SettingsPage users & groups wiring', () => {
 
     await user.click(deleteNightShift());
     await user.click(screen.getByRole('button', { name: /^cancel$/i }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^cancel$/i })).toBeNull());
     expect(writes()).toHaveLength(0);
 
     await user.click(deleteNightShift());
@@ -252,6 +253,7 @@ describe('SettingsPage users & groups wiring', () => {
 
     await user.click(await screen.findByRole('button', { name: /^disable$/i }));
     await user.click(screen.getByRole('button', { name: /^cancel$/i }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^cancel$/i })).toBeNull());
     expect(writes()).toHaveLength(0);
 
     await user.click(screen.getByRole('button', { name: /^disable$/i }));

@@ -423,7 +423,7 @@ describe('LocationSensorOptionsModal', () => {
     const confirmOverlay = overlays[overlays.length - 1];
     await user.click(confirmOverlay);
 
-    expect(screen.queryByText(/cannot be undone/i)).toBeNull();
+    await waitFor(() => expect(screen.queryByText(/cannot be undone/i)).toBeNull());
     expect(onClose).not.toHaveBeenCalled();
   });
 

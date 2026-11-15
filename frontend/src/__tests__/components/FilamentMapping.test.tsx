@@ -236,15 +236,10 @@ describe('FilamentMapping — FTS routing', () => {
     expect(screen.queryByLabelText(/Force color match/i)).not.toBeInTheDocument();
   });
 
-  it('offers cross-extruder slots in the dropdown without FTS (#1722)', async () => {
-    // Before #1722 the dropdown filtered to only slots whose extruder matched
-    // the filament's slicer-assigned nozzle. On a dual-nozzle printer with one
-    // AMS per side, that prevented the user from picking a slot on the OTHER
-    // extruder even when they'd intentionally loaded the required filament
-    // there. The fix: trust the user, show every loaded slot regardless of
-    // which extruder it's wired to. The L/R badge on the filament row still
-    // tells the user what the slicer planned; the printer firmware accepts
-    // or rejects the cross-extruder ams_mapping at start-print.
+  it('lists cross-extruder slots without FTS, greyed and unpickable', async () => {
+    // #1722 lists every loaded slot whichever extruder it is wired to. Fenrir
+    // keeps them visible but disabled: the firmware refuses a cross-nozzle
+    // ams_mapping at start-print, so the job would simply not start.
     server.use(
       http.get(
         '/api/v1/printers/:id/status',
@@ -258,12 +253,13 @@ describe('FilamentMapping — FTS routing', () => {
       ),
     );
 
+    const onManualMappingChange = vi.fn();
     render(
       <FilamentMapping
         printerId={1}
         filamentReqs={mockFilamentReqs}
         manualMappings={{}}
-        onManualMappingChange={() => {}}
+        onManualMappingChange={onManualMappingChange}
         currencySymbol="$"
         defaultCostPerKg={0}
         defaultExpanded
@@ -271,11 +267,13 @@ describe('FilamentMapping — FTS routing', () => {
     );
 
     // Required nozzle is 1 (LEFT) and AMS 0 is wired to extruder 0 (RIGHT).
-    // Both slots must STILL be offered so the user can pick them — explicitly
-    // the cross-extruder scenario the #1722 fix unblocks.
     const listbox = await openSlotPicker();
-    expect(within(listbox).getByText(/Bambu PLA/)).toBeInTheDocument();
-    expect(within(listbox).getByText(/Bambu PETG/)).toBeInTheDocument();
+    const option = within(listbox).getByRole('option', { name: /Bambu PETG/ });
+    expect(within(listbox).getByRole('option', { name: /Bambu PLA/ })).toBeInTheDocument();
+    expect(option).toHaveAttribute('aria-disabled', 'true');
+    expect(option).toHaveAttribute('title', 'Right nozzle');
+    fireEvent.click(option);
+    expect(onManualMappingChange).not.toHaveBeenCalled();
   });
 
   it('renders sub-brand + material-disambiguated colour on the required side (#1718)', async () => {

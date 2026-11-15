@@ -176,6 +176,7 @@ describe('SpoolmanSettings wiring', () => {
     await user.click(await screen.findByRole('button', { name: 'Sync Spoolman Weights from AMS' }));
     await screen.findByText('Sync Spoolman Spool Weights from AMS');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^cancel$/i })).toBeNull());
     expect(mocked.syncSpoolmanAmsWeights).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: 'Sync Spoolman Weights from AMS' }));

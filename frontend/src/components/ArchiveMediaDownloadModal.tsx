@@ -131,9 +131,9 @@ export function ArchiveMediaDownloadModal({
   ));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 animate-overlay-in" onClick={onClose}>
       <div
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary"
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary animate-modal-in"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-bambu-dark-tertiary p-4">

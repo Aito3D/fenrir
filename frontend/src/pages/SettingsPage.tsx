@@ -6435,6 +6435,7 @@ export function SettingsPage() {
                   return (
                     <Collapsible
                       key={model}
+                      animated
                       defaultOpen={hasContent}
                       className="border border-bambu-dark-tertiary rounded-lg px-3 py-2"
                       summary={

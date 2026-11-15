@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { Card, CardContent } from './Card';
@@ -65,6 +65,23 @@ export function ConfirmModal({
   const resolvedConfirmText = confirmText ?? t('common.confirm');
   const resolvedCancelText = cancelText ?? t('common.cancel');
   const resolvedLoadingText = loadingText ?? t('common.loading');
+  // Cancel plays the exit (.animate-modal-out, 150ms) before `onCancel` fires.
+  // setTimeout rather than animationend: reduced motion and jsdom never fire it.
+  // `closing` resets too, so a caller whose onCancel keeps the modal mounted
+  // gets it back instead of an invisible overlay.
+  const [closing, setClosing] = useState(false);
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+  useEffect(() => {
+    if (!closing) return;
+    const id = window.setTimeout(() => {
+      setClosing(false);
+      onCancelRef.current();
+    }, 150);
+    return () => window.clearTimeout(id);
+  }, [closing]);
+  const requestCancel = () => setClosing(true);
+
   // Close on Escape key (but not while loading)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -72,11 +89,11 @@ export function ConfirmModal({
       // Claimed before anything else sees it: the window capture phase runs
       // first, so the host's own bubble-phase Escape never fires.
       if (isolateEscape) e.stopPropagation();
-      if (!isLoading) onCancel();
+      if (!isLoading) setClosing(true);
     };
     window.addEventListener('keydown', handleKeyDown, isolateEscape);
     return () => window.removeEventListener('keydown', handleKeyDown, isolateEscape);
-  }, [onCancel, isLoading, isolateEscape]);
+  }, [isLoading, isolateEscape]);
 
   const variantStyles = {
     danger: {
@@ -97,11 +114,11 @@ export function ConfirmModal({
 
   return (
     <div
-      className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 animate-overlay-in ${overlayZIndex ?? 'z-50'}`}
-      onClick={isLoading ? undefined : onCancel}
+      className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 ${closing ? 'animate-overlay-out' : 'animate-overlay-in'} ${overlayZIndex ?? 'z-50'}`}
+      onClick={isLoading ? undefined : requestCancel}
     >
       <Card
-        className={`w-full max-w-md animate-modal-in ${cardClassName ?? ''}`}
+        className={`w-full max-w-md ${closing ? 'animate-modal-out' : 'animate-modal-in'} ${cardClassName ?? ''}`}
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         <CardContent className="p-6">
@@ -118,7 +135,7 @@ export function ConfirmModal({
           <div className={stacked ? 'flex flex-col-reverse gap-2 mt-6' : 'flex gap-3 mt-6'}>
             <Button
               variant={cancelVariant ?? 'secondary'}
-              onClick={onCancel}
+              onClick={requestCancel}
               className={stacked ? 'w-full' : 'flex-1'}
               disabled={isLoading}
             >
@@ -128,7 +145,7 @@ export function ConfirmModal({
               <Button
                 onClick={onConfirm}
                 className={`flex-1 ${styles.button}`}
-                disabled={isLoading || confirmDisabled}
+                disabled={isLoading || confirmDisabled || closing}
               >
                 {isLoading ? (
                   <>

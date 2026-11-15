@@ -193,7 +193,7 @@ describe('ForecastPanel wiring', () => {
     const dialog = screen.getByText('Clear shopping list?').closest('div.fixed') as HTMLElement;
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
-    expect(screen.queryByText('Clear shopping list?')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Clear shopping list?')).toBeNull());
     expect(mocked.clearShoppingList).not.toHaveBeenCalled();
   });
 

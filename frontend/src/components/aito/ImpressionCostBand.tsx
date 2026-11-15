@@ -113,7 +113,7 @@ export function ImpressionCostBand({
           <>
             <CostSplitBar segments={segments} total={result.total_ht} currency={currency} />
             <SegmentLegend segments={segments} total={result.total_ht} />
-            <details className="pt-1">
+            <details className="fold-details pt-1">
               <summary className="cursor-pointer text-xs text-bambu-gray marker:text-bambu-gray">
                 {t('aito.costDetail')}
               </summary>

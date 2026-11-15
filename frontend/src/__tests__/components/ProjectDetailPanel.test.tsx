@@ -1958,7 +1958,7 @@ describe('ProjectDetailPanel quote row', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Duplicate' }));
     expect(await screen.findByText('Replace the draft in progress?')).toBeInTheDocument();
     fireEvent.keyDown(document.body, { key: 'Escape' });
-    expect(screen.queryByText('Replace the draft in progress?')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Replace the draft in progress?')).not.toBeInTheDocument());
     expect(onClose).not.toHaveBeenCalled();
     expect(onDuplicate).not.toHaveBeenCalled();
     localStorage.clear();
@@ -2757,17 +2757,17 @@ describe('ProjectDetailPanel delete', () => {
     }
   });
 
-  it('cancelling the trash confirm leaves the card alone', () => {
+  it('cancelling the trash confirm leaves the card alone', async () => {
     const onDelete = vi.fn();
     render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onDelete={onDelete} />);
     fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move to trash' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByText('Move this card to the trash?')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Move this card to the trash?')).not.toBeInTheDocument());
     expect(onDelete).not.toHaveBeenCalled();
   });
 
-  it('Escape on the trash confirm closes only the confirm, not the panel behind it', () => {
+  it('Escape on the trash confirm closes only the confirm, not the panel behind it', async () => {
     const onClose = vi.fn();
     const onDelete = vi.fn();
     render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={onClose} onDelete={onDelete} />);
@@ -2776,7 +2776,7 @@ describe('ProjectDetailPanel delete', () => {
     // On the body, not the window: a real key event targets an element, and
     // the confirm claims it on the way down.
     fireEvent.keyDown(document.body, { key: 'Escape' });
-    expect(screen.queryByText('Move this card to the trash?')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Move this card to the trash?')).not.toBeInTheDocument());
     expect(onClose).not.toHaveBeenCalled();
     expect(onDelete).not.toHaveBeenCalled();
     expect(screen.getByTestId('panel-column-tasks')).toBeInTheDocument();

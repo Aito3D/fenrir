@@ -1159,7 +1159,7 @@ describe('CalculatorPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
-    expect(screen.queryByText('Reset inputs')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Reset inputs')).not.toBeInTheDocument());
     expect(weight).toHaveValue('40');
     expect(localStorage.removeItem).not.toHaveBeenCalledWith('calculator-state');
   });

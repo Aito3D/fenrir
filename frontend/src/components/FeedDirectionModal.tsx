@@ -76,10 +76,10 @@ export function FeedDirectionModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-overlay-in"
       onClick={isLoading ? undefined : onCancel}
     >
-      <Card className="w-full max-w-md" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <Card className="w-full max-w-md animate-modal-in" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CardContent className="p-6">
           <h3 className="text-lg font-semibold text-white mb-2">
             {t('printers.ams.feedTitle', { slot: slotLabel })}

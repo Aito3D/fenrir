@@ -64,7 +64,7 @@ export function ModelSourcesPage() {
 
   return (
     <div className="p-4 md:p-8 max-w-screen-2xl">
-      <div className="mb-6">
+      <div className="mb-6 animate-rise-lg vt-page-title">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3">
           <Globe className="w-7 h-7 text-bambu-green" />
           {t('modelSources.title')}

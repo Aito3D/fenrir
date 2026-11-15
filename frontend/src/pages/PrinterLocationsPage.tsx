@@ -177,8 +177,8 @@ function LocationDialog({ initial, saving, onSave, onCancel }: LocationDialogPro
   const save = () => canSave && onSave({ name: name.trim(), icon, color });
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-md">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-overlay-in">
+      <Card className="w-full max-w-md animate-modal-in">
         <CardContent className="space-y-4">
           <h2 className="text-lg font-semibold text-white">
             {initial ? t('printers.locations.editTitle') : t('printers.locations.createTitle')}
@@ -260,8 +260,8 @@ function MoveDialog({ count, printerName, locations, saving, onMove, onCancel }:
   const { t } = useTranslation();
   const [target, setTarget] = useState('');
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-md">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-overlay-in">
+      <Card className="w-full max-w-md animate-modal-in">
         <CardContent className="space-y-4">
           <h2 className="text-lg font-semibold text-white">
             {count === 1 ? t('printers.locations.moveTitle') : t('printers.locations.moveTitleMany', { count })}

@@ -688,7 +688,7 @@ function ModalShell({ onClose, label, children }: { onClose: () => void; label: 
   const { t } = useTranslation();
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-2 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-2 sm:p-4 overflow-y-auto animate-overlay-in"
       onMouseDown={(e) => {
         // The overlay scrolls a tall archive: a press on its scrollbar
         // (right of its content box) scrolls rather than closes.
@@ -700,7 +700,7 @@ function ModalShell({ onClose, label, children }: { onClose: () => void; label: 
         role="dialog"
         aria-modal="true"
         aria-label={label}
-        className="relative w-full max-w-[1600px] min-w-0 my-auto bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl p-4 md:p-6 space-y-7"
+        className="relative w-full max-w-[1600px] min-w-0 my-auto bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl p-4 md:p-6 space-y-7 animate-modal-in"
       >
         <button
           type="button"

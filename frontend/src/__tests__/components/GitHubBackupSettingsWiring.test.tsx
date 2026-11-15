@@ -150,6 +150,7 @@ describe('GitHubBackupSettings wiring', () => {
     await screen.findByText('bambuddy-backup-2026-10-01.zip');
     await user.click(within(fileRow('bambuddy-backup-2026-10-01.zip')).getByTitle('Delete'));
     await user.click(screen.getByRole('button', { name: /^cancel$/i }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^cancel$/i })).toBeNull());
     expect(writes()).toHaveLength(0);
 
     await user.click(within(fileRow('bambuddy-backup-2026-10-01.zip')).getByTitle('Delete'));
@@ -215,7 +216,7 @@ describe('GitHubBackupSettings wiring', () => {
     await user.click(within(history).getByRole('button', { name: /^clear$/i }));
     const dialog = () => screen.getByText('Clear backup history?').closest('div.fixed') as HTMLElement;
     await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByText('Clear backup history?')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Clear backup history?')).toBeNull());
     expect(writes()).toEqual([]);
 
     await user.click(within(history).getByRole('button', { name: /^clear$/i }));
