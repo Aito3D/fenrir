@@ -43,6 +43,10 @@ class PrintArchive(Base):
     # False = accepted on filename alone and may be a same-name impostor
     # (#2104); None = not applicable (uploads, virtual printer, legacy rows).
     content_verified: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # SHA256 of the file's G-code only (#1634): a slice sent again from the
+    # slicer, in a new 3MF, adds a run to this archive. "" = read, no G-code;
+    # NULL = not read yet. See services/archive_gcode_hash.
+    gcode_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     thumbnail_path: Mapped[str | None] = mapped_column(String(500))
     timelapse_path: Mapped[str | None] = mapped_column(String(500))
     # The plate whose run produced ``timelapse_path`` (#3275). Every plate of a

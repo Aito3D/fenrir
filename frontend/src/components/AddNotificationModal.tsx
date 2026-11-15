@@ -3,11 +3,12 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Send, CheckCircle, XCircle } from 'lucide-react';
 import { api } from '../api/client';
-import type { NotificationProvider, NotificationProviderCreate, NotificationProviderUpdate, ProviderType, TelegramVerdictMode } from '../api/client';
+import type { NotificationPhotoEvent, NotificationProvider, NotificationProviderCreate, NotificationProviderUpdate, ProviderType, TelegramVerdictMode } from '../api/client';
 import { Button } from './Button';
 import { Toggle } from './Toggle';
 import { EVENT_FLAGS, MODAL_SECTIONS, MODAL_PRIORITY_KEYS, type ModalFlag, type ModalFlagKey } from './notificationEventFlags';
 import { isNotifyPushOnlyTarget, isNotifyPhotoUnsupported } from '../utils/notify';
+import { enabledPhotoEvents } from '../utils/notificationPhotoEvents';
 import { SECRET_PLACEHOLDER, selectPlaceholderOnFocus } from '../utils/secrets';
 
 interface ConfigField {
@@ -46,6 +47,8 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       ? false
       : provider?.attach_photo ?? true
   );
+  // Events sent without the snapshot although Attach Photo is on (#2877).
+  const [photoSkipEvents, setPhotoSkipEvents] = useState<NotificationPhotoEvent[]>(provider?.photo_skip_events ?? []);
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(provider?.quiet_hours_enabled || false);
   const [quietHoursStart, setQuietHoursStart] = useState(provider?.quiet_hours_start || '22:00');
   const [quietHoursEnd, setQuietHoursEnd] = useState(provider?.quiet_hours_end || '07:00');
@@ -63,6 +66,13 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
   const [telegramVerdictMode, setTelegramVerdictMode] = useState<TelegramVerdictMode>(
     provider?.telegram_verdict_mode ?? 'buttons'
   );
+  // Only the photo events this provider sends; skipped ones that are hidden
+  // keep their choice for when the event is switched back on (#2877).
+  const photoEvents = enabledPhotoEvents({
+    // Used when this dialog has no toggle for it (then it is set on the card).
+    on_plate_not_empty: provider?.on_plate_not_empty ?? true,
+    ...eventFlags,
+  });
 
   const [notifyLiveActivities, setNotifyLiveActivities] = useState(
     provider?.config?.live_activities === true && !isNotifyPushOnlyTarget(String(provider?.config?.device_id || ''))
@@ -224,6 +234,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       config: finalConfig,
       printer_id: printerId,
       attach_photo: attachPhoto && !notifyPhotosUnsupported,
+      photo_skip_events: photoSkipEvents,
       quiet_hours_enabled: quietHoursEnabled,
       quiet_hours_start: quietHoursEnabled ? quietHoursStart : null,
       quiet_hours_end: quietHoursEnabled ? quietHoursEnd : null,
@@ -716,6 +727,28 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               onChange={setAttachPhoto}
             />
           </div>
+          {attachPhoto && !notifyPhotosUnsupported && photoEvents.length > 0 && (
+            <fieldset className="pl-4 border-l-2 border-bambu-dark-tertiary">
+              <legend className="text-xs text-bambu-gray mb-2">{t('notifications.attachPhotoEvents')}</legend>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {photoEvents.map(({ event, labelKey }) => (
+                  <label key={event} className="flex items-center gap-1 text-sm text-white">
+                    <input
+                      type="checkbox"
+                      checked={!photoSkipEvents.includes(event)}
+                      onChange={(e) =>
+                        setPhotoSkipEvents(e.target.checked
+                          ? photoSkipEvents.filter((skipped) => skipped !== event)
+                          : [...photoSkipEvents, event])
+                      }
+                      className="accent-bambu-green"
+                    />
+                    {t(labelKey)}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
 
           {/* Quiet Hours */}
           <div className="space-y-2">

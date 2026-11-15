@@ -3,7 +3,8 @@ import logging
 import math
 import re
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,7 @@ from backend.app.services.bambu_mqtt import (
     PrinterState,
     get_stage_name,
 )
+from backend.app.services.panda_breath import panda_breath_service
 from backend.app.services.pause_eta import next_pause
 from backend.app.services.print_storage import external_storage_warning
 from backend.app.utils.ams_humidity import ams_humidity_percent
@@ -447,6 +449,21 @@ class PrinterManager:
     def get_printer(self, printer_id: int) -> PrinterInfo | None:
         """Get printer info by ID."""
         return self._printer_info.get(printer_id)
+
+    def printer_id_for_serial(self, serial: str) -> int | None:
+        """The printer with this serial number, ignoring case and blanks."""
+        wanted = (serial or "").strip().upper()
+        if not wanted:
+            return None
+        for printer_id, info in list(self._printer_info.items()):
+            if (info.serial_number or "").strip().upper() == wanted:
+                return printer_id
+        return None
+
+    def schedule_status_broadcast(self, printer_id: int) -> None:
+        """Push this printer's status from any thread, e.g. a Panda Breath update (#1466)."""
+        if self._loop and self._loop.is_running():
+            self._schedule_async(self._broadcast_status_change(printer_id))
 
     def set_current_print_user(self, printer_id: int, user_id: int, username: str, queue_item_id: int | None = None):
         """Track who started the current print (Issue #206), and for which queue item."""
@@ -982,6 +999,22 @@ class PrinterManager:
     def get_client(self, printer_id: int) -> BambuMQTTClient | None:
         """Get the MQTT client for a printer."""
         return self._clients.get(printer_id)
+
+    @contextmanager
+    def uploading(self, printer_id: int | None) -> Iterator[None]:
+        """Fenrir is uploading to this printer: its MQTT silence is expected (#3538).
+
+        Ends on the client it began on, so a client replaced meanwhile is
+        neither left counting nor decremented.
+        """
+        client = self._clients.get(printer_id) if printer_id is not None else None
+        if client is not None:
+            client.begin_upload()
+        try:
+            yield
+        finally:
+            if client is not None:
+                client.end_upload()
 
     def mark_printer_offline(self, printer_id: int):
         """Mark a printer as offline and trigger status callback.
@@ -1872,6 +1905,9 @@ def printer_state_to_dict(
         # so surface it here — without this, WebSocket merges drop the flag and the
         # "Clear Plate" button only appears when the 30 s REST fallback poll runs.
         "awaiting_plate_clear": printer_manager.is_awaiting_plate_clear(printer_id) if printer_id else False,
+        # Panda Breath bound to this printer (#1466). Always present, None when
+        # there is none, so a WebSocket merge drops a device that went away.
+        "panda_breath": panda_breath_service.state_for_printer(printer_id),
     }
     # Add cover URL if there's an active print and printer_id is provided
     # Include PAUSE state so skip objects modal can show cover

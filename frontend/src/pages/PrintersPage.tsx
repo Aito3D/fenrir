@@ -161,7 +161,7 @@ import { ConfirmOutcomeDialog } from '../components/ConfirmOutcomeDialog';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withMediaToken, ApiError } from '../api/client';
 import { formatDateOnly, formatDateTime, formatETA, formatDuration, formatDurationFromHours, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, AMSTray, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
+import type { Printer, PrinterCreate, PrinterStatus, PandaBreathCommand, PandaBreathMode, PandaBreathState, AMSUnit, AMSTray, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { SkeletonGrid } from '../components/Skeleton';
@@ -197,7 +197,7 @@ import { FeedDirectionModal } from '../components/FeedDirectionModal';
 import { plateCheckFailureText } from '../utils/plateCheck';
 import { ams3hDryerGridColumns, ams3hSlotGridPlacement, amsUnitSlotCount, isAms3hUnit, rackExternalLabel, amsHasLoadedTray, getAmsLabel, getEmptySlotKind, getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, installedNozzleDiameters, isAmsHtUnit, isBambuLabSpool, trayForSlot, resolveSlotNozzleDiameter, resolveSlotExtruder, formatSlotLabel, slotPresetDescribesTray, FTS_INLET_SIDE } from '../utils/amsHelpers';
 import { RACK_SLOT_COUNT, externalHotend, externalSlotIndex, isExternalTray, layoutAmsType, locateTray, trayLayoutOf } from '../utils/trayIds';
-import { MAX_CHAMBER_TEMP_C, getPrinterImage, getWifiStrength, filterCompatibleQueueItems, isPrinterCurrentlyDispatchable, IDLE_PRINTER_STATES } from '../utils/printer';
+import { MAX_CHAMBER_TEMP_C, PANDA_BREATH_MAX_TARGET_C, getPrinterImage, getWifiStrength, filterCompatibleQueueItems, isPrinterCurrentlyDispatchable, IDLE_PRINTER_STATES } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
 import { Collapsible } from '../components/Collapsible';
 import { ConnectionDiagnosticModal, DiagnosticChecklist } from '../components/ConnectionDiagnostic';
@@ -1640,6 +1640,106 @@ function IndicatorControlPopover({
   );
 }
 
+/**
+ * BIQU Panda Breath bound to the printer (#1466): its chamber reading, and a
+ * popover to switch it, pick its mode and set its target. It works without
+ * the printer, so only the control right and the device being online gate it.
+ */
+function PandaBreathTile({
+  panda,
+  canControl,
+  open,
+  onOpenChange,
+  isPending,
+  onCommand,
+}: {
+  panda: PandaBreathState;
+  canControl: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  isPending: boolean;
+  onCommand: (command: PandaBreathCommand) => void;
+}) {
+  const { t } = useTranslation();
+  const usable = canControl && panda.online !== false;
+  const modeLabels: Record<PandaBreathMode, string> = {
+    'auto mode': t('printers.pandaBreath.modeAuto'),
+    'power on': t('printers.pandaBreath.modeOn'),
+    'filament drying': t('printers.pandaBreath.modeDrying'),
+  };
+  const modeLabel = panda.mode && panda.mode in modeLabels ? modeLabels[panda.mode as PandaBreathMode] : panda.mode;
+  const title = panda.online === false
+    ? t('printers.pandaBreath.offline')
+    : !canControl
+      ? t('printers.permission.noControl')
+      : [modeLabel, panda.drying_running && panda.drying_remaining_min != null
+        ? t('printers.pandaBreath.dryingLeft', { minutes: Math.round(panda.drying_remaining_min) })
+        : null].filter(Boolean).join(' · ') || undefined;
+  return (
+    <div
+      className={usable
+        ? 'relative text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center transition-colors cursor-pointer hover:bg-bambu-dark-tertiary'
+        : 'relative text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center opacity-80'}
+      title={title}
+      onClick={() => usable && onOpenChange(!open)}
+      data-testid="panda-breath-tile"
+    >
+      <HeaterThermometer className="w-[var(--pc-i35,0.875rem)] h-[var(--pc-i35,0.875rem)] mb-0.5" color="text-green-400" isHeating={panda.work_on === true} />
+      <p className="text-[length:var(--pc-t9,9px)] text-bambu-gray">Panda Breath</p>
+      <p className="text-[length:var(--pc-t11,11px)] text-white">
+        {panda.online === false
+          ? t('printers.pandaBreath.offline')
+          : <>
+              {panda.chamber_temp != null ? `${Math.round(panda.chamber_temp)}°C` : '—'}
+              {panda.work_on && panda.target_temp != null ? ` / ${Math.round(panda.target_temp)}°` : ''}
+            </>}
+      </p>
+      {usable && open && (
+        <IndicatorControlPopover
+          title="Panda Breath"
+          unit="°C"
+          customMin={0}
+          customMax={PANDA_BREATH_MAX_TARGET_C}
+          popoverHeight={260}
+          isPending={isPending}
+          onClose={() => onOpenChange(false)}
+          onSubmit={(target) => onCommand({ target_temp: target })}
+        >
+          <div className="px-3 py-2.5 space-y-1.5">
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={() => onCommand({ work_on: !panda.work_on })}
+              className="h-8 w-full rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 text-xs font-medium text-white transition-colors hover:bg-bambu-dark-tertiary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {panda.work_on ? t('printers.pandaBreath.turnOff') : t('printers.pandaBreath.turnOn')}
+            </button>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(Object.keys(modeLabels) as PandaBreathMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={isPending}
+                  aria-pressed={panda.mode === mode}
+                  onClick={() => onCommand({ mode })}
+                  className={`h-8 rounded-lg border px-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    panda.mode === mode
+                      ? 'border-bambu-green bg-bambu-green/20 text-white'
+                      : 'border-bambu-dark-tertiary bg-bambu-dark text-white hover:bg-bambu-dark-tertiary'
+                  }`}
+                >
+                  {modeLabels[mode]}
+                </button>
+              ))}
+            </div>
+            <p className="pt-1 text-[11px] text-bambu-gray">{t('printers.pandaBreath.targetHint')}</p>
+          </div>
+        </IndicatorControlPopover>
+      )}
+    </div>
+  );
+}
+
 const NOZZLE_TEMPERATURE_OPTIONS = buildPresetOptions(NOZZLE_TEMP_DEFAULTS, 'C');
 
 function NozzleTemperatureControlBox({
@@ -3044,6 +3144,15 @@ function PrinterCard({
       setStatusControlMenu(null);
       showToast(result.message);
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
+    },
+    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
+  });
+
+  const pandaBreathMutation = useMutation({
+    mutationFn: (command: PandaBreathCommand) => api.sendPandaBreathCommand(printer.id, command),
+    onSuccess: () => {
+      setStatusControlMenu(null);
+      showToast(t('printers.pandaBreath.sent'));
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
   });
@@ -4912,6 +5021,16 @@ function PrinterCard({
                         </div>
                       );
                     })()}
+                    {status.panda_breath && (
+                      <PandaBreathTile
+                        panda={status.panda_breath}
+                        canControl={hasPermission('printers:control')}
+                        open={statusControlMenu === 'panda-breath'}
+                        onOpenChange={(open) => setStatusControlMenu(open ? 'panda-breath' : null)}
+                        isPending={pandaBreathMutation.isPending}
+                        onCommand={(command) => pandaBreathMutation.mutate(command)}
+                      />
+                    )}
                     {/* Active nozzle indicator for dual-nozzle printers */}
                     {isDualNozzle && (
                       <DualNozzleHoverCard
@@ -6749,6 +6868,21 @@ function PrinterCard({
             the gate is Fenrir-side — releasing it never touches the printer (#2864). */}
         {printer.is_active !== false && !status?.connected && viewMode === 'expanded' && showClearPlateButton && (
           expandedClearPlateButton
+        )}
+
+        {/* The Panda Breath keeps running with the printer off, so its tile
+            stays reachable on an offline card (#1466). */}
+        {!status?.connected && viewMode === 'expanded' && status?.panda_breath && (
+          <div className="flex items-stretch gap-1.5 mt-3">
+            <PandaBreathTile
+              panda={status.panda_breath}
+              canControl={hasPermission('printers:control')}
+              open={statusControlMenu === 'panda-breath'}
+              onOpenChange={(open) => setStatusControlMenu(open ? 'panda-breath' : null)}
+              isPending={pandaBreathMutation.isPending}
+              onCommand={(command) => pandaBreathMutation.mutate(command)}
+            />
+          </div>
         )}
 
         {/* Bottom block (power row + action bar). Wrapped together so the
@@ -8652,6 +8786,7 @@ function EditPrinterModal({
     auto_archive: printer.auto_archive,
     is_active: printer.is_active,
     wear_cost_per_hour: printer.wear_cost_per_hour ? String(printer.wear_cost_per_hour) : '',
+    dispatch_priority: printer.dispatch_priority != null ? String(printer.dispatch_priority) : '',
   });
   const { data: settings } = useUiSettings();
   const currency = getCurrencySymbol(settings?.currency || 'USD');
@@ -8710,6 +8845,8 @@ function EditPrinterModal({
       is_active: form.is_active,
       // Empty or 0 turns wear cost off for this printer (#694)
       wear_cost_per_hour: Number(form.wear_cost_per_hour) > 0 ? Number(form.wear_cost_per_hour) : null,
+      // Empty clears it; 0 is a real place (first) (#2915)
+      dispatch_priority: form.dispatch_priority.trim() === '' ? null : Math.max(0, Math.round(Number(form.dispatch_priority)) || 0),
     };
     // Only include access_code if it was changed
     if (form.access_code) {
@@ -8876,6 +9013,23 @@ function EditPrinterModal({
                 placeholder="0.00"
               />
               <p className="text-xs text-bambu-gray mt-1">{t('printers.modal.wearCostHelp')}</p>
+            </div>
+            <div>
+              <label htmlFor="edit_dispatch_priority" className="block text-sm text-bambu-gray mb-1">
+                {t('printers.modal.dispatchPriorityLabel', 'Priority for any-model jobs')}
+              </label>
+              <input
+                id="edit_dispatch_priority"
+                type="number"
+                min={0}
+                step={1}
+                inputMode="numeric"
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                value={form.dispatch_priority}
+                onChange={(e) => setForm({ ...form, dispatch_priority: e.target.value })}
+                placeholder="-"
+              />
+              <p className="text-xs text-bambu-gray mt-1">{t('printers.modal.dispatchPriorityHelp')}</p>
             </div>
             {/* Maintenance Mode toggle (#1476) — checkbox is the inverse of
                 is_active because the user-facing concept is "is this printer

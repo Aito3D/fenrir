@@ -1491,6 +1491,7 @@ class ArchiveService:
         slicer_ams_mapping_printer_id: int | None = None,
         update_archive_id: int | None = None,
         started_at: datetime | None = None,
+        replace_archive_id: int | None = None,
     ) -> PrintArchive | None:
         """Archive a 3MF file with metadata.
 
@@ -1545,6 +1546,14 @@ class ArchiveService:
                 better to say about them.
             started_at: When the print started, for a "printing" archive whose 3MF
                 was downloaded after the start (#3327). Defaults to now.
+            replace_archive_id: Put this file in place of an existing archive's: the
+                same slice sent again from the slicer (#1634, same G-code in a new
+                3MF). The file goes into the archive's own folder, where its photos
+                and timelapses are, and the old one is deleted. Everything read from
+                the file is the new one's; what belongs to the archive (owner,
+                project, notes, tags, photos, runs, a saved AMS mapping) stays, and so
+                does a name set by hand. Status and start are the caller's: the run
+                is opened as for any print of an existing archive.
         """
         # Verify printer exists if specified
         if printer_id is not None:
@@ -1562,21 +1571,39 @@ class ArchiveService:
         archive_dir = (
             settings.archive_dir / printer_folder / archive_name
         )  # SEC-PATH-OK: printer_folder = str(int|None) → digits or "unassigned"; archive_name = f"{timestamp}_{display_stem}" where resolve_display_stem strips path components via Path(filename).name
-        # Every archive owns its folder. The name is only second-resolution, so
-        # two same-name files archived within a second used to share one: the
-        # second overwrote the first's 3MF, and deleting either removed both.
-        archive_dir.parent.mkdir(parents=True, exist_ok=True)
-        base_dir_name = archive_dir.name
-        suffix = 1
-        while True:
-            try:
-                archive_dir.mkdir(exist_ok=False)
-                break
-            except FileExistsError:
-                suffix += 1
-                archive_dir = archive_dir.with_name(f"{base_dir_name}_{suffix}")
+        # A slicer resend replacing an archive's file (#1634): into that
+        # archive's folder, which holds its photos and timelapses and which
+        # deleting it removes. One without a file (restored from a backup, a
+        # fallback) gets a new folder, as a fallback given its 3MF does.
+        replacing: PrintArchive | None = None
+        if replace_archive_id is not None:
+            replacing = await self.db.get(PrintArchive, replace_archive_id)
+            if replacing is None:
+                logger.warning("archive_print: archive %s to replace the file of no longer exists", replace_archive_id)
+                return None
+        # False only when the file goes into the replaced archive's existing
+        # folder, which a failure below must never remove.
+        own_dir = replacing is None or not replacing.file_path
+        if not own_dir:
+            archive_dir = resolve_archive_dir(replacing)
+            archive_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            # Every archive owns its folder. The name is only second-resolution, so
+            # two same-name files archived within a second used to share one: the
+            # second overwrote the first's 3MF, and deleting either removed both.
+            archive_dir.parent.mkdir(parents=True, exist_ok=True)
+            base_dir_name = archive_dir.name
+            suffix = 1
+            while True:
+                try:
+                    archive_dir.mkdir(exist_ok=False)
+                    break
+                except FileExistsError:
+                    suffix += 1
+                    archive_dir = archive_dir.with_name(f"{base_dir_name}_{suffix}")
 
-        # From here on the folder is this call's own (created exclusively above).
+        # From here on the folder is this call's own (created exclusively above,
+        # unless it is a replaced archive's: see own_dir).
         # Any failure -- a commit refused with "database is locked", a full disk
         # mid-copy -- rolls the session back for the caller and removes the
         # folder, instead of leaving an orphan with no row and a session stuck
@@ -1590,7 +1617,12 @@ class ArchiveService:
             # The file work below runs in worker threads: copying, fsyncing,
             # hashing and parsing a 50-300 MB 3MF on the event loop stalled
             # every other printer's MQTT for seconds at each print start.
-            await asyncio.to_thread(_copy_and_fsync, source_file, dest_file)
+            # Over the replaced archive's file of the same name only once the copy
+            # is whole and checked, so a failed copy leaves the archive its file.
+            copy_target = dest_file
+            if replacing is not None and dest_file.exists():
+                copy_target = archive_dir / f".replacing-{source_file.name}"
+            await asyncio.to_thread(_copy_and_fsync, source_file, copy_target)
 
             # If we just archived a 3MF, verify the dest is a valid ZIP before
             # going any further. Staying quiet here is how #1032 escaped review —
@@ -1599,25 +1631,25 @@ class ArchiveService:
             if (
                 source_file.suffix.lower() == ".3mf"
                 and await asyncio.to_thread(zipfile.is_zipfile, source_file)
-                and not await asyncio.to_thread(zipfile.is_zipfile, dest_file)
+                and not await asyncio.to_thread(zipfile.is_zipfile, copy_target)
             ):
                 try:
                     src_size = source_file.stat().st_size
-                    dst_size = dest_file.stat().st_size
+                    dst_size = copy_target.stat().st_size
                 except OSError:
                     src_size = dst_size = -1
                 logger.error(
                     "Archive copy corrupted 3MF: src=%s (%s bytes, valid ZIP) -> dst=%s (%s bytes, NOT a ZIP). Refusing to create archive row.",
                     source_file,
                     src_size,
-                    dest_file,
+                    copy_target,
                     dst_size,
                 )
                 # Narrow cleanup: remove only the truncated file and the archive
                 # directory if it's now empty. The directory is this call's own
                 # (created exclusively above), but the narrow form costs nothing.
                 try:
-                    dest_file.unlink()
+                    copy_target.unlink()
                 except OSError:
                     pass
                 try:
@@ -1626,8 +1658,16 @@ class ArchiveService:
                     pass  # directory not empty — leave untouched
                 return None
 
+            if copy_target != dest_file:
+                os.replace(copy_target, dest_file)
+
             # Compute content hash for duplicate detection
             content_hash = await asyncio.to_thread(self.compute_file_hash, dest_file)
+            # And of its G-code alone, so the same slice sent again in a new 3MF
+            # adds a run to this archive (#1634). Off the event loop: it unzips.
+            from backend.app.services.archive_gcode_hash import NO_GCODE, gcode_fingerprint
+
+            gcode_hash = await asyncio.to_thread(gcode_fingerprint, dest_file) or NO_GCODE
 
             # Extract plate number from filename (e.g., "plate_5" from "/data/Metadata/plate_5.gcode")
             plate_number = None
@@ -1705,6 +1745,25 @@ class ArchiveService:
 
             # Recovery of an existing fallback row: assign the freshly-parsed values
             # onto it rather than adding a second archive for the same print (#2957).
+            if replacing is not None:
+                return await self._take_replacement_file(
+                    replacing,
+                    dest_file=dest_file,
+                    filename=original_filename or source_file.name,
+                    print_name=(
+                        clean_display_name(display_stem)
+                        if prefer_filename_for_name
+                        else (clean_display_name(metadata.get("print_name")) or clean_display_name(display_stem))
+                    ),
+                    content_hash=content_hash,
+                    gcode_hash=gcode_hash,
+                    thumbnail_path=thumbnail_path,
+                    metadata=metadata,
+                    cost=cost,
+                    quantity=quantity,
+                    plate_id=plate_id,
+                )
+
             if update_archive_id is not None:
                 existing = await self.db.get(PrintArchive, update_archive_id)
                 if existing is None:
@@ -1728,6 +1787,7 @@ class ArchiveService:
                 existing.file_path = str(dest_file.relative_to(settings.base_dir))
                 existing.file_size = dest_file.stat().st_size
                 existing.content_hash = content_hash
+                existing.gcode_hash = gcode_hash
                 existing.thumbnail_path = thumbnail_path
                 existing.print_name = (
                     clean_display_name(display_stem)
@@ -1780,6 +1840,7 @@ class ArchiveService:
                 file_path=str(dest_file.relative_to(settings.base_dir)),
                 file_size=dest_file.stat().st_size,
                 content_hash=content_hash,
+                gcode_hash=gcode_hash,
                 thumbnail_path=thumbnail_path,
                 # clean_display_name because the 3MF's own metadata reaches this
                 # verbatim, and a control character in it renders nowhere and
@@ -1844,9 +1905,97 @@ class ArchiveService:
                 refused = isinstance(exc, IntegrityError) or (
                     isinstance(exc, OperationalError) and "database is locked" in str(exc)
                 )
-                if not committing or refused:
+                if not own_dir:
+                    # The replaced archive's folder stays; only a half-copied file goes.
+                    (archive_dir / f".replacing-{source_file.name}").unlink(missing_ok=True)
+                elif not committing or refused:
                     shutil.rmtree(archive_dir, ignore_errors=True)
             raise
+
+    async def _take_replacement_file(
+        self,
+        archive: PrintArchive,
+        *,
+        dest_file: Path,
+        filename: str,
+        print_name: str | None,
+        content_hash: str,
+        gcode_hash: str,
+        thumbnail_path: str | None,
+        metadata: dict,
+        cost: float | None,
+        quantity: int,
+        plate_id: int | None,
+    ) -> PrintArchive:
+        """Give ``archive`` the file just placed at ``dest_file`` in place of its
+        own (``archive_print(replace_archive_id=...)``, #1634), and delete the
+        old one once that is committed."""
+        old_file = (
+            settings.base_dir / archive.file_path if archive.file_path else None
+        )  # SEC-PATH-OK: archive.file_path is DB-stored, internally generated
+        old_extra = archive.extra_data or {}
+
+        # A name the old file gave follows the file; one set by hand stays.
+        # Both ways archive_print names a file: its 3MF title, or its file name.
+        generated = {
+            clean_display_name(old_extra.get("print_name")),
+            clean_display_name(resolve_display_stem(archive.filename)) if archive.filename else None,
+        } - {None}
+        if print_name and (not archive.print_name or archive.print_name in generated):
+            archive.print_name = print_name
+
+        archive.filename = filename
+        archive.file_path = str(dest_file.relative_to(settings.base_dir))
+        archive.file_size = dest_file.stat().st_size
+        archive.content_hash = content_hash
+        archive.gcode_hash = gcode_hash
+        # Earlier runs point at the old thumbnail by path: one of another name
+        # stays in the folder for them, one of the same name now shows the new
+        # file's (the same slice).
+        if thumbnail_path is not None:
+            archive.thumbnail_path = thumbnail_path
+        # The same G-code, so what the new 3MF leaves out the old one said.
+        for field in (
+            "print_time_seconds",
+            "filament_used_grams",
+            "filament_type",
+            "filament_color",
+            "layer_height",
+            "total_layers",
+            "nozzle_diameter",
+            "bed_temperature",
+            "bed_type",
+            "nozzle_temperature",
+            "sliced_for_model",
+            "makerworld_url",
+            "designer",
+        ):
+            value = metadata.get(field)
+            if value is not None:
+                setattr(archive, field, value)
+        if cost is not None:
+            archive.cost = cost
+        archive.quantity = quantity
+        # The new file's description. Of what is not the file's, only the saved
+        # AMS pick is the archive's (a pause warning is its last run's).
+        extra = dict(metadata)
+        if "slicer_ams_mapping" in old_extra:
+            extra["slicer_ams_mapping"] = old_extra["slicer_ams_mapping"]
+        archive.extra_data = extra
+        if plate_id is not None:
+            archive.plate_id = plate_id
+        from backend.app.services.print_cost_estimate import refresh_plate_estimates
+
+        refresh_plate_estimates(archive)
+        await self.db.commit()
+        await self.db.refresh(archive)
+
+        if old_file is not None and old_file != dest_file:
+            try:
+                old_file.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning("Could not delete the replaced file %s of archive %s: %s", old_file, archive.id, exc)
+        return archive
 
     async def get_archive(self, archive_id: int) -> PrintArchive | None:
         """Get an archive by ID with relationships loaded."""

@@ -534,6 +534,7 @@ export interface Printer {
   // printers stream via WebRTC instead of the MJPEG grid stream
   supports_rtsp?: boolean;
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
+  dispatch_priority: number | null;  // Place in the pick order of any-model jobs, lowest first (#2915)
   wled_config: WLEDConfig | null;
   created_at: string;
   updated_at: string;
@@ -847,6 +848,34 @@ export interface PrinterStatus {
   drying_screen_only?: boolean;
   // Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
   supports_chamber_heater?: boolean;
+  // BIQU Panda Breath bound to this printer (#1466), null without one.
+  panda_breath?: PandaBreathState | null;
+}
+
+export type PandaBreathMode = 'auto mode' | 'power on' | 'filament drying';
+
+export interface PandaBreathState {
+  device_id: string;
+  online: boolean | null;
+  chamber_temp: number | null;
+  target_temp: number | null;
+  work_on: boolean | null;
+  mode: string | null;
+  filament_drying_mode: string | null;
+  drying_running: boolean | null;
+  drying_remaining_min: number | null;
+}
+
+export interface PandaBreathCommand {
+  work_on?: boolean;
+  mode?: PandaBreathMode;
+  target_temp?: number;
+}
+
+export interface PandaBreathStatus {
+  enabled: boolean;
+  connected: boolean;
+  devices: (PandaBreathState & { bound: boolean; printer_id: number | null; printer_name: string | null })[];
 }
 
 export interface PrinterCreate {
@@ -870,6 +899,7 @@ export interface PrinterCreate {
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;
+  dispatch_priority?: number | null;
   wled_config?: WLEDConfig | null;
 }
 
@@ -1616,6 +1646,8 @@ export type CameraEngine = 'ffmpeg' | 'go2rtc';
 export type CalibrationMode = 'off' | 'on' | 'auto';
 
 // Settings types
+export type ModelDispatchOrder = 'fewest_hours' | 'most_hours' | 'least_recently_used' | 'priority';
+
 export interface AppSettings {
   auto_archive: boolean;
   projects_auto_file_by_code: boolean; // Fenrir: file uploads named "P-0042_…" into that project
@@ -1703,6 +1735,8 @@ export interface AppSettings {
   mqtt_password: string;
   mqtt_topic_prefix: string;
   mqtt_use_tls: boolean;
+  // BIQU Panda Breath heaters on the same broker (#1466)
+  panda_breath_enabled: boolean;
   // External URL for notifications
   external_url: string;
   // Directory holding docker-compose.yml, shown in the update instructions (#2664)
@@ -1779,6 +1813,8 @@ export interface AppSettings {
   require_plate_clear: boolean;
   // Shortest job first scheduling
   queue_shortest_first: boolean;
+  // Which printer an any-model job takes when several can run it (#2915).
+  model_dispatch_order: ModelDispatchOrder;
   // How many printers the queue may upload to at once (#2555). 1 restores the
   // old strictly-serial behaviour, where every printer waited out every other
   // printer's transfer.
@@ -2590,6 +2626,8 @@ export interface CloudDevice {
 }
 
 // Smart Plug types
+export type SmartPlugTempSource = 'nozzle' | 'bed';
+
 export interface SmartPlug {
   id: number;
   name: string;
@@ -2647,6 +2685,9 @@ export interface SmartPlug {
   off_delay_mode: 'time' | 'temperature';
   off_delay_minutes: number;
   off_temp_threshold: number;
+  // #3464: what temperature mode waits for, and the bed's own threshold.
+  off_temp_source: SmartPlugTempSource;
+  off_bed_temp_threshold: number;
   // #1349: auto-off after AMS drying completes.
   auto_off_after_drying: boolean;
   off_delay_after_drying_minutes: number;
@@ -2725,6 +2766,9 @@ export interface SmartPlugCreate {
   off_delay_mode?: 'time' | 'temperature';
   off_delay_minutes?: number;
   off_temp_threshold?: number;
+  // #3464
+  off_temp_source?: SmartPlugTempSource;
+  off_bed_temp_threshold?: number;
   // #1349
   auto_off_after_drying?: boolean;
   off_delay_after_drying_minutes?: number;
@@ -2795,6 +2839,9 @@ export interface SmartPlugUpdate {
   off_delay_mode?: 'time' | 'temperature';
   off_delay_minutes?: number;
   off_temp_threshold?: number;
+  // #3464
+  off_temp_source?: SmartPlugTempSource;
+  off_bed_temp_threshold?: number;
   // #1349
   auto_off_after_drying?: boolean;
   off_delay_after_drying_minutes?: number;
@@ -3487,6 +3534,19 @@ export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'ema
 // How a Telegram provider collects the outcome verdict (#3046)
 export type TelegramVerdictMode = 'buttons' | 'reactions' | 'both';
 
+// Events that can carry a camera snapshot; a provider can skip it per event (#2877).
+export type NotificationPhotoEvent =
+  | 'print_start'
+  | 'print_complete'
+  | 'print_failed'
+  | 'print_stopped'
+  | 'print_progress'
+  | 'first_layer_complete'
+  | 'printer_error'
+  | 'ai_failure_detection'
+  | 'plate_not_empty'
+  | 'print_confirm_request';
+
 export interface NotificationProvider {
   id: number;
   name: string;
@@ -3494,6 +3554,7 @@ export interface NotificationProvider {
   enabled: boolean;
   config: Record<string, unknown>;
   attach_photo: boolean;
+  photo_skip_events: NotificationPhotoEvent[];
   // Print lifecycle events
   on_print_start: boolean;
   on_print_complete: boolean;
@@ -3566,6 +3627,7 @@ export interface NotificationProviderCreate {
   enabled?: boolean;
   config: Record<string, unknown>;
   attach_photo?: boolean;
+  photo_skip_events?: NotificationPhotoEvent[];
   // Print lifecycle events
   on_print_start?: boolean;
   on_print_complete?: boolean;
@@ -3631,6 +3693,7 @@ export interface NotificationProviderUpdate {
   enabled?: boolean;
   config?: Record<string, unknown>;
   attach_photo?: boolean;
+  photo_skip_events?: NotificationPhotoEvent[];
   // Print lifecycle events
   on_print_start?: boolean;
   on_print_complete?: boolean;
@@ -7274,6 +7337,12 @@ export const api = {
       method: 'POST',
     }),
 
+  sendPandaBreathCommand: (printerId: number, command: PandaBreathCommand) =>
+    request<{ success: boolean }>(`/printers/${printerId}/panda-breath`, {
+      method: 'POST',
+      body: JSON.stringify(command),
+    }),
+
   setFanSpeed: (printerId: number, fan: 'part' | 'aux' | 'aux2' | 'chamber', speed: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/fan-speed?fan=${fan}&speed=${speed}`, {
       method: 'POST',
@@ -8320,6 +8389,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getMQTTStatus: () => request<MQTTStatus>('/settings/mqtt/status'),
+  getPandaBreathStatus: () => request<PandaBreathStatus>('/settings/panda-breath/status'),
   exportBackup: async (): Promise<{ blob: Blob; filename: string }> => {
     // New simplified backup - complete database + all files
     const url = `${API_BASE}/settings/backup`;

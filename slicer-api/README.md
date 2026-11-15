@@ -52,6 +52,12 @@ native, and a stopgap until native ARM64 images ship. See
 
 Override via `ORCA_API_PORT` / `BAMBU_API_PORT` in `.env`.
 
+The ports are published on all interfaces by default. The sidecars have no
+login, so anyone who can reach the ports can use them. If Fenrir runs on
+the same host with `network_mode: host` (its default compose file), set
+`SIDECAR_BIND=127.0.0.1` in `.env` so only this host can reach them. Leave it
+unset when Fenrir runs in bridge mode or on another host.
+
 ## Fenrir wiring
 
 In the Fenrir UI: **Settings → Slicer**:
