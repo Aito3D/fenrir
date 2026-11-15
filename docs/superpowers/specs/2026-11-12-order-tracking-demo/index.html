@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maquette — suivi de commande</title>
+<style>
+  :root {
+    --cyan: #04A1E4; --cyan-dim: #11364a; --midnight: #0c1016; --card: #141b23;
+    --line: #212c37; --ink: #e9eff6; --muted: #a3b1c0; --green: #22c55e; --amber: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--midnight); color: var(--ink); font: 15px/1.45 -apple-system, "Inter", "Segoe UI", sans-serif; padding: 0 0 48px; min-height: 100vh; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  /* Mockup controls: not part of the page */
+  .mock { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center;
+    padding: 8px 12px; background: #000c; backdrop-filter: blur(6px); border-bottom: 1px dashed #445; font-size: 12px; color: var(--muted); }
+  .mock button { border: 1px solid #445; background: none; border-radius: 999px; padding: 4px 10px; color: var(--muted); }
+  .mock button[aria-pressed="true"] { border-color: var(--cyan); color: var(--cyan); }
+  .mock b { color: var(--amber); font-weight: 600; margin-right: 6px; }
+
+  .card { position: relative; margin: 40px auto 0; width: calc(100% - 32px); max-width: 620px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); padding: 24px; }
+  @media (min-width: 640px) { .card { padding: 32px; } }
+  .lang { position: absolute; top: 14px; right: 14px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--muted); }
+  header { text-align: center; }
+  .logo { margin-bottom: 20px; font-weight: 800; letter-spacing: .14em; font-size: 20px; }
+  .logo span { color: var(--cyan); }
+  h1 { font-size: 23px; font-weight: 600; letter-spacing: -.01em; }
+  .ref { margin-top: 8px; font-size: 13.5px; color: var(--muted); }
+
+  /* Rail: segments between nodes, never a line through them */
+  .rail { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 32px; list-style: none; padding: 0; }
+  .rail li { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; font-size: 11px; line-height: 1.2; color: color-mix(in srgb, var(--muted) 70%, transparent); padding: 0 2px; }
+  .rail li::before, .rail li::after { content: ""; position: absolute; top: 15px; height: 2px; background: var(--line); }
+  .rail li::before { left: 0; right: calc(50% + 18px); }
+  .rail li::after { left: calc(50% + 18px); right: 0; }
+  .rail li:first-child::before, .rail li:last-child::after { display: none; }
+  .rail li.done::before, .rail li.done::after, .rail li.current::before { background: color-mix(in srgb, var(--cyan) 55%, transparent); }
+  .node { position: relative; height: 32px; width: 32px; display: flex; align-items: center; justify-content: center; margin-bottom: 8px; }
+  .node i { display: flex; align-items: center; justify-content: center; height: 28px; width: 28px; border-radius: 50%; border: 2px solid var(--line); background: var(--card); }
+  .done .node i { border: 0; background: var(--cyan-dim); }
+  .current .node i { border: 0; height: 32px; width: 32px; background: var(--cyan); box-shadow: 0 0 0 5px color-mix(in srgb, var(--cyan) 14%, transparent); }
+  .current .node i::after { content: ""; height: 9px; width: 9px; border-radius: 50%; background: #fff; animation: pulse 2s ease-in-out infinite; }
+  .current.finished .node i::after { display: none; }
+  .rail li.done { color: color-mix(in srgb, var(--muted) 80%, transparent); }
+  .rail li.current { color: var(--ink); font-weight: 600; font-size: 12px; }
+  .node svg { display: none; }
+  .done .node svg, .finished .node svg { display: block; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) { .current .node i::after { animation: none; } }
+
+  .state { margin-top: 32px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--cyan) 35%, transparent); background: color-mix(in srgb, var(--cyan) 10%, transparent); padding: 16px; }
+  @media (min-width: 640px) { .state { padding: 16px 24px; } }
+  .state h2 { font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
+  .state p { margin-top: 8px; color: var(--muted); }
+  .state .upd { font-size: 13px; color: color-mix(in srgb, var(--muted) 80%, transparent); }
+  .state .where { margin-top: 12px; padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+  .state .where small { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .state .where span { display: block; margin-top: 4px; }
+  .state .where a { color: var(--cyan); text-decoration: none; font-weight: 600; font-size: 13.5px; }
+
+  h3 { margin: 24px 0 8px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .lines { list-style: none; padding: 0; }
+  .lines li { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+  .lines li:first-child { border-top: 0; }
+  .lines .name { flex: 1; min-width: 0; }
+  .lines .name small { display: block; margin-top: 2px; font-size: 12.5px; }
+  .lines .qty { min-width: 28px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .tally { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 4px; font-size: 13px; }
+  .more { margin-top: 12px; min-height: 44px; border: 0; background: none; color: var(--cyan); font-size: 13.5px; font-weight: 600; padding: 0; }
+  .s-ready { color: var(--cyan); } .s-wait { color: var(--amber); } .s-given { color: var(--muted); } .s-prep { color: var(--muted); }
+
+  .pay { margin-top: 32px; border-radius: 12px; border: 1px solid var(--line); padding: 16px; display: grid; gap: 12px; }
+  @media (min-width: 640px) { .pay { padding: 16px 24px; grid-template-columns: 1fr auto; align-items: center; } }
+  .pay small { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .pay strong { display: block; margin-top: 4px; font-size: 21px; font-variant-numeric: tabular-nums; }
+  .pay .sub { margin-top: 2px; font-size: 13px; color: var(--muted); }
+  .pay .ok { color: var(--green); font-size: 17px; }
+  .btn { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; border-radius: 8px; padding: 0 20px; font-size: 14px; font-weight: 600; border: 1px solid color-mix(in srgb, var(--cyan) 35%, transparent); color: var(--cyan); background: none; transition: transform .15s, background-color .15s; }
+  .btn:hover { background: color-mix(in srgb, var(--cyan) 10%, transparent); }
+  .btn:active { transform: scale(.97); }
+  .btn.fill { background: var(--cyan); color: var(--midnight); border-color: var(--cyan); }
+  .btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); text-align: center; font-size: 13px; color: var(--muted); }
+  footer a { color: var(--cyan); text-decoration: none; }
+  [hidden] { display: none !important; }
+
+  /* Side panels, as on the Aito tracking page: the card slides aside and a 420px panel comes out from behind it
+     (shop on the left, payment on the right); below 1120px the panel is a bottom sheet over a scrim. */
+  .stage { position: relative; margin: 40px auto 0; width: calc(100% - 32px); max-width: 620px; }
+  .stage .card { margin: 0; width: 100%; z-index: 2; transition: transform .38s cubic-bezier(.2,.8,.2,1); }
+  .panel { position: absolute; top: 50%; width: 420px; max-height: 92%; overflow: auto; z-index: 1; border-radius: 12px; border: 1px solid var(--line);
+    background: #10161d; padding: 22px 20px; opacity: 0; pointer-events: none; transform: translateY(-50%) scale(.97);
+    transition: transform .38s cubic-bezier(.2,.8,.2,1), opacity .2s; }
+  .panel.left { left: 0; } .panel.right { right: 0; }
+  .stage[data-open="shop"] .card { transform: translateX(215px); }
+  .stage[data-open="pay"] .card { transform: translateX(-215px); }
+  .stage[data-open="shop"] .panel.left { opacity: 1; pointer-events: auto; transform: translate(-215px, -50%); }
+  .stage[data-open="pay"] .panel.right { opacity: 1; pointer-events: auto; transform: translate(215px, -50%); }
+  .panel h2 { font-size: 18px; font-weight: 600; }
+  .panel .psub { margin-top: 4px; font-size: 13px; color: var(--muted); }
+  .panel .x { position: absolute; top: 14px; right: 14px; height: 32px; width: 32px; border-radius: 8px; border: 1px solid var(--line); background: none; color: var(--muted); }
+  .map { margin-top: 18px; height: 200px; border-radius: 10px; border: 1px solid var(--line); background:
+    linear-gradient(#1a2430 1px, transparent 1px) 0 0/100% 34px, linear-gradient(90deg, #1a2430 1px, transparent 1px) 0 0/46px 100%, #0e141b;
+    display: flex; align-items: center; justify-content: center; color: var(--cyan); font-size: 26px; }
+  .addr { margin-top: 14px; font-size: 14.5px; } .addr small { display: block; color: var(--muted); font-size: 13px; }
+  .rows { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; }
+  .rows a, .rows div { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 12px; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; }
+  .rows > :first-child { border-top: 0; }
+  .rows span { flex: 1; min-width: 0; font-size: 14.5px; overflow-wrap: anywhere; } .rows span small { display: block; font-size: 12px; color: var(--muted); }
+  .rows em { font-style: normal; color: var(--muted); font-size: 12.5px; }
+  .panel .btns { margin-top: 16px; } .panel .btns .btn { flex: 1; }
+  .seg { margin-top: 18px; display: flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; }
+  .seg button { flex: 1; min-height: 38px; border: 0; border-radius: 7px; background: none; color: var(--muted); font-size: 13.5px; font-weight: 600; }
+  .seg button[aria-pressed="true"] { background: color-mix(in srgb, var(--cyan) 14%, transparent); color: var(--cyan); }
+  .hint { margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .scrim { display: none; }
+  @media (max-width: 1119px) {
+    .stage[data-open] .card { transform: none; }
+    .panel, .panel.left, .panel.right { position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: 86vh; z-index: 10;
+      border-radius: 16px 16px 0 0; transform: translateY(100%); opacity: 1; }
+    .stage[data-open="shop"] .panel.left, .stage[data-open="pay"] .panel.right { transform: translateY(0); }
+    .stage[data-open] .scrim { display: block; position: fixed; inset: 0; z-index: 9; background: #000a; }
+  }
+  @media (prefers-reduced-motion: reduce) { .stage .card, .panel { transition: opacity .15s; } }
+</style>
+</head>
+<body>
+<div class="mock" role="group" aria-label="Maquette : état de la commande">
+  <b>MAQUETTE</b>
+  <button data-s="0">Reçue</button>
+  <button data-s="1">En préparation</button>
+  <button data-s="2">Prête en partie</button>
+  <button data-s="3">Prête à retirer</button>
+  <button data-s="4">Remise</button>
+  <span>·</span>
+  <button id="paid">Soldée</button>
+  <button id="link">Lien de paiement ouvert</button>
+  <button id="many">20 articles</button>
+</div>
+
+<div class="stage" id="stage">
+<div class="scrim" id="scrim"></div>
+
+<aside class="panel left" aria-label="Nous trouver">
+  <button class="x" data-close aria-label="Fermer">✕</button>
+  <h2>Nous trouver</h2>
+  <p class="psub">Retrait des commandes à la boutique</p>
+  <div class="map" aria-hidden="true">●</div>
+  <p class="addr">Aito3D<small>20 Route de l'eau Royale, Arue – Tahiti</small></p>
+  <div class="rows">
+    <a href="#"><span><small>Téléphone</small>(numéro de la boutique)</span><em>›</em></a>
+    <a href="#"><span><small>E-mail</small>(adresse de la boutique)</span><em>›</em></a>
+    <a href="#"><span><small>Site</small>aito3d.fr</span><em>↗</em></a>
+    <a href="#"><span><small>Instagram</small>@aito3d</span><em>↗</em></a>
+  </div>
+  <div class="btns"><button class="btn fill">Itinéraire</button><button class="btn">Appeler</button></div>
+</aside>
+
+<aside class="panel right" aria-label="Moyens de paiement">
+  <button class="x" data-close aria-label="Fermer">✕</button>
+  <h2>Moyens de paiement</h2>
+  <p class="psub">Commande #1079 · reste à régler 3 050 FCFP</p>
+  <div class="seg" role="group" aria-label="Moyen de paiement">
+    <button data-m="0" aria-pressed="true">Virement</button><button data-m="1">Appli</button><button data-m="2">En boutique</button>
+  </div>
+  <div class="rows" id="facts"></div>
+  <p class="hint" id="mhint"></p>
+</aside>
+
+<div class="card">
+  <span class="lang">FR</span>
+  <header>
+    <div class="logo">AITO<span>3D</span></div>
+    <h1>Suivi de ta commande</h1>
+    <p class="ref">Commande #1079 · passée le 1 octobre 2026</p>
+  </header>
+
+  <ol class="rail" id="rail" aria-label="Étapes de la commande"></ol>
+
+  <section class="state" aria-live="polite">
+    <h2 id="title"></h2>
+    <p id="sub"></p>
+    <div class="where" id="where">
+      <small>Retrait</small>
+      <span>Aito3D — 20 Route de l'eau Royale, Arue</span>
+      <a href="#" data-open="shop">Voir la boutique et l'itinéraire</a>
+    </div>
+    <p class="upd">Mis à jour il y a 12 minutes</p>
+  </section>
+
+  <h3>Ta commande</h3>
+  <p class="tally" id="tally" hidden></p>
+  <ul class="lines" id="lines"></ul>
+  <button class="more" id="more" hidden></button>
+
+  <section class="pay" id="pay"></section>
+
+  <footer>Une question ? <a href="#" data-open="shop">Nous trouver</a> · Aito3D</footer>
+</div>
+</div>
+
+<script>
+const STEPS = ['Commande reçue', 'En préparation', 'Prête à retirer', 'Remise'];
+const CHECK = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+const ITEMS = ['SUNLU PETG — Blanc Os, 1 kg', 'SUNLU PETG — Rouge, 1 kg', 'SUNLU PETG — Glow in the Dark Vert, 1 kg'];
+// state → rail step, copy, per-line status [class, label]
+const STATES = [
+  { step: 0, title: 'Nous avons bien reçu ta commande', sub: 'Elle sera préparée dès que possible. Tu recevras un SMS quand elle sera prête.', lines: [['s-prep', 'À préparer'], ['s-prep', 'À préparer'], ['s-prep', 'À préparer']] },
+  { step: 1, title: 'Ta commande est en préparation', sub: 'Un article est en attente de réapprovisionnement. Le reste est en cours de préparation.', lines: [['s-prep', 'En préparation'], ['s-prep', 'En préparation'], ['s-wait', 'En attente de stock']] },
+  { step: 2, title: 'Une partie de ta commande est prête', sub: 'Tu peux déjà venir chercher 2 articles sur 3. Le reste arrive prochainement.', where: true, lines: [['s-ready', 'Prêt à retirer'], ['s-ready', 'Prêt à retirer'], ['s-wait', 'En attente de stock']] },
+  { step: 2, title: 'Ta commande est prête', sub: 'Tu peux venir la retirer à la boutique.', where: true, lines: [['s-ready', 'Prêt à retirer'], ['s-ready', 'Prêt à retirer'], ['s-ready', 'Prêt à retirer']] },
+  { step: 3, title: 'Commande remise', sub: 'Merci pour ta confiance. À bientôt !', lines: [['s-given', 'Remis le 12 novembre'], ['s-given', 'Remis le 12 novembre'], ['s-given', 'Remis le 2 octobre']] },
+];
+let s = 2, paid = false, link = true, many = false, all = false;
+// Long orders: same fold as the Aito page (more than 8 lines → 6 shown), plus a tally by status above the list.
+const FOLD = 8, SHOWN = 6;
+const BRANDS = ['SUNLU PETG', 'eSUN PLA Silk', 'Bambu PLA Basic', 'eSUN PETG'];
+const COLOURS = ['Blanc', 'Noir', 'Rouge', 'Or', 'Cuivre', 'Bleu', 'Vert', 'Gris', 'Orange', 'Violet'];
+const LONG = Array.from({ length: 20 }, (_, i) => [`${BRANDS[i % 4]} — ${COLOURS[i % 10]}, 1 kg`, 1 + (i % 3)]);
+// What the customer can act on comes first: ready, then in preparation, then waiting for stock, then already handed over.
+const RANK = { 's-ready': 0, 's-prep': 1, 's-wait': 2, 's-given': 3 };
+const $ = (id) => document.getElementById(id);
+function render() {
+  const st = STATES[s];
+  $('rail').innerHTML = STEPS.map((label, i) => {
+    const cls = i < st.step ? 'done' : i === st.step ? 'current' + (s === 4 ? ' finished' : '') : '';
+    return `<li class="${cls}"${i === st.step ? ' aria-current="step"' : ''}><span class="node"><i>${CHECK}</i></span>${label}</li>`;
+  }).join('');
+  $('title').textContent = st.title;
+  $('sub').textContent = st.sub;
+  $('where').hidden = !st.where;
+  const rows = (many ? LONG.map(([name, qty], i) => [name, qty, st.lines[s === 2 || s === 1 ? (i % 5 === 4 ? 2 : 0) : 0]]) : ITEMS.map((name, i) => [name, 1, st.lines[i]]))
+    .sort((a, b) => RANK[a[2][0]] - RANK[b[2][0]]);
+  const folded = rows.length > FOLD && !all;
+  $('lines').innerHTML = (folded ? rows.slice(0, SHOWN) : rows).map(([name, qty, [cls, label]]) => `<li><span class="name">${name}<small class="${cls}">${label}</small></span><span class="qty">×${qty}</span></li>`).join('');
+  $('more').hidden = !folded;
+  $('more').textContent = `Voir les ${rows.length} articles`;
+  const counts = {};
+  rows.forEach(([, , [cls, label]]) => { counts[label] = [cls, (counts[label]?.[1] ?? 0) + 1]; });
+  $('tally').hidden = rows.length <= FOLD || Object.keys(counts).length < 2;
+  $('tally').innerHTML = Object.entries(counts).map(([label, [cls, n]]) => `<span class="${cls}">${n} · ${label.toLowerCase()}</span>`).join('');
+  $('many').setAttribute('aria-pressed', String(many));
+  $('pay').innerHTML = paid || s === 4
+    ? '<div><small>Paiement</small><strong class="ok">Commande réglée</strong><p class="sub">Total 5 345 FCFP</p></div>'
+    : `<div><small>Reste à régler</small><strong>3 050 FCFP</strong><p class="sub">Déjà réglé 2 295 FCFP · total 5 345 FCFP</p></div>
+       <div class="btns">${link ? '<button class="btn fill">Payer en ligne</button>' : ''}<button class="btn" data-open="pay">Moyens de paiement</button></div>`;
+  document.querySelectorAll('.mock [data-s]').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.s === s)));
+  $('paid').setAttribute('aria-pressed', String(paid));
+  $('link').setAttribute('aria-pressed', String(link));
+}
+document.querySelectorAll('.mock [data-s]').forEach((b) => b.addEventListener('click', () => { s = +b.dataset.s; all = false; render(); }));
+$('paid').addEventListener('click', () => { paid = !paid; render(); });
+$('link').addEventListener('click', () => { link = !link; render(); });
+$('many').addEventListener('click', () => { many = !many; all = false; render(); });
+$('more').addEventListener('click', () => { all = true; render(); });
+render();
+
+// Panels: one open at a time; the trigger toggles, Escape / the scrim / ✕ close.
+const stage = $('stage');
+const show = (which) => { if (which) stage.dataset.open = which; else delete stage.dataset.open; };
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-open],[data-close]');
+  if (!t) return;
+  e.preventDefault();
+  show(t.hasAttribute('data-close') || stage.dataset.open === t.dataset.open ? null : t.dataset.open);
+});
+$('scrim').addEventListener('click', () => show(null));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') show(null); });
+const METHODS = [
+  { facts: [['IBAN', '(IBAN de la boutique)'], ['Bénéficiaire', 'Aito3D'], ['BIC', '(BIC)'], ['Référence à indiquer', '#1079']], hint: 'Un virement met 1 à 2 jours ouvrés à nous parvenir.' },
+  { facts: [['Identifiant', '(identifiant de la boutique)'], ['Message à indiquer', '#1079']], hint: 'Ouvre ton appli de paiement et envoie le montant à cet identifiant.' },
+  { facts: [['Sur place', 'Carte, espèces ou chèque'], ['Adresse', "20 Route de l'eau Royale, Arue"]], hint: 'Tu peux régler au moment du retrait.' },
+];
+function method(i) {
+  document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.m === i)));
+  $('facts').innerHTML = METHODS[i].facts.map(([l, v]) => `<div><span><small>${l}</small>${v}</span><em>Copier</em></div>`).join('');
+  $('mhint').textContent = METHODS[i].hint;
+}
+document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => method(+b.dataset.m)));
+method(0);
+</script>
+</body>
+</html>

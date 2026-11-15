@@ -53,6 +53,18 @@ describe('OrderPaymentBlock payment buttons', () => {
     expect(start).toHaveBeenCalledWith('so1', 12000);
   });
 
+  it('the waiting screen turns to paid once the terminal reports the card', async () => {
+    vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
+    const get = vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(null);
+    vi.spyOn(api, 'startOrderTerminalPayment').mockResolvedValue(tpe());
+    render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+    await userEvent.click(await screen.findByRole('button', { name: /Card terminal/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Start the terminal' }));
+    expect(await screen.findByText('Waiting for the card on the terminal…')).toBeInTheDocument();
+    get.mockResolvedValue(tpe({ status: 'paid', amount_confirmed: 12000, booking_status: 'booked', settled_at: '2026-11-11T01:01:00' }));
+    expect(await screen.findByText('Payment accepted', {}, { timeout: 8000 })).toBeInTheDocument();
+  }, 12000);
+
   it('the prefill is capped at the document balance', async () => {
     vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target({ max_amount: 5000 }));
     vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(null);
