@@ -157,6 +157,18 @@ class StubOrca:
             raise self.fail
         return next((e for e in self.entries if e.get("id") == profile_id), "not a dict")
 
+    async def introspect(self):
+        # read-only pairing: SYNC pulls, and the push reports needs_write_scope without sending anything
+        self.calls.append("introspect")
+        return {"scope": "external_app:connect sync:read"}
+
+    async def push_profile(self, **kw):
+        self.calls.append(f"push_profile({kw.get('name')})")
+        return {"updated_time": 2}
+
+    async def delete_profiles(self, ids):
+        self.calls.append(f"delete_profiles({len(ids)})")
+
     async def close(self):
         self.calls.append("close")
 

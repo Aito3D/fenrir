@@ -1,7 +1,7 @@
 ### exit: 0
 ### stdout:
 locale files (16): de.ts en.ts es.ts fr.ts it.ts ja.ts ko.ts nl.ts pl.ts pt-BR.ts ru.ts sv.ts tr.ts uk.ts zh-CN.ts zh-TW.ts
---- en values (240 keys)
+--- en values (249 keys)
 filamentTrees.addColour = "Add colour"
 filamentTrees.addMachine = "Add printer"
 filamentTrees.addNozzle = "Add nozzle"
@@ -17,6 +17,12 @@ filamentTrees.baseFamilyHint = "The Bambu preset family the profiles inherit, fo
 filamentTrees.brand = "Brand"
 filamentTrees.calibrationSource = "Calibration source"
 filamentTrees.candidatesTitle = "New in Orca Cloud"
+filamentTrees.cleanOrca = "Clean Orca Cloud…"
+filamentTrees.cleanOrcaConfirm = "{{n}} filament presets in Orca Cloud are not part of a Fenrir tree and will be deleted. A snapshot is saved first. Printer and process presets are not touched."  placeholders={{n}}
+filamentTrees.cleanOrcaDone = "Deleted {{deleted}} from Orca Cloud, {{failed}} could not be deleted"  placeholders={{deleted}},{{failed}}
+filamentTrees.cleanOrcaNone = "Orca Cloud is already clean"
+filamentTrees.cleanOrcaReadOnly = "Orca Cloud is connected read-only. Disconnect and reconnect it to allow deleting."
+filamentTrees.cleanOrcaTitle = "Clean Orca Cloud?"
 filamentTrees.colourCount = "Colours: {{n}}"  placeholders={{n}}
 filamentTrees.colourHex = "Colour (hex)"
 filamentTrees.colourHexOf = "Colour of {{name}}"  placeholders={{name}}
@@ -219,6 +225,8 @@ filamentTrees.parentValue = "parent {{value}}"  placeholders={{value}}
 filamentTrees.path = "Profile path"
 filamentTrees.pendingExport = "{{n}} profiles changed since the last export"  placeholders={{n}}
 filamentTrees.pickNozzle = "Pick a nozzle to open this colour"
+filamentTrees.pushFailed = "{{n}} could not be sent to Orca Cloud. The next sync retries them."  placeholders={{n}}
+filamentTrees.pushNeedsReconnect = "Nothing was sent to Orca Cloud: this connection is read-only. Disconnect and reconnect Orca Cloud to allow sending ({{n}} waiting)."  placeholders={{n}}
 filamentTrees.removeColour = "Remove {{name}}"  placeholders={{name}}
 filamentTrees.removeColourBody = "Remove {{name}} from {{tree}}? Its profiles for every printer and nozzle are deleted."  placeholders={{name}},{{tree}}
 filamentTrees.revert = "Revert"
@@ -233,6 +241,7 @@ filamentTrees.stat.applied = "Pulled"
 filamentTrees.stat.ignored = "Ignored"
 filamentTrees.stat.legacy = "Old presets"
 filamentTrees.stat.missing = "Missing in Orca"
+filamentTrees.stat.pushed = "Pushed"
 filamentTrees.subtitle = "One calibrated profile per filament family, derived for every printer, nozzle and colour"
 filamentTrees.sync = "SYNC"
 filamentTrees.syncTitle = "Sync result"
@@ -243,7 +252,7 @@ filamentTrees.useParent = "Use parent"
 filamentTrees.useParentFor = "Use parent: {{field}}"  placeholders={{field}}
 nav.filamentProfiles = "Filament Profiles"
 
---- de.ts keys=240 values-sha256=384538e7fa1d9e05
+--- de.ts keys=249 values-sha256=57dffee2df8fe488
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
@@ -262,6 +271,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -464,6 +479,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -478,6 +495,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -488,7 +506,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- en.ts keys=240 values-sha256=09e647e899f0cb0b
+--- en.ts keys=249 values-sha256=cfdf0c71fc8bedd1
 missing=[] extra=[]
 same-as-en=0 non-string=[]
 placeholder-drift=[]
@@ -507,6 +525,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -709,6 +733,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -723,6 +749,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -733,7 +760,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- es.ts keys=240 values-sha256=297cca985162d588
+--- es.ts keys=249 values-sha256=02f299e8ba9a7a22
 missing=[] extra=[]
 same-as-en=3 non-string=[]
 placeholder-drift=[]
@@ -752,6 +779,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -954,6 +987,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -968,6 +1003,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -978,7 +1014,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- fr.ts keys=240 values-sha256=f2a06e00dc5230b1
+--- fr.ts keys=249 values-sha256=de80ad05e74954d9
 missing=[] extra=[]
 same-as-en=5 non-string=[]
 placeholder-drift=[]
@@ -997,6 +1033,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -1199,6 +1241,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -1213,6 +1257,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -1223,7 +1268,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- it.ts keys=240 values-sha256=0068b73a2b772636
+--- it.ts keys=249 values-sha256=cde8d25b5742e09f
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -1242,6 +1287,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -1444,6 +1495,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -1458,6 +1511,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -1468,7 +1522,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- ja.ts keys=240 values-sha256=90ff04e8833158a9
+--- ja.ts keys=249 values-sha256=ccfdff2f8722ee3e
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -1487,6 +1541,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -1689,6 +1749,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -1703,6 +1765,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -1713,7 +1776,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- ko.ts keys=240 values-sha256=6902360cb01ef9e0
+--- ko.ts keys=249 values-sha256=35bc191f3ca637a7
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -1732,6 +1795,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -1934,6 +2003,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -1948,6 +2019,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -1958,7 +2030,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- nl.ts keys=240 values-sha256=0dda7d531a3d9163
+--- nl.ts keys=249 values-sha256=03f7ee2c3899cf68
 missing=[] extra=[]
 same-as-en=8 non-string=[]
 placeholder-drift=[]
@@ -1977,6 +2049,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -2179,6 +2257,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -2193,6 +2273,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -2203,7 +2284,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- pl.ts keys=240 values-sha256=26d7d4babfe332cb
+--- pl.ts keys=249 values-sha256=1b2814455687457d
 missing=[] extra=[]
 same-as-en=8 non-string=[]
 placeholder-drift=[]
@@ -2222,6 +2303,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -2424,6 +2511,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -2438,6 +2527,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -2448,7 +2538,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- pt-BR.ts keys=240 values-sha256=226bcaff466cee3b
+--- pt-BR.ts keys=249 values-sha256=637c2672921f4a0c
 missing=[] extra=[]
 same-as-en=3 non-string=[]
 placeholder-drift=[]
@@ -2467,6 +2557,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -2669,6 +2765,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -2683,6 +2781,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -2693,7 +2792,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- ru.ts keys=240 values-sha256=c2a09ccf574c493f
+--- ru.ts keys=249 values-sha256=61fbc53f068c4f2b
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -2712,6 +2811,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -2914,6 +3019,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -2928,6 +3035,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -2938,7 +3046,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- sv.ts keys=240 values-sha256=b7d21d01eb7657d7
+--- sv.ts keys=249 values-sha256=a2778029f5ba3c0f
 missing=[] extra=[]
 same-as-en=6 non-string=[]
 placeholder-drift=[]
@@ -2957,6 +3065,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -3159,6 +3273,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -3173,6 +3289,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -3183,7 +3300,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- tr.ts keys=240 values-sha256=b23d0886450f8369
+--- tr.ts keys=249 values-sha256=8369582c711dc78e
 missing=[] extra=[]
 same-as-en=9 non-string=[]
 placeholder-drift=[]
@@ -3202,6 +3319,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -3404,6 +3527,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -3418,6 +3543,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -3428,7 +3554,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- uk.ts keys=240 values-sha256=0dc5d317a3c30d9a
+--- uk.ts keys=249 values-sha256=fcce3cc8cbe0ddd9
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -3447,6 +3573,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -3649,6 +3781,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -3663,6 +3797,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -3673,7 +3808,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- zh-CN.ts keys=240 values-sha256=de10eae0cfcdee7f
+--- zh-CN.ts keys=249 values-sha256=f5d81c9cda775139
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -3692,6 +3827,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -3894,6 +4035,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -3908,6 +4051,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -3918,7 +4062,7 @@ filamentTrees.useParent
 filamentTrees.useParentFor
 nav.filamentProfiles
 
---- zh-TW.ts keys=240 values-sha256=fa747af9d4036b41
+--- zh-TW.ts keys=249 values-sha256=c552eff8038c80ba
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -3937,6 +4081,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm
+filamentTrees.cleanOrcaDone
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount
 filamentTrees.colourHex
 filamentTrees.colourHexOf
@@ -4139,6 +4289,8 @@ filamentTrees.parentValue
 filamentTrees.path
 filamentTrees.pendingExport
 filamentTrees.pickNozzle
+filamentTrees.pushFailed
+filamentTrees.pushNeedsReconnect
 filamentTrees.removeColour
 filamentTrees.removeColourBody
 filamentTrees.revert
@@ -4153,6 +4305,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle

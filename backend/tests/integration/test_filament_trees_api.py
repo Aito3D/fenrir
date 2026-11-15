@@ -12,8 +12,9 @@ from backend.app.api.routes import filament_trees as routes
 from backend.app.models.filament_profile import BaseFilamentPreset, FilamentPreset
 from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor, FilamentTreeLeaf
 from backend.app.schemas.filament_profile import _CONTENT_MAX_LENGTH
-from backend.app.services import filament_tree_store as store
+from backend.app.services import filament_tree_push as push_service, filament_tree_store as store
 from backend.app.services.orca_cloud import OrcaCloudAuthError, OrcaCloudError
+from backend.app.services.orca_cloud_codec import encode_content
 from backend.tests.integration.test_filament_profiles_api import _create_user_with_perms, _setup_admin
 
 API = "/api/v1/filament-trees"
@@ -44,9 +45,25 @@ async def _tree(db, name="Polymaker PETG"):
 
 
 class _StubOrca:
-    def __init__(self, entries):
+    def __init__(self, entries, scope="sync:read"):
         self.entries = entries
+        self.scope = scope
         self.closed = False
+        self.pushed = []
+        self.push_error = None
+
+    async def introspect(self):
+        return {"scope": f"external_app:connect {self.scope}"}
+
+    async def delete_profiles(self, ids):
+        self.deleted = ids
+        self.entries[:] = [e for e in self.entries if e["id"] not in ids or e["id"] == "stuck"]
+
+    async def push_profile(self, **kw):
+        if self.push_error:
+            raise self.push_error
+        self.pushed.append(kw)
+        return {"updated_time": 2}
 
     async def list_profiles(self):
         return self.entries
@@ -58,8 +75,8 @@ class _StubOrca:
         self.closed = True
 
 
-def _stub_orca(monkeypatch, entries):
-    stub = _StubOrca(entries)
+def _stub_orca(monkeypatch, entries, scope="sync:read"):
+    stub = _StubOrca(entries, scope)
 
     async def build(_db, _user, **_kw):
         return stub
@@ -107,7 +124,15 @@ async def test_node_get_reports_sources_and_inherited(async_client, db_session, 
     class _Reader:
         def values(self, name):
             assert name == "Generic PETG @BBL H2S 0.4 nozzle"
-            return {"name": name, "type": "filament", "nozzle_temperature": ["240"], "cool_plate_temp": ["35"]}
+            return {
+                "name": name,
+                "type": "filament",
+                "nozzle_temperature": ["240"],
+                "cool_plate_temp": ["35"],
+                "filament_max_volumetric_speed": ["18"],
+                "filament_extruder_variant": ["Direct Drive Standard", "Direct Drive High Flow"],
+                "filament_flow_ratio": ["0.95", "0.98"],
+            }
 
     async def reader(_db):
         return _Reader()
@@ -125,6 +150,7 @@ async def test_node_get_reports_sources_and_inherited(async_client, db_session, 
         "inherited_value": ["245"],
         "inherited_source": "root",
         "source_label": None,
+        "variants": None,
     }
     assert (rows["hot_plate_temp"]["value"], rows["hot_plate_temp"]["source"]) == (["72"], "colorwide")
     assert rows["hot_plate_temp"]["own"] is False
@@ -132,6 +158,9 @@ async def test_node_get_reports_sources_and_inherited(async_client, db_session, 
     assert rows["cool_plate_temp"]["source"] == "bambu"
     assert rows["cool_plate_temp"]["source_label"] == "Generic PETG @BBL H2S 0.4 nozzle"
     assert "name" not in rows and "type" not in rows
+    # a per-variant array names the extruder variant of each entry
+    assert rows["filament_flow_ratio"]["variants"] == ["Direct Drive Standard", "Direct Drive High Flow"]
+    assert rows["cool_plate_temp"]["variants"] is None
 
     # colour-wide node: own hot_plate_temp, inherited from the root
     r = await async_client.get(f"{API}/{tree.id}/node", params={"color_id": red.id})
@@ -146,6 +175,9 @@ async def test_node_get_reports_sources_and_inherited(async_client, db_session, 
     temp = {row["key"]: row for row in r.json()}["nozzle_temperature"]
     assert (temp["own"], temp["inherited_value"], temp["inherited_source"]) == (True, ["240"], "bambu")
     assert temp["source_label"] == "Generic PETG @BBL H2S 0.4 nozzle"
+    # a nozzle-bound key cannot be set at the root, but its Bambu default still shows
+    speed = {row["key"]: row for row in r.json()}["filament_max_volumetric_speed"]
+    assert (speed["value"], speed["source"], speed["own"]) == (["18"], "bambu", False)
 
     # machine node inherits from the root
     r = await async_client.get(f"{API}/{tree.id}/node", params={"machine": "H2S"})
@@ -213,13 +245,107 @@ async def test_sync_applies_and_returns_plan(async_client, db_session, monkeypat
     r = await async_client.post(f"{API}/sync")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert set(body) == {"applied", "conflicts", "candidates", "legacy", "missing", "ignored", "refresh"}
+    assert set(body) == {"applied", "conflicts", "candidates", "legacy", "missing", "ignored", "refresh", "push"}
     [applied] = body["applied"]
     assert applied["target"] == "color" and applied["values"] == {"nozzle_temperature": ["255"]}
     assert [c["orca_id"] for c in body["candidates"]] == ["b"]
     assert stub.closed
     r = await async_client.get(f"{API}/{tree.id}/node", params={"machine": "H2S", "nozzle": "0.4", "color_id": red.id})
     assert {row["key"]: row["value"] for row in r.json()}["nozzle_temperature"] == ["255"]
+
+
+async def test_sync_pushes_changed_leaves(async_client, db_session, monkeypatch, tmp_path):
+    monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
+    await _tree(db_session)
+    rows = (await db_session.execute(select(FilamentTreeLeaf, FilamentPreset).join(FilamentPreset))).all()
+    same, edited = rows[0][1], rows[1][1]
+    entries = [
+        {
+            "id": "same",
+            "name": same.name,
+            "updated_time": 1,
+            "content": encode_content(json.loads(same.content) | {"type": "filament"}),
+        },
+        # first sight with a difference: a conflict, so this leaf must wait for the user
+        {
+            "id": "edit",
+            "name": edited.name,
+            "content": encode_content(json.loads(edited.content) | {"type": "filament", "x": ["1"]}),
+        },
+    ]
+    # a read-only pairing pushes nothing and says so
+    stub = _stub_orca(monkeypatch, entries)
+    push = (await async_client.post(f"{API}/sync")).json()["push"]
+    assert push["needs_write_scope"] and push["remaining"] == len(rows) - 2 and not stub.pushed
+
+    stub = _stub_orca(monkeypatch, entries, scope="sync:write")
+    r = await async_client.post(f"{API}/sync")
+    assert r.status_code == 200, r.text
+    push = r.json()["push"]
+    assert push["pushed"] == len(rows) - 2 and push["failed"] == []
+    assert {p["name"] for p in stub.pushed} == {preset.name for _, preset in rows} - {same.name, edited.name}
+    assert all(p["content"]["type"] == "filament" and p["original_updated_time"] is None for p in stub.pushed)
+    assert json.loads((tmp_path / push["snapshot"]).read_text()) == entries  # Orca as it was before the push
+    # Orca Cloud holds one string per setting: a JSON list crashes OrcaSlicer at startup
+    assert all(isinstance(v, str) for p in stub.pushed for v in p["content"].values())
+
+    # Orca now holds what was pushed: nothing left to send
+    entries += [{"id": p["profile_id"], "name": p["name"], "content": p["content"]} for p in stub.pushed]
+    stub = _stub_orca(monkeypatch, entries, scope="sync:write")
+    assert (await async_client.post(f"{API}/sync")).json()["push"]["pushed"] == 0 and not stub.pushed
+
+    # a profile the first push release sent as JSON lists is sent again, even though its values match
+    entries[0]["content"] = json.loads(same.content) | {"type": "filament"}
+    stub = _stub_orca(monkeypatch, entries, scope="sync:write")
+    assert (await async_client.post(f"{API}/sync")).json()["push"]["pushed"] == 1
+    assert stub.pushed[0]["profile_id"] == "same"
+    entries[0]["content"] = stub.pushed[0]["content"]
+
+    # a Fenrir edit goes out as an update of the existing Orca profiles; the conflict shown earlier and left
+    # unanswered no longer holds its leaf back (Fenrir is the master)
+    tree_id = rows[0][0].tree_id
+    r = await async_client.put(f"{API}/{tree_id}/node", json={"set": {"hot_plate_temp": ["75"]}})
+    assert r.status_code == 200, r.text
+    assert (await async_client.post(f"{API}/sync")).json()["push"]["pushed"] == len(rows)
+    by_id = {p["profile_id"]: p for p in stub.pushed}
+    assert by_id["same"]["original_updated_time"] == 1 and "edit" in by_id
+
+
+async def test_sync_push_stops_after_repeated_failures(async_client, db_session, monkeypatch, tmp_path):
+    monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
+    await _tree(db_session)
+    total = (await db_session.execute(select(func.count()).select_from(FilamentTreeLeaf))).scalar_one()
+    stub = _stub_orca(monkeypatch, [], scope="sync:write")
+    stub.push_error = OrcaCloudError("Orca Cloud push failed (429): slow down")
+    push = (await async_client.post(f"{API}/sync")).json()["push"]
+    assert push["pushed"] == 0 and len(push["failed"]) == 5 and push["remaining"] == total - 5
+
+
+async def test_orca_cleanup_deletes_only_stray_filaments(async_client, db_session, monkeypatch, tmp_path):
+    monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
+    await _tree(db_session)
+    leaf = (await db_session.execute(select(FilamentPreset).join(FilamentTreeLeaf))).scalars().first()
+    entries = [
+        {"id": "leaf", "name": leaf.name, "content": {"type": "filament"}},
+        {"id": "old", "name": "Polymaker PETG - Red", "content": {"type": "filament"}},
+        {"id": "stuck", "name": "eSUN PLA+ - Blue", "content": {"type": "filament"}},
+        {"id": "proc", "name": "0.20mm Standard", "content": {"type": "print"}},
+    ]
+    stub = _stub_orca(monkeypatch, entries)
+    r = await async_client.get(f"{API}/orca-cleanup")
+    assert r.json() == {"count": 2, "names": ["Polymaker PETG - Red", "eSUN PLA+ - Blue"], "writable": False}
+    # read-only pairing, or a count the user never saw: refused before anything is deleted
+    assert (await async_client.post(f"{API}/orca-cleanup", json={"expected": 2})).status_code == 400
+    stub = _stub_orca(monkeypatch, entries, scope="sync:write")
+    assert (await async_client.post(f"{API}/orca-cleanup", json={"expected": 3})).status_code == 400
+    assert not hasattr(stub, "deleted") and not list(tmp_path.iterdir())
+
+    r = await async_client.post(f"{API}/orca-cleanup", json={"expected": 2})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert stub.deleted == ["old", "stuck"]  # never the leaf, never the process profile
+    assert (body["deleted"], body["failed"]) == (1, 1)  # counted from a fresh listing, not from Orca's reply
+    assert len(json.loads((tmp_path / body["snapshot"]).read_text())) == 3  # every filament as it was before
 
 
 async def test_sync_requires_orca_permission(async_client, db_session, monkeypatch):

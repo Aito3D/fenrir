@@ -1428,7 +1428,9 @@ false
   {
    "color_id": 1,
    "content": {
-    "extra_key": "1",
+    "extra_key": [
+     "1"
+    ],
     "hot_plate_temp": [
      "70"
     ],
@@ -1465,7 +1467,9 @@ false
    "key": "extra_key",
    "machine": "H2S",
    "nozzle": "0.4",
-   "orca_value": "1",
+   "orca_value": [
+    "1"
+   ],
    "tree_id": 1
   }
  ],

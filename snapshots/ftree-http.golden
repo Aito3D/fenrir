@@ -1000,7 +1000,8 @@ GET /api/v1/filament-trees/1/node
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "35"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1011,7 +1012,8 @@ GET /api/v1/filament-trees/1/node
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "20"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1022,7 +1024,20 @@ GET /api/v1/filament-trees/1/node
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "20"
-  ]
+  ],
+  "variants": null
+ },
+ {
+  "inherited_source": null,
+  "inherited_value": null,
+  "key": "filament_max_volumetric_speed",
+  "own": false,
+  "source": "bambu",
+  "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
+  "value": [
+   "16"
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1033,7 +1048,8 @@ GET /api/v1/filament-trees/1/node
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "70"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1044,7 +1060,8 @@ GET /api/v1/filament-trees/1/node
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "240"
-  ]
+  ],
+  "variants": null
  }
 ]
 ### D02 put root
@@ -1267,7 +1284,8 @@ GET /api/v1/filament-trees/1/node
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "35"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1278,7 +1296,8 @@ GET /api/v1/filament-trees/1/node
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "20"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "bambu",
@@ -1291,7 +1310,20 @@ GET /api/v1/filament-trees/1/node
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "25.5"
-  ]
+  ],
+  "variants": null
+ },
+ {
+  "inherited_source": null,
+  "inherited_value": null,
+  "key": "filament_max_volumetric_speed",
+  "own": false,
+  "source": "bambu",
+  "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
+  "value": [
+   "16"
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1302,7 +1334,8 @@ GET /api/v1/filament-trees/1/node
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "70"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "bambu",
@@ -1315,7 +1348,8 @@ GET /api/v1/filament-trees/1/node
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "246"
-  ]
+  ],
+  "variants": null
  }
 ]
 ### D31 get machine
@@ -1331,7 +1365,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "35"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1342,7 +1377,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "20"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -1355,7 +1391,20 @@ GET /api/v1/filament-trees/1/node?machine=H2S
   "source_label": null,
   "value": [
    "25.5"
-  ]
+  ],
+  "variants": null
+ },
+ {
+  "inherited_source": null,
+  "inherited_value": null,
+  "key": "filament_max_volumetric_speed",
+  "own": false,
+  "source": "bambu",
+  "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
+  "value": [
+   "16"
+  ],
+  "variants": null
  },
  {
   "inherited_source": "bambu",
@@ -1368,7 +1417,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "75"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -1381,7 +1431,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S
   "source_label": null,
   "value": [
    "246"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1392,7 +1443,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S
   "source_label": null,
   "value": [
    "0.01"
-  ]
+  ],
+  "variants": null
  }
 ]
 ### D32 get nozzle
@@ -1408,7 +1460,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "35"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1419,7 +1472,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "1"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1430,7 +1484,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "20"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -1443,7 +1498,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "25.5"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1454,7 +1510,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "16"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1465,7 +1522,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "M900 K0.03"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "machine",
@@ -1478,7 +1536,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "75"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -1491,7 +1550,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "246"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "machine",
@@ -1504,7 +1564,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "0.03"
-  ]
+  ],
+  "variants": null
  }
 ]
 ### D33 get nozzle without base preset
@@ -1518,7 +1579,8 @@ GET /api/v1/filament-trees/1/node?machine=H2D&nozzle=0.6
   "own": false,
   "source": "machine",
   "source_label": null,
-  "value": true
+  "value": true,
+  "variants": null
  },
  {
   "inherited_source": "machine",
@@ -1527,7 +1589,8 @@ GET /api/v1/filament-trees/1/node?machine=H2D&nozzle=0.6
   "own": false,
   "source": "machine",
   "source_label": null,
-  "value": 1.5
+  "value": 1.5,
+  "variants": null
  },
  {
   "inherited_source": "machine",
@@ -1544,7 +1607,8 @@ GET /api/v1/filament-trees/1/node?machine=H2D&nozzle=0.6
    "s",
    1,
    2.5
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "machine",
@@ -1553,7 +1617,8 @@ GET /api/v1/filament-trees/1/node?machine=H2D&nozzle=0.6
   "own": false,
   "source": "machine",
   "source_label": null,
-  "value": "s"
+  "value": "s",
+  "variants": null
  },
  {
   "inherited_source": "machine",
@@ -1562,7 +1627,8 @@ GET /api/v1/filament-trees/1/node?machine=H2D&nozzle=0.6
   "own": false,
   "source": "machine",
   "source_label": null,
-  "value": 3
+  "value": 3,
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1573,7 +1639,8 @@ GET /api/v1/filament-trees/1/node?machine=H2D&nozzle=0.6
   "source_label": "Generic PETG @base",
   "value": [
    "35"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -1586,7 +1653,8 @@ GET /api/v1/filament-trees/1/node?machine=H2D&nozzle=0.6
   "source_label": null,
   "value": [
    "25.5"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1597,7 +1665,8 @@ GET /api/v1/filament-trees/1/node?machine=H2D&nozzle=0.6
   "source_label": "Generic PETG @base",
   "value": [
    "12"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -1610,7 +1679,8 @@ GET /api/v1/filament-trees/1/node?machine=H2D&nozzle=0.6
   "source_label": null,
   "value": [
    "246"
-  ]
+  ],
+  "variants": null
  }
 ]
 ### D34 get colour-wide
@@ -1626,7 +1696,8 @@ GET /api/v1/filament-trees/1/node?color_id=2
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "35"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "bambu",
@@ -1639,7 +1710,8 @@ GET /api/v1/filament-trees/1/node?color_id=2
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "40"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -1652,7 +1724,20 @@ GET /api/v1/filament-trees/1/node?color_id=2
   "source_label": null,
   "value": [
    "25.5"
-  ]
+  ],
+  "variants": null
+ },
+ {
+  "inherited_source": null,
+  "inherited_value": null,
+  "key": "filament_max_volumetric_speed",
+  "own": false,
+  "source": "bambu",
+  "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
+  "value": [
+   "16"
+  ],
+  "variants": null
  },
  {
   "inherited_source": "bambu",
@@ -1665,7 +1750,8 @@ GET /api/v1/filament-trees/1/node?color_id=2
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "72"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -1678,7 +1764,8 @@ GET /api/v1/filament-trees/1/node?color_id=2
   "source_label": null,
   "value": [
    "246"
-  ]
+  ],
+  "variants": null
  }
 ]
 ### D35 get colour
@@ -1694,7 +1781,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.6&color_id=2
   "source_label": "Generic PETG @BBL H2S",
   "value": [
    "35"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "colorwide",
@@ -1707,7 +1795,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.6&color_id=2
   "source_label": null,
   "value": [
    "40"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -1720,7 +1809,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.6&color_id=2
   "source_label": null,
   "value": [
    "25.5"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "bambu",
@@ -1733,7 +1823,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.6&color_id=2
   "source_label": "Generic PETG @BBL H2S",
   "value": [
    "18"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "colorwide",
@@ -1746,7 +1837,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.6&color_id=2
   "source_label": null,
   "value": [
    "72"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -1759,7 +1851,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.6&color_id=2
   "source_label": null,
   "value": [
    "250"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "machine",
@@ -1772,7 +1865,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.6&color_id=2
   "source_label": null,
   "value": [
    "0.01"
-  ]
+  ],
+  "variants": null
  }
 ]
 ### D36 get source leaf
@@ -1788,7 +1882,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4&color_id=1
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "35"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "nozzle",
@@ -1801,7 +1896,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4&color_id=1
   "source_label": null,
   "value": [
    "1"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1812,7 +1908,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4&color_id=1
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "20"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -1825,7 +1922,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4&color_id=1
   "source_label": null,
   "value": [
    "25.5"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -1836,7 +1934,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4&color_id=1
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "16"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "nozzle",
@@ -1849,7 +1948,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4&color_id=1
   "source_label": null,
   "value": [
    "M900 K0.03"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "machine",
@@ -1862,7 +1962,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4&color_id=1
   "source_label": null,
   "value": [
    "75"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -1875,7 +1976,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4&color_id=1
   "source_label": null,
   "value": [
    "246"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "nozzle",
@@ -1888,7 +1990,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4&color_id=1
   "source_label": null,
   "value": [
    "0.03"
-  ]
+  ],
+  "variants": null
  }
 ]
 ### D37 get: nozzle without machine
@@ -4622,7 +4725,8 @@ GET /api/v1/filament-trees/3/node
   "source_label": "Bambu PETG Basic @BBL H2S",
   "value": [
    "0"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "bambu",
@@ -4635,7 +4739,20 @@ GET /api/v1/filament-trees/3/node
   "source_label": "Bambu PETG Basic @BBL H2S",
   "value": [
    "60"
-  ]
+  ],
+  "variants": null
+ },
+ {
+  "inherited_source": null,
+  "inherited_value": null,
+  "key": "filament_start_gcode",
+  "own": false,
+  "source": "bambu",
+  "source_label": "Bambu PETG Basic @BBL H2S",
+  "value": [
+   "; base start"
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -4646,7 +4763,8 @@ GET /api/v1/filament-trees/3/node
   "source_label": null,
   "value": [
    "245"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -4657,7 +4775,8 @@ GET /api/v1/filament-trees/3/node
   "source_label": "Bambu PETG Basic @BBL H2S",
   "value": [
    "70"
-  ]
+  ],
+  "variants": null
  }
 ]
 ### I15 migrated tree: source nozzle
@@ -4673,7 +4792,8 @@ GET /api/v1/filament-trees/3/node?machine=H2S&nozzle=0.4
   "source_label": "Bambu PETG Basic @BBL H2S",
   "value": [
    "0"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -4686,7 +4806,8 @@ GET /api/v1/filament-trees/3/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "60"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -4697,7 +4818,8 @@ GET /api/v1/filament-trees/3/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "24"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "bambu",
@@ -4710,7 +4832,8 @@ GET /api/v1/filament-trees/3/node?machine=H2S&nozzle=0.4
   "source_label": "Bambu PETG Basic @BBL H2S",
   "value": [
    "M900 L1000 M10\nM900 K0.035"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -4723,7 +4846,8 @@ GET /api/v1/filament-trees/3/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "245"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -4734,7 +4858,8 @@ GET /api/v1/filament-trees/3/node?machine=H2S&nozzle=0.4
   "source_label": "Bambu PETG Basic @BBL H2S",
   "value": [
    "70"
-  ]
+  ],
+  "variants": null
  }
 ]
 ### I20 managed preset: PATCH refused
@@ -8848,6 +8973,13 @@ POST /api/v1/filament-trees/sync
   "Polymaker PETG - White @H2S 0.4",
   "Polymaker PETG - White @H2S 0.6"
  ],
+ "push": {
+  "failed": [],
+  "needs_write_scope": true,
+  "pushed": 0,
+  "remaining": 47,
+  "snapshot": null
+ },
  "refresh": []
 }
 ### DUMP K after first sync
@@ -9160,6 +9292,13 @@ POST /api/v1/filament-trees/sync
   "Polymaker PETG - White @H2S 0.4",
   "Polymaker PETG - White @H2S 0.6"
  ],
+ "push": {
+  "failed": [],
+  "needs_write_scope": true,
+  "pushed": 0,
+  "remaining": 48,
+  "snapshot": null
+ },
  "refresh": []
 }
 ### K05 node after sync: source nozzle
@@ -9175,7 +9314,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "35"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -9186,7 +9326,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "1"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -9199,7 +9340,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "30"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "machine",
@@ -9212,7 +9354,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "85"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -9223,7 +9366,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "20"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -9236,7 +9380,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "25.5"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -9249,7 +9394,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "0.97"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -9260,7 +9406,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "16"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -9271,7 +9418,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "M900 K0.045"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -9282,7 +9430,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": "Generic PETG @BBL H2S 0.4 nozzle",
   "value": [
    "70"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -9295,7 +9444,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "245"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": null,
@@ -9306,7 +9456,8 @@ GET /api/v1/filament-trees/1/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "0.03"
-  ]
+  ],
+  "variants": null
  }
 ]
 ### K06 a Fenrir edit of the colour leaf
@@ -9395,6 +9546,13 @@ POST /api/v1/filament-trees/sync
   "Polymaker PETG - White @H2S 0.4",
   "Polymaker PETG - White @H2S 0.6"
  ],
+ "push": {
+  "failed": [],
+  "needs_write_scope": true,
+  "pushed": 0,
+  "remaining": 47,
+  "snapshot": null
+ },
  "refresh": [
   {
    "color_id": 2,
@@ -9479,6 +9637,13 @@ POST /api/v1/filament-trees/sync
   "Polymaker PETG - White @H2S 0.4",
   "Polymaker PETG - White @H2S 0.6"
  ],
+ "push": {
+  "failed": [],
+  "needs_write_scope": true,
+  "pushed": 0,
+  "remaining": 48,
+  "snapshot": null
+ },
  "refresh": []
 }
 ### K10 sync: source leaf root edit
@@ -9560,6 +9725,13 @@ POST /api/v1/filament-trees/sync
   "Polymaker PETG - White @H2S 0.4",
   "Polymaker PETG - White @H2S 0.6"
  ],
+ "push": {
+  "failed": [],
+  "needs_write_scope": true,
+  "pushed": 0,
+  "remaining": 48,
+  "snapshot": null
+ },
  "refresh": []
 }
 ### K11 resolve on the source leaf: nozzle-bound -> node
@@ -9664,6 +9836,13 @@ POST /api/v1/filament-trees/sync
   "Polymaker PETG - White @H2S 0.4",
   "Polymaker PETG - White @H2S 0.6"
  ],
+ "push": {
+  "failed": [],
+  "needs_write_scope": true,
+  "pushed": 0,
+  "remaining": 48,
+  "snapshot": null
+ },
  "refresh": []
 }
 ### K17 sync: Orca auth error
@@ -12062,7 +12241,8 @@ GET /api/v1/filament-trees/5/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "18"
-  ]
+  ],
+  "variants": null
  },
  {
   "inherited_source": "root",
@@ -12075,7 +12255,8 @@ GET /api/v1/filament-trees/5/node?machine=H2S&nozzle=0.4
   "source_label": null,
   "value": [
    "215"
-  ]
+  ],
+  "variants": null
  }
 ]
 ### L13 list
@@ -14677,7 +14858,7 @@ GET /api/v1/filament-trees/unmanaged
 {"brand": "Bare", "color": "Blue", "color_hex": "#0000FF", "content": "<356 chars sha256=7c2d79b91628>", "filename": "Bare PLA - Blue @H2D 0.4.json", "id": 78, "material": "PLA", "name": "Bare PLA - Blue @H2D 0.4"}
 {"brand": "Bare", "color": "Blue", "color_hex": "#0000FF", "content": "<356 chars sha256=2e4ef8d45537>", "filename": "Bare PLA - Blue @H2D 0.6.json", "id": 79, "material": "PLA", "name": "Bare PLA - Blue @H2D 0.6"}
 -- settings: {"filament_tree_targets": "{\"machines\": [\"H2S\", \"H2D\"], \"nozzles\": [\"0.2\", \"0.4\", \"0.6\"]}"}
-### orca stub calls: ["list_profiles", "close", "list_profiles", "close", "list_profiles", "close", "list_profiles", "close", "list_profiles", "close", "list_profiles", "close", "list_profiles", "close", "list_profiles", "close", "list_profiles", "close", "get_profile(c1)", "close", "get_profile(c1)", "close", "get_profile(c1)", "close", "get_profile(c2)", "close", "get_profile(c3)", "close", "get_profile(zzz)", "close", "get_profile(c4)", "close", "get_profile(c1)", "close", "get_profile(c1)", "close", "get_profile(c1)", "close"]
+### orca stub calls: ["list_profiles", "close", "introspect", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "introspect", "close", "list_profiles", "close", "list_profiles", "close", "list_profiles", "close", "get_profile(c1)", "close", "get_profile(c1)", "close", "get_profile(c1)", "close", "get_profile(c2)", "close", "get_profile(c3)", "close", "get_profile(zzz)", "close", "get_profile(c4)", "close", "get_profile(c1)", "close", "get_profile(c1)", "close", "get_profile(c1)", "close"]
 
 ### stderr:
 

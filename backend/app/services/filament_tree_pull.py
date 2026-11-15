@@ -14,6 +14,7 @@ from backend.app.models.filament_profile import FilamentPreset
 from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor, FilamentTreeLeaf, FilamentTreeOverride
 from backend.app.services.filament_tree import NOZZLE_BOUND_KEYS, SKIP_KEYS
 from backend.app.services.filament_tree_store import get_leaf_preset, regenerate_tree, set_node_values
+from backend.app.services.orca_cloud_codec import decode_content
 
 _LEAF_SUFFIX = re.compile(r" @\S+ \d\.\d$")
 
@@ -82,10 +83,11 @@ def plan_pull(orca_entries: list[dict], leaves: list[LeafState], tree_colour_nam
         if not isinstance(entry, dict):
             plan.ignored += 1
             continue
-        content = entry.get("content") or {}
-        if not isinstance(content, dict):
+        raw_content = entry.get("content") or {}
+        if not isinstance(raw_content, dict):
             plan.ignored += 1
             continue
+        content = decode_content(raw_content)
         if content.get("type") != "filament":
             continue
         name = entry.get("name", "")

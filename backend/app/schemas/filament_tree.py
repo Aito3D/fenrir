@@ -100,6 +100,10 @@ class ExportConfirm(BaseModel):
     token: str
 
 
+class OrcaCleanupRequest(BaseModel):
+    expected: int  # the count the user saw and confirmed
+
+
 class TreeCreate(BaseModel):
     brand: Name
     material: Name
@@ -147,6 +151,7 @@ class NodeRow(BaseModel):
     inherited_value: Any = None
     inherited_source: str | None = None
     source_label: str | None = None  # the Bambu base preset name, for bambu rows
+    variants: list[str] | None = None  # extruder variant of each entry, for per-variant arrays
 
 
 class NodeUpdate(BaseModel):

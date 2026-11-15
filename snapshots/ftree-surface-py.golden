@@ -9,6 +9,8 @@ PUT /api/v1/filament-trees/targets  -> put_targets  [require_permission_if_auth_
 GET /api/v1/filament-trees/unmanaged  -> list_unmanaged  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:read']"} <- (HTTPBearer); get_db]
 POST /api/v1/filament-trees/migrate  -> migrate  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:create', 'filaments:update']"} <- (HTTPBearer); get_db]
 POST /api/v1/filament-trees/sync  -> sync  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update', 'orca_cloud:auth']"} <- (HTTPBearer))]
+GET /api/v1/filament-trees/orca-cleanup  -> orca_cleanup_preview  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:delete', 'orca_cloud:auth']"} <- (HTTPBearer))]
+POST /api/v1/filament-trees/orca-cleanup  -> orca_cleanup  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:delete', 'orca_cloud:auth']"} <- (HTTPBearer))]
 POST /api/v1/filament-trees/conflicts/resolve  -> resolve  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
 POST /api/v1/filament-trees/candidates  -> adopt_candidate  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:create', 'orca_cloud:auth']"} <- (HTTPBearer))]
 POST /api/v1/filament-trees/export  -> export  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
@@ -39,6 +41,8 @@ async def get_targets(_: backend.app.models.user.User | None = Depends(dependenc
 async def list_trees(_: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def list_unmanaged(_: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def migrate(payload: backend.app.schemas.filament_tree.MigrateRequest, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def orca_cleanup(payload: backend.app.schemas.filament_tree.OrcaCleanupRequest, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function cloud_caller.<locals>.resolved>, use_cache=True, scope=None))
+async def orca_cleanup_preview(db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function cloud_caller.<locals>.resolved>, use_cache=True, scope=None))
 async def patch_tree(tree_id: int, payload: backend.app.schemas.filament_tree.TreeUpdate, user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def put_node(tree_id: int, payload: backend.app.schemas.filament_tree.NodeUpdate, user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def put_targets(payload: backend.app.schemas.filament_tree.Targets, user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
@@ -74,6 +78,7 @@ class MigrateGroup(BaseModel)
 class MigrateRequest(BaseModel)
 class NodeRow(BaseModel)
 class NodeUpdate(BaseModel)
+class OrcaCleanupRequest(BaseModel)
 class Targets(BaseModel)
 class TreeChange(BaseModel)
 class TreeColor(BaseModel)
@@ -102,6 +107,7 @@ def resolve_with_sources(tree: backend.app.services.filament_tree.TreeData, mach
 class BaseValueReader(object)
     def __init__(self, filenames: dict[str, str])
     def values(self, name: str) -> dict
+VARIANT_KEY = 'filament_extruder_variant'
 async def build_base_reader(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> backend.app.services.filament_tree_base.BaseValueReader
 
 ## backend.app.services.filament_tree_export
@@ -196,12 +202,15 @@ class NodeRow(BaseModel)
     inherited_value: typing.Any  default=None
     inherited_source: str | None  default=None
     source_label: str | None  default=None
+    variants: list[str] | None  default=None
 class NodeUpdate(BaseModel)
     machine: typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  default=None
     nozzle: typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  default=None
     color_id: int | None  default=None
     set_values: dict[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=100), _PydanticGeneralMetadata(pattern='^[a-z0-9_]+$')])], typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)], typing.Annotated[bool, Strict(strict=True)], typing.Annotated[list[typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)]]], FieldInfo(annotation=NoneType, required=True, metadata=[MaxLen(max_length=16)])]]]  default_factory=dict
     clear: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=100), _PydanticGeneralMetadata(pattern='^[a-z0-9_]+$')])]]  default_factory=list
+class OrcaCleanupRequest(BaseModel)
+    expected: <class 'int'>  required
 class Targets(BaseModel)
     machines: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  required
     nozzles: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  required

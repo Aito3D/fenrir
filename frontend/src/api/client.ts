@@ -536,6 +536,7 @@ export interface Printer {
   // printers stream via WebRTC instead of the MJPEG grid stream
   supports_rtsp?: boolean;
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
+  dispatch_priority: number | null;  // Place in the pick order of any-model jobs, lowest first (#2915)
   wled_config: WLEDConfig | null;
   created_at: string;
   updated_at: string;
@@ -849,6 +850,34 @@ export interface PrinterStatus {
   drying_screen_only?: boolean;
   // Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
   supports_chamber_heater?: boolean;
+  // BIQU Panda Breath bound to this printer (#1466), null without one.
+  panda_breath?: PandaBreathState | null;
+}
+
+export type PandaBreathMode = 'auto mode' | 'power on' | 'filament drying';
+
+export interface PandaBreathState {
+  device_id: string;
+  online: boolean | null;
+  chamber_temp: number | null;
+  target_temp: number | null;
+  work_on: boolean | null;
+  mode: string | null;
+  filament_drying_mode: string | null;
+  drying_running: boolean | null;
+  drying_remaining_min: number | null;
+}
+
+export interface PandaBreathCommand {
+  work_on?: boolean;
+  mode?: PandaBreathMode;
+  target_temp?: number;
+}
+
+export interface PandaBreathStatus {
+  enabled: boolean;
+  connected: boolean;
+  devices: (PandaBreathState & { bound: boolean; printer_id: number | null; printer_name: string | null })[];
 }
 
 export interface PrinterCreate {
@@ -872,6 +901,7 @@ export interface PrinterCreate {
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;
+  dispatch_priority?: number | null;
   wled_config?: WLEDConfig | null;
 }
 
@@ -1618,6 +1648,8 @@ export type CameraEngine = 'ffmpeg' | 'go2rtc';
 export type CalibrationMode = 'off' | 'on' | 'auto';
 
 // Settings types
+export type ModelDispatchOrder = 'fewest_hours' | 'most_hours' | 'least_recently_used' | 'priority';
+
 export interface AppSettings {
   auto_archive: boolean;
   projects_auto_file_by_code: boolean; // Fenrir: file uploads named "P-0042_…" into that project
@@ -1705,6 +1737,8 @@ export interface AppSettings {
   mqtt_password: string;
   mqtt_topic_prefix: string;
   mqtt_use_tls: boolean;
+  // BIQU Panda Breath heaters on the same broker (#1466)
+  panda_breath_enabled: boolean;
   // External URL for notifications
   external_url: string;
   // Directory holding docker-compose.yml, shown in the update instructions (#2664)
@@ -1781,6 +1815,8 @@ export interface AppSettings {
   require_plate_clear: boolean;
   // Shortest job first scheduling
   queue_shortest_first: boolean;
+  // Which printer an any-model job takes when several can run it (#2915).
+  model_dispatch_order: ModelDispatchOrder;
   // How many printers the queue may upload to at once (#2555). 1 restores the
   // old strictly-serial behaviour, where every printer waited out every other
   // printer's transfer.
@@ -2592,6 +2628,8 @@ export interface CloudDevice {
 }
 
 // Smart Plug types
+export type SmartPlugTempSource = 'nozzle' | 'bed';
+
 export interface SmartPlug {
   id: number;
   name: string;
@@ -2649,6 +2687,9 @@ export interface SmartPlug {
   off_delay_mode: 'time' | 'temperature';
   off_delay_minutes: number;
   off_temp_threshold: number;
+  // #3464: what temperature mode waits for, and the bed's own threshold.
+  off_temp_source: SmartPlugTempSource;
+  off_bed_temp_threshold: number;
   // #1349: auto-off after AMS drying completes.
   auto_off_after_drying: boolean;
   off_delay_after_drying_minutes: number;
@@ -2727,6 +2768,9 @@ export interface SmartPlugCreate {
   off_delay_mode?: 'time' | 'temperature';
   off_delay_minutes?: number;
   off_temp_threshold?: number;
+  // #3464
+  off_temp_source?: SmartPlugTempSource;
+  off_bed_temp_threshold?: number;
   // #1349
   auto_off_after_drying?: boolean;
   off_delay_after_drying_minutes?: number;
@@ -2797,6 +2841,9 @@ export interface SmartPlugUpdate {
   off_delay_mode?: 'time' | 'temperature';
   off_delay_minutes?: number;
   off_temp_threshold?: number;
+  // #3464
+  off_temp_source?: SmartPlugTempSource;
+  off_bed_temp_threshold?: number;
   // #1349
   auto_off_after_drying?: boolean;
   off_delay_after_drying_minutes?: number;
@@ -3489,6 +3536,19 @@ export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'ema
 // How a Telegram provider collects the outcome verdict (#3046)
 export type TelegramVerdictMode = 'buttons' | 'reactions' | 'both';
 
+// Events that can carry a camera snapshot; a provider can skip it per event (#2877).
+export type NotificationPhotoEvent =
+  | 'print_start'
+  | 'print_complete'
+  | 'print_failed'
+  | 'print_stopped'
+  | 'print_progress'
+  | 'first_layer_complete'
+  | 'printer_error'
+  | 'ai_failure_detection'
+  | 'plate_not_empty'
+  | 'print_confirm_request';
+
 export interface NotificationProvider {
   id: number;
   name: string;
@@ -3496,6 +3556,7 @@ export interface NotificationProvider {
   enabled: boolean;
   config: Record<string, unknown>;
   attach_photo: boolean;
+  photo_skip_events: NotificationPhotoEvent[];
   // Print lifecycle events
   on_print_start: boolean;
   on_print_complete: boolean;
@@ -3568,6 +3629,7 @@ export interface NotificationProviderCreate {
   enabled?: boolean;
   config: Record<string, unknown>;
   attach_photo?: boolean;
+  photo_skip_events?: NotificationPhotoEvent[];
   // Print lifecycle events
   on_print_start?: boolean;
   on_print_complete?: boolean;
@@ -3633,6 +3695,7 @@ export interface NotificationProviderUpdate {
   enabled?: boolean;
   config?: Record<string, unknown>;
   attach_photo?: boolean;
+  photo_skip_events?: NotificationPhotoEvent[];
   // Print lifecycle events
   on_print_start?: boolean;
   on_print_complete?: boolean;
@@ -4430,6 +4493,8 @@ export interface FilamentTreeNodeRow {
   inherited_value?: unknown; inherited_source?: string | null;
   /** the Bambu base preset name, for bambu rows */
   source_label?: string | null;
+  /** the extruder variant each entry belongs to, for per-variant arrays */
+  variants?: string[] | null;
 }
 export interface FilamentTreeMigrationGroup {
   prefix: string; preset_ids: number[]; proposed_source_preset_id: number;
@@ -4448,6 +4513,8 @@ export interface FilamentTreePullResult {
   candidates: FilamentTreeCandidate[];
   legacy: number; missing: string[]; ignored: number;
   refresh: Array<{ tree_id: number; machine: string; nozzle: string; color_id: number; keys: string[] }>;
+  // remaining: leaves still waiting (read-only pairing, or the run stopped after repeated failures)
+  push: { pushed: number; failed: Array<{ name: string; detail: string }>; remaining: number; needs_write_scope: boolean; snapshot: string | null };
 }
 export interface FilamentTreeNodeUpdate {
   machine?: string | null; nozzle?: string | null; color_id?: number | null;
@@ -4931,6 +4998,27 @@ export interface ExternalLinkUpdate {
 }
 
 // Pricing Calculator
+/** One plate of a Bambu Studio project .3mf, as the Aito import job reports it. */
+export interface Aito3mfFilament { type: string; color: string; used_g: number; vendor: string | null }
+export interface Aito3mfObject { name: string; count: number; x_mm: number | null; y_mm: number | null; z_mm: number | null }
+export interface Aito3mfPlate {
+  index: number;
+  name: string | null;
+  print_time_seconds: number | null;
+  weight_g: number | null;
+  printer_model: string | null;
+  filaments: Aito3mfFilament[];
+  objects: Aito3mfObject[];
+  thumbnail: string | null;
+}
+export interface Aito3mfImportState {
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  percent: number | null;
+  filename: string;
+  plates: Aito3mfPlate[] | null;
+  error: string | null;
+}
+
 export interface CalculatorFilament {
   id: number;
   /** Derived display label: "<brand> <material>" (computed server-side). */
@@ -7276,6 +7364,12 @@ export const api = {
       method: 'POST',
     }),
 
+  sendPandaBreathCommand: (printerId: number, command: PandaBreathCommand) =>
+    request<{ success: boolean }>(`/printers/${printerId}/panda-breath`, {
+      method: 'POST',
+      body: JSON.stringify(command),
+    }),
+
   setFanSpeed: (printerId: number, fan: 'part' | 'aux' | 'aux2' | 'chamber', speed: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/fan-speed?fan=${fan}&speed=${speed}`, {
       method: 'POST',
@@ -8322,6 +8416,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getMQTTStatus: () => request<MQTTStatus>('/settings/mqtt/status'),
+  getPandaBreathStatus: () => request<PandaBreathStatus>('/settings/panda-breath/status'),
   exportBackup: async (): Promise<{ blob: Blob; filename: string }> => {
     // New simplified backup - complete database + all files
     const url = `${API_BASE}/settings/backup`;
@@ -9214,6 +9309,10 @@ export const api = {
   migrateFilamentPresets: (groups: Array<{ prefix: string; source_preset_id: number; machine: string; nozzle: string }>) =>
     request<{ tree_ids: number[] }>('/filament-trees/migrate', { method: 'POST', body: JSON.stringify({ groups }) }),
   syncFilamentTrees: () => request<FilamentTreePullResult>('/filament-trees/sync', { method: 'POST' }),
+  // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if the count still matches
+  getOrcaCleanupPreview: () => request<{ count: number; names: string[]; writable: boolean }>('/filament-trees/orca-cleanup'),
+  cleanOrcaCloud: (expected: number) =>
+    request<{ deleted: number; failed: number; snapshot: string | null }>('/filament-trees/orca-cleanup', { method: 'POST', body: JSON.stringify({ expected }) }),
   // orca_value: what Orca holds; the server stores it as the leaf's baseline whichever value is kept
   resolveFilamentTreeConflict: (data: { tree_id: number; machine: string; nozzle: string; color_id: number; key: string; value: FilamentTreePresetValue | null; orca_value: FilamentTreePresetValue | null }) =>
     request<{ success: boolean }>('/filament-trees/conflicts/resolve', { method: 'POST', body: JSON.stringify(data) }),
@@ -10268,6 +10367,16 @@ export const api = {
     params.set('tz_offset_minutes', String(-new Date().getTimezoneOffset()));
     return request<AitoStats>(`/aito/stats?${params}`);
   },
+  startAito3mfImport: async (file: File): Promise<{ job_id: number }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_BASE}/aito/import-3mf`, {
+      method: 'POST', headers: bearerAuthHeaders(), body: formData,
+    });
+    if (!response.ok) await throwApiError(response);
+    return response.json();
+  },
+  getAito3mfImport: (jobId: number) => request<Aito3mfImportState>(`/aito/import-3mf/${jobId}`),
   getAitoClientHistory: (clientId: string, limit = 5) =>
     request<AitoClientHistory>(`/aito/clients/${encodeURIComponent(clientId)}/history?limit=${limit}`),
   getAitoClientRating: (clientId: string, refresh = false) =>

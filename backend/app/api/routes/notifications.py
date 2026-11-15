@@ -122,6 +122,7 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         "enabled": provider.enabled,
         "config": mask_config(_stored_config(provider)),
         "attach_photo": provider.attach_photo,
+        "photo_skip_events": provider.photo_skip_events or [],
         **{name: getattr(provider, name) for name in _EVENT_FLAG_FIELDS},
         "printer_error_max_level": provider.printer_error_max_level,
         # Rows from before #3046 hold NULL here; "buttons" is what they did.
@@ -234,6 +235,7 @@ async def create_notification_provider(
         enabled=provider_data.enabled,
         config=json.dumps(provider_data.config),
         attach_photo=provider_data.attach_photo,
+        photo_skip_events=provider_data.photo_skip_events,
         **{name: getattr(provider_data, name) for name in _EVENT_FLAG_FIELDS},
         printer_error_max_level=provider_data.printer_error_max_level,
         telegram_verdict_mode=provider_data.telegram_verdict_mode,

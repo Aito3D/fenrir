@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.filament_profile import BaseFilamentPreset
 from backend.app.services.bambu_studio import read_bundle_preset
 
+VARIANT_KEY = "filament_extruder_variant"
+
 
 class BaseValueReader:
     def __init__(self, filenames: dict[str, str]):
@@ -32,6 +34,16 @@ class BaseValueReader:
                 current = data.get("inherits") or ""
             merged: dict = {}
             for data in reversed(chain):
+                # shortcut: of an `include` template only the extruder variant list is merged (it names the
+                # entries of per-variant arrays), merge whole templates if their other defaults are ever needed
+                for template in data.get("include") or []:
+                    raw = read_bundle_preset(self._filenames[template]) if template in self._filenames else None
+                    try:
+                        variants = json.loads(raw).get(VARIANT_KEY) if raw else None
+                    except ValueError:
+                        variants = None
+                    if variants:
+                        merged[VARIANT_KEY] = variants
                 merged.update(data)
             self._cache[name] = merged
         return self._cache[name]

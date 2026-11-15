@@ -19,6 +19,8 @@ PUT /api/v1/filament-trees/targets  -> put_targets  [require_permission_if_auth_
 GET /api/v1/filament-trees/unmanaged  -> list_unmanaged  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:read']"} <- (HTTPBearer); get_db]
 POST /api/v1/filament-trees/migrate  -> migrate  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:create', 'filaments:update']"} <- (HTTPBearer); get_db]
 POST /api/v1/filament-trees/sync  -> sync  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update', 'orca_cloud:auth']"} <- (HTTPBearer))]
+GET /api/v1/filament-trees/orca-cleanup  -> orca_cleanup_preview  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:delete', 'orca_cloud:auth']"} <- (HTTPBearer))]
+POST /api/v1/filament-trees/orca-cleanup  -> orca_cleanup  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:delete', 'orca_cloud:auth']"} <- (HTTPBearer))]
 POST /api/v1/filament-trees/conflicts/resolve  -> resolve  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
 POST /api/v1/filament-trees/candidates  -> adopt_candidate  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:create', 'orca_cloud:auth']"} <- (HTTPBearer))]
 POST /api/v1/filament-trees/export  -> export  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
@@ -47,6 +49,8 @@ backend/app/api/routes/filament_trees.py:@router.put("/targets", response_model=
 backend/app/api/routes/filament_trees.py:@router.get("/unmanaged")
 backend/app/api/routes/filament_trees.py:@router.post("/migrate")
 backend/app/api/routes/filament_trees.py:@router.post("/sync", dependencies=[Depends(_cloud_api_key_gate)])
+backend/app/api/routes/filament_trees.py:@router.get("/orca-cleanup", dependencies=[Depends(_cloud_api_key_gate)])
+backend/app/api/routes/filament_trees.py:@router.post("/orca-cleanup", dependencies=[Depends(_cloud_api_key_gate)])
 backend/app/api/routes/filament_trees.py:@router.post("/conflicts/resolve")
 backend/app/api/routes/filament_trees.py:@router.post("/candidates", dependencies=[Depends(_cloud_api_key_gate)])
 backend/app/api/routes/filament_trees.py:@router.post("/export")
@@ -116,12 +120,15 @@ class NodeRow(BaseModel)
     inherited_value: typing.Any  default=None
     inherited_source: str | None  default=None
     source_label: str | None  default=None
+    variants: list[str] | None  default=None
 class NodeUpdate(BaseModel)
     machine: typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  default=None
     nozzle: typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  default=None
     color_id: int | None  default=None
     set_values: dict[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=100), _PydanticGeneralMetadata(pattern='^[a-z0-9_]+$')])], typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)], typing.Annotated[bool, Strict(strict=True)], typing.Annotated[list[typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)]]], FieldInfo(annotation=NoneType, required=True, metadata=[MaxLen(max_length=16)])]]]  default_factory=dict
     clear: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=100), _PydanticGeneralMetadata(pattern='^[a-z0-9_]+$')])]]  default_factory=list
+class OrcaCleanupRequest(BaseModel)
+    expected: <class 'int'>  required
 class Targets(BaseModel)
     machines: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  required
     nozzles: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  required
@@ -382,6 +389,8 @@ async def get_targets(_: backend.app.models.user.User | None = Depends(dependenc
 async def list_trees(_: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def list_unmanaged(_: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def migrate(payload: backend.app.schemas.filament_tree.MigrateRequest, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def orca_cleanup(payload: backend.app.schemas.filament_tree.OrcaCleanupRequest, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function cloud_caller.<locals>.resolved>, use_cache=True, scope=None))
+async def orca_cleanup_preview(db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function cloud_caller.<locals>.resolved>, use_cache=True, scope=None))
 async def patch_tree(tree_id: int, payload: backend.app.schemas.filament_tree.TreeUpdate, user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def put_node(tree_id: int, payload: backend.app.schemas.filament_tree.NodeUpdate, user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def put_targets(payload: backend.app.schemas.filament_tree.Targets, user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
@@ -417,6 +426,7 @@ class MigrateGroup(BaseModel)
 class MigrateRequest(BaseModel)
 class NodeRow(BaseModel)
 class NodeUpdate(BaseModel)
+class OrcaCleanupRequest(BaseModel)
 class Targets(BaseModel)
 class TreeChange(BaseModel)
 class TreeColor(BaseModel)
@@ -445,6 +455,7 @@ def resolve_with_sources(tree: backend.app.services.filament_tree.TreeData, mach
 class BaseValueReader(object)
     def __init__(self, filenames: dict[str, str])
     def values(self, name: str) -> dict
+VARIANT_KEY = 'filament_extruder_variant'
 async def build_base_reader(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> backend.app.services.filament_tree_base.BaseValueReader
 
 ## backend.app.services.filament_tree_export
@@ -494,9 +505,11 @@ def validate_targets(targets: dict) -> dict
 ```regen: grep -hoE '(get_setting|set_setting)\([a-z_]+, *[A-Za-z_"]+|[A-Z_]+_KEY = "[a-z_]+"|Settings\.key == "[a-z_]+"' backend/app/api/routes/filament_trees.py backend/app/models/filament_tree.py backend/app/schemas/filament_tree.py backend/app/services/filament_tree.py backend/app/services/filament_tree_*.py | sort -u; echo 'env vars / app settings:'; grep -hoE 'os\.environ[^)]*\)|os\.getenv\([^)]*\)|env_get\([^)]*\)|settings\.[a-z_]+' backend/app/api/routes/filament_trees.py backend/app/models/filament_tree.py backend/app/schemas/filament_tree.py backend/app/services/filament_tree.py backend/app/services/filament_tree_*.py | sort -u; echo 'limits and helpers borrowed from other modules:'; grep -hE '^from backend\.app\.(schemas\.filament_profile|api\.routes\.(settings|cloud|orca_cloud)|services\.(bambu_studio|orca_cloud)) import' backend/app/api/routes/filament_trees.py backend/app/models/filament_tree.py backend/app/schemas/filament_tree.py backend/app/services/filament_tree.py backend/app/services/filament_tree_*.py | sort -u```
 ```
 TARGETS_KEY = "filament_tree_targets"
+VARIANT_KEY = "filament_extruder_variant"
 get_setting(db, TARGETS_KEY
 set_setting(db, TARGETS_KEY
 env vars / app settings:
+settings.base_dir
 limits and helpers borrowed from other modules:
 from backend.app.api.routes.cloud import _cloud_api_key_gate, cloud_caller
 from backend.app.api.routes.orca_cloud import _build_authenticated_service
@@ -655,6 +668,8 @@ export interface FilamentTreeNodeRow {
   inherited_value?: unknown; inherited_source?: string | null;
   /** the Bambu base preset name, for bambu rows */
   source_label?: string | null;
+  /** the extruder variant each entry belongs to, for per-variant arrays */
+  variants?: string[] | null;
 }
 export interface FilamentTreeMigrationGroup {
   prefix: string; preset_ids: number[]; proposed_source_preset_id: number;
@@ -673,6 +688,8 @@ export interface FilamentTreePullResult {
   candidates: FilamentTreeCandidate[];
   legacy: number; missing: string[]; ignored: number;
   refresh: Array<{ tree_id: number; machine: string; nozzle: string; color_id: number; keys: string[] }>;
+  // remaining: leaves still waiting (read-only pairing, or the run stopped after repeated failures)
+  push: { pushed: number; failed: Array<{ name: string; detail: string }>; remaining: number; needs_write_scope: boolean; snapshot: string | null };
 }
 export interface FilamentTreeNodeUpdate {
   machine?: string | null; nozzle?: string | null; color_id?: number | null;
@@ -695,6 +712,10 @@ export interface FilamentTreeUpdate {
   migrateFilamentPresets: (groups: Array<{ prefix: string; source_preset_id: number; machine: string; nozzle: string }>) =>
     request<{ tree_ids: number[] }>('/filament-trees/migrate', { method: 'POST', body: JSON.stringify({ groups }) }),
   syncFilamentTrees: () => request<FilamentTreePullResult>('/filament-trees/sync', { method: 'POST' }),
+  // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if the count still matches
+  getOrcaCleanupPreview: () => request<{ count: number; names: string[]; writable: boolean }>('/filament-trees/orca-cleanup'),
+  cleanOrcaCloud: (expected: number) =>
+    request<{ deleted: number; failed: number; snapshot: string | null }>('/filament-trees/orca-cleanup', { method: 'POST', body: JSON.stringify({ expected }) }),
   // orca_value: what Orca holds; the server stores it as the leaf's baseline whichever value is kept
   resolveFilamentTreeConflict: (data: { tree_id: number; machine: string; nozzle: string; color_id: number; key: string; value: FilamentTreePresetValue | null; orca_value: FilamentTreePresetValue | null }) =>
     request<{ success: boolean }>('/filament-trees/conflicts/resolve', { method: 'POST', body: JSON.stringify(data) }),
@@ -756,6 +777,12 @@ filamentTrees.baseFamilyHint
 filamentTrees.brand
 filamentTrees.calibrationSource
 filamentTrees.candidatesTitle
+filamentTrees.cleanOrca
+filamentTrees.cleanOrcaConfirm  {{n}}
+filamentTrees.cleanOrcaDone  {{deleted}},{{failed}}
+filamentTrees.cleanOrcaNone
+filamentTrees.cleanOrcaReadOnly
+filamentTrees.cleanOrcaTitle
 filamentTrees.colourCount  {{n}}
 filamentTrees.colourHex
 filamentTrees.colourHexOf  {{name}}
@@ -958,6 +985,8 @@ filamentTrees.parentValue  {{value}}
 filamentTrees.path
 filamentTrees.pendingExport  {{n}}
 filamentTrees.pickNozzle
+filamentTrees.pushFailed  {{n}}
+filamentTrees.pushNeedsReconnect  {{n}}
 filamentTrees.removeColour  {{name}}
 filamentTrees.removeColourBody  {{name}},{{tree}}
 filamentTrees.revert
@@ -972,6 +1001,7 @@ filamentTrees.stat.applied
 filamentTrees.stat.ignored
 filamentTrees.stat.legacy
 filamentTrees.stat.missing
+filamentTrees.stat.pushed
 filamentTrees.subtitle
 filamentTrees.sync
 filamentTrees.syncTitle
@@ -1021,6 +1051,12 @@ nav.filamentProfiles
 'filamentTrees.brand'
 'filamentTrees.calibrationSource'
 'filamentTrees.candidatesTitle'
+'filamentTrees.cleanOrca'
+'filamentTrees.cleanOrcaConfirm'
+'filamentTrees.cleanOrcaDone'
+'filamentTrees.cleanOrcaNone'
+'filamentTrees.cleanOrcaReadOnly'
+'filamentTrees.cleanOrcaTitle'
 'filamentTrees.colourCount'
 'filamentTrees.colourHex'
 'filamentTrees.colourHexOf'
@@ -1089,6 +1125,8 @@ nav.filamentProfiles
 'filamentTrees.path'
 'filamentTrees.pendingExport'
 'filamentTrees.pickNozzle'
+'filamentTrees.pushFailed'
+'filamentTrees.pushNeedsReconnect'
 'filamentTrees.removeColour'
 'filamentTrees.removeColourBody'
 'filamentTrees.revert'

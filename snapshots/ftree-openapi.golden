@@ -185,6 +185,57 @@
     "filament-trees"
    ]
   },
+  "GET /api/v1/filament-trees/orca-cleanup": {
+   "description": "What a cleanup would delete: Orca Cloud filament profiles that are not a tree leaf.",
+   "operationId": "orca_cleanup_preview_api_v1_filament_trees_orca_cleanup_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Orca Cleanup Preview",
+   "tags": [
+    "filament-trees"
+   ]
+  },
   "GET /api/v1/filament-trees/targets": {
    "operationId": "get_targets_api_v1_filament_trees_targets_get",
    "parameters": [
@@ -1036,8 +1087,69 @@
     "filament-trees"
    ]
   },
+  "POST /api/v1/filament-trees/orca-cleanup": {
+   "description": "Delete them, after a snapshot. 400 when the count no longer matches what the user confirmed.",
+   "operationId": "orca_cleanup_api_v1_filament_trees_orca_cleanup_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/OrcaCleanupRequest"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Orca Cleanup",
+   "tags": [
+    "filament-trees"
+   ]
+  },
   "POST /api/v1/filament-trees/sync": {
-   "description": "Pull only: fold OrcaSlicer edits into the trees, report conflicts and candidates.",
+   "description": "Pull, then push: fold OrcaSlicer edits into the trees, then send every changed leaf to Orca Cloud.",
    "operationId": "sync_api_v1_filament_trees_sync_post",
    "parameters": [
     {
@@ -1890,6 +2002,20 @@
     },
     "value": {
      "title": "Value"
+    },
+    "variants": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Variants"
     }
    },
    "required": [
@@ -1997,6 +2123,19 @@
     }
    },
    "title": "NodeUpdate",
+   "type": "object"
+  },
+  "OrcaCleanupRequest": {
+   "properties": {
+    "expected": {
+     "title": "Expected",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "expected"
+   ],
+   "title": "OrcaCleanupRequest",
    "type": "object"
   },
   "Targets": {

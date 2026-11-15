@@ -38,7 +38,7 @@ import { STATUSES, STATUS_META, TONE } from '../components/orders/orderStatus';
 import type { Tone } from '../components/orders/orderStatus';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { formatDateTime } from '../utils/date';
+import { formatDateTime, formatRelativeTime } from '../utils/date';
 import { prefersReducedMotion } from '../utils/motion';
 import { formatMoney } from '../utils/pricing';
 
@@ -368,7 +368,7 @@ export function OrderBoardPage() {
               {syncing && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
               {syncing
                 ? t('orders.syncing', { n: data.sync.pending })
-                : data.computed_at && t('orders.updated', { when: formatDateTime(data.computed_at) })}
+                : data.computed_at && t('orders.updated', { when: formatRelativeTime(data.computed_at, 'system', t) })}
             </span>
           )}
           {hasPermission('orders:update') && (

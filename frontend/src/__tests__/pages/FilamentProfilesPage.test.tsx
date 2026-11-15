@@ -54,6 +54,7 @@ const EMPTY_PULL: FilamentTreePullResult = {
   missing: [],
   ignored: 0,
   refresh: [],
+  push: { pushed: 0, failed: [], remaining: 0, needs_write_scope: false, snapshot: null },
 };
 
 function stub({ trees = [TREE], groups = [] as FilamentTreeMigrationGroup[] } = {}) {
@@ -174,6 +175,17 @@ describe('FilamentProfilesPage (trees)', () => {
     await waitFor(() => expect(within(dialog).queryByRole('button', { name: 'Keep Orca: 245' })).not.toBeInTheDocument());
   });
 
+  it('SYNC tells a read-only pairing to reconnect before anything can be pushed', async () => {
+    stub();
+    vi.spyOn(api, 'syncFilamentTrees').mockResolvedValue({
+      ...EMPTY_PULL,
+      push: { ...EMPTY_PULL.push, needs_write_scope: true, remaining: 7 },
+    });
+    render(<FilamentProfilesPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'SYNC' }));
+    expect(await within(await screen.findByRole('dialog')).findByText(/read-only.*7 waiting/)).toBeInTheDocument();
+  });
+
   it('candidate form posts the brand, material and colour parsed from the name', async () => {
     stub();
     vi.spyOn(api, 'syncFilamentTrees').mockResolvedValue({
@@ -215,6 +227,18 @@ describe('FilamentProfilesPage (trees)', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('Orca Cloud is not connected.')).toBeInTheDocument();
     expect(within(dialog).getByRole('link', { name: /Profiles › Orca Cloud/ })).toHaveAttribute('href', '/profiles');
+  });
+
+  it('Clean Orca Cloud deletes only after the count is confirmed', async () => {
+    stub();
+    vi.spyOn(api, 'getOrcaCleanupPreview').mockResolvedValue({ count: 44, names: [], writable: true });
+    const clean = vi.spyOn(api, 'cleanOrcaCloud').mockResolvedValue({ deleted: 44, failed: 0, snapshot: 's.json' });
+    render(<FilamentProfilesPage />);
+    await menu('Clean Orca Cloud…');
+    expect(await screen.findByText(/44 filament presets in Orca Cloud/)).toBeInTheDocument();
+    expect(clean).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(clean).toHaveBeenCalledWith(44));
   });
 
   it('Export for Orca downloads the bundle', async () => {
@@ -385,6 +409,18 @@ describe('FilamentProfilesPage (trees)', () => {
     await userEvent.click(within(screen.getByRole('group', { name: 'Printer' })).getByRole('button', { name: 'All machines' }));
     expect(window.location.search).toBe('?tree=1&color=11');
     expect(await screen.findByRole('navigation', { name: 'Profile path' })).toHaveTextContent('Red (all machines)');
+  });
+
+  it('shows beside SYNC how many changed profiles it will send, and nothing when none changed', async () => {
+    stub({ trees: [{ ...TREE, export_pending: 3 }] });
+    const { unmount } = render(<FilamentProfilesPage />);
+    await screen.findByRole('button', { name: 'SYNC' });
+    expect(await screen.findByTestId('sync-pending-count')).toHaveTextContent('3');
+    unmount();
+    stub();
+    render(<FilamentProfilesPage />);
+    await screen.findByRole('button', { name: 'SYNC' });
+    expect(screen.queryByTestId('sync-pending-count')).not.toBeInTheDocument();
   });
 
   it('exports only the changed profiles and creates a filament from scratch', async () => {

@@ -204,6 +204,22 @@ describe('NodePanel', () => {
     expect(screen.getByRole('textbox', { name: 'Pressure advance (K)' })).toHaveValue('0.035');
   });
 
+  it('labels each entry of a per-variant value with its extruder variant', async () => {
+    getNode.mockResolvedValue([
+      {
+        key: 'filament_flow_ratio',
+        value: ['0.95', '0.98'],
+        source: 'bambu',
+        own: false,
+        variants: ['Direct Drive Standard', 'Direct Drive High Flow'],
+      },
+    ]);
+    renderPanel(<NodePanel node={{ treeId: 1, machine: 'H2S', nozzle: '0.6', colorId: 11 }} />);
+    expect(await screen.findByRole('textbox', { name: 'Flow ratio 2' })).toHaveValue('0.98');
+    expect(screen.getByText('Direct Drive Standard')).toBeInTheDocument();
+    expect(screen.getByText('Direct Drive High Flow')).toBeInTheDocument();
+  });
+
   it('edits one element of a multi-element value and keeps the others verbatim', async () => {
     const both = ['G1 X1, Y2\nM900 K0.03', 'a, b'];
     getNode.mockResolvedValue([{ key: 'filament_end_gcode', value: both, source: 'machine', own: false }]);

@@ -312,6 +312,9 @@ class AppSettings(BaseModel):
     mqtt_password: str = Field(default="", description="MQTT password for authentication (optional)")
     mqtt_topic_prefix: str = Field(default="fenrir", description="Topic prefix for all published messages")
     mqtt_use_tls: bool = Field(default=False, description="Use TLS/SSL encryption for MQTT connection")
+    panda_breath_enabled: bool = Field(
+        default=False, description="Follow BIQU Panda Breath heaters on the MQTT broker above (#1466)"
+    )
 
     # External URL for notifications
     external_url: str = Field(
@@ -549,6 +552,13 @@ class AppSettings(BaseModel):
     queue_shortest_first: bool = Field(
         default=False,
         description="Shortest Job First — scheduler prioritizes shorter print jobs over longer ones",
+    )
+    model_dispatch_order: Literal["fewest_hours", "most_hours", "least_recently_used", "priority"] = Field(
+        default="fewest_hours",
+        description=(
+            "Which printer an 'Any model' job takes when several can run it (#2915): the one with the fewest "
+            "print hours, the most, the one idle the longest, or the first by the printers' own priority."
+        ),
     )
     queue_max_concurrent_uploads: int = Field(
         default=4,
@@ -924,6 +934,7 @@ class AppSettingsUpdate(BaseModel):
     mqtt_password: str | None = None
     mqtt_topic_prefix: str | None = None
     mqtt_use_tls: bool | None = None
+    panda_breath_enabled: bool | None = None
     external_url: str | None = None
     docker_compose_dir: str | None = None
     ha_enabled: bool | None = None
@@ -939,6 +950,7 @@ class AppSettingsUpdate(BaseModel):
     # Capped by camera_light.MAX_DELAY_SECONDS: the finish photo's budget
     # has no more to spare.
     camera_light_delay: float | None = Field(default=None, ge=0, le=5)
+    model_dispatch_order: Literal["fewest_hours", "most_hours", "least_recently_used", "priority"] | None = None
     preferred_slicer: str | None = None
     open_in_slicer: str | None = None
     slice_engine: str | None = None

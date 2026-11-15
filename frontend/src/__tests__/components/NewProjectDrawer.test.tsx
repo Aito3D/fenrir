@@ -1474,3 +1474,74 @@ describe('NewProjectDrawer — stale summary at Create', () => {
     );
   });
 });
+
+describe('NewProjectDrawer — .3mf import', () => {
+  const importPlate = (name: string) => ({
+    index: 1, name, print_time_seconds: 3600, weight_g: 50, printer_model: 'H2S',
+    filaments: [{ type: 'PA6-CF', color: '#000000', used_g: 50, vendor: 'Sunlu' }],
+    objects: [{ name: 'marteau', count: 2, x_mm: 120, y_mm: 30, z_mm: 50 }], thumbnail: null,
+  });
+  /** Each upload gets its own job; job N's single plate is named `names[N - 1]`. (The
+   *  handler cannot read the multipart body: jsdom's File does not survive msw's parse.) */
+  function serveImports(...names: string[]) {
+    let jobs = 0;
+    server.use(
+      http.post('/api/v1/aito/import-3mf', () => HttpResponse.json({ job_id: ++jobs }, { status: 202 })),
+      http.get('/api/v1/aito/import-3mf/:id', ({ params }) =>
+        HttpResponse.json({
+          status: 'completed', percent: 100, filename: 'x.3mf', error: null,
+          plates: [importPlate(names[Number(params.id) - 1])],
+        }),
+      ),
+    );
+  }
+  const pick = (name: string) =>
+    userEvent.upload(screen.getByTestId('import-3mf-input'), new File(['x'], name), { applyAccept: false });
+  const panel = () => within(screen.getByTestId('import-3mf-panel'));
+
+  it('appends imported tasks after the drafts already typed', async () => {
+    serveImports('Marteaux');
+    await renderDrawer();
+    await userEvent.type(screen.getByLabelText('Optional title'), 'Capot');
+    await pick('Marteaux.3mf');
+    await userEvent.click(await panel().findByRole('button', { name: 'Add 1 task' }));
+    await waitFor(() => expect(taskTitles()).toEqual(['Capot', 'Marteaux']));
+    expect(screen.queryByTestId('import-3mf-panel')).not.toBeInTheDocument();
+  });
+
+  it('a second file replaces the one under review', async () => {
+    serveImports('Premier', 'Second');
+    await renderDrawer();
+    await pick('Premier.3mf');
+    expect(await panel().findByText('Premier')).toBeInTheDocument();
+    await pick('Second.3mf');
+    expect(await panel().findByText('Second')).toBeInTheDocument();
+    expect(panel().queryByText('Premier')).not.toBeInTheDocument();
+  });
+
+  it('refuses a non-.3mf drop with the onlyThreeMf message', async () => {
+    await renderDrawer();
+    fireEvent.drop(screen.getByTestId('import-3mf-drop'), {
+      dataTransfer: { files: [new File(['x'], 'part.stl')] },
+    });
+    expect(await screen.findByText('Only .3mf files can be imported')).toBeInTheDocument();
+    expect(screen.queryByTestId('import-3mf-panel')).not.toBeInTheDocument();
+  });
+
+  it('leaves a text drag over the Work section to the browser', async () => {
+    await renderDrawer();
+    const zone = screen.getByTestId('import-3mf-drop');
+    // fireEvent returns false when the handler called preventDefault.
+    expect(fireEvent.dragOver(zone, { dataTransfer: { types: ['text/plain'] } })).toBe(true);
+    expect(fireEvent.dragOver(zone, { dataTransfer: { types: ['Files'] } })).toBe(false);
+  });
+
+  it('opens the import from a dropped .3mf', async () => {
+    serveImports('Depose');
+    await renderDrawer();
+    fireEvent.drop(screen.getByTestId('import-3mf-drop'), {
+      dataTransfer: { files: [new File(['x'], 'Depose.3mf')] },
+    });
+    expect(await panel().findByText('Depose')).toBeInTheDocument();
+  });
+});

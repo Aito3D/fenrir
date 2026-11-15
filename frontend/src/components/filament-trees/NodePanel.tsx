@@ -339,16 +339,20 @@ export function NodePanel({ node, onCreated }: { node: NodeRef; onCreated?: (tre
       control = (
         <div className="flex w-full min-w-0 flex-col gap-1">
           {elements.map((el, i) => (
-            <ValueInput
-              key={`${i}:${String(el)}:${tick}`}
-              label={`${label} ${i + 1}`}
-              value={String(el)}
-              unit={field.unit}
-              multiline={field.kind === 'gcode'}
-              disabled={!editable}
-              own={row?.own}
-              onCommit={(next) => set(field.key, elements.map((v, j) => (j === i ? next : v)))}
-            />
+            <div key={`${i}:${String(el)}:${tick}`} className="flex min-w-0 items-center gap-2">
+              <ValueInput
+                label={`${label} ${i + 1}`}
+                value={String(el)}
+                unit={field.unit}
+                multiline={field.kind === 'gcode'}
+                disabled={!editable}
+                own={row?.own}
+                onCommit={(next) => set(field.key, elements.map((v, j) => (j === i ? next : v)))}
+              />
+              {row?.variants?.[i] && (
+                <span className="whitespace-nowrap text-[11px] text-bambu-gray/60">{row.variants[i]}</span>
+              )}
+            </div>
           ))}
         </div>
       );

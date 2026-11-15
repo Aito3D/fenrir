@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Check, ChevronDown, Plus, RotateCcw, X } from 'lucide-react';
+import { Box, Check, ChevronDown, Plus, RotateCcw, X } from 'lucide-react';
 import { api } from '../../api/client';
 import type { AitoTask, ZohoContact } from '../../api/client';
 import { AiSummaryPanel } from './AiSummaryPanel';
@@ -10,6 +10,7 @@ import { CLIENT_HISTORY_LIMIT } from './ClientHistory';
 import { ClientSection } from './ClientSection';
 import { CreateChecklist } from './CreateChecklist';
 import { HoldButton } from './HoldButton';
+import { Import3mfPanel } from './Import3mfPanel';
 import { NewContactForm } from './NewContactForm';
 import { TaskEditor } from './TaskEditor';
 import { AITO_SERVICE_LABEL_KEYS } from './services';
@@ -384,8 +385,11 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
   // arrived unpriced names itself at once. The Client section is open when
   // this runs, so the signature check `openClient` performs on opening would
   // never fire — it is repeated here under the same hand-edited guard.
-  const reuseTasks = (source: AitoTask[]) => {
-    const fresh = source.map((task) => freshenTaskDraft(taskDraftFromAitoTask(task)));
+  const reuseTasks = (source: AitoTask[]) =>
+    appendTasks(source.map((task) => freshenTaskDraft(taskDraftFromAitoTask(task))));
+
+  // Shared by the recall block and the .3mf import: both hand over finished drafts.
+  const appendTasks = (fresh: TaskDraft[]) => {
     if (fresh.length === 0) return;
     const next = [...tasks.filter((task) => !isBlankTaskDraft(task)), ...fresh];
     setTasks(next);
@@ -400,6 +404,19 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
       setGenerateNonce((n) => n + 1);
     }
     showToast(t('aito.tasksReused', { count: fresh.length }), 'success');
+  };
+
+  // The .3mf under import (design 2026-11-14). `n` keys the panel, so picking another file
+  // starts it from scratch instead of mixing two files' plates.
+  const [importFile, setImportFile] = useState<{ file: File; n: number } | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const startImport = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.3mf')) {
+      showToast(t('aito.import3mf.onlyThreeMf'), 'error');
+      return;
+    }
+    setImportFile((prev) => ({ file, n: (prev?.n ?? 0) + 1 }));
   };
 
   const resetDraft = () => {
@@ -602,6 +619,16 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
               done={allPriced}
               onToggle={() => toggleSection('work')}
             >
+              <div
+                data-testid="import-3mf-drop"
+                // Files only: a text drag into a task field stays the browser's.
+                onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
+                onDrop={(e) => {
+                  if (e.dataTransfer.files.length === 0) return;
+                  e.preventDefault();
+                  startImport(e.dataTransfer.files[0]);
+                }}
+              >
               <TaskEditor
                 value={tasks}
                 onChange={setTasks}
@@ -623,6 +650,35 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
                 accordion
                 onRowBlur={(task) => setRevealedTaskKeys((prev) => new Set(prev).add(rowKey(task)))}
               />
+              <input
+                ref={importInputRef}
+                data-testid="import-3mf-input"
+                type="file"
+                accept=".3mf"
+                className="hidden"
+                onChange={(e) => {
+                  startImport(e.target.files?.[0]);
+                  e.target.value = ''; // the same file can be picked again
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => importInputRef.current?.click()}
+                className={`mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-[.6rem] border border-bambu-dark-tertiary py-2 text-sm text-bambu-gray transition-colors hover:border-bambu-green/40 hover:bg-bambu-green/[0.04] hover:text-bambu-green motion-reduce:transition-none ${focusRingCls}`}
+              >
+                <Box className="h-4 w-4" />
+                {t('aito.import3mf.button')}
+                <span className="text-xs opacity-70">{t('aito.import3mf.dropHint')}</span>
+              </button>
+              {importFile && (
+                <Import3mfPanel
+                  key={importFile.n}
+                  file={importFile.file}
+                  onAdd={appendTasks}
+                  onClose={() => setImportFile(null)}
+                />
+              )}
+              </div>
             </Section>
 
             <Section

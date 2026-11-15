@@ -168,6 +168,18 @@ def test_base_reader_walks_inherits(monkeypatch):
     assert reader.values("C") == {} and reader.values("nope") == {}
 
 
+def test_base_value_reader_takes_extruder_variants_from_include(monkeypatch):
+    files = {
+        "t.json": json.dumps({"name": "T", "filament_extruder_variant": ["Std", "HF"], "x": ["9", "9"]}),
+        "a.json": json.dumps({"name": "A", "filament_extruder_variant": ["Std"], "x": ["1"]}),
+        "b.json": json.dumps({"name": "B", "inherits": "A", "include": ["T", "gone"]}),
+    }
+    monkeypatch.setattr("backend.app.services.filament_tree_base.read_bundle_preset", files.get)
+    values = BaseValueReader({"A": "a.json", "B": "b.json", "T": "t.json"}).values("B")
+    assert values["filament_extruder_variant"] == ["Std", "HF"]
+    assert values["x"] == ["1"]  # the template's other values are not merged
+
+
 def test_source_pair_outside_compat_keeps_nozzle_values():
     gcode = "filament_start_gcode"
     shared = plan_tree(_group(fan_max_speed=["60"]), 3, "H2S", "0.6", lambda _i: {})["overrides"]

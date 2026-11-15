@@ -2,11 +2,12 @@ import { useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ChevronDown, Database, Download, Droplets, HardDrive, Loader2, Plus, RefreshCw, Settings2 } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Database, Download, Droplets, HardDrive, Loader2, Plus, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 
 import { api } from '../api/client';
 import type { FilamentTreePullResult } from '../api/client';
 import { Button } from '../components/Button';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 import { Skeleton } from '../components/Skeleton';
 import { SyncBaseResultModal } from '../components/filament-profiles/SyncBaseResultModal';
@@ -57,6 +58,7 @@ export function FilamentProfilesPage() {
   const [newOpen, setNewOpen] = useState(false);
   const [migrateOpen, setMigrateOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [cleanup, setCleanup] = useState<{ count: number; busy: boolean } | null>(null);
   const [syncOutcome, setSyncOutcome] = useState<{ result?: FilamentTreePullResult; error?: unknown } | null>(null);
   const { zohoSyncing, zohoResult, handleZohoSync } = useZohoSync();
   // The generated rows: source colour names for the migration modal, and what "Sync to PC" writes.
@@ -110,6 +112,24 @@ export function FilamentProfilesPage() {
       .then(() => queryClient.invalidateQueries({ queryKey: ['filament-trees'] }))
       .catch((err) => showToast(errorMessage(err), 'error'));
 
+  const previewCleanup = () =>
+    api
+      .getOrcaCleanupPreview()
+      .then((p) => {
+        if (!p.writable) showToast(t('filamentTrees.cleanOrcaReadOnly'), 'error');
+        else if (p.count === 0) showToast(t('filamentTrees.cleanOrcaNone'), 'success');
+        else setCleanup({ count: p.count, busy: false });
+      })
+      .catch((err) => showToast(errorMessage(err), 'error'));
+  const confirmCleanup = (count: number) => {
+    setCleanup({ count, busy: true });
+    api
+      .cleanOrcaCloud(count)
+      .then((r) => showToast(t('filamentTrees.cleanOrcaDone', r), r.failed ? 'error' : 'success'))
+      .catch((err) => showToast(errorMessage(err), 'error'))
+      .finally(() => setCleanup(null));
+  };
+
   const menuItems: ContextMenuItem[] = [
     ...(canUpdate
       ? [
@@ -121,6 +141,9 @@ export function FilamentProfilesPage() {
             disabled: pendingExport === 0,
           },
         ]
+      : []),
+    ...(canSync && canDelete
+      ? [{ label: t('filamentTrees.cleanOrca'), icon: <Trash2 className="h-4 w-4" />, onClick: () => void previewCleanup() }]
       : []),
     ...(canSyncZohoPrices
       ? [{ label: t('filamentProfiles.syncZohoPrices'), icon: <RefreshCw className="h-4 w-4" />, onClick: handleZohoSync, disabled: zohoSyncing }]
@@ -173,6 +196,21 @@ export function FilamentProfilesPage() {
               {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               {t('filamentTrees.sync')}
             </Button>
+          )}
+          {canSync && pendingExport > 0 && (
+            // shortcut: local count of leaves edited since the last push/export; the push itself diffs against Orca Cloud, so it can send more (e.g. profiles missing there). Upgrade to a dry-run endpoint if the gap matters.
+            // unfolds on arrival so the buttons after it slide over instead of jumping
+            <span className="aito-unfold-x -ml-1">
+              <span>
+                <span
+                  data-testid="sync-pending-count"
+                  title={t('filamentTrees.pendingExport', { n: pendingExport })}
+                  className="rounded-full bg-sky-400/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-sky-300"
+                >
+                  {pendingExport}
+                </span>
+              </span>
+            </span>
           )}
           {canCreate && targets && (
             <Button variant="secondary" size="sm" onClick={() => setNewOpen(true)}>
@@ -234,7 +272,7 @@ export function FilamentProfilesPage() {
           <Skeleton className="h-96 rounded-xl" />
         </div>
       ) : trees.length === 0 ? (
-        <div className="py-12 text-center">
+        <div className="animate-rise py-12 text-center">
           <p className="font-medium text-white">{t('filamentTrees.emptyTitle')}</p>
           <p className="mx-auto mt-1 max-w-lg text-sm text-bambu-gray">
             {unmanagedQuery.isError
@@ -260,7 +298,7 @@ export function FilamentProfilesPage() {
             </div>
           )}
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-            <div className="min-w-0">
+            <div className="min-w-0 animate-rise">
               <MaterialCards
                 trees={trees}
                 targets={targets}
@@ -271,7 +309,7 @@ export function FilamentProfilesPage() {
                 onLevel={(m, n) => patchParams({ m, n })}
               />
             </div>
-            <div className="min-w-0 self-start rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-4 xl:sticky xl:top-4">
+            <div className="min-w-0 animate-rise self-start rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-4 [animation-delay:80ms] xl:sticky xl:top-4">
               {no02 ? (
                 <p className="text-sm text-amber-300/80">{t('filamentTrees.no02')}</p>
               ) : (
@@ -315,6 +353,16 @@ export function FilamentProfilesPage() {
         />
       )}
 
+      {cleanup && (
+        <ConfirmModal
+          title={t('filamentTrees.cleanOrcaTitle')}
+          message={t('filamentTrees.cleanOrcaConfirm', { n: cleanup.count })}
+          variant="danger"
+          isLoading={cleanup.busy}
+          onConfirm={() => confirmCleanup(cleanup.count)}
+          onCancel={() => setCleanup(null)}
+        />
+      )}
       {syncOutcome && targets && (
         <SyncResultModal
           result={syncOutcome.result}
