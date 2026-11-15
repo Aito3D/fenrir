@@ -314,6 +314,7 @@ export function OrderLinesPanel({
                     key={line.id}
                     groupId={group.id}
                     line={line}
+                    currency={row.currency}
                     qty={qty}
                     ofQty={ofQty}
                     index={index}

@@ -4,6 +4,7 @@ import type { OrderBoardLine } from '../../api/client';
 import { formatQty } from './orderBoard';
 import type { OrderCheck, OrderEdit, PanelGroup } from './orderBoard';
 import { TONE } from './orderStatus';
+import { formatMoney } from '../../utils/pricing';
 import { GROUP, LINE_STATE, TRASH, dash } from './orderLinesShared';
 import { OrderQtyStepper } from './OrderQtyStepper';
 
@@ -11,6 +12,7 @@ import { OrderQtyStepper } from './OrderQtyStepper';
 export function OrderLineRow({
   groupId,
   line,
+  currency,
   qty,
   ofQty,
   index,
@@ -25,6 +27,7 @@ export function OrderLineRow({
 }: {
   groupId: PanelGroup['id'];
   line: OrderBoardLine;
+  currency: string;
   qty: number;
   ofQty: number | null;
   index: number;
@@ -43,11 +46,19 @@ export function OrderLineRow({
   const short = todo && (line.state === 'backorder' || line.state === 'to_order');
   const editing = todo && edit;
   const gone = !!edit && todo && edit.gone.has(line.id);
+  // shortcut: Books' rate is before any line discount, so a discounted line shows its list price; read item_total if that matters.
+  const priced = line.rate > 0;
   return (
     <tr className={`transition-opacity duration-150 ease-out ${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${(todo && check && !(check.max[line.id] > 0)) || gone ? 'opacity-40' : ''}`}>
       <td className={`border-l-2 py-2 pl-4 pr-3 ${TONE[meta.tone].rail} ${gone ? 'line-through' : ''}`}>
         <div className="text-white">{line.name}</div>
-        {line.sku && <div className="font-mono text-xs text-bambu-gray">{line.sku}</div>}
+        {(line.sku || priced) && (
+          <div className="text-xs text-bambu-gray">
+            {line.sku && <span className="font-mono">{line.sku}</span>}
+            {line.sku && priced && ' · '}
+            {priced && <span className="tabular-nums">{formatMoney(line.rate, currency)}</span>}
+          </div>
+        )}
       </td>
       <td className="whitespace-nowrap text-right tabular-nums text-white">
         {editing && gone ? (
@@ -133,6 +144,7 @@ export function OrderLineRow({
             {line.po_numbers.join(', ')} · +{formatQty(line.covered_by_po)}
           </span>
         )}
+        {priced && <span className="float-right pl-4 tabular-nums text-bambu-gray">{formatMoney(line.rate * qty, currency)}</span>}
       </td>
       )}
     </tr>

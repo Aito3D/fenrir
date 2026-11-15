@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="fr" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prix des lignes · maquette</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  bg: '#0c1016', surf: '#141b23', line: '#212c37', ink: '#e9eff6', sub: '#93a4b6', acc: '#14b8a6',
+} } } };
+</script>
+<style>
+  html { font-size: 14.4px; }
+  body { background: #0c1016; color: #e9eff6; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  [data-lucide] { width: 1em; height: 1em; display: inline-block; vertical-align: -0.125em; }
+  .seg[aria-pressed=true] { background: #14b8a6; color: #0c1016; font-weight: 600; }
+  td, th { vertical-align: middle; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- guided tour: not part of the app -->
+<div class="sticky top-0 z-10 border-b border-line bg-surf">
+  <div class="mx-auto flex max-w-[1300px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 text-sm">
+    <span><span class="font-semibold">Prix par produit</span> <span class="text-sub">· maquette, données fictives</span></span>
+    <span class="ml-auto flex flex-wrap items-center gap-3 text-xs">
+      <span class="text-sub">Proposition</span>
+      <span class="inline-flex overflow-hidden rounded-lg border border-line">
+        <button class="seg px-2.5 py-1" data-v="a">A · colonnes PU + Total</button>
+        <button class="seg px-2.5 py-1" data-v="b">B · « 3 × 12,90 € » sous la qté</button>
+        <button class="seg px-2.5 py-1" data-v="c">C · sous le nom du produit</button>
+      </span>
+      <span class="text-sub">Sous-total par bandeau</span>
+      <span class="inline-flex overflow-hidden rounded-lg border border-line">
+        <button class="seg px-2.5 py-1" data-sub="on">Oui</button>
+        <button class="seg px-2.5 py-1" data-sub="off">Non</button>
+      </span>
+    </span>
+  </div>
+</div>
+
+<main class="mx-auto max-w-[1300px] px-4 py-5">
+  <h1 class="mb-4 text-xl font-bold">Commandes</h1>
+
+  <!-- order row (collapsed header of the open order) -->
+  <div class="overflow-hidden rounded-xl border border-line bg-surf">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-3">
+      <i data-lucide="chevron-down" class="text-sub"></i>
+      <span class="font-mono text-sm">SO-00441</span>
+      <span class="font-semibold">Voilerie Martin</span>
+      <span class="rounded bg-yellow-500/15 px-1.5 py-0.5 text-[11px] text-yellow-400">En attente de stock</span>
+      <span class="ml-auto text-sm tabular-nums">216,40 €</span>
+      <span class="rounded bg-green-500/15 px-1.5 py-0.5 text-[11px] text-green-400">Acompte 84,00 €</span>
+    </div>
+    <div class="p-4">
+      <div id="panel"></div>
+    </div>
+  </div>
+
+  <div class="mt-6 rounded-lg border border-dashed border-line p-4 text-xs leading-relaxed text-sub">
+    <div class="mb-1 font-semibold uppercase tracking-wide text-ink">Ce que montre la maquette</div>
+    <ul class="list-disc space-y-1 pl-5">
+      <li><b class="text-ink">A</b> : deux colonnes « PU » et « Total » à droite de la quantité. Le plus lisible, mais le tableau s'élargit (5 → 7 colonnes).</li>
+      <li><b class="text-ink">B</b> : une seule colonne « Total » ; le prix unitaire s'écrit en petit sous la quantité (« × 12,90 € »). Compromis place / clarté.</li>
+      <li><b class="text-ink">C</b> : aucune colonne en plus ; le prix unitaire suit la référence sous le nom, le total de la ligne en gris à droite de l'état. Le plus discret.</li>
+      <li>Le prix vient de Zoho Books (la <code>rate</code> de la ligne, déjà lue par la synchro). Une remise sur la ligne s'affiche barrée → prix remisé.</li>
+      <li>En bas : total HT, TVA, total TTC de la commande, comme sur la facture. Les lignes « Autres » (port, service) comptent dans le total.</li>
+      <li>En mode « Modifier la commande », le total se recalcule pendant qu'on change les quantités (déjà affiché pour une ligne ajoutée).</li>
+    </ul>
+  </div>
+</main>
+
+<script>
+const ui = { v: 'a', sub: 'on' };
+const money = n => n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
+const qty = n => n.toLocaleString('fr-FR');
+
+const GROUPS = [
+  { id: 'todo', label: 'À préparer', icon: 'clipboard-list', band: 'bg-teal-500/10', name: 'text-ink', rail: 'border-zinc-500', lines: [
+    { name: 'Bambu PLA Basic Noir 1 kg', sku: 'BL-PLA-BK', q: 3, rate: 22.90, avail: 12, state: ['Prête', 'text-green-400'] },
+    { name: 'Marlow D12 8 mm (au mètre)', sku: 'MAR-D12-8', q: 8, rate: 9.80, avail: 6, short: 2, state: ['En commande', 'text-yellow-400'], po: 'PO-00118 · +2' },
+    { name: 'Buse 0,4 HS trempée', sku: 'BL-NZ-04HS', q: 1, rate: 24.90, disc: 19.90, avail: 0, short: 1, state: ['À commander', 'text-red-400'] },
+  ]},
+  { id: 'packed', label: 'Emballé, en attente de livraison', icon: 'package', band: 'bg-blue-500/10', name: 'text-blue-400', rail: 'border-blue-500', lines: [
+    { name: 'Hobie poulie 40 mm', sku: 'HOB-PUL-40', q: 2, rate: 18.50, packed: true },
+  ]},
+  { id: 'other', label: 'Autres lignes', icon: 'receipt-text', band: 'bg-zinc-500/10', name: 'text-sub', rail: 'border-zinc-600', dim: true, lines: [
+    { name: 'Frais de port Colissimo', sku: '', q: 1, rate: 8.90, state: ['Service', 'text-sub'] },
+  ]},
+];
+const unit = l => l.disc ?? l.rate;
+const total = l => unit(l) * l.q;
+
+function priceCell(l, small) {
+  return l.disc
+    ? `<span class="text-sub line-through ${small ? '' : 'mr-1'}">${money(l.rate)}</span> <span class="text-ink">${money(l.disc)}</span>`
+    : money(l.rate);
+}
+
+function render() {
+  const v = ui.v;
+  const cols = v === 'a' ? 7 : v === 'b' ? 6 : 5;
+  let h = `<table class="w-full text-sm"><thead class="text-left text-[11px] uppercase tracking-wide text-sub"><tr>
+    <th class="py-1.5 font-medium">Produit</th>
+    <th class="text-right font-medium">Qté</th>
+    ${v === 'a' ? '<th class="pl-4 text-right font-medium">PU HT</th>' : ''}
+    ${v !== 'c' ? '<th class="pl-4 text-right font-medium">Total HT</th>' : ''}
+    <th class="pl-4 text-right font-medium">Dispo</th>
+    <th class="pl-4 text-right font-medium">Manque</th>
+    <th class="pl-4 font-medium">État</th></tr></thead><tbody>`;
+  for (const g of GROUPS) {
+    const st = g.lines.reduce((s, l) => s + total(l), 0);
+    h += `<tr><th colspan="${cols}" class="pt-3 pb-1 text-left font-normal">
+      <div class="flex items-center gap-2 rounded-md ${g.band} px-3 py-1.5 text-xs">
+        <i data-lucide="${g.icon}" class="${g.name}"></i><span class="font-semibold ${g.name}">${g.label}</span>
+        <span class="text-sub">· ${g.lines.length} ligne${g.lines.length > 1 ? 's' : ''}</span>
+        ${ui.sub === 'on' ? `<span class="ml-auto tabular-nums ${g.name}">${money(st)} HT</span>` : ''}
+      </div></th></tr>`;
+    g.lines.forEach((l, i) => {
+      const dash = '<span class="text-sub">–</span>';
+      const stateCell = l.packed
+        ? '<span class="inline-flex items-center gap-1 text-blue-400"><i data-lucide="package"></i> Emballé</span>'
+        : `<span class="${l.state[1]}">${l.state[0]}</span>${l.po ? `<span class="ml-1.5 text-xs text-sub">${l.po}</span>` : ''}`;
+      h += `<tr class="${i ? 'border-t border-line/60' : ''} ${g.dim ? 'opacity-80' : ''}">
+        <td class="border-l-2 ${g.rail} py-2 pl-4 pr-3">
+          <div>${l.name}</div>
+          ${v === 'c'
+            ? `<div class="text-xs text-sub">${l.sku ? `<span class="font-mono">${l.sku}</span> · ` : ''}<span class="tabular-nums">${priceCell(l, true)} HT</span></div>`
+            : (l.sku ? `<div class="font-mono text-xs text-sub">${l.sku}</div>` : '')}
+        </td>
+        <td class="whitespace-nowrap text-right tabular-nums">
+          ${qty(l.q)}
+          ${v === 'b' ? `<div class="text-[11px] text-sub">× ${priceCell(l, true)}</div>` : ''}
+        </td>
+        ${v === 'a' ? `<td class="whitespace-nowrap pl-4 text-right tabular-nums">${priceCell(l)}</td>` : ''}
+        ${v !== 'c' ? `<td class="whitespace-nowrap pl-4 text-right font-medium tabular-nums">${money(total(l))}</td>` : ''}
+        <td class="pl-4 text-right tabular-nums ${l.state?.[0] === 'Prête' ? 'text-green-400' : ''}">${l.avail ?? dash}</td>
+        <td class="pl-4 text-right tabular-nums ${l.short ? l.state[1] : ''}">${l.short ? '−' + l.short : dash}</td>
+        <td class="whitespace-nowrap pl-4">${stateCell}${v === 'c' ? `<span class="float-right tabular-nums text-sub">${money(total(l))}</span>` : ''}</td>
+      </tr>`;
+    });
+  }
+  const ht = GROUPS.flatMap(g => g.lines).reduce((s, l) => s + total(l), 0);
+  const tva = ht * 0.2; // fictive: the real figure comes from Zoho's tax_total
+  h += `</tbody></table>
+  <div class="mt-3 flex justify-end border-t border-line pt-3">
+    <dl class="grid grid-cols-[auto_auto] gap-x-6 gap-y-0.5 text-sm tabular-nums">
+      <dt class="text-sub">Total HT</dt><dd class="text-right">${money(ht)}</dd>
+      <dt class="text-sub">TVA</dt><dd class="text-right">${money(tva)}</dd>
+      <dt class="font-semibold">Total TTC</dt><dd class="text-right font-semibold">${money(ht + tva)}</dd>
+    </dl>
+  </div>`;
+  document.getElementById('panel').innerHTML = h;
+  document.querySelectorAll('[data-v]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === ui.v));
+  document.querySelectorAll('[data-sub]').forEach(b => b.setAttribute('aria-pressed', b.dataset.sub === ui.sub));
+  location.hash = `${ui.v},${ui.sub}`;
+  lucide.createIcons();
+}
+const [hv, hs] = location.hash.slice(1).split(',');
+if (['a', 'b', 'c'].includes(hv)) ui.v = hv;
+if (['on', 'off'].includes(hs)) ui.sub = hs;
+document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { ui.v = b.dataset.v; render(); });
+document.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { ui.sub = b.dataset.sub; render(); });
+render();
+</script>
+</body>
+</html>
