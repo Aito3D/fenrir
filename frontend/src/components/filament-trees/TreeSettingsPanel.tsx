@@ -88,7 +88,9 @@ export function TreeSettingsPanel({ tree, onCreated }: { tree: FilamentTreeSumma
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() => downloadTreeExport(tree.id).catch((err) => showToast(errorMessage(err), 'error'))}
+                onClick={() => downloadTreeExport(tree.id)
+                  .then(() => queryClient.invalidateQueries({ queryKey: ['filament-trees'] }))
+                  .catch((err) => showToast(errorMessage(err), 'error'))}
               >
                 <Download className="h-4 w-4" />
                 {t('filamentTrees.exportTree')}

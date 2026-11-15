@@ -25,6 +25,23 @@ describe('downloadTreeExport', () => {
     expect(order).toEqual(['click', 'confirm']);
   });
 
+  it('revokes the blob URL only after a delay, still confirming right after the click', async () => {
+    vi.useFakeTimers();
+    try {
+      const revoke = vi.fn();
+      vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => 'blob:x', revokeObjectURL: revoke }));
+      vi.spyOn(api, 'exportFilamentTrees').mockResolvedValue({ blob: new Blob(['z']), token: 'tok' });
+      const confirm = vi.spyOn(api, 'confirmFilamentTreeExport').mockResolvedValue({ confirmed: 1 });
+      await downloadTreeExport();
+      expect(confirm).toHaveBeenCalledWith('tok');
+      expect(revoke).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(60_000);
+      expect(revoke).toHaveBeenCalledWith('blob:x');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not confirm when the export request fails', async () => {
     vi.spyOn(api, 'exportFilamentTrees').mockRejectedValue(new Error('HTTP 500'));
     const confirm = vi.spyOn(api, 'confirmFilamentTreeExport');

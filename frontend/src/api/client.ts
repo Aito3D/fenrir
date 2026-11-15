@@ -229,10 +229,7 @@ async function postForResponse(endpoint: string, data: unknown, signal?: AbortSi
     body: JSON.stringify(data),
     signal,
   });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(typeof error.detail === 'string' ? error.detail : `HTTP ${response.status}`);
-  }
+  if (!response.ok) await throwApiError(response);
   return response;
 }
 

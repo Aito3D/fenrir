@@ -4,8 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TreeSettingsPanel } from '../../../components/filament-trees/TreeSettingsPanel';
 import { api } from '../../../api/client';
 import type { FilamentTreeSummary } from '../../../api/client';
+import { downloadTreeExport } from '../../../components/filament-trees/exportDownload';
 
 vi.mock('../../../api/client', () => ({ api: { updateFilamentTreeColor: vi.fn() } }));
+vi.mock('../../../components/filament-trees/exportDownload', () => ({ downloadTreeExport: vi.fn() }));
 vi.mock('../../../contexts/ToastContext', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../contexts/AuthContext', () => ({ useAuth: () => ({ hasPermission: () => true }) }));
 
@@ -56,5 +58,27 @@ describe('TreeSettingsPanel delayed colour save', () => {
     fireEvent.change(screen.getByLabelText('Colour of Red'), { target: { value: '#00ff00' } });
     unmount();
     expect(update).toHaveBeenCalledWith(1, 11, { name: 'Red', hex: '#00ff00' });
+  });
+});
+
+describe('TreeSettingsPanel per-tree export', () => {
+  it('refreshes the tree list once the export and its confirm succeeded', async () => {
+    vi.mocked(downloadTreeExport).mockReset().mockResolvedValue(undefined);
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    render(<QueryClientProvider client={client}><TreeSettingsPanel tree={tree} /></QueryClientProvider>);
+    fireEvent.click(screen.getByRole('button', { name: /export/i }));
+    await vi.waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['filament-trees'] }));
+    expect(downloadTreeExport).toHaveBeenCalledWith(1);
+  });
+
+  it('does not refresh the list when the export fails', async () => {
+    vi.mocked(downloadTreeExport).mockReset().mockRejectedValue(new Error('boom'));
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    render(<QueryClientProvider client={client}><TreeSettingsPanel tree={tree} /></QueryClientProvider>);
+    fireEvent.click(screen.getByRole('button', { name: /export/i }));
+    await vi.waitFor(() => expect(downloadTreeExport).toHaveBeenCalled());
+    expect(invalidate).not.toHaveBeenCalled();
   });
 });

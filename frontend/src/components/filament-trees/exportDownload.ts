@@ -10,7 +10,8 @@ export async function downloadTreeExport(treeId?: number, changedOnly = false) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  // deferred: WebKit can abort a download whose blob URL is revoked on the same tick
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
   // the file is saved: only now do its leaves stop counting as pending (a failure here surfaces as the caller's error toast)
   await api.confirmFilamentTreeExport(token);
 }
