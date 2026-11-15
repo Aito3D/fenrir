@@ -2,11 +2,12 @@ import { useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ChevronDown, Database, Download, Droplets, HardDrive, Loader2, Plus, RefreshCw, Settings2 } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Database, Download, Droplets, HardDrive, Loader2, Plus, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 
 import { api } from '../api/client';
 import type { FilamentTreePullResult } from '../api/client';
 import { Button } from '../components/Button';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 import { Skeleton } from '../components/Skeleton';
 import { SyncBaseResultModal } from '../components/filament-profiles/SyncBaseResultModal';
@@ -57,6 +58,7 @@ export function FilamentProfilesPage() {
   const [newOpen, setNewOpen] = useState(false);
   const [migrateOpen, setMigrateOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [cleanup, setCleanup] = useState<{ count: number; busy: boolean } | null>(null);
   const [syncOutcome, setSyncOutcome] = useState<{ result?: FilamentTreePullResult; error?: unknown } | null>(null);
   const { zohoSyncing, zohoResult, handleZohoSync } = useZohoSync();
   // The generated rows: source colour names for the migration modal, and what "Sync to PC" writes.
@@ -110,6 +112,24 @@ export function FilamentProfilesPage() {
       .then(() => queryClient.invalidateQueries({ queryKey: ['filament-trees'] }))
       .catch((err) => showToast(errorMessage(err), 'error'));
 
+  const previewCleanup = () =>
+    api
+      .getOrcaCleanupPreview()
+      .then((p) => {
+        if (!p.writable) showToast(t('filamentTrees.cleanOrcaReadOnly'), 'error');
+        else if (p.count === 0) showToast(t('filamentTrees.cleanOrcaNone'), 'success');
+        else setCleanup({ count: p.count, busy: false });
+      })
+      .catch((err) => showToast(errorMessage(err), 'error'));
+  const confirmCleanup = (count: number) => {
+    setCleanup({ count, busy: true });
+    api
+      .cleanOrcaCloud(count)
+      .then((r) => showToast(t('filamentTrees.cleanOrcaDone', r), r.failed ? 'error' : 'success'))
+      .catch((err) => showToast(errorMessage(err), 'error'))
+      .finally(() => setCleanup(null));
+  };
+
   const menuItems: ContextMenuItem[] = [
     { label: t('filamentTrees.exportOrca'), icon: <Download className="h-4 w-4" />, onClick: () => void exportOrca(false), disabled: trees.length === 0 },
     {
@@ -118,6 +138,9 @@ export function FilamentProfilesPage() {
       onClick: () => void exportOrca(true),
       disabled: pendingExport === 0,
     },
+    ...(canSync && canDelete
+      ? [{ label: t('filamentTrees.cleanOrca'), icon: <Trash2 className="h-4 w-4" />, onClick: () => void previewCleanup() }]
+      : []),
     ...(canSyncZohoPrices
       ? [{ label: t('filamentProfiles.syncZohoPrices'), icon: <RefreshCw className="h-4 w-4" />, onClick: handleZohoSync, disabled: zohoSyncing }]
       : []),
@@ -311,6 +334,16 @@ export function FilamentProfilesPage() {
         />
       )}
 
+      {cleanup && (
+        <ConfirmModal
+          title={t('filamentTrees.cleanOrcaTitle')}
+          message={t('filamentTrees.cleanOrcaConfirm', { n: cleanup.count })}
+          variant="danger"
+          isLoading={cleanup.busy}
+          onConfirm={() => confirmCleanup(cleanup.count)}
+          onCancel={() => setCleanup(null)}
+        />
+      )}
       {syncOutcome && targets && (
         <SyncResultModal
           result={syncOutcome.result}

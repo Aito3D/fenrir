@@ -176,10 +176,11 @@ export function SyncResultModal({ result, error, trees, targets, onClose }: {
         <p className="text-sm text-red-400">{errorMessage(error)}</p>
       ) : result ? (
         <>
-          <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
             {(
               [
                 ['applied', result.applied.length],
+                ['pushed', result.push.pushed],
                 ['legacy', result.legacy],
                 ['missing', result.missing.length],
                 ['ignored', result.ignored],
@@ -191,6 +192,20 @@ export function SyncResultModal({ result, error, trees, targets, onClose }: {
               </div>
             ))}
           </dl>
+          {result.push.needs_write_scope ? (
+            <p className="text-sm text-amber-400">
+              {t('filamentTrees.pushNeedsReconnect', { n: result.push.remaining })}{' '}
+              <Link to="/profiles" className="text-sky-400 hover:underline">
+                {t('filamentTrees.orcaConnect')}
+              </Link>
+            </p>
+          ) : (
+            result.push.failed.length > 0 && (
+              <p className="break-words text-sm text-amber-400" title={result.push.failed[0].detail}>
+                {t('filamentTrees.pushFailed', { n: result.push.failed.length + result.push.remaining })}
+              </p>
+            )
+          )}
           {result.missing.length > 0 && (
             <p className="break-words text-xs text-bambu-gray">{result.missing.join(', ')}</p>
           )}

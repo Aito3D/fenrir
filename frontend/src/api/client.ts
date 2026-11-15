@@ -4491,6 +4491,8 @@ export interface FilamentTreeNodeRow {
   inherited_value?: unknown; inherited_source?: string | null;
   /** the Bambu base preset name, for bambu rows */
   source_label?: string | null;
+  /** the extruder variant each entry belongs to, for per-variant arrays */
+  variants?: string[] | null;
 }
 export interface FilamentTreeMigrationGroup {
   prefix: string; preset_ids: number[]; proposed_source_preset_id: number;
@@ -4509,6 +4511,8 @@ export interface FilamentTreePullResult {
   candidates: FilamentTreeCandidate[];
   legacy: number; missing: string[]; ignored: number;
   refresh: Array<{ tree_id: number; machine: string; nozzle: string; color_id: number; keys: string[] }>;
+  // remaining: leaves still waiting (read-only pairing, or the run stopped after repeated failures)
+  push: { pushed: number; failed: Array<{ name: string; detail: string }>; remaining: number; needs_write_scope: boolean; snapshot: string | null };
 }
 export interface FilamentTreeNodeUpdate {
   machine?: string | null; nozzle?: string | null; color_id?: number | null;
@@ -9282,6 +9286,10 @@ export const api = {
   migrateFilamentPresets: (groups: Array<{ prefix: string; source_preset_id: number; machine: string; nozzle: string }>) =>
     request<{ tree_ids: number[] }>('/filament-trees/migrate', { method: 'POST', body: JSON.stringify({ groups }) }),
   syncFilamentTrees: () => request<FilamentTreePullResult>('/filament-trees/sync', { method: 'POST' }),
+  // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if the count still matches
+  getOrcaCleanupPreview: () => request<{ count: number; names: string[]; writable: boolean }>('/filament-trees/orca-cleanup'),
+  cleanOrcaCloud: (expected: number) =>
+    request<{ deleted: number; failed: number; snapshot: string | null }>('/filament-trees/orca-cleanup', { method: 'POST', body: JSON.stringify({ expected }) }),
   // orca_value: what Orca holds; the server stores it as the leaf's baseline whichever value is kept
   resolveFilamentTreeConflict: (data: { tree_id: number; machine: string; nozzle: string; color_id: number; key: string; value: FilamentTreePresetValue | null; orca_value: FilamentTreePresetValue | null }) =>
     request<{ success: boolean }>('/filament-trees/conflicts/resolve', { method: 'POST', body: JSON.stringify(data) }),

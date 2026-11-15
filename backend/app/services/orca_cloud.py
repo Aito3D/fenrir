@@ -63,12 +63,10 @@ ORCA_API_BASE = os.environ.get("ORCA_CLOUD_API_BASE", _DEFAULT_API_BASE).rstrip(
 # only for the (unlikely) case of a separate staging registration.
 ORCA_CLIENT_ID = os.environ.get("ORCA_CLOUD_CLIENT_ID", "oc_app_e873d49ce7dbcc7dca8ba386")
 
-# Scope requested at pairing time. Fenrir currently only READS the user's
-# Orca Cloud profiles (list + view), so we request the minimum — read-only.
-# ``sync:read`` grants pull + versions; bump to ``sync:write`` here if/when a
-# push-to-cloud feature lands (which forces existing users to re-pair, since
-# the granted scope is baked into the issued token).
-ORCA_SCOPE = os.environ.get("ORCA_CLOUD_SCOPE", "sync:read")
+# Scope requested at pairing time. ``sync:write`` implies read and lets the
+# filament-tree SYNC push leaves; the granted scope is baked into the issued
+# token, so pairings made under ``sync:read`` must re-pair before push works.
+ORCA_SCOPE = os.environ.get("ORCA_CLOUD_SCOPE", "sync:write")
 
 # Honest client identity. Same posture as the Bambu Cloud client: identifies
 # Fenrir without impersonating Orca's desktop client. Also the thing that
@@ -122,6 +120,10 @@ class OrcaCloudAuthError(OrcaCloudError):
     will recover without re-pairing."""
 
     pass
+
+
+class OrcaCloudConflict(OrcaCloudError):
+    """409 from the push endpoint: the profile changed since ``original_updated_time`` (or the id is taken)."""
 
 
 _shared_http_client: httpx.AsyncClient | None = None
@@ -406,6 +408,43 @@ class OrcaCloudService:
             return data
         logger.warning("Orca Cloud /external/sync/pull returned unexpected shape: %r", type(data).__name__)
         return []
+
+    async def push_profile(
+        self, *, profile_id: str, name: str, content: dict[str, Any], original_updated_time: int | None = None
+    ) -> dict[str, Any]:
+        """Create or update one profile (``POST /api/v1/external/sync/push``, needs ``sync:write``).
+
+        For an update pass the ``updated_time`` last seen on the server: Orca answers 409
+        (:class:`OrcaCloudConflict`) when the profile changed since. Omit it when creating."""
+        body: dict[str, Any] = {"id": profile_id, "name": name, "content": content}
+        if original_updated_time is not None:
+            body["original_updated_time"] = int(original_updated_time)
+        url = f"{ORCA_API_BASE}/api/v1/external/sync/push"
+        try:
+            resp = await self._client.post(url, json=body, headers=self._api_headers())
+        except httpx.HTTPError as e:
+            raise OrcaCloudError(f"Network error pushing Orca Cloud profile: {e}") from e
+        if resp.status_code == 401:
+            raise OrcaCloudAuthError("Orca Cloud push unauthorized — token expired or revoked")
+        if resp.status_code == 409:
+            raise OrcaCloudConflict(f"Orca Cloud push conflict: {resp.text[:200]}")
+        if resp.status_code >= 400:
+            raise OrcaCloudError(f"Orca Cloud push failed ({resp.status_code}): {resp.text[:200]}")
+        return resp.json()
+
+    async def delete_profiles(self, ids: list[str]) -> None:
+        """Delete profiles (``DELETE /api/v1/external/sync/delete?resource=profiles``, needs ``sync:write``).
+
+        200 ok / 207 partial / 404 none matched are all accepted: callers re-list to see what is really gone."""
+        url = f"{ORCA_API_BASE}/api/v1/external/sync/delete?resource=profiles"
+        try:
+            resp = await self._client.request("DELETE", url, json={"ids": ids}, headers=self._api_headers())
+        except httpx.HTTPError as e:
+            raise OrcaCloudError(f"Network error deleting Orca Cloud profiles: {e}") from e
+        if resp.status_code == 401:
+            raise OrcaCloudAuthError("Orca Cloud delete unauthorized — token expired or revoked")
+        if resp.status_code not in (200, 207, 404):
+            raise OrcaCloudError(f"Orca Cloud delete failed ({resp.status_code}): {resp.text[:200]}")
 
     async def get_profile(self, profile_id: str) -> dict[str, Any]:
         """Fetch a single profile's full content. The external sync API has no

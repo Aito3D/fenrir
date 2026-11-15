@@ -35,6 +35,7 @@ from backend.app.schemas.filament_tree import (
     MigrateRequest,
     NodeRow,
     NodeUpdate,
+    OrcaCleanupRequest,
     Targets,
     TreeChange,
     TreeColor,
@@ -55,7 +56,7 @@ from backend.app.services.filament_tree import (
     parse_inherits,
     resolve_with_sources,
 )
-from backend.app.services.filament_tree_base import build_base_reader
+from backend.app.services.filament_tree_base import VARIANT_KEY, build_base_reader
 from backend.app.services.filament_tree_export import build_export_zip
 from backend.app.services.filament_tree_migration import apply_migration, propose_groups, row_dict
 from backend.app.services.filament_tree_pull import (
@@ -64,6 +65,7 @@ from backend.app.services.filament_tree_pull import (
     plan_pull,
     resolve_conflict,
 )
+from backend.app.services.filament_tree_push import cleanup_orca, cleanup_preview, push_leaves
 from backend.app.services.orca_cloud import OrcaCloudAuthError, OrcaCloudError
 
 router = APIRouter(prefix="/filament-trees", tags=["filament-trees"])
@@ -320,13 +322,37 @@ async def sync(
     db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(_UPDATE, Permission.ORCA_CLOUD_AUTH),
 ):
-    """Pull only: fold OrcaSlicer edits into the trees, report conflicts and candidates."""
+    """Pull, then push: fold OrcaSlicer edits into the trees, then send every changed leaf to Orca Cloud."""
     entries = await _orca_call(db, current_user, lambda svc: svc.list_profiles())
     leaves, colour_names = await collect_leaf_states(db)
     plan = plan_pull(entries, leaves, colour_names)
     with _mapped():
         await apply_pull(db, plan)
-    return {k: v for k, v in asdict(plan).items() if k != "baselines"}  # full Orca contents stay server-side
+    open_conflicts = {(c["tree_id"], c["machine"], c["nozzle"], c["color_id"]) for c in plan.conflicts}
+    push = await _orca_call(db, current_user, lambda svc: push_leaves(db, svc, entries, open_conflicts))
+    # full Orca contents stay server-side
+    return {k: v for k, v in asdict(plan).items() if k != "baselines"} | {"push": push}
+
+
+@router.get("/orca-cleanup", dependencies=[Depends(_cloud_api_key_gate)])
+async def orca_cleanup_preview(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = cloud_caller(_DELETE, Permission.ORCA_CLOUD_AUTH),
+):
+    """What a cleanup would delete: Orca Cloud filament profiles that are not a tree leaf."""
+    preview = await _orca_call(db, current_user, lambda svc: cleanup_preview(db, svc))
+    return {k: v for k, v in preview.items() if not k.startswith("_")}
+
+
+@router.post("/orca-cleanup", dependencies=[Depends(_cloud_api_key_gate)])
+async def orca_cleanup(
+    payload: OrcaCleanupRequest,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = cloud_caller(_DELETE, Permission.ORCA_CLOUD_AUTH),
+):
+    """Delete them, after a snapshot. 400 when the count no longer matches what the user confirmed."""
+    with _mapped():
+        return await _orca_call(db, current_user, lambda svc: cleanup_orca(db, svc, payload.expected))
 
 
 @router.post("/conflicts/resolve")
@@ -443,8 +469,17 @@ async def get_node(
             tree.base_family, base_machine, base_nozzle, await store.base_names(db), tree.fallback_inherits
         )
         reader = await build_base_reader(db)
-        skip = SKIP_KEYS if nozzle is not None else SKIP_KEYS | NOZZLE_BOUND_KEYS
-        base = {k: v for k, v in reader.values(base_name).items() if k not in skip}
+        # nozzle-bound keys stay in: read-only above the machine, they show the default a nozzle starts from
+        base = {k: v for k, v in reader.values(base_name).items() if k not in SKIP_KEYS}
+    tree_variants, base_variants = current.get(VARIANT_KEY, (None, None))[0], base.get(VARIANT_KEY)
+
+    def variants(value: object, source: str) -> list[str] | None:
+        """The extruder variant each entry of a per-variant array belongs to: the list of matching length."""
+        if not isinstance(value, list) or len(value) < 2:
+            return None
+        candidates = (base_variants, tree_variants) if source == "bambu" else (tree_variants, base_variants)
+        return next((v for v in candidates if isinstance(v, list) and len(v) == len(value)), None)
+
     rows = []
     for key in sorted(current.keys() | base.keys()):
         if key in current:
@@ -459,10 +494,20 @@ async def get_node(
                     inherited_value=inherited[0],
                     inherited_source=inherited[1],
                     source_label=base_name if inherited[1] == "bambu" else None,
+                    variants=variants(value, source),
                 )
             )
         else:
-            rows.append(NodeRow(key=key, value=base[key], source="bambu", own=False, source_label=base_name))
+            rows.append(
+                NodeRow(
+                    key=key,
+                    value=base[key],
+                    source="bambu",
+                    own=False,
+                    source_label=base_name,
+                    variants=variants(base[key], "bambu"),
+                )
+            )
     return rows
 
 
