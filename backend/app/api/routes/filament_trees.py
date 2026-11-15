@@ -36,6 +36,7 @@ from backend.app.schemas.filament_tree import (
 from backend.app.services import filament_tree_store as store
 from backend.app.services.filament_tree import (
     NOZZLE_BOUND_KEYS,
+    SKIP_KEYS,
     TreeData,
     is_abrasive,
     leaf_targets,
@@ -47,7 +48,6 @@ from backend.app.services.filament_tree_base import build_base_reader
 from backend.app.services.filament_tree_export import build_export_zip
 from backend.app.services.filament_tree_migration import apply_migration, propose_groups, row_dict
 from backend.app.services.filament_tree_pull import (
-    SKIP_KEYS,
     apply_pull,
     collect_leaf_states,
     plan_pull,
@@ -170,11 +170,15 @@ async def put_targets(
                 raise ValueError(
                     f"{tree.name}: its calibration source {tree.source[0]} {tree.source[1]} must stay a target"
                 )
-        targets = await store.set_targets(db, payload.model_dump())
-    # every tree's leaf set follows the targets
-    for tree_id in tree_ids:
-        await store.regenerate_tree(db, tree_id)
-    await db.commit()
+        try:
+            # one transaction: the targets only change if every tree regenerates under them
+            targets = await store.set_targets(db, payload.model_dump(), commit=False)
+            for tree_id in tree_ids:
+                await store.regenerate_tree(db, tree_id)
+            await db.commit()
+        except BaseException:
+            await db.rollback()
+            raise
     return targets
 
 
@@ -242,10 +246,13 @@ async def adopt_candidate(
     raw_inherits = content.get("inherits")
     inherits = raw_inherits if isinstance(raw_inherits, str) else ""
     machine, nozzle = payload.machine, payload.nozzle
+    tree_name = payload.name.split(" - ", 1)[0].strip() or f"{payload.brand} {payload.material}"
     try:
         with _mapped():
+            if await db.scalar(select(FilamentTree.id).where(FilamentTree.name == tree_name)) is not None:
+                raise ValueError(f"a filament tree named {tree_name!r} already exists")
             tree = FilamentTree(
-                name=payload.name.split(" - ", 1)[0].strip() or f"{payload.brand} {payload.material}",
+                name=tree_name,
                 brand=payload.brand,
                 material=payload.material,
                 version=str(content.get("version") or "2.4.0.8"),

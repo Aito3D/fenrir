@@ -12,24 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.filament_profile import FilamentPreset
 from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor, FilamentTreeLeaf, FilamentTreeOverride
-from backend.app.services.filament_tree import IDENTITY_KEYS, NOZZLE_BOUND_KEYS
+from backend.app.services.filament_tree import NOZZLE_BOUND_KEYS, SKIP_KEYS
 from backend.app.services.filament_tree_store import set_node_values
 
 _LEAF_SUFFIX = re.compile(r" @\S+ \d\.\d$")
-# Orca-side metadata that is never a tree value
-SKIP_KEYS = IDENTITY_KEYS | {
-    "type",
-    "setting_id",
-    "base_id",
-    "filament_id",
-    "user_id",
-    "updated_time",
-    "instantiation",
-    "is_custom_defined",
-    "compatible_printers_condition",
-    "compatible_prints",
-    "compatible_prints_condition",
-}
 
 
 @dataclass

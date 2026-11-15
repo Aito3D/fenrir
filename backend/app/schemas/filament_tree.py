@@ -1,11 +1,28 @@
 """Pydantic schemas for /filament-trees."""
 
-from typing import Any
+import re
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr
 
 _TEXT_MAX = 200
 _HEX_MAX = 32
+_UNSAFE = re.compile(r"[/\\\x00-\x1f\x7f]|\.\.")
+
+
+def _safe_name(value: str) -> str:
+    # name parts end up in preset file names and zip entry names
+    if _UNSAFE.search(value):
+        raise ValueError("must not contain '/', '\\', '..' or control characters")
+    return value
+
+
+Name = Annotated[str, Field(min_length=1, max_length=_TEXT_MAX), AfterValidator(_safe_name)]
+Part = Annotated[str, Field(min_length=1, max_length=32), AfterValidator(_safe_name)]  # machine / nozzle
+# An Orca preset value: a scalar or a short list of scalars (e.g. ["246"], both extruders).
+_Scalar = StrictStr | StrictInt | StrictFloat | StrictBool
+PresetValue = _Scalar | Annotated[list[StrictStr | StrictInt | StrictFloat], Field(max_length=16)]
+PresetKey = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[a-z0-9_]+$")]
 
 
 class TreeSource(BaseModel):
@@ -34,15 +51,15 @@ class TreeSummary(BaseModel):
 
 
 class Targets(BaseModel):
-    machines: list[str]
-    nozzles: list[str]
+    machines: list[Part] = Field(max_length=12)
+    nozzles: list[Part] = Field(max_length=8)
 
 
 class MigrateGroup(BaseModel):
     prefix: str = Field(min_length=1, max_length=_TEXT_MAX)
     source_preset_id: int
-    machine: str = Field(min_length=1, max_length=_TEXT_MAX)
-    nozzle: str = Field(min_length=1, max_length=_TEXT_MAX)
+    machine: Part
+    nozzle: Part
 
 
 class MigrateRequest(BaseModel):
@@ -54,19 +71,19 @@ class ConflictResolveRequest(BaseModel):
     machine: str
     nozzle: str
     color_id: int
-    key: str = Field(min_length=1, max_length=_TEXT_MAX)
-    value: Any
+    key: PresetKey
+    value: PresetValue
 
 
 class CandidateRequest(BaseModel):
     orca_id: str = Field(min_length=1, max_length=_TEXT_MAX)
-    name: str = Field(min_length=1, max_length=_TEXT_MAX)
-    brand: str = Field(min_length=1, max_length=_TEXT_MAX)
-    material: str = Field(min_length=1, max_length=_TEXT_MAX)
-    color_name: str = Field(min_length=1, max_length=_TEXT_MAX)
+    name: Name
+    brand: Name
+    material: Name
+    color_name: Name
     color_hex: str = Field(max_length=_HEX_MAX)
-    machine: str = Field(min_length=1, max_length=_TEXT_MAX)
-    nozzle: str = Field(min_length=1, max_length=_TEXT_MAX)
+    machine: Part
+    nozzle: Part
 
 
 class ExportRequest(BaseModel):
@@ -89,22 +106,22 @@ class NodeUpdate(BaseModel):
     machine: str | None = None
     nozzle: str | None = None
     color_id: int | None = None
-    set_values: dict[str, Any] = Field(default_factory=dict, alias="set")
-    clear: list[str] = Field(default_factory=list)
+    set_values: dict[PresetKey, PresetValue] = Field(default_factory=dict, alias="set", max_length=200)
+    clear: list[PresetKey] = Field(default_factory=list, max_length=200)
 
 
 class TreeUpdate(BaseModel):
     skip_02: bool | None = None
     source_color_id: int | None = None
-    source_machine: str | None = None
-    source_nozzle: str | None = None
+    source_machine: Part | None = None
+    source_nozzle: Part | None = None
 
 
 class ColorCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=_TEXT_MAX)
+    name: Name
     hex: str = Field(default="", max_length=_HEX_MAX)
 
 
 class ColorUpdate(BaseModel):
-    name: str = Field(min_length=1, max_length=_TEXT_MAX)
+    name: Name
     hex: str | None = Field(default=None, max_length=_HEX_MAX)

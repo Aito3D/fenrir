@@ -18,6 +18,20 @@ IDENTITY_KEYS = frozenset(
         "compatible_printers",
     }
 )
+# Orca-side metadata that is never a tree value
+SKIP_KEYS = IDENTITY_KEYS | {
+    "type",
+    "setting_id",
+    "base_id",
+    "filament_id",
+    "user_id",
+    "updated_time",
+    "instantiation",
+    "is_custom_defined",
+    "compatible_printers_condition",
+    "compatible_prints",
+    "compatible_prints_condition",
+}
 DEFAULT_TARGETS = {"machines": ["X2D", "H2S", "H2D", "H2C"], "nozzles": ["0.2", "0.4", "0.6", "0.8"]}
 
 _ABRASIVE = re.compile(r"(CF|GF)\b", re.IGNORECASE)

@@ -15,10 +15,11 @@ from backend.app.models.filament_tree import (
     FilamentTreeLeaf,
     FilamentTreeOverride,
 )
+from backend.app.schemas.filament_profile import _CONTENT_MAX_LENGTH, _validate_bare_filename
 from backend.app.services.filament_tree import (
     DEFAULT_TARGETS,
-    IDENTITY_KEYS,
     NOZZLE_BOUND_KEYS,
+    SKIP_KEYS,
     TreeData,
     leaf_name,
     leaf_targets,
@@ -46,10 +47,12 @@ async def get_targets(db: AsyncSession) -> dict:
     return json.loads(raw) if raw else {k: list(v) for k, v in DEFAULT_TARGETS.items()}
 
 
-async def set_targets(db: AsyncSession, targets: dict) -> dict:
+async def set_targets(db: AsyncSession, targets: dict, *, commit: bool = True) -> dict:
+    """commit=False leaves the write in the caller's transaction (e.g. to regenerate the trees first)."""
     clean = _validate_targets(targets)
     await set_setting(db, TARGETS_KEY, json.dumps(clean))
-    await db.commit()
+    if commit:
+        await db.commit()
     return clean
 
 
@@ -111,6 +114,12 @@ async def regenerate_tree(db: AsyncSession, tree_id: int) -> dict:
         name = leaf_name(tree, *key)
         color_name, color_hex = tree.colors[color_id]
         content = json.dumps(resolve_leaf(tree, machine, nozzle, color_id, bases), indent=4)
+        if len(content) > _CONTENT_MAX_LENGTH:
+            raise ValueError(f"{name}: the generated preset is larger than {_CONTENT_MAX_LENGTH} bytes")
+        try:
+            _validate_bare_filename(f"{name}.json")
+        except ValueError as e:
+            raise ValueError(f"{name!r} cannot be a preset file name") from e
         fields = {
             "name": name,
             "brand": meta.brand,
@@ -164,9 +173,9 @@ async def set_node_values(
     colorwide = machine is None and nozzle is None and color_id is not None
     if not colorwide and ((machine is None and nozzle is not None) or (nozzle is None and color_id is not None)):
         raise ValueError("a node needs its ancestors: machine, then nozzle, then colour")
-    bad = IDENTITY_KEYS & set(set_values)
+    bad = SKIP_KEYS & set(set_values)
     if bad:
-        raise ValueError(f"identity keys are set by the resolver: {sorted(bad)}")
+        raise ValueError(f"identity and Orca metadata keys are not tree values: {sorted(bad)}")
     if machine is None and NOZZLE_BOUND_KEYS & set(set_values):
         where = "a colour-wide node" if colorwide else "the root"
         raise ValueError(f"nozzle-bound keys cannot live on {where}: {sorted(NOZZLE_BOUND_KEYS & set(set_values))}")
