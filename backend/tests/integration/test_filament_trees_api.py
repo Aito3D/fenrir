@@ -749,3 +749,26 @@ async def test_missing_preset_is_a_domain_lookup_error(db_session, monkeypatch):
     monkeypatch.setattr(db_session, "get", get)
     with pytest.raises(LookupError, match="preset .* is missing"):
         await store.regenerate_tree(db_session, tree.id)
+
+
+async def test_put_targets_validates_before_source_check(async_client, db_session):
+    await _tree(db_session)
+    r = await async_client.put(f"{API}/targets", json={"machines": [" H2S "], "nozzles": ["0.4"]})
+    assert r.status_code == 200 and r.json()["machines"] == ["H2S"]
+    r = await async_client.put(f"{API}/targets", json={"machines": ["H2S"], "nozzles": []})
+    assert r.status_code == 400 and "non-empty list" in r.json()["detail"]
+    r = await async_client.put(f"{API}/targets", json={"machines": ["H2S"], "nozzles": ["x"]})
+    assert r.status_code == 400 and "look like 0.4" in r.json()["detail"]
+    r = await async_client.put(f"{API}/targets", json={"machines": ["H2D"], "nozzles": ["0.4"]})
+    assert r.status_code == 400 and "must stay a target" in r.json()["detail"]
+
+
+async def test_tree_patch_refuses_explicit_null_source(async_client, db_session):
+    tree, _, red = await _tree(db_session)
+    for key in ("source_machine", "source_nozzle", "source_color_id"):
+        r = await async_client.patch(f"{API}/{tree.id}", json={key: None})
+        assert r.status_code == 400 and key in r.json()["detail"]
+    r = await async_client.patch(f"{API}/{tree.id}", json={"skip_02": None})
+    assert r.status_code == 200, r.text
+    r = await async_client.patch(f"{API}/{tree.id}", json={"source_color_id": red.id})
+    assert r.status_code == 200, r.text

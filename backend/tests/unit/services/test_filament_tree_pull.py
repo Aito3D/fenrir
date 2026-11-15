@@ -340,3 +340,8 @@ async def test_first_sight_conflict_kept_absent_in_fenrir(db_session):
     assert "fan_min_speed" not in after.generated and after.baseline["fan_min_speed"] == ["40"]
     again = plan_pull([orca(lf.name, **_vals(lf), fan_min_speed=["40"])], leaves, names)
     assert again.conflicts == [] and again.applied == []
+
+
+def test_plan_pull_missing_list_is_sorted():
+    leaves = [leaf(name=n, baseline={"nozzle_temperature": ["246"]}) for n in ("zeta", "alpha", "mid")]
+    assert plan_pull([], leaves, set()).missing == ["alpha", "mid", "zeta"]

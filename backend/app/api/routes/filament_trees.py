@@ -274,9 +274,10 @@ async def put_targets(
 ):
     tree_ids = (await db.execute(select(FilamentTree.id))).scalars().all()
     with _mapped():
+        clean = store._validate_targets(payload.model_dump())
         for tree_id in tree_ids:
             tree = await store.load_tree(db, tree_id)
-            if tree.source not in leaf_targets(tree, payload.model_dump()):
+            if tree.source not in leaf_targets(tree, clean):
                 raise ValueError(
                     f"{tree.name}: its calibration source {tree.source[0]} {tree.source[1]} must stay a target"
                 )
@@ -586,6 +587,9 @@ async def patch_tree(
     kwargs = {}
     with _mapped():
         tree = await store.load_tree(db, tree_id)
+        for k in ("source_machine", "source_nozzle", "source_color_id"):
+            if k in changes and changes[k] is None:
+                raise ValueError(f"{k} must not be null")
         if "skip_02" in changes:
             kwargs["skip_02"] = changes["skip_02"]
         kwargs.update({k: changes[k] for k in ("brand", "material") if changes.get(k)})

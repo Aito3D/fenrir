@@ -102,7 +102,7 @@ def plan_pull(orca_entries: list[dict], leaves: list[LeafState], tree_colour_nam
             plan.candidates.append({"orca_id": entry.get("id"), "name": name, "content": content})
         else:
             plan.ignored += 1
-    plan.missing = [lf.name for lf in leaves if (lf.exported or lf.baseline is not None) and lf.name not in seen]
+    plan.missing = sorted(lf.name for lf in leaves if (lf.exported or lf.baseline is not None) and lf.name not in seen)
     return plan
 
 
