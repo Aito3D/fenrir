@@ -119,3 +119,6 @@ feature_votes.sh
 
 # Photos the notification service saves at runtime
 notification_photos/
+
+# graphify knowledge-graph output
+graphify-out/
