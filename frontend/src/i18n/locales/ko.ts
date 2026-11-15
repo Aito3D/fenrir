@@ -5513,6 +5513,25 @@ export default {
     }
   },
   // Filament Profiles (preset manager)
+  filamentTrees: {
+    navLabel: "필라멘트 프로필 트리",
+    toggle: "{{name}} 펼치기 또는 접기",
+    allColours: "색상 — 모든 기기",
+    allMachines: "{{color}} (모든 기기)",
+    ownCount_one: "고유 값 {{count}}개",
+    ownCount_other: "고유 값 {{count}}개",
+    calibrationSource: "보정 원본",
+    path: "프로필 경로",
+    own: "고유",
+    parentValue: "상위 값 {{value}}",
+    useParent: "상위 값 사용",
+    useParentFor: "상위 값 사용: {{field}}",
+    from: "{{source}}에서 상속",
+    fromBambu: "Bambu {{machine}} {{nozzle}}에서 상속",
+    sourceReadOnly: "보정된 프로필을 바꾸려면 루트를 편집하세요",
+    paK: "압력 전진 (K)",
+    noValues: "이 단계에는 아직 값이 없습니다.",
+  },
   filamentProfiles: {
     // Page/header
     title: '필라멘트 프로필',

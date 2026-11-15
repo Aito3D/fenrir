@@ -5521,6 +5521,25 @@ export default {
     },
   },
   // Filament Profiles (preset manager)
+  filamentTrees: {
+    navLabel: "Дерева профілів філаменту",
+    toggle: "Показати або сховати {{name}}",
+    allColours: "Кольори — усі принтери",
+    allMachines: "{{color}} (усі принтери)",
+    ownCount_one: "Власних значень: {{count}}",
+    ownCount_other: "Власних значень: {{count}}",
+    calibrationSource: "Джерело калібрування",
+    path: "Шлях профілю",
+    own: "власне",
+    parentValue: "батьківське {{value}}",
+    useParent: "Взяти від батька",
+    useParentFor: "Взяти від батька: {{field}}",
+    from: "з {{source}}",
+    fromBambu: "з Bambu {{machine}} {{nozzle}}",
+    sourceReadOnly: "Змініть корінь, щоб змінити калібрований профіль",
+    paK: "Випередження тиску (K)",
+    noValues: "На цьому рівні ще немає значень.",
+  },
   filamentProfiles: {
     // Page/header
     title: "Профілі філаменту",

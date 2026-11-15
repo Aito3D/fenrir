@@ -5686,6 +5686,25 @@ export default {
   },
 
   // Filament Profiles (preset manager)
+  filamentTrees: {
+    navLabel: "耗材設定檔樹",
+    toggle: "展開或收合 {{name}}",
+    allColours: "顏色 — 所有機器",
+    allMachines: "{{color}}（所有機器）",
+    ownCount_one: "{{count}} 個自有值",
+    ownCount_other: "{{count}} 個自有值",
+    calibrationSource: "校準來源",
+    path: "設定檔路徑",
+    own: "自有",
+    parentValue: "上層 {{value}}",
+    useParent: "使用上層值",
+    useParentFor: "使用上層值：{{field}}",
+    from: "繼承自 {{source}}",
+    fromBambu: "繼承自 Bambu {{machine}} {{nozzle}}",
+    sourceReadOnly: "編輯根節點以變更已校準的設定檔",
+    paK: "壓力提前 (K)",
+    noValues: "此層級尚無值。",
+  },
   filamentProfiles: {
     // Page/header
     title: '耗材預設',

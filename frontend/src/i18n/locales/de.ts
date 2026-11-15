@@ -5699,6 +5699,25 @@ export default {
   },
 
   // Filament Profiles (preset manager)
+  filamentTrees: {
+    navLabel: "Filamentprofil-Bäume",
+    toggle: "{{name}} ein- oder ausklappen",
+    allColours: "Farben — alle Maschinen",
+    allMachines: "{{color}} (alle Maschinen)",
+    ownCount_one: "{{count}} eigener Wert",
+    ownCount_other: "{{count}} eigene Werte",
+    calibrationSource: "Kalibrierungsquelle",
+    path: "Profilpfad",
+    own: "eigen",
+    parentValue: "übergeordnet {{value}}",
+    useParent: "Übergeordneten verwenden",
+    useParentFor: "Übergeordneten verwenden: {{field}}",
+    from: "von {{source}}",
+    fromBambu: "von Bambu {{machine}} {{nozzle}}",
+    sourceReadOnly: "Bearbeite die Wurzel, um das kalibrierte Profil zu ändern",
+    paK: "Druckvorlauf (K)",
+    noValues: "Auf dieser Ebene gibt es noch keine Werte.",
+  },
   filamentProfiles: {
     // Page/header
     title: 'Filamentprofile',

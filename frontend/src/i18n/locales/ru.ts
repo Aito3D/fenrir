@@ -5506,6 +5506,25 @@ export default {
     },
   },
   // Filament Profiles (preset manager)
+  filamentTrees: {
+    navLabel: "Деревья профилей филамента",
+    toggle: "Показать или скрыть {{name}}",
+    allColours: "Цвета — все принтеры",
+    allMachines: "{{color}} (все принтеры)",
+    ownCount_one: "Собственных значений: {{count}}",
+    ownCount_other: "Собственных значений: {{count}}",
+    calibrationSource: "Источник калибровки",
+    path: "Путь профиля",
+    own: "своё",
+    parentValue: "родитель {{value}}",
+    useParent: "Взять от родителя",
+    useParentFor: "Взять от родителя: {{field}}",
+    from: "из {{source}}",
+    fromBambu: "из Bambu {{machine}} {{nozzle}}",
+    sourceReadOnly: "Измените корень, чтобы поменять калиброванный профиль",
+    paK: "Опережение давления (K)",
+    noValues: "На этом уровне пока нет значений.",
+  },
   filamentProfiles: {
     // Page/header
     title: "Профили филамента",

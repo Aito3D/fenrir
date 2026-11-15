@@ -5687,6 +5687,25 @@ export default {
   },
 
   // Filament Profiles (preset manager)
+  filamentTrees: {
+    navLabel: "Arbres de profils de filament",
+    toggle: "Afficher ou masquer {{name}}",
+    allColours: "Couleurs — toutes les machines",
+    allMachines: "{{color}} (toutes les machines)",
+    ownCount_one: "{{count}} valeur propre",
+    ownCount_other: "{{count}} valeurs propres",
+    calibrationSource: "Source de calibration",
+    path: "Chemin du profil",
+    own: "propre",
+    parentValue: "parent : {{value}}",
+    useParent: "Reprendre le parent",
+    useParentFor: "Reprendre le parent : {{field}}",
+    from: "de {{source}}",
+    fromBambu: "de Bambu {{machine}} {{nozzle}}",
+    sourceReadOnly: "Modifiez la racine pour changer le profil calibré",
+    paK: "Avance de pression (K)",
+    noValues: "Aucune valeur à ce niveau pour l'instant.",
+  },
   filamentProfiles: {
     // Page/header
     title: 'Profils de filament',

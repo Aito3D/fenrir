@@ -5694,6 +5694,25 @@ export default {
   },
 
   // Filament Profiles (preset manager)
+  filamentTrees: {
+    navLabel: "Filament profil ağaçları",
+    toggle: "{{name}} göster veya gizle",
+    allColours: "Renkler — tüm makineler",
+    allMachines: "{{color}} (tüm makineler)",
+    ownCount_one: "{{count}} özel değer",
+    ownCount_other: "{{count}} özel değer",
+    calibrationSource: "Kalibrasyon kaynağı",
+    path: "Profil yolu",
+    own: "özel",
+    parentValue: "üst {{value}}",
+    useParent: "Üsttekini kullan",
+    useParentFor: "Üsttekini kullan: {{field}}",
+    from: "{{source}} kaynağından",
+    fromBambu: "Bambu {{machine}} {{nozzle}} kaynağından",
+    sourceReadOnly: "Kalibre edilmiş profili değiştirmek için kökü düzenleyin",
+    paK: "Basınç ilerlemesi (K)",
+    noValues: "Bu seviyede henüz değer yok.",
+  },
   filamentProfiles: {
     // Page/header
     title: 'Filament Profilleri',
