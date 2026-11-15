@@ -6,7 +6,7 @@ import { api } from '../../api/client';
 import type { FilamentTreeNodeRow, FilamentTreeNodeUpdate, FilamentTreePresetValue, FilamentTreeSummary } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import { errorMessage } from '../filament-profiles/presetJson';
+import { errorMessage } from './errorMessage';
 import { inputCls } from '../formStyles';
 import { FIELD_LABEL_KEYS } from './fieldLabels';
 import { normalizePaK, readPaK, writePaK } from './paGcode';
@@ -81,7 +81,7 @@ function SettingRow({ row, label, sourceText, writable, resetTick, onSave }: {
     <tr className="border-b border-bambu-dark-tertiary/60 align-top">
       <td className="py-2 pr-3">
         <div className="text-sm text-bambu-gray-light">{label}</div>
-        <div id={id} className="font-mono text-[11px] text-bambu-gray/50">
+        <div id={id} className="break-all font-mono text-[11px] text-bambu-gray/50">
           {row.key}
         </div>
       </td>
@@ -245,24 +245,27 @@ export function NodePanel({ node }: { node: NodeRef }) {
           {rows.length === 0 ? (
             <p className="text-sm text-bambu-gray">{t('filamentTrees.noValues')}</p>
           ) : (
-            <table className="w-full border-collapse">
-              <tbody>
-                {rows.map((row) => {
-                  const labelKey = FIELD_LABEL_KEYS[row.key];
-                  return (
-                    <SettingRow
-                      key={row.key}
-                      row={row}
-                      label={labelKey ? t(labelKey) : row.key}
-                      sourceText={sourceText(row)}
-                      writable={writable}
-                      resetTick={resets[row.key] ?? 0}
-                      onSave={(body) => save.mutate(body)}
-                    />
-                  );
-                })}
-              </tbody>
-            </table>
+            // the card scrolls, not the page, if a long value still overflows on a phone
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <tbody>
+                  {rows.map((row) => {
+                    const labelKey = FIELD_LABEL_KEYS[row.key];
+                    return (
+                      <SettingRow
+                        key={row.key}
+                        row={row}
+                        label={labelKey ? t(labelKey) : row.key}
+                        sourceText={sourceText(row)}
+                        writable={writable}
+                        resetTick={resets[row.key] ?? 0}
+                        onSave={(body) => save.mutate(body)}
+                      />
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </>
       )}

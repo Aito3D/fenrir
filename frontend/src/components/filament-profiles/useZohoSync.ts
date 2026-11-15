@@ -72,7 +72,9 @@ export function useZohoSync() {
       // paths must refetch too instead of leaving the grid and any open
       // editor on the pre-sync snapshot (which a subsequent Save would then
       // PATCH straight back over the committed price).
+      // Prices land on the tree roots (and the generated rows), so both views refetch.
       await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
+      await queryClient.invalidateQueries({ queryKey: ['filament-trees'] });
       clearTimeout(deadline);
       setZohoSyncing(false);
     }
