@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { TreeNav } from '../../../components/filament-trees/TreeNav';
 import type { FilamentTreeSummary, FilamentTreeTargets } from '../../../api/client';
 
@@ -94,6 +94,9 @@ describe('TreeNav', () => {
     );
     const leaf = screen.getByRole('button', { name: 'X2D › 0.4 › White' });
     expect(leaf).toHaveAttribute('aria-current', 'true');
-    expect(screen.getAllByLabelText('Calibration source').length).toBeGreaterThan(0);
+    // the mark sits in the source leaf's row, not in a sibling colour's row
+    expect(within(leaf.parentElement!).getByLabelText('Calibration source')).toBeInTheDocument();
+    const sibling = screen.getByRole('button', { name: 'X2D › 0.4 › Red' });
+    expect(within(sibling.parentElement!).queryByLabelText('Calibration source')).toBeNull();
   });
 });

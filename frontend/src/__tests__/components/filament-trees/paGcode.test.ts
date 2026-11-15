@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readPaK, writePaK } from '../../../components/filament-trees/paGcode';
+import { normalizePaK, readPaK, writePaK } from '../../../components/filament-trees/paGcode';
 
 describe('paGcode', () => {
   it('reads the M900 K value', () => {
@@ -19,5 +19,20 @@ describe('paGcode', () => {
   it('removes the line when k is empty', () => {
     expect(writePaK('M900 L1000 M10\nM900 K0.035', '')).toBe('M900 L1000 M10');
     expect(writePaK('M900 K0.035\n; after', '')).toBe('; after');
+  });
+
+  it('normalises user input and refuses non-numbers', () => {
+    expect(normalizePaK(' 0,028 ')).toBe('0.028');
+    expect(normalizePaK('.02')).toBe('.02');
+    expect(normalizePaK('')).toBe('');
+    expect(normalizePaK('abc')).toBeNull();
+    expect(normalizePaK('0.0.2')).toBeNull();
+    expect(writePaK('M900 K0.035', 'abc')).toBe('M900 K0.035');
+    expect(writePaK('M900 K0.035', '0,03')).toBe('M900 K0.03');
+  });
+
+  it('tolerates extra spaces and trailing arguments', () => {
+    expect(readPaK('M900  K0.04 L1000')).toBe('0.04');
+    expect(writePaK('M900 K0.04 L1000', '0.05')).toBe('M900 K0.05 L1000');
   });
 });

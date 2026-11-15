@@ -145,4 +145,70 @@ describe('NodePanel', () => {
     expect(await screen.findByText('from Polymaker PETG')).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).toBeNull();
   });
+
+  it('accepts a comma decimal for pressure advance', async () => {
+    renderPanel(<NodePanel node={{ treeId: 1, machine: 'H2S', nozzle: '0.6', colorId: 11 }} />);
+    const pa = await screen.findByRole('textbox', { name: 'Pressure advance (K)' });
+    fireEvent.change(pa, { target: { value: '0,028' } });
+    fireEvent.blur(pa);
+    await waitFor(() =>
+      expect(setNode).toHaveBeenCalledWith(1, {
+        machine: 'H2S',
+        nozzle: '0.6',
+        color_id: 11,
+        set: { filament_start_gcode: ['M900 L1000 M10\nM900 K0.028'] },
+      }),
+    );
+  });
+
+  it('refuses a non-numeric pressure advance and resets the input', async () => {
+    renderPanel(<NodePanel node={{ treeId: 1, machine: 'H2S', nozzle: '0.6', colorId: 11 }} />);
+    const pa = await screen.findByRole('textbox', { name: 'Pressure advance (K)' });
+    fireEvent.change(pa, { target: { value: 'abc' } });
+    fireEvent.blur(pa);
+    expect(mockShowToast).toHaveBeenCalledWith('Pressure advance must be a number, like 0.028', 'error');
+    expect(setNode).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox', { name: 'Pressure advance (K)' })).toHaveValue('0.035');
+  });
+
+  it('edits one element of a multi-element value and keeps the others verbatim', async () => {
+    const both = ['G1 X1, Y2\nM900 K0.03', 'a, b'];
+    getNode.mockResolvedValue([{ key: 'filament_end_gcode', value: both, source: 'machine', own: false }]);
+    renderPanel(<NodePanel node={{ treeId: 1, machine: 'H2S', nozzle: '0.6', colorId: 11 }} />);
+    const first = await screen.findByRole('textbox', { name: 'End G-code 1' });
+    expect(first.tagName).toBe('TEXTAREA');
+    expect(first).toHaveValue(both[0]);
+    const second = screen.getByRole('textbox', { name: 'End G-code 2' });
+    fireEvent.change(second, { target: { value: 'a, c' } });
+    fireEvent.blur(second);
+    await waitFor(() =>
+      expect(setNode).toHaveBeenCalledWith(1, {
+        machine: 'H2S',
+        nozzle: '0.6',
+        color_id: 11,
+        set: { filament_end_gcode: [both[0], 'a, c'] },
+      }),
+    );
+  });
+
+  it('non-source colour-wide node has value inputs but no PA input', async () => {
+    getNode.mockResolvedValue([{ key: 'nozzle_temperature', value: ['230'], source: 'root', own: false }]);
+    renderPanel(<NodePanel node={{ treeId: 1, colorId: 11 }} />);
+    expect(await screen.findByText('Polymaker PETG › Red (all machines)')).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: 'Print' })).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Pressure advance (K)' })).toBeNull();
+  });
+
+  it('a failed save resets only the failing row and keeps other drafts', async () => {
+    setNode.mockRejectedValue(new Error('refused'));
+    renderPanel(<NodePanel node={{ treeId: 1, machine: 'H2S', nozzle: '0.6', colorId: 11 }} />);
+    const temp = await screen.findByRole('textbox', { name: 'Print' });
+    const flow = screen.getByRole('textbox', { name: 'Flow ratio' });
+    fireEvent.change(flow, { target: { value: '0.95' } }); // draft, not committed
+    fireEvent.change(temp, { target: { value: '999' } });
+    fireEvent.blur(temp);
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith('refused', 'error'));
+    expect(screen.getByRole('textbox', { name: 'Print' })).toHaveValue('220');
+    expect(screen.getByRole('textbox', { name: 'Flow ratio' })).toHaveValue('0.95');
+  });
 });

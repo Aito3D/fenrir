@@ -5698,26 +5698,29 @@ export default {
     },
   },
 
-  // Filament Profiles (preset manager)
+  // Filament profile trees (tree page)
   filamentTrees: {
-    navLabel: "フィラメントプロファイルツリー",
-    toggle: "{{name}} の表示を切り替え",
-    allColours: "カラー — すべてのマシン",
-    allMachines: "{{color}}（すべてのマシン）",
-    ownCount_one: "固有の値 {{count}} 件",
-    ownCount_other: "固有の値 {{count}} 件",
-    calibrationSource: "キャリブレーション元",
-    path: "プロファイルのパス",
-    own: "固有",
-    parentValue: "親の値 {{value}}",
-    useParent: "親の値を使う",
-    useParentFor: "親の値を使う: {{field}}",
-    from: "{{source}} から継承",
-    fromBambu: "Bambu {{machine}} {{nozzle}} から継承",
-    sourceReadOnly: "キャリブレーション済みプロファイルを変更するにはルートを編集してください",
-    paK: "プレッシャーアドバンス (K)",
-    noValues: "この階層にはまだ値がありません。",
+    navLabel: 'フィラメントプロファイルツリー',
+    toggle: '{{name}} の表示を切り替え',
+    allColours: 'カラー — すべてのマシン',
+    allMachines: '{{color}}（すべてのマシン）',
+    ownCount_one: '固有の値 {{count}} 件',
+    ownCount_other: '固有の値 {{count}} 件',
+    calibrationSource: 'キャリブレーション元',
+    path: 'プロファイルのパス',
+    own: '固有',
+    parentValue: '親の値 {{value}}',
+    useParent: '親の値を使う',
+    useParentFor: '親の値を使う: {{field}}',
+    from: '{{source}} から継承',
+    fromBambu: 'Bambu {{machine}} {{nozzle}} から継承',
+    sourceReadOnly: 'キャリブレーション済みプロファイルを変更するにはルートを編集してください',
+    paK: 'プレッシャーアドバンス (K)',
+    noValues: 'この階層にはまだ値がありません。',
+    paInvalid: 'プレッシャーアドバンスは 0.028 のような数値で入力してください',
   },
+
+  // Filament Profiles (preset manager)
   filamentProfiles: {
     // Page/header
     title: 'フィラメントプロファイル',

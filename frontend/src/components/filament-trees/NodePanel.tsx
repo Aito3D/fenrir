@@ -9,7 +9,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { errorMessage } from '../filament-profiles/presetJson';
 import { inputCls } from '../formStyles';
 import { FIELD_LABEL_KEYS } from './fieldLabels';
-import { readPaK, writePaK } from './paGcode';
+import { normalizePaK, readPaK, writePaK } from './paGcode';
 import type { NodeRef } from './TreeNav';
 
 /** Mirrors the backend's NOZZLE_BOUND_KEYS: refused at the root and colour-wide levels. */
@@ -23,12 +23,8 @@ const PA_KEY = 'filament_start_gcode';
 
 const display = (v: unknown) => (Array.isArray(v) ? v.join(', ') : v == null ? '' : String(v));
 
-/** Text back into the stored Orca shape: one-element arrays stay one element; longer arrays split on commas. */
-// shortcut: a comma inside a multi-element array entry splits it, upgrade if such a key ever needs editing here
-function parse(text: string, original: unknown): FilamentTreePresetValue {
-  if (!Array.isArray(original)) return text;
-  return original.length > 1 ? text.split(',').map((s) => s.trim()) : [text];
-}
+/** Text back into the stored Orca shape: a one-element array stays an array, anything else is saved as text. */
+const parse = (text: string, original: unknown): FilamentTreePresetValue => (Array.isArray(original) ? [text] : text);
 
 function ValueInput({ label, value, describedBy, own, onCommit }: {
   label: string;
@@ -80,6 +76,7 @@ function SettingRow({ row, label, sourceText, writable, resetTick, onSave }: {
   const { t } = useTranslation();
   const id = useId();
   const text = display(row.value);
+  const elements = Array.isArray(row.value) && row.value.length > 1 ? (row.value as Array<string | number>) : null;
   return (
     <tr className="border-b border-bambu-dark-tertiary/60 align-top">
       <td className="py-2 pr-3">
@@ -89,7 +86,20 @@ function SettingRow({ row, label, sourceText, writable, resetTick, onSave }: {
         </div>
       </td>
       <td className="py-2 pr-3">
-        {writable ? (
+        {writable && elements ? (
+          <div className="space-y-1">
+            {elements.map((el, i) => (
+              <ValueInput
+                key={`${i}:${String(el)}:${resetTick}`}
+                label={`${label} ${i + 1}`}
+                value={String(el)}
+                describedBy={id}
+                own={row.own}
+                onCommit={(next) => onSave({ set: { [row.key]: elements.map((v, j) => (j === i ? next : v)) } })}
+              />
+            ))}
+          </div>
+        ) : writable ? (
           <ValueInput
             key={`${text}:${resetTick}`}
             label={label}
@@ -136,7 +146,10 @@ export function NodePanel({ node }: { node: NodeRef }) {
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [resetTick, setResetTick] = useState(0);
+  // Bumped per key when a save of that key fails, so only that row's inputs remount with the stored value.
+  const [resets, setResets] = useState<Record<string, number>>({});
+  const reset = (keys: string[]) =>
+    setResets((prev) => Object.fromEntries([...Object.entries(prev), ...keys.map((k) => [k, (prev[k] ?? 0) + 1])]));
   const { treeId, machine, nozzle, colorId } = node;
 
   const { data: trees } = useQuery({ queryKey: ['filament-trees'], queryFn: api.getFilamentTrees });
@@ -154,8 +167,8 @@ export function NodePanel({ node }: { node: NodeRef }) {
         ...body,
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['filament-trees'] }),
-    onError: (err) => {
-      setResetTick((n) => n + 1); // put the refused value back in the input
+    onError: (err, body) => {
+      reset([...Object.keys(body.set ?? {}), ...(body.clear ?? [])]);
       showToast(errorMessage(err), 'error');
     },
   });
@@ -190,7 +203,13 @@ export function NodePanel({ node }: { node: NodeRef }) {
   const rows = (rowsQuery.data ?? []).filter((r) => !(hidesNozzleBound && NOZZLE_BOUND_KEYS.has(r.key)));
   const gcodeRow = rows.find((r) => r.key === PA_KEY);
   const gcodeText = Array.isArray(gcodeRow?.value) ? String(gcodeRow.value[0] ?? '') : display(gcodeRow?.value);
-  const savePa = (k: string) => {
+  const savePa = (input: string) => {
+    const k = normalizePaK(input);
+    if (k === null) {
+      reset([PA_KEY]);
+      showToast(t('filamentTrees.paInvalid'), 'error');
+      return;
+    }
     const old = gcodeRow?.value;
     const next = Array.isArray(old)
       ? old.map((g) => writePaK(String(g), k))
@@ -216,7 +235,7 @@ export function NodePanel({ node }: { node: NodeRef }) {
             <label className="flex max-w-xs flex-col gap-1">
               <span className="text-xs font-semibold uppercase tracking-wide text-bambu-gray/70">{t('filamentTrees.paK')}</span>
               <ValueInput
-                key={`${gcodeText}:${resetTick}`}
+                key={`${gcodeText}:${resets[PA_KEY] ?? 0}`}
                 label={t('filamentTrees.paK')}
                 value={readPaK(gcodeText)}
                 onCommit={savePa}
@@ -237,7 +256,7 @@ export function NodePanel({ node }: { node: NodeRef }) {
                       label={labelKey ? t(labelKey) : row.key}
                       sourceText={sourceText(row)}
                       writable={writable}
-                      resetTick={resetTick}
+                      resetTick={resets[row.key] ?? 0}
                       onSave={(body) => save.mutate(body)}
                     />
                   );

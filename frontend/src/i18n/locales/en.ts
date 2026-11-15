@@ -5734,26 +5734,29 @@ export default {
     },
   },
 
-  // Filament Profiles (preset manager)
+  // Filament profile trees (tree page)
   filamentTrees: {
-    navLabel: "Filament profile trees",
-    toggle: "Show or hide {{name}}",
-    allColours: "Colours — all machines",
-    allMachines: "{{color}} (all machines)",
-    ownCount_one: "{{count}} own value",
-    ownCount_other: "{{count}} own values",
-    calibrationSource: "Calibration source",
-    path: "Profile path",
-    own: "own",
-    parentValue: "parent {{value}}",
-    useParent: "Use parent",
-    useParentFor: "Use parent: {{field}}",
-    from: "from {{source}}",
-    fromBambu: "from Bambu {{machine}} {{nozzle}}",
-    sourceReadOnly: "Edit the root to change the calibrated profile",
-    paK: "Pressure advance (K)",
-    noValues: "No values at this level yet.",
+    navLabel: 'Filament profile trees',
+    toggle: 'Show or hide {{name}}',
+    allColours: 'Colours — all machines',
+    allMachines: '{{color}} (all machines)',
+    ownCount_one: '{{count}} own value',
+    ownCount_other: '{{count}} own values',
+    calibrationSource: 'Calibration source',
+    path: 'Profile path',
+    own: 'own',
+    parentValue: 'parent {{value}}',
+    useParent: 'Use parent',
+    useParentFor: 'Use parent: {{field}}',
+    from: 'from {{source}}',
+    fromBambu: 'from Bambu {{machine}} {{nozzle}}',
+    sourceReadOnly: 'Edit the root to change the calibrated profile',
+    paK: 'Pressure advance (K)',
+    noValues: 'No values at this level yet.',
+    paInvalid: 'Pressure advance must be a number, like 0.028',
   },
+
+  // Filament Profiles (preset manager)
   filamentProfiles: {
     // Page/header
     title: 'Filament Profiles',

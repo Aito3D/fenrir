@@ -5685,26 +5685,29 @@ export default {
     },
   },
 
-  // Filament Profiles (preset manager)
+  // Filament profile trees (tree page)
   filamentTrees: {
-    navLabel: "Árvores de perfis de filamento",
-    toggle: "Mostrar ou ocultar {{name}}",
-    allColours: "Cores — todas as máquinas",
-    allMachines: "{{color}} (todas as máquinas)",
-    ownCount_one: "{{count}} valor próprio",
-    ownCount_other: "{{count}} valores próprios",
-    calibrationSource: "Origem da calibração",
-    path: "Caminho do perfil",
-    own: "próprio",
-    parentValue: "pai {{value}}",
-    useParent: "Usar o do pai",
-    useParentFor: "Usar o do pai: {{field}}",
-    from: "de {{source}}",
-    fromBambu: "de Bambu {{machine}} {{nozzle}}",
-    sourceReadOnly: "Edite a raiz para alterar o perfil calibrado",
-    paK: "Avanço de pressão (K)",
-    noValues: "Ainda não há valores neste nível.",
+    navLabel: 'Árvores de perfis de filamento',
+    toggle: 'Mostrar ou ocultar {{name}}',
+    allColours: 'Cores — todas as máquinas',
+    allMachines: '{{color}} (todas as máquinas)',
+    ownCount_one: '{{count}} valor próprio',
+    ownCount_other: '{{count}} valores próprios',
+    calibrationSource: 'Origem da calibração',
+    path: 'Caminho do perfil',
+    own: 'próprio',
+    parentValue: 'pai {{value}}',
+    useParent: 'Usar o do pai',
+    useParentFor: 'Usar o do pai: {{field}}',
+    from: 'de {{source}}',
+    fromBambu: 'de Bambu {{machine}} {{nozzle}}',
+    sourceReadOnly: 'Edite a raiz para alterar o perfil calibrado',
+    paK: 'Avanço de pressão (K)',
+    noValues: 'Ainda não há valores neste nível.',
+    paInvalid: 'O avanço de pressão deve ser um número, por exemplo 0.028',
   },
+
+  // Filament Profiles (preset manager)
   filamentProfiles: {
     // Page/header
     title: 'Perfis de filamento',
