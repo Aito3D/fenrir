@@ -9570,7 +9570,7 @@ POST /api/v1/filament-trees/conflicts/resolve  body={"color_id": 1, "key": "a", 
 POST /api/v1/filament-trees/conflicts/resolve  body={"color_id": 2, "key": "a", "machine": "A1", "nozzle": "0.4", "orca_value": "1", "tree_id": 1, "value": "1"}
 -> 404
 {
- "detail": "No row was found when one was required"
+ "detail": "leaf A1 0.4 (colour 2) of tree 1 not found"
 }
 ### K14 resolve: identity key refused
 POST /api/v1/filament-trees/conflicts/resolve  body={"color_id": 2, "key": "name", "machine": "H2S", "nozzle": "0.4", "orca_value": "x", "tree_id": 1, "value": "x"}

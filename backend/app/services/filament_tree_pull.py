@@ -152,7 +152,9 @@ async def _leaf_preset(
                 FilamentTreeLeaf.color_id == color_id,
             )
         )
-    ).scalar_one()
+    ).scalar_one_or_none()
+    if link is None:
+        raise LookupError(f"leaf {machine} {nozzle} (colour {color_id}) of tree {tree_id} not found")
     preset = await db.get(FilamentPreset, link.preset_id)
     if preset is None:
         raise LookupError(f"preset {link.preset_id} of a tree leaf is missing")

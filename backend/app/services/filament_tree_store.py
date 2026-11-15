@@ -64,6 +64,8 @@ def _validate_targets(targets: dict) -> dict:
         if not isinstance(vals, list) or not vals or not all(isinstance(v, str) and v.strip() for v in vals):
             raise ValueError(f"{key} must be a non-empty list of non-empty strings")
         out[key] = [v.strip() for v in vals]
+        if len(set(out[key])) != len(out[key]):
+            raise ValueError(f"{key} must not contain duplicates")
     if not all(re.match(r"^\d\.\d$", n) for n in out["nozzles"]):
         raise ValueError("nozzles must look like 0.4")
     return out
@@ -172,7 +174,9 @@ async def regenerate_tree(db: AsyncSession, tree_id: int) -> dict:
             )
             counts["created"] += 1
         else:
-            preset = (await db.execute(select(FilamentPreset).where(FilamentPreset.id == link.preset_id))).scalar_one()
+            preset = await db.get(FilamentPreset, link.preset_id)
+            if preset is None:
+                raise LookupError(f"preset {link.preset_id} of leaf {machine} {nozzle} (colour {color_id}) is missing")
             if preset.content != content:
                 link.export_pending = True
             for k, v in fields.items():
@@ -282,8 +286,16 @@ async def set_node_values(
         await db.commit()
 
 
+async def _check_color_name_free(db: AsyncSession, tree_id: int, name: str, except_id: int | None = None) -> None:
+    """Colour names become leaf preset names, so two colours of a tree may not share one (casefolded, as spools are)."""
+    rows = (await db.execute(select(FilamentTreeColor).where(FilamentTreeColor.tree_id == tree_id))).scalars().all()
+    if any(c.id != except_id and c.name.casefold() == name.casefold() for c in rows):
+        raise ValueError(f"this tree already has a colour named {name!r}")
+
+
 async def add_color(db: AsyncSession, tree_id: int, name: str, hex: str) -> int:
     await _get_tree(db, tree_id)
+    await _check_color_name_free(db, tree_id, name)
     last = (
         (
             await db.execute(
@@ -307,6 +319,7 @@ async def rename_color(db: AsyncSession, tree_id: int, color_id: int, name: str,
     color = await db.get(FilamentTreeColor, color_id)
     if color is None or color.tree_id != tree_id:
         raise LookupError(f"colour {color_id} not found")
+    await _check_color_name_free(db, tree_id, name, color_id)
     color.name = name
     if hex is not None:
         color.hex = hex

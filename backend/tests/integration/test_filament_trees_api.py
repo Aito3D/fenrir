@@ -564,7 +564,7 @@ async def test_conflict_resolve_unknown_leaf_404(async_client, db_session):
     }
     r = await async_client.post(f"{API}/conflicts/resolve", json=body)
     assert r.status_code == 404
-    assert r.json()["detail"] == "No row was found when one was required"  # current text (SQLAlchemy's)
+    assert r.json()["detail"] == f"leaf NOPE 0.4 (colour {red.id}) of tree {tree.id} not found"
 
 
 async def test_node_put_refuses_orca_metadata_keys(async_client, db_session):
@@ -710,3 +710,42 @@ async def test_history_revert_and_export_changed_only(async_client, db_session):
     assert {row["key"]: row for row in rows}["hot_plate_temp"]["own"] is False
     assert len((await async_client.get(f"{API}/{tree.id}/history")).json()) == 2
     assert (await async_client.post(f"{API}/{tree.id}/history/9999/revert")).status_code == 404
+
+
+async def test_put_targets_refuses_duplicates(async_client):
+    for body in (
+        {"machines": ["H2S", "H2S"], "nozzles": ["0.4"]},
+        {"machines": ["H2S", " H2S"], "nozzles": ["0.4"]},
+        {"machines": ["H2S"], "nozzles": ["0.4", "0.4"]},
+    ):
+        r = await async_client.put(f"{API}/targets", json=body)
+        assert r.status_code == 400 and "duplicates" in r.json()["detail"]
+    ok = await async_client.put(f"{API}/targets", json={"machines": ["H2S", "H2D"], "nozzles": ["0.4", "0.2"]})
+    assert ok.status_code == 200
+
+
+async def test_duplicate_colour_names_refused(async_client, db_session):
+    tree, white, red = await _tree(db_session)
+    r = await async_client.post(f"{API}/{tree.id}/colors", json={"name": "white", "hex": "#FFFFFF"})
+    assert r.status_code == 400 and "already has a colour" in r.json()["detail"]
+    r = await async_client.patch(f"{API}/{tree.id}/colors/{red.id}", json={"name": "WHITE"})
+    assert r.status_code == 400
+    # own name (hex-only change, or same name) and a free name still work
+    r = await async_client.patch(f"{API}/{tree.id}/colors/{red.id}", json={"name": "Red", "hex": "#EE0000"})
+    assert r.status_code == 200, r.text
+    r = await async_client.patch(f"{API}/{tree.id}/colors/{red.id}", json={"name": "Crimson"})
+    assert r.status_code == 200, r.text
+    r = await async_client.post(f"{API}/{tree.id}/colors", json={"name": "Blue", "hex": "#0000FF"})
+    assert r.status_code == 200, r.text
+
+
+async def test_missing_preset_is_a_domain_lookup_error(db_session, monkeypatch):
+    tree, _, _ = await _tree(db_session)
+    real_get = db_session.get
+
+    async def get(model, *args, **kwargs):
+        return None if model is FilamentPreset else await real_get(model, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "get", get)
+    with pytest.raises(LookupError, match="preset .* is missing"):
+        await store.regenerate_tree(db_session, tree.id)

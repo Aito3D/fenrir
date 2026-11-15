@@ -7,7 +7,6 @@ from dataclasses import asdict, replace
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy import delete, func, select
-from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.cloud import _cloud_api_key_gate, cloud_caller
@@ -82,7 +81,7 @@ def _mapped():
         yield
     except (KeyError, IndexError):
         raise
-    except (LookupError, NoResultFound) as e:
+    except LookupError as e:
         raise HTTPException(404, str(e) or "not found") from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
