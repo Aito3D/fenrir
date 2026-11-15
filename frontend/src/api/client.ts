@@ -4402,6 +4402,52 @@ export interface SpoolmanBulkCreateResult {
   failed_count: number;
 }
 
+// ── Filament profile trees ──────────────────────────────────────────────────
+export type FilamentTreePresetValue = string | number | boolean | Array<string | number>;
+export interface FilamentTreeColor { id: number; name: string; hex: string }
+export interface FilamentTreeSummary {
+  id: number; name: string; brand: string; material: string;
+  skip_02: boolean | null; abrasive: boolean;
+  source: { machine: string; nozzle: string; color_id: number | null };
+  colors: FilamentTreeColor[];
+  /** keys: "root", "M", "M/N", "M/N/cid", "color:cid" */
+  own_counts: Record<string, number>;
+}
+export interface FilamentTreeTargets { machines: string[]; nozzles: string[] }
+export interface FilamentTreeNodeRow {
+  key: string; value: unknown;
+  source: 'root' | 'machine' | 'nozzle' | 'colorwide' | 'color' | 'bambu';
+  own: boolean;
+  inherited_value?: unknown; inherited_source?: string | null;
+  /** the Bambu base preset name, for bambu rows */
+  source_label?: string | null;
+}
+export interface FilamentTreeMigrationGroup {
+  prefix: string; preset_ids: number[]; proposed_source_preset_id: number;
+  proposed_machine: string; proposed_nozzle: string; warnings: string[];
+}
+export interface FilamentTreeConflict {
+  tree_id: number; machine: string; nozzle: string; color_id: number;
+  key: string; fenrir_value: unknown; orca_value: unknown;
+}
+export interface FilamentTreeCandidate {
+  orca_id: string | null; name: string; content: Record<string, unknown>;
+}
+export interface FilamentTreePullResult {
+  applied: Array<{ tree_id: number; machine: string; nozzle: string; color_id: number; target: string; values: Record<string, unknown> }>;
+  conflicts: FilamentTreeConflict[];
+  candidates: FilamentTreeCandidate[];
+  legacy: number; missing: string[]; ignored: number;
+  refresh: Array<{ tree_id: number; machine: string; nozzle: string; color_id: number; keys: string[] }>;
+}
+export interface FilamentTreeNodeUpdate {
+  machine?: string | null; nozzle?: string | null; color_id?: number | null;
+  set?: Record<string, FilamentTreePresetValue>; clear?: string[];
+}
+export interface FilamentTreeUpdate {
+  skip_02?: boolean | null; source_color_id?: number; source_machine?: string; source_nozzle?: string;
+}
+
 // ── Filament profile manager ────────────────────────────────────────────────
 export interface FilamentPreset {
   id: number; name: string; brand: string; material: string; color: string;
@@ -9149,6 +9195,41 @@ export const api = {
     }),
   unassignSpool: (printerId: number, amsId: number, trayId: number) =>
     request<{ status: string }>(`/inventory/assignments/${printerId}/${amsId}/${trayId}`, { method: 'DELETE' }),
+  // Filament profile trees
+  getFilamentTrees: () => request<FilamentTreeSummary[]>('/filament-trees'),
+  getFilamentTreeTargets: () => request<FilamentTreeTargets>('/filament-trees/targets'),
+  setFilamentTreeTargets: (data: FilamentTreeTargets) =>
+    request<FilamentTreeTargets>('/filament-trees/targets', { method: 'PUT', body: JSON.stringify(data) }),
+  getUnmanagedFilamentGroups: () => request<FilamentTreeMigrationGroup[]>('/filament-trees/unmanaged'),
+  migrateFilamentPresets: (groups: Array<{ prefix: string; source_preset_id: number; machine: string; nozzle: string }>) =>
+    request<{ tree_ids: number[] }>('/filament-trees/migrate', { method: 'POST', body: JSON.stringify({ groups }) }),
+  syncFilamentTrees: () => request<FilamentTreePullResult>('/filament-trees/sync', { method: 'POST' }),
+  resolveFilamentTreeConflict: (data: { tree_id: number; machine: string; nozzle: string; color_id: number; key: string; value: FilamentTreePresetValue }) =>
+    request<{ success: boolean }>('/filament-trees/conflicts/resolve', { method: 'POST', body: JSON.stringify(data) }),
+  createFilamentTreeFromCandidate: (data: { orca_id: string; name: string; brand: string; material: string; color_name: string; color_hex: string; machine: string; nozzle: string }) =>
+    request<{ tree_id: number }>('/filament-trees/candidates', { method: 'POST', body: JSON.stringify(data) }),
+  exportFilamentTrees: (treeId?: number): Promise<Blob> =>
+    postForBlob('/filament-trees/export', treeId === undefined ? {} : { tree_id: treeId }),
+  getFilamentTreeNode: (treeId: number, node: { machine?: string; nozzle?: string; colorId?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (node.machine !== undefined) q.set('machine', node.machine);
+    if (node.nozzle !== undefined) q.set('nozzle', node.nozzle);
+    if (node.colorId !== undefined) q.set('color_id', String(node.colorId));
+    const qs = q.toString();
+    return request<FilamentTreeNodeRow[]>(`/filament-trees/${treeId}/node${qs ? `?${qs}` : ''}`);
+  },
+  setFilamentTreeNode: (treeId: number, body: FilamentTreeNodeUpdate) =>
+    request<{ success: boolean }>(`/filament-trees/${treeId}/node`, { method: 'PUT', body: JSON.stringify(body) }),
+  updateFilamentTree: (treeId: number, data: FilamentTreeUpdate) =>
+    request<{ success: boolean }>(`/filament-trees/${treeId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  addFilamentTreeColor: (treeId: number, data: { name: string; hex?: string }) =>
+    request<{ id: number }>(`/filament-trees/${treeId}/colors`, { method: 'POST', body: JSON.stringify(data) }),
+  updateFilamentTreeColor: (treeId: number, colorId: number, data: { name: string; hex?: string | null }) =>
+    request<{ success: boolean }>(`/filament-trees/${treeId}/colors/${colorId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteFilamentTreeColor: (treeId: number, colorId: number) =>
+    request<{ success: boolean }>(`/filament-trees/${treeId}/colors/${colorId}`, { method: 'DELETE' }),
+  deleteFilamentTree: (treeId: number) =>
+    request<{ success: boolean }>(`/filament-trees/${treeId}`, { method: 'DELETE' }),
   // Filament profile manager
   getFilamentPresets: () => request<FilamentPreset[]>('/filament-profiles'),
   createFilamentPreset: (data: FilamentPresetPayload) =>
