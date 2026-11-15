@@ -62,6 +62,7 @@ function stub({ trees = [TREE], groups = [] as FilamentTreeMigrationGroup[] } = 
   vi.spyOn(api, 'getFilamentTreeTargets').mockResolvedValue(TARGETS);
   vi.spyOn(api, 'getUnmanagedFilamentGroups').mockResolvedValue(groups);
   vi.spyOn(api, 'getFilamentPresets').mockResolvedValue(PRESETS);
+  vi.spyOn(api, 'previewFilamentTreeSync').mockResolvedValue({ pull: [], push: [], conflicts: 0 });
   vi.spyOn(api, 'getFilamentTreeNode').mockResolvedValue([
     { key: 'nozzle_temperature', value: ['240'], source: 'root', own: true },
   ]);
@@ -71,6 +72,12 @@ beforeEach(() => {
   vi.restoreAllMocks();
   window.history.replaceState({}, '', '/'); // the open node lives in the URL
 });
+
+/** Clicks SYNC, then confirms the preview. */
+async function sync() {
+  await userEvent.click(await screen.findByRole('button', { name: 'SYNC' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+}
 
 /** Opens the header's "Sync & export" menu and clicks one entry. */
 async function menu(name: string) {
@@ -136,6 +143,27 @@ describe('FilamentProfilesPage (trees)', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
+  it('SYNC lists what it would do and syncs only once confirmed', async () => {
+    stub();
+    vi.spyOn(api, 'previewFilamentTreeSync').mockResolvedValue({
+      pull: [{ name: 'Polymaker PETG - Red @H2S 0.4', keys: ['nozzle_temperature'] }],
+      push: ['Polymaker PETG - Red @H2D 0.6'],
+      conflicts: 2,
+    });
+    const run = vi.spyOn(api, 'syncFilamentTrees').mockResolvedValue(EMPTY_PULL);
+    render(<FilamentProfilesPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'SYNC' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Sync with Orca Cloud' });
+    expect(within(dialog).getByText('Polymaker PETG - Red @H2S 0.4')).toBeInTheDocument();
+    expect(within(dialog).getByText('nozzle_temperature')).toBeInTheDocument();
+    expect(within(dialog).getByText('Polymaker PETG - Red @H2D 0.6')).toBeInTheDocument();
+    expect(within(dialog).getByText(/^2 conflicting values/)).toBeInTheDocument();
+    expect(run).not.toHaveBeenCalled();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    expect(await screen.findByRole('dialog', { name: 'Sync result' })).toBeInTheDocument();
+  });
+
   it('SYNC shows conflicts and resolving one sends the chosen value', async () => {
     stub();
     vi.spyOn(api, 'syncFilamentTrees').mockResolvedValue({
@@ -156,7 +184,7 @@ describe('FilamentProfilesPage (trees)', () => {
     const resolve = vi.spyOn(api, 'resolveFilamentTreeConflict').mockResolvedValue({ success: true });
     render(<FilamentProfilesPage />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'SYNC' }));
+    await sync();
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('Polymaker PETG - Red @H2S 0.6')).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Keep Orca: 245' }));
@@ -182,7 +210,7 @@ describe('FilamentProfilesPage (trees)', () => {
       push: { ...EMPTY_PULL.push, needs_write_scope: true, remaining: 7 },
     });
     render(<FilamentProfilesPage />);
-    await userEvent.click(await screen.findByRole('button', { name: 'SYNC' }));
+    await sync();
     expect(await within(await screen.findByRole('dialog')).findByText(/read-only.*7 waiting/)).toBeInTheDocument();
   });
 
@@ -201,7 +229,7 @@ describe('FilamentProfilesPage (trees)', () => {
     const create = vi.spyOn(api, 'createFilamentTreeFromCandidate').mockResolvedValue({ tree_id: 9 });
     render(<FilamentProfilesPage />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'SYNC' }));
+    await sync();
     const dialog = await screen.findByRole('dialog');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Create tree' }));
 
@@ -221,7 +249,7 @@ describe('FilamentProfilesPage (trees)', () => {
 
   it('explains how to connect Orca Cloud when SYNC gets a 401', async () => {
     stub();
-    vi.spyOn(api, 'syncFilamentTrees').mockRejectedValue(new ApiError('Not logged in to Orca Cloud', 401));
+    vi.spyOn(api, 'previewFilamentTreeSync').mockRejectedValue(new ApiError('Not logged in to Orca Cloud', 401));
     render(<FilamentProfilesPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'SYNC' }));
     const dialog = await screen.findByRole('dialog');
@@ -325,7 +353,7 @@ describe('FilamentProfilesPage (trees)', () => {
     vi.spyOn(api, 'syncFilamentTrees').mockResolvedValue({ ...EMPTY_PULL, conflicts: [conflict] });
     const resolve = vi.spyOn(api, 'resolveFilamentTreeConflict').mockResolvedValue({ success: true });
     render(<FilamentProfilesPage />);
-    await userEvent.click(await screen.findByRole('button', { name: 'SYNC' }));
+    await sync();
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Keep Fenrir: 240' }));
     await waitFor(() =>
       expect(resolve).toHaveBeenCalledWith({

@@ -93,9 +93,9 @@ async def cleanup_orca(db: AsyncSession, svc, expected: int) -> dict:
     return {"deleted": len(ids) - len(left), "failed": len(left), "snapshot": snapshot}
 
 
-async def push_leaves(db: AsyncSession, svc, entries: list[dict], skip: set[tuple]) -> dict:
-    """``skip``: (tree_id, machine, nozzle, color_id) of leaves with an open conflict."""
-    out: dict = {"pushed": 0, "failed": [], "remaining": 0, "needs_write_scope": False, "snapshot": None}
+async def _todo(db: AsyncSession, entries: list[dict], skip: set[tuple]) -> tuple[list[tuple], list[dict]]:
+    """Leaves Orca Cloud lacks or holds differently, and Orca's filament entries.
+    ``skip``: (tree_id, machine, nozzle, color_id) of leaves with an open conflict."""
     filaments = [e for e in entries if _is_filament(e)]
     by_name = {e.get("name"): e for e in filaments}
     rows = (
@@ -113,6 +113,18 @@ async def push_leaves(db: AsyncSession, svc, entries: list[dict], skip: set[tupl
         entry = by_name.get(preset.name)
         if entry is None or not is_wire_format(entry["content"]) or _differs(content, decode_content(entry["content"])):
             todo.append((link, preset.name, content, entry))
+    return todo, filaments
+
+
+async def push_names(db: AsyncSession, entries: list[dict], skip: set[tuple]) -> list[str]:
+    """Names of the leaves a push would send, without sending them."""
+    return [name for _, name, _, _ in (await _todo(db, entries, skip))[0]]
+
+
+async def push_leaves(db: AsyncSession, svc, entries: list[dict], skip: set[tuple]) -> dict:
+    """``skip``: (tree_id, machine, nozzle, color_id) of leaves with an open conflict."""
+    out: dict = {"pushed": 0, "failed": [], "remaining": 0, "needs_write_scope": False, "snapshot": None}
+    todo, filaments = await _todo(db, entries, skip)
     if not todo:
         return out
     if not await _can_write(svc):

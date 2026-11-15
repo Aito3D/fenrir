@@ -4516,6 +4516,8 @@ export interface FilamentTreePullResult {
   // remaining: leaves still waiting (read-only pairing, or the run stopped after repeated failures)
   push: { pushed: number; failed: Array<{ name: string; detail: string }>; remaining: number; needs_write_scope: boolean; snapshot: string | null };
 }
+/** What a SYNC would do: Orca edits folded into Fenrir, leaves sent to Orca, conflicts left to settle. */
+export interface FilamentTreeSyncPreview { pull: Array<{ name: string; keys: string[] }>; push: string[]; conflicts: number }
 export interface FilamentTreeNodeUpdate {
   machine?: string | null; nozzle?: string | null; color_id?: number | null;
   set?: Record<string, FilamentTreePresetValue>; clear?: string[];
@@ -9308,6 +9310,7 @@ export const api = {
   getUnmanagedFilamentGroups: () => request<FilamentTreeMigrationGroup[]>('/filament-trees/unmanaged'),
   migrateFilamentPresets: (groups: Array<{ prefix: string; source_preset_id: number; machine: string; nozzle: string }>) =>
     request<{ tree_ids: number[] }>('/filament-trees/migrate', { method: 'POST', body: JSON.stringify({ groups }) }),
+  previewFilamentTreeSync: () => request<FilamentTreeSyncPreview>('/filament-trees/sync'),
   syncFilamentTrees: () => request<FilamentTreePullResult>('/filament-trees/sync', { method: 'POST' }),
   // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if the count still matches
   getOrcaCleanupPreview: () => request<{ count: number; names: string[]; writable: boolean }>('/filament-trees/orca-cleanup'),

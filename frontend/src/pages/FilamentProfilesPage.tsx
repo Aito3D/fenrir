@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ChevronDown, Database, Download, Droplets, HardDrive, Loader2, Plus, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 
 import { api } from '../api/client';
-import type { FilamentTreePullResult } from '../api/client';
+import type { FilamentTreePullResult, FilamentTreeSyncPreview } from '../api/client';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
@@ -20,6 +20,7 @@ import { downloadTreeExport } from '../components/filament-trees/exportDownload'
 import { MigrateModal } from '../components/filament-trees/MigrateModal';
 import { MaterialCards } from '../components/filament-trees/MaterialCards';
 import { NodePanel, type NodeRef } from '../components/filament-trees/NodePanel';
+import { SyncPreviewModal } from '../components/filament-trees/SyncPreviewModal';
 import { SyncResultModal } from '../components/filament-trees/SyncResultModal';
 import { NewTreeModal } from '../components/filament-trees/NewTreeModal';
 import { TargetsModal } from '../components/filament-trees/TargetsModal';
@@ -59,6 +60,7 @@ export function FilamentProfilesPage() {
   const [migrateOpen, setMigrateOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [cleanup, setCleanup] = useState<{ count: number; busy: boolean } | null>(null);
+  const [syncPreview, setSyncPreview] = useState<FilamentTreeSyncPreview | null>(null);
   const [syncOutcome, setSyncOutcome] = useState<{ result?: FilamentTreePullResult; error?: unknown } | null>(null);
   const { zohoSyncing, zohoResult, handleZohoSync } = useZohoSync();
   // The generated rows: source colour names for the migration modal, and what "Sync to PC" writes.
@@ -164,7 +166,19 @@ export function FilamentProfilesPage() {
   ];
   const busy = zohoSyncing || syncBaseBusy;
 
+  // SYNC first shows what it would do; nothing is pulled or sent until the operator confirms
+  const previewSync = async () => {
+    setSyncing(true);
+    try {
+      setSyncPreview(await api.previewFilamentTreeSync());
+    } catch (error) {
+      setSyncOutcome({ error });
+    } finally {
+      setSyncing(false);
+    }
+  };
   const handleSync = async () => {
+    setSyncPreview(null);
     setSyncing(true);
     try {
       setSyncOutcome({ result: await api.syncFilamentTrees() });
@@ -192,7 +206,7 @@ export function FilamentProfilesPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canSync && (
-            <Button size="sm" onClick={handleSync} disabled={syncing}>
+            <Button size="sm" onClick={previewSync} disabled={syncing}>
               {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               {t('filamentTrees.sync')}
             </Button>
@@ -362,6 +376,9 @@ export function FilamentProfilesPage() {
           onConfirm={() => confirmCleanup(cleanup.count)}
           onCancel={() => setCleanup(null)}
         />
+      )}
+      {syncPreview && (
+        <SyncPreviewModal preview={syncPreview} onConfirm={handleSync} onClose={() => setSyncPreview(null)} />
       )}
       {syncOutcome && targets && (
         <SyncResultModal

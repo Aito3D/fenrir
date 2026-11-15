@@ -66,7 +66,7 @@ from backend.app.services.filament_tree_pull import (
     plan_pull,
     resolve_conflict,
 )
-from backend.app.services.filament_tree_push import cleanup_orca, cleanup_preview, push_leaves
+from backend.app.services.filament_tree_push import cleanup_orca, cleanup_preview, push_leaves, push_names
 from backend.app.services.orca_cloud import OrcaCloudAuthError, OrcaCloudError
 
 router = APIRouter(prefix="/filament-trees", tags=["filament-trees"])
@@ -344,6 +344,32 @@ async def migrate(
         except IntegrityError as e:  # a concurrent migrate of the same group won the leaf-preset unique constraint
             raise ValueError("group already migrated") from e
     return {"tree_ids": tree_ids}
+
+
+@router.get("/sync", dependencies=[Depends(_cloud_api_key_gate)])
+async def sync_preview(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = cloud_caller(_UPDATE, Permission.ORCA_CLOUD_AUTH),
+):
+    """What a SYNC would do, without doing it."""
+    entries = await _orca_call(db, current_user, lambda svc: svc.list_profiles())
+    leaves, colour_names = await collect_leaf_states(db)
+    plan = plan_pull(entries, leaves, colour_names)
+
+    def key(c: dict) -> tuple:
+        return (c["tree_id"], c["machine"], c["nozzle"], c["color_id"])
+
+    names = {(lf.tree_id, lf.machine, lf.nozzle, lf.color_id): lf.name for lf in leaves}
+    pull: dict[str, set[str]] = {}
+    for a in plan.applied:
+        pull.setdefault(names[key(a)], set()).update(a["values"])
+    return {
+        "pull": [{"name": name, "keys": sorted(keys)} for name, keys in sorted(pull.items())],
+        "conflicts": len(plan.conflicts),
+        # shortcut: computed before the pull lands. A leaf Orca edited counts as pull only, and the other leaves
+        # that edit reaches are not listed; plan the pull in a rolled-back transaction if the exact list matters
+        "push": await push_names(db, entries, {key(c) for c in [*plan.conflicts, *plan.applied]}),
+    }
 
 
 @router.post("/sync", dependencies=[Depends(_cloud_api_key_gate)])

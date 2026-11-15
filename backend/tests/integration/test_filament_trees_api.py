@@ -242,6 +242,11 @@ async def test_sync_applies_and_returns_plan(async_client, db_session, monkeypat
     assert r.json()["applied"] == [] and r.json()["conflicts"] == []
 
     entries[0]["content"] = imported | {"nozzle_temperature": ["255"]}
+    preview = (await async_client.get(f"{API}/sync")).json()
+    assert preview["pull"] == [{"name": preset.name, "keys": ["nozzle_temperature"]}] and preview["conflicts"] == 0
+    assert preset.name not in preview["push"] and len(preview["push"]) > 0  # every leaf Orca does not hold yet
+    r = await async_client.get(f"{API}/{tree.id}/node", params={"machine": "H2S", "nozzle": "0.4", "color_id": red.id})
+    assert {row["key"]: row["value"] for row in r.json()}["nozzle_temperature"] != ["255"]  # the preview wrote nothing
     r = await async_client.post(f"{API}/sync")
     assert r.status_code == 200, r.text
     body = r.json()
