@@ -409,6 +409,18 @@ describe('FilamentProfilesPage (trees)', () => {
     expect(await screen.findByRole('navigation', { name: 'Profile path' })).toHaveTextContent('Red (all machines)');
   });
 
+  it('shows beside SYNC how many changed profiles it will send, and nothing when none changed', async () => {
+    stub({ trees: [{ ...TREE, export_pending: 3 }] });
+    const { unmount } = render(<FilamentProfilesPage />);
+    await screen.findByRole('button', { name: 'SYNC' });
+    expect(await screen.findByTestId('sync-pending-count')).toHaveTextContent('3');
+    unmount();
+    stub();
+    render(<FilamentProfilesPage />);
+    await screen.findByRole('button', { name: 'SYNC' });
+    expect(screen.queryByTestId('sync-pending-count')).not.toBeInTheDocument();
+  });
+
   it('exports only the changed profiles and creates a filament from scratch', async () => {
     stub({ trees: [{ ...TREE, export_pending: 3 }] });
     vi.spyOn(api, 'getBaseFilamentPresets').mockResolvedValue([]);

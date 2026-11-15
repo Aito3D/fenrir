@@ -193,6 +193,21 @@ export function FilamentProfilesPage() {
               {t('filamentTrees.sync')}
             </Button>
           )}
+          {canSync && pendingExport > 0 && (
+            // shortcut: local count of leaves edited since the last push/export; the push itself diffs against Orca Cloud, so it can send more (e.g. profiles missing there). Upgrade to a dry-run endpoint if the gap matters.
+            // unfolds on arrival so the buttons after it slide over instead of jumping
+            <span className="aito-unfold-x -ml-1">
+              <span>
+                <span
+                  data-testid="sync-pending-count"
+                  title={t('filamentTrees.pendingExport', { n: pendingExport })}
+                  className="rounded-full bg-sky-400/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-sky-300"
+                >
+                  {pendingExport}
+                </span>
+              </span>
+            </span>
+          )}
           {canCreate && targets && (
             <Button variant="secondary" size="sm" onClick={() => setNewOpen(true)}>
               <Plus className="h-4 w-4" />
@@ -253,7 +268,7 @@ export function FilamentProfilesPage() {
           <Skeleton className="h-96 rounded-xl" />
         </div>
       ) : trees.length === 0 ? (
-        <div className="py-12 text-center">
+        <div className="animate-rise py-12 text-center">
           <p className="font-medium text-white">{t('filamentTrees.emptyTitle')}</p>
           <p className="mx-auto mt-1 max-w-lg text-sm text-bambu-gray">
             {unmanagedQuery.isError
@@ -279,7 +294,7 @@ export function FilamentProfilesPage() {
             </div>
           )}
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-            <div className="min-w-0">
+            <div className="min-w-0 animate-rise">
               <MaterialCards
                 trees={trees}
                 targets={targets}
@@ -290,7 +305,7 @@ export function FilamentProfilesPage() {
                 onLevel={(m, n) => patchParams({ m, n })}
               />
             </div>
-            <div className="min-w-0 self-start rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-4 xl:sticky xl:top-4">
+            <div className="min-w-0 animate-rise self-start rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-4 [animation-delay:80ms] xl:sticky xl:top-4">
               {no02 ? (
                 <p className="text-sm text-amber-300/80">{t('filamentTrees.no02')}</p>
               ) : (

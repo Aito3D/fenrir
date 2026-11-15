@@ -43,7 +43,7 @@ const skips02 = (tree: FilamentTreeSummary) => tree.skip_02 ?? tree.abrasive;
 const first = (v: unknown) => (Array.isArray(v) ? String(v[0] ?? '') : v == null ? '' : String(v));
 
 const pillCls = (active: boolean) =>
-  `rounded-full px-2.5 py-1 text-xs font-medium ${active ? 'bg-bambu-green/20 text-bambu-green' : 'border border-bambu-dark-tertiary text-bambu-gray hover:text-white'}`;
+  `btn-press rounded-full px-2.5 py-1 text-xs font-medium ${active ? 'bg-bambu-green/20 text-bambu-green' : 'border border-bambu-dark-tertiary text-bambu-gray hover:text-white'}`;
 
 function Badge({ count }: { count: number | undefined }) {
   const { t } = useTranslation();
@@ -125,7 +125,7 @@ function BrandRow({ tree, colors, machine, nozzle, selected, onSelect }: {
             disabled={blocked}
             aria-label={tree.name}
             aria-current={brandSelected ? 'true' : undefined}
-            className={`rounded px-1 -mx-1 text-xs font-bold uppercase tracking-wide disabled:opacity-40 ${brandSelected ? 'bg-bambu-green/15 text-white' : 'text-bambu-gray hover:text-white'}`}
+            className={`btn-press rounded px-1 -mx-1 text-xs font-bold uppercase tracking-wide disabled:opacity-40 ${brandSelected ? 'bg-bambu-green/15 text-white' : 'text-bambu-gray hover:text-white'}`}
           >
             {tree.brand || '—'}
           </button>
@@ -164,7 +164,7 @@ function BrandRow({ tree, colors, machine, nozzle, selected, onSelect }: {
               disabled={!ref || blocked}
               title={ref ? (c.price != null ? `${c.price}/kg` : undefined) : t('filamentTrees.pickNozzle')}
               aria-current={active ? 'true' : undefined}
-              className={`flex items-center gap-2 rounded-lg border py-1 pl-1 pr-2.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${active ? 'border-bambu-green bg-bambu-green/15 text-white' : 'border-bambu-dark-tertiary text-bambu-gray-light enabled:hover:border-bambu-green/40 enabled:hover:text-white'}`}
+              className={`btn-press flex items-center gap-2 rounded-lg border py-1 pl-1 pr-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${active ? 'border-bambu-green bg-bambu-green/15 text-white' : 'border-bambu-dark-tertiary text-bambu-gray-light enabled:hover:border-bambu-green/40 enabled:hover:text-white'}`}
             >
               <span className="h-6 w-6 shrink-0 rounded-md ring-1 ring-white/10" style={{ backgroundColor: c.hex || '#444' }} />
               {c.name}
@@ -203,7 +203,7 @@ function MaterialCard({ material, rows, machine, nozzle, selected, onSelect }: {
   const colors = rows.flatMap((r) => r.colors);
   return (
     <Card className={`overflow-hidden border-l-[3px] border-l-current ${materialFamilyClass(material)}`}>
-      <details open className="group/section">
+      <details open className="fold-details group/section">
         <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 hover:bg-white/[.02] [&::-webkit-details-marker]:hidden">
           <ChevronRight className="h-4 w-4 text-bambu-gray transition-transform group-open/section:rotate-90" />
           <span className="font-mono text-lg font-bold">{material}</span>
@@ -292,15 +292,20 @@ export function MaterialCards({ trees, targets, selected, onSelect, machine, noz
           value={machine}
           onChange={(v) => onLevel(v, '')}
         />
-        {machine && (
-          <Pills
-            label={t('filamentTrees.nozzle')}
-            all={t('filamentTrees.anyNozzle')}
-            options={nozzles}
-            value={nozzle}
-            onChange={(v) => onLevel(machine, v)}
-          />
-        )}
+        {/* always mounted so the row folds open and shut instead of shoving the cards; -mt-2/pt-2 cancels the space-y gap while closed */}
+        <div className="aito-fold -mt-2" data-open={!!machine} aria-hidden={!machine} inert={!machine}>
+          <div>
+            <div className="pt-2">
+              <Pills
+                label={t('filamentTrees.nozzle')}
+                all={t('filamentTrees.anyNozzle')}
+                options={nozzles}
+                value={nozzle}
+                onChange={(v) => onLevel(machine, v)}
+              />
+            </div>
+          </div>
+        </div>
       </div>
       {groups.length === 0 ? (
         <p className="py-6 text-center text-sm text-bambu-gray">{t('filamentProfiles.noResults')}</p>

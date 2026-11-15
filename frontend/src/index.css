@@ -1052,6 +1052,38 @@ body {
   .animate-slice-done { animation: none; }
 }
 
+/* A <details> whose body folds instead of snapping (filament profile material
+   cards). Progressive: without ::details-content it snaps as before, without
+   interpolate-size only the fade plays. */
+.fold-details {
+  interpolate-size: allow-keywords;
+}
+.fold-details::details-content {
+  height: 0;
+  opacity: 0;
+  overflow: clip;
+  transition:
+    height 0.15s var(--ease-exit),
+    opacity 0.1s ease-in,
+    content-visibility 0.15s allow-discrete;
+}
+.fold-details[open]::details-content {
+  height: auto;
+  opacity: 1;
+  transition:
+    height 0.25s var(--ease-signature),
+    opacity 0.2s ease-out,
+    content-visibility 0.25s allow-discrete;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fold-details::details-content,
+  .fold-details[open]::details-content {
+    transition:
+      opacity 0.15s ease,
+      content-visibility 0.15s allow-discrete;
+  }
+}
+
 /* Generic mount entrance — the app-wide counterpart to .animate-calc-rise.
    `backwards` fill keeps staggered children hidden through their delay. */
 @keyframes rise {
