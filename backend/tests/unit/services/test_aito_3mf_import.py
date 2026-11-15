@@ -221,3 +221,14 @@ def test_thumbnail_is_a_data_url():
 def test_missing_thumbnail_is_none():
     src = source({2: [IDENTITY]}, [(2, IDENTITY)], {2: "a.stl"}, [(1, "", [2])])
     assert plate_facts(src, SLICED)[0]["thumbnail"] is None
+
+
+def test_component_fan_out_past_the_placement_cap_is_not_measured(monkeypatch):
+    """An untrusted file must not buy unbounded work: past the cap the sizes are simply left out."""
+    from backend.app.services import plate_thumbnail
+
+    monkeypatch.setattr(plate_thumbnail, "_MAX_PLACEMENTS", 3)
+    src = source({2: [IDENTITY] * 5}, [(2, IDENTITY)], {2: "a.stl"}, [(1, "", [2])])
+    assert plate_facts(src, SLICED)[0]["objects"] == [
+        {"name": "a", "count": 1, "x_mm": None, "y_mm": None, "z_mm": None}
+    ]

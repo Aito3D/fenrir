@@ -621,8 +621,10 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
             >
               <div
                 data-testid="import-3mf-drop"
-                onDragOver={(e) => e.preventDefault()}
+                // Files only: a text drag into a task field stays the browser's.
+                onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
                 onDrop={(e) => {
+                  if (e.dataTransfer.files.length === 0) return;
                   e.preventDefault();
                   startImport(e.dataTransfer.files[0]);
                 }}

@@ -93,3 +93,9 @@ async def test_library_slice_job_is_not_served(async_client: AsyncClient):
 
 async def test_unknown_job_is_404(async_client: AsyncClient):
     assert (await async_client.get(f"{URL}/987654321")).status_code == 404
+
+
+async def test_generic_slice_job_route_does_not_serve_imports(async_client: AsyncClient):
+    """The library's polling route is gated on library permissions, not Aito's."""
+    job = await slice_dispatch.enqueue(kind="aito_import", source_id=0, source_name="x.3mf", run=_noop)
+    assert (await async_client.get(f"/api/v1/slice-jobs/{job.id}")).status_code == 404

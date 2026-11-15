@@ -1528,6 +1528,14 @@ describe('NewProjectDrawer — .3mf import', () => {
     expect(screen.queryByTestId('import-3mf-panel')).not.toBeInTheDocument();
   });
 
+  it('leaves a text drag over the Work section to the browser', async () => {
+    await renderDrawer();
+    const zone = screen.getByTestId('import-3mf-drop');
+    // fireEvent returns false when the handler called preventDefault.
+    expect(fireEvent.dragOver(zone, { dataTransfer: { types: ['text/plain'] } })).toBe(true);
+    expect(fireEvent.dragOver(zone, { dataTransfer: { types: ['Files'] } })).toBe(false);
+  });
+
   it('opens the import from a dropped .3mf', async () => {
     serveImports('Depose');
     await renderDrawer();

@@ -61,7 +61,10 @@ export function Import3mfPanel({ file, onAdd, onClose, pollMs = 1500 }: Import3m
     queryKey: ['aito3mfImport', jobId],
     queryFn: () => api.getAito3mfImport(jobId as number),
     enabled: jobId !== null,
-    retry: false,
+    // The shop is reached through a tunnel that drops requests: one lost poll must not
+    // throw away a slice that took minutes.
+    retry: 3,
+    retryDelay: pollMs,
     gcTime: 0,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
@@ -85,6 +88,11 @@ export function Import3mfPanel({ file, onAdd, onClose, pollMs = 1500 }: Import3m
   }, [slicing]);
 
   const retry = () => {
+    // Polls were lost but the server never said the job failed: ask the same job again.
+    if (jobId !== null && state?.status !== 'failed') {
+      void job.refetch();
+      return;
+    }
     setStartError(null);
     setJobId(null);
     setElapsed(0);

@@ -26,10 +26,12 @@ export function mainFilament(plate: Aito3mfPlate): Aito3mfFilament | null {
   return plate.filaments.reduce<Aito3mfFilament | null>((best, f) => (best && best.used_g >= f.used_g ? best : f), null);
 }
 
-/** The one calculator printer whose name contains the slicer's model, else null (the operator picks). */
+/** The one calculator printer named after the slicer's model ("X1C", "Bambu Lab X1C"), else
+ *  null and the operator picks. Equality, not containment: a file sliced for an A1 must not
+ *  silently take the rates of an "A1 mini". */
 export function matchPrinter(model: string | null, printers: ImportPrinter[]): number | null {
   if (!model) return null;
-  const hits = printers.filter((p) => p.name.toLowerCase().includes(model.toLowerCase()));
+  const hits = printers.filter((p) => same(p.name.replace(/^\s*bambu(\s+lab)?\s+/i, ''), model));
   return hits.length === 1 ? hits[0].id : null;
 }
 

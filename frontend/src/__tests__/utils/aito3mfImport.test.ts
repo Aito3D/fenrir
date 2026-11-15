@@ -64,11 +64,17 @@ describe('mainFilament', () => {
 });
 
 describe('matchPrinter', () => {
-  it('matches the printer by contained model name, case-insensitive', () => {
+  it('matches the printer named after the model, case-insensitive, with or without the Bambu prefix', () => {
     expect(matchPrinter('x1c', [X1C, A1])).toBe(1);
+    expect(matchPrinter('X1C', [{ ...X1C, name: 'Bambu Lab X1C' }])).toBe(1);
+    expect(matchPrinter('X1C', [{ ...X1C, name: 'x1c' }])).toBe(1);
   });
-  it('does not match when two printers contain the model', () => {
-    expect(matchPrinter('X1C', [X1C, { ...X1C, id: 3, name: 'X1C atelier' }])).toBeNull();
+  it('never prices with a printer whose name only contains the model', () => {
+    // A file sliced for an A1 must not silently take the A1 mini's rates.
+    expect(matchPrinter('A1', [X1C, A1])).toBeNull();
+  });
+  it('does not match when two printers carry the model name', () => {
+    expect(matchPrinter('X1C', [X1C, { ...X1C, id: 3, name: 'X1C' }])).toBeNull();
   });
   it('does not match an unknown or missing model', () => {
     expect(matchPrinter('H2D', [X1C, A1])).toBeNull();

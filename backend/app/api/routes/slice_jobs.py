@@ -38,7 +38,8 @@ async def get_slice_job(
 ):
     user, can_read_all = auth
     job = slice_dispatch.get(job_id)
-    if job is None:
+    # Fenrir: an Aito .3mf import is followed on its own route, gated on Aito permissions.
+    if job is None or job.kind == "aito_import":
         raise HTTPException(status_code=404, detail="Slice job not found or expired")
     # Per-row scoping. Jobs recorded without an owner (auth off, a key without
     # an owner, an archive slice through a key) are visible only to READ_ALL

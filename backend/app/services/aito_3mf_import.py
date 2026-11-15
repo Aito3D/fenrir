@@ -126,6 +126,7 @@ def _instance_sizes(zf: zipfile.ZipFile) -> dict[str, list[tuple[int, int, int]]
     """
     import numpy as np
 
+    from backend.app.services import plate_thumbnail
     from backend.app.services.plate_thumbnail import _MAX_COMPONENT_DEPTH, _MODEL_ROOT, _parse_model_file
 
     names = set(zf.namelist())
@@ -139,7 +140,14 @@ def _instance_sizes(zf: zipfile.ZipFile) -> dict[str, list[tuple[int, int, int]]
     root_objects, build = _parse_model_file(zf, _MODEL_ROOT)
     files[_MODEL_ROOT] = root_objects
 
+    placed_count = 0
+
     def corners(path: str, object_id: str, matrix, depth: int, trail: frozenset) -> list:
+        # Same ceiling as the thumbnail renderer: a crafted component fan-out must not buy unbounded work.
+        nonlocal placed_count
+        placed_count += 1
+        if placed_count > plate_thumbnail._MAX_PLACEMENTS:
+            raise ValueError("too many placed parts to measure")
         key = (path, object_id)
         obj = objects_in(path).get(object_id)
         if obj is None or depth > _MAX_COMPONENT_DEPTH or key in trail:

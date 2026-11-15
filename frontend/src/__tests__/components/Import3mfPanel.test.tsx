@@ -132,6 +132,38 @@ describe('Import3mfPanel', () => {
     expect(await screen.findByText('Marteaux')).toBeInTheDocument();
   });
 
+  it('rides out a failed poll without uploading again', async () => {
+    let uploads = 0;
+    let calls = 0;
+    server.use(
+      http.post('/api/v1/aito/import-3mf', () => HttpResponse.json({ job_id: ++uploads + 6 }, { status: 202 })),
+      http.get('/api/v1/aito/import-3mf/7', () =>
+        ++calls === 1 ? HttpResponse.json({ detail: 'tunnel hiccup' }, { status: 502 }) : HttpResponse.json(done([plate({})])),
+      ),
+    );
+    mount();
+    expect(await screen.findByText('Marteaux')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(uploads).toBe(1);
+  });
+
+  it('Retry after lost polls asks the same job again instead of slicing twice', async () => {
+    let uploads = 0;
+    let down = true;
+    server.use(
+      http.post('/api/v1/aito/import-3mf', () => HttpResponse.json({ job_id: ++uploads + 6 }, { status: 202 })),
+      http.get('/api/v1/aito/import-3mf/7', () =>
+        down ? HttpResponse.json({ detail: 'tunnel down' }, { status: 502 }) : HttpResponse.json(done([plate({})])),
+      ),
+    );
+    mount();
+    expect(await screen.findByRole('alert')).toHaveTextContent('tunnel down');
+    down = false;
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Marteaux')).toBeInTheDocument();
+    expect(uploads).toBe(1);
+  });
+
   it('shows a refusal of the upload itself', async () => {
     server.use(
       http.post('/api/v1/aito/import-3mf', () =>
