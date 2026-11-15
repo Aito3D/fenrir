@@ -48,10 +48,44 @@ def test_plan_pull_conflict_when_both_changed():
     assert (p.conflicts[0]["fenrir_value"], p.conflicts[0]["orca_value"]) == (["250"], ["240"])
 
 
-def test_plan_pull_same_value_both_sides_is_not_conflict():
+def test_plan_pull_same_value_both_sides_refreshes_baseline_only():
     lf = leaf(generated={"nozzle_temperature": ["250"]}, baseline={"nozzle_temperature": ["246"]})
     p = plan_pull([orca("T - Red @H2S 0.4", nozzle_temperature=["250"])], [lf], set())
-    assert p.conflicts == []
+    assert p.conflicts == [] and p.applied == []
+    assert p.refresh[0]["keys"] == ["nozzle_temperature"]
+
+
+def test_plan_pull_orca_metadata_is_never_applied():
+    meta = dict.fromkeys(("setting_id", "base_id", "filament_id", "user_id", "updated_time", "instantiation"), "x")
+    meta |= {
+        "is_custom_defined": "0",
+        "compatible_printers_condition": "",
+        "compatible_prints": [],
+        "compatible_prints_condition": "",
+    }
+    p = plan_pull([orca("T - Red @H2S 0.4", **meta)], [leaf()], set())
+    assert p.applied == [] and p.conflicts == [] and p.refresh == []
+
+
+def test_plan_pull_key_missing_from_orca_is_ignored():
+    lf = leaf(
+        baseline={"nozzle_temperature": ["246"], "gone": ["1"]},
+        generated={"nozzle_temperature": ["246"], "gone": ["1"]},
+    )
+    p = plan_pull([orca("T - Red @H2S 0.4", nozzle_temperature=["246"])], [lf], set())
+    assert p.ignored == 1 and p.applied == []
+
+
+def test_plan_pull_source_edit_goes_to_deepest_owning_node():
+    lf = leaf(is_source=True)
+    lf.owned_at = {"nozzle_temperature": "machine", "filament_density": "node"}
+    e = orca("T - Red @H2S 0.4", nozzle_temperature=["250"], filament_density=["1.3"], filament_cost=["30"])
+    p = plan_pull([e], [lf], set())
+    assert {a["target"]: sorted(a["values"]) for a in p.applied} == {
+        "machine": ["nozzle_temperature"],
+        "node": ["filament_density"],
+        "root": ["filament_cost"],
+    }
 
 
 def test_plan_pull_legacy_copy_not_candidate():
@@ -162,3 +196,54 @@ async def test_apply_pull_keeps_conflict_held_and_skips_refused_key(db_session):
     leaves, _ = await pull.collect_leaf_states(db_session)
     after = next(lf for lf in leaves if lf.name == name)
     assert after.generated["nozzle_temperature"] == after.baseline["nozzle_temperature"] == ["240"]
+
+
+@pytest.mark.asyncio
+async def test_source_leaf_owned_key_and_is_source_flags(db_session):
+    tree = await _tree(db_session)
+    await store.set_node_values(db_session, tree.id, "H2S", None, None, {"nozzle_temperature": ["240"]}, [])
+    leaves, _ = await pull.collect_leaf_states(db_session)
+    by = {lf.name: lf for lf in leaves}
+    src = by["Polymaker PETG - Red @H2S 0.4"]
+    assert src.is_source and src.owned_at == {"nozzle_temperature": "machine"}
+    assert not by["Polymaker PETG - Blue @H2S 0.4"].is_source
+    plan = plan_pull([orca(src.name, nozzle_temperature=["245"])], leaves, set())
+    await pull.apply_pull(db_session, plan)
+    leaves, _ = await pull.collect_leaf_states(db_session)
+    assert next(lf for lf in leaves if lf.name == src.name).generated["nozzle_temperature"] == ["245"]
+    assert next(lf for lf in leaves if lf.name == "Polymaker PETG - Blue @H2S 0.6").generated["nozzle_temperature"] == [
+        "245"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_same_value_pull_and_resolve_write_no_override(db_session):
+    tree = await _tree(db_session)
+    await store.set_node_values(db_session, tree.id, "H2S", "0.4", 2, {"nozzle_temperature": ["250"]}, [])
+    leaves, names = await pull.collect_leaf_states(db_session)
+    name = "Polymaker PETG - Blue @H2S 0.4"
+    row = (
+        await db_session.execute(
+            select(FilamentTreeLeaf).where(
+                FilamentTreeLeaf.color_id == 2, FilamentTreeLeaf.machine == "H2S", FilamentTreeLeaf.nozzle == "0.4"
+            )
+        )
+    ).scalar_one()
+    row.baseline_content = json.dumps({"nozzle_temperature": ["246"]})
+    await db_session.commit()
+    leaves, names = await pull.collect_leaf_states(db_session)
+    plan = plan_pull([orca(name, nozzle_temperature=["250"])], leaves, names)
+    assert plan.applied == [] and plan.refresh
+    await pull.apply_pull(db_session, plan)
+    leaves, _ = await pull.collect_leaf_states(db_session)
+    assert next(lf for lf in leaves if lf.name == name).baseline["nozzle_temperature"] == ["250"]
+    # resolve with the Fenrir value: baseline moves, override row untouched
+    row.baseline_content = json.dumps({"nozzle_temperature": ["246"]})
+    await db_session.commit()
+    from backend.app.models.filament_tree import FilamentTreeOverride
+
+    before = (await db_session.execute(select(FilamentTreeOverride.values))).scalars().all()
+    await pull.resolve_conflict(db_session, tree.id, "H2S", "0.4", 2, "nozzle_temperature", ["250"])
+    assert (await db_session.execute(select(FilamentTreeOverride.values))).scalars().all() == before
+    await db_session.refresh(row)
+    assert json.loads(row.baseline_content)["nozzle_temperature"] == ["250"]
