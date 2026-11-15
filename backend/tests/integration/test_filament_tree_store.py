@@ -142,11 +142,11 @@ def _lock_map():
 
 
 async def test_tree_write_lock_map_empty_after_use():
-    async with store._tree_write_lock([999_001, 1, 1]):
+    async with store.tree_write_lock([999_001, 1, 1]):
         assert set(_lock_map()) == {1, 999_001}
     assert _lock_map() == {}
     with pytest.raises(RuntimeError):
-        async with store._tree_write_lock([5]):
+        async with store.tree_write_lock([5]):
             raise RuntimeError("boom")
     assert _lock_map() == {}
 
@@ -160,7 +160,7 @@ async def test_tree_write_lock_excludes_three_overlapping_holders():
 
     async def holder():
         nonlocal inside, peak
-        async with store._tree_write_lock([7]):
+        async with store.tree_write_lock([7]):
             seen_locks.append(_lock_map()[7][0])
             inside += 1
             peak = max(peak, inside)
@@ -176,11 +176,39 @@ async def test_tree_write_lock_excludes_three_overlapping_holders():
 async def test_tree_write_lock_cancelled_waiter_leaves_no_entry():
     import asyncio
 
-    async with store._tree_write_lock([3]):
-        waiter = asyncio.create_task(store._tree_write_lock([3]).__aenter__())
+    async with store.tree_write_lock([3]):
+        waiter = asyncio.create_task(store.tree_write_lock([3]).__aenter__())
         await asyncio.sleep(0)
         waiter.cancel()
         with pytest.raises(asyncio.CancelledError):
             await waiter
         assert _lock_map()[3][1] == 1
+    assert _lock_map() == {}
+
+
+async def test_tree_write_lock_opposite_id_orders_do_not_deadlock():
+    """[1, 2] and [2, 1] both take the ids in sorted order: the second waits for the first, no deadlock."""
+    import asyncio
+
+    first_in, release = asyncio.Event(), asyncio.Event()
+    order = []
+
+    async def first():
+        async with store.tree_write_lock([1, 2]):
+            order.append("first")
+            first_in.set()
+            await release.wait()
+
+    async def second():
+        await first_in.wait()
+        async with store.tree_write_lock([2, 1]):
+            order.append("second")
+
+    tasks = [asyncio.create_task(first()), asyncio.create_task(second())]
+    while _lock_map().get(1, [None, 0])[1] < 2:  # the second caller queued on id 1 (users counts holder + waiter)
+        await asyncio.sleep(0)
+    assert order == ["first"]
+    release.set()
+    await asyncio.wait_for(asyncio.gather(*tasks), timeout=5)
+    assert order == ["first", "second"]
     assert _lock_map() == {}

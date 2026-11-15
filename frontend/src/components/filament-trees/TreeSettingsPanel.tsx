@@ -33,6 +33,10 @@ export function TreeSettingsPanel({ tree, onCreated }: { tree: FilamentTreeSumma
   const [busy, setBusy] = useState(false);
   // Colour pickers fire on every drag step: save each colour 400ms after the last change (or on unmount).
   const pendingHex = useRef(new Map<number, { timer: ReturnType<typeof setTimeout>; save: () => void }>());
+  // The delayed hex save reads the colour at fire time: the latest tree, plus names still being saved.
+  const latestColors = useRef(tree.colors);
+  latestColors.current = tree.colors;
+  const savingNames = useRef(new Map<number, string>());
   useEffect(() => {
     const pending = pendingHex.current;
     return () => pending.forEach(({ timer, save }) => { clearTimeout(timer); save(); });
@@ -133,11 +137,17 @@ export function TreeSettingsPanel({ tree, onCreated }: { tree: FilamentTreeSumma
             <h3 className={heading}>{t('filamentTrees.colours')}</h3>
             <ul className="space-y-1.5">
               {tree.colors.map((c) => {
+                const currentColour = () => {
+                  const latest = latestColors.current.find((x) => x.id === c.id) ?? c;
+                  return { ...latest, name: savingNames.current.get(c.id) ?? latest.name };
+                };
                 const isSource = c.id === tree.source.color_id;
-                const rename = (patch: { name?: string; hex?: string }) => {
-                  const next = { name: (patch.name ?? c.name).trim(), hex: patch.hex ?? c.hex };
-                  if (next.name && (next.name !== c.name || next.hex !== c.hex))
-                    void run(() => api.updateFilamentTreeColor(tree.id, c.id, next));
+                const rename = (patch: { name?: string; hex?: string }, cur: FilamentTreeColor = c) => {
+                  const next = { name: (patch.name ?? cur.name).trim(), hex: patch.hex ?? cur.hex };
+                  if (next.name && (next.name !== cur.name || next.hex !== cur.hex)) {
+                    savingNames.current.set(c.id, next.name);
+                    void run(() => api.updateFilamentTreeColor(tree.id, c.id, next)).then(() => savingNames.current.delete(c.id));
+                  }
                 };
                 return (
                   <li key={`${c.id}:${c.name}:${c.hex}`} className="flex items-center gap-2">
@@ -148,7 +158,7 @@ export function TreeSettingsPanel({ tree, onCreated }: { tree: FilamentTreeSumma
                       disabled={!canUpdate}
                       onChange={(e) => {
                         const hex = e.target.value;
-                        const save = () => { pendingHex.current.delete(c.id); rename({ hex }); };
+                        const save = () => { pendingHex.current.delete(c.id); rename({ hex }, currentColour()); };
                         clearTimeout(pendingHex.current.get(c.id)?.timer);
                         pendingHex.current.set(c.id, { timer: setTimeout(save, 400), save });
                       }}

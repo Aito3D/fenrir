@@ -40,7 +40,7 @@ _tree_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[int, lis
 
 
 @asynccontextmanager
-async def _tree_write_lock(tree_ids: Iterable[int]) -> AsyncIterator[None]:
+async def tree_write_lock(tree_ids: Iterable[int]) -> AsyncIterator[None]:
     """Serialize read-modify-write of tree nodes. Take it in the route, before any read of the tree, never inside
     set_node_values (not re-entrant). Several ids are taken in sorted order so two callers cannot deadlock."""
     locks = _tree_locks.setdefault(asyncio.get_running_loop(), {})
@@ -63,7 +63,7 @@ async def _tree_write_lock(tree_ids: Iterable[int]) -> AsyncIterator[None]:
                 locks.pop(tree_id, None)
 
 
-def _validate_targets(targets: dict) -> dict:
+def validate_targets(targets: dict) -> dict:
     out = {}
     for key in ("machines", "nozzles"):
         vals = targets.get(key)
@@ -84,7 +84,7 @@ async def get_targets(db: AsyncSession) -> dict:
 
 async def set_targets(db: AsyncSession, targets: dict, *, commit: bool = True) -> dict:
     """commit=False leaves the write in the caller's transaction (e.g. to regenerate the trees first)."""
-    clean = _validate_targets(targets)
+    clean = validate_targets(targets)
     await set_setting(db, TARGETS_KEY, json.dumps(clean))
     if commit:
         await db.commit()

@@ -825,7 +825,7 @@ async def test_colour_removal_waits_for_node_save_in_flight(async_client, db_ses
 async def test_tree_writers_queue_behind_the_tree_lock(async_client, db_session, method, path, body):
     tree, _white, red = await _tree(db_session)
     kw = {} if body is None else {"json": body}
-    async with store._tree_write_lock([tree.id]):
+    async with store.tree_write_lock([tree.id]):
         task = asyncio.create_task(getattr(async_client, method)(f"{API}/{tree.id}{path.format(red=red.id)}", **kw))
         await asyncio.sleep(0.05)
         assert not task.done()
@@ -835,7 +835,7 @@ async def test_tree_writers_queue_behind_the_tree_lock(async_client, db_session,
 async def test_put_targets_queues_behind_the_tree_lock(async_client, db_session):
     tree, _white, _red = await _tree(db_session)
     targets = (await async_client.get(f"{API}/targets")).json()
-    async with store._tree_write_lock([tree.id]):
+    async with store.tree_write_lock([tree.id]):
         task = asyncio.create_task(async_client.put(f"{API}/targets", json=targets))
         await asyncio.sleep(0.05)
         assert not task.done()
@@ -908,3 +908,127 @@ async def test_skip_02_removing_a_leaf_needs_delete_permission(async_client, db_
     r = await async_client.patch(f"{API}/{tree_id}", json={"skip_02": False}, headers=update_only)
     assert r.status_code == 200, r.text
     assert await _leaf_count(db_session) == before
+
+
+async def _queued_behind_lock(tree_id, users=2):
+    """Wait until a second caller has joined the tree's lock (users counts the holder plus its waiters)."""
+
+    async def joined():
+        while store._tree_locks.get(asyncio.get_running_loop(), {}).get(tree_id, [None, 0])[1] < users:
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(joined(), timeout=10)
+
+
+async def _request_waits_for_lock(tree_id, send):
+    """Hold the tree lock, start the request, prove it queued without finishing, then release and return its response."""
+    async with store.tree_write_lock([tree_id]):
+        task = asyncio.create_task(send())
+        await _queued_behind_lock(tree_id)
+        assert not task.done()
+    return await asyncio.wait_for(task, timeout=10)
+
+
+async def _own_values(async_client, tree_id, **params):
+    rows = (await async_client.get(f"{API}/{tree_id}/node", params=params)).json()
+    return {row["key"]: row["value"] for row in rows if row["own"]}
+
+
+async def test_bulk_waits_for_the_tree_lock_then_writes(async_client, db_session):
+    tree, _, _ = await _tree(db_session)
+    r = await _request_waits_for_lock(
+        tree.id,
+        lambda: async_client.post(f"{API}/bulk", json={"tree_ids": [tree.id], "set": {"fan_min_speed": ["30"]}}),
+    )
+    assert r.status_code == 200, r.text
+    assert (await _own_values(async_client, tree.id))["fan_min_speed"] == ["30"]
+
+
+async def test_sync_waits_for_the_tree_lock_then_applies(async_client, db_session, monkeypatch):
+    tree, _, red = await _tree(db_session)
+    r = await async_client.post(f"{API}/export", json={"tree_id": tree.id})
+    await async_client.post(f"{API}/export/confirm", json={"token": r.headers["x-export-token"]})
+    preset = (
+        await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG - Red @H2S 0.4"))
+    ).scalar_one()
+    imported = json.loads(preset.content) | {"type": "filament"}
+    entries = [{"id": "a", "name": preset.name, "content": imported}]
+    _stub_orca(monkeypatch, entries)
+    assert (await async_client.post(f"{API}/sync")).status_code == 200  # records the baseline
+    entries[0]["content"] = imported | {"nozzle_temperature": ["255"]}
+
+    r = await _request_waits_for_lock(tree.id, lambda: async_client.post(f"{API}/sync"))
+    assert r.status_code == 200, r.text
+    [applied] = r.json()["applied"]
+    assert applied["values"] == {"nozzle_temperature": ["255"]}
+    own = await _own_values(async_client, tree.id, machine="H2S", nozzle="0.4", color_id=red.id)
+    assert own["nozzle_temperature"] == ["255"]
+
+
+async def test_conflict_resolve_waits_for_the_tree_lock_then_writes(async_client, db_session):
+    tree, _, red = await _tree(db_session)
+    tree_id, red_id = tree.id, red.id
+    leaf = await _first_red_leaf(db_session, tree_id, red_id)
+    body = {
+        "tree_id": tree_id,
+        "machine": leaf.machine,
+        "nozzle": leaf.nozzle,
+        "color_id": red_id,
+        "key": "fan_min_speed",
+        "value": ["40"],
+        "orca_value": ["35"],
+    }
+    r = await _request_waits_for_lock(tree_id, lambda: async_client.post(f"{API}/conflicts/resolve", json=body))
+    assert r.json() == {"success": True}
+    db_session.expire_all()
+    leaf = await _first_red_leaf(db_session, tree_id, red_id)
+    preset = await db_session.get(FilamentPreset, leaf.preset_id)
+    assert json.loads(preset.content)["fan_min_speed"] == ["40"]
+    assert json.loads(leaf.baseline_content)["fan_min_speed"] == ["35"]
+
+
+async def test_revert_waits_for_the_tree_lock_then_restores(async_client, db_session):
+    tree, _, _ = await _tree(db_session)
+    node = {"machine": "H2S"}
+    await async_client.put(f"{API}/{tree.id}/node", json={**node, "set": {"hot_plate_temp": ["75"]}})
+    [change] = (await async_client.get(f"{API}/{tree.id}/history")).json()
+    r = await _request_waits_for_lock(
+        tree.id, lambda: async_client.post(f"{API}/{tree.id}/history/{change['id']}/revert")
+    )
+    assert r.status_code == 200, r.text
+    assert "hot_plate_temp" not in await _own_values(async_client, tree.id, **node)
+    assert len((await async_client.get(f"{API}/{tree.id}/history")).json()) == 2
+
+
+async def test_export_confirm_waits_for_the_tree_lock_then_clears_pending(async_client, db_session):
+    tree, _, _ = await _tree(db_session)
+    r = await async_client.post(f"{API}/export", json={"tree_id": tree.id})
+    body = {"token": r.headers["x-export-token"]}
+    r = await _request_waits_for_lock(tree.id, lambda: async_client.post(f"{API}/export/confirm", json=body))
+    assert r.status_code == 200 and r.json() == {"confirmed": 32}
+    assert (await async_client.get(API)).json()[0]["export_pending"] == 0
+
+
+async def test_overlapping_bulk_and_node_put_keep_both_edits(async_client, db_session):
+    tree, _, _ = await _tree(db_session)
+    rs = await asyncio.gather(
+        async_client.post(f"{API}/bulk", json={"tree_ids": [tree.id], "set": {"fan_min_speed": ["30"]}}),
+        async_client.put(f"{API}/{tree.id}/node", json={"set": {"cool_plate_temp": ["55"]}}),
+    )
+    assert [r.status_code for r in rs] == [200, 200]
+    own = await _own_values(async_client, tree.id)
+    assert own["fan_min_speed"] == ["30"] and own["cool_plate_temp"] == ["55"]
+
+
+async def test_overlapping_revert_and_node_put_both_take_effect(async_client, db_session):
+    tree, _, _ = await _tree(db_session)
+    node = {"machine": "H2S"}
+    await async_client.put(f"{API}/{tree.id}/node", json={**node, "set": {"hot_plate_temp": ["75"]}})
+    [change] = (await async_client.get(f"{API}/{tree.id}/history")).json()
+    rs = await asyncio.gather(
+        async_client.post(f"{API}/{tree.id}/history/{change['id']}/revert"),
+        async_client.put(f"{API}/{tree.id}/node", json={**node, "set": {"cool_plate_temp": ["55"]}}),
+    )
+    assert [r.status_code for r in rs] == [200, 200]
+    own = await _own_values(async_client, tree.id, **node)
+    assert "hot_plate_temp" not in own and own["cool_plate_temp"] == ["55"]

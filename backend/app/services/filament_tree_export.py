@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.filament_profile import FilamentPreset
 from backend.app.models.filament_tree import FilamentTreeLeaf
-from backend.app.services.filament_tree_store import _get_tree, _tree_write_lock
+from backend.app.services.filament_tree_store import _get_tree, tree_write_lock
 
 # token -> {leaf_id: (tree_id, sha256 of the zipped preset)}. In memory, newest _MAX_OPEN kept: after a restart or an
 # eviction the confirm 404s and the leaves simply stay pending (safe direction).
@@ -55,7 +55,7 @@ async def confirm_export(db: AsyncSession, token: str) -> int:
     exported = _open_exports.get(token)
     if exported is None:
         raise LookupError("unknown export token")
-    async with _tree_write_lock({tree for tree, _ in exported.values()}):
+    async with tree_write_lock({tree for tree, _ in exported.values()}):
         if _open_exports.pop(token, None) is None:  # a concurrent confirm won the lock
             raise LookupError("unknown export token")
         rows = (

@@ -483,7 +483,9 @@ async def remove_color(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id:
 async def rename_color(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int, color_id: int, name: str, hex: str | None = None) -> None
 async def set_node_values(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int, machine: str | None, nozzle: str | None, color_id: int | None, set_values: dict, clear: list[str], *, regenerate: bool = True, actor: str = '') -> None
 async def set_targets(db: sqlalchemy.ext.asyncio.session.AsyncSession, targets: dict, *, commit: bool = True) -> dict
+def tree_write_lock(tree_ids: collections.abc.Iterable[int]) -> collections.abc.AsyncIterator[None]
 async def update_tree(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int, *, skip_02: Any = <object object>, source: Any = <object object>, brand: str | None = None, material: str | None = None) -> None
+def validate_targets(targets: dict) -> dict
 
 ```
 

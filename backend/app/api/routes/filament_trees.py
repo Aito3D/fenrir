@@ -253,7 +253,7 @@ async def bulk_node(
 ):
     """One write on the same node of several trees; all or nothing."""
     try:
-        async with store._tree_write_lock(payload.tree_ids):
+        async with store.tree_write_lock(payload.tree_ids):
             with _mapped():
                 for tree_id in dict.fromkeys(payload.tree_ids):
                     _check_node(await store.load_tree(db, tree_id), payload.machine, payload.nozzle, None)
@@ -291,9 +291,9 @@ async def put_targets(
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
     tree_ids = (await db.execute(select(FilamentTree.id))).scalars().all()
-    async with store._tree_write_lock(tree_ids):
+    async with store.tree_write_lock(tree_ids):
         with _mapped():
-            clean = store._validate_targets(payload.model_dump())
+            clean = store.validate_targets(payload.model_dump())
             drops = False
             for tree_id in tree_ids:
                 tree = await store.load_tree(db, tree_id)
@@ -347,7 +347,7 @@ async def sync(
 ):
     """Pull only: fold OrcaSlicer edits into the trees, report conflicts and candidates."""
     entries = await _orca_call(db, current_user, lambda svc: svc.list_profiles())
-    async with store._tree_write_lock((await db.execute(select(FilamentTree.id))).scalars().all()):
+    async with store.tree_write_lock((await db.execute(select(FilamentTree.id))).scalars().all()):
         leaves, colour_names = await collect_leaf_states(db)
         plan = plan_pull(entries, leaves, colour_names)
         with _mapped():
@@ -361,7 +361,7 @@ async def resolve(
     _: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    async with store._tree_write_lock([payload.tree_id]):
+    async with store.tree_write_lock([payload.tree_id]):
         with _mapped():
             await resolve_conflict(
                 db,
@@ -511,7 +511,7 @@ async def put_node(
     user: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    async with store._tree_write_lock([tree_id]):
+    async with store.tree_write_lock([tree_id]):
         with _mapped():
             _check_node(await store.load_tree(db, tree_id), payload.machine, payload.nozzle, payload.color_id)
             await store.set_node_values(
@@ -535,7 +535,7 @@ async def duplicate_tree(
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
     try:
-        async with store._tree_write_lock([tree_id]):
+        async with store.tree_write_lock([tree_id]):
             with _mapped():
                 new_id = await store.duplicate_tree(db, tree_id, payload.name, payload.brand)
                 await db.commit()
@@ -586,7 +586,7 @@ async def revert_change(
         raise HTTPException(404, f"change {change_id} not found")
     node = (change.machine or None, change.nozzle or None, change.color_id or None)
     old = None if change.old_value is None else json.loads(change.old_value)
-    async with store._tree_write_lock([tree_id]):
+    async with store.tree_write_lock([tree_id]):
         with _mapped():
             _check_node(await store.load_tree(db, tree_id), *node)
             await store.set_node_values(
@@ -609,7 +609,7 @@ async def patch_tree(
 ):
     changes = payload.model_dump(exclude_unset=True)
     kwargs = {}
-    async with store._tree_write_lock([tree_id]):
+    async with store.tree_write_lock([tree_id]):
         with _mapped():
             tree = await store.load_tree(db, tree_id)
             for k in ("source_machine", "source_nozzle", "source_color_id"):
@@ -649,7 +649,7 @@ async def add_color(
     _: User | None = RequirePermissionIfAuthEnabled(_CREATE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    async with store._tree_write_lock([tree_id]):
+    async with store.tree_write_lock([tree_id]):
         with _mapped():
             return {"id": await store.add_color(db, tree_id, payload.name, payload.hex)}
 
@@ -662,7 +662,7 @@ async def rename_color(
     _: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    async with store._tree_write_lock([tree_id]):
+    async with store.tree_write_lock([tree_id]):
         with _mapped():
             await store.rename_color(db, tree_id, color_id, payload.name, payload.hex)
     return {"success": True}
@@ -675,7 +675,7 @@ async def remove_color(
     _: User | None = RequirePermissionIfAuthEnabled(_DELETE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    async with store._tree_write_lock([tree_id]):
+    async with store.tree_write_lock([tree_id]):
         with _mapped():
             await store.remove_color(db, tree_id, color_id)
     return {"success": True}
@@ -687,7 +687,7 @@ async def delete_tree(
     _: User | None = RequirePermissionIfAuthEnabled(_DELETE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    async with store._tree_write_lock([tree_id]):
+    async with store.tree_write_lock([tree_id]):
         if await db.get(FilamentTree, tree_id) is None:
             raise HTTPException(404, f"filament tree {tree_id} not found")
         preset_ids = list(
