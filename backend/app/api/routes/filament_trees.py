@@ -31,6 +31,7 @@ from backend.app.schemas.filament_tree import (
     ColorCreate,
     ColorUpdate,
     ConflictResolveRequest,
+    ExportConfirm,
     ExportRequest,
     MigrateRequest,
     NodeRow,
@@ -56,7 +57,7 @@ from backend.app.services.filament_tree import (
     resolve_with_sources,
 )
 from backend.app.services.filament_tree_base import build_base_reader
-from backend.app.services.filament_tree_export import build_export_zip
+from backend.app.services.filament_tree_export import build_export_zip, confirm_export
 from backend.app.services.filament_tree_migration import apply_migration, propose_groups, row_dict
 from backend.app.services.filament_tree_pull import (
     apply_pull,
@@ -408,16 +409,27 @@ async def adopt_candidate(
 @router.post("/export")
 async def export(
     payload: ExportRequest,
-    _: User | None = RequirePermissionIfAuthEnabled(_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
     with _mapped():
-        data = await build_export_zip(db, payload.tree_id, payload.changed_only)
+        data, token = await build_export_zip(db, payload.tree_id, payload.changed_only)
     return Response(
         content=data,
         media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="fenrir-filaments.zip"'},
+        headers={"Content-Disposition": 'attachment; filename="fenrir-filaments.zip"', "X-Export-Token": token},
     )
+
+
+@router.post("/export/confirm")
+async def export_confirm(
+    payload: ExportConfirm,
+    _: User | None = RequirePermissionIfAuthEnabled(_UPDATE),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """The client holds the zip: clear export_pending on the leaves it contained (unchanged since)."""
+    with _mapped():
+        return {"confirmed": await confirm_export(db, payload.token)}
 
 
 # --- /{tree_id} routes ---

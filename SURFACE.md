@@ -21,7 +21,8 @@ POST /api/v1/filament-trees/migrate  -> migrate  [require_permission_if_auth_ena
 POST /api/v1/filament-trees/sync  -> sync  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update', 'orca_cloud:auth']"} <- (HTTPBearer))]
 POST /api/v1/filament-trees/conflicts/resolve  -> resolve  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
 POST /api/v1/filament-trees/candidates  -> adopt_candidate  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:create', 'orca_cloud:auth']"} <- (HTTPBearer))]
-POST /api/v1/filament-trees/export  -> export  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:read']"} <- (HTTPBearer); get_db]
+POST /api/v1/filament-trees/export  -> export  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
+POST /api/v1/filament-trees/export/confirm  -> export_confirm  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
 GET /api/v1/filament-trees/{tree_id}/node  -> get_node  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:read']"} <- (HTTPBearer); get_db]
 PUT /api/v1/filament-trees/{tree_id}/node  -> put_node  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
 POST /api/v1/filament-trees/{tree_id}/duplicate  -> duplicate_tree  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:create']"} <- (HTTPBearer); get_db]
@@ -49,6 +50,7 @@ backend/app/api/routes/filament_trees.py:@router.post("/sync", dependencies=[Dep
 backend/app/api/routes/filament_trees.py:@router.post("/conflicts/resolve")
 backend/app/api/routes/filament_trees.py:@router.post("/candidates", dependencies=[Depends(_cloud_api_key_gate)])
 backend/app/api/routes/filament_trees.py:@router.post("/export")
+backend/app/api/routes/filament_trees.py:@router.post("/export/confirm")
 backend/app/api/routes/filament_trees.py:@router.get("/{tree_id}/node", response_model=list[NodeRow])
 backend/app/api/routes/filament_trees.py:@router.put("/{tree_id}/node")
 backend/app/api/routes/filament_trees.py:@router.post("/{tree_id}/duplicate")
@@ -94,6 +96,8 @@ class ConflictResolveRequest(BaseModel)
     key: <class 'str'>  required
     value: typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)], typing.Annotated[bool, Strict(strict=True)], typing.Annotated[list[typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)]]], FieldInfo(annotation=NoneType, required=True, metadata=[MaxLen(max_length=16)])], NoneType]  required
     orca_value: typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)], typing.Annotated[bool, Strict(strict=True)], typing.Annotated[list[typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)]]], FieldInfo(annotation=NoneType, required=True, metadata=[MaxLen(max_length=16)])], NoneType]  required
+class ExportConfirm(BaseModel)
+    token: <class 'str'>  required
 class ExportRequest(BaseModel)
     tree_id: int | None  default=None
     changed_only: <class 'bool'>  default=False
@@ -371,6 +375,7 @@ async def create_tree(payload: backend.app.schemas.filament_tree.TreeCreate, _: 
 async def delete_tree(tree_id: int, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def duplicate_tree(tree_id: int, payload: backend.app.schemas.filament_tree.TreeDuplicate, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def export(payload: backend.app.schemas.filament_tree.ExportRequest, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def export_confirm(payload: backend.app.schemas.filament_tree.ExportConfirm, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def get_history(tree_id: int, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def get_node(tree_id: int, machine: str | None = None, nozzle: str | None = None, color_id: int | None = None, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def get_targets(_: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
@@ -406,6 +411,7 @@ class CandidateRequest(BaseModel)
 class ColorCreate(BaseModel)
 class ColorUpdate(BaseModel)
 class ConflictResolveRequest(BaseModel)
+class ExportConfirm(BaseModel)
 class ExportRequest(BaseModel)
 class MigrateGroup(BaseModel)
 class MigrateRequest(BaseModel)
@@ -442,7 +448,8 @@ class BaseValueReader(object)
 async def build_base_reader(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> backend.app.services.filament_tree_base.BaseValueReader
 
 ## backend.app.services.filament_tree_export
-async def build_export_zip(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int | None, changed_only: bool = False) -> bytes
+async def build_export_zip(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int | None, changed_only: bool = False) -> tuple[bytes, str]
+async def confirm_export(db: sqlalchemy.ext.asyncio.session.AsyncSession, token: str) -> int
 
 ## backend.app.services.filament_tree_migration
 class MigrationGroup(object)
@@ -690,8 +697,12 @@ export interface FilamentTreeUpdate {
     request<{ success: boolean }>('/filament-trees/conflicts/resolve', { method: 'POST', body: JSON.stringify(data) }),
   createFilamentTreeFromCandidate: (data: { orca_id: string; name: string; brand: string; material: string; color_name: string; color_hex: string; machine: string; nozzle: string }) =>
     request<{ tree_id: number }>('/filament-trees/candidates', { method: 'POST', body: JSON.stringify(data) }),
-  exportFilamentTrees: (treeId?: number, changedOnly = false): Promise<Blob> =>
-    postForBlob('/filament-trees/export', { ...(treeId !== undefined && { tree_id: treeId }), ...(changedOnly && { changed_only: true }) }),
+  exportFilamentTrees: async (treeId?: number, changedOnly = false): Promise<{ blob: Blob; token: string }> => {
+    const response = await postForResponse('/filament-trees/export', { ...(treeId !== undefined && { tree_id: treeId }), ...(changedOnly && { changed_only: true }) });
+    return { blob: await response.blob(), token: response.headers.get('X-Export-Token') ?? '' };
+  },
+  confirmFilamentTreeExport: (token: string) =>
+    request<{ confirmed: number }>('/filament-trees/export/confirm', { method: 'POST', body: JSON.stringify({ token }) }),
   createFilamentTree: (data: { brand: string; material: string; base_family: string; color_name: string; color_hex: string; machine: string; nozzle: string }) =>
     request<{ tree_id: number }>('/filament-trees', { method: 'POST', body: JSON.stringify(data) }),
   duplicateFilamentTree: (treeId: number, data: { name: string; brand: string }) =>

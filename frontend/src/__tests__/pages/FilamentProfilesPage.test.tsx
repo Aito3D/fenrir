@@ -220,7 +220,8 @@ describe('FilamentProfilesPage (trees)', () => {
   it('Export for Orca downloads the bundle', async () => {
     stub();
     const blob = new Blob(['zip']);
-    const exportSpy = vi.spyOn(api, 'exportFilamentTrees').mockResolvedValue(blob);
+    const exportSpy = vi.spyOn(api, 'exportFilamentTrees').mockResolvedValue({ blob, token: 'tok' });
+    const confirmSpy = vi.spyOn(api, 'confirmFilamentTreeExport').mockResolvedValue({ confirmed: 1 });
     const createUrl = vi.fn(() => 'blob:x');
     const revokeUrl = vi.fn();
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: createUrl, revokeObjectURL: revokeUrl }));
@@ -231,6 +232,7 @@ describe('FilamentProfilesPage (trees)', () => {
     await waitFor(() => expect(click).toHaveBeenCalled());
     expect(exportSpy).toHaveBeenCalledWith(undefined, false);
     expect(createUrl).toHaveBeenCalledWith(blob);
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith('tok'));
     vi.unstubAllGlobals();
   });
 
@@ -388,7 +390,8 @@ describe('FilamentProfilesPage (trees)', () => {
   it('exports only the changed profiles and creates a filament from scratch', async () => {
     stub({ trees: [{ ...TREE, export_pending: 3 }] });
     vi.spyOn(api, 'getBaseFilamentPresets').mockResolvedValue([]);
-    const exportSpy = vi.spyOn(api, 'exportFilamentTrees').mockResolvedValue(new Blob(['zip']));
+    const exportSpy = vi.spyOn(api, 'exportFilamentTrees').mockResolvedValue({ blob: new Blob(['zip']), token: 'tok' });
+    vi.spyOn(api, 'confirmFilamentTreeExport').mockResolvedValue({ confirmed: 3 });
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} }));
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     const create = vi.spyOn(api, 'createFilamentTree').mockResolvedValue({ tree_id: 7 });

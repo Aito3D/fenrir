@@ -915,6 +915,67 @@
     "filament-trees"
    ]
   },
+  "POST /api/v1/filament-trees/export/confirm": {
+   "description": "The client holds the zip: clear export_pending on the leaves it contained (unchanged since).",
+   "operationId": "export_confirm_api_v1_filament_trees_export_confirm_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/ExportConfirm"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Export Confirm",
+   "tags": [
+    "filament-trees"
+   ]
+  },
   "POST /api/v1/filament-trees/migrate": {
    "operationId": "migrate_api_v1_filament_trees_migrate_post",
    "parameters": [
@@ -1687,6 +1748,19 @@
     "orca_value"
    ],
    "title": "ConflictResolveRequest",
+   "type": "object"
+  },
+  "ExportConfirm": {
+   "properties": {
+    "token": {
+     "title": "Token",
+     "type": "string"
+    }
+   },
+   "required": [
+    "token"
+   ],
+   "title": "ExportConfirm",
    "type": "object"
   },
   "ExportRequest": {

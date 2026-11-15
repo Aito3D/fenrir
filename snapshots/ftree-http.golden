@@ -6989,6 +6989,18 @@ zip member 'Beta PETG - White @H2S 0.6.json' <567 chars sha256=08391197a0e7> dat
  "version": "2.4.0.8"
 }
 zip members: 12
+### J01b confirm the download
+POST /api/v1/filament-trees/export/confirm  body={"token": "<token>"}
+-> 200
+{
+ "confirmed": 12
+}
+### J01c confirm again (token spent)
+POST /api/v1/filament-trees/export/confirm  body={"token": "<token>"}
+-> 404
+{
+ "detail": "unknown export token"
+}
 ### J02 export changed only (the rest)
 POST /api/v1/filament-trees/export  body={"changed_only": true}
 -> 200
@@ -8095,6 +8107,12 @@ zip member 'Polymaker PETG - White @H2S 0.6.json' <492 chars sha256=bd8c04054f8a
  "version": "2.4.0.8"
 }
 zip members: 36
+### J02b confirm the download
+POST /api/v1/filament-trees/export/confirm  body={"token": "<token>"}
+-> 200
+{
+ "confirmed": 36
+}
 ### J03 export changed only (nothing left)
 POST /api/v1/filament-trees/export  body={"changed_only": true}
 -> 200
@@ -8536,6 +8554,18 @@ zip member 'Beta PETG - White @H2D 0.6.json' <699 chars sha256=a3ef999242df> dat
  "version": "2.4.0.8"
 }
 zip members: 6
+### J08 confirm the download
+POST /api/v1/filament-trees/export/confirm  body={"token": "<token>"}
+-> 200
+{
+ "confirmed": 6
+}
+### J09 confirm unknown token
+POST /api/v1/filament-trees/export/confirm  body={"token": "nope"}
+-> 404
+{
+ "detail": "unknown export token"
+}
 ### DUMP J after exports
 -- filament_trees (4)
 {"base_family": "Generic PETG", "brand": "Acme", "created_at": "<ts>", "fallback_inherits": "Generic PETG @base", "id": 1, "material": "PETG", "name": "Acme PETG", "own_values": "{\"nozzle_temperature\": [\"245\"], \"filament_cost\": [\"25.5\"], \"filament_flow_ratio\": [\"0.97\"]}", "skip_02": false, "source_color_id": 1, "source_machine": "H2S", "source_nozzle": "0.4", "updated_at": "<ts>", "version": "2.4.0.8"}

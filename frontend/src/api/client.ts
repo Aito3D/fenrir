@@ -221,8 +221,8 @@ async function throwApiError(response: Response): Promise<never> {
   throw new ApiError(message, response.status, code, structuredDetail);
 }
 
-/** POST JSON and return the response body as a Blob (label PDFs and images). */
-async function postForBlob(endpoint: string, data: unknown, signal?: AbortSignal): Promise<Blob> {
+/** POST JSON and return the successful Response (throws on a non-2xx). */
+async function postForResponse(endpoint: string, data: unknown, signal?: AbortSignal): Promise<Response> {
   const response = await fetch(`${API_BASE}${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...bearerAuthHeaders() },
@@ -233,7 +233,12 @@ async function postForBlob(endpoint: string, data: unknown, signal?: AbortSignal
     const error = await response.json().catch(() => ({}));
     throw new Error(typeof error.detail === 'string' ? error.detail : `HTTP ${response.status}`);
   }
-  return response.blob();
+  return response;
+}
+
+/** POST JSON and return the response body as a Blob (label PDFs and images). */
+async function postForBlob(endpoint: string, data: unknown, signal?: AbortSignal): Promise<Blob> {
+  return (await postForResponse(endpoint, data, signal)).blob();
 }
 
 async function request<T>(
@@ -9217,8 +9222,12 @@ export const api = {
     request<{ success: boolean }>('/filament-trees/conflicts/resolve', { method: 'POST', body: JSON.stringify(data) }),
   createFilamentTreeFromCandidate: (data: { orca_id: string; name: string; brand: string; material: string; color_name: string; color_hex: string; machine: string; nozzle: string }) =>
     request<{ tree_id: number }>('/filament-trees/candidates', { method: 'POST', body: JSON.stringify(data) }),
-  exportFilamentTrees: (treeId?: number, changedOnly = false): Promise<Blob> =>
-    postForBlob('/filament-trees/export', { ...(treeId !== undefined && { tree_id: treeId }), ...(changedOnly && { changed_only: true }) }),
+  exportFilamentTrees: async (treeId?: number, changedOnly = false): Promise<{ blob: Blob; token: string }> => {
+    const response = await postForResponse('/filament-trees/export', { ...(treeId !== undefined && { tree_id: treeId }), ...(changedOnly && { changed_only: true }) });
+    return { blob: await response.blob(), token: response.headers.get('X-Export-Token') ?? '' };
+  },
+  confirmFilamentTreeExport: (token: string) =>
+    request<{ confirmed: number }>('/filament-trees/export/confirm', { method: 'POST', body: JSON.stringify({ token }) }),
   createFilamentTree: (data: { brand: string; material: string; base_family: string; color_name: string; color_hex: string; machine: string; nozzle: string }) =>
     request<{ tree_id: number }>('/filament-trees', { method: 'POST', body: JSON.stringify(data) }),
   duplicateFilamentTree: (treeId: number, data: { name: string; brand: string }) =>

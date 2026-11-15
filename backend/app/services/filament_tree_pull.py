@@ -79,10 +79,19 @@ def plan_pull(orca_entries: list[dict], leaves: list[LeafState], tree_colour_nam
     by_name = {lf.name: lf for lf in leaves}
     seen: set[str] = set()
     for entry in orca_entries:
+        if not isinstance(entry, dict):
+            plan.ignored += 1
+            continue
         content = entry.get("content") or {}
+        if not isinstance(content, dict):
+            plan.ignored += 1
+            continue
         if content.get("type") != "filament":
             continue
         name = entry.get("name", "")
+        if not isinstance(name, str):
+            plan.ignored += 1
+            continue
         seen.add(name)
         leaf = by_name.get(name)
         if leaf is not None:

@@ -80,14 +80,16 @@ export function TreeSettingsPanel({ tree, onCreated }: { tree: FilamentTreeSumma
             ) : (
               <h2 className="text-lg font-semibold text-white">{tree.name}</h2>
             )}
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => downloadTreeExport(tree.id).catch((err) => showToast(errorMessage(err), 'error'))}
-            >
-              <Download className="h-4 w-4" />
-              {t('filamentTrees.exportTree')}
-            </Button>
+            {canUpdate && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => downloadTreeExport(tree.id).catch((err) => showToast(errorMessage(err), 'error'))}
+              >
+                <Download className="h-4 w-4" />
+                {t('filamentTrees.exportTree')}
+              </Button>
+            )}
             {canCreate && (
               <Button size="sm" variant="secondary" disabled={busy} onClick={() => setCopy({ name: `${tree.name} copy`, brand: tree.brand })}>
                 <Copy className="h-4 w-4" />

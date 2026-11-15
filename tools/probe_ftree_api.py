@@ -74,15 +74,17 @@ def show(v) -> str:
 class Client:
     def __init__(self, c: AsyncClient):
         self.c = c
+        self.token = None  # X-Export-Token of the last zip response
 
     async def __call__(self, label, method, path, json_body=None, **params):
         params = {k: v for k, v in params.items() if v is not None}
         r = await self.c.request(method, path, json=json_body, params=params or None)
         query = "?" + "&".join(f"{k}={v}" for k, v in params.items()) if params else ""
-        print(f"### {label}\n{method} {path}{query}" + (f"  body={json.dumps(json_body, sort_keys=True)}" if json_body is not None else ""))
+        print(f"### {label}\n{method} {path}{query}" + (f"  body={json.dumps(json_body, sort_keys=True).replace(self.token or chr(0), "<token>")}" if json_body is not None else ""))
         print(f"-> {r.status_code}")
         if r.headers.get("content-type", "").startswith("application/zip"):
             print("content-disposition:", r.headers.get("content-disposition"))
+            self.token = r.headers["x-export-token"]
             with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
                 for name in sorted(zf.namelist()):
                     raw = zf.read(name).decode()
@@ -382,12 +384,17 @@ async def main() -> None:
 
             # === J: export =========================================================================
             await c("J01 export one tree", "POST", f"{API}/export", {"tree_id": t2})
+            await c("J01b confirm the download", "POST", f"{API}/export/confirm", {"token": c.token})
+            await c("J01c confirm again (token spent)", "POST", f"{API}/export/confirm", {"token": c.token})
             await c("J02 export changed only (the rest)", "POST", f"{API}/export", {"changed_only": True})
+            await c("J02b confirm the download", "POST", f"{API}/export/confirm", {"token": c.token})
             await c("J03 export changed only (nothing left)", "POST", f"{API}/export", {"changed_only": True})
             await c("J04 export unknown tree", "POST", f"{API}/export", {"tree_id": 999})
             await c("J05 a write marks leaves pending again", "PUT", f"{API}/{t2}/node", {"machine": "H2D", "set": {"hot_plate_temp": ["68"]}})
             await c("J06 list (export_pending)", "GET", API)
             await c("J07 export tree changed only", "POST", f"{API}/export", {"tree_id": t2, "changed_only": True})
+            await c("J08 confirm the download", "POST", f"{API}/export/confirm", {"token": c.token})
+            await c("J09 confirm unknown token", "POST", f"{API}/export/confirm", {"token": "nope"})
             await dump("J after exports")
 
             # === K: sync + conflicts ===============================================================

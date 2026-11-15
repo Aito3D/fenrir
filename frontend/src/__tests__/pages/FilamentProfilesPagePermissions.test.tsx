@@ -102,7 +102,14 @@ describe('FilamentProfilesPage — permission gating (T-016)', () => {
     for (const field of screen.getAllByRole('textbox')) expect(field).toBeDisabled();
     expect(screen.queryByRole('button', { name: /use parent/i })).not.toBeInTheDocument();
 
-    // Export only reads, so it stays visible regardless of permission.
+    // Export marks leaves as exported, so the backend needs filaments:update.
+    expect(screen.queryByRole('button', { name: 'Export for Orca' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Export changed/ })).not.toBeInTheDocument();
+  });
+
+  it('shows Export for Orca with filaments:update', async () => {
+    permissions.granted = ['filaments:read', 'filaments:update'];
+    await renderPage();
     expect(screen.getByRole('button', { name: 'Export for Orca' })).toBeInTheDocument();
   });
 

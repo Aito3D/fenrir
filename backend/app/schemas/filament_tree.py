@@ -96,6 +96,10 @@ class ExportRequest(BaseModel):
     changed_only: bool = False
 
 
+class ExportConfirm(BaseModel):
+    token: str
+
+
 class TreeCreate(BaseModel):
     brand: Name
     material: Name

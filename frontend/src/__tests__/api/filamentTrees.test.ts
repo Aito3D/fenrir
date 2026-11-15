@@ -16,13 +16,28 @@ describe('filament tree api methods', () => {
 
   it('exportFilamentTrees posts tree_id and resolves a Blob', async () => {
     const seen = mockFetch('zipbytes');
-    const blob = await api.exportFilamentTrees(3);
+    const { blob, token } = await api.exportFilamentTrees(3);
+    expect(token).toBe('');
     expect(blob.size).toBe(8); // not instanceof: Node 22's Response returns a Blob from another realm than jsdom's
     expect(path(seen[0].url)).toBe('/filament-trees/export');
     expect(seen[0].init?.method).toBe('POST');
     expect(JSON.parse(String(seen[0].init?.body))).toEqual({ tree_id: 3 });
     await api.exportFilamentTrees();
     expect(JSON.parse(String(seen[1].init?.body))).toEqual({});
+  });
+
+  it('exportFilamentTrees returns the confirm token and confirmFilamentTreeExport posts it', async () => {
+    const seen: { url: string; init?: RequestInit }[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      seen.push({ url: String(url), init });
+      return String(url).endsWith('/confirm')
+        ? new Response('{"confirmed":2}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+        : new Response('zip', { status: 200, headers: { 'X-Export-Token': 'tok1' } });
+    });
+    expect((await api.exportFilamentTrees()).token).toBe('tok1');
+    expect(await api.confirmFilamentTreeExport('tok1')).toEqual({ confirmed: 2 });
+    expect(path(seen[1].url)).toBe('/filament-trees/export/confirm');
+    expect(JSON.parse(String(seen[1].init?.body))).toEqual({ token: 'tok1' });
   });
 
   it('getFilamentTreeNode sends only the params that are set', async () => {

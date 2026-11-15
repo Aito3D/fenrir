@@ -193,7 +193,8 @@ async def test_overlapping_node_puts_keep_both_edits(async_client, db_session, n
 
 async def test_sync_applies_and_returns_plan(async_client, db_session, monkeypatch):
     tree, _, red = await _tree(db_session)
-    await async_client.post(f"{API}/export", json={"tree_id": tree.id})
+    r = await async_client.post(f"{API}/export", json={"tree_id": tree.id})
+    await async_client.post(f"{API}/export/confirm", json={"token": r.headers["x-export-token"]})
     preset = (
         await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG - Red @H2S 0.4"))
     ).scalar_one()
@@ -236,6 +237,42 @@ async def test_sync_requires_orca_permission(async_client, db_session, monkeypat
     assert r.status_code == 200, r.text
 
 
+async def test_export_requires_update_permission(async_client, db_session):
+    tree, _, _ = await _tree(db_session)
+    admin = await _setup_admin(async_client, username="ftadmin_export")
+    token = await _create_user_with_perms(async_client, admin, username="ft_read_only", permissions=["filaments:read"])
+    r = await async_client.post(
+        f"{API}/export", json={"tree_id": tree.id}, headers={"Authorization": f"Bearer {token}"}
+    )
+    assert r.status_code == 403
+    token = await _create_user_with_perms(
+        async_client, admin, username="ft_updater", permissions=["filaments:read", "filaments:update"]
+    )
+    r = await async_client.post(
+        f"{API}/export", json={"tree_id": tree.id}, headers={"Authorization": f"Bearer {token}"}
+    )
+    assert r.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "not-a-dict",
+        ["x"],
+        {"id": "m1", "name": "A", "content": "text"},
+        {"id": "m2", "name": "A", "content": ["list"]},
+        {"id": "m3", "name": None, "content": {"type": "filament"}},
+        {"id": "m4", "name": 7, "content": {"type": "filament"}},
+    ],
+)
+async def test_sync_ignores_malformed_orca_entries(async_client, db_session, monkeypatch, bad):
+    await _tree(db_session)
+    _stub_orca(monkeypatch, [bad])
+    r = await async_client.post(f"{API}/sync")
+    assert r.status_code == 200, r.text
+    assert r.json()["ignored"] == 1
+
+
 async def test_export_returns_zip(async_client, db_session):
     tree, _, _ = await _tree(db_session)
     r = await async_client.post(f"{API}/export", json={"tree_id": tree.id})
@@ -245,6 +282,24 @@ async def test_export_returns_zip(async_client, db_session):
     assert len(zipfile.ZipFile(io.BytesIO(r.content)).namelist()) == 32
     assert (await async_client.post(f"{API}/export", json={})).status_code == 200
     assert (await async_client.post(f"{API}/export", json={"tree_id": 9999})).status_code == 404
+    assert (await async_client.post(f"{API}/export/confirm", json={"token": "nope"})).status_code == 404
+
+
+async def test_export_confirm_requires_update_permission(async_client, db_session):
+    tree, _, _ = await _tree(db_session)
+    admin = await _setup_admin(async_client, username="ftadmin_confirm")
+    r = await async_client.post(
+        f"{API}/export", json={"tree_id": tree.id}, headers={"Authorization": f"Bearer {admin}"}
+    )
+    body = {"token": r.headers["x-export-token"]}
+    ro = await _create_user_with_perms(async_client, admin, username="ft_ro_c", permissions=["filaments:read"])
+    r = await async_client.post(f"{API}/export/confirm", json=body, headers={"Authorization": f"Bearer {ro}"})
+    assert r.status_code == 403
+    rw = await _create_user_with_perms(
+        async_client, admin, username="ft_rw_c", permissions=["filaments:read", "filaments:update"]
+    )
+    r = await async_client.post(f"{API}/export/confirm", json=body, headers={"Authorization": f"Bearer {rw}"})
+    assert r.status_code == 200 and r.json() == {"confirmed": 32}
 
 
 async def test_migrate_then_list(async_client, db_session):
@@ -630,7 +685,10 @@ async def test_create_duplicate_and_bulk(async_client, db_session):
 
 async def test_history_revert_and_export_changed_only(async_client, db_session):
     tree, _, _ = await _tree(db_session)
-    await async_client.post(f"{API}/export", json={})
+    r = await async_client.post(f"{API}/export", json={})
+    assert (await async_client.get(API)).json()[0]["export_pending"] == 32  # not confirmed yet
+    r = await async_client.post(f"{API}/export/confirm", json={"token": r.headers["x-export-token"]})
+    assert r.json() == {"confirmed": 32}
     assert (await async_client.get(API)).json()[0]["export_pending"] == 0
 
     await async_client.put(f"{API}/{tree.id}/node", json={"machine": "H2S", "set": {"hot_plate_temp": ["75"]}})
@@ -638,6 +696,8 @@ async def test_history_revert_and_export_changed_only(async_client, db_session):
     assert (await async_client.get(API)).json()[0]["export_pending"] == 8  # H2S: 4 nozzles x 2 colours
     r = await async_client.post(f"{API}/export", json={"changed_only": True})
     assert len(zipfile.ZipFile(io.BytesIO(r.content)).namelist()) == 8
+    assert (await async_client.get(API)).json()[0]["export_pending"] == 8
+    await async_client.post(f"{API}/export/confirm", json={"token": r.headers["x-export-token"]})
     assert (await async_client.get(API)).json()[0]["export_pending"] == 0
 
     history = (await async_client.get(f"{API}/{tree.id}/history")).json()
