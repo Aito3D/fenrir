@@ -189,7 +189,9 @@ async def list_unmanaged(
 ):
     rows = (await db.execute(select(FilamentPreset).order_by(FilamentPreset.name))).scalars().all()
     with _mapped():
-        groups = propose_groups([row_dict(r) for r in rows], await store.managed_preset_ids(db))
+        groups = propose_groups(
+            [row_dict(r) for r in rows], await store.managed_preset_ids(db), await store.get_targets(db)
+        )
     return [asdict(g) for g in groups]
 
 

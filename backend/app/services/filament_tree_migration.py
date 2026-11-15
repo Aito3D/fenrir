@@ -18,6 +18,7 @@ from backend.app.models.filament_tree import (
     FilamentTreeSnapshot,
 )
 from backend.app.services.filament_tree import (
+    DEFAULT_TARGETS,
     IDENTITY_KEYS,
     NOZZLE_BOUND_KEYS,
     leaf_targets,
@@ -53,7 +54,8 @@ def _prefix(name: str) -> str:
 
 
 def _raw_color_name(preset: dict) -> str:
-    return (preset["name"].split(" - ", 1)[1] if " - " in preset["name"] else preset["color"]).strip()
+    raw = preset["name"].split(" - ", 1)[1] if " - " in preset["name"] else preset["color"]
+    return raw.split(" @", 1)[0].strip()  # "White @BBL H2S 0.4mm" -> "White"
 
 
 def _color_name(preset: dict) -> str:
@@ -64,8 +66,13 @@ def _compat_pairs(content: dict) -> list[tuple[str, str]]:
     return [(m[1], m[2]) for e in content.get("compatible_printers") or [] if (m := _COMPAT.match(e))]
 
 
-def propose_groups(presets: list[dict], exclude_ids: frozenset[int] | set[int] = frozenset()) -> list[MigrationGroup]:
-    """Group unmanaged presets by name prefix and propose a calibration source for each group."""
+def propose_groups(
+    presets: list[dict], exclude_ids: frozenset[int] | set[int] = frozenset(), targets: dict | None = None
+) -> list[MigrationGroup]:
+    """Group unmanaged presets by name prefix and propose a calibration source for each group.
+
+    The proposed machine/nozzle are always taken from the targets when possible (else apply refuses them)."""
+    targets = targets or DEFAULT_TARGETS
     groups: dict[str, list[dict]] = {}
     for p in sorted(presets, key=lambda p: p["name"]):
         if p["id"] not in exclude_ids:
@@ -76,7 +83,11 @@ def propose_groups(presets: list[dict], exclude_ids: frozenset[int] | set[int] =
         source = next((p for p in rows if _color_name(p).strip().lower() == "white"), rows[0])
         src = contents[source["id"]]
         _, machine, nozzle = parse_inherits(src.get("inherits", ""))
-        first_m, first_n = next(iter(_compat_pairs(src)), (None, None))
+        machine = machine if machine in targets["machines"] else None
+        nozzle = nozzle if nozzle in targets["nozzles"] else None
+        pairs = _compat_pairs(src)
+        first_m = next((m for m, _n in pairs if m in targets["machines"]), None)
+        first_n = next((n for _m, n in pairs if n in targets["nozzles"]), None)
         warnings = []
         if len({c.get("inherits", "") for c in contents.values()}) > 1:
             warnings.append("colours in this group have different inherits (base presets)")

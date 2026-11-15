@@ -64,6 +64,28 @@ def test_propose_groups_nozzle_from_compat_when_inherits_has_none():
     assert (group.prefix, group.proposed_machine, group.proposed_nozzle) == ("SUNLU PA6-GF", "H2S", "0.6")
 
 
+def test_propose_groups_ignores_inherits_machine_outside_targets():
+    compat = [f"Bambu Lab {m} 0.4 nozzle" for m in ("H2S", "H2D", "H2C", "X2D")]
+    row = _preset(9, "White", compatible_printers=compat)
+    row["name"] = "Polymaker ASA - White"
+    content = json.loads(row["content"])
+    content["inherits"] = "Bambu ABS @BBL X1C"
+    row["content"] = json.dumps(content)
+    [group] = propose_groups([row], targets={"machines": ["X2D", "H2S", "H2D", "H2C"], "nozzles": ["0.4"]})
+    assert (group.proposed_machine, group.proposed_nozzle) == ("H2S", "0.4")
+    # neither inherits nor compat names a target machine: H2S / 0.4
+    [group] = propose_groups([row], targets={"machines": ["P1S"], "nozzles": ["0.6"]})
+    assert (group.proposed_machine, group.proposed_nozzle) == ("H2S", "0.4")
+
+
+def test_colour_name_strips_trailing_at_suffix():
+    row = _preset(9, "White")
+    row["name"] = "eSUN PLA - White @BBL H2S 0.4mm"
+    [group] = propose_groups([row])
+    assert group.prefix == "eSUN PLA"
+    assert plan_tree([row], 9, "H2S", "0.4", lambda _i: {})["colors"][0][1] == "White"
+
+
 def test_propose_groups_warns_and_skips_managed():
     rows = _group()
     content = json.loads(rows[0]["content"])
