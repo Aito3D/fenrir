@@ -156,6 +156,8 @@ class NodeUpdate(BaseModel):
 
 
 class TreeUpdate(BaseModel):
+    brand: Name | None = None  # renames the tree (and every generated profile) to "<brand> <material>"
+    material: Name | None = None
     skip_02: bool | None = None
     source_color_id: int | None = None
     source_machine: Part | None = None

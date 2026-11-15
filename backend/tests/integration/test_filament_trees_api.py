@@ -296,6 +296,18 @@ async def test_tree_patch_colors_and_delete(async_client, db_session):
     assert (tree.skip_02, tree.source_color_id) == (True, red.id)
     assert (await async_client.patch(f"{API}/{tree.id}", json={"source_nozzle": "0.2"})).status_code == 400
 
+    old_name = tree.name
+    r = await async_client.patch(f"{API}/{tree.id}", json={"brand": "Inslogic", "material": "PLA"})
+    assert r.status_code == 200, r.text
+    await db_session.refresh(tree)
+    assert (tree.name, tree.brand, tree.material) == ("Inslogic PLA", "Inslogic", "PLA")
+    names = (await db_session.execute(select(FilamentPreset.name))).scalars().all()
+    assert names and all(n.startswith("Inslogic PLA - ") for n in names)
+    r = await async_client.patch(
+        f"{API}/{tree.id}", json={"brand": old_name.split()[0], "material": old_name.split()[1]}
+    )
+    assert r.status_code == 200, r.text
+
     r = await async_client.post(f"{API}/{tree.id}/colors", json={"name": "Blue", "hex": "#0000FF"})
     assert r.status_code == 200, r.text
     blue = r.json()["id"]

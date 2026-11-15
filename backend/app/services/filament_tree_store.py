@@ -307,9 +307,24 @@ async def remove_color(db: AsyncSession, tree_id: int, color_id: int) -> None:
     await db.commit()
 
 
-async def update_tree(db: AsyncSession, tree_id: int, *, skip_02: Any = _UNSET, source: Any = _UNSET) -> None:
-    """skip_02: True/False/None (auto); source: (machine, nozzle, color_id)."""
+async def update_tree(
+    db: AsyncSession,
+    tree_id: int,
+    *,
+    skip_02: Any = _UNSET,
+    source: Any = _UNSET,
+    brand: str | None = None,
+    material: str | None = None,
+) -> None:
+    """skip_02: True/False/None (auto); source: (machine, nozzle, color_id); brand/material rename the tree."""
     tree = await _get_tree(db, tree_id)
+    if brand or material:
+        tree.brand, tree.material = brand or tree.brand, material or tree.material
+        name = f"{tree.brand} {tree.material}"
+        taken = await db.scalar(select(FilamentTree.id).where(FilamentTree.name == name, FilamentTree.id != tree_id))
+        if taken is not None:
+            raise ValueError(f"a filament tree named {name!r} already exists")
+        tree.name = name
     if skip_02 is not _UNSET:
         tree.skip_02 = skip_02
     if source is not _UNSET:

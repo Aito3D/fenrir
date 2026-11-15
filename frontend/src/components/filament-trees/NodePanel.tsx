@@ -280,6 +280,29 @@ export function NodePanel({ node, onCreated }: { node: NodeRef; onCreated?: (tre
     const elements = Array.isArray(row?.value) && row.value.length > 1 ? (row.value as Array<string | number>) : null;
 
     let control;
+    if (field.key === 'filament_vendor') {
+      // Orca's vendor is the tree's brand: editing it renames the tree and its profiles
+      const brand = tree?.brand ?? '';
+      return (
+        <ValueInput
+          key={`${brand}:${tick}`}
+          label={label}
+          value={brand}
+          disabled={!writable}
+          onCommit={(next) =>
+            next.trim()
+              ? api
+                  .updateFilamentTree(treeId, { brand: next.trim() })
+                  .then(() => queryClient.invalidateQueries({ queryKey: ['filament-trees'] }))
+                  .catch((err) => {
+                    reset([field.key]);
+                    showToast(errorMessage(err), 'error');
+                  })
+              : reset([field.key])
+          }
+        />
+      );
+    }
     if (field.kind === 'pa') {
       control = (
         <ValueInput

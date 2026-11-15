@@ -4453,6 +4453,7 @@ export interface FilamentTreeNodeUpdate {
 }
 export interface FilamentTreeUpdate {
   skip_02?: boolean | null; source_color_id?: number; source_machine?: string; source_nozzle?: string;
+  brand?: string; material?: string;
 }
 
 // ── Filament profile manager ────────────────────────────────────────────────

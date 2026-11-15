@@ -58,7 +58,28 @@ export function TreeSettingsPanel({ tree, onCreated }: { tree: FilamentTreeSumma
     <section className="min-w-0 space-y-6">
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-white">{tree.name}</h2>
+            {canUpdate ? (
+              <div className="flex min-w-0 gap-2">
+                {(['brand', 'material'] as const).map((part) => (
+                  <input
+                    key={`${part}:${tree[part]}`}
+                    aria-label={t(`filamentTrees.${part}`)}
+                    defaultValue={tree[part]}
+                    disabled={busy}
+                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                    onBlur={(e) => {
+                      const el = e.currentTarget;
+                      const next = el.value.trim();
+                      if (!next || next === tree[part]) el.value = tree[part];
+                      else void run(() => api.updateFilamentTree(tree.id, { [part]: next })).then((ok) => { if (!ok) el.value = tree[part]; });
+                    }}
+                    className={`${inputCls} w-36 font-semibold`}
+                  />
+                ))}
+              </div>
+            ) : (
+              <h2 className="text-lg font-semibold text-white">{tree.name}</h2>
+            )}
             <Button
               size="sm"
               variant="secondary"

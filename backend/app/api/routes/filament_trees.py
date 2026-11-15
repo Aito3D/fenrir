@@ -572,6 +572,7 @@ async def patch_tree(
         tree = await store.load_tree(db, tree_id)
         if "skip_02" in changes:
             kwargs["skip_02"] = changes["skip_02"]
+        kwargs.update({k: changes[k] for k in ("brand", "material") if changes.get(k)})
         if changes.keys() & {"source_machine", "source_nozzle", "source_color_id"}:
             m, n, c = tree.source
             source = (
