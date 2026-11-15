@@ -1,49 +1,49 @@
 [
  {
-  "id": "notif-openapi",
-  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_notif_openapi.py 2>/dev/null",
+  "id": "ftree-openapi",
+  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_ftree_openapi.py 2>/dev/null",
   "timeout": 300,
   "scrub": [],
   "files": []
  },
  {
-  "id": "notif-rules",
-  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_notif_rules.py 2>/dev/null",
+  "id": "ftree-rules",
+  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_ftree_rules.py 2>/dev/null",
   "timeout": 300,
   "scrub": [],
   "files": []
  },
  {
-  "id": "notif-http",
-  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_notif_api.py 2>/dev/null",
+  "id": "ftree-http",
+  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_ftree_api.py 2>/dev/null",
   "timeout": 600,
   "scrub": ["\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"],
   "files": []
  },
  {
-  "id": "notif-surface-py",
-  "cmd": "for w in routes schemas ddl permissions; do echo \"=== $w\"; PYTHONHASHSEED=0 ./venv/bin/python3 tools/probe_notif_surface.py $w 2>/dev/null; done",
+  "id": "ftree-surface-py",
+  "cmd": "for w in routes callables schemas ddl permissions; do echo \"=== $w\"; PYTHONHASHSEED=0 ./venv/bin/python3 tools/probe_ftree_surface.py $w 2>/dev/null; done",
   "timeout": 600,
   "scrub": [],
   "files": []
  },
  {
-  "id": "notif-frontend-pure",
-  "cmd": "mkdir -p /tmp/fenrir-refactor-notif-probe && frontend/node_modules/.bin/rolldown tools/probe_notif_frontend_entry.ts --format cjs --file /tmp/fenrir-refactor-notif-probe/notifFrontend.cjs >/dev/null 2>&1 && node tools/probe_notif_frontend.cjs",
+  "id": "ftree-frontend-pure",
+  "cmd": "mkdir -p /tmp/fenrir-refactor-ftree-probe && frontend/node_modules/.bin/rolldown tools/probe_ftree_frontend_entry.ts --format cjs --file /tmp/fenrir-refactor-ftree-probe/ftreeFrontend.cjs >/dev/null 2>&1 && node tools/probe_ftree_frontend.cjs",
   "timeout": 300,
   "scrub": [],
   "files": []
  },
  {
-  "id": "notif-i18n",
-  "cmd": "mkdir -p /tmp/fenrir-refactor-notif-probe && frontend/node_modules/.bin/rolldown tools/probe_notif_i18n_entry.ts --format cjs --file /tmp/fenrir-refactor-notif-probe/notifI18n.cjs >/dev/null 2>&1 && node tools/probe_notif_i18n.cjs",
+  "id": "ftree-i18n",
+  "cmd": "LC_ALL=C node tools/probe_ftree_i18n.cjs",
   "timeout": 300,
   "scrub": [],
   "files": []
  },
  {
-  "id": "notif-api-client",
-  "cmd": "sed -n '/^export interface NotificationProvider {/,/^export interface NotificationLogStats {/p' frontend/src/api/client.ts; sed -n '/^export interface NotificationLogStats {/,/^}/p' frontend/src/api/client.ts; grep -E '^  [a-zA-Z]+: ' frontend/src/api/client.ts | grep -iE 'notification|inbox|appmessage'",
+  "id": "ftree-api-client",
+  "cmd": "LC_ALL=C awk -f tools/probe_ftree_client.awk frontend/src/api/client.ts",
   "timeout": 60,
   "scrub": [],
   "files": []

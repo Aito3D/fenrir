@@ -1,0 +1,2349 @@
+### exit: 0
+### stdout:
+{
+ "operations": {
+  "DELETE /api/v1/filament-trees/{tree_id}": {
+   "operationId": "delete_tree_api_v1_filament_trees__tree_id__delete",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "tree_id",
+     "required": true,
+     "schema": {
+      "title": "Tree Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Delete Tree",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "DELETE /api/v1/filament-trees/{tree_id}/colors/{color_id}": {
+   "operationId": "remove_color_api_v1_filament_trees__tree_id__colors__color_id__delete",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "tree_id",
+     "required": true,
+     "schema": {
+      "title": "Tree Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "path",
+     "name": "color_id",
+     "required": true,
+     "schema": {
+      "title": "Color Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Remove Color",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "GET /api/v1/filament-trees": {
+   "operationId": "list_trees_api_v1_filament_trees_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/TreeSummary"
+        },
+        "title": "Response List Trees Api V1 Filament Trees Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Trees",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "GET /api/v1/filament-trees/targets": {
+   "operationId": "get_targets_api_v1_filament_trees_targets_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/Targets"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Targets",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "GET /api/v1/filament-trees/unmanaged": {
+   "operationId": "list_unmanaged_api_v1_filament_trees_unmanaged_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Unmanaged",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "GET /api/v1/filament-trees/{tree_id}/history": {
+   "operationId": "get_history_api_v1_filament_trees__tree_id__history_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "tree_id",
+     "required": true,
+     "schema": {
+      "title": "Tree Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/TreeChange"
+        },
+        "title": "Response Get History Api V1 Filament Trees  Tree Id  History Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get History",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "GET /api/v1/filament-trees/{tree_id}/node": {
+   "operationId": "get_node_api_v1_filament_trees__tree_id__node_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "tree_id",
+     "required": true,
+     "schema": {
+      "title": "Tree Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "query",
+     "name": "machine",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Machine"
+     }
+    },
+    {
+     "in": "query",
+     "name": "nozzle",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nozzle"
+     }
+    },
+    {
+     "in": "query",
+     "name": "color_id",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Color Id"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/NodeRow"
+        },
+        "title": "Response Get Node Api V1 Filament Trees  Tree Id  Node Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Node",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "PATCH /api/v1/filament-trees/{tree_id}": {
+   "operationId": "patch_tree_api_v1_filament_trees__tree_id__patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "tree_id",
+     "required": true,
+     "schema": {
+      "title": "Tree Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/TreeUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Patch Tree",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "PATCH /api/v1/filament-trees/{tree_id}/colors/{color_id}": {
+   "operationId": "rename_color_api_v1_filament_trees__tree_id__colors__color_id__patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "tree_id",
+     "required": true,
+     "schema": {
+      "title": "Tree Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "path",
+     "name": "color_id",
+     "required": true,
+     "schema": {
+      "title": "Color Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/ColorUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Rename Color",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "POST /api/v1/filament-trees": {
+   "description": "A new filament from scratch: one colour, no own values, leaves inherit the Bambu family.",
+   "operationId": "create_tree_api_v1_filament_trees_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/TreeCreate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Create Tree",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "POST /api/v1/filament-trees/bulk": {
+   "description": "One write on the same node of several trees; all or nothing.",
+   "operationId": "bulk_node_api_v1_filament_trees_bulk_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/BulkNodeUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Bulk Node",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "POST /api/v1/filament-trees/candidates": {
+   "description": "Turn an Orca-only preset into a one-colour tree calibrated at (machine, nozzle).",
+   "operationId": "adopt_candidate_api_v1_filament_trees_candidates_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/CandidateRequest"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Adopt Candidate",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "POST /api/v1/filament-trees/conflicts/resolve": {
+   "operationId": "resolve_api_v1_filament_trees_conflicts_resolve_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/ConflictResolveRequest"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Resolve",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "POST /api/v1/filament-trees/export": {
+   "operationId": "export_api_v1_filament_trees_export_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/ExportRequest"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Export",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "POST /api/v1/filament-trees/migrate": {
+   "operationId": "migrate_api_v1_filament_trees_migrate_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/MigrateRequest"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Migrate",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "POST /api/v1/filament-trees/sync": {
+   "description": "Pull only: fold OrcaSlicer edits into the trees, report conflicts and candidates.",
+   "operationId": "sync_api_v1_filament_trees_sync_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Sync",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "POST /api/v1/filament-trees/{tree_id}/colors": {
+   "operationId": "add_color_api_v1_filament_trees__tree_id__colors_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "tree_id",
+     "required": true,
+     "schema": {
+      "title": "Tree Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/ColorCreate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Add Color",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "POST /api/v1/filament-trees/{tree_id}/duplicate": {
+   "operationId": "duplicate_tree_api_v1_filament_trees__tree_id__duplicate_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "tree_id",
+     "required": true,
+     "schema": {
+      "title": "Tree Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/TreeDuplicate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Duplicate Tree",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "POST /api/v1/filament-trees/{tree_id}/history/{change_id}/revert": {
+   "description": "Put a node's key back to what it was before that change (itself logged as a new change).",
+   "operationId": "revert_change_api_v1_filament_trees__tree_id__history__change_id__revert_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "tree_id",
+     "required": true,
+     "schema": {
+      "title": "Tree Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "path",
+     "name": "change_id",
+     "required": true,
+     "schema": {
+      "title": "Change Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Revert Change",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "PUT /api/v1/filament-trees/targets": {
+   "operationId": "put_targets_api_v1_filament_trees_targets_put",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Targets"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/Targets"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Put Targets",
+   "tags": [
+    "filament-trees"
+   ]
+  },
+  "PUT /api/v1/filament-trees/{tree_id}/node": {
+   "operationId": "put_node_api_v1_filament_trees__tree_id__node_put",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "tree_id",
+     "required": true,
+     "schema": {
+      "title": "Tree Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/NodeUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Put Node",
+   "tags": [
+    "filament-trees"
+   ]
+  }
+ },
+ "schemas": {
+  "BulkNodeUpdate": {
+   "description": "The same root / machine / nozzle-level write on several trees (colour ids differ per tree).",
+   "properties": {
+    "clear": {
+     "items": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[a-z0-9_]+$",
+      "type": "string"
+     },
+     "maxItems": 200,
+     "title": "Clear",
+     "type": "array"
+    },
+    "machine": {
+     "anyOf": [
+      {
+       "maxLength": 32,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Machine"
+    },
+    "nozzle": {
+     "anyOf": [
+      {
+       "maxLength": 32,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle"
+    },
+    "set": {
+     "maxProperties": 200,
+     "patternProperties": {
+      "^[a-z0-9_]+$": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        },
+        {
+         "type": "number"
+        },
+        {
+         "type": "boolean"
+        },
+        {
+         "items": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "integer"
+           },
+           {
+            "type": "number"
+           }
+          ]
+         },
+         "maxItems": 16,
+         "type": "array"
+        }
+       ]
+      }
+     },
+     "propertyNames": {
+      "maxLength": 100,
+      "minLength": 1
+     },
+     "title": "Set",
+     "type": "object"
+    },
+    "tree_ids": {
+     "items": {
+      "type": "integer"
+     },
+     "maxItems": 200,
+     "minItems": 1,
+     "title": "Tree Ids",
+     "type": "array"
+    }
+   },
+   "required": [
+    "tree_ids"
+   ],
+   "title": "BulkNodeUpdate",
+   "type": "object"
+  },
+  "CandidateRequest": {
+   "properties": {
+    "brand": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Brand",
+     "type": "string"
+    },
+    "color_hex": {
+     "maxLength": 32,
+     "title": "Color Hex",
+     "type": "string"
+    },
+    "color_name": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Color Name",
+     "type": "string"
+    },
+    "machine": {
+     "maxLength": 32,
+     "minLength": 1,
+     "title": "Machine",
+     "type": "string"
+    },
+    "material": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Material",
+     "type": "string"
+    },
+    "name": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Name",
+     "type": "string"
+    },
+    "nozzle": {
+     "maxLength": 32,
+     "minLength": 1,
+     "title": "Nozzle",
+     "type": "string"
+    },
+    "orca_id": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Orca Id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "orca_id",
+    "name",
+    "brand",
+    "material",
+    "color_name",
+    "color_hex",
+    "machine",
+    "nozzle"
+   ],
+   "title": "CandidateRequest",
+   "type": "object"
+  },
+  "ColorCreate": {
+   "properties": {
+    "hex": {
+     "default": "",
+     "maxLength": 32,
+     "title": "Hex",
+     "type": "string"
+    },
+    "name": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Name",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "title": "ColorCreate",
+   "type": "object"
+  },
+  "ColorUpdate": {
+   "properties": {
+    "hex": {
+     "anyOf": [
+      {
+       "maxLength": 32,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Hex"
+    },
+    "name": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Name",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "title": "ColorUpdate",
+   "type": "object"
+  },
+  "ConflictResolveRequest": {
+   "properties": {
+    "color_id": {
+     "title": "Color Id",
+     "type": "integer"
+    },
+    "key": {
+     "maxLength": 100,
+     "minLength": 1,
+     "pattern": "^[a-z0-9_]+$",
+     "title": "Key",
+     "type": "string"
+    },
+    "machine": {
+     "title": "Machine",
+     "type": "string"
+    },
+    "nozzle": {
+     "title": "Nozzle",
+     "type": "string"
+    },
+    "orca_value": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "integer"
+      },
+      {
+       "type": "number"
+      },
+      {
+       "type": "boolean"
+      },
+      {
+       "items": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "integer"
+         },
+         {
+          "type": "number"
+         }
+        ]
+       },
+       "maxItems": 16,
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Orca Value"
+    },
+    "tree_id": {
+     "title": "Tree Id",
+     "type": "integer"
+    },
+    "value": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "integer"
+      },
+      {
+       "type": "number"
+      },
+      {
+       "type": "boolean"
+      },
+      {
+       "items": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "integer"
+         },
+         {
+          "type": "number"
+         }
+        ]
+       },
+       "maxItems": 16,
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Value"
+    }
+   },
+   "required": [
+    "tree_id",
+    "machine",
+    "nozzle",
+    "color_id",
+    "key",
+    "value",
+    "orca_value"
+   ],
+   "title": "ConflictResolveRequest",
+   "type": "object"
+  },
+  "ExportRequest": {
+   "properties": {
+    "changed_only": {
+     "default": false,
+     "title": "Changed Only",
+     "type": "boolean"
+    },
+    "tree_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Tree Id"
+    }
+   },
+   "title": "ExportRequest",
+   "type": "object"
+  },
+  "HTTPValidationError": {
+   "properties": {
+    "detail": {
+     "items": {
+      "$ref": "#/components/schemas/ValidationError"
+     },
+     "title": "Detail",
+     "type": "array"
+    }
+   },
+   "title": "HTTPValidationError",
+   "type": "object"
+  },
+  "MigrateGroup": {
+   "properties": {
+    "machine": {
+     "maxLength": 32,
+     "minLength": 1,
+     "title": "Machine",
+     "type": "string"
+    },
+    "nozzle": {
+     "maxLength": 32,
+     "minLength": 1,
+     "title": "Nozzle",
+     "type": "string"
+    },
+    "prefix": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Prefix",
+     "type": "string"
+    },
+    "source_preset_id": {
+     "title": "Source Preset Id",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "prefix",
+    "source_preset_id",
+    "machine",
+    "nozzle"
+   ],
+   "title": "MigrateGroup",
+   "type": "object"
+  },
+  "MigrateRequest": {
+   "properties": {
+    "groups": {
+     "items": {
+      "$ref": "#/components/schemas/MigrateGroup"
+     },
+     "minItems": 1,
+     "title": "Groups",
+     "type": "array"
+    }
+   },
+   "required": [
+    "groups"
+   ],
+   "title": "MigrateRequest",
+   "type": "object"
+  },
+  "NodeRow": {
+   "properties": {
+    "inherited_source": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Inherited Source"
+    },
+    "inherited_value": {
+     "title": "Inherited Value"
+    },
+    "key": {
+     "title": "Key",
+     "type": "string"
+    },
+    "own": {
+     "title": "Own",
+     "type": "boolean"
+    },
+    "source": {
+     "title": "Source",
+     "type": "string"
+    },
+    "source_label": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Source Label"
+    },
+    "value": {
+     "title": "Value"
+    }
+   },
+   "required": [
+    "key",
+    "value",
+    "source",
+    "own"
+   ],
+   "title": "NodeRow",
+   "type": "object"
+  },
+  "NodeUpdate": {
+   "properties": {
+    "clear": {
+     "items": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[a-z0-9_]+$",
+      "type": "string"
+     },
+     "maxItems": 200,
+     "title": "Clear",
+     "type": "array"
+    },
+    "color_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Color Id"
+    },
+    "machine": {
+     "anyOf": [
+      {
+       "maxLength": 32,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Machine"
+    },
+    "nozzle": {
+     "anyOf": [
+      {
+       "maxLength": 32,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle"
+    },
+    "set": {
+     "maxProperties": 200,
+     "patternProperties": {
+      "^[a-z0-9_]+$": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        },
+        {
+         "type": "number"
+        },
+        {
+         "type": "boolean"
+        },
+        {
+         "items": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "integer"
+           },
+           {
+            "type": "number"
+           }
+          ]
+         },
+         "maxItems": 16,
+         "type": "array"
+        }
+       ]
+      }
+     },
+     "propertyNames": {
+      "maxLength": 100,
+      "minLength": 1
+     },
+     "title": "Set",
+     "type": "object"
+    }
+   },
+   "title": "NodeUpdate",
+   "type": "object"
+  },
+  "Targets": {
+   "properties": {
+    "machines": {
+     "items": {
+      "maxLength": 32,
+      "minLength": 1,
+      "type": "string"
+     },
+     "maxItems": 12,
+     "title": "Machines",
+     "type": "array"
+    },
+    "nozzles": {
+     "items": {
+      "maxLength": 32,
+      "minLength": 1,
+      "type": "string"
+     },
+     "maxItems": 8,
+     "title": "Nozzles",
+     "type": "array"
+    }
+   },
+   "required": [
+    "machines",
+    "nozzles"
+   ],
+   "title": "Targets",
+   "type": "object"
+  },
+  "TreeChange": {
+   "properties": {
+    "actor": {
+     "title": "Actor",
+     "type": "string"
+    },
+    "color_id": {
+     "title": "Color Id",
+     "type": "integer"
+    },
+    "created_at": {
+     "format": "date-time",
+     "title": "Created At",
+     "type": "string"
+    },
+    "id": {
+     "title": "Id",
+     "type": "integer"
+    },
+    "key": {
+     "title": "Key",
+     "type": "string"
+    },
+    "machine": {
+     "title": "Machine",
+     "type": "string"
+    },
+    "new_value": {
+     "title": "New Value"
+    },
+    "nozzle": {
+     "title": "Nozzle",
+     "type": "string"
+    },
+    "old_value": {
+     "title": "Old Value"
+    }
+   },
+   "required": [
+    "id",
+    "machine",
+    "nozzle",
+    "color_id",
+    "key",
+    "actor",
+    "created_at"
+   ],
+   "title": "TreeChange",
+   "type": "object"
+  },
+  "TreeColor": {
+   "properties": {
+    "hex": {
+     "title": "Hex",
+     "type": "string"
+    },
+    "id": {
+     "title": "Id",
+     "type": "integer"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "price": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Price"
+    },
+    "spools": {
+     "default": 0,
+     "title": "Spools",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "id",
+    "name",
+    "hex"
+   ],
+   "title": "TreeColor",
+   "type": "object"
+  },
+  "TreeCreate": {
+   "properties": {
+    "base_family": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Base Family",
+     "type": "string"
+    },
+    "brand": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Brand",
+     "type": "string"
+    },
+    "color_hex": {
+     "default": "",
+     "maxLength": 32,
+     "title": "Color Hex",
+     "type": "string"
+    },
+    "color_name": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Color Name",
+     "type": "string"
+    },
+    "machine": {
+     "maxLength": 32,
+     "minLength": 1,
+     "title": "Machine",
+     "type": "string"
+    },
+    "material": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Material",
+     "type": "string"
+    },
+    "nozzle": {
+     "maxLength": 32,
+     "minLength": 1,
+     "title": "Nozzle",
+     "type": "string"
+    }
+   },
+   "required": [
+    "brand",
+    "material",
+    "base_family",
+    "color_name",
+    "machine",
+    "nozzle"
+   ],
+   "title": "TreeCreate",
+   "type": "object"
+  },
+  "TreeDuplicate": {
+   "properties": {
+    "brand": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Brand",
+     "type": "string"
+    },
+    "name": {
+     "maxLength": 200,
+     "minLength": 1,
+     "title": "Name",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "brand"
+   ],
+   "title": "TreeDuplicate",
+   "type": "object"
+  },
+  "TreeSource": {
+   "properties": {
+    "color_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Color Id"
+    },
+    "machine": {
+     "title": "Machine",
+     "type": "string"
+    },
+    "nozzle": {
+     "title": "Nozzle",
+     "type": "string"
+    }
+   },
+   "required": [
+    "machine",
+    "nozzle",
+    "color_id"
+   ],
+   "title": "TreeSource",
+   "type": "object"
+  },
+  "TreeSummary": {
+   "properties": {
+    "abrasive": {
+     "title": "Abrasive",
+     "type": "boolean"
+    },
+    "brand": {
+     "title": "Brand",
+     "type": "string"
+    },
+    "colors": {
+     "items": {
+      "$ref": "#/components/schemas/TreeColor"
+     },
+     "title": "Colors",
+     "type": "array"
+    },
+    "export_pending": {
+     "default": 0,
+     "title": "Export Pending",
+     "type": "integer"
+    },
+    "id": {
+     "title": "Id",
+     "type": "integer"
+    },
+    "material": {
+     "title": "Material",
+     "type": "string"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "own_counts": {
+     "additionalProperties": {
+      "type": "integer"
+     },
+     "title": "Own Counts",
+     "type": "object"
+    },
+    "skip_02": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Skip 02"
+    },
+    "source": {
+     "$ref": "#/components/schemas/TreeSource"
+    }
+   },
+   "required": [
+    "id",
+    "name",
+    "brand",
+    "material",
+    "skip_02",
+    "abrasive",
+    "source",
+    "colors",
+    "own_counts"
+   ],
+   "title": "TreeSummary",
+   "type": "object"
+  },
+  "TreeUpdate": {
+   "properties": {
+    "brand": {
+     "anyOf": [
+      {
+       "maxLength": 200,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Brand"
+    },
+    "material": {
+     "anyOf": [
+      {
+       "maxLength": 200,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Material"
+    },
+    "skip_02": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Skip 02"
+    },
+    "source_color_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Source Color Id"
+    },
+    "source_machine": {
+     "anyOf": [
+      {
+       "maxLength": 32,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Source Machine"
+    },
+    "source_nozzle": {
+     "anyOf": [
+      {
+       "maxLength": 32,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Source Nozzle"
+    }
+   },
+   "title": "TreeUpdate",
+   "type": "object"
+  },
+  "ValidationError": {
+   "properties": {
+    "ctx": {
+     "title": "Context",
+     "type": "object"
+    },
+    "input": {
+     "title": "Input"
+    },
+    "loc": {
+     "items": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "integer"
+       }
+      ]
+     },
+     "title": "Location",
+     "type": "array"
+    },
+    "msg": {
+     "title": "Message",
+     "type": "string"
+    },
+    "type": {
+     "title": "Error Type",
+     "type": "string"
+    }
+   },
+   "required": [
+    "loc",
+    "msg",
+    "type"
+   ],
+   "title": "ValidationError",
+   "type": "object"
+  }
+ }
+}
+
+### stderr:
+

@@ -1,0 +1,486 @@
+### exit: 0
+### stdout:
+=== routes
+GET /api/v1/filament-trees  -> list_trees  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:read']"} <- (HTTPBearer); get_db]
+POST /api/v1/filament-trees  -> create_tree  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:create']"} <- (HTTPBearer); get_db]
+POST /api/v1/filament-trees/bulk  -> bulk_node  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
+GET /api/v1/filament-trees/targets  -> get_targets  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:read']"} <- (HTTPBearer); get_db]
+PUT /api/v1/filament-trees/targets  -> put_targets  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
+GET /api/v1/filament-trees/unmanaged  -> list_unmanaged  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:read']"} <- (HTTPBearer); get_db]
+POST /api/v1/filament-trees/migrate  -> migrate  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:create', 'filaments:update']"} <- (HTTPBearer); get_db]
+POST /api/v1/filament-trees/sync  -> sync  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update', 'orca_cloud:auth']"} <- (HTTPBearer))]
+POST /api/v1/filament-trees/conflicts/resolve  -> resolve  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
+POST /api/v1/filament-trees/candidates  -> adopt_candidate  [_cloud_api_key_gate <- (HTTPBearer); get_db; cloud_caller.<locals>.resolved <- (require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:create', 'orca_cloud:auth']"} <- (HTTPBearer))]
+POST /api/v1/filament-trees/export  -> export  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:read']"} <- (HTTPBearer); get_db]
+GET /api/v1/filament-trees/{tree_id}/node  -> get_node  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:read']"} <- (HTTPBearer); get_db]
+PUT /api/v1/filament-trees/{tree_id}/node  -> put_node  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
+POST /api/v1/filament-trees/{tree_id}/duplicate  -> duplicate_tree  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:create']"} <- (HTTPBearer); get_db]
+GET /api/v1/filament-trees/{tree_id}/history  -> get_history  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:read']"} <- (HTTPBearer); get_db]
+POST /api/v1/filament-trees/{tree_id}/history/{change_id}/revert  -> revert_change  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
+PATCH /api/v1/filament-trees/{tree_id}  -> patch_tree  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
+POST /api/v1/filament-trees/{tree_id}/colors  -> add_color  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:create']"} <- (HTTPBearer); get_db]
+PATCH /api/v1/filament-trees/{tree_id}/colors/{color_id}  -> rename_color  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:update']"} <- (HTTPBearer); get_db]
+DELETE /api/v1/filament-trees/{tree_id}/colors/{color_id}  -> remove_color  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:delete']"} <- (HTTPBearer); get_db]
+DELETE /api/v1/filament-trees/{tree_id}  -> delete_tree  [require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['filaments:delete']"} <- (HTTPBearer); get_db]
+=== callables
+## backend.app.api.routes.filament_trees
+async def add_color(tree_id: int, payload: backend.app.schemas.filament_tree.ColorCreate, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def adopt_candidate(payload: backend.app.schemas.filament_tree.CandidateRequest, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function cloud_caller.<locals>.resolved>, use_cache=True, scope=None))
+async def bulk_node(payload: backend.app.schemas.filament_tree.BulkNodeUpdate, user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def create_tree(payload: backend.app.schemas.filament_tree.TreeCreate, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def delete_tree(tree_id: int, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def duplicate_tree(tree_id: int, payload: backend.app.schemas.filament_tree.TreeDuplicate, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def export(payload: backend.app.schemas.filament_tree.ExportRequest, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def get_history(tree_id: int, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def get_node(tree_id: int, machine: str | None = None, nozzle: str | None = None, color_id: int | None = None, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def get_targets(_: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def list_trees(_: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def list_unmanaged(_: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def migrate(payload: backend.app.schemas.filament_tree.MigrateRequest, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def patch_tree(tree_id: int, payload: backend.app.schemas.filament_tree.TreeUpdate, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def put_node(tree_id: int, payload: backend.app.schemas.filament_tree.NodeUpdate, user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def put_targets(payload: backend.app.schemas.filament_tree.Targets, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def remove_color(tree_id: int, color_id: int, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def rename_color(tree_id: int, color_id: int, payload: backend.app.schemas.filament_tree.ColorUpdate, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def resolve(payload: backend.app.schemas.filament_tree.ConflictResolveRequest, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def revert_change(tree_id: int, change_id: int, user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
+async def sync(db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function cloud_caller.<locals>.resolved>, use_cache=True, scope=None))
+
+## backend.app.models.filament_tree
+class FilamentTree(Base)
+    def __init__(self, **kwargs)
+class FilamentTreeChange(Base)
+    def __init__(self, **kwargs)
+class FilamentTreeColor(Base)
+    def __init__(self, **kwargs)
+class FilamentTreeLeaf(Base)
+    def __init__(self, **kwargs)
+class FilamentTreeOverride(Base)
+    def __init__(self, **kwargs)
+class FilamentTreeSnapshot(Base)
+    def __init__(self, **kwargs)
+
+## backend.app.schemas.filament_tree
+class BulkNodeUpdate(BaseModel)
+class CandidateRequest(BaseModel)
+class ColorCreate(BaseModel)
+class ColorUpdate(BaseModel)
+class ConflictResolveRequest(BaseModel)
+class ExportRequest(BaseModel)
+class MigrateGroup(BaseModel)
+class MigrateRequest(BaseModel)
+class NodeRow(BaseModel)
+class NodeUpdate(BaseModel)
+class Targets(BaseModel)
+class TreeChange(BaseModel)
+class TreeColor(BaseModel)
+class TreeCreate(BaseModel)
+class TreeDuplicate(BaseModel)
+class TreeSource(BaseModel)
+class TreeSummary(BaseModel)
+class TreeUpdate(BaseModel)
+
+## backend.app.services.filament_tree
+DEFAULT_TARGETS = {'machines': ['X2D', 'H2S', 'H2D', 'H2C'], 'nozzles': ['0.2', '0.4', '0.6', '0.8']}
+IDENTITY_KEYS = ['compatible_printers', 'default_filament_colour', 'filament_settings_id', 'filament_vendor', 'from', 'inherits', 'name', 'version']
+NOZZLE_BOUND_KEYS = ['enable_pressure_advance', 'filament_max_volumetric_speed', 'filament_start_gcode', 'pressure_advance']
+SKIP_KEYS = ['base_id', 'compatible_printers', 'compatible_printers_condition', 'compatible_prints', 'compatible_prints_condition', 'default_filament_colour', 'filament_id', 'filament_settings_id', 'filament_vendor', 'from', 'inherits', 'instantiation', 'is_custom_defined', 'name', 'setting_id', 'type', 'updated_time', 'user_id', 'version']
+class TreeData(object)
+    def __init__(self, name: str, brand: str, version: str, base_family: str, fallback_inherits: str, own: dict, colors: dict[int, tuple[str, str]], overrides: dict[tuple[str, str, int], dict], source: tuple[str, str, int | None], skip_02: bool | None, material: str) -> None
+def is_abrasive(tree: backend.app.services.filament_tree.TreeData) -> bool
+def leaf_name(tree: backend.app.services.filament_tree.TreeData, machine: str, nozzle: str, color_id: int) -> str
+def leaf_targets(tree: backend.app.services.filament_tree.TreeData, targets: dict) -> list[tuple[str, str, int]]
+def match_base(base_family: str, machine: str, nozzle: str, base_names: set[str], fallback: str) -> str
+def parse_inherits(inherits: str) -> tuple[str, str | None, str | None]
+def resolve_leaf(tree: backend.app.services.filament_tree.TreeData, machine: str, nozzle: str, color_id: int, base_names: set[str]) -> dict
+def resolve_with_sources(tree: backend.app.services.filament_tree.TreeData, machine: str | None, nozzle: str | None, color_id: int | None) -> dict[str, tuple[object, str]]
+
+## backend.app.services.filament_tree_base
+class BaseValueReader(object)
+    def __init__(self, filenames: dict[str, str])
+    def values(self, name: str) -> dict
+async def build_base_reader(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> backend.app.services.filament_tree_base.BaseValueReader
+
+## backend.app.services.filament_tree_export
+async def build_export_zip(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int | None, changed_only: bool = False) -> bytes
+
+## backend.app.services.filament_tree_migration
+class MigrationGroup(object)
+    def __init__(self, prefix: str, preset_ids: list[int], proposed_source_preset_id: int, proposed_machine: str, proposed_nozzle: str, warnings: list[str] = <factory>) -> None
+async def apply_migration(db: sqlalchemy.ext.asyncio.session.AsyncSession, choices: list[dict]) -> list[int]
+def plan_tree(group_presets: list[dict], source_preset_id: int, machine: str, nozzle: str, base_values: collections.abc.Callable[[str], dict], known_bases: set[str] | None = None) -> dict
+def propose_groups(presets: list[dict], exclude_ids: frozenset[int] | set[int] = frozenset(), targets: dict | None = None) -> list[backend.app.services.filament_tree_migration.MigrationGroup]
+def row_dict(row: backend.app.models.filament_profile.FilamentPreset) -> dict
+
+## backend.app.services.filament_tree_pull
+class LeafState(object)
+    def __init__(self, tree_id: int, machine: str, nozzle: str, color_id: int, name: str, generated: dict, baseline: dict | None, is_source: bool, owned_at: dict[str, str] = <factory>, exported: bool = False) -> None
+class PullPlan(object)
+    def __init__(self, applied: list[dict] = <factory>, conflicts: list[dict] = <factory>, candidates: list[dict] = <factory>, legacy: int = 0, missing: list[str] = <factory>, ignored: int = 0, refresh: list[dict] = <factory>, baselines: list[dict] = <factory>) -> None
+async def apply_pull(db: sqlalchemy.ext.asyncio.session.AsyncSession, plan: backend.app.services.filament_tree_pull.PullPlan) -> None
+async def collect_leaf_states(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> tuple[list[backend.app.services.filament_tree_pull.LeafState], set[str]]
+def plan_pull(orca_entries: list[dict], leaves: list[backend.app.services.filament_tree_pull.LeafState], tree_colour_names: set[str]) -> backend.app.services.filament_tree_pull.PullPlan
+async def resolve_conflict(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int, machine: str, nozzle: str, color_id: int, key: str, value, orca_value) -> None
+
+## backend.app.services.filament_tree_store
+TARGETS_KEY = 'filament_tree_targets'
+async def add_color(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int, name: str, hex: str) -> int
+async def base_names(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> set[str]
+async def create_tree(db: sqlalchemy.ext.asyncio.session.AsyncSession, *, name: str, brand: str, material: str, base_family: str, color_name: str, color_hex: str, machine: str, nozzle: str, own_values: dict | None = None) -> int
+async def duplicate_tree(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int, name: str, brand: str) -> int
+async def get_targets(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> dict
+async def load_tree(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int) -> backend.app.services.filament_tree.TreeData
+async def managed_preset_ids(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> set[int]
+async def regenerate_tree(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int) -> dict
+async def remove_color(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int, color_id: int) -> None
+async def rename_color(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int, color_id: int, name: str, hex: str | None = None) -> None
+async def set_node_values(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int, machine: str | None, nozzle: str | None, color_id: int | None, set_values: dict, clear: list[str], *, regenerate: bool = True, actor: str = '') -> None
+async def set_targets(db: sqlalchemy.ext.asyncio.session.AsyncSession, targets: dict, *, commit: bool = True) -> dict
+async def update_tree(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int, *, skip_02: Any = <object object>, source: Any = <object object>, brand: str | None = None, material: str | None = None) -> None
+
+=== schemas
+## backend.app.schemas.filament_tree
+class BulkNodeUpdate(BaseModel)
+    tree_ids: list[int]  required
+    machine: typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  default=None
+    nozzle: typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  default=None
+    set_values: dict[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=100), _PydanticGeneralMetadata(pattern='^[a-z0-9_]+$')])], typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)], typing.Annotated[bool, Strict(strict=True)], typing.Annotated[list[typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)]]], FieldInfo(annotation=NoneType, required=True, metadata=[MaxLen(max_length=16)])]]]  default_factory=dict
+    clear: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=100), _PydanticGeneralMetadata(pattern='^[a-z0-9_]+$')])]]  default_factory=list
+class CandidateRequest(BaseModel)
+    orca_id: <class 'str'>  required
+    name: <class 'str'>  required
+    brand: <class 'str'>  required
+    material: <class 'str'>  required
+    color_name: <class 'str'>  required
+    color_hex: <class 'str'>  required
+    machine: <class 'str'>  required
+    nozzle: <class 'str'>  required
+class ColorCreate(BaseModel)
+    name: <class 'str'>  required
+    hex: <class 'str'>  default=''
+class ColorUpdate(BaseModel)
+    name: <class 'str'>  required
+    hex: str | None  default=None
+class ConflictResolveRequest(BaseModel)
+    tree_id: <class 'int'>  required
+    machine: <class 'str'>  required
+    nozzle: <class 'str'>  required
+    color_id: <class 'int'>  required
+    key: <class 'str'>  required
+    value: typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)], typing.Annotated[bool, Strict(strict=True)], typing.Annotated[list[typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)]]], FieldInfo(annotation=NoneType, required=True, metadata=[MaxLen(max_length=16)])], NoneType]  required
+    orca_value: typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)], typing.Annotated[bool, Strict(strict=True)], typing.Annotated[list[typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)]]], FieldInfo(annotation=NoneType, required=True, metadata=[MaxLen(max_length=16)])], NoneType]  required
+class ExportRequest(BaseModel)
+    tree_id: int | None  default=None
+    changed_only: <class 'bool'>  default=False
+class MigrateGroup(BaseModel)
+    prefix: <class 'str'>  required
+    source_preset_id: <class 'int'>  required
+    machine: <class 'str'>  required
+    nozzle: <class 'str'>  required
+class MigrateRequest(BaseModel)
+    groups: list[backend.app.schemas.filament_tree.MigrateGroup]  required
+class NodeRow(BaseModel)
+    key: <class 'str'>  required
+    value: typing.Any  required
+    source: <class 'str'>  required
+    own: <class 'bool'>  required
+    inherited_value: typing.Any  default=None
+    inherited_source: str | None  default=None
+    source_label: str | None  default=None
+class NodeUpdate(BaseModel)
+    machine: typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  default=None
+    nozzle: typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  default=None
+    color_id: int | None  default=None
+    set_values: dict[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=100), _PydanticGeneralMetadata(pattern='^[a-z0-9_]+$')])], typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)], typing.Annotated[bool, Strict(strict=True)], typing.Annotated[list[typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)]]], FieldInfo(annotation=NoneType, required=True, metadata=[MaxLen(max_length=16)])]]]  default_factory=dict
+    clear: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=100), _PydanticGeneralMetadata(pattern='^[a-z0-9_]+$')])]]  default_factory=list
+class Targets(BaseModel)
+    machines: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  required
+    nozzles: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  required
+class TreeChange(BaseModel)
+    id: <class 'int'>  required
+    machine: <class 'str'>  required
+    nozzle: <class 'str'>  required
+    color_id: <class 'int'>  required
+    key: <class 'str'>  required
+    old_value: typing.Any  default=None
+    new_value: typing.Any  default=None
+    actor: <class 'str'>  required
+    created_at: <class 'datetime.datetime'>  required
+class TreeColor(BaseModel)
+    id: <class 'int'>  required
+    name: <class 'str'>  required
+    hex: <class 'str'>  required
+    spools: <class 'int'>  default=0
+    price: float | None  default=None
+class TreeCreate(BaseModel)
+    brand: <class 'str'>  required
+    material: <class 'str'>  required
+    base_family: <class 'str'>  required
+    color_name: <class 'str'>  required
+    color_hex: <class 'str'>  default=''
+    machine: <class 'str'>  required
+    nozzle: <class 'str'>  required
+class TreeDuplicate(BaseModel)
+    name: <class 'str'>  required
+    brand: <class 'str'>  required
+class TreeSource(BaseModel)
+    machine: <class 'str'>  required
+    nozzle: <class 'str'>  required
+    color_id: int | None  required
+class TreeSummary(BaseModel)
+    id: <class 'int'>  required
+    name: <class 'str'>  required
+    brand: <class 'str'>  required
+    material: <class 'str'>  required
+    skip_02: bool | None  required
+    abrasive: <class 'bool'>  required
+    source: <class 'backend.app.schemas.filament_tree.TreeSource'>  required
+    colors: list[backend.app.schemas.filament_tree.TreeColor]  required
+    own_counts: dict[str, int]  required
+    export_pending: <class 'int'>  default=0
+class TreeUpdate(BaseModel)
+    brand: typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=200)]), AfterValidator(func=<function _safe_name>)]]  default=None
+    material: typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=200)]), AfterValidator(func=<function _safe_name>)]]  default=None
+    skip_02: bool | None  default=None
+    source_color_id: int | None  default=None
+    source_machine: typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  default=None
+    source_nozzle: typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  default=None
+
+=== ddl
+-- sqlite
+CREATE TABLE filament_tree_changes (
+	id INTEGER NOT NULL, 
+	tree_id INTEGER NOT NULL, 
+	machine VARCHAR NOT NULL, 
+	nozzle VARCHAR NOT NULL, 
+	color_id INTEGER NOT NULL, 
+	"key" VARCHAR NOT NULL, 
+	old_value TEXT, 
+	new_value TEXT, 
+	actor VARCHAR NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(tree_id) REFERENCES filament_trees (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_filament_tree_changes_tree_id ON filament_tree_changes (tree_id);
+-- postgresql
+CREATE TABLE filament_tree_changes (
+	id SERIAL NOT NULL, 
+	tree_id INTEGER NOT NULL, 
+	machine VARCHAR NOT NULL, 
+	nozzle VARCHAR NOT NULL, 
+	color_id INTEGER NOT NULL, 
+	key VARCHAR NOT NULL, 
+	old_value TEXT, 
+	new_value TEXT, 
+	actor VARCHAR NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(tree_id) REFERENCES filament_trees (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_filament_tree_changes_tree_id ON filament_tree_changes (tree_id);
+
+-- sqlite
+CREATE TABLE filament_tree_colors (
+	id INTEGER NOT NULL, 
+	tree_id INTEGER NOT NULL, 
+	name VARCHAR NOT NULL, 
+	hex VARCHAR NOT NULL, 
+	sort INTEGER NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(tree_id) REFERENCES filament_trees (id) ON DELETE CASCADE
+);
+-- postgresql
+CREATE TABLE filament_tree_colors (
+	id SERIAL NOT NULL, 
+	tree_id INTEGER NOT NULL, 
+	name VARCHAR NOT NULL, 
+	hex VARCHAR NOT NULL, 
+	sort INTEGER NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(tree_id) REFERENCES filament_trees (id) ON DELETE CASCADE
+);
+
+-- sqlite
+CREATE TABLE filament_tree_leaves (
+	id INTEGER NOT NULL, 
+	tree_id INTEGER NOT NULL, 
+	machine VARCHAR NOT NULL, 
+	nozzle VARCHAR NOT NULL, 
+	color_id INTEGER NOT NULL, 
+	preset_id INTEGER NOT NULL, 
+	baseline_content TEXT, 
+	exported_at DATETIME, 
+	export_pending BOOLEAN DEFAULT '1' NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (tree_id, machine, nozzle, color_id), 
+	FOREIGN KEY(tree_id) REFERENCES filament_trees (id) ON DELETE CASCADE, 
+	UNIQUE (preset_id), 
+	FOREIGN KEY(preset_id) REFERENCES filament_presets (id) ON DELETE CASCADE
+);
+-- postgresql
+CREATE TABLE filament_tree_leaves (
+	id SERIAL NOT NULL, 
+	tree_id INTEGER NOT NULL, 
+	machine VARCHAR NOT NULL, 
+	nozzle VARCHAR NOT NULL, 
+	color_id INTEGER NOT NULL, 
+	preset_id INTEGER NOT NULL, 
+	baseline_content TEXT, 
+	exported_at TIMESTAMP WITHOUT TIME ZONE, 
+	export_pending BOOLEAN DEFAULT '1' NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (tree_id, machine, nozzle, color_id), 
+	FOREIGN KEY(tree_id) REFERENCES filament_trees (id) ON DELETE CASCADE, 
+	UNIQUE (preset_id), 
+	FOREIGN KEY(preset_id) REFERENCES filament_presets (id) ON DELETE CASCADE
+);
+
+-- sqlite
+CREATE TABLE filament_tree_overrides (
+	id INTEGER NOT NULL, 
+	tree_id INTEGER NOT NULL, 
+	machine VARCHAR NOT NULL, 
+	nozzle VARCHAR NOT NULL, 
+	color_id INTEGER NOT NULL, 
+	"values" TEXT NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (tree_id, machine, nozzle, color_id), 
+	FOREIGN KEY(tree_id) REFERENCES filament_trees (id) ON DELETE CASCADE
+);
+-- postgresql
+CREATE TABLE filament_tree_overrides (
+	id SERIAL NOT NULL, 
+	tree_id INTEGER NOT NULL, 
+	machine VARCHAR NOT NULL, 
+	nozzle VARCHAR NOT NULL, 
+	color_id INTEGER NOT NULL, 
+	values TEXT NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (tree_id, machine, nozzle, color_id), 
+	FOREIGN KEY(tree_id) REFERENCES filament_trees (id) ON DELETE CASCADE
+);
+
+-- sqlite
+CREATE TABLE filament_tree_snapshots (
+	id INTEGER NOT NULL, 
+	kind VARCHAR NOT NULL, 
+	payload TEXT NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id)
+);
+-- postgresql
+CREATE TABLE filament_tree_snapshots (
+	id SERIAL NOT NULL, 
+	kind VARCHAR NOT NULL, 
+	payload TEXT NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	PRIMARY KEY (id)
+);
+
+-- sqlite
+CREATE TABLE filament_trees (
+	id INTEGER NOT NULL, 
+	name VARCHAR NOT NULL, 
+	brand VARCHAR NOT NULL, 
+	material VARCHAR NOT NULL, 
+	base_family VARCHAR NOT NULL, 
+	fallback_inherits VARCHAR NOT NULL, 
+	version VARCHAR NOT NULL, 
+	own_values TEXT NOT NULL, 
+	source_machine VARCHAR NOT NULL, 
+	source_nozzle VARCHAR NOT NULL, 
+	source_color_id INTEGER, 
+	skip_02 BOOLEAN, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id)
+);
+-- postgresql
+CREATE TABLE filament_trees (
+	id SERIAL NOT NULL, 
+	name VARCHAR NOT NULL, 
+	brand VARCHAR NOT NULL, 
+	material VARCHAR NOT NULL, 
+	base_family VARCHAR NOT NULL, 
+	fallback_inherits VARCHAR NOT NULL, 
+	version VARCHAR NOT NULL, 
+	own_values TEXT NOT NULL, 
+	source_machine VARCHAR NOT NULL, 
+	source_nozzle VARCHAR NOT NULL, 
+	source_color_id INTEGER, 
+	skip_02 BOOLEAN, 
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	PRIMARY KEY (id)
+);
+
+=== permissions
+{
+ "apikey_denied": [
+  "filaments:create",
+  "filaments:update",
+  "filaments:delete"
+ ],
+ "apikey_scope": {
+  "filaments:create": "None",
+  "filaments:delete": "None",
+  "filaments:read": "can_read_status",
+  "filaments:update": "None",
+  "orca_cloud:auth": "can_access_cloud"
+ },
+ "categories": {
+  "Cloud": [
+   "orca_cloud:auth"
+  ],
+  "Filaments": [
+   "filaments:read",
+   "filaments:create",
+   "filaments:update",
+   "filaments:delete"
+  ]
+ },
+ "groups": {
+  "Administrators": [
+   "filaments:read",
+   "filaments:create",
+   "filaments:update",
+   "filaments:delete",
+   "orca_cloud:auth"
+  ],
+  "Operators": [
+   "filaments:read",
+   "filaments:create",
+   "filaments:update",
+   "filaments:delete",
+   "orca_cloud:auth"
+  ],
+  "Viewers": [
+   "filaments:read"
+  ]
+ },
+ "values": [
+  "filaments:read",
+  "filaments:create",
+  "filaments:update",
+  "filaments:delete",
+  "orca_cloud:auth"
+ ]
+}
+
+### stderr:
+
