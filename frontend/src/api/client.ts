@@ -4996,6 +4996,27 @@ export interface ExternalLinkUpdate {
 }
 
 // Pricing Calculator
+/** One plate of a Bambu Studio project .3mf, as the Aito import job reports it. */
+export interface Aito3mfFilament { type: string; color: string; used_g: number; vendor: string | null }
+export interface Aito3mfObject { name: string; count: number; x_mm: number | null; y_mm: number | null; z_mm: number | null }
+export interface Aito3mfPlate {
+  index: number;
+  name: string | null;
+  print_time_seconds: number | null;
+  weight_g: number | null;
+  printer_model: string | null;
+  filaments: Aito3mfFilament[];
+  objects: Aito3mfObject[];
+  thumbnail: string | null;
+}
+export interface Aito3mfImportState {
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  percent: number | null;
+  filename: string;
+  plates: Aito3mfPlate[] | null;
+  error: string | null;
+}
+
 export interface CalculatorFilament {
   id: number;
   /** Derived display label: "<brand> <material>" (computed server-side). */
@@ -10340,6 +10361,16 @@ export const api = {
     params.set('tz_offset_minutes', String(-new Date().getTimezoneOffset()));
     return request<AitoStats>(`/aito/stats?${params}`);
   },
+  startAito3mfImport: async (file: File): Promise<{ job_id: number }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_BASE}/aito/import-3mf`, {
+      method: 'POST', headers: bearerAuthHeaders(), body: formData,
+    });
+    if (!response.ok) await throwApiError(response);
+    return response.json();
+  },
+  getAito3mfImport: (jobId: number) => request<Aito3mfImportState>(`/aito/import-3mf/${jobId}`),
   getAitoClientHistory: (clientId: string, limit = 5) =>
     request<AitoClientHistory>(`/aito/clients/${encodeURIComponent(clientId)}/history?limit=${limit}`),
   getAitoClientRating: (clientId: string, refresh = false) =>
