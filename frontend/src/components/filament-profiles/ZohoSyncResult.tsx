@@ -20,7 +20,7 @@ const ZOHO_ATTENTION_REASON_KEYS: Record<FilamentPresetZohoSyncAttention['reason
 export function ZohoSyncResult({ zohoResult }: { zohoResult: FilamentPresetZohoSyncResponse }) {
   const { t } = useTranslation();
   return (
-      <div className="mb-4 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 text-sm">
+      <div className="animate-rise mb-4 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 text-sm">
         <div className="text-white">
           {t('filamentProfiles.syncZohoDone', { priced: zohoResult.priced, unchanged: zohoResult.unchanged })}
         </div>

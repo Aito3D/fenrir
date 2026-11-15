@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { Button } from '../Button';
 import type { FilamentBaseSyncResult } from '../../api/client';
 
@@ -21,12 +22,17 @@ function StatRow({ label, value, valueClassName }: { label: string; value: numbe
 /** Small result modal for the header's "Sync base" action (spec §5.2). */
 export function SyncBaseResultModal({ result, error, onClose }: SyncBaseResultModalProps) {
   const { t } = useTranslation();
+  // 150ms = .animate-modal-out
+  const { closing, requestClose } = useDismissableDialog(onClose, { animationMs: 150 });
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 animate-overlay-in" onClick={onClose}>
+    <div
+      className={`fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 ${closing ? 'animate-overlay-out' : 'animate-overlay-in'}`}
+      onClick={requestClose}
+    >
       <div
         data-testid="sync-base-result-modal"
-        className="w-full max-w-md rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-6 animate-modal-in"
+        className={`w-full max-w-md rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-6 ${closing ? 'animate-modal-out' : 'animate-modal-in'}`}
         onClick={(e) => e.stopPropagation()}
       >
         {error ? (
@@ -51,7 +57,7 @@ export function SyncBaseResultModal({ result, error, onClose }: SyncBaseResultMo
             </div>
           </>
         ) : null}
-        <Button onClick={onClose} className="mt-6 w-full">
+        <Button onClick={requestClose} className="mt-6 w-full">
           {t('filamentProfiles.close')}
         </Button>
       </div>

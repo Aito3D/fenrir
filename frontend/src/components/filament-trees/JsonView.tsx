@@ -17,7 +17,7 @@ export function JsonView({ rows, leafName }: {
 }) {
   const { t } = useTranslation();
   const [view, setView] = useState<View>(leafName ? 'profile' : 'own');
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<boolean | null>(null);
   const presets = useQuery({ queryKey: ['filamentPresets'], queryFn: api.getFilamentPresets, enabled: !!leafName });
 
   const current: View = !leafName && view === 'profile' ? 'own' : view;
@@ -54,7 +54,7 @@ export function JsonView({ rows, leafName }: {
               type="button"
               aria-pressed={v === current}
               onClick={() => setView(v)}
-              className={`rounded-full px-2.5 py-0.5 text-xs ${focusRingCls} ${
+              className={`btn-press rounded-full px-2.5 py-0.5 text-xs ${focusRingCls} ${
                 v === current ? 'bg-bambu-green/20 text-bambu-green' : 'bg-bambu-dark text-bambu-gray hover:text-bambu-gray-light'
               }`}
             >
@@ -63,7 +63,9 @@ export function JsonView({ rows, leafName }: {
           ))}
         </div>
         <Button size="sm" variant="secondary" className="ml-auto" onClick={copy}>
-          {copied ? t('common.copied') : t('common.copy')}
+          <span key={String(copied)} className={copied === null ? '' : 'animate-aito-swap'}>
+            {copied ? t('common.copied') : t('common.copy')}
+          </span>
         </Button>
       </div>
       <p className="text-xs text-bambu-gray">{t(`filamentTrees.json_${current}Hint`)}</p>

@@ -104,9 +104,10 @@ function CandidateForm({ candidate, targets }: { candidate: FilamentTreeCandidat
   );
 }
 
-function ConflictRow({ conflict, leafName, onResolved }: {
+function ConflictRow({ conflict, leafName, open, onResolved }: {
   conflict: FilamentTreeConflict;
   leafName: string;
+  open: boolean;
   onResolved: () => void;
 }) {
   const { t } = useTranslation();
@@ -130,16 +131,21 @@ function ConflictRow({ conflict, leafName, onResolved }: {
     }
   };
   return (
-    <li className="space-y-2 rounded-lg border border-bambu-dark-tertiary p-3">
-      <div className="text-sm text-white">{leafName}</div>
-      <div className="font-mono text-xs text-bambu-gray">{conflict.key}</div>
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="secondary" disabled={busy} onClick={() => pick(conflict.fenrir_value)}>
-          {t('filamentTrees.keepFenrir', { value: display(conflict.fenrir_value) })}
-        </Button>
-        <Button size="sm" variant="secondary" disabled={busy} onClick={() => pick(conflict.orca_value)}>
-          {t('filamentTrees.keepOrca', { value: display(conflict.orca_value) })}
-        </Button>
+    // a settled row folds shut rather than vanishing, so the next row's buttons don't jump under the cursor
+    <li className="aito-fold" data-open={open} aria-hidden={!open} inert={!open}>
+      <div>
+        <div className="mb-2 space-y-2 rounded-lg border border-bambu-dark-tertiary p-3">
+          <div className="text-sm text-white">{leafName}</div>
+          <div className="font-mono text-xs text-bambu-gray">{conflict.key}</div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => pick(conflict.fenrir_value)}>
+              {t('filamentTrees.keepFenrir', { value: display(conflict.fenrir_value) })}
+            </Button>
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => pick(conflict.orca_value)}>
+              {t('filamentTrees.keepOrca', { value: display(conflict.orca_value) })}
+            </Button>
+          </div>
+        </div>
       </div>
     </li>
   );
@@ -161,7 +167,7 @@ export function SyncResultModal({ result, error, trees, targets, onClose }: {
     const colour = tree?.colors.find((col) => col.id === c.color_id);
     return `${tree?.name ?? `#${c.tree_id}`} - ${colour?.name ?? `#${c.color_id}`} @${c.machine} ${c.nozzle}`;
   };
-  const conflicts = (result?.conflicts ?? []).map((c, i) => ({ c, i })).filter(({ i }) => !resolved.has(i));
+  const conflicts = result?.conflicts ?? [];
 
   return (
     <Dialog title={t('filamentTrees.syncTitle')} onClose={onClose}>
@@ -209,16 +215,17 @@ export function SyncResultModal({ result, error, trees, targets, onClose }: {
           {result.missing.length > 0 && (
             <p className="break-words text-xs text-bambu-gray">{result.missing.join(', ')}</p>
           )}
-          {conflicts.length > 0 && (
+          {conflicts.length > resolved.size && (
             <section className="space-y-2">
               <h4 className="font-semibold text-white">{t('filamentTrees.conflictsTitle')}</h4>
               <p className="text-xs text-bambu-gray">{t('filamentTrees.conflictsHint')}</p>
-              <ul className="space-y-2">
-                {conflicts.map(({ c, i }) => (
+              <ul>
+                {conflicts.map((c, i) => (
                   <ConflictRow
                     key={i}
                     conflict={c}
                     leafName={leafName(c)}
+                    open={!resolved.has(i)}
                     onResolved={() => setResolved((prev) => new Set(prev).add(i))}
                   />
                 ))}

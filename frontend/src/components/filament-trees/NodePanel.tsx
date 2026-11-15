@@ -55,7 +55,7 @@ const readTab = () => {
 };
 
 const fieldCls =
-  'h-8 w-full rounded border border-bambu-dark-tertiary bg-bambu-dark px-2 text-sm text-white transition-colors focus:border-bambu-green focus:outline-none disabled:cursor-not-allowed disabled:opacity-50';
+  'h-8 w-full rounded border border-bambu-dark-tertiary bg-bambu-dark px-2 text-sm text-white transition-[color,background-color,border-color,opacity] focus:border-bambu-green focus:outline-none disabled:cursor-not-allowed disabled:opacity-50';
 
 function ValueInput({ label, value, unit, multiline, disabled, own, onCommit }: {
   label: string;
@@ -135,7 +135,7 @@ function Marker({ row, label, canClear, resetText, sourceText, onClear }: {
       onClick={onClear}
       aria-label={t('filamentTrees.useParentFor', { field: label })}
       title={resetText}
-      className={`${box} rounded ${ORANGE} hover:bg-orange-400/10 ${focusRingCls}`}
+      className={`btn-press ${box} rounded ${ORANGE} hover:bg-orange-400/10 ${focusRingCls}`}
     >
       <Undo2 className="h-4 w-4" />
     </button>
@@ -433,7 +433,7 @@ export function NodePanel({ node, onCreated }: { node: NodeRef; onCreated?: (tre
                 className="h-4 w-4 shrink-0 accent-bambu-green disabled:opacity-50"
               />
             )}
-            <span className={`text-sm ${own ? `${ORANGE} font-medium` : 'text-bambu-gray-light'}`}>{label}</span>
+            <span className={`text-sm transition-colors ${own ? `${ORANGE} font-medium` : 'text-bambu-gray-light'}`}>{label}</span>
           </div>
         )}
         <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1">

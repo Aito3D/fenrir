@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle2, Loader2 } from 'lucide-react';
+import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { Button } from '../Button';
 import type { FilamentSyncStats } from '../../api/client';
 
@@ -37,25 +37,22 @@ export function SyncModal({ state, stats, onCancel, onConfirm, onClose, canConfi
   const dismissible = state !== 'syncing';
   const dismiss = state === 'preview' ? onCancel : onClose;
 
-  useEffect(() => {
-    if (!dismissible) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') dismiss();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [dismissible, dismiss]);
+  // 150ms = .animate-modal-out
+  const { closing, requestClose } = useDismissableDialog(dismiss, {
+    animationMs: 150,
+    onEscape: (close) => dismissible && close(),
+  });
 
   const zeroChanges = state === 'preview' && !!stats && stats.added + stats.updated + stats.removed === 0;
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 animate-overlay-in"
-      onClick={dismissible ? dismiss : undefined}
+      className={`fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 ${closing ? 'animate-overlay-out' : 'animate-overlay-in'}`}
+      onClick={dismissible ? requestClose : undefined}
     >
       <div
         data-testid="sync-modal"
-        className="w-full max-w-md rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-6 animate-modal-in"
+        className={`w-full max-w-md rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-6 ${closing ? 'animate-modal-out' : 'animate-modal-in'}`}
         onClick={(e) => e.stopPropagation()}
       >
         {state === 'syncing' && (
@@ -85,7 +82,7 @@ export function SyncModal({ state, stats, onCancel, onConfirm, onClose, canConfi
               <p className="mt-3 text-sm text-amber-400">{t('filamentProfiles.syncConfirmNeedsDelete')}</p>
             )}
             <div className="mt-6 flex gap-3">
-              <Button variant="secondary" onClick={onCancel} className="flex-1">
+              <Button variant="secondary" onClick={requestClose} className="flex-1">
                 {t('filamentProfiles.cancel')}
               </Button>
               <Button onClick={onConfirm} disabled={!stats || zeroChanges || !canConfirm} className="flex-1">
@@ -98,7 +95,7 @@ export function SyncModal({ state, stats, onCancel, onConfirm, onClose, canConfi
         {state === 'done' && (
           <>
             <div className="flex flex-col items-center gap-2 text-center">
-              <CheckCircle2 className="h-8 w-8 text-green-400" />
+              <CheckCircle2 className="h-8 w-8 animate-slice-done text-green-400" />
               <h3 className="text-lg font-semibold text-white">{t('filamentProfiles.syncDoneTitle')}</h3>
             </div>
             {stats && (
@@ -108,7 +105,7 @@ export function SyncModal({ state, stats, onCancel, onConfirm, onClose, canConfi
                 <StatRow label={t('filamentProfiles.statRemoved')} value={stats.removed} valueClassName="text-red-400" />
               </div>
             )}
-            <Button onClick={onClose} className="mt-6 w-full">
+            <Button onClick={requestClose} className="mt-6 w-full">
               {t('filamentProfiles.close')}
             </Button>
           </>
