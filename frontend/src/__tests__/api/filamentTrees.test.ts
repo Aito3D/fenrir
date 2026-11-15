@@ -17,7 +17,7 @@ describe('filament tree api methods', () => {
   it('exportFilamentTrees posts tree_id and resolves a Blob', async () => {
     const seen = mockFetch('zipbytes');
     const blob = await api.exportFilamentTrees(3);
-    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.size).toBe(8); // not instanceof: Node 22's Response returns a Blob from another realm than jsdom's
     expect(path(seen[0].url)).toBe('/filament-trees/export');
     expect(seen[0].init?.method).toBe('POST');
     expect(JSON.parse(String(seen[0].init?.body))).toEqual({ tree_id: 3 });

@@ -146,7 +146,7 @@ async def regenerate_tree(db: AsyncSession, tree_id: int) -> dict:
             )
             counts["created"] += 1
         else:
-            preset = await db.get(FilamentPreset, link.preset_id)
+            preset = (await db.execute(select(FilamentPreset).where(FilamentPreset.id == link.preset_id))).scalar_one()
             if preset.content != content:
                 link.export_pending = True
             for k, v in fields.items():

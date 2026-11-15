@@ -153,7 +153,7 @@ async def _spool_counts(db: AsyncSession) -> dict[tuple[str, str, str], int]:
 def _price(tree: TreeData, color_id: int) -> float | None:
     raw = resolve_with_sources(tree, None, None, color_id).get("filament_cost", (None,))[0]
     try:
-        return float(raw[0] if isinstance(raw, list) else raw)
+        return float(str(raw[0] if isinstance(raw, list) else raw))
     except (TypeError, ValueError, IndexError):
         return None
 
