@@ -169,6 +169,7 @@ async def set_node_values(
     regenerate: bool = True,
 ) -> None:
     """regenerate=False only flushes: the caller batches several writes, then regenerates and commits once."""
+    machine, nozzle = machine or None, nozzle or None  # "" must not pass as "no machine" past the guards below
     tree = await _get_tree(db, tree_id)
     colorwide = machine is None and nozzle is None and color_id is not None
     if not colorwide and ((machine is None and nozzle is not None) or (nozzle is None and color_id is not None)):

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.filament_profile import FilamentPreset
 from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor, FilamentTreeLeaf, FilamentTreeOverride
 from backend.app.services.filament_tree import NOZZLE_BOUND_KEYS, SKIP_KEYS
-from backend.app.services.filament_tree_store import set_node_values
+from backend.app.services.filament_tree_store import regenerate_tree, set_node_values
 
 _LEAF_SUFFIX = re.compile(r" @\S+ \d\.\d$")
 
@@ -29,6 +29,7 @@ class LeafState:
     baseline: dict | None
     is_source: bool
     owned_at: dict[str, str] = field(default_factory=dict)  # source leaf only: key -> "node" | "machine" (else root)
+    exported: bool = False
 
 
 @dataclass
@@ -40,6 +41,7 @@ class PullPlan:
     missing: list[str] = field(default_factory=list)
     ignored: int = 0
     refresh: list[dict] = field(default_factory=list)  # leaves whose baseline must follow generated for some keys
+    baselines: list[dict] = field(default_factory=list)  # never-synced leaves found in Orca: store Orca's content
 
 
 def _target(is_source: bool, key: str, owned_at: dict[str, str]) -> str:
@@ -91,13 +93,22 @@ def plan_pull(orca_entries: list[dict], leaves: list[LeafState], tree_colour_nam
             plan.candidates.append({"orca_id": entry.get("id"), "name": name, "content": content})
         else:
             plan.ignored += 1
-    plan.missing = [lf.name for lf in leaves if lf.baseline is not None and lf.name not in seen]
+    plan.missing = [lf.name for lf in leaves if (lf.exported or lf.baseline is not None) and lf.name not in seen]
     return plan
 
 
 def _plan_leaf(plan: PullPlan, leaf: LeafState, orca: dict) -> None:
-    baseline = leaf.baseline if leaf.baseline is not None else leaf.generated
     where = {"tree_id": leaf.tree_id, "machine": leaf.machine, "nozzle": leaf.nozzle, "color_id": leaf.color_id}
+    if leaf.baseline is None:
+        # first sight in Orca: we cannot tell who changed what, so every difference is a conflict
+        plan.baselines.append({**where, "content": orca})
+        for key, value in orca.items():
+            if key not in SKIP_KEYS and value != leaf.generated.get(key):
+                plan.conflicts.append(
+                    {**where, "key": key, "fenrir_value": leaf.generated.get(key), "orca_value": value}
+                )
+        return
+    baseline = leaf.baseline
     plan.ignored += sum(1 for k in baseline if k not in SKIP_KEYS and k not in orca)
     grouped: dict[str, dict] = {}
     refresh: list[str] = []
@@ -141,6 +152,7 @@ async def _leaf_preset(
 
 
 async def apply_pull(db: AsyncSession, plan: PullPlan) -> None:
+    """One transaction: each tree's writes + regeneration sit in a savepoint, a refused tree is rolled back."""
     groups: dict[_NodeKey, dict] = {}
     leaf_keys: dict[tuple, dict[_NodeKey, set[str]]] = {}  # leaf -> {node: keys written there}
     for e in plan.applied:
@@ -153,36 +165,65 @@ async def apply_pull(db: AsyncSession, plan: PullPlan) -> None:
     for leaf in leaf_keys.keys() | refresh.keys():
         link, preset = await _leaf_preset(db, *leaf)
         old[leaf] = json.loads(link.baseline_content or preset.content)
-    for node, values in groups.items():
+    by_tree: dict[int, list[_NodeKey]] = {}
+    for node in groups:
+        by_tree.setdefault(node[0], []).append(node)
+    for tree_id, nodes in by_tree.items():
+        written: dict[_NodeKey, set[str]] = {}
         try:
-            await set_node_values(db, *node, values, [])
+            async with db.begin_nested():
+                for node in nodes:
+                    written[node] = await _write_node(db, node, groups[node])
+                await regenerate_tree(db, tree_id)
         except ValueError:
-            # the store refuses some keys (e.g. identity-adjacent); keep the rest of the pull
-            for k, v in values.items():
-                try:
-                    await set_node_values(db, *node, {k: v}, [])
-                except ValueError:
-                    plan.ignored += 1
-                    for by_node in leaf_keys.values():
-                        by_node.get(node, set()).discard(k)
+            written = {node: set() for node in nodes}  # the savepoint dropped all of this tree's writes
+        for node in nodes:
+            refused = set(groups[node]) - written[node]
+            plan.ignored += len(refused)
+            for by_node in leaf_keys.values():
+                by_node.get(node, set()).difference_update(refused)
     for leaf, baseline in old.items():
         link, preset = await _leaf_preset(db, *leaf)
         current = json.loads(preset.content)
         for keys in [*leaf_keys.get(leaf, {}).values(), refresh.get(leaf, set())]:
             for k in keys:
-                baseline[k] = current[k]
+                if k in current:
+                    baseline[k] = current[k]
+                else:  # Orca holds null and Fenrir has no value: nothing to remember
+                    baseline.pop(k, None)
         link.baseline_content = json.dumps(baseline, indent=4)
+    for b in plan.baselines:
+        link, _ = await _leaf_preset(db, b["tree_id"], b["machine"], b["nozzle"], b["color_id"])
+        link.baseline_content = json.dumps(b["content"], indent=4)
     await db.commit()
 
 
+async def _write_node(db: AsyncSession, node: _NodeKey, values: dict) -> set[str]:
+    """Write values without regenerating; the store refuses some keys (validation, nothing written) -> skip them."""
+    try:
+        await set_node_values(db, *node, values, [], regenerate=False)
+        return set(values)
+    except ValueError:
+        kept = set()
+        for k, v in values.items():
+            try:
+                await set_node_values(db, *node, {k: v}, [], regenerate=False)
+                kept.add(k)
+            except ValueError:
+                pass
+        return kept
+
+
 async def resolve_conflict(
-    db: AsyncSession, tree_id: int, machine: str, nozzle: str, color_id: int, key: str, value
+    db: AsyncSession, tree_id: int, machine: str, nozzle: str, color_id: int, key: str, value, orca_value
 ) -> None:
+    """Write the chosen value; the baseline always records what Orca holds (orca_value)."""
     tree = await db.get(FilamentTree, tree_id)
     if tree is None:
         raise LookupError(f"filament tree {tree_id} not found")
     link, preset = await _leaf_preset(db, tree_id, machine, nozzle, color_id)
-    if json.loads(preset.content).get(key) != value:  # choosing Fenrir's own value writes nothing
+    # choosing Fenrir's own value (or its absence, None) writes nothing
+    if value is not None and json.loads(preset.content).get(key) != value:
         is_source = (machine, nozzle, color_id) == (tree.source_machine, tree.source_nozzle, tree.source_color_id)
         owned = await _owned_at(db, tree_id, machine, nozzle) if is_source else {}
         await set_node_values(
@@ -191,7 +232,7 @@ async def resolve_conflict(
         await db.refresh(preset)
     current = json.loads(preset.content)
     baseline = json.loads(link.baseline_content) if link.baseline_content else dict(current)
-    baseline[key] = value
+    baseline[key] = orca_value
     link.baseline_content = json.dumps(baseline, indent=4)
     await db.commit()
 
@@ -214,6 +255,7 @@ async def collect_leaf_states(db: AsyncSession) -> tuple[list[LeafState], set[st
                 generated=json.loads(preset.content),
                 baseline=json.loads(link.baseline_content) if link.baseline_content else None,
                 is_source=is_source,
+                exported=link.exported_at is not None,
                 owned_at=await _owned_at(db, link.tree_id, link.machine, link.nozzle) if is_source else {},
             )
         )

@@ -20,7 +20,7 @@ async def _tree(db, name):
     return tree
 
 
-async def test_export_zip_entries_and_baseline(db_session):
+async def test_export_zip_entries_marks_exported_not_baseline(db_session):
     tree = await _tree(db_session, "Polymaker PETG")
     data = await build_export_zip(db_session, tree.id)
     zf = zipfile.ZipFile(io.BytesIO(data))
@@ -29,8 +29,8 @@ async def test_export_zip_entries_and_baseline(db_session):
     assert "Polymaker PETG - Red @H2S 0.4.json" in names
     assert all("inherits" in json.loads(zf.read(n)) for n in names)
     leaves = (await db_session.execute(select(FilamentTreeLeaf))).scalars().all()
-    assert len(leaves) == 16 and all(lf.baseline_content for lf in leaves)
-    assert json.loads(leaves[0].baseline_content)["name"].endswith(("0.2", "0.4", "0.6", "0.8"))
+    # Orca has not imported the zip yet: only SYNC may record what Orca holds
+    assert len(leaves) == 16 and all(lf.baseline_content is None and lf.exported_at for lf in leaves)
     assert data == await build_export_zip(db_session, tree.id)
 
 

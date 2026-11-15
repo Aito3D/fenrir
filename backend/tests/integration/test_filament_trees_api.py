@@ -172,15 +172,18 @@ async def test_sync_applies_and_returns_plan(async_client, db_session, monkeypat
     preset = (
         await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG - Red @H2S 0.4"))
     ).scalar_one()
-    content = json.loads(preset.content) | {"type": "filament", "nozzle_temperature": ["255"]}
-    stub = _stub_orca(
-        monkeypatch,
-        [
-            {"id": "a", "name": preset.name, "content": content},
-            {"id": "b", "name": "eSUN PLA+ - Blue", "content": {"type": "filament", "from": "User"}},
-        ],
-    )
+    imported = json.loads(preset.content) | {"type": "filament"}
+    entries = [
+        {"id": "a", "name": preset.name, "content": imported},
+        {"id": "b", "name": "eSUN PLA+ - Blue", "content": {"type": "filament", "from": "User"}},
+    ]
+    stub = _stub_orca(monkeypatch, entries)
+    # first SYNC after the import only records what Orca holds (export never writes the baseline)
+    r = await async_client.post(f"{API}/sync")
+    assert r.status_code == 200, r.text
+    assert r.json()["applied"] == [] and r.json()["conflicts"] == []
 
+    entries[0]["content"] = imported | {"nozzle_temperature": ["255"]}
     r = await async_client.post(f"{API}/sync")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -238,6 +241,10 @@ async def test_migrate_then_list(async_client, db_session):
     body = {
         "groups": [{"prefix": "Polymaker PETG", "source_preset_id": ids["White"], "machine": "H2S", "nozzle": "0.4"}]
     }
+    r = await async_client.post(f"{API}/migrate", json=body)
+    assert r.status_code == 400 and "run Sync base first" in r.json()["detail"]
+    db_session.add(BaseFilamentPreset(name="Bambu PETG Basic @BBL H2S", filename="b.json"))
+    await db_session.commit()
     r = await async_client.post(f"{API}/migrate", json=body)
     assert r.status_code == 200, r.text
     [tree_id] = r.json()["tree_ids"]
@@ -436,3 +443,11 @@ async def test_candidate_refuses_existing_tree_name(async_client, db_session, mo
     r = await async_client.post(f"{API}/candidates", json=body)
     assert r.status_code == 400 and "already exists" in r.json()["detail"]
     assert await db_session.scalar(select(func.count()).select_from(FilamentTree)) == 1
+
+
+async def test_node_put_empty_machine_cannot_reach_source_colour(async_client, db_session):
+    tree, white, _ = await _tree(db_session)
+    body = {"machine": "", "nozzle": "", "color_id": white.id, "set": {"hot_plate_temp": ["80"]}}
+    assert (await async_client.put(f"{API}/{tree.id}/node", json=body)).status_code == 422
+    with pytest.raises(ValueError, match="calibration source colour"):
+        await store.set_node_values(db_session, tree.id, "", "", white.id, {"hot_plate_temp": ["80"]}, [])

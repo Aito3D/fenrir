@@ -24,7 +24,13 @@ from backend.app.services.filament_tree import (
     parse_inherits,
 )
 from backend.app.services.filament_tree_base import build_base_reader
-from backend.app.services.filament_tree_store import get_targets, load_tree, managed_preset_ids, regenerate_tree
+from backend.app.services.filament_tree_store import (
+    base_names,
+    get_targets,
+    load_tree,
+    managed_preset_ids,
+    regenerate_tree,
+)
 
 logger = logging.getLogger(__name__)
 _COMPAT = re.compile(r"^Bambu Lab (\S+) (\d\.\d) nozzle$")
@@ -98,11 +104,19 @@ def plan_tree(
     machine: str,
     nozzle: str,
     base_values: Callable[[str], dict],
+    known_bases: set[str] | None = None,
 ) -> dict:
-    """Split a group into root own values + node/colour overrides; colour keys are preset ids (0 = node)."""
+    """Split a group into root own values + node/colour overrides; colour keys are preset ids (0 = node).
+
+    known_bases: the indexed Bambu base preset names; a colour inheriting an unindexed base is refused,
+    since its base values would silently read as empty."""
     contents = {p["id"]: json.loads(p["content"]) for p in group_presets}
     if source_preset_id not in contents:
         raise ValueError(f"source preset {source_preset_id} is not in the group")
+    if known_bases is not None:
+        unindexed = sorted({i for c in contents.values() if (i := c.get("inherits") or "") and i not in known_bases})
+        if unindexed:
+            raise ValueError(f"Bambu base presets not indexed for: {', '.join(unindexed)} — run Sync base first")
     families = {p["name"]: parse_inherits(contents[p["id"]].get("inherits", ""))[0] for p in group_presets}
     if len(set(families.values())) > 1:
         detail = ", ".join(f"{name} ({fam})" for name, fam in sorted(families.items()))
@@ -221,10 +235,11 @@ async def apply_migration(db: AsyncSession, choices: list[dict]) -> list[int]:
 
         targets = await get_targets(db)
         reader = await build_base_reader(db)
+        known = await base_names(db)
         tree_ids = []
         for ch, group in picked:
             machine, nozzle, source_id = ch["machine"], ch["nozzle"], ch["source_preset_id"]
-            plan = plan_tree([row_dict(r) for r in group], source_id, machine, nozzle, reader.values)
+            plan = plan_tree([row_dict(r) for r in group], source_id, machine, nozzle, reader.values, known)
             for warning in plan["warnings"]:
                 logger.warning("filament tree migration %s: %s", ch["prefix"], warning)
             t = plan["tree"]

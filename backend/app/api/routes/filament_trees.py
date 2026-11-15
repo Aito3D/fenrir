@@ -215,7 +215,7 @@ async def sync(
     plan = plan_pull(entries, leaves, colour_names)
     with _mapped():
         await apply_pull(db, plan)
-    return asdict(plan)
+    return {k: v for k, v in asdict(plan).items() if k != "baselines"}  # full Orca contents stay server-side
 
 
 @router.post("/conflicts/resolve")
@@ -226,7 +226,14 @@ async def resolve(
 ):
     with _mapped():
         await resolve_conflict(
-            db, payload.tree_id, payload.machine, payload.nozzle, payload.color_id, payload.key, payload.value
+            db,
+            payload.tree_id,
+            payload.machine,
+            payload.nozzle,
+            payload.color_id,
+            payload.key,
+            payload.value,
+            payload.orca_value,
         )
     return {"success": True}
 

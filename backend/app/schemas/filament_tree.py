@@ -72,7 +72,8 @@ class ConflictResolveRequest(BaseModel):
     nozzle: str
     color_id: int
     key: PresetKey
-    value: PresetValue
+    value: PresetValue | None  # None: keep Fenrir having no value for the key
+    orca_value: PresetValue | None  # what Orca holds: always becomes the baseline
 
 
 class CandidateRequest(BaseModel):
@@ -103,8 +104,8 @@ class NodeRow(BaseModel):
 class NodeUpdate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    machine: str | None = None
-    nozzle: str | None = None
+    machine: Part | None = None
+    nozzle: Part | None = None
     color_id: int | None = None
     set_values: dict[PresetKey, PresetValue] = Field(default_factory=dict, alias="set", max_length=200)
     clear: list[PresetKey] = Field(default_factory=list, max_length=200)

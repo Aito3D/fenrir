@@ -3,15 +3,18 @@ import json
 import pytest
 from sqlalchemy import func, select
 
-from backend.app.models.filament_profile import FilamentPreset
+from backend.app.models.filament_profile import BaseFilamentPreset, FilamentPreset
 from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor, FilamentTreeLeaf, FilamentTreeSnapshot
 from backend.app.services.filament_tree_migration import apply_migration
 
 COMPAT = [f"Bambu Lab {m} 0.4 nozzle" for m in ("H2S", "H2D", "H2C", "X2D")]
 
 
-async def _seed(db, red_inherits="Bambu PETG Basic @BBL H2S"):
+async def _seed(db, red_inherits="Bambu PETG Basic @BBL H2S", index=True):
     ids = {}
+    if index:  # the Bambu base index (Sync base) the colours inherit from
+        for i, base in enumerate(sorted({red_inherits, "Bambu PETG Basic @BBL H2S"})):
+            db.add(BaseFilamentPreset(name=base, filename=f"base{i}.json"))
     for color, k in (("White", "0.035"), ("Red", "0.030"), ("Black", "0.035")):
         name = f"Polymaker PETG - {color}"
         content = {
@@ -87,5 +90,13 @@ async def test_apply_migration_rejects_source_outside_targets(db_session):
     ids = await _seed(db_session)
     choice = {"prefix": "Polymaker PETG", "source_preset_id": ids["White"], "machine": "P1S", "nozzle": "0.4"}
     with pytest.raises(ValueError):
+        await apply_migration(db_session, [choice])
+    await _assert_nothing_written(db_session, ids)
+
+
+async def test_apply_migration_refuses_unindexed_base(db_session):
+    ids = await _seed(db_session, index=False)
+    choice = {"prefix": "Polymaker PETG", "source_preset_id": ids["White"], "machine": "H2S", "nozzle": "0.4"}
+    with pytest.raises(ValueError, match="not indexed for: Bambu PETG Basic @BBL H2S .* run Sync base first"):
         await apply_migration(db_session, [choice])
     await _assert_nothing_written(db_session, ids)

@@ -73,7 +73,8 @@ class FilamentTreeLeaf(Base):
     preset_id: Mapped[int] = mapped_column(
         ForeignKey("filament_presets.id", ondelete="CASCADE"), nullable=False, unique=True
     )
-    baseline_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    baseline_content: Mapped[str | None] = mapped_column(Text, nullable=True)  # what Orca holds, set by SYNC
+    exported_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # last Export for Orca
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

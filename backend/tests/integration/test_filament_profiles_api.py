@@ -660,6 +660,84 @@ class TestFilamentProfilesZohoSyncPermissions:
         assert r.status_code == 200
 
 
+async def _tree_leaf_inherits(db: AsyncSession) -> str:
+    """Seed one filament tree (family "Generic PETG", fallback inherits) and return its H2S 0.4 leaf's inherits."""
+    import json as _json
+
+    from sqlalchemy import select
+
+    from backend.app.models.filament_profile import FilamentPreset
+    from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor
+    from backend.app.services import filament_tree_store as store
+
+    tree = FilamentTree(
+        name="Polymaker PETG",
+        brand="Polymaker",
+        material="PETG",
+        base_family="Generic PETG",
+        fallback_inherits="Old Fallback",
+        source_machine="H2S",
+        source_nozzle="0.4",
+    )
+    db.add(tree)
+    await db.flush()
+    db.add(FilamentTreeColor(tree_id=tree.id, name="Red", hex="#FF0000"))
+    await db.flush()
+    await store.regenerate_tree(db, tree.id)
+    await db.commit()
+    preset = (
+        await db.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG - Red @H2S 0.4"))
+    ).scalar_one()
+    return _json.loads(preset.content)["inherits"]
+
+
+async def _leaf_inherits_now(db: AsyncSession) -> str:
+    import json as _json
+
+    from sqlalchemy import select
+
+    from backend.app.models.filament_profile import FilamentPreset
+
+    db.expire_all()
+    preset = (
+        await db.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG - Red @H2S 0.4"))
+    ).scalar_one()
+    return _json.loads(preset.content)["inherits"]
+
+
+class TestBaseIndexRegeneratesTrees:
+    """sync-base and base-upload change the index leaves resolve against, so every tree is regenerated."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_sync_base_regenerates_trees(self, async_client, db_session, tmp_path, monkeypatch):
+        from backend.app.core.config import settings
+
+        bundle = tmp_path / "bundle"
+        bundle.mkdir()
+        (bundle / "g.json").write_text('{"name": "Generic PETG @BBL H2S"}')
+        monkeypatch.setattr(settings, "bambu_studio_bundle_dir", str(bundle))
+        assert await _tree_leaf_inherits(db_session) == "Old Fallback"
+        r = await async_client.post("/api/v1/filament-profiles/sync-base")
+        assert r.status_code == 200, r.text
+        assert await _leaf_inherits_now(db_session) == "Generic PETG @BBL H2S"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_base_upload_regenerates_trees(self, async_client, db_session, tmp_path, monkeypatch):
+        from backend.app.core.config import settings
+        from backend.app.services import bambu_studio
+
+        monkeypatch.setattr(settings, "bambu_studio_bundle_dir", None)
+        monkeypatch.setattr(bambu_studio, "DEFAULT_BUNDLE_DIR", str(tmp_path / "no-such-app"))
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        assert await _tree_leaf_inherits(db_session) == "Old Fallback"
+        files = [{"filename": "g.json", "content": '{"name": "Generic PETG @base"}'}]
+        r = await async_client.post("/api/v1/filament-profiles/base-upload", json={"files": files})
+        assert r.status_code == 200, r.text
+        assert await _leaf_inherits_now(db_session) == "Generic PETG @base"
+
+
 class TestBaseUpload:
     """POST /filament-profiles/base-upload — browser-side fallback for deploys
     where the backend host has no Bambu Studio install (#sync-base upload)."""

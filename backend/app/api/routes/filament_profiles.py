@@ -135,6 +135,14 @@ async def _collect_and_sync_base(db: AsyncSession) -> dict[str, int]:
         else:
             unchanged += 1
 
+    # leaves resolve their inherits/base values against this index: regenerate every tree in the same commit
+    await db.flush()
+    try:
+        for tree_id in (await db.execute(select(FilamentTree.id))).scalars().all():
+            await regenerate_tree(db, tree_id)
+    except ValueError as e:
+        await db.rollback()
+        raise HTTPException(400, str(e)) from e
     await db.commit()
     return {"added": added, "updated": updated, "unchanged": unchanged, "total": len(records)}
 
