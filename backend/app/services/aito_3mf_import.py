@@ -203,7 +203,7 @@ def plate_facts(source: bytes, sliced: bytes) -> list[dict[str, Any]]:
         except Exception:  # best effort: a plate without sizes is still worth importing
             logger.warning("Aito .3mf import: could not measure the objects", exc_info=True)
             sizes = {}
-        names = {obj.get("id"): _metadata(obj).get("name", "") for obj in root.findall("object") if obj.get("id")}
+        names = {oid: _metadata(obj).get("name", "") for obj in root.findall("object") if (oid := obj.get("id"))}
         zip_names = set(zf.namelist())
         for plate in root.findall("plate"):
             meta = _metadata(plate)
