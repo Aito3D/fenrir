@@ -157,6 +157,7 @@ describe('FilamentProfilesPage (trees)', () => {
         color_id: 11,
         key: 'nozzle_temperature',
         value: ['245'],
+        orca_value: ['245'],
       }),
     );
     await waitFor(() => expect(within(dialog).queryByRole('button', { name: 'Keep Orca: 245' })).not.toBeInTheDocument());
@@ -260,6 +261,35 @@ describe('FilamentProfilesPage (trees)', () => {
     fireEvent.change(picker, { target: { value: '#445566' } });
     expect(update).not.toHaveBeenCalled();
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update).toHaveBeenCalledWith(1, 11, { name: 'Red', hex: '#445566' });
+  });
+
+  it('keeping the Fenrir value still sends what Orca holds', async () => {
+    stub();
+    const conflict = {
+      tree_id: 1, machine: 'H2S', nozzle: '0.6', color_id: 11, key: 'nozzle_temperature',
+      fenrir_value: ['240'], orca_value: ['245'],
+    };
+    vi.spyOn(api, 'syncFilamentTrees').mockResolvedValue({ ...EMPTY_PULL, conflicts: [conflict] });
+    const resolve = vi.spyOn(api, 'resolveFilamentTreeConflict').mockResolvedValue({ success: true });
+    render(<FilamentProfilesPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'SYNC' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Keep Fenrir: 240' }));
+    await waitFor(() =>
+      expect(resolve).toHaveBeenCalledWith({
+        tree_id: 1, machine: 'H2S', nozzle: '0.6', color_id: 11, key: 'nozzle_temperature',
+        value: ['240'], orca_value: ['245'],
+      }),
+    );
+  });
+
+  it('saves a pending recolour when the panel unmounts', async () => {
+    stub();
+    const update = vi.spyOn(api, 'updateFilamentTreeColor').mockResolvedValue({ success: true });
+    const { unmount } = render(<FilamentProfilesPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Tree settings' }));
+    fireEvent.change(await screen.findByLabelText('Colour of Red'), { target: { value: '#445566' } });
+    unmount();
     expect(update).toHaveBeenCalledWith(1, 11, { name: 'Red', hex: '#445566' });
   });
 

@@ -9204,7 +9204,8 @@ export const api = {
   migrateFilamentPresets: (groups: Array<{ prefix: string; source_preset_id: number; machine: string; nozzle: string }>) =>
     request<{ tree_ids: number[] }>('/filament-trees/migrate', { method: 'POST', body: JSON.stringify({ groups }) }),
   syncFilamentTrees: () => request<FilamentTreePullResult>('/filament-trees/sync', { method: 'POST' }),
-  resolveFilamentTreeConflict: (data: { tree_id: number; machine: string; nozzle: string; color_id: number; key: string; value: FilamentTreePresetValue }) =>
+  // orca_value: what Orca holds; the server stores it as the leaf's baseline whichever value is kept
+  resolveFilamentTreeConflict: (data: { tree_id: number; machine: string; nozzle: string; color_id: number; key: string; value: FilamentTreePresetValue | null; orca_value: FilamentTreePresetValue | null }) =>
     request<{ success: boolean }>('/filament-trees/conflicts/resolve', { method: 'POST', body: JSON.stringify(data) }),
   createFilamentTreeFromCandidate: (data: { orca_id: string; name: string; brand: string; material: string; color_name: string; color_hex: string; machine: string; nozzle: string }) =>
     request<{ tree_id: number }>('/filament-trees/candidates', { method: 'POST', body: JSON.stringify(data) }),

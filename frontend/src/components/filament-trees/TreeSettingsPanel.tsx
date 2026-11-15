@@ -31,11 +31,11 @@ export function TreeSettingsPanel({ tree, targets }: { tree: FilamentTreeSummary
   const [nozzles, setNozzles] = useState(targets.nozzles.join(', '));
   const [removing, setRemoving] = useState<FilamentTreeColor | null>(null);
   const [busy, setBusy] = useState(false);
-  // Colour pickers fire on every drag step: save each colour 400ms after the last change.
-  const hexTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  // Colour pickers fire on every drag step: save each colour 400ms after the last change (or on unmount).
+  const pendingHex = useRef(new Map<number, { timer: ReturnType<typeof setTimeout>; save: () => void }>());
   useEffect(() => {
-    const timers = hexTimers.current;
-    return () => timers.forEach(clearTimeout);
+    const pending = pendingHex.current;
+    return () => pending.forEach(({ timer, save }) => { clearTimeout(timer); save(); });
   }, []);
 
   // Every write: refused edits come back as 400 with a reason, shown as a toast.
@@ -108,8 +108,9 @@ export function TreeSettingsPanel({ tree, targets }: { tree: FilamentTreeSummary
                       disabled={!canUpdate}
                       onChange={(e) => {
                         const hex = e.target.value;
-                        clearTimeout(hexTimers.current.get(c.id));
-                        hexTimers.current.set(c.id, setTimeout(() => rename({ hex }), 400));
+                        const save = () => { pendingHex.current.delete(c.id); rename({ hex }); };
+                        clearTimeout(pendingHex.current.get(c.id)?.timer);
+                        pendingHex.current.set(c.id, { timer: setTimeout(save, 400), save });
                       }}
                       className="h-8 w-8 shrink-0 cursor-pointer rounded border border-bambu-dark-tertiary bg-transparent"
                     />

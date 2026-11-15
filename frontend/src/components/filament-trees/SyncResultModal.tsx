@@ -117,7 +117,11 @@ function ConflictRow({ conflict, leafName, onResolved }: {
     setBusy(true);
     const { tree_id, machine, nozzle, color_id, key } = conflict;
     try {
-      await api.resolveFilamentTreeConflict({ tree_id, machine, nozzle, color_id, key, value: value as FilamentTreePresetValue });
+      await api.resolveFilamentTreeConflict({
+        tree_id, machine, nozzle, color_id, key,
+        value: value as FilamentTreePresetValue | null,
+        orca_value: conflict.orca_value as FilamentTreePresetValue | null,
+      });
       onResolved();
       await queryClient.invalidateQueries({ queryKey: ['filament-trees'] });
     } catch (err) {
