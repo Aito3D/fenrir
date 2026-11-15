@@ -179,7 +179,7 @@ export function TreeSettingsPanel({ tree, onCreated }: { tree: FilamentTreeSumma
                         type="button"
                         onClick={() => setRemoving(c)}
                         aria-label={t('filamentTrees.removeColour', { name: c.name })}
-                        className="rounded p-1.5 text-bambu-gray hover:text-red-400"
+                        className="btn-press rounded p-1.5 text-bambu-gray hover:text-red-400"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>

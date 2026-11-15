@@ -66,7 +66,7 @@ export function HistoryTab({ tree }: { tree: FilamentTreeSummary }) {
               disabled={busy}
               onClick={() => revert(c)}
               aria-label={`${t('filamentTrees.revert')}: ${keyLabel(t, c.key)}`}
-              className="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs text-orange-400 hover:bg-orange-400/10 disabled:opacity-50"
+              className="btn-press flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs text-orange-400 hover:bg-orange-400/10 disabled:opacity-50"
             >
               <Undo2 className="h-3.5 w-3.5" />
               {t('filamentTrees.revert')}
