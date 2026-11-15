@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from backend.app.services.filament_tree import IDENTITY_KEYS, NOZZLE_BOUND_KEYS
 from backend.app.services.filament_tree_base import BaseValueReader
 from backend.app.services.filament_tree_migration import plan_tree, propose_groups
@@ -135,3 +137,35 @@ def test_base_reader_walks_inherits(monkeypatch):
     reader = BaseValueReader({"A": "a.json", "B": "b.json", "C": "missing.json"})
     assert reader.values("A")["x"] == ["1"] and reader.values("A")["y"] == ["2"]
     assert reader.values("C") == {} and reader.values("nope") == {}
+
+
+def test_source_pair_outside_compat_keeps_nozzle_values():
+    gcode = "filament_start_gcode"
+    shared = plan_tree(_group(fan_max_speed=["60"]), 3, "H2S", "0.6", lambda _i: {})["overrides"]
+    assert shared[("H2S", "0.6", 0)][gcode] == ["M900 L1000 M10\nM900 K0.035"]
+    assert shared[("H2S", "0.6", 0)]["filament_max_volumetric_speed"] == ["24"]
+    differ = plan_tree(_group(red_k="0.030", fan_max_speed=["60"]), 3, "H2S", "0.6", lambda _i: {})["overrides"]
+    assert differ[("H2S", "0.6", 0)][gcode] == ["M900 L1000 M10\nM900 K0.035"]
+    assert differ[("H2S", "0.6", 2)][gcode] == ["M900 L1000 M10\nM900 K0.030"]
+    assert differ[("H2S", "0.6", 1)][gcode] == ["M900 L1000 M10\nM900 K0.035"]
+
+
+def test_plan_refuses_mixed_base_families():
+    rows = _group()
+    content = json.loads(rows[1]["content"])
+    content["inherits"] = "Bambu PETG HF @BBL H2S"
+    rows[1]["content"] = json.dumps(content)
+    with pytest.raises(ValueError, match="Polymaker PETG - Red"):
+        _plan(rows)
+    # a different machine/nozzle suffix on the same family is fine
+    content["inherits"] = "Bambu PETG Basic @BBL X2D 0.4 nozzle"
+    rows[1]["content"] = json.dumps(content)
+    _plan(rows)
+
+
+def test_colour_name_falls_back_to_preset_id():
+    rows = _group(fan_max_speed=["60"])
+    rows[0]["name"], rows[0]["color"] = "Polymaker PETG", ""
+    plan = _plan(rows)
+    assert (1, "Colour 1", "#FFFFFF") in plan["colors"]
+    assert any("no colour name" in w for w in plan["warnings"])

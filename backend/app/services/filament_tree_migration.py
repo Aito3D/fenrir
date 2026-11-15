@@ -1,6 +1,7 @@
 """One-time migration: flat `BRAND MATERIAL - COLOR` presets -> filament trees, snapshot first."""
 
 import json
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -25,6 +26,7 @@ from backend.app.services.filament_tree import (
 from backend.app.services.filament_tree_base import build_base_reader
 from backend.app.services.filament_tree_store import get_targets, load_tree, managed_preset_ids, regenerate_tree
 
+logger = logging.getLogger(__name__)
 _COMPAT = re.compile(r"^Bambu Lab (\S+) (\d\.\d) nozzle$")
 _SKIP = IDENTITY_KEYS | NOZZLE_BOUND_KEYS
 _MISSING = object()
@@ -44,8 +46,12 @@ def _prefix(name: str) -> str:
     return name.split(" - ", 1)[0]
 
 
+def _raw_color_name(preset: dict) -> str:
+    return (preset["name"].split(" - ", 1)[1] if " - " in preset["name"] else preset["color"]).strip()
+
+
 def _color_name(preset: dict) -> str:
-    return preset["name"].split(" - ", 1)[1] if " - " in preset["name"] else preset["color"]
+    return _raw_color_name(preset) or f"Colour {preset['id']}"
 
 
 def _compat_pairs(content: dict) -> list[tuple[str, str]]:
@@ -97,12 +103,18 @@ def plan_tree(
     contents = {p["id"]: json.loads(p["content"]) for p in group_presets}
     if source_preset_id not in contents:
         raise ValueError(f"source preset {source_preset_id} is not in the group")
+    families = {p["name"]: parse_inherits(contents[p["id"]].get("inherits", ""))[0] for p in group_presets}
+    if len(set(families.values())) > 1:
+        detail = ", ".join(f"{name} ({fam})" for name, fam in sorted(families.items()))
+        raise ValueError(f"colours inherit from different base families, split the group first: {detail}")
     source = next(p for p in group_presets if p["id"] == source_preset_id)
     ordered = [source] + [p for p in group_presets if p["id"] != source_preset_id]
     src = contents[source_preset_id]
     root = {k: v for k, v in src.items() if k not in _SKIP}
     overrides: dict[tuple[str, str, int], dict] = {}
-    warnings: list[str] = []
+    warnings: list[str] = [
+        f"preset {p['id']} has no colour name; named {_color_name(p)!r}" for p in ordered if not _raw_color_name(p)
+    ]
 
     def put(m: str, n: str, c: int, values: dict) -> None:
         overrides.setdefault((m, n, c), {}).update(values)
@@ -126,7 +138,9 @@ def plan_tree(
             put("", "", p["id"], own)
 
     def compat(pid: int) -> list[tuple[str, str]]:
-        return _compat_pairs(contents[pid]) or [(machine, nozzle)]
+        # Every old row becomes the leaf at (machine, nozzle), so that pair always keeps its values.
+        pairs = _compat_pairs(contents[pid])
+        return pairs if (machine, nozzle) in pairs else [*pairs, (machine, nozzle)]
 
     for k in sorted(NOZZLE_BOUND_KEYS):
         vals = {pid: c.get(k, _MISSING) for pid, c in contents.items()}
@@ -211,6 +225,8 @@ async def apply_migration(db: AsyncSession, choices: list[dict]) -> list[int]:
         for ch, group in picked:
             machine, nozzle, source_id = ch["machine"], ch["nozzle"], ch["source_preset_id"]
             plan = plan_tree([_row_dict(r) for r in group], source_id, machine, nozzle, reader.values)
+            for warning in plan["warnings"]:
+                logger.warning("filament tree migration %s: %s", ch["prefix"], warning)
             t = plan["tree"]
             tree = FilamentTree(
                 name=t["name"],
