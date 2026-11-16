@@ -30,14 +30,16 @@ def _snapshot_dir() -> Path:
     return settings.base_dir / "orca_snapshots"
 
 
-def _snapshot(entries: list[dict]) -> str:
-    """Save Orca Cloud's filament profiles as they were before this push; keep the newest few."""
+def _snapshot(entries: list[dict], prefix: str = "filaments") -> str:
+    """Save Orca Cloud's filament profiles as they were before this push; keep the newest few.
+    Only push snapshots (the default prefix) rotate: a ``cleanup`` snapshot is never pruned."""
     folder = _snapshot_dir()
     folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"filaments-{datetime.now(timezone.utc):%Y%m%dT%H%M%S%fZ}.json"
+    path = folder / f"{prefix}-{datetime.now(timezone.utc):%Y%m%dT%H%M%S%fZ}.json"
     path.write_text(json.dumps(entries))
-    for old in sorted(folder.glob("filaments-*.json"))[:-_KEEP_SNAPSHOTS]:
-        old.unlink()
+    if prefix == "filaments":
+        for old in sorted(folder.glob("filaments-*.json"))[:-_KEEP_SNAPSHOTS]:
+            old.unlink()
     return path.name
 
 
@@ -88,9 +90,14 @@ async def cleanup_orca(db: AsyncSession, svc, confirmed: list[str]) -> dict:
     ids = preview["_ids"]
     if not ids:
         return {"deleted": 0, "failed": 0, "snapshot": None}
-    snapshot = _snapshot(preview["_filaments"])
+    snapshot = _snapshot(preview["_filaments"], "cleanup")
     for i in range(0, len(ids), 100):
-        await svc.delete_profiles(ids[i : i + 100])
+        try:
+            await svc.delete_profiles(ids[i : i + 100])
+        except OrcaCloudAuthError:
+            raise
+        except OrcaCloudError as e:
+            logger.info("Orca cleanup delete batch failed: %s", e)  # the listing below counts what is left
     left = {str(e.get("id")) for e in await svc.list_profiles()} & set(ids)  # trust the listing, not the reply
     return {"deleted": len(ids) - len(left), "failed": len(left), "snapshot": snapshot}
 

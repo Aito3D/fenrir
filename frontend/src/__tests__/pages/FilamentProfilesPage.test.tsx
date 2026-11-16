@@ -3,7 +3,7 @@
  * unmanaged presets, SYNC (pull) result handling, Export for Orca and tree settings.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { FilamentProfilesPage } from '../../pages/FilamentProfilesPage';
@@ -245,6 +245,45 @@ describe('FilamentProfilesPage (trees)', () => {
         nozzle: '0.4',
       }),
     );
+  });
+
+  it('aborts a hung SYNC at the 10 minute deadline, re-enables the button and reports an unknown outcome', async () => {
+    stub();
+    let signal: AbortSignal | undefined;
+    vi.spyOn(api, 'syncFilamentTrees').mockImplementation(
+      (s) =>
+        new Promise((_, reject) => {
+          signal = s;
+          s?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        }),
+    );
+    render(<FilamentProfilesPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'SYNC' }));
+    const confirm = await screen.findByRole('button', { name: 'Confirm' });
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(confirm);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(599_999);
+      });
+      expect(signal?.aborted).toBe(false);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await screen.findByText(/Sync result unknown/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'SYNC' })).toBeEnabled();
+  });
+
+  it('shows a definite SYNC error from the server as it is', async () => {
+    stub();
+    vi.spyOn(api, 'syncFilamentTrees').mockRejectedValue(new ApiError('Orca is down', 502));
+    render(<FilamentProfilesPage />);
+    await sync();
+    expect(await screen.findByText('Orca is down')).toBeInTheDocument();
   });
 
   it('explains how to connect Orca Cloud when SYNC gets a 401', async () => {

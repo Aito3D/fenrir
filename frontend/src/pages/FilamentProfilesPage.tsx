@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ChevronDown, Database, Download, Droplets, HardDrive, Loader2, Plus, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type { FilamentTreePullResult, FilamentTreeSyncPreview } from '../api/client';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -26,6 +26,10 @@ import { NewTreeModal } from '../components/filament-trees/NewTreeModal';
 import { TargetsModal } from '../components/filament-trees/TargetsModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+
+// POST /sync pushes one leaf at a time (30s timeout each): 10 minutes leaves headroom for a legitimate run, while a
+// connection dropped without a reset (proxy idle-kill, laptop sleep) still re-enables the SYNC button (as useZohoSync).
+const SYNC_DEADLINE_MS = 600_000;
 
 /**
  * Filament Profiles: the profile trees as material cards (cards left, settings right; stacked below xl),
@@ -180,11 +184,15 @@ export function FilamentProfilesPage() {
   const handleSync = async () => {
     setSyncPreview(null);
     setSyncing(true);
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), SYNC_DEADLINE_MS);
     try {
-      setSyncOutcome({ result: await api.syncFilamentTrees() });
+      setSyncOutcome({ result: await api.syncFilamentTrees(controller.signal) });
     } catch (error) {
-      setSyncOutcome({ error });
+      // only an HTTP error response means the sync did not apply; an abort or a dropped connection lost the response
+      setSyncOutcome({ error: error instanceof ApiError ? error : new Error(t('filamentProfiles.syncZohoUnknown')) });
     } finally {
+      clearTimeout(deadline);
       setSyncing(false);
       // a pull can change own values anywhere: tree list, open node, unmanaged groups
       void queryClient.invalidateQueries({ queryKey: ['filament-trees'] });

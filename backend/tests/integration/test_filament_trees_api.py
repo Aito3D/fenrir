@@ -405,7 +405,27 @@ async def test_orca_cleanup_deletes_only_stray_filaments(async_client, db_sessio
     body = r.json()
     assert stub.deleted == ["old", "stuck"]  # never the leaf, never the process profile
     assert (body["deleted"], body["failed"]) == (1, 1)  # counted from a fresh listing, not from Orca's reply
+    assert body["snapshot"].startswith("cleanup-")
     assert len(json.loads((tmp_path / body["snapshot"]).read_text())) == 3  # every filament as it was before
+
+
+@pytest.mark.parametrize(("error", "status"), [(OrcaCloudError("5xx"), 200), (OrcaCloudAuthError("expired"), 401)])
+async def test_orca_cleanup_failed_delete_batch(async_client, db_session, monkeypatch, tmp_path, error, status):
+    monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
+    await _tree(db_session)
+    entries = [{"id": "old", "name": "Polymaker PETG - Red", "content": {"type": "filament"}}]
+    stub = _stub_orca(monkeypatch, entries, scope="sync:write")
+
+    async def fail(_ids):
+        raise error
+
+    stub.delete_profiles = fail
+    r = await async_client.post(f"{API}/orca-cleanup", json={"names": ["Polymaker PETG - Red"]})
+    assert r.status_code == status, r.text
+    if status == 200:  # the run continues to the final listing: counts and snapshot name still come back
+        body = r.json()
+        assert (body["deleted"], body["failed"]) == (0, 1)
+        assert (tmp_path / body["snapshot"]).exists()
 
 
 async def test_sync_requires_orca_permission(async_client, db_session, monkeypatch):

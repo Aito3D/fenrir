@@ -9311,7 +9311,7 @@ export const api = {
   migrateFilamentPresets: (groups: Array<{ prefix: string; source_preset_id: number; machine: string; nozzle: string }>) =>
     request<{ tree_ids: number[] }>('/filament-trees/migrate', { method: 'POST', body: JSON.stringify({ groups }) }),
   previewFilamentTreeSync: () => request<FilamentTreeSyncPreview>('/filament-trees/sync'),
-  syncFilamentTrees: () => request<FilamentTreePullResult>('/filament-trees/sync', { method: 'POST' }),
+  syncFilamentTrees: (signal?: AbortSignal) => request<FilamentTreePullResult>('/filament-trees/sync', { method: 'POST', signal }),
   // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if exactly these names are still the strays
   getOrcaCleanupPreview: () => request<{ count: number; names: string[]; writable: boolean }>('/filament-trees/orca-cleanup'),
   cleanOrcaCloud: (names: string[]) =>
