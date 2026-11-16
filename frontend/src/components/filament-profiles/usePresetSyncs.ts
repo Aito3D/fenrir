@@ -8,7 +8,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { collectPresetFiles } from './pickedFiles';
 import { errorMessage } from '../filament-trees/errorMessage';
 
-type SyncBaseModalState = { result?: FilamentBaseSyncResult; error?: string } | null;
+type SyncBaseModalState = { result?: FilamentBaseSyncResult; error?: string; fromUpload?: boolean } | null;
 type SyncModalState = { state: 'syncing' | 'preview' | 'done'; stats?: FilamentSyncStats } | null;
 
 /** "Sync base": index Bambu Studio's bundled presets, from the server's install or from uploaded files. */
@@ -51,7 +51,7 @@ export function useBaseSync() {
         return;
       }
       const result = await api.uploadBaseFilamentPresets(collected);
-      setSyncBaseModal({ result });
+      setSyncBaseModal({ result, fromUpload: true });
     } catch (err) {
       setSyncBaseModal({ error: errorMessage(err) });
     } finally {

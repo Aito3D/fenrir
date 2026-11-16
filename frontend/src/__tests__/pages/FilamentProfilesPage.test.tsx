@@ -502,6 +502,27 @@ describe('FilamentProfilesPage (trees)', () => {
     );
   });
 
+  it('an upload that finds no presets reports 0 results, and Choose files is disabled while it runs', async () => {
+    stub();
+    vi.spyOn(api, 'syncBaseFilamentPresets').mockResolvedValue(
+      { total: 0, added: 0, updated: 0, unchanged: 0 } as Awaited<ReturnType<typeof api.syncBaseFilamentPresets>>,
+    );
+    let finish: (r: Awaited<ReturnType<typeof api.uploadBaseFilamentPresets>>) => void = () => {};
+    vi.spyOn(api, 'uploadBaseFilamentPresets').mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    render(<FilamentProfilesPage />);
+    const input = screen.getByTestId('fp-base-file-input') as HTMLInputElement;
+    vi.spyOn(input, 'click').mockImplementation(() => {});
+    await menu('Sync base');
+    await screen.findByText(/No BambuStudio bundle on the server/);
+
+    const file = new File(['{"name":"x"}'], 'base.json', { type: 'application/json' });
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Choose files' })).toBeDisabled());
+    finish({ total: 0, added: 0, updated: 0, unchanged: 0 } as Awaited<ReturnType<typeof api.uploadBaseFilamentPresets>>);
+    expect(await screen.findByText('Base profiles synced')).toBeInTheDocument();
+    expect(screen.queryByText(/No BambuStudio bundle on the server/)).not.toBeInTheDocument();
+  });
+
   it('Sync to PC previews with a dry run, then writes the generated rows on confirm', async () => {
     stub();
     const stats = { added: 1, updated: 0, removed: 0, unchanged: 1 };

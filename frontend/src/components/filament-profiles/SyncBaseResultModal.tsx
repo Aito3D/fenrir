@@ -9,6 +9,8 @@ export interface SyncBaseResultModalProps {
   error?: string;
   /** Opens the file picker; offered when the server had no Bambu Studio bundle (total 0). */
   onChooseFiles?: () => void;
+  /** Disables the picker button while an upload runs. */
+  chooseDisabled?: boolean;
   onClose: () => void;
 }
 
@@ -22,7 +24,7 @@ function StatRow({ label, value, valueClassName }: { label: string; value: numbe
 }
 
 /** Small result modal for the header's "Sync base" action (spec §5.2). */
-export function SyncBaseResultModal({ result, error, onChooseFiles, onClose }: SyncBaseResultModalProps) {
+export function SyncBaseResultModal({ result, error, onChooseFiles, chooseDisabled, onClose }: SyncBaseResultModalProps) {
   const { t } = useTranslation();
   // 150ms = .animate-modal-out
   const { closing, requestClose } = useDismissableDialog(onClose, { animationMs: 150 });
@@ -48,7 +50,7 @@ export function SyncBaseResultModal({ result, error, onChooseFiles, onClose }: S
         ) : result?.total === 0 && onChooseFiles ? (
           <>
             <p className="text-center text-sm text-bambu-gray">{t('filamentProfiles.noServerBase')}</p>
-            <Button onClick={onChooseFiles} className="mt-4 w-full">
+            <Button onClick={onChooseFiles} disabled={chooseDisabled} className="mt-4 w-full">
               {t('projectsPdm.files.chooseFiles')}
             </Button>
           </>

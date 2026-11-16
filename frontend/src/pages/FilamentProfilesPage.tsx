@@ -379,7 +379,8 @@ export function FilamentProfilesPage() {
         <SyncBaseResultModal
           result={syncBaseModal.result}
           error={syncBaseModal.error}
-          onChooseFiles={() => baseFileInputRef.current?.click()}
+          onChooseFiles={syncBaseModal.fromUpload ? undefined : () => baseFileInputRef.current?.click()}
+          chooseDisabled={syncBaseBusy}
           onClose={() => setSyncBaseModal(null)}
         />
       )}

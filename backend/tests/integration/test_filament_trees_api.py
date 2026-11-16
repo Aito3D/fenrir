@@ -291,6 +291,26 @@ async def test_sync_fingerprint_matching_syncs_and_stale_is_409(async_client, db
     assert await temp() == ["260"]
 
 
+async def test_sync_fingerprint_ignores_orca_listing_order(async_client, db_session, monkeypatch):
+    await _tree(db_session)
+    presets = (await db_session.execute(select(FilamentPreset).order_by(FilamentPreset.id))).scalars().all()[:2]
+    assert len(presets) == 2
+    imported = [json.loads(p.content) | {"type": "filament"} for p in presets]
+    entries = [
+        {"id": str(i), "name": p.name, "content": c} for i, (p, c) in enumerate(zip(presets, imported, strict=True))
+    ]
+    _stub_orca(monkeypatch, entries)
+    assert (await async_client.post(f"{API}/sync")).status_code == 200  # records the baselines
+
+    for e, c, temp in zip(
+        entries, imported, ("255", "260"), strict=True
+    ):  # distinct values, so the order shows in the hash
+        e["content"] = c | {"nozzle_temperature": [temp]}
+    first = (await async_client.get(f"{API}/sync")).json()["fingerprint"]
+    entries.reverse()
+    assert (await async_client.get(f"{API}/sync")).json()["fingerprint"] == first
+
+
 async def test_sync_pushes_changed_leaves(async_client, db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
     await _tree(db_session)

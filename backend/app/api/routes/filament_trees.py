@@ -373,7 +373,11 @@ async def _sync_view(db: AsyncSession, entries: list[dict]) -> dict:
         "push": await push_names(db, entries, {key(c) for c in [*plan.conflicts, *plan.applied]}),
     }
     # the values are hashed too: the preview lists only keys, but a changed value is a changed plan
-    plan_json = json.dumps([view, [a["values"] for a in plan.applied]], sort_keys=True, default=str)
+    # sorted by leaf identity: Orca's listing order is not stable between the preview and the confirm
+    applied = sorted(
+        plan.applied, key=lambda a: (*map(str, key(a)), json.dumps(a["values"], sort_keys=True, default=str))
+    )
+    plan_json = json.dumps([view, [a["values"] for a in applied]], sort_keys=True, default=str)
     return view | {"fingerprint": hashlib.sha256(plan_json.encode()).hexdigest()[:16]}
 
 
