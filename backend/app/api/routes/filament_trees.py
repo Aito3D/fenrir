@@ -346,6 +346,12 @@ async def migrate(
     return {"tree_ids": tree_ids}
 
 
+def _orca_run_lock():
+    """One SYNC or cleanup at a time: a second run lists Orca only after the first has finished pushing, so it never
+    re-creates a leaf the first just created. The id -1 is no tree: it only borrows the loop-safe lock registry."""
+    return store.tree_write_lock([-1])
+
+
 @router.get("/sync", dependencies=[Depends(_cloud_api_key_gate)])
 async def sync_preview(
     db: AsyncSession = Depends(get_db, scope="function"),
@@ -378,15 +384,17 @@ async def sync(
     current_user: User | None = cloud_caller(_UPDATE, Permission.ORCA_CLOUD_AUTH),
 ):
     """Pull, then push: fold OrcaSlicer edits into the trees, then send every changed leaf to Orca Cloud."""
-    entries = await _orca_call(db, current_user, lambda svc: svc.list_profiles())
-    async with store.tree_write_lock((await db.execute(select(FilamentTree.id))).scalars().all()):
-        leaves, colour_names = await collect_leaf_states(db)
-        plan = plan_pull(entries, leaves, colour_names)
-        with _mapped():
-            await apply_pull(db, plan)
-    open_conflicts = {(c["tree_id"], c["machine"], c["nozzle"], c["color_id"]) for c in plan.conflicts}
-    # the push talks to Orca Cloud: outside the tree locks, so node saves do not wait on the network
-    push = await _orca_call(db, current_user, lambda svc: push_leaves(db, svc, entries, open_conflicts))
+    async with _orca_run_lock():
+        entries = await _orca_call(db, current_user, lambda svc: svc.list_profiles())
+        async with store.tree_write_lock((await db.execute(select(FilamentTree.id))).scalars().all()):
+            leaves, colour_names = await collect_leaf_states(db)
+            plan = plan_pull(entries, leaves, colour_names)
+            with _mapped():
+                refused = await apply_pull(db, plan)
+        # a leaf whose Orca edit was refused keeps Orca's version: pushing Fenrir's would overwrite the edit
+        open_conflicts = {(c["tree_id"], c["machine"], c["nozzle"], c["color_id"]) for c in plan.conflicts} | refused
+        # the push talks to Orca Cloud: outside the tree locks, so node saves do not wait on the network
+        push = await _orca_call(db, current_user, lambda svc: push_leaves(db, svc, entries, open_conflicts))
     # full Orca contents stay server-side
     return {k: v for k, v in asdict(plan).items() if k != "baselines"} | {"push": push}
 
@@ -408,8 +416,9 @@ async def orca_cleanup(
     current_user: User | None = cloud_caller(_DELETE, Permission.ORCA_CLOUD_AUTH),
 ):
     """Delete them, after a snapshot. 400 when the count no longer matches what the user confirmed."""
-    with _mapped():
-        return await _orca_call(db, current_user, lambda svc: cleanup_orca(db, svc, payload.expected))
+    async with _orca_run_lock():
+        with _mapped():
+            return await _orca_call(db, current_user, lambda svc: cleanup_orca(db, svc, payload.expected))
 
 
 @router.post("/conflicts/resolve")

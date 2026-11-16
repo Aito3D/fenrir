@@ -162,8 +162,10 @@ async def _leaf_preset(
     return link, preset
 
 
-async def apply_pull(db: AsyncSession, plan: PullPlan) -> None:
-    """One transaction: each tree's writes + regeneration sit in a savepoint, a refused tree is rolled back."""
+async def apply_pull(db: AsyncSession, plan: PullPlan) -> set[tuple]:
+    """One transaction: each tree's writes + regeneration sit in a savepoint, a refused tree is rolled back.
+
+    Returns the leaves (tree_id, machine, nozzle, color_id) with an Orca edit that was refused."""
     groups: dict[_NodeKey, dict] = {}
     leaf_keys: dict[tuple, dict[_NodeKey, set[str]]] = {}  # leaf -> {node: keys written there}
     for e in plan.applied:
@@ -176,6 +178,7 @@ async def apply_pull(db: AsyncSession, plan: PullPlan) -> None:
     for leaf in leaf_keys.keys() | refresh.keys():
         link, preset = await _leaf_preset(db, *leaf)
         old[leaf] = json.loads(link.baseline_content or preset.content)
+    refused_leaves: set[tuple] = set()
     by_tree: dict[int, list[_NodeKey]] = {}
     for node in groups:
         by_tree.setdefault(node[0], []).append(node)
@@ -191,7 +194,9 @@ async def apply_pull(db: AsyncSession, plan: PullPlan) -> None:
         for node in nodes:
             refused = set(groups[node]) - written[node]
             plan.ignored += len(refused)
-            for by_node in leaf_keys.values():
+            for leaf, by_node in leaf_keys.items():
+                if by_node.get(node, set()) & refused:
+                    refused_leaves.add(leaf)
                 by_node.get(node, set()).difference_update(refused)
     for leaf, baseline in old.items():
         link, preset = await _leaf_preset(db, *leaf)
@@ -207,6 +212,7 @@ async def apply_pull(db: AsyncSession, plan: PullPlan) -> None:
         link, _ = await _leaf_preset(db, b["tree_id"], b["machine"], b["nozzle"], b["color_id"])
         link.baseline_content = json.dumps(b["content"], indent=4)
     await db.commit()
+    return refused_leaves
 
 
 async def _write_node(db: AsyncSession, node: _NodeKey, values: dict) -> set[str]:

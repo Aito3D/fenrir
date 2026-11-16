@@ -316,6 +316,29 @@ async def test_sync_pushes_changed_leaves(async_client, db_session, monkeypatch,
     assert by_id["same"]["original_updated_time"] == 1 and "edit" in by_id
 
 
+async def test_sync_does_not_push_a_leaf_whose_orca_edit_was_refused(async_client, db_session, monkeypatch, tmp_path):
+    monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
+    tree, _, _ = await _tree(db_session)
+    r = await async_client.post(f"{API}/export", json={"tree_id": tree.id})
+    await async_client.post(f"{API}/export/confirm", json={"token": r.headers["x-export-token"]})
+    preset = (
+        await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG - Red @H2S 0.4"))
+    ).scalar_one()
+    imported = json.loads(preset.content) | {"type": "filament"}
+    entries = [{"id": "a", "name": preset.name, "updated_time": 1, "content": encode_content(imported)}]
+    _stub_orca(monkeypatch, entries, scope="sync:write")
+    assert (await async_client.post(f"{API}/sync")).status_code == 200  # records the baseline
+
+    # the OrcaSlicer edit makes the regenerated preset too large: the pull refuses it
+    huge = "x" * (_CONTENT_MAX_LENGTH + 1)
+    entries[0]["content"] = encode_content(imported | {"nozzle_temperature": [huge]})
+    stub = _stub_orca(monkeypatch, entries, scope="sync:write")
+    body = (await async_client.post(f"{API}/sync")).json()
+    assert body["ignored"] == 1
+    assert "a" not in {p["profile_id"] for p in stub.pushed}  # Orca keeps the edit
+    assert body["push"]["pushed"] == len(stub.pushed)
+
+
 async def test_sync_push_stops_after_repeated_failures(async_client, db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
     await _tree(db_session)
@@ -324,6 +347,35 @@ async def test_sync_push_stops_after_repeated_failures(async_client, db_session,
     stub.push_error = OrcaCloudError("Orca Cloud push failed (429): slow down")
     push = (await async_client.post(f"{API}/sync")).json()["push"]
     assert push["pushed"] == 0 and len(push["failed"]) == 5 and push["remaining"] == total - 5
+
+
+async def test_sync_auth_error_mid_push_keeps_the_baselines_already_pushed(
+    async_client, db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
+    await _tree(db_session)
+    stub = _stub_orca(monkeypatch, [], scope="sync:write")
+    ok_push = stub.push_profile
+
+    async def push(**kw):
+        if len(stub.pushed) == 2:
+            raise OrcaCloudAuthError("token expired")
+        return await ok_push(**kw)
+
+    stub.push_profile = push
+    r = await async_client.post(f"{API}/sync")
+    assert r.status_code == 401 and r.json()["detail"] == "token expired"
+    assert len(stub.pushed) == 2
+
+    db_session.expire_all()
+    rows = (await db_session.execute(select(FilamentTreeLeaf, FilamentPreset).join(FilamentPreset))).all()
+    done = [(link, preset) for link, preset in rows if link.baseline_content is not None]
+    assert {preset.name for _, preset in done} == {p["name"] for p in stub.pushed}
+    for link, preset in done:
+        assert link.exported_at is not None and link.export_pending is False
+        assert json.loads(link.baseline_content) == json.loads(preset.content)
+    assert len(done) == 2
+    assert all(link.export_pending is not False for link, _ in rows if link.baseline_content is None)  # the rest wait
 
 
 async def test_orca_cleanup_deletes_only_stray_filaments(async_client, db_session, monkeypatch, tmp_path):
@@ -1188,6 +1240,32 @@ async def test_sync_waits_for_the_tree_lock_then_applies(async_client, db_sessio
     assert applied["values"] == {"nozzle_temperature": ["255"]}
     own = await _own_values(async_client, tree.id, machine="H2S", nozzle="0.4", color_id=red.id)
     assert own["nozzle_temperature"] == ["255"]
+
+
+async def test_sync_waits_for_a_running_orca_run_then_lists_orca(async_client, db_session, monkeypatch, tmp_path):
+    monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
+    await _tree(db_session)
+    entries: list[dict] = []
+    stub = _stub_orca(monkeypatch, entries, scope="sync:write")
+    # a running SYNC or cleanup holds the Orca-run lock (id -1): the second run lists Orca only after it ends
+    async with routes._orca_run_lock():
+        task = asyncio.create_task(async_client.post(f"{API}/sync"))
+        await _queued_behind_lock(-1)
+        assert not task.done() and not stub.pushed
+        entries.append({"id": "late", "name": "eSUN PLA+ - Blue", "content": {"type": "filament"}})
+    r = await asyncio.wait_for(task, timeout=10)
+    assert r.status_code == 200, r.text
+    assert [c["orca_id"] for c in r.json()["candidates"]] == ["late"]  # it saw Orca as the first run left it
+
+
+async def test_orca_cleanup_waits_for_a_running_orca_run(async_client, db_session, monkeypatch, tmp_path):
+    monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
+    await _tree(db_session)
+    entries = [{"id": "old", "name": "Polymaker PETG - Red", "content": {"type": "filament"}}]
+    stub = _stub_orca(monkeypatch, entries, scope="sync:write")
+    r = await _request_waits_for_lock(-1, lambda: async_client.post(f"{API}/orca-cleanup", json={"expected": 1}))
+    assert r.status_code == 200, r.text
+    assert stub.deleted == ["old"]
 
 
 async def test_conflict_resolve_waits_for_the_tree_lock_then_writes(async_client, db_session):

@@ -478,7 +478,7 @@ class LeafState(object)
     def __init__(self, tree_id: int, machine: str, nozzle: str, color_id: int, name: str, generated: dict, baseline: dict | None, is_source: bool, owned_at: dict[str, str] = <factory>, exported: bool = False) -> None
 class PullPlan(object)
     def __init__(self, applied: list[dict] = <factory>, conflicts: list[dict] = <factory>, candidates: list[dict] = <factory>, legacy: int = 0, missing: list[str] = <factory>, ignored: int = 0, refresh: list[dict] = <factory>, baselines: list[dict] = <factory>) -> None
-async def apply_pull(db: sqlalchemy.ext.asyncio.session.AsyncSession, plan: backend.app.services.filament_tree_pull.PullPlan) -> None
+async def apply_pull(db: sqlalchemy.ext.asyncio.session.AsyncSession, plan: backend.app.services.filament_tree_pull.PullPlan) -> set[tuple]
 async def collect_leaf_states(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> tuple[list[backend.app.services.filament_tree_pull.LeafState], set[str]]
 def plan_pull(orca_entries: list[dict], leaves: list[backend.app.services.filament_tree_pull.LeafState], tree_colour_names: set[str]) -> backend.app.services.filament_tree_pull.PullPlan
 async def resolve_conflict(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int, machine: str, nozzle: str, color_id: int, key: str, value, orca_value) -> None
