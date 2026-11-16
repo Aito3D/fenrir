@@ -21,8 +21,13 @@ export function AnimatedOutlet() {
     () => typeof document.startViewTransition === 'function',
   );
 
+  // An archive opens OVER the Archives list (/archives/:id renders the same
+  // page): one key for both, or the list is torn down and rebuilt behind the
+  // dialog on every open and close.
+  const pageKey = location.pathname.replace(/^\/archives\/[^/]+$/, '/archives');
+
   return (
-    <div key={location.pathname} className={supportsViewTransitions ? undefined : 'animate-page-in'}>
+    <div key={pageKey} className={supportsViewTransitions ? undefined : 'animate-page-in'}>
       {outlet}
     </div>
   );

@@ -23,7 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { api, ApiError } from '../api/client';
-import type { PrintLogEntry } from '../api/client';
+import type { Archive, PrintLogEntry } from '../api/client';
 import type { PlateMetadata } from '../types/plates';
 import { Button } from './Button';
 import { Card, CardContent } from './Card';
@@ -121,6 +121,13 @@ export function ArchiveDetailModal({ archiveId, onClose }: { archiveId: number; 
     queryFn: () => api.getArchive(archiveId),
     enabled: Number.isFinite(archiveId),
     retry: false,
+    // The row the list already holds paints the archive at once (and lets the
+    // prints and plates below load alongside, not after); the fetch replaces it.
+    placeholderData: () =>
+      queryClient
+        .getQueriesData<Archive[]>({ queryKey: ['archives'] })
+        .flatMap(([, rows]) => (Array.isArray(rows) ? rows : []))
+        .find((row) => row.id === archiveId),
   });
   const archive = archiveQuery.data;
   const { data: runsData, isLoading: runsLoading } = useQuery({

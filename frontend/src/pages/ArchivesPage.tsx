@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { settleWithConcurrency } from '../utils/concurrency';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -260,7 +260,9 @@ function useArchiveVideos(archive: Archive, navigate: (to: string) => void, play
 // the file (COST-3), not what this run used.
 const UNFINISHED_STATUSES = new Set(['failed', 'aborted', 'cancelled', 'stopped']);
 
-function ArchiveCard({
+// Memoised (as is ArchiveListRow): the page re-renders on every keystroke,
+// selection and open/close, and 50 cards re-rendering each time is the lag.
+const ArchiveCard = memo(function ArchiveCard({
   archive,
   printerName,
   printerMap,
@@ -277,6 +279,7 @@ function ArchiveCard({
   calcConfig,
   t,
   onNavigateToArchive,
+  navigate,
 }: {
   archive: Archive;
   printerName: string;
@@ -293,12 +296,14 @@ function ArchiveCard({
   calcConfig?: CalcConfig | null;
   t: TFunction;
   onNavigateToArchive?: (archiveId: number) => void;
+  /** The page's, identity-stable; see useArchiveActions. */
+  navigate: (to: string) => void;
   /** Printer id -> name, for naming the printer a saved slicer AMS mapping
    *  belongs to. The card can't know which printer a reprint will target, so
    *  the badge names the one the mapping is actually good for. */
   printerMap: Map<number, string>;
 }) {
-  const actions = useArchiveActions(archive, t);
+  const actions = useArchiveActions(archive, t, navigate);
   const {
     hasPermission,
     canModify,
@@ -326,7 +331,6 @@ function ArchiveCard({
     assignProjectMutation,
     handleContextMenu,
   } = actions;
-  const navigate = useNavigate();
   const { videos, openTimelapse } = useArchiveVideos(archive, navigate, () => setShowTimelapse(true));
   // Name of the printer this archive's saved slicer AMS mapping was resolved
   // against, or undefined when there is none. Undefined also when the printer
@@ -1267,9 +1271,9 @@ function ArchiveCard({
       />
     </Card>
   );
-}
+});
 
-function ArchiveListRow({
+const ArchiveListRow = memo(function ArchiveListRow({
   archive,
   printerName,
   isSelected,
@@ -1282,6 +1286,7 @@ function ArchiveListRow({
   calcConfig,
   t,
   onNavigateToArchive,
+  navigate,
 }: {
   archive: Archive;
   printerName: string;
@@ -1295,8 +1300,10 @@ function ArchiveListRow({
   calcConfig?: CalcConfig | null;
   t: TFunction;
   onNavigateToArchive?: (archiveId: number) => void;
+  /** The page's, identity-stable; see useArchiveActions. */
+  navigate: (to: string) => void;
 }) {
-  const actions = useArchiveActions(archive, t);
+  const actions = useArchiveActions(archive, t, navigate);
   const {
     hasPermission,
     canModify,
@@ -1321,7 +1328,6 @@ function ArchiveListRow({
     assignProjectMutation,
     handleContextMenu,
   } = actions;
-  const navigate = useNavigate();
   const { videos, openTimelapse } = useArchiveVideos(archive, navigate, () => setShowTimelapse(true));
 
   // 3D Preview: the part viewer, with its own plate card, model and toolpath tabs.
@@ -1727,7 +1733,7 @@ function ArchiveListRow({
       />
     </>
   );
-}
+});
 
 type SortOption = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc' | 'size-desc' | 'size-asc';
 type ViewMode = 'grid' | 'list' | 'calendar' | 'log';
@@ -1760,6 +1766,15 @@ function dupGroupKeyOf(a: { id: number; duplicate_sequence?: number | null; orig
 export function ArchivesPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // For the memoised cards: the router's navigate is a new function whenever
+  // the matched route changes (list <-> open archive), which re-rendered them all.
+  const navigateRef = useRef(navigate);
+  useEffect(() => {
+    navigateRef.current = navigate;
+  }, [navigate]);
+  const navigateStable = useCallback((to: string) => {
+    void navigateRef.current(to);
+  }, []);
   // /archives/<id> opens that archive over the list.
   const { id: openArchiveId } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
@@ -1968,9 +1983,26 @@ export function ArchivesPage() {
   // behind it. Both keys sit under ['archives'] so every existing
   // invalidateQueries({ queryKey: ['archives'] }) refreshes both.
   const headSize = Math.max(pageSize, ARCHIVE_HEAD_MIN);
+  const fullKey = ['archives', filterPrinter];
+  const headOptions = {
+    queryKey: ['archives', filterPrinter, 'head', headSize],
+    queryFn: () => api.getArchives(filterPrinter || undefined, undefined, headSize),
+    // The full list waits for this answer: a failed head must not hold it
+    // back for a retry.
+    retry: false,
+  };
   const fullQuery = useQuery({
-    queryKey: ['archives', filterPrinter],
-    queryFn: () => api.getAllArchives(filterPrinter || undefined),
+    queryKey: fullKey,
+    queryFn: async () => {
+      // First load only: let the head answer first. The server builds the
+      // full list on its event loop, and started together it held the head
+      // back. Awaited here, not gated on a render, so a slow device painting
+      // the head does not delay the full list too.
+      if (pageSize !== -1 && queryClient.getQueryData(fullKey) === undefined) {
+        await queryClient.fetchQuery({ ...headOptions, staleTime: Infinity }).catch(() => undefined);
+      }
+      return api.getAllArchives(filterPrinter || undefined);
+    },
     // Archive WebSocket events keep it fresh; a refetch on every return to the
     // tab re-downloaded the whole list (~1 MB gzipped at 6k archives).
     refetchOnWindowFocus: false,
@@ -1978,8 +2010,7 @@ export function ArchivesPage() {
   // Only until the full list is in: after that the head paints nothing, and
   // keeping it enabled made every ['archives'] invalidation fetch it too.
   const headQuery = useQuery({
-    queryKey: ['archives', filterPrinter, 'head', headSize],
-    queryFn: () => api.getArchives(filterPrinter || undefined, undefined, headSize),
+    ...headOptions,
     enabled: pageSize !== -1 && !fullQuery.data,
   });
   // The head holds only the newest rows. Any order other than newest-first,
@@ -2742,7 +2773,8 @@ export function ArchivesPage() {
 
   const selectionMode = isSelectionMode || selectedIds.size > 0;
 
-  const toggleSelect = (id: number) => {
+  // Stable: it is a prop of every memoised card.
+  const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -2752,7 +2784,7 @@ export function ArchivesPage() {
       }
       return next;
     });
-  };
+  }, []);
 
   const selectAll = () => {
     if (filteredArchives) {
@@ -3505,6 +3537,7 @@ export function ArchivesPage() {
                   calcConfig={calcConfig}
                   t={t}
                   onNavigateToArchive={handleNavigateToArchive}
+                  navigate={navigateStable}
                 />
               </div>
             ))}
@@ -3548,6 +3581,7 @@ export function ArchivesPage() {
                   calcConfig={calcConfig}
                   t={t}
                   onNavigateToArchive={handleNavigateToArchive}
+                  navigate={navigateStable}
                 />
               ))}
             </div>

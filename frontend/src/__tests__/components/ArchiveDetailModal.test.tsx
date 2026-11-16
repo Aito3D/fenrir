@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
+import { useQueryClient } from '@tanstack/react-query';
 import { render } from '../utils';
 import { server } from '../mocks/server';
 import { ArchiveDetailModal } from '../../components/ArchiveDetailModal';
@@ -538,5 +539,19 @@ describe('ArchiveDetailModal', () => {
     render(<ArchiveDetailModal archiveId={Number(routeId)} onClose={onClose} />);
 
     expect(await screen.findByText('This archive does not exist or you cannot see it.')).toBeInTheDocument();
+  });
+
+  it('paints from the row the list already holds while the archive loads', async () => {
+    // The archive itself never answers: only the list's row can paint it.
+    server.use(http.get('/api/v1/archives/5', () => new Promise<never>(() => {})));
+    function WithListLoaded() {
+      useQueryClient().setQueryData(['archives', null], [archive]);
+      return <ArchiveDetailModal archiveId={5} onClose={onClose} />;
+    }
+    render(<WithListLoaded />);
+
+    expect(await screen.findByRole('heading', { name: 'Planter' })).toBeInTheDocument();
+    // Its prints load alongside, not after the archive.
+    expect(await screen.findAllByTestId(/archive-run-/)).toHaveLength(2);
   });
 });

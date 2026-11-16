@@ -184,4 +184,41 @@ describe('ArchivesPage progressive load', () => {
     // The pending jump retried once the full list arrived and found the original.
     expect(scrollIntoView).toHaveBeenCalled();
   });
+
+  it('asks for the full list only once the head has answered', async () => {
+    // Started together, the server built the full list first and held the head back.
+    const asked: string[] = [];
+    let releaseHead: () => void = () => {};
+    const headGate = new Promise<void>((resolve) => { releaseHead = resolve; });
+    server.use(
+      http.get('/api/v1/archives/', async ({ request }) => {
+        const limit = new URL(request.url).searchParams.get('limit');
+        asked.push(limit === '10000' ? 'full' : 'head');
+        if (limit !== '10000') await headGate;
+        return HttpResponse.json(limit === '10000' ? [newest, older] : [newest]);
+      }),
+    );
+    render(<ArchivesPage />);
+
+    await waitFor(() => expect(asked).toEqual(['head']));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(asked).toEqual(['head']);
+
+    releaseHead();
+    await waitFor(() => expect(screen.getByText('Older Bracket')).toBeInTheDocument(), { timeout: 5000 });
+    expect(asked).toEqual(['head', 'full']);
+  });
+
+  it('still loads the full list when the head fails', async () => {
+    server.use(
+      http.get('/api/v1/archives/', ({ request }) =>
+        new URL(request.url).searchParams.get('limit') === '10000'
+          ? HttpResponse.json([newest, older])
+          : new HttpResponse(null, { status: 500 }),
+      ),
+    );
+    render(<ArchivesPage />);
+
+    await waitFor(() => expect(screen.getByText('Older Bracket')).toBeInTheDocument(), { timeout: 10000 });
+  }, 15000);
 });

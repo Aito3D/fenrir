@@ -1,6 +1,5 @@
 import { useState, useRef } from 'react';
 import type React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import type { Archive } from '../../api/client';
@@ -18,11 +17,12 @@ export type ArchiveTFunction = (key: string, options?: Record<string, unknown>) 
  * archive list row: modal toggles, the per-archive file/timelapse/project
  * mutations, and the context-menu position.
  */
-export function useArchiveActions(archive: Archive, t: ArchiveTFunction) {
+// `navigate` comes from the page, not useNavigate() here: that hook reads the
+// route context, so every card re-rendered whenever the address changed.
+export function useArchiveActions(archive: Archive, t: ArchiveTFunction, navigate: (to: string) => void) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission, canModify } = useAuth();
-  const navigate = useNavigate();
   const [showReprint, setShowReprint] = useState(false);
   // Post-print outcome confirmation dialog (#1898)
   const [showConfirmOutcome, setShowConfirmOutcome] = useState(false);
