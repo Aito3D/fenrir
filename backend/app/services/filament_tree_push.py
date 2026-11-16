@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.config import settings
 from backend.app.models.filament_profile import FilamentPreset
 from backend.app.models.filament_tree import FilamentTreeLeaf
-from backend.app.services.filament_tree import SKIP_KEYS
 from backend.app.services.orca_cloud import OrcaCloudAuthError, OrcaCloudError
 from backend.app.services.orca_cloud_codec import decode_content, encode_content, is_wire_format
 
@@ -42,7 +41,9 @@ def _snapshot(entries: list[dict]) -> str:
 
 
 def _differs(generated: dict, orca: dict) -> bool:
-    return any(v != orca.get(k) for k, v in generated.items() if k not in SKIP_KEYS)
+    # every generated key, identity keys included: the pull skips those, so only a push can fix a colour or
+    # printer list Orca holds differently
+    return any(v != orca.get(k) for k, v in generated.items())
 
 
 def _is_filament(entry: object) -> bool:

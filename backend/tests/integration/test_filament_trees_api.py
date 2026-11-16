@@ -306,6 +306,14 @@ async def test_sync_pushes_changed_leaves(async_client, db_session, monkeypatch,
     assert stub.pushed[0]["profile_id"] == "same"
     entries[0]["content"] = stub.pushed[0]["content"]
 
+    # identity keys are no tree values, but Fenrir still owns them: Orca holding another colour or printer list
+    # (a colour hex edit here, a re-save in OrcaSlicer there) is sent again
+    for key in ("default_filament_colour", "compatible_printers"):
+        entries[0]["content"] = stub.pushed[0]["content"] | {key: "other"}
+        stub = _stub_orca(monkeypatch, entries, scope="sync:write")
+        assert (await async_client.post(f"{API}/sync")).json()["push"]["pushed"] == 1, key
+        entries[0]["content"] = stub.pushed[0]["content"]
+
     # a Fenrir edit goes out as an update of the existing Orca profiles; the conflict shown earlier and left
     # unanswered no longer holds its leaf back (Fenrir is the master)
     tree_id = rows[0][0].tree_id
