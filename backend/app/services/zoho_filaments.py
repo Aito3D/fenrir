@@ -227,6 +227,7 @@ class FilamentProduct:
     dealer_price: float
     cost_per_kg: float
     has_price: bool
+    stock_on_hand: float = 0.0  # spools in stock (Zoho units), negatives clamped to 0
 
 
 @dataclass(frozen=True)
@@ -439,6 +440,7 @@ def _map_item(item: dict) -> FilamentProduct:
         dealer_price=dealer,
         cost_per_kg=cost,
         has_price=dealer > 0,
+        stock_on_hand=max(0.0, float(item.get("stock_on_hand") or 0.0)),
     )
 
 

@@ -36,6 +36,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.archive import PrintArchive
 from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.printer import Printer
+from backend.app.services import zoho_filaments
 from backend.app.utils.local_time import utcnow_naive
 
 MULTIPLIER = 1.5  # shortcut: fixed, upgrade to a setting when the shop wants to tune it
@@ -47,6 +48,7 @@ ORDERS_OFFSET = 1_700
 PRINT_HOURS_OFFSET = 40_000
 LAYERS_OFFSET = 3_200_000
 LOAD_FACTOR = 2  # the tracked fleet under-reports the shop's real machine hours
+STOCK_MULTIPLIER = 1.2  # filament stock shown = Zoho stock x this. Same shortcut as MULTIPLIER.
 PRINTERS_OFFSET = 3  # machines not connected to Fenrir; the load still divides by the real fleet
 CACHE_TTL = 300.0
 LOAD_WINDOW_DAYS = 7
@@ -73,6 +75,17 @@ _session_factory = async_session  # module attribute so tests can point a recomp
 def reset_cache() -> None:
     global _cache
     _cache = None
+
+
+async def filament_stock_kg(db: AsyncSession) -> float | None:
+    """Kg of filament in stock in Zoho (spools x spool weight) x ``STOCK_MULTIPLIER``;
+    None when Zoho is unreachable or not configured, so the rest of the figures still serve."""
+    try:
+        catalogue = await zoho_filaments.fetch_catalogue(db)  # cached 10 min by that module
+    except Exception:
+        logger.warning("showcase stats: Zoho filament stock unavailable", exc_info=True)
+        return None
+    return round(sum(p.stock_on_hand * p.spool_weight_kg for p in catalogue) * STOCK_MULTIPLIER, 1)
 
 
 def load_level(avg_hours_per_printer: float) -> str:
@@ -153,6 +166,7 @@ async def compute(db: AsyncSession, now: datetime | None = None) -> dict[str, An
         "layers": round(int(layers or 0) * m) + LAYERS_OFFSET,
         "orders": round(orders * m) + ORDERS_OFFSET,
         "printers": linked_printers + PRINTERS_OFFSET,
+        "filament_stock_kg": await filament_stock_kg(db),
         "last_30_days": {
             "prints": round(int(n_recent or 0) * m),
             "filament_kg": round(float(grams_recent or 0) / 1000 * m, 1),

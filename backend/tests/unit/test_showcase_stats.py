@@ -246,3 +246,23 @@ async def test_no_snapshot_and_a_failure_is_a_bodiless_503(async_client, served_
     assert r.content == b""
     assert r.headers["cache-control"] == "no-store"
     assert r.headers["retry-after"] == "60"
+
+
+@pytest.mark.asyncio
+async def test_filament_stock_kg_sums_spools_times_weight_times_multiplier(db_session, monkeypatch):
+    from backend.app.services.zoho_filaments import FilamentProduct
+
+    def product(stock, weight):
+        return FilamentProduct("1", "n", "", "b", "PLA", "c", weight, False, 0.0, 0.0, False, stock)
+
+    async def catalogue(db):
+        return [product(10, 1.0), product(4, 0.75), product(0, 1.0)]
+
+    monkeypatch.setattr(svc.zoho_filaments, "fetch_catalogue", catalogue)
+    assert (await svc.compute(db_session))["filament_stock_kg"] == round(13 * svc.STOCK_MULTIPLIER, 1)
+
+    async def down(db):
+        raise RuntimeError("Could not reach Zoho")
+
+    monkeypatch.setattr(svc.zoho_filaments, "fetch_catalogue", down)
+    assert (await svc.compute(db_session))["filament_stock_kg"] is None
