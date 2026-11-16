@@ -329,6 +329,34 @@ describe('useStreamTokenSync', () => {
 // #3025 — the two tokens are not interchangeable. A user without camera:view
 // holds a media token and no camera token; sending the media token to a camera
 // route (or the camera token to a thumbnail) would 401 either way.
+describe('rewriteMediaSrcWithToken leaves cookie-authed URLs stable (Fenrir)', () => {
+  const addImg = (src: string, broken: boolean) => {
+    const img = document.createElement('img');
+    img.setAttribute('src', src);
+    Object.defineProperty(img, 'complete', { value: true });
+    Object.defineProperty(img, 'naturalWidth', { value: broken ? 0 : 64 });
+    document.body.appendChild(img);
+    return img;
+  };
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('never appends a token to a URL marked ck=1', () => {
+    const img = addImg('/api/v1/library/files/7/thumbnail?ck=1&tv=a.png', false);
+    expect(rewriteMediaSrcWithToken(document, 'media-tok', null)).toBe(0);
+    expect(img.getAttribute('src')).toBe('/api/v1/library/files/7/thumbnail?ck=1&tv=a.png');
+  });
+
+  it('retries a failed cookie-authed image once, with the same URL', () => {
+    const img = addImg('/api/v1/library/files/7/thumbnail?ck=1', true);
+    expect(rewriteMediaSrcWithToken(document, 'media-tok', null)).toBe(1);
+    expect(img.getAttribute('src')).toBe('/api/v1/library/files/7/thumbnail?ck=1');
+    expect(rewriteMediaSrcWithToken(document, 'media-tok-2', null)).toBe(0);
+  });
+});
+
 describe('rewriteMediaSrcWithToken picks the token per URL (#3025)', () => {
   let root: HTMLDivElement;
 
@@ -387,5 +415,27 @@ describe('rewriteMediaSrcWithToken picks the token per URL (#3025)', () => {
   it('does not throw for isCameraUrl on a src that fails URL parsing', () => {
     expect(() => isCameraUrl('http://[invalid/api/v1/printers/1/camera/stream')).not.toThrow();
     expect(isCameraUrl('http://[invalid/api/v1/printers/1/camera/stream')).toBe(false);
+  });
+});
+
+describe('getLibraryFileThumbnailUrl (Fenrir: cookie-authed, cacheable)', () => {
+  afterEach(async () => {
+    const { setMediaToken } = await import('../../api/client');
+    setMediaToken(null);
+  });
+
+  it('carries no token once one was minted, so the URL survives token rotation', async () => {
+    const { api, setMediaToken } = await import('../../api/client');
+    setMediaToken('first');
+    const url = api.getLibraryFileThumbnailUrl(7, 'archive/library/thumbnails/abc.png');
+    setMediaToken('second');
+    expect(api.getLibraryFileThumbnailUrl(7, 'archive/library/thumbnails/abc.png')).toBe(url);
+    expect(url).toBe('/api/v1/library/files/7/thumbnail?ck=1&tv=abc.png');
+    expect(api.getLibraryFileThumbnailUrl(7)).toBe('/api/v1/library/files/7/thumbnail?ck=1');
+  });
+
+  it('stays the bare URL before the first mint, for the token rewrite to pick up', async () => {
+    const { api } = await import('../../api/client');
+    expect(api.getLibraryFileThumbnailUrl(7, 'x/abc.png')).toBe('/api/v1/library/files/7/thumbnail');
   });
 });

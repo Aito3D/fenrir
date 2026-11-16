@@ -99,6 +99,9 @@ export function getStreamToken(): string | null {
   return streamToken;
 }
 
+/** Query marker of a media URL that authenticates by cookie, not `?token=`. */
+export const MEDIA_COOKIE_MARK = 'ck=1';
+
 export function setMediaToken(token: string | null) {
   mediaToken = token;
 }
@@ -11088,7 +11091,16 @@ export const api = {
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
   },
-  getLibraryFileThumbnailUrl: (id: number) => withMediaToken(`${API_BASE}/library/files/${id}/thumbnail`),
+  // Fenrir: once a media token was minted the browser also holds it as a
+  // cookie, so the URL carries no token and stays the same across the token's
+  // rotation: the browser cache can serve it. `ck=1` marks it cookie-authed
+  // (see rewriteMediaSrcWithToken); `tv` moves when the thumbnail is redrawn.
+  getLibraryFileThumbnailUrl: (id: number, thumbnailPath?: string | null) => {
+    const url = `${API_BASE}/library/files/${id}/thumbnail`;
+    if (!mediaToken) return url;
+    const version = thumbnailPath?.split('/').pop();
+    return `${url}?${MEDIA_COOKIE_MARK}${version ? `&tv=${encodeURIComponent(version)}` : ''}`;
+  },
   // Client-rendered preview thumbnail upload (#2976). STEP/PDF/spreadsheet
   // previews render in the browser; the first render is posted back so the
   // grid gets a thumbnail without a server-side renderer for those formats.

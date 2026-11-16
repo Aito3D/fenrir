@@ -23,3 +23,19 @@ export function preloadRoute(pathname: string, table: RoutePreloadTable): void {
   started.add(load);
   void load().catch(() => {});
 }
+
+/** Start a route's chunk as soon as the pointer reaches a link to it (a tap
+ *  fires `pointerover` too), so the click that follows finds it loaded. One
+ *  document listener covers every in-app link. */
+export function prefetchRoutesOnHover(table: RoutePreloadTable): void {
+  document.addEventListener(
+    'pointerover',
+    (event) => {
+      const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (link instanceof HTMLAnchorElement && link.origin === window.location.origin) {
+        preloadRoute(link.pathname, table);
+      }
+    },
+    { passive: true },
+  );
+}

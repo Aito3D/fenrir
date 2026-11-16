@@ -12853,6 +12853,11 @@ async def lifespan(app: FastAPI):
     # below a migration run. See warn_if_running_on_uvloop for what is at stake.
     warn_if_running_on_uvloop()
 
+    # Fenrir: log the stack of whatever blocks the event loop for over a second.
+    from backend.app.core.loop_watchdog import start_loop_watchdog
+
+    stop_loop_watchdog = start_loop_watchdog()
+
     await init_db()
 
     # Browser download tokens expire after five minutes. Remove abandoned
@@ -13412,6 +13417,8 @@ async def lifespan(app: FastAPI):
     start_order_board_sync()
 
     yield
+
+    stop_loop_watchdog()
 
     # Shutdown
     print_scheduler.stop()

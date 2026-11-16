@@ -11,7 +11,7 @@ from typing import Annotated
 
 import anyio
 import jwt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import PyJWTError as JWTError
 from passlib.context import CryptContext
@@ -1406,6 +1406,8 @@ async def verify_overlay_token(token: str) -> PrinterScope | None:
 # TTL -- acceptable for read-only media at 60 minutes, and identical to the
 # guarantee ``/api/v1/ws`` has made since GHSA-r2qv.
 MEDIA_TOKEN_EXPIRE_MINUTES = 60
+# Fenrir: cookie twin of ``?token=`` for the ownership-scoped media routes (all GET).
+MEDIA_COOKIE_NAME = "fenrir_media"
 
 
 async def create_media_token(username: str | None) -> str:
@@ -3051,10 +3053,16 @@ def require_media_token_ownership(
         token: str | None = None,
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
         x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+        media_cookie: Annotated[str | None, Cookie(alias=MEDIA_COOKIE_NAME)] = None,
     ) -> tuple[User | ApiKeyActor | None, bool]:
         async with async_session() as db:
             if not await is_auth_enabled(db):
                 return None, True  # Auth disabled, allow all
+        # Fenrir: the same media token, carried in a cookie, so the image URL
+        # stays stable and the browser cache can hold it. Explicit credentials
+        # win: a fetch() or API key must not be answered as the cookie's user.
+        if not token and credentials is None and not x_api_key:
+            token = media_cookie
         if token:
             user = await _user_from_media_token(token)
             if user.has_permission(all_perm):

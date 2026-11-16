@@ -15,7 +15,7 @@ import { ColorCatalogProvider } from './contexts/ColorCatalogContext';
 import { FullscreenProvider } from './contexts/FullscreenContext';
 import { TrackingErrorBoundary } from './components/aito/trackingShell';
 import { AuthRetrying } from './components/AuthRetrying';
-import { preloadRoute, type RoutePreloadTable } from './utils/routePreload';
+import { preloadRoute, prefetchRoutesOnHover, type RoutePreloadTable } from './utils/routePreload';
 
 // After a redeploy the previous build's hashed chunk files no longer exist,
 // so a lazy route's dynamic import rejects. One forced reload picks up the
@@ -104,7 +104,10 @@ const ROUTE_PRELOADS: RoutePreloadTable = [
   [/^\/t\/o\/[^/]+$/, loadOrderTrackPage],
   [/^\/(t|track)\/[^/]+$/, loadAitoTrackPage],
 ];
-if (typeof window !== 'undefined') preloadRoute(window.location.pathname, ROUTE_PRELOADS);
+if (typeof window !== 'undefined') {
+  preloadRoute(window.location.pathname, ROUTE_PRELOADS);
+  prefetchRoutesOnHover(ROUTE_PRELOADS);
+}
 const AitoTrackEntryPage = lazyWithReload(() => import('./pages/AitoTrackEntryPage').then(m => ({ default: m.AitoTrackEntryPage })));
 const GroupEditPage = lazyWithReload(() => import('./pages/GroupEditPage').then(m => ({ default: m.GroupEditPage })));
 const PrinterLocationsPage = lazyWithReload(() => import('./pages/PrinterLocationsPage').then(m => ({ default: m.PrinterLocationsPage })));

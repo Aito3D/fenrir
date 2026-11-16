@@ -17,6 +17,8 @@ from sqlalchemy.orm import selectinload
 from backend.app.api.routes.settings import get_external_login_url
 from backend.app.core.auth import (
     ALGORITHM,
+    MEDIA_COOKIE_NAME,
+    MEDIA_TOKEN_EXPIRE_MINUTES,
     SECRET_KEY,
     Permission,
     RequireAdminIfAuthEnabled,
@@ -743,6 +745,8 @@ async def mint_websocket_token(
 
 @router.post("/media-token")
 async def mint_media_token(
+    request: Request,
+    response: Response,
     current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Mint a short-lived token for ``<img>`` / ``<video>`` media routes (#3025).
@@ -762,7 +766,19 @@ async def mint_media_token(
     Returns ``{"token": <opaque string>}``, valid for 60 minutes.
     """
     username = current_user.username if current_user is not None else None
-    return {"token": await create_media_token(username)}
+    token = await create_media_token(username)
+    # Fenrir: also hand the token over as a cookie, so thumbnail URLs need no
+    # ``?token=`` and stay cacheable across the token's 50-minute rotation.
+    response.set_cookie(
+        MEDIA_COOKIE_NAME,
+        token,
+        max_age=MEDIA_TOKEN_EXPIRE_MINUTES * 60,
+        path="/api/v1",
+        httponly=True,
+        samesite="strict",
+        secure=request.url.scheme == "https",
+    )
+    return {"token": token}
 
 
 @router.get("/me", response_model=UserResponse)
@@ -856,6 +872,7 @@ async def get_current_user_info(
 @router.post("/logout")
 async def logout(
     raw_request: Request,
+    response: Response,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
 ):
     """Logout — revokes the current JWT so it cannot be reused after logout."""
@@ -892,6 +909,7 @@ async def logout(
                 ua,
             )
 
+    response.delete_cookie(MEDIA_COOKIE_NAME, path="/api/v1")
     return {"message": "Logged out successfully"}
 
 

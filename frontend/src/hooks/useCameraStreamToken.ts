@@ -7,6 +7,7 @@ import {
   setMediaToken,
   getMediaToken,
   withStreamToken,
+  MEDIA_COOKIE_MARK,
 } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -34,6 +35,11 @@ export function isCameraUrl(src: string): boolean {
   return isSameOriginApiV1Src(src) && src.includes('/camera/');
 }
 
+/** True for a media URL that authenticates by the media cookie (no token). */
+function isCookieMediaUrl(src: string): boolean {
+  return new RegExp(`[?&]${MEDIA_COOKIE_MARK}(&|$)`).test(src);
+}
+
 /**
  * Walks the DOM and updates every <img>/<video> pointing at /api/v1/ so its
  * src carries the right token: the camera token for live-camera URLs, the
@@ -57,6 +63,18 @@ export function rewriteMediaSrcWithToken(
       if (!isSameOriginApiV1Src(src)) return;
       const token = isCameraUrl(src) ? cameraToken : mediaToken;
       if (!token) return;
+      if (isCookieMediaUrl(src)) {
+        // Authenticated by the cookie a fresh mint just renewed: leave the URL
+        // alone (it is the cache key) and only retry an image that failed.
+        // Once per element: a thumbnail that is simply missing (404) must not
+        // be re-requested on every token refresh.
+        if (el instanceof HTMLImageElement && el.complete && el.naturalWidth === 0 && !el.dataset.ckRetried) {
+          el.dataset.ckRetried = '1';
+          el.src = src;
+          updated += 1;
+        }
+        return;
+      }
       const tokenParam = `token=${encodeURIComponent(token)}`;
       if (src.includes(tokenParam)) return;
       const withoutToken = src.replace(/([?&])token=[^&]*(&|$)/, (_m, pre, post) =>
@@ -161,7 +179,9 @@ export function useStreamTokenSync() {
       if (!isSameOriginApiV1Src(src)) return;
       const camera = isCameraUrl(src);
       const token = camera ? getStreamToken() : getMediaToken();
-      if (!token || !src.includes(`token=${encodeURIComponent(token)}`)) return;
+      const usedOurCredential =
+        src.includes(`token=${encodeURIComponent(token ?? '')}`) || (isCookieMediaUrl(src) && !el.dataset.ckRetried);
+      if (!token || !usedOurCredential) return;
 
       // This image/video used one of our tokens and failed — likely invalid
       if (refreshingRef.current) return;

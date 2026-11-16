@@ -45,3 +45,18 @@ describe('preloadRoute', () => {
     expect(failing).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('prefetchRoutesOnHover', () => {
+  it('starts a route when the pointer reaches a link to it, and ignores other elements', async () => {
+    const { prefetchRoutesOnHover } = await import('../../utils/routePreload');
+    const files = vi.fn(() => Promise.resolve({}));
+    prefetchRoutesOnHover([[/^\/files\/?$/, files]]);
+
+    document.body.innerHTML = '<a href="/files"><span id="label">Files</span></a><button id="other">x</button>';
+    document.getElementById('other')!.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }));
+    expect(files).not.toHaveBeenCalled();
+    document.getElementById('label')!.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }));
+    document.getElementById('label')!.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }));
+    expect(files).toHaveBeenCalledTimes(1);
+  });
+});
