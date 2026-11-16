@@ -1,111 +1,96 @@
-# Refactor loop — campaign F1: the filament profile tree — final report
+# Refactor-loop campaign F2 — the filament profile page — final report
 
-2026-11-14 / 2026-11-15. Branch `auto-refactor-loop` in `/Users/paultheis/Documents/Code/bambuddy-refactor`,
-cut from `main` at `d037b490e` (UPSTREAM). BASE is the tag `refactor-base` (`5dce0d855`, the setup commit).
+Date: 2026-11-15. Branch `auto-refactor-loop` in `../bambuddy-refactor`, based on local main `5de604eed`
+(BASE = tag `refactor-base`, setup commit `431ba6ef5`). Follow-on to campaign F1 (same feature, landed the same day).
 
-## Outcome
+## Summary
 
-- **Why it ended:** MAX_ROUNDS (3 survey rounds done). The iteration budget (raised from 8 to 10 by the user at the round-3
-  sweep) is also spent. Not converged: round 3 still filed findings.
-- **Iterations:** 10, every one PASSED its blind verification on the first attempt. Tags `loop-1` … `loop-10`.
-- **Commits:** 10 squashed iteration commits on top of the setup commit, plus this report.
-- **Tasks:** 30 filed into the plan, 29 DONE, 1 declined by the user (T-071). 0 OPEN, 0 BLOCKED.
-- **Triage list:** 57 findings were triaged over the campaign (P2/P3), 7 were promoted and worked, 50 remain in `TRIAGE.md`.
+| | |
+|---|---|
+| Iterations run | 7 of 8 (all 7 passed blind verification on the first attempt) |
+| Survey rounds | 3 of 3 |
+| Commits | 1 setup + 7 iteration commits (grouped) + this report |
+| Tags | `refactor-base`, `loop-1` … `loop-7` |
+| Tasks | 18 filed, 18 DONE, 0 open / blocked / declined |
+| Why it ended | MAX_ROUNDS (3). Round 3 was dry: all four auditors filed nothing |
 
-## Coverage, tests, goldens
+Scope: `backend/app/api/routes/filament_trees.py`, `models|schemas/filament_tree.py`, `services/filament_tree*.py`
+(incl. the new `filament_tree_push.py`); `frontend/src/pages/FilamentProfilesPage.tsx`, `components/filament-trees/*`,
+`components/filament-profiles/*`, the FilamentTree slice of `api/client.ts`; and their tests.
 
-| | Baseline (BASE) | Final (loop-10) |
+## Gates
+
+| Gate | Baseline | Final |
 |---|---|---|
-| Backend scoped statements | 96.86% (1140/1177) | 98.14% (1267/1291) |
-| Frontend scoped statements | 88.94% (716/805) | 89.48% (732/818) |
-| Backend suite | 27508 passed, 1 failed (known_broken) | 27560 passed, 0 failed |
-| Frontend suite | 11269 passed | 11284 passed (1 load flake, passes alone) |
+| Backend scoped statement coverage | 97.91% (1403/1433) | 98.09% (1436/1464) |
+| Frontend scoped statement coverage | 85.64% (841/982) | 88.20% (875/992) |
+| Known-broken tests | 1 | 1 (unchanged: `test_printer_hours_migrations.py::test_migration_backfills_calibrated_at_from_offset`, out of scope, time-of-day dependent) |
+| Golden snapshot probes | 7/7 | 7/7 (re-recorded only for approved changes) |
+| SURFACE.md | — | changed only by approved changes (see below) |
+| Diff vs BASE | — | 41 files, +880 / −123 (production code: 10 files, +167 / −67; the rest is tests, 16 locale files, goldens) |
 
-- Golden probes: 7/7 matching at every iteration. Goldens moved only for user-approved changes.
-- `SURFACE.md`: changed only for user-approved changes (listed below); regenerated output is identical to the committed file.
-- known_broken: `test_printer_hours_migrations.py::test_migration_backfills_calibrated_at_from_offset` (out of scope) —
-  unchanged; it fails only while the local day (UTC-10) differs from the UTC day, and passed in the late-night runs.
-- CI gates checked on the final tree: ruff, `tsc -b`, eslint (0 errors), i18n parity, knip (exit 0), basedpyright lock mode
-  (no line mentions `filament_tree`). Not run: `npm run build`, Docker suite, security suite as a whole.
-- Size: production code 10 files, +367 / −166; tests 11 files, +955 / −14.
+Load flakes seen during verification, all in files the campaign never touched and all passing when rerun alone:
+`PrintModal.test.tsx`, `ArchivesPage.test.tsx`, `StreamOverlayPage.test.tsx`, `FileManagerPage.test.tsx`;
+backend `test_mfa_api.py::TestOIDCAutoCreateUsername`, `test_timelapse_clock_match.py` (baseline run only).
 
-## User-approved behavior changes (all in BASELINE-CHANGELOG.md)
+## User-approved behavior changes (all in BASELINE-CHANGELOG.md, dated 2026-11-15)
 
-Round 1 (approved 2026-11-14):
-- T-001 Export for Orca requires `filaments:update`; export buttons hidden without it.
-- T-002 / T-010 unknown leaf / missing preset: 404 with a domain message instead of SQLAlchemy's text.
-- T-006 a malformed Orca Cloud entry is counted as ignored instead of failing the sync with a 500.
-- T-007 export no longer marks leaves exported; it returns `X-Export-Token`, and `POST /filament-trees/export/confirm`
-  clears only the leaves whose content is unchanged. Tokens live in memory (newest 32): a restart between export and
-  confirm leaves the leaves pending.
-- T-008 duplicate machines/nozzles in the targets → 400. T-009 duplicate colour names (case-insensitive) → 400.
-- T-011 targets are validated and stripped before the calibration-source check. T-012 explicit null source on PATCH → 400.
-- T-014 the sync `missing` list is sorted. T-026 migration skips the 11 Orca metadata keys of `SKIP_KEYS`.
-- T-036 five unused `filamentTrees` translation keys removed from all 16 locales.
+- **T-084** SYNC no longer pushes a leaf whose Orca edit the pull refused (the OrcaSlicer edit is no longer overwritten).
+- **T-081 / T-087** `POST /filament-trees/orca-cleanup` takes the previewed `names` instead of a count; 400 "Orca Cloud changed" when the stray set differs.
+- **T-082** Pre-cleanup snapshots are `cleanup-<ts>.json` and are never pruned by the push-snapshot rotation.
+- **T-088** A failed delete batch during cleanup returns 200 with `failed > 0` and the snapshot name instead of a 502.
+- **T-089** SYNC has a 10-minute deadline; a lost response shows "outcome unknown"; the button re-enables.
+- **T-090** `GET /sync` returns a `fingerprint`; `POST /sync?fingerprint=` answers 409 when the plan changed since the preview and the page shows a fresh preview. Omitting the parameter keeps the old behavior.
+- **T-091** Sync base on a server without a Bambu Studio bundle offers a "Choose files" button instead of opening the picker by itself.
+- **T-083** The Clean Orca Cloud confirmation lists the preset names it will delete.
+- **T-092** Filament-tree dialogs ignore clicks and keys during their close animation.
+- **T-118** The SYNC response gains `push.held` (leaves held back by a refused Orca edit) and the result modal lists them (new key `filamentTrees.pushHeld`, 16 locales). The preview still lists those keys as pulled: a refusal is only known by attempting the write.
+- **T-119** A cleanup whose final check fails after deleting returns 200 with the snapshot name and unknown counts (new key `filamentTrees.cleanOrcaUnknown`, 16 locales). An auth error at that point is still a 401 without the snapshot name.
+- **T-121** An upload that finds no presets shows the normal 0-result stats; Choose files is disabled while an upload runs.
+- **T-120** (golden re-record only, no observable change) the SYNC fingerprint no longer depends on the order Orca lists profiles.
 
-Round 2 (approved 2026-11-15):
-- T-054 changing targets or skip-0.2 needs `filaments:delete` when it would remove an existing leaf preset.
-- T-059 the per-tree Export button refreshes the tree list. T-063 label and export requests raise `ApiError`.
-- T-060 (SURFACE regeneration only) `store.tree_write_lock` / `store.validate_targets` are public.
+Not behavior changes: **T-085** POST /sync and POST /orca-cleanup run one at a time (per process) so concurrent runs cannot
+create duplicate Orca profiles; **T-105, T-112, T-116** tests only.
 
-Round 3 (approved 2026-11-15):
-- T-067 a brand/material rename runs the leaf-removal (403 without `filaments:delete`) and source-stays-a-target (400)
-  checks; a skip-0.2-only PATCH now gets that 400 too.
-- T-070 two concurrent migrations of one group: the loser gets 400 "group already migrated".
-- T-075 one missing-preset message (`store.get_leaf_preset`). T-076 no export token → the page skips the confirm call.
+## What each survey round found
 
-Declined: T-071 (keep leaves pending until the user confirms the file was saved).
+| Round | security | robustness | cleanliness | tests | Outcome |
+|---|---|---|---|---|---|
+| 1 | 3 filed | 8 filed, 3 triaged | 10 triaged | 3 filed, 10 triaged | 14 tasks → iterations 1–5 |
+| 2 | clean | 3 filed, 1 triaged (T-120, later promoted by the user) | 1 triaged | 3 triaged | 4 tasks → iterations 6–7 |
+| 3 | clean | clean | clean | clean | dry |
 
-## Changes without a changelog entry (judged non-observable by the verifier)
+Scanners (bandit, gitleaks, semgrep rule packs, pip-audit, npm audit): nothing in scope in any round.
 
-- T-003 / T-053 / T-055: every tree write route serialises on a per-tree lock (`store.tree_write_lock`, refcounted, released
-  when idle). Overlapping saves no longer lose an edit or fail with a 500. A sync holds every tree's lock while it applies.
-- T-056: a delayed colour save sends the colour's current name (a rename right after a recolour is no longer undone).
-- T-058: the export blob URL is revoked 60 s after the click instead of immediately.
-- T-040, T-041, T-065: tests only.
+## Findings by auditor (filed into the plan)
 
-## Survey rounds
+| Auditor | Filed | DONE | BLOCKED | WONTFIX-AUTO |
+|---|---|---|---|---|
+| audit-security | 3 | 3 | 0 | 0 |
+| audit-robustness | 12 (incl. promoted T-120) | 12 | 0 | 0 |
+| audit-cleanliness | 0 | 0 | 0 | 0 |
+| audit-tests | 3 | 3 | 0 | 0 |
 
-| Round | security | robustness | cleanliness | tests | Filed | Triaged |
-|---|---|---|---|---|---|---|
-| 1 | 2 | 12 | 25 | 13 | 15 | 37 |
-| 2 | 2 | 5 | 5 | 2 | 3 | 11 |
-| 3 | 1 | 5 | 5 | 3 | 5 | 9 |
+## Triaged this campaign (recorded, not worked)
 
-Findings by auditor (plan tasks): audit-security 5 filed / 5 DONE; audit-robustness 16 filed / 15 DONE, 1 declined;
-audit-cleanliness 6 filed / 6 DONE; audit-tests 3 filed / 3 DONE.
-Triaged by auditor over the campaign: security 1, robustness 10, cleanliness 30, tests 16 (57; 7 promoted: T-053, T-055,
-T-056, T-057, T-058, T-060, T-065).
+28 findings were diverted to TRIAGE.md (P2/P3, no behavior change): robustness 4, cleanliness 11, tests 13. One (T-120) was
+promoted and done, so 27 remain from this campaign. TRIAGE.md also still carries campaign F1's 50 entries, 77 in total
+(robustness 9, cleanliness 40, tests 28), each with full evidence. Promote one with
+`python3 tools/plan.py promote <id> --iteration N` (the flag is required).
+
+Worth a look first:
+- T-086 `push_leaves` writes leaf rows it read before the network calls, without the tree lock (a save during a push can lose its export-pending flag; a leaf deleted during a push gives a 500).
+- T-093 `push_leaves` crashes on an Orca filament entry without an id.
+- T-094 `_snapshot` writes non-atomically and blocks the event loop.
+- T-122 POST /sync with a fingerprint plans the pull twice (cost only).
+- ~160 unreferenced `filamentProfiles` i18n keys from the removed preset grid (cleanliness, round 1).
+- Remaining test gaps: push failure-streak reset, snapshot batch sizes, `pickedFiles` zip branch, `usePresetSyncs` failure paths, `ZohoSyncResult` branches.
 
 ## Left for humans
 
-`TRIAGE.md` holds 50 findings with full evidence (`python tools/plan.py --file TRIAGE.md render --iteration 10`;
-promote one with `python tools/plan.py promote <id> --iteration N`). The ones most worth a look:
+- No task is OPEN, BLOCKED or WONTFIX-AUTO.
+- Known limits of what shipped: the run lock (T-085) is per process; `inert` keyboard blocking (T-092) is asserted by attribute only, not checked in a real browser; nothing was run against live Orca Cloud (all Orca calls are stubbed in tests and probes).
+- After merging: rebuild `static/` (frontend changed), restart the :8000 dev server.
 
-- T-068 `put_targets` and `sync` read the list of tree ids before taking the lock: a tree created in that gap is not
-  regenerated under the new targets; a tree deleted while `put_targets` waits makes the whole PUT fail with a 404.
-- T-069 `MaterialCards`: each brand row runs its own node query, so one edit triggers one `GET /node` per tree, each reading
-  the Bambu base presets from disk on the event loop.
-- T-072 the delayed colour save sends the name of a rename still in flight; if the server refuses the rename, the recolour
-  is refused too and the picker shows an unsaved colour.
-- T-078 `TreeSettingsPanel` permission gating has no test (the test grants every permission).
-- T-004 / T-005 / T-013 (round 1 robustness): `apply_pull` savepoints commit on release under SQLite, so a sync is not one
-  transaction; refusals in `apply_pull` / `_write_node` are swallowed without a log line; tree-name uniqueness is
-  check-then-insert with no unique constraint.
-- Round-1 cleanliness: the tree + colour insert sequence exists three times; `NodePanel` is one ~460-line component; the
-  mutate / invalidate / toast wrapper is hand-written in nine call sites.
-
-Noted by auditors or workers but out of scope or not filed:
-- `price_import` in `routes/filament_profiles.py` calls `set_node_values` without the tree lock.
-- A read-only user without Zoho permission sees an empty "Sync & export" menu.
-- `X-Export-Token` would need CORS `expose_headers` if the frontend were ever served from another origin.
-
-## Landing notes
-
-- `main` moved on only if the user committed there meanwhile; the campaign touched files the user is actively developing
-  (`filament_trees.py`, `filament_tree_store.py`, `TreeSettingsPanel.tsx`, `FilamentProfilesPage.tsx`, `client.ts`, all 16
-  locale files) — expect conflicts if `main` has uncommitted or newer work there.
-- `static/` was not rebuilt on this branch (`npm run build` is forbidden in the loop): rebuild and commit it after merging.
-- The dev backend on :8000 needs a restart after landing (new confirm route, lock, permission checks).
-- Loop state (PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log, findings JSON, briefs) is untracked in the worktree and was
-  copied to `plans/refactor-campaign-ftree-f1/` in the main checkout.
+Detailed state (PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log, auditor findings JSON, briefs) is copied to
+`plans/refactor-campaign-ftree-f2/` in the main checkout.
