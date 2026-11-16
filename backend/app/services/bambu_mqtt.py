@@ -1058,7 +1058,13 @@ HMS_MQTT_VERIFY_FAILED: str = "0500050000010007"
 # Faults Bambu files at level 1 (error) that the shop treats as level 2
 # (warning): the print carries on, only the chip label and camera-wall tint
 # change. "Toolhead Camera lens seems to be dirty" (X1 series).
-_HMS_SEVERITY_OVERRIDES: dict[str, int] = {"0C00010000010004": 2}
+# "AMS-HT <X> front cover is open" is filed at level 2 and the shop treats it as
+# level 3 (notice): opening a drying AMS-HT is routine, so it stays listed in the
+# HMS modal but raises no badge and no notification.
+_HMS_SEVERITY_OVERRIDES: dict[str, int] = {
+    "0C00010000010004": 2,
+    **{f"18{unit:02X}240000020009": 3 for unit in range(8)},  # AMS-HT A-H
+}
 
 
 @dataclass

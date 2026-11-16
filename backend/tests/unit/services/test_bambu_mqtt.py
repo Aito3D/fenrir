@@ -5550,6 +5550,17 @@ class TestHMSUserActionFiltering:
         assert error.full_code == "0C00010000010004"
         assert error.severity == 2
 
+    def test_ams_ht_cover_open_is_downgraded_to_notice(self, mqtt_client):
+        """1801-2400-0002-0009 (AMS-HT B front cover open) is level 2 in Bambu's
+        scheme; the shop keeps it listed but it must not count as a fault."""
+        from backend.app.services.hms_errors import hms_fault_counts
+
+        mqtt_client._update_state({"hms": [{"attr": 0x18012400, "code": 0x00020009}]})
+        (error,) = mqtt_client.state.hms_errors
+        assert error.full_code == "1801240000020009"
+        assert error.severity == 3
+        assert not hms_fault_counts(error)
+
     def test_real_layer_shift_still_passes_through(self, mqtt_client):
         """0300_4057 (Z-axis step loss) is a real fault and must NOT be filtered."""
         mqtt_client._update_state({"hms": [{"attr": 0x03000100, "code": 0x4057}]})
