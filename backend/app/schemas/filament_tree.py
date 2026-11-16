@@ -101,7 +101,7 @@ class ExportConfirm(BaseModel):
 
 
 class OrcaCleanupRequest(BaseModel):
-    expected: int  # the count the user saw and confirmed
+    names: list[str]  # the profiles the user saw in the preview and confirmed
 
 
 class TreeCreate(BaseModel):

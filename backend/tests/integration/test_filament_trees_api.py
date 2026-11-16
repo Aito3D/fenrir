@@ -391,13 +391,16 @@ async def test_orca_cleanup_deletes_only_stray_filaments(async_client, db_sessio
     stub = _stub_orca(monkeypatch, entries)
     r = await async_client.get(f"{API}/orca-cleanup")
     assert r.json() == {"count": 2, "names": ["Polymaker PETG - Red", "eSUN PLA+ - Blue"], "writable": False}
-    # read-only pairing, or a count the user never saw: refused before anything is deleted
-    assert (await async_client.post(f"{API}/orca-cleanup", json={"expected": 2})).status_code == 400
+    seen = ["Polymaker PETG - Red", "eSUN PLA+ - Blue"]
+    # read-only pairing, or names the user never saw (even with the same count): refused before anything is deleted
+    assert (await async_client.post(f"{API}/orca-cleanup", json={"names": seen})).status_code == 400
     stub = _stub_orca(monkeypatch, entries, scope="sync:write")
-    assert (await async_client.post(f"{API}/orca-cleanup", json={"expected": 3})).status_code == 400
+    assert (await async_client.post(f"{API}/orca-cleanup", json={"names": [*seen, "extra"]})).status_code == 400
+    r = await async_client.post(f"{API}/orca-cleanup", json={"names": [seen[0], "Some Other Profile"]})
+    assert r.status_code == 400 and "Orca Cloud changed" in r.json()["detail"]
     assert not hasattr(stub, "deleted") and not list(tmp_path.iterdir())
 
-    r = await async_client.post(f"{API}/orca-cleanup", json={"expected": 2})
+    r = await async_client.post(f"{API}/orca-cleanup", json={"names": seen})
     assert r.status_code == 200, r.text
     body = r.json()
     assert stub.deleted == ["old", "stuck"]  # never the leaf, never the process profile
@@ -1263,7 +1266,9 @@ async def test_orca_cleanup_waits_for_a_running_orca_run(async_client, db_sessio
     await _tree(db_session)
     entries = [{"id": "old", "name": "Polymaker PETG - Red", "content": {"type": "filament"}}]
     stub = _stub_orca(monkeypatch, entries, scope="sync:write")
-    r = await _request_waits_for_lock(-1, lambda: async_client.post(f"{API}/orca-cleanup", json={"expected": 1}))
+    r = await _request_waits_for_lock(
+        -1, lambda: async_client.post(f"{API}/orca-cleanup", json={"names": ["Polymaker PETG - Red"]})
+    )
     assert r.status_code == 200, r.text
     assert stub.deleted == ["old"]
 

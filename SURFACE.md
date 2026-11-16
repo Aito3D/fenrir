@@ -130,7 +130,7 @@ class NodeUpdate(BaseModel)
     set_values: dict[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=100), _PydanticGeneralMetadata(pattern='^[a-z0-9_]+$')])], typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)], typing.Annotated[bool, Strict(strict=True)], typing.Annotated[list[typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)]]], FieldInfo(annotation=NoneType, required=True, metadata=[MaxLen(max_length=16)])]]]  default_factory=dict
     clear: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=100), _PydanticGeneralMetadata(pattern='^[a-z0-9_]+$')])]]  default_factory=list
 class OrcaCleanupRequest(BaseModel)
-    expected: <class 'int'>  required
+    names: list[str]  required
 class Targets(BaseModel)
     machines: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  required
     nozzles: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  required
@@ -728,10 +728,10 @@ export interface FilamentTreeUpdate {
     request<{ tree_ids: number[] }>('/filament-trees/migrate', { method: 'POST', body: JSON.stringify({ groups }) }),
   previewFilamentTreeSync: () => request<FilamentTreeSyncPreview>('/filament-trees/sync'),
   syncFilamentTrees: () => request<FilamentTreePullResult>('/filament-trees/sync', { method: 'POST' }),
-  // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if the count still matches
+  // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if exactly these names are still the strays
   getOrcaCleanupPreview: () => request<{ count: number; names: string[]; writable: boolean }>('/filament-trees/orca-cleanup'),
-  cleanOrcaCloud: (expected: number) =>
-    request<{ deleted: number; failed: number; snapshot: string | null }>('/filament-trees/orca-cleanup', { method: 'POST', body: JSON.stringify({ expected }) }),
+  cleanOrcaCloud: (names: string[]) =>
+    request<{ deleted: number; failed: number; snapshot: string | null }>('/filament-trees/orca-cleanup', { method: 'POST', body: JSON.stringify({ names }) }),
   // orca_value: what Orca holds; the server stores it as the leaf's baseline whichever value is kept
   resolveFilamentTreeConflict: (data: { tree_id: number; machine: string; nozzle: string; color_id: number; key: string; value: FilamentTreePresetValue | null; orca_value: FilamentTreePresetValue | null }) =>
     request<{ success: boolean }>('/filament-trees/conflicts/resolve', { method: 'POST', body: JSON.stringify(data) }),

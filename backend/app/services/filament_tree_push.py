@@ -75,14 +75,16 @@ async def cleanup_preview(db: AsyncSession, svc) -> dict:
     }
 
 
-async def cleanup_orca(db: AsyncSession, svc, expected: int) -> dict:
+async def cleanup_orca(db: AsyncSession, svc, confirmed: list[str]) -> dict:
     """Snapshot, then delete every Orca Cloud filament profile that is not a tree leaf. Printer and process
-    profiles are never touched. ``expected`` is the count the user confirmed: anything else refuses."""
+    profiles are never touched. ``confirmed`` are the names the user saw: any other stray set refuses."""
     preview = await cleanup_preview(db, svc)
     if not preview["writable"]:
         raise ValueError("Orca Cloud is connected read-only: disconnect and reconnect it to allow deleting")
-    if preview["count"] != expected:
-        raise ValueError(f"Orca Cloud changed: {preview['count']} profiles would be deleted, not {expected}")
+    if preview["names"] != sorted(confirmed):
+        raise ValueError(
+            f"Orca Cloud changed: {preview['count']} profiles would be deleted, not the {len(confirmed)} confirmed"
+        )
     ids = preview["_ids"]
     if not ids:
         return {"deleted": 0, "failed": 0, "snapshot": None}

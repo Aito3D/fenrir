@@ -1139,7 +1139,7 @@
    ]
   },
   "POST /api/v1/filament-trees/orca-cleanup": {
-   "description": "Delete them, after a snapshot. 400 when the count no longer matches what the user confirmed.",
+   "description": "Delete them, after a snapshot. 400 when the profiles to delete no longer match the names the user confirmed.",
    "operationId": "orca_cleanup_api_v1_filament_trees_orca_cleanup_post",
    "parameters": [
     {
@@ -2178,13 +2178,16 @@
   },
   "OrcaCleanupRequest": {
    "properties": {
-    "expected": {
-     "title": "Expected",
-     "type": "integer"
+    "names": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Names",
+     "type": "array"
     }
    },
    "required": [
-    "expected"
+    "names"
    ],
    "title": "OrcaCleanupRequest",
    "type": "object"

@@ -212,7 +212,7 @@ class NodeUpdate(BaseModel)
     set_values: dict[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=100), _PydanticGeneralMetadata(pattern='^[a-z0-9_]+$')])], typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)], typing.Annotated[bool, Strict(strict=True)], typing.Annotated[list[typing.Union[typing.Annotated[str, Strict(strict=True)], typing.Annotated[int, Strict(strict=True)], typing.Annotated[float, Strict(strict=True)]]], FieldInfo(annotation=NoneType, required=True, metadata=[MaxLen(max_length=16)])]]]  default_factory=dict
     clear: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=100), _PydanticGeneralMetadata(pattern='^[a-z0-9_]+$')])]]  default_factory=list
 class OrcaCleanupRequest(BaseModel)
-    expected: <class 'int'>  required
+    names: list[str]  required
 class Targets(BaseModel)
     machines: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  required
     nozzles: list[typing.Annotated[str, FieldInfo(annotation=NoneType, required=True, metadata=[MinLen(min_length=1), MaxLen(max_length=32)]), AfterValidator(func=<function _safe_name>)]]  required

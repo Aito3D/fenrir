@@ -59,7 +59,7 @@ export function FilamentProfilesPage() {
   const [newOpen, setNewOpen] = useState(false);
   const [migrateOpen, setMigrateOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [cleanup, setCleanup] = useState<{ count: number; busy: boolean } | null>(null);
+  const [cleanup, setCleanup] = useState<{ count: number; names: string[]; busy: boolean } | null>(null);
   const [syncPreview, setSyncPreview] = useState<FilamentTreeSyncPreview | null>(null);
   const [syncOutcome, setSyncOutcome] = useState<{ result?: FilamentTreePullResult; error?: unknown } | null>(null);
   const { zohoSyncing, zohoResult, handleZohoSync } = useZohoSync();
@@ -120,13 +120,13 @@ export function FilamentProfilesPage() {
       .then((p) => {
         if (!p.writable) showToast(t('filamentTrees.cleanOrcaReadOnly'), 'error');
         else if (p.count === 0) showToast(t('filamentTrees.cleanOrcaNone'), 'success');
-        else setCleanup({ count: p.count, busy: false });
+        else setCleanup({ count: p.count, names: p.names, busy: false });
       })
       .catch((err) => showToast(errorMessage(err), 'error'));
-  const confirmCleanup = (count: number) => {
-    setCleanup({ count, busy: true });
+  const confirmCleanup = (confirmed: { count: number; names: string[] }) => {
+    setCleanup({ ...confirmed, busy: true });
     api
-      .cleanOrcaCloud(count)
+      .cleanOrcaCloud(confirmed.names)
       .then((r) => showToast(t('filamentTrees.cleanOrcaDone', r), r.failed ? 'error' : 'success'))
       .catch((err) => showToast(errorMessage(err), 'error'))
       .finally(() => setCleanup(null));
@@ -373,7 +373,7 @@ export function FilamentProfilesPage() {
           message={t('filamentTrees.cleanOrcaConfirm', { n: cleanup.count })}
           variant="danger"
           isLoading={cleanup.busy}
-          onConfirm={() => confirmCleanup(cleanup.count)}
+          onConfirm={() => confirmCleanup(cleanup)}
           onCancel={() => setCleanup(null)}
         />
       )}

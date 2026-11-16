@@ -259,14 +259,14 @@ describe('FilamentProfilesPage (trees)', () => {
 
   it('Clean Orca Cloud deletes only after the count is confirmed', async () => {
     stub();
-    vi.spyOn(api, 'getOrcaCleanupPreview').mockResolvedValue({ count: 44, names: [], writable: true });
-    const clean = vi.spyOn(api, 'cleanOrcaCloud').mockResolvedValue({ deleted: 44, failed: 0, snapshot: 's.json' });
+    vi.spyOn(api, 'getOrcaCleanupPreview').mockResolvedValue({ count: 2, names: ['A', 'B'], writable: true });
+    const clean = vi.spyOn(api, 'cleanOrcaCloud').mockResolvedValue({ deleted: 2, failed: 0, snapshot: 's.json' });
     render(<FilamentProfilesPage />);
     await menu('Clean Orca Cloud…');
-    expect(await screen.findByText(/44 filament presets in Orca Cloud/)).toBeInTheDocument();
+    expect(await screen.findByText(/2 filament presets in Orca Cloud/)).toBeInTheDocument();
     expect(clean).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
-    await waitFor(() => expect(clean).toHaveBeenCalledWith(44));
+    await waitFor(() => expect(clean).toHaveBeenCalledWith(['A', 'B']));
   });
 
   it('Export for Orca downloads the bundle', async () => {

@@ -415,10 +415,10 @@ async def orca_cleanup(
     db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(_DELETE, Permission.ORCA_CLOUD_AUTH),
 ):
-    """Delete them, after a snapshot. 400 when the count no longer matches what the user confirmed."""
+    """Delete them, after a snapshot. 400 when the profiles to delete no longer match the names the user confirmed."""
     async with _orca_run_lock():
         with _mapped():
-            return await _orca_call(db, current_user, lambda svc: cleanup_orca(db, svc, payload.expected))
+            return await _orca_call(db, current_user, lambda svc: cleanup_orca(db, svc, payload.names))
 
 
 @router.post("/conflicts/resolve")

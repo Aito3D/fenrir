@@ -9312,10 +9312,10 @@ export const api = {
     request<{ tree_ids: number[] }>('/filament-trees/migrate', { method: 'POST', body: JSON.stringify({ groups }) }),
   previewFilamentTreeSync: () => request<FilamentTreeSyncPreview>('/filament-trees/sync'),
   syncFilamentTrees: () => request<FilamentTreePullResult>('/filament-trees/sync', { method: 'POST' }),
-  // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if the count still matches
+  // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if exactly these names are still the strays
   getOrcaCleanupPreview: () => request<{ count: number; names: string[]; writable: boolean }>('/filament-trees/orca-cleanup'),
-  cleanOrcaCloud: (expected: number) =>
-    request<{ deleted: number; failed: number; snapshot: string | null }>('/filament-trees/orca-cleanup', { method: 'POST', body: JSON.stringify({ expected }) }),
+  cleanOrcaCloud: (names: string[]) =>
+    request<{ deleted: number; failed: number; snapshot: string | null }>('/filament-trees/orca-cleanup', { method: 'POST', body: JSON.stringify({ names }) }),
   // orca_value: what Orca holds; the server stores it as the leaf's baseline whichever value is kept
   resolveFilamentTreeConflict: (data: { tree_id: number; machine: string; nozzle: string; color_id: number; key: string; value: FilamentTreePresetValue | null; orca_value: FilamentTreePresetValue | null }) =>
     request<{ success: boolean }>('/filament-trees/conflicts/resolve', { method: 'POST', body: JSON.stringify(data) }),
