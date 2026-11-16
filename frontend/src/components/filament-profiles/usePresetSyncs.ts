@@ -25,14 +25,8 @@ export function useBaseSync() {
     setSyncBaseBusy(true);
     try {
       const result = await api.syncBaseFilamentPresets();
-      if (result.total === 0) {
-        // Remote-deploy case: no Bambu Studio bundle on the backend host.
-        // Fall back to a browser picker so the base preset JSONs (or a ZIP
-        // of the bundle folder) can be uploaded from the client machine.
-        showToast(t('filamentProfiles.noServerBase'), 'info');
-        baseFileInputRef.current?.click();
-        return;
-      }
+      // total 0 = remote deploy with no Bambu Studio bundle: the modal offers the upload picker, which a browser
+      // only opens from the operator's own click (not after this await)
       setSyncBaseModal({ result });
     } catch (err) {
       setSyncBaseModal({ error: errorMessage(err) });

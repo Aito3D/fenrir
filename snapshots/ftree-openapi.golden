@@ -1200,9 +1200,25 @@
    ]
   },
   "POST /api/v1/filament-trees/sync": {
-   "description": "Pull, then push: fold OrcaSlicer edits into the trees, then send every changed leaf to Orca Cloud.",
+   "description": "Pull, then push: fold OrcaSlicer edits into the trees, then send every changed leaf to Orca Cloud.\nWith the preview's fingerprint, 409 (nothing touched) when the plan has changed since that preview.",
    "operationId": "sync_api_v1_filament_trees_sync_post",
    "parameters": [
+    {
+     "in": "query",
+     "name": "fingerprint",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Fingerprint"
+     }
+    },
     {
      "in": "header",
      "name": "X-API-Key",

@@ -1,5 +1,6 @@
 """Filament profile trees: brand + material > machine > nozzle > colour; each leaf generates one filament preset."""
 
+import hashlib
 import json
 from contextlib import contextmanager
 from dataclasses import asdict, replace
@@ -352,13 +353,8 @@ def _orca_run_lock():
     return store.tree_write_lock([-1])
 
 
-@router.get("/sync", dependencies=[Depends(_cloud_api_key_gate)])
-async def sync_preview(
-    db: AsyncSession = Depends(get_db, scope="function"),
-    current_user: User | None = cloud_caller(_UPDATE, Permission.ORCA_CLOUD_AUTH),
-):
-    """What a SYNC would do, without doing it."""
-    entries = await _orca_call(db, current_user, lambda svc: svc.list_profiles())
+async def _sync_view(db: AsyncSession, entries: list[dict]) -> dict:
+    """The preview body, fingerprint included; the GET shows it and the POST recomputes it to spot a stale preview."""
     leaves, colour_names = await collect_leaf_states(db)
     plan = plan_pull(entries, leaves, colour_names)
 
@@ -369,24 +365,41 @@ async def sync_preview(
     pull: dict[str, set[str]] = {}
     for a in plan.applied:
         pull.setdefault(names[key(a)], set()).update(a["values"])
-    return {
+    view = {
         "pull": [{"name": name, "keys": sorted(keys)} for name, keys in sorted(pull.items())],
         "conflicts": len(plan.conflicts),
         # shortcut: computed before the pull lands. A leaf Orca edited counts as pull only, and the other leaves
         # that edit reaches are not listed; plan the pull in a rolled-back transaction if the exact list matters
         "push": await push_names(db, entries, {key(c) for c in [*plan.conflicts, *plan.applied]}),
     }
+    # the values are hashed too: the preview lists only keys, but a changed value is a changed plan
+    plan_json = json.dumps([view, [a["values"] for a in plan.applied]], sort_keys=True, default=str)
+    return view | {"fingerprint": hashlib.sha256(plan_json.encode()).hexdigest()[:16]}
+
+
+@router.get("/sync", dependencies=[Depends(_cloud_api_key_gate)])
+async def sync_preview(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = cloud_caller(_UPDATE, Permission.ORCA_CLOUD_AUTH),
+):
+    """What a SYNC would do, without doing it."""
+    entries = await _orca_call(db, current_user, lambda svc: svc.list_profiles())
+    return await _sync_view(db, entries)
 
 
 @router.post("/sync", dependencies=[Depends(_cloud_api_key_gate)])
 async def sync(
+    fingerprint: str | None = None,
     db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(_UPDATE, Permission.ORCA_CLOUD_AUTH),
 ):
-    """Pull, then push: fold OrcaSlicer edits into the trees, then send every changed leaf to Orca Cloud."""
+    """Pull, then push: fold OrcaSlicer edits into the trees, then send every changed leaf to Orca Cloud.
+    With the preview's fingerprint, 409 (nothing touched) when the plan has changed since that preview."""
     async with _orca_run_lock():
         entries = await _orca_call(db, current_user, lambda svc: svc.list_profiles())
         async with store.tree_write_lock((await db.execute(select(FilamentTree.id))).scalars().all()):
+            if fingerprint is not None and (await _sync_view(db, entries))["fingerprint"] != fingerprint:
+                raise HTTPException(status_code=409, detail="The SYNC plan changed since the preview")
             leaves, colour_names = await collect_leaf_states(db)
             plan = plan_pull(entries, leaves, colour_names)
             with _mapped():

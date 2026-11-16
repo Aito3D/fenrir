@@ -400,7 +400,7 @@ async def remove_color(tree_id: int, color_id: int, _: backend.app.models.user.U
 async def rename_color(tree_id: int, color_id: int, payload: backend.app.schemas.filament_tree.ColorUpdate, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def resolve(payload: backend.app.schemas.filament_tree.ConflictResolveRequest, _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
 async def revert_change(tree_id: int, change_id: int, user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'))
-async def sync(db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function cloud_caller.<locals>.resolved>, use_cache=True, scope=None))
+async def sync(fingerprint: str | None = None, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function cloud_caller.<locals>.resolved>, use_cache=True, scope=None))
 async def sync_preview(db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function cloud_caller.<locals>.resolved>, use_cache=True, scope=None))
 
 ## backend.app.models.filament_tree
@@ -705,7 +705,7 @@ export interface FilamentTreePullResult {
   // remaining: leaves still waiting (read-only pairing, or the run stopped after repeated failures)
   push: { pushed: number; failed: Array<{ name: string; detail: string }>; remaining: number; needs_write_scope: boolean; snapshot: string | null };
 }
-export interface FilamentTreeSyncPreview { pull: Array<{ name: string; keys: string[] }>; push: string[]; conflicts: number }
+export interface FilamentTreeSyncPreview { pull: Array<{ name: string; keys: string[] }>; push: string[]; conflicts: number; fingerprint: string }
 export interface FilamentTreeNodeUpdate {
   machine?: string | null; nozzle?: string | null; color_id?: number | null;
   set?: Record<string, FilamentTreePresetValue>; clear?: string[];
@@ -727,7 +727,8 @@ export interface FilamentTreeUpdate {
   migrateFilamentPresets: (groups: Array<{ prefix: string; source_preset_id: number; machine: string; nozzle: string }>) =>
     request<{ tree_ids: number[] }>('/filament-trees/migrate', { method: 'POST', body: JSON.stringify({ groups }) }),
   previewFilamentTreeSync: () => request<FilamentTreeSyncPreview>('/filament-trees/sync'),
-  syncFilamentTrees: (signal?: AbortSignal) => request<FilamentTreePullResult>('/filament-trees/sync', { method: 'POST', signal }),
+  syncFilamentTrees: (signal?: AbortSignal, fingerprint?: string) =>
+    request<FilamentTreePullResult>(`/filament-trees/sync${fingerprint ? `?fingerprint=${encodeURIComponent(fingerprint)}` : ''}`, { method: 'POST', signal }),
   // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if exactly these names are still the strays
   getOrcaCleanupPreview: () => request<{ count: number; names: string[]; writable: boolean }>('/filament-trees/orca-cleanup'),
   cleanOrcaCloud: (names: string[]) =>

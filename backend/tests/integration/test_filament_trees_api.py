@@ -259,6 +259,38 @@ async def test_sync_applies_and_returns_plan(async_client, db_session, monkeypat
     assert {row["key"]: row["value"] for row in r.json()}["nozzle_temperature"] == ["255"]
 
 
+async def test_sync_fingerprint_matching_syncs_and_stale_is_409(async_client, db_session, monkeypatch):
+    tree, _, red = await _tree(db_session)
+    r = await async_client.post(f"{API}/export", json={"tree_id": tree.id})
+    await async_client.post(f"{API}/export/confirm", json={"token": r.headers["x-export-token"]})
+    preset = (
+        await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG - Red @H2S 0.4"))
+    ).scalar_one()
+    imported = json.loads(preset.content) | {"type": "filament"}
+    entries = [{"id": "a", "name": preset.name, "content": imported}]
+    _stub_orca(monkeypatch, entries)
+    assert (await async_client.post(f"{API}/sync")).status_code == 200  # records the baseline
+
+    entries[0]["content"] = imported | {"nozzle_temperature": ["255"]}
+    stale = (await async_client.get(f"{API}/sync")).json()["fingerprint"]
+    entries[0]["content"] = imported | {"nozzle_temperature": ["260"]}  # Orca changed after the preview
+    node = {"machine": "H2S", "nozzle": "0.4", "color_id": red.id}
+
+    async def temp():
+        r = await async_client.get(f"{API}/{tree.id}/node", params=node)
+        return {row["key"]: row["value"] for row in r.json()}["nozzle_temperature"]
+
+    before = await temp()
+    r = await async_client.post(f"{API}/sync", params={"fingerprint": stale})
+    assert r.status_code == 409
+    assert await temp() == before  # nothing was pulled
+    fresh = (await async_client.get(f"{API}/sync")).json()["fingerprint"]
+    assert fresh != stale
+    r = await async_client.post(f"{API}/sync", params={"fingerprint": fresh})
+    assert r.status_code == 200, r.text
+    assert await temp() == ["260"]
+
+
 async def test_sync_pushes_changed_leaves(async_client, db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
     await _tree(db_session)

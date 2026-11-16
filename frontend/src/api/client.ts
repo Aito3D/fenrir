@@ -4517,7 +4517,7 @@ export interface FilamentTreePullResult {
   push: { pushed: number; failed: Array<{ name: string; detail: string }>; remaining: number; needs_write_scope: boolean; snapshot: string | null };
 }
 /** What a SYNC would do: Orca edits folded into Fenrir, leaves sent to Orca, conflicts left to settle. */
-export interface FilamentTreeSyncPreview { pull: Array<{ name: string; keys: string[] }>; push: string[]; conflicts: number }
+export interface FilamentTreeSyncPreview { pull: Array<{ name: string; keys: string[] }>; push: string[]; conflicts: number; fingerprint: string }
 export interface FilamentTreeNodeUpdate {
   machine?: string | null; nozzle?: string | null; color_id?: number | null;
   set?: Record<string, FilamentTreePresetValue>; clear?: string[];
@@ -9311,7 +9311,8 @@ export const api = {
   migrateFilamentPresets: (groups: Array<{ prefix: string; source_preset_id: number; machine: string; nozzle: string }>) =>
     request<{ tree_ids: number[] }>('/filament-trees/migrate', { method: 'POST', body: JSON.stringify({ groups }) }),
   previewFilamentTreeSync: () => request<FilamentTreeSyncPreview>('/filament-trees/sync'),
-  syncFilamentTrees: (signal?: AbortSignal) => request<FilamentTreePullResult>('/filament-trees/sync', { method: 'POST', signal }),
+  syncFilamentTrees: (signal?: AbortSignal, fingerprint?: string) =>
+    request<FilamentTreePullResult>(`/filament-trees/sync${fingerprint ? `?fingerprint=${encodeURIComponent(fingerprint)}` : ''}`, { method: 'POST', signal }),
   // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if exactly these names are still the strays
   getOrcaCleanupPreview: () => request<{ count: number; names: string[]; writable: boolean }>('/filament-trees/orca-cleanup'),
   cleanOrcaCloud: (names: string[]) =>

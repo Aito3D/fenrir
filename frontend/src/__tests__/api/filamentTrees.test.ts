@@ -57,15 +57,17 @@ describe('filament tree api methods', () => {
     await api.getFilamentTrees();
     await api.setFilamentTreeTargets({ machines: ['H2S'], nozzles: ['0.4'] });
     await api.syncFilamentTrees();
+    await api.syncFilamentTrees(undefined, 'ab 1');
     await api.setFilamentTreeNode(2, { machine: 'H2S', set: { a: '1' }, clear: ['b'] });
     await api.deleteFilamentTreeColor(2, 7);
     expect(seen.map((s) => [path(s.url), s.init?.method ?? 'GET'])).toEqual([
       ['/filament-trees', 'GET'],
       ['/filament-trees/targets', 'PUT'],
       ['/filament-trees/sync', 'POST'],
+      ['/filament-trees/sync?fingerprint=ab%201', 'POST'],
       ['/filament-trees/2/node', 'PUT'],
       ['/filament-trees/2/colors/7', 'DELETE'],
     ]);
-    expect(JSON.parse(String(seen[3].init?.body))).toEqual({ machine: 'H2S', set: { a: '1' }, clear: ['b'] });
+    expect(JSON.parse(String(seen[4].init?.body))).toEqual({ machine: 'H2S', set: { a: '1' }, clear: ['b'] });
   });
 });

@@ -181,22 +181,26 @@ export function FilamentProfilesPage() {
       setSyncing(false);
     }
   };
-  const handleSync = async () => {
+  const handleSync = async (preview: FilamentTreeSyncPreview) => {
     setSyncPreview(null);
     setSyncing(true);
+    let stale = false;
     const controller = new AbortController();
     const deadline = setTimeout(() => controller.abort(), SYNC_DEADLINE_MS);
     try {
-      setSyncOutcome({ result: await api.syncFilamentTrees(controller.signal) });
+      setSyncOutcome({ result: await api.syncFilamentTrees(controller.signal, preview.fingerprint) });
     } catch (error) {
+      // 409: the plan moved since the preview and nothing was synced; show the operator what it would do now
+      stale = error instanceof ApiError && error.status === 409;
       // only an HTTP error response means the sync did not apply; an abort or a dropped connection lost the response
-      setSyncOutcome({ error: error instanceof ApiError ? error : new Error(t('filamentProfiles.syncZohoUnknown')) });
+      if (!stale) setSyncOutcome({ error: error instanceof ApiError ? error : new Error(t('filamentProfiles.syncZohoUnknown')) });
     } finally {
       clearTimeout(deadline);
       setSyncing(false);
       // a pull can change own values anywhere: tree list, open node, unmanaged groups
       void queryClient.invalidateQueries({ queryKey: ['filament-trees'] });
     }
+    if (stale) await previewSync();
   };
 
   const loading = treesQuery.isLoading || targetsQuery.isLoading;
@@ -371,6 +375,7 @@ export function FilamentProfilesPage() {
         <SyncBaseResultModal
           result={syncBaseModal.result}
           error={syncBaseModal.error}
+          onChooseFiles={() => baseFileInputRef.current?.click()}
           onClose={() => setSyncBaseModal(null)}
         />
       )}
@@ -383,10 +388,16 @@ export function FilamentProfilesPage() {
           isLoading={cleanup.busy}
           onConfirm={() => confirmCleanup(cleanup)}
           onCancel={() => setCleanup(null)}
-        />
+        >
+          <ul className="mb-4 max-h-48 space-y-1 overflow-y-auto text-sm text-white" data-testid="clean-orca-names">
+            {cleanup.names.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
+        </ConfirmModal>
       )}
       {syncPreview && (
-        <SyncPreviewModal preview={syncPreview} onConfirm={handleSync} onClose={() => setSyncPreview(null)} />
+        <SyncPreviewModal preview={syncPreview} onConfirm={() => handleSync(syncPreview)} onClose={() => setSyncPreview(null)} />
       )}
       {syncOutcome && targets && (
         <SyncResultModal

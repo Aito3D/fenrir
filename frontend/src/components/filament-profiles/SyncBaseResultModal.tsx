@@ -7,6 +7,8 @@ import type { FilamentBaseSyncResult } from '../../api/client';
 export interface SyncBaseResultModalProps {
   result?: FilamentBaseSyncResult;
   error?: string;
+  /** Opens the file picker; offered when the server had no Bambu Studio bundle (total 0). */
+  onChooseFiles?: () => void;
   onClose: () => void;
 }
 
@@ -20,7 +22,7 @@ function StatRow({ label, value, valueClassName }: { label: string; value: numbe
 }
 
 /** Small result modal for the header's "Sync base" action (spec §5.2). */
-export function SyncBaseResultModal({ result, error, onClose }: SyncBaseResultModalProps) {
+export function SyncBaseResultModal({ result, error, onChooseFiles, onClose }: SyncBaseResultModalProps) {
   const { t } = useTranslation();
   // 150ms = .animate-modal-out
   const { closing, requestClose } = useDismissableDialog(onClose, { animationMs: 150 });
@@ -42,6 +44,13 @@ export function SyncBaseResultModal({ result, error, onClose }: SyncBaseResultMo
               <h3 className="text-lg font-semibold text-white">{t('filamentProfiles.baseSyncFailedTitle')}</h3>
             </div>
             <p className="mt-2 text-center text-sm text-bambu-gray">{error}</p>
+          </>
+        ) : result?.total === 0 && onChooseFiles ? (
+          <>
+            <p className="text-center text-sm text-bambu-gray">{t('filamentProfiles.noServerBase')}</p>
+            <Button onClick={onChooseFiles} className="mt-4 w-full">
+              {t('projectsPdm.files.chooseFiles')}
+            </Button>
           </>
         ) : result ? (
           <>

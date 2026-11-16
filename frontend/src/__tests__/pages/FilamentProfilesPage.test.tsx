@@ -62,7 +62,7 @@ function stub({ trees = [TREE], groups = [] as FilamentTreeMigrationGroup[] } = 
   vi.spyOn(api, 'getFilamentTreeTargets').mockResolvedValue(TARGETS);
   vi.spyOn(api, 'getUnmanagedFilamentGroups').mockResolvedValue(groups);
   vi.spyOn(api, 'getFilamentPresets').mockResolvedValue(PRESETS);
-  vi.spyOn(api, 'previewFilamentTreeSync').mockResolvedValue({ pull: [], push: [], conflicts: 0 });
+  vi.spyOn(api, 'previewFilamentTreeSync').mockResolvedValue({ pull: [], push: [], conflicts: 0, fingerprint: 'f0' });
   vi.spyOn(api, 'getFilamentTreeNode').mockResolvedValue([
     { key: 'nozzle_temperature', value: ['240'], source: 'root', own: true },
   ]);
@@ -149,6 +149,7 @@ describe('FilamentProfilesPage (trees)', () => {
       pull: [{ name: 'Polymaker PETG - Red @H2S 0.4', keys: ['nozzle_temperature'] }],
       push: ['Polymaker PETG - Red @H2D 0.6'],
       conflicts: 2,
+      fingerprint: 'abc123',
     });
     const run = vi.spyOn(api, 'syncFilamentTrees').mockResolvedValue(EMPTY_PULL);
     render(<FilamentProfilesPage />);
@@ -161,7 +162,26 @@ describe('FilamentProfilesPage (trees)', () => {
     expect(run).not.toHaveBeenCalled();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    expect(run.mock.calls[0][1]).toBe('abc123');
     expect(await screen.findByRole('dialog', { name: 'Sync result' })).toBeInTheDocument();
+  });
+
+  it('a SYNC whose plan changed since the preview (409) shows a fresh preview instead of syncing', async () => {
+    stub();
+    const preview = vi
+      .spyOn(api, 'previewFilamentTreeSync')
+      .mockResolvedValueOnce({ pull: [], push: ['Old leaf'], conflicts: 0, fingerprint: 'old' })
+      .mockResolvedValue({ pull: [], push: ['New leaf'], conflicts: 0, fingerprint: 'new' });
+    const run = vi.spyOn(api, 'syncFilamentTrees').mockRejectedValue(new ApiError('changed', 409));
+    render(<FilamentProfilesPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'SYNC' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Sync with Orca Cloud' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    expect(await screen.findByText('New leaf')).toBeInTheDocument();
+    expect(preview).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenCalledWith(expect.anything(), 'old');
+    expect(screen.queryByRole('dialog', { name: 'Sync result' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Old leaf')).not.toBeInTheDocument();
   });
 
   it('SYNC shows conflicts and resolving one sends the chosen value', async () => {
@@ -303,6 +323,8 @@ describe('FilamentProfilesPage (trees)', () => {
     render(<FilamentProfilesPage />);
     await menu('Clean Orca Cloud…');
     expect(await screen.findByText(/2 filament presets in Orca Cloud/)).toBeInTheDocument();
+    const names = within(screen.getByTestId('clean-orca-names')).getAllByRole('listitem');
+    expect(names.map((li) => li.textContent)).toEqual(['A', 'B']);
     expect(clean).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(clean).toHaveBeenCalledWith(['A', 'B']));
@@ -443,7 +465,10 @@ describe('FilamentProfilesPage (trees)', () => {
     const input = screen.getByTestId('fp-base-file-input') as HTMLInputElement;
     const pickerClick = vi.spyOn(input, 'click').mockImplementation(() => {});
     await menu('Sync base');
-    await waitFor(() => expect(pickerClick).toHaveBeenCalled());
+    expect(await screen.findByText(/No BambuStudio bundle on the server/)).toBeInTheDocument();
+    expect(pickerClick).not.toHaveBeenCalled(); // only the operator's own click may open the picker
+    await userEvent.click(screen.getByRole('button', { name: 'Choose files' }));
+    expect(pickerClick).toHaveBeenCalledOnce();
 
     const file = new File(['{"name":"Bambu PLA Basic @BBL H2S"}'], 'base.json', { type: 'application/json' });
     fireEvent.change(input, { target: { files: [file] } });
