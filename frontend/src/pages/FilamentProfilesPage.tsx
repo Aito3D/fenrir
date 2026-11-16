@@ -131,7 +131,11 @@ export function FilamentProfilesPage() {
     setCleanup({ ...confirmed, busy: true });
     api
       .cleanOrcaCloud(confirmed.names)
-      .then((r) => showToast(t('filamentTrees.cleanOrcaDone', r), r.failed ? 'error' : 'success'))
+      .then((r) =>
+        r.deleted === null
+          ? showToast(t('filamentTrees.cleanOrcaUnknown', r), 'error')
+          : showToast(t('filamentTrees.cleanOrcaDone', r), r.failed ? 'error' : 'success'),
+      )
       .catch((err) => showToast(errorMessage(err), 'error'))
       .finally(() => setCleanup(null));
   };

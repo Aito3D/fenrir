@@ -162,10 +162,10 @@ async def _leaf_preset(
     return link, preset
 
 
-async def apply_pull(db: AsyncSession, plan: PullPlan) -> set[tuple]:
+async def apply_pull(db: AsyncSession, plan: PullPlan) -> dict[tuple, set[str]]:
     """One transaction: each tree's writes + regeneration sit in a savepoint, a refused tree is rolled back.
 
-    Returns the leaves (tree_id, machine, nozzle, color_id) with an Orca edit that was refused."""
+    Returns the leaves (tree_id, machine, nozzle, color_id) with an Orca edit that was refused, with the refused keys."""
     groups: dict[_NodeKey, dict] = {}
     leaf_keys: dict[tuple, dict[_NodeKey, set[str]]] = {}  # leaf -> {node: keys written there}
     for e in plan.applied:
@@ -178,7 +178,7 @@ async def apply_pull(db: AsyncSession, plan: PullPlan) -> set[tuple]:
     for leaf in leaf_keys.keys() | refresh.keys():
         link, preset = await _leaf_preset(db, *leaf)
         old[leaf] = json.loads(link.baseline_content or preset.content)
-    refused_leaves: set[tuple] = set()
+    refused_leaves: dict[tuple, set[str]] = {}
     by_tree: dict[int, list[_NodeKey]] = {}
     for node in groups:
         by_tree.setdefault(node[0], []).append(node)
@@ -195,8 +195,8 @@ async def apply_pull(db: AsyncSession, plan: PullPlan) -> set[tuple]:
             refused = set(groups[node]) - written[node]
             plan.ignored += len(refused)
             for leaf, by_node in leaf_keys.items():
-                if by_node.get(node, set()) & refused:
-                    refused_leaves.add(leaf)
+                if hit := by_node.get(node, set()) & refused:
+                    refused_leaves.setdefault(leaf, set()).update(hit)
                 by_node.get(node, set()).difference_update(refused)
     for leaf, baseline in old.items():
         link, preset = await _leaf_preset(db, *leaf)

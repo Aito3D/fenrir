@@ -54,7 +54,7 @@ const EMPTY_PULL: FilamentTreePullResult = {
   missing: [],
   ignored: 0,
   refresh: [],
-  push: { pushed: 0, failed: [], remaining: 0, needs_write_scope: false, snapshot: null },
+  push: { pushed: 0, failed: [], remaining: 0, needs_write_scope: false, snapshot: null, held: [] },
 };
 
 function stub({ trees = [TREE], groups = [] as FilamentTreeMigrationGroup[] } = {}) {
@@ -234,6 +234,19 @@ describe('FilamentProfilesPage (trees)', () => {
     expect(await within(await screen.findByRole('dialog')).findByText(/read-only.*7 waiting/)).toBeInTheDocument();
   });
 
+  it('SYNC lists the leaves held back by a refused Orca edit', async () => {
+    stub();
+    vi.spyOn(api, 'syncFilamentTrees').mockResolvedValue({
+      ...EMPTY_PULL,
+      push: { ...EMPTY_PULL.push, held: [{ name: 'Polymaker PETG - Red @H2S 0.4', keys: ['nozzle_temperature', 'fan_max_speed'] }] },
+    });
+    render(<FilamentProfilesPage />);
+    await sync();
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText(/Not sent: an Orca edit/)).toBeInTheDocument();
+    expect(within(dialog).getByText('Polymaker PETG - Red @H2S 0.4: nozzle_temperature, fan_max_speed')).toBeInTheDocument();
+  });
+
   it('candidate form posts the brand, material and colour parsed from the name', async () => {
     stub();
     vi.spyOn(api, 'syncFilamentTrees').mockResolvedValue({
@@ -328,6 +341,18 @@ describe('FilamentProfilesPage (trees)', () => {
     expect(clean).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(clean).toHaveBeenCalledWith(['A', 'B']));
+  });
+
+  it('Clean Orca Cloud with an unknown count names the snapshot instead of a number', async () => {
+    stub();
+    vi.spyOn(api, 'getOrcaCleanupPreview').mockResolvedValue({ count: 2, names: ['A', 'B'], writable: true });
+    vi.spyOn(api, 'cleanOrcaCloud').mockResolvedValue({ deleted: null, failed: null, snapshot: 'cleanup-1.json' });
+    render(<FilamentProfilesPage />);
+    await menu('Clean Orca Cloud…');
+    await userEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    const toast = await screen.findByText(/deleted count is unknown/);
+    expect(toast).toHaveTextContent('Snapshot: cleanup-1.json');
+    expect(toast).not.toHaveTextContent(/null|NaN/);
   });
 
   it('Export for Orca downloads the bundle', async () => {

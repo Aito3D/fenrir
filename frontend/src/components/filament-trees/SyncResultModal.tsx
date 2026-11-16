@@ -212,6 +212,18 @@ export function SyncResultModal({ result, error, trees, targets, onClose }: {
               </p>
             )
           )}
+          {result.push.held.length > 0 && (
+            <section className="space-y-1">
+              <p className="text-sm text-amber-400">{t('filamentTrees.pushHeld')}</p>
+              <ul className="break-words text-xs text-bambu-gray">
+                {result.push.held.map((h) => (
+                  <li key={h.name}>
+                    {h.name}: {h.keys.join(', ')}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {result.missing.length > 0 && (
             <p className="break-words text-xs text-bambu-gray">{result.missing.join(', ')}</p>
           )}

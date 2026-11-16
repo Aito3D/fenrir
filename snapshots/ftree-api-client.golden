@@ -45,7 +45,7 @@ export interface FilamentTreePullResult {
   legacy: number; missing: string[]; ignored: number;
   refresh: Array<{ tree_id: number; machine: string; nozzle: string; color_id: number; keys: string[] }>;
   // remaining: leaves still waiting (read-only pairing, or the run stopped after repeated failures)
-  push: { pushed: number; failed: Array<{ name: string; detail: string }>; remaining: number; needs_write_scope: boolean; snapshot: string | null };
+  push: { pushed: number; failed: Array<{ name: string; detail: string }>; remaining: number; needs_write_scope: boolean; snapshot: string | null; held: Array<{ name: string; keys: string[] }> };
 }
 export interface FilamentTreeSyncPreview { pull: Array<{ name: string; keys: string[] }>; push: string[]; conflicts: number; fingerprint: string }
 export interface FilamentTreeNodeUpdate {
@@ -69,7 +69,8 @@ export interface FilamentTreeUpdate {
   // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if exactly these names are still the strays
   getOrcaCleanupPreview: () => request<{ count: number; names: string[]; writable: boolean }>('/filament-trees/orca-cleanup'),
   cleanOrcaCloud: (names: string[]) =>
-    request<{ deleted: number; failed: number; snapshot: string | null }>('/filament-trees/orca-cleanup', { method: 'POST', body: JSON.stringify({ names }) }),
+    // deleted/failed are null when the check after deleting failed: the count is unknown
+    request<{ deleted: number | null; failed: number | null; snapshot: string | null }>('/filament-trees/orca-cleanup', { method: 'POST', body: JSON.stringify({ names }) }),
   // orca_value: what Orca holds; the server stores it as the leaf's baseline whichever value is kept
   resolveFilamentTreeConflict: (data: { tree_id: number; machine: string; nozzle: string; color_id: number; key: string; value: FilamentTreePresetValue | null; orca_value: FilamentTreePresetValue | null }) =>
     request<{ success: boolean }>('/filament-trees/conflicts/resolve', { method: 'POST', body: JSON.stringify(data) }),

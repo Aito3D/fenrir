@@ -369,6 +369,9 @@ async def test_sync_does_not_push_a_leaf_whose_orca_edit_was_refused(async_clien
     assert body["ignored"] == 1
     assert "a" not in {p["profile_id"] for p in stub.pushed}  # Orca keeps the edit
     assert body["push"]["pushed"] == len(stub.pushed)
+    assert body["push"]["held"] == [{"name": preset.name, "keys": ["nozzle_temperature"]}]
+    entries[0]["content"] = encode_content(imported)  # a clean listing holds nothing
+    assert (await async_client.post(f"{API}/sync")).json()["push"]["held"] == []
 
 
 async def test_sync_push_stops_after_repeated_failures(async_client, db_session, monkeypatch, tmp_path):
@@ -457,6 +460,31 @@ async def test_orca_cleanup_failed_delete_batch(async_client, db_session, monkey
     if status == 200:  # the run continues to the final listing: counts and snapshot name still come back
         body = r.json()
         assert (body["deleted"], body["failed"]) == (0, 1)
+        assert (tmp_path / body["snapshot"]).exists()
+
+
+@pytest.mark.parametrize(("error", "status"), [(OrcaCloudError("network"), 200), (OrcaCloudAuthError("expired"), 401)])
+async def test_orca_cleanup_failed_final_listing(async_client, db_session, monkeypatch, tmp_path, error, status):
+    monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
+    await _tree(db_session)
+    entries = [{"id": "old", "name": "Polymaker PETG - Red", "content": {"type": "filament"}}]
+    stub = _stub_orca(monkeypatch, entries, scope="sync:write")
+    list_ok = stub.list_profiles
+    calls = []
+
+    async def list_profiles():
+        calls.append(1)
+        if len(calls) > 1:  # the check after the delete
+            raise error
+        return await list_ok()
+
+    stub.list_profiles = list_profiles
+    r = await async_client.post(f"{API}/orca-cleanup", json={"names": ["Polymaker PETG - Red"]})
+    assert r.status_code == status, r.text
+    assert stub.deleted == ["old"]
+    if status == 200:  # deleted: the count is unknown, the snapshot name still comes back
+        body = r.json()
+        assert body["deleted"] is None and body["failed"] is None
         assert (tmp_path / body["snapshot"]).exists()
 
 

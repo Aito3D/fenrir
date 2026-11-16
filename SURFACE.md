@@ -478,7 +478,7 @@ class LeafState(object)
     def __init__(self, tree_id: int, machine: str, nozzle: str, color_id: int, name: str, generated: dict, baseline: dict | None, is_source: bool, owned_at: dict[str, str] = <factory>, exported: bool = False) -> None
 class PullPlan(object)
     def __init__(self, applied: list[dict] = <factory>, conflicts: list[dict] = <factory>, candidates: list[dict] = <factory>, legacy: int = 0, missing: list[str] = <factory>, ignored: int = 0, refresh: list[dict] = <factory>, baselines: list[dict] = <factory>) -> None
-async def apply_pull(db: sqlalchemy.ext.asyncio.session.AsyncSession, plan: backend.app.services.filament_tree_pull.PullPlan) -> set[tuple]
+async def apply_pull(db: sqlalchemy.ext.asyncio.session.AsyncSession, plan: backend.app.services.filament_tree_pull.PullPlan) -> dict[tuple, set[str]]
 async def collect_leaf_states(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> tuple[list[backend.app.services.filament_tree_pull.LeafState], set[str]]
 def plan_pull(orca_entries: list[dict], leaves: list[backend.app.services.filament_tree_pull.LeafState], tree_colour_names: set[str]) -> backend.app.services.filament_tree_pull.PullPlan
 async def resolve_conflict(db: sqlalchemy.ext.asyncio.session.AsyncSession, tree_id: int, machine: str, nozzle: str, color_id: int, key: str, value, orca_value) -> None
@@ -703,7 +703,7 @@ export interface FilamentTreePullResult {
   legacy: number; missing: string[]; ignored: number;
   refresh: Array<{ tree_id: number; machine: string; nozzle: string; color_id: number; keys: string[] }>;
   // remaining: leaves still waiting (read-only pairing, or the run stopped after repeated failures)
-  push: { pushed: number; failed: Array<{ name: string; detail: string }>; remaining: number; needs_write_scope: boolean; snapshot: string | null };
+  push: { pushed: number; failed: Array<{ name: string; detail: string }>; remaining: number; needs_write_scope: boolean; snapshot: string | null; held: Array<{ name: string; keys: string[] }> };
 }
 export interface FilamentTreeSyncPreview { pull: Array<{ name: string; keys: string[] }>; push: string[]; conflicts: number; fingerprint: string }
 export interface FilamentTreeNodeUpdate {
@@ -732,7 +732,8 @@ export interface FilamentTreeUpdate {
   // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if exactly these names are still the strays
   getOrcaCleanupPreview: () => request<{ count: number; names: string[]; writable: boolean }>('/filament-trees/orca-cleanup'),
   cleanOrcaCloud: (names: string[]) =>
-    request<{ deleted: number; failed: number; snapshot: string | null }>('/filament-trees/orca-cleanup', { method: 'POST', body: JSON.stringify({ names }) }),
+    // deleted/failed are null when the check after deleting failed: the count is unknown
+    request<{ deleted: number | null; failed: number | null; snapshot: string | null }>('/filament-trees/orca-cleanup', { method: 'POST', body: JSON.stringify({ names }) }),
   // orca_value: what Orca holds; the server stores it as the leaf's baseline whichever value is kept
   resolveFilamentTreeConflict: (data: { tree_id: number; machine: string; nozzle: string; color_id: number; key: string; value: FilamentTreePresetValue | null; orca_value: FilamentTreePresetValue | null }) =>
     request<{ success: boolean }>('/filament-trees/conflicts/resolve', { method: 'POST', body: JSON.stringify(data) }),
@@ -800,6 +801,7 @@ filamentTrees.cleanOrcaDone  {{deleted}},{{failed}}
 filamentTrees.cleanOrcaNone
 filamentTrees.cleanOrcaReadOnly
 filamentTrees.cleanOrcaTitle
+filamentTrees.cleanOrcaUnknown  {{snapshot}}
 filamentTrees.colourCount  {{n}}
 filamentTrees.colourHex
 filamentTrees.colourHexOf  {{name}}
@@ -1003,6 +1005,7 @@ filamentTrees.path
 filamentTrees.pendingExport  {{n}}
 filamentTrees.pickNozzle
 filamentTrees.pushFailed  {{n}}
+filamentTrees.pushHeld
 filamentTrees.pushNeedsReconnect  {{n}}
 filamentTrees.removeColour  {{name}}
 filamentTrees.removeColourBody  {{name}},{{tree}}
@@ -1112,6 +1115,7 @@ nav.filamentProfiles
 'filamentTrees.cleanOrcaNone'
 'filamentTrees.cleanOrcaReadOnly'
 'filamentTrees.cleanOrcaTitle'
+'filamentTrees.cleanOrcaUnknown'
 'filamentTrees.colourCount'
 'filamentTrees.colourHex'
 'filamentTrees.colourHexOf'
@@ -1181,6 +1185,7 @@ nav.filamentProfiles
 'filamentTrees.pendingExport'
 'filamentTrees.pickNozzle'
 'filamentTrees.pushFailed'
+'filamentTrees.pushHeld'
 'filamentTrees.pushNeedsReconnect'
 'filamentTrees.removeColour'
 'filamentTrees.removeColourBody'

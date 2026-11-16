@@ -405,9 +405,15 @@ async def sync(
             with _mapped():
                 refused = await apply_pull(db, plan)
         # a leaf whose Orca edit was refused keeps Orca's version: pushing Fenrir's would overwrite the edit
-        open_conflicts = {(c["tree_id"], c["machine"], c["nozzle"], c["color_id"]) for c in plan.conflicts} | refused
+        open_conflicts = {
+            (c["tree_id"], c["machine"], c["nozzle"], c["color_id"]) for c in plan.conflicts
+        } | refused.keys()
         # the push talks to Orca Cloud: outside the tree locks, so node saves do not wait on the network
         push = await _orca_call(db, current_user, lambda svc: push_leaves(db, svc, entries, open_conflicts))
+    lf_names = {(lf.tree_id, lf.machine, lf.nozzle, lf.color_id): lf.name for lf in leaves}
+    push["held"] = sorted(
+        ({"name": lf_names[k], "keys": sorted(keys)} for k, keys in refused.items()), key=lambda h: h["name"]
+    )
     # full Orca contents stay server-side
     return {k: v for k, v in asdict(plan).items() if k != "baselines"} | {"push": push}
 

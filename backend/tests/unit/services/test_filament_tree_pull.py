@@ -223,7 +223,8 @@ async def test_apply_pull_keeps_conflict_held_and_skips_refused_key(db_session):
         }
     )
     before = plan.ignored
-    await pull.apply_pull(db_session, plan)
+    refused = await pull.apply_pull(db_session, plan)
+    assert refused == {(tree.id, "H2S", "0.4", 2): {"pressure_advance"}}
     assert plan.ignored == before + 1  # pressure_advance refused on root, filament_diameter applied
     leaves, _ = await pull.collect_leaf_states(db_session)
     after = next(lf for lf in leaves if lf.name == name)
@@ -316,7 +317,8 @@ async def test_apply_pull_rolls_back_a_tree_whose_regeneration_fails(db_session)
     huge = "x" * (_CONTENT_MAX_LENGTH + 1)
     plan = plan_pull([orca(lf.name, nozzle_temperature=["255"], filament_notes=huge)], leaves, names)
     assert plan.applied and plan.ignored == 0
-    await pull.apply_pull(db_session, plan)
+    refused = await pull.apply_pull(db_session, plan)
+    assert refused == {(lf.tree_id, lf.machine, lf.nozzle, lf.color_id): {"nozzle_temperature", "filament_notes"}}
     assert plan.ignored == 2  # both keys of the refused tree
     leaves, _ = await pull.collect_leaf_states(db_session)
     after = next(x for x in leaves if x.name == lf.name)

@@ -98,7 +98,14 @@ async def cleanup_orca(db: AsyncSession, svc, confirmed: list[str]) -> dict:
             raise
         except OrcaCloudError as e:
             logger.info("Orca cleanup delete batch failed: %s", e)  # the listing below counts what is left
-    left = {str(e.get("id")) for e in await svc.list_profiles()} & set(ids)  # trust the listing, not the reply
+    try:
+        listing = await svc.list_profiles()
+    except OrcaCloudAuthError:
+        raise
+    except OrcaCloudError as e:  # the deletes ran and the snapshot exists: say so, with the count unknown
+        logger.info("Orca cleanup final check failed: %s", e)
+        return {"deleted": None, "failed": None, "snapshot": snapshot}
+    left = {str(e.get("id")) for e in listing} & set(ids)  # trust the listing, not the reply
     return {"deleted": len(ids) - len(left), "failed": len(left), "snapshot": snapshot}
 
 
