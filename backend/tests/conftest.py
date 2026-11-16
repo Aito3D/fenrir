@@ -1356,3 +1356,32 @@ def _reset_live_plug_total_cache():
     archives._live_plug_total_cache.clear()
     yield
     archives._live_plug_total_cache.clear()
+
+
+@pytest.fixture
+async def file_engine(test_engine, tmp_path):
+    """A WAL file database, for tests whose sessions run CONCURRENTLY.
+    `test_engine` is `:memory:` behind a StaticPool, so every session shares
+    one sqlite3 connection, and one session's commit while another has a
+    statement open fails with "cannot commit transaction - SQL statements in
+    progress" (SQLite 3.46 on the CI runners; 3.53 on macOS lets it through).
+    Production gives each session its own connection to a WAL file, as this
+    does. Depends on `test_engine` only for its model registration."""
+    from sqlalchemy import event
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from backend.app.core.database import Base
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'race.db'}")
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _pragmas(dbapi_conn, _record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode = WAL")
+        cursor.execute("PRAGMA busy_timeout = 15000")
+        cursor.close()
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()

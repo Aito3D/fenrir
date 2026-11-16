@@ -804,11 +804,15 @@ async def test_apply_refreshes_the_row_after_accept_quote_rolls_back(db_session,
 
 
 @pytest.mark.asyncio
-async def test_concurrent_starts_are_serialized_by_the_lock(test_engine, db_session):
+async def test_concurrent_starts_are_serialized_by_the_lock(file_engine):
     """Two starts that straddle the guard-then-insert must not both reserve
     a row: `_start_lock` serialises the check. See FINDING 6."""
-    p = await _project(db_session)
-    project_id = p.id
+    # file_engine: two sessions committing at once need a connection each (see the fixture)
+    maker = async_sessionmaker(file_engine, class_=AsyncSession, expire_on_commit=False)
+    async with maker() as s0:
+        await set_setting(s0, "heimdall_base_url", "http://pos.local:8081")
+        await set_setting(s0, "heimdall_api_token", "hmd_live.84f32b71ac095ed2.s3cret")
+        project_id = (await _project(s0)).id
 
     calls = []
 
@@ -817,7 +821,6 @@ async def test_concurrent_starts_are_serialized_by_the_lock(test_engine, db_sess
         return httpx.Response(202, json=_payment())
 
     heimdall_service._transport = httpx.MockTransport(handler)
-    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with maker() as s1, maker() as s2:
         p1 = await s1.get(AitoProject, project_id)
         p2 = await s2.get(AitoProject, project_id)
