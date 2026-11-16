@@ -488,6 +488,24 @@ async def test_orca_cleanup_deletes_only_stray_filaments(async_client, db_sessio
     assert len(json.loads((tmp_path / body["snapshot"]).read_text())) == 3  # every filament as it was before
 
 
+async def test_orca_cleanup_deletes_older_copies_of_a_leaf(async_client, db_session, monkeypatch, tmp_path):
+    """A leaf pushed several times (Orca Cloud lists 1000 profiles at most) keeps its last updated copy only."""
+    monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
+    await _tree(db_session)
+    leaf = (await db_session.execute(select(FilamentPreset).join(FilamentTreeLeaf))).scalars().first()
+    entries = [
+        {"id": "first", "name": leaf.name, "updated_time": 10, "content": {"type": "filament"}},
+        {"id": "last", "name": leaf.name, "updated_time": 30, "content": {"type": "filament"}},
+        {"id": "middle", "name": leaf.name, "updated_time": 20, "content": {"type": "filament"}},
+    ]
+    stub = _stub_orca(monkeypatch, entries, scope="sync:write")
+    r = await async_client.get(f"{API}/orca-cleanup")
+    assert r.json() == {"count": 2, "names": [leaf.name, leaf.name], "writable": True}
+    r = await async_client.post(f"{API}/orca-cleanup", json={"names": [leaf.name, leaf.name]})
+    assert r.status_code == 200, r.text
+    assert stub.deleted == ["first", "middle"]
+
+
 @pytest.mark.parametrize(("error", "status"), [(OrcaCloudError("5xx"), 200), (OrcaCloudAuthError("expired"), 401)])
 async def test_orca_cleanup_failed_delete_batch(async_client, db_session, monkeypatch, tmp_path, error, status):
     monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)

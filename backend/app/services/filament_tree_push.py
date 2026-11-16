@@ -54,12 +54,24 @@ def _is_filament(entry: object) -> bool:
     return isinstance(content, dict) and content.get("type") == "filament"
 
 
+def _newest_by_name(filaments: list[dict]) -> dict:
+    """One entry per name, the last updated. Orca Cloud lists 1000 profiles at most: a leaf SYNC could not see
+    was pushed again under a new id, so a name can be held several times."""
+    newest: dict = {}
+    for e in filaments:
+        held = newest.get(e.get("name"))
+        if held is None or (e.get("updated_time") or 0) >= (held.get("updated_time") or 0):
+            newest[e.get("name")] = e
+    return newest
+
+
 async def can_write(svc) -> bool:
     return "sync:write" in str((await svc.introspect()).get("scope", ""))
 
 
 async def stray_filaments(db: AsyncSession, entries: list[dict], keep: frozenset[str] = frozenset()) -> list[dict]:
-    """Orca Cloud filament profiles that are no tree leaf. ``keep``: names to leave alone anyway."""
+    """Orca Cloud filament profiles that are no tree leaf, and the older copies of a name held several times.
+    ``keep``: names that are no leaf but stay anyway (their older copies still go)."""
     leaf_names = set(
         (
             await db.execute(
@@ -67,10 +79,12 @@ async def stray_filaments(db: AsyncSession, entries: list[dict], keep: frozenset
             )
         ).scalars()
     )
+    filaments = [e for e in entries if _is_filament(e) and e.get("id")]
+    newest = _newest_by_name(filaments)
     return [
         e
-        for e in entries
-        if _is_filament(e) and e.get("id") and e.get("name") not in leaf_names and e.get("name") not in keep
+        for e in filaments
+        if (e.get("name") not in leaf_names and e.get("name") not in keep) or e is not newest[e.get("name")]
     ]
 
 
@@ -136,7 +150,7 @@ async def _todo(db: AsyncSession, entries: list[dict], skip: set[tuple]) -> tupl
     """Leaves Orca Cloud lacks or holds differently, and Orca's filament entries.
     ``skip``: (tree_id, machine, nozzle, color_id) of leaves with an open conflict."""
     filaments = [e for e in entries if _is_filament(e)]
-    by_name = {e.get("name"): e for e in filaments}
+    by_name = _newest_by_name(filaments)
     rows = (
         await db.execute(
             select(FilamentTreeLeaf, FilamentPreset)
