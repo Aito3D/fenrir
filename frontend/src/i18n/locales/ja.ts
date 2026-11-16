@@ -5851,6 +5851,8 @@ export default {
     addColour: '色を追加',
     targetsTitle: 'プリンターとノズル（全ツリー共通）',
     targetsHint: '各ツリーにプリンターとノズルごとのプロファイルが作成されます。',
+    targetsJoinHint: '同じプロファイルを共有するプリンターは + でつなぎます（例: H2C+H2D）。プロファイルは両方に対応し、最初のプリンターが Bambu のベースになります。',
+    mergeNozzles: '設定が同一のノズルを 1 つのプロファイルにまとめる',
     machines: 'プリンター一覧',
     nozzles: 'ノズル一覧',
     saveTargets: '対象を保存',

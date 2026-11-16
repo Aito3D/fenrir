@@ -5851,6 +5851,8 @@ export default {
     addColour: 'Farbe hinzufügen',
     targetsTitle: 'Drucker und Düsen (alle Bäume)',
     targetsHint: 'Jeder Baum erhält ein Profil pro Drucker und Düse.',
+    targetsJoinHint: 'Drucker, die sich ein Profil teilen, mit + verbinden, z. B. H2C+H2D: Das Profil ist mit beiden kompatibel, der erste Drucker liefert die Bambu-Basis.',
+    mergeNozzles: 'Düsen mit identischen Einstellungen zu einem Profil zusammenfassen',
     machines: 'Drucker',
     nozzles: 'Düsen',
     saveTargets: 'Ziele speichern',

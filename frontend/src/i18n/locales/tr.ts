@@ -5846,6 +5846,8 @@ export default {
     addColour: 'Renk ekle',
     targetsTitle: 'Yazıcılar ve nozullar (tüm ağaçlar)',
     targetsHint: 'Her ağaç, her yazıcı ve nozul için bir profil alır.',
+    targetsJoinHint: 'Tek profili paylaşan yazıcıları + ile birleştirin, örn. H2C+H2D: profil ikisiyle de uyumludur ve ilk yazıcı Bambu tabanını belirler.',
+    mergeNozzles: 'Ayarları aynı olan nozulları tek profilde birleştir',
     machines: 'Yazıcılar',
     nozzles: 'Nozullar',
     saveTargets: 'Hedefleri kaydet',

@@ -87,8 +87,8 @@ async def test_targets_default_and_roundtrip(db_session):
         "nozzles": ["0.2", "0.4", "0.6", "0.8"],
     }
     t = {"machines": ["H2S"], "nozzles": ["0.4"]}
-    assert await store.set_targets(db_session, t) == t
-    assert await store.get_targets(db_session) == t
+    assert await store.set_targets(db_session, t) == t | {"merge_nozzles": False}
+    assert await store.get_targets(db_session) == t | {"merge_nozzles": False}
 
 
 async def test_targets_rejects_bad_nozzle(db_session):

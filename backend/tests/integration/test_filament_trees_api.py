@@ -711,10 +711,111 @@ async def test_migrate_then_list(async_client, db_session):
 async def test_literal_routes_not_shadowed(async_client, db_session):
     r = await async_client.get(f"{API}/targets")
     assert r.status_code == 200
-    assert r.json() == {"machines": ["X2D", "H2S", "H2D", "H2C"], "nozzles": ["0.2", "0.4", "0.6", "0.8"]}
+    assert r.json() == {
+        "machines": ["X2D", "H2S", "H2D", "H2C"],
+        "nozzles": ["0.2", "0.4", "0.6", "0.8"],
+        "merge_nozzles": False,
+    }
     r = await async_client.put(f"{API}/targets", json={"machines": ["H2S"], "nozzles": ["0.4"]})
-    assert r.status_code == 200 and r.json() == {"machines": ["H2S"], "nozzles": ["0.4"]}
+    assert r.status_code == 200 and r.json() == {"machines": ["H2S"], "nozzles": ["0.4"], "merge_nozzles": False}
     assert (await async_client.put(f"{API}/targets", json={"machines": [], "nozzles": ["0.4"]})).status_code == 400
+
+
+async def test_joined_printers_share_one_preset_per_nozzle_and_colour(async_client, db_session):
+    tree, white, _ = await _tree(db_session)
+    db_session.add(BaseFilamentPreset(name="Generic PETG @BBL H2C", filename="c.json"))
+    await db_session.commit()
+    node = {"machine": "H2C", "nozzle": "0.4"}
+    pa = {"set": {"pressure_advance": ["0.03"]}}
+    assert (await async_client.put(f"{API}/{tree.id}/node", json=node | pa)).status_code == 200
+    before = await db_session.scalar(select(func.count()).select_from(FilamentTreeLeaf))
+
+    joined = {"machines": ["X2D", "H2S", "H2C+H2D"], "nozzles": ["0.2", "0.4", "0.6", "0.8"]}
+    # H2D lacks the H2C calibration: joining them would lose one side, so it is refused and nothing changes
+    r = await async_client.put(f"{API}/targets", json=joined)
+    assert r.status_code == 400 and "H2C and H2D hold different values (pressure_advance)" in r.json()["detail"]
+    assert await db_session.scalar(select(func.count()).select_from(FilamentTreeLeaf)) == before
+
+    assert (await async_client.put(f"{API}/{tree.id}/node", json=node | pa | {"machine": "H2D"})).status_code == 200
+    r = await async_client.put(f"{API}/targets", json=joined)
+    assert r.status_code == 200, r.text
+    # one printer's worth of presets fewer: 4 nozzles x 2 colours
+    assert await db_session.scalar(select(func.count()).select_from(FilamentTreeLeaf)) == before - 8
+    preset = (
+        await db_session.execute(
+            select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG - White @H2C+H2D 0.4")
+        )
+    ).scalar_one()
+    content = json.loads(preset.content)
+    assert content["compatible_printers"] == ["Bambu Lab H2C 0.4 nozzle", "Bambu Lab H2D 0.4 nozzle"]
+    assert content["inherits"] == "Generic PETG @BBL H2C"  # the first joined printer gives the base
+    assert content["pressure_advance"] == ["0.03"]  # its calibration came along
+    r = await async_client.get(f"{API}/{tree.id}/node", params={"machine": "H2C+H2D", "nozzle": "0.4"})
+    assert {row["key"]: row["value"] for row in r.json()}["pressure_advance"] == ["0.03"]
+
+    # a printer cannot be in two targets
+    r = await async_client.put(f"{API}/targets", json=joined | {"machines": ["H2S", "H2C+H2D", "H2D"]})
+    assert r.status_code == 400
+
+
+async def test_merged_nozzles_share_a_preset_until_one_is_calibrated(async_client, db_session, monkeypatch):
+    tree, _, red = await _tree(db_session)
+    tree_id, colour_id = tree.id, red.id  # read now: the test expires the session to see what the API wrote
+    targets = {"machines": ["H2S"], "nozzles": ["0.4", "0.6", "0.8"], "merge_nozzles": True}
+    assert (await async_client.put(f"{API}/targets", json=targets)).status_code == 200
+
+    async def presets():
+        rows = await db_session.execute(select(FilamentPreset.name, FilamentPreset.id).order_by(FilamentPreset.name))
+        return dict(rows.tuples().all())
+
+    # nothing is nozzle-specific yet: one preset per colour, compatible with the three nozzles
+    merged = await presets()
+    assert list(merged) == ["Polymaker PETG - Red @H2S 0.4+0.6+0.8", "Polymaker PETG - White @H2S 0.4+0.6+0.8"]
+    red_id = merged["Polymaker PETG - Red @H2S 0.4+0.6+0.8"]
+    content = json.loads((await db_session.get(FilamentPreset, red_id)).content)
+    assert content["compatible_printers"] == [f"Bambu Lab H2S {n} nozzle" for n in ("0.4", "0.6", "0.8")]
+
+    # calibrating the 0.8 splits it off; the others keep their preset row under the narrower name
+    body = {"machine": "H2S", "nozzle": "0.8", "set": {"pressure_advance": ["0.03"]}}
+    assert (await async_client.put(f"{API}/{tree_id}/node", json=body)).status_code == 200
+    db_session.expire_all()
+    split = await presets()
+    assert set(split) == {f"Polymaker PETG - {c} @H2S {n}" for c in ("Red", "White") for n in ("0.4+0.6", "0.8")}
+    assert split["Polymaker PETG - Red @H2S 0.4+0.6"] == red_id
+
+    # an OrcaSlicer edit to the merged preset lands on each nozzle it covers, and only those
+    preset = await db_session.get(FilamentPreset, red_id)
+    held = json.loads(preset.content) | {"type": "filament"}
+    entries = [{"id": "a", "name": preset.name, "content": held}]
+    _stub_orca(monkeypatch, entries)
+    assert (await async_client.post(f"{API}/sync")).status_code == 200  # records the baseline
+    entries[0]["content"] = held | {"nozzle_temperature": ["255"]}
+    assert (await async_client.post(f"{API}/sync")).status_code == 200
+
+    async def temp(nozzle):
+        r = await async_client.get(
+            f"{API}/{tree_id}/node", params={"machine": "H2S", "nozzle": nozzle, "color_id": colour_id}
+        )
+        return {row["key"]: row["value"] for row in r.json()}["nozzle_temperature"]
+
+    assert [await temp(n) for n in ("0.4", "0.6", "0.8")] == [["255"], ["255"], ["245"]]
+    db_session.expire_all()
+    assert (await presets())["Polymaker PETG - Red @H2S 0.4+0.6"] == red_id  # still one preset for both
+
+    # so does a conflict settled on the merged preset
+    choice = {"tree_id": tree_id, "machine": "H2S", "nozzle": "0.4+0.6", "color_id": colour_id}
+    r = await async_client.post(
+        f"{API}/conflicts/resolve", json=choice | {"key": "hot_plate_temp", "value": ["75"], "orca_value": ["75"]}
+    )
+    assert r.status_code == 200, r.text
+
+    async def plate(nozzle):
+        r = await async_client.get(
+            f"{API}/{tree_id}/node", params={"machine": "H2S", "nozzle": nozzle, "color_id": colour_id}
+        )
+        return {row["key"]: row["value"] for row in r.json()}["hot_plate_temp"]
+
+    assert [await plate(n) for n in ("0.4", "0.6", "0.8")] == [["75"], ["75"], ["70"]]
 
 
 async def test_patch_managed_preset_is_409(async_client, db_session):

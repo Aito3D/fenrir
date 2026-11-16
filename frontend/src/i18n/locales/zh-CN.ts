@@ -5838,6 +5838,8 @@ export default {
     addColour: '添加颜色',
     targetsTitle: '打印机和喷嘴（所有树）',
     targetsHint: '每棵树都会为每台打印机和每种喷嘴生成一个配置。',
+    targetsJoinHint: '用 + 连接共用同一配置的打印机，例如 H2C+H2D：该配置与两者兼容，第一台打印机决定 Bambu 基础预设。',
+    mergeNozzles: '将设置相同的喷嘴合并为一个配置',
     machines: '打印机列表',
     nozzles: '喷嘴列表',
     saveTargets: '保存目标',

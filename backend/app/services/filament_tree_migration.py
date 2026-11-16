@@ -23,6 +23,7 @@ from backend.app.services.filament_tree import (
     SKIP_KEYS,
     leaf_targets,
     parse_inherits,
+    target_machine,
 )
 from backend.app.services.filament_tree_base import build_base_reader
 from backend.app.services.filament_tree_store import (
@@ -83,10 +84,10 @@ def propose_groups(
         source = next((p for p in rows if _color_name(p).strip().lower() == "white"), rows[0])
         src = contents[source["id"]]
         _, machine, nozzle = parse_inherits(src.get("inherits", ""))
-        machine = machine if machine in targets["machines"] else None
+        machine = target_machine(machine or "", targets["machines"])
         nozzle = nozzle if nozzle in targets["nozzles"] else None
         pairs = _compat_pairs(src)
-        first_m = next((m for m, _n in pairs if m in targets["machines"]), None)
+        first_m = next(filter(None, (target_machine(m, targets["machines"]) for m, _n in pairs)), None)
         first_n = next((n for _m, n in pairs if n in targets["nozzles"]), None)
         warnings = []
         if len({c.get("inherits", "") for c in contents.values()}) > 1:

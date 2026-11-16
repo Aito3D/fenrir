@@ -5838,6 +5838,8 @@ export default {
     addColour: 'Adicionar cor',
     targetsTitle: 'Impressoras e bicos (todas as árvores)',
     targetsHint: 'Cada árvore recebe um perfil por impressora e bico.',
+    targetsJoinHint: 'Una com + as impressoras que compartilham um perfil, por ex. H2C+H2D: o perfil é compatível com ambas e a primeira impressora fornece a base da Bambu.',
+    mergeNozzles: 'Unir em um só perfil os bicos com configurações idênticas',
     machines: 'Impressoras',
     nozzles: 'Bicos',
     saveTargets: 'Salvar destinos',
