@@ -521,17 +521,22 @@ export function NodePanel({ node, onCreated }: { node: NodeRef; onCreated?: (tre
           {crumbs.join(' › ')}
         </nav>
         {modified > 0 && (
-          <span className={`shrink-0 text-xs ${ORANGE}`}>{t('filamentTrees.orca.modified', { count: modified })}</span>
-        )}
-        {modified > 0 && colorId === undefined && writable && (trees?.length ?? 0) > 1 && (
-          <button
-            type="button"
-            onClick={() => setBulkOpen(true)}
-            className={`flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-bambu-gray-light hover:bg-white/5 hover:text-white ${focusRingCls}`}
-          >
-            <CopyPlus className="h-3.5 w-3.5" />
-            {t('filamentTrees.applyToOthers')}
-          </button>
+          // unfolds on the first override so the breadcrumb narrows instead of snapping
+          <span className="aito-unfold-x shrink-0">
+            <span className="flex items-center gap-2">
+              <span className={`shrink-0 text-xs ${ORANGE}`}>{t('filamentTrees.orca.modified', { count: modified })}</span>
+              {colorId === undefined && writable && (trees?.length ?? 0) > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setBulkOpen(true)}
+                  className={`flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-bambu-gray-light hover:bg-white/5 hover:text-white ${focusRingCls}`}
+                >
+                  <CopyPlus className="h-3.5 w-3.5" />
+                  {t('filamentTrees.applyToOthers')}
+                </button>
+              )}
+            </span>
+          </span>
         )}
       </div>
       {isSource && <p className="text-sm text-sky-300">{t('filamentTrees.sourceReadOnly')}</p>}

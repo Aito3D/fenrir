@@ -67,7 +67,15 @@ from backend.app.services.filament_tree_pull import (
     plan_pull,
     resolve_conflict,
 )
-from backend.app.services.filament_tree_push import cleanup_orca, cleanup_preview, push_leaves, push_names
+from backend.app.services.filament_tree_push import (
+    can_write,
+    cleanup_orca,
+    cleanup_preview,
+    push_leaves,
+    push_names,
+    remove_strays,
+    stray_filaments,
+)
 from backend.app.services.orca_cloud import OrcaCloudAuthError, OrcaCloudError
 
 router = APIRouter(prefix="/filament-trees", tags=["filament-trees"])
@@ -353,7 +361,39 @@ def _orca_run_lock():
     return store.tree_write_lock([-1])
 
 
-async def _sync_view(db: AsyncSession, entries: list[dict]) -> dict:
+# shortcut: in this process's memory, so one worker only and gone on restart; move it to the DB if Fenrir ever runs several workers
+# phase: read (listing Orca Cloud) -> push (name = the leaf being sent) -> clean; stop: asked to stop before the next leaf
+_sync_progress: dict = {"running": False, "done": 0, "total": 0, "phase": "read", "name": "", "stop": False}
+# the last finished SYNC's response, for a page that lost it (dropped connection, operator left); same shortcut as above
+_last_sync: dict = {}
+
+
+@router.get("/sync/progress")
+async def sync_progress(_: User | None = RequirePermissionIfAuthEnabled(_READ)):
+    """How far the running SYNC's push is; total 0 while it is still reading Orca Cloud. Any page can ask."""
+    return _sync_progress
+
+
+@router.post("/sync/stop")
+async def sync_stop(_: User | None = cloud_caller(_UPDATE, Permission.ORCA_CLOUD_AUTH)):
+    """Ask the running SYNC to stop before its next leaf; what it already sent stays, the next SYNC resumes."""
+    if _sync_progress["running"]:
+        _sync_progress["stop"] = True
+    return _sync_progress
+
+
+@router.get("/sync/last")
+async def sync_last(current_user: User | None = cloud_caller(_UPDATE, Permission.ORCA_CLOUD_AUTH)):
+    """The result of the caller's last finished SYNC, or null. It holds their Orca Cloud presets: nobody else's."""
+    return _last_sync.get("result") if _last_sync.get("user") == getattr(current_user, "id", None) else None
+
+
+def _adoptable(plan) -> frozenset[str]:
+    """New filaments made in OrcaSlicer: SYNC offers them for adoption into a tree instead of deleting them."""
+    return frozenset(c["name"] for c in plan.candidates)
+
+
+async def _sync_view(db: AsyncSession, entries: list[dict], user: User | None) -> dict:
     """The preview body, fingerprint included; the GET shows it and the POST recomputes it to spot a stale preview."""
     leaves, colour_names = await collect_leaf_states(db)
     plan = plan_pull(entries, leaves, colour_names)
@@ -361,16 +401,25 @@ async def _sync_view(db: AsyncSession, entries: list[dict]) -> dict:
     def key(c: dict) -> tuple:
         return (c["tree_id"], c["machine"], c["nozzle"], c["color_id"])
 
-    names = {(lf.tree_id, lf.machine, lf.nozzle, lf.color_id): lf.name for lf in leaves}
-    pull: dict[str, set[str]] = {}
+    by_key = {(lf.tree_id, lf.machine, lf.nozzle, lf.color_id): lf for lf in leaves}
+    pull: dict[str, dict[str, list]] = {}
     for a in plan.applied:
-        pull.setdefault(names[key(a)], set()).update(a["values"])
+        leaf = by_key[key(a)]
+        # [what Fenrir holds, what Orca brings]
+        pull.setdefault(leaf.name, {}).update({k: [leaf.generated.get(k), v] for k, v in a["values"].items()})
     view = {
-        "pull": [{"name": name, "keys": sorted(keys)} for name, keys in sorted(pull.items())],
-        "conflicts": len(plan.conflicts),
+        "pull": [{"name": name, "changes": changes} for name, changes in sorted(pull.items())],
+        # settled in the preview, before the run; sorted because Orca's listing order is not stable
+        "conflicts": sorted(
+            ({**c, "name": by_key[key(c)].name} for c in plan.conflicts), key=lambda c: (c["name"], c["key"])
+        ),
         # shortcut: computed before the pull lands. A leaf Orca edited counts as pull only, and the other leaves
         # that edit reaches are not listed; plan the pull in a rolled-back transaction if the exact list matters
         "push": await push_names(db, entries, {key(c) for c in [*plan.conflicts, *plan.applied]}),
+        # Orca filaments that are no leaf are deleted, so both sides hold the same set; deleting needs filaments:delete
+        "remove": []
+        if _lacks_delete(user)
+        else sorted(str(e.get("name")) for e in await stray_filaments(db, entries, _adoptable(plan))),
     }
     # the values are hashed too: the preview lists only keys, but a changed value is a changed plan
     # sorted by leaf identity: Orca's listing order is not stable between the preview and the confirm
@@ -387,39 +436,64 @@ async def sync_preview(
     current_user: User | None = cloud_caller(_UPDATE, Permission.ORCA_CLOUD_AUTH),
 ):
     """What a SYNC would do, without doing it."""
-    entries = await _orca_call(db, current_user, lambda svc: svc.list_profiles())
-    return await _sync_view(db, entries)
+
+    async def read(svc):
+        return await svc.list_profiles(), await can_write(svc)
+
+    entries, writable = await _orca_call(db, current_user, read)
+    # outside the fingerprint: a reconnect between preview and confirm is no changed plan
+    return await _sync_view(db, entries, current_user) | {"writable": writable}
 
 
 @router.post("/sync", dependencies=[Depends(_cloud_api_key_gate)])
 async def sync(
     fingerprint: str | None = None,
+    remove: bool = True,
     db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(_UPDATE, Permission.ORCA_CLOUD_AUTH),
 ):
     """Pull, then push: fold OrcaSlicer edits into the trees, then send every changed leaf to Orca Cloud.
-    With the preview's fingerprint, 409 (nothing touched) when the plan has changed since that preview."""
+    With the preview's fingerprint, 409 (nothing touched) when the plan has changed since that preview.
+    ``remove=false`` keeps the Orca Cloud filaments that are no tree leaf."""
     async with _orca_run_lock():
-        entries = await _orca_call(db, current_user, lambda svc: svc.list_profiles())
-        async with store.tree_write_lock((await db.execute(select(FilamentTree.id))).scalars().all()):
-            if fingerprint is not None and (await _sync_view(db, entries))["fingerprint"] != fingerprint:
-                raise HTTPException(status_code=409, detail="The SYNC plan changed since the preview")
-            leaves, colour_names = await collect_leaf_states(db)
-            plan = plan_pull(entries, leaves, colour_names)
-            with _mapped():
-                refused = await apply_pull(db, plan)
-        # a leaf whose Orca edit was refused keeps Orca's version: pushing Fenrir's would overwrite the edit
-        open_conflicts = {
-            (c["tree_id"], c["machine"], c["nozzle"], c["color_id"]) for c in plan.conflicts
-        } | refused.keys()
-        # the push talks to Orca Cloud: outside the tree locks, so node saves do not wait on the network
-        push = await _orca_call(db, current_user, lambda svc: push_leaves(db, svc, entries, open_conflicts))
+        _sync_progress.update(running=True, done=0, total=0, phase="read", name="", stop=False)
+        try:
+            entries = await _orca_call(db, current_user, lambda svc: svc.list_profiles())
+            async with store.tree_write_lock((await db.execute(select(FilamentTree.id))).scalars().all()):
+                if (
+                    fingerprint is not None
+                    and (await _sync_view(db, entries, current_user))["fingerprint"] != fingerprint
+                ):
+                    raise HTTPException(status_code=409, detail="The SYNC plan changed since the preview")
+                leaves, colour_names = await collect_leaf_states(db)
+                plan = plan_pull(entries, leaves, colour_names)
+                with _mapped():
+                    refused = await apply_pull(db, plan)
+            # a leaf whose Orca edit was refused keeps Orca's version: pushing Fenrir's would overwrite the edit
+            open_conflicts = {
+                (c["tree_id"], c["machine"], c["nozzle"], c["color_id"]) for c in plan.conflicts
+            } | refused.keys()
+            # the push talks to Orca Cloud: outside the tree locks, so node saves do not wait on the network
+            push = await _orca_call(
+                db, current_user, lambda svc: push_leaves(db, svc, entries, open_conflicts, _sync_progress)
+            )
+            # last, so a leaf just pushed under a new name is never mistaken for a stray; the snapshot is taken first
+            _sync_progress.update(phase="clean", name="")
+            push["removed"] = (
+                {"deleted": 0, "failed": 0, "snapshot": None}
+                if not remove or push["stopped"] or _lacks_delete(current_user) or push["needs_write_scope"]
+                else await _orca_call(db, current_user, lambda svc: remove_strays(db, svc, entries, _adoptable(plan)))
+            )
+        finally:
+            _sync_progress["running"] = False
     lf_names = {(lf.tree_id, lf.machine, lf.nozzle, lf.color_id): lf.name for lf in leaves}
     push["held"] = sorted(
         ({"name": lf_names[k], "keys": sorted(keys)} for k, keys in refused.items()), key=lambda h: h["name"]
     )
     # full Orca contents stay server-side
-    return {k: v for k, v in asdict(plan).items() if k != "baselines"} | {"push": push}
+    result = {k: v for k, v in asdict(plan).items() if k != "baselines"} | {"push": push}
+    _last_sync.update(user=getattr(current_user, "id", None), result=result)
+    return result
 
 
 @router.get("/orca-cleanup", dependencies=[Depends(_cloud_api_key_gate)])

@@ -243,8 +243,12 @@ async def test_sync_applies_and_returns_plan(async_client, db_session, monkeypat
 
     entries[0]["content"] = imported | {"nozzle_temperature": ["255"]}
     preview = (await async_client.get(f"{API}/sync")).json()
-    assert preview["pull"] == [{"name": preset.name, "keys": ["nozzle_temperature"]}] and preview["conflicts"] == 0
-    assert preset.name not in preview["push"] and len(preview["push"]) > 0  # every leaf Orca does not hold yet
+    assert preview["pull"] == [
+        {"name": preset.name, "changes": {"nozzle_temperature": [imported["nozzle_temperature"], ["255"]]}}
+    ]
+    assert preview["conflicts"] == [] and preview["writable"] is False  # the stub pairing is read-only
+    # every leaf Orca does not hold yet, flagged as new there
+    assert preview["push"] and all(p["new"] and p["name"] != preset.name for p in preview["push"])
     r = await async_client.get(f"{API}/{tree.id}/node", params={"machine": "H2S", "nozzle": "0.4", "color_id": red.id})
     assert {row["key"]: row["value"] for row in r.json()}["nozzle_temperature"] != ["255"]  # the preview wrote nothing
     r = await async_client.post(f"{API}/sync")
@@ -340,6 +344,18 @@ async def test_sync_pushes_changed_leaves(async_client, db_session, monkeypatch,
     assert r.status_code == 200, r.text
     push = r.json()["push"]
     assert push["pushed"] == len(rows) - 2 and push["failed"] == []
+    # the progress any page can poll: the run is over, and it counted every leaf it had to send
+    progress = (await async_client.get(f"{API}/sync/progress")).json()
+    assert progress == {
+        "running": False,
+        "done": len(rows) - 3,
+        "total": len(rows) - 2,
+        "phase": "clean",
+        "name": "",
+        "stop": False,
+    }
+    # a page that lost the response can still read the result
+    assert (await async_client.get(f"{API}/sync/last")).json()["push"]["pushed"] == len(rows) - 2
     assert {p["name"] for p in stub.pushed} == {preset.name for _, preset in rows} - {same.name, edited.name}
     assert all(p["content"]["type"] == "filament" and p["original_updated_time"] is None for p in stub.pushed)
     assert json.loads((tmp_path / push["snapshot"]).read_text()) == entries  # Orca as it was before the push
@@ -1448,3 +1464,74 @@ async def test_overlapping_revert_and_node_put_both_take_effect(async_client, db
     assert [r.status_code for r in rs] == [200, 200]
     own = await _own_values(async_client, tree.id, **node)
     assert "hot_plate_temp" not in own and own["cool_plate_temp"] == ["55"]
+
+
+async def test_sync_stops_before_the_next_leaf_when_asked(async_client, db_session, monkeypatch, tmp_path):
+    monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
+    await _tree(db_session)
+    stub = _stub_orca(
+        monkeypatch, [{"id": "stray", "name": "Ghost", "content": {"type": "filament"}}], scope="sync:write"
+    )
+    sent = stub.push_profile
+
+    async def push_then_stop(**kw):  # the operator presses Stop while the first leaf is on its way
+        await sent(**kw)
+        assert (await async_client.post(f"{API}/sync/stop")).json()["stop"] is True
+
+    stub.push_profile = push_then_stop
+    push = (await async_client.post(f"{API}/sync")).json()["push"]
+    assert push["stopped"] and push["pushed"] == 1 and push["remaining"] > 0 and push["failed"] == []
+    assert not hasattr(stub, "deleted")  # stopped means stopped: no cleanup either
+    # the stop does not carry over to the next run
+    stub = _stub_orca(monkeypatch, [], scope="sync:write")
+    assert (await async_client.post(f"{API}/sync")).json()["push"]["stopped"] is False
+
+
+async def test_sync_preview_lists_conflicts_to_settle_before_the_run(async_client, db_session, monkeypatch):
+    tree, _, _ = await _tree(db_session)
+    r = await async_client.post(f"{API}/export", json={"tree_id": tree.id})
+    await async_client.post(f"{API}/export/confirm", json={"token": r.headers["x-export-token"]})
+    preset = (
+        await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG - Red @H2S 0.4"))
+    ).scalar_one()
+    content = json.loads(preset.content)
+    # never synced and Orca holds another value: nobody knows who changed it
+    _stub_orca(
+        monkeypatch,
+        [{"id": "a", "name": preset.name, "content": content | {"type": "filament", "nozzle_temperature": ["255"]}}],
+    )
+    [conflict] = (await async_client.get(f"{API}/sync")).json()["conflicts"]
+    assert conflict["name"] == preset.name and conflict["key"] == "nozzle_temperature"
+    assert conflict["fenrir_value"] == content["nozzle_temperature"] and conflict["orca_value"] == ["255"]
+
+
+async def test_sync_removes_orca_filaments_that_are_no_leaf(async_client, db_session, monkeypatch, tmp_path):
+    monkeypatch.setattr(push_service, "_snapshot_dir", lambda: tmp_path)
+    await _tree(db_session)
+    entries = [
+        {"id": "stray", "name": "Ghost PLA - Red @H2D 0.4", "content": {"type": "filament"}},
+        # made in OrcaSlicer: offered for adoption, never deleted
+        {"id": "new", "name": "My new filament", "content": {"type": "filament", "from": "User"}},
+        {"id": "printer", "name": "My H2D", "content": {"type": "machine"}},
+    ]
+    stub = _stub_orca(monkeypatch, entries, scope="sync:write")
+    assert (await async_client.get(f"{API}/sync")).json()["remove"] == ["Ghost PLA - Red @H2D 0.4"]
+    assert not hasattr(stub, "deleted")  # the preview deletes nothing
+    # the operator unticked the deletion: the stray stays
+    assert (await async_client.post(f"{API}/sync", params={"remove": "false"})).json()["push"]["removed"][
+        "deleted"
+    ] == 0
+    assert not hasattr(stub, "deleted")
+
+    r = await async_client.post(f"{API}/sync")
+    assert r.status_code == 200, r.text
+    removed = r.json()["push"]["removed"]
+    assert stub.deleted == ["stray"] and removed["deleted"] == 1 and removed["failed"] == 0
+    assert (tmp_path / removed["snapshot"]).exists()
+    assert [c["name"] for c in r.json()["candidates"]] == ["My new filament"]
+
+    # a read-only pairing deletes nothing
+    entries.append({"id": "stray2", "name": "Ghost PLA - Red @H2D 0.6", "content": {"type": "filament"}})
+    stub = _stub_orca(monkeypatch, entries)
+    assert (await async_client.post(f"{API}/sync")).json()["push"]["removed"]["deleted"] == 0
+    assert not hasattr(stub, "deleted")

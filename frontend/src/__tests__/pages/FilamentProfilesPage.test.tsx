@@ -54,7 +54,7 @@ const EMPTY_PULL: FilamentTreePullResult = {
   missing: [],
   ignored: 0,
   refresh: [],
-  push: { pushed: 0, failed: [], remaining: 0, needs_write_scope: false, snapshot: null, held: [] },
+  push: { pushed: 0, failed: [], remaining: 0, needs_write_scope: false, snapshot: null, held: [], removed: { deleted: 0, failed: 0, snapshot: null } },
 };
 
 function stub({ trees = [TREE], groups = [] as FilamentTreeMigrationGroup[] } = {}) {
@@ -62,7 +62,9 @@ function stub({ trees = [TREE], groups = [] as FilamentTreeMigrationGroup[] } = 
   vi.spyOn(api, 'getFilamentTreeTargets').mockResolvedValue(TARGETS);
   vi.spyOn(api, 'getUnmanagedFilamentGroups').mockResolvedValue(groups);
   vi.spyOn(api, 'getFilamentPresets').mockResolvedValue(PRESETS);
-  vi.spyOn(api, 'previewFilamentTreeSync').mockResolvedValue({ pull: [], push: [], conflicts: 0, fingerprint: 'f0' });
+  vi.spyOn(api, 'previewFilamentTreeSync').mockResolvedValue({ pull: [], push: [], remove: [], conflicts: [], writable: true, fingerprint: 'f0' });
+  vi.spyOn(api, 'getFilamentTreeSyncProgress').mockResolvedValue({ running: false, done: 0, total: 0 });
+  vi.spyOn(api, 'getFilamentTreeSyncLast').mockResolvedValue(null);
   vi.spyOn(api, 'getFilamentTreeNode').mockResolvedValue([
     { key: 'nozzle_temperature', value: ['240'], source: 'root', own: true },
   ]);
@@ -143,24 +145,55 @@ describe('FilamentProfilesPage (trees)', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
+  it('shows a SYNC already running on the server, e.g. after leaving the page and coming back', async () => {
+    stub();
+    vi.spyOn(api, 'getFilamentTreeSyncProgress').mockResolvedValue({ running: true, done: 10, total: 400, phase: 'push', name: 'Polymaker PETG - Red @H2S 0.4' });
+    const stop = vi.spyOn(api, 'stopFilamentTreeSync').mockResolvedValue({ running: true, done: 10, total: 400, phase: 'push', stop: true });
+    render(<FilamentProfilesPage />);
+    // the phase, the count and the profile on its way
+    expect(await screen.findByText('Sending to Orca Cloud 10/400 · Polymaker PETG - Red @H2S 0.4')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '10');
+    expect(screen.getByRole('button', { name: 'SYNC' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it('shows the result of a SYNC that finished without this page holding its response', async () => {
+    stub();
+    vi.spyOn(api, 'getFilamentTreeSyncProgress')
+      .mockResolvedValueOnce({ running: true, done: 0, total: 0, phase: 'read' })
+      .mockResolvedValue({ running: false, done: 4, total: 5, phase: 'push' });
+    vi.spyOn(api, 'getFilamentTreeSyncLast').mockResolvedValue({
+      ...EMPTY_PULL,
+      push: { ...EMPTY_PULL.push, pushed: 4, stopped: true, remaining: 1 },
+    });
+    render(<FilamentProfilesPage />);
+    expect(await screen.findByText('Reading Orca Cloud')).toBeInTheDocument();
+    // the next poll (1 s) sees the run over
+    const dialog = await screen.findByRole('dialog', { name: 'Sync result' }, { timeout: 3000 });
+    expect(within(dialog).getByText(/Stopped: 1 not sent yet/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
   it('SYNC lists what it would do and syncs only once confirmed', async () => {
     stub();
     vi.spyOn(api, 'previewFilamentTreeSync').mockResolvedValue({
-      pull: [{ name: 'Polymaker PETG - Red @H2S 0.4', keys: ['nozzle_temperature'] }],
-      push: ['Polymaker PETG - Red @H2D 0.6'],
-      conflicts: 2,
+      pull: [{ name: 'Polymaker PETG - Red @H2S 0.4', changes: { nozzle_temperature: [['240'], ['255']] } }],
+      push: [{ name: 'Polymaker PETG - Red @H2D 0.6', new: true }], remove: [],
+      conflicts: [], writable: true,
       fingerprint: 'abc123',
     });
     const run = vi.spyOn(api, 'syncFilamentTrees').mockResolvedValue(EMPTY_PULL);
     render(<FilamentProfilesPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'SYNC' }));
     const dialog = await screen.findByRole('dialog', { name: 'Sync with Orca Cloud' });
-    expect(within(dialog).getByText('Polymaker PETG - Red @H2S 0.4')).toBeInTheDocument();
+    // one row per filament in each direction; the printer/nozzle preset sits inside it
+    expect(within(dialog).getAllByText('Polymaker PETG - Red')).toHaveLength(2);
+    expect(within(dialog).getByText('H2S 0.4')).toBeInTheDocument();
     expect(within(dialog).getByText('nozzle_temperature')).toBeInTheDocument();
-    expect(within(dialog).getByText('Polymaker PETG - Red @H2D 0.6')).toBeInTheDocument();
-    expect(within(dialog).getByText(/^2 conflicting values/)).toBeInTheDocument();
+    expect(within(dialog).getByText('H2D 0.6')).toBeInTheDocument();
     expect(run).not.toHaveBeenCalled();
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: /Confirm/ }));
     await waitFor(() => expect(run).toHaveBeenCalledOnce());
     expect(run.mock.calls[0][1]).toBe('abc123');
     expect(await screen.findByRole('dialog', { name: 'Sync result' })).toBeInTheDocument();
@@ -170,16 +203,16 @@ describe('FilamentProfilesPage (trees)', () => {
     stub();
     const preview = vi
       .spyOn(api, 'previewFilamentTreeSync')
-      .mockResolvedValueOnce({ pull: [], push: ['Old leaf'], conflicts: 0, fingerprint: 'old' })
-      .mockResolvedValue({ pull: [], push: ['New leaf'], conflicts: 0, fingerprint: 'new' });
+      .mockResolvedValueOnce({ pull: [], push: [{ name: 'Old leaf', new: false }], remove: [], conflicts: [], writable: true, fingerprint: 'old' })
+      .mockResolvedValue({ pull: [], push: [{ name: 'New leaf', new: false }], remove: [], conflicts: [], writable: true, fingerprint: 'new' });
     const run = vi.spyOn(api, 'syncFilamentTrees').mockRejectedValue(new ApiError('changed', 409));
     render(<FilamentProfilesPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'SYNC' }));
     const dialog = await screen.findByRole('dialog', { name: 'Sync with Orca Cloud' });
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: /Confirm/ }));
     expect(await screen.findByText('New leaf')).toBeInTheDocument();
     expect(preview).toHaveBeenCalledTimes(2);
-    expect(run).toHaveBeenCalledWith(expect.anything(), 'old');
+    expect(run).toHaveBeenCalledWith(expect.anything(), 'old', true);
     expect(screen.queryByRole('dialog', { name: 'Sync result' })).not.toBeInTheDocument();
     expect(screen.queryByText('Old leaf')).not.toBeInTheDocument();
   });

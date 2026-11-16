@@ -54,12 +54,12 @@ def _is_filament(entry: object) -> bool:
     return isinstance(content, dict) and content.get("type") == "filament"
 
 
-async def _can_write(svc) -> bool:
+async def can_write(svc) -> bool:
     return "sync:write" in str((await svc.introspect()).get("scope", ""))
 
 
-async def cleanup_preview(db: AsyncSession, svc) -> dict:
-    """Filament profiles in Orca Cloud that are not a tree leaf: what a cleanup would delete."""
+async def stray_filaments(db: AsyncSession, entries: list[dict], keep: frozenset[str] = frozenset()) -> list[dict]:
+    """Orca Cloud filament profiles that are no tree leaf. ``keep``: names to leave alone anyway."""
     leaf_names = set(
         (
             await db.execute(
@@ -67,12 +67,21 @@ async def cleanup_preview(db: AsyncSession, svc) -> dict:
             )
         ).scalars()
     )
+    return [
+        e
+        for e in entries
+        if _is_filament(e) and e.get("id") and e.get("name") not in leaf_names and e.get("name") not in keep
+    ]
+
+
+async def cleanup_preview(db: AsyncSession, svc) -> dict:
+    """Filament profiles in Orca Cloud that are not a tree leaf: what a cleanup would delete."""
     filaments = [e for e in await svc.list_profiles() if _is_filament(e)]
-    strays = [e for e in filaments if e.get("name") not in leaf_names and e.get("id")]
+    strays = await stray_filaments(db, filaments)
     return {
         "count": len(strays),
         "names": sorted(str(e.get("name")) for e in strays),
-        "writable": await _can_write(svc),
+        "writable": await can_write(svc),
         "_filaments": filaments,
         "_ids": [str(e["id"]) for e in strays],
     }
@@ -88,10 +97,23 @@ async def cleanup_orca(db: AsyncSession, svc, confirmed: list[str]) -> dict:
         raise ValueError(
             f"Orca Cloud changed: {preview['count']} profiles would be deleted, not the {len(confirmed)} confirmed"
         )
-    ids = preview["_ids"]
+    return await _delete_profiles(svc, preview["_ids"], preview["_filaments"])
+
+
+async def remove_strays(db: AsyncSession, svc, entries: list[dict], keep: frozenset[str]) -> dict:
+    """SYNC's last step: delete the Orca Cloud filaments that are no tree leaf, so both sides hold the same set.
+    Read-only pairing: nothing is deleted and every stray counts as failed."""
+    strays = await stray_filaments(db, entries, keep)
+    if strays and not await can_write(svc):
+        return {"deleted": 0, "failed": len(strays), "snapshot": None}
+    return await _delete_profiles(svc, [str(e["id"]) for e in strays], [e for e in entries if _is_filament(e)])
+
+
+async def _delete_profiles(svc, ids: list[str], filaments: list[dict]) -> dict:
+    """Snapshot ``filaments`` (Orca as it is), delete ``ids``, then count what the listing still holds."""
     if not ids:
         return {"deleted": 0, "failed": 0, "snapshot": None}
-    snapshot = _snapshot(preview["_filaments"], "cleanup")
+    snapshot = _snapshot(filaments, "cleanup")
     for i in range(0, len(ids), 100):
         try:
             await svc.delete_profiles(ids[i : i + 100])
@@ -133,26 +155,45 @@ async def _todo(db: AsyncSession, entries: list[dict], skip: set[tuple]) -> tupl
     return todo, filaments
 
 
-async def push_names(db: AsyncSession, entries: list[dict], skip: set[tuple]) -> list[str]:
-    """Names of the leaves a push would send, without sending them."""
-    return [name for _, name, _, _ in (await _todo(db, entries, skip))[0]]
+async def push_names(db: AsyncSession, entries: list[dict], skip: set[tuple]) -> list[dict]:
+    """The leaves a push would send, without sending them; ``new``: Orca Cloud does not hold it yet."""
+    return [{"name": name, "new": entry is None} for _, name, _, entry in (await _todo(db, entries, skip))[0]]
 
 
-async def push_leaves(db: AsyncSession, svc, entries: list[dict], skip: set[tuple]) -> dict:
-    """``skip``: (tree_id, machine, nozzle, color_id) of leaves with an open conflict."""
-    out: dict = {"pushed": 0, "failed": [], "remaining": 0, "needs_write_scope": False, "snapshot": None}
+async def push_leaves(
+    db: AsyncSession, svc, entries: list[dict], skip: set[tuple], progress: dict | None = None
+) -> dict:
+    """``skip``: (tree_id, machine, nozzle, color_id) of leaves with an open conflict.
+    ``progress``: its ``done``/``total``/``name`` are kept current while the leaves are sent; its ``stop`` set
+    by anyone ends the run before the next leaf (``stopped``, the rest counted in ``remaining``)."""
+    out: dict = {
+        "pushed": 0,
+        "failed": [],
+        "remaining": 0,
+        "needs_write_scope": False,
+        "snapshot": None,
+        "stopped": False,
+    }
     todo, filaments = await _todo(db, entries, skip)
     if not todo:
         return out
-    if not await _can_write(svc):
+    if not await can_write(svc):
         out["needs_write_scope"] = True
         out["remaining"] = len(todo)
         return out
     out["snapshot"] = _snapshot(filaments)
+    if progress is not None:
+        progress.update(total=len(todo), phase="push")
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     streak = 0
     try:
         for done, (link, name, content, entry) in enumerate(todo):
+            if progress is not None:
+                if progress.get("stop"):
+                    out["stopped"] = True
+                    out["remaining"] = len(todo) - done
+                    break
+                progress.update(done=done, name=name)
             try:
                 await svc.push_profile(
                     profile_id=str(entry["id"]) if entry else str(uuid.uuid4()),

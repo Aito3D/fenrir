@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -174,6 +174,32 @@ export function FilamentProfilesPage() {
   ];
   const busy = zohoSyncing || syncBaseBusy;
 
+  // the server's view of the running SYNC: it outlives this page, so coming back mid-sync still shows the bar
+  const { data: progress, refetch: refetchProgress } = useQuery({
+    queryKey: ['filament-tree-sync-progress'],
+    queryFn: api.getFilamentTreeSyncProgress,
+    enabled: canSync,
+    refetchInterval: (q) => (q.state.data?.running ? 1000 : false),
+  });
+  const running = !!progress?.running;
+  const wasRunning = useRef(false);
+  // true while this page awaits the POST's own response
+  const ownsRun = useRef(false);
+  useEffect(() => {
+    // a sync that finished while this page did not own the request (operator left and came back, or the connection
+    // dropped): show its result in the trees, and the result itself as the server remembers it
+    if (wasRunning.current && !running) {
+      void queryClient.invalidateQueries({ queryKey: ['filament-trees'] });
+      if (!ownsRun.current) {
+        void api
+          .getFilamentTreeSyncLast()
+          .then((last) => last && setSyncOutcome((current) => (current?.result ? current : { result: last })))
+          .catch(() => {}); // the trees are refreshed either way
+      }
+    }
+    wasRunning.current = running;
+  }, [running, queryClient]);
+
   // SYNC first shows what it would do; nothing is pulled or sent until the operator confirms
   const previewSync = async () => {
     setSyncing(true);
@@ -185,14 +211,26 @@ export function FilamentProfilesPage() {
       setSyncing(false);
     }
   };
-  const handleSync = async (preview: FilamentTreeSyncPreview) => {
+  // a conflict settled in the preview changes the plan: show the new one (its fingerprint is what the confirm sends)
+  const refreshPreview = async () => {
+    try {
+      const fresh = await api.previewFilamentTreeSync();
+      setSyncPreview((current) => current && fresh); // closed meanwhile: stay closed
+    } catch {
+      // the old preview stays; confirming it gets the 409 path below, which previews again and reports the error
+    }
+  };
+  const handleSync = async (preview: FilamentTreeSyncPreview, remove: boolean) => {
     setSyncPreview(null);
     setSyncing(true);
+    ownsRun.current = true;
     let stale = false;
     const controller = new AbortController();
     const deadline = setTimeout(() => controller.abort(), SYNC_DEADLINE_MS);
+    // the POST answers only at the end; start watching its progress once the server has picked it up
+    const watch = setTimeout(() => void refetchProgress(), 500);
     try {
-      setSyncOutcome({ result: await api.syncFilamentTrees(controller.signal, preview.fingerprint) });
+      setSyncOutcome({ result: await api.syncFilamentTrees(controller.signal, preview.fingerprint, remove) });
     } catch (error) {
       // 409: the plan moved since the preview and nothing was synced; show the operator what it would do now
       stale = error instanceof ApiError && error.status === 409;
@@ -200,7 +238,11 @@ export function FilamentProfilesPage() {
       if (!stale) setSyncOutcome({ error: error instanceof ApiError ? error : new Error(t('filamentProfiles.syncZohoUnknown')) });
     } finally {
       clearTimeout(deadline);
+      clearTimeout(watch);
       setSyncing(false);
+      // let the progress poll that sees this run end still count it as ours; a lost response left the run to the server
+      await refetchProgress();
+      ownsRun.current = false;
       // a pull can change own values anywhere: tree list, open node, unmanaged groups
       void queryClient.invalidateQueries({ queryKey: ['filament-trees'] });
     }
@@ -222,8 +264,8 @@ export function FilamentProfilesPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canSync && (
-            <Button size="sm" onClick={previewSync} disabled={syncing}>
-              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            <Button size="sm" onClick={previewSync} disabled={syncing || running}>
+              {syncing || running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               {t('filamentTrees.sync')}
             </Button>
           )}
@@ -237,7 +279,7 @@ export function FilamentProfilesPage() {
                   title={t('filamentTrees.pendingExport', { n: pendingExport })}
                   className="rounded-full bg-sky-400/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-sky-300"
                 >
-                  {pendingExport}
+                  {t('filamentTrees.syncPending', { n: pendingExport })}
                 </span>
               </span>
             </span>
@@ -275,6 +317,45 @@ export function FilamentProfilesPage() {
             className="hidden"
             onChange={handleBaseFilesSelected}
           />
+        </div>
+      </div>
+
+      {/* always mounted so the row folds in and out instead of shoving the page; -mt-6/pt-6 cancel the space-y gap while closed.
+          The finished progress stays in the query cache, so the row keeps its numbers while it folds shut. */}
+      <div className="aito-fold -mt-6" data-open={running} aria-hidden={!running} inert={!running}>
+        <div>
+          <div className="flex items-center gap-3 pt-6" data-testid={running ? 'sync-progress' : undefined}>
+            <div
+              role="progressbar"
+              aria-label={t('filamentTrees.sync')}
+              aria-valuemin={0}
+              aria-valuemax={progress?.total || undefined}
+              aria-valuenow={progress?.total ? progress.done : undefined}
+              className="h-2 flex-1 overflow-hidden rounded-full bg-bambu-dark-tertiary"
+            >
+              {/* no total yet = still reading Orca Cloud: a full pulsing bar instead of an empty one */}
+              <div
+                className={`h-full rounded-full bg-bambu-green transition-[width] duration-500 ${progress?.total ? '' : 'animate-pulse'}`}
+                style={{ width: progress?.total ? `${(progress.done / progress.total) * 100}%` : '100%' }}
+              />
+            </div>
+            <span className="min-w-0 max-w-[50%] truncate text-sm tabular-nums text-bambu-gray" title={progress?.name || undefined}>
+              {t(`filamentTrees.syncPhase.${progress?.phase ?? 'read'}`)}
+              {progress?.phase === 'push' && ` ${progress.done}/${progress.total}`}
+              {progress?.phase === 'push' && progress.name && ` · ${progress.name}`}
+            </span>
+            {/* only the sending loop can stop between two profiles */}
+            {running && progress?.phase === 'push' && (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={progress.stop}
+                onClick={() => void api.stopFilamentTreeSync().then(() => refetchProgress()).catch((e) => showToast(errorMessage(e), 'error'))}
+              >
+                {t('filamentTrees.syncStop')}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -319,12 +400,19 @@ export function FilamentProfilesPage() {
         </div>
       ) : (
         <>
-          {unmanagedCount > 0 && canMigrate && (
-            <div className="animate-rise flex flex-wrap items-center gap-3 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-2.5">
-              <span className="text-sm text-sky-200">{t('filamentTrees.notInTree', { n: unmanagedCount })}</span>
-              <Button size="sm" variant="secondary" onClick={() => setMigrateOpen(true)} className="ml-auto">
-                {t('filamentTrees.organise')}
-              </Button>
+          {canMigrate && (
+            // folds shut after Organise instead of the grid jumping up; -mt-6/pt-6 cancel the space-y gap while closed
+            <div className="aito-fold -mt-6" data-open={unmanagedCount > 0} aria-hidden={unmanagedCount === 0} inert={unmanagedCount === 0}>
+              <div>
+                <div className="pt-6">
+                  <div className="animate-rise flex flex-wrap items-center gap-3 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-2.5">
+                    <span className="text-sm text-sky-200">{t('filamentTrees.notInTree', { n: unmanagedCount })}</span>
+                    <Button size="sm" variant="secondary" onClick={() => setMigrateOpen(true)} className="ml-auto">
+                      {t('filamentTrees.organise')}
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
@@ -402,7 +490,12 @@ export function FilamentProfilesPage() {
         </ConfirmModal>
       )}
       {syncPreview && (
-        <SyncPreviewModal preview={syncPreview} onConfirm={() => handleSync(syncPreview)} onClose={() => setSyncPreview(null)} />
+        <SyncPreviewModal
+          preview={syncPreview}
+          onConfirm={(remove) => handleSync(syncPreview, remove)}
+          onResolved={refreshPreview}
+          onClose={() => setSyncPreview(null)}
+        />
       )}
       {syncOutcome && targets && (
         <SyncResultModal
@@ -411,6 +504,10 @@ export function FilamentProfilesPage() {
           trees={trees}
           targets={targets}
           onClose={() => setSyncOutcome(null)}
+          onRetry={() => {
+            setSyncOutcome(null);
+            void previewSync();
+          }}
         />
       )}
     </div>

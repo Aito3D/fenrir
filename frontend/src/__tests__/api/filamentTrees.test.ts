@@ -63,8 +63,8 @@ describe('filament tree api methods', () => {
     expect(seen.map((s) => [path(s.url), s.init?.method ?? 'GET'])).toEqual([
       ['/filament-trees', 'GET'],
       ['/filament-trees/targets', 'PUT'],
-      ['/filament-trees/sync', 'POST'],
-      ['/filament-trees/sync?fingerprint=ab%201', 'POST'],
+      ['/filament-trees/sync?remove=true', 'POST'],
+      ['/filament-trees/sync?fingerprint=ab+1&remove=true', 'POST'],
       ['/filament-trees/2/node', 'PUT'],
       ['/filament-trees/2/colors/7', 'DELETE'],
     ]);

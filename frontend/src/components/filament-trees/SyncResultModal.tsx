@@ -15,11 +15,10 @@ import type {
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { Button } from '../Button';
+import { display } from './display';
 import { errorMessage } from './errorMessage';
 import { inputCls } from '../formStyles';
 import { Dialog } from './Dialog';
-
-const display = (v: unknown) => (Array.isArray(v) ? v.join(', ') : v == null ? '' : String(v));
 
 /** "SUNLU PA6-GF - Black @BBL H2S" -> brand SUNLU, material PA6-GF, colour Black. */
 function parseCandidateName(name: string) {
@@ -83,28 +82,32 @@ function CandidateForm({ candidate, targets }: { candidate: FilamentTreeCandidat
   return (
     <li className="space-y-2 rounded-lg border border-bambu-dark-tertiary p-3">
       <div className="break-all font-mono text-sm text-white">{candidate.name}</div>
-      {state === 'done' ? (
-        <p className="text-sm text-green-400">{t('filamentTrees.treeCreated')}</p>
-      ) : !candidate.orca_id ? null : (
-        <>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {field('brand', t('filamentTrees.brand'))}
-            {field('material', t('filamentTrees.material'))}
-            {field('color_name', t('filamentTrees.colourName'))}
-            {field('color_hex', t('filamentTrees.colourHex'))}
-            {select('machine', t('filamentTrees.machine'), targets.machines)}
-            {select('nozzle', t('filamentTrees.nozzle'), targets.nozzles)}
+      {candidate.orca_id && (
+        // the form folds shut once created so the next row's button doesn't jump under the cursor; -mt-2/pt-2 cancel the space-y gap while closed
+        <div className="aito-fold -mt-2" data-open={state !== 'done'} aria-hidden={state === 'done'} inert={state === 'done'}>
+          <div>
+            <div className="space-y-2 pt-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {field('brand', t('filamentTrees.brand'))}
+                {field('material', t('filamentTrees.material'))}
+                {field('color_name', t('filamentTrees.colourName'))}
+                {field('color_hex', t('filamentTrees.colourHex'))}
+                {select('machine', t('filamentTrees.machine'), targets.machines)}
+                {select('nozzle', t('filamentTrees.nozzle'), targets.nozzles)}
+              </div>
+              <Button size="sm" onClick={create} disabled={state !== 'idle'}>
+                {t('filamentTrees.createTree')}
+              </Button>
+            </div>
           </div>
-          <Button size="sm" onClick={create} disabled={state === 'busy'}>
-            {t('filamentTrees.createTree')}
-          </Button>
-        </>
+        </div>
       )}
+      {state === 'done' && <p className="animate-rise text-sm text-green-400">{t('filamentTrees.treeCreated')}</p>}
     </li>
   );
 }
 
-function ConflictRow({ conflict, leafName, open, onResolved }: {
+export function ConflictRow({ conflict, leafName, open, onResolved }: {
   conflict: FilamentTreeConflict;
   leafName: string;
   open: boolean;
@@ -152,12 +155,13 @@ function ConflictRow({ conflict, leafName, open, onResolved }: {
 }
 
 /** What a SYNC pull did: counts, conflicts to settle, Orca-only presets that can become trees. */
-export function SyncResultModal({ result, error, trees, targets, onClose }: {
+export function SyncResultModal({ result, error, trees, targets, onClose, onRetry }: {
   result?: FilamentTreePullResult;
   error?: unknown;
   trees: FilamentTreeSummary[];
   targets: FilamentTreeTargets;
   onClose: () => void;
+  onRetry: () => void;
 }) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
@@ -168,9 +172,14 @@ export function SyncResultModal({ result, error, trees, targets, onClose }: {
     return `${tree?.name ?? `#${c.tree_id}`} - ${colour?.name ?? `#${c.color_id}`} @${c.machine} ${c.nozzle}`;
   };
   const conflicts = result?.conflicts ?? [];
+  const unsent = result ? result.push.failed.length + result.push.remaining : 0;
 
   return (
-    <Dialog title={t('filamentTrees.syncTitle')} onClose={onClose}>
+    <Dialog
+      title={t('filamentTrees.syncTitle')}
+      onClose={onClose}
+      footer={unsent > 0 && !result?.push.needs_write_scope && <Button onClick={onRetry}>{t('common.retry')}</Button>}
+    >
       {error instanceof ApiError && error.status === 401 ? (
         <div className="space-y-1 text-sm">
           <p className="text-white">{t('filamentTrees.orcaNotConnected')}</p>
@@ -191,7 +200,10 @@ export function SyncResultModal({ result, error, trees, targets, onClose }: {
                 ['missing', result.missing.length],
                 ['ignored', result.ignored],
               ] as const
-            ).map(([key, n]) => (
+            )
+              // the bookkeeping counts only show when they have something to say
+              .filter(([key, n]) => n > 0 || key === 'applied' || key === 'pushed')
+              .map(([key, n]) => (
               <div key={key} className="rounded-lg bg-bambu-dark p-2">
                 <dt className="text-xs text-bambu-gray">{t(`filamentTrees.stat.${key}`)}</dt>
                 <dd className="text-lg font-semibold tabular-nums text-white">{n}</dd>
@@ -205,10 +217,28 @@ export function SyncResultModal({ result, error, trees, targets, onClose }: {
                 {t('filamentTrees.orcaConnect')}
               </Link>
             </p>
+          ) : result.push.stopped ? (
+            <p className="text-sm text-amber-400">{t('filamentTrees.syncStopped', { n: result.push.remaining })}</p>
           ) : (
             result.push.failed.length > 0 && (
-              <p className="break-words text-sm text-amber-400" title={result.push.failed[0].detail}>
-                {t('filamentTrees.pushFailed', { n: result.push.failed.length + result.push.remaining })}
+              <section className="space-y-1">
+                <p className="text-sm text-amber-400">{t('filamentTrees.pushFailed', { n: unsent })}</p>
+                <ul className="max-h-40 overflow-y-auto break-words text-xs text-bambu-gray">
+                  {result.push.failed.map((f) => (
+                    <li key={f.name}>
+                      {f.name}: {f.detail}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )
+          )}
+          {result.push.removed.deleted === null ? (
+            <p className="break-words text-sm text-amber-400">{t('filamentTrees.cleanOrcaUnknown', result.push.removed)}</p>
+          ) : (
+            result.push.removed.deleted + (result.push.removed.failed ?? 0) > 0 && (
+              <p className={`text-sm ${result.push.removed.failed ? 'text-amber-400' : 'text-bambu-gray'}`}>
+                {t('filamentTrees.cleanOrcaDone', result.push.removed)}
               </p>
             )
           )}

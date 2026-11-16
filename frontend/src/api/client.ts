@@ -4517,10 +4517,22 @@ export interface FilamentTreePullResult {
   legacy: number; missing: string[]; ignored: number;
   refresh: Array<{ tree_id: number; machine: string; nozzle: string; color_id: number; keys: string[] }>;
   // remaining: leaves still waiting (read-only pairing, or the run stopped after repeated failures)
-  push: { pushed: number; failed: Array<{ name: string; detail: string }>; remaining: number; needs_write_scope: boolean; snapshot: string | null; held: Array<{ name: string; keys: string[] }> };
+  push: { pushed: number; failed: Array<{ name: string; detail: string }>; remaining: number; needs_write_scope: boolean; /* the operator pressed Stop */ stopped?: boolean; snapshot: string | null; held: Array<{ name: string; keys: string[] }>;
+    // deleted/failed are null when the check after deleting failed: the count is unknown
+    removed: { deleted: number | null; failed: number | null; snapshot: string | null } };
 }
 /** What a SYNC would do: Orca edits folded into Fenrir, leaves sent to Orca, conflicts left to settle. */
-export interface FilamentTreeSyncPreview { pull: Array<{ name: string; keys: string[] }>; push: string[]; conflicts: number; fingerprint: string }
+// remove: Orca Cloud filaments that are no Fenrir leaf, deleted by the sync (empty without filaments:delete)
+// pull changes: key -> [Fenrir's value, Orca's value]; push new: Orca Cloud does not hold it yet; writable: false = read-only pairing
+export interface FilamentTreeSyncProgress { running: boolean; done: number; total: number; phase?: 'read' | 'push' | 'clean'; name?: string; stop?: boolean }
+export interface FilamentTreeSyncPreview {
+  pull: Array<{ name: string; changes: Record<string, [unknown, unknown]> }>;
+  push: Array<{ name: string; new: boolean }>;
+  remove: string[];
+  conflicts: Array<FilamentTreeConflict & { name: string }>;
+  writable: boolean;
+  fingerprint: string;
+}
 export interface FilamentTreeNodeUpdate {
   machine?: string | null; nozzle?: string | null; color_id?: number | null;
   set?: Record<string, FilamentTreePresetValue>; clear?: string[];
@@ -9314,8 +9326,15 @@ export const api = {
   migrateFilamentPresets: (groups: Array<{ prefix: string; source_preset_id: number; machine: string; nozzle: string }>) =>
     request<{ tree_ids: number[] }>('/filament-trees/migrate', { method: 'POST', body: JSON.stringify({ groups }) }),
   previewFilamentTreeSync: () => request<FilamentTreeSyncPreview>('/filament-trees/sync'),
-  syncFilamentTrees: (signal?: AbortSignal, fingerprint?: string) =>
-    request<FilamentTreePullResult>(`/filament-trees/sync${fingerprint ? `?fingerprint=${encodeURIComponent(fingerprint)}` : ''}`, { method: 'POST', signal }),
+  // the running SYNC's push; total 0 while it is still reading Orca Cloud
+  // phase: read (listing Orca Cloud) → push (name = the profile being sent) → clean; stop: asked to stop before the next profile
+  getFilamentTreeSyncProgress: () => request<FilamentTreeSyncProgress>('/filament-trees/sync/progress'),
+  stopFilamentTreeSync: () => request<FilamentTreeSyncProgress>('/filament-trees/sync/stop', { method: 'POST' }),
+  // the caller's last finished SYNC (server memory: null after a restart), for a page that lost the response
+  getFilamentTreeSyncLast: () => request<FilamentTreePullResult | null>('/filament-trees/sync/last'),
+  // remove false: keep the Orca Cloud filaments that are no tree leaf
+  syncFilamentTrees: (signal?: AbortSignal, fingerprint?: string, remove = true) =>
+    request<FilamentTreePullResult>(`/filament-trees/sync?${new URLSearchParams({ ...(fingerprint && { fingerprint }), remove: String(remove) })}`, { method: 'POST', signal }),
   // Orca Cloud filament presets that are not a tree leaf; the POST deletes them only if exactly these names are still the strays
   getOrcaCleanupPreview: () => request<{ count: number; names: string[]; writable: boolean }>('/filament-trees/orca-cleanup'),
   cleanOrcaCloud: (names: string[]) =>
