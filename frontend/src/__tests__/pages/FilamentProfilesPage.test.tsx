@@ -432,9 +432,8 @@ describe('FilamentProfilesPage (trees)', () => {
     const printers = within(await screen.findByRole('group', { name: 'Printers' }));
     await userEvent.click(printers.getByRole('button', { name: 'Remove H2S' }));
     await userEvent.type(printers.getByLabelText('Add printer'), 'H2D{Enter}');
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Merge nozzles with identical settings into one profile' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save targets' }));
-    await waitFor(() => expect(putTargets).toHaveBeenCalledWith({ machines: ['X2D', 'H2D'], nozzles: ['0.4', '0.6'], merge_nozzles: true }));
+    await waitFor(() => expect(putTargets).toHaveBeenCalledWith({ machines: ['X2D', 'H2D'], nozzles: ['0.4', '0.6'] }));
   });
 
   it('deletes a whole filament only after confirming', async () => {

@@ -62,12 +62,11 @@ export function TargetsModal({ targets, onClose }: { targets: FilamentTreeTarget
   const queryClient = useQueryClient();
   const [machines, setMachines] = useState(targets.machines);
   const [nozzles, setNozzles] = useState(targets.nozzles);
-  const [mergeNozzles, setMergeNozzles] = useState(!!targets.merge_nozzles);
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
     try {
-      await api.setFilamentTreeTargets({ machines, nozzles, merge_nozzles: mergeNozzles });
+      await api.setFilamentTreeTargets({ machines, nozzles });
       await queryClient.invalidateQueries({ queryKey: ['filament-trees'] });
       onClose();
     } catch (err) {
@@ -88,12 +87,7 @@ export function TargetsModal({ targets, onClose }: { targets: FilamentTreeTarget
     >
       <p className="text-xs text-bambu-gray/70">{t('filamentTrees.targetsHint')}</p>
       <ChipList label={t('filamentTrees.machines')} addLabel={t('filamentTrees.addMachine')} values={machines} onChange={setMachines} />
-      <p className="text-xs text-bambu-gray/70">{t('filamentTrees.targetsJoinHint')}</p>
       <ChipList label={t('filamentTrees.nozzles')} addLabel={t('filamentTrees.addNozzle')} values={nozzles} onChange={setNozzles} />
-      <label className="flex cursor-pointer items-center gap-2 text-sm text-bambu-gray-light">
-        <input type="checkbox" checked={mergeNozzles} onChange={(e) => setMergeNozzles(e.target.checked)} className="h-4 w-4 accent-bambu-green" />
-        {t('filamentTrees.mergeNozzles')}
-      </label>
     </Dialog>
   );
 }

@@ -57,8 +57,6 @@ class TreeSummary(BaseModel):
 class Targets(BaseModel):
     machines: list[Part] = Field(max_length=12)
     nozzles: list[Part] = Field(max_length=8)
-    # nozzles of one printer whose presets would be identical share one preset
-    merge_nozzles: bool = False
 
 
 class MigrateGroup(BaseModel):

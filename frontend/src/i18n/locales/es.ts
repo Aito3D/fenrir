@@ -5853,8 +5853,6 @@ export default {
     addColour: 'Añadir color',
     targetsTitle: 'Impresoras y boquillas (todos los árboles)',
     targetsHint: 'Cada árbol recibe un perfil por impresora y boquilla.',
-    targetsJoinHint: 'Une con + las impresoras que comparten un perfil, p. ej. H2C+H2D: el perfil es compatible con ambas y la primera impresora aporta la base de Bambu.',
-    mergeNozzles: 'Unir en un solo perfil las boquillas con ajustes idénticos',
     machines: 'Impresoras',
     nozzles: 'Boquillas',
     saveTargets: 'Guardar destinos',

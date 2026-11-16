@@ -5887,8 +5887,6 @@ export default {
     addColour: 'Add colour',
     targetsTitle: 'Printers and nozzles (all trees)',
     targetsHint: 'Every tree gets a profile for each printer and nozzle.',
-    targetsJoinHint: 'Join printers that share one profile with +, e.g. H2C+H2D: the profile is compatible with both and the first printer gives the Bambu base.',
-    mergeNozzles: 'Merge nozzles with identical settings into one profile',
     machines: 'Printers',
     nozzles: 'Nozzles',
     saveTargets: 'Save targets',

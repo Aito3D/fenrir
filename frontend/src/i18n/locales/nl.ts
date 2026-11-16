@@ -10500,8 +10500,6 @@ export default {
     addColour: 'Kleur toevoegen',
     targetsTitle: 'Printers en nozzles (alle bomen)',
     targetsHint: 'Elke boom krijgt een profiel per printer en nozzle.',
-    targetsJoinHint: 'Koppel printers die één profiel delen met +, bijv. H2C+H2D: het profiel is compatibel met beide en de eerste printer levert de Bambu-basis.',
-    mergeNozzles: 'Nozzles met identieke instellingen samenvoegen tot één profiel',
     machines: 'Printerlijst',
     nozzles: 'Nozzlelijst',
     saveTargets: 'Doelen opslaan',

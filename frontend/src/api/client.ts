@@ -4488,8 +4488,7 @@ export interface FilamentTreeChange {
   id: number; machine: string; nozzle: string; color_id: number; key: string;
   old_value: unknown; new_value: unknown; actor: string; created_at: string;
 }
-// machines: "H2C+H2D" joins printers that share one preset; merge_nozzles: nozzles with identical presets share one
-export interface FilamentTreeTargets { machines: string[]; nozzles: string[]; merge_nozzles?: boolean }
+export interface FilamentTreeTargets { machines: string[]; nozzles: string[] }
 export interface FilamentTreeNodeRow {
   key: string; value: unknown;
   source: 'root' | 'machine' | 'nozzle' | 'colorwide' | 'color' | 'bambu';

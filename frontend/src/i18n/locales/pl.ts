@@ -10506,8 +10506,6 @@ export default {
     addColour: 'Dodaj kolor',
     targetsTitle: 'Drukarki i dysze (wszystkie drzewa)',
     targetsHint: 'Każde drzewo otrzymuje profil dla każdej drukarki i dyszy.',
-    targetsJoinHint: 'Połącz znakiem + drukarki, które dzielą jeden profil, np. H2C+H2D: profil jest zgodny z obiema, a pierwsza drukarka wyznacza bazę Bambu.',
-    mergeNozzles: 'Łącz dysze o identycznych ustawieniach w jeden profil',
     machines: 'Drukarki',
     nozzles: 'Dysze',
     saveTargets: 'Zapisz cele',

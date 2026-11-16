@@ -106,11 +106,9 @@ def _lacks_delete(user: User | None) -> bool:
 
 async def _would_drop_leaf(db: AsyncSession, tree_id: int, tree, targets: dict) -> bool:
     """True when regenerating `tree` under `targets` would delete an existing leaf preset."""
-    # per nozzle covered, not per leaf: regrouping merged nozzles moves presets without taking one away from a node
     existing = {
-        (lf.machine, n, lf.color_id)
+        (lf.machine, lf.nozzle, lf.color_id)
         for lf in (await db.execute(select(FilamentTreeLeaf).where(FilamentTreeLeaf.tree_id == tree_id))).scalars()
-        for n in lf.nozzle.split("+")
     }
     return bool(existing - set(leaf_targets(tree, targets)))
 
@@ -308,19 +306,18 @@ async def put_targets(
     async with store.tree_write_lock(tree_ids):
         with _mapped():
             clean = store.validate_targets(payload.model_dump())
+            drops = False
+            for tree_id in tree_ids:
+                tree = await store.load_tree(db, tree_id)
+                if tree.source not in leaf_targets(tree, clean):
+                    raise ValueError(
+                        f"{tree.name}: its calibration source {tree.source[0]} {tree.source[1]} must stay a target"
+                    )
+                drops = drops or (_lacks_delete(user) and await _would_drop_leaf(db, tree_id, tree, clean))
+            if drops:
+                _refuse_missing_delete()
             try:
                 # one transaction: the targets only change if every tree regenerates under them
-                await store.join_machines(db, tree_ids, await store.get_targets(db), clean)
-                drops = False
-                for tree_id in tree_ids:
-                    tree = await store.load_tree(db, tree_id)
-                    if tree.source not in leaf_targets(tree, clean):
-                        raise ValueError(
-                            f"{tree.name}: its calibration source {tree.source[0]} {tree.source[1]} must stay a target"
-                        )
-                    drops = drops or (_lacks_delete(user) and await _would_drop_leaf(db, tree_id, tree, clean))
-                if drops:
-                    _refuse_missing_delete()
                 targets = await store.set_targets(db, payload.model_dump(), commit=False)
                 for tree_id in tree_ids:
                     await store.regenerate_tree(db, tree_id)

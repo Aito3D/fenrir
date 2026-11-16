@@ -5839,8 +5839,6 @@ export default {
     addColour: 'Ajouter une couleur',
     targetsTitle: 'Imprimantes et buses (tous les arbres)',
     targetsHint: 'Chaque arbre reçoit un profil par imprimante et par buse.',
-    targetsJoinHint: 'Reliez avec + les imprimantes qui partagent un profil, p. ex. H2C+H2D : le profil est compatible avec les deux et la première imprimante fournit la base Bambu.',
-    mergeNozzles: 'Fusionner en un seul profil les buses aux réglages identiques',
     machines: 'Imprimantes',
     nozzles: 'Buses',
     saveTargets: 'Enregistrer les cibles',

@@ -376,20 +376,38 @@ class TestListProfiles:
             await svc.list_profiles()
 
     @pytest.mark.asyncio
-    async def test_follows_next_cursor_past_the_first_page(self, svc):
-        """Orca Cloud caps a pull at 1000 entries: the rest comes with ``?cursor=<next_cursor>``."""
+    async def test_pages_by_the_newest_updated_time_not_by_next_cursor(self, svc):
+        """Orca Cloud answers the oldest changes after the cursor and a ``next_cursor`` that is its clock:
+        the next page starts one second before the newest entry of this one (probed live 2026-11-16)."""
         svc.access_token = "oc_ext_A"
         svc.token_expiry = datetime.now(timezone.utc) + timedelta(hours=12)
+        a, b, c = ({"id": i, "updated_time": t} for i, t in (("a", 100), ("b", 105), ("c", 109)))
         svc._client.get = AsyncMock(
             side_effect=[
-                _mock_response(json_data={"next_cursor": 10, "upserts": [{"id": "a"}, {"id": "b"}], "deletes": []}),
-                _mock_response(json_data={"next_cursor": 20, "upserts": [{"id": "c"}], "deletes": ["a"]}),
-                _mock_response(json_data={"next_cursor": 20, "upserts": [], "deletes": []}),
+                _mock_response(json_data={"next_cursor": 999, "upserts": [a, b], "deletes": []}),
+                # b again (same second as the cut), c new, a deleted since
+                _mock_response(json_data={"next_cursor": 999, "upserts": [b, c], "deletes": ["a"]}),
+                _mock_response(json_data={"next_cursor": 999, "upserts": [c], "deletes": []}),
             ]
         )
         assert [p["id"] for p in await svc.list_profiles()] == ["b", "c"]
-        urls = [c.args[0] for c in svc._client.get.call_args_list]
-        assert [u.rpartition("pull")[2] for u in urls] == ["", "?cursor=10", "?cursor=20"]
+        urls = [call.args[0] for call in svc._client.get.call_args_list]
+        assert [u.rpartition("pull")[2] for u in urls] == ["", "?cursor=104", "?cursor=108"]
+
+    @pytest.mark.asyncio
+    async def test_refuses_a_partial_list_when_a_later_page_fails(self, svc):
+        """A truncated list would make SYNC push every unseen profile again as new."""
+        svc.access_token = "oc_ext_A"
+        svc.token_expiry = datetime.now(timezone.utc) + timedelta(hours=12)
+        page = {"next_cursor": 999, "upserts": [{"id": "a", "updated_time": 100}, {"id": "b", "updated_time": 105}]}
+        svc._client.get = AsyncMock(
+            side_effect=[
+                _mock_response(json_data=page),
+                _mock_response(status_code=410, json_data={"error": "cursor_too_old"}),
+            ]
+        )
+        with pytest.raises(OrcaCloudError, match="listed 2 profiles and refused the rest"):
+            await svc.list_profiles()
 
     @pytest.mark.asyncio
     async def test_bare_list_response_tolerated(self, svc):

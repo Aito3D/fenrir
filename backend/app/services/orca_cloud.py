@@ -381,30 +381,49 @@ class OrcaCloudService:
         Starts with ``GET /api/v1/external/sync/pull`` with NO ``?cursor=`` parameter,
         the documented "full snapshot" bootstrap. Sending ``cursor=0`` instead
         trips ``410 cursor_too_old`` (the sync log doesn't reach back to the
-        Unix epoch). The pull response is ``{next_cursor, upserts, deletes}``;
-        later pages are fetched with ``?cursor=<next_cursor>`` and merged by id."""
-        # Orca Cloud answers at most 1000 entries per pull: follow ``next_cursor`` until a page comes back
-        # empty, or every profile past the first 1000 looks missing and is pushed again as new on each SYNC.
+        Unix epoch). The pull response is ``{next_cursor, upserts, deletes}``.
+
+        Probed live 2026-11-16: a pull answers the 1000 entries changed longest ago after the cursor, oldest
+        first, and its ``next_cursor`` is the server's clock, so following it skips everything past those 1000.
+        The next page therefore starts at the newest ``updated_time`` this page held, until a page brings no
+        entry not seen yet. Reading only the first page made every profile past it look missing, and each SYNC
+        pushed those again under a fresh id."""
         merged: dict[str, dict[str, Any]] = {}
         loose: list[dict[str, Any]] = []  # entries without an id cannot be merged across pages
         cursor = None
         for _ in range(_MAX_PULL_PAGES):
-            data = await self._pull_page(cursor)
+            try:
+                data = await self._pull_page(cursor)
+            except OrcaCloudError as e:
+                if cursor is None or isinstance(e, OrcaCloudAuthError):
+                    raise
+                # e.g. 410: the rest is older than Orca's sync log. A partial list would send every unseen
+                # profile again as new, so refuse instead.
+                raise OrcaCloudError(
+                    f"Orca Cloud listed {len(merged)} profiles and refused the rest ({e}); "
+                    "remove old profiles in OrcaSlicer, then retry"
+                ) from e
             upserts = _upserts_of(data)
+            fresh = False
+            times: list[int] = []
             for entry in upserts:
                 if isinstance(entry, dict) and entry.get("id"):
+                    fresh = fresh or str(entry["id"]) not in merged
                     merged[str(entry["id"])] = entry
-                else:
+                    if str(entry.get("updated_time", "")).isdigit():
+                        times.append(int(entry["updated_time"]))
+                elif cursor is None:
                     loose.append(entry)
             if not isinstance(data, dict):
                 break
-            if cursor is not None:  # a later page reports what changed since the previous one
+            if cursor is not None:  # a later page reports what was deleted since the earlier ones
                 for gone in data.get("deletes") or []:
                     merged.pop(str(gone), None)
-            next_cursor = data.get("next_cursor")
-            if not upserts or not next_cursor or next_cursor == cursor:
+            if not fresh or not times:
                 break
-            cursor = next_cursor
+            # one second back: entries sharing the newest second may straddle the cut, and they merge by id.
+            # A page that is one single second cannot step back, or it would be asked for again forever.
+            cursor = max(times) - 1 if min(times) < max(times) else max(times)
         return [*merged.values(), *loose]
 
     async def _pull_page(self, cursor: Any) -> Any:

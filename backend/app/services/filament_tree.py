@@ -1,6 +1,5 @@
 """Pure resolver: filament tree (root > machine > nozzle > colour) -> full Orca filament preset JSON per leaf."""
 
-import json
 import re
 from dataclasses import dataclass
 
@@ -71,30 +70,11 @@ def leaf_targets(tree: TreeData, targets: dict) -> list[tuple[str, str, int]]:
     ]
 
 
-def leaf_groups(tree: TreeData, targets: dict, base_names: set[str]) -> list[tuple[str, str, int]]:
-    """The leaves as generated. With ``merge_nozzles``, nozzles of one machine and colour whose presets would be
-    identical (same values, same Bambu base) share one leaf whose nozzle reads "0.6+0.8"."""
-    if not targets.get("merge_nozzles"):
-        return leaf_targets(tree, targets)
-    groups: dict[tuple, list[str]] = {}
-    for m, n, c in leaf_targets(tree, targets):
-        values = {k: v for k, (v, _) in resolve_with_sources(tree, m, n, c).items()}
-        base = match_base(tree.base_family, m, n, base_names, tree.fallback_inherits)
-        groups.setdefault((m, c, json.dumps([values, base], sort_keys=True, default=str)), []).append(n)
-    return [(m, "+".join(nozzles), c) for (m, c, _), nozzles in groups.items()]
-
-
 def leaf_name(tree: TreeData, machine: str, nozzle: str, color_id: int) -> str:
     return f"{tree.name} - {tree.colors[color_id][0]} @{machine} {nozzle}"
 
 
-def target_machine(machine: str, machines: list[str]) -> str | None:
-    """The target that covers ``machine``: itself, or the joined target ("H2C+H2D") it is part of."""
-    return next((t for t in machines if machine in t.split("+")), None)
-
-
 def match_base(base_family: str, machine: str, nozzle: str, base_names: set[str], fallback: str) -> str:
-    machine = machine.split("+")[0]  # joined printers share one preset: the first one gives the Bambu base
     for cand in (
         f"{base_family} @BBL {machine} {nozzle} nozzle",
         f"{base_family} @BBL {machine}",
@@ -137,18 +117,17 @@ def resolve_with_sources(
 
 def resolve_leaf(tree: TreeData, machine: str, nozzle: str, color_id: int, base_names: set[str]) -> dict:
     name = leaf_name(tree, machine, nozzle, color_id)
-    first = nozzle.split("+")[0]  # merged nozzles hold the same values and base: any of them speaks for all
-    leaf = {k: v for k, (v, _) in resolve_with_sources(tree, machine, first, color_id).items()}
+    leaf = {k: v for k, (v, _) in resolve_with_sources(tree, machine, nozzle, color_id).items()}
     leaf.update(
         {
             "name": name,
             "filament_settings_id": [name],
             "from": "User",
-            "inherits": match_base(tree.base_family, machine, first, base_names, tree.fallback_inherits),
+            "inherits": match_base(tree.base_family, machine, nozzle, base_names, tree.fallback_inherits),
             "version": tree.version,
             "filament_vendor": [tree.brand],
             "default_filament_colour": [tree.colors[color_id][1]],
-            "compatible_printers": [f"Bambu Lab {m} {n} nozzle" for m in machine.split("+") for n in nozzle.split("+")],
+            "compatible_printers": [f"Bambu Lab {machine} {nozzle} nozzle"],
         }
     )
     return leaf

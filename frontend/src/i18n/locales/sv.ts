@@ -10533,8 +10533,6 @@ errors: {
     addColour: 'Lägg till färg',
     targetsTitle: 'Skrivare och munstycken (alla träd)',
     targetsHint: 'Varje träd får en profil per skrivare och munstycke.',
-    targetsJoinHint: 'Slå ihop skrivare som delar en profil med +, t.ex. H2C+H2D: profilen är kompatibel med båda och den första skrivaren ger Bambu-basen.',
-    mergeNozzles: 'Slå ihop munstycken med identiska inställningar till en profil',
     machines: 'Skrivarlista',
     nozzles: 'Munstycken',
     saveTargets: 'Spara mål',
