@@ -51,9 +51,18 @@ def _target(is_source: bool, key: str, owned_at: dict[str, str]) -> str:
     return "node" if key in NOZZLE_BOUND_KEYS else owned_at.get(key, "root")
 
 
-def _node(target: str, machine: str, nozzle: str, color_id: int) -> tuple[str | None, str | None, int | None]:
-    return {"root": (None, None, None), "machine": (machine, None, None), "node": (machine, nozzle, None)}.get(
-        target, (machine, nozzle, color_id)
+def _nodes(target: str, machine: str, nozzle: str, color_id: int) -> list[tuple[str | None, str | None, int | None]]:
+    """The tree nodes a leaf's value lands on: one, or one per nozzle when the leaf merges several ("0.6+0.8")."""
+    if target == "root":
+        return [(None, None, None)]
+    if target == "machine":
+        return [(machine, None, None)]
+    return [(machine, n, None if target == "node" else color_id) for n in nozzle.split("+")]
+
+
+def _is_source(link: FilamentTreeLeaf, tree: FilamentTree) -> bool:
+    return (link.machine, link.color_id) == (tree.source_machine, tree.source_color_id) and (
+        tree.source_nozzle in link.nozzle.split("+")
     )
 
 
@@ -170,9 +179,10 @@ async def apply_pull(db: AsyncSession, plan: PullPlan) -> dict[tuple, set[str]]:
     leaf_keys: dict[tuple, dict[_NodeKey, set[str]]] = {}  # leaf -> {node: keys written there}
     for e in plan.applied:
         leaf = (e["tree_id"], e["machine"], e["nozzle"], e["color_id"])
-        node: _NodeKey = (e["tree_id"], *_node(e["target"], e["machine"], e["nozzle"], e["color_id"]))
-        groups.setdefault(node, {}).update(e["values"])
-        leaf_keys.setdefault(leaf, {}).setdefault(node, set()).update(e["values"])
+        for where in _nodes(e["target"], e["machine"], e["nozzle"], e["color_id"]):
+            node: _NodeKey = (e["tree_id"], *where)
+            groups.setdefault(node, {}).update(e["values"])
+            leaf_keys.setdefault(leaf, {}).setdefault(node, set()).update(e["values"])
     refresh = {(r["tree_id"], r["machine"], r["nozzle"], r["color_id"]): set(r["keys"]) for r in plan.refresh}
     old: dict[tuple, dict] = {}  # reference each leaf had before the writes (generated when never synced)
     for leaf in leaf_keys.keys() | refresh.keys():
@@ -199,7 +209,10 @@ async def apply_pull(db: AsyncSession, plan: PullPlan) -> dict[tuple, set[str]]:
                     refused_leaves.setdefault(leaf, set()).update(hit)
                 by_node.get(node, set()).difference_update(refused)
     for leaf, baseline in old.items():
-        link, preset = await _leaf_preset(db, *leaf)
+        try:
+            link, preset = await _leaf_preset(db, *leaf)
+        except LookupError:
+            continue  # the edit regrouped its nozzles: the preset goes out under a new name, nothing to remember
         current = json.loads(preset.content)
         for keys in [*leaf_keys.get(leaf, {}).values(), refresh.get(leaf, set())]:
             for k in keys:
@@ -209,7 +222,10 @@ async def apply_pull(db: AsyncSession, plan: PullPlan) -> dict[tuple, set[str]]:
                     baseline.pop(k, None)
         link.baseline_content = json.dumps(baseline, indent=4)
     for b in plan.baselines:
-        link, _ = await _leaf_preset(db, b["tree_id"], b["machine"], b["nozzle"], b["color_id"])
+        try:
+            link, _ = await _leaf_preset(db, b["tree_id"], b["machine"], b["nozzle"], b["color_id"])
+        except LookupError:
+            continue  # regrouped by an edit above
         link.baseline_content = json.dumps(b["content"], indent=4)
     await db.commit()
     return refused_leaves
@@ -241,12 +257,16 @@ async def resolve_conflict(
     link, preset = await _leaf_preset(db, tree_id, machine, nozzle, color_id)
     # choosing Fenrir's own value (or its absence, None) writes nothing
     if value is not None and json.loads(preset.content).get(key) != value:
-        is_source = (machine, nozzle, color_id) == (tree.source_machine, tree.source_nozzle, tree.source_color_id)
-        owned = await _owned_at(db, tree_id, machine, nozzle) if is_source else {}
-        await set_node_values(
-            db, tree_id, *_node(_target(is_source, key, owned), machine, nozzle, color_id), {key: value}, []
-        )
-        await db.refresh(preset)
+        is_source = _is_source(link, tree)
+        owned = await _owned_at(db, tree_id, machine, tree.source_nozzle) if is_source else {}
+        for node in _nodes(_target(is_source, key, owned), machine, nozzle, color_id):
+            await set_node_values(db, tree_id, *node, {key: value}, [], regenerate=False)
+        await regenerate_tree(db, tree_id)
+        try:
+            link, preset = await _leaf_preset(db, tree_id, machine, nozzle, color_id)
+        except LookupError:  # the choice regrouped its nozzles: the preset goes out under a new name
+            await db.commit()
+            return
     current = json.loads(preset.content)
     baseline = json.loads(link.baseline_content) if link.baseline_content else dict(current)
     baseline[key] = orca_value
@@ -261,7 +281,7 @@ async def collect_leaf_states(db: AsyncSession) -> tuple[list[LeafState], set[st
     leaves = []
     for link, preset in rows:
         t = trees[link.tree_id]
-        is_source = (link.machine, link.nozzle, link.color_id) == (t.source_machine, t.source_nozzle, t.source_color_id)
+        is_source = _is_source(link, t)
         leaves.append(
             LeafState(
                 tree_id=link.tree_id,
@@ -273,7 +293,7 @@ async def collect_leaf_states(db: AsyncSession) -> tuple[list[LeafState], set[st
                 baseline=json.loads(link.baseline_content) if link.baseline_content else None,
                 is_source=is_source,
                 exported=link.exported_at is not None,
-                owned_at=await _owned_at(db, link.tree_id, link.machine, link.nozzle) if is_source else {},
+                owned_at=await _owned_at(db, link.tree_id, link.machine, t.source_nozzle) if is_source else {},
             )
         )
     names = {f"{trees[c.tree_id].name} - {c.name}" for c in colours.values()}

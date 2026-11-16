@@ -5838,6 +5838,8 @@ export default {
     addColour: 'Aggiungi colore',
     targetsTitle: 'Stampanti e ugelli (tutti gli alberi)',
     targetsHint: 'Ogni albero riceve un profilo per ogni stampante e ugello.',
+    targetsJoinHint: 'Unisci con + le stampanti che condividono un profilo, ad es. H2C+H2D: il profilo è compatibile con entrambe e la prima stampante fornisce la base Bambu.',
+    mergeNozzles: 'Unire in un unico profilo gli ugelli con impostazioni identiche',
     machines: 'Stampanti',
     nozzles: 'Ugelli',
     saveTargets: 'Salva destinazioni',

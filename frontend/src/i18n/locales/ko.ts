@@ -5665,6 +5665,8 @@ export default {
     addColour: '색상 추가',
     targetsTitle: '프린터와 노즐 (모든 트리)',
     targetsHint: '각 트리는 프린터와 노즐마다 프로필을 받습니다.',
+    targetsJoinHint: '하나의 프로필을 공유하는 프린터는 +로 연결하세요(예: H2C+H2D). 프로필은 둘 다와 호환되며 첫 번째 프린터가 Bambu 베이스를 제공합니다.',
+    mergeNozzles: '설정이 동일한 노즐을 하나의 프로필로 병합',
     machines: '프린터 목록',
     nozzles: '노즐 목록',
     saveTargets: '대상 저장',

@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from typing import Any
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.settings import get_setting, set_setting
@@ -26,9 +26,11 @@ from backend.app.services.filament_tree import (
     NOZZLE_BOUND_KEYS,
     SKIP_KEYS,
     TreeData,
+    leaf_groups,
     leaf_name,
     leaf_targets,
     resolve_leaf,
+    resolve_with_sources,
 )
 
 TARGETS_KEY = "filament_tree_targets"
@@ -72,8 +74,12 @@ def validate_targets(targets: dict) -> dict:
         out[key] = [v.strip() for v in vals]
         if len(set(out[key])) != len(out[key]):
             raise ValueError(f"{key} must not contain duplicates")
+    parts = [p for m in out["machines"] for p in m.split("+")]
+    if "" in parts or len(set(parts)) != len(parts):
+        raise ValueError("a printer can be in one machine target only (joined targets look like H2C+H2D)")
     if not all(re.match(r"^\d\.\d$", n) for n in out["nozzles"]):
         raise ValueError("nozzles must look like 0.4")
+    out["merge_nozzles"] = bool(targets.get("merge_nozzles"))
     return out
 
 
@@ -89,6 +95,73 @@ async def set_targets(db: AsyncSession, targets: dict, *, commit: bool = True) -
     if commit:
         await db.commit()
     return clean
+
+
+async def join_machines(db: AsyncSession, tree_ids: Iterable[int], old: dict, new: dict) -> None:
+    """A new target "A+B" joins printers that share one preset per nozzle and colour (compatible with both; A gives
+    the Bambu base). The first joined printer that was a target hands its values, leaves and history to the joined
+    name. Refused while the joined printers resolve to different values: nothing is merged away silently."""
+    for token in new["machines"]:
+        parts = token.split("+")
+        if len(parts) < 2 or token in old["machines"]:
+            continue
+        live = [p for p in parts if p in old["machines"]]
+        for tree_id in tree_ids:
+            tree = await load_tree(db, tree_id)
+
+            def values(machine: str, tree: TreeData = tree) -> list[dict]:
+                return [
+                    {k: v for k, (v, _) in resolve_with_sources(tree, machine, nozzle, color).items()}
+                    for nozzle in [None, *old["nozzles"]]
+                    for color in [None, *tree.colors]
+                ]
+
+            for other in live[1:]:
+                differing = sorted(
+                    {
+                        k
+                        for a, b in zip(values(live[0]), values(other), strict=True)
+                        for k in a | b
+                        if a.get(k) != b.get(k)
+                    }
+                )
+                if differing:
+                    raise ValueError(
+                        f"{tree.name}: {live[0]} and {other} hold different values ({', '.join(differing[:5])}); "
+                        "make them equal before joining them"
+                    )
+            keep = live[0] if live else None
+            rows = (
+                await db.execute(
+                    select(FilamentTreeOverride).where(
+                        FilamentTreeOverride.tree_id == tree_id, FilamentTreeOverride.machine.in_(parts)
+                    )
+                )
+            ).scalars()
+            for row in rows:
+                if row.machine == keep:
+                    row.machine = token
+                else:
+                    await db.delete(row)
+            # the kept printer's leaves carry on (preset row, sync baseline); the others' are dropped by the regeneration
+            leaves = (
+                await db.execute(
+                    select(FilamentTreeLeaf).where(
+                        FilamentTreeLeaf.tree_id == tree_id, FilamentTreeLeaf.machine == keep
+                    )
+                )
+            ).scalars()
+            for leaf in leaves:
+                leaf.machine = token
+            await db.execute(
+                update(FilamentTreeChange)
+                .where(FilamentTreeChange.tree_id == tree_id, FilamentTreeChange.machine.in_(parts))
+                .values(machine=token)
+            )
+            meta = await _get_tree(db, tree_id)
+            if meta.source_machine in parts:
+                meta.source_machine = token
+            await db.flush()
 
 
 async def _get_tree(db: AsyncSession, tree_id: int) -> FilamentTree:
@@ -137,12 +210,29 @@ async def regenerate_tree(db: AsyncSession, tree_id: int) -> dict:
     """Upsert one preset per target leaf and drop leaves (and presets) that are no longer targets."""
     tree = await load_tree(db, tree_id)
     meta = await _get_tree(db, tree_id)
-    targets = leaf_targets(tree, await get_targets(db))
     bases = await base_names(db)
+    targets = leaf_groups(tree, await get_targets(db), bases)
     existing = {
         (lf.machine, lf.nozzle, lf.color_id): lf
         for lf in (await db.execute(select(FilamentTreeLeaf).where(FilamentTreeLeaf.tree_id == tree_id))).scalars()
     }
+    # a regrouped set of nozzles ("0.6" -> "0.6+0.8") takes over a leaf that covered one of them, so the preset
+    # row and whatever links to it live on under the new name
+    for key in targets:
+        if key not in existing:
+            donor = next(
+                (
+                    k
+                    for k in existing
+                    if k not in targets
+                    and (k[0], k[2]) == (key[0], key[2])
+                    and set(k[1].split("+")) & set(key[1].split("+"))
+                ),
+                None,
+            )
+            if donor:
+                existing[key] = existing.pop(donor)
+                existing[key].nozzle = key[1]
     counts = {"created": 0, "updated": 0, "deleted": 0}
     for key in targets:
         machine, nozzle, color_id = key
