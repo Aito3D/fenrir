@@ -201,6 +201,33 @@ describe('OrderTrackPage', () => {
     expect(screen.queryByTestId('track-payment')).not.toBeInTheDocument();
   });
 
+  it('the paid card plays in when a refetch settles the order, not when it loads already paid', async () => {
+    const paid = { payment: { currency: 'XPF', total: 5345, paid: 5345, left: 0 }, pay_url: null };
+    mockTrack(paid);
+    const view = renderPage();
+    await h2('Une partie de ta commande est prête');
+    expect(within(screen.getByTestId('track-payment')).getByText('Commande réglée')).not.toHaveClass('animate-aito-pop-in');
+    view.unmount();
+
+    mockTrack({});
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    rtlRender(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/t/o/K7F3XQ']}>
+          <Routes>
+            <Route path="/t/o/:token" element={<OrderTrackPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await h2('Une partie de ta commande est prête');
+    expect(screen.getByTestId('track-payment')).toHaveAttribute('data-state', 'unpaid');
+    mockTrack(paid);
+    await queryClient.refetchQueries();
+    await waitFor(() => expect(screen.getByTestId('track-payment')).toHaveAttribute('data-state', 'paid'));
+    expect(within(screen.getByTestId('track-payment')).getByText('Commande réglée')).toHaveClass('animate-aito-pop-in');
+  });
+
   it('the payment methods open on the right with the order reference, the shop on the left; one at a time', async () => {
     mockTrack({});
     renderPage();

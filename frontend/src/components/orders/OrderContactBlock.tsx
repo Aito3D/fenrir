@@ -24,6 +24,14 @@ export function OrderContactBlock({
 }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState<string | null>(null);
+  // The Contacted pill pops only when an SMS goes out while this order is open, never on mount.
+  const contactedNow = !!sms?.contacted;
+  const [seenContacted, setSeenContacted] = useState(contactedNow);
+  const [pop, setPop] = useState(false);
+  if (contactedNow !== seenContacted) {
+    setSeenContacted(contactedNow);
+    setPop(contactedNow);
+  }
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   const copy = async (value: string) => {
@@ -46,7 +54,7 @@ export function OrderContactBlock({
         type="button"
         aria-label={copied === value ? t('orders.contact.copied') : t('orders.contact.copy', { what: value })}
         onClick={() => copy(value)}
-        className="rounded p-1 text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green"
+        className="btn-press rounded p-1 text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green"
       >
         {copied === value ? <Check aria-hidden="true" className="animate-slice-done h-3.5 w-3.5" /> : <Copy aria-hidden="true" className="h-3.5 w-3.5" />}
       </button>
@@ -77,7 +85,7 @@ export function OrderContactBlock({
               by: sms.contacted?.by || '–',
               date: contactedAt.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
             })}
-            className={`${pill} ml-auto border-green-400/30 bg-green-400/[0.14] text-green-400 hover:bg-green-400/25 focus-visible:ring-green-400/40`}
+            className={`${pill} ${pop ? 'animate-aito-pop-in' : ''} ml-auto border-green-400/30 bg-green-400/[0.14] text-green-400 hover:bg-green-400/25 focus-visible:ring-green-400/40`}
           >
             <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
             {t('aito.contacted')} · {contactedAt.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}

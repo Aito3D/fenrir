@@ -60,7 +60,7 @@ export function OrderHandoverBar({ row, packageId, onClose }: { row: OrderPanelR
       aria-pressed={mode === m}
       disabled={busy}
       onClick={() => setMode(m)}
-      className={`rounded px-2 py-1 disabled:opacity-60 ${mode === m ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'}`}
+      className={`btn-press rounded px-2 py-1 disabled:opacity-60 ${mode === m ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'}`}
     >
       {t(`orders.handover.${m}`)}
     </button>

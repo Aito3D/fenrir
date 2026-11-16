@@ -106,6 +106,13 @@ export function OrderTrackPage() {
   const panel = useTrackingPanel();
   const payment = data?.payment ?? null;
   const owes = showContent && payment !== null && payment.left > 0;
+  // A refetch that settles the order (the customer just paid) plays the paid card in; a first load already paid does not.
+  const lastOwes = useRef<boolean | undefined>(undefined);
+  const paidLive = useRef(false);
+  if (showContent && payment) {
+    if (lastOwes.current && !owes) paidLive.current = true;
+    lastOwes.current = owes;
+  }
   const shopTrigger = { open: panel.open === 'shop', controls: 'track-panel-shop', toggle: (from: HTMLElement) => panel.toggle('shop', from) };
   // A refetch can settle the order while the payment panel is open: its trigger is gone, so close it here.
   useEffect(() => {
@@ -288,9 +295,9 @@ export function OrderTrackPage() {
                         </div>
                       </>
                     ) : (
-                      <div>
+                      <div className={paidLive.current ? 'animate-rise' : undefined}>
                         <p className={small}>{t('aito.track.order.pay.heading')}</p>
-                        <p className="mt-[4px] text-[17px] font-semibold text-green-500">{t('aito.track.order.pay.settled')}</p>
+                        <p className={`mt-[4px] text-[17px] font-semibold text-green-500 ${paidLive.current ? 'animate-aito-pop-in' : ''}`}>{t('aito.track.order.pay.settled')}</p>
                         <p className="mt-[2px] text-[13px] text-aito-muted">{t('aito.track.order.pay.total', { total: money(payment.total) })}</p>
                       </div>
                     )}

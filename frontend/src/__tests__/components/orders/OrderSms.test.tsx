@@ -49,6 +49,20 @@ describe('OrderContactBlock SMS pill', () => {
     await userEvent.setup().click(pill);
     expect(onOpen).toHaveBeenCalledWith('+689-89530560');
   });
+
+  it('pops the Contacted pill when an SMS goes out while open, never on mount', () => {
+    const sent = { at: '2026-11-10T08:20:00+00:00', by: 'paul' };
+    const block = (contacted: typeof sent | null) => (
+      <OrderContactBlock contact={contact()} orderNumber="SO-00264" others={[]} sms={{ contacted, onOpen: vi.fn() }} />
+    );
+    const mounted = render(block(sent));
+    expect(screen.getByRole('button', { name: /contacted ·/i })).not.toHaveClass('animate-aito-pop-in');
+    mounted.unmount();
+
+    const { rerender } = render(block(null));
+    rerender(block(sent));
+    expect(screen.getByRole('button', { name: /contacted ·/i })).toHaveClass('animate-aito-pop-in');
+  });
 });
 
 function relayAnswers(response: () => Response) {

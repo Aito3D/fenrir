@@ -60,7 +60,7 @@ export function OrderSidePanel({
         scope={tabScope}
       />
       {/* Only the selected panel mounts, so the history query never runs behind a closed tab. */}
-      <div role="tabpanel" id={panelTabPanelId(sideTab, tabScope)} aria-labelledby={panelTabId(sideTab, tabScope)}>
+      <div key={sideTab} className="animate-fade-in" role="tabpanel" id={panelTabPanelId(sideTab, tabScope)} aria-labelledby={panelTabId(sideTab, tabScope)}>
         {sideTab === 'details' ? (
           <div className="space-y-3">
             <OrderContactBlock

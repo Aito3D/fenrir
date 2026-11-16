@@ -50,7 +50,7 @@ const CORE_ONLY_KEY = 'orders.coreOnly';
 const STATS_OPEN_KEY = 'orders.statsOpen';
 
 const chipCls = (active: boolean) =>
-  `rounded-full border px-3 py-1.5 text-xs ${active ? 'border-bambu-green bg-bambu-green/15 text-white' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`;
+  `btn-press rounded-full border px-3 py-1.5 text-xs ${active ? 'border-bambu-green bg-bambu-green/15 text-white' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`;
 
 // "3D only" is on unless the viewer turned it off. Storage can throw (private
 // windows, blocked site data); the page must render without it.
@@ -79,9 +79,9 @@ function remember(key: string, value: boolean) {
   }
 }
 
-function Notice({ icon: Icon, title, hint }: { icon: LucideIcon; title: string; hint?: string }) {
+function Notice({ icon: Icon, title, hint, rise }: { icon: LucideIcon; title: string; hint?: string; rise?: boolean }) {
   return (
-    <div className="rounded-xl border border-dashed border-bambu-dark-tertiary px-6 py-12 text-center">
+    <div className={`rounded-xl border border-dashed border-bambu-dark-tertiary px-6 py-12 text-center ${rise ? 'animate-rise' : ''}`}>
       <Icon aria-hidden="true" className="mx-auto h-8 w-8 text-bambu-gray" />
       <div className="mt-3 font-medium text-white">{title}</div>
       {hint && <div className="mt-1 text-sm text-bambu-gray">{hint}</div>}
@@ -275,7 +275,7 @@ export function OrderBoardPage() {
       aria-pressed={status === id}
       title={id === 'all' || id === 'finished' ? undefined : t(STATUS_META[id].hint)}
       onClick={() => setStatus(status === id ? 'all' : id)}
-      className={`rounded-xl border border-l-4 border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-3 text-left hover:bg-bambu-dark-tertiary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green ${TONE[tone].edge} ${status === id ? 'ring-2 ring-bambu-green/60' : ''}`}
+      className={`btn-press rounded-xl border border-l-4 border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-3 text-left hover:bg-bambu-dark-tertiary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green ${TONE[tone].edge} ${status === id ? 'ring-2 ring-bambu-green/60' : ''}`}
     >
       <span className="block text-xs text-bambu-gray">{label}</span>{' '}
       {ready && !(id === 'finished' && finishedQuery.isLoading) ? (
@@ -326,9 +326,9 @@ export function OrderBoardPage() {
   } else if (status === 'finished' && finishedQuery.isLoading) {
     list = Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-16 rounded-xl" />);
   } else if (listed.length === 0 && all.length === 0 && status !== 'finished') {
-    list = <Notice icon={PackageCheck} title={t('orders.empty.none')} hint={t('orders.empty.noneHint')} />;
+    list = <Notice rise icon={PackageCheck} title={t('orders.empty.none')} hint={t('orders.empty.noneHint')} />;
   } else if (listed.length === 0 && coreOnly && branded.length === 0 && !searchText.trim() && status === 'all') {
-    list = <Notice icon={Box} title={t('orders.empty.core')} hint={t('orders.empty.coreHint')} />;
+    list = <Notice rise icon={Box} title={t('orders.empty.core')} hint={t('orders.empty.coreHint')} />;
   } else if (listed.length === 0) {
     list = <Notice icon={SearchX} title={t('orders.empty.noResults')} />;
   } else {
@@ -432,7 +432,7 @@ export function OrderBoardPage() {
           type="button"
           aria-pressed={coreOnly}
           onClick={toggleCoreOnly}
-          className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${coreOnly ? 'border-bambu-green/50 bg-bambu-green/10 text-bambu-green' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`}
+          className={`btn-press inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${coreOnly ? 'border-bambu-green/50 bg-bambu-green/10 text-bambu-green' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`}
         >
           <Box aria-hidden="true" className="h-4 w-4" />
           {t('orders.coreOnly')}
@@ -456,7 +456,7 @@ export function OrderBoardPage() {
                 type="button"
                 aria-pressed={active}
                 onClick={() => setSort(active ? { key, flipped: !sort.flipped } : { key, flipped: false })}
-                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 ${active ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'}`}
+                className={`btn-press inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 ${active ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'}`}
               >
                 {t(`orders.sort.${key}`)}
                 {active && <span>{sort.flipped ? '↑' : '↓'}</span>}
@@ -467,7 +467,7 @@ export function OrderBoardPage() {
       </div>
 
       {batch.length > 0 && (
-        <div data-testid="orders-batch" className="sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-bambu-green/50 bg-bambu-dark-secondary px-3 py-2">
+        <div data-testid="orders-batch" className="animate-rise-sm sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-bambu-green/50 bg-bambu-dark-secondary px-3 py-2">
           <Button size="sm" onClick={printSelected} disabled={printingBatch}>
             {printingBatch ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Printer aria-hidden="true" className="h-4 w-4" />}
             {t('orders.prep.batch', { n: batch.length })}
@@ -483,7 +483,7 @@ export function OrderBoardPage() {
         <button
           type="button"
           onClick={() => setShown(n => n + PAGE)}
-          className="mx-auto mt-2 block rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-2 text-xs text-bambu-gray hover:text-white"
+          className="btn-press mx-auto mt-2 block rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-2 text-xs text-bambu-gray hover:text-white"
         >
           {t('orders.showMore')}
         </button>

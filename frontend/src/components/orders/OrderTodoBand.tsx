@@ -35,14 +35,14 @@ export function OrderTodoEditRows({
     <>
       {edit.added.map(({ item, quantity }) => (
         <tr key={`add-${item.id}`} className="border-t border-bambu-dark-tertiary/60">
-          <td className="border-l-2 border-bambu-green py-2 pl-4 pr-3">
+          <td className="animate-rise-sm border-l-2 border-bambu-green py-2 pl-4 pr-3">
             <div className="text-white">{item.name}</div>
             {item.sku && <div className="font-mono text-xs text-bambu-gray">{item.sku}</div>}
             <span className="mt-0.5 inline-block rounded bg-bambu-green/15 px-1.5 py-0.5 text-[10px] text-bambu-green">
               {t('orders.edit.newLine', { price: formatMoney(item.rate, row.currency) })}
             </span>
           </td>
-          <td className="whitespace-nowrap text-right tabular-nums text-white">
+          <td className="animate-rise-sm whitespace-nowrap text-right tabular-nums text-white">
             <OrderQtyStepper
               id={`add-${item.id}`}
               name={item.name}
@@ -54,9 +54,9 @@ export function OrderTodoEditRows({
               onChange={v => setEdit({ ...edit, added: edit.added.map(a => (a.item.id === item.id ? { ...a, quantity: v } : a)) })}
             />
           </td>
-          <td className="text-right tabular-nums text-white">{item.stock_on_hand !== null ? formatQty(item.stock_on_hand) : dash}</td>
-          <td className="text-right">{dash}</td>
-          <td className="pl-4">
+          <td className="animate-rise-sm text-right tabular-nums text-white">{item.stock_on_hand !== null ? formatQty(item.stock_on_hand) : dash}</td>
+          <td className="animate-rise-sm text-right">{dash}</td>
+          <td className="animate-rise-sm pl-4">
             <button
               type="button"
               aria-label={`${t('orders.edit.remove')} · ${item.name}`}

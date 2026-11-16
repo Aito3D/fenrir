@@ -63,7 +63,7 @@ export function OrderInvoiceNow({ row, busy, onCreate, onClose }: { row: Pick<Or
   );
 
   return (
-    <div className="mt-2 space-y-2.5 motion-safe:animate-rise-sm">
+    <div className="mt-2 space-y-2.5 animate-rise-sm">
       <div className="text-[11px] uppercase tracking-wide text-bambu-gray">{t('orders.inv.what')}</div>
       <div role="radiogroup" aria-label={t('orders.inv.what')} className="space-y-1.5">
         {option('packed', t('orders.units', { count: p.packed.units }), p.packed.units <= 0)}

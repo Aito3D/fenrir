@@ -47,9 +47,9 @@ function TrackingLinkChip({ orderId }: { orderId: string }) {
       onClick={() => void copy()}
       title={t('aito.trackingCopy')}
       aria-label={t('aito.trackingCopy')}
-      className={`${CHIP} hover:border-bambu-green/60 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green`}
+      className={`btn-press ${CHIP} hover:border-bambu-green/60 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green`}
     >
-      <Icon aria-hidden="true" className={`h-3 w-3 ${copied ? 'text-bambu-green' : ''}`} />
+      <Icon aria-hidden="true" className={`h-3 w-3 ${copied ? 'animate-slice-done text-bambu-green' : ''}`} />
       {t(copied ? 'aito.trackingCopied' : 'orders.chip.tracking')}
     </button>
   );

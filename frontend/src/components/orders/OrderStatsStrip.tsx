@@ -35,7 +35,7 @@ export function OrderStatsStrip({ open, onToggle, rows, finished }: Props) {
       </div>
     );
     return (
-      <dl data-testid="orders-stats" className="grid grid-cols-2 gap-4 px-4 pb-3 lg:grid-cols-4">
+      <dl data-testid="orders-stats" className="animate-rise-sm grid grid-cols-2 gap-4 px-4 pb-3 lg:grid-cols-4">
         {figure(t('orders.stats.weekly'), weeks ? (
           <div
             role="img"
