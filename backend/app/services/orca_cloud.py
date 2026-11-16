@@ -129,6 +129,9 @@ class OrcaCloudConflict(OrcaCloudError):
 _shared_http_client: httpx.AsyncClient | None = None
 
 
+_MAX_PULL_PAGES = 20  # 20 000 profiles: a server that never returns an empty page must not loop forever
+
+
 def set_shared_http_client(client: httpx.AsyncClient | None) -> None:
     """Register an app-scoped ``httpx.AsyncClient`` so per-request
     ``OrcaCloudService`` instances can reuse its connection pool. Mirrors the
@@ -375,13 +378,39 @@ class OrcaCloudService:
         entries (``{id, name, content, updated_time, created_time}``) —
         forwarded verbatim; callers pick the fields they need.
 
-        Uses ``GET /api/v1/external/sync/pull`` with NO ``?cursor=`` parameter,
+        Starts with ``GET /api/v1/external/sync/pull`` with NO ``?cursor=`` parameter,
         the documented "full snapshot" bootstrap. Sending ``cursor=0`` instead
         trips ``410 cursor_too_old`` (the sync log doesn't reach back to the
         Unix epoch). The pull response is ``{next_cursor, upserts, deletes}``;
-        we return ``upserts`` and ignore the rest (no prior client state to
-        invalidate on a read-only list)."""
+        later pages are fetched with ``?cursor=<next_cursor>`` and merged by id."""
+        # Orca Cloud answers at most 1000 entries per pull: follow ``next_cursor`` until a page comes back
+        # empty, or every profile past the first 1000 looks missing and is pushed again as new on each SYNC.
+        merged: dict[str, dict[str, Any]] = {}
+        loose: list[dict[str, Any]] = []  # entries without an id cannot be merged across pages
+        cursor = None
+        for _ in range(_MAX_PULL_PAGES):
+            data = await self._pull_page(cursor)
+            upserts = _upserts_of(data)
+            for entry in upserts:
+                if isinstance(entry, dict) and entry.get("id"):
+                    merged[str(entry["id"])] = entry
+                else:
+                    loose.append(entry)
+            if not isinstance(data, dict):
+                break
+            if cursor is not None:  # a later page reports what changed since the previous one
+                for gone in data.get("deletes") or []:
+                    merged.pop(str(gone), None)
+            next_cursor = data.get("next_cursor")
+            if not upserts or not next_cursor or next_cursor == cursor:
+                break
+            cursor = next_cursor
+        return [*merged.values(), *loose]
+
+    async def _pull_page(self, cursor: Any) -> Any:
         url = f"{ORCA_API_BASE}/api/v1/external/sync/pull"
+        if cursor is not None:
+            url += f"?cursor={cursor}"
         try:
             resp = await self._client.get(url, headers=self._api_headers())
         except httpx.HTTPError as e:
@@ -394,20 +423,7 @@ class OrcaCloudService:
             raise OrcaCloudError("Orca Cloud sync cursor too old — a full resync is required")
         if resp.status_code >= 400:
             raise OrcaCloudError(f"Orca Cloud profile list failed ({resp.status_code}): {resp.text[:200]}")
-        data = resp.json()
-        if isinstance(data, dict):
-            upserts = data.get("upserts")
-            if isinstance(upserts, list):
-                return upserts
-            # Tolerate a flat-list shape if Orca ever rolls one out here.
-            for key in ("profiles", "data"):
-                value = data.get(key)
-                if isinstance(value, list):
-                    return value
-        if isinstance(data, list):
-            return data
-        logger.warning("Orca Cloud /external/sync/pull returned unexpected shape: %r", type(data).__name__)
-        return []
+        return resp.json()
 
     async def push_profile(
         self, *, profile_id: str, name: str, content: dict[str, Any], original_updated_time: int | None = None
@@ -466,6 +482,20 @@ class OrcaCloudService:
         using an injected or app-shared client (those are managed elsewhere)."""
         if self._owns_client:
             await self._client.aclose()
+
+
+def _upserts_of(data: Any) -> list:
+    """The profile entries of one pull response."""
+    if isinstance(data, dict):
+        # ``profiles``/``data``: tolerate a flat-list shape if Orca ever rolls one out here.
+        for key in ("upserts", "profiles", "data"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return value
+    if isinstance(data, list):
+        return data
+    logger.warning("Orca Cloud /external/sync/pull returned unexpected shape: %r", type(data).__name__)
+    return []
 
 
 def _error_code(resp: httpx.Response) -> str | None:

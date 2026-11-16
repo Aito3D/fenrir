@@ -376,6 +376,22 @@ class TestListProfiles:
             await svc.list_profiles()
 
     @pytest.mark.asyncio
+    async def test_follows_next_cursor_past_the_first_page(self, svc):
+        """Orca Cloud caps a pull at 1000 entries: the rest comes with ``?cursor=<next_cursor>``."""
+        svc.access_token = "oc_ext_A"
+        svc.token_expiry = datetime.now(timezone.utc) + timedelta(hours=12)
+        svc._client.get = AsyncMock(
+            side_effect=[
+                _mock_response(json_data={"next_cursor": 10, "upserts": [{"id": "a"}, {"id": "b"}], "deletes": []}),
+                _mock_response(json_data={"next_cursor": 20, "upserts": [{"id": "c"}], "deletes": ["a"]}),
+                _mock_response(json_data={"next_cursor": 20, "upserts": [], "deletes": []}),
+            ]
+        )
+        assert [p["id"] for p in await svc.list_profiles()] == ["b", "c"]
+        urls = [c.args[0] for c in svc._client.get.call_args_list]
+        assert [u.rpartition("pull")[2] for u in urls] == ["", "?cursor=10", "?cursor=20"]
+
+    @pytest.mark.asyncio
     async def test_bare_list_response_tolerated(self, svc):
         svc.access_token = "oc_ext_A"
         svc.token_expiry = datetime.now(timezone.utc) + timedelta(hours=12)
