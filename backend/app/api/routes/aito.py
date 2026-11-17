@@ -4901,7 +4901,9 @@ async def edit_project_client(
             target_person_id=target_person_id,
         )
     else:
-        name = company if is_company else normalize_display_name(first, last)
+        # A walk-in card keeps its name: renaming the customer means
+        # transferring the card to a real contact, not editing the shared bucket.
+        name = project.client_name or (company if is_company else normalize_display_name(first, last))
 
     # Re-read before the local writes below diff against it: the claim above
     # committed mid-request, so the row in hand is a snapshot taken before

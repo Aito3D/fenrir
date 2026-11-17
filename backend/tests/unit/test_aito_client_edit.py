@@ -215,7 +215,8 @@ async def test_walk_in_card_is_edited_without_touching_zoho(async_client):
 
     r = await async_client.put(f"/api/v1/aito/{project['id']}/client", json=PERSON_EDIT)
     assert r.status_code == 200, r.text
-    assert r.json()["client_name"] == "Jean-Pierre DUPONT"
+    # The name is locked on a walk-in card; only the coordinates change.
+    assert r.json()["client_name"] == "Client de passage"
     assert r.json()["client_phone"] == "+689-87000002"
     assert seen == []
 

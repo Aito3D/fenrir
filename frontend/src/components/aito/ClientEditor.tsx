@@ -420,6 +420,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
               autoComplete="new-password"
               value={draft.companyName}
               onChange={(e) => update({ companyName: e.target.value })}
+              disabled={isWalkIn}
               className={fieldCls}
             />
           </div>
@@ -456,6 +457,8 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
                 value={draft.firstName}
                 onChange={(e) => update({ firstName: e.target.value })}
                 onBlur={(e) => update({ firstName: titleCaseSegments(e.target.value) })}
+                // Walk-in: the name is locked; a real customer is a transfer, not a rename.
+                disabled={isWalkIn}
                 className={fieldCls}
               />
             </div>
@@ -470,6 +473,7 @@ export function ClientEditor({ project, onSaved, onCancel, triggerRef, closing =
                 value={draft.lastName}
                 onChange={(e) => update({ lastName: e.target.value })}
                 onBlur={(e) => update({ lastName: upperCaseName(e.target.value) })}
+                disabled={isWalkIn}
                 className={fieldCls}
               />
             </div>

@@ -275,7 +275,7 @@ async def test_a_no_op_edit_surfaces_no_change_event(async_client, books, broadc
 
 
 @pytest.mark.asyncio
-async def test_walk_in_card_takes_the_composed_name_and_blank_coordinates_become_none(async_client, books, broadcasts):
+async def test_walk_in_card_keeps_its_name_and_blank_coordinates_become_none(async_client, books, broadcasts):
     await _configure(async_client)
     project = await _create(async_client, client_id="66407000001237340", client_name="Client de passage")
 
@@ -287,13 +287,12 @@ async def test_walk_in_card_takes_the_composed_name_and_blank_coordinates_become
 
     assert r.status_code == 200, r.text
     assert books["calls"] == []
-    assert r.json()["client_name"] == "Jean-Pierre DUPONT"
+    assert r.json()["client_name"] == "Client de passage"
     assert r.json()["client_email"] is None
     assert await _updated_changes(async_client, project["id"]) == [
         [
             {"field": "client_social_network", "from": None, "to": "instagram"},
             {"field": "client_social_handle", "from": None, "to": "jp"},
-            {"field": "client_name", "from": "Client de passage", "to": "Jean-Pierre DUPONT"},
             {"field": "client_phone", "from": "+689-87000001", "to": "+689-87000002"},
             {"field": "client_email", "from": "jean@example.pf", "to": None},
         ]

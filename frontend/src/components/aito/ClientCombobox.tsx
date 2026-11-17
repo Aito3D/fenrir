@@ -102,7 +102,7 @@ export function ClientCombobox({ clientName, onSelect, onCreateNew, onReset, sho
             id="aito-client-search"
             role="combobox"
             type="text"
-            autoComplete="new-password"
+            autoComplete="off"
             aria-expanded={open}
             aria-autocomplete="list"
             value={editing ? rawQuery : clientName}

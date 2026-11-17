@@ -295,6 +295,8 @@ describe('ClientEditor', () => {
     show({ client_id: WALK_IN, client_name: 'Jean-Pierre LE ROUX' });
     await waitFor(() => expect(firstName().value).toBe('Jean-Pierre'));
     expect(lastName().value).toBe('LE ROUX');
+    expect(firstName()).toBeDisabled();
+    expect(lastName()).toBeDisabled();
     expect(email().value).toBe('jean@example.pf');
     expect(screen.getByText(i18n.t('aito.clientEditWalkIn'))).toBeInTheDocument();
     expect(screen.getByTestId('client-edit-source')).toHaveTextContent(i18n.t('aito.clientEditSourceCard'));

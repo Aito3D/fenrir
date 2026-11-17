@@ -83,7 +83,7 @@ describe('ClientCombobox', () => {
 
   it('disables browser autocomplete on the search input', () => {
     render(<ClientCombobox {...props} />);
-    expect(screen.getByRole('combobox')).toHaveAttribute('autocomplete', 'new-password');
+    expect(screen.getByRole('combobox')).toHaveAttribute('autocomplete', 'off');
   });
 
   it('hides the reset control unless showReset is set', async () => {
