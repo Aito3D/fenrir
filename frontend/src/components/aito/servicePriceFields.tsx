@@ -16,8 +16,9 @@ export const rowLabelCls = 'text-sm text-bambu-gray text-right';
 
 /** The percentages the shop offers. Not free entry: a discount is a
  *  commercial decision from a fixed menu, and a typed 12.5% would print a
- *  rate nobody agreed. Module-private: only `DiscountSelect` below reads it. */
-const DISCOUNT_STEPS: readonly number[] = [5, 10, 15, 20, 25, 30];
+ *  rate nobody agreed. 5% steps up to 100%, which quotes a step free (the
+ *  line stays on the quote at 0). Module-private: only `DiscountSelect` below reads it. */
+const DISCOUNT_STEPS: readonly number[] = Array.from({ length: 20 }, (_, i) => (i + 1) * 5);
 
 /** How many units one service line covers.
  *
