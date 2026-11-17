@@ -170,9 +170,19 @@ async def settle_deposits(
     refused = [a.number for (_, payments), a in zip(shares, applications, strict=False) if payments and a.applied <= 0]
     applied_total = 0.0
     for application in applications:
-        if application.applied <= 0:
+        # An answer lost on the way (timeout, 5xx) may still have moved the money: keep it on record,
+        # marked unknown, like the manual route does.
+        amount = application.applied or application.unknown_amount
+        if amount <= 0:
             continue
         applied_total += application.applied
+        detail = {
+            "retainer_number": application.number,
+            "invoice_number": str(invoice.get("number") or ""),
+            "amount": round(amount, 2),
+        }
+        if application.unknown_amount:
+            detail["outcome"] = "unknown"
         await aito_events.record(
             db,
             project_id,
@@ -180,12 +190,12 @@ async def settle_deposits(
             actor_class="system",
             subject_type="project",
             subject_id=project_id,
-            detail={
-                "retainer_number": application.number,
-                "invoice_number": str(invoice.get("number") or ""),
-                "amount": round(application.applied, 2),
-            },
+            detail=detail,
         )
+    # What landed is recorded above; a 429 now escapes so the caller arms the shared throttle.
+    for application in applications:
+        if application.rate_limited is not None:
+            raise application.rate_limited
     if applied_total <= 0:
         return DepositSettlement(invoice, remaining, refused)
 

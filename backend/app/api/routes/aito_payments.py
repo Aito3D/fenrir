@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.aito import (
+    _CLIENT_RATING_MAX_CALLS,
     _actor,
     _check_rate_limit,
     _get_active_project_or_404,
@@ -82,6 +83,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/aito", tags=["aito"])
 
 _COUNTER_PAYMENT_MAX_CALLS = 10
+_UNLINKED_RETAINERS_DETAIL = "Too many deposit lookups. Please wait a moment and try again."
 _COUNTER_PAYMENT_DETAIL = "Too many payment requests. Please wait a moment and try again."
 
 
@@ -100,6 +102,21 @@ def _check_counter_payment_rate_limit(request: Request, current_user: User | Non
         )
     except HTTPException as e:
         raise _refuse(429, "rate_limited", _COUNTER_PAYMENT_DETAIL) from e
+
+
+def _check_unlinked_retainers_rate_limit(request: Request, current_user: User | None) -> None:
+    """The unlinked-deposit read costs two uncached Books list calls: the client-rating budget, own bucket.
+    Same structured 429 as the counter-payment check."""
+    try:
+        _check_rate_limit(
+            request,
+            current_user,
+            bucket="unlinked_retainers",
+            max_calls=_CLIENT_RATING_MAX_CALLS,
+            detail=_UNLINKED_RETAINERS_DETAIL,
+        )
+    except HTTPException as e:
+        raise _refuse(429, "rate_limited", _UNLINKED_RETAINERS_DETAIL) from e
 
 
 def _refuse(status: int, code: str, message: str) -> HTTPException:
@@ -351,11 +368,13 @@ async def _unlinked_retainers(db: AsyncSession, project) -> list[dict]:
 @router.get("/{project_id}/unlinked-retainers", response_model=list[AitoUnlinkedRetainer])
 async def get_unlinked_retainers(
     project_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db, scope="function"),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
     """The customer's paid deposits that name no quote, so the panel can warn
     that they do not count toward this quote's deposit. Live from Books."""
+    _check_unlinked_retainers_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
     return await _unlinked_retainers(db, project)
 

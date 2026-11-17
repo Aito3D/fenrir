@@ -99,3 +99,13 @@ async def test_generic_slice_job_route_does_not_serve_imports(async_client: Asyn
     """The library's polling route is gated on library permissions, not Aito's."""
     job = await slice_dispatch.enqueue(kind="aito_import", source_id=0, source_name="x.3mf", run=_noop)
     assert (await async_client.get(f"/api/v1/slice-jobs/{job.id}")).status_code == 404
+
+
+async def test_import_over_its_own_cap_is_413(async_client: AsyncClient, stub_slicer, monkeypatch):
+    from backend.app.api.routes import aito
+
+    monkeypatch.setattr(aito, "_IMPORT_3MF_MAX_BYTES", len(SOURCE) - 1)
+    r = await async_client.post(URL, files=_upload(SOURCE))
+    assert (r.status_code, r.json()["detail"]) == (413, "The .3mf is too large")
+    monkeypatch.setattr(aito, "_IMPORT_3MF_MAX_BYTES", len(SOURCE))
+    assert (await async_client.post(URL, files=_upload(SOURCE))).status_code == 202

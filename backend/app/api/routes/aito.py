@@ -2178,6 +2178,10 @@ async def proofread_field(
     return AitoProofreadResponse(text=corrected, model=model)
 
 
+# The import keeps the whole upload in memory for the life of its slice job (a project .3mf is a few hundred MB at most).
+_IMPORT_3MF_MAX_BYTES = 512 * 1024 * 1024
+
+
 @router.post("/import-3mf", status_code=202)
 async def start_3mf_import(
     file: UploadFile = File(...),
@@ -2193,8 +2197,9 @@ async def start_3mf_import(
     filename = file.filename or ""
     if not filename.lower().endswith(".3mf"):
         raise HTTPException(status_code=400, detail="Only .3mf files can be imported")
-    source = await file.read(settings.library_max_upload_bytes + 1)
-    if len(source) > settings.library_max_upload_bytes:
+    max_bytes = min(_IMPORT_3MF_MAX_BYTES, settings.library_max_upload_bytes)
+    source = await file.read(max_bytes + 1)
+    if len(source) > max_bytes:
         raise HTTPException(status_code=413, detail="The .3mf is too large")
     try:
         await asyncio.to_thread(importer.check_importable, source)

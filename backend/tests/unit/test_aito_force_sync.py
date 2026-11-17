@@ -478,3 +478,98 @@ async def test_force_sync_is_rate_limited_per_user(async_client, db_session, stu
     r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
     assert r.status_code == 429
     assert r.json()["detail"] == aito_routes._FORCE_SYNC_DETAIL
+
+
+def _real_settle_books(monkeypatch, stubs, apply):
+    """The real settle with two linked deposits (each 4000, balance 7000) and `apply` as the Books write."""
+    monkeypatch.setattr("backend.app.services.aito_invoice_sweep.settle_deposits", real_settle_deposits)
+    stubs["invoices"] = [{"id": "INV1", "number": "FA-1", "balance": 7000.0, "status": "draft", "due_date": ""}]
+
+    async def get_estimate(db, estimate_id):
+        return {
+            "estimate_id": "EST1",
+            "customer_id": "z1",
+            "retainerinvoices": [{"retainerinvoice_id": "RET1"}, {"retainerinvoice_id": "RET2"}],
+        }
+
+    async def list_customer_payments(db, customer_id):
+        return [
+            {"payment_id": f"P{n}", "payment_number": str(n), "retainerinvoice_id": f"RET{n}", "amount": 4000.0,
+             "unused_amount": 4000.0, "date": f"2026-09-0{n}"}
+            for n in (1, 2)
+        ]  # fmt: skip
+
+    async def list_customer_retainers(db, customer_id):
+        return [
+            {"retainerinvoice_id": f"RET{n}", "retainerinvoice_number": f"RET-{n}", "reference_number": ""}
+            for n in (1, 2)
+        ]
+
+    for name, fn in {
+        "get_estimate": get_estimate,
+        "list_customer_payments": list_customer_payments,
+        "list_customer_retainers": list_customer_retainers,
+        "apply_invoice_credits": apply,
+    }.items():
+        monkeypatch.setattr(zoho_service, name, fn)
+
+
+@pytest.mark.asyncio
+async def test_a_429_on_the_deposit_apply_is_rate_limited_and_stops_the_calls(
+    async_client, db_session, stubs, monkeypatch
+):
+    armed, attempts = [], []
+    monkeypatch.setattr(aito_quote_sync, "_arm_rate_limit_throttle", armed.append)
+
+    async def throttled(db, invoice_id, invoice_payments):
+        attempts.append(invoice_payments)
+        raise ZohoRateLimited("slow down")
+
+    _real_settle_books(monkeypatch, stubs, throttled)
+    p = await _project(db_session)
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    assert r.status_code == 200, r.text
+    assert len(attempts) == 1 and len(armed) == 1
+    assert _by_key(r.json())["invoice"] == {"key": "invoice", "outcome": "failed", "detail": {"reason": "rate_limited"}}
+
+
+@pytest.mark.asyncio
+async def test_a_429_after_one_deposit_landed_keeps_its_event(async_client, db_session, stubs, monkeypatch):
+    monkeypatch.setattr(aito_quote_sync, "_arm_rate_limit_throttle", lambda e: None)
+    calls = []
+
+    async def first_lands(db, invoice_id, invoice_payments):
+        calls.append(invoice_payments)
+        if len(calls) > 1:
+            raise ZohoRateLimited("slow down")
+
+    _real_settle_books(monkeypatch, stubs, first_lands)
+    p = await _project(db_session)
+    pid = p.id
+    r = await async_client.post(f"/api/v1/aito/{pid}/force-sync")
+    assert _by_key(r.json())["invoice"]["detail"] == {"reason": "rate_limited"}
+    rows = (await db_session.execute(select(AitoEvent).where(AitoEvent.kind == "invoice.deposit_applied"))).scalars()
+    assert [(e.detail["retainer_number"], e.detail["amount"], "outcome" in e.detail) for e in rows] == [
+        ("RET-1", 4000.0, False)
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["unreachable", "ambiguous"])
+async def test_a_deposit_apply_that_timed_out_is_recorded_as_outcome_unknown(
+    async_client, db_session, stubs, monkeypatch, failure
+):
+    from backend.app.services.zoho import ZohoAmbiguous, ZohoUnreachable
+
+    async def lost(db, invoice_id, invoice_payments):
+        raise (ZohoUnreachable if failure == "unreachable" else ZohoAmbiguous)("no answer")
+
+    _real_settle_books(monkeypatch, stubs, lost)
+    p = await _project(db_session)
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    assert _by_key(r.json())["invoice"]["detail"] == {"reason": "refused"}
+    rows = (await db_session.execute(select(AitoEvent).where(AitoEvent.kind == "invoice.deposit_applied"))).scalars()
+    assert sorted((e.detail["retainer_number"], e.detail["amount"], e.detail["outcome"]) for e in rows) == [
+        ("RET-1", 4000.0, "unknown"),
+        ("RET-2", 3000.0, "unknown"),
+    ]
