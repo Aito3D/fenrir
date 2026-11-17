@@ -34,35 +34,40 @@ const SELF_TOASTED_KINDS = new Set(['quote.emailed', 'invoice.emailed', 'retaine
 
 type ZohoToastType = 'success' | 'error' | 'warning';
 
-/** The toast for one Zoho result, or null for a kind the board does not voice. */
-export function zohoToast(t: TFunction, r: AitoZohoResult): { text: string; type: ZohoToastType } | null {
-  const v = { doc: r.doc, error: r.error ?? '' };
-  const ok = (key: string) => ({ text: t(`aito.zohoToast.${key}`, v), type: 'success' as const });
-  let toast: { text: string; type: ZohoToastType };
+/** The translation key and severity of one Zoho result's toast, or null for a kind the board does not voice. */
+function zohoToastParts(r: AitoZohoResult): { key: string; type: ZohoToastType } | null {
   switch (r.kind) {
-    case 'quote.created': toast = ok('quoteCreated'); break;
-    case 'invoice.created': toast = ok('invoiceCreated'); break;
-    case 'payment.manual.recorded': toast = ok(r.has_retainer ? 'retainerCreated' : 'paymentRecorded'); break;
+    case 'quote.created': return { key: 'quoteCreated', type: 'success' };
+    case 'invoice.created': return { key: 'invoiceCreated', type: 'success' };
+    case 'payment.manual.recorded': return { key: r.has_retainer ? 'retainerCreated' : 'paymentRecorded', type: 'success' };
     case 'quote.emailed':
     case 'invoice.emailed':
-    case 'retainer.emailed': toast = ok('emailed'); break;
+    case 'retainer.emailed': return { key: 'emailed', type: 'success' };
     case 'payment_link.created':
-    case 'payment_link.replaced': toast = ok('paymentLink'); break;
+    case 'payment_link.replaced': return { key: 'paymentLink', type: 'success' };
     case 'invoice.deposit_applied':
-      toast = r.outcome === 'unknown'
-        ? { text: t('aito.zohoToast.depositUnknown', v), type: 'warning' }
-        : ok('depositApplied');
-      break;
-    case 'payment.manual.partial': toast = { text: t('aito.zohoToast.paymentPartial', v), type: 'error' }; break;
-    case 'sync.failed': toast = { text: t('aito.zohoToast.syncFailed', v), type: 'error' }; break;
-    case 'sync.conflict': toast = { text: t('aito.zohoToast.syncConflict', v), type: 'warning' }; break;
+      return r.outcome === 'unknown' ? { key: 'depositUnknown', type: 'warning' } : { key: 'depositApplied', type: 'success' };
+    case 'payment.manual.partial': return { key: 'paymentPartial', type: 'error' };
+    case 'sync.failed': return { key: 'syncFailed', type: 'error' };
+    case 'sync.conflict': return { key: 'syncConflict', type: 'warning' };
     default: return null;
   }
-  return r.client ? { ...toast, text: `${toast.text} · ${r.client}` } : toast;
 }
 
+/** The toast for one Zoho result, or null for a kind the board does not voice. */
+export function zohoToast(t: TFunction, r: AitoZohoResult): { text: string; type: ZohoToastType } | null {
+  const parts = zohoToastParts(r);
+  if (!parts) return null;
+  const text = t(`aito.zohoToast.${parts.key}`, { doc: r.doc, error: r.error ?? '' });
+  return { text: r.client ? `${text} · ${r.client}` : text, type: parts.type };
+}
+
+/** After a toast, further results of its kind inside this window fold into one summary, so a pass that touches many cards never stacks them. */
+const ZOHO_COALESCE_MS = 1500;
+
 /** A toast for every result of Fenrir's work in Zoho, background or not, for
- *  everyone with the board open. Mounted by AitoPage beside the peer toasts. */
+ *  everyone with the board open. Mounted by AitoPage beside the peer toasts.
+ *  The first result of a kind shows at once; the rest of the next ZOHO_COALESCE_MS fold into one summary. */
 export function useAitoZohoToasts(): void {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -70,16 +75,35 @@ export function useAitoZohoToasts(): void {
   const me = user?.username ?? null;
 
   useEffect(() => {
+    // Per toast key: the first result toasts at once and opens a window; later ones of that key are counted
+    // and folded into one summary when the window closes.
+    const windows = new Map<string, { extra: number; type: ZohoToastType; timer: number }>();
     const onResult = (event: Event) => {
       const result = (event as CustomEvent<AitoZohoResult>).detail;
       if (result?.kind && SELF_TOASTED_KINDS.has(result.kind) && me !== null && result.actor === me) return;
       // ApplyDepositModal already toasts its own success.
       if (result?.kind === 'invoice.deposit_applied' && me !== null && result.actor === me && result.outcome !== 'unknown') return;
-      const toast = result ? zohoToast(t, result) : null;
+      const parts = result ? zohoToastParts(result) : null;
+      if (!result || !parts) return;
+      const open = windows.get(parts.key);
+      if (open) {
+        open.extra += 1;
+        return;
+      }
+      const toast = zohoToast(t, result);
       if (toast) showToast(toast.text, toast.type);
+      const timer = window.setTimeout(() => {
+        const closed = windows.get(parts.key);
+        windows.delete(parts.key);
+        if (closed && closed.extra > 0) showToast(t(`aito.zohoToast.${parts.key}Many`, { count: closed.extra }), closed.type);
+      }, ZOHO_COALESCE_MS);
+      windows.set(parts.key, { extra: 0, type: parts.type, timer });
     };
     window.addEventListener(AITO_ZOHO_EVENT, onResult);
-    return () => window.removeEventListener(AITO_ZOHO_EVENT, onResult);
+    return () => {
+      window.removeEventListener(AITO_ZOHO_EVENT, onResult);
+      windows.forEach((w) => window.clearTimeout(w.timer));
+    };
   }, [me, showToast, t]);
 }
 

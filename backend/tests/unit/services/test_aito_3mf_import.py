@@ -10,6 +10,7 @@ from backend.app.services.aito_3mf_import import (
     ALREADY_SLICED,
     NO_SETTINGS,
     Import3mfError,
+    _read_capped,
     check_importable,
     plate_facts,
 )
@@ -216,6 +217,37 @@ def test_unreadable_geometry_keeps_the_plate():
 
 def test_thumbnail_is_a_data_url():
     assert plate_facts(SOURCE, SLICED)[0]["thumbnail"] == "data:image/png;base64,iVBORw0KGgpmYWtl"
+
+
+def test_oversized_thumbnail_is_left_out_but_the_plate_stays(monkeypatch):
+    monkeypatch.setattr("backend.app.services.aito_3mf_import._MAX_THUMBNAIL_BYTES", len(PNG) - 1)
+    facts = plate_facts(SOURCE, SLICED)
+    assert facts[0]["thumbnail"] is None
+    assert facts[0]["objects"]
+
+
+def test_oversized_model_settings_is_refused_by_check_and_by_plate_facts(monkeypatch):
+    monkeypatch.setattr("backend.app.services.aito_3mf_import._MAX_PART_BYTES", 10)
+    for call in (lambda: check_importable(SOURCE), lambda: plate_facts(SOURCE, SLICED)):
+        with pytest.raises(Import3mfError) as err:
+            call()
+        assert err.value.status_code == 413
+        assert err.value.detail == "The .3mf's project settings are too large to slice (over 0 MB)"
+
+
+def test_read_capped_stops_a_lying_header():
+    class Info:
+        file_size = 1
+
+    class LyingZip:
+        def getinfo(self, name):
+            return Info()
+
+        def open(self, name):
+            return io.BytesIO(b"x" * 50)
+
+    assert _read_capped(LyingZip(), "a", 10) is None
+    assert _read_capped(LyingZip(), "a", 50) == b"x" * 50
 
 
 def test_missing_thumbnail_is_none():

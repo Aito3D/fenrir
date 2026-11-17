@@ -132,6 +132,24 @@ describe('Import3mfPanel', () => {
     expect(await screen.findByText('Marteaux')).toBeInTheDocument();
   });
 
+  it('shows an error with Retry when a calculator list cannot load, and Retry reloads it without slicing again', async () => {
+    serve([done([plate({})])]);
+    let printerCalls = 0;
+    server.use(
+      http.get('/api/v1/calculator/printers/', () =>
+        ++printerCalls === 1 ? HttpResponse.json({ detail: 'Printers unavailable' }, { status: 500 }) : HttpResponse.json(PRINTERS),
+      ),
+    );
+    let uploads = 0;
+    server.use(http.post('/api/v1/aito/import-3mf', () => (uploads++, HttpResponse.json({ job_id: 7 }, { status: 202 }))));
+    mount();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Printers unavailable');
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Marteaux')).toBeInTheDocument();
+    expect(uploads).toBe(1);
+  });
+
   it('rides out a failed poll without uploading again', async () => {
     let uploads = 0;
     let calls = 0;

@@ -72,12 +72,18 @@ export function Import3mfPanel({ file, onAdd, onClose, pollMs = 1500 }: Import3m
     },
   });
   // Same keys and fetchers as ImpressionFields, so React Query shares the lists.
-  const filaments = useQuery({ queryKey: ['calculatorFilaments'], queryFn: api.getCalculatorFilaments, staleTime: 60_000 }).data;
-  const printers = useQuery({ queryKey: ['calculatorPrinters'], queryFn: api.getCalculatorPrinters, staleTime: 60_000 }).data;
-  const defaults = useQuery({ queryKey: ['calculatorDefaults'], queryFn: api.getCalculatorDefaults, staleTime: 60_000 }).data;
+  const filamentsQuery = useQuery({ queryKey: ['calculatorFilaments'], queryFn: api.getCalculatorFilaments, staleTime: 60_000 });
+  const printersQuery = useQuery({ queryKey: ['calculatorPrinters'], queryFn: api.getCalculatorPrinters, staleTime: 60_000 });
+  const defaultsQuery = useQuery({ queryKey: ['calculatorDefaults'], queryFn: api.getCalculatorDefaults, staleTime: 60_000 });
+  const filaments = filamentsQuery.data;
+  const printers = printersQuery.data;
+  const defaults = defaultsQuery.data;
+  const failedLists = [filamentsQuery, printersQuery, defaultsQuery].filter((q) => q.isError);
 
   const state = job.data;
-  const error = startError ?? (job.isError ? (job.error as Error).message : state?.status === 'failed' ? state.error : null);
+  const jobError = startError ?? (job.isError ? (job.error as Error).message : state?.status === 'failed' ? state.error : null);
+  // A list that cannot load would otherwise leave the slicing spinner up for good.
+  const error = jobError ?? (failedLists.length > 0 ? (failedLists[0].error as Error).message : null);
   const plates = state?.status === 'completed' ? (state.plates ?? []) : null;
   const slicing = error === null && plates === null;
 
@@ -88,6 +94,11 @@ export function Import3mfPanel({ file, onAdd, onClose, pollMs = 1500 }: Import3m
   }, [slicing]);
 
   const retry = () => {
+    // Only the calculator lists failed: reload them, the slice itself is fine.
+    if (jobError === null && failedLists.length > 0) {
+      failedLists.forEach((q) => void q.refetch());
+      return;
+    }
     // Polls were lost but the server never said the job failed: ask the same job again.
     // A 404 means the server no longer has the job (restart, retention): slice it afresh.
     const gone = job.error instanceof ApiError && job.error.status === 404;
