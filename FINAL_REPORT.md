@@ -1,96 +1,105 @@
-# Refactor-loop campaign F2 — the filament profile page — final report
+# FINAL REPORT — refactor-loop campaign O3: the Order Board (/orders)
 
-Date: 2026-11-15. Branch `auto-refactor-loop` in `../bambuddy-refactor`, based on local main `5de604eed`
-(BASE = tag `refactor-base`, setup commit `431ba6ef5`). Follow-on to campaign F1 (same feature, landed the same day).
+Campaign 1 on branch `auto-refactor-loop` (worktree `../bambuddy-refactor`), cut from main `2c8d80901` on 2026-11-16.
+BASE `refactor-base` = setup commit `504291e00`. Ended 2026-11-17.
 
 ## Summary
+- **Iterations run:** 11 of 12 allowed (loop-1 … loop-11), one squashed commit + one tag per iteration.
+- **Survey rounds:** 3 of 3.
+- **Why it ended:** MAX_ROUNDS. The plan was empty after round 3's tasks, and the round cap was reached.
+- **Commits:** 1 setup commit + 11 iteration commits, plus this report.
+- **Tags:** `refactor-base`, `loop-1` … `loop-11`.
+- **Parameters:** scope = Order Board (routes/order_board/, services/order_board*, order_board_actions/, order_board_sync/, models order_board_*, components/orders/**, OrderBoardPage, OrderTrackPage, utils/orderTracking.ts, and their tests). MAX_ITER 12, MAX_ROUNDS 3, BATCH 3, auto, grouped, at-exit. TRIAGE was P2,P3 at the start and lowered to P3 by the user at the setup sweep.
+- **Tasks:** 31 filed in PLAN.md, 29 DONE, 2 WONTFIX-AUTO, 0 OPEN or BLOCKED. 19 findings remain in TRIAGE.md.
+- **Verifier:** every iteration passed. Iteration 1 needed one fix: its first verify failed the coverage ratchet arithmetically, because deleted dead code had been covered. Tests were added rather than resetting the baseline.
 
-| | |
-|---|---|
-| Iterations run | 7 of 8 (all 7 passed blind verification on the first attempt) |
-| Survey rounds | 3 of 3 |
-| Commits | 1 setup + 7 iteration commits (grouped) + this report |
-| Tags | `refactor-base`, `loop-1` … `loop-7` |
-| Tasks | 18 filed, 18 DONE, 0 open / blocked / declined |
-| Why it ended | MAX_ROUNDS (3). Round 3 was dry: all four auditors filed nothing |
-
-Scope: `backend/app/api/routes/filament_trees.py`, `models|schemas/filament_tree.py`, `services/filament_tree*.py`
-(incl. the new `filament_tree_push.py`); `frontend/src/pages/FilamentProfilesPage.tsx`, `components/filament-trees/*`,
-`components/filament-profiles/*`, the FilamentTree slice of `api/client.ts`; and their tests.
-
-## Gates
-
-| Gate | Baseline | Final |
+## Coverage, tests, goldens
+| | Baseline (BASE) | Final (loop-11) |
 |---|---|---|
-| Backend scoped statement coverage | 97.91% (1403/1433) | 98.09% (1436/1464) |
-| Frontend scoped statement coverage | 85.64% (841/982) | 88.20% (875/992) |
-| Known-broken tests | 1 | 1 (unchanged: `test_printer_hours_migrations.py::test_migration_backfills_calibrated_at_from_offset`, out of scope, time-of-day dependent) |
-| Golden snapshot probes | 7/7 | 7/7 (re-recorded only for approved changes) |
-| SURFACE.md | — | changed only by approved changes (see below) |
-| Diff vs BASE | — | 41 files, +880 / −123 (production code: 10 files, +167 / −67; the rest is tests, 16 locale files, goldens) |
+| Backend scoped statements | 2815/2913 = 96.64% | 2912/2938 = **99.12%** |
+| Backend scoped branches | 701/748 = 93.72% | (not reported per run) |
+| Frontend scoped statements | 1554/1636 = 94.98% | 1578/1640 = **96.21%** |
+| Backend full suite | 27969 passed, 1 known_broken | 28036 passed, 0 failed |
+| Frontend full suite | 11397 passed, 3 load flakes | 11425 passed, 0 failed |
 
-Load flakes seen during verification, all in files the campaign never touched and all passing when rerun alone:
-`PrintModal.test.tsx`, `ArchivesPage.test.tsx`, `StreamOverlayPage.test.tsx`, `FileManagerPage.test.tsx`;
-backend `test_mfa_api.py::TestOIDCAutoCreateUsername`, `test_timelapse_clock_match.py` (baseline run only).
+- **known_broken:** `test_printer_hours_migrations.py::test_migration_backfills_calibrated_at_from_offset` is unchanged. It is outside scope and fails between 14:00 and midnight local time.
+- **Snapshot probes:** 8/8 match. Two goldens were re-recorded for approved changes: `orders-i18n` for T-003, and `orders-surface-py` for T-016 and T-021.
+- **SURFACE.md:** one line changed. Line 215 lists the sync package's `__all__`, where `_stored_query` became `find_stored`. This is the user-approved SURFACE regeneration for T-021.
+- **Diff since BASE:** 47 files, +1589/−191, mostly tests. Production code: 31 files, +180/−96, including 16 locale files.
+- **Gates at the end:** ruff check and format clean, basedpyright in lock mode 0 errors, tsc, eslint with 0 errors (5 warnings that predate this campaign and sit outside scope), knip, and i18n parity across 16 locales.
 
-## User-approved behavior changes (all in BASELINE-CHANGELOG.md, dated 2026-11-15)
+## User-approved behavior changes (BASELINE-CHANGELOG.md)
+- **T-003:** three refusal codes (`nothing_to_pack`, `unknown_package`, `unknown_picklist`) now show their own message in 16 locales.
+- **T-016:** both preparation-sheet routes now require `orders:update`. The print controls are hidden from users without it.
+- **T-017:** no Books re-read is sent inside the 429 back-off window after a write.
+- **T-018:** the history line for an edited order shows the new total, and none if the re-read failed.
+- **T-019:** a sync pass compares an order against the current stored copy, so an operator's own edit is no longer logged as "edited in Books".
+- **T-020:** a sync pass that fails for a non-Zoho reason shows a short error on the board, and Refresh returns the board instead of a 500.
+- **T-021 (SURFACE only):** a single `find_stored` helper replaces 7 copies of the lookup.
+- **T-030:** one failing quote lookup no longer stops the whole pass. A deleted quote is remembered as having no number.
+- **T-047:** a quote lookup that keeps failing is retried about once a day, and the warning names the order.
+- **T-049:** a parcel edit whose Books call timed out but went through is recorded in the history.
+- **T-050:** the order search box keeps fast keystrokes.
+- **Declined by the user:** T-048, which would open the back-off window after a 429 on an invoice email.
 
-- **T-084** SYNC no longer pushes a leaf whose Orca edit the pull refused (the OrcaSlicer edit is no longer overwritten).
-- **T-081 / T-087** `POST /filament-trees/orca-cleanup` takes the previewed `names` instead of a count; 400 "Orca Cloud changed" when the stray set differs.
-- **T-082** Pre-cleanup snapshots are `cleanup-<ts>.json` and are never pruned by the push-snapshot rotation.
-- **T-088** A failed delete batch during cleanup returns 200 with `failed > 0` and the snapshot name instead of a 502.
-- **T-089** SYNC has a 10-minute deadline; a lost response shows "outcome unknown"; the button re-enables.
-- **T-090** `GET /sync` returns a `fingerprint`; `POST /sync?fingerprint=` answers 409 when the plan changed since the preview and the page shows a fresh preview. Omitting the parameter keeps the old behavior.
-- **T-091** Sync base on a server without a Bambu Studio bundle offers a "Choose files" button instead of opening the picker by itself.
-- **T-083** The Clean Orca Cloud confirmation lists the preset names it will delete.
-- **T-092** Filament-tree dialogs ignore clicks and keys during their close animation.
-- **T-118** The SYNC response gains `push.held` (leaves held back by a refused Orca edit) and the result modal lists them (new key `filamentTrees.pushHeld`, 16 locales). The preview still lists those keys as pulled: a refusal is only known by attempting the write.
-- **T-119** A cleanup whose final check fails after deleting returns 200 with the snapshot name and unknown counts (new key `filamentTrees.cleanOrcaUnknown`, 16 locales). An auth error at that point is still a 401 without the snapshot name.
-- **T-121** An upload that finds no presets shows the normal 0-result stats; Choose files is disabled while an upload runs.
-- **T-120** (golden re-record only, no observable change) the SYNC fingerprint no longer depends on the order Orca lists profiles.
+## What each round found
+- **Round 1 (setup):** 20 findings.
+  - security 1 (T-016), robustness 4 (T-017 to T-020), cleanliness 7, tests 8.
+  - Six were behavior changes, and all six were approved.
+  - 14 went to triage, and 8 of those were promoted when TRIAGE was lowered to P3.
+- **Round 2:** 21 findings.
+  - security 0.
+  - robustness 1: T-030 (high). A deleted quote froze the board.
+  - cleanliness 9: 2 filed, 7 triaged.
+  - tests 11: 8 filed, 3 triaged. One filed finding was a stamp-race test that could never fail.
+- **Round 3:** 9 findings.
+  - security 0.
+  - robustness 4: T-047, T-049 and T-050 approved, T-048 declined.
+  - cleanliness 2, both triaged.
+  - tests 3: 2 filed, 1 triaged.
 
-Not behavior changes: **T-085** POST /sync and POST /orca-cleanup run one at a time (per process) so concurrent runs cannot
-create duplicate Orca profiles; **T-105, T-112, T-116** tests only.
-
-## What each survey round found
-
-| Round | security | robustness | cleanliness | tests | Outcome |
-|---|---|---|---|---|---|
-| 1 | 3 filed | 8 filed, 3 triaged | 10 triaged | 3 filed, 10 triaged | 14 tasks → iterations 1–5 |
-| 2 | clean | 3 filed, 1 triaged (T-120, later promoted by the user) | 1 triaged | 3 triaged | 4 tasks → iterations 6–7 |
-| 3 | clean | clean | clean | clean | dry |
-
-Scanners (bandit, gitleaks, semgrep rule packs, pip-audit, npm audit): nothing in scope in any round.
-
-## Findings by auditor (filed into the plan)
-
-| Auditor | Filed | DONE | BLOCKED | WONTFIX-AUTO |
+## Findings by auditor (PLAN.md, `plan.py stats`)
+| Auditor | Filed in PLAN.md | DONE | BLOCKED | WONTFIX-AUTO |
 |---|---|---|---|---|
-| audit-security | 3 | 3 | 0 | 0 |
-| audit-robustness | 12 (incl. promoted T-120) | 12 | 0 | 0 |
-| audit-cleanliness | 0 | 0 | 0 | 0 |
-| audit-tests | 3 | 3 | 0 | 0 |
+| audit-security | 1 | 1 | 0 | 0 |
+| audit-robustness | 9 | 8 | 0 | 1 (T-048, declined) |
+| audit-cleanliness | 5 | 4 | 0 | 1 (T-026, no change: the seven mutations differ) |
+| audit-tests | 16 | 16 | 0 | 0 |
 
-## Triaged this campaign (recorded, not worked)
+T-002 (split `_rewrite_parcel`) counts as DONE with no change. T-001's dead-branch removal had already brought that function down to about 70 lines.
 
-28 findings were diverted to TRIAGE.md (P2/P3, no behavior change): robustness 4, cleanliness 11, tests 13. One (T-120) was
-promoted and done, so 27 remain from this campaign. TRIAGE.md also still carries campaign F1's 50 entries, 77 in total
-(robustness 9, cleanliness 40, tests 28), each with full evidence. Promote one with
-`python3 tools/plan.py promote <id> --iteration N` (the flag is required).
+## Triaged (TRIAGE.md, for human review)
+Campaign-wide, 27 findings were triaged at ingest: 14 in round 1, 10 in round 2 and 3 in round 3. 8 of them were promoted into PLAN.md, so 19 remain: 13 from audit-cleanliness and 6 from audit-tests. All are P3. Each has full evidence in TRIAGE.md. Read it with `python tools/plan.py --file TRIAGE.md render --iteration 11`, and move one into the plan with `python tools/plan.py promote <id> --iteration N` (the `--iteration` flag is required).
 
-Worth a look first:
-- T-086 `push_leaves` writes leaf rows it read before the network calls, without the tree lock (a save during a push can lose its export-pending flag; a leaf deleted during a push gives a 500).
-- T-093 `push_leaves` crashes on an Orca filament entry without an id.
-- T-094 `_snapshot` writes non-atomically and blocks the event loop.
-- T-122 POST /sync with a fingerprint plans the pull twice (cost only).
-- ~160 unreferenced `filamentProfiles` i18n keys from the removed preset grid (cleanliness, round 1).
-- Remaining test gaps: push failure-streak reset, snapshot batch sizes, `pickedFiles` zip branch, `usePresetSyncs` failure paths, `ZohoSyncResult` branches.
+- **T-004:** `get_finished_order` repeats `_run`'s Zoho error mapping.
+- **T-005:** `_order_for_payment` repeats the `_require_order` lookup. This one is largely resolved by T-021.
+- **T-006:** OrderBoardPage is one ~400-line component.
+- **T-007:** OrderLinesPanel is one ~340-line component.
+- **T-012:** some frontend order tests use fixed `setTimeout` waits.
+- **T-015:** a parcel edit that completes the order records no `order.packed` event, and no test pins either outcome.
+- **T-022:** the 429 window test is open-coded in 4 modules.
+- **T-023:** the `ZohoRateLimited` → `open_rate_limit_window` handling is hand-rolled in 4 places.
+- **T-024:** the private `actions._row` is used from `order_board_sms`.
+- **T-025:** the `['order-board']` query key is redefined in several places.
+- **T-027:** three edit bars share one submit skeleton.
+- **T-028:** the refusal toast and invalidate code is repeated.
+- **T-029:** ruff SIM105 in `_loop.py`.
+- **T-038:** `_line_changes` with a renamed line is untested.
+- **T-040:** the `orderEventDetail` money detail lines are untested.
+- **T-041:** the `useScan` guards are untested.
+- **T-042:** OrderTrackPage copies AitoTrackPage's timeout query and stage gate.
+- **T-043:** `_with_unused` repeats the tolerant `_num`.
+- **T-045:** the 429 quote test resets the window by hand.
 
 ## Left for humans
+- **OPEN / BLOCKED:** none.
+- **WONTFIX-AUTO:**
+  - T-026: no change made. The seven mutations' callbacks differ, so a shared builder would need flags.
+  - T-048: behavior change declined. A 429 on the invoice email opens no back-off window.
+- **Notes from the verifiers and workers, not filed:**
+  - T-034 pins what happens if an order row vanishes mid-pass, a state production can't reach today.
+  - T-050's in-flight guard ignores an outside navigation to the exact URL still in flight, within a few milliseconds.
+  - The frontend full suite is very load-sensitive: 13 unrelated files flaked at load 70 and all passed alone.
 
-- No task is OPEN, BLOCKED or WONTFIX-AUTO.
-- Known limits of what shipped: the run lock (T-085) is per process; `inert` keyboard blocking (T-092) is asserted by attribute only, not checked in a real browser; nothing was run against live Orca Cloud (all Orca calls are stubbed in tests and probes).
-- After merging: rebuild `static/` (frontend changed), restart the :8000 dev server.
-
-Detailed state (PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log, auditor findings JSON, briefs) is copied to
-`plans/refactor-campaign-ftree-f2/` in the main checkout.
+## Preserved state
+At the user's request, all untracked loop state is copied to `plans/refactor-campaign-orders-o3/` in the main checkout (gitignored). That covers PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log, the findings JSON files and the two briefs.
