@@ -147,7 +147,7 @@ async def edit_lines(
             if was.get(i, 0.0) != edits.get(i, 0.0)
         ] + [{"field": items[i].get("name") or i, "from": 0, "to": q} for i, q in new.items()]
         total_from = detail.get("total")
-        await _best_effort_refresh(db, salesorder_id, number)
+        refreshed = await _best_effort_refresh(db, salesorder_id, number)
         stored = (await db.execute(sync._stored_query(salesorder_id))).scalar_one_or_none()
         await _log(
             db,
@@ -156,7 +156,7 @@ async def edit_lines(
             by,
             changes=changes,
             total_from=total_from,
-            total_to=((stored.header or {}).get("total") if stored is not None else None),
+            total_to=((stored.detail or {}).get("total") if refreshed and stored is not None else None),
         )
     try:
         return await _row(db, salesorder_id)

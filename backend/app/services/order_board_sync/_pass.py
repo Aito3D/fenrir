@@ -149,9 +149,9 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
         get = zoho_service.get_salesorder if doc.kind == "salesorder" else zoho_service.get_purchaseorder
         began = time.monotonic()
         fetched = await get(db, doc.zoho_id)
+        await db.refresh(doc)  # the copy loaded at the pass start may predate a write: diff against what is stored now
         if _written_at.get(doc.zoho_id, -1.0) >= began and doc.kind == "salesorder":
-            await db.refresh(doc)  # a write here is newer than this copy: keep it, and the pending mark
-            continue
+            continue  # a write here is newer than this copy: keep it, and the pending mark
         previous = doc.detail
         retainers = await _retainers(db, fetched, previous, payments) if doc.kind == "salesorder" else {}
         doc.detail = {**fetched, "_fetched_at": _now(), **retainers}

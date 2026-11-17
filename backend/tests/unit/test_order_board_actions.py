@@ -2191,6 +2191,45 @@ async def test_omitted_line_is_removed(db_session, lines_edit):
     assert any(c["to"] == 0 for c in events[0].changes) and "total_from" in events[0].detail
 
 
+def _repricing_update(lines_edit, monkeypatch, *, break_reads=False):
+    """Books reprices the order to 777 on the edit; optionally every read after the write fails."""
+    write = zoho_service.update_salesorder
+
+    async def update_salesorder(db, salesorder_id, body):
+        out = await write(db, salesorder_id, body)
+        lines_edit.orders[salesorder_id]["total"] = 777.0
+        if break_reads:
+
+            async def boom(db, salesorder_id):
+                raise ZohoUpstreamError("boom")
+
+            monkeypatch.setattr(zoho_service, "get_salesorder", boom)
+        return out
+
+    monkeypatch.setattr(zoho_service, "update_salesorder", update_salesorder)
+
+
+@pytest.mark.asyncio
+async def test_edit_event_records_the_new_total_from_the_refreshed_copy(db_session, lines_edit, monkeypatch):
+    await _board(db_session, lines_edit, _edit_order())
+    _repricing_update(lines_edit, monkeypatch)
+    await actions.edit_lines(
+        db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}, {"line_id": "l2", "quantity": 1}]
+    )
+    detail = (await events_of(db_session, "so1"))[0].detail
+    assert detail["total_to"] == 777.0 and detail["total_from"] != 777.0
+
+
+@pytest.mark.asyncio
+async def test_edit_event_total_to_is_none_when_the_reread_failed(db_session, lines_edit, monkeypatch):
+    await _board(db_session, lines_edit, _edit_order())
+    _repricing_update(lines_edit, monkeypatch, break_reads=True)
+    await actions.edit_lines(
+        db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}, {"line_id": "l2", "quantity": 1}]
+    )
+    assert (await events_of(db_session, "so1"))[0].detail["total_to"] is None
+
+
 @pytest.mark.asyncio
 async def test_floor_uses_books_cumulative_figures(db_session, lines_edit):
     await _board(
@@ -3201,3 +3240,37 @@ async def test_a_failed_prep_stamp_delete_after_a_parcel_is_logged_and_the_numbe
     assert "OperationalError" in caplog.text
     assert parcels.writes.count("create_package") == 1
     assert (await _doc(db_session, "so1")).pending is True
+
+
+@pytest.mark.asyncio
+async def test_no_books_re_read_inside_the_429_window_and_the_order_is_left_pending(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1))
+    pl = await _pick(db_session, "so1", {"l1": 1})
+    parcels.create_error = _rate_limited()
+    reads = []
+    real = zoho_service.get_salesorder
+
+    async def counting(db, salesorder_id):
+        reads.append(salesorder_id)
+        return await real(db, salesorder_id)
+
+    monkeypatch.setattr(zoho_service, "get_salesorder", counting)
+    with pytest.raises(ZohoRateLimited):
+        await actions.create_parcel(db_session, "so1", pl, {"l1": 1})
+    assert reads == []
+    assert (await _doc(db_session, "so1")).pending is True
+
+
+@pytest.mark.asyncio
+async def test_the_best_effort_re_read_still_runs_outside_the_window(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1))
+    reads = []
+    real = zoho_service.get_salesorder
+
+    async def counting(db, salesorder_id):
+        reads.append(salesorder_id)
+        return await real(db, salesorder_id)
+
+    monkeypatch.setattr(zoho_service, "get_salesorder", counting)
+    await actions._common._best_effort_refresh(db_session, "so1", "SO-1")
+    assert reads == ["so1"]
