@@ -11811,6 +11811,9 @@ export default {
       bad_quantity: '数量无效',
       too_many: '超出订单仍允许的数量',
       picklist_shared: '拣货单与其他行共用，请在 Books 中完成',
+      nothing_to_pack: '这些行没有可打包的内容',
+      unknown_package: '此包裹已不在订单中，请重新查看',
+      unknown_picklist: '此拣货单已不在订单中，请重新查看',
     },
     cancel: {
       label: "取消订单",

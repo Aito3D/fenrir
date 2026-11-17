@@ -11852,6 +11852,9 @@ export default {
       bad_quantity: 'een aantal is ongeldig',
       too_many: 'meer stuks dan de order nog toestaat',
       picklist_shared: 'de picklijst wordt gedeeld met andere regels, rond die af in Books',
+      nothing_to_pack: 'er is niets in te pakken op deze regels',
+      unknown_package: 'dit pakket staat niet meer op de bestelling, kijk opnieuw',
+      unknown_picklist: 'deze picklijst staat niet meer op de bestelling, kijk opnieuw',
     },
     cancel: {
       label: "Bestelling annuleren",

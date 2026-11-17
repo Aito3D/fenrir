@@ -5,7 +5,8 @@ import { ApiError } from '../../api/client';
 export const isRefused = (e: unknown): boolean => e instanceof ApiError && (e.status === 400 || e.status === 404 || e.status === 409);
 
 const REASON_CODES = ['version', 'below_floor', 'unknown_item', 'service_line', 'nothing_changed', 'package_shipped', 'package_changed',
-  'picklist_open', 'unknown_line', 'bad_quantity', 'too_many', 'picklist_shared'];
+  'picklist_open', 'unknown_line', 'bad_quantity', 'too_many', 'picklist_shared',
+  'nothing_to_pack', 'unknown_package', 'unknown_picklist'];
 
 /** The refusal code: the server sends it as the plain-string detail, which becomes the message. */
 const reasonCode = (e: ApiError): string | null => {

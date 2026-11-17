@@ -11827,6 +11827,9 @@ export default {
       bad_quantity: '数量が無効です',
       too_many: '注文で残っている数量を超えています',
       picklist_shared: 'ピッキングリストが他の明細と共有されています。Books で完了してください',
+      nothing_to_pack: 'これらの明細には梱包するものがありません',
+      unknown_package: 'この荷物は注文にありません。もう一度確認してください',
+      unknown_picklist: 'このピッキングリストは注文にありません。もう一度確認してください',
     },
     cancel: {
       label: "注文をキャンセル",

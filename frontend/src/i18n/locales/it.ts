@@ -11813,6 +11813,9 @@ export default {
       bad_quantity: 'una quantità non è valida',
       too_many: 'più unità di quante l’ordine ne consenta ancora',
       picklist_shared: 'la lista di prelievo è condivisa con altre righe, completala in Books',
+      nothing_to_pack: 'non c’è nulla da imballare su queste righe',
+      unknown_package: 'questo pacco non è più nell’ordine, controlla di nuovo',
+      unknown_picklist: 'questa lista di prelievo non è più nell’ordine, controlla di nuovo',
     },
     cancel: {
       label: "Annulla ordine",

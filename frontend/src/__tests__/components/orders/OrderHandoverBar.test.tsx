@@ -206,7 +206,7 @@ describe('the hand-over bar', () => {
 
 describe('the hand-over bar, answers and refusals', () => {
   const confirmText = 'Handed to the customer';
-  it.each([[400, 'unknown_package'], [409, 'busy']])('a %i refusal says the order changed and keeps the bar open', async (status, detail) => {
+  it.each([[400, 'unlisted_refusal'], [409, 'busy']])('a %i refusal says the order changed and keeps the bar open', async (status, detail) => {
     const user = userEvent.setup();
     servePreview(preview());
     post(() => HttpResponse.json({ detail }, { status }));

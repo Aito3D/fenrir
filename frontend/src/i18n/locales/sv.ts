@@ -11885,6 +11885,9 @@ errors: {
       bad_quantity: 'ett antal är ogiltigt',
       too_many: 'fler enheter än ordern fortfarande tillåter',
       picklist_shared: 'plocklistan delas med andra rader, slutför den i Books',
+      nothing_to_pack: 'det finns inget att packa på dessa rader',
+      unknown_package: 'det här paketet finns inte längre på ordern, titta igen',
+      unknown_picklist: 'den här plocklistan finns inte längre på ordern, titta igen',
     },
     cancel: {
       label: "Avbryt order",

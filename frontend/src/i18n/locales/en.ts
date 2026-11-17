@@ -11884,6 +11884,9 @@ export default {
       bad_quantity: 'a quantity is not valid',
       too_many: 'more units than the order still allows',
       picklist_shared: 'the picklist is shared with other rows, finish it in Books',
+      nothing_to_pack: 'there is nothing to pack on these rows',
+      unknown_package: 'this parcel is no longer on the order, look again',
+      unknown_picklist: 'this picklist is no longer on the order, look again',
     },
     cancel: {
       label: "Cancel order",

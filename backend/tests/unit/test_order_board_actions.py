@@ -2703,54 +2703,6 @@ async def test_edit_parcel_refuses_without_writing(db_session, parcels, setup, v
 
 
 @pytest.mark.asyncio
-async def test_replace_mode_deletes_and_recreates(db_session, parcels, monkeypatch):
-    monkeypatch.setattr(parcel_edit, "_PARCEL_EDIT_REPLACES", True)
-    await _board(db_session, parcels, _packed(parcels))
-    row = await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3})
-    assert _labels(parcels) == ["delete_package", "picklist", "create_package"]
-    assert parcels.bodies["picklist"]["line_items"] == [
-        {"line_item_id": "r1", "quantity_to_be_picked": 3, "quantity_picked": 3}
-    ]
-    assert parcels.created[-1][2] == [{"so_line_item_id": "l1", "quantity": 3, "picklist_item_id": "r1"}]
-    assert row["lines"][0]["packed_waiting"] == 3
-
-
-@pytest.mark.asyncio
-async def test_replace_mode_recreates_a_picklist_books_will_not_change(db_session, parcels, monkeypatch):
-    monkeypatch.setattr(parcel_edit, "_PARCEL_EDIT_REPLACES", True)
-    await _board(db_session, parcels, _packed(parcels))
-    parcels.fail_step, parcels.fail_with = "picklist", ZohoRequestRejected
-    await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
-    assert _labels(parcels) == [
-        "delete_package",
-        "delete_picklist",
-        "create_picklist",
-        "complete_picklist",
-        "create_package",
-    ]
-    assert parcels.created[-1][2] == [{"so_line_item_id": "l1", "quantity": 1, "picklist_item_id": "pl1-l1"}]
-
-
-@pytest.mark.asyncio
-async def test_replace_mode_emptying_the_only_parcel_deletes_its_picklist(db_session, parcels, monkeypatch):
-    monkeypatch.setattr(parcel_edit, "_PARCEL_EDIT_REPLACES", True)
-    await _board(db_session, parcels, _packed(parcels))
-    await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {})
-    assert parcels.steps == [("delete_package", "p1"), ("delete_picklist", "pl1")]
-
-
-@pytest.mark.asyncio
-async def test_replace_mode_keeps_a_picklist_a_sibling_parcel_boxed_from(db_session, parcels, monkeypatch):
-    monkeypatch.setattr(parcel_edit, "_PARCEL_EDIT_REPLACES", True)
-    await _board(db_session, parcels, _packed(parcels, qty=5, picked=5, parcels_=(("p1", 2), ("p2", 3))))
-    parcels.fail_step, parcels.fail_with = "picklist", ZohoRequestRejected
-    with pytest.raises(ZohoRequestRejected):
-        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
-    assert _labels(parcels) == ["delete_package"]
-    assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 5  # p2's row untouched
-
-
-@pytest.mark.asyncio
 async def test_an_edit_that_takes_the_order_off_the_board_returns_nothing(db_session, lines_edit, monkeypatch):
     await _board(db_session, lines_edit, _edit_order())
     reads = iter([await actions._row(db_session, "so1")])  # the floors read; the read after the write finds nothing
@@ -2949,3 +2901,128 @@ async def test_invoice_preview_names_a_blocking_draft_and_survives_books(db_sess
     await sync.run_pass(db_session)
     books.errors["get_package"] = ZohoUpstreamError("down")
     assert (await actions.invoice_preview(db_session, "so1"))["available"] is False
+
+
+# --- Parcel edit: refusals and partial failures ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_gone_from_books_is_unknown(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    del parcels.packages["p1"]
+    with pytest.raises(actions.OrderActionRefused, match="unknown_package"):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3})
+    assert parcels.steps == []
+    assert sync_common._rate_limited_until == 0.0
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_parcel_read_is_busy_and_opens_the_window(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+
+    async def limited(db, package_id):
+        raise _rate_limited()
+
+    monkeypatch.setattr(zoho_service, "get_package", limited)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3})
+    _assert_window_open()
+    assert parcels.steps == []
+
+
+@pytest.mark.asyncio
+async def test_busy_zoho_gives_no_parcel_content(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    parcels.meter = sync.CALL_CEILING
+    reads = parcels.calls["detail"]
+    with pytest.raises(sync.ZohoBusy):
+        await actions.package_content(db_session, "so1", "p1")
+    assert parcels.calls["detail"] == reads
+
+
+def _no_picklist_row(zoho):
+    zoho.packages["p1"]["line_items"][0]["picklist_item_id"] = ""
+
+
+def _row_on_no_picklist(zoho):
+    zoho.packages["p1"]["line_items"][0]["picklist_item_id"] = "zz"
+
+
+def _split_over_two_picklists(zoho):
+    doc = zoho.orders["so1"]
+    doc["picklists"].append({"picklist_id": "pl2", "picklist_number": "PL-00002", "status": "completed"})
+    row = {**zoho.picklists["pl1"]["line_items"][0], "line_item_id": "r2", "so_line_item_id": "l2"}
+    zoho.picklists["pl2"] = {**zoho.picklists["pl1"], "picklist_id": "pl2", "line_items": [row]}
+    zoho.packages["p1"]["line_items"].append({"so_line_item_id": "l2", "quantity": 1, "picklist_item_id": "r2"})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("setup", [_no_picklist_row, _row_on_no_picklist, _split_over_two_picklists])
+async def test_a_parcel_without_one_picklist_of_its_own_is_refused(db_session, parcels, setup):
+    await _board(db_session, parcels, _packed(parcels))
+    setup(parcels)
+    with pytest.raises(actions.OrderActionRefused, match="picklist_shared"):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3})
+    assert parcels.steps == []
+
+
+@pytest.mark.asyncio
+async def test_a_picklist_row_that_never_appeared_stops_the_edit_before_the_package_write(
+    db_session, parcels, monkeypatch
+):
+    await _board(db_session, parcels, _packed(parcels))
+
+    async def swallowed(db, picklist_id, body):  # Books accepted the call but the new row is not on the picklist
+        parcels.steps.append(("picklist", body))
+
+    monkeypatch.setattr(zoho_service, "update_picklist", swallowed)
+    with pytest.raises(ZohoUpstreamError, match="picklist row missing"):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 2, "l2": 1})
+    assert _labels(parcels) == ["picklist"]  # the package was never written
+    assert await events_of(db_session, "so1") == []
+
+
+@pytest.mark.asyncio
+async def test_a_stale_marker_is_dropped_by_a_save_with_no_change(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    stale = {"old": {"l1": 2}, "new": {"l1": 3}}  # the parcel holds 2, not what the marked edit asked for
+    db_session.add(OrderBoardDoc(kind="parcel_edit", zoho_id="p1", header=stale))
+    await db_session.commit()
+    with pytest.raises(actions.OrderActionRefused, match="nothing_changed"):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 2})
+    assert await parcel_edit._marker(db_session, "p1") is None
+    assert parcels.steps == []
+
+
+@pytest.mark.asyncio
+async def test_a_marker_that_cannot_be_cleared_is_logged_and_rolled_back(caplog):
+    class Broken:
+        rolled_back = False
+
+        async def execute(self, *_):
+            raise RuntimeError("db gone")
+
+        async def rollback(self):
+            self.rolled_back = True
+
+    broken = Broken()
+    with caplog.at_level("WARNING"):
+        await parcel_edit._unmark(broken, "p1")
+    assert broken.rolled_back
+    assert "clearing a parcel edit marker failed for p1 (RuntimeError)" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_edit_that_takes_the_order_off_the_board_returns_nothing(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+    real, calls = parcel_edit._row, []
+
+    async def vanishing(db, salesorder_id):
+        calls.append(salesorder_id)
+        if len(calls) > 1:  # the read for the editor's floors works; the read after the write finds nothing
+            raise actions.OrderNotOnBoard(salesorder_id)
+        return await real(db, salesorder_id)
+
+    monkeypatch.setattr(parcel_edit, "_row", vanishing)
+    assert await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3}) == {}
+    assert _labels(parcels) == ["picklist", "parcel"]

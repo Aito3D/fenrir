@@ -11755,6 +11755,9 @@ export default {
       bad_quantity: 'bir miktar geçersiz',
       too_many: 'siparişin hâlâ izin verdiğinden fazla adet',
       picklist_shared: 'toplama listesi başka satırlarla paylaşılıyor, Books’ta tamamlayın',
+      nothing_to_pack: 'bu satırlarda paketlenecek bir şey yok',
+      unknown_package: 'bu paket artık siparişte değil, yeniden bakın',
+      unknown_picklist: 'bu toplama listesi artık siparişte değil, yeniden bakın',
     },
     cancel: {
       label: "Siparişi iptal et",

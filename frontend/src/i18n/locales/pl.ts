@@ -12033,6 +12033,9 @@ export default {
       bad_quantity: 'ilość jest nieprawidłowa',
       too_many: 'więcej sztuk, niż zamówienie jeszcze pozwala',
       picklist_shared: 'lista kompletacji jest współdzielona z innymi pozycjami, zakończ ją w Books',
+      nothing_to_pack: 'na tych pozycjach nie ma nic do spakowania',
+      unknown_package: 'ta paczka nie jest już w zamówieniu, sprawdź ponownie',
+      unknown_picklist: 'ta lista kompletacji nie jest już w zamówieniu, sprawdź ponownie',
     },
     cancel: {
       label: "Anuluj zamówienie",

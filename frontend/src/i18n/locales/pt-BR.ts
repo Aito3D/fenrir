@@ -11813,6 +11813,9 @@ export default {
       bad_quantity: 'uma quantidade não é válida',
       too_many: 'mais unidades do que o pedido ainda permite',
       picklist_shared: 'a lista de separação é compartilhada com outras linhas, conclua-a no Books',
+      nothing_to_pack: 'não há nada para embalar nestas linhas',
+      unknown_package: 'este pacote não está mais no pedido, olhe de novo',
+      unknown_picklist: 'esta lista de separação não está mais no pedido, olhe de novo',
     },
     cancel: {
       label: "Cancelar pedido",

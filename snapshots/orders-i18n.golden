@@ -2,7 +2,7 @@
 ### stdout:
 locale files (16): de.ts en.ts es.ts fr.ts it.ts ja.ts ko.ts nl.ts pl.ts pt-BR.ts ru.ts sv.ts tr.ts uk.ts zh-CN.ts zh-TW.ts
 extra literal keys read by the scope (53): aito.contacted aito.history.title aito.invoiceEmailFailed aito.invoiceEmailed aito.panelTabAttention aito.panelTabDetails aito.payment.linkTitle aito.sendInvoice aito.sendInvoiceLoadFailed aito.sendInvoiceTitle aito.smsGenerateFailed aito.smsGenerating aito.smsMaybeSent aito.smsMessageLabel aito.smsNoPhone aito.smsPickup aito.smsPickupShort aito.smsRelayUnreachable aito.smsSend aito.smsSendFailed aito.smsSent aito.smsTitle aito.track.codeTooMany aito.track.error aito.track.invalidEnterCode aito.track.invalidTitle aito.track.order.appHint aito.track.order.invalidBody aito.track.order.line.handedOn aito.track.order.linesHeading aito.track.order.pay.heading aito.track.order.pay.left aito.track.order.pay.methods aito.track.order.pay.paidSub aito.track.order.pay.settled aito.track.order.pay.total aito.track.order.pickup aito.track.order.pickupLink aito.track.order.placed aito.track.order.question aito.track.order.ref aito.track.order.showAll aito.track.order.title aito.track.retry aito.track.retrying aito.track.updated aito.trackingCopied aito.trackingCopy aito.trackingCopyFailed aito.trackingNeedsExternalUrl common.cancel common.error common.errorLoading
---- en values (428 keys)
+--- en values (431 keys)
 aito.contacted = "Contacted"
 aito.history.title = "Activity"
 aito.invoiceEmailFailed = "Could not send the invoice"
@@ -140,6 +140,7 @@ orders.empty.noneHint = "Every customer order has shipped."
 orders.err.bad_quantity = "a quantity is not valid"
 orders.err.below_floor = "a quantity is under what already left or is billed"
 orders.err.nothing_changed = "nothing changed"
+orders.err.nothing_to_pack = "there is nothing to pack on these rows"
 orders.err.package_changed = "the parcel changed in Books, look again"
 orders.err.package_shipped = "this parcel was already handed over"
 orders.err.picklist_open = "a picklist is still open on this order, finish it first"
@@ -148,6 +149,8 @@ orders.err.service_line = "a service line cannot change here"
 orders.err.too_many = "more units than the order still allows"
 orders.err.unknown_item = "unknown item"
 orders.err.unknown_line = "a line is no longer on the order, look again"
+orders.err.unknown_package = "this parcel is no longer on the order, look again"
+orders.err.unknown_picklist = "this picklist is no longer on the order, look again"
 orders.err.version = "the order changed in Books, look again"
 orders.finished.busyRetrying = "Zoho is busy, trying again…"
 orders.finished.loadFailed = "Could not load this order from Zoho."
@@ -432,7 +435,7 @@ orders.watch.off = "Watch"
 orders.watch.on = "Watching"
 settings.tabs.orders = "Orders"
 
---- de.ts keys=428 values-sha256=ea63b249518ff29f
+--- de.ts keys=431 values-sha256=dfdc0971f068bee4
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -573,6 +576,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -581,6 +585,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -865,7 +871,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- en.ts keys=428 values-sha256=dc4375840367a44b
+--- en.ts keys=431 values-sha256=a1039faa360edec4
 missing=[] extra=[]
 same-as-en=0 non-string=[]
 placeholder-drift=[]
@@ -1006,6 +1012,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -1014,6 +1021,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -1298,7 +1307,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- es.ts keys=428 values-sha256=a972b0c9a70b1985
+--- es.ts keys=431 values-sha256=fe7121f9cf2392ac
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -1439,6 +1448,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -1447,6 +1457,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -1731,7 +1743,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- fr.ts keys=428 values-sha256=7d4b3199229e886c
+--- fr.ts keys=431 values-sha256=a2e93bf61f67c3d2
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
@@ -1872,6 +1884,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -1880,6 +1893,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -2164,7 +2179,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- it.ts keys=428 values-sha256=e9851cc0e4c5b7a9
+--- it.ts keys=431 values-sha256=35d5429ff05b27c9
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -2305,6 +2320,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -2313,6 +2329,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -2597,7 +2615,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- ja.ts keys=428 values-sha256=64bbc76130a46b38
+--- ja.ts keys=431 values-sha256=c022c507b194bda8
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -2738,6 +2756,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -2746,6 +2765,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -3030,7 +3051,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- ko.ts keys=428 values-sha256=04d28671a79a119c
+--- ko.ts keys=431 values-sha256=457c00cc10bc33ea
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -3171,6 +3192,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -3179,6 +3201,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -3463,7 +3487,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- nl.ts keys=428 values-sha256=260d7e62b85e18f9
+--- nl.ts keys=431 values-sha256=b831ee7aaf6c593e
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -3604,6 +3628,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -3612,6 +3637,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -3896,7 +3923,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- pl.ts keys=428 values-sha256=e21c036cf2a9a456
+--- pl.ts keys=431 values-sha256=caccc4f11667a859
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -4037,6 +4064,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -4045,6 +4073,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -4329,7 +4359,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- pt-BR.ts keys=428 values-sha256=aa18f35e3a2f4d86
+--- pt-BR.ts keys=431 values-sha256=95412c1b0e2a069e
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -4470,6 +4500,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -4478,6 +4509,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -4762,7 +4795,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- ru.ts keys=428 values-sha256=1d963de0b5ec1c15
+--- ru.ts keys=431 values-sha256=74add1271fed4605
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -4903,6 +4936,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -4911,6 +4945,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -5195,7 +5231,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- sv.ts keys=428 values-sha256=b65929df9b7c75b8
+--- sv.ts keys=431 values-sha256=921d42f576a9b6a7
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -5336,6 +5372,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -5344,6 +5381,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -5628,7 +5667,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- tr.ts keys=428 values-sha256=514b80b0c5059251
+--- tr.ts keys=431 values-sha256=0ea2971d8a470b0d
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -5769,6 +5808,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -5777,6 +5817,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -6061,7 +6103,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- uk.ts keys=428 values-sha256=e33699860488559c
+--- uk.ts keys=431 values-sha256=02c8b99e4c5259dd
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -6202,6 +6244,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -6210,6 +6253,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -6494,7 +6539,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- zh-CN.ts keys=428 values-sha256=891c698d46c4074c
+--- zh-CN.ts keys=431 values-sha256=06eb130408922c11
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -6635,6 +6680,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -6643,6 +6689,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
@@ -6927,7 +6975,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- zh-TW.ts keys=428 values-sha256=aefed00bf7cd4dca
+--- zh-TW.ts keys=431 values-sha256=a75edff4faa9801b
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -7068,6 +7116,7 @@ orders.empty.noneHint
 orders.err.bad_quantity
 orders.err.below_floor
 orders.err.nothing_changed
+orders.err.nothing_to_pack
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -7076,6 +7125,8 @@ orders.err.service_line
 orders.err.too_many
 orders.err.unknown_item
 orders.err.unknown_line
+orders.err.unknown_package
+orders.err.unknown_picklist
 orders.err.version
 orders.finished.busyRetrying
 orders.finished.loadFailed
