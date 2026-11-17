@@ -1066,6 +1066,11 @@ _HMS_SEVERITY_OVERRIDES: dict[str, int] = {
     **{f"18{unit:02X}240000020009": 3 for unit in range(8)},  # AMS-HT A-H
 }
 
+# Command responses whose content the debug log leaves out (#3531). push_status
+# is the printer's status, arriving every second and logged field by field;
+# project_file carries the download URL of a print, which may be a signed one.
+_COMMANDS_LOGGED_BY_NAME_ONLY: frozenset[str] = frozenset({"push_status", "project_file"})
+
 
 @dataclass
 class KProfile:
@@ -2927,6 +2932,14 @@ class BambuMQTTClient:
             if "command" in print_data:
                 cmd = print_data.get("command")
                 logger.debug("[%s] Received command response: %s", self.serial_number, cmd)
+                if cmd not in _COMMANDS_LOGGED_BY_NAME_ONLY:
+                    # The printer reports back commands sent from its own
+                    # screen too, and this is the only place their content can
+                    # be seen: H3C Unload All is one command whose fields are
+                    # not documented anywhere (#3531).
+                    logger.debug(
+                        "[%s] %s content: %s", self.serial_number, cmd, json.dumps(print_data, default=str)[:4000]
+                    )
                 if cmd in ("extrusion_cali_set", "extrusion_cali_del"):
                     # INFO, not debug: this is the printer's verdict on a write
                     # the user just made, and it was invisible in support

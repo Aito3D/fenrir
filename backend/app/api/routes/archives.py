@@ -2120,6 +2120,7 @@ async def _sum_live_plug_totals(db: AsyncSession) -> float:
     from backend.app.models.smart_plug import SmartPlug
     from backend.app.services.homeassistant import homeassistant_service
     from backend.app.services.mqtt_relay import mqtt_relay
+    from backend.app.services.plug_energy import mqtt_has_lifetime_counter
     from backend.app.services.rest_smart_plug import rest_smart_plug_service
     from backend.app.services.tasmota import tasmota_service
 
@@ -2141,9 +2142,13 @@ async def _sum_live_plug_totals(db: AsyncSession) -> float:
             energy = await homeassistant_service.get_energy(plug)
             return energy["total"] if energy and energy.get("total") is not None else 0.0
         if plug.plug_type == "mqtt":
-            # MQTT plugs only expose today's counter, not lifetime.
+            # The lifetime counter when the plug has one (#3582), else its one
+            # energy value, as before.
             mqtt_data = mqtt_relay.smart_plug_service.get_plug_data(plug.id)
-            return mqtt_data.energy if mqtt_data and mqtt_data.energy is not None else 0.0
+            if not mqtt_data:
+                return 0.0
+            value = mqtt_data.energy_total if mqtt_has_lifetime_counter(plug) else mqtt_data.energy
+            return value if value is not None else 0.0
         if plug.plug_type == "rest":
             # A REST device that exposes only a lifetime counter (Shelly
             # ``aenergy.total`` via ``rest_energy_total_path``) returns no
