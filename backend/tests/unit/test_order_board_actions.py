@@ -3067,3 +3067,137 @@ async def test_a_parcel_edit_that_takes_the_order_off_the_board_returns_nothing(
     monkeypatch.setattr(parcel_edit, "_row", vanishing)
     assert await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3}) == {}
     assert _labels(parcels) == ["picklist", "parcel"]
+
+
+_PREVIEW_UNKNOWN = {
+    "available": False,
+    "credit": 0.0,
+    "drafts": [],
+    "packed": {"units": 0.0, "invoice_total": None, "manual_reason": None},
+    "whole": {"units": 0.0, "invoice_total": None, "manual_reason": None},
+}
+
+
+@pytest.mark.asyncio
+async def test_invoice_preview_of_a_package_with_an_unexpected_status_is_unknown(db_session, books):
+    await _ready(db_session, books)
+    books.packages["pk1"]["status"] = "lost"  # the stored copy still says not_shipped
+    assert await actions.invoice_preview(db_session, "so1") == _PREVIEW_UNKNOWN
+    assert "invoice_prefill" not in _names(books)
+
+
+@pytest.mark.asyncio
+async def test_invoice_preview_skips_a_parcel_without_an_id_and_one_that_has_shipped_since(db_session, books):
+    handover_order(books, qty=3, box=2)
+    books.orders["so1"]["packages"].append({"package_number": "PKG-X", "status": "not_shipped", "quantity": 1})
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    books.log.clear()
+    books.packages["pk1"]["status"] = "shipped"  # shipped since the stored copy: already in quantity_shipped
+    preview = await actions.invoice_preview(db_session, "so1")
+    assert _calls(books, "get_package") == [("pk1",)]  # the id-less parcel is never read
+    assert preview["available"] is True
+    assert preview["packed"]["units"] == 0.0
+    assert preview["whole"]["units"] == 3.0
+
+
+@pytest.mark.asyncio
+async def test_invoice_preview_is_unknown_while_books_is_busy(db_session, books):
+    await _ready(db_session, books)
+    books.meter = sync.CALL_CEILING
+    assert await actions.invoice_preview(db_session, "so1") == _PREVIEW_UNKNOWN
+    assert books.log == []
+
+
+@pytest.mark.asyncio
+async def test_invoice_preview_is_unknown_when_books_refuses_the_prefill_for_owed_units(db_session, books):
+    await _ready(db_session, books)
+    books.prefill_refused = True
+    assert await actions.invoice_preview(db_session, "so1") == _PREVIEW_UNKNOWN
+    assert _calls(books, "invoice_prefill") == [("so1",)]
+
+
+@pytest.mark.asyncio
+async def test_invoice_preview_is_unknown_and_opens_the_window_on_a_rate_limited_read(db_session, books):
+    await _ready(db_session, books)
+    books.errors["get_package"] = _rate_limited()
+    assert await actions.invoice_preview(db_session, "so1") == _PREVIEW_UNKNOWN
+    _assert_window_open()
+
+
+@pytest.mark.asyncio
+async def test_search_items_while_zoho_is_busy_does_not_call_books(db_session, lines_edit, monkeypatch):
+    sync.open_rate_limit_window(_rate_limited())
+    asked = []
+
+    async def list_items(db, search_text):
+        asked.append(search_text)
+        return []
+
+    monkeypatch.setattr(zoho_service, "list_items", list_items)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.search_items(db_session, "item")
+    assert asked == []
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_item_search_is_busy_and_opens_the_window(db_session, lines_edit, monkeypatch):
+    async def list_items(db, search_text):
+        raise _rate_limited()
+
+    monkeypatch.setattr(zoho_service, "list_items", list_items)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.search_items(db_session, "item")
+    _assert_window_open()
+
+
+@pytest.mark.asyncio
+async def test_naming_a_line_twice_is_refused_without_writing(db_session, lines_edit):
+    await _board(db_session, lines_edit, _edit_order())
+    with pytest.raises(actions.OrderActionRefused, match="unknown_line"):
+        await actions.edit_lines(
+            db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}, {"line_id": "l1", "quantity": 4}]
+        )
+    assert "lines" not in lines_edit.bodies
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_item_lookup_on_edit_is_busy_and_writes_nothing(db_session, lines_edit, monkeypatch):
+    await _board(db_session, lines_edit, _edit_order())
+
+    async def list_items_by_ids(db, ids):
+        raise _rate_limited()
+
+    monkeypatch.setattr(zoho_service, "list_items_by_ids", list_items_by_ids)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.edit_lines(
+            db_session,
+            "so1",
+            VERSION,
+            [{"line_id": "l1", "quantity": 2}, {"line_id": "l2", "quantity": 1}, {"item_id": "B", "quantity": 1}],
+        )
+    _assert_window_open()
+    assert "lines" not in lines_edit.bodies
+
+
+@pytest.mark.asyncio
+async def test_a_failed_prep_stamp_delete_after_a_parcel_is_logged_and_the_number_returned(
+    db_session, parcels, monkeypatch, caplog
+):
+    await _board(db_session, parcels, order(1, qty=2))
+    pl = await _pick(db_session, "so1", {"l1": 1})
+    await actions.stamp_print(db_session, "so1", "paul")
+    real_execute = db_session.execute
+
+    async def execute(stmt, *a, **kw):
+        if str(stmt).startswith("DELETE"):
+            raise OperationalError("DELETE", {}, Exception("database is locked"))
+        return await real_execute(stmt, *a, **kw)
+
+    monkeypatch.setattr(db_session, "execute", execute)
+    with caplog.at_level("WARNING"):
+        assert await actions.create_parcel(db_session, "so1", pl, {"l1": 1}) == "PKG-00001"
+    assert "bookkeeping after a parcel failed" in caplog.text
+    assert "OperationalError" in caplog.text
+    assert parcels.writes.count("create_package") == 1
+    assert (await _doc(db_session, "so1")).pending is True

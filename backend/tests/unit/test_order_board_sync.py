@@ -532,19 +532,22 @@ async def test_saving_settings_wakes_the_loop_instead_of_waiting_out_the_interva
     """Turning sync on, or raising the age limit, must not show a loading page
     for up to an hour while nothing runs."""
     turns = []
+    turn_ran = asyncio.Event()
 
     async def fake_iteration(db):
         turns.append(1)
+        turn_ran.set()
         return 3600.0
 
     monkeypatch.setattr(sync_loop, "_iteration", fake_iteration)
     monkeypatch.setattr(sync_loop, "async_session", _NoSession)
     loop_task = asyncio.create_task(sync.run_loop())
     try:
-        await asyncio.sleep(0.05)
+        await asyncio.wait_for(turn_ran.wait(), 5)
         assert len(turns) == 1
+        turn_ran.clear()
         await sync.save_settings(db_session, sync.OrderBoardSettings(True, 15, 365, []))
-        await asyncio.sleep(0.05)
+        await asyncio.wait_for(turn_ran.wait(), 5)
         assert len(turns) == 2
     finally:
         loop_task.cancel()
@@ -554,9 +557,12 @@ async def test_saving_settings_wakes_the_loop_instead_of_waiting_out_the_interva
 @pytest.mark.asyncio
 async def test_a_loop_turn_that_raises_does_not_end_the_loop(monkeypatch):
     turns = []
+    two_turns = asyncio.Event()
 
     async def failing_iteration(db):
         turns.append(1)
+        if len(turns) >= 2:
+            two_turns.set()
         raise RuntimeError("database is locked")
 
     monkeypatch.setattr(sync_loop, "_iteration", failing_iteration)
@@ -564,7 +570,7 @@ async def test_a_loop_turn_that_raises_does_not_end_the_loop(monkeypatch):
     monkeypatch.setattr(sync_loop, "PENDING_PAUSE_SECONDS", 0.01)
     loop_task = asyncio.create_task(sync.run_loop())
     try:
-        await asyncio.sleep(0.1)
+        await asyncio.wait_for(two_turns.wait(), 5)
         assert len(turns) >= 2
     finally:
         loop_task.cancel()
