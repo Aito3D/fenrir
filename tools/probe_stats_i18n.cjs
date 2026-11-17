@@ -11,9 +11,9 @@
 // and stays quiet on a reworded French sentence, which is what a refactor
 // campaign should be allowed to leave alone.
 //
-// The bundle is produced by rolldown into /tmp/fenrir-refactor-probe/ by the
+// The bundle is produced by rolldown into /tmp/fenrir-a33-probe/ by the
 // probe command in PROBES.json before this script runs.
-const locales = require("/tmp/fenrir-refactor-probe/statsI18n.cjs");
+const locales = require("/tmp/fenrir-a33-probe/statsI18n.cjs");
 
 const PLACEHOLDER = /\{\{\s*([A-Za-z0-9_]+)[^}]*\}\}/g;
 
