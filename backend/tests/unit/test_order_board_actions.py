@@ -890,6 +890,17 @@ async def test_a_database_error_on_the_stamp_delete_still_returns_the_number(db_
 
 
 @pytest.mark.asyncio
+async def test_reprinting_an_order_with_a_prep_stamp_updates_the_one_row_and_logs_both(db_session, zoho):
+    await _board(db_session, zoho, order(1))
+    await actions.stamp_print(db_session, "so1", "first")
+    row = await actions.stamp_print(db_session, "so1", "second")
+    assert row["prep"]["by"] == "second"
+    docs = (await db_session.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "prep"))).scalars().all()
+    assert [d.header["by"] for d in docs] == ["second"]
+    assert [e.actor_name for e in await events_of(db_session, "so1") if e.kind == "prep.printed"] == ["first", "second"]
+
+
+@pytest.mark.asyncio
 async def test_a_simultaneous_first_stamp_updates_the_winner_instead_of_failing(file_sessions, zoho, monkeypatch):
     async with file_sessions() as one, file_sessions() as two:
         await _board(one, zoho, order(1))
@@ -900,9 +911,18 @@ async def test_a_simultaneous_first_stamp_updates_the_winner_instead_of_failing(
             calls.append(1)
             return select(OrderBoardDoc).where(false()) if len(calls) == 1 else real_query(salesorder_id)
 
-        monkeypatch.setattr(stamp_module, "_prep_query", blind_first)
-        await actions.stamp_print(two, "so1", "winner")
+        await actions.stamp_print(two, "so1", "winner")  # the winner commits first, with the real query
+        monkeypatch.setattr(stamp_module, "_prep_query", blind_first)  # now only `one` looks, and misses the row
+        real_rollback = one.rollback
+        rollbacks = []
+
+        async def counting_rollback():
+            rollbacks.append(1)
+            await real_rollback()
+
+        monkeypatch.setattr(one, "rollback", counting_rollback)
         row = await actions.stamp_print(one, "so1", "loser")
+        assert rollbacks == [1]  # the IntegrityError recovery ran
         assert row["prep"]["by"] == "loser"
         stamps = (await one.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "prep"))).scalars().all()
         assert len(stamps) == 1
@@ -3274,3 +3294,86 @@ async def test_the_best_effort_re_read_still_runs_outside_the_window(db_session,
     monkeypatch.setattr(zoho_service, "get_salesorder", counting)
     await actions._common._best_effort_refresh(db_session, "so1", "SO-1")
     assert reads == ["so1"]
+
+
+async def _gone_from_the_board(monkeypatch):
+    async def not_stored(db, salesorder_id):
+        raise sync.OrderNotStored(salesorder_id)
+
+    monkeypatch.setattr(sync, "refresh_order", not_stored)
+
+
+@pytest.mark.asyncio
+async def test_edit_lines_re_read_429_is_busy_and_opens_the_window(db_session, lines_edit, monkeypatch):
+    await _board(db_session, lines_edit, _edit_order())
+
+    async def limited(db, salesorder_id):
+        raise _rate_limited()
+
+    monkeypatch.setattr(zoho_service, "get_salesorder", limited)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.edit_lines(db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}])
+    _assert_window_open()
+    assert lines_edit.writes == []
+
+
+@pytest.mark.asyncio
+async def test_edit_parcel_re_read_429_is_busy_and_opens_the_window(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+
+    async def limited(db, salesorder_id):
+        raise _rate_limited()
+
+    monkeypatch.setattr(zoho_service, "get_salesorder", limited)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    _assert_window_open()
+    assert parcels.writes == [] and parcels.steps == []
+
+
+@pytest.mark.asyncio
+async def test_edit_lines_re_read_of_a_vanished_order_is_not_on_board(db_session, lines_edit, monkeypatch):
+    await _board(db_session, lines_edit, _edit_order())
+    await _gone_from_the_board(monkeypatch)
+    with pytest.raises(actions.OrderNotOnBoard):
+        await actions.edit_lines(db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}])
+    assert lines_edit.writes == []
+
+
+@pytest.mark.asyncio
+async def test_edit_parcel_re_read_of_a_vanished_order_is_not_on_board(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+    await _gone_from_the_board(monkeypatch)
+    with pytest.raises(actions.OrderNotOnBoard):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert parcels.writes == [] and parcels.steps == []
+
+
+@pytest.mark.asyncio
+async def test_a_pending_copy_that_vanishes_on_the_entry_refresh_is_not_on_board(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1))
+    (await _doc(db_session, "so1")).pending = True
+    await db_session.commit()
+    await _gone_from_the_board(monkeypatch)
+    with pytest.raises(actions.OrderNotOnBoard):
+        await actions.confirm_stored_copy(db_session, "so1")
+
+
+@pytest.mark.asyncio
+async def test_a_failed_best_effort_re_read_of_an_unstored_order_is_false(db_session, parcels):
+    from backend.app.services.order_board_actions import _common
+
+    assert await _common._best_effort_refresh(db_session, "nope", "SO-X") is False
+
+
+def test_num_reads_garbage_as_zero():
+    from backend.app.services.order_board_actions import _common
+
+    assert (_common._num("abc"), _common._num([1]), _common._num(None), _common._num("2.5")) == (0.0, 0.0, 0.0, 2.5)
+
+
+def test_to_box_skips_a_picklist_row_without_both_ids():
+    from backend.app.services.order_board_actions import _common
+
+    row = {"salesorder_id": "so1", "so_line_item_id": "l1", "line_item_id": "", "quantity_to_be_picked": 2}
+    assert _common._to_box({"status": "open", "line_items": [row]}, "so1") == {}

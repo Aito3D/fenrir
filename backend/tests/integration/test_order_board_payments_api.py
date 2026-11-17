@@ -24,7 +24,7 @@ from backend.app.services.heimdall import (
     LinkView,
     heimdall_service,
 )
-from backend.app.services.zoho import zoho_service
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
 from backend.tests.unit.test_order_board_routes import tokens  # noqa: F401
 
 BASE = "/api/v1/order-board/orders/so1"
@@ -810,3 +810,54 @@ async def test_a_void_sales_order_takes_no_payment(async_client, tokens, order, 
     await order({**SALES_ORDER, "status": "void"}, left=3050)
     r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 100}, headers=tokens["both"])
     assert r.status_code == 422 and r.json()["detail"]["code"] == "document_mismatch"
+
+
+# --- the money guard: upstream mapping, order off the board, garbage balances, no payment row ----------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [ZohoUpstreamError("books down"), ZohoNotConfiguredError("no books")])
+async def test_document_lookup_failure_is_502_upstream(async_client, tokens, order, monkeypatch, error):  # noqa: F811
+    await order({"invoices": [INVOICE_NEW]})
+
+    async def boom(*_a, **_k):
+        raise error
+
+    monkeypatch.setattr(routes, "resolve_order_document", boom)
+    r = await async_client.post(f"{BASE}/payment-link", json={"amount": 100}, headers=tokens["both"])
+    assert r.status_code == 502 and r.json()["detail"]["code"] == "upstream"
+
+
+@pytest.mark.asyncio
+async def test_an_order_off_the_board_or_without_detail_is_404(async_client, tokens, order, db_session):  # noqa: F811
+    await order({"invoices": [INVOICE_NEW]})
+    r = await async_client.post(
+        "/api/v1/order-board/orders/other/payment-link", json={"amount": 100}, headers=tokens["both"]
+    )
+    assert (r.status_code, r.json()["detail"]) == (404, "Order not found.")
+    stored = (await db_session.execute(select(OrderBoardDoc).where(OrderBoardDoc.zoho_id == "so1"))).scalar_one()
+    stored.detail = {}
+    await db_session.commit()
+    r = await async_client.post(f"{BASE}/payment-link", json={"amount": 100}, headers=tokens["both"])
+    assert (r.status_code, r.json()["detail"]) == (404, "Order not found.")
+
+
+@pytest.mark.asyncio
+async def test_a_garbage_balance_counts_as_zero_and_is_not_payable(async_client, tokens, order):  # noqa: F811
+    await order({"invoices": [{**INVOICE_NEW, "balance": "abc"}]})
+    body = (await async_client.get(f"{BASE}/payment-target", headers=tokens["both"])).json()
+    assert body["kind"] is None and body["max_amount"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_row_without_payment_has_no_left_cap(async_client, tokens, order, live_invoice, terminal, monkeypatch):  # noqa: F811
+    await order({"invoices": [INVOICE_NEW]})
+
+    async def no_payment_row(db, salesorder_id):
+        return {"id": "so1"}
+
+    monkeypatch.setattr(order_board_sync, "find_board_row", no_payment_row)
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 12001}, headers=tokens["both"])
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "amount_above_balance"
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 12000}, headers=tokens["both"])
+    assert r.status_code == 201
