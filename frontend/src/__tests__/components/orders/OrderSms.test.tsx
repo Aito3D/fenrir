@@ -139,6 +139,36 @@ describe('OrderSmsModal', () => {
     expect(record).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByDisplayValue(/tes filaments/)).toBeInTheDocument());
   });
+
+  // Pinned: only a confirmed send reaches recordOrderSms, so a 'maybe sent' (504) does NOT mark the order contacted.
+  it.each([
+    ['a 504 from the relay warns the text may have gone, and records nothing', 504, /may already have gone/],
+    ['any other relay refusal reads as a failed send, and records nothing', 500, /could not send the sms/i],
+  ])('%s', async (_name, status, toast) => {
+    vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue({ message: DRAFT, kind: 'filaments', partial: false, due: 0 });
+    relayAnswers(() => new HttpResponse('nope', { status }));
+    const record = vi.spyOn(api, 'recordOrderSms');
+    await openAndSend();
+    expect(await screen.findByText(toast)).toBeInTheDocument();
+    expect(record).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue(/tes filaments/)).toBeInTheDocument();
+  });
+
+  it('Reset text puts the generated draft back after an edit and disables itself again', async () => {
+    vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue({ message: DRAFT, kind: 'filaments', partial: false, due: 0 });
+    render(<OrderSmsModal row={row} phone="+689-89530560" onClose={() => {}} />);
+    const user = userEvent.setup();
+    const box = await screen.findByDisplayValue(/tes filaments/);
+    const reset = screen.getByRole('button', { name: /reset text/i });
+    expect(reset).toBeDisabled();
+    await user.clear(box);
+    await user.type(box, 'Bonjour');
+    expect(box).toHaveValue('Bonjour');
+    expect(reset).toBeEnabled();
+    await user.click(reset);
+    expect(box).toHaveValue(DRAFT);
+    expect(reset).toBeDisabled();
+  });
 });
 
 describe('OrderSidePanel ?sms=1 deep link', () => {

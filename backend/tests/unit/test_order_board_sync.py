@@ -15,6 +15,7 @@ from backend.app.services import order_board_sync as sync
 from backend.app.services.order_board_sync import (
     _common as sync_common,
     _loop as sync_loop,
+    _pass as sync_pass,
     _retainers as sync_retainers,
 )
 from backend.app.services.zoho import (
@@ -1404,3 +1405,45 @@ async def test_a_rate_limited_quote_lookup_opens_the_window_and_stops_the_pass(d
     assert sync_common._rate_limited_until > time.monotonic()
     assert "estimate_number" not in (await _doc(db_session, "so1")).detail
     sync_common._rate_limited_until = 0.0
+
+
+@pytest.mark.asyncio
+async def test_a_busy_zoho_stops_the_pass_before_the_finished_details(db_session, zoho, monkeypatch):
+    await _synced(db_session, zoho, order(1, age=10, shipped=1))
+    await _forget_detail(db_session, "so1")
+    before = zoho.calls["detail"]
+    monkeypatch.setattr(sync_pass, "zoho_busy", lambda: True)
+    assert await sync.run_pass(db_session) is True
+    assert zoho.calls["detail"] == before
+    assert (await _doc(db_session, "so1")).detail is None
+
+
+@pytest.mark.asyncio
+async def test_a_busy_finished_detail_stops_the_rest_of_the_pass(db_session, zoho, monkeypatch):
+    await _synced(db_session, zoho, order(1, age=10, shipped=1), order(2, age=11, shipped=1))
+    await _forget_detail(db_session, "so1")
+    await _forget_detail(db_session, "so2")
+    asked = []
+
+    async def busy(db, doc):
+        asked.append(doc.zoho_id)
+        raise sync.ZohoBusy("busy")
+
+    monkeypatch.setattr(sync_pass, "_ensure_finished_detail", busy)
+    assert await sync.run_pass(db_session) is True
+    assert asked == ["so1"]  # newest first; the second is never asked
+
+
+@pytest.mark.asyncio
+async def test_the_call_ceiling_stops_the_quote_number_reads(db_session, zoho, monkeypatch):
+    from backend.app.services.zoho import ZohoUnreachable
+
+    broken = _failing_quote(monkeypatch, "e1", ZohoUnreachable("boom"))
+    await _synced(db_session, zoho, *_pos_orders())
+    assert "estimate_number" not in (await _doc(db_session, "so1")).detail
+    broken["on"] = False  # Books answers again, so only the budget can hold the read back
+    calls = zoho.calls["estimate"]
+    zoho.meter = sync.CALL_CEILING  # nothing is pending, so only the quote loop looks at the budget
+    assert await sync.run_pass(db_session) is True
+    assert zoho.calls["estimate"] == calls
+    assert "estimate_number" not in (await _doc(db_session, "so1")).detail
