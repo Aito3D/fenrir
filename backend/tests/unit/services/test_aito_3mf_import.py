@@ -323,3 +323,27 @@ async def test_slice_source_maps_slicer_errors(monkeypatch):
     assert (caught.value.status_code, caught.value.detail) == expected
     assert expected[0] == 502
     assert caught.value.__cause__ is boom
+
+
+async def test_slice_source_waits_for_a_project_slice_slot(monkeypatch):
+    import asyncio
+
+    from backend.app.services.aito_3mf_import import slice_source
+    from backend.app.services.project_slice import _MAX_CONCURRENT_SLICES, _slice_slot
+
+    events: list[str] = []
+    _patch_slicer(monkeypatch, events)
+    slot = _slice_slot()
+    for _ in range(_MAX_CONCURRENT_SLICES):
+        await slot.acquire()
+    task = asyncio.create_task(slice_source(_FakeDb(events), b"src", "p.3mf", 5))
+    try:
+        await asyncio.sleep(0.05)
+        assert events == ["commit"]  # committed, then queued: no sidecar call while both slots are taken
+        slot.release()
+        assert await asyncio.wait_for(task, 5) == b"SLICED"
+        assert events == ["commit", "slice"]
+    finally:
+        for _ in range(_MAX_CONCURRENT_SLICES - 1):
+            slot.release()
+        task.cancel()

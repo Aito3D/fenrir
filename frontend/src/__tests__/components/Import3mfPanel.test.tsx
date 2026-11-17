@@ -164,6 +164,22 @@ describe('Import3mfPanel', () => {
     expect(uploads).toBe(1);
   });
 
+  it('Retry after the server forgot the job uploads and slices the file again', async () => {
+    let uploads = 0;
+    server.use(
+      http.post('/api/v1/aito/import-3mf', () => HttpResponse.json({ job_id: ++uploads + 6 }, { status: 202 })),
+      http.get('/api/v1/aito/import-3mf/7', () =>
+        HttpResponse.json({ detail: 'Import not found or expired' }, { status: 404 }),
+      ),
+      http.get('/api/v1/aito/import-3mf/8', () => HttpResponse.json(done([plate({})]))),
+    );
+    mount();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Import not found or expired');
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Marteaux')).toBeInTheDocument();
+    expect(uploads).toBe(2);
+  });
+
   it('shows a refusal of the upload itself', async () => {
     server.use(
       http.post('/api/v1/aito/import-3mf', () =>

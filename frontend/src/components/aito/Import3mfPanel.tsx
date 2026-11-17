@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Box, Check, Loader2, X } from 'lucide-react';
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import type { Aito3mfPlate } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { focusRingCls, inputCls } from '../formStyles';
@@ -89,7 +89,9 @@ export function Import3mfPanel({ file, onAdd, onClose, pollMs = 1500 }: Import3m
 
   const retry = () => {
     // Polls were lost but the server never said the job failed: ask the same job again.
-    if (jobId !== null && state?.status !== 'failed') {
+    // A 404 means the server no longer has the job (restart, retention): slice it afresh.
+    const gone = job.error instanceof ApiError && job.error.status === 404;
+    if (jobId !== null && state?.status !== 'failed' && !gone) {
       void job.refetch();
       return;
     }

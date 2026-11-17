@@ -235,7 +235,7 @@ async def slice_source(db, source: bytes, filename: str, job_id: int) -> bytes:
     import asyncio
 
     from backend.app.api.routes.library import resolve_slicer_api_url
-    from backend.app.services.project_slice import NO_SLICER, _error_status_and_message
+    from backend.app.services.project_slice import NO_SLICER, _error_status_and_message, _slice_slot
     from backend.app.services.slice_dispatch import slice_dispatch
     from backend.app.services.slicer_api import SlicerApiService, get_stall_timeout_seconds
     from backend.app.utils.threemf_tools import sanitize_project_settings_sentinels
@@ -246,7 +246,9 @@ async def slice_source(db, source: bytes, filename: str, job_id: int) -> bytes:
     timeout = await get_stall_timeout_seconds(db)
     await db.commit()  # end the read transaction: the slice can take minutes
     try:
-        async with SlicerApiService(url, timeout_seconds=timeout) as service:
+        # The slot project revisions take: a queued import holds no transaction (committed above) and its
+        # stall clock starts with the sidecar call, inside the slot.
+        async with _slice_slot(), SlicerApiService(url, timeout_seconds=timeout) as service:
             result = await service.slice_without_profiles(
                 model_bytes=await asyncio.to_thread(sanitize_project_settings_sentinels, source),
                 model_filename=filename,

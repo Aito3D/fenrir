@@ -566,6 +566,8 @@ class ZohoService:
         Error responses are JSON even when the success response is a PDF, so
         both callers can supply a parsed payload for the message.
         """
+        if not isinstance(payload, dict):  # a JSON array/string error body
+            payload = {}
         if response.status_code == 404:
             raise ZohoNotFound(payload.get("message") or "Not found in Zoho Books")
         if response.status_code == 400:
@@ -601,7 +603,9 @@ class ZohoService:
         try:
             payload = response.json() if response.content else {}
         except ValueError as e:
-            raise ZohoAmbiguous(f"Zoho returned a non-JSON response (HTTP {response.status_code})") from e
+            if response.status_code < 400:
+                raise ZohoAmbiguous(f"Zoho returned a non-JSON response (HTTP {response.status_code})") from e
+            payload = {}  # a gateway's HTML 4xx/5xx still maps to its typed error
         self._raise_for_status(response, payload)
         return payload
 
