@@ -12878,6 +12878,17 @@ async def lifespan(app: FastAPI):
     async with async_session() as oidc_db:
         await apply_env_oidc_provider(oidc_db)
 
+    # Filament-tree presets are stored, so a release that changes what a leaf holds only reaches them once they
+    # are rebuilt. In the background: it takes seconds and nothing at startup waits on it.
+    async def _regenerate_filament_trees() -> None:
+        from backend.app.services.filament_tree_store import regenerate_all_trees
+
+        changed = await regenerate_all_trees(async_session)
+        if changed:
+            logging.info("Filament trees: %s presets regenerated and awaiting export", changed)
+
+    spawn_background_task(_regenerate_filament_trees(), name="regenerate-filament-trees")
+
     # Close out batches that finished before `completed` was a reachable status
     # (#342). Without this the Batches tab opens on every batch created since
     # the feature shipped, all still marked active. Never blocks startup.

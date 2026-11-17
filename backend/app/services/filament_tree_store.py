@@ -2,13 +2,14 @@
 
 import asyncio
 import json
+import logging
 import re
 import weakref
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from typing import Any
 
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.settings import get_setting, set_setting
@@ -33,6 +34,8 @@ from backend.app.services.filament_tree import (
     resolve_with_sources,
 )
 from backend.app.services.filament_tree_base import build_base_reader
+
+logger = logging.getLogger(__name__)
 
 TARGETS_KEY = "filament_tree_targets"
 _UNSET = object()
@@ -579,3 +582,28 @@ async def duplicate_tree(db: AsyncSession, tree_id: int, name: str, brand: str) 
     await db.flush()
     await regenerate_tree(db, copy.id)
     return copy.id
+
+
+async def regenerate_all_trees(session_factory) -> int:
+    """Rebuild every tree's presets with the running code; returns how many presets now differ and await an export.
+
+    Stored presets are only rewritten when their tree is edited, so a release that changes what a leaf contains would
+    otherwise leave the old content in place. One transaction per tree: a tree that fails is logged and skipped.
+    """
+    async with session_factory() as db:
+        tree_ids = (await db.execute(select(FilamentTree.id))).scalars().all()
+        changed = 0
+        for tree_id in tree_ids:
+            try:
+                async with tree_write_lock([tree_id]):
+                    pending = select(func.count()).where(
+                        FilamentTreeLeaf.tree_id == tree_id, FilamentTreeLeaf.export_pending
+                    )
+                    before = await db.scalar(pending)
+                    await regenerate_tree(db, tree_id)
+                    changed += await db.scalar(pending) - before
+                    await db.commit()
+            except Exception:
+                await db.rollback()
+                logger.exception("Filament tree %s could not be regenerated", tree_id)
+        return changed

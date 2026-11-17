@@ -212,3 +212,25 @@ async def test_tree_write_lock_opposite_id_orders_do_not_deadlock():
     await asyncio.wait_for(asyncio.gather(*tasks), timeout=5)
     assert order == ["first", "second"]
     assert _lock_map() == {}
+
+
+async def test_regenerate_all_trees_rewrites_stale_presets(db_session):
+    """A preset left behind by older code is rebuilt and flagged for export; a second pass changes nothing."""
+    from contextlib import asynccontextmanager
+
+    tree, _ = await _make_tree(db_session)
+    await store.regenerate_tree(db_session, tree.id)
+    await db_session.execute(FilamentTreeLeaf.__table__.update().values(export_pending=False))
+    stale = (await db_session.execute(select(FilamentPreset).limit(1))).scalar_one()
+    fresh = stale.content
+    stale.content = json.dumps({"inherits": "old parent"})
+    await db_session.commit()
+
+    @asynccontextmanager
+    async def factory():
+        yield db_session
+
+    assert await store.regenerate_all_trees(factory) == 1
+    await db_session.refresh(stale)
+    assert stale.content == fresh
+    assert await store.regenerate_all_trees(factory) == 0
