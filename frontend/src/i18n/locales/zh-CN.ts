@@ -5770,7 +5770,7 @@ export default {
     paInvalid: '压力提前必须是数字，例如 0.028',
     subtitle: '每个耗材系列一份校准配置，派生到每台打印机、每个喷嘴和每种颜色',
     sync: '同步',
-    exportOrca: '导出到 Orca',
+    exportOrca: '导出到切片软件',
     emptyTitle: '还没有耗材树',
     emptyBody: '把现有预设整理成树：每个系列一份校准配置，派生到每台打印机、每个喷嘴和每种颜色。',
     emptyNone: '还没有耗材预设。运行同步，从 Orca Cloud 拉取 OrcaSlicer 预设。',

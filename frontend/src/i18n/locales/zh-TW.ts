@@ -5770,7 +5770,7 @@ export default {
     paInvalid: '壓力提前必須是數字，例如 0.028',
     subtitle: '每個線材系列一份校準設定檔，衍生到每台印表機、每個噴嘴和每種顏色',
     sync: '同步',
-    exportOrca: '匯出到 Orca',
+    exportOrca: '匯出到切片軟體',
     emptyTitle: '還沒有線材樹',
     emptyBody: '把現有預設整理成樹：每個系列一份校準設定檔，衍生到每台印表機、每個噴嘴和每種顏色。',
     emptyNone: '還沒有線材預設。執行同步，從 Orca Cloud 拉取 OrcaSlicer 預設。',

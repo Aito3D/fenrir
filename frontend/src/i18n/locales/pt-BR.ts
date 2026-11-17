@@ -5770,7 +5770,7 @@ export default {
     paInvalid: 'O avanço de pressão deve ser um número, por exemplo 0.028',
     subtitle: 'Um perfil calibrado por família de filamento, derivado para cada impressora, bico e cor',
     sync: 'SYNC',
-    exportOrca: 'Exportar para o Orca',
+    exportOrca: 'Exportar para o fatiador',
     emptyTitle: 'Ainda não há árvores de filamento',
     emptyBody: 'Agrupe seus presets existentes em árvores: um perfil calibrado por família, derivado para cada impressora, bico e cor.',
     emptyNone: 'Ainda não há presets de filamento. Execute SYNC para trazer seus presets do OrcaSlicer do Orca Cloud.',

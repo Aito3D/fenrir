@@ -1,6 +1,6 @@
 /**
  * Filament Profiles page, tree edition: material cards + node panel, migration of
- * unmanaged presets, SYNC (pull) result handling, Export for Orca and tree settings.
+ * unmanaged presets, SYNC (pull) result handling, Export for slicer and tree settings.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
@@ -388,7 +388,7 @@ describe('FilamentProfilesPage (trees)', () => {
     expect(toast).not.toHaveTextContent(/null|NaN/);
   });
 
-  it('Export for Orca downloads the bundle', async () => {
+  it('Export for slicer downloads the bundle', async () => {
     stub();
     const blob = new Blob(['zip']);
     const exportSpy = vi.spyOn(api, 'exportFilamentTrees').mockResolvedValue({ blob, token: 'tok' });
@@ -399,7 +399,7 @@ describe('FilamentProfilesPage (trees)', () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     render(<FilamentProfilesPage />);
 
-    await menu('Export for Orca');
+    await menu('Export for slicer');
     await waitFor(() => expect(click).toHaveBeenCalled());
     expect(exportSpy).toHaveBeenCalledWith(undefined, false);
     expect(createUrl).toHaveBeenCalledWith(blob);

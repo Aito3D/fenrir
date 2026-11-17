@@ -5819,7 +5819,7 @@ export default {
     paInvalid: 'Pressure advance must be a number, like 0.028',
     subtitle: 'One calibrated profile per filament family, derived for every printer, nozzle and colour',
     sync: 'SYNC',
-    exportOrca: 'Export for Orca',
+    exportOrca: 'Export for slicer',
     emptyTitle: 'No filament trees yet',
     emptyBody: 'Group your existing presets into trees: one calibrated profile per family, derived for every printer, nozzle and colour.',
     emptyNone: 'No filament presets yet. Run SYNC to pull your OrcaSlicer presets from Orca Cloud.',

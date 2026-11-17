@@ -103,14 +103,14 @@ describe('FilamentProfilesPage — permission gating (T-016)', () => {
     expect(screen.queryByRole('button', { name: /use parent/i })).not.toBeInTheDocument();
 
     // Export marks leaves as exported, so the backend needs filaments:update.
-    expect(screen.queryByRole('button', { name: 'Export for Orca' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Export for slicer' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Export changed/ })).not.toBeInTheDocument();
   });
 
-  it('shows Export for Orca with filaments:update', async () => {
+  it('shows Export for slicer with filaments:update', async () => {
     permissions.granted = ['filaments:read', 'filaments:update'];
     await renderPage();
-    expect(screen.getByRole('button', { name: 'Export for Orca' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export for slicer' })).toBeInTheDocument();
   });
 
   it('needs orca_cloud:auth as well as filaments:update for SYNC', async () => {

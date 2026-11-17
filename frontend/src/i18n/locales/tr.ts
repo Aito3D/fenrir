@@ -5778,7 +5778,7 @@ export default {
     paInvalid: 'Basınç ilerlemesi 0.028 gibi bir sayı olmalıdır',
     subtitle: 'Her filament ailesi için tek kalibre profil; her yazıcı, nozul ve renk için türetilir',
     sync: 'SYNC',
-    exportOrca: 'Orca için dışa aktar',
+    exportOrca: 'Dilimleyici için dışa aktar',
     emptyTitle: 'Henüz filament ağacı yok',
     emptyBody: 'Mevcut ön ayarlarınızı ağaçlarda toplayın: aile başına tek kalibre profil; her yazıcı, nozul ve renk için türetilir.',
     emptyNone: 'Henüz filament ön ayarı yok. OrcaSlicer ön ayarlarınızı Orca Cloud\'dan çekmek için SYNC çalıştırın.',

@@ -5770,7 +5770,7 @@ export default {
     paInvalid: 'L\'avanzamento di pressione deve essere un numero, ad esempio 0.028',
     subtitle: 'Un profilo calibrato per famiglia di filamento, derivato per ogni stampante, ugello e colore',
     sync: 'SYNC',
-    exportOrca: 'Esporta per Orca',
+    exportOrca: 'Esporta per slicer',
     emptyTitle: 'Ancora nessun albero di filamenti',
     emptyBody: 'Raggruppa i preset esistenti in alberi: un profilo calibrato per famiglia, derivato per ogni stampante, ugello e colore.',
     emptyNone: 'Ancora nessun preset di filamento. Avvia SYNC per scaricare i preset di OrcaSlicer da Orca Cloud.',

@@ -5771,7 +5771,7 @@ export default {
     paInvalid: 'L\'avance de pression doit être un nombre, par exemple 0.028',
     subtitle: 'Un profil calibré par famille de filament, décliné pour chaque imprimante, buse et couleur',
     sync: 'SYNC',
-    exportOrca: 'Exporter pour Orca',
+    exportOrca: 'Exporter pour le trancheur',
     emptyTitle: 'Aucun arbre de filament pour l\'instant',
     emptyBody: 'Regroupez vos préréglages existants en arbres : un profil calibré par famille, décliné pour chaque imprimante, buse et couleur.',
     emptyNone: 'Aucun préréglage de filament pour l\'instant. Lancez SYNC pour récupérer vos préréglages OrcaSlicer depuis Orca Cloud.',

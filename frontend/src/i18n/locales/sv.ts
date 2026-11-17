@@ -10468,7 +10468,7 @@ errors: {
     paInvalid: 'Tryckförskott måste vara ett tal, till exempel 0.028',
     subtitle: 'En kalibrerad profil per filamentfamilj, härledd för varje skrivare, munstycke och färg',
     sync: 'SYNC',
-    exportOrca: 'Exportera för Orca',
+    exportOrca: 'Exportera för slicer',
     emptyTitle: 'Inga filamentträd än',
     emptyBody: 'Gruppera dina befintliga förinställningar i träd: en kalibrerad profil per familj, härledd för varje skrivare, munstycke och färg.',
     emptyNone: 'Inga filamentförinställningar än. Kör SYNC för att hämta dina OrcaSlicer-förinställningar från Orca Cloud.',

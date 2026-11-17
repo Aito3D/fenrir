@@ -5597,7 +5597,7 @@ export default {
     paInvalid: '압력 전진 값은 0.028 같은 숫자여야 합니다',
     subtitle: '필라멘트 계열마다 보정된 프로필 하나를 두고 모든 프린터, 노즐, 색상으로 파생합니다',
     sync: '동기화',
-    exportOrca: 'Orca용 내보내기',
+    exportOrca: '슬라이서용 내보내기',
     emptyTitle: '아직 필라멘트 트리가 없습니다',
     emptyBody: '기존 프리셋을 트리로 묶습니다: 계열마다 보정된 프로필 하나를 두고 모든 프린터, 노즐, 색상으로 파생합니다.',
     emptyNone: '아직 필라멘트 프리셋이 없습니다. 동기화를 실행해 Orca Cloud에서 OrcaSlicer 프리셋을 가져오세요.',

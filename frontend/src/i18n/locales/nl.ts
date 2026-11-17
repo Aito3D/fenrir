@@ -10435,7 +10435,7 @@ export default {
     paInvalid: 'Drukvoorloop moet een getal zijn, bijvoorbeeld 0.028',
     subtitle: 'Eén gekalibreerd profiel per filamentfamilie, afgeleid voor elke printer, nozzle en kleur',
     sync: 'SYNC',
-    exportOrca: 'Exporteren voor Orca',
+    exportOrca: 'Exporteren voor slicer',
     emptyTitle: 'Nog geen filamentbomen',
     emptyBody: 'Groepeer je bestaande presets in bomen: één gekalibreerd profiel per familie, afgeleid voor elke printer, nozzle en kleur.',
     emptyNone: 'Nog geen filamentpresets. Start SYNC om je OrcaSlicer-presets uit Orca Cloud op te halen.',

@@ -5783,7 +5783,7 @@ export default {
     paInvalid: 'Der Druckvorlauf muss eine Zahl sein, z. B. 0.028',
     subtitle: 'Ein kalibriertes Profil pro Filamentfamilie, abgeleitet für jeden Drucker, jede Düse und jede Farbe',
     sync: 'SYNC',
-    exportOrca: 'Für Orca exportieren',
+    exportOrca: 'Für Slicer exportieren',
     emptyTitle: 'Noch keine Filamentbäume',
     emptyBody: 'Fassen Sie Ihre vorhandenen Presets zu Bäumen zusammen: ein kalibriertes Profil pro Familie, abgeleitet für jeden Drucker, jede Düse und jede Farbe.',
     emptyNone: 'Noch keine Filament-Presets. Starten Sie SYNC, um Ihre OrcaSlicer-Presets aus Orca Cloud zu holen.',

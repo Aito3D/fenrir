@@ -10441,7 +10441,7 @@ export default {
     paInvalid: 'Wyprzedzenie ciśnienia musi być liczbą, np. 0.028',
     subtitle: 'Jeden skalibrowany profil na rodzinę filamentu, wyprowadzany dla każdej drukarki, dyszy i koloru',
     sync: 'SYNC',
-    exportOrca: 'Eksportuj do Orca',
+    exportOrca: 'Eksportuj do slicera',
     emptyTitle: 'Brak drzew filamentów',
     emptyBody: 'Pogrupuj istniejące presety w drzewa: jeden skalibrowany profil na rodzinę, wyprowadzany dla każdej drukarki, dyszy i koloru.',
     emptyNone: 'Brak presetów filamentu. Uruchom SYNC, aby pobrać presety OrcaSlicer z Orca Cloud.',
