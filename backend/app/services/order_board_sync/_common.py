@@ -107,12 +107,14 @@ async def _find_state(db: AsyncSession) -> OrderBoardDoc | None:
     ).scalar_one_or_none()
 
 
-def _stored_query(salesorder_id: str):
+async def find_stored(db: AsyncSession, salesorder_id: str) -> OrderBoardDoc | None:
     return (
-        select(OrderBoardDoc)
-        .where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id)
-        .execution_options(populate_existing=True)
-    )
+        await db.execute(
+            select(OrderBoardDoc)
+            .where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
 
 
 async def _state(db: AsyncSession) -> OrderBoardDoc:

@@ -211,11 +211,11 @@ async def _has_event(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder
 async def _iteration(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> float
 def _naive_utc(text: str) -> datetime.datetime | None
 def _now() -> str
-def _stored_query(salesorder_id: str)
 _unconfirmed: set
 _written_at: dict
 async def announce_board_change(*, finished: bool = False) -> None
 async def find_board_row(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict | None
+async def find_stored(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> backend.app.models.order_board_doc.OrderBoardDoc | None
 async def load_settings(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> backend.app.services.order_board_sync._common.OrderBoardSettings
 def needs_refresh(salesorder_id: str) -> bool
 def note_write(salesorder_id: str) -> None

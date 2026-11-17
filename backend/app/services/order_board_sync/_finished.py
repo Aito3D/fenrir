@@ -1,6 +1,7 @@
 """Finished orders: which ones count, the list, one in full, and the detail kept or fetched on open."""
 
 import asyncio
+import logging
 import time
 from datetime import date, datetime, timezone
 
@@ -25,7 +26,15 @@ from backend.app.services.order_board_sync._common import (
     load_settings,
     open_rate_limit_window,
 )
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, zoho_service
+from backend.app.services.zoho import (
+    ZohoNotConfiguredError,
+    ZohoNotFound,
+    ZohoRateLimited,
+    ZohoUpstreamError,
+    zoho_service,
+)
+
+logger = logging.getLogger(__name__)
 
 # A finished, paid order older than this keeps only its list row; its detail is read again when opened.
 FINISHED_DETAIL_DAYS = 90
@@ -169,7 +178,19 @@ async def _ensure_finished_detail(db: AsyncSession, doc: OrderBoardDoc) -> None:
 
 
 async def _store_quote_number(db: AsyncSession, doc: OrderBoardDoc) -> None:
-    quote = await zoho_service.get_estimate(db, str((doc.detail or {}).get("estimate_id") or ""))
+    """Keep the quote's number with the order. One bad quote must not stop the pass: a deleted one is
+    kept as "no number" (not retried), any other upstream error is skipped and retried next pass."""
+    try:
+        quote = await zoho_service.get_estimate(db, str((doc.detail or {}).get("estimate_id") or ""))
+    except ZohoRateLimited as e:
+        open_rate_limit_window(e)
+        raise
+    except ZohoNotFound:
+        logger.warning("Order board: the quote of an order is gone from Books (ZohoNotFound)")
+        quote = {}
+    except ZohoUpstreamError as e:
+        logger.warning("Order board: a quote number was not read, retried next pass (%s)", type(e).__name__)
+        return
     await db.refresh(doc)
     doc.detail = {**(doc.detail or {}), "estimate_number": quote.get("estimate_number") or ""}
     await db.commit()

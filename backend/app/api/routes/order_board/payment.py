@@ -78,7 +78,7 @@ def _payable(docs: list[dict] | None) -> dict | None:
 async def _order_for_payment(db: AsyncSession, salesorder_id: str) -> tuple[dict, dict]:
     """The board row and the stored sales order; an order off the board takes no payment from here."""
     row = await order_board_sync.find_board_row(db, salesorder_id)
-    doc = (await db.execute(order_board_sync._stored_query(salesorder_id))).scalar_one_or_none()
+    doc = await order_board_sync.find_stored(db, salesorder_id)
     if row is None or doc is None or not doc.detail:
         raise HTTPException(status_code=404, detail="Order not found.")
     return row, doc.detail

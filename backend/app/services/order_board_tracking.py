@@ -186,7 +186,7 @@ async def compute(db: AsyncSession, token: str, now: datetime) -> tuple[str, dic
         if finished is None or not finished.detail:
             return None
         row = order_row(finished.detail, {}, now.date())
-    stored = (await db.execute(sync._stored_query(salesorder_id))).scalar_one_or_none()
+    stored = await sync.find_stored(db, salesorder_id)
     detail = (stored.detail if stored else None) or {}
 
     event = OrderBoardEvent

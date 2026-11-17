@@ -60,7 +60,7 @@ async def confirm_stored_copy(db: AsyncSession, salesorder_id: str) -> OrderBoar
     here stops the action before anything is sent. Returns the stored order."""
     if sync.zoho_busy():
         raise sync.ZohoBusy(salesorder_id)
-    doc = (await db.execute(sync._stored_query(salesorder_id))).scalar_one_or_none()
+    doc = await sync.find_stored(db, salesorder_id)
     if doc is None:
         raise OrderNotOnBoard(salesorder_id)
     if doc.pending or sync.needs_refresh(salesorder_id):
@@ -83,7 +83,7 @@ async def _best_effort_refresh(db: AsyncSession, salesorder_id: str, number: str
         logger.warning("Order board: re-read after a write failed for %s (%s)", number, type(e).__name__)
         try:  # the next pass, and the next write, re-read it
             await db.rollback()
-            doc = (await db.execute(sync._stored_query(salesorder_id))).scalar_one_or_none()
+            doc = await sync.find_stored(db, salesorder_id)
             if doc is not None:
                 doc.pending = True
                 await db.commit()
@@ -158,7 +158,7 @@ def _open_picklists(order: dict) -> list[dict]:
 
 
 async def _stored_order(db: AsyncSession, salesorder_id: str) -> dict:
-    doc = (await db.execute(sync._stored_query(salesorder_id))).scalar_one_or_none()
+    doc = await sync.find_stored(db, salesorder_id)
     if doc is None or not doc.detail:
         raise OrderNotOnBoard(salesorder_id)
     return doc.detail

@@ -20,10 +20,10 @@ from backend.app.services.order_board_sync._common import (
     _is_candidate,
     _now,
     _pending_count,
-    _stored_query,
     _unconfirmed,
     _written_at,
     announce_board_change,
+    find_stored,
     load_settings,
 )
 from backend.app.services.order_board_sync._events import _observe, _record_board_events
@@ -53,7 +53,7 @@ async def save_settings(db: AsyncSession, settings: OrderBoardSettings) -> None:
 
 async def refresh_order(db: AsyncSession, salesorder_id: str) -> None:
     """Re-read one order from Books after a write here, store it and rebuild the board."""
-    doc = (await db.execute(_stored_query(salesorder_id))).scalar_one_or_none()
+    doc = await find_stored(db, salesorder_id)
     if doc is None:
         raise OrderNotStored(salesorder_id)
     fetched = await zoho_service.get_salesorder(db, salesorder_id)

@@ -148,7 +148,7 @@ async def edit_lines(
         ] + [{"field": items[i].get("name") or i, "from": 0, "to": q} for i, q in new.items()]
         total_from = detail.get("total")
         refreshed = await _best_effort_refresh(db, salesorder_id, number)
-        stored = (await db.execute(sync._stored_query(salesorder_id))).scalar_one_or_none()
+        stored = await sync.find_stored(db, salesorder_id)
         await _log(
             db,
             salesorder_id,
