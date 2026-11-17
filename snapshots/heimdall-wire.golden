@@ -471,8 +471,8 @@
   },
   {
    "case": "200-link-not-an-object",
-   "message": "'str' object has no attribute 'get'",
-   "outcome": "AttributeError"
+   "message": "Heimdall returned an unexpected payment shape: 'str' object has no attribute 'get'",
+   "outcome": "HeimdallAmbiguous"
   },
   {
    "case": "200-minimal-valid",

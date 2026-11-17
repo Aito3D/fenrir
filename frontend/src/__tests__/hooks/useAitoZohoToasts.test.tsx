@@ -48,4 +48,21 @@ describe('useAitoZohoToasts', () => {
     send({ kind: 'invoice.deposit_applied', doc: 'FA-1', actor: 'marie' });
     expect(showToast).toHaveBeenCalledWith('Deposit applied to invoice FA-1', 'success');
   });
+
+  it("skips the actor's own send/create results (their mutation already toasts), colleagues still hear them", () => {
+    renderHook(() => useAitoZohoToasts());
+    const own = ['quote.emailed', 'invoice.emailed', 'retainer.emailed', 'invoice.created', 'payment_link.created'];
+    for (const kind of own) send({ kind, doc: 'X-1', actor: 'paul' });
+    expect(showToast).not.toHaveBeenCalled();
+    for (const kind of own) send({ kind, doc: 'X-1', actor: 'marie' });
+    expect(showToast).toHaveBeenCalledTimes(own.length);
+  });
+
+  it("still toasts the actor's own background kinds", () => {
+    renderHook(() => useAitoZohoToasts());
+    for (const kind of ['sync.failed', 'sync.conflict', 'payment_link.replaced', 'payment.manual.partial']) {
+      send({ kind, doc: 'X-1', actor: 'paul' });
+    }
+    expect(showToast).toHaveBeenCalledTimes(4);
+  });
 });

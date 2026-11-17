@@ -706,3 +706,23 @@ async def test_422_maps_to_heimdall_invalid_with_the_message(db_session):
         await heimdall_service.create_terminal_payment(db_session, idempotency_key="k", amount=30000, document=None)
     assert "exceeds balance 23000" in str(exc.value)
     assert isinstance(exc.value, HeimdallUpstreamError)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "exc"),
+    [(502, HeimdallAmbiguous), (404, HeimdallNotFound), (400, HeimdallUpstreamError)],
+)
+async def test_a_string_error_body_maps_like_an_error_envelope(db_session, status, exc):
+    await _configure(db_session)
+    heimdall_service._transport = httpx.MockTransport(lambda r: httpx.Response(status, json={"error": "bad gateway"}))
+    with pytest.raises(exc) as info:
+        await heimdall_service.get_payment(db_session, "6f1e")
+    assert f"Heimdall HTTP {status}" in str(info.value)
+    assert "bad gateway" in str(info.value)
+
+
+@pytest.mark.parametrize("shape", [{"link": "oops"}, {"booking": "oops"}])
+def test_to_view_treats_a_string_link_or_booking_as_an_unreadable_answer(shape):
+    with pytest.raises(HeimdallAmbiguous):
+        _to_view(_link_json(**shape))

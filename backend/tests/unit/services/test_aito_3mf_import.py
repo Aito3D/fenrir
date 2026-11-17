@@ -232,3 +232,94 @@ def test_component_fan_out_past_the_placement_cap_is_not_measured(monkeypatch):
     assert plate_facts(src, SLICED)[0]["objects"] == [
         {"name": "a", "count": 1, "x_mm": None, "y_mm": None, "z_mm": None}
     ]
+
+
+class _FakeDb:
+    def __init__(self, events):
+        self.events = events
+
+    async def commit(self):
+        self.events.append("commit")
+
+
+def _patch_slicer(monkeypatch, events, *, raises=None):
+    """Stub everything slice_source reaches for: the slicer URL, the stall timeout, the service and the sanitizer."""
+    from types import SimpleNamespace
+
+    from backend.app.api.routes import library
+    from backend.app.services import slice_dispatch as slice_dispatch_module, slicer_api
+    from backend.app.utils import threemf_tools
+
+    calls = {}
+
+    class FakeService:
+        def __init__(self, url, timeout_seconds):
+            calls["init"] = (url, timeout_seconds)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def slice_without_profiles(self, **kwargs):
+            events.append("slice")
+            calls["kwargs"] = kwargs
+            if raises is not None:
+                raise raises
+            kwargs["on_progress"]({"percent": 42})
+            return SimpleNamespace(content=b"SLICED")
+
+    async def fake_url(db):
+        return "http://slicer"
+
+    async def fake_timeout(db):
+        return 77
+
+    progress = []
+    monkeypatch.setattr(library, "resolve_slicer_api_url", fake_url)
+    monkeypatch.setattr(slicer_api, "get_stall_timeout_seconds", fake_timeout)
+    monkeypatch.setattr(slicer_api, "SlicerApiService", FakeService)
+    monkeypatch.setattr(threemf_tools, "sanitize_project_settings_sentinels", lambda data: b"CLEAN" + data)
+    monkeypatch.setattr(
+        slice_dispatch_module.slice_dispatch, "set_progress", lambda job_id, snap: progress.append((job_id, snap))
+    )
+    calls["progress"] = progress
+    return calls
+
+
+async def test_slice_source_slices_every_plate_after_committing(monkeypatch):
+    from backend.app.services.aito_3mf_import import slice_source
+
+    events: list[str] = []
+    calls = _patch_slicer(monkeypatch, events)
+
+    content = await slice_source(_FakeDb(events), b"src", "p.3mf", 9)
+
+    assert content == b"SLICED"
+    assert events == ["commit", "slice"]  # the read transaction ends before the slice starts
+    assert calls["init"] == ("http://slicer", 77)
+    kwargs = calls["kwargs"]
+    assert kwargs["model_bytes"] == b"CLEANsrc"
+    assert kwargs["model_filename"] == "p.3mf"
+    assert kwargs["plate"] == 0
+    assert kwargs["export_3mf"] is True
+    assert kwargs["request_id"]
+    assert calls["progress"] == [(9, {"percent": 42})]
+
+
+async def test_slice_source_maps_slicer_errors(monkeypatch):
+    from backend.app.services.aito_3mf_import import slice_source
+    from backend.app.services.project_slice import _error_status_and_message
+    from backend.app.services.slicer_api import SlicerApiError
+
+    boom = SlicerApiError("slicer said no")
+    _patch_slicer(monkeypatch, [], raises=boom)
+
+    with pytest.raises(Import3mfError) as caught:
+        await slice_source(_FakeDb([]), b"src", "p.3mf", 1)
+
+    expected = _error_status_and_message(boom)
+    assert (caught.value.status_code, caught.value.detail) == expected
+    assert expected[0] == 502
+    assert caught.value.__cause__ is boom

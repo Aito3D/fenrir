@@ -28,6 +28,10 @@ export interface AitoZohoResult {
   error?: string | null;
 }
 
+/** Kinds whose own mutation already toasts on success: the acting operator skips the Zoho-result toast (colleagues
+ *  still get it). Background kinds (sync.*, payment_link.replaced, payment.manual.partial) always toast. */
+const SELF_TOASTED_KINDS = new Set(['quote.emailed', 'invoice.emailed', 'retainer.emailed', 'invoice.created', 'payment_link.created']);
+
 type ZohoToastType = 'success' | 'error' | 'warning';
 
 /** The toast for one Zoho result, or null for a kind the board does not voice. */
@@ -68,6 +72,7 @@ export function useAitoZohoToasts(): void {
   useEffect(() => {
     const onResult = (event: Event) => {
       const result = (event as CustomEvent<AitoZohoResult>).detail;
+      if (result?.kind && SELF_TOASTED_KINDS.has(result.kind) && me !== null && result.actor === me) return;
       // ApplyDepositModal already toasts its own success.
       if (result?.kind === 'invoice.deposit_applied' && me !== null && result.actor === me && result.outcome !== 'unknown') return;
       const toast = result ? zohoToast(t, result) : null;
