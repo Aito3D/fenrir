@@ -130,3 +130,26 @@ def test_parse_inherits():
     assert parse_inherits("Bambu PETG Basic @BBL H2S 0.6 nozzle") == ("Bambu PETG Basic", "H2S", "0.6")
     assert parse_inherits("Generic PP @base") == ("Generic PP", None, None)
     assert parse_inherits("Generic PC") == ("Generic PC", None, None)
+
+
+def test_leaf_is_flattened_onto_its_bambu_base():
+    base = {
+        "name": "Bambu PETG Basic @BBL H2S 0.4 nozzle",
+        "inherits": "Bambu PETG Basic @BBL H2S",
+        "setting_id": "GFSG00",
+        "include": ["fdm_filament_template_direct_dual"],
+        "filament_id": "GFG00",
+        "nozzle_temperature": ["255"],
+        "fan_max_speed": ["80"],
+    }
+    leaf = resolve_leaf(TREE, "H2S", "0.4", RED, BASES, {"Bambu PETG Basic @BBL H2S 0.4 nozzle": base}.get)
+    assert leaf["inherits"] == ""  # no parent: Bambu Studio shows the name without "@H2S 0.4"
+    assert leaf["fan_max_speed"] == ["80"] and leaf["filament_id"] == "GFG00"
+    assert leaf["nozzle_temperature"] == ["246"]  # the tree wins over the base
+    assert leaf["name"] == "Polymaker PETG - Red @H2S 0.4"
+    assert "setting_id" not in leaf and "include" not in leaf
+
+
+def test_leaf_keeps_its_parent_when_the_base_cannot_be_read():
+    leaf = resolve_leaf(TREE, "H2S", "0.4", RED, BASES, lambda _name: {})
+    assert leaf["inherits"] == "Bambu PETG Basic @BBL H2S 0.4 nozzle"

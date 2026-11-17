@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 NOZZLE_BOUND_KEYS = frozenset(
@@ -33,6 +34,8 @@ SKIP_KEYS = IDENTITY_KEYS | {
     "compatible_prints",
     "compatible_prints_condition",
 }
+# Keys of a Bambu base preset that describe the base itself: a flattened leaf must not carry them
+_BASE_ONLY_KEYS = (SKIP_KEYS - {"filament_id"}) | {"include", "description", "renamed_from", "alias"}
 DEFAULT_TARGETS = {"machines": ["X2D", "H2S", "H2D", "H2C"], "nozzles": ["0.2", "0.4", "0.6", "0.8"]}
 
 _ABRASIVE = re.compile(r"(CF|GF)\b", re.IGNORECASE)
@@ -135,16 +138,28 @@ def resolve_with_sources(
     return out
 
 
-def resolve_leaf(tree: TreeData, machine: str, nozzle: str, color_id: int, base_names: set[str]) -> dict:
+def resolve_leaf(
+    tree: TreeData,
+    machine: str,
+    nozzle: str,
+    color_id: int,
+    base_names: set[str],
+    base_values: Callable[[str], dict] | None = None,
+) -> dict:
     name = leaf_name(tree, machine, nozzle, color_id)
     first = nozzle.split("+")[0]  # merged nozzles hold the same values and base: any of them speaks for all
-    leaf = {k: v for k, (v, _) in resolve_with_sources(tree, machine, first, color_id).items()}
+    inherits = match_base(tree.base_family, machine, first, base_names, tree.fallback_inherits)
+    # Bambu Studio only gives a custom filament a short name (no "@X2D 0.4" in its lists, and the same filament
+    # followed across a printer switch) when it has no parent: so the leaf carries the base's values itself,
+    # filament_id included (a child got it from its parent). A base that cannot be read keeps the parent link.
+    base = {k: v for k, v in (base_values(inherits) if base_values else {}).items() if k not in _BASE_ONLY_KEYS}
+    leaf = base | {k: v for k, (v, _) in resolve_with_sources(tree, machine, first, color_id).items()}
     leaf.update(
         {
             "name": name,
             "filament_settings_id": [name],
             "from": "User",
-            "inherits": match_base(tree.base_family, machine, first, base_names, tree.fallback_inherits),
+            "inherits": "" if base else inherits,
             "version": tree.version,
             "filament_vendor": [tree.brand],
             "default_filament_colour": [tree.colors[color_id][1]],

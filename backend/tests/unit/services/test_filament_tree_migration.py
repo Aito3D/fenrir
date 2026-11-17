@@ -168,16 +168,17 @@ def test_base_reader_walks_inherits(monkeypatch):
     assert reader.values("C") == {} and reader.values("nope") == {}
 
 
-def test_base_value_reader_takes_extruder_variants_from_include(monkeypatch):
+def test_base_value_reader_merges_include_templates(monkeypatch):
     files = {
         "t.json": json.dumps({"name": "T", "filament_extruder_variant": ["Std", "HF"], "x": ["9", "9"]}),
         "a.json": json.dumps({"name": "A", "filament_extruder_variant": ["Std"], "x": ["1"]}),
-        "b.json": json.dumps({"name": "B", "inherits": "A", "include": ["T", "gone"]}),
+        "b.json": json.dumps({"name": "B", "inherits": "A", "include": ["T", "gone"], "y": ["2"]}),
     }
     monkeypatch.setattr("backend.app.services.filament_tree_base.read_bundle_preset", files.get)
     values = BaseValueReader({"A": "a.json", "B": "b.json", "T": "t.json"}).values("B")
     assert values["filament_extruder_variant"] == ["Std", "HF"]
-    assert values["x"] == ["1"]  # the template's other values are not merged
+    assert values["x"] == ["9", "9"]  # like Bambu Studio: an include overrides what the parent set
+    assert values["y"] == ["2"] and values["name"] == "B"  # the preset's own values win over the template
 
 
 def test_source_pair_outside_compat_keeps_nozzle_values():

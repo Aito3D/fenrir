@@ -32,6 +32,7 @@ from backend.app.services.filament_tree import (
     resolve_leaf,
     resolve_with_sources,
 )
+from backend.app.services.filament_tree_base import build_base_reader
 
 TARGETS_KEY = "filament_tree_targets"
 _UNSET = object()
@@ -211,6 +212,7 @@ async def regenerate_tree(db: AsyncSession, tree_id: int) -> dict:
     tree = await load_tree(db, tree_id)
     meta = await _get_tree(db, tree_id)
     bases = await base_names(db)
+    reader = await build_base_reader(db)
     targets = leaf_groups(tree, await get_targets(db), bases)
     existing = {
         (lf.machine, lf.nozzle, lf.color_id): lf
@@ -238,7 +240,7 @@ async def regenerate_tree(db: AsyncSession, tree_id: int) -> dict:
         machine, nozzle, color_id = key
         name = leaf_name(tree, *key)
         color_name, color_hex = tree.colors[color_id]
-        content = json.dumps(resolve_leaf(tree, machine, nozzle, color_id, bases), indent=4)
+        content = json.dumps(resolve_leaf(tree, machine, nozzle, color_id, bases, reader.values), indent=4)
         if len(content) > _CONTENT_MAX_LENGTH:
             raise ValueError(f"{name}: the generated preset is larger than {_CONTENT_MAX_LENGTH} bytes")
         try:

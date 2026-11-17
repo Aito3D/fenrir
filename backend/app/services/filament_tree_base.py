@@ -34,16 +34,13 @@ class BaseValueReader:
                 current = data.get("inherits") or ""
             merged: dict = {}
             for data in reversed(chain):
-                # shortcut: of an `include` template only the extruder variant list is merged (it names the
-                # entries of per-variant arrays), merge whole templates if their other defaults are ever needed
+                # same order as Bambu Studio: the parent's values, then the `include` templates, then the preset's own
                 for template in data.get("include") or []:
                     raw = read_bundle_preset(self._filenames[template]) if template in self._filenames else None
                     try:
-                        variants = json.loads(raw).get(VARIANT_KEY) if raw else None
+                        merged.update(json.loads(raw) if raw else {})
                     except ValueError:
-                        variants = None
-                    if variants:
-                        merged[VARIANT_KEY] = variants
+                        pass
                 merged.update(data)
             self._cache[name] = merged
         return self._cache[name]
