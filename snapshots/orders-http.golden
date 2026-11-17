@@ -1,0 +1,7312 @@
+### exit: 0
+### stdout:
+[
+ {
+  "scenario": "board",
+  "steps": [
+   {
+    "body": {
+     "computed_at": null,
+     "rows": [],
+     "scan": false,
+     "stock_loaded_at": null,
+     "sync": {
+      "configured": true,
+      "enabled": true,
+      "last_error": null,
+      "last_error_at": null,
+      "last_success_at": null,
+      "pending": 0,
+      "running": false
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "board before any pass",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "computed_at": "<SCRUBBED>",
+     "rows": [
+      {
+       "age_days": 5,
+       "contact": null,
+       "contacted": null,
+       "currency": "XPF",
+       "customer": "Customer 1",
+       "customer_id": "c1",
+       "date": "<SCRUBBED>",
+       "estimable": false,
+       "facts": {
+        "channel": "",
+        "delivery_method": "",
+        "estimate_id": null,
+        "payment_terms": "",
+        "quote_number": "",
+        "quote_url": null,
+        "reference": "",
+        "shopify_order": "",
+        "shopify_url": null
+       },
+       "id": "so1",
+       "is_core": true,
+       "last_event": {
+        "actor_name": null,
+        "detail": {
+         "pickup": false,
+         "reference": "",
+         "source": "direct",
+         "total": 1000.0,
+         "units": 2.0
+        },
+        "kind": "order.received",
+        "occurred_at": "<SCRUBBED>"
+       },
+       "lines": [
+        {
+         "cancelled": 0.0,
+         "codes": [
+          "SKU"
+         ],
+         "covered": 2.0,
+         "covered_by_po": 0.0,
+         "floor": 0.0,
+         "id": "l1",
+         "invoiced": 0.0,
+         "item_id": "A",
+         "name": "Thing",
+         "packable": 2.0,
+         "packed_waiting": 0.0,
+         "po_numbers": [],
+         "quantity": 2.0,
+         "rate": 0.0,
+         "remaining": 2.0,
+         "shipped": 0.0,
+         "shortfall": 0.0,
+         "sku": "SKU",
+         "state": "ready",
+         "stock_available": 3.0
+        }
+       ],
+       "number": "SO-00001",
+       "packages": [],
+       "packed": 0.0,
+       "payment": {
+        "advance": 0.0,
+        "due": 0,
+        "invoice_paid": 0.0,
+        "invoices": [],
+        "left": 1000.0,
+        "next_due": null,
+        "overdue": 0,
+        "paid": 0.0,
+        "pct": 0,
+        "rest": 1000.0,
+        "retainer": 0,
+        "retainer_known": true,
+        "state": "unpaid"
+       },
+       "picked": 0,
+       "picklists": [],
+       "prep": null,
+       "ready_ratio": 1.0,
+       "status": "to_ship",
+       "total": 1000.0,
+       "unbilled_units": 0.0,
+       "units": {
+        "backordered": 0,
+        "ready": 2.0,
+        "shipped": 0.0,
+        "to_order": 0,
+        "total": 2.0
+       },
+       "version": "<SCRUBBED>",
+       "zoho_url": "https://books.example/app/1#/salesorders/so1"
+      },
+      {
+       "age_days": 5,
+       "contact": null,
+       "contacted": null,
+       "currency": "XPF",
+       "customer": "Customer 2",
+       "customer_id": "c1",
+       "date": "<SCRUBBED>",
+       "estimable": false,
+       "facts": {
+        "channel": "",
+        "delivery_method": "",
+        "estimate_id": null,
+        "payment_terms": "",
+        "quote_number": "",
+        "quote_url": null,
+        "reference": "",
+        "shopify_order": "",
+        "shopify_url": null
+       },
+       "id": "so2",
+       "is_core": true,
+       "last_event": {
+        "actor_name": null,
+        "detail": {
+         "pickup": false,
+         "reference": "",
+         "source": "direct",
+         "total": 1000.0,
+         "units": 3.0
+        },
+        "kind": "order.received",
+        "occurred_at": "<SCRUBBED>"
+       },
+       "lines": [
+        {
+         "cancelled": 0.0,
+         "codes": [
+          "SKU"
+         ],
+         "covered": 1.0,
+         "covered_by_po": 2.0,
+         "floor": 0.0,
+         "id": "l2",
+         "invoiced": 0.0,
+         "item_id": "B",
+         "name": "Thing",
+         "packable": 1.0,
+         "packed_waiting": 0.0,
+         "po_numbers": [
+          "PO-0001"
+         ],
+         "quantity": 3.0,
+         "rate": 0.0,
+         "remaining": 3.0,
+         "shipped": 0.0,
+         "shortfall": 2.0,
+         "sku": "SKU",
+         "state": "backorder",
+         "stock_available": 1.0
+        }
+       ],
+       "number": "SO-00002",
+       "packages": [],
+       "packed": 0.0,
+       "payment": {
+        "advance": 0.0,
+        "due": 0,
+        "invoice_paid": 0.0,
+        "invoices": [],
+        "left": 1000.0,
+        "next_due": null,
+        "overdue": 0,
+        "paid": 0.0,
+        "pct": 0,
+        "rest": 1000.0,
+        "retainer": 0,
+        "retainer_known": true,
+        "state": "unpaid"
+       },
+       "picked": 0,
+       "picklists": [],
+       "prep": null,
+       "ready_ratio": 0.3333333333333333,
+       "status": "incoming",
+       "total": 1000.0,
+       "unbilled_units": 0.0,
+       "units": {
+        "backordered": 2.0,
+        "ready": 1.0,
+        "shipped": 0.0,
+        "to_order": 0,
+        "total": 3.0
+       },
+       "version": "<SCRUBBED>",
+       "zoho_url": "https://books.example/app/1#/salesorders/so2"
+      }
+     ],
+     "scan": false,
+     "stock_loaded_at": "<SCRUBBED>",
+     "sync": {
+      "configured": true,
+      "enabled": true,
+      "last_error": null,
+      "last_error_at": null,
+      "last_success_at": "<SCRUBBED>",
+      "pending": 0,
+      "running": false
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "first pass",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so2"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "po1"
+      ],
+      "call": "zoho.get_purchaseorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so3"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A",
+        "B"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "computed_at": "<SCRUBBED>",
+     "rows": [
+      {
+       "age_days": 5,
+       "contact": null,
+       "contacted": null,
+       "currency": "XPF",
+       "customer": "Customer 1",
+       "customer_id": "c1",
+       "date": "<SCRUBBED>",
+       "estimable": false,
+       "facts": {
+        "channel": "",
+        "delivery_method": "",
+        "estimate_id": null,
+        "payment_terms": "",
+        "quote_number": "",
+        "quote_url": null,
+        "reference": "",
+        "shopify_order": "",
+        "shopify_url": null
+       },
+       "id": "so1",
+       "is_core": true,
+       "last_event": {
+        "actor_name": null,
+        "detail": {
+         "pickup": false,
+         "reference": "",
+         "source": "direct",
+         "total": 1000.0,
+         "units": 2.0
+        },
+        "kind": "order.received",
+        "occurred_at": "<SCRUBBED>"
+       },
+       "lines": [
+        {
+         "cancelled": 0.0,
+         "codes": [
+          "SKU"
+         ],
+         "covered": 2.0,
+         "covered_by_po": 0.0,
+         "floor": 0.0,
+         "id": "l1",
+         "invoiced": 0.0,
+         "item_id": "A",
+         "name": "Thing",
+         "packable": 2.0,
+         "packed_waiting": 0.0,
+         "po_numbers": [],
+         "quantity": 2.0,
+         "rate": 0.0,
+         "remaining": 2.0,
+         "shipped": 0.0,
+         "shortfall": 0.0,
+         "sku": "SKU",
+         "state": "ready",
+         "stock_available": 3.0
+        }
+       ],
+       "number": "SO-00001",
+       "packages": [],
+       "packed": 0.0,
+       "payment": {
+        "advance": 0.0,
+        "due": 0,
+        "invoice_paid": 0.0,
+        "invoices": [],
+        "left": 1000.0,
+        "next_due": null,
+        "overdue": 0,
+        "paid": 0.0,
+        "pct": 0,
+        "rest": 1000.0,
+        "retainer": 0,
+        "retainer_known": true,
+        "state": "unpaid"
+       },
+       "picked": 0,
+       "picklists": [],
+       "prep": null,
+       "ready_ratio": 1.0,
+       "status": "to_ship",
+       "total": 1000.0,
+       "unbilled_units": 0.0,
+       "units": {
+        "backordered": 0,
+        "ready": 2.0,
+        "shipped": 0.0,
+        "to_order": 0,
+        "total": 2.0
+       },
+       "version": "<SCRUBBED>",
+       "zoho_url": "https://books.example/app/1#/salesorders/so1"
+      },
+      {
+       "age_days": 5,
+       "contact": null,
+       "contacted": null,
+       "currency": "XPF",
+       "customer": "Customer 2",
+       "customer_id": "c1",
+       "date": "<SCRUBBED>",
+       "estimable": false,
+       "facts": {
+        "channel": "",
+        "delivery_method": "",
+        "estimate_id": null,
+        "payment_terms": "",
+        "quote_number": "",
+        "quote_url": null,
+        "reference": "",
+        "shopify_order": "",
+        "shopify_url": null
+       },
+       "id": "so2",
+       "is_core": true,
+       "last_event": {
+        "actor_name": null,
+        "detail": {
+         "pickup": false,
+         "reference": "",
+         "source": "direct",
+         "total": 1000.0,
+         "units": 3.0
+        },
+        "kind": "order.received",
+        "occurred_at": "<SCRUBBED>"
+       },
+       "lines": [
+        {
+         "cancelled": 0.0,
+         "codes": [
+          "SKU"
+         ],
+         "covered": 1.0,
+         "covered_by_po": 2.0,
+         "floor": 0.0,
+         "id": "l2",
+         "invoiced": 0.0,
+         "item_id": "B",
+         "name": "Thing",
+         "packable": 1.0,
+         "packed_waiting": 0.0,
+         "po_numbers": [
+          "PO-0001"
+         ],
+         "quantity": 3.0,
+         "rate": 0.0,
+         "remaining": 3.0,
+         "shipped": 0.0,
+         "shortfall": 2.0,
+         "sku": "SKU",
+         "state": "backorder",
+         "stock_available": 1.0
+        }
+       ],
+       "number": "SO-00002",
+       "packages": [],
+       "packed": 0.0,
+       "payment": {
+        "advance": 0.0,
+        "due": 0,
+        "invoice_paid": 0.0,
+        "invoices": [],
+        "left": 1000.0,
+        "next_due": null,
+        "overdue": 0,
+        "paid": 0.0,
+        "pct": 0,
+        "rest": 1000.0,
+        "retainer": 0,
+        "retainer_known": true,
+        "state": "unpaid"
+       },
+       "picked": 0,
+       "picklists": [],
+       "prep": null,
+       "ready_ratio": 0.3333333333333333,
+       "status": "incoming",
+       "total": 1000.0,
+       "unbilled_units": 0.0,
+       "units": {
+        "backordered": 2.0,
+        "ready": 1.0,
+        "shipped": 0.0,
+        "to_order": 0,
+        "total": 3.0
+       },
+       "version": "<SCRUBBED>",
+       "zoho_url": "https://books.example/app/1#/salesorders/so2"
+      }
+     ],
+     "scan": false,
+     "stock_loaded_at": "<SCRUBBED>",
+     "sync": {
+      "configured": true,
+      "enabled": true,
+      "last_error": null,
+      "last_error_at": null,
+      "last_success_at": "<SCRUBBED>",
+      "pending": 0,
+      "running": false
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "second pass",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A",
+        "B"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "computed_at": "<SCRUBBED>",
+     "rows": [
+      {
+       "age_days": 5,
+       "contact": null,
+       "contacted": null,
+       "currency": "XPF",
+       "customer": "Customer 1",
+       "customer_id": "c1",
+       "date": "<SCRUBBED>",
+       "estimable": false,
+       "facts": {
+        "channel": "",
+        "delivery_method": "",
+        "estimate_id": null,
+        "payment_terms": "",
+        "quote_number": "",
+        "quote_url": null,
+        "reference": "",
+        "shopify_order": "",
+        "shopify_url": null
+       },
+       "id": "so1",
+       "is_core": true,
+       "last_event": {
+        "actor_name": null,
+        "detail": {
+         "pickup": false,
+         "reference": "",
+         "source": "direct",
+         "total": 1000.0,
+         "units": 2.0
+        },
+        "kind": "order.received",
+        "occurred_at": "<SCRUBBED>"
+       },
+       "lines": [
+        {
+         "cancelled": 0.0,
+         "codes": [
+          "SKU"
+         ],
+         "covered": 2.0,
+         "covered_by_po": 0.0,
+         "floor": 0.0,
+         "id": "l1",
+         "invoiced": 0.0,
+         "item_id": "A",
+         "name": "Thing",
+         "packable": 2.0,
+         "packed_waiting": 0.0,
+         "po_numbers": [],
+         "quantity": 2.0,
+         "rate": 0.0,
+         "remaining": 2.0,
+         "shipped": 0.0,
+         "shortfall": 0.0,
+         "sku": "SKU",
+         "state": "ready",
+         "stock_available": 3.0
+        }
+       ],
+       "number": "SO-00001",
+       "packages": [],
+       "packed": 0.0,
+       "payment": {
+        "advance": 0.0,
+        "due": 0,
+        "invoice_paid": 0.0,
+        "invoices": [],
+        "left": 1000.0,
+        "next_due": null,
+        "overdue": 0,
+        "paid": 0.0,
+        "pct": 0,
+        "rest": 1000.0,
+        "retainer": 0,
+        "retainer_known": true,
+        "state": "unpaid"
+       },
+       "picked": 0,
+       "picklists": [],
+       "prep": null,
+       "ready_ratio": 1.0,
+       "status": "to_ship",
+       "total": 1000.0,
+       "unbilled_units": 0.0,
+       "units": {
+        "backordered": 0,
+        "ready": 2.0,
+        "shipped": 0.0,
+        "to_order": 0,
+        "total": 2.0
+       },
+       "version": "<SCRUBBED>",
+       "zoho_url": "https://books.example/app/1#/salesorders/so1"
+      },
+      {
+       "age_days": 5,
+       "contact": null,
+       "contacted": null,
+       "currency": "XPF",
+       "customer": "Customer 2",
+       "customer_id": "c1",
+       "date": "<SCRUBBED>",
+       "estimable": false,
+       "facts": {
+        "channel": "",
+        "delivery_method": "",
+        "estimate_id": null,
+        "payment_terms": "",
+        "quote_number": "",
+        "quote_url": null,
+        "reference": "",
+        "shopify_order": "",
+        "shopify_url": null
+       },
+       "id": "so2",
+       "is_core": true,
+       "last_event": {
+        "actor_name": null,
+        "detail": {
+         "pickup": false,
+         "reference": "",
+         "source": "direct",
+         "total": 1000.0,
+         "units": 3.0
+        },
+        "kind": "order.received",
+        "occurred_at": "<SCRUBBED>"
+       },
+       "lines": [
+        {
+         "cancelled": 0.0,
+         "codes": [
+          "SKU"
+         ],
+         "covered": 1.0,
+         "covered_by_po": 2.0,
+         "floor": 0.0,
+         "id": "l2",
+         "invoiced": 0.0,
+         "item_id": "B",
+         "name": "Thing",
+         "packable": 1.0,
+         "packed_waiting": 0.0,
+         "po_numbers": [
+          "PO-0001"
+         ],
+         "quantity": 3.0,
+         "rate": 0.0,
+         "remaining": 3.0,
+         "shipped": 0.0,
+         "shortfall": 2.0,
+         "sku": "SKU",
+         "state": "backorder",
+         "stock_available": 1.0
+        }
+       ],
+       "number": "SO-00002",
+       "packages": [],
+       "packed": 0.0,
+       "payment": {
+        "advance": 0.0,
+        "due": 0,
+        "invoice_paid": 0.0,
+        "invoices": [],
+        "left": 1000.0,
+        "next_due": null,
+        "overdue": 0,
+        "paid": 0.0,
+        "pct": 0,
+        "rest": 1000.0,
+        "retainer": 0,
+        "retainer_known": true,
+        "state": "unpaid"
+       },
+       "picked": 0,
+       "picklists": [],
+       "prep": null,
+       "ready_ratio": 0.3333333333333333,
+       "status": "incoming",
+       "total": 1000.0,
+       "unbilled_units": 0.0,
+       "units": {
+        "backordered": 2.0,
+        "ready": 1.0,
+        "shipped": 0.0,
+        "to_order": 0,
+        "total": 3.0
+       },
+       "version": "<SCRUBBED>",
+       "zoho_url": "https://books.example/app/1#/salesorders/so2"
+      }
+     ],
+     "scan": false,
+     "stock_loaded_at": "<SCRUBBED>",
+     "sync": {
+      "configured": true,
+      "enabled": true,
+      "last_error": null,
+      "last_error_at": null,
+      "last_success_at": "<SCRUBBED>",
+      "pending": 0,
+      "running": false
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "rows": [
+      {
+       "currency": "XPF",
+       "customer": "Customer 3",
+       "date": "<SCRUBBED>",
+       "handed_over": null,
+       "id": "so3",
+       "is_core": true,
+       "number": "SO-00003",
+       "paid_flag": "paid",
+       "payment": {
+        "advance": 0.0,
+        "due": 0,
+        "invoice_paid": 0.0,
+        "invoices": [],
+        "left": 1000.0,
+        "next_due": null,
+        "overdue": 0,
+        "paid": 0.0,
+        "pct": 0,
+        "rest": 1000.0,
+        "retainer": 0,
+        "retainer_known": true,
+        "state": "unpaid"
+       },
+       "reference": "",
+       "total": 1000.0,
+       "units": {
+        "shipped": 1.0,
+        "total": 1.0
+       },
+       "zoho_url": "https://books.example/app/1#/salesorders/so3"
+      }
+     ]
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/finished",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "age_days": 5,
+     "contact": null,
+     "contacted": null,
+     "currency": "XPF",
+     "customer": "Customer 3",
+     "customer_id": "c1",
+     "date": "<SCRUBBED>",
+     "estimable": false,
+     "facts": {
+      "channel": "",
+      "delivery_method": "",
+      "estimate_id": null,
+      "payment_terms": "",
+      "quote_number": "",
+      "quote_url": null,
+      "reference": "",
+      "shopify_order": "",
+      "shopify_url": null
+     },
+     "id": "so3",
+     "is_core": false,
+     "lines": [
+      {
+       "cancelled": 0.0,
+       "codes": [
+        "SKU"
+       ],
+       "covered": 0.0,
+       "covered_by_po": 0.0,
+       "floor": 0.0,
+       "id": "l3",
+       "invoiced": 0.0,
+       "item_id": "A",
+       "name": "Thing",
+       "packable": 0.0,
+       "packed_waiting": 0.0,
+       "po_numbers": [],
+       "quantity": 1.0,
+       "rate": 0.0,
+       "remaining": 0.0,
+       "shipped": 1.0,
+       "shortfall": 0.0,
+       "sku": "SKU",
+       "state": "shipped",
+       "stock_available": null
+      }
+     ],
+     "number": "SO-00003",
+     "packages": [],
+     "packed": 0,
+     "payment": {
+      "advance": 0.0,
+      "due": 0,
+      "invoice_paid": 0.0,
+      "invoices": [],
+      "left": 1000.0,
+      "next_due": null,
+      "overdue": 0,
+      "paid": 0.0,
+      "pct": 0,
+      "rest": 1000.0,
+      "retainer": 0,
+      "retainer_known": true,
+      "state": "unpaid"
+     },
+     "picked": 0,
+     "picklists": [],
+     "prep": null,
+     "ready_ratio": 1.0,
+     "status": "finished",
+     "total": 1000.0,
+     "unbilled_units": 1.0,
+     "units": {
+      "backordered": 0,
+      "ready": 0,
+      "shipped": 1.0,
+      "to_order": 0,
+      "total": 1.0
+     },
+     "version": "<SCRUBBED>",
+     "zoho_url": "https://books.example/app/1#/salesorders/so3"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/finished/so3",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": "Finished order not found."
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 404,
+    "step": "an open order is not finished",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "core_brands": [
+      "Bambu Lab",
+      "eSUN",
+      "SUNLU",
+      "Polymaker",
+      "Inslogic",
+      "Magigoo"
+     ],
+     "max_age_days": 365,
+     "scan_enabled": false,
+     "sync_enabled": true,
+     "sync_minutes": 15
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/settings",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "core_brands": [
+      "eSUN",
+      "Marlow"
+     ],
+     "max_age_days": 0,
+     "scan_enabled": true,
+     "sync_enabled": false,
+     "sync_minutes": 60
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "core_brands": [
+      " eSUN ",
+      "esun",
+      "Marlow"
+     ],
+     "max_age_days": 0,
+     "scan_enabled": true,
+     "sync_enabled": false,
+     "sync_minutes": 60
+    },
+    "status": 200,
+    "step": "PUT /api/v1/order-board/settings",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": [
+      {
+       "ctx": {
+        "expected": "5, 15 or 60"
+       },
+       "input": 7,
+       "loc": [
+        "body",
+        "sync_minutes"
+       ],
+       "msg": "Input should be 5, 15 or 60",
+       "type": "literal_error"
+      }
+     ]
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "core_brands": [],
+     "max_age_days": 0,
+     "sync_enabled": true,
+     "sync_minutes": 7
+    },
+    "status": 422,
+    "step": "bad minutes",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "core_brands": [
+      "eSUN",
+      "Marlow"
+     ],
+     "max_age_days": 0,
+     "scan_enabled": true,
+     "sync_enabled": false,
+     "sync_minutes": 60
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/settings",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "watching": false
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/watch",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "watching": false
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "PUT /api/v1/order-board/orders/so1/watch",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "watching": false
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "DELETE /api/v1/order-board/orders/so1/watch",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "detail": "Order not found."
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 404,
+    "step": "unknown order",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "actor_class": "user",
+     "actor_name": "Admin",
+     "changes": null,
+     "detail": null,
+     "id": 3,
+     "kind": "note.added",
+     "note": "Client called, comes Friday",
+     "occurred_at": "<SCRUBBED>"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "note": "Client called, comes Friday"
+    },
+    "status": 201,
+    "step": "POST /api/v1/order-board/orders/so1/events",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "detail": [
+      {
+       "ctx": {
+        "min_length": 1
+       },
+       "input": "",
+       "loc": [
+        "body",
+        "note"
+       ],
+       "msg": "String should have at least 1 character",
+       "type": "string_too_short"
+      }
+     ]
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "note": ""
+    },
+    "status": 422,
+    "step": "empty note",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "events": [
+      {
+       "actor_class": "user",
+       "actor_name": "Admin",
+       "changes": null,
+       "detail": null,
+       "id": 3,
+       "kind": "note.added",
+       "note": "Client called, comes Friday",
+       "occurred_at": "<SCRUBBED>"
+      },
+      {
+       "actor_class": "system",
+       "actor_name": null,
+       "changes": null,
+       "detail": {
+        "pickup": false,
+        "reference": "",
+        "source": "direct",
+        "total": 1000.0,
+        "units": 2.0
+       },
+       "id": 1,
+       "kind": "order.received",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      }
+     ],
+     "has_more": false
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/events?depth=story",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "events": [
+      {
+       "actor_class": "user",
+       "actor_name": "Admin",
+       "changes": null,
+       "detail": null,
+       "id": 3,
+       "kind": "note.added",
+       "note": "Client called, comes Friday",
+       "occurred_at": "<SCRUBBED>"
+      },
+      {
+       "actor_class": "system",
+       "actor_name": null,
+       "changes": null,
+       "detail": {
+        "pickup": false,
+        "reference": "",
+        "source": "direct",
+        "total": 1000.0,
+        "units": 2.0
+       },
+       "id": 1,
+       "kind": "order.received",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      }
+     ],
+     "has_more": false
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/events?depth=detail",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "events": [
+      {
+       "actor_class": "user",
+       "actor_name": "Admin",
+       "changes": null,
+       "detail": null,
+       "id": 3,
+       "kind": "note.added",
+       "note": "Client called, comes Friday",
+       "occurred_at": "<SCRUBBED>"
+      },
+      {
+       "actor_class": "system",
+       "actor_name": null,
+       "changes": null,
+       "detail": {
+        "pickup": false,
+        "reference": "",
+        "source": "direct",
+        "total": 1000.0,
+        "units": 2.0
+       },
+       "id": 1,
+       "kind": "order.received",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      }
+     ],
+     "has_more": false
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/events?depth=everything",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "events": [
+      {
+       "actor_class": "user",
+       "actor_name": "Admin",
+       "changes": null,
+       "detail": null,
+       "id": 3,
+       "kind": "note.added",
+       "note": "Client called, comes Friday",
+       "occurred_at": "<SCRUBBED>"
+      }
+     ],
+     "has_more": true
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/events?limit=1",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "detail": "The cursor needs both 'before' and 'before_at'"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 422,
+    "step": "half a cursor",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "pages": 1,
+     "text": [
+      "AITO3D BON DE PRÉPARATION\nSO-00001\nImprimé le <SCRUBBED> <SCRUBBED>\nClient\nCustomer 1\nCommande du <SCRUBBED>\nPaiement Reste à payer 1 000 FCFP\nQté Produit Référence Commandé\n2 Thing SKU 2\n1 article · 2 unités\nPréparé par Contrôlé par Nombre de colis Poids\nDocument interne. Le colis est créé dans Zoho Books après contrôle."
+     ]
+    },
+    "content_type": "application/pdf",
+    "headers": {
+     "cache-control": "no-store",
+     "content-disposition": "inline; filename=\"bon-de-preparation.pdf\"; filename*=UTF-8''bon-de-preparation.pdf"
+    },
+    "request": null,
+    "status": 200,
+    "step": "prep sheet, whole order",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "pages": 3,
+     "text": [
+      "AITO3D LISTE DE PRÉLÈVEMENT\n2 commandes\nImprimé le <SCRUBBED> <SCRUBBED>\nQté Produit Référence\neSUN\n2 Thing SKU\nSO-00001 ×2\n1 Thing SKU\nSO-00002 ×1\n2 articles · 3 unités",
+      "AITO3D BON DE PRÉPARATION\nSO-00001\nImprimé le <SCRUBBED> <SCRUBBED>\nClient\nCustomer 1\nCommande du <SCRUBBED>\nPaiement Reste à payer 1 000 FCFP\nQté Produit Référence Commandé\n2 Thing SKU 2\n1 article · 2 unités\nPréparé par Contrôlé par Nombre de colis Poids\nDocument interne. Le colis est créé dans Zoho Books après contrôle.",
+      "AITO3D BON DE PRÉPARATION\nSO-00002\nImprimé le <SCRUBBED> <SCRUBBED>\nClient\nCustomer 2\nCommande du <SCRUBBED>\nPaiement Reste à payer 1 000 FCFP\nQté Produit Référence Commandé\n1 Thing SKU 3\n1 article · 1 unité\nPas en stock, reste à livrer\n2 Thing\nPréparé par Contrôlé par Nombre de colis Poids\nDocument interne. Le colis est créé dans Zoho Books après contrôle."
+     ]
+    },
+    "content_type": "application/pdf",
+    "headers": {
+     "cache-control": "no-store",
+     "content-disposition": "inline; filename=\"bons-de-preparation.pdf\"; filename*=UTF-8''bons-de-preparation.pdf"
+    },
+    "request": {
+     "ids": [
+      "so1",
+      "so2",
+      "so1",
+      "nope"
+     ]
+    },
+    "status": 200,
+    "step": "POST /api/v1/order-board/prep-sheet/batch",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": "No order to prepare."
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "ids": [
+      "nope"
+     ]
+    },
+    "status": 404,
+    "step": "batch with nothing to pick",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "computed_at": "<SCRUBBED>",
+     "rows": [
+      {
+       "age_days": 5,
+       "contact": null,
+       "contacted": null,
+       "currency": "XPF",
+       "customer": "Customer 1",
+       "customer_id": "c1",
+       "date": "<SCRUBBED>",
+       "estimable": false,
+       "facts": {
+        "channel": "",
+        "delivery_method": "",
+        "estimate_id": null,
+        "payment_terms": "",
+        "quote_number": "",
+        "quote_url": null,
+        "reference": "",
+        "shopify_order": "",
+        "shopify_url": null
+       },
+       "id": "so1",
+       "is_core": true,
+       "last_event": {
+        "actor_name": "",
+        "detail": {
+         "picklist": null
+        },
+        "kind": "prep.printed",
+        "occurred_at": "<SCRUBBED>"
+       },
+       "lines": [
+        {
+         "cancelled": 0.0,
+         "codes": [
+          "SKU"
+         ],
+         "covered": 2.0,
+         "covered_by_po": 0.0,
+         "floor": 0.0,
+         "id": "l1",
+         "invoiced": 0.0,
+         "item_id": "A",
+         "name": "Thing",
+         "packable": 2.0,
+         "packed_waiting": 0.0,
+         "po_numbers": [],
+         "quantity": 2.0,
+         "rate": 0.0,
+         "remaining": 2.0,
+         "shipped": 0.0,
+         "shortfall": 0.0,
+         "sku": "SKU",
+         "state": "ready",
+         "stock_available": 3.0
+        }
+       ],
+       "number": "SO-00001",
+       "packages": [],
+       "packed": 0.0,
+       "payment": {
+        "advance": 0.0,
+        "due": 0,
+        "invoice_paid": 0.0,
+        "invoices": [],
+        "left": 1000.0,
+        "next_due": null,
+        "overdue": 0,
+        "paid": 0.0,
+        "pct": 0,
+        "rest": 1000.0,
+        "retainer": 0,
+        "retainer_known": true,
+        "state": "unpaid"
+       },
+       "picked": 0,
+       "picklists": [],
+       "prep": {
+        "at": "<SCRUBBED>",
+        "by": ""
+       },
+       "ready_ratio": 1.0,
+       "status": "to_ship",
+       "total": 1000.0,
+       "unbilled_units": 0.0,
+       "units": {
+        "backordered": 0,
+        "ready": 2.0,
+        "shipped": 0.0,
+        "to_order": 0,
+        "total": 2.0
+       },
+       "version": "<SCRUBBED>",
+       "zoho_url": "https://books.example/app/1#/salesorders/so1"
+      },
+      {
+       "age_days": 5,
+       "contact": null,
+       "contacted": null,
+       "currency": "XPF",
+       "customer": "Customer 2",
+       "customer_id": "c1",
+       "date": "<SCRUBBED>",
+       "estimable": false,
+       "facts": {
+        "channel": "",
+        "delivery_method": "",
+        "estimate_id": null,
+        "payment_terms": "",
+        "quote_number": "",
+        "quote_url": null,
+        "reference": "",
+        "shopify_order": "",
+        "shopify_url": null
+       },
+       "id": "so2",
+       "is_core": true,
+       "last_event": {
+        "actor_name": "",
+        "detail": {
+         "picklist": null
+        },
+        "kind": "prep.printed",
+        "occurred_at": "<SCRUBBED>"
+       },
+       "lines": [
+        {
+         "cancelled": 0.0,
+         "codes": [
+          "SKU"
+         ],
+         "covered": 1.0,
+         "covered_by_po": 2.0,
+         "floor": 0.0,
+         "id": "l2",
+         "invoiced": 0.0,
+         "item_id": "B",
+         "name": "Thing",
+         "packable": 1.0,
+         "packed_waiting": 0.0,
+         "po_numbers": [
+          "PO-0001"
+         ],
+         "quantity": 3.0,
+         "rate": 0.0,
+         "remaining": 3.0,
+         "shipped": 0.0,
+         "shortfall": 2.0,
+         "sku": "SKU",
+         "state": "backorder",
+         "stock_available": 1.0
+        }
+       ],
+       "number": "SO-00002",
+       "packages": [],
+       "packed": 0.0,
+       "payment": {
+        "advance": 0.0,
+        "due": 0,
+        "invoice_paid": 0.0,
+        "invoices": [],
+        "left": 1000.0,
+        "next_due": null,
+        "overdue": 0,
+        "paid": 0.0,
+        "pct": 0,
+        "rest": 1000.0,
+        "retainer": 0,
+        "retainer_known": true,
+        "state": "unpaid"
+       },
+       "picked": 0,
+       "picklists": [],
+       "prep": {
+        "at": "<SCRUBBED>",
+        "by": ""
+       },
+       "ready_ratio": 0.3333333333333333,
+       "status": "incoming",
+       "total": 1000.0,
+       "unbilled_units": 0.0,
+       "units": {
+        "backordered": 2.0,
+        "ready": 1.0,
+        "shipped": 0.0,
+        "to_order": 0,
+        "total": 3.0
+       },
+       "version": "<SCRUBBED>",
+       "zoho_url": "https://books.example/app/1#/salesorders/so2"
+      }
+     ],
+     "scan": true,
+     "stock_loaded_at": "<SCRUBBED>",
+     "sync": {
+      "configured": true,
+      "enabled": false,
+      "last_error": null,
+      "last_error_at": null,
+      "last_success_at": "<SCRUBBED>",
+      "pending": 0,
+      "running": false
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "board after the prints",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "picklist_parcel",
+  "steps": [
+   {
+    "body": {
+     "lines": [
+      {
+       "line_id": "l1",
+       "quantity": 3.0
+      },
+      {
+       "line_id": "lb",
+       "quantity": 1.0
+      }
+     ]
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/picklist",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A",
+        "B"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A",
+        "B"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.picklist_prefill",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": "too_many"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "lines": [
+      {
+       "line_id": "l1",
+       "quantity": 9
+      }
+     ]
+    },
+    "status": 400,
+    "step": "too many",
+    "zoho_calls": [
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.picklist_prefill",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "board": {
+      "computed_at": "<SCRUBBED>",
+      "rows": [
+       {
+        "age_days": 5,
+        "contact": null,
+        "contacted": null,
+        "currency": "XPF",
+        "customer": "Customer 1",
+        "customer_id": "c1",
+        "date": "<SCRUBBED>",
+        "estimable": false,
+        "facts": {
+         "channel": "",
+         "delivery_method": "",
+         "estimate_id": null,
+         "payment_terms": "",
+         "quote_number": "",
+         "quote_url": null,
+         "reference": "",
+         "shopify_order": "",
+         "shopify_url": null
+        },
+        "id": "so1",
+        "is_core": true,
+        "last_event": {
+         "actor_name": null,
+         "detail": {
+          "picklist": "PL-00001",
+          "units": 3.0
+         },
+         "kind": "picklist.created",
+         "occurred_at": "<SCRUBBED>"
+        },
+        "lines": [
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 3.0,
+          "covered_by_po": 0.0,
+          "floor": 0.0,
+          "id": "l1",
+          "invoiced": 0.0,
+          "item_id": "A",
+          "name": "Thing",
+          "packable": 3.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 3.0,
+          "rate": 0.0,
+          "remaining": 3.0,
+          "shipped": 0.0,
+          "shortfall": 0.0,
+          "sku": "SKU",
+          "state": "ready",
+          "stock_available": 3.0
+         },
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 1.0,
+          "covered_by_po": 0.0,
+          "floor": 0.0,
+          "id": "lb",
+          "invoiced": 0.0,
+          "item_id": "B",
+          "name": "Thing",
+          "packable": 1.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 2.0,
+          "rate": 0.0,
+          "remaining": 2.0,
+          "shipped": 0.0,
+          "shortfall": 1.0,
+          "sku": "SKU",
+          "state": "to_order",
+          "stock_available": 1.0
+         }
+        ],
+        "number": "SO-00001",
+        "packages": [],
+        "packed": 0.0,
+        "payment": {
+         "advance": 0.0,
+         "due": 0,
+         "invoice_paid": 0.0,
+         "invoices": [],
+         "left": 1000.0,
+         "next_due": null,
+         "overdue": 0,
+         "paid": 0.0,
+         "pct": 0,
+         "rest": 1000.0,
+         "retainer": 0,
+         "retainer_known": true,
+         "state": "unpaid"
+        },
+        "picked": 0,
+        "picklists": [
+         {
+          "date": "<SCRUBBED>",
+          "id": "pl1",
+          "number": "PL-00001",
+          "status": "yet_to_start"
+         }
+        ],
+        "prep": null,
+        "ready_ratio": 0.8,
+        "status": "partial",
+        "total": 1000.0,
+        "unbilled_units": 0.0,
+        "units": {
+         "backordered": 0,
+         "ready": 4.0,
+         "shipped": 0.0,
+         "to_order": 1.0,
+         "total": 5.0
+        },
+        "version": "<SCRUBBED>",
+        "zoho_url": "https://books.example/app/1#/salesorders/so1"
+       }
+      ],
+      "scan": false,
+      "stock_loaded_at": "<SCRUBBED>",
+      "sync": {
+       "configured": true,
+       "enabled": true,
+       "last_error": null,
+       "last_error_at": null,
+       "last_success_at": "<SCRUBBED>",
+       "pending": 1,
+       "running": false
+      }
+     },
+     "picklist": {
+      "id": "pl1",
+      "number": "PL-00001"
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "lines": [
+      {
+       "line_id": "l1",
+       "quantity": 2
+      },
+      {
+       "line_id": "lb",
+       "quantity": 1
+      }
+     ]
+    },
+    "status": 200,
+    "step": "POST /api/v1/order-board/orders/so1/picklists",
+    "zoho_calls": [
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.picklist_prefill",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       {
+        "date": "<SCRUBBED>",
+        "group_by": "none",
+        "line_items": [
+         {
+          "quantity_picked": 0,
+          "quantity_to_be_picked": 2.0,
+          "salesorder_id": "so1",
+          "so_line_item_id": "l1"
+         },
+         {
+          "quantity_picked": 0,
+          "quantity_to_be_picked": 1.0,
+          "salesorder_id": "so1",
+          "so_line_item_id": "lb"
+         }
+        ],
+        "location_id": "loc1",
+        "parent_entity": "salesorder"
+       }
+      ],
+      "call": "zoho.create_picklist",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": "picklist_open"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "lines": [
+      {
+       "line_id": "l1",
+       "quantity": 1
+      }
+     ]
+    },
+    "status": 400,
+    "step": "second open picklist",
+    "zoho_calls": [
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "id": "pl1",
+     "lines": [
+      {
+       "line_id": "l1",
+       "quantity": 2.0
+      },
+      {
+       "line_id": "lb",
+       "quantity": 1.0
+      }
+     ],
+     "number": "PL-00001",
+     "status": "yet_to_start"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/picklists/pl1",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A",
+        "B"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A",
+        "B"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "pl1"
+      ],
+      "call": "zoho.get_picklist",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "pages": 1,
+     "text": [
+      "AITO3D BON DE PRÉPARATION\nSO-00001 · PL-00001\nImprimé le <SCRUBBED> <SCRUBBED>\nClient\nCustomer 1\nCommande du <SCRUBBED>\nPaiement Reste à payer 1 000 FCFP\nQté Produit Référence Commandé\n2 Thing SKU 3\n1 Thing SKU 2\n2 articles · 3 unités\nHors de ce prélèvement, reste à livrer\n1 Thing\n1 Thing\nPréparé par Contrôlé par Nombre de colis Poids\nDocument interne. Le colis est créé dans Zoho Books après contrôle."
+     ]
+    },
+    "content_type": "application/pdf",
+    "headers": {
+     "cache-control": "no-store",
+     "content-disposition": "inline; filename=\"bon-de-preparation.pdf\"; filename*=UTF-8''bon-de-preparation.pdf"
+    },
+    "request": null,
+    "status": 200,
+    "step": "prep sheet of the picklist",
+    "zoho_calls": [
+     {
+      "args": [
+       "pl1"
+      ],
+      "call": "zoho.get_picklist",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "board": {
+      "computed_at": "<SCRUBBED>",
+      "rows": [
+       {
+        "age_days": 5,
+        "contact": null,
+        "contacted": null,
+        "currency": "XPF",
+        "customer": "Customer 1",
+        "customer_id": "c1",
+        "date": "<SCRUBBED>",
+        "estimable": false,
+        "facts": {
+         "channel": "",
+         "delivery_method": "",
+         "estimate_id": null,
+         "payment_terms": "",
+         "quote_number": "",
+         "quote_url": null,
+         "reference": "",
+         "shopify_order": "",
+         "shopify_url": null
+        },
+        "id": "so1",
+        "is_core": true,
+        "last_event": {
+         "actor_name": null,
+         "detail": {
+          "package": "PKG-00001",
+          "picklist": "PL-00001",
+          "units": 3.0
+         },
+         "kind": "package.created",
+         "occurred_at": "<SCRUBBED>"
+        },
+        "lines": [
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 3.0,
+          "covered_by_po": 0.0,
+          "floor": 2.0,
+          "id": "l1",
+          "invoiced": 0.0,
+          "item_id": "A",
+          "name": "Thing",
+          "packable": 1.0,
+          "packed_waiting": 2.0,
+          "po_numbers": [],
+          "quantity": 3.0,
+          "rate": 0.0,
+          "remaining": 3.0,
+          "shipped": 0.0,
+          "shortfall": 0.0,
+          "sku": "SKU",
+          "state": "ready",
+          "stock_available": 3.0
+         },
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 1.0,
+          "covered_by_po": 0.0,
+          "floor": 1.0,
+          "id": "lb",
+          "invoiced": 0.0,
+          "item_id": "B",
+          "name": "Thing",
+          "packable": 0.0,
+          "packed_waiting": 1.0,
+          "po_numbers": [],
+          "quantity": 2.0,
+          "rate": 0.0,
+          "remaining": 2.0,
+          "shipped": 0.0,
+          "shortfall": 1.0,
+          "sku": "SKU",
+          "state": "to_order",
+          "stock_available": 1.0
+         }
+        ],
+        "number": "SO-00001",
+        "packages": [
+         {
+          "date": "",
+          "id": "pk1",
+          "number": "PKG-00001",
+          "shipment_id": "",
+          "status": "not_shipped"
+         }
+        ],
+        "packed": 3.0,
+        "payment": {
+         "advance": 0.0,
+         "due": 0,
+         "invoice_paid": 0.0,
+         "invoices": [],
+         "left": 1000.0,
+         "next_due": null,
+         "overdue": 0,
+         "paid": 0.0,
+         "pct": 0,
+         "rest": 1000.0,
+         "retainer": 0,
+         "retainer_known": true,
+         "state": "unpaid"
+        },
+        "picked": 0,
+        "picklists": [
+         {
+          "date": "<SCRUBBED>",
+          "id": "pl1",
+          "number": "PL-00001",
+          "status": "completed"
+         }
+        ],
+        "prep": null,
+        "ready_ratio": 0.8,
+        "status": "partial",
+        "total": 1000.0,
+        "unbilled_units": 0.0,
+        "units": {
+         "backordered": 0,
+         "ready": 4.0,
+         "shipped": 0.0,
+         "to_order": 1.0,
+         "total": 5.0
+        },
+        "version": "<SCRUBBED>",
+        "zoho_url": "https://books.example/app/1#/salesorders/so1"
+       }
+      ],
+      "scan": false,
+      "stock_loaded_at": "<SCRUBBED>",
+      "sync": {
+       "configured": true,
+       "enabled": true,
+       "last_error": null,
+       "last_error_at": null,
+       "last_success_at": "<SCRUBBED>",
+       "pending": 1,
+       "running": false
+      }
+     },
+     "package_number": "PKG-00001"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "lines": [
+      {
+       "line_id": "l1",
+       "quantity": 2
+      },
+      {
+       "line_id": "lb",
+       "quantity": 1
+      }
+     ],
+     "picklist_id": "pl1"
+    },
+    "status": 200,
+    "step": "POST /api/v1/order-board/orders/so1/packages",
+    "zoho_calls": [
+     {
+      "args": [
+       "pl1"
+      ],
+      "call": "zoho.get_picklist",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "pl1",
+       {
+        "date": "<SCRUBBED>",
+        "line_items": [
+         {
+          "line_item_id": "pl1-l1",
+          "quantity_picked": 2.0,
+          "quantity_to_be_picked": 2.0
+         },
+         {
+          "line_item_id": "pl1-lb",
+          "quantity_picked": 1.0,
+          "quantity_to_be_picked": 1.0
+         }
+        ],
+        "location_id": "loc1"
+       }
+      ],
+      "call": "zoho.update_picklist",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "pl1"
+      ],
+      "call": "zoho.complete_picklist",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.create_package",
+      "kwargs": {
+       "date": "<SCRUBBED>",
+       "line_items": [
+        {
+         "picklist_item_id": "pl1-l1",
+         "quantity": 2.0,
+         "so_line_item_id": "l1"
+        },
+        {
+         "picklist_item_id": "pl1-lb",
+         "quantity": 1.0,
+         "so_line_item_id": "lb"
+        }
+       ]
+      }
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": "unknown_picklist"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "lines": [
+      {
+       "line_id": "l1",
+       "quantity": 1
+      }
+     ],
+     "picklist_id": "nope"
+    },
+    "status": 400,
+    "step": "unknown picklist",
+    "zoho_calls": [
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": [
+      {
+       "ctx": {
+        "error": {}
+       },
+       "input": [
+        {
+         "line_id": "l1",
+         "quantity": 1
+        },
+        {
+         "line_id": "l1",
+         "quantity": 1
+        }
+       ],
+       "loc": [
+        "body",
+        "lines"
+       ],
+       "msg": "Value error, a line may appear only once",
+       "type": "value_error"
+      }
+     ]
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "lines": [
+      {
+       "line_id": "l1",
+       "quantity": 1
+      },
+      {
+       "line_id": "l1",
+       "quantity": 1
+      }
+     ],
+     "picklist_id": "pl1"
+    },
+    "status": 422,
+    "step": "duplicate line",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "detail": "Order not found."
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "lines": [
+      {
+       "line_id": "l1",
+       "quantity": 1
+      }
+     ]
+    },
+    "status": 404,
+    "step": "unknown order",
+    "zoho_calls": []
+   }
+  ],
+  "zoho_bodies": {
+   "create_picklist": {
+    "date": "<SCRUBBED>",
+    "group_by": "none",
+    "line_items": [
+     {
+      "quantity_picked": 0,
+      "quantity_to_be_picked": 2.0,
+      "salesorder_id": "so1",
+      "so_line_item_id": "l1"
+     },
+     {
+      "quantity_picked": 0,
+      "quantity_to_be_picked": 1.0,
+      "salesorder_id": "so1",
+      "so_line_item_id": "lb"
+     }
+    ],
+    "location_id": "loc1",
+    "parent_entity": "salesorder"
+   },
+   "picklist": {
+    "date": "<SCRUBBED>",
+    "line_items": [
+     {
+      "line_item_id": "pl1-l1",
+      "quantity_picked": 2.0,
+      "quantity_to_be_picked": 2.0
+     },
+     {
+      "line_item_id": "pl1-lb",
+      "quantity_picked": 1.0,
+      "quantity_to_be_picked": 1.0
+     }
+    ],
+    "location_id": "loc1"
+   },
+   "update_picklist": {
+    "date": "<SCRUBBED>",
+    "line_items": [
+     {
+      "line_item_id": "pl1-l1",
+      "quantity_picked": 2.0,
+      "quantity_to_be_picked": 2.0
+     },
+     {
+      "line_item_id": "pl1-lb",
+      "quantity_picked": 1.0,
+      "quantity_to_be_picked": 1.0
+     }
+    ],
+    "location_id": "loc1"
+   }
+  },
+  "zoho_writes": [
+   "create_picklist",
+   "update_picklist",
+   "complete_picklist",
+   "create_package"
+  ]
+ },
+ {
+  "scenario": "parcel_edit",
+  "steps": [
+   {
+    "body": {
+     "id": "p1",
+     "lines": [
+      {
+       "line_id": "l1",
+       "max": 3.0,
+       "quantity": 2.0
+      },
+      {
+       "line_id": "l2",
+       "max": 4.0,
+       "quantity": 0.0
+      }
+     ],
+     "number": "PKG-00001",
+     "pending": false,
+     "picklist_id": "pl1",
+     "version": "<SCRUBBED>"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/packages/p1",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A",
+        "C"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A",
+        "C"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "p1"
+      ],
+      "call": "zoho.get_package",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "pl1"
+      ],
+      "call": "zoho.get_picklist",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": "version"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "lines": [
+      {
+       "line_id": "l1",
+       "quantity": 3
+      }
+     ],
+     "version": "stale",
+     "was": [
+      {
+       "line_id": "l1",
+       "quantity": 2
+      }
+     ]
+    },
+    "status": 400,
+    "step": "stale version",
+    "zoho_calls": [
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "board": {
+      "computed_at": "<SCRUBBED>",
+      "rows": [
+       {
+        "age_days": 5,
+        "contact": null,
+        "contacted": null,
+        "currency": "XPF",
+        "customer": "Customer 1",
+        "customer_id": "c1",
+        "date": "<SCRUBBED>",
+        "estimable": false,
+        "facts": {
+         "channel": "",
+         "delivery_method": "",
+         "estimate_id": null,
+         "payment_terms": "",
+         "quote_number": "",
+         "quote_url": null,
+         "reference": "",
+         "shopify_order": "",
+         "shopify_url": null
+        },
+        "id": "so1",
+        "is_core": true,
+        "last_event": {
+         "actor_name": null,
+         "detail": {
+          "package": "PKG-00001"
+         },
+         "kind": "package.edited",
+         "occurred_at": "<SCRUBBED>"
+        },
+        "lines": [
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 3.0,
+          "covered_by_po": 0.0,
+          "floor": 3.0,
+          "id": "l1",
+          "invoiced": 0.0,
+          "item_id": "A",
+          "name": "Thing",
+          "packable": 0.0,
+          "packed_waiting": 3.0,
+          "po_numbers": [],
+          "quantity": 3.0,
+          "rate": 0.0,
+          "remaining": 3.0,
+          "shipped": 0.0,
+          "shortfall": 0.0,
+          "sku": "SKU",
+          "state": "ready",
+          "stock_available": 100.0
+         },
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 4.0,
+          "covered_by_po": 0.0,
+          "floor": 1.0,
+          "id": "l2",
+          "invoiced": 0.0,
+          "item_id": "C",
+          "name": "Thing",
+          "packable": 3.0,
+          "packed_waiting": 1.0,
+          "po_numbers": [],
+          "quantity": 4.0,
+          "rate": 0.0,
+          "remaining": 4.0,
+          "shipped": 0.0,
+          "shortfall": 0.0,
+          "sku": "SKU",
+          "state": "ready",
+          "stock_available": 4.0
+         }
+        ],
+        "number": "SO-00001",
+        "packages": [
+         {
+          "date": "",
+          "id": "p1",
+          "number": "PKG-00001",
+          "shipment_id": "",
+          "status": "not_shipped"
+         }
+        ],
+        "packed": 4.0,
+        "payment": {
+         "advance": 0.0,
+         "due": 0,
+         "invoice_paid": 0.0,
+         "invoices": [],
+         "left": 1000.0,
+         "next_due": null,
+         "overdue": 0,
+         "paid": 0.0,
+         "pct": 0,
+         "rest": 1000.0,
+         "retainer": 0,
+         "retainer_known": true,
+         "state": "unpaid"
+        },
+        "picked": 0,
+        "picklists": [
+         {
+          "date": "",
+          "id": "pl1",
+          "number": "PL-00001",
+          "status": "completed"
+         }
+        ],
+        "prep": null,
+        "ready_ratio": 1.0,
+        "status": "to_ship",
+        "total": 1000.0,
+        "unbilled_units": 0.0,
+        "units": {
+         "backordered": 0,
+         "ready": 7.0,
+         "shipped": 0.0,
+         "to_order": 0,
+         "total": 7.0
+        },
+        "version": "<SCRUBBED>",
+        "zoho_url": "https://books.example/app/1#/salesorders/so1"
+       }
+      ],
+      "scan": false,
+      "stock_loaded_at": "<SCRUBBED>",
+      "sync": {
+       "configured": true,
+       "enabled": true,
+       "last_error": null,
+       "last_error_at": null,
+       "last_success_at": "<SCRUBBED>",
+       "pending": 1,
+       "running": false
+      }
+     },
+     "row": {
+      "age_days": 5,
+      "contact": null,
+      "contacted": null,
+      "currency": "XPF",
+      "customer": "Customer 1",
+      "customer_id": "c1",
+      "date": "<SCRUBBED>",
+      "estimable": false,
+      "facts": {
+       "channel": "",
+       "delivery_method": "",
+       "estimate_id": null,
+       "payment_terms": "",
+       "quote_number": "",
+       "quote_url": null,
+       "reference": "",
+       "shopify_order": "",
+       "shopify_url": null
+      },
+      "id": "so1",
+      "is_core": true,
+      "last_event": {
+       "actor_name": null,
+       "detail": {
+        "package": "PKG-00001"
+       },
+       "kind": "package.edited",
+       "occurred_at": "<SCRUBBED>"
+      },
+      "lines": [
+       {
+        "cancelled": 0.0,
+        "codes": [
+         "SKU"
+        ],
+        "covered": 3.0,
+        "covered_by_po": 0.0,
+        "floor": 3.0,
+        "id": "l1",
+        "invoiced": 0.0,
+        "item_id": "A",
+        "name": "Thing",
+        "packable": 0.0,
+        "packed_waiting": 3.0,
+        "po_numbers": [],
+        "quantity": 3.0,
+        "rate": 0.0,
+        "remaining": 3.0,
+        "shipped": 0.0,
+        "shortfall": 0.0,
+        "sku": "SKU",
+        "state": "ready",
+        "stock_available": 100.0
+       },
+       {
+        "cancelled": 0.0,
+        "codes": [
+         "SKU"
+        ],
+        "covered": 4.0,
+        "covered_by_po": 0.0,
+        "floor": 1.0,
+        "id": "l2",
+        "invoiced": 0.0,
+        "item_id": "C",
+        "name": "Thing",
+        "packable": 3.0,
+        "packed_waiting": 1.0,
+        "po_numbers": [],
+        "quantity": 4.0,
+        "rate": 0.0,
+        "remaining": 4.0,
+        "shipped": 0.0,
+        "shortfall": 0.0,
+        "sku": "SKU",
+        "state": "ready",
+        "stock_available": 4.0
+       }
+      ],
+      "number": "SO-00001",
+      "packages": [
+       {
+        "date": "",
+        "id": "p1",
+        "number": "PKG-00001",
+        "shipment_id": "",
+        "status": "not_shipped"
+       }
+      ],
+      "packed": 4.0,
+      "payment": {
+       "advance": 0.0,
+       "due": 0,
+       "invoice_paid": 0.0,
+       "invoices": [],
+       "left": 1000.0,
+       "next_due": null,
+       "overdue": 0,
+       "paid": 0.0,
+       "pct": 0,
+       "rest": 1000.0,
+       "retainer": 0,
+       "retainer_known": true,
+       "state": "unpaid"
+      },
+      "picked": 0,
+      "picklists": [
+       {
+        "date": "",
+        "id": "pl1",
+        "number": "PL-00001",
+        "status": "completed"
+       }
+      ],
+      "prep": null,
+      "ready_ratio": 1.0,
+      "status": "to_ship",
+      "total": 1000.0,
+      "unbilled_units": 0.0,
+      "units": {
+       "backordered": 0,
+       "ready": 7.0,
+       "shipped": 0.0,
+       "to_order": 0,
+       "total": 7.0
+      },
+      "version": "<SCRUBBED>",
+      "zoho_url": "https://books.example/app/1#/salesorders/so1"
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "lines": [
+      {
+       "line_id": "l1",
+       "quantity": 3
+      },
+      {
+       "line_id": "l2",
+       "quantity": 1
+      }
+     ],
+     "version": "<SCRUBBED>",
+     "was": [
+      {
+       "line_id": "l1",
+       "quantity": 2
+      }
+     ]
+    },
+    "status": 200,
+    "step": "PUT /api/v1/order-board/orders/so1/packages/p1",
+    "zoho_calls": [
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "p1"
+      ],
+      "call": "zoho.get_package",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "pl1"
+      ],
+      "call": "zoho.get_picklist",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "pl1",
+       {
+        "date": "<SCRUBBED>",
+        "group_by": "none",
+        "line_items": [
+         {
+          "line_item_id": "r1",
+          "quantity_picked": 3.0,
+          "quantity_to_be_picked": 3.0
+         },
+         {
+          "quantity_picked": 1.0,
+          "quantity_to_be_picked": 1.0,
+          "salesorder_id": "so1",
+          "so_line_item_id": "l2"
+         }
+        ],
+        "location_id": "loc1"
+       }
+      ],
+      "call": "zoho.update_picklist",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "pl1"
+      ],
+      "call": "zoho.get_picklist",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "p1",
+       "so1",
+       {
+        "date": "<SCRUBBED>",
+        "line_items": [
+         {
+          "picklist_item_id": "r1",
+          "quantity": 3.0,
+          "so_line_item_id": "l1"
+         },
+         {
+          "picklist_item_id": "pl1-l2",
+          "quantity": 1.0,
+          "so_line_item_id": "l2"
+         }
+        ]
+       }
+      ],
+      "call": "zoho.update_package",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "p1"
+      ],
+      "call": "zoho.get_package",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "pl1"
+      ],
+      "call": "zoho.get_picklist",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": "unknown_package"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 400,
+    "step": "unknown parcel",
+    "zoho_calls": []
+   }
+  ],
+  "zoho_steps": [
+   [
+    "picklist",
+    {
+     "date": "<SCRUBBED>",
+     "group_by": "none",
+     "line_items": [
+      {
+       "line_item_id": "r1",
+       "quantity_picked": 3.0,
+       "quantity_to_be_picked": 3.0
+      },
+      {
+       "quantity_picked": 1.0,
+       "quantity_to_be_picked": 1.0,
+       "salesorder_id": "so1",
+       "so_line_item_id": "l2"
+      }
+     ],
+     "location_id": "loc1"
+    }
+   ],
+   [
+    "parcel",
+    {
+     "date": "<SCRUBBED>",
+     "line_items": [
+      {
+       "picklist_item_id": "r1",
+       "quantity": 3.0,
+       "so_line_item_id": "l1"
+      },
+      {
+       "picklist_item_id": "pl1-l2",
+       "quantity": 1.0,
+       "so_line_item_id": "l2"
+      }
+     ]
+    }
+   ]
+  ]
+ },
+ {
+  "scenario": "line_edit",
+  "steps": [
+   {
+    "body": {
+     "items": [
+      {
+       "id": "B",
+       "name": "Bee",
+       "product_type": "goods",
+       "rate": 2900.0,
+       "sku": "B1",
+       "stock_on_hand": 4.0
+      }
+     ]
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/items?q=be",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "be"
+      ],
+      "call": "zoho.list_items",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": [
+      {
+       "ctx": {
+        "min_length": 2
+       },
+       "input": "b",
+       "loc": [
+        "query",
+        "q"
+       ],
+       "msg": "String should have at least 2 characters",
+       "type": "string_too_short"
+      }
+     ]
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 422,
+    "step": "query too short",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "detail": "version"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "lines": [
+      {
+       "line_id": "l1",
+       "quantity": 3
+      }
+     ],
+     "version": "old"
+    },
+    "status": 400,
+    "step": "stale version",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "board": {
+      "computed_at": "<SCRUBBED>",
+      "rows": [
+       {
+        "age_days": 5,
+        "contact": null,
+        "contacted": null,
+        "currency": "XPF",
+        "customer": "Customer 1",
+        "customer_id": "c1",
+        "date": "<SCRUBBED>",
+        "estimable": false,
+        "facts": {
+         "channel": "",
+         "delivery_method": "",
+         "estimate_id": null,
+         "payment_terms": "",
+         "quote_number": "",
+         "quote_url": null,
+         "reference": "",
+         "shopify_order": "",
+         "shopify_url": null
+        },
+        "id": "so1",
+        "is_core": true,
+        "last_event": {
+         "actor_name": null,
+         "detail": {
+          "total_from": 1000.0,
+          "total_to": 1000.0
+         },
+         "kind": "order.edited",
+         "occurred_at": "<SCRUBBED>"
+        },
+        "lines": [
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 3.0,
+          "covered_by_po": 0.0,
+          "floor": 0.0,
+          "id": "l1",
+          "invoiced": 0.0,
+          "item_id": "A",
+          "name": "Thing",
+          "packable": 3.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 3.0,
+          "rate": 1000.0,
+          "remaining": 3.0,
+          "shipped": 0.0,
+          "shortfall": 0.0,
+          "sku": "SKU",
+          "state": "ready",
+          "stock_available": 100.0
+         },
+         {
+          "cancelled": 0.0,
+          "codes": [],
+          "covered": 0.0,
+          "covered_by_po": 0.0,
+          "floor": 0.0,
+          "id": "s1",
+          "invoiced": 0.0,
+          "item_id": null,
+          "name": "Labour",
+          "packable": 0.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 1.0,
+          "rate": 500.0,
+          "remaining": 1.0,
+          "shipped": 0.0,
+          "shortfall": 0.0,
+          "sku": "",
+          "state": "service",
+          "stock_available": null
+         },
+         {
+          "cancelled": 0.0,
+          "codes": [],
+          "covered": 0.0,
+          "covered_by_po": 0.0,
+          "floor": 0.0,
+          "id": "new-B",
+          "invoiced": 0.0,
+          "item_id": "B",
+          "name": "",
+          "packable": 0.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 1.0,
+          "rate": 2900.0,
+          "remaining": 1.0,
+          "shipped": 0.0,
+          "shortfall": 1.0,
+          "sku": "",
+          "state": "to_order",
+          "stock_available": 0.0
+         }
+        ],
+        "number": "SO-00001",
+        "packages": [],
+        "packed": 0.0,
+        "payment": {
+         "advance": 0.0,
+         "due": 0,
+         "invoice_paid": 0.0,
+         "invoices": [],
+         "left": 1000.0,
+         "next_due": null,
+         "overdue": 0,
+         "paid": 0.0,
+         "pct": 0,
+         "rest": 1000.0,
+         "retainer": 0,
+         "retainer_known": true,
+         "state": "unpaid"
+        },
+        "picked": 0,
+        "picklists": [],
+        "prep": null,
+        "ready_ratio": 0.75,
+        "status": "partial",
+        "total": 1000.0,
+        "unbilled_units": 0.0,
+        "units": {
+         "backordered": 0,
+         "ready": 3.0,
+         "shipped": 0.0,
+         "to_order": 1.0,
+         "total": 4.0
+        },
+        "version": "<SCRUBBED>",
+        "zoho_url": "https://books.example/app/1#/salesorders/so1"
+       }
+      ],
+      "scan": false,
+      "stock_loaded_at": "<SCRUBBED>",
+      "sync": {
+       "configured": true,
+       "enabled": true,
+       "last_error": null,
+       "last_error_at": null,
+       "last_success_at": "<SCRUBBED>",
+       "pending": 1,
+       "running": false
+      }
+     },
+     "row": {
+      "age_days": 5,
+      "contact": null,
+      "contacted": null,
+      "currency": "XPF",
+      "customer": "Customer 1",
+      "customer_id": "c1",
+      "date": "<SCRUBBED>",
+      "estimable": false,
+      "facts": {
+       "channel": "",
+       "delivery_method": "",
+       "estimate_id": null,
+       "payment_terms": "",
+       "quote_number": "",
+       "quote_url": null,
+       "reference": "",
+       "shopify_order": "",
+       "shopify_url": null
+      },
+      "id": "so1",
+      "is_core": true,
+      "last_event": {
+       "actor_name": null,
+       "detail": {
+        "total_from": 1000.0,
+        "total_to": 1000.0
+       },
+       "kind": "order.edited",
+       "occurred_at": "<SCRUBBED>"
+      },
+      "lines": [
+       {
+        "cancelled": 0.0,
+        "codes": [
+         "SKU"
+        ],
+        "covered": 3.0,
+        "covered_by_po": 0.0,
+        "floor": 0.0,
+        "id": "l1",
+        "invoiced": 0.0,
+        "item_id": "A",
+        "name": "Thing",
+        "packable": 3.0,
+        "packed_waiting": 0.0,
+        "po_numbers": [],
+        "quantity": 3.0,
+        "rate": 1000.0,
+        "remaining": 3.0,
+        "shipped": 0.0,
+        "shortfall": 0.0,
+        "sku": "SKU",
+        "state": "ready",
+        "stock_available": 100.0
+       },
+       {
+        "cancelled": 0.0,
+        "codes": [],
+        "covered": 0.0,
+        "covered_by_po": 0.0,
+        "floor": 0.0,
+        "id": "s1",
+        "invoiced": 0.0,
+        "item_id": null,
+        "name": "Labour",
+        "packable": 0.0,
+        "packed_waiting": 0.0,
+        "po_numbers": [],
+        "quantity": 1.0,
+        "rate": 500.0,
+        "remaining": 1.0,
+        "shipped": 0.0,
+        "shortfall": 0.0,
+        "sku": "",
+        "state": "service",
+        "stock_available": null
+       },
+       {
+        "cancelled": 0.0,
+        "codes": [],
+        "covered": 0.0,
+        "covered_by_po": 0.0,
+        "floor": 0.0,
+        "id": "new-B",
+        "invoiced": 0.0,
+        "item_id": "B",
+        "name": "",
+        "packable": 0.0,
+        "packed_waiting": 0.0,
+        "po_numbers": [],
+        "quantity": 1.0,
+        "rate": 2900.0,
+        "remaining": 1.0,
+        "shipped": 0.0,
+        "shortfall": 1.0,
+        "sku": "",
+        "state": "to_order",
+        "stock_available": 0.0
+       }
+      ],
+      "number": "SO-00001",
+      "packages": [],
+      "packed": 0.0,
+      "payment": {
+       "advance": 0.0,
+       "due": 0,
+       "invoice_paid": 0.0,
+       "invoices": [],
+       "left": 1000.0,
+       "next_due": null,
+       "overdue": 0,
+       "paid": 0.0,
+       "pct": 0,
+       "rest": 1000.0,
+       "retainer": 0,
+       "retainer_known": true,
+       "state": "unpaid"
+      },
+      "picked": 0,
+      "picklists": [],
+      "prep": null,
+      "ready_ratio": 0.75,
+      "status": "partial",
+      "total": 1000.0,
+      "unbilled_units": 0.0,
+      "units": {
+       "backordered": 0,
+       "ready": 3.0,
+       "shipped": 0.0,
+       "to_order": 1.0,
+       "total": 4.0
+      },
+      "version": "<SCRUBBED>",
+      "zoho_url": "https://books.example/app/1#/salesorders/so1"
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "lines": [
+      {
+       "line_id": "l1",
+       "quantity": 3
+      },
+      {
+       "item_id": "B",
+       "quantity": 1
+      }
+     ],
+     "version": "<SCRUBBED>"
+    },
+    "status": 200,
+    "step": "PUT /api/v1/order-board/orders/so1/lines",
+    "zoho_calls": [
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "B"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1",
+       {
+        "line_items": [
+         {
+          "item_id": "A",
+          "line_item_id": "l1",
+          "name": "Thing",
+          "quantity": 3.0,
+          "rate": 1000
+         },
+         {
+          "line_item_id": "s1",
+          "name": "Labour",
+          "quantity": 1,
+          "rate": 500
+         },
+         {
+          "item_id": "B",
+          "quantity": 1.0,
+          "rate": 2900.0
+         }
+        ]
+       }
+      ],
+      "call": "zoho.update_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": [
+      {
+       "ctx": {
+        "error": {}
+       },
+       "input": {
+        "item_id": "B",
+        "line_id": "l1",
+        "quantity": 1
+       },
+       "loc": [
+        "body",
+        "lines",
+        0
+       ],
+       "msg": "Value error, a line names exactly one of line_id or item_id",
+       "type": "value_error"
+      }
+     ]
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "lines": [
+      {
+       "item_id": "B",
+       "line_id": "l1",
+       "quantity": 1
+      }
+     ],
+     "version": "<SCRUBBED>"
+    },
+    "status": 422,
+    "step": "both targets",
+    "zoho_calls": []
+   }
+  ],
+  "zoho_bodies": {
+   "lines": {
+    "line_items": [
+     {
+      "item_id": "A",
+      "line_item_id": "l1",
+      "name": "Thing",
+      "quantity": 3.0,
+      "rate": 1000
+     },
+     {
+      "line_item_id": "s1",
+      "name": "Labour",
+      "quantity": 1,
+      "rate": 500
+     },
+     {
+      "item_id": "B",
+      "quantity": 1.0,
+      "rate": 2900.0
+     }
+    ]
+   }
+  },
+  "zoho_writes": [
+   "update_salesorder"
+  ]
+ },
+ {
+  "scenario": "handover",
+  "steps": [
+   {
+    "body": {
+     "available": true,
+     "covered_by": [],
+     "credit": 600.0,
+     "invoice_total": 1000.0,
+     "manual": false,
+     "manual_reason": null,
+     "to_invoice": true,
+     "units": 2.0
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/packages/pk1/handover",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "pk1"
+      ],
+      "call": "zoho.get_package",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.invoice_prefill",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "available": true,
+     "credit": 600.0,
+     "drafts": [],
+     "packed": {
+      "invoice_total": 1000.0,
+      "manual_reason": null,
+      "units": 2.0
+     },
+     "whole": {
+      "invoice_total": 1500.0,
+      "manual_reason": null,
+      "units": 3.0
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/invoice",
+    "zoho_calls": [
+     {
+      "args": [
+       "pk1"
+      ],
+      "call": "zoho.get_package",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.invoice_prefill",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "board": {
+      "computed_at": "<SCRUBBED>",
+      "rows": [
+       {
+        "age_days": 5,
+        "contact": {
+         "email": "hina@example.test",
+         "mobile": "87 11 22 33",
+         "name": "Hina T",
+         "phone": ""
+        },
+        "contacted": null,
+        "currency": "XPF",
+        "customer": "Customer 1",
+        "customer_id": "c1",
+        "date": "<SCRUBBED>",
+        "estimable": false,
+        "facts": {
+         "channel": "",
+         "delivery_method": "",
+         "estimate_id": null,
+         "payment_terms": "",
+         "quote_number": "",
+         "quote_url": null,
+         "reference": "",
+         "shopify_order": "",
+         "shopify_url": null
+        },
+        "id": "so1",
+        "is_core": true,
+        "last_event": {
+         "actor_name": null,
+         "detail": {
+          "credit_applied": 600.0,
+          "invoice": "INV-1",
+          "scope": "shipped",
+          "total": 1000.0
+         },
+         "kind": "invoice.created",
+         "occurred_at": "<SCRUBBED>"
+        },
+        "lines": [
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 1.0,
+          "covered_by_po": 0.0,
+          "floor": 2.0,
+          "id": "l1",
+          "invoiced": 0.0,
+          "item_id": "A",
+          "name": "Thing",
+          "packable": 1.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 3.0,
+          "rate": 0.0,
+          "remaining": 1.0,
+          "shipped": 2.0,
+          "shortfall": 0.0,
+          "sku": "SKU",
+          "state": "ready",
+          "stock_available": 100.0
+         }
+        ],
+        "number": "SO-00001",
+        "packages": [
+         {
+          "date": "",
+          "id": "pk1",
+          "number": "PKG-00001",
+          "shipment_id": "sh1",
+          "status": "delivered"
+         }
+        ],
+        "packed": 0.0,
+        "payment": {
+         "advance": 600.0,
+         "due": 0.0,
+         "invoice_paid": 0.0,
+         "invoices": [
+          {
+           "balance": 0.0,
+           "date": null,
+           "due_date": null,
+           "id": "inv-1",
+           "number": "INV-1",
+           "status": "sent",
+           "total": 0.0,
+           "url": "https://books.example/app/1#/invoices/inv-1"
+          }
+         ],
+         "left": 900.0,
+         "next_due": null,
+         "overdue": 0,
+         "paid": 600.0,
+         "pct": 40,
+         "rest": 900.0,
+         "retainer": 0,
+         "retainer_known": true,
+         "state": "partial"
+        },
+        "picked": 0,
+        "picklists": [],
+        "prep": null,
+        "ready_ratio": 1.0,
+        "status": "to_ship",
+        "total": 1500.0,
+        "unbilled_units": 0.0,
+        "units": {
+         "backordered": 0,
+         "ready": 1.0,
+         "shipped": 2.0,
+         "to_order": 0,
+         "total": 3.0
+        },
+        "version": "<SCRUBBED>",
+        "zoho_url": "https://books.example/app/1#/salesorders/so1"
+       }
+      ],
+      "scan": false,
+      "stock_loaded_at": "<SCRUBBED>",
+      "sync": {
+       "configured": true,
+       "enabled": true,
+       "last_error": null,
+       "last_error_at": null,
+       "last_success_at": "<SCRUBBED>",
+       "pending": 1,
+       "running": false
+      }
+     },
+     "outcome": {
+      "credit_applied": 600.0,
+      "delivered": "done",
+      "error": null,
+      "failed_step": null,
+      "invoice": "created",
+      "invoice_number": "INV-1",
+      "manual_reason": null,
+      "package_number": "PKG-00001",
+      "shipment": "done"
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "apply_credit": true,
+     "mode": "pickup"
+    },
+    "status": 200,
+    "step": "POST /api/v1/order-board/orders/so1/packages/pk1/handover",
+    "zoho_calls": [
+     {
+      "args": [
+       "pk1"
+      ],
+      "call": "zoho.get_package",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1",
+       "pk1"
+      ],
+      "call": "zoho.create_shipment",
+      "kwargs": {
+       "date": "<SCRUBBED>",
+       "delivery_method": "PICK UP"
+      }
+     },
+     {
+      "args": [
+       "sh1"
+      ],
+      "call": "zoho.mark_shipment_delivered",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.invoice_prefill",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       {
+        "adjustment": 0,
+        "customer_id": "c1",
+        "date": "<SCRUBBED>",
+        "discount": 0,
+        "is_inclusive_tax": true,
+        "line_items": [
+         {
+          "discount": 0,
+          "item_id": "A",
+          "name": "Thing",
+          "quantity": 2.0,
+          "rate": 500.0,
+          "salesorder_item_id": "l1",
+          "tax_id": "t1"
+         }
+        ],
+        "shipping_charge": 0
+       }
+      ],
+      "call": "zoho.create_invoice",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "inv-1"
+      ],
+      "call": "zoho.mark_invoice_sent",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_payments",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "inv-1",
+       [
+        {
+         "amount_applied": 600.0,
+         "payment_id": "p1"
+        }
+       ]
+      ],
+      "call": "zoho.apply_invoice_credits",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "board": {
+      "computed_at": "<SCRUBBED>",
+      "rows": [
+       {
+        "age_days": 5,
+        "contact": {
+         "email": "hina@example.test",
+         "mobile": "87 11 22 33",
+         "name": "Hina T",
+         "phone": ""
+        },
+        "contacted": null,
+        "currency": "XPF",
+        "customer": "Customer 1",
+        "customer_id": "c1",
+        "date": "<SCRUBBED>",
+        "estimable": false,
+        "facts": {
+         "channel": "",
+         "delivery_method": "",
+         "estimate_id": null,
+         "payment_terms": "",
+         "quote_number": "",
+         "quote_url": null,
+         "reference": "",
+         "shopify_order": "",
+         "shopify_url": null
+        },
+        "id": "so1",
+        "is_core": true,
+        "last_event": {
+         "actor_name": null,
+         "detail": {
+          "credit_applied": 600.0,
+          "invoice": "INV-1",
+          "scope": "shipped",
+          "total": 1000.0
+         },
+         "kind": "invoice.created",
+         "occurred_at": "<SCRUBBED>"
+        },
+        "lines": [
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 1.0,
+          "covered_by_po": 0.0,
+          "floor": 2.0,
+          "id": "l1",
+          "invoiced": 0.0,
+          "item_id": "A",
+          "name": "Thing",
+          "packable": 1.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 3.0,
+          "rate": 0.0,
+          "remaining": 1.0,
+          "shipped": 2.0,
+          "shortfall": 0.0,
+          "sku": "SKU",
+          "state": "ready",
+          "stock_available": 100.0
+         }
+        ],
+        "number": "SO-00001",
+        "packages": [
+         {
+          "date": "",
+          "id": "pk1",
+          "number": "PKG-00001",
+          "shipment_id": "sh1",
+          "status": "delivered"
+         }
+        ],
+        "packed": 0.0,
+        "payment": {
+         "advance": 600.0,
+         "due": 0.0,
+         "invoice_paid": 0.0,
+         "invoices": [
+          {
+           "balance": 0.0,
+           "date": null,
+           "due_date": null,
+           "id": "inv-1",
+           "number": "INV-1",
+           "status": "sent",
+           "total": 0.0,
+           "url": "https://books.example/app/1#/invoices/inv-1"
+          }
+         ],
+         "left": 900.0,
+         "next_due": null,
+         "overdue": 0,
+         "paid": 600.0,
+         "pct": 40,
+         "rest": 900.0,
+         "retainer": 0,
+         "retainer_known": true,
+         "state": "partial"
+        },
+        "picked": 0,
+        "picklists": [],
+        "prep": null,
+        "ready_ratio": 1.0,
+        "status": "to_ship",
+        "total": 1500.0,
+        "unbilled_units": 0.0,
+        "units": {
+         "backordered": 0,
+         "ready": 1.0,
+         "shipped": 2.0,
+         "to_order": 0,
+         "total": 3.0
+        },
+        "version": "<SCRUBBED>",
+        "zoho_url": "https://books.example/app/1#/salesorders/so1"
+       }
+      ],
+      "scan": false,
+      "stock_loaded_at": "<SCRUBBED>",
+      "sync": {
+       "configured": true,
+       "enabled": true,
+       "last_error": null,
+       "last_error_at": null,
+       "last_success_at": "<SCRUBBED>",
+       "pending": 1,
+       "running": false
+      }
+     },
+     "outcome": {
+      "credit_applied": 0.0,
+      "delivered": "skipped",
+      "error": null,
+      "failed_step": null,
+      "invoice": "none",
+      "invoice_number": null,
+      "manual_reason": null,
+      "package_number": "PKG-00001",
+      "shipment": "skipped"
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "apply_credit": true,
+     "mode": "pickup"
+    },
+    "status": 200,
+    "step": "again: nothing left",
+    "zoho_calls": [
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "pk1"
+      ],
+      "call": "zoho.get_package",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "pages": 1,
+     "text": [
+      "Facture inv-1"
+     ]
+    },
+    "content_type": "application/pdf",
+    "headers": {
+     "cache-control": "no-store",
+     "content-disposition": "inline; filename=\"facture.pdf\"; filename*=UTF-8''facture.pdf"
+    },
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/invoices/inv-1/pdf",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "detail": "Invoice not found."
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 404,
+    "step": "invoice no stored order lists",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "body": "<p>Bonjour</p>",
+     "default_email": "HINA@example.test",
+     "invoice_id": "inv-1",
+     "invoice_number": "INV-1",
+     "recipients": [
+      {
+       "email": "other@example.test",
+       "name": "Other"
+      },
+      {
+       "email": "HINA@example.test",
+       "name": "Hina"
+      }
+     ],
+     "subject": "Facture inv-1"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/invoices/inv-1/email",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "detail": "That address is not a recipient of this invoice"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "to": "stranger@example.test"
+    },
+    "status": 422,
+    "step": "not a recipient",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "board": {
+      "computed_at": "<SCRUBBED>",
+      "rows": [
+       {
+        "age_days": 5,
+        "contact": {
+         "email": "hina@example.test",
+         "mobile": "87 11 22 33",
+         "name": "Hina T",
+         "phone": ""
+        },
+        "contacted": null,
+        "currency": "XPF",
+        "customer": "Customer 1",
+        "customer_id": "c1",
+        "date": "<SCRUBBED>",
+        "estimable": false,
+        "facts": {
+         "channel": "",
+         "delivery_method": "",
+         "estimate_id": null,
+         "payment_terms": "",
+         "quote_number": "",
+         "quote_url": null,
+         "reference": "",
+         "shopify_order": "",
+         "shopify_url": null
+        },
+        "id": "so1",
+        "is_core": true,
+        "last_event": {
+         "actor_name": null,
+         "detail": {
+          "invoice": "INV-1",
+          "to": "hina@example.test"
+         },
+         "kind": "invoice.emailed",
+         "occurred_at": "<SCRUBBED>"
+        },
+        "lines": [
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 1.0,
+          "covered_by_po": 0.0,
+          "floor": 2.0,
+          "id": "l1",
+          "invoiced": 0.0,
+          "item_id": "A",
+          "name": "Thing",
+          "packable": 1.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 3.0,
+          "rate": 0.0,
+          "remaining": 1.0,
+          "shipped": 2.0,
+          "shortfall": 0.0,
+          "sku": "SKU",
+          "state": "ready",
+          "stock_available": 100.0
+         }
+        ],
+        "number": "SO-00001",
+        "packages": [
+         {
+          "date": "",
+          "id": "pk1",
+          "number": "PKG-00001",
+          "shipment_id": "sh1",
+          "status": "delivered"
+         }
+        ],
+        "packed": 0.0,
+        "payment": {
+         "advance": 600.0,
+         "due": 0.0,
+         "invoice_paid": 0.0,
+         "invoices": [
+          {
+           "balance": 0.0,
+           "date": null,
+           "due_date": null,
+           "id": "inv-1",
+           "number": "INV-1",
+           "status": "sent",
+           "total": 0.0,
+           "url": "https://books.example/app/1#/invoices/inv-1"
+          }
+         ],
+         "left": 900.0,
+         "next_due": null,
+         "overdue": 0,
+         "paid": 600.0,
+         "pct": 40,
+         "rest": 900.0,
+         "retainer": 0,
+         "retainer_known": true,
+         "state": "partial"
+        },
+        "picked": 0,
+        "picklists": [],
+        "prep": null,
+        "ready_ratio": 1.0,
+        "status": "to_ship",
+        "total": 1500.0,
+        "unbilled_units": 0.0,
+        "units": {
+         "backordered": 0,
+         "ready": 1.0,
+         "shipped": 2.0,
+         "to_order": 0,
+         "total": 3.0
+        },
+        "version": "<SCRUBBED>",
+        "zoho_url": "https://books.example/app/1#/salesorders/so1"
+       }
+      ],
+      "scan": false,
+      "stock_loaded_at": "<SCRUBBED>",
+      "sync": {
+       "configured": true,
+       "enabled": true,
+       "last_error": null,
+       "last_error_at": null,
+       "last_success_at": "<SCRUBBED>",
+       "pending": 1,
+       "running": false
+      }
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "to": " hina@example.test "
+    },
+    "status": 200,
+    "step": "POST /api/v1/order-board/invoices/inv-1/email",
+    "zoho_calls": [
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": "Already sent — this email went to that address less than a minute ago; check with the client before sending again"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "to": "hina@example.test"
+    },
+    "status": 409,
+    "step": "second send inside the guard window",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "events": [
+      {
+       "actor_class": "user",
+       "actor_name": null,
+       "changes": null,
+       "detail": {
+        "invoice": "INV-1",
+        "to": "hina@example.test"
+       },
+       "id": 4,
+       "kind": "invoice.emailed",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      },
+      {
+       "actor_class": "user",
+       "actor_name": null,
+       "changes": null,
+       "detail": {
+        "credit_applied": 600.0,
+        "invoice": "INV-1",
+        "scope": "shipped",
+        "total": 1000.0
+       },
+       "id": 3,
+       "kind": "invoice.created",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      },
+      {
+       "actor_class": "user",
+       "actor_name": null,
+       "changes": null,
+       "detail": {
+        "package": "PKG-00001"
+       },
+       "id": 2,
+       "kind": "handover.delivered",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      },
+      {
+       "actor_class": "system",
+       "actor_name": null,
+       "changes": null,
+       "detail": {
+        "pickup": false,
+        "reference": "",
+        "source": "direct",
+        "total": 1500.0,
+        "units": 3.0
+       },
+       "id": 1,
+       "kind": "order.received",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      }
+     ],
+     "has_more": false
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/events?depth=everything",
+    "zoho_calls": []
+   }
+  ]
+ },
+ {
+  "scenario": "invoice_cancel",
+  "steps": [
+   {
+    "body": {
+     "available": true,
+     "credit": 0.0,
+     "drafts": [],
+     "packed": {
+      "invoice_total": 1500.0,
+      "manual_reason": null,
+      "units": 3.0
+     },
+     "whole": {
+      "invoice_total": 2000.0,
+      "manual_reason": null,
+      "units": 4.0
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/invoice",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so2"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.invoice_prefill",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "board": {
+      "computed_at": "<SCRUBBED>",
+      "rows": [
+       {
+        "age_days": 5,
+        "contact": null,
+        "contacted": null,
+        "currency": "XPF",
+        "customer": "Customer 1",
+        "customer_id": "c1",
+        "date": "<SCRUBBED>",
+        "estimable": false,
+        "facts": {
+         "channel": "",
+         "delivery_method": "",
+         "estimate_id": null,
+         "payment_terms": "",
+         "quote_number": "",
+         "quote_url": null,
+         "reference": "",
+         "shopify_order": "",
+         "shopify_url": null
+        },
+        "id": "so1",
+        "is_core": true,
+        "last_event": {
+         "actor_name": null,
+         "detail": {
+          "credit_applied": 0.0,
+          "invoice": "INV-1",
+          "scope": "shipped",
+          "total": 1500.0
+         },
+         "kind": "invoice.created",
+         "occurred_at": "<SCRUBBED>"
+        },
+        "lines": [
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 1.0,
+          "covered_by_po": 0.0,
+          "floor": 2.0,
+          "id": "l1",
+          "invoiced": 0.0,
+          "item_id": "A",
+          "name": "Thing",
+          "packable": 1.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 3.0,
+          "rate": 0.0,
+          "remaining": 1.0,
+          "shipped": 2.0,
+          "shortfall": 0.0,
+          "sku": "SKU",
+          "state": "ready",
+          "stock_available": 100.0
+         },
+         {
+          "cancelled": 0.0,
+          "codes": [],
+          "covered": 0.0,
+          "covered_by_po": 0.0,
+          "floor": 1.0,
+          "id": "l1s",
+          "invoiced": 1.0,
+          "item_id": null,
+          "name": "Design",
+          "packable": 0.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 1.0,
+          "rate": 0.0,
+          "remaining": 1.0,
+          "shipped": 0.0,
+          "shortfall": 0.0,
+          "sku": "",
+          "state": "service",
+          "stock_available": null
+         }
+        ],
+        "number": "SO-00001",
+        "packages": [
+         {
+          "date": "",
+          "id": "pk1",
+          "number": "PKG-00001",
+          "shipment_id": "sh0",
+          "status": "shipped"
+         }
+        ],
+        "packed": 0.0,
+        "payment": {
+         "advance": 0.0,
+         "due": 0.0,
+         "invoice_paid": 0.0,
+         "invoices": [
+          {
+           "balance": 0.0,
+           "date": null,
+           "due_date": null,
+           "id": "inv-1",
+           "number": "INV-1",
+           "status": "sent",
+           "total": 0.0,
+           "url": "https://books.example/app/1#/invoices/inv-1"
+          }
+         ],
+         "left": 1000.0,
+         "next_due": null,
+         "overdue": 0,
+         "paid": 0.0,
+         "pct": 0,
+         "rest": 1000.0,
+         "retainer": 0,
+         "retainer_known": true,
+         "state": "unpaid"
+        },
+        "picked": 0,
+        "picklists": [],
+        "prep": null,
+        "ready_ratio": 1.0,
+        "status": "to_ship",
+        "total": 1000.0,
+        "unbilled_units": 0.0,
+        "units": {
+         "backordered": 0,
+         "ready": 1.0,
+         "shipped": 2.0,
+         "to_order": 0,
+         "total": 3.0
+        },
+        "version": "<SCRUBBED>",
+        "zoho_url": "https://books.example/app/1#/salesorders/so1"
+       },
+       {
+        "age_days": 5,
+        "contact": null,
+        "contacted": null,
+        "currency": "XPF",
+        "customer": "Customer 2",
+        "customer_id": "c1",
+        "date": "<SCRUBBED>",
+        "estimable": false,
+        "facts": {
+         "channel": "",
+         "delivery_method": "",
+         "estimate_id": null,
+         "payment_terms": "",
+         "quote_number": "",
+         "quote_url": null,
+         "reference": "",
+         "shopify_order": "",
+         "shopify_url": null
+        },
+        "id": "so2",
+        "is_core": true,
+        "last_event": {
+         "actor_name": null,
+         "detail": {
+          "pickup": false,
+          "reference": "",
+          "source": "direct",
+          "total": 1000.0,
+          "units": 1.0
+         },
+         "kind": "order.received",
+         "occurred_at": "<SCRUBBED>"
+        },
+        "lines": [
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 1.0,
+          "covered_by_po": 0.0,
+          "floor": 0.0,
+          "id": "l2",
+          "invoiced": 0.0,
+          "item_id": "A",
+          "name": "Thing",
+          "packable": 1.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 1.0,
+          "rate": 0.0,
+          "remaining": 1.0,
+          "shipped": 0.0,
+          "shortfall": 0.0,
+          "sku": "SKU",
+          "state": "ready",
+          "stock_available": 99.0
+         }
+        ],
+        "number": "SO-00002",
+        "packages": [],
+        "packed": 0.0,
+        "payment": {
+         "advance": 0.0,
+         "due": 0,
+         "invoice_paid": 0.0,
+         "invoices": [],
+         "left": 1000.0,
+         "next_due": null,
+         "overdue": 0,
+         "paid": 0.0,
+         "pct": 0,
+         "rest": 1000.0,
+         "retainer": 0,
+         "retainer_known": true,
+         "state": "unpaid"
+        },
+        "picked": 0,
+        "picklists": [],
+        "prep": null,
+        "ready_ratio": 1.0,
+        "status": "to_ship",
+        "total": 1000.0,
+        "unbilled_units": 0.0,
+        "units": {
+         "backordered": 0,
+         "ready": 1.0,
+         "shipped": 0.0,
+         "to_order": 0,
+         "total": 1.0
+        },
+        "version": "<SCRUBBED>",
+        "zoho_url": "https://books.example/app/1#/salesorders/so2"
+       }
+      ],
+      "scan": false,
+      "stock_loaded_at": "<SCRUBBED>",
+      "sync": {
+       "configured": true,
+       "enabled": true,
+       "last_error": null,
+       "last_error_at": null,
+       "last_success_at": "<SCRUBBED>",
+       "pending": 1,
+       "running": false
+      }
+     },
+     "outcome": {
+      "credit_applied": 0.0,
+      "delivered": "skipped",
+      "error": null,
+      "failed_step": null,
+      "invoice": "created",
+      "invoice_number": "INV-1",
+      "manual_reason": null,
+      "package_number": "",
+      "shipment": "skipped"
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "apply_credit": false,
+     "scope": "shipped"
+    },
+    "status": 200,
+    "step": "POST /api/v1/order-board/orders/so1/invoice",
+    "zoho_calls": [
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.invoice_prefill",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       {
+        "adjustment": 0,
+        "customer_id": "c1",
+        "date": "<SCRUBBED>",
+        "discount": 0,
+        "is_inclusive_tax": true,
+        "line_items": [
+         {
+          "discount": 0,
+          "item_id": "A",
+          "name": "Thing",
+          "quantity": 2.0,
+          "rate": 500.0,
+          "salesorder_item_id": "l1",
+          "tax_id": "t1"
+         },
+         {
+          "discount": 0,
+          "name": "Design",
+          "quantity": 1.0,
+          "rate": 500.0,
+          "salesorder_item_id": "l1s",
+          "tax_id": "t1"
+         }
+        ],
+        "shipping_charge": 0
+       }
+      ],
+      "call": "zoho.create_invoice",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "inv-1"
+      ],
+      "call": "zoho.mark_invoice_sent",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": [
+      {
+       "ctx": {
+        "expected": "'shipped', 'packed' or 'whole'"
+       },
+       "input": "everything",
+       "loc": [
+        "body",
+        "scope"
+       ],
+       "msg": "Input should be 'shipped', 'packed' or 'whole'",
+       "type": "literal_error"
+      }
+     ]
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "apply_credit": false,
+     "scope": "everything"
+    },
+    "status": 422,
+    "step": "bad scope",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "board": {
+      "computed_at": "<SCRUBBED>",
+      "rows": [
+       {
+        "age_days": 5,
+        "contact": null,
+        "contacted": null,
+        "currency": "XPF",
+        "customer": "Customer 1",
+        "customer_id": "c1",
+        "date": "<SCRUBBED>",
+        "estimable": false,
+        "facts": {
+         "channel": "",
+         "delivery_method": "",
+         "estimate_id": null,
+         "payment_terms": "",
+         "quote_number": "",
+         "quote_url": null,
+         "reference": "",
+         "shopify_order": "",
+         "shopify_url": null
+        },
+        "id": "so1",
+        "is_core": true,
+        "last_event": {
+         "actor_name": null,
+         "detail": {
+          "credit_applied": 0.0,
+          "invoice": "INV-1",
+          "scope": "shipped",
+          "total": 1500.0
+         },
+         "kind": "invoice.created",
+         "occurred_at": "<SCRUBBED>"
+        },
+        "lines": [
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 1.0,
+          "covered_by_po": 0.0,
+          "floor": 2.0,
+          "id": "l1",
+          "invoiced": 0.0,
+          "item_id": "A",
+          "name": "Thing",
+          "packable": 1.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 3.0,
+          "rate": 0.0,
+          "remaining": 1.0,
+          "shipped": 2.0,
+          "shortfall": 0.0,
+          "sku": "SKU",
+          "state": "ready",
+          "stock_available": 100.0
+         },
+         {
+          "cancelled": 0.0,
+          "codes": [],
+          "covered": 0.0,
+          "covered_by_po": 0.0,
+          "floor": 1.0,
+          "id": "l1s",
+          "invoiced": 1.0,
+          "item_id": null,
+          "name": "Design",
+          "packable": 0.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 1.0,
+          "rate": 0.0,
+          "remaining": 1.0,
+          "shipped": 0.0,
+          "shortfall": 0.0,
+          "sku": "",
+          "state": "service",
+          "stock_available": null
+         }
+        ],
+        "number": "SO-00001",
+        "packages": [
+         {
+          "date": "",
+          "id": "pk1",
+          "number": "PKG-00001",
+          "shipment_id": "sh0",
+          "status": "shipped"
+         }
+        ],
+        "packed": 0.0,
+        "payment": {
+         "advance": 0.0,
+         "due": 0.0,
+         "invoice_paid": 0.0,
+         "invoices": [
+          {
+           "balance": 0.0,
+           "date": null,
+           "due_date": null,
+           "id": "inv-1",
+           "number": "INV-1",
+           "status": "sent",
+           "total": 0.0,
+           "url": "https://books.example/app/1#/invoices/inv-1"
+          }
+         ],
+         "left": 1000.0,
+         "next_due": null,
+         "overdue": 0,
+         "paid": 0.0,
+         "pct": 0,
+         "rest": 1000.0,
+         "retainer": 0,
+         "retainer_known": true,
+         "state": "unpaid"
+        },
+        "picked": 0,
+        "picklists": [],
+        "prep": null,
+        "ready_ratio": 1.0,
+        "status": "to_ship",
+        "total": 1000.0,
+        "unbilled_units": 0.0,
+        "units": {
+         "backordered": 0,
+         "ready": 1.0,
+         "shipped": 2.0,
+         "to_order": 0,
+         "total": 3.0
+        },
+        "version": "<SCRUBBED>",
+        "zoho_url": "https://books.example/app/1#/salesorders/so1"
+       }
+      ],
+      "scan": false,
+      "stock_loaded_at": "<SCRUBBED>",
+      "sync": {
+       "configured": true,
+       "enabled": true,
+       "last_error": null,
+       "last_error_at": null,
+       "last_success_at": "<SCRUBBED>",
+       "pending": 2,
+       "running": false
+      }
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "POST /api/v1/order-board/orders/so2/cancel",
+    "zoho_calls": [
+     {
+      "args": [
+       "so2"
+      ],
+      "call": "zoho.void_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so2"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "board": {
+      "computed_at": "<SCRUBBED>",
+      "rows": [
+       {
+        "age_days": 5,
+        "contact": null,
+        "contacted": null,
+        "currency": "XPF",
+        "customer": "Customer 1",
+        "customer_id": "c1",
+        "date": "<SCRUBBED>",
+        "estimable": false,
+        "facts": {
+         "channel": "",
+         "delivery_method": "",
+         "estimate_id": null,
+         "payment_terms": "",
+         "quote_number": "",
+         "quote_url": null,
+         "reference": "",
+         "shopify_order": "",
+         "shopify_url": null
+        },
+        "id": "so1",
+        "is_core": true,
+        "last_event": {
+         "actor_name": null,
+         "detail": {
+          "credit_applied": 0.0,
+          "invoice": "INV-1",
+          "scope": "shipped",
+          "total": 1500.0
+         },
+         "kind": "invoice.created",
+         "occurred_at": "<SCRUBBED>"
+        },
+        "lines": [
+         {
+          "cancelled": 0.0,
+          "codes": [
+           "SKU"
+          ],
+          "covered": 1.0,
+          "covered_by_po": 0.0,
+          "floor": 2.0,
+          "id": "l1",
+          "invoiced": 0.0,
+          "item_id": "A",
+          "name": "Thing",
+          "packable": 1.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 3.0,
+          "rate": 0.0,
+          "remaining": 1.0,
+          "shipped": 2.0,
+          "shortfall": 0.0,
+          "sku": "SKU",
+          "state": "ready",
+          "stock_available": 100.0
+         },
+         {
+          "cancelled": 0.0,
+          "codes": [],
+          "covered": 0.0,
+          "covered_by_po": 0.0,
+          "floor": 1.0,
+          "id": "l1s",
+          "invoiced": 1.0,
+          "item_id": null,
+          "name": "Design",
+          "packable": 0.0,
+          "packed_waiting": 0.0,
+          "po_numbers": [],
+          "quantity": 1.0,
+          "rate": 0.0,
+          "remaining": 1.0,
+          "shipped": 0.0,
+          "shortfall": 0.0,
+          "sku": "",
+          "state": "service",
+          "stock_available": null
+         }
+        ],
+        "number": "SO-00001",
+        "packages": [
+         {
+          "date": "",
+          "id": "pk1",
+          "number": "PKG-00001",
+          "shipment_id": "sh0",
+          "status": "shipped"
+         }
+        ],
+        "packed": 0.0,
+        "payment": {
+         "advance": 0.0,
+         "due": 0.0,
+         "invoice_paid": 0.0,
+         "invoices": [
+          {
+           "balance": 0.0,
+           "date": null,
+           "due_date": null,
+           "id": "inv-1",
+           "number": "INV-1",
+           "status": "sent",
+           "total": 0.0,
+           "url": "https://books.example/app/1#/invoices/inv-1"
+          }
+         ],
+         "left": 1000.0,
+         "next_due": null,
+         "overdue": 0,
+         "paid": 0.0,
+         "pct": 0,
+         "rest": 1000.0,
+         "retainer": 0,
+         "retainer_known": true,
+         "state": "unpaid"
+        },
+        "picked": 0,
+        "picklists": [],
+        "prep": null,
+        "ready_ratio": 1.0,
+        "status": "to_ship",
+        "total": 1000.0,
+        "unbilled_units": 0.0,
+        "units": {
+         "backordered": 0,
+         "ready": 1.0,
+         "shipped": 2.0,
+         "to_order": 0,
+         "total": 3.0
+        },
+        "version": "<SCRUBBED>",
+        "zoho_url": "https://books.example/app/1#/salesorders/so1"
+       }
+      ],
+      "scan": false,
+      "stock_loaded_at": "<SCRUBBED>",
+      "sync": {
+       "configured": true,
+       "enabled": true,
+       "last_error": null,
+       "last_error_at": null,
+       "last_success_at": "<SCRUBBED>",
+       "pending": 2,
+       "running": false
+      }
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "already off the board",
+    "zoho_calls": [
+     {
+      "args": [
+       "so2"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so2"
+      ],
+      "call": "zoho.void_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so2"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "computed_at": "<SCRUBBED>",
+     "rows": [
+      {
+       "age_days": 5,
+       "contact": null,
+       "contacted": null,
+       "currency": "XPF",
+       "customer": "Customer 1",
+       "customer_id": "c1",
+       "date": "<SCRUBBED>",
+       "estimable": false,
+       "facts": {
+        "channel": "",
+        "delivery_method": "",
+        "estimate_id": null,
+        "payment_terms": "",
+        "quote_number": "",
+        "quote_url": null,
+        "reference": "",
+        "shopify_order": "",
+        "shopify_url": null
+       },
+       "id": "so1",
+       "is_core": true,
+       "last_event": {
+        "actor_name": null,
+        "detail": {
+         "credit_applied": 0.0,
+         "invoice": "INV-1",
+         "scope": "shipped",
+         "total": 1500.0
+        },
+        "kind": "invoice.created",
+        "occurred_at": "<SCRUBBED>"
+       },
+       "lines": [
+        {
+         "cancelled": 0.0,
+         "codes": [
+          "SKU"
+         ],
+         "covered": 1.0,
+         "covered_by_po": 0.0,
+         "floor": 2.0,
+         "id": "l1",
+         "invoiced": 0.0,
+         "item_id": "A",
+         "name": "Thing",
+         "packable": 1.0,
+         "packed_waiting": 0.0,
+         "po_numbers": [],
+         "quantity": 3.0,
+         "rate": 0.0,
+         "remaining": 1.0,
+         "shipped": 2.0,
+         "shortfall": 0.0,
+         "sku": "SKU",
+         "state": "ready",
+         "stock_available": 100.0
+        },
+        {
+         "cancelled": 0.0,
+         "codes": [],
+         "covered": 0.0,
+         "covered_by_po": 0.0,
+         "floor": 1.0,
+         "id": "l1s",
+         "invoiced": 1.0,
+         "item_id": null,
+         "name": "Design",
+         "packable": 0.0,
+         "packed_waiting": 0.0,
+         "po_numbers": [],
+         "quantity": 1.0,
+         "rate": 0.0,
+         "remaining": 1.0,
+         "shipped": 0.0,
+         "shortfall": 0.0,
+         "sku": "",
+         "state": "service",
+         "stock_available": null
+        }
+       ],
+       "number": "SO-00001",
+       "packages": [
+        {
+         "date": "",
+         "id": "pk1",
+         "number": "PKG-00001",
+         "shipment_id": "sh0",
+         "status": "shipped"
+        }
+       ],
+       "packed": 0.0,
+       "payment": {
+        "advance": 0.0,
+        "due": 0.0,
+        "invoice_paid": 0.0,
+        "invoices": [
+         {
+          "balance": 0.0,
+          "date": null,
+          "due_date": null,
+          "id": "inv-1",
+          "number": "INV-1",
+          "status": "sent",
+          "total": 0.0,
+          "url": "https://books.example/app/1#/invoices/inv-1"
+         }
+        ],
+        "left": 1000.0,
+        "next_due": null,
+        "overdue": 0,
+        "paid": 0.0,
+        "pct": 0,
+        "rest": 1000.0,
+        "retainer": 0,
+        "retainer_known": true,
+        "state": "unpaid"
+       },
+       "picked": 0,
+       "picklists": [],
+       "prep": null,
+       "ready_ratio": 1.0,
+       "status": "to_ship",
+       "total": 1000.0,
+       "unbilled_units": 0.0,
+       "units": {
+        "backordered": 0,
+        "ready": 1.0,
+        "shipped": 2.0,
+        "to_order": 0,
+        "total": 3.0
+       },
+       "version": "<SCRUBBED>",
+       "zoho_url": "https://books.example/app/1#/salesorders/so1"
+      }
+     ],
+     "scan": false,
+     "stock_loaded_at": "<SCRUBBED>",
+     "sync": {
+      "configured": true,
+      "enabled": true,
+      "last_error": null,
+      "last_error_at": null,
+      "last_success_at": "<SCRUBBED>",
+      "pending": 2,
+      "running": false
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.is_configured",
+      "kwargs": {}
+     }
+    ]
+   }
+  ],
+  "voided": [
+   "so2",
+   "so2"
+  ]
+ },
+ {
+  "heimdall_created": [
+   "order:so1:1"
+  ],
+  "links": [
+   {
+    "amount": 600,
+    "document_kind": "invoice",
+    "document_number": "FA-2",
+    "id": 1,
+    "idempotency_key": "order:so1:1",
+    "status": "cancelled"
+   }
+  ],
+  "scenario": "payments_sms",
+  "steps": [
+   {
+    "body": {
+     "document_id": "inv-2",
+     "kind": "invoice",
+     "left": 600.0,
+     "link": null,
+     "max_amount": 600,
+     "number": "FA-2"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/payment-target",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so2"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c2"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "document_id": "so2",
+     "kind": "salesorder",
+     "left": 1000.0,
+     "link": null,
+     "max_amount": 1000,
+     "number": "SO-00002"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "order without an invoice",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "due": 600.0,
+     "kind": "other",
+     "message": "Ia Ora na, ta commande SO-00001 est disponible. Tu peux venir la récupérer à notre boutique à Arue. Reste à régler : 600 FCFP.\nSuivi de ta commande : https://shop.example/t/<TOKEN>\nAito3D",
+     "partial": false,
+     "payment_link": null
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "sms draft before any link",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "detail": {
+      "code": "amount_above_left",
+      "message": "Amount exceeds what is left to pay on the order (600)"
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "amount": 601
+    },
+    "status": 422,
+    "step": "above what is left",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "amount": 600,
+     "currency": "XPF",
+     "document_number": "FA-2",
+     "expires_on": "<SCRUBBED>",
+     "id": 1,
+     "minted": true,
+     "paid_at": null,
+     "state": "pending",
+     "sync_error": null,
+     "url": "https://pay.example/l/1"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "amount": 600
+    },
+    "status": 200,
+    "step": "POST /api/v1/order-board/orders/so1/payment-link",
+    "zoho_calls": [
+     {
+      "args": [
+       "inv-2"
+      ],
+      "call": "zoho.get_invoice_raw",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "heimdall.create_link",
+      "kwargs": {
+       "amount": 600,
+       "expires_in_days": 30,
+       "idempotency_key": "order:so1:1",
+       "reference": "FA-2"
+      }
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": {
+      "code": "link_exists",
+      "message": "A payment link is already open for this order"
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "amount": 600
+    },
+    "status": 409,
+    "step": "second link",
+    "zoho_calls": [
+     {
+      "args": [
+       "inv-2"
+      ],
+      "call": "zoho.get_invoice_raw",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "document_id": "inv-2",
+     "kind": "invoice",
+     "left": 600.0,
+     "link": {
+      "amount": 600,
+      "currency": "XPF",
+      "document_number": "FA-2",
+      "expires_on": "<SCRUBBED>",
+      "id": 1,
+      "minted": true,
+      "paid_at": null,
+      "state": "pending",
+      "sync_error": null,
+      "url": "https://pay.example/l/1"
+     },
+     "max_amount": 600,
+     "number": "FA-2"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "target with the open link",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "due": 600.0,
+     "kind": "other",
+     "message": "Ia Ora na, ta commande SO-00001 est disponible. Tu peux venir la récupérer à notre boutique à Arue. Reste à régler : 600 FCFP.\nLien de paiement : https://pay.example/l/1\nSuivi de ta commande : https://shop.example/t/<TOKEN>\nAito3D",
+     "partial": false,
+     "payment_link": {
+      "amount": 600,
+      "id": 1,
+      "url": "https://pay.example/l/1"
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "sms draft with the link",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "age_days": 5,
+     "contact": {
+      "email": "",
+      "mobile": "87 11 22 33",
+      "name": "Hina T",
+      "phone": ""
+     },
+     "contacted": {
+      "at": "<SCRUBBED>",
+      "by": ""
+     },
+     "currency": "XPF",
+     "customer": "Customer 1",
+     "customer_id": "c1",
+     "date": "<SCRUBBED>",
+     "estimable": false,
+     "facts": {
+      "channel": "",
+      "delivery_method": "",
+      "estimate_id": null,
+      "payment_terms": "",
+      "quote_number": "",
+      "quote_url": null,
+      "reference": "",
+      "shopify_order": "",
+      "shopify_url": null
+     },
+     "id": "so1",
+     "is_core": true,
+     "last_event": {
+      "actor_name": "",
+      "detail": {
+       "to": "87 11 22 33"
+      },
+      "kind": "sms.sent",
+      "occurred_at": "<SCRUBBED>"
+     },
+     "lines": [
+      {
+       "cancelled": 0.0,
+       "codes": [
+        "SKU"
+       ],
+       "covered": 1.0,
+       "covered_by_po": 0.0,
+       "floor": 0.0,
+       "id": "l1",
+       "invoiced": 0.0,
+       "item_id": "A",
+       "name": "Thing",
+       "packable": 1.0,
+       "packed_waiting": 0.0,
+       "po_numbers": [],
+       "quantity": 1.0,
+       "rate": 0.0,
+       "remaining": 1.0,
+       "shipped": 0.0,
+       "shortfall": 0.0,
+       "sku": "SKU",
+       "state": "ready",
+       "stock_available": 100.0
+      }
+     ],
+     "number": "SO-00001",
+     "packages": [],
+     "packed": 0.0,
+     "payment": {
+      "advance": 0.0,
+      "due": 600.0,
+      "invoice_paid": 400.0,
+      "invoices": [
+       {
+        "balance": 600.0,
+        "date": "<SCRUBBED>",
+        "due_date": "<SCRUBBED>",
+        "id": "inv-2",
+        "number": "FA-2",
+        "status": "sent",
+        "total": 1000.0,
+        "url": "https://books.example/app/1#/invoices/inv-2"
+       }
+      ],
+      "left": 600.0,
+      "next_due": "<SCRUBBED>",
+      "overdue": 0,
+      "paid": 400.0,
+      "pct": 40,
+      "rest": 0.0,
+      "retainer": 0,
+      "retainer_known": true,
+      "state": "partial"
+     },
+     "picked": 0,
+     "picklists": [],
+     "prep": null,
+     "ready_ratio": 1.0,
+     "status": "to_ship",
+     "total": 1000.0,
+     "unbilled_units": 0.0,
+     "units": {
+      "backordered": 0,
+      "ready": 1.0,
+      "shipped": 0.0,
+      "to_order": 0,
+      "total": 1.0
+     },
+     "version": "<SCRUBBED>",
+     "zoho_url": "https://books.example/app/1#/salesorders/so1"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "payment_link_id": 1
+    },
+    "status": 200,
+    "step": "POST /api/v1/order-board/orders/so1/sms",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "detail": {
+      "code": "link_open",
+      "message": "A payment link is open for this order"
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "amount": 600
+    },
+    "status": 409,
+    "step": "terminal while a link is open",
+    "zoho_calls": [
+     {
+      "args": [
+       "inv-2"
+      ],
+      "call": "zoho.get_invoice_raw",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "amount": 600,
+     "currency": "XPF",
+     "document_number": "FA-2",
+     "expires_on": "<SCRUBBED>",
+     "id": 1,
+     "minted": true,
+     "paid_at": null,
+     "state": "cancelled",
+     "sync_error": null,
+     "url": "https://pay.example/l/1"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "POST /api/v1/order-board/orders/so1/payment-link/cancel",
+    "zoho_calls": [
+     {
+      "args": [
+       "h-1"
+      ],
+      "call": "heimdall.cancel_link",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "detail": {
+      "code": "not_cancellable",
+      "message": "This payment link is not open and cannot be cancelled"
+     }
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 409,
+    "step": "nothing open to cancel",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "amount": 600,
+     "amount_confirmed": null,
+     "booking_error": null,
+     "booking_status": null,
+     "created_at": "<SCRUBBED>",
+     "document_kind": "invoice",
+     "document_number": "FA-2",
+     "id": 1,
+     "settled_at": null,
+     "status": "processing",
+     "sync_error": null
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": {
+     "amount": 600
+    },
+    "status": 201,
+    "step": "POST /api/v1/order-board/orders/so1/terminal-payment",
+    "zoho_calls": [
+     {
+      "args": [
+       "inv-2"
+      ],
+      "call": "zoho.get_invoice_raw",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "heimdall.create_terminal_payment",
+      "kwargs": {
+       "amount": 600,
+       "document": {
+        "id": "inv-2",
+        "type": "invoice"
+       },
+       "idempotency_key": "order-tpe:so1:1"
+      }
+     }
+    ]
+   },
+   {
+    "body": {
+     "amount": 600,
+     "amount_confirmed": null,
+     "booking_error": null,
+     "booking_status": null,
+     "created_at": "<SCRUBBED>",
+     "document_kind": "invoice",
+     "document_number": "FA-2",
+     "id": 1,
+     "settled_at": null,
+     "status": "processing",
+     "sync_error": null
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/terminal-payment",
+    "zoho_calls": []
+   },
+   {
+    "body": null,
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "no terminal charge",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "events": [
+      {
+       "actor_class": "user",
+       "actor_name": null,
+       "changes": null,
+       "detail": {
+        "amount": 600,
+        "document": "FA-2"
+       },
+       "id": 6,
+       "kind": "terminal.started",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      },
+      {
+       "actor_class": "user",
+       "actor_name": null,
+       "changes": null,
+       "detail": {
+        "amount": 600,
+        "document": "FA-2",
+        "heimdall_id": "h-1",
+        "reason": "operator"
+       },
+       "id": 5,
+       "kind": "payment_link.cancelled",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      },
+      {
+       "actor_class": "user",
+       "actor_name": null,
+       "changes": null,
+       "detail": {
+        "amount": 600,
+        "document": "FA-2"
+       },
+       "id": 4,
+       "kind": "payment_link.sent",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      },
+      {
+       "actor_class": "user",
+       "actor_name": "",
+       "changes": null,
+       "detail": {
+        "to": "87 11 22 33"
+       },
+       "id": 3,
+       "kind": "sms.sent",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      },
+      {
+       "actor_class": "system",
+       "actor_name": null,
+       "changes": null,
+       "detail": {
+        "pickup": false,
+        "reference": "",
+        "source": "direct",
+        "total": 1000.0,
+        "units": 1.0
+       },
+       "id": 1,
+       "kind": "order.received",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      }
+     ],
+     "has_more": false
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/events?depth=everything",
+    "zoho_calls": []
+   }
+  ]
+ },
+ {
+  "scenario": "tracking",
+  "steps": [
+   {
+    "body": {
+     "tracking_url": null
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "no external URL yet",
+    "zoho_calls": [
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so1"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "so2"
+      ],
+      "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_salesorders",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.list_purchaseorders",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       [
+        "A"
+       ]
+      ],
+      "call": "zoho.list_items_by_ids",
+      "kwargs": {}
+     },
+     {
+      "args": [],
+      "call": "zoho.books_salesorder_url_base",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_invoice_url",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       ""
+      ],
+      "call": "zoho.books_app_url",
+      "kwargs": {}
+     }
+    ]
+   },
+   {
+    "body": {
+     "tracking_url": "https://shop.example/t/<TOKEN>"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/orders/so1/tracking-link",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "tracking_url": "https://shop.example/t/<TOKEN>"
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "same link again",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "detail": "Order not found."
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 404,
+    "step": "unknown order",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "counts": {
+      "open": 2,
+      "ready": 1,
+      "waiting": 1
+     },
+     "date": "<SCRUBBED>",
+     "lines": [
+      {
+       "handed_on": null,
+       "name": "Thing",
+       "quantity": 1.0,
+       "status": "ready"
+      },
+      {
+       "handed_on": null,
+       "name": "Thing",
+       "quantity": 2.0,
+       "status": "waiting"
+      }
+     ],
+     "pay_url": null,
+     "payment": {
+      "currency": "XPF",
+      "left": 1000,
+      "paid": 0,
+      "total": 1000
+     },
+     "pickup": true,
+     "reference": "#1079",
+     "stage": "ready",
+     "state": "partly_ready",
+     "updated_at": "<SCRUBBED>"
+    },
+    "content_type": "application/json",
+    "headers": {
+     "cache-control": "no-store"
+    },
+    "request": null,
+    "status": 200,
+    "step": "GET /api/v1/order-board/track/<TOKEN>",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "counts": {
+      "open": 2,
+      "ready": 1,
+      "waiting": 1
+     },
+     "date": "<SCRUBBED>",
+     "lines": [
+      {
+       "handed_on": null,
+       "name": "Thing",
+       "quantity": 1.0,
+       "status": "ready"
+      },
+      {
+       "handed_on": null,
+       "name": "Thing",
+       "quantity": 2.0,
+       "status": "waiting"
+      }
+     ],
+     "pay_url": null,
+     "payment": {
+      "currency": "XPF",
+      "left": 1000,
+      "paid": 0,
+      "total": 1000
+     },
+     "pickup": true,
+     "reference": "#1079",
+     "stage": "ready",
+     "state": "partly_ready",
+     "updated_at": "<SCRUBBED>"
+    },
+    "content_type": "application/json",
+    "headers": {
+     "cache-control": "no-store"
+    },
+    "request": null,
+    "status": 200,
+    "step": "code in lower case",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "detail": "Lien introuvable"
+    },
+    "content_type": "application/json",
+    "headers": {
+     "cache-control": "no-store"
+    },
+    "request": null,
+    "status": 404,
+    "step": "unknown code",
+    "zoho_calls": []
+   },
+   {
+    "body": {
+     "events": [
+      {
+       "actor_class": "client",
+       "actor_name": null,
+       "changes": null,
+       "detail": null,
+       "id": 2,
+       "kind": "tracking.viewed",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      },
+      {
+       "actor_class": "system",
+       "actor_name": null,
+       "changes": null,
+       "detail": {
+        "pickup": true,
+        "reference": "1079",
+        "source": "shopify",
+        "total": 1000.0,
+        "units": 3.0
+       },
+       "id": 1,
+       "kind": "order.received",
+       "note": null,
+       "occurred_at": "<SCRUBBED>"
+      }
+     ],
+     "has_more": false
+    },
+    "content_type": "application/json",
+    "headers": {},
+    "request": null,
+    "status": 200,
+    "step": "the view is logged",
+    "zoho_calls": []
+   }
+  ]
+ }
+]
+
+### stderr:
+

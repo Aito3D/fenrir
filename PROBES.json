@@ -1,49 +1,60 @@
 [
  {
-  "id": "ftree-openapi",
-  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_ftree_openapi.py 2>/dev/null",
+  "id": "orders-openapi",
+  "cmd": "PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 tools/probe_orders_openapi.py 2>/dev/null",
   "timeout": 300,
   "scrub": [],
   "files": []
  },
  {
-  "id": "ftree-rules",
-  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_ftree_rules.py 2>/dev/null",
+  "id": "orders-rules",
+  "cmd": "PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 tools/probe_orders_rules.py 2>/dev/null",
   "timeout": 300,
   "scrub": [],
   "files": []
  },
  {
-  "id": "ftree-http",
-  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_ftree_api.py 2>/dev/null",
+  "id": "orders-http",
+  "cmd": "mkdir -p /tmp/fenrir-orders-probe && OUT=$(mktemp /tmp/fenrir-orders-probe/http.XXXXXX) && mkdir -p /tmp/fenrir-orders-probe/http-data && PROBE_OUT=$OUT DATA_DIR=/tmp/fenrir-orders-probe/http-data LOG_DIR=/tmp/fenrir-orders-probe/http-data/logs PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 -m pytest -p backend.tests.conftest -p no:randomly -p no:cacheprovider -q tools/probe_orders_http_test.py > $OUT.log 2>&1; rc=$?; cat $OUT; [ $rc = 0 ] || tail -40 $OUT.log; rm -f $OUT $OUT.log; exit $rc",
   "timeout": 600,
-  "scrub": ["\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"],
+  "scrub": [
+   "\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:[+-]\\d{2}:?\\d{2}|Z)?)?",
+   "\\d{1,2} (?:janv\\.|févr\\.|mars|avr\\.|mai|juin|juil\\.|août|sept\\.|oct\\.|nov\\.|déc\\.) \\d{4}",
+   "à \\d{2}:\\d{2}"
+  ],
   "files": []
  },
  {
-  "id": "ftree-surface-py",
-  "cmd": "for w in routes callables schemas ddl permissions; do echo \"=== $w\"; PYTHONHASHSEED=0 ./venv/bin/python3 tools/probe_ftree_surface.py $w 2>/dev/null; done",
+  "id": "orders-prep-sheet",
+  "cmd": "PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 tools/probe_orders_prep_sheet.py 2>/dev/null",
+  "timeout": 300,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "orders-surface-py",
+  "cmd": "for w in routes callables schemas ddl permissions settings; do echo \"=== $w\"; PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 tools/probe_orders_surface.py $w 2>/dev/null; done",
   "timeout": 600,
   "scrub": [],
   "files": []
  },
  {
-  "id": "ftree-frontend-pure",
-  "cmd": "mkdir -p /tmp/fenrir-refactor-ftree-probe && frontend/node_modules/.bin/rolldown tools/probe_ftree_frontend_entry.ts --format cjs --file /tmp/fenrir-refactor-ftree-probe/ftreeFrontend.cjs >/dev/null 2>&1 && node tools/probe_ftree_frontend.cjs",
+  "id": "orders-frontend-pure",
+  "cmd": "mkdir -p /tmp/fenrir-orders-probe && frontend/node_modules/.bin/rolldown tools/probe_orders_frontend_entry.ts --format cjs --file /tmp/fenrir-orders-probe/ordersFrontend.cjs >/dev/null 2>&1 && TZ=Pacific/Tahiti node tools/probe_orders_frontend.cjs",
   "timeout": 300,
   "scrub": [],
   "files": []
  },
  {
-  "id": "ftree-i18n",
-  "cmd": "LC_ALL=C node tools/probe_ftree_i18n.cjs",
+  "id": "orders-i18n",
+  "cmd": "LC_ALL=C node tools/probe_orders_i18n.cjs",
   "timeout": 300,
   "scrub": [],
   "files": []
  },
  {
-  "id": "ftree-api-client",
-  "cmd": "LC_ALL=C awk -f tools/probe_ftree_client.awk frontend/src/api/client.ts",
+  "id": "orders-api-client",
+  "cmd": "LC_ALL=C awk -f tools/probe_orders_client.awk frontend/src/api/client.ts",
   "timeout": 60,
   "scrub": [],
   "files": []
