@@ -13,10 +13,13 @@ from backend.app.models.aito_terminal_payment import AitoTerminalPayment
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_actions, order_board_sync
+from backend.app.services.aito_payment_links import InvoiceLinkExists
 from backend.app.services.aito_terminal_payments import TerminalInProgress
 from backend.app.services.heimdall import (
     HeimdallConflict,
+    HeimdallInvalid,
     HeimdallNotConfigured,
+    HeimdallRateLimited,
     HeimdallUnreachable,
     LinkView,
     heimdall_service,
@@ -325,6 +328,64 @@ async def test_terminal_refusals_write_no_event(
     assert await _events(db_session, "terminal.started") == []
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "status", "code"),
+    [
+        (InvoiceLinkExists("open"), 409, "link_exists"),
+        (HeimdallNotConfigured("no url"), 502, "not_configured"),
+        (HeimdallInvalid("bad reference"), 422, "invalid"),
+        (HeimdallUnreachable("timeout"), 502, "upstream"),
+    ],
+)
+async def test_link_create_refusals_write_no_event(
+    async_client,
+    tokens,  # noqa: F811
+    order,
+    live_invoice,
+    db_session,
+    monkeypatch,
+    error,
+    status,
+    code,
+):
+    await order({"invoices": [INVOICE_NEW]})
+
+    async def create(db, salesorder_id, *, document, amount, actor_name, now):
+        raise error
+
+    monkeypatch.setattr(routes, "create_order_invoice_link", create)
+    r = await async_client.post(f"{BASE}/payment-link", json={"amount": 100}, headers=tokens["both"])
+    assert r.status_code == status and r.json()["detail"]["code"] == code
+    assert await _events(db_session, "payment_link") == []
+
+
+@pytest.mark.asyncio
+async def test_terminal_get_rate_limited_429(async_client, tokens, db_session, monkeypatch):  # noqa: F811
+    db_session.add(
+        AitoTerminalPayment(
+            project_id=0,
+            salesorder_id="so1",
+            document_kind="invoice",
+            document_id="inv-2",
+            document_number="FA-2",
+            idempotency_key="order-tpe:so1:1",
+            heimdall_id="h-1",
+            amount=100,
+            status="processing",
+            created_at=NOW,
+        )
+    )
+    await db_session.commit()
+
+    async def refresh(db, row, *, now):
+        raise HeimdallRateLimited("slow down", 5)
+
+    monkeypatch.setattr(routes, "refresh_terminal_payment", refresh)
+    r = await async_client.get(f"{BASE}/terminal-payment", headers=tokens["both"])
+    assert r.status_code == 429 and r.json()["detail"]["code"] == "rate_limited"
+
+
 # --- link ---------------------------------------------------------------------------------------------------
 
 
@@ -505,6 +566,17 @@ async def test_cancel_heimdall_down_keeps_the_link(async_client, tokens, db_sess
     heimdall_cancel.error = HeimdallUnreachable("timeout")
     r = await async_client.post(f"{BASE}/payment-link/cancel", headers=tokens["both"])
     assert r.status_code == 502 and r.json()["detail"]["code"] == "upstream"
+    assert (await db_session.execute(select(AitoPaymentLink))).scalar_one().status == "pending"
+    assert await _events(db_session, "payment_link.cancelled") == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_heimdall_not_configured_keeps_the_link(async_client, tokens, db_session, heimdall_cancel):  # noqa: F811
+    db_session.add(_pending_link())
+    await db_session.commit()
+    heimdall_cancel.error = HeimdallNotConfigured("no url")
+    r = await async_client.post(f"{BASE}/payment-link/cancel", headers=tokens["both"])
+    assert r.status_code == 502 and r.json()["detail"]["code"] == "not_configured"
     assert (await db_session.execute(select(AitoPaymentLink))).scalar_one().status == "pending"
     assert await _events(db_session, "payment_link.cancelled") == []
 

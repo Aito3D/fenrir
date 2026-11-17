@@ -909,6 +909,47 @@ async def test_a_simultaneous_first_stamp_updates_the_winner_instead_of_failing(
 
 
 @pytest.mark.asyncio
+async def test_a_print_stamp_losing_the_unique_key_race_keeps_one_row_with_the_latest_by_and_logs(file_sessions, zoho):
+    async with file_sessions() as one, file_sessions() as two:
+        await _board(one, zoho, order(1))
+        real_commit = one.commit
+        raced = []
+
+        async def winner_lands_first():
+            if not raced:
+                raced.append(1)
+                await actions.stamp_print(two, "so1", "winner")
+            await real_commit()
+
+        one.commit = winner_lands_first
+        row = await actions.stamp_print(one, "so1", "loser", "PL-9")
+        assert row["prep"]["by"] == "loser"
+        docs = (await one.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "prep"))).scalars().all()
+        assert [d.header["by"] for d in docs] == ["loser"]
+        assert [e.actor_name for e in await events_of(one, "so1") if e.kind == "prep.printed"] == ["winner", "loser"]
+
+
+@pytest.mark.asyncio
+async def test_a_simultaneous_first_contact_stamp_keeps_the_winner_and_still_logs(file_sessions, zoho):
+    async with file_sessions() as one, file_sessions() as two:
+        await _board(one, zoho, order(1))
+        real_commit = one.commit
+        raced = []
+
+        async def winner_lands_first():
+            if not raced:
+                raced.append(1)
+                await actions.stamp_contact(two, "so1", "winner")
+            await real_commit()
+
+        one.commit = winner_lands_first
+        await actions.stamp_contact(one, "so1", "loser")
+        docs = (await one.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "contact"))).scalars().all()
+        assert [d.header["by"] for d in docs] == ["winner"]
+        assert [e.actor_name for e in await events_of(one, "so1") if e.kind == "sms.sent"] == ["winner", "loser"]
+
+
+@pytest.mark.asyncio
 async def test_a_pending_stored_copy_is_reread_before_a_parcel(db_session, parcels):
     """The pending flag survives a restart, where the in-memory unconfirmed mark does not."""
     await _board(db_session, parcels, order(1, qty=2))

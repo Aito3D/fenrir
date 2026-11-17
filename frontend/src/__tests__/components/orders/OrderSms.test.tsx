@@ -8,6 +8,7 @@ import { render } from '../../utils';
 import { api, type OrderBoardRow, type OrderContact, type OrderPanelRow } from '../../../api/client';
 import { OrderContactBlock } from '../../../components/orders/OrderContactBlock';
 import { OrderSmsModal } from '../../../components/orders/OrderSmsModal';
+import { OrderSidePanel } from '../../../components/orders/OrderSidePanel';
 
 const contact = (o: Partial<OrderContact> = {}): OrderContact => ({ name: 'Kelly SACAULT', email: '', phone: '', mobile: '+689-89530560', ...o });
 const row = { id: 'so264', number: 'SO-00264', contact: contact(), contacted: null } as unknown as OrderPanelRow;
@@ -137,5 +138,113 @@ describe('OrderSmsModal', () => {
     expect(await screen.findByText(/sms relay not reachable/i)).toBeInTheDocument();
     expect(record).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByDisplayValue(/tes filaments/)).toBeInTheDocument());
+  });
+});
+
+describe('OrderSidePanel ?sms=1 deep link', () => {
+  const draft = { message: DRAFT, kind: 'filaments' as const, partial: false, due: 0 };
+  const panel = (o: { smsAllowed?: boolean; r?: OrderPanelRow; createInvoice?: unknown } = {}) =>
+    render(
+      <OrderSidePanel
+        row={o.r ?? row}
+        others={[]}
+        canUpdate
+        createInvoice={(o.createInvoice ?? { isPending: false, mutate: vi.fn() }) as never}
+        smsAllowed={o.smsAllowed ?? true}
+        editingTotal={null}
+      />,
+    );
+  const visit = (qs: string) => window.history.pushState({}, '', `/orders?${qs}`);
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.history.pushState({}, '', '/');
+  });
+
+  it('opens the draft for this order with the mobile number, then drops only the sms flag', async () => {
+    const getDraft = vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue(draft);
+    visit('order=so264&sms=1');
+    panel();
+    expect(await screen.findByDisplayValue(/tes filaments/)).toBeInTheDocument();
+    expect(screen.getByText(/Kelly SACAULT · \+689-89530560/)).toBeInTheDocument();
+    expect(getDraft).toHaveBeenCalledWith('so264');
+    expect(window.location.search).toBe('?order=so264');
+  });
+
+  it('falls back to the landline when there is no mobile', async () => {
+    vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue(draft);
+    visit('order=so264&sms=1');
+    panel({ r: { ...row, contact: contact({ mobile: '', phone: '+689-40111222' }) } as OrderPanelRow });
+    expect(await screen.findByText(/Kelly SACAULT · \+689-40111222/)).toBeInTheDocument();
+  });
+
+  it('with no phone opens nothing but still drops the flag', async () => {
+    const getDraft = vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue(draft);
+    visit('order=so264&sms=1');
+    panel({ r: { ...row, contact: contact({ mobile: '', phone: '' }) } as OrderPanelRow });
+    await waitFor(() => expect(window.location.search).toBe('?order=so264'));
+    expect(getDraft).not.toHaveBeenCalled();
+    expect(screen.queryByDisplayValue(/tes filaments/)).not.toBeInTheDocument();
+  });
+
+  it('when sms is not allowed opens nothing but still drops the flag', async () => {
+    const getDraft = vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue(draft);
+    visit('order=so264&sms=1');
+    panel({ smsAllowed: false });
+    await waitFor(() => expect(window.location.search).toBe('?order=so264'));
+    expect(getDraft).not.toHaveBeenCalled();
+    expect(screen.queryByDisplayValue(/tes filaments/)).not.toBeInTheDocument();
+  });
+
+  it('for another order does nothing, and leaves the URL as it is', async () => {
+    const getDraft = vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue(draft);
+    visit('order=so999&sms=1');
+    panel();
+    await screen.findByRole('button', { name: /pickup sms/i });
+    expect(getDraft).not.toHaveBeenCalled();
+    expect(window.location.search).toBe('?order=so999&sms=1');
+  });
+
+  it('without the flag does nothing', async () => {
+    const getDraft = vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue(draft);
+    visit('order=so264');
+    panel();
+    await screen.findByRole('button', { name: /pickup sms/i });
+    expect(getDraft).not.toHaveBeenCalled();
+  });
+
+  it('closing the draft removes it', async () => {
+    vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue(draft);
+    visit('order=so264&sms=1');
+    panel();
+    await screen.findByDisplayValue(/tes filaments/);
+    await userEvent.setup().keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByDisplayValue(/tes filaments/)).not.toBeInTheDocument());
+  });
+
+  it('Invoice now creates once with the chosen scope, ignoring a second click while it is in flight', async () => {
+    server.use(
+      http.get('*/order-board/orders/so264/invoice', () =>
+        HttpResponse.json({
+          available: true, credit: 0, drafts: [],
+          packed: { units: 6, invoice_total: 40000, manual_reason: null },
+          whole: { units: 10, invoice_total: 60955, manual_reason: null },
+        }),
+      ),
+    );
+    const mutate = vi.fn();
+    const user = userEvent.setup();
+    panel({
+      r: { ...row, currency: 'XPF', unbilled_units: 0, lines: [{ remaining: 10, invoiced: 0 }], facts: {} } as unknown as OrderPanelRow,
+      createInvoice: { isPending: false, mutate },
+    });
+    await user.click(screen.getByRole('button', { name: 'Invoice now' }));
+    await user.click(await screen.findByRole('radio', { name: /The whole order/ }));
+    const create = screen.getByRole('button', { name: 'Create in Zoho Books' });
+    await user.click(create);
+    await user.click(create);
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate).toHaveBeenCalledWith({ id: 'so264', applyCredit: true, scope: 'whole' }, expect.any(Object));
+    mutate.mock.calls[0][1].onSettled();
   });
 });
