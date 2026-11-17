@@ -16,9 +16,11 @@ from backend.app.services import order_board_actions as actions, order_board_syn
 from backend.app.services.order_board_actions import line_edit, parcel_edit, stamps as stamp_module
 from backend.app.services.order_board_sync import _common as sync_common
 from backend.app.services.zoho import (
+    ZohoAmbiguous,
     ZohoNotFound,
     ZohoRateLimited,
     ZohoRequestRejected,
+    ZohoUnreachable,
     ZohoUpstreamError,
     zoho_service,
 )
@@ -3126,6 +3128,100 @@ async def test_a_parcel_edit_that_takes_the_order_off_the_board_returns_nothing(
     monkeypatch.setattr(parcel_edit, "_row", vanishing)
     assert await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3}) == {}
     assert _labels(parcels) == ["picklist", "parcel"]
+
+
+def _applied_then_fail(monkeypatch, name, error, after=None):
+    """Books applies the package write, then the call ends with ``error`` (a timeout that went through)."""
+    real = getattr(zoho_service, name)
+
+    async def write(*args):
+        await real(*args)
+        if after:
+            after()
+        raise error("timed out")
+
+    monkeypatch.setattr(zoho_service, name, write)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [ZohoUnreachable, ZohoAmbiguous])
+async def test_a_parcel_edit_that_timed_out_but_applied_is_recorded(db_session, parcels, monkeypatch, error):
+    await _board(db_session, parcels, _packed(parcels))
+    _applied_then_fail(monkeypatch, "update_package", error)
+    with pytest.raises(error):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["package.edited"]
+    assert events[0].changes == [{"field": events[0].changes[0]["field"], "from": 2, "to": 1}]
+    assert "package" in events[0].detail
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_delete_that_timed_out_but_went_through_is_recorded(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+    _applied_then_fail(monkeypatch, "delete_package", ZohoUnreachable)
+    with pytest.raises(ZohoUnreachable):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {})
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["package.edited"]
+    assert events[0].detail["deleted"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_timeout_that_did_not_apply_records_nothing(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    parcels.fail_with, parcels.fail_step = ZohoUnreachable, "parcel"
+    with pytest.raises(ZohoUnreachable):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert await events_of(db_session, "so1") == []
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_timeout_whose_confirming_read_fails_records_nothing(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+    real, down = zoho_service.get_package, []
+
+    async def flaky(db, package_id):
+        if down:
+            raise ZohoUpstreamError("down")
+        return await real(db, package_id)
+
+    monkeypatch.setattr(zoho_service, "get_package", flaky)
+    _applied_then_fail(monkeypatch, "update_package", ZohoUnreachable, after=lambda: down.append(1))
+    with pytest.raises(ZohoUnreachable):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert await events_of(db_session, "so1") == []
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_timeout_while_books_is_busy_makes_no_confirming_read(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+    _applied_then_fail(
+        monkeypatch, "update_package", ZohoUnreachable, after=lambda: setattr(parcels, "meter", sync.CALL_CEILING)
+    )
+    with pytest.raises(ZohoUnreachable):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert await events_of(db_session, "so1") == []
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_timeout_whose_confirming_read_is_rate_limited_opens_the_window(
+    db_session, parcels, monkeypatch
+):
+    await _board(db_session, parcels, _packed(parcels))
+    real, down = zoho_service.get_package, []
+
+    async def limited(db, package_id):
+        if down:
+            raise _rate_limited()
+        return await real(db, package_id)
+
+    monkeypatch.setattr(zoho_service, "get_package", limited)
+    _applied_then_fail(monkeypatch, "update_package", ZohoUnreachable, after=lambda: down.append(1))
+    with pytest.raises(ZohoUnreachable):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    _assert_window_open()
+    assert await events_of(db_session, "so1") == []
 
 
 _PREVIEW_UNKNOWN = {

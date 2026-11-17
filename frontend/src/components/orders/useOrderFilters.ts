@@ -30,11 +30,15 @@ export function useOrderFilters() {
   const [sort, setSort] = useState<{ key: SortKey; flipped: boolean }>(initial.sort);
   // The search string this hook last wrote or followed: any other one came from outside.
   const known = useRef<string | null>(null);
+  // Strings of our own writes the router may not have committed yet (it commits in a transition, so a fast
+  // keystroke renders against the old URL, and the older write lands after a newer one): not outside changes.
+  const inflight = useRef(new Set<string>());
 
   useEffect(() => {
     const current = params.toString();
-    if (known.current !== null && current !== known.current) {
+    if (known.current !== null && current !== known.current && !inflight.current.has(current)) {
       known.current = current;
+      inflight.current.clear();
       const f = fromUrl(params);
       setQuery(f.query);
       setStatus(f.status);
@@ -50,7 +54,10 @@ export function useOrderFilters() {
     put('sort', sort.key === 'age' ? null : sort.key);
     put('flip', sort.flipped ? '1' : null);
     known.current = next.toString();
-    if (known.current !== current) setParams(next, { replace: true });
+    if (known.current !== current) {
+      inflight.current.add(current).add(known.current);
+      setParams(next, { replace: true });
+    } else inflight.current.clear();
   }, [query, status, payFilter, sort, params, setParams]);
 
   return { query, setQuery, status, setStatus, payFilter, setPayFilter, sort, setSort };

@@ -30,8 +30,10 @@ from backend.app.services.order_board_actions._common import (
     writing,
 )
 from backend.app.services.zoho import (
+    ZohoAmbiguous,
     ZohoNotFound,
     ZohoRateLimited,
+    ZohoUnreachable,
     ZohoUpstreamError,
     zoho_service,
 )
@@ -309,6 +311,24 @@ async def _rewrite_parcel(
             await _unmark(db, package_id)
 
 
+async def _applied_despite_error(
+    db: AsyncSession, error: Exception, package_id: str, package: dict, new: dict[str, float]
+) -> bool:
+    """Whether a package write that ended unknown (timeout, ambiguous) did change the package in Books: only a fresh
+    read of that package says so (it holds ``new``, or is gone for a delete). Any doubt, or a busy Books, is no."""
+    if not isinstance(error, ZohoUnreachable | ZohoAmbiguous) or sync.zoho_busy() or _same(_boxed(package), new):
+        return False
+    try:
+        return _same(_boxed(await zoho_service.get_package(db, package_id)), new)
+    except ZohoNotFound:
+        return not new
+    except ZohoRateLimited as e:
+        sync.open_rate_limit_window(e)
+    except Exception:
+        logger.warning("Order board: confirming parcel %s after a Books timeout failed", package_id)
+    return False
+
+
 async def _record_edit(db, salesorder_id, by, package, names, old, new) -> None:
     changes = [
         {"field": names.get(i) or i, "from": old.get(i, 0.0), "to": new.get(i, 0.0)}
@@ -359,7 +379,9 @@ async def edit_parcel(
         names = {line["id"]: line["name"] for line in row["lines"]}
         try:
             await _rewrite_parcel(db, salesorder_id, number, detail, package, picklist, old, new, landed)
-        except Exception:
+        except Exception as e:
+            if not landed and await _applied_despite_error(db, e, package_id, package, new):
+                landed.append("package")
             if landed:
                 await _record_edit(db, salesorder_id, by, package, names, old, new)
             await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean Books did it
