@@ -36,7 +36,14 @@ def _seg(value: str) -> str:
 
     The schema also constrains ``quote_id``; this is the backstop for every
     other id (contacts, contact persons) and for whatever the next caller
-    forgets to validate."""
+    forgets to validate.
+
+    Bare ``.`` and ``..`` survive quoting and are still dot segments, so a
+    stored id of ``..`` would re-target ``/contacts/../contactpersons``; they
+    are refused as a rejected payload (the callers already map that to a
+    normal Books refusal)."""
+    if value in (".", ".."):
+        raise ZohoRequestRejected("Invalid Zoho Books id")
     return urlquote(value, safe="")
 
 

@@ -306,10 +306,10 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput, _OptionalClien
     # T-003 comment on AitoProjectUpdate.client_id below for why the bound
     # sits here and on AitoProjectUpdate only, never on a response model.
     # Deliberately no character-class pattern (unlike quote_id's below): a
-    # Zoho contact id is opaque and this app never interpolates it into a
-    # URL path or trusts it as a filesystem-adjacent token the way quote_id
-    # is, so there is nothing here for a charset to protect against — only
-    # length matches the column it is stored in.
+    # Zoho contact id is opaque; it IS interpolated into Books contact URL
+    # paths (update_contact), where zoho._seg escapes it and refuses a bare
+    # '.' / '..' (T-656) — so no charset is enforced here, only length
+    # matches the column it is stored in.
     client_id: str = Field(min_length=1, max_length=50)
     # Caps mirror ZohoContactCreate's company_name/email/phone — the same contact data,
     # captured here instead of a Zoho round-trip.
