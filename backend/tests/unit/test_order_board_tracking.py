@@ -373,12 +373,11 @@ async def test_a_crashed_lookup_hands_its_reservation_back_and_propagates(async_
     async def boom(*_):
         raise RuntimeError("db is gone")
 
-    monkeypatch.setattr(tracking, "compute", boom)
-    with pytest.raises(RuntimeError, match="db is gone"):
-        await _open(async_client, "ZZZZZZ")
+    with monkeypatch.context() as m:
+        m.setattr(tracking, "compute", boom)
+        with pytest.raises(RuntimeError, match="db is gone"):
+            await _open(async_client, "ZZZZZZ")
     assert sum(len(v) for v in aito_routes._track_rate_ip_misses.values()) == 0
-    monkeypatch.undo()
-    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_IP", 1)
     assert (await _open(async_client, "ZZZZZZ")).status_code == 404  # a real miss still counts, then blocks
     assert sum(len(v) for v in aito_routes._track_rate_ip_misses.values()) == 1
 

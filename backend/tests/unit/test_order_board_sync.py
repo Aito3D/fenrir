@@ -4,7 +4,7 @@ fake throughout: nothing here may reach Books."""
 import asyncio
 import time
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
@@ -1391,9 +1391,21 @@ async def test_a_failing_quote_lookup_is_skipped_and_retried_next_pass(db_sessio
     assert board["sync"]["last_success_at"] and not board["sync"]["last_error"]
     assert "estimate_number" not in (await _doc(db_session, "so1")).detail
     assert (await _doc(db_session, "so2")).detail["estimate_number"] == "DEV26-e2"
+    assert "_quote_failed_at" in (await _doc(db_session, "so1")).detail
     broken["on"] = False
+    # inside the backoff the failed quote is left alone ...
+    calls = zoho.calls["estimate"]
     await sync.run_pass(db_session)
-    assert (await _doc(db_session, "so1")).detail["estimate_number"] == "DEV26-e1"
+    assert zoho.calls["estimate"] == calls
+    assert "estimate_number" not in (await _doc(db_session, "so1")).detail
+    # ... a day later it is read again, and the marker goes with the success
+    from backend.app.services.order_board_sync import _finished
+
+    later = datetime.now(timezone.utc) + timedelta(hours=_finished.QUOTE_RETRY_HOURS, minutes=1)
+    monkeypatch.setattr(_finished, "_now", lambda: later.isoformat())
+    await sync.run_pass(db_session)
+    detail = (await _doc(db_session, "so1")).detail
+    assert detail["estimate_number"] == "DEV26-e1" and "_quote_failed_at" not in detail
 
 
 @pytest.mark.asyncio

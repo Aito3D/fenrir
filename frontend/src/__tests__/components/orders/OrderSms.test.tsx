@@ -173,12 +173,12 @@ describe('OrderSmsModal', () => {
 
 describe('OrderSidePanel ?sms=1 deep link', () => {
   const draft = { message: DRAFT, kind: 'filaments' as const, partial: false, due: 0 };
-  const panel = (o: { smsAllowed?: boolean; r?: OrderPanelRow; createInvoice?: unknown } = {}) =>
+  const panel = (o: { smsAllowed?: boolean; r?: OrderPanelRow; createInvoice?: unknown; canUpdate?: boolean } = {}) =>
     render(
       <OrderSidePanel
         row={o.r ?? row}
         others={[]}
-        canUpdate
+        canUpdate={o.canUpdate ?? true}
         createInvoice={(o.createInvoice ?? { isPending: false, mutate: vi.fn() }) as never}
         smsAllowed={o.smsAllowed ?? true}
         editingTotal={null}
@@ -276,5 +276,62 @@ describe('OrderSidePanel ?sms=1 deep link', () => {
     expect(mutate).toHaveBeenCalledTimes(1);
     expect(mutate).toHaveBeenCalledWith({ id: 'so264', applyCredit: true, scope: 'whole' }, expect.any(Object));
     mutate.mock.calls[0][1].onSettled();
+  });
+
+  describe('Create invoice for handed-over units', () => {
+    const pay = (advance: number, retainer: number) => ({
+      state: 'unpaid', pct: 0, paid: 0, invoice_paid: 0, retainer, advance, due: 0, overdue: 0, rest: 0, left: 0, next_due: null, invoices: [],
+    });
+    const unbilled = (payment: unknown) =>
+      ({ ...row, currency: 'XPF', unbilled_units: 2, lines: [], facts: {}, payment }) as unknown as OrderPanelRow;
+    const createFor = async (payment: unknown) => {
+      const mutate = vi.fn();
+      panel({ r: unbilled(payment), createInvoice: { isPending: false, mutate } });
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Create invoice' }));
+      return mutate;
+    };
+
+    it.each([
+      ['an advance', pay(5000, 0)],
+      ['a retainer', pay(0, 3000)],
+    ])('applies the credit when there is %s', async (_n, payment) => {
+      const mutate = await createFor(payment);
+      expect(mutate).toHaveBeenCalledWith({ id: 'so264', applyCredit: true }, expect.any(Object));
+    });
+
+    it.each([
+      ['both at zero', pay(0, 0)],
+      ['no payment block', undefined],
+    ])('does not apply credit with %s', async (_n, payment) => {
+      const mutate = await createFor(payment);
+      expect(mutate).toHaveBeenCalledWith({ id: 'so264', applyCredit: false }, expect.any(Object));
+    });
+
+    it('creates once on a double click, and again after the first settles', async () => {
+      const mutate = vi.fn();
+      const user = userEvent.setup();
+      panel({ r: unbilled(pay(0, 0)), createInvoice: { isPending: false, mutate } });
+      const create = screen.getByRole('button', { name: 'Create invoice' });
+      await user.click(create);
+      await user.click(create);
+      expect(mutate).toHaveBeenCalledTimes(1);
+      mutate.mock.calls[0][1].onSettled();
+      await user.click(create);
+      expect(mutate).toHaveBeenCalledTimes(2);
+    });
+
+    it('is disabled and creates nothing while a creation is pending', async () => {
+      const mutate = vi.fn();
+      panel({ r: unbilled(pay(0, 0)), createInvoice: { isPending: true, mutate } });
+      const create = screen.getByRole('button', { name: 'Create invoice' });
+      expect(create).toBeDisabled();
+      await userEvent.setup().click(create);
+      expect(mutate).not.toHaveBeenCalled();
+    });
+
+    it('shows no button without orders:update', () => {
+      panel({ r: unbilled(pay(0, 0)), canUpdate: false });
+      expect(screen.queryByRole('button', { name: 'Create invoice' })).not.toBeInTheDocument();
+    });
   });
 });
