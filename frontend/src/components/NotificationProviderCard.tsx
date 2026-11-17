@@ -222,7 +222,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
           {/* Expanded Settings */}
           {isExpanded && (
-            <div className="pt-3 border-t border-bambu-dark-tertiary space-y-4">
+            <div className="fold-open pt-3 border-t border-bambu-dark-tertiary space-y-4">
               {/* Enabled Toggle */}
               <div className="flex items-center justify-between">
                 <div>

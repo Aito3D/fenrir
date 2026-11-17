@@ -1084,6 +1084,38 @@ body {
   }
 }
 
+/* The .fold-details unfold for a conditionally-rendered body ({expanded && …}
+   on settings cards, PrintModal sections, queue batches): it opens from zero
+   height on mount instead of shoving everything below it down in one frame.
+   Padding folds with the height so the box starts truly flat; unlayered, so
+   @starting-style beats the element's p-* utilities. Same progressive deal as
+   .fold-details: without interpolate-size (Safari) only the fade plays.
+   Collapse still snaps — the body unmounts — which is the quick direction.
+   overflow clips only while folding (flips at the 0.25s midpoint of the
+   discrete transition) so dropdowns inside the body are never cut off. */
+.fold-open {
+  interpolate-size: allow-keywords;
+  overflow: visible;
+  transition:
+    height 0.25s var(--ease-signature),
+    padding-block 0.25s var(--ease-signature),
+    opacity 0.2s ease-out,
+    overflow 0.5s allow-discrete;
+}
+@starting-style {
+  .fold-open {
+    height: 0;
+    padding-block: 0;
+    opacity: 0;
+    overflow: clip;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fold-open {
+    transition: opacity 0.15s ease;
+  }
+}
+
 /* Generic mount entrance — the app-wide counterpart to .animate-calc-rise.
    `backwards` fill keeps staggered children hidden through their delay. */
 @keyframes rise {

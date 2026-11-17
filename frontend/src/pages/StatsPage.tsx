@@ -1474,7 +1474,7 @@ export function StatsPage() {
               {t('stats.exportStats')}
             </Button>
             {showExportMenu && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl z-20">
+              <div className="animate-dropdown-in [--dropdown-origin:top_right] absolute right-0 top-full mt-1 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl z-20">
                 <button
                   className="w-full px-4 py-2 text-left text-white hover:bg-bambu-dark-tertiary transition-colors flex items-center gap-2 rounded-t-lg"
                   onClick={() => handleExport('csv')}
@@ -1509,7 +1509,7 @@ export function StatsPage() {
                     className="fixed inset-0 z-10"
                     onClick={() => setShowUserPicker(false)}
                   />
-                  <div className="absolute right-0 top-full mt-1 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl z-20 p-2 max-h-64 overflow-y-auto">
+                  <div className="animate-dropdown-in [--dropdown-origin:top_right] absolute right-0 top-full mt-1 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl z-20 p-2 max-h-64 overflow-y-auto">
                     <button
                       className={`w-full px-3 py-2 text-left text-sm rounded-md transition-colors ${
                         selectedUserId === null

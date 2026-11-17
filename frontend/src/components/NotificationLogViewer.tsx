@@ -261,7 +261,7 @@ function LogEntry({
       </button>
 
       {isExpanded && (
-        <div className="px-3 py-2 border-t border-bambu-dark-tertiary bg-bambu-dark/20 space-y-2">
+        <div className="fold-open px-3 py-2 border-t border-bambu-dark-tertiary bg-bambu-dark/20 space-y-2">
           <div>
             <p className="text-xs text-bambu-gray mb-1">{t('notifications.logTitle')}</p>
             <p className="text-sm text-white">{log.title}</p>

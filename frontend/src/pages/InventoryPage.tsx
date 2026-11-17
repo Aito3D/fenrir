@@ -2310,7 +2310,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                       </div>
                       {/* Expanded individual spools */}
                       {isExpanded && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-2 ml-4">
+                        <div className="fold-open grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-2 ml-4">
                           {groupSpools.map((spool) => {
                             const remaining = Math.max(0, spool.label_weight - spool.weight_used);
                             const pct = spool.label_weight > 0 ? (remaining / spool.label_weight) * 100 : 0;

@@ -10510,8 +10510,8 @@ export function PrintersPage() {
           cardClassName="h-72"
         />
       ) : printers?.length === 0 ? (
-        <Card>
-          <CardContent className="text-center py-12">
+        <Card className="animate-rise-lg">
+          <CardContent className="text-center py-12 stagger-nested">
             <p className="text-bambu-gray mb-4">{t('printers.noPrintersConfigured')}</p>
             <Button
               onClick={() => setShowAddModal(true)}

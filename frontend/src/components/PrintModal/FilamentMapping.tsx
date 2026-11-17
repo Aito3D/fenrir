@@ -357,7 +357,7 @@ export function FilamentMapping({
       </button>
 
       {isExpanded && (
-        <div className="mt-2 bg-bambu-dark rounded-lg p-3 space-y-2">
+        <div className="fold-open mt-2 bg-bambu-dark rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-bambu-gray">{t('printModal.clickToChangeSlot')}</span>
             <div className="flex items-center gap-1.5">

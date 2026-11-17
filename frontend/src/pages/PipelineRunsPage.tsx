@@ -527,7 +527,7 @@ function RunRow({
         </div>
       </div>
       {expanded && (
-        <div className="border-t border-bambu-dark-tertiary px-3 py-2 bg-bambu-dark/30">
+        <div className="fold-open border-t border-bambu-dark-tertiary px-3 py-2 bg-bambu-dark/30">
           <div className="space-y-1.5">
             {run.jobs.map((job) => (
               <div key={job.id} className="flex items-center gap-2 text-xs">

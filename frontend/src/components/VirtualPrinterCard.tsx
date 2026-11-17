@@ -378,7 +378,7 @@ export function VirtualPrinterCard({ printer, models, modelSerialPrefixes = {}, 
 
         {/* Expanded content */}
         {expanded && (
-          <CardContent className="pt-0 space-y-4">
+          <CardContent className="fold-open pt-0 space-y-4">
             <div className="border-t border-bambu-dark-tertiary" />
 
             {/* Name + delete */}

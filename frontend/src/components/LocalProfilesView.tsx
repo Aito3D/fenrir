@@ -155,7 +155,7 @@ function PresetCard({
 
         {/* 5) Expanded detail — show meaningful fields, hide self-inherits */}
         {isExpanded && (
-          <div className="mt-3 pt-3 border-t border-bambu-dark-tertiary text-xs space-y-1.5">
+          <div className="fold-open mt-3 pt-3 border-t border-bambu-dark-tertiary text-xs space-y-1.5">
             {material && (
               <div className="flex justify-between">
                 <span className="text-bambu-gray">{t('profiles.localProfiles.filamentType')}</span>

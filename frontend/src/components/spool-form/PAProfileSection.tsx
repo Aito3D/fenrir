@@ -216,7 +216,7 @@ export function PAProfileSection({
 
               {/* Calibration Profiles */}
               {isExpanded && (
-                <div className="px-4 py-3 space-y-3 bg-bambu-dark border-t border-bambu-dark-tertiary">
+                <div className="fold-open px-4 py-3 space-y-3 bg-bambu-dark border-t border-bambu-dark-tertiary">
                   {!printer.connected ? (
                     <p className="text-sm text-bambu-gray italic py-2">
                       {t('inventory.printerOffline')}

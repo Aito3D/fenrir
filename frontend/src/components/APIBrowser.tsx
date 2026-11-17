@@ -326,7 +326,7 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
       </button>
 
       {expanded && (
-        <div className="border-t border-bambu-dark-tertiary p-4 space-y-4 bg-bambu-dark/50">
+        <div className="fold-open border-t border-bambu-dark-tertiary p-4 space-y-4 bg-bambu-dark/50">
           {spec.description && (
             <p className="text-sm text-bambu-gray">{spec.description}</p>
           )}

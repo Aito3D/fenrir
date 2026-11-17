@@ -3083,7 +3083,7 @@ export function ArchivesPage() {
               Export
             </Button>
             {showExportMenu && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl z-20">
+              <div className="animate-dropdown-in [--dropdown-origin:top_right] absolute right-0 top-full mt-1 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl z-20">
                 <button
                   className="w-full px-4 py-2 text-left text-white hover:bg-bambu-dark-tertiary transition-colors flex items-center gap-2 rounded-t-lg"
                   onClick={async () => {
@@ -3481,8 +3481,8 @@ export function ArchivesPage() {
         // NULLs the FK), so "no archives" says nothing about whether there is
         // a log to show. Without the guard, purging archives made the whole
         // Print Log unreachable — the view has its own empty state below.
-        <Card>
-          <CardContent className="text-center py-12">
+        <Card className="animate-rise-lg">
+          <CardContent className="text-center py-12 stagger-nested">
             <p className="text-bambu-gray">
               {search ? t('archives.noArchivesSearch') : t('archives.noArchivesYet')}
             </p>

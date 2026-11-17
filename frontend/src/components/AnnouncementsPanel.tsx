@@ -190,7 +190,7 @@ function AnnouncementItem({ announcement: a, expanded, onToggle }: AnnouncementI
         />
       </button>
       {expanded && (
-        <div id={bodyId} className="pl-10 pr-5 pb-4 space-y-2">
+        <div id={bodyId} className="fold-open pl-10 pr-5 pb-4 space-y-2">
           <p className="text-sm text-bambu-gray-light whitespace-pre-line break-words">{text.body}</p>
           {link && (
             <a

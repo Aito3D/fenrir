@@ -121,7 +121,7 @@ function PendingUploadItem({
 
         {/* Expanded details for adding tags/notes/project */}
         {expanded && (
-          <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary space-y-3">
+          <div className="fold-open mt-4 pt-4 border-t border-bambu-dark-tertiary space-y-3">
             <div>
               <label className="block text-sm text-bambu-gray mb-1">{t('pendingUploads.tags')}</label>
               <input

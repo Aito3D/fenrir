@@ -151,7 +151,7 @@ export function LogViewer() {
 
       {/* Expanded content */}
       {isExpanded && (
-        <div className="border-t border-bambu-dark-tertiary">
+        <div className="fold-open border-t border-bambu-dark-tertiary">
           {/* Controls */}
           <div className="flex flex-col gap-2 p-4 border-b border-bambu-dark-tertiary">
             <div className="flex items-center gap-2 flex-wrap">

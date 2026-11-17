@@ -523,7 +523,7 @@ export function PrinterLocationsPage() {
           {showSortMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowSortMenu(false)} />
-              <div role="menu" className="absolute right-0 top-full mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg p-1 min-w-[10rem]">
+              <div role="menu" className="animate-dropdown-in [--dropdown-origin:top_right] absolute right-0 top-full mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg p-1 min-w-[10rem]">
                 {SORT_MODES.map((mode) => (
                   <button
                     key={mode}

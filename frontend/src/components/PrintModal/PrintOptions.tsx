@@ -102,7 +102,7 @@ export function PrintOptionsPanel({
         )}
       </button>
       {isExpanded && (
-        <div className="mt-2 bg-bambu-dark rounded-lg p-3 space-y-2">
+        <div className="fold-open mt-2 bg-bambu-dark rounded-lg p-3 space-y-2">
           {visibleOptions.map(({ key, label, desc, tristate }) =>
             tristate ? (
               <div key={key} className="flex items-center justify-between gap-3">

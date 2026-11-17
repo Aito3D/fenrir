@@ -103,7 +103,7 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
           />
 
           {/* Dropdown */}
-          <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg">
+          <div className="animate-dropdown-in absolute z-50 mt-1 w-full max-h-64 overflow-y-auto bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg">
             <div className="grid grid-cols-5 gap-1 p-2">
               {AVAILABLE_ICONS.map(({ name, icon: Icon }) => (
                 <button

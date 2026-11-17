@@ -1535,7 +1535,7 @@ function SortableBatchRow({
 
       {/* Children (only when expanded) */}
       {!collapsed && (
-        <div className="border-t border-bambu-dark-tertiary bg-black/20 p-2 sm:p-3 space-y-2">
+        <div className="fold-open border-t border-bambu-dark-tertiary bg-black/20 p-2 sm:p-3 space-y-2">
           {batchRow.items.map((child, ci) => (
             <SortableQueueItem
               key={child.id}
@@ -1761,7 +1761,7 @@ function HistorySection({
                 </div>
               </button>
               {!collapsed && (
-                <div className="border-t border-bambu-dark-tertiary bg-black/20 p-2 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                <div className="fold-open border-t border-bambu-dark-tertiary bg-black/20 p-2 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                   {row.items.map((child) => (
                     <CompactHistoryRow
                       key={child.id}
