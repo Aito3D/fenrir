@@ -842,3 +842,49 @@ async def test_refresh_returns_the_board_with_the_error_when_the_pass_fails_for_
     r = await async_client.post("/api/v1/order-board/refresh", headers=tokens["both"])
     assert r.status_code == 200
     assert r.json()["sync"]["last_error"].startswith("ValueError")
+
+
+async def _store_order(db_session, zoho_id="so1"):
+    from backend.app.models.order_board_doc import OrderBoardDoc
+
+    db_session.add(OrderBoardDoc(kind="salesorder", zoho_id=zoho_id, header={}, detail={}))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_watch_is_a_no_op_with_auth_disabled(async_client, db_session):
+    from sqlalchemy import func, select
+
+    from backend.app.models.notification_inbox import OrderWatch
+
+    await _store_order(db_session)
+    put = await async_client.put("/api/v1/order-board/orders/so1/watch")
+    assert (put.status_code, put.json()) == (200, {"watching": False})
+    got = await async_client.get("/api/v1/order-board/orders/so1/watch")
+    assert (got.status_code, got.json()) == (200, {"watching": False})
+    assert (await db_session.execute(select(func.count()).select_from(OrderWatch))).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_a_concurrent_watch_is_recovered_not_a_500(async_client, tokens, db_session, monkeypatch):
+    from sqlalchemy import func, select
+
+    from backend.app.api.routes.order_board import board
+    from backend.app.models.notification_inbox import OrderWatch
+    from backend.app.models.user import User
+
+    await _store_order(db_session)
+    user = (await db_session.execute(select(User).where(User.username == "orders-read"))).scalar_one()
+    db_session.add(OrderWatch(user_id=user.id, salesorder_id="so1"))
+    await db_session.commit()
+
+    real, calls = board._own_watch, []
+
+    async def stale_first(db, salesorder_id, current_user):
+        calls.append(1)
+        return None if len(calls) == 1 else await real(db, salesorder_id, current_user)
+
+    monkeypatch.setattr(board, "_own_watch", stale_first)
+    r = await async_client.put("/api/v1/order-board/orders/so1/watch", headers=tokens["read"])
+    assert (r.status_code, r.json()) == (200, {"watching": True})
+    assert (await db_session.execute(select(func.count()).select_from(OrderWatch))).scalar_one() == 1

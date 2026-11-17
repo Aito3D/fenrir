@@ -269,3 +269,38 @@ async def test_an_edit_saved_during_the_pass_is_not_also_logged_as_a_zoho_edit(f
 async def test_an_outside_edit_after_the_operators_save_is_still_logged(file_sessions, zoho, monkeypatch):
     (event,) = await _operator_saves_so2_during_the_pass(file_sessions, zoho, monkeypatch, order(2, qty=4))
     assert event.changes == [{"field": "Thing", "from": 3.0, "to": 4.0}]
+
+
+@pytest.mark.asyncio
+async def test_a_stored_order_vanishing_mid_pass_fails_the_pass_after_the_earlier_details_are_kept(
+    file_sessions, zoho, monkeypatch
+):
+    """Characterization. Production cannot reach this today: sales-order rows are only deleted inside a pass,
+    which holds the pass lock. If that changes, the refresh of the vanished row ends the whole pass."""
+    from backend.app.models.order_board_doc import OrderBoardDoc
+    from backend.app.services.order_board_sync._common import _state
+
+    async with file_sessions() as passing, file_sessions() as writing:
+        zoho.add(order(1, age=10), order(2, age=5))
+        await sync.run_pass(passing)
+        await sync.run_pass(passing)
+        for n in (1, 2):
+            zoho.orders[f"so{n}"] = edited(n, "2026-11-02T08:00:00-1000", age=10 if n == 1 else 5)
+        real = zoho.get_salesorder
+
+        async def get(db, salesorder_id):
+            if salesorder_id == "so2":
+                row = (await writing.execute(select(OrderBoardDoc).where(OrderBoardDoc.zoho_id == "so2"))).scalar_one()
+                await writing.delete(row)
+                await writing.commit()
+            return await real(db, salesorder_id)
+
+        monkeypatch.setattr(zoho_service, "get_salesorder", get)
+        before = (await _state(passing)).detail["last_success_at"]
+        await sync.run_pass(passing)
+
+        detail = (await _state(writing)).detail
+        assert detail["last_error"] == "InvalidRequestError: the sync pass failed, see the server log"
+        assert detail["last_success_at"] == before  # the pass did not finish
+        so1 = (await writing.execute(select(OrderBoardDoc).where(OrderBoardDoc.zoho_id == "so1"))).scalar_one()
+        assert so1.pending is False and so1.detail["_fetched_at"]  # fetched and committed before the failure
