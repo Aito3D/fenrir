@@ -42,7 +42,7 @@ import { prefersReducedMotion } from '../utils/motion';
 const VIEW_VT_SCOPE = 'aito-view';
 import { useBoardDrag } from '../hooks/useBoardDrag';
 import { useBoardSync } from '../hooks/useBoardSync';
-import { useAitoPeerToasts } from '../hooks/useAitoPeerToasts';
+import { useAitoPeerToasts, useAitoZohoToasts } from '../hooks/useAitoPeerToasts';
 import { useQuotePendingPoll } from '../hooks/useQuotePendingPoll';
 import { useAitoPageMutations } from '../hooks/useAitoPageMutations';
 import { placeholderProject } from '../utils/aitoOptimistic';
@@ -133,6 +133,7 @@ export function AitoPage() {
   // `pendingWrites` one) is used here.
   const boardSync = useBoardSync();
   useAitoPeerToasts();
+  useAitoZohoToasts();
   const refetchQuotePending = useQuotePendingPoll(boardSync);
   const aitoQuery = useQuery({
     queryKey: ['aito-projects'],

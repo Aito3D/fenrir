@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
 import { useToast } from '../contexts/ToastContext';
-import { AITO_PEER_CHANGE_EVENT } from './useAitoPeerToasts';
+import { AITO_PEER_CHANGE_EVENT, AITO_ZOHO_EVENT } from './useAitoPeerToasts';
 import { useTranslation } from 'react-i18next';
 import { api, ApiError, bumpArchiveThumbnail } from '../api/client';
 import { inventoryLocationsQueryKey, inventorySuppliersQueryKey } from '../utils/inventoryQueries';
@@ -746,6 +746,10 @@ export function useWebSocket() {
       // Sent only to the sockets of the users it names, so it is ours.
       case 'inbox_changed':
         queryClient.invalidateQueries({ queryKey: ['inbox'] });
+        break;
+
+      case 'aito_zoho':
+        window.dispatchEvent(new CustomEvent(AITO_ZOHO_EVENT, { detail: message }));
         break;
 
       case 'aito_changed': {

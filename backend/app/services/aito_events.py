@@ -374,4 +374,7 @@ async def record(
     from backend.app.services.inbox import fan_out  # local: inbox imports the ws layer and models
 
     await fan_out(db, event)
+    from backend.app.services.aito_zoho_toasts import note as note_toast  # local: imports the ws layer
+
+    await note_toast(db, project_id, kind, actor_name, detail)
     return event

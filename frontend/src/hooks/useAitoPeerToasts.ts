@@ -15,6 +15,69 @@ export interface AitoPeerChange {
   column?: string;
 }
 
+/** `useWebSocket` relays every `aito_zoho` message (services/aito_zoho_toasts.py) as this window event. */
+export const AITO_ZOHO_EVENT = 'aito-zoho-result';
+
+export interface AitoZohoResult {
+  kind?: string;
+  actor?: string | null;
+  doc?: string;
+  client?: string | null;
+  has_retainer?: boolean;
+  outcome?: string | null;
+  error?: string | null;
+}
+
+type ZohoToastType = 'success' | 'error' | 'warning';
+
+/** The toast for one Zoho result, or null for a kind the board does not voice. */
+export function zohoToast(t: TFunction, r: AitoZohoResult): { text: string; type: ZohoToastType } | null {
+  const v = { doc: r.doc, error: r.error ?? '' };
+  const ok = (key: string) => ({ text: t(`aito.zohoToast.${key}`, v), type: 'success' as const });
+  let toast: { text: string; type: ZohoToastType };
+  switch (r.kind) {
+    case 'quote.created': toast = ok('quoteCreated'); break;
+    case 'invoice.created': toast = ok('invoiceCreated'); break;
+    case 'payment.manual.recorded': toast = ok(r.has_retainer ? 'retainerCreated' : 'paymentRecorded'); break;
+    case 'quote.emailed':
+    case 'invoice.emailed':
+    case 'retainer.emailed': toast = ok('emailed'); break;
+    case 'payment_link.created':
+    case 'payment_link.replaced': toast = ok('paymentLink'); break;
+    case 'invoice.deposit_applied':
+      toast = r.outcome === 'unknown'
+        ? { text: t('aito.zohoToast.depositUnknown', v), type: 'warning' }
+        : ok('depositApplied');
+      break;
+    case 'payment.manual.partial': toast = { text: t('aito.zohoToast.paymentPartial', v), type: 'error' }; break;
+    case 'sync.failed': toast = { text: t('aito.zohoToast.syncFailed', v), type: 'error' }; break;
+    case 'sync.conflict': toast = { text: t('aito.zohoToast.syncConflict', v), type: 'warning' }; break;
+    default: return null;
+  }
+  return r.client ? { ...toast, text: `${toast.text} · ${r.client}` } : toast;
+}
+
+/** A toast for every result of Fenrir's work in Zoho, background or not, for
+ *  everyone with the board open. Mounted by AitoPage beside the peer toasts. */
+export function useAitoZohoToasts(): void {
+  const { t } = useTranslation();
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const me = user?.username ?? null;
+
+  useEffect(() => {
+    const onResult = (event: Event) => {
+      const result = (event as CustomEvent<AitoZohoResult>).detail;
+      // ApplyDepositModal already toasts its own success.
+      if (result?.kind === 'invoice.deposit_applied' && me !== null && result.actor === me && result.outcome !== 'unknown') return;
+      const toast = result ? zohoToast(t, result) : null;
+      if (toast) showToast(toast.text, toast.type);
+    };
+    window.addEventListener(AITO_ZOHO_EVENT, onResult);
+    return () => window.removeEventListener(AITO_ZOHO_EVENT, onResult);
+  }, [me, showToast, t]);
+}
+
 /** Changes landing inside this window become one toast, so a merge or a
  *  multi-card drop by a colleague never stacks them. */
 const COALESCE_MS = 1500;
