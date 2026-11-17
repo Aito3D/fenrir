@@ -350,7 +350,7 @@ export function OrderBoardPage() {
         start={start?.id === row.id ? start.target : undefined}
         startTick={start?.id === row.id ? start.tick : undefined}
         selected={ticked.has(row.id)}
-        onSelect={on => select(row.id, on)}
+        onSelect={hasPermission('orders:update') ? on => select(row.id, on) : undefined}
       />
     ));
   }

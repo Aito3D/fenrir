@@ -254,7 +254,7 @@ async def print_prep_sheet(
     salesorder_id: str,
     picklist_id: str | None = Query(default=None, min_length=1, max_length=64),
     db: AsyncSession = Depends(get_db, scope="function"),
-    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ) -> Response:
     """Stamp the order as printed and return its prep sheet: the units of one picklist, or everything packable."""
     content = await _run(order_board_actions.picklist_content(db, salesorder_id, picklist_id)) if picklist_id else None
@@ -283,7 +283,7 @@ class PrepSheetBatchBody(BaseModel):
 async def print_prep_sheet_batch(
     body: PrepSheetBatchBody,
     db: AsyncSession = Depends(get_db, scope="function"),
-    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_READ),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ) -> Response:
     """One PDF for a round of orders: a combined picking page, then each order's prep sheet. It only prints
     (no picklist, no parcel); each order is stamped as printed. Orders with nothing to pick are left out."""

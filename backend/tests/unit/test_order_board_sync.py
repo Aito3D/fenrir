@@ -8,6 +8,7 @@ from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
@@ -1286,3 +1287,54 @@ async def test_opening_an_order_that_is_not_finished_is_refused(db_session, zoho
         await sync.read_finished_order(db_session, "so1")
     with pytest.raises(sync.OrderNotFinished):
         await sync.read_finished_order(db_session, "nope")
+
+
+def _failing_sync(monkeypatch, exc):
+    from backend.app.services.order_board_sync import _pass
+
+    async def boom(db):
+        raise exc
+
+    monkeypatch.setattr(_pass, "_sync", boom)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exc",
+    [
+        OperationalError("SELECT secret_customer FROM t", {"p": "Jane Doe"}, Exception("database is locked")),
+        ValueError("odd Books field"),
+    ],
+)
+async def test_a_non_zoho_pass_failure_is_recorded_without_leaking_its_text(db_session, zoho, monkeypatch, exc):
+    await sync.run_pass(db_session)
+    good = await sync.read_board(db_session)
+    _failing_sync(monkeypatch, exc)
+    assert await sync.run_pass(db_session) is True
+    board = await sync.read_board(db_session)
+    err = board["sync"]["last_error"]
+    assert err.startswith(type(exc).__name__) and board["sync"]["last_error_at"]
+    assert "secret_customer" not in err and "Jane" not in err and "odd Books" not in err
+    assert board["rows"] == good["rows"]
+
+
+@pytest.mark.asyncio
+async def test_a_pass_cancellation_still_propagates(db_session, zoho, monkeypatch):
+    _failing_sync(monkeypatch, asyncio.CancelledError())
+    with pytest.raises(asyncio.CancelledError):
+        await sync.run_pass(db_session)
+    assert (await sync.read_board(db_session))["sync"]["last_error"] is None
+
+
+@pytest.mark.asyncio
+async def test_when_recording_the_failure_fails_too_the_original_reaches_the_loop(db_session, zoho, monkeypatch):
+    from backend.app.services.order_board_sync import _pass
+
+    _failing_sync(monkeypatch, ValueError("first"))
+
+    async def locked(db):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(_pass, "_state", locked)
+    with pytest.raises(ValueError, match="first"):
+        await sync.run_pass(db_session)

@@ -249,7 +249,7 @@ async def run_pass(db: AsyncSession) -> bool:
     """One bounded sync pass. False when nothing ran: another pass is already
     running, or Books asked us to back off and that window is still open.
 
-    A Zoho failure ends the pass, is recorded for the page to show, and leaves
+    Any failure ends the pass, is recorded for the page to show, and leaves
     the stored board as it was.
     """
     # During a 429 back-off even a Refresh click sends nothing: the Kanban
@@ -267,4 +267,20 @@ async def run_pass(db: AsyncSession) -> bool:
             state = await _state(db)
             state.detail = {**(state.detail or {}), "last_error": str(e)[:300], "last_error_at": _now()}
             await db.commit()
+        except Exception as e:
+            # Not str(e): a SQLAlchemy error carries SQL text and bound parameters (customer data).
+            logger.exception("Order board sync pass failed")
+            try:
+                await db.rollback()
+                state = await _state(db)
+                state.detail = {
+                    **(state.detail or {}),
+                    "last_error": f"{type(e).__name__}: the sync pass failed, see the server log"[:300],
+                    "last_error_at": _now(),
+                }
+                await db.commit()
+            except Exception:
+                # Recording failed too (e.g. DB locked again): keep the original for the loop's backstop.
+                logger.exception("Order board sync pass: could not record the failure")
+                raise e from None
     return True
