@@ -15,7 +15,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_invoice_create import build_line_items
 from backend.app.services.aito_search import document_numbers_of
-from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ZohoRateLimited, ZohoUnreachable, ZohoUpstreamError, zoho_service
 
 ESTIMATE = {
     "estimate_id": "EST-9",
@@ -147,12 +147,13 @@ def books(monkeypatch):
         # stick: the invoice exists, the estimate filter never finds it.
         "link_sticks": True,
         "fail": None,  # a path prefix that should raise instead
+        "fail_with": None,  # the exception to raise there (default: ZohoUpstreamError)
     }
 
     async def request(db, method, path, *, params=None, json=None):
         state["calls"].append({"method": method, "path": path, "params": params or {}, "json": json})
         if state["fail"] and path.startswith(state["fail"]):
-            raise ZohoUpstreamError("Zoho is down")
+            raise state["fail_with"] or ZohoUpstreamError("Zoho is down")
         if path == "/invoices" and method == "GET":
             return {"invoices": [dict(i) for i in state["listed"]]}
         if path == "/invoices" and method == "POST":
@@ -469,7 +470,7 @@ async def test_a_paid_retainer_is_applied_as_payment(async_client, db_session, b
 
     credits = next(c for c in books["calls"] if c["path"] == "/invoices/inv-1/credits")
     assert credits["json"] == {"invoice_payments": [{"payment_id": "pay-1", "amount_applied": 1000.0}]}
-    assert body["retainers"] == [{"number": "RET-00269", "total": 1000.0, "applied": 1000.0}]
+    assert body["retainers"] == [{"number": "RET-00269", "total": 1000.0, "applied": 1000.0, "outcome": "applied"}]
     db_session.expire_all()
     row = await db_session.get(AitoProject, project_id)
     assert "FA-26-4100" in document_numbers_of(row)
@@ -568,7 +569,9 @@ async def test_an_unpaid_retainer_is_reported_and_the_invoice_still_lands(async_
     response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
 
     assert response.status_code == 200
-    assert response.json()["retainers"] == [{"number": "RET-00269", "total": 1000.0, "applied": 0.0}]
+    assert response.json()["retainers"] == [
+        {"number": "RET-00269", "total": 1000.0, "applied": 0.0, "outcome": "not_attempted"}
+    ]
     assert "/invoices/inv-1/credits" not in _paths(books)
 
 
@@ -582,7 +585,7 @@ async def test_a_retainer_already_drawn_is_not_spent_twice(async_client, db_sess
     body = (await async_client.post(f"/api/v1/aito/{project_id}/invoice")).json()
 
     assert "/invoices/inv-1/credits" not in _paths(books)
-    assert body["retainers"] == [{"number": "RET-00269", "total": 1000.0, "applied": 0.0}]
+    assert body["retainers"] == [{"number": "RET-00269", "total": 1000.0, "applied": 0.0, "outcome": "not_attempted"}]
 
 
 @pytest.mark.asyncio
@@ -615,8 +618,8 @@ async def test_a_deposit_raised_by_hand_with_no_quote_link_is_applied_too(async_
         [{"payment_id": "pay-2", "amount_applied": 500.0}],
     ]
     assert body["retainers"] == [
-        {"number": "RET-00269", "total": 1000.0, "applied": 1000.0},
-        {"number": "#4580", "total": 500.0, "applied": 500.0},
+        {"number": "RET-00269", "total": 1000.0, "applied": 1000.0, "outcome": "applied"},
+        {"number": "#4580", "total": 500.0, "applied": 500.0, "outcome": "applied"},
     ]
 
 
@@ -766,7 +769,59 @@ async def test_a_failed_retainer_application_still_returns_the_real_invoice(asyn
     response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
 
     assert response.status_code == 200
-    assert response.json()["retainers"] == [{"number": "RET-00269", "total": 1000.0, "applied": 0.0}]
+    assert response.json()["retainers"] == [
+        {"number": "RET-00269", "total": 1000.0, "applied": 0.0, "outcome": "refused"}
+    ]
+    # T-698: the refusal reaches the timeline, attributed to the operator.
+    refusals = (
+        (await db_session.execute(select(AitoEvent).where(AitoEvent.kind == "invoice.deposit_refused"))).scalars().all()
+    )
+    assert [(e.actor_class, e.detail["retainer_number"]) for e in refusals] == [("user", "RET-00269")]
+
+
+@pytest.mark.asyncio
+async def test_a_timed_out_deposit_application_is_reported_and_recorded_as_unknown(async_client, db_session, books):
+    """T-684: Books may have taken the money; 'applied 0' would invite a second manual apply."""
+    books["fail"] = "/invoices/inv-1/credits"
+    books["fail_with"] = ZohoUnreachable("Zoho Books unreachable: ReadTimeout")
+    project_id = await _project(db_session)
+
+    response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert response.status_code == 200
+    assert response.json()["retainers"] == [
+        {"number": "RET-00269", "total": 1000.0, "applied": 0.0, "outcome": "unknown"}
+    ]
+    events = (
+        (await db_session.execute(select(AitoEvent).where(AitoEvent.kind == "invoice.deposit_applied"))).scalars().all()
+    )
+    assert len(events) == 1
+    assert events[0].actor_class == "user"
+    assert events[0].detail["outcome"] == "unknown"
+    assert events[0].detail["retainer_number"] == "RET-00269"
+    assert events[0].detail["amount"] > 0
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_deposit_application_arms_the_shared_throttle(async_client, db_session, books):
+    from backend.app.services import aito_quote_sync
+
+    aito_quote_sync._throttled_until = None
+    books["fail"] = "/invoices/inv-1/credits"
+    books["fail_with"] = ZohoRateLimited("Zoho Books error (HTTP 429)")
+    project_id = await _project(db_session)
+    try:
+        response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+    finally:
+        armed = aito_quote_sync._throttled_until
+        aito_quote_sync._throttled_until = None
+
+    assert response.status_code == 200
+    assert response.json()["retainers"][0]["outcome"] == "not_attempted"
+    assert armed is not None
+    assert (
+        await db_session.execute(select(AitoEvent.id).where(AitoEvent.kind == "invoice.deposit_refused"))
+    ).all() == []
 
 
 def _fail_second_customerpayments_read(books, error):

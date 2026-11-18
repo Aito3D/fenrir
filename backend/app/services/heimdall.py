@@ -242,7 +242,7 @@ def _to_view(data: dict) -> LinkView:
             booking_error=str(booking["error"]) if booking.get("error") is not None else None,
             zoho_payment_id=str(booking["zoho_payment_id"]) if booking.get("zoho_payment_id") is not None else None,
         )
-    except (KeyError, TypeError, ValueError) as e:
+    except (KeyError, TypeError, ValueError, AttributeError) as e:
         # Ambiguous, not a plain upstream error: this parses a 2xx answer, so
         # Heimdall ACCEPTED the call — a charge start that cannot be read must
         # stay a replayable reservation (services/aito_terminal_payments.py).
@@ -326,8 +326,10 @@ class HeimdallService:
             raise HeimdallAmbiguous(f"Heimdall returned a non-JSON response (HTTP {response.status_code})") from e
         if response.status_code >= 400:
             error = payload.get("error") if isinstance(payload, dict) else None
-            code = str((error or {}).get("code") or "")
-            message = f"Heimdall HTTP {response.status_code} {code}: {(error or {}).get('message') or ''}".strip()
+            if not isinstance(error, dict):  # a proxy/gateway body like {"error": "bad gateway"}
+                error = {"message": str(error)} if error else {}
+            code = str(error.get("code") or "")
+            message = f"Heimdall HTTP {response.status_code} {code}: {error.get('message') or ''}".strip()
             if response.status_code in (401, 403):
                 raise HeimdallAuthError(message, response.status_code)
             if response.status_code == 404:

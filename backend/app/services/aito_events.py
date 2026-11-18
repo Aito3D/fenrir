@@ -69,6 +69,10 @@ KINDS: dict[str, str] = {
     # the only local record of WHY an overdue invoice turned paid with no
     # payment arriving.
     "invoice.deposit_applied": "story",
+    # Books refused a deposit for the bill (draft invoice, currency mismatch, locked retainer): once per
+    # retainer+invoice, so the hourly sweep retrying it never repeats the entry. Story: the only local
+    # record of why the invoice stays unpaid. detail = {retainer_number, invoice_number}. No toast.
+    "invoice.deposit_refused": "story",
     "quote.viewed": "story",
     "quote.accepted": "story",
     # Acceptance revoked by hand (the detail panel's hold-to-unaccept pill) —

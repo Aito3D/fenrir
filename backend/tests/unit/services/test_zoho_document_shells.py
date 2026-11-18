@@ -212,19 +212,14 @@ async def test_error_mapping(async_client, db_session, name, resource, kind, res
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("name", "resource", "kind"), ALL_METHODS, ids=ALL_IDS)
 async def test_non_json_error_body(async_client, db_session, name, resource, kind):
-    """A non-JSON 4xx: the PDF shell falls back to an empty payload and maps
-    the status; the JSON shell (_request) refuses to parse it at all."""
+    """A non-JSON 404 (an edge/proxy page) says nothing about the document:
+    both shells raise ZohoAmbiguous, not ZohoNotFound (T-682)."""
     await _configure(async_client)
     _serve(httpx.Response(404, content=b"<html>not json</html>"))
 
-    with pytest.raises(ZohoUpstreamError) as excinfo:
+    with pytest.raises(ZohoAmbiguous) as excinfo:
         await _call(name, kind, db_session)
-    if kind == "pdf":
-        assert type(excinfo.value) is ZohoNotFound
-        assert str(excinfo.value) == "Not found in Zoho Books"
-    else:
-        assert type(excinfo.value) is ZohoAmbiguous
-        assert str(excinfo.value) == "Zoho returned a non-JSON response (HTTP 404)"
+    assert str(excinfo.value) == "Zoho Books error (HTTP 404)"
 
 
 # --- email content family ---------------------------------------------------------------

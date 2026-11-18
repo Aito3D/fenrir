@@ -184,4 +184,57 @@ describe('CreateInvoiceButton', () => {
     // round trip would leave the panel showing neither.
     await waitFor(() => expect(client.getQueryData(['aito-invoice', 7])).toEqual(created));
   });
+
+  it("does not call an outcome-unknown deposit 'could not be applied' (the broadcast warns)", async () => {
+    vi.spyOn(api, 'getAitoInvoicePreview').mockResolvedValue(PREVIEW);
+    const base = {
+      id: 'inv-1',
+      number: 'FA-26-4100',
+      date: '2026-09-12',
+      due_date: '2026-09-12',
+      total: 2500,
+      balance: 1500,
+      currency_code: 'XPF',
+      status: 'draft',
+      url: '',
+      invoice_count: 1,
+    };
+    vi.spyOn(api, 'createAitoInvoice').mockResolvedValue({
+      ...base,
+      retainers: [{ number: 'RET-00269', total: 1000, applied: 0, outcome: 'unknown' }],
+    });
+    renderButton(makeProject());
+
+    await userEvent.click(screen.getByRole('button'));
+    await screen.findByText('RET-00269');
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(await screen.findByText(/FA-26-4100/)).toBeInTheDocument();
+    // An unknown deposit is not also reported as "could not be applied".
+    expect(screen.queryByText(/could not be applied/)).not.toBeInTheDocument();
+  });
+
+  it('reports an old-server response with no outcome field as before', async () => {
+    vi.spyOn(api, 'getAitoInvoicePreview').mockResolvedValue(PREVIEW);
+    vi.spyOn(api, 'createAitoInvoice').mockResolvedValue({
+      id: 'inv-1',
+      number: 'FA-26-4100',
+      date: '',
+      due_date: '',
+      total: 2500,
+      balance: 1500,
+      currency_code: 'XPF',
+      status: 'draft',
+      url: '',
+      invoice_count: 1,
+      retainers: [{ number: 'RET-00269', total: 1000, applied: 0 }],
+    });
+    renderButton(makeProject());
+
+    await userEvent.click(screen.getByRole('button'));
+    await screen.findByText('RET-00269');
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(await screen.findByText(/RET-00269 could not be applied/)).toBeInTheDocument();
+  });
 });

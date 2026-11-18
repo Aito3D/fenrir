@@ -17,9 +17,9 @@
 // themselves are the i18n probe's business. Clock and timezone are pinned:
 // TZ=UTC by the probe command, `now`/`today` passed in explicitly.
 //
-// The bundle is produced by rolldown into /tmp/fenrir-refactor-track-probe/ by the
+// The bundle is produced by rolldown into /tmp/fenrir-a33-probe/ by the
 // probe command in PROBES.json before this script runs.
-const { tracking, code, shell } = require("/tmp/fenrir-refactor-track-probe/trackingFrontend.cjs");
+const { tracking, code, shell } = require("/tmp/fenrir-a33-probe/trackingFrontend.cjs");
 
 const t = (key, opts) => (opts ? `${key}|${JSON.stringify(opts)}` : key);
 const NOW = new Date("2026-03-15T12:00:00.000Z");

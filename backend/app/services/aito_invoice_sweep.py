@@ -63,7 +63,13 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_events
 from backend.app.services.aito_events import utc_now_naive as _now
 from backend.app.services.aito_invoice_cache import invoice_total_of
-from backend.app.services.aito_invoice_create import RetainerCredit, apply_retainers, customer_credits, share_out
+from backend.app.services.aito_invoice_create import (
+    RetainerApplication,
+    RetainerCredit,
+    apply_retainers,
+    customer_credits,
+    share_out,
+)
 from backend.app.services.aito_search import remember_document_numbers
 from backend.app.services.inbox import broadcast_pending, purge_old
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
@@ -114,13 +120,15 @@ def linked_credits(
 @dataclass
 class DepositSettlement:
     """What ``settle_deposits`` did. ``refused`` names the linked deposits
-    that had a share to spend and that Books did not take — ``apply_retainers``
+    that had a share to spend and that Books refused (``unknown`` lists the outcome-unknown ones) — ``apply_retainers``
     swallows those failures, so without this the caller cannot tell "nothing
     to apply" from "Books said no"."""
 
     invoice: dict
     remaining: float | None
     refused: list[str] = field(default_factory=list)
+    # Deposits whose apply timed out (timeout/5xx): the money may have moved.
+    unknown: list[str] = field(default_factory=list)
 
 
 async def settle_with_deposits(
@@ -141,6 +149,66 @@ async def settle_with_deposits(
     """
     settlement = await settle_deposits(db, project_id, quote_id, invoice, quote_number)
     return settlement.invoice, settlement.remaining
+
+
+async def record_deposit_application(
+    db: AsyncSession,
+    project_id: int,
+    invoice: dict,
+    application: RetainerApplication,
+    actor_class: str = "system",
+    actor_name: str | None = None,
+) -> None:
+    """The ``invoice.deposit_applied`` event for one application (system actor by default)."""
+    detail = {
+        "retainer_number": application.number,
+        "invoice_number": str(invoice.get("number") or ""),
+        "amount": round(application.applied or application.unknown_amount, 2),
+    }
+    if application.unknown_amount:
+        detail["outcome"] = "unknown"
+    await aito_events.record(
+        db,
+        project_id,
+        "invoice.deposit_applied",
+        actor_class=actor_class,
+        actor_name=actor_name,
+        subject_type="project",
+        subject_id=project_id,
+        detail=detail,
+    )
+
+
+async def record_deposit_refusal(
+    db: AsyncSession,
+    project_id: int,
+    invoice: dict,
+    application: RetainerApplication,
+    actor_class: str = "system",
+    actor_name: str | None = None,
+) -> None:
+    """One ``invoice.deposit_refused`` per retainer+invoice: the hourly sweep retries a refused deposit, so an
+    existing entry for the pair means it is already on the timeline."""
+    detail = {"retainer_number": application.number, "invoice_number": str(invoice.get("number") or "")}
+    earlier = (
+        await db.execute(
+            select(AitoEvent.detail).where(
+                AitoEvent.project_id == project_id, AitoEvent.kind == "invoice.deposit_refused"
+            )
+        )
+    ).scalars()
+    if any(d == detail for d in earlier):
+        return
+    await aito_events.record(
+        db,
+        project_id,
+        "invoice.deposit_refused",
+        actor_class=actor_class,
+        actor_name=actor_name,
+        subject_type="project",
+        subject_id=project_id,
+        detail=detail,
+    )
 
 
 async def settle_deposits(
@@ -167,27 +235,32 @@ async def settle_deposits(
     # and came back with nothing applied is known to have been refused.
     shares = share_out(to_apply, balance)
     applications = await apply_retainers(db, invoice_id, balance, to_apply)
-    refused = [a.number for (_, payments), a in zip(shares, applications, strict=False) if payments and a.applied <= 0]
+    # apply_retainers returns one application per share (strict). An outcome-unknown deposit
+    # (timeout/5xx, the money may have moved) is not refused; a 429 raises below, so none is "not attempted" here.
+    refused = [
+        a.number
+        for (_, payments), a in zip(shares, applications, strict=True)
+        if payments and a.applied <= 0 and a.unknown_amount <= 0
+    ]
+    unknown = [a.number for a in applications if a.unknown_amount > 0]
     applied_total = 0.0
     for application in applications:
-        if application.applied <= 0:
+        # An answer lost on the way (timeout, 5xx) may still have moved the money: keep it on record,
+        # marked unknown, like the manual route does.
+        amount = application.applied or application.unknown_amount
+        if amount <= 0:
             continue
         applied_total += application.applied
-        await aito_events.record(
-            db,
-            project_id,
-            "invoice.deposit_applied",
-            actor_class="system",
-            subject_type="project",
-            subject_id=project_id,
-            detail={
-                "retainer_number": application.number,
-                "invoice_number": str(invoice.get("number") or ""),
-                "amount": round(application.applied, 2),
-            },
-        )
+        await record_deposit_application(db, project_id, invoice, application)
+    for application in applications:
+        if application.outcome == "refused":
+            await record_deposit_refusal(db, project_id, invoice, application)
+    # What landed is recorded above; a 429 now escapes so the caller arms the shared throttle.
+    for application in applications:
+        if application.rate_limited is not None:
+            raise application.rate_limited
     if applied_total <= 0:
-        return DepositSettlement(invoice, remaining, refused)
+        return DepositSettlement(invoice, remaining, refused, unknown)
 
     # Re-read BY ID, same rule as the create route: the list row in hand was
     # read before the deposits landed. Degrades to the stale row on failure
@@ -199,7 +272,7 @@ async def settle_deposits(
     except (ZohoNotConfiguredError, ZohoUpstreamError) as exc:
         logger.warning("Invoice sweep applied deposits to %s but could not re-read it: %s", invoice_id, exc)
         fresh = None
-    return DepositSettlement(fresh or invoice, max(remaining - applied_total, 0.0), refused)
+    return DepositSettlement(fresh or invoice, max(remaining - applied_total, 0.0), refused, unknown)
 
 
 # The Aito columns where a promised date is moot: a delivered job is not late.
@@ -371,6 +444,25 @@ async def _refresh_cached_invoice(
         project.invoice_due_date = None
 
 
+async def _keep_what_landed(db: AsyncSession, project: AitoProject) -> None:
+    """After a step raised: commit what it recorded (a settle can raise a 429
+    on its re-read AFTER Books took the money and its events were recorded —
+    no write to Books without its event), and leave the session usable for
+    the steps after it. A session a failed commit poisoned is rolled back,
+    and the project reloaded, since a rollback expires it."""
+    if db.is_active:
+        try:
+            await db.commit()
+            return
+        except Exception as exc:  # noqa: BLE001 - fall through to the rollback
+            logger.warning("Committing after a failed step on project %s failed: %s", project.id, exc)
+    try:
+        await db.rollback()
+        await db.refresh(project)
+    except Exception as exc:  # noqa: BLE001 - the later steps report their own failures
+        logger.warning("Could not recover the session after a failed step: %s", exc)
+
+
 async def sweep_invoices(
     db: AsyncSession,
     *,
@@ -388,8 +480,8 @@ async def sweep_invoices(
     the window clears, so continuing to hit Books once per remaining project
     would only deepen the throttle, the same failure mode ``sync_project``'s
     own 429 handler exists to avoid. Every project already refreshed before
-    the 429 was already committed on its own (T-010), so this function has
-    nothing left to flush — it simply lets the exception propagate:
+    the 429 was already committed on its own (T-010), so only what
+    the project hit by the 429 staged is committed (T-683) before the exception propagates:
     ``run_sync_loop`` catches it there and arms the same process-local
     throttle window ``sync_project`` uses, so the two callers share one
     backoff instead of each discovering the limit on its own.
@@ -445,9 +537,11 @@ async def sweep_invoices(
             except ZohoRateLimited:
                 # T-006: stop here rather than spending one more request per
                 # remaining project — everything refreshed so far this pass was
-                # already committed per project below, so there is nothing left
-                # to flush; just let the caller (run_sync_loop) arm the shared
-                # throttle.
+                # already committed per project below. Only what THIS project
+                # staged before the 429 (a landed deposit's event) is kept
+                # (T-683); the caller (run_sync_loop) arms the shared throttle.
+                await _keep_what_landed(db, project)
+                await broadcast_pending(db)
                 raise
             except (ZohoUpstreamError, ValueError, TypeError, KeyError) as exc:
                 logger.warning("Invoice sweep skipped project %s: %s", project_id, exc)

@@ -132,6 +132,24 @@ describe('Import3mfPanel', () => {
     expect(await screen.findByText('Marteaux')).toBeInTheDocument();
   });
 
+  it('shows an error with Retry when a calculator list cannot load, and Retry reloads it without slicing again', async () => {
+    serve([done([plate({})])]);
+    let printerCalls = 0;
+    server.use(
+      http.get('/api/v1/calculator/printers/', () =>
+        ++printerCalls === 1 ? HttpResponse.json({ detail: 'Printers unavailable' }, { status: 500 }) : HttpResponse.json(PRINTERS),
+      ),
+    );
+    let uploads = 0;
+    server.use(http.post('/api/v1/aito/import-3mf', () => (uploads++, HttpResponse.json({ job_id: 7 }, { status: 202 }))));
+    mount();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Printers unavailable');
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Marteaux')).toBeInTheDocument();
+    expect(uploads).toBe(1);
+  });
+
   it('rides out a failed poll without uploading again', async () => {
     let uploads = 0;
     let calls = 0;
@@ -164,6 +182,22 @@ describe('Import3mfPanel', () => {
     expect(uploads).toBe(1);
   });
 
+  it('Retry after the server forgot the job uploads and slices the file again', async () => {
+    let uploads = 0;
+    server.use(
+      http.post('/api/v1/aito/import-3mf', () => HttpResponse.json({ job_id: ++uploads + 6 }, { status: 202 })),
+      http.get('/api/v1/aito/import-3mf/7', () =>
+        HttpResponse.json({ detail: 'Import not found or expired' }, { status: 404 }),
+      ),
+      http.get('/api/v1/aito/import-3mf/8', () => HttpResponse.json(done([plate({})]))),
+    );
+    mount();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Import not found or expired');
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Marteaux')).toBeInTheDocument();
+    expect(uploads).toBe(2);
+  });
+
   it('shows a refusal of the upload itself', async () => {
     server.use(
       http.post('/api/v1/aito/import-3mf', () =>
@@ -184,5 +218,68 @@ describe('Import3mfPanel', () => {
     await new Promise((r) => setTimeout(r, 120));
     expect(polls).toBeLessThanOrEqual(seen + 1); // at most the request already in flight
     expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  describe('cancelling an abandoned import (T-685)', () => {
+    let cancelled: number[] = [];
+    beforeEach(() => {
+      cancelled = [];
+      server.use(
+        http.delete('/api/v1/aito/import-3mf/:id', ({ params }) => {
+          cancelled.push(Number(params.id));
+          return new HttpResponse(null, { status: 204 });
+        }),
+      );
+    });
+
+    it('cancels the running job on unmount', async () => {
+      serve([running]);
+      const { unmount } = mount();
+      await screen.findByRole('progressbar');
+      await waitFor(() => expect(polls).toBeGreaterThan(0));
+      unmount();
+      await waitFor(() => expect(cancelled).toEqual([7]));
+    });
+
+    it('cancels a job whose upload finished after the panel was closed', async () => {
+      server.use(
+        http.post('/api/v1/aito/import-3mf', async () => {
+          await new Promise((r) => setTimeout(r, 60));
+          return HttpResponse.json({ job_id: 7 }, { status: 202 });
+        }),
+      );
+      const { unmount } = mount();
+      unmount();
+      await waitFor(() => expect(cancelled).toEqual([7]));
+    });
+
+    it('does not cancel a job that already finished', async () => {
+      serve([done([plate({})])]);
+      const { unmount } = mount();
+      await screen.findByText('Marteaux');
+      unmount();
+      await new Promise((r) => setTimeout(r, 80));
+      expect(cancelled).toEqual([]);
+    });
+
+    it('cancels the previous job when Retry uploads again, and ignores a failing cancel', async () => {
+      let uploads = 0;
+      server.use(
+        http.post('/api/v1/aito/import-3mf', () => HttpResponse.json({ job_id: ++uploads + 6 }, { status: 202 })),
+        http.get('/api/v1/aito/import-3mf/7', () =>
+          HttpResponse.json({ detail: 'Import not found or expired' }, { status: 404 }),
+        ),
+        http.get('/api/v1/aito/import-3mf/8', () => HttpResponse.json(done([plate({})]))),
+        http.delete('/api/v1/aito/import-3mf/7', () => {
+          cancelled.push(7);
+          return HttpResponse.json({ detail: 'Import not found or expired' }, { status: 404 });
+        }),
+      );
+      mount();
+      await screen.findByRole('alert');
+      await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      expect(await screen.findByText('Marteaux')).toBeInTheDocument();
+      expect(cancelled).toEqual([7]);
+    });
   });
 });

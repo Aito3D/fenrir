@@ -19,6 +19,7 @@ from typing import Any
 import defusedxml.ElementTree as ET
 
 from backend.app.services.http_status_error import HttpStatusError
+from backend.app.services.project_snapshot import _MAX_PART_BYTES
 from backend.app.utils.printer_models import normalize_printer_model_id
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ _MODEL_SETTINGS = "Metadata/model_settings.config"
 _SLICE_INFO = "Metadata/slice_info.config"
 _GCODE_RE = re.compile(r"^Metadata/plate_\d+\.gcode$")
 _NAME_EXT_RE = re.compile(r"\.(stl|step|stp|3mf|obj)$", re.IGNORECASE)
+_MAX_THUMBNAIL_BYTES = 2 * 1024 * 1024
 
 
 class Import3mfError(HttpStatusError):
@@ -55,6 +57,24 @@ def check_importable(source: bytes) -> None:
         check_source_within_caps(source)
     except ProjectFilesError as exc:
         raise Import3mfError(exc.status_code, exc.detail) from exc
+    with zipfile.ZipFile(io.BytesIO(source)) as zf:
+        if _MODEL_SETTINGS in names and zf.getinfo(_MODEL_SETTINGS).file_size > _MAX_PART_BYTES:
+            raise Import3mfError(413, _model_settings_too_big())
+
+
+def _model_settings_too_big() -> str:
+    from backend.app.services.project_slice import _SETTINGS_TOO_BIG
+
+    return _SETTINGS_TOO_BIG.format(limit=_MAX_PART_BYTES // (1024 * 1024))
+
+
+def _read_capped(zf: zipfile.ZipFile, name: str, cap: int) -> bytes | None:
+    """The entry's bytes, or None when it is over `cap` (declared size, or the actual read for a lying header)."""
+    if zf.getinfo(name).file_size > cap:
+        return None
+    with zf.open(name) as f:
+        data = f.read(cap + 1)
+    return data if len(data) <= cap else None
 
 
 def _metadata(elem) -> dict[str, str]:
@@ -195,8 +215,12 @@ def plate_facts(source: bytes, sliced: bytes) -> list[dict[str, Any]]:
     slices = _slice_plates(sliced)
     plates: list[dict[str, Any]] = []
     with zipfile.ZipFile(io.BytesIO(source)) as zf:
-        root = _read_xml(zf, _MODEL_SETTINGS)
-        if root is None:
+        try:
+            raw = _read_capped(zf, _MODEL_SETTINGS, _MAX_PART_BYTES)
+            if raw is None:
+                raise Import3mfError(413, _model_settings_too_big())
+            root = ET.fromstring(raw)
+        except (KeyError, ET.ParseError):
             return []
         try:
             sizes = _instance_sizes(zf)
@@ -205,12 +229,16 @@ def plate_facts(source: bytes, sliced: bytes) -> list[dict[str, Any]]:
             sizes = {}
         names = {oid: _metadata(obj).get("name", "") for obj in root.findall("object") if (oid := obj.get("id"))}
         zip_names = set(zf.namelist())
+        thumbnails: dict[int, str | None] = {}
         for plate in root.findall("plate"):
             meta = _metadata(plate)
             index = _int(meta.get("plater_id"))
             if index is None:
                 continue
-            thumb = f"Metadata/plate_{index}_small.png"
+            if index not in thumbnails:
+                thumb = f"Metadata/plate_{index}_small.png"
+                data = _read_capped(zf, thumb, _MAX_THUMBNAIL_BYTES) if thumb in zip_names else None
+                thumbnails[index] = None if data is None else "data:image/png;base64," + base64.b64encode(data).decode()
             empty = {"print_time_seconds": None, "weight_g": None, "printer_model": None, "filaments": []}
             plates.append(
                 {
@@ -218,11 +246,7 @@ def plate_facts(source: bytes, sliced: bytes) -> list[dict[str, Any]]:
                     "name": meta.get("plater_name", "").strip() or None,
                     **slices.get(index, empty),
                     "objects": _plate_objects(plate, names, sizes),
-                    "thumbnail": (
-                        "data:image/png;base64," + base64.b64encode(zf.read(thumb)).decode()
-                        if thumb in zip_names
-                        else None
-                    ),
+                    "thumbnail": thumbnails[index],
                 }
             )
     return sorted(plates, key=lambda p: p["index"])
@@ -235,7 +259,7 @@ async def slice_source(db, source: bytes, filename: str, job_id: int) -> bytes:
     import asyncio
 
     from backend.app.api.routes.library import resolve_slicer_api_url
-    from backend.app.services.project_slice import NO_SLICER, _error_status_and_message
+    from backend.app.services.project_slice import NO_SLICER, _error_status_and_message, _slice_slot
     from backend.app.services.slice_dispatch import slice_dispatch
     from backend.app.services.slicer_api import SlicerApiService, get_stall_timeout_seconds
     from backend.app.utils.threemf_tools import sanitize_project_settings_sentinels
@@ -246,7 +270,9 @@ async def slice_source(db, source: bytes, filename: str, job_id: int) -> bytes:
     timeout = await get_stall_timeout_seconds(db)
     await db.commit()  # end the read transaction: the slice can take minutes
     try:
-        async with SlicerApiService(url, timeout_seconds=timeout) as service:
+        # The slot project revisions take: a queued import holds no transaction (committed above) and its
+        # stall clock starts with the sidecar call, inside the slot.
+        async with _slice_slot(), SlicerApiService(url, timeout_seconds=timeout) as service:
             result = await service.slice_without_profiles(
                 model_bytes=await asyncio.to_thread(sanitize_project_settings_sentinels, source),
                 model_filename=filename,

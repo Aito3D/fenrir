@@ -40,7 +40,14 @@ from dataclasses import dataclass, field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_project import AitoProject
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import (
+    ZohoAmbiguous,
+    ZohoNotConfiguredError,
+    ZohoRateLimited,
+    ZohoUnreachable,
+    ZohoUpstreamError,
+    zoho_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +124,12 @@ class RetainerApplication:
     number: str
     total: float
     applied: float
+    # What Books may or may not have taken when its answer was lost (timeout, 5xx): 0.0 = not that case.
+    unknown_amount: float = 0.0
+    # Set on the application Books answered 429 to; the retainers behind it were not tried.
+    rate_limited: ZohoRateLimited | None = None
+    # "applied" | "refused" (Books said no) | "unknown" (answer lost) | "not_attempted" (no share, or throttled before it).
+    outcome: str = "applied"
 
 
 def build_line_items(estimate_lines: list[dict]) -> list[dict]:
@@ -334,12 +347,26 @@ async def apply_retainers(
     # retainer whose application FAILS must not hand its share to the ones
     # behind it. Books would accept that (the balance really is still owed),
     # but it would silently spend a different deposit than the dialog named.
+    throttle: ZohoRateLimited | None = None
     for retainer, payments in share_out(retainers, balance):
         applied = sum(p["amount_applied"] for p in payments)
-        if payments:
+        unknown_amount = 0.0
+        hit = None
+        outcome = "applied" if payments else "not_attempted"
+        if throttle is not None:
+            # Books is throttling: do not spend more calls, report the rest as not applied.
+            applied = 0.0
+            outcome = "not_attempted"
+        elif payments:
             try:
                 await zoho_service.apply_invoice_credits(db, invoice_id, payments)
             except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+                if isinstance(e, ZohoRateLimited):
+                    throttle = hit = e
+                elif isinstance(e, ZohoUnreachable | ZohoAmbiguous):
+                    unknown_amount = round(applied, 2)
+                # A 429 is a retryable "not tried", not Books refusing the deposit.
+                outcome = "unknown" if unknown_amount else ("not_attempted" if hit else "refused")
                 # Nothing was applied. The share is NOT handed to the
                 # retainers behind it — see the comment above the loop.
                 applied = 0.0
@@ -349,5 +376,14 @@ async def apply_retainers(
                     retainer.number,
                     e,
                 )
-        applications.append(RetainerApplication(number=retainer.number, total=retainer.total, applied=applied))
+        applications.append(
+            RetainerApplication(
+                number=retainer.number,
+                total=retainer.total,
+                applied=applied,
+                unknown_amount=unknown_amount,
+                rate_limited=hit,
+                outcome=outcome,
+            )
+        )
     return applications

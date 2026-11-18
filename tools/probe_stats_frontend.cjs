@@ -12,9 +12,9 @@
 //     tones, and the tooltip ordering. A chart that changes colour is a
 //     behaviour change a test asserting on text would never catch.
 //
-// The bundle is produced by rolldown into /tmp/fenrir-refactor-probe/ by the
+// The bundle is produced by rolldown into /tmp/fenrir-a33-probe/ by the
 // probe command in PROBES.json before this script runs.
-const m = require("/tmp/fenrir-refactor-probe/statsFrontend.cjs");
+const m = require("/tmp/fenrir-a33-probe/statsFrontend.cjs");
 
 const { computeDateRange, TIMEFRAME_PRESETS, STATS_SCREENS, statsTabId, statsScreenId, palette } = m;
 

@@ -111,6 +111,12 @@ class SliceDispatchService:
             result = await run(job.id)
             job.result = result
             job.status = "completed"
+        except asyncio.CancelledError:
+            # cancel(): the job must not read "running" forever. The cancellation still propagates.
+            job.status = "failed"
+            job.error_status = 499
+            job.error_detail = "Cancelled"
+            raise
         except _SliceJobError as exc:
             # Caller-controlled HTTP error — propagate status + detail.
             job.status = "failed"
@@ -124,6 +130,12 @@ class SliceDispatchService:
         finally:
             job.completed_at = datetime.now(timezone.utc)
             self._tasks.pop(job.id, None)
+
+    def cancel(self, job_id: int) -> None:
+        """Cancel a job that is still running (no-op once it finished); its task unwinds through its own cleanup."""
+        task = self._tasks.get(job_id)
+        if task is not None and not task.done():
+            task.cancel()
 
     def get(self, job_id: int) -> SliceJob | None:
         return self._jobs.get(job_id)

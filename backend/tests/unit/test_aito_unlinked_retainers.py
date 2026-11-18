@@ -98,3 +98,25 @@ async def test_link_writes_the_quote_number_and_refuses_any_other_retainer(async
     r = await async_client.post(f"/api/v1/aito/{pid}/unlinked-retainers/r-hand/link")
     assert r.status_code == 200, r.text
     assert books == [("r-hand", "DEV26-9")] and refreshed == [pid]
+
+
+@pytest.mark.asyncio
+async def test_the_listing_is_rate_limited_before_books_is_asked(async_client, books, monkeypatch):
+    from backend.app.api.routes import aito as aito_routes, aito_payments
+
+    monkeypatch.setattr(aito_payments, "_CLIENT_RATING_MAX_CALLS", 2)
+    monkeypatch.setattr(aito_routes, "_ai_rate_limit_calls", {})
+    pid = await _card(async_client)
+    url = f"/api/v1/aito/{pid}/unlinked-retainers"
+    calls = []
+    real = aito_payments.unlinked_retainers
+
+    async def counted(db, client_id):
+        calls.append(client_id)
+        return await real(db, client_id)
+
+    monkeypatch.setattr(aito_payments, "unlinked_retainers", counted)
+    assert [(await async_client.get(url)).status_code for _ in range(2)] == [200, 200]
+    r = await async_client.get(url)
+    assert (r.status_code, r.json()["detail"]["code"]) == (429, "rate_limited")
+    assert len(calls) == 2

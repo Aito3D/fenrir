@@ -35,6 +35,7 @@ const STEP_REASON_KEY: Partial<Record<AitoForceSyncStep['key'], Record<string, s
   },
   invoice: {
     refused: 'aito.forceSyncReasonDepositRefused',
+    outcome_unknown: 'aito.forceSyncReasonOutcomeUnknown',
   },
 };
 

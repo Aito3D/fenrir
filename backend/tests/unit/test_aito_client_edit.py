@@ -197,6 +197,33 @@ async def test_zoho_rejection_surfaces_its_message_as_409(async_client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("client_id", ["..", "."])
+async def test_a_dot_segment_client_id_is_refused_without_any_books_call(async_client, client_id):
+    """T-656: a bare '.'/'..' survives urlquote and httpx would resolve it as a
+    dot segment, re-targeting the Books path; _seg refuses it first."""
+    await _configure(async_client)
+    seen: list = []
+    zoho_service.transport = _books(lambda request: seen.append(request) or httpx.Response(200, json={}))
+    project = await _create(async_client, client_id=client_id)
+
+    r = await async_client.put(f"/api/v1/aito/{project['id']}/client", json=PERSON_EDIT)
+    assert r.status_code == 409
+    assert r.json()["detail"] == "Invalid Zoho Books id"
+    assert seen == []
+
+
+def test_seg_refuses_dot_segments_and_leaves_ordinary_ids_alone():
+    from backend.app.services.zoho import ZohoRequestRejected, _seg
+
+    for bad in (".", ".."):
+        with pytest.raises(ZohoRequestRejected):
+            _seg(bad)
+    assert _seg("66407000001237340") == "66407000001237340"
+    assert _seg("a.b") == "a.b"
+    assert _seg("../x") == "..%2Fx"
+
+
+@pytest.mark.asyncio
 async def test_zoho_unconfigured_is_409(async_client):
     project = await _create(async_client)
     r = await async_client.put(f"/api/v1/aito/{project['id']}/client", json=PERSON_EDIT)

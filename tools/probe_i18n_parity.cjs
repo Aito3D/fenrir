@@ -6,7 +6,7 @@
 // This probe pins, for every locale: the total key count, the keys missing
 // relative to en, the extra keys, and any key whose {{placeholder}} set
 // differs from en's.
-const locales = require('/tmp/fenrir-refactor-probe/i18nAll.cjs');
+const locales = require('/tmp/fenrir-a33-probe/i18nAll.cjs');
 
 const flat = (obj, prefix = '', out = {}) => {
   for (const k of Object.keys(obj || {})) {

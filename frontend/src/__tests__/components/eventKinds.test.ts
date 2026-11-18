@@ -98,6 +98,13 @@ describe('detailText', () => {
     expect(detailText('invoice.deposit_applied', { amount: 4000 })).toBeNull();
   });
 
+  it('names the retainer for invoice.deposit_refused, null without one', () => {
+    expect(detailText('invoice.deposit_refused', { retainer_number: 'RET26-00295', invoice_number: 'INV-1' })).toBe(
+      'RET26-00295',
+    );
+    expect(detailText('invoice.deposit_refused', { invoice_number: 'INV-1' })).toBeNull();
+  });
+
   it('returns null for sync.conflict/sync.status_rejected when neither side is a non-empty string', () => {
     expect(detailText('sync.conflict', {})).toBeNull();
     expect(detailText('sync.conflict', { ours: '', theirs: '' })).toBeNull();
@@ -238,6 +245,10 @@ describe('EVENT_LABEL_KEY', () => {
 
   it('labels invoice.deposit_applied', () => {
     expect(EVENT_LABEL_KEY['invoice.deposit_applied']).toBe('aito.history.invoiceDepositApplied');
+  });
+
+  it('labels invoice.deposit_refused', () => {
+    expect(EVENT_LABEL_KEY['invoice.deposit_refused']).toBe('aito.history.invoiceDepositRefused');
   });
 
   it('labels the terminal payment kinds', () => {

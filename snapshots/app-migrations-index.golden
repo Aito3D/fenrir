@@ -1,0 +1,311 @@
+### exit: 0
+### stdout:
+     1	# Migration: Add parent_run_id column to pipeline_runs (#1425 PR C).
+     2	# Migration: Add source_archive_id column to pipeline_runs (#1425 PR B follow-up).
+     3	# Migration: Add is_favorite column to print_archives
+     4	# Migration: Add OIDC group sync columns (#3107). group_claim defaults to
+     5	# Migration: Add wallet_charge_skipped column to print_archives so deleted print charges stay deleted
+     6	# Migration: Add content_hash column to print_archives for duplicate detection
+     7	# Migration: Add auto_off_executed column to smart_plugs
+     8	# Migration: Add on_print_stopped column to notification_providers
+     9	# Migration: Add source_3mf_path column to print_archives
+    10	# Migration: Add f3d_path column to print_archives for Fusion 360 design files
+    11	# Migration: Add plate_id column to print_archives (#2603). The selected plate
+    12	# Migration: Add on_maintenance_due column to notification_providers
+    13	# Migration: Add location column to printers for grouping
+    14	# Migration: Add interval_type column to maintenance_types
+    15	# Migration: Add is_deleted column to maintenance_types for soft-deletes
+    16	# Migration: Add cost_center columns expected by current finance model
+    17	# Migration: Add custom_interval_type column to printer_maintenance
+    18	# Migration: Add power alert columns to smart_plugs
+    19	# Migration: Add schedule columns to smart_plugs
+    20	# Migration: Add daily digest columns to notification_providers
+    21	# Migration: Add print_run_id to wallet_transactions so repeated prints of the same archive
+    22	# Migration: Add missing-spool-assignment print-start notification toggle
+    23	# Migration: Add project_id column to print_archives
+    24	# Migration: Add project_id column to print_queue
+    25	# Migration: Enforce uniqueness on user_oidc_links for existing rows.
+    26	# Migration: Add unique indexes to prevent duplicate print-charge transactions
+    27	# Migration: Create FTS5 virtual table for archive full-text search (SQLite only)
+    28	# Migration: Create triggers to keep FTS index in sync
+    29	# Migration: Add auto_off_pending columns to smart_plugs (for restart recovery)
+    30	# Migration: Add auto_off_persistent column to smart_plugs (keep auto-off enabled between prints)
+    31	# Migration: Add AMS alarm notification columns to notification_providers
+    32	# Migration: Add AMS-HT alarm notification columns to notification_providers
+    33	# Migration: Add plate not empty notification column to notification_providers
+    34	# Migration: Add notes column to projects (Phase 2)
+    35	# Migration: Add attachments column to projects (Phase 3)
+    36	# Migration: Add tags column to projects (Phase 4)
+    37	# Migration: Add due_date column to projects (Phase 5)
+    38	# Migration: Add priority column to projects (Phase 5)
+    39	# Migration: Add budget column to projects (Phase 6)
+    40	# Migration: Add is_template column to projects (Phase 8)
+    41	# Migration: Add template_source_id column to projects (Phase 8)
+    42	# Migration: Add parent_id column to projects (Phase 10)
+    43	# Migration: Rename quantity_printed to quantity_acquired in project_bom_items
+    44	# Migration: Add unit_price column to project_bom_items
+    45	# Migration: Add sourcing_url column to project_bom_items
+    46	# Migration: Rename notes to remarks in project_bom_items
+    47	# Migration: Add show_in_switchbar column to smart_plugs
+    48	# Migration: Add runtime tracking columns to printers
+    49	# Migration: Add quantity column to print_archives for tracking item count
+    50	# Migration: Add manual_start column to print_queue for staged prints
+    51	# Migration: Add cost_center_id column to print_queue for billing metadata
+    52	# Migration: Add cost_center_id column to print_archives for billing metadata
+    53	# Migration: Add wiki_url column to maintenance_types for documentation links
+    54	# Migration: Add tailscale_disabled column to virtual_printers. Opt-in: default TRUE so
+    55	# Migration: Add ams_mapping column to print_queue for storing filament slot assignments
+    56	# Migration: filament_short flag on print_queue (#1496). Set by the
+    57	# Migration: skip_filament_check flag on print_queue (#1698-followup).
+    58	# Migration: cleanup flag for transient printer-card uploads routed through
+    59	# Migration: Add queue_force_color_match column to virtual_printers (#1188).
+    60	# Migration: Add save_ams_mapping column to virtual_printers. Opt-in flag:
+    61	# Migration: virtual printer uploads go to the File Manager, not the
+    62	# Migration: personal virtual-printer access codes (#1430). The code a
+    63	# Migration: nozzle_mapping + nozzles_info on print_queue for H2C rack-swap
+    64	# Migration: nozzle_rack_choice (#1784). Which rack position each filament
+    65	# Migration: Add target_parts_count column to projects for tracking total parts needed
+    66	# Migration: Add url + cover_image_filename columns to projects (#1155).
+    67	# Migration: enhanced filament colour handling on color_catalog (#1154).
+    68	# Migration: Make printer_id nullable in print_queue for unassigned queue items
+    69	# Migration: Add plug_type column to smart_plugs for HA integration
+    70	# Migration: Add ha_entity_id column to smart_plugs for HA integration
+    71	# Migration: Add project_id column to library_folders for linking folders to projects
+    72	# Migration: Add archive_id column to library_folders for linking folders to archives
+    73	# Migration: Make ip_address nullable for HA plugs (SQLite requires table recreation)
+    74	# Migration: Add plate_id column to print_queue for multi-plate 3MF support
+    75	# Migration: Add print options columns to print_queue
+    76	# Migration: Add nozzle offset calibration option (dual-nozzle printers, #1682).
+    77	# Migration: convert bed_levelling / flow_cali / nozzle_offset_cali from
+    78	# Migration: normalise the workflow-default settings rows that back these
+    79	# Migration: Per-item preheat / heat-soak override (#1468). preheat_override
+    80	# Migration: Add library_file_id column to print_queue and make archive_id nullable
+    81	# Migration: Add dispatching_at claim column to print_queue (#2615). Nullable
+    82	# Migration: Add HA energy sensor entity columns to smart_plugs
+    83	# Migration: Create users table for authentication
+    84	# Migration: Add external camera columns to printers
+    85	# Migration: Add external_url column to print_archives for user-defined links (Printables, etc.)
+    86	# Migration: Add sliced_for_model column to print_archives for model-based queue assignment
+    87	# Migration: Add is_external column to library_files for external cloud files
+    88	# Migration: Add project_id column to library_files
+    89	# Migration: Add is_external column to library_folders for external cloud folders
+    90	# Migration: Add external folder settings columns to library_folders
+    91	# Migration: Add plate_detection_enabled column to printers
+    92	# Migration: Add plate detection ROI columns to printers
+    93	# Migration: Remove UNIQUE constraint from smart_plugs.printer_id
+    94	# Migration: Add show_on_printer_card column to smart_plugs
+    95	# Migration: Add MQTT smart plug fields (legacy)
+    96	# Migration: Add enhanced MQTT smart plug fields (separate topics and multipliers)
+    97	# Migration: Copy existing mqtt_topic to mqtt_power_topic for backward compatibility
+    98	# Migration: Create groups table for permission-based access control
+    99	# Migration: Create user_groups association table
+   100	# Migration: Add model-based queue assignment columns to print_queue
+   101	# Migration: Add nozzle_count column to printers (for dual-extruder detection)
+   102	# Migration: Add print_hours_offset column to printers (baseline hours adjustment)
+   103	# Migration: Add queue notification event columns to notification_providers
+   104	# Migration: Add created_by_id column to print_archives for user tracking (Issue #206)
+   105	# Migration: Add created_by_id column to print_queue for user tracking (Issue #206)
+   106	# Migration: Add created_by_id column to library_files for user tracking (Issue #206)
+   107	# Migration: Add target_location column to print_queue for location-based filtering (Issue #220)
+   108	# Migration: Convert absolute paths to relative paths in library_files table
+   109	# Migration: Add preset_source column to slot_preset_mappings for local preset support
+   110	# Migration: Add email column to users for Advanced Auth (PR #322)
+   111	# Migration: Add inventory spool tracking columns
+   112	# Migration: Add RFID tag matching columns to spool
+   113	# Migration: Add core_weight_catalog_id to track which catalog entry was used for empty spool weight
+   114	# Migration: Create spool_usage_history table for filament consumption tracking
+   115	# Migration: Add open_in_new_tab column to external_links
+   116	# Migration: Add bed cooled notification column to notification_providers
+   117	# Migration: Add first layer complete notification column to notification_providers
+   118	# Migration: Add weight_locked flag to spool table (skip AMS auto-sync for manually-entered weights)
+   119	# Migration: Add SpoolBuddy scale weight tracking columns to spool table
+   120	# Migration: Add cost tracking fields to spool table
+   121	# Migration: Per-spool category + low-stock threshold override (#729). Both
+   122	# Migration: Add user-editable storage location to spool table
+   123	# Migration: Add weight_used_baseline anchor for the resettable "Total
+   124	# Migration: Widen tag_uid column from VARCHAR(16) to VARCHAR(32) to accommodate 7-byte NFC
+   125	# Migration: enhanced filament colour handling (#1154). `extra_colors` is
+   126	# Migration: Add cost field to spool_usage_history table
+   127	# Migration: Add archive_id field to spool_usage_history table
+   128	# Migration: Migrate single virtual printer key-value settings to virtual_printers table.
+   129	# Migration: Add filament_overrides column to print_queue for filament override in model-based assignment
+   130	# Migration: Add NFC reader and display control columns to spoolbuddy_devices
+   131	# Migration: Add NFC tag write payload column to spoolbuddy_devices
+   132	# Migration: Add OTA update tracking columns to spoolbuddy_devices
+   133	# Migration: Persist SpoolBuddy backend URL and queued system payload
+   134	# Migration: Add system_stats JSON blob column to spoolbuddy_devices
+   135	# Migration: Add SSH host key for TOFU verification (H1 security fix)
+   136	# Migration: Widen ssh_host_key from VARCHAR(500) to TEXT — RSA-3072+ host keys
+   137	# Migration: Convert ams_labels table from (printer_id, ams_id) key to ams_serial_number key
+   138	# Migration: Add auto_dispatch column to virtual_printers
+   139	# Migration: Fix VP model codes — convert legacy SSDP codes and display names to correct SSDP codes
+   140	# Migration: Rename VP mode wire values to match the user-facing labels
+   141	# Migration: Auto-sync VP access codes from their target printer.
+   142	# Migration: Recover queue items that got stuck in `skipped` because of
+   143	# Migration: Unify `LibraryFile.file_type` across ingest paths (#1600).
+   144	# Migration: Add per-user Bambu Cloud credential columns
+   145	# Migration: Create user_email_preferences table for user-specific email notification settings
+   146	# Migration: Add camera_rotation column to printers
+   147	# Migration: Add awaiting_plate_clear column to printers (#961)
+   148	# Migration: Add REST/Webhook smart plug fields
+   149	# Migration: Add separate REST power/energy URLs and multipliers
+   150	# Migration: Add batch_id column to print_queue for batch grouping
+   151	# Migration: Shortest-job-first scheduling columns on print_queue
+   152	# Migration: Auto-print G-code injection (#422)
+   153	# Migration: Store estimated print cost for budget checks before queued jobs start
+   154	# Migration: Aito online-payment notification toggle (2026-09-12).
+   155	# Migration: alert-level cut for printer error notifications (2026-11-07).
+   156	# Migration: Add backup_spools and backup_archives columns to github_backup_config
+   157	# Migration: Widen columns where SQLite allowed data beyond the declared VARCHAR limit
+   158	# Migration: Create GIN index for full-text search on PostgreSQL
+   159	# Migration: Add auth_source column to users for LDAP support (#794)
+   160	# Migration: Make password_hash nullable for LDAP users (#794)
+   161	# Migration: Add energy_start_kwh to print_archives (#941)
+   162	# Migration: Add subtask_id to print_archives (#972)
+   163	# Migration: Add bed_type to print_archives (#1253)
+   164	# Migration: Add deleted_at to print_archives (#1343)
+   165	# Migration: Add fenrir_forced_timelapse to print_archives (#1397)
+   166	# Migration: content verification of print-start downloads (#2104 wrong-file
+   167	# Migration: Create smart_plug_energy_snapshots table (#941)
+   168	# Migration: Add PKCE code_verifier column to auth_ephemeral_tokens
+   169	# Migration: Add TOTP replay-protection counter to user_totp
+   170	# Migration: Add challenge_id for pre-auth token client binding (HttpOnly cookie)
+   171	# Migration: Add auto_link_existing_accounts column to oidc_providers (M-4)
+   172	# Migration: Azure Entra ID support — configurable email claim and verification requirement
+   173	# Migration: Update auto_link CHECK constraint formula (existing installs).
+   174	# Migration: Add default_group_id to oidc_providers.
+   175	# Migration: Add cached-icon columns to oidc_providers (#1333).
+   176	# Migration: Add password_changed_at to users (M-R7-B)
+   177	# Migration: Back-fill password_changed_at = created_at for existing users (I2).
+   178	# Migration: Provenance columns on library_files for MakerWorld imports.
+   179	# Migration: Cache metadata title on pending uploads (#1152 follow-up).
+   180	# Migration: Per-user API key ownership + cloud-access scope (#1182).
+   181	# Migration: Soft-delete column for trash bin (Issue #1008). Indexed so the
+   182	# Migration: Normalise provider_email to lowercase (SEC-3).
+   183	# Migration: Create spoolman_slot_assignments table for local AMS-slot→Spoolman-spool mapping.
+   184	# Migration: widen ck_ams_id_range on spoolman_slot_assignments to allow
+   185	# Migration: Create spoolman_k_profile table for K-value calibration profiles linked to Spoolman spools.
+   186	# Migration: Add provider column to github_backup_config for multi-provider support
+   187	# Migration: Add allow_insecure_http column to github_backup_config for self-hosted HTTP instances
+   188	# Migration: Create filament_sku_settings table for reorder forecasting
+   189	# Migration: add color_name to filament_sku_settings so forecasts
+   190	# Migration: add color_name to filament_sku_settings and widen the
+   191	# Migration: Add inventory stock alert columns to notification_providers.
+   192	# Migration: Heal orphan auth-related rows left behind by user-delete
+   193	# Migration: extend print_log_entries with archive_id, cost, energy, failure_reason,
+   194	# Migration: smart_plugs gets per-plug auto-off-after-drying toggle and
+   195	# Migration: Add per-user Orca Cloud credential columns. Mirrors the Bambu
+   196	# Migration: record when Bambu rejects a stored cloud token. Until now the
+   197	# Migration: structured storage locations (#1004). Flat catalog of physical
+   198	# Migration: Add on_ai_failure_detection column to notification_providers (#1794).
+   199	# Migration: Add gate_acknowledged column to print_queue (#1818). Cleared
+   200	# Migration: Add is_autologin column to oidc_providers (#1589). Postgres
+   201	# Migration: Add is_env_managed column to oidc_providers (#2593). Marks the
+   202	# Migration: Add dispatch_attempts to print_queue (#2555). Counts the times
+   203	# Migration: repair completed print-log rows that stored a multi-plate 3MF's
+   204	# Migration: Add controls_printer_power to smart_plugs (#2629). Marks
+   205	# Migration: real filesystem mtime for library files/folders (#2680). The
+   206	# Migration: Disambiguate the four ``user_print_*`` notification template
+   207	# Migration: standalone index on library_file_tags.tag_id (#1268 follow-up).
+   208	# Migration: difficulty factor moved from a calculator-page input onto the
+   209	# Migration: default margin over cost, used to prefill new calculator filaments.
+   210	# Migration: one-time per-job base fee (quotation time, order handling).
+   211	# Migration: hyperbolic margin curves (size margin × quantity discount)
+   212	# Migration: calculator filament profiles split the single free-text name
+   213	# Migration: calculator filaments can be linked to a Zoho product, whose
+   214	# Migration: Aito cards snapshot the client's email alongside the phone so
+   215	# Migration: Aito cards record whether the attached client is a company, so
+   216	# Migration: Aito cards imported from a Zoho quote snapshot the quote's
+   217	# Migration: the outbox for pushing a project into its Zoho quote. The
+   218	# Migration: the quote's acceptance moment, so an accepted card's age can
+   219	# Migration: when the quote first left the shop, plus the cached newest
+   220	# Migration: the cached invoice's total (2026-10-13 tracking-page amounts).
+   221	# Migration: backfill the explicit 'unmanaged' ownership marker (Critical
+   222	# Migration: per-step Done flags on Aito tasks (2026-07-29). One boolean per
+   223	# Migration: per-line percent discount on the Impression3D service
+   224	# Migration: per-service quantity and percent discount on the other three
+   225	# Migration: the Main d'œuvre service (2026-09-20). Three additive
+   226	# Migration: per-service descriptions on Aito tasks (2026-08-03). The
+   227	# Migration: invoiced flag on Aito projects (2026-08-03).
+   228	# Migration: urgent flag on Aito projects (2026-08-04).
+   229	# Migration: content-fields revision counter for optimistic concurrency
+   230	# Migration: three-state board flag on Aito projects (2026-08-06).
+   231	# Migration: the comment mirror's fetch policy needs to know when it last
+   232	# Migration: Aito shipping (Livraison Avion). Six nullable columns; a NULL
+   233	# Migration: Aito shipping LTA (air waybill) number. One nullable column;
+   234	# Migration: an optional social-network handle on an Aito card, standing in
+   235	# Migration: the Finish column's "client has been told to collect" mark.
+   236	# Migration: promised delivery date (2026-09-04). Nullable, so no
+   237	# Migration: when the card last arrived in Done (2026-10-30), for the
+   238	# Migration: the rush surcharge was removed (2026-09-07). Drop the columns
+   239	# Migration: public tracking link token (2026-09-06). Nullable, minted on
+   240	# Migration: tracking page view log (2026-09-06). A row is a card and a
+   241	# Migration: payment-link ledger + the two project facts it reads
+   242	# Migration: the customer's unspent deposits, customer-wide (2026-09-15).
+   243	# Migration: the chosen Zoho contact person on a card (2026-09-22; first
+   244	# Migration: per-customer payment rating cache (2026-09-22). See
+   245	# Migration: the rating rework of 2026-09-23 scores companies on their
+   246	# Migration: terminal (TPE) charges started from a project card (2026-09-23).
+   247	# Migration: invoice payment links share the quote links' ledger (2026-09-23).
+   248	# Migration: remember whether a quote link asked for a deposit (2026-11-05). Nullable, no
+   249	# Migration: heal the 'invoiced' quote statuses the sync worker stored
+   250	# Migration: per-file print progress inside a project (#1897).
+   251	# Migration: persist the timelapse snapshot-diff baseline (#2704).
+   252	# Migration: plate-clear-required notification opt-in (#2525). Off by
+   253	# Migration: variant grouping for library files (#671 / #2570). The
+   254	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
+   255	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
+   256	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
+   257	# Migration: user link + photos on library files (#3077), the same trio
+   258	# Migration: storage location sensor alerts (#2824), own column rather than
+   259	# Migration: post-print outcome confirmation (#1898). VARCHAR and the
+   260	# Migration: take the capability URLs out of the outcome prompt's body
+   261	# Migration: Telegram verdict-by-reaction (#3046). Per-provider mode plus
+   262	# Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
+   263	# Migration: back the one-binding-per-(location, entity) rule with a unique
+   264	# Migration: the stock alert templates name the colour and subtype (#2955).
+   265	# Migration: the Password Reset template is for the reset link. Its old
+   266	# Migration: the Welcome Email template no longer holds the new user's
+   267	# Migration: use the same AI detection template for either provider (#3236).
+   268	# Migration: supplier master list + spool assignments (#2988).
+   269	# Migration: Add material_number to spool (#2870). Nullable free text —
+   270	# Migration: repair the tare of spools the RFID auto-add gave the wrong
+   271	# Migration: the Bambu PLA Silk+ colours were seeded under "PLA Silk", so
+   272	# Migration: drop the AMS slot markers an older Fenrir wrote into
+   273	# Migration: whether Books has been directly observed to agree with an
+   274	# Migration: the card owes Books its customer after a client transfer
+   275	# Migration: document numbers for the board search (2026-10-04). Nullable;
+   276	# Migration: a settled terminal charge whose event/acceptance failed is
+   277	# Migration: Order Board payments share the two Heimdall ledgers (2026-11-11). Nullable, no backfill:
+   278	# Migration: link a batch to the external record that asked for it (a shop
+   279	# Migration: messages from other applications through the notification
+   280	# Migration: a code for why a scheduled drying failed, so the card can show
+   281	# Migration: per-provider photo attachment opt-out. Defaults TRUE so
+   282	# Migration: the filament id a slot preset was written with, so the slot
+   283	# Migration: printers picked for the chamber light while the camera is in
+   284	# Migration: optional per-printer WLED preset configuration (#1528).
+   285	# Migration: printer-scoped groups (#1727). Defaults off, so no existing
+   286	# Migration: camera-stream and websocket tokens record who minted them, so
+   287	# Migration: electricity price on each energy snapshot, and where and when a
+   288	# Migration: library folder ownership and sharing (#3201).
+   289	# Migration: printer wear cost per printing hour, and the wear cost of each
+   290	# Migration: a printer's place in the pick order of "Any model" jobs (#2915).
+   291	# Migration: when each spool was last dried, at what temperature and for
+   292	# Migration: which plate's run the attached timelapse came from, so starting
+   293	# Migration: slots a queue item was sent with in another colour than the
+   294	# Migration: spools assigned to a tray while a print runs, so a hand swap
+   295	# Migration: a print log run whose times were not measured, a print that
+   296	# Migration: heads-up before a pause the slicer put into the print (#2984).
+   297	# Migration: per-print usage of Spoolman spools (#3407), so Spoolman mode
+   298	# Migration: mark a timelapse baseline taken off an unreadable card
+   299	# Migration: filament tree leaves whose generated preset changed since the last Export for Orca.
+   300	# Migration: the plate each print log run printed. A library file printed
+   301	# Migration: what describes one print, on the run (archive redesign P1).
+   302	# Migration: each plate's estimate on the archive (#3375). Nullable, no
+   303	# Migration: the G-code fingerprint of the archive's file (#1634), so a
+   304	# Migration: who assigned a spool to a slot, whose cloud sign-in the replay
+   305	# Migration: what a smart plug's temperature-based auto-off waits for
+   306	# Migration: the events a provider sends without its camera snapshot
+
+### stderr:
+

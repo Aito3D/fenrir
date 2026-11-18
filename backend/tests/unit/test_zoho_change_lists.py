@@ -6,7 +6,14 @@ import time
 import httpx
 import pytest
 
-from backend.app.services.zoho import ModifiedSinceRows, ZohoRateLimited, zoho_service
+from backend.app.services.zoho import (
+    ModifiedSinceRows,
+    ZohoAmbiguous,
+    ZohoNotFound,
+    ZohoRateLimited,
+    ZohoUpstreamError,
+    zoho_service,
+)
 from backend.tests.unit.test_aito_quote_sync import (  # noqa: F401 — fixtures register by name
     _configure_zoho,
     reset_zoho_service,
@@ -147,3 +154,33 @@ async def test_a_429_carries_books_error_code_and_the_raw_retry_after(db_session
     assert caught.value.code == 44
     assert caught.value.retry_after == 900.0
     assert caught.value.retry_after_raw == "900"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "body", "headers", "expected"),
+    [
+        (429, "<html>slow down</html>", {"Retry-After": "120"}, ZohoRateLimited),
+        (404, "<html>gone</html>", {}, ZohoAmbiguous),
+        (404, '["not", "a", "dict"]', {}, ZohoNotFound),
+        (502, "<html>bad gateway</html>", {}, ZohoAmbiguous),
+        (403, "<html>waf</html>", {}, ZohoAmbiguous),
+        (400, "<html>bad</html>", {}, ZohoAmbiguous),
+        (200, "<html>login</html>", {}, ZohoAmbiguous),
+    ],
+)
+async def test_a_non_json_error_body_still_maps_to_its_typed_error(db_session, status, body, headers, expected):
+    await _configure_zoho(db_session)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(status, content=body, headers=headers)
+
+    zoho_service.transport = httpx.MockTransport(handler)
+
+    with pytest.raises(expected) as caught:
+        await zoho_service.list_estimates_modified_since(db_session, SINCE)
+
+    if expected is ZohoRateLimited:
+        assert caught.value.retry_after == 120.0

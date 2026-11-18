@@ -6069,6 +6069,8 @@ export interface AitoRetainerApplied {
   number: string;
   total: number;
   applied: number;
+  /** "applied" | "refused" | "unknown" (Books may have taken it) | "not_attempted"; absent on older servers. */
+  outcome?: 'applied' | 'refused' | 'unknown' | 'not_attempted';
 }
 
 /** The freshly-raised invoice, in the exact shape the Invoice card renders,
@@ -10473,6 +10475,8 @@ export const api = {
     return response.json();
   },
   getAito3mfImport: (jobId: number) => request<Aito3mfImportState>(`/aito/import-3mf/${jobId}`),
+  /** Fire-and-forget: stops the server-side slice. Callers ignore failures (the job may have expired). */
+  cancelAito3mfImport: (jobId: number) => request<void>(`/aito/import-3mf/${jobId}`, { method: 'DELETE' }),
   getAitoClientHistory: (clientId: string, limit = 5) =>
     request<AitoClientHistory>(`/aito/clients/${encodeURIComponent(clientId)}/history?limit=${limit}`),
   getAitoClientRating: (clientId: string, refresh = false) =>

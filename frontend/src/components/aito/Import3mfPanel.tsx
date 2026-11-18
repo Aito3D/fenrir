@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Box, Check, Loader2, X } from 'lucide-react';
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import type { Aito3mfPlate } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { focusRingCls, inputCls } from '../formStyles';
@@ -46,14 +46,28 @@ export function Import3mfPanel({ file, onAdd, onClose, pollMs = 1500 }: Import3m
   const [choices, setChoices] = useState<Record<number, RowChoice>>({});
   const [elapsed, setElapsed] = useState(0);
 
+  // Whether the server already settled the job; a settled one has nothing left to cancel.
+  const settledRef = useRef(false);
+  // Fire-and-forget: the job may already be gone, and a failure here changes nothing for the operator.
+  const cancelJob = (id: number) => void api.cancelAito3mfImport(id).catch(() => undefined);
+
   useEffect(() => {
     let cancelled = false;
+    let startedId: number | null = null;
+    settledRef.current = false;
     api
       .startAito3mfImport(file)
-      .then((r) => !cancelled && setJobId(r.job_id))
+      .then((r) => {
+        // Closed or re-picked while the upload was in flight: stop the slice nobody will read.
+        if (cancelled) return cancelJob(r.job_id);
+        startedId = r.job_id;
+        setJobId(r.job_id);
+      })
       .catch((e: unknown) => !cancelled && setStartError(e instanceof Error ? e.message : String(e)));
     return () => {
       cancelled = true;
+      // Unmount, another file or a Retry re-upload: the previous job is abandoned.
+      if (startedId !== null && !settledRef.current) cancelJob(startedId);
     };
   }, [file, attempt]);
 
@@ -72,12 +86,19 @@ export function Import3mfPanel({ file, onAdd, onClose, pollMs = 1500 }: Import3m
     },
   });
   // Same keys and fetchers as ImpressionFields, so React Query shares the lists.
-  const filaments = useQuery({ queryKey: ['calculatorFilaments'], queryFn: api.getCalculatorFilaments, staleTime: 60_000 }).data;
-  const printers = useQuery({ queryKey: ['calculatorPrinters'], queryFn: api.getCalculatorPrinters, staleTime: 60_000 }).data;
-  const defaults = useQuery({ queryKey: ['calculatorDefaults'], queryFn: api.getCalculatorDefaults, staleTime: 60_000 }).data;
+  const filamentsQuery = useQuery({ queryKey: ['calculatorFilaments'], queryFn: api.getCalculatorFilaments, staleTime: 60_000 });
+  const printersQuery = useQuery({ queryKey: ['calculatorPrinters'], queryFn: api.getCalculatorPrinters, staleTime: 60_000 });
+  const defaultsQuery = useQuery({ queryKey: ['calculatorDefaults'], queryFn: api.getCalculatorDefaults, staleTime: 60_000 });
+  const filaments = filamentsQuery.data;
+  const printers = printersQuery.data;
+  const defaults = defaultsQuery.data;
+  const failedLists = [filamentsQuery, printersQuery, defaultsQuery].filter((q) => q.isError);
 
   const state = job.data;
-  const error = startError ?? (job.isError ? (job.error as Error).message : state?.status === 'failed' ? state.error : null);
+  settledRef.current = state?.status === 'completed' || state?.status === 'failed';
+  const jobError = startError ?? (job.isError ? (job.error as Error).message : state?.status === 'failed' ? state.error : null);
+  // A list that cannot load would otherwise leave the slicing spinner up for good.
+  const error = jobError ?? (failedLists.length > 0 ? (failedLists[0].error as Error).message : null);
   const plates = state?.status === 'completed' ? (state.plates ?? []) : null;
   const slicing = error === null && plates === null;
 
@@ -88,8 +109,15 @@ export function Import3mfPanel({ file, onAdd, onClose, pollMs = 1500 }: Import3m
   }, [slicing]);
 
   const retry = () => {
+    // Only the calculator lists failed: reload them, the slice itself is fine.
+    if (jobError === null && failedLists.length > 0) {
+      failedLists.forEach((q) => void q.refetch());
+      return;
+    }
     // Polls were lost but the server never said the job failed: ask the same job again.
-    if (jobId !== null && state?.status !== 'failed') {
+    // A 404 means the server no longer has the job (restart, retention): slice it afresh.
+    const gone = job.error instanceof ApiError && job.error.status === 404;
+    if (jobId !== null && state?.status !== 'failed' && !gone) {
       void job.refetch();
       return;
     }

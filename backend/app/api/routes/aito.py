@@ -134,6 +134,7 @@ from backend.app.services.aito_invoice_create import (
     plan_invoice,
     share_out,
 )
+from backend.app.services.aito_invoice_sweep import record_deposit_application, record_deposit_refusal
 from backend.app.services.aito_payment_links import current_link, current_links, link_view, reconcile_payment_links
 from backend.app.services.aito_quote_import import build_preview
 from backend.app.services.aito_quote_rating import read_client_quote_rating
@@ -2178,6 +2179,10 @@ async def proofread_field(
     return AitoProofreadResponse(text=corrected, model=model)
 
 
+# The import keeps the whole upload in memory for the life of its slice job (a project .3mf is a few hundred MB at most).
+_IMPORT_3MF_MAX_BYTES = 512 * 1024 * 1024
+
+
 @router.post("/import-3mf", status_code=202)
 async def start_3mf_import(
     file: UploadFile = File(...),
@@ -2193,8 +2198,9 @@ async def start_3mf_import(
     filename = file.filename or ""
     if not filename.lower().endswith(".3mf"):
         raise HTTPException(status_code=400, detail="Only .3mf files can be imported")
-    source = await file.read(settings.library_max_upload_bytes + 1)
-    if len(source) > settings.library_max_upload_bytes:
+    max_bytes = min(_IMPORT_3MF_MAX_BYTES, settings.library_max_upload_bytes)
+    source = await file.read(max_bytes + 1)
+    if len(source) > max_bytes:
         raise HTTPException(status_code=413, detail="The .3mf is too large")
     try:
         await asyncio.to_thread(importer.check_importable, source)
@@ -2235,6 +2241,22 @@ async def get_3mf_import(
         "plates": (job.result or {}).get("plates") if job.status == "completed" else None,
         "error": job.error_detail if job.status == "failed" else None,
     }
+
+
+@router.delete("/import-3mf/{job_id}", status_code=204)
+async def cancel_3mf_import(
+    job_id: int,
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """Stop the slice of an import this caller started, so an abandoned one frees its upload and slice slot.
+    204 for an own job in any state (a finished one is left as is), 404 for anyone else's or an expired one."""
+    from backend.app.services.actor import actor_user_id
+    from backend.app.services.slice_dispatch import slice_dispatch
+
+    job = slice_dispatch.get(job_id)
+    if job is None or job.kind != "aito_import" or job.owner_id != actor_user_id(current_user):
+        raise HTTPException(status_code=404, detail="Import not found or expired")
+    slice_dispatch.cancel(job_id)
 
 
 @router.get("/taxes", response_model=AitoTaxesResponse)
@@ -2956,6 +2978,9 @@ async def create_invoice(
             except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
                 logger.warning("Aito invoice %s could not be linked to estimate %s: %s", invoice_number, quote_id, e)
         applications = await apply_retainers(db, invoice_id, float(created.get("balance") or 0), plan.retainers)
+        for a in applications:
+            if a.rate_limited is not None:
+                aito_quote_sync._arm_rate_limit_throttle(a.rate_limited)
         # The deposits just spent must leave "deposit available" NOW, not at the
         # sweep's next tick: the panel re-renders off this response's board
         # refetch. Best-effort like the sweep's own read — None keeps the old
@@ -3000,6 +3025,16 @@ async def create_invoice(
                     "retainers_applied": round(sum(a.applied for a in applications), 2),
                 },
             )
+            # A deposit whose answer was lost may have been spent: put it on the timeline, marked unknown.
+            for a in applications:
+                if a.unknown_amount > 0:
+                    await record_deposit_application(
+                        db, project_pk, {"number": invoice_number}, a, "user", _actor(current_user)
+                    )
+                elif a.outcome == "refused":
+                    await record_deposit_refusal(
+                        db, project_pk, {"number": invoice_number}, a, "user", _actor(current_user)
+                    )
             await db.commit()
         except SQLAlchemyError as e:
             # Never 500 past the create, for the reason in the docstring: the
@@ -3076,7 +3111,10 @@ async def create_invoice(
         **fresh,
         url=url,
         invoice_count=count,
-        retainers=[AitoRetainerApplied(number=a.number, total=a.total, applied=a.applied) for a in applications],
+        retainers=[
+            AitoRetainerApplied(number=a.number, total=a.total, applied=a.applied, outcome=a.outcome)
+            for a in applications
+        ],
     )
 
 

@@ -405,8 +405,8 @@ def _books_answer(response_factory):
     [
         (lambda: httpx.Response(500, json={"code": 1, "message": "x"}), "Zoho Books error (HTTP 500)"),
         (lambda: httpx.Response(503, json={}), "Zoho Books error (HTTP 503)"),
-        (lambda: httpx.Response(502, content=b"<html>502</html>"), "Zoho returned a non-JSON response (HTTP 502)"),
-        (lambda: httpx.Response(504, content=b"<html>504</html>"), "Zoho returned a non-JSON response (HTTP 504)"),
+        (lambda: httpx.Response(502, content=b"<html>502</html>"), "Zoho Books error (HTTP 502)"),
+        (lambda: httpx.Response(504, content=b"<html>504</html>"), "Zoho Books error (HTTP 504)"),
         (lambda: httpx.Response(200, content=b"<html>ok</html>"), "Zoho returned a non-JSON response (HTTP 200)"),
     ],
     ids=["500-json", "503-json", "502-html", "504-html", "200-html"],
