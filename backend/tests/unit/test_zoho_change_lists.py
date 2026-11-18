@@ -161,10 +161,11 @@ async def test_a_429_carries_books_error_code_and_the_raw_retry_after(db_session
     ("status", "body", "headers", "expected"),
     [
         (429, "<html>slow down</html>", {"Retry-After": "120"}, ZohoRateLimited),
-        (404, "<html>gone</html>", {}, ZohoNotFound),
+        (404, "<html>gone</html>", {}, ZohoAmbiguous),
         (404, '["not", "a", "dict"]', {}, ZohoNotFound),
         (502, "<html>bad gateway</html>", {}, ZohoAmbiguous),
-        (403, "<html>waf</html>", {}, ZohoUpstreamError),
+        (403, "<html>waf</html>", {}, ZohoAmbiguous),
+        (400, "<html>bad</html>", {}, ZohoAmbiguous),
         (200, "<html>login</html>", {}, ZohoAmbiguous),
     ],
 )

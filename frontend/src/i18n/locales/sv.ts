@@ -10104,6 +10104,7 @@ errors: {
     forceSyncReasonHeimdallNotConfigured: 'Heimdall är inte konfigurerat',
     forceSyncReasonHeimdallUpstream: 'Heimdall returnerade ett fel',
     forceSyncReasonDepositRefused: 'Zoho vägrade att använda förskottet',
+    forceSyncReasonOutcomeUnknown: 'Utfallet är okänt — kontrollera fakturan i Zoho Books',
     forceSyncErrorCleared: 'Tidigare fel åtgärdat',
     forceSyncCreditChanged: 'från {{before}} till {{after}}',
     forceSyncQuoteTotalChanged: 'Summa från {{before}} till {{after}}',

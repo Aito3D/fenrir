@@ -39,6 +39,11 @@ describe('forceSyncStepText', () => {
     expect(text(step('credit', 'failed', { reason })).detail).toBe(expected);
   });
 
+  it('tells the operator to check Books for an outcome-unknown deposit', () => {
+    const r = text(step('invoice', 'failed', { reason: 'outcome_unknown', deposits: ['RET-1'] }));
+    expect(r.detail).toBe('Outcome unknown — check the invoice in Zoho Books');
+  });
+
   it('shows a credit change with both amounts', () => {
     const d = text(step('credit', 'fixed', { before: 500, after: 7000 })).detail!;
     expect(d).toContain(formatMoney(500, 'XPF'));

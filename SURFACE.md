@@ -2747,6 +2747,7 @@ aito.forceSyncReasonNoClient
 aito.forceSyncReasonNoQuote
 aito.forceSyncReasonNotConfigured
 aito.forceSyncReasonNotInvoiced
+aito.forceSyncReasonOutcomeUnknown
 aito.forceSyncReasonRateLimited
 aito.forceSyncReasonRefused
 aito.forceSyncReasonTimeout

@@ -900,6 +900,7 @@ export default {
     forceSyncReasonHeimdallNotConfigured: 'Heimdall non è configurato',
     forceSyncReasonHeimdallUpstream: 'Heimdall ha restituito un errore',
     forceSyncReasonDepositRefused: 'Zoho ha rifiutato di applicare l\'acconto',
+    forceSyncReasonOutcomeUnknown: 'Esito sconosciuto — controlla la fattura in Zoho Books',
     forceSyncErrorCleared: 'Errore precedente risolto',
     forceSyncCreditChanged: 'da {{before}} a {{after}}',
     forceSyncQuoteTotalChanged: 'Totale da {{before}} a {{after}}',

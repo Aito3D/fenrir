@@ -900,6 +900,7 @@ export default {
     forceSyncReasonHeimdallNotConfigured: 'Heimdallが設定されていません',
     forceSyncReasonHeimdallUpstream: 'Heimdallがエラーを返しました',
     forceSyncReasonDepositRefused: 'Zohoが前受金の充当を拒否しました',
+    forceSyncReasonOutcomeUnknown: '結果不明 — Zoho Booksで請求書を確認してください',
     forceSyncErrorCleared: '以前のエラーを解消しました',
     forceSyncCreditChanged: '{{before}} から {{after}} へ',
     forceSyncQuoteTotalChanged: '合計 {{before}} から {{after}} へ',

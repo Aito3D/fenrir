@@ -10076,6 +10076,7 @@ export default {
     forceSyncReasonHeimdallNotConfigured: 'Heimdall nie jest skonfigurowany',
     forceSyncReasonHeimdallUpstream: 'Heimdall zwrócił błąd',
     forceSyncReasonDepositRefused: 'Zoho odmówiło zastosowania zaliczki',
+    forceSyncReasonOutcomeUnknown: 'Wynik nieznany — sprawdź fakturę w Zoho Books',
     forceSyncErrorCleared: 'Poprzedni błąd wyczyszczony',
     forceSyncCreditChanged: 'z {{before}} na {{after}}',
     forceSyncQuoteTotalChanged: 'Suma z {{before}} na {{after}}',

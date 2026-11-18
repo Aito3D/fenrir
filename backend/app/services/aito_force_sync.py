@@ -26,6 +26,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_invoice_sweep, aito_payment_links, aito_quote_sync
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_invoice_cache import invoice_total_of
+from backend.app.services.aito_invoice_sweep import _keep_what_landed
 from backend.app.services.aito_search import remember_document_numbers
 from backend.app.services.heimdall import heimdall_service
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
@@ -121,6 +122,12 @@ async def _invoice_step(db: AsyncSession, project: AitoProject) -> StepResult:
     if settlement is not None and settlement.remaining is not None:
         project.customer_credit_total = settlement.remaining
     await db.commit()
+    if settlement is not None and settlement.unknown and after > 0:
+        # An apply timed out: Books may or may not have taken it. Not "in sync" until someone looks.
+        detail: dict = {"reason": "outcome_unknown", "deposits": settlement.unknown}
+        if settlement.refused:
+            detail["refused"] = settlement.refused
+        return StepResult("invoice", "failed", detail)
     if settlement is not None and settlement.refused and after > 0:
         # A linked deposit had a share to spend and Books did not take it:
         # the balance stays open while the money sits unused. Not in sync.
@@ -168,25 +175,6 @@ async def _links_step(db: AsyncSession, project: AitoProject) -> StepResult:
     if errors:
         return StepResult("payment_links", "failed", {"reason": "upstream", "message": errors[0]})
     return StepResult("payment_links", "fixed" if after != before else "in_sync")
-
-
-async def _keep_what_landed(db: AsyncSession, project: AitoProject) -> None:
-    """After a step raised: commit what it recorded (a settle can raise a 429
-    on its re-read AFTER Books took the money and its events were recorded —
-    no write to Books without its event), and leave the session usable for
-    the steps after it. A session a failed commit poisoned is rolled back,
-    and the project reloaded, since a rollback expires it."""
-    if db.is_active:
-        try:
-            await db.commit()
-            return
-        except Exception as exc:  # noqa: BLE001 - fall through to the rollback
-            logger.warning("Force sync: committing after a failed step on project %s failed: %s", project.id, exc)
-    try:
-        await db.rollback()
-        await db.refresh(project)
-    except Exception as exc:  # noqa: BLE001 - the later steps report their own failures
-        logger.warning("Force sync: could not recover the session after a failed step: %s", exc)
 
 
 async def run_force_sync(

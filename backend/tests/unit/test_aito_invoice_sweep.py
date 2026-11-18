@@ -323,12 +323,11 @@ async def test_a_429_stops_the_sweep_and_commits_what_is_already_refreshed(db_se
     # Never reached EST-NEVER: the loop stopped dead at the 429, not merely
     # skipped the one project like a plain ZohoUpstreamError would.
     assert calls == ["EST-GOOD", "EST-BAD"]
-    # Exactly one commit -- T-010's per-project commit for EST-GOOD, taken
-    # right after that project succeeds and well before EST-BAD is even
-    # attempted. There is no longer a second, end-of-pass commit for this
-    # path to also take (dropped as dead code by T-010: by the time a 429
-    # can fire, every prior success is already committed).
-    assert len(commit_calls) == 1
+    # Two commits -- T-010's per-project commit for EST-GOOD, taken right
+    # after that project succeeds and well before EST-BAD is even attempted,
+    # and (T-683) the 429 branch's keep-what-landed commit, empty here since
+    # EST-BAD staged nothing before the rate limit.
+    assert len(commit_calls) == 2
 
     db_session.expire_all()
     good_row = await db_session.get(AitoProject, good_id)
@@ -975,6 +974,45 @@ async def test_rate_limit_during_the_reread_after_applying_propagates(db_session
         await sweep_invoices(db_session, force=True)
 
     assert len(books.applied) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_429_after_a_deposit_landed_commits_its_event_even_if_a_later_step_rolls_back(db_session, monkeypatch):
+    """T-683: Books spent the deposit, then answered 429; the timeline entry must be
+    committed by the sweep itself, not ride on a later commit that may never come."""
+    project = await _project(db_session, quote_id="EST1")
+    project_id = project.id
+    _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(4000.0, "overdue")]},
+        estimate=_estimate("RET1"),
+        payments=[_payment("P1", "RET1", 4000.0)],
+    )
+
+    async def limited_get_invoice(db, invoice_id):
+        raise ZohoRateLimited("Too many requests", retry_after=5.0)
+
+    monkeypatch.setattr(zoho_service, "get_invoice", limited_get_invoice)
+
+    with pytest.raises(ZohoRateLimited):
+        await sweep_invoices(db_session, force=True)
+    await db_session.rollback()  # what poll_contacts' failure handler does next
+
+    assert [e.kind for e in await _events(db_session, project_id)] == ["invoice.deposit_applied"]
+
+
+@pytest.mark.asyncio
+async def test_keep_what_landed_rolls_back_when_the_commit_fails(db_session, monkeypatch):
+    project = await _project(db_session, quote_id="EST1")
+
+    async def failing_commit():
+        raise OperationalError("COMMIT", {}, Exception("database is locked"))
+
+    monkeypatch.setattr(db_session, "commit", failing_commit)
+
+    await aito_invoice_sweep._keep_what_landed(db_session, project)  # must not raise
+
+    assert project.quote_id == "EST1"
 
 
 @pytest.mark.asyncio

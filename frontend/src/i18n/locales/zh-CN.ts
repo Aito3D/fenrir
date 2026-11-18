@@ -900,6 +900,7 @@ export default {
     forceSyncReasonHeimdallNotConfigured: 'Heimdall 未配置',
     forceSyncReasonHeimdallUpstream: 'Heimdall 返回了错误',
     forceSyncReasonDepositRefused: 'Zoho 拒绝抵扣预付款',
+    forceSyncReasonOutcomeUnknown: '结果未知 — 请在 Zoho Books 中检查发票',
     forceSyncErrorCleared: '之前的错误已解决',
     forceSyncCreditChanged: '从 {{before}} 变为 {{after}}',
     forceSyncQuoteTotalChanged: '总额从 {{before}} 变为 {{after}}',

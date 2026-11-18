@@ -10071,6 +10071,7 @@ export default {
     forceSyncReasonHeimdallNotConfigured: 'Heimdall is niet ingesteld',
     forceSyncReasonHeimdallUpstream: 'Heimdall gaf een fout terug',
     forceSyncReasonDepositRefused: 'Zoho weigerde het voorschot toe te passen',
+    forceSyncReasonOutcomeUnknown: 'Uitkomst onbekend — controleer de factuur in Zoho Books',
     forceSyncErrorCleared: 'Eerdere fout opgelost',
     forceSyncCreditChanged: 'van {{before}} naar {{after}}',
     forceSyncQuoteTotalChanged: 'Totaal van {{before}} naar {{after}}',

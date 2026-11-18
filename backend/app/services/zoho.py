@@ -612,9 +612,19 @@ class ZohoService:
         except ValueError as e:
             if response.status_code < 400:
                 raise ZohoAmbiguous(f"Zoho returned a non-JSON response (HTTP {response.status_code})") from e
-            payload = {}  # a gateway's HTML 4xx/5xx still maps to its typed error
+            payload = self._non_json_error_payload(response)
         self._raise_for_status(response, payload)
         return payload
+
+    @staticmethod
+    def _non_json_error_payload(response: httpx.Response) -> dict:
+        """The empty payload for a non-JSON error body, where the status alone
+        decides: 429 and 5xx. Any other 4xx says nothing without Books' JSON
+        (an edge/proxy HTML 404 is not "the document is gone"), so it is
+        ZohoAmbiguous, i.e. retried as transient."""
+        if response.status_code == 429 or response.status_code >= 500:
+            return {}
+        raise ZohoAmbiguous(f"Zoho Books error (HTTP {response.status_code})")
 
     # The shared request shells behind the per-document PDF and email methods
     # (estimates, invoices, retainer invoices). Each public method names its
@@ -628,7 +638,7 @@ class ZohoService:
             try:
                 payload = response.json() if response.content else {}
             except ValueError:
-                payload = {}
+                payload = self._non_json_error_payload(response)
             self._raise_for_status(response, payload)
         if not response.content.startswith(b"%PDF-"):
             # A 200 that is not a PDF means Books answered with something else

@@ -900,6 +900,7 @@ export default {
     forceSyncReasonHeimdallNotConfigured: 'Heimdall이 설정되지 않았습니다',
     forceSyncReasonHeimdallUpstream: 'Heimdall에서 오류를 반환했습니다',
     forceSyncReasonDepositRefused: 'Zoho가 선수금 적용을 거부했습니다',
+    forceSyncReasonOutcomeUnknown: '결과를 알 수 없음 — Zoho Books에서 청구서를 확인하세요',
     forceSyncErrorCleared: '이전 오류가 해결되었습니다',
     forceSyncCreditChanged: '{{before}}에서 {{after}}(으)로',
     forceSyncQuoteTotalChanged: '합계 {{before}}에서 {{after}}(으)로',

@@ -900,6 +900,7 @@ export default {
     forceSyncReasonHeimdallNotConfigured: 'Heimdall yapılandırılmamış',
     forceSyncReasonHeimdallUpstream: 'Heimdall bir hata döndürdü',
     forceSyncReasonDepositRefused: 'Zoho avansı uygulamayı reddetti',
+    forceSyncReasonOutcomeUnknown: 'Sonuç bilinmiyor — faturayı Zoho Books\'ta kontrol edin',
     forceSyncErrorCleared: 'Önceki hata giderildi',
     forceSyncCreditChanged: '{{before}} değerinden {{after}} değerine',
     forceSyncQuoteTotalChanged: 'Toplam {{before}} değerinden {{after}} değerine',

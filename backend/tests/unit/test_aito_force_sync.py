@@ -567,9 +567,36 @@ async def test_a_deposit_apply_that_timed_out_is_recorded_as_outcome_unknown(
     _real_settle_books(monkeypatch, stubs, lost)
     p = await _project(db_session)
     r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
-    assert _by_key(r.json())["invoice"]["detail"] == {"reason": "refused"}
+    # T-660: an outcome-unknown deposit is not a refusal (the money may have moved), but not in sync either.
+    assert _by_key(r.json())["invoice"] == {
+        "key": "invoice",
+        "outcome": "failed",
+        "detail": {"reason": "outcome_unknown", "deposits": ["RET-1", "RET-2"]},
+    }
     rows = (await db_session.execute(select(AitoEvent).where(AitoEvent.kind == "invoice.deposit_applied"))).scalars()
     assert sorted((e.detail["retainer_number"], e.detail["amount"], e.detail["outcome"]) for e in rows) == [
         ("RET-1", 4000.0, "unknown"),
         ("RET-2", 3000.0, "unknown"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_a_refused_and_an_outcome_unknown_deposit_report_outcome_unknown_with_both(
+    async_client, db_session, stubs, monkeypatch
+):
+    from backend.app.services.zoho import ZohoRequestRejected, ZohoUnreachable
+
+    calls = []
+
+    async def mixed(db, invoice_id, invoice_payments):
+        calls.append(invoice_payments)
+        raise (ZohoRequestRejected("no") if len(calls) == 1 else ZohoUnreachable("no answer"))
+
+    _real_settle_books(monkeypatch, stubs, mixed)
+    p = await _project(db_session)
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    assert _by_key(r.json())["invoice"] == {
+        "key": "invoice",
+        "outcome": "failed",
+        "detail": {"reason": "outcome_unknown", "deposits": ["RET-2"], "refused": ["RET-1"]},
+    }

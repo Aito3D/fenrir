@@ -900,6 +900,7 @@ export default {
     forceSyncReasonHeimdallNotConfigured: 'Heimdall ist nicht eingerichtet',
     forceSyncReasonHeimdallUpstream: 'Heimdall hat einen Fehler gemeldet',
     forceSyncReasonDepositRefused: 'Zoho hat die Anrechnung der Anzahlung abgelehnt',
+    forceSyncReasonOutcomeUnknown: 'Ergebnis unbekannt — Rechnung in Zoho Books prüfen',
     forceSyncErrorCleared: 'Früherer Fehler behoben',
     forceSyncCreditChanged: 'von {{before}} auf {{after}}',
     forceSyncQuoteTotalChanged: 'Summe von {{before}} auf {{after}}',

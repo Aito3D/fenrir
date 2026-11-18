@@ -904,6 +904,7 @@ export default {
     forceSyncReasonHeimdallNotConfigured: 'Heimdall is not configured',
     forceSyncReasonHeimdallUpstream: 'Heimdall returned an error',
     forceSyncReasonDepositRefused: 'Zoho refused to apply the deposit',
+    forceSyncReasonOutcomeUnknown: 'Outcome unknown — check the invoice in Zoho Books',
     forceSyncErrorCleared: 'Previous error cleared',
     forceSyncCreditChanged: 'from {{before}} to {{after}}',
     forceSyncQuoteTotalChanged: 'Total from {{before}} to {{after}}',
