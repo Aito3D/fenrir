@@ -155,6 +155,7 @@ describe('mapping row on a narrow screen', () => {
     render(
       <FilamentMapping
         printerId={1}
+        blockedFilaments={[]}
         filamentReqs={{
           filaments: [{ slot_id: 1, type: 'PLA', color: '#DE4343', used_grams: 297.6, used_meters: 90, ...filament }],
         }}

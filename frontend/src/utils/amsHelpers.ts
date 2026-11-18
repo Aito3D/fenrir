@@ -611,6 +611,8 @@ interface MatchTray {
   trayInfoIdx?: string;
   extruderId?: number;
   remain?: number;
+  /** The user's groups may not use this filament (#3522): never auto-picked. */
+  blocked?: boolean;
 }
 
 /**
@@ -665,7 +667,7 @@ export function matchFilamentsToTrays<R extends MatchRequirement, T extends Matc
   requirements.forEach((requirement, index) => {
     if (options.skip?.(requirement, index)) return;
     ordered.forEach((tray, rank) => {
-      if (used.has(tray.globalTrayId)) return;
+      if (used.has(tray.globalTrayId) || tray.blocked) return;
       if (requirement.nozzle_id != null && !options.ftsActive && tray.extruderId !== requirement.nozzle_id) return;
       const sameVariant = !!requirement.tray_info_idx && tray.trayInfoIdx === requirement.tray_info_idx;
       if (!sameVariant && !filamentTypesCompatible(tray.type, requirement.type)) return;

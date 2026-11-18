@@ -46,6 +46,7 @@ from backend.app.core.auth import (
     verify_password,
 )
 from backend.app.core.database import async_session, get_db
+from backend.app.core.filament_scope import filament_policies_for
 from backend.app.core.oidc_env import env_bool
 from backend.app.models.api_key import APIKey
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent, EventType, TokenType
@@ -116,6 +117,7 @@ def _user_to_response(user: User) -> UserResponse:
         auth_source=getattr(user, "auth_source", "local"),
         groups=[GroupBrief(id=g.id, name=g.name) for g in user.groups],
         permissions=sorted(user.get_permissions()),
+        filament_policies=filament_policies_for(user),
         created_at=user.created_at.isoformat(),
     )
 
@@ -161,6 +163,10 @@ async def _api_key_to_user_response(db: AsyncSession, api_key) -> UserResponse:
         # imply capabilities the key does not inherit.
         groups=[],
         permissions=apikey_effective_permissions(api_key, owner),
+        # The owner's: the scheduler and the queue judge a key's jobs by the
+        # owner's filament rules (#3522). A legacy ownerless key's jobs have no
+        # creator, so they are unrestricted, as None says.
+        filament_policies=filament_policies_for(owner) if owner else None,
         created_at=api_key.created_at.isoformat(),
     )
 

@@ -13,6 +13,8 @@ import { useFilamentLabels } from './useFilamentLabels';
 import { autoAssignRackPositions, rackOptionsForGroup } from '../../utils/nozzleRack';
 import type { FilamentMappingProps, RackGroupInfo } from './types';
 import { useUiSettings } from '../../hooks/useUiSettings';
+import { useFilamentPolicies } from '../../hooks/useFilamentPolicies';
+import { filamentName } from '../../utils/filamentScope';
 
 /**
  * Filament mapping UI for comparing required filaments with loaded AMS slots.
@@ -21,6 +23,7 @@ import { useUiSettings } from '../../hooks/useUiSettings';
 export function FilamentMapping({
   printerId,
   filamentReqs,
+  blockedFilaments,
   manualMappings,
   onManualMappingChange,
   onEstimatedCostChange,
@@ -105,6 +108,7 @@ export function FilamentMapping({
   // the dispatcher uses (#1766). Without this, the per-slot dropdown's
   // auto-suggestion could disagree with what actually gets dispatched.
   const { data: settings } = useUiSettings();
+  const filamentPolicies = useFilamentPolicies();
   const { data: inventoryRemain } = useQuery({
     queryKey: ['printer-inventory-remain', printerId],
     queryFn: () => api.getInventoryRemain(printerId),
@@ -155,7 +159,15 @@ export function FilamentMapping({
       gatedPreferLowest,
       inventoryByTrayId,
       slotSpools,
+      filamentPolicies,
     );
+
+  // Filaments this file needs that the user's group may not print with
+  // (#3522). The server refuses such a job; this says so before submitting.
+  // The dialog passes the list its submit check uses, so the two never disagree.
+  const blockedReqNames = blockedFilaments;
+  const blockedSlotReason = (f: { type: string; trayInfoIdx?: string }) =>
+    t('printModal.filamentBlockedSlot', { filament: filamentName(f.type, f.trayInfoIdx) });
 
   // Per-slot sub-brand + material-disambiguated colour labels (#1718). Same
   // shared hook the model-mode FilamentOverride uses so both panels render
@@ -372,7 +384,9 @@ export function FilamentMapping({
             </span>
           ))}
         </span>
-        {hasTypeMismatch ? (
+        {blockedReqNames.length > 0 ? (
+          <span className="shrink-0 text-red-700 dark:text-red-400">({t('printModal.statusBlocked')})</span>
+        ) : hasTypeMismatch ? (
           <span className="shrink-0 text-orange-700 dark:text-orange-400">({t('printModal.statusTypeNotFound')})</span>
         ) : hasColorMismatch ? (
           <span className="shrink-0 text-yellow-700 dark:text-yellow-400">({t('printModal.statusColorMismatch')})</span>
@@ -385,6 +399,15 @@ export function FilamentMapping({
           }`}
         />
       </button>
+
+      {/* Outside the collapsible part: the panel starts collapsed, and this is
+          the reason the submit button is disabled (#3522). */}
+      {blockedReqNames.length > 0 && (
+        <div role="alert" className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/20 text-red-700 dark:text-red-400 text-xs">
+          <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+          {t('printModal.filamentBlockedFile', { filaments: blockedReqNames.join(', ') })}
+        </div>
+      )}
 
       {isExpanded && (
         <div className="fold-open mt-2 bg-bambu-dark rounded-lg p-3 space-y-2">
@@ -590,10 +613,14 @@ export function FilamentMapping({
                         value: String(f.globalTrayId),
                         label: `${f.label}: ${f.spoolName || f.traySubBrands || f.type} (${f.colorName})`,
                         meta: `${remainingLabel}${ftsBadge}${nozzleBadge}`,
-                        disabled: wrongNozzle,
-                        disabledReason: onLeft
-                          ? t('printModal.leftNozzleTooltip')
-                          : t('printModal.rightNozzleTooltip'),
+                        // Greyed for a slot on the wrong nozzle, or one the
+                        // user's group may not use (#3522).
+                        disabled: wrongNozzle || !!f.blocked,
+                        disabledReason: f.blocked
+                          ? blockedSlotReason(f)
+                          : onLeft
+                            ? t('printModal.leftNozzleTooltip')
+                            : t('printModal.rightNozzleTooltip'),
                         rgba: f.color,
                         extraColors: f.extraColors,
                         effectType: f.effectType,
@@ -608,8 +635,15 @@ export function FilamentMapping({
                       };
                   })}
                 />
-                {/* Status icon */}
-                {item.status === 'match' ? (
+                {/* Status icon. A blocked tray outranks the match status: it
+                    can still be the chosen one through a manual pick (an older
+                    queue job, the archive's saved mapping), and the server
+                    will pick another tray for it (#3522). */}
+                {item.loaded?.blocked ? (
+                  <span role="img" title={blockedSlotReason(item.loaded)} aria-label={blockedSlotReason(item.loaded)}>
+                    <AlertTriangle className="w-3 h-3 text-red-600 dark:text-red-400" />
+                  </span>
+                ) : item.status === 'match' ? (
                   <Check className="w-3 h-3 text-bambu-green" />
                 ) : item.status === 'type_only' ? (
                   <span

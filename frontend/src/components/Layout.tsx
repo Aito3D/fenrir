@@ -25,6 +25,7 @@ import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 import aito3dLogo from '../assets/aito3d_logo.png';
 import { AnnouncementsPanel } from './AnnouncementsPanel';
+import { AccountMenu } from './AccountMenu';
 import { AnnouncementBanner } from './AnnouncementBanner';
 import { useAnnouncements } from '../hooks/useAnnouncements';
 // Required by upstream's root-level mount adopted in this merge. The fork had
@@ -906,13 +907,7 @@ export function Layout() {
                 </button>
                 {authEnabled && user && (
                   <>
-                    <button
-                      onClick={() => setShowChangePasswordModal(true)}
-                      className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                      title={t('changePassword.title')}
-                    >
-                      <Key className="w-5 h-5" />
-                    </button>
+                    <AccountMenu username={user.username} onChangePassword={() => setShowChangePasswordModal(true)} />
                     <button
                       onClick={logout}
                       className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
@@ -1021,13 +1016,7 @@ export function Layout() {
               </button>
               {authEnabled && user && (
                 <>
-                  <button
-                    onClick={() => setShowChangePasswordModal(true)}
-                    className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                    title={t('changePassword.title')}
-                  >
-                    <Key className="w-5 h-5" />
-                  </button>
+                  <AccountMenu username={user.username} onChangePassword={() => setShowChangePasswordModal(true)} />
                   <button
                     onClick={logout}
                     className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"

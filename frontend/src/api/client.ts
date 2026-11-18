@@ -540,6 +540,7 @@ export interface Printer {
   supports_rtsp?: boolean;
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
   dispatch_priority: number | null;  // Place in the pick order of any-model jobs, lowest first (#2915)
+  require_plate_clear: boolean | null;  // Own "Require plate-clear confirmation", null follows the app setting (#2860)
   wled_config: WLEDConfig | null;
   created_at: string;
   updated_at: string;
@@ -905,6 +906,7 @@ export interface PrinterCreate {
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;
   dispatch_priority?: number | null;
+  require_plate_clear?: boolean | null;
   wled_config?: WLEDConfig | null;
 }
 
@@ -1074,6 +1076,13 @@ export interface Archive {
   total_filament_actual_grams: number | null;
   successful_run_count: number;
   failed_run_count: number;
+  // What all its runs cost, summed as Statistics does (#3609); null where no
+  // run has the figure. The archive's own cost and energy stay the file's and
+  // the first run's.
+  total_cost?: number | null;
+  total_energy_kwh?: number | null;
+  total_energy_cost?: number | null;
+  total_wear_cost?: number | null;
 }
 
 export interface ArchiveSlim {
@@ -1906,6 +1915,8 @@ export interface AppSettings {
   // Server-backed so two admins seed the same alert rules and a restore
   // brings them back; see utils/locationSensorDefaults.ts.
   location_sensor_alert_defaults: string;
+  // Markdown on the Connect slicer page, above the user's virtual printers (#3602).
+  virtual_printer_connect_instructions: string;
 }
 
 export type AppSettingsUpdate = Partial<Omit<AppSettings, 'octoeverywhere_api_key_configured'>>;
@@ -6507,6 +6518,21 @@ export interface GroupBrief {
   name: string;
 }
 
+/** One filament rule of a group (#3522): a material type or a slicer filament id */
+export interface FilamentRule {
+  match: 'material' | 'filament_id';
+  value: string;
+}
+
+export type FilamentRuleMode = 'allow' | 'block';
+
+/** One restricted group's filament rules, from /auth/me (#3522) */
+export interface FilamentPolicy {
+  group: string;
+  mode: FilamentRuleMode;
+  rules: FilamentRule[];
+}
+
 export interface Group {
   id: number;
   name: string;
@@ -6518,6 +6544,10 @@ export interface Group {
   printer_ids: number[];
   /** Matched against Printer.location, so printers added there later are included */
   locations: string[];
+  /** Members may only print with filaments these rules allow (#3522) */
+  restrict_filaments: boolean;
+  filament_rule_mode: FilamentRuleMode;
+  filament_rules: FilamentRule[];
   user_count: number;
   created_at: string;
   updated_at: string;
@@ -6534,6 +6564,9 @@ export interface GroupCreate {
   restrict_printers?: boolean;
   printer_ids?: number[];
   locations?: string[];
+  restrict_filaments?: boolean;
+  filament_rule_mode?: FilamentRuleMode;
+  filament_rules?: FilamentRule[];
 }
 
 export interface GroupUpdate {
@@ -6543,6 +6576,9 @@ export interface GroupUpdate {
   restrict_printers?: boolean;
   printer_ids?: number[];
   locations?: string[];
+  restrict_filaments?: boolean;
+  filament_rule_mode?: FilamentRuleMode;
+  filament_rules?: FilamentRule[];
 }
 
 export interface PermissionInfo {
@@ -6594,6 +6630,8 @@ export interface UserResponse {
   auth_source: string;  // "local" or "ldap"
   groups: GroupBrief[];
   permissions: Permission[];  // All permissions from groups
+  /** null: may print with every filament (#3522) */
+  filament_policies?: FilamentPolicy[] | null;
   created_at: string;
 }
 
@@ -8350,6 +8388,8 @@ export const api = {
         used_grams: number;
         used_meters: number;
         used_in_plate?: boolean;
+        /** Slicer filament preset id, e.g. GFG03; '' when the 3MF names none. */
+        tray_info_idx?: string;
       }>;
     }>(`/archives/${archiveId}/filament-requirements${qs.toString() ? `?${qs}` : ''}`);
   },
@@ -11301,6 +11341,8 @@ export const api = {
         used_grams: number;
         used_meters: number;
         used_in_plate?: boolean;
+        /** Slicer filament preset id, e.g. GFG03; '' when the 3MF names none. */
+        tray_info_idx?: string;
       }>;
     }>(`/library/files/${fileId}/filament-requirements${qs.toString() ? `?${qs}` : ''}`);
   },
@@ -12367,18 +12409,40 @@ export const multiVirtualPrinterApi = {
   getCaCertificate: () =>
     request<VPCaCertificate>('/virtual-printers/ca-certificate'),
 
-  // A script that adds the CA to Bambu Studio and OrcaSlicer, with the CA
-  // written into it: 'windows' (.cmd) or 'unix' (.sh, Linux and macOS).
   // The signed-in user's personal access code (#1430); renewing replaces it.
   getMyAccessCode: () => request<{ code: string }>('/virtual-printers/my-access-code'),
   renewMyAccessCode: () => request<{ code: string }>('/virtual-printers/my-access-code', { method: 'POST' }),
 
+  // What the signed-in user enters in their slicer (#3602).
+  getConnectInfo: () => request<VPConnectInfo>('/virtual-printers/connect-info'),
+
+  // A script that adds the CA to Bambu Studio and OrcaSlicer, with the CA
+  // written into it: 'windows' (.cmd) or 'unix' (.sh, Linux and macOS).
   getCaCertificateInstaller: (platform: 'windows' | 'unix') =>
     request<{ filename: string; content: string }>(`/virtual-printers/ca-certificate/installer/${platform}`),
 
   diagnose: (id: number) =>
     request<VPDiagnosticResult>(`/virtual-printers/${id}/diagnostic`),
 };
+
+/** A virtual printer the signed-in user may send to with their personal code (#3602). */
+export interface VPConnectPrinter {
+  id: number;
+  name: string;
+  mode: 'library' | 'review' | 'queue';
+  model: string;
+  model_name: string;
+  serial: string;
+  address: string;
+  target_printer_name: string | null;
+  running: boolean;
+}
+
+export interface VPConnectInfo {
+  auth_enabled: boolean;
+  instructions: string;
+  printers: VPConnectPrinter[];
+}
 
 /** The shared CA certificate every virtual printer presents — imported once
  *  into the slicer's trust store. Only the public certificate is returned. */

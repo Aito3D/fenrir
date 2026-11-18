@@ -114,6 +114,7 @@ const PrinterLocationsPage = lazyWithReload(() => import('./pages/PrinterLocatio
 const InventoryPage = lazyWithReload(() => import('./pages/InventoryPage'));
 const ModelSourcesPage = lazyWithReload(() => import('./pages/ModelSourcesPage').then(m => ({ default: m.ModelSourcesPage })));
 const SystemInfoPage = lazyWithReload(() => import('./pages/SystemInfoPage').then(m => ({ default: m.SystemInfoPage })));
+const ConnectSlicerPage = lazyWithReload(() => import('./pages/ConnectSlicerPage').then(m => ({ default: m.ConnectSlicerPage })));
 const LoginPage = lazyWithReload(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
 const ConnectAuthorizePage = lazyWithReload(() => import('./pages/ConnectAuthorizePage').then(m => ({ default: m.ConnectAuthorizePage })));
 const SetupPage = lazyWithReload(() => import('./pages/SetupPage').then(m => ({ default: m.SetupPage })));
@@ -370,6 +371,8 @@ const router = createBrowserRouter(
         <Route path="users" element={<Navigate to="/settings?tab=users" replace />} />
         <Route path="groups" element={<Navigate to="/settings?tab=users" replace />} />
         <Route path="system" element={<SystemInfoPage />} />
+        {/* Any signed-in user: what to enter in the slicer, without Settings access (#3602). */}
+        <Route path="connect-slicer" element={<ConnectSlicerPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="gcode-viewer" element={<GCodeViewerPage />} />
         <Route path="external/:id" element={<ExternalLinkPage />} />

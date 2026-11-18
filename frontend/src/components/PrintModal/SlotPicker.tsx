@@ -309,7 +309,9 @@ export function SlotPicker({
                 }`}
               >
                 {renderSwatch(row)}
-                <span className="flex-1 min-w-0 truncate" title={row.label}>
+                {/* No title of its own on a disabled row: the label fills most
+                    of the row, and its title would hide the row's reason. */}
+                <span className="flex-1 min-w-0 truncate" title={row.disabled ? undefined : row.label}>
                   {row.label}
                   {row.meta ? <span className="text-bambu-gray">{row.meta}</span> : null}
                 </span>
