@@ -313,6 +313,8 @@ def compute_board(
 ) -> list[dict]:
     """Board rows for every unfinished sales order, in allocation sequence.
 
+    Counter orders (reference "Comptoir", a walk-in sale) come first, then the rest by date and number.
+
     ``orders`` and ``purchase_orders`` are Zoho Books detail documents,
     ``items`` maps item id to the Books item. Draft and void orders, and orders
     older than ``max_age_days`` (0 = no limit), are left out and take no stock.
@@ -322,7 +324,10 @@ def compute_board(
     core = {brand.casefold() for brand in core_brands}
 
     kept: list[tuple[dict, int, list[dict]]] = []
-    for order in sorted(orders, key=lambda o: (o.get("date") or "", o.get("salesorder_number") or "")):
+    for order in sorted(
+        orders,
+        key=lambda o: (o.get("reference_number") != "Comptoir", o.get("date") or "", o.get("salesorder_number") or ""),
+    ):
         age = age_days(order.get("date") or "", today)
         if order.get("status") in _SKIPPED_STATUSES or (max_age_days > 0 and age > max_age_days):
             continue

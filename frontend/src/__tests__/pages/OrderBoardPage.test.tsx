@@ -80,7 +80,7 @@ const pay = (o: Partial<OrderPayment> = {}): OrderPayment => ({
 });
 
 const fin = (n: number, o: Partial<FinishedOrderRow> = {}): FinishedOrderRow => ({
-  id: `f${n}`, number: `SO-F${String(n).padStart(3, '0')}`, customer: `Client ${n}`, date: '2026-08-01', total: 5000, currency: 'XPF',
+  id: `f${n}`, number: `SO-F${String(n).padStart(3, '0')}`, customer: `Client ${n}`, customer_id: 'c1', date: '2026-08-01', total: 5000, currency: 'XPF',
   reference: '', units: { shipped: 3, total: 3 }, paid_flag: null, payment: null, is_core: null, zoho_url: null, ...o,
 });
 

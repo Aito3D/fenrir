@@ -787,6 +787,13 @@ async def test_finished_list_is_newest_first_and_costs_no_zoho_call(db_session, 
 
 
 @pytest.mark.asyncio
+async def test_finished_rows_carry_customer_id(db_session, zoho):
+    await _synced(db_session, zoho, order(1, shipped=1, customer="c7"))
+    rows = (await sync.read_finished(db_session))["rows"]
+    assert rows[0]["customer_id"] == "c7"
+
+
+@pytest.mark.asyncio
 async def test_finished_row_says_when_the_last_parcel_left(db_session, zoho):
     shipped = {**order(1, shipped=1), "packages": [{"shipment_date": "2026-11-02"}, {"shipment_date": "2026-11-04"}]}
     await _synced(db_session, zoho, shipped, {**order(2, shipped=1), "packages": [{"shipment_date": ""}]})

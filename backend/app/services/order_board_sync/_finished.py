@@ -130,6 +130,7 @@ async def read_finished(db: AsyncSession) -> dict:
             "id": d.zoho_id,
             "number": d.header.get("salesorder_number"),
             "customer": d.header.get("customer_name"),
+            "customer_id": d.header.get("customer_id") or "",
             "date": d.header.get("date"),
             "total": d.header.get("total"),
             "currency": d.header.get("currency_code"),

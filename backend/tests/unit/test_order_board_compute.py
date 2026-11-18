@@ -93,6 +93,13 @@ def test_worked_case_from_the_brief():
     assert rows[1]["ready_ratio"] == pytest.approx(1 / 3)
 
 
+def test_counter_order_takes_stock_before_older_orders():
+    counter = {**so("SO-2", "2026-01-10", [line("A", 1)]), "reference_number": "Comptoir"}
+    orders = [so("SO-1", "2026-01-05", [line("A", 1)]), counter]
+    rows = compute_board(orders, [], {"A": item(1)}, TODAY)
+    assert [(r["number"], only_line(r)["state"]) for r in rows] == [("SO-2", "ready"), ("SO-1", "to_order")]
+
+
 def test_same_date_orders_are_served_by_order_number():
     orders = [so("SO-B", "2026-01-05", [line("A", 1)]), so("SO-A", "2026-01-05", [line("A", 1)])]
     rows = compute_board(orders, [], {"A": item(1)}, TODAY)
