@@ -872,7 +872,7 @@ async def perform_maintenance(
             printer_name=printer.name,
             maintenance_type_id=item.maintenance_type_id,
             maintenance_type_name=item.maintenance_type.name,
-            hours_at_maintenance=current_hours,
+            hours_at_maintenance=hours_now,
             notes=data.notes,
             performed_by_id=performed_by_id,
             performed_by_username=performed_by_username,
