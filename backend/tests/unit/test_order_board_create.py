@@ -27,8 +27,10 @@ ITEMS = {
 @pytest.fixture(autouse=True)
 def no_ref_left_over():
     create_module._created.clear()
+    create_module._ref_locks.clear()
     yield
     create_module._created.clear()
+    create_module._ref_locks.clear()
 
 
 @pytest.fixture
@@ -122,6 +124,45 @@ async def test_confirm_failure_voids_the_draft(db_session, books):
     assert books.voided == ["9"]
     assert await _docs(db_session) == []
     assert create_module._created == {}  # a retry with the same ref tries again
+
+
+@pytest.mark.asyncio
+async def test_failed_creates_leave_no_lock_behind(db_session, books):
+    books.open_error = ZohoUpstreamError("open boom")
+    lines = [{"item_id": "A", "quantity": 1}]
+    results = await asyncio.gather(
+        actions.create_counter_order(db_session, "c1", lines, "ref-3", by=None),
+        actions.create_counter_order(db_session, "c1", lines, "ref-3", by=None),
+        return_exceptions=True,
+    )
+    assert all(isinstance(r, actions.OrderActionRefused) for r in results)
+    assert len(books.payloads) == 2  # the waiter retried once the first had failed, never alongside it
+    assert create_module._ref_locks == {}
+    books.open_error = None
+    assert await actions.create_counter_order(db_session, "c1", lines, "ref-3", by=None) == "9"
+    assert create_module._ref_locks == {}
+
+
+@pytest.mark.asyncio
+async def test_an_order_a_pass_stored_first_is_reused(db_session, books, monkeypatch):
+    """The pass commits the order between the stored-copy check and the insert: the unique key refuses the insert."""
+    real = sync.find_stored
+    calls = {"n": 0}
+
+    async def find_stored(db, salesorder_id):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            db_session.add(OrderBoardDoc(kind="salesorder", zoho_id="9", header={"from": "pass"}, pending=False))
+            await db_session.commit()
+            return None
+        return await real(db, salesorder_id)
+
+    monkeypatch.setattr(sync, "find_stored", find_stored)
+    assert await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "r", by="ana") == "9"
+    docs = await _docs(db_session)
+    assert len(docs) == 1 and docs[0].detail["status"] == "open"  # refreshed
+    assert [e.kind for e in await events_of(db_session, "9")] == ["order.created"]
+    assert create_module._created == {"r": "9"}
 
 
 @pytest.mark.asyncio

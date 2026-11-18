@@ -6,6 +6,7 @@ import math
 import re
 from datetime import date
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.order_board_doc import OrderBoardDoc
@@ -18,8 +19,10 @@ logger = logging.getLogger(__name__)
 _DISCOUNT = re.compile(r"(\d+(?:\.\d+)?)(%?)")
 _KEEP_REFS = 200
 # shortcut: in-memory dedupe, lost on restart; upgrade to a stored marker if restarts mid-sale matter
+# shortcut: a create that times out after Books saved it is not remembered, so a retry makes a second order the
+# operator voids; upgrade by searching Books for the ref before creating if that happens in practice
 _created: dict[str, str] = {}
-_ref_locks: dict[str, asyncio.Lock] = {}
+_ref_locks: dict[str, list] = {}  # client_ref -> [lock, callers using it]
 
 
 def _discount(raw: str | None) -> tuple[float, bool] | None:
@@ -45,16 +48,21 @@ async def create_counter_order(
         raise sync.ZohoBusy(client_ref)
     if client_ref in _created:
         return _created[client_ref]
-    lock = _ref_locks.setdefault(client_ref, asyncio.Lock())
-    async with lock:
-        if client_ref in _created:  # a concurrent duplicate finished while this one waited
-            return _created[client_ref]
-        salesorder_id = await _create(db, customer_id, lines, by)
-        _created[client_ref] = salesorder_id
-        while len(_created) > _KEEP_REFS:
-            del _created[next(iter(_created))]
-    _ref_locks.pop(client_ref, None)  # a failed ref keeps its lock for the retry
-    return salesorder_id
+    entry = _ref_locks.setdefault(client_ref, [asyncio.Lock(), 0])
+    entry[1] += 1  # callers holding or waiting on the lock; the last one out drops it
+    try:
+        async with entry[0]:
+            if client_ref in _created:  # a concurrent duplicate finished while this one waited
+                return _created[client_ref]
+            salesorder_id = await _create(db, customer_id, lines, by)
+            _created[client_ref] = salesorder_id
+            while len(_created) > _KEEP_REFS:
+                del _created[next(iter(_created))]
+            return salesorder_id
+    finally:
+        entry[1] -= 1
+        if entry[1] == 0:
+            _ref_locks.pop(client_ref, None)
 
 
 async def _create(db: AsyncSession, customer_id: str, lines: list[dict], by: str | None) -> str:
@@ -110,9 +118,14 @@ async def _create(db: AsyncSession, customer_id: str, lines: list[dict], by: str
     doc = await sync.find_stored(db, salesorder_id)  # a pass may have listed it already
     if doc is None:
         db.add(OrderBoardDoc(kind="salesorder", zoho_id=salesorder_id, header=created, pending=True))
-    else:
+        try:
+            await db.commit()
+        except IntegrityError:  # a pass stored it between the check and the insert: use its copy
+            await db.rollback()
+            doc = await sync.find_stored(db, salesorder_id)
+    if doc is not None:
         doc.pending = True
-    await db.commit()
+        await db.commit()
     await _best_effort_refresh(db, salesorder_id, number)  # a failure leaves it pending for the next pass
     await _log(db, salesorder_id, "order.created", by)
     return salesorder_id
