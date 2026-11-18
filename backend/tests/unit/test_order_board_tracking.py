@@ -365,6 +365,23 @@ async def test_an_order_code_asked_on_the_aito_route_is_not_a_wrong_guess(async_
         assert (await _open(async_client, code)).status_code == 200
 
 
+@pytest.mark.asyncio
+async def test_a_crashed_lookup_hands_its_reservation_back_and_propagates(async_client, db_session, zoho, monkeypatch):  # noqa: F811
+    """A server error never answered hit-or-miss: it must not burn the visitor's miss budget."""
+    monkeypatch.setattr(aito_routes, "_TRACK_RATE_MAX_MISSES_PER_IP", 1)
+
+    async def boom(*_):
+        raise RuntimeError("db is gone")
+
+    with monkeypatch.context() as m:
+        m.setattr(tracking, "compute", boom)
+        with pytest.raises(RuntimeError, match="db is gone"):
+            await _open(async_client, "ZZZZZZ")
+    assert sum(len(v) for v in aito_routes._track_rate_ip_misses.values()) == 0
+    assert (await _open(async_client, "ZZZZZZ")).status_code == 404  # a real miss still counts, then blocks
+    assert sum(len(v) for v in aito_routes._track_rate_ip_misses.values()) == 1
+
+
 # --- the operator's side ---------------------------------------------------------------------------------------
 
 

@@ -11887,6 +11887,9 @@ export default {
       bad_quantity: 'eine Menge ist ungültig',
       too_many: 'mehr Einheiten, als der Auftrag noch zulässt',
       picklist_shared: 'die Pickliste ist mit anderen Positionen geteilt, bitte in Books abschließen',
+      nothing_to_pack: 'auf diesen Positionen gibt es nichts zu packen',
+      unknown_package: 'dieses Paket ist nicht mehr auf der Bestellung, bitte neu laden',
+      unknown_picklist: 'diese Pickliste ist nicht mehr auf der Bestellung, bitte neu laden',
     },
     cancel: {
       label: "Bestellung stornieren",

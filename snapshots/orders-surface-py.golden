@@ -1,0 +1,469 @@
+### exit: 0
+### stdout:
+=== routes
+GET /api/v1/order-board  -> get_order_board  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+GET /api/v1/order-board/finished  -> get_finished_orders  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+GET /api/v1/order-board/finished/{salesorder_id}  -> get_finished_order  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+POST /api/v1/order-board/refresh  -> refresh_order_board  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/settings  -> get_order_board_settings  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+PUT /api/v1/order-board/settings  -> update_order_board_settings  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/orders/{salesorder_id}/watch  -> get_order_watch  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+PUT /api/v1/order-board/orders/{salesorder_id}/watch  -> watch_order  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+DELETE /api/v1/order-board/orders/{salesorder_id}/watch  -> unwatch_order  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+GET /api/v1/order-board/orders/{salesorder_id}/events  -> list_order_events  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+POST /api/v1/order-board/orders/{salesorder_id}/events  -> add_order_note  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+POST /api/v1/order-board/orders/{salesorder_id}/prep-sheet  -> print_prep_sheet  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+POST /api/v1/order-board/prep-sheet/batch  -> print_prep_sheet_batch  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/orders/{salesorder_id}/sms-draft  -> get_pickup_sms_draft  [get_db; require_admin_if_auth_enabled.<locals>.admin_checker <- (HTTPBearer)]
+POST /api/v1/order-board/orders/{salesorder_id}/sms  -> record_pickup_sms  [get_db; require_admin_if_auth_enabled.<locals>.admin_checker <- (HTTPBearer)]
+GET /api/v1/order-board/orders/{salesorder_id}/tracking-link  -> get_order_tracking_link  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/track/{token}  -> get_order_tracking  [get_db]
+GET /api/v1/order-board/orders/{salesorder_id}/payment-target  -> get_payment_target  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+POST /api/v1/order-board/orders/{salesorder_id}/payment-link  -> create_order_payment_link  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+POST /api/v1/order-board/orders/{salesorder_id}/payment-link/cancel  -> cancel_order_payment_link  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+POST /api/v1/order-board/orders/{salesorder_id}/terminal-payment  -> start_order_terminal_payment_route  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/orders/{salesorder_id}/terminal-payment  -> get_order_terminal_payment  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/orders/{salesorder_id}/picklist  -> get_picklist_preview  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+POST /api/v1/order-board/orders/{salesorder_id}/picklists  -> create_picklist  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/orders/{salesorder_id}/picklists/{picklist_id}  -> get_picklist_content  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+POST /api/v1/order-board/orders/{salesorder_id}/packages  -> create_parcel  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/items  -> search_items  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+PUT /api/v1/order-board/orders/{salesorder_id}/lines  -> edit_order_lines  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/orders/{salesorder_id}/packages/{package_id}  -> get_package_content  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+PUT /api/v1/order-board/orders/{salesorder_id}/packages/{package_id}  -> edit_parcel  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/orders/{salesorder_id}/packages/{package_id}/handover  -> get_handover_preview  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+POST /api/v1/order-board/orders/{salesorder_id}/packages/{package_id}/handover  -> hand_over_parcel  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/orders/{salesorder_id}/invoice  -> get_invoice_preview  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+POST /api/v1/order-board/orders/{salesorder_id}/invoice  -> invoice_order  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+POST /api/v1/order-board/orders/{salesorder_id}/cancel  -> cancel_order  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/invoices/{invoice_id}/pdf  -> get_invoice_pdf  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+GET /api/v1/order-board/invoices/{invoice_id}/email  -> get_invoice_email  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+POST /api/v1/order-board/invoices/{invoice_id}/email  -> send_invoice_email  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+=== callables
+## backend.app.api.routes.order_board
+
+## backend.app.api.routes.order_board._common
+
+## backend.app.api.routes.order_board.board
+class OrderBoardSettingsBody(BaseModel)
+class OrderEventPage(BaseModel)
+class OrderEventResponse(BaseModel)
+class PrepSheetBatchBody(BaseModel)
+async def add_order_note(salesorder_id: str, payload: backend.app.schemas.aito.AitoNoteCreate, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> backend.app.api.routes.order_board.board.OrderEventResponse
+async def get_finished_order(salesorder_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def get_finished_orders(db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def get_order_board(db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def get_order_board_settings(db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def get_order_watch(salesorder_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def list_order_events(salesorder_id: str, depth: Literal['story', 'detail', 'everything'] = 'detail', before: int | None = None, before_at: datetime.datetime | None = None, limit: int = 50, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> backend.app.api.routes.order_board.board.OrderEventPage
+async def print_prep_sheet(salesorder_id: str, picklist_id: str | None = Query(None), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> starlette.responses.Response
+async def print_prep_sheet_batch(body: backend.app.api.routes.order_board.board.PrepSheetBatchBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> starlette.responses.Response
+async def refresh_order_board(db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def unwatch_order(salesorder_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def update_order_board_settings(body: backend.app.api.routes.order_board.board.OrderBoardSettingsBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def watch_order(salesorder_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+
+## backend.app.api.routes.order_board.fulfilment
+class EditLine(BaseModel)
+class HandoverBody(BaseModel)
+class InvoiceBody(BaseModel)
+class InvoiceEmailBody(BaseModel)
+class LinesBody(BaseModel)
+class PackBody(ParcelBody)
+class ParcelBody(BaseModel)
+class ParcelEditBody(BaseModel)
+class ParcelLine(BaseModel)
+class ParcelQty(BaseModel)
+async def cancel_order(salesorder_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def create_parcel(salesorder_id: str, body: backend.app.api.routes.order_board.fulfilment.PackBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def create_picklist(salesorder_id: str, body: backend.app.api.routes.order_board.fulfilment.ParcelBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def edit_order_lines(salesorder_id: str, body: backend.app.api.routes.order_board.fulfilment.LinesBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def edit_parcel(salesorder_id: str, package_id: str, body: backend.app.api.routes.order_board.fulfilment.ParcelEditBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def get_handover_preview(salesorder_id: str, package_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def get_invoice_email(invoice_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def get_invoice_pdf(invoice_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> starlette.responses.Response
+async def get_invoice_preview(salesorder_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def get_package_content(salesorder_id: str, package_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def get_picklist_content(salesorder_id: str, picklist_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def get_picklist_preview(salesorder_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def hand_over_parcel(salesorder_id: str, package_id: str, body: backend.app.api.routes.order_board.fulfilment.HandoverBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def invoice_order(salesorder_id: str, body: backend.app.api.routes.order_board.fulfilment.InvoiceBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def search_items(q: str = Query(PydanticUndefined), db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def send_invoice_email(invoice_id: str, body: backend.app.api.routes.order_board.fulfilment.InvoiceEmailBody, request: starlette.requests.Request, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+
+## backend.app.api.routes.order_board.payment
+class OrderPaymentBody(BaseModel)
+class OrderPaymentLinkView(AitoPaymentLinkView)
+class OrderPaymentTarget(BaseModel)
+class OrderTerminalBody(OrderPaymentBody)
+async def cancel_order_payment_link(salesorder_id: str, request: starlette.requests.Request, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> backend.app.api.routes.order_board.payment.OrderPaymentLinkView
+async def create_order_payment_link(salesorder_id: str, body: backend.app.api.routes.order_board.payment.OrderPaymentBody, request: starlette.requests.Request, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> backend.app.api.routes.order_board.payment.OrderPaymentLinkView
+async def get_order_terminal_payment(salesorder_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None))
+async def get_payment_target(salesorder_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> backend.app.api.routes.order_board.payment.OrderPaymentTarget
+async def start_order_terminal_payment_route(salesorder_id: str, body: backend.app.api.routes.order_board.payment.OrderTerminalBody, request: starlette.requests.Request, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None))
+
+## backend.app.api.routes.order_board.tracking
+class OrderTrackingCounts(BaseModel)
+class OrderTrackingLine(BaseModel)
+class OrderTrackingPayment(BaseModel)
+class OrderTrackingResponse(BaseModel)
+class SmsSentBody(BaseModel)
+async def get_order_tracking(token: str, request: starlette.requests.Request, response: starlette.responses.Response, background_tasks: fastapi.background.BackgroundTasks, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function')) -> dict | starlette.responses.JSONResponse
+async def get_order_tracking_link(salesorder_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def get_pickup_sms_draft(salesorder_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_admin_if_auth_enabled.<locals>.admin_checker>, use_cache=True, scope=None)) -> dict
+async def record_pickup_sms(salesorder_id: str, body: backend.app.api.routes.order_board.tracking.SmsSentBody | None = None, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_admin_if_auth_enabled.<locals>.admin_checker>, use_cache=True, scope=None)) -> dict
+
+## backend.app.models.order_board_doc
+class OrderBoardDoc(Base)
+    def __init__(self, **kwargs)
+
+## backend.app.models.order_board_event
+class OrderBoardEvent(Base)
+    def __init__(self, **kwargs)
+
+## backend.app.services.order_board
+def age_days(day: str, today: datetime.date) -> int
+def compute_board(orders: list[dict], purchase_orders: list[dict], items: dict[str, dict], today: datetime.date, *, max_age_days: int = 0, core_brands: collections.abc.Sequence[str] = ()) -> list[dict]
+def finished_is_core(order: dict | None, items: dict[str, dict], core: set[str]) -> bool | None
+def order_row(order: dict, items: dict[str, dict], today: datetime.date) -> dict
+def picked_waiting(order: dict) -> dict[str, float]
+def units_to_invoice(order: dict, extra_shipped: collections.abc.Mapping[str, float] | None = None, service_line_ids: collections.abc.Collection[str] = ()) -> dict[str, float]
+
+## backend.app.services.order_board_events
+KINDS: dict
+async def backfill_alert_kinds(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> int
+def kinds_for_depth(depth: str) -> list[str]
+async def record(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, kind: str, *, actor_class: str, actor_name: str | None = None, changes: list[dict] | None = None, detail: dict | None = None, note: str | None = None, occurred_at: datetime.datetime | None = None, alert: bool = True) -> backend.app.models.order_board_event.OrderBoardEvent | None
+
+## backend.app.services.order_board_payment
+def board_payments(orders: list[dict], today: datetime.date) -> dict[str, dict | None]
+def order_contact(order: dict) -> dict | None
+def order_facts(order: dict) -> dict
+def order_payment(order: dict, today: datetime.date, credit: float = 0.0) -> dict | None
+def quote_number_missing(order: dict) -> bool
+
+## backend.app.services.order_board_prep_sheet
+def combine_picks(rows: list[dict], brands: collections.abc.Mapping[str, str]) -> list[dict]
+def render_batch_prep_sheet(rows: list[dict], brands: collections.abc.Mapping[str, str], *, printed_at: datetime.datetime, order_urls: collections.abc.Mapping[str, str], shop_name: str = 'AITO3D') -> bytes
+def render_prep_sheet(row: dict, *, printed_at: datetime.datetime, order_url: str | None, shop_name: str = 'AITO3D', quantities: collections.abc.Mapping[str, float] | None = None, picklist_number: str = '') -> bytes
+
+## backend.app.services.order_board_sms
+FILAMENTS = 'Filaments'
+PRINTERS = '3D Printers'
+SIGNATURE = 'Aito3D'
+def compose(row: dict, natures: dict[str, str], link_url: str | None = None, tracking_url: str | None = None) -> dict
+async def draft(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
+
+## backend.app.services.order_board_tracking
+TRACK_KIND = 'track'
+TTL_AFTER_HANDOVER: timedelta
+VIEW_DEDUP_WINDOW: timedelta
+async def compute(db: sqlalchemy.ext.asyncio.session.AsyncSession, token: str, now: datetime.datetime) -> tuple[str, dict] | None
+def derive_tracking(row: dict, handed_days: collections.abc.Collection[str] = ()) -> dict | None
+async def ensure_token(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> str
+def is_expired(finished_at: datetime.datetime | None, now: datetime.datetime) -> bool
+async def log_view(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, now: datetime.datetime) -> None
+async def order_of(db: sqlalchemy.ext.asyncio.session.AsyncSession, token: str) -> str | None
+async def tracking_url(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> str | None
+def tracking_url_for(base: str, token: str) -> str | None
+
+## backend.app.services.order_board_actions
+InvoiceScope: _LiteralGenericAlias
+class OrderActionRefused(Exception)
+class OrderBusy(Exception)
+class OrderNotOnBoard(Exception)
+async def _row(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
+async def cancel_order(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, *, by: str | None = None) -> None
+async def confirm_stored_copy(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> backend.app.models.order_board_doc.OrderBoardDoc
+async def create_parcel(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, picklist_id: str, quantities: dict[str, float], *, by: str | None = None) -> str
+async def create_picklist(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, quantities: dict[str, float], *, by: str | None = None) -> dict
+async def edit_lines(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, version: str, lines: list[dict], *, by: str | None = None) -> dict
+async def edit_parcel(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, package_id: str, version: str, was: dict[str, float], lines: dict[str, float], *, by: str | None = None) -> dict
+async def email_invoice(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, number: str, invoice_id: str, to: str, *, by: str | None = None, invoice_number: str = '') -> None
+async def hand_over(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, package_id: str, *, mode: Literal['pickup', 'delivery'], apply_credit: bool, by: str | None = None) -> dict
+async def handover_preview(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, package_id: str) -> dict
+def invoice_payload(prefill: dict, keep: collections.abc.Mapping[str, float], today: str) -> tuple[dict | None, str | None]
+async def invoice_preview(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
+async def invoice_shipped(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, *, apply_credit: bool, scope: Literal['shipped', 'packed', 'whole'] = 'shipped', by: str | None = None) -> dict
+async def package_content(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, package_id: str) -> dict
+async def picklist_content(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, picklist_id: str) -> dict
+async def picklist_preview(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
+async def search_items(db: sqlalchemy.ext.asyncio.session.AsyncSession, query: str) -> list[dict]
+async def stamp_contact(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, by: str) -> dict
+async def stamp_print(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, by: str, picklist: str | None = None) -> dict
+def writing(salesorder_id: str)
+
+## backend.app.services.order_board_sync
+CALL_CEILING = 30
+DAILY_BUDGET_FLOOR = 5000
+FINISHED_DETAIL_DAYS = 90
+FINISHED_DETAIL_GRACE_DAYS = 7
+MAX_DETAILS_PER_PASS = 20
+class OrderBoardSettings(object)
+class OrderNotFinished(Exception)
+class OrderNotStored(Exception)
+PENDING_PAUSE_SECONDS = 60
+class ZohoBusy(Exception)
+def _busy_on_rate_limit(key: str) -> collections.abc.Iterator[None]
+async def _find_state(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> backend.app.models.order_board_doc.OrderBoardDoc | None
+async def _finished_docs(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str | None = None) -> list[backend.app.models.order_board_doc.OrderBoardDoc]
+async def _has_event(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, kind: str, after: datetime.datetime | None = None) -> bool
+async def _iteration(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> float
+def _naive_utc(text: str) -> datetime.datetime | None
+def _now() -> str
+_unconfirmed: set
+_written_at: dict
+async def announce_board_change(*, finished: bool = False) -> None
+async def find_board_row(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict | None
+async def find_stored(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> backend.app.models.order_board_doc.OrderBoardDoc | None
+async def load_settings(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> backend.app.services.order_board_sync._common.OrderBoardSettings
+def needs_refresh(salesorder_id: str) -> bool
+def note_write(salesorder_id: str) -> None
+def open_rate_limit_window(e: backend.app.services.zoho.ZohoRateLimited) -> None
+async def read_board(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> dict
+async def read_finished(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> dict
+async def read_finished_order(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
+async def refresh_order(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> None
+async def run_loop() -> None
+async def run_pass(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> bool
+async def save_settings(db: sqlalchemy.ext.asyncio.session.AsyncSession, settings: backend.app.services.order_board_sync._common.OrderBoardSettings) -> None
+def start_order_board_sync() -> None
+ws_manager: ConnectionManager
+def zoho_busy() -> bool
+
+=== schemas
+## backend.app.api.routes.order_board
+
+## backend.app.api.routes.order_board._common
+
+## backend.app.api.routes.order_board.board
+class OrderBoardSettingsBody(BaseModel)
+    sync_enabled: <class 'bool'>  required
+    sync_minutes: typing.Literal[5, 15, 60]  required
+    max_age_days: <class 'int'>  required
+    core_brands: list[str]  required
+    scan_enabled: <class 'bool'>  default=False
+class OrderEventPage(BaseModel)
+    events: list[backend.app.api.routes.order_board.board.OrderEventResponse]  required
+    has_more: <class 'bool'>  required
+class OrderEventResponse(BaseModel)
+    id: <class 'int'>  required
+    occurred_at: <class 'datetime.datetime'>  required
+    kind: <class 'str'>  required
+    actor_class: <class 'str'>  required
+    actor_name: str | None  required
+    changes: list[dict] | None  required
+    detail: dict | None  required
+    note: str | None  required
+class PrepSheetBatchBody(BaseModel)
+    ids: list[typing.Annotated[str, StringConstraints(strip_whitespace=None, to_upper=None, to_lower=None, strict=None, min_length=1, max_length=64, pattern=None)]]  required
+
+## backend.app.api.routes.order_board.fulfilment
+class EditLine(BaseModel)
+    line_id: str | None  default=None
+    item_id: str | None  default=None
+    quantity: <class 'float'>  required
+class HandoverBody(BaseModel)
+    mode: typing.Literal['pickup', 'delivery']  required
+    apply_credit: <class 'bool'>  required
+class InvoiceBody(BaseModel)
+    apply_credit: <class 'bool'>  required
+    scope: typing.Literal['shipped', 'packed', 'whole']  default='shipped'
+class InvoiceEmailBody(BaseModel)
+    to: <class 'str'>  required
+class LinesBody(BaseModel)
+    version: <class 'str'>  required
+    lines: list[backend.app.api.routes.order_board.fulfilment.EditLine]  required
+class PackBody(ParcelBody)
+    lines: list[backend.app.api.routes.order_board.fulfilment.ParcelLine]  required
+    picklist_id: <class 'str'>  required
+class ParcelBody(BaseModel)
+    lines: list[backend.app.api.routes.order_board.fulfilment.ParcelLine]  required
+class ParcelEditBody(BaseModel)
+    version: <class 'str'>  required
+    was: list[backend.app.api.routes.order_board.fulfilment.ParcelLine]  required
+    lines: list[backend.app.api.routes.order_board.fulfilment.ParcelQty]  required
+class ParcelLine(BaseModel)
+    line_id: <class 'str'>  required
+    quantity: <class 'float'>  required
+class ParcelQty(BaseModel)
+    line_id: <class 'str'>  required
+    quantity: <class 'float'>  required
+
+## backend.app.api.routes.order_board.payment
+class OrderPaymentBody(BaseModel)
+    amount: <class 'int'>  required
+class OrderPaymentLinkView(AitoPaymentLinkView)
+    id: <class 'int'>  required
+    state: typing.Literal['pending', 'paid', 'failed', 'cancelled', 'expired']  required
+    amount: <class 'int'>  required
+    currency: <class 'str'>  required
+    url: str | None  required
+    expires_on: <class 'str'>  required
+    paid_at: datetime.datetime | None  required
+    sync_error: str | None  required
+    minted: <class 'bool'>  required
+    document_number: str | None  required
+class OrderPaymentTarget(BaseModel)
+    kind: typing.Optional[typing.Literal['invoice', 'retainer', 'quote', 'salesorder']]  required
+    document_id: str | None  required
+    number: str | None  required
+    max_amount: int | None  required
+    left: <class 'float'>  required
+    link: backend.app.api.routes.order_board.payment.OrderPaymentLinkView | None  required
+class OrderTerminalBody(OrderPaymentBody)
+    amount: <class 'int'>  required
+    cancel_link: <class 'bool'>  default=False
+
+## backend.app.api.routes.order_board.tracking
+class OrderTrackingCounts(BaseModel)
+    open: <class 'int'>  required
+    ready: <class 'int'>  required
+    waiting: <class 'int'>  required
+class OrderTrackingLine(BaseModel)
+    name: <class 'str'>  required
+    quantity: <class 'float'>  required
+    status: typing.Literal['ready', 'preparing', 'to_prepare', 'waiting', 'handed_over']  required
+    handed_on: str | None  required
+class OrderTrackingPayment(BaseModel)
+    currency: <class 'str'>  required
+    total: <class 'int'>  required
+    paid: <class 'int'>  required
+    left: <class 'int'>  required
+class OrderTrackingResponse(BaseModel)
+    reference: <class 'str'>  required
+    date: str | None  required
+    state: typing.Literal['received', 'preparing', 'partly_ready', 'ready', 'handed_over']  required
+    stage: typing.Literal['received', 'preparing', 'ready', 'handed_over']  required
+    lines: list[backend.app.api.routes.order_board.tracking.OrderTrackingLine]  required
+    counts: <class 'backend.app.api.routes.order_board.tracking.OrderTrackingCounts'>  required
+    pickup: <class 'bool'>  required
+    payment: backend.app.api.routes.order_board.tracking.OrderTrackingPayment | None  required
+    pay_url: str | None  required
+    updated_at: <class 'datetime.datetime'>  required
+class SmsSentBody(BaseModel)
+    payment_link_id: int | None  default=None
+
+## backend.app.schemas.aito
+class AitoNoteCreate(BaseModel)
+    note: <class 'str'>  required
+class AitoPaymentLinkView(BaseModel)
+    id: <class 'int'>  required
+    state: typing.Literal['pending', 'paid', 'failed', 'cancelled', 'expired']  required
+    amount: <class 'int'>  required
+    currency: <class 'str'>  required
+    url: str | None  required
+    expires_on: <class 'str'>  required
+    paid_at: datetime.datetime | None  required
+    sync_error: str | None  required
+    minted: <class 'bool'>  required
+class AitoTerminalPaymentView(BaseModel)
+    id: <class 'int'>  required
+    document_kind: typing.Literal['quote', 'invoice', 'retainer', 'salesorder']  required
+    document_number: <class 'str'>  required
+    status: typing.Literal['pending', 'processing', 'paid', 'failed', 'cancelled', 'expired', 'needs_attention']  required
+    amount: <class 'int'>  required
+    amount_confirmed: int | None  required
+    booking_status: typing.Optional[typing.Literal['pending', 'booked', 'failed', 'not_booked']]  required
+    booking_error: str | None  required
+    sync_error: str | None  required
+    created_at: <class 'datetime.datetime'>  required
+    settled_at: datetime.datetime | None  required
+
+=== ddl
+-- sqlite
+CREATE TABLE order_board_docs (
+	id INTEGER NOT NULL, 
+	kind VARCHAR(20) NOT NULL, 
+	zoho_id VARCHAR(64) NOT NULL, 
+	header JSON NOT NULL, 
+	detail JSON, 
+	pending BOOLEAN NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_order_board_docs_kind_zoho_id UNIQUE (kind, zoho_id)
+);
+-- postgresql
+CREATE TABLE order_board_docs (
+	id SERIAL NOT NULL, 
+	kind VARCHAR(20) NOT NULL, 
+	zoho_id VARCHAR(64) NOT NULL, 
+	header JSON NOT NULL, 
+	detail JSON, 
+	pending BOOLEAN NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_order_board_docs_kind_zoho_id UNIQUE (kind, zoho_id)
+);
+
+-- sqlite
+CREATE TABLE order_board_events (
+	id INTEGER NOT NULL, 
+	salesorder_id VARCHAR(64) NOT NULL, 
+	occurred_at DATETIME NOT NULL, 
+	kind VARCHAR(48) NOT NULL, 
+	actor_class VARCHAR(16) NOT NULL, 
+	actor_name VARCHAR(255), 
+	changes JSON, 
+	detail JSON, 
+	note TEXT, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id)
+);
+CREATE INDEX ix_order_board_events_kind ON order_board_events (kind);
+CREATE INDEX ix_order_board_events_occurred_at ON order_board_events (occurred_at);
+CREATE INDEX ix_order_board_events_so_occurred ON order_board_events (salesorder_id, occurred_at, id);
+-- postgresql
+CREATE TABLE order_board_events (
+	id SERIAL NOT NULL, 
+	salesorder_id VARCHAR(64) NOT NULL, 
+	occurred_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	kind VARCHAR(48) NOT NULL, 
+	actor_class VARCHAR(16) NOT NULL, 
+	actor_name VARCHAR(255), 
+	changes JSON, 
+	detail JSON, 
+	note TEXT, 
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	PRIMARY KEY (id)
+);
+CREATE INDEX ix_order_board_events_kind ON order_board_events (kind);
+CREATE INDEX ix_order_board_events_occurred_at ON order_board_events (occurred_at);
+CREATE INDEX ix_order_board_events_so_occurred ON order_board_events (salesorder_id, occurred_at, id);
+
+=== permissions
+{
+ "apikey_denied": [
+  "orders:read",
+  "orders:update"
+ ],
+ "apikey_scope": {
+  "orders:read": "None",
+  "orders:update": "None"
+ },
+ "categories": {
+  "Orders": [
+   "orders:read",
+   "orders:update"
+  ]
+ },
+ "groups": {
+  "Administrators": [
+   "orders:read",
+   "orders:update"
+  ],
+  "Operators": [
+   "orders:read",
+   "orders:update"
+  ],
+  "Viewers": []
+ },
+ "values": [
+  "orders:read",
+  "orders:update"
+ ]
+}
+=== settings
+OrderBoardSettings: [('sync_enabled', "<class 'bool'>"), ('sync_minutes', "<class 'int'>"), ('max_age_days', "<class 'int'>"), ('core_brands', 'list[str]'), ('scan_enabled', "<class 'bool'>", False)]
+keys: ['"order_board_core_brands"', '"order_board_max_age_days"', '"order_board_scan_enabled"', '"order_board_sync_enabled"', '"order_board_sync_minutes"', '"order_board_updated"', '"orders_inbox_kinds_backfilled"']
+
+### stderr:
+

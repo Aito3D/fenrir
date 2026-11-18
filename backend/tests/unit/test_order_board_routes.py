@@ -181,9 +181,9 @@ INVOICE = {"apply_credit": True}
 LINES = {"version": "v1", "lines": [{"line_id": "l1", "quantity": 3}]}
 PARCEL_EDIT = {"version": "v1", "was": [{"line_id": "l1", "quantity": 2}], "lines": [{"line_id": "l1", "quantity": 1}]}
 NEW_ROUTES = [
-    ("post", f"{BASE}/orders/so1/prep-sheet", None, False),
-    ("post", f"{BASE}/orders/so1/prep-sheet?picklist_id=pl1", None, False),
-    ("post", f"{BASE}/prep-sheet/batch", {"ids": ["so1"]}, False),
+    ("post", f"{BASE}/orders/so1/prep-sheet", None, True),
+    ("post", f"{BASE}/orders/so1/prep-sheet?picklist_id=pl1", None, True),
+    ("post", f"{BASE}/prep-sheet/batch", {"ids": ["so1"]}, True),
     ("get", f"{BASE}/orders/so1/picklist", None, False),
     ("post", f"{BASE}/orders/so1/picklists", PICK, True),
     ("get", f"{BASE}/orders/so1/picklists/pl1", None, False),
@@ -229,7 +229,7 @@ async def test_prep_sheet_is_a_pdf_and_stamps_with_the_username(async_client, to
 
     monkeypatch.setattr(actions, "stamp_print", fake_stamp)
     monkeypatch.setattr("backend.app.api.routes.order_board.board.render_prep_sheet", lambda row, **kw: b"%PDF-fake")
-    r = await async_client.post(f"{BASE}/orders/so1/prep-sheet", headers=tokens["read"])
+    r = await async_client.post(f"{BASE}/orders/so1/prep-sheet", headers=tokens["both"])
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/pdf"
     assert r.content.startswith(b"%PDF-")
@@ -238,7 +238,7 @@ async def test_prep_sheet_is_a_pdf_and_stamps_with_the_username(async_client, to
         and "bon-de-preparation.pdf" in r.headers["content-disposition"]
     )
     assert r.headers["cache-control"] == "no-store"
-    assert seen == {"id": "so1", "by": "orders-read"}
+    assert seen == {"id": "so1", "by": "orders-both"}
 
 
 @pytest.mark.asyncio
@@ -249,7 +249,7 @@ async def test_prep_sheet_renders_a_real_pdf(async_client, tokens, monkeypatch):
         return {"number": "SO-1", "customer": "X", "lines": [], "printed": None}
 
     monkeypatch.setattr(actions, "stamp_print", fake_stamp)
-    r = await async_client.post(f"{BASE}/orders/so1/prep-sheet", headers=tokens["read"])
+    r = await async_client.post(f"{BASE}/orders/so1/prep-sheet", headers=tokens["both"])
     assert r.status_code == 200 and r.content.startswith(b"%PDF-")
 
 
@@ -319,7 +319,7 @@ async def test_prep_sheet_of_a_picklist_prints_its_units_and_number(async_client
     monkeypatch.setattr(actions, "stamp_print", fake_stamp)
     monkeypatch.setattr(actions, "picklist_content", fake_content)
     monkeypatch.setattr("backend.app.api.routes.order_board.board.render_prep_sheet", fake_render)
-    r = await async_client.post(f"{BASE}/orders/so1/prep-sheet?picklist_id=pl1", headers=tokens["read"])
+    r = await async_client.post(f"{BASE}/orders/so1/prep-sheet?picklist_id=pl1", headers=tokens["both"])
     assert r.status_code == 200
     assert (seen["quantities"], seen["picklist_number"]) == ({"l1": 2}, "PL-00013")
 
@@ -787,22 +787,22 @@ async def test_batch_prep_sheet_stamps_each_preparable_order_once_and_returns_on
     monkeypatch.setattr("backend.app.api.routes.order_board.board.render_batch_prep_sheet", fake_render)
     # so2 has nothing to pick, "gone" left the board, so3 is sent twice
     body = {"ids": ["so3", "so2", "gone", "so1", "so3"]}
-    r = await async_client.post(f"{BASE}/prep-sheet/batch", json=body, headers=tokens["read"])
+    r = await async_client.post(f"{BASE}/prep-sheet/batch", json=body, headers=tokens["both"])
     assert r.status_code == 200 and r.headers["content-type"] == "application/pdf" and r.content == b"%PDF-fake"
     assert "bons-de-preparation.pdf" in r.headers["content-disposition"]
     assert r.headers["cache-control"] == "no-store"
-    assert stamped == [("so3", "orders-read", None), ("so1", "orders-read", None)]
+    assert stamped == [("so3", "orders-both", None), ("so1", "orders-both", None)]
     assert seen == {"rows": ["so3", "so1"], "brands": {"A": "eSUN"}}
 
     stamped.clear()
-    r = await async_client.post(f"{BASE}/prep-sheet/batch", json={"ids": ["so2"]}, headers=tokens["read"])
+    r = await async_client.post(f"{BASE}/prep-sheet/batch", json={"ids": ["so2"]}, headers=tokens["both"])
     assert r.status_code == 404 and stamped == []
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("ids", [[], [f"so{i}" for i in range(31)], [""], ["x" * 65]])
 async def test_batch_prep_sheet_refuses_no_ids_too_many_and_bad_ids(async_client, tokens, ids):
-    r = await async_client.post(f"{BASE}/prep-sheet/batch", json={"ids": ids}, headers=tokens["read"])
+    r = await async_client.post(f"{BASE}/prep-sheet/batch", json={"ids": ids}, headers=tokens["both"])
     assert r.status_code == 422
 
 
@@ -825,5 +825,66 @@ async def test_batch_prep_sheet_renders_a_real_pdf(async_client, tokens, monkeyp
 
     monkeypatch.setattr(order_board_sync, "read_board", fake_board)
     monkeypatch.setattr(actions, "stamp_print", fake_stamp)
-    r = await async_client.post(f"{BASE}/prep-sheet/batch", json={"ids": ["so1"]}, headers=tokens["read"])
+    r = await async_client.post(f"{BASE}/prep-sheet/batch", json={"ids": ["so1"]}, headers=tokens["both"])
     assert r.status_code == 200 and r.content.startswith(b"%PDF-")
+
+
+@pytest.mark.asyncio
+async def test_refresh_returns_the_board_with_the_error_when_the_pass_fails_for_a_non_zoho_reason(
+    async_client, tokens, monkeypatch
+):
+    from backend.app.services.order_board_sync import _pass
+
+    async def boom(db):
+        raise ValueError("odd Books field")
+
+    monkeypatch.setattr(_pass, "_sync", boom)
+    r = await async_client.post("/api/v1/order-board/refresh", headers=tokens["both"])
+    assert r.status_code == 200
+    assert r.json()["sync"]["last_error"].startswith("ValueError")
+
+
+async def _store_order(db_session, zoho_id="so1"):
+    from backend.app.models.order_board_doc import OrderBoardDoc
+
+    db_session.add(OrderBoardDoc(kind="salesorder", zoho_id=zoho_id, header={}, detail={}))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_watch_is_a_no_op_with_auth_disabled(async_client, db_session):
+    from sqlalchemy import func, select
+
+    from backend.app.models.notification_inbox import OrderWatch
+
+    await _store_order(db_session)
+    put = await async_client.put("/api/v1/order-board/orders/so1/watch")
+    assert (put.status_code, put.json()) == (200, {"watching": False})
+    got = await async_client.get("/api/v1/order-board/orders/so1/watch")
+    assert (got.status_code, got.json()) == (200, {"watching": False})
+    assert (await db_session.execute(select(func.count()).select_from(OrderWatch))).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_a_concurrent_watch_is_recovered_not_a_500(async_client, tokens, db_session, monkeypatch):
+    from sqlalchemy import func, select
+
+    from backend.app.api.routes.order_board import board
+    from backend.app.models.notification_inbox import OrderWatch
+    from backend.app.models.user import User
+
+    await _store_order(db_session)
+    user = (await db_session.execute(select(User).where(User.username == "orders-read"))).scalar_one()
+    db_session.add(OrderWatch(user_id=user.id, salesorder_id="so1"))
+    await db_session.commit()
+
+    real, calls = board._own_watch, []
+
+    async def stale_first(db, salesorder_id, current_user):
+        calls.append(1)
+        return None if len(calls) == 1 else await real(db, salesorder_id, current_user)
+
+    monkeypatch.setattr(board, "_own_watch", stale_first)
+    r = await async_client.put("/api/v1/order-board/orders/so1/watch", headers=tokens["read"])
+    assert (r.status_code, r.json()) == (200, {"watching": True})
+    assert (await db_session.execute(select(func.count()).select_from(OrderWatch))).scalar_one() == 1

@@ -11508,6 +11508,9 @@ export default {
       bad_quantity: '수량이 올바르지 않습니다',
       too_many: '주문에서 남은 수량보다 많습니다',
       picklist_shared: '피킹 리스트가 다른 품목과 공유되어 있습니다. Books에서 완료하세요',
+      nothing_to_pack: '이 품목에는 포장할 것이 없습니다',
+      unknown_package: '이 소포는 더 이상 주문에 없습니다. 다시 확인하세요',
+      unknown_picklist: '이 피킹 리스트는 더 이상 주문에 없습니다. 다시 확인하세요',
     },
     cancel: {
       label: "주문 취소",

@@ -11870,6 +11870,9 @@ export default {
       bad_quantity: '數量無效',
       too_many: '超出訂單仍允許的數量',
       picklist_shared: '揀貨單與其他行共用，請在 Books 中完成',
+      nothing_to_pack: '這些行沒有可打包的內容',
+      unknown_package: '此包裹已不在訂單中，請重新查看',
+      unknown_picklist: '此揀貨單已不在訂單中，請重新查看',
     },
     cancel: {
       label: "取消訂單",

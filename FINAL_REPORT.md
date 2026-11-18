@@ -1,120 +1,105 @@
-# Refactor-loop campaign 33 — the Aito board and everything behind it — final report
+# FINAL REPORT — refactor-loop campaign O3: the Order Board (/orders)
 
-Date: 2026-11-17. Branch `auto-refactor-loop-a33` in `../bambuddy-refactor-a33`, based on local main `2c8d80901`
-(BASE = tag `a33-base`, setup commit `43d0c7d11`). Ran in parallel with the order-board campaign O3 under its own names.
-Ask (2026-11-16): "check the Aito page, look at each feature and optimize everything, fix all the bugs and issues it can
-have — I need something bulletproof to errors and bugs." Zero feature changes except what the user approved one by one.
+Campaign 1 on branch `auto-refactor-loop` (worktree `../bambuddy-refactor`), cut from main `2c8d80901` on 2026-11-16.
+BASE `refactor-base` = setup commit `504291e00`. Ended 2026-11-17.
 
-Full loop state (plan with per-task evidence, the 43-item TRIAGE.md, verifier log, raw auditor findings, briefs) is
-copied to `plans/refactor-campaign33/` in the main checkout.
+## Summary
+- **Iterations run:** 11 of 12 allowed (loop-1 … loop-11), one squashed commit + one tag per iteration.
+- **Survey rounds:** 3 of 3.
+- **Why it ended:** MAX_ROUNDS. The plan was empty after round 3's tasks, and the round cap was reached.
+- **Commits:** 1 setup commit + 11 iteration commits, plus this report.
+- **Tags:** `refactor-base`, `loop-1` … `loop-11`.
+- **Parameters:** scope = Order Board (routes/order_board/, services/order_board*, order_board_actions/, order_board_sync/, models order_board_*, components/orders/**, OrderBoardPage, OrderTrackPage, utils/orderTracking.ts, and their tests). MAX_ITER 12, MAX_ROUNDS 3, BATCH 3, auto, grouped, at-exit. TRIAGE was P2,P3 at the start and lowered to P3 by the user at the setup sweep.
+- **Tasks:** 31 filed in PLAN.md, 29 DONE, 2 WONTFIX-AUTO, 0 OPEN or BLOCKED. 19 findings remain in TRIAGE.md.
+- **Verifier:** every iteration passed. Iteration 1 needed one fix: its first verify failed the coverage ratchet arithmetically, because deleted dead code had been covered. Tests were added rather than resetting the baseline.
 
-## Outcome
+## Coverage, tests, goldens
+| | Baseline (BASE) | Final (loop-11) |
+|---|---|---|
+| Backend scoped statements | 2815/2913 = 96.64% | 2912/2938 = **99.12%** |
+| Backend scoped branches | 701/748 = 93.72% | (not reported per run) |
+| Frontend scoped statements | 1554/1636 = 94.98% | 1578/1640 = **96.21%** |
+| Backend full suite | 27969 passed, 1 known_broken | 28036 passed, 0 failed |
+| Frontend full suite | 11397 passed, 3 load flakes | 11425 passed, 0 failed |
 
-| | |
-|---|---|
-| Iterations run | 9 (8 with commits + 1 empty), budget 12 |
-| Survey rounds | 3 of 3 (MAX_ROUNDS) |
-| Why it ended | **MAX_ROUNDS** — round 3 was productive, its plan was worked, no rounds left |
-| Commits | 1 setup + 8 squashed iteration commits (`a33-loop-1` … `a33-loop-8`) |
-| Tags | `a33-base`, `a33-loop-1` … `a33-loop-9` (`a33-loop-9` = same tree as `a33-loop-8`) |
-| Tasks | 22 DONE · 0 OPEN · 0 BLOCKED · 3 WONTFIX-AUTO (2 duplicates + 1 deferred feature) |
-| Triaged for humans | 43 (TRIAGE.md) |
-| Coverage, backend scoped statements | 98.06% (9558/9747) → **98.19%** (9674/9852) |
-| Coverage, frontend scoped statements | 94.57% (6376/6742) → **94.73%** (6422/6779) |
-| Snapshot probes | 35/35 matching (9 goldens re-recorded, each under a user-approved changelog entry) |
-| SURFACE.md | changed only by approved additions (see below) |
-| known_broken | `test_printer_hours_migrations.py::test_migration_backfills_calibrated_at_from_offset` before → still (date-boundary; out of scope) |
-| Tests | backend 27,969 → 28,007 passing (+38); frontend 11,401 → 11,417 (+16) |
-| Diff | 63 files, +1,800 / −148 (production +413/−100 in 18 files; tests +871/−29) |
+- **known_broken:** `test_printer_hours_migrations.py::test_migration_backfills_calibrated_at_from_offset` is unchanged. It is outside scope and fails between 14:00 and midnight local time.
+- **Snapshot probes:** 8/8 match. Two goldens were re-recorded for approved changes: `orders-i18n` for T-003, and `orders-surface-py` for T-016 and T-021.
+- **SURFACE.md:** one line changed. Line 215 lists the sync package's `__all__`, where `_stored_query` became `find_stored`. This is the user-approved SURFACE regeneration for T-021.
+- **Diff since BASE:** 47 files, +1589/−191, mostly tests. Production code: 31 files, +180/−96, including 16 locale files.
+- **Gates at the end:** ruff check and format clean, basedpyright in lock mode 0 errors, tsc, eslint with 0 errors (5 warnings that predate this campaign and sit outside scope), knip, and i18n parity across 16 locales.
 
-Every iteration passed the blind verifier (build, lint, both type checks, knip, i18n parity, full suites, coverage
-ratchet, 35 probes, surface diff). Three verifies failed first and were fixed before tagging: loop-2 (a test still
-pinned the old 5xx message), loop-6 (a commit overwrote another task's changelog line), and loop-3 once ran out of CPU
-(load 67–148) and was re-run.
+## User-approved behavior changes (BASELINE-CHANGELOG.md)
+- **T-003:** three refusal codes (`nothing_to_pack`, `unknown_package`, `unknown_picklist`) now show their own message in 16 locales.
+- **T-016:** both preparation-sheet routes now require `orders:update`. The print controls are hidden from users without it.
+- **T-017:** no Books re-read is sent inside the 429 back-off window after a write.
+- **T-018:** the history line for an edited order shows the new total, and none if the re-read failed.
+- **T-019:** a sync pass compares an order against the current stored copy, so an operator's own edit is no longer logged as "edited in Books".
+- **T-020:** a sync pass that fails for a non-Zoho reason shows a short error on the board, and Refresh returns the board instead of a 500.
+- **T-021 (SURFACE only):** a single `find_stored` helper replaces 7 copies of the lookup.
+- **T-030:** one failing quote lookup no longer stops the whole pass. A deleted quote is remembered as having no number.
+- **T-047:** a quote lookup that keeps failing is retried about once a day, and the warning names the order.
+- **T-049:** a parcel edit whose Books call timed out but went through is recorded in the history.
+- **T-050:** the order search box keeps fast keystrokes.
+- **Declined by the user:** T-048, which would open the back-off window after a 429 on an invoice email.
 
-## What changed (all user-approved behavior changes, recorded in BASELINE-CHANGELOG.md)
+## What each round found
+- **Round 1 (setup):** 20 findings.
+  - security 1 (T-016), robustness 4 (T-017 to T-020), cleanliness 7, tests 8.
+  - Six were behavior changes, and all six were approved.
+  - 14 went to triage, and 8 of those were promoted when TRIAGE was lowered to P3.
+- **Round 2:** 21 findings.
+  - security 0.
+  - robustness 1: T-030 (high). A deleted quote froze the board.
+  - cleanliness 9: 2 filed, 7 triaged.
+  - tests 11: 8 filed, 3 triaged. One filed finding was a stamp-race test that could never fail.
+- **Round 3:** 9 findings.
+  - security 0.
+  - robustness 4: T-047, T-049 and T-050 approved, T-048 declined.
+  - cleanliness 2, both triaged.
+  - tests 3: 2 filed, 1 triaged.
 
-**.3mf import into the new-project modal (new, never audited before)**
-- T-632 the real slicer call is now tested (it never ran in any test).
-- T-646 imports share the slicer's 2-slot limit instead of piling onto the sidecar.
-- T-647 Retry after "Import not found or expired" re-uploads and re-slices instead of repeating the error forever.
-- T-648 a failed printers/filaments list shows an error with Retry instead of an endless "Slicing…" spinner.
-- T-653 zip-bomb guard: a thumbnail over 2 MiB comes back empty, a `model_settings.config` over 8 MiB is refused (413);
-  reads are capped even when the zip header lies.
-- T-654 the import has its own 512 MiB upload cap (was 2 GiB held in memory). The "one import per user" 409 was
-  **withheld**: it would block re-picking a file and, with auth off, block every user.
-- T-685 new `DELETE /aito/import-3mf/{job_id}`: closing the panel, picking another file or retrying cancels the old job.
-- T-696 the cancel really aborts the sidecar request (it used to wait for the slice to finish); this edits the shared
-  `slicer_api.py`, so project slices cancelled at shutdown also stop at once.
-
-**Zoho Books and Heimdall clients**
-- T-641 malformed Heimdall replies (e.g. `{"error":"bad gateway"}`) map to typed errors instead of crashing a pass.
-- T-642 a gateway's non-JSON 429 now triggers the rate-limit freeze; non-JSON 5xx message is "Zoho Books error (HTTP n)".
-- T-682 fixes a regression T-642 introduced: a non-JSON 404 (and other non-429 4xx) is transient again, so an edge
-  page can no longer mark a live quote "no longer exists".
-- T-656 a client id of literally `.` / `..` is refused (409 "Invalid Zoho Books id") instead of hitting the wrong path.
-- T-655 the unlinked-deposit warning is rate-limited (60/min); past it the warning just hides.
-
-**Deposits and invoices**
-- T-657 when Books rate-limits a deposit apply, the sweep/force sync stop and arm the throttle; a timed-out apply is
-  recorded as an outcome-unknown deposit event instead of "applied 0".
-- T-683 fixes a regression T-657 introduced: deposit events that landed before a mid-sweep 429 are committed at once.
-- T-660 "refused" now means refused; force sync flags an outcome-unknown deposit as failed with the new reason
-  "Outcome unknown — check the invoice in Zoho Books".
-- T-684 creating an invoice records outcome-unknown deposits (existing warning toast) and arms the throttle on 429;
-  retainer rows gain an `outcome` field.
-- T-699 a deposit skipped by a 429 reads `not_attempted`, not `refused`.
-- T-698 a deposit Books refuses gets one timeline entry, "Zoho Books refused the deposit for the invoice" (once, not
-  hourly; no toast).
-
-**Board toasts (new Zoho-result toasts)**
-- T-638 / T-686 the acting operator no longer gets a second toast for their own email/invoice/payment-link/counter
-  payment; colleagues still do. (Verified: those kinds are only recorded on success, so no failure is hidden.)
-- T-649 the first Zoho toast of a kind shows at once; the rest of a 1.5 s burst fold into one summary toast (22 new
-  translated keys). Known wording quirk: a burst of 3 reads "Payment link ready for A-1" then "2 payment links ready".
-
-**API/SURFACE additions:** route `DELETE /api/v1/aito/import-3mf/{job_id}` (Aito route count 76 → 77, read-only class),
-client method `cancelAito3mfImport`, helpers `record_deposit_application`, `record_deposit_refusal`, field
-`AitoRetainerApplied.outcome`, i18n keys `aito.forceSyncReasonOutcomeUnknown`, `aito.history.invoiceDepositRefused`,
-22 `aito.zohoToast.*Many_one/_other`, event kind `invoice.deposit_refused`.
-
-## Survey rounds
-
-| Round | Filed (new → plan) | Needed approval | Triaged | Notes |
+## Findings by auditor (PLAN.md, `plan.py stats`)
+| Auditor | Filed in PLAN.md | DONE | BLOCKED | WONTFIX-AUTO |
 |---|---|---|---|---|
-| 1 | 13 + 2 carried c32 approvals | 12 (10 approved, 2 duplicates) | 11 | .3mf import, toasts, Zoho/Heimdall errors |
-| 2 | 6 | 6 (all approved) | 24 | found 2 regressions in this campaign's own fixes (T-682, T-683); security clean |
-| 3 | 4 | 4 (all approved; T-695 later deferred) | 8 | found the T-685 cancel gap (T-696); security clean |
+| audit-security | 1 | 1 | 0 | 0 |
+| audit-robustness | 9 | 8 | 0 | 1 (T-048, declined) |
+| audit-cleanliness | 5 | 4 | 0 | 1 (T-026, no change: the seven mutations differ) |
+| audit-tests | 16 | 16 | 0 | 0 |
 
-## Findings by auditor
+T-002 (split `_rewrite_parcel`) counts as DONE with no change. T-001's dead-branch removal had already brought that function down to about 70 lines.
 
-| Auditor | Filed to plan | DONE | WONTFIX-AUTO | Triaged |
-|---|---|---|---|---|
-| audit-security | 3 | 3 | 0 | 0 |
-| audit-robustness | 12 | 12 | 0 | 5 |
-| audit-cleanliness | 7 | 4 | 3 | 19 |
-| audit-tests | 1 | 1 | 0 | 19 |
-| survey (c32 approvals) | 2 | 2 | 0 | — |
+## Triaged (TRIAGE.md, for human review)
+Campaign-wide, 27 findings were triaged at ingest: 14 in round 1, 10 in round 2 and 3 in round 3. 8 of them were promoted into PLAN.md, so 19 remain: 13 from audit-cleanliness and 6 from audit-tests. All are P3. Each has full evidence in TRIAGE.md. Read it with `python tools/plan.py --file TRIAGE.md render --iteration 11`, and move one into the plan with `python tools/plan.py promote <id> --iteration N` (the `--iteration` flag is required).
 
-43 findings triaged this campaign (tests 19, cleanliness 19, robustness 5). All sit in TRIAGE.md with full evidence;
-promote one with `python tools/plan.py promote <id> --iteration N` (flag required). Worth a look first:
-- T-689 cancelling a .3mf import before its job task starts leaves the job unmarked.
-- T-697 the frontend upload has no AbortSignal, so a closed panel still uploads the whole file before the cancel fires.
-- T-690 `CompactBoardCard` defeats `CardView`'s memo — every phone/tablet card re-renders on each board render.
-- T-652 concurrent per-customer tax-default saves can drop one (read-modify-write of one JSON blob).
-- T-650 `extend_quote_expiry()`'s lock pre-check is racy (c32 carry).
-- T-670 / T-672 / T-688 untested sweep-429, force-sync failure and create-invoice broadcast paths.
+- **T-004:** `get_finished_order` repeats `_run`'s Zoho error mapping.
+- **T-005:** `_order_for_payment` repeats the `_require_order` lookup. This one is largely resolved by T-021.
+- **T-006:** OrderBoardPage is one ~400-line component.
+- **T-007:** OrderLinesPanel is one ~340-line component.
+- **T-012:** some frontend order tests use fixed `setTimeout` waits.
+- **T-015:** a parcel edit that completes the order records no `order.packed` event, and no test pins either outcome.
+- **T-022:** the 429 window test is open-coded in 4 modules.
+- **T-023:** the `ZohoRateLimited` → `open_rate_limit_window` handling is hand-rolled in 4 places.
+- **T-024:** the private `actions._row` is used from `order_board_sms`.
+- **T-025:** the `['order-board']` query key is redefined in several places.
+- **T-027:** three edit bars share one submit skeleton.
+- **T-028:** the refusal toast and invalidate code is repeated.
+- **T-029:** ruff SIM105 in `_loop.py`.
+- **T-038:** `_line_changes` with a renamed line is untested.
+- **T-040:** the `orderEventDetail` money detail lines are untested.
+- **T-041:** the `useScan` guards are untested.
+- **T-042:** OrderTrackPage copies AitoTrackPage's timeout query and stage gate.
+- **T-043:** `_with_unused` repeats the tolerant `_num`.
+- **T-045:** the 429 quote test resets the window by hand.
 
 ## Left for humans
+- **OPEN / BLOCKED:** none.
+- **WONTFIX-AUTO:**
+  - T-026: no change made. The seven mutations' callbacks differ, so a shared builder would need flags.
+  - T-048: behavior change declined. A 429 on the invoice email opens no back-off window.
+- **Notes from the verifiers and workers, not filed:**
+  - T-034 pins what happens if an order row vanishes mid-pass, a state production can't reach today.
+  - T-050's in-flight guard ignores an outside navigation to the exact URL still in flight, within a few milliseconds.
+  - The frontend full suite is very load-sensitive: 13 unrelated files flaked at load 70 and all passed alone.
 
-- **T-695 (deferred feature):** the board poll ships every Done card (and Trash loads every deleted card on open).
-  Splitting Done out is a frontend redesign: Done cards also feed the "Show Done (N)" count, search over Done, the
-  merge pickers, the import-quote "already imported" marker (double-import guard), panel/`?card=` lookup, and ~30
-  writers of the `['aito-projects']` cache. A safe version needs a server-side Done count, a third panel source, one
-  shared cache-writer helper and picker reads. Trash is already on-demand (not polled) and can stay.
-- **One-import-per-user 409 (T-654 half):** now possible since T-685/T-696 added a real cancel; still needs a decision
-  for auth-off installs (owner id is null for everyone).
-- **Live checks owed:** nothing here was smoke-tested against real Zoho Books, Heimdall or the slicer sidecar (all
-  stubbed). Worth one live pass: a deposit apply on a test invoice, a .3mf import + cancel, and the toast bursts.
-- Probe weak spots (stable, pre-existing): `aito-frontend-pure` pins 30 TypeErrors from stale probe fixtures,
-  `aito-quote-money` pins 3 AttributeErrors; `tools/gen_surface_aito32.sh` greps a deleted `pushcut.py`.
+## Preserved state
+At the user's request, all untracked loop state is copied to `plans/refactor-campaign-orders-o3/` in the main checkout (gitignored). That covers PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log, the findings JSON files and the two briefs.

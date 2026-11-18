@@ -4,16 +4,18 @@ fake throughout: nothing here may reach Books."""
 import asyncio
 import time
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
 from backend.app.services.order_board_sync import (
     _common as sync_common,
     _loop as sync_loop,
+    _pass as sync_pass,
     _retainers as sync_retainers,
 )
 from backend.app.services.zoho import (
@@ -532,19 +534,22 @@ async def test_saving_settings_wakes_the_loop_instead_of_waiting_out_the_interva
     """Turning sync on, or raising the age limit, must not show a loading page
     for up to an hour while nothing runs."""
     turns = []
+    turn_ran = asyncio.Event()
 
     async def fake_iteration(db):
         turns.append(1)
+        turn_ran.set()
         return 3600.0
 
     monkeypatch.setattr(sync_loop, "_iteration", fake_iteration)
     monkeypatch.setattr(sync_loop, "async_session", _NoSession)
     loop_task = asyncio.create_task(sync.run_loop())
     try:
-        await asyncio.sleep(0.05)
+        await asyncio.wait_for(turn_ran.wait(), 5)
         assert len(turns) == 1
+        turn_ran.clear()
         await sync.save_settings(db_session, sync.OrderBoardSettings(True, 15, 365, []))
-        await asyncio.sleep(0.05)
+        await asyncio.wait_for(turn_ran.wait(), 5)
         assert len(turns) == 2
     finally:
         loop_task.cancel()
@@ -554,9 +559,12 @@ async def test_saving_settings_wakes_the_loop_instead_of_waiting_out_the_interva
 @pytest.mark.asyncio
 async def test_a_loop_turn_that_raises_does_not_end_the_loop(monkeypatch):
     turns = []
+    two_turns = asyncio.Event()
 
     async def failing_iteration(db):
         turns.append(1)
+        if len(turns) >= 2:
+            two_turns.set()
         raise RuntimeError("database is locked")
 
     monkeypatch.setattr(sync_loop, "_iteration", failing_iteration)
@@ -564,7 +572,7 @@ async def test_a_loop_turn_that_raises_does_not_end_the_loop(monkeypatch):
     monkeypatch.setattr(sync_loop, "PENDING_PAUSE_SECONDS", 0.01)
     loop_task = asyncio.create_task(sync.run_loop())
     try:
-        await asyncio.sleep(0.1)
+        await asyncio.wait_for(two_turns.wait(), 5)
         assert len(turns) >= 2
     finally:
         loop_task.cancel()
@@ -1156,7 +1164,9 @@ async def test_no_estimate_reads_the_retainers_under_the_order_number(db_session
     zoho.customer_payments = [_retainer_payment("r1", 300.0), _retainer_payment("r2", 900.0)]
     await _synced(db_session, zoho, {**order(1), "contact": {"unused_customer_credits": 1200.0}})
     assert (zoho.calls["retainers"], zoho.calls["estimate"]) == (0, 0)
-    stored = (await db_session.execute(sync._stored_query("so1"))).scalar_one().detail
+    doc = await sync.find_stored(db_session, "so1")
+    assert doc is not None
+    stored = doc.detail
     assert [(r["id"], r["unused"]) for r in stored["_retainers"]] == [("r1", 300.0)]
     payment = (await sync.read_board(db_session))["rows"][0]["payment"]
     assert payment["retainer"] == 300.0
@@ -1181,7 +1191,9 @@ async def test_customer_payments_read_once_per_customer_per_pass(db_session, zoh
     await sync.run_pass(db_session)
     assert zoho.calls["retainers"] == 3
     assert zoho.calls["customer_payments"] == 1  # c2's quote has no retainer: nothing to read
-    stored = {n: (await db_session.execute(sync._stored_query(n))).scalar_one().detail for n in ("so1", "so2", "so3")}
+    docs = {n: await sync.find_stored(db_session, n) for n in ("so1", "so2", "so3")}
+    assert all(d is not None for d in docs.values())
+    stored = {n: d.detail for n, d in docs.items() if d is not None}
     assert [r["unused"] for r in stored["so1"]["_retainers"]] == [100.0]
     assert [r["unused"] for r in stored["so2"]["_retainers"]] == [0.0]
     assert stored["so3"]["_retainers"] == []
@@ -1195,7 +1207,8 @@ async def test_retainer_fetch_failure_keeps_previous(db_session, zoho):
     zoho.fail_retainers = ZohoUpstreamError("retainers boom")
     zoho.orders["so1"] = {**order(1, estimate_id="e1", qty=2), "last_modified_time": "2026-11-02T08:00:00-1000"}
     await sync.run_pass(db_session)
-    doc = (await db_session.execute(sync._stored_query("so1"))).scalar_one()
+    doc = await sync.find_stored(db_session, "so1")
+    assert doc is not None
     assert doc.detail["quantity"] == 2 and doc.detail["_retainers"] == [{**_retainer(300.0), "unused": 300.0}]
     assert zoho.calls["retainers"] == 2
 
@@ -1220,7 +1233,8 @@ async def test_a_sloppy_unused_amount_reads_as_zero(db_session, zoho):
     zoho.retainers["e1"] = [_retainer(300.0)]
     zoho.customer_payments = [_retainer_payment("r1", "n/a"), _retainer_payment("r1", 100.0)]
     await _synced(db_session, zoho, order(1, estimate_id="e1"))
-    doc = (await db_session.execute(sync._stored_query("so1"))).scalar_one()
+    doc = await sync.find_stored(db_session, "so1")
+    assert doc is not None
     assert [r["unused"] for r in doc.detail["_retainers"]] == [100.0]
 
 
@@ -1280,3 +1294,168 @@ async def test_opening_an_order_that_is_not_finished_is_refused(db_session, zoho
         await sync.read_finished_order(db_session, "so1")
     with pytest.raises(sync.OrderNotFinished):
         await sync.read_finished_order(db_session, "nope")
+
+
+def _failing_sync(monkeypatch, exc):
+    from backend.app.services.order_board_sync import _pass
+
+    async def boom(db):
+        raise exc
+
+    monkeypatch.setattr(_pass, "_sync", boom)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exc",
+    [
+        OperationalError("SELECT secret_customer FROM t", {"p": "Jane Doe"}, Exception("database is locked")),
+        ValueError("odd Books field"),
+    ],
+)
+async def test_a_non_zoho_pass_failure_is_recorded_without_leaking_its_text(db_session, zoho, monkeypatch, exc):
+    await sync.run_pass(db_session)
+    good = await sync.read_board(db_session)
+    _failing_sync(monkeypatch, exc)
+    assert await sync.run_pass(db_session) is True
+    board = await sync.read_board(db_session)
+    err = board["sync"]["last_error"]
+    assert err.startswith(type(exc).__name__) and board["sync"]["last_error_at"]
+    assert "secret_customer" not in err and "Jane" not in err and "odd Books" not in err
+    assert board["rows"] == good["rows"]
+
+
+@pytest.mark.asyncio
+async def test_a_pass_cancellation_still_propagates(db_session, zoho, monkeypatch):
+    _failing_sync(monkeypatch, asyncio.CancelledError())
+    with pytest.raises(asyncio.CancelledError):
+        await sync.run_pass(db_session)
+    assert (await sync.read_board(db_session))["sync"]["last_error"] is None
+
+
+@pytest.mark.asyncio
+async def test_when_recording_the_failure_fails_too_the_original_reaches_the_loop(db_session, zoho, monkeypatch):
+    from backend.app.services.order_board_sync import _pass
+
+    _failing_sync(monkeypatch, ValueError("first"))
+
+    async def locked(db):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(_pass, "_state", locked)
+    with pytest.raises(ValueError, match="first"):
+        await sync.run_pass(db_session)
+
+
+def _failing_quote(monkeypatch, bad_id, error):
+    """get_estimate raises `error` for `bad_id` and answers normally for the others."""
+    ok = zoho_service.get_estimate
+    broken = {"on": True}
+
+    async def get_estimate(db, estimate_id):
+        if broken["on"] and estimate_id == bad_id:
+            raise error
+        return await ok(db, estimate_id)
+
+    monkeypatch.setattr(zoho_service, "get_estimate", get_estimate)
+    return broken
+
+
+def _pos_orders():
+    return [{**order(n, estimate_id=f"e{n}"), "reference_number": f"110{n}"} for n in (1, 2)]
+
+
+@pytest.mark.asyncio
+async def test_a_deleted_quote_does_not_stop_the_pass_and_is_not_retried(db_session, zoho, monkeypatch):
+    from backend.app.services.zoho import ZohoNotFound
+
+    _failing_quote(monkeypatch, "e1", ZohoNotFound("gone"))
+    await _synced(db_session, zoho, *_pos_orders())
+    board = await sync.read_board(db_session)
+    assert board["stock_loaded_at"] and board["sync"]["last_success_at"] and not board["sync"]["last_error"]
+    rows = {r["id"]: r["facts"] for r in board["rows"]}
+    assert rows["so2"]["quote_number"] == "DEV26-e2"
+    assert (await _doc(db_session, "so1")).detail["estimate_number"] == ""
+    calls = zoho.calls["estimate"]
+    await sync.run_pass(db_session)
+    assert zoho.calls["estimate"] == calls
+
+
+@pytest.mark.asyncio
+async def test_a_failing_quote_lookup_is_skipped_and_retried_next_pass(db_session, zoho, monkeypatch):
+    from backend.app.services.zoho import ZohoUnreachable
+
+    broken = _failing_quote(monkeypatch, "e1", ZohoUnreachable("boom"))
+    await _synced(db_session, zoho, *_pos_orders())
+    board = await sync.read_board(db_session)
+    assert board["sync"]["last_success_at"] and not board["sync"]["last_error"]
+    assert "estimate_number" not in (await _doc(db_session, "so1")).detail
+    assert (await _doc(db_session, "so2")).detail["estimate_number"] == "DEV26-e2"
+    assert "_quote_failed_at" in (await _doc(db_session, "so1")).detail
+    broken["on"] = False
+    # inside the backoff the failed quote is left alone ...
+    calls = zoho.calls["estimate"]
+    await sync.run_pass(db_session)
+    assert zoho.calls["estimate"] == calls
+    assert "estimate_number" not in (await _doc(db_session, "so1")).detail
+    # ... a day later it is read again, and the marker goes with the success
+    from backend.app.services.order_board_sync import _finished
+
+    later = datetime.now(timezone.utc) + timedelta(hours=_finished.QUOTE_RETRY_HOURS, minutes=1)
+    monkeypatch.setattr(_finished, "_now", lambda: later.isoformat())
+    await sync.run_pass(db_session)
+    detail = (await _doc(db_session, "so1")).detail
+    assert detail["estimate_number"] == "DEV26-e1" and "_quote_failed_at" not in detail
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_quote_lookup_opens_the_window_and_stops_the_pass(db_session, zoho, monkeypatch):
+    from backend.app.services.zoho import ZohoRateLimited
+
+    _failing_quote(monkeypatch, "e1", ZohoRateLimited("slow down", retry_after=90))
+    await _synced(db_session, zoho, *_pos_orders())
+    assert sync_common._rate_limited_until > time.monotonic()
+    assert "estimate_number" not in (await _doc(db_session, "so1")).detail
+    sync_common._rate_limited_until = 0.0
+
+
+@pytest.mark.asyncio
+async def test_a_busy_zoho_stops_the_pass_before_the_finished_details(db_session, zoho, monkeypatch):
+    await _synced(db_session, zoho, order(1, age=10, shipped=1))
+    await _forget_detail(db_session, "so1")
+    before = zoho.calls["detail"]
+    monkeypatch.setattr(sync_pass, "zoho_busy", lambda: True)
+    assert await sync.run_pass(db_session) is True
+    assert zoho.calls["detail"] == before
+    assert (await _doc(db_session, "so1")).detail is None
+
+
+@pytest.mark.asyncio
+async def test_a_busy_finished_detail_stops_the_rest_of_the_pass(db_session, zoho, monkeypatch):
+    await _synced(db_session, zoho, order(1, age=10, shipped=1), order(2, age=11, shipped=1))
+    await _forget_detail(db_session, "so1")
+    await _forget_detail(db_session, "so2")
+    asked = []
+
+    async def busy(db, doc):
+        asked.append(doc.zoho_id)
+        raise sync.ZohoBusy("busy")
+
+    monkeypatch.setattr(sync_pass, "_ensure_finished_detail", busy)
+    assert await sync.run_pass(db_session) is True
+    assert asked == ["so1"]  # newest first; the second is never asked
+
+
+@pytest.mark.asyncio
+async def test_the_call_ceiling_stops_the_quote_number_reads(db_session, zoho, monkeypatch):
+    from backend.app.services.zoho import ZohoUnreachable
+
+    broken = _failing_quote(monkeypatch, "e1", ZohoUnreachable("boom"))
+    await _synced(db_session, zoho, *_pos_orders())
+    assert "estimate_number" not in (await _doc(db_session, "so1")).detail
+    broken["on"] = False  # Books answers again, so only the budget can hold the read back
+    calls = zoho.calls["estimate"]
+    zoho.meter = sync.CALL_CEILING  # nothing is pending, so only the quote loop looks at the budget
+    assert await sync.run_pass(db_session) is True
+    assert zoho.calls["estimate"] == calls
+    assert "estimate_number" not in (await _doc(db_session, "so1")).detail

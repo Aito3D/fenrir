@@ -30,18 +30,15 @@ from backend.app.services.order_board_actions._common import (
     writing,
 )
 from backend.app.services.zoho import (
+    ZohoAmbiguous,
     ZohoNotFound,
     ZohoRateLimited,
-    ZohoRequestRejected,
+    ZohoUnreachable,
     ZohoUpstreamError,
     zoho_service,
 )
 
 logger = logging.getLogger(__name__)
-
-# False: edit the package and its completed picklist in place. True: the spec's fallback (delete the package, fix
-# the picklist, create the package again), for when the first live run shows Books refuses a completed picklist.
-_PARCEL_EDIT_REPLACES = False
 
 
 def _units(quantities: Mapping[str, float]) -> dict[str, float]:
@@ -181,9 +178,7 @@ async def package_content(db: AsyncSession, salesorder_id: str, package_id: str)
         raise sync.ZohoBusy(salesorder_id)
     package, picklist, boxed, ceiling = await _parcel(db, salesorder_id, package_id, order, row)
     # A picklist-down step left undone by a failure: a save with no change finishes it.
-    pending = not _PARCEL_EDIT_REPLACES and _owed(
-        await _marker(db, package_id), picklist, package, boxed, salesorder_id
-    )
+    pending = _owed(await _marker(db, package_id), picklist, package, boxed, salesorder_id)
     return {
         "id": package_id,
         "number": package.get("package_number") or "",
@@ -278,57 +273,6 @@ async def _rewrite_parcel(
         await _write(salesorder_id, number, step, zoho_service.update_picklist(db, picklist_id, body(rows)))
         return await _picklist(db, order, picklist_id)
 
-    if _PARCEL_EDIT_REPLACES:
-        await _write(salesorder_id, number, "delete_package", zoho_service.delete_package(db, package_id))
-        landed.append("package")
-        picklist = await _picklist(db, order, picklist_id)
-        rows, units, same = _picklist_rows(picklist, {}, old, new, False, salesorder_id)
-        if not rows:  # no parcel holds anything from it any more
-            await _write(salesorder_id, number, "delete_picklist", zoho_service.delete_picklist(db, picklist_id))
-            return
-        if not same:
-            try:
-                picklist = await update_picklist("picklist", rows)
-            except ZohoRequestRejected:  # Books will not change a completed picklist: make it again
-                held = await _picklist(db, order, picklist_id)
-                if any(_num(r.get("quantity_packed")) > 0 for r in held.get("line_items") or []):
-                    raise  # another parcel boxed from it: keep it (picklist ≥ package), "Créer le colis" finishes
-                await _write(salesorder_id, number, "delete_picklist", zoho_service.delete_picklist(db, picklist_id))
-                fresh = {
-                    "date": date.today().isoformat(),
-                    "location_id": picklist.get("location_id"),
-                    "parent_entity": "salesorder",
-                    "group_by": "none",
-                    "line_items": [
-                        {
-                            "salesorder_id": salesorder_id,
-                            "so_line_item_id": k,
-                            "quantity_to_be_picked": q,
-                            "quantity_picked": q,
-                        }
-                        for k, q in units.items()
-                        if q > 0
-                    ],
-                }
-                picklist = await _write(salesorder_id, number, "picklist", zoho_service.create_picklist(db, fresh))
-                if picklist.get("status") != "completed":
-                    await _write(
-                        salesorder_id,
-                        number,
-                        "picklist_completed",
-                        zoho_service.complete_picklist(db, picklist.get("picklist_id") or ""),
-                    )
-        if new:
-            await _write(
-                salesorder_id,
-                number,
-                "parcel",
-                zoho_service.create_package(
-                    db, salesorder_id, date=date.today().isoformat(), line_items=_package_lines(picklist, new)
-                ),
-            )
-        return
-
     if not new:
         await _write(salesorder_id, number, "delete_package", zoho_service.delete_package(db, package_id))
         landed.append("package")
@@ -365,6 +309,24 @@ async def _rewrite_parcel(
             await update_picklist("picklist_down", rows)
         if new:
             await _unmark(db, package_id)
+
+
+async def _applied_despite_error(
+    db: AsyncSession, error: Exception, package_id: str, package: dict, new: dict[str, float]
+) -> bool:
+    """Whether a package write that ended unknown (timeout, ambiguous) did change the package in Books: only a fresh
+    read of that package says so (it holds ``new``, or is gone for a delete). Any doubt, or a busy Books, is no."""
+    if not isinstance(error, ZohoUnreachable | ZohoAmbiguous) or sync.zoho_busy() or _same(_boxed(package), new):
+        return False
+    try:
+        return _same(_boxed(await zoho_service.get_package(db, package_id)), new)
+    except ZohoNotFound:
+        return not new
+    except ZohoRateLimited as e:
+        sync.open_rate_limit_window(e)
+    except Exception:
+        logger.warning("Order board: confirming parcel %s after a Books timeout failed", package_id)
+    return False
 
 
 async def _record_edit(db, salesorder_id, by, package, names, old, new) -> None:
@@ -407,7 +369,7 @@ async def edit_parcel(
         _within(new, ceiling, {line["id"] for line in row["lines"]})
         if _same(old, new):
             # No change asked: only a marked edit whose picklist step is still owed has something to finish.
-            marker = None if _PARCEL_EDIT_REPLACES else await _marker(db, package_id)
+            marker = await _marker(db, package_id)
             if marker is None or not _owed(marker, picklist, package, boxed, salesorder_id):
                 if marker is not None:
                     await _unmark(db, package_id)  # done or out of date
@@ -417,7 +379,9 @@ async def edit_parcel(
         names = {line["id"]: line["name"] for line in row["lines"]}
         try:
             await _rewrite_parcel(db, salesorder_id, number, detail, package, picklist, old, new, landed)
-        except Exception:
+        except Exception as e:
+            if not landed and await _applied_despite_error(db, e, package_id, package, new):
+                landed.append("package")
             if landed:
                 await _record_edit(db, salesorder_id, by, package, names, old, new)
             await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean Books did it

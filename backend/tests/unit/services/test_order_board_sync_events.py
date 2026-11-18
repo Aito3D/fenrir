@@ -8,8 +8,9 @@ from sqlalchemy import select
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_events, order_board_sync as sync
 from backend.app.services.aito_events import utc_now_naive
-from backend.app.services.zoho import ZohoUpstreamError
+from backend.app.services.zoho import ZohoUpstreamError, zoho_service
 from backend.tests.unit.test_order_board_sync import (  # noqa: F401 (fixtures)
+    file_sessions,
     no_back_off_left_over,
     order,
     zoho,
@@ -228,3 +229,78 @@ async def test_an_undrawn_deposit_drawn_after_the_invoice_is_not_a_payment(db_se
     payment = (await sync.read_board(db_session))["rows"][0]["payment"]
     assert (payment["retainer"], payment["invoice_paid"], payment["left"]) == (0.0, 400.0, 600.0)
     assert await events(db_session, "payment.received") == []
+
+
+async def _operator_saves_so2_during_the_pass(file_sessions, zoho, monkeypatch, books_now: dict):
+    """so1 is fetched first; while its get is in flight the operator's write (another session) stores D2 of so2,
+    then the pass reaches so2 and Books answers ``books_now``."""
+    async with file_sessions() as passing, file_sessions() as writing:
+        zoho.add(order(1, age=10), order(2, age=5, qty=1))
+        await sync.run_pass(passing)
+        await sync.run_pass(passing)
+        for n in (1, 2):
+            zoho.orders[f"so{n}"] = edited(n, "2026-11-02T08:00:00-1000", age=10 if n == 1 else 5)
+        real = zoho.get_salesorder
+        d2 = order(2, qty=3)
+
+        async def get(db, salesorder_id):
+            if salesorder_id == "so2":
+                return books_now
+            monkeypatch.setattr(zoho_service, "get_salesorder", lambda _db, _i: _fixed(d2))
+            await sync.refresh_order(writing, "so2")
+            monkeypatch.setattr(zoho_service, "get_salesorder", get)
+            return await real(db, salesorder_id)
+
+        monkeypatch.setattr(zoho_service, "get_salesorder", get)
+        await sync.run_pass(passing)
+        return await events(writing, "zoho.edited")
+
+
+async def _fixed(value):
+    return value
+
+
+@pytest.mark.asyncio
+async def test_an_edit_saved_during_the_pass_is_not_also_logged_as_a_zoho_edit(file_sessions, zoho, monkeypatch):
+    assert await _operator_saves_so2_during_the_pass(file_sessions, zoho, monkeypatch, order(2, qty=3)) == []
+
+
+@pytest.mark.asyncio
+async def test_an_outside_edit_after_the_operators_save_is_still_logged(file_sessions, zoho, monkeypatch):
+    (event,) = await _operator_saves_so2_during_the_pass(file_sessions, zoho, monkeypatch, order(2, qty=4))
+    assert event.changes == [{"field": "Thing", "from": 3.0, "to": 4.0}]
+
+
+@pytest.mark.asyncio
+async def test_a_stored_order_vanishing_mid_pass_fails_the_pass_after_the_earlier_details_are_kept(
+    file_sessions, zoho, monkeypatch
+):
+    """Characterization. Production cannot reach this today: sales-order rows are only deleted inside a pass,
+    which holds the pass lock. If that changes, the refresh of the vanished row ends the whole pass."""
+    from backend.app.models.order_board_doc import OrderBoardDoc
+    from backend.app.services.order_board_sync._common import _state
+
+    async with file_sessions() as passing, file_sessions() as writing:
+        zoho.add(order(1, age=10), order(2, age=5))
+        await sync.run_pass(passing)
+        await sync.run_pass(passing)
+        for n in (1, 2):
+            zoho.orders[f"so{n}"] = edited(n, "2026-11-02T08:00:00-1000", age=10 if n == 1 else 5)
+        real = zoho.get_salesorder
+
+        async def get(db, salesorder_id):
+            if salesorder_id == "so2":
+                row = (await writing.execute(select(OrderBoardDoc).where(OrderBoardDoc.zoho_id == "so2"))).scalar_one()
+                await writing.delete(row)
+                await writing.commit()
+            return await real(db, salesorder_id)
+
+        monkeypatch.setattr(zoho_service, "get_salesorder", get)
+        before = (await _state(passing)).detail["last_success_at"]
+        await sync.run_pass(passing)
+
+        detail = (await _state(writing)).detail
+        assert detail["last_error"] == "InvalidRequestError: the sync pass failed, see the server log"
+        assert detail["last_success_at"] == before  # the pass did not finish
+        so1 = (await writing.execute(select(OrderBoardDoc).where(OrderBoardDoc.zoho_id == "so1"))).scalar_one()
+        assert so1.pending is False and so1.detail["_fetched_at"]  # fetched and committed before the failure

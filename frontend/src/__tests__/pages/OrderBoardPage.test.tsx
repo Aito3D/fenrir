@@ -361,6 +361,14 @@ describe('OrderBoardPage', () => {
     expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument();
   });
 
+  it('offers no batch prep-sheet tick without orders:update', async () => {
+    mockUseAuth.hasPermission.mockImplementation((p: string) => p !== 'orders:update');
+    serve(board());
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    expect(screen.queryByRole('checkbox', { name: /SO-00412/ })).not.toBeInTheDocument();
+  });
+
   it('Refresh asks the server for one pass and shows what comes back', async () => {
     const user = userEvent.setup();
     let posts = 0;

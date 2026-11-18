@@ -49,10 +49,12 @@ export function OrderPrepActions({
       {boxablePicklists(row).map(p => (
         <span key={p.id} className="inline-flex flex-wrap items-center gap-2">
           <span className="rounded-full border border-bambu-dark-tertiary bg-bambu-dark/40 px-2 py-0.5 font-mono text-[10px] text-bambu-gray">{p.number}</span>
-          <button type="button" disabled={printing} aria-label={`${t(printed ? 'orders.prep.reprint' : 'orders.prep.sheet')} · ${p.number}`} onClick={() => onPrint(p)} className={QUIET}>
-            {printing ? spin : <Printer aria-hidden="true" className="h-3.5 w-3.5" />}
-            {t(printed ? 'orders.prep.reprint' : 'orders.prep.sheet')}
-          </button>
+          {canUpdate && (
+            <button type="button" disabled={printing} aria-label={`${t(printed ? 'orders.prep.reprint' : 'orders.prep.sheet')} · ${p.number}`} onClick={() => onPrint(p)} className={QUIET}>
+              {printing ? spin : <Printer aria-hidden="true" className="h-3.5 w-3.5" />}
+              {t(printed ? 'orders.prep.reprint' : 'orders.prep.sheet')}
+            </button>
+          )}
           {canUpdate && (
             <button type="button" data-opens={`pack-${p.id}`} disabled={opening !== null} aria-label={`${t('orders.parcel.create')} · ${p.number}`} onClick={() => onPack(p)} className={STRONG}>
               {opening === p.id ? spin : <PackagePlus aria-hidden="true" className="h-3.5 w-3.5" />}

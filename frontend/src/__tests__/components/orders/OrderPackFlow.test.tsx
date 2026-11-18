@@ -78,7 +78,8 @@ describe('the prep band', () => {
     first.unmount();
     mockUseAuth.hasPermission.mockImplementation(() => false);
     render(<OrderLinesPanel row={picking()} />);
-    expect(screen.getByRole('button', { name: 'Prep sheet · PL-00013' })).toBeInTheDocument();
+    // Printing stamps the order, so it is an orders:update action like the parcel button.
+    expect(screen.queryByRole('button', { name: /Prep sheet/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Create parcel/ })).not.toBeInTheDocument();
   });
 

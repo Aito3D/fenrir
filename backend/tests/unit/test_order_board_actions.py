@@ -16,9 +16,11 @@ from backend.app.services import order_board_actions as actions, order_board_syn
 from backend.app.services.order_board_actions import line_edit, parcel_edit, stamps as stamp_module
 from backend.app.services.order_board_sync import _common as sync_common
 from backend.app.services.zoho import (
+    ZohoAmbiguous,
     ZohoNotFound,
     ZohoRateLimited,
     ZohoRequestRejected,
+    ZohoUnreachable,
     ZohoUpstreamError,
     zoho_service,
 )
@@ -890,6 +892,17 @@ async def test_a_database_error_on_the_stamp_delete_still_returns_the_number(db_
 
 
 @pytest.mark.asyncio
+async def test_reprinting_an_order_with_a_prep_stamp_updates_the_one_row_and_logs_both(db_session, zoho):
+    await _board(db_session, zoho, order(1))
+    await actions.stamp_print(db_session, "so1", "first")
+    row = await actions.stamp_print(db_session, "so1", "second")
+    assert row["prep"]["by"] == "second"
+    docs = (await db_session.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "prep"))).scalars().all()
+    assert [d.header["by"] for d in docs] == ["second"]
+    assert [e.actor_name for e in await events_of(db_session, "so1") if e.kind == "prep.printed"] == ["first", "second"]
+
+
+@pytest.mark.asyncio
 async def test_a_simultaneous_first_stamp_updates_the_winner_instead_of_failing(file_sessions, zoho, monkeypatch):
     async with file_sessions() as one, file_sessions() as two:
         await _board(one, zoho, order(1))
@@ -900,12 +913,62 @@ async def test_a_simultaneous_first_stamp_updates_the_winner_instead_of_failing(
             calls.append(1)
             return select(OrderBoardDoc).where(false()) if len(calls) == 1 else real_query(salesorder_id)
 
-        monkeypatch.setattr(stamp_module, "_prep_query", blind_first)
-        await actions.stamp_print(two, "so1", "winner")
+        await actions.stamp_print(two, "so1", "winner")  # the winner commits first, with the real query
+        monkeypatch.setattr(stamp_module, "_prep_query", blind_first)  # now only `one` looks, and misses the row
+        real_rollback = one.rollback
+        rollbacks = []
+
+        async def counting_rollback():
+            rollbacks.append(1)
+            await real_rollback()
+
+        monkeypatch.setattr(one, "rollback", counting_rollback)
         row = await actions.stamp_print(one, "so1", "loser")
+        assert rollbacks == [1]  # the IntegrityError recovery ran
         assert row["prep"]["by"] == "loser"
         stamps = (await one.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "prep"))).scalars().all()
         assert len(stamps) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_print_stamp_losing_the_unique_key_race_keeps_one_row_with_the_latest_by_and_logs(file_sessions, zoho):
+    async with file_sessions() as one, file_sessions() as two:
+        await _board(one, zoho, order(1))
+        real_commit = one.commit
+        raced = []
+
+        async def winner_lands_first():
+            if not raced:
+                raced.append(1)
+                await actions.stamp_print(two, "so1", "winner")
+            await real_commit()
+
+        one.commit = winner_lands_first
+        row = await actions.stamp_print(one, "so1", "loser", "PL-9")
+        assert row["prep"]["by"] == "loser"
+        docs = (await one.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "prep"))).scalars().all()
+        assert [d.header["by"] for d in docs] == ["loser"]
+        assert [e.actor_name for e in await events_of(one, "so1") if e.kind == "prep.printed"] == ["winner", "loser"]
+
+
+@pytest.mark.asyncio
+async def test_a_simultaneous_first_contact_stamp_keeps_the_winner_and_still_logs(file_sessions, zoho):
+    async with file_sessions() as one, file_sessions() as two:
+        await _board(one, zoho, order(1))
+        real_commit = one.commit
+        raced = []
+
+        async def winner_lands_first():
+            if not raced:
+                raced.append(1)
+                await actions.stamp_contact(two, "so1", "winner")
+            await real_commit()
+
+        one.commit = winner_lands_first
+        await actions.stamp_contact(one, "so1", "loser")
+        docs = (await one.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "contact"))).scalars().all()
+        assert [d.header["by"] for d in docs] == ["winner"]
+        assert [e.actor_name for e in await events_of(one, "so1") if e.kind == "sms.sent"] == ["winner", "loser"]
 
 
 @pytest.mark.asyncio
@@ -2150,6 +2213,45 @@ async def test_omitted_line_is_removed(db_session, lines_edit):
     assert any(c["to"] == 0 for c in events[0].changes) and "total_from" in events[0].detail
 
 
+def _repricing_update(lines_edit, monkeypatch, *, break_reads=False):
+    """Books reprices the order to 777 on the edit; optionally every read after the write fails."""
+    write = zoho_service.update_salesorder
+
+    async def update_salesorder(db, salesorder_id, body):
+        out = await write(db, salesorder_id, body)
+        lines_edit.orders[salesorder_id]["total"] = 777.0
+        if break_reads:
+
+            async def boom(db, salesorder_id):
+                raise ZohoUpstreamError("boom")
+
+            monkeypatch.setattr(zoho_service, "get_salesorder", boom)
+        return out
+
+    monkeypatch.setattr(zoho_service, "update_salesorder", update_salesorder)
+
+
+@pytest.mark.asyncio
+async def test_edit_event_records_the_new_total_from_the_refreshed_copy(db_session, lines_edit, monkeypatch):
+    await _board(db_session, lines_edit, _edit_order())
+    _repricing_update(lines_edit, monkeypatch)
+    await actions.edit_lines(
+        db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}, {"line_id": "l2", "quantity": 1}]
+    )
+    detail = (await events_of(db_session, "so1"))[0].detail
+    assert detail["total_to"] == 777.0 and detail["total_from"] != 777.0
+
+
+@pytest.mark.asyncio
+async def test_edit_event_total_to_is_none_when_the_reread_failed(db_session, lines_edit, monkeypatch):
+    await _board(db_session, lines_edit, _edit_order())
+    _repricing_update(lines_edit, monkeypatch, break_reads=True)
+    await actions.edit_lines(
+        db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}, {"line_id": "l2", "quantity": 1}]
+    )
+    assert (await events_of(db_session, "so1"))[0].detail["total_to"] is None
+
+
 @pytest.mark.asyncio
 async def test_floor_uses_books_cumulative_figures(db_session, lines_edit):
     await _board(
@@ -2703,54 +2805,6 @@ async def test_edit_parcel_refuses_without_writing(db_session, parcels, setup, v
 
 
 @pytest.mark.asyncio
-async def test_replace_mode_deletes_and_recreates(db_session, parcels, monkeypatch):
-    monkeypatch.setattr(parcel_edit, "_PARCEL_EDIT_REPLACES", True)
-    await _board(db_session, parcels, _packed(parcels))
-    row = await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3})
-    assert _labels(parcels) == ["delete_package", "picklist", "create_package"]
-    assert parcels.bodies["picklist"]["line_items"] == [
-        {"line_item_id": "r1", "quantity_to_be_picked": 3, "quantity_picked": 3}
-    ]
-    assert parcels.created[-1][2] == [{"so_line_item_id": "l1", "quantity": 3, "picklist_item_id": "r1"}]
-    assert row["lines"][0]["packed_waiting"] == 3
-
-
-@pytest.mark.asyncio
-async def test_replace_mode_recreates_a_picklist_books_will_not_change(db_session, parcels, monkeypatch):
-    monkeypatch.setattr(parcel_edit, "_PARCEL_EDIT_REPLACES", True)
-    await _board(db_session, parcels, _packed(parcels))
-    parcels.fail_step, parcels.fail_with = "picklist", ZohoRequestRejected
-    await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
-    assert _labels(parcels) == [
-        "delete_package",
-        "delete_picklist",
-        "create_picklist",
-        "complete_picklist",
-        "create_package",
-    ]
-    assert parcels.created[-1][2] == [{"so_line_item_id": "l1", "quantity": 1, "picklist_item_id": "pl1-l1"}]
-
-
-@pytest.mark.asyncio
-async def test_replace_mode_emptying_the_only_parcel_deletes_its_picklist(db_session, parcels, monkeypatch):
-    monkeypatch.setattr(parcel_edit, "_PARCEL_EDIT_REPLACES", True)
-    await _board(db_session, parcels, _packed(parcels))
-    await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {})
-    assert parcels.steps == [("delete_package", "p1"), ("delete_picklist", "pl1")]
-
-
-@pytest.mark.asyncio
-async def test_replace_mode_keeps_a_picklist_a_sibling_parcel_boxed_from(db_session, parcels, monkeypatch):
-    monkeypatch.setattr(parcel_edit, "_PARCEL_EDIT_REPLACES", True)
-    await _board(db_session, parcels, _packed(parcels, qty=5, picked=5, parcels_=(("p1", 2), ("p2", 3))))
-    parcels.fail_step, parcels.fail_with = "picklist", ZohoRequestRejected
-    with pytest.raises(ZohoRequestRejected):
-        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
-    assert _labels(parcels) == ["delete_package"]
-    assert parcels.picklists["pl1"]["line_items"][0]["quantity_picked"] == 5  # p2's row untouched
-
-
-@pytest.mark.asyncio
 async def test_an_edit_that_takes_the_order_off_the_board_returns_nothing(db_session, lines_edit, monkeypatch):
     await _board(db_session, lines_edit, _edit_order())
     reads = iter([await actions._row(db_session, "so1")])  # the floors read; the read after the write finds nothing
@@ -2949,3 +3003,473 @@ async def test_invoice_preview_names_a_blocking_draft_and_survives_books(db_sess
     await sync.run_pass(db_session)
     books.errors["get_package"] = ZohoUpstreamError("down")
     assert (await actions.invoice_preview(db_session, "so1"))["available"] is False
+
+
+# --- Parcel edit: refusals and partial failures ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_gone_from_books_is_unknown(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    del parcels.packages["p1"]
+    with pytest.raises(actions.OrderActionRefused, match="unknown_package"):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3})
+    assert parcels.steps == []
+    assert sync_common._rate_limited_until == 0.0
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_parcel_read_is_busy_and_opens_the_window(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+
+    async def limited(db, package_id):
+        raise _rate_limited()
+
+    monkeypatch.setattr(zoho_service, "get_package", limited)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3})
+    _assert_window_open()
+    assert parcels.steps == []
+
+
+@pytest.mark.asyncio
+async def test_busy_zoho_gives_no_parcel_content(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    parcels.meter = sync.CALL_CEILING
+    reads = parcels.calls["detail"]
+    with pytest.raises(sync.ZohoBusy):
+        await actions.package_content(db_session, "so1", "p1")
+    assert parcels.calls["detail"] == reads
+
+
+def _no_picklist_row(zoho):
+    zoho.packages["p1"]["line_items"][0]["picklist_item_id"] = ""
+
+
+def _row_on_no_picklist(zoho):
+    zoho.packages["p1"]["line_items"][0]["picklist_item_id"] = "zz"
+
+
+def _split_over_two_picklists(zoho):
+    doc = zoho.orders["so1"]
+    doc["picklists"].append({"picklist_id": "pl2", "picklist_number": "PL-00002", "status": "completed"})
+    row = {**zoho.picklists["pl1"]["line_items"][0], "line_item_id": "r2", "so_line_item_id": "l2"}
+    zoho.picklists["pl2"] = {**zoho.picklists["pl1"], "picklist_id": "pl2", "line_items": [row]}
+    zoho.packages["p1"]["line_items"].append({"so_line_item_id": "l2", "quantity": 1, "picklist_item_id": "r2"})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("setup", [_no_picklist_row, _row_on_no_picklist, _split_over_two_picklists])
+async def test_a_parcel_without_one_picklist_of_its_own_is_refused(db_session, parcels, setup):
+    await _board(db_session, parcels, _packed(parcels))
+    setup(parcels)
+    with pytest.raises(actions.OrderActionRefused, match="picklist_shared"):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3})
+    assert parcels.steps == []
+
+
+@pytest.mark.asyncio
+async def test_a_picklist_row_that_never_appeared_stops_the_edit_before_the_package_write(
+    db_session, parcels, monkeypatch
+):
+    await _board(db_session, parcels, _packed(parcels))
+
+    async def swallowed(db, picklist_id, body):  # Books accepted the call but the new row is not on the picklist
+        parcels.steps.append(("picklist", body))
+
+    monkeypatch.setattr(zoho_service, "update_picklist", swallowed)
+    with pytest.raises(ZohoUpstreamError, match="picklist row missing"):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 2, "l2": 1})
+    assert _labels(parcels) == ["picklist"]  # the package was never written
+    assert await events_of(db_session, "so1") == []
+
+
+@pytest.mark.asyncio
+async def test_a_stale_marker_is_dropped_by_a_save_with_no_change(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    stale = {"old": {"l1": 2}, "new": {"l1": 3}}  # the parcel holds 2, not what the marked edit asked for
+    db_session.add(OrderBoardDoc(kind="parcel_edit", zoho_id="p1", header=stale))
+    await db_session.commit()
+    with pytest.raises(actions.OrderActionRefused, match="nothing_changed"):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 2})
+    assert await parcel_edit._marker(db_session, "p1") is None
+    assert parcels.steps == []
+
+
+@pytest.mark.asyncio
+async def test_a_marker_that_cannot_be_cleared_is_logged_and_rolled_back(caplog):
+    class Broken:
+        rolled_back = False
+
+        async def execute(self, *_):
+            raise RuntimeError("db gone")
+
+        async def rollback(self):
+            self.rolled_back = True
+
+    broken = Broken()
+    with caplog.at_level("WARNING"):
+        await parcel_edit._unmark(broken, "p1")
+    assert broken.rolled_back
+    assert "clearing a parcel edit marker failed for p1 (RuntimeError)" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_edit_that_takes_the_order_off_the_board_returns_nothing(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+    real, calls = parcel_edit._row, []
+
+    async def vanishing(db, salesorder_id):
+        calls.append(salesorder_id)
+        if len(calls) > 1:  # the read for the editor's floors works; the read after the write finds nothing
+            raise actions.OrderNotOnBoard(salesorder_id)
+        return await real(db, salesorder_id)
+
+    monkeypatch.setattr(parcel_edit, "_row", vanishing)
+    assert await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 3}) == {}
+    assert _labels(parcels) == ["picklist", "parcel"]
+
+
+def _applied_then_fail(monkeypatch, name, error, after=None):
+    """Books applies the package write, then the call ends with ``error`` (a timeout that went through)."""
+    real = getattr(zoho_service, name)
+
+    async def write(*args):
+        await real(*args)
+        if after:
+            after()
+        raise error("timed out")
+
+    monkeypatch.setattr(zoho_service, name, write)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [ZohoUnreachable, ZohoAmbiguous])
+async def test_a_parcel_edit_that_timed_out_but_applied_is_recorded(db_session, parcels, monkeypatch, error):
+    await _board(db_session, parcels, _packed(parcels))
+    _applied_then_fail(monkeypatch, "update_package", error)
+    with pytest.raises(error):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["package.edited"]
+    assert events[0].changes == [{"field": events[0].changes[0]["field"], "from": 2, "to": 1}]
+    assert "package" in events[0].detail
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_delete_that_timed_out_but_went_through_is_recorded(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+    _applied_then_fail(monkeypatch, "delete_package", ZohoUnreachable)
+    with pytest.raises(ZohoUnreachable):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {})
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["package.edited"]
+    assert events[0].detail["deleted"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_timeout_that_did_not_apply_records_nothing(db_session, parcels):
+    await _board(db_session, parcels, _packed(parcels))
+    parcels.fail_with, parcels.fail_step = ZohoUnreachable, "parcel"
+    with pytest.raises(ZohoUnreachable):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert await events_of(db_session, "so1") == []
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_timeout_whose_confirming_read_fails_records_nothing(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+    real, down = zoho_service.get_package, []
+
+    async def flaky(db, package_id):
+        if down:
+            raise ZohoUpstreamError("down")
+        return await real(db, package_id)
+
+    monkeypatch.setattr(zoho_service, "get_package", flaky)
+    _applied_then_fail(monkeypatch, "update_package", ZohoUnreachable, after=lambda: down.append(1))
+    with pytest.raises(ZohoUnreachable):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert await events_of(db_session, "so1") == []
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_timeout_while_books_is_busy_makes_no_confirming_read(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+    _applied_then_fail(
+        monkeypatch, "update_package", ZohoUnreachable, after=lambda: setattr(parcels, "meter", sync.CALL_CEILING)
+    )
+    with pytest.raises(ZohoUnreachable):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert await events_of(db_session, "so1") == []
+
+
+@pytest.mark.asyncio
+async def test_a_parcel_timeout_whose_confirming_read_is_rate_limited_opens_the_window(
+    db_session, parcels, monkeypatch
+):
+    await _board(db_session, parcels, _packed(parcels))
+    real, down = zoho_service.get_package, []
+
+    async def limited(db, package_id):
+        if down:
+            raise _rate_limited()
+        return await real(db, package_id)
+
+    monkeypatch.setattr(zoho_service, "get_package", limited)
+    _applied_then_fail(monkeypatch, "update_package", ZohoUnreachable, after=lambda: down.append(1))
+    with pytest.raises(ZohoUnreachable):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    _assert_window_open()
+    assert await events_of(db_session, "so1") == []
+
+
+_PREVIEW_UNKNOWN = {
+    "available": False,
+    "credit": 0.0,
+    "drafts": [],
+    "packed": {"units": 0.0, "invoice_total": None, "manual_reason": None},
+    "whole": {"units": 0.0, "invoice_total": None, "manual_reason": None},
+}
+
+
+@pytest.mark.asyncio
+async def test_invoice_preview_of_a_package_with_an_unexpected_status_is_unknown(db_session, books):
+    await _ready(db_session, books)
+    books.packages["pk1"]["status"] = "lost"  # the stored copy still says not_shipped
+    assert await actions.invoice_preview(db_session, "so1") == _PREVIEW_UNKNOWN
+    assert "invoice_prefill" not in _names(books)
+
+
+@pytest.mark.asyncio
+async def test_invoice_preview_skips_a_parcel_without_an_id_and_one_that_has_shipped_since(db_session, books):
+    handover_order(books, qty=3, box=2)
+    books.orders["so1"]["packages"].append({"package_number": "PKG-X", "status": "not_shipped", "quantity": 1})
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    books.log.clear()
+    books.packages["pk1"]["status"] = "shipped"  # shipped since the stored copy: already in quantity_shipped
+    preview = await actions.invoice_preview(db_session, "so1")
+    assert _calls(books, "get_package") == [("pk1",)]  # the id-less parcel is never read
+    assert preview["available"] is True
+    assert preview["packed"]["units"] == 0.0
+    assert preview["whole"]["units"] == 3.0
+
+
+@pytest.mark.asyncio
+async def test_invoice_preview_is_unknown_while_books_is_busy(db_session, books):
+    await _ready(db_session, books)
+    books.meter = sync.CALL_CEILING
+    assert await actions.invoice_preview(db_session, "so1") == _PREVIEW_UNKNOWN
+    assert books.log == []
+
+
+@pytest.mark.asyncio
+async def test_invoice_preview_is_unknown_when_books_refuses_the_prefill_for_owed_units(db_session, books):
+    await _ready(db_session, books)
+    books.prefill_refused = True
+    assert await actions.invoice_preview(db_session, "so1") == _PREVIEW_UNKNOWN
+    assert _calls(books, "invoice_prefill") == [("so1",)]
+
+
+@pytest.mark.asyncio
+async def test_invoice_preview_is_unknown_and_opens_the_window_on_a_rate_limited_read(db_session, books):
+    await _ready(db_session, books)
+    books.errors["get_package"] = _rate_limited()
+    assert await actions.invoice_preview(db_session, "so1") == _PREVIEW_UNKNOWN
+    _assert_window_open()
+
+
+@pytest.mark.asyncio
+async def test_search_items_while_zoho_is_busy_does_not_call_books(db_session, lines_edit, monkeypatch):
+    sync.open_rate_limit_window(_rate_limited())
+    asked = []
+
+    async def list_items(db, search_text):
+        asked.append(search_text)
+        return []
+
+    monkeypatch.setattr(zoho_service, "list_items", list_items)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.search_items(db_session, "item")
+    assert asked == []
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_item_search_is_busy_and_opens_the_window(db_session, lines_edit, monkeypatch):
+    async def list_items(db, search_text):
+        raise _rate_limited()
+
+    monkeypatch.setattr(zoho_service, "list_items", list_items)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.search_items(db_session, "item")
+    _assert_window_open()
+
+
+@pytest.mark.asyncio
+async def test_naming_a_line_twice_is_refused_without_writing(db_session, lines_edit):
+    await _board(db_session, lines_edit, _edit_order())
+    with pytest.raises(actions.OrderActionRefused, match="unknown_line"):
+        await actions.edit_lines(
+            db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}, {"line_id": "l1", "quantity": 4}]
+        )
+    assert "lines" not in lines_edit.bodies
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_item_lookup_on_edit_is_busy_and_writes_nothing(db_session, lines_edit, monkeypatch):
+    await _board(db_session, lines_edit, _edit_order())
+
+    async def list_items_by_ids(db, ids):
+        raise _rate_limited()
+
+    monkeypatch.setattr(zoho_service, "list_items_by_ids", list_items_by_ids)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.edit_lines(
+            db_session,
+            "so1",
+            VERSION,
+            [{"line_id": "l1", "quantity": 2}, {"line_id": "l2", "quantity": 1}, {"item_id": "B", "quantity": 1}],
+        )
+    _assert_window_open()
+    assert "lines" not in lines_edit.bodies
+
+
+@pytest.mark.asyncio
+async def test_a_failed_prep_stamp_delete_after_a_parcel_is_logged_and_the_number_returned(
+    db_session, parcels, monkeypatch, caplog
+):
+    await _board(db_session, parcels, order(1, qty=2))
+    pl = await _pick(db_session, "so1", {"l1": 1})
+    await actions.stamp_print(db_session, "so1", "paul")
+    real_execute = db_session.execute
+
+    async def execute(stmt, *a, **kw):
+        if str(stmt).startswith("DELETE"):
+            raise OperationalError("DELETE", {}, Exception("database is locked"))
+        return await real_execute(stmt, *a, **kw)
+
+    monkeypatch.setattr(db_session, "execute", execute)
+    with caplog.at_level("WARNING"):
+        assert await actions.create_parcel(db_session, "so1", pl, {"l1": 1}) == "PKG-00001"
+    assert "bookkeeping after a parcel failed" in caplog.text
+    assert "OperationalError" in caplog.text
+    assert parcels.writes.count("create_package") == 1
+    assert (await _doc(db_session, "so1")).pending is True
+
+
+@pytest.mark.asyncio
+async def test_no_books_re_read_inside_the_429_window_and_the_order_is_left_pending(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1))
+    pl = await _pick(db_session, "so1", {"l1": 1})
+    parcels.create_error = _rate_limited()
+    reads = []
+    real = zoho_service.get_salesorder
+
+    async def counting(db, salesorder_id):
+        reads.append(salesorder_id)
+        return await real(db, salesorder_id)
+
+    monkeypatch.setattr(zoho_service, "get_salesorder", counting)
+    with pytest.raises(ZohoRateLimited):
+        await actions.create_parcel(db_session, "so1", pl, {"l1": 1})
+    assert reads == []
+    assert (await _doc(db_session, "so1")).pending is True
+
+
+@pytest.mark.asyncio
+async def test_the_best_effort_re_read_still_runs_outside_the_window(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1))
+    reads = []
+    real = zoho_service.get_salesorder
+
+    async def counting(db, salesorder_id):
+        reads.append(salesorder_id)
+        return await real(db, salesorder_id)
+
+    monkeypatch.setattr(zoho_service, "get_salesorder", counting)
+    await actions._common._best_effort_refresh(db_session, "so1", "SO-1")
+    assert reads == ["so1"]
+
+
+async def _gone_from_the_board(monkeypatch):
+    async def not_stored(db, salesorder_id):
+        raise sync.OrderNotStored(salesorder_id)
+
+    monkeypatch.setattr(sync, "refresh_order", not_stored)
+
+
+@pytest.mark.asyncio
+async def test_edit_lines_re_read_429_is_busy_and_opens_the_window(db_session, lines_edit, monkeypatch):
+    await _board(db_session, lines_edit, _edit_order())
+
+    async def limited(db, salesorder_id):
+        raise _rate_limited()
+
+    monkeypatch.setattr(zoho_service, "get_salesorder", limited)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.edit_lines(db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}])
+    _assert_window_open()
+    assert lines_edit.writes == []
+
+
+@pytest.mark.asyncio
+async def test_edit_parcel_re_read_429_is_busy_and_opens_the_window(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+
+    async def limited(db, salesorder_id):
+        raise _rate_limited()
+
+    monkeypatch.setattr(zoho_service, "get_salesorder", limited)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    _assert_window_open()
+    assert parcels.writes == [] and parcels.steps == []
+
+
+@pytest.mark.asyncio
+async def test_edit_lines_re_read_of_a_vanished_order_is_not_on_board(db_session, lines_edit, monkeypatch):
+    await _board(db_session, lines_edit, _edit_order())
+    await _gone_from_the_board(monkeypatch)
+    with pytest.raises(actions.OrderNotOnBoard):
+        await actions.edit_lines(db_session, "so1", VERSION, [{"line_id": "l1", "quantity": 3}])
+    assert lines_edit.writes == []
+
+
+@pytest.mark.asyncio
+async def test_edit_parcel_re_read_of_a_vanished_order_is_not_on_board(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, _packed(parcels))
+    await _gone_from_the_board(monkeypatch)
+    with pytest.raises(actions.OrderNotOnBoard):
+        await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
+    assert parcels.writes == [] and parcels.steps == []
+
+
+@pytest.mark.asyncio
+async def test_a_pending_copy_that_vanishes_on_the_entry_refresh_is_not_on_board(db_session, parcels, monkeypatch):
+    await _board(db_session, parcels, order(1))
+    (await _doc(db_session, "so1")).pending = True
+    await db_session.commit()
+    await _gone_from_the_board(monkeypatch)
+    with pytest.raises(actions.OrderNotOnBoard):
+        await actions.confirm_stored_copy(db_session, "so1")
+
+
+@pytest.mark.asyncio
+async def test_a_failed_best_effort_re_read_of_an_unstored_order_is_false(db_session, parcels):
+    from backend.app.services.order_board_actions import _common
+
+    assert await _common._best_effort_refresh(db_session, "nope", "SO-X") is False
+
+
+def test_num_reads_garbage_as_zero():
+    from backend.app.services.order_board_actions import _common
+
+    assert (_common._num("abc"), _common._num([1]), _common._num(None), _common._num("2.5")) == (0.0, 0.0, 0.0, 2.5)
+
+
+def test_to_box_skips_a_picklist_row_without_both_ids():
+    from backend.app.services.order_board_actions import _common
+
+    row = {"salesorder_id": "so1", "so_line_item_id": "l1", "line_item_id": "", "quantity_to_be_picked": 2}
+    assert _common._to_box({"status": "open", "line_items": [row]}, "so1") == {}

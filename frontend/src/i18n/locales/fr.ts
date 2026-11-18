@@ -11872,6 +11872,9 @@ export default {
       bad_quantity: 'une quantité n’est pas valide',
       too_many: 'plus d’unités que la commande n’en permet encore',
       picklist_shared: 'le prélèvement est partagé avec d’autres lignes, terminez-le dans Books',
+      nothing_to_pack: 'il n’y a rien à emballer sur ces lignes',
+      unknown_package: 'ce colis n’est plus sur la commande, regardez à nouveau',
+      unknown_picklist: 'ce prélèvement n’est plus sur la commande, regardez à nouveau',
     },
     cancel: {
       label: "Annuler la commande",
