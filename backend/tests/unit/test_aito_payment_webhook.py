@@ -126,7 +126,9 @@ async def test_every_refusal_is_the_same_401(async_client, secret, fake):  # noq
         "unprefixed signature": (body, {**good, "X-Heimdall-Signature": good["X-Heimdall-Signature"][7:]}),
         "non-ascii signature": (body, {**good, "X-Heimdall-Signature": "sha256=é".encode()}),
         "stale timestamp": (body, _headers(body, timestamp=now - 301)),
-        "future timestamp": (body, _headers(body, timestamp=now + 301)),
+        # +360, not +301: a slow runner needs more than a second to get here, and
+        # by then now+301 is inside the window (CI shard 4, 2026-11-18).
+        "future timestamp": (body, _headers(body, timestamp=now + 360)),
         "milliseconds": (body, _headers(body, timestamp=now * 1000)),
         "garbage timestamp": (body, {**good, "X-Heimdall-Timestamp": "soon"}),
         "short nonce": (body, _headers(body, nonce="short")),
