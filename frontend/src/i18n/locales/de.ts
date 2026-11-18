@@ -11640,6 +11640,7 @@ export default {
       title: 'Neue Bestellung',
       draft: 'Entwurf',
       abandon: 'Verwerfen',
+      abandonBack: 'Verwerfen und zurück zur Liste',
       hidden_one: '{{count}} weitere Bestellung während der Erstellung ausgeblendet',
       hidden_other: '{{count}} weitere Bestellungen während der Erstellung ausgeblendet',
       search: 'Produkt scannen oder suchen (Name, SKU)…',

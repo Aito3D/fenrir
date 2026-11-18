@@ -1,6 +1,7 @@
 """Edit the order's lines in Books."""
 
 import math
+import re
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,28 +22,36 @@ from backend.app.services.order_board_actions._common import (
 )
 from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 
+_BARCODE = re.compile(r"\d{8,14}")
 _SO_LINE_FIELDS = ("line_item_id", "item_id", "name", "description", "rate", "quantity", "unit", "tax_id", "discount")
 
 
 async def search_items(db: AsyncSession, query: str) -> list[dict]:
-    """Books items matching ``query`` that are goods, not services; the first five."""
+    """Books items matching ``query`` that are goods, not services; the first five. A barcode-shaped query (8 to 14
+    digits) also asks Books by UPC and EAN, and those items come first."""
     if sync.zoho_busy():
         raise sync.ZohoBusy(query)
     try:
+        coded = await zoho_service.list_items_by_code(db, query) if _BARCODE.fullmatch(query) else []
         found = await zoho_service.list_items(db, query)
     except ZohoRateLimited as e:
         sync.open_rate_limit_window(e)
         raise sync.ZohoBusy(query) from e
+    merged: dict[str, dict] = {}
+    for item in [*coded, *found]:
+        merged.setdefault(item.get("item_id") or "", item)
     return [
         {
             "id": item.get("item_id") or "",
             "name": item.get("name") or "",
             "sku": item.get("sku") or "",
+            "upc": item.get("upc") or "",
+            "ean": item.get("ean") or "",
             "rate": float(_num(item.get("rate"))),
             "stock_on_hand": None if item.get("stock_on_hand") is None else float(_num(item.get("stock_on_hand"))),
             "product_type": item.get("product_type") or "",
         }
-        for item in found
+        for item in merged.values()
         if not (item.get("product_type") or "").endswith("service")
     ][:5]
 

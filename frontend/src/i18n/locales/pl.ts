@@ -11845,6 +11845,7 @@ export default {
       title: 'Nowe zamówienie',
       draft: 'Szkic',
       abandon: 'Porzuć',
+      abandonBack: 'Porzuć i wróć do listy',
       hidden_one: 'Ukryte zamówienia podczas tworzenia: {{count}}',
       hidden_other: 'Ukryte zamówienia podczas tworzenia: {{count}}',
       search: 'Zeskanuj lub wyszukaj produkt (nazwa, SKU)…',

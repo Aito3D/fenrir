@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Search } from 'lucide-react';
@@ -8,7 +8,9 @@ import { formatMoney } from '../../utils/pricing';
 import { formatQty } from './orderBoard';
 import { TONE } from './orderStatus';
 
-/** The "add an item" field of an order edit: Books items by name or SKU, from two characters, the ones already on the order left out. */
+/** The "add an item" field of an order edit: Books items by name, SKU or barcode, from two characters, the ones already on the order left out.
+ *  A scanner types its code and Enter faster than the search answers: that Enter waits for the answer, then adds the item
+ *  whose SKU, UPC or EAN is the code (or the only hit), never a guess among several. */
 export function OrderItemSearch({ orderItemIds, currency, disabled, onAdd, label }: { orderItemIds: Set<string>; currency: string; disabled: boolean; onAdd: (item: OrderItemHit) => void; label?: string }) {
   const { t } = useTranslation();
   const placeholder = label ?? t('orders.edit.search');
@@ -21,11 +23,22 @@ export function OrderItemSearch({ orderItemIds, currency, disabled, onAdd, label
   const asking = q.length >= 2 && text.trim().length >= 2;
   const { data } = useQuery({ queryKey: ['order-items', q], queryFn: () => api.searchOrderItems(q), enabled: asking });
   const hits = asking && data ? data.items.filter(i => !orderItemIds.has(i.id)).slice(0, 5) : [];
+  // The text an Enter was pressed on before its search answered.
+  const [pending, setPending] = useState<string | null>(null);
   const add = (item: OrderItemHit) => {
     onAdd(item);
     setText('');
     setQ('');
   };
+  const addRef = useRef(add);
+  addRef.current = add;
+  const exact = (code: string) => hits.find(h => [h.sku, h.upc, h.ean].includes(code));
+  useEffect(() => {
+    if (pending === null || q !== pending || !data) return;
+    setPending(null);
+    const match = exact(pending) ?? (hits.length === 1 ? hits[0] : undefined);
+    if (match) addRef.current(match);
+  }, [pending, q, data]); // eslint-disable-line react-hooks/exhaustive-deps -- hits and exact derive from data and q
 
   return (
     <div className="relative max-w-md">
@@ -39,9 +52,14 @@ export function OrderItemSearch({ orderItemIds, currency, disabled, onAdd, label
           placeholder={placeholder}
           onChange={e => setText(e.target.value)}
           onKeyDown={e => {
-            if (e.key === 'Enter' && hits[0]) {
+            const typed = text.trim();
+            if (e.key === 'Enter' && hits[0] && q === typed) {
               e.preventDefault();
-              add(hits[0]);
+              add(exact(typed) ?? hits[0]);
+            } else if (e.key === 'Enter' && typed.length >= 2) {
+              e.preventDefault();
+              setPending(typed);
+              setQ(typed); // ask now rather than after the pause
             } else if (e.key === 'Escape' && text) {
               e.stopPropagation(); // the first Escape clears the field, the next one closes the edit
               setText('');

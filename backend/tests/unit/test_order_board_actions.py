@@ -2428,10 +2428,54 @@ async def test_search_items_drops_services_and_caps_at_five(db_session, lines_ed
         "id": "i0",
         "name": "Item 0",
         "sku": "S0",
+        "upc": "",
+        "ean": "",
         "rate": 10.0,
         "stock_on_hand": 3.0,
         "product_type": "goods",
     }
+
+
+@pytest.mark.asyncio
+async def test_a_scanned_barcode_finds_the_item_by_upc_or_ean_first(db_session, lines_edit, monkeypatch):
+    scanned = {"item_id": "x", "name": "Buse", "sku": "NZ", "ean": "3760123456789", "rate": 5, "product_type": "goods"}
+    asked = []
+
+    async def list_items_by_code(db, code):
+        asked.append(code)
+        return [scanned]
+
+    monkeypatch.setattr(zoho_service, "list_items_by_code", list_items_by_code)
+    lines_edit.item_search = [{"item_id": "y", "name": "Other", "product_type": "goods"}, scanned]
+    found = await actions.search_items(db_session, "3760123456789")
+    assert asked == ["3760123456789"]
+    assert [i["id"] for i in found] == ["x", "y"]
+    assert found[0]["ean"] == "3760123456789"
+
+
+@pytest.mark.asyncio
+async def test_a_text_search_does_not_ask_for_barcodes(db_session, lines_edit, monkeypatch):
+    asked = []
+
+    async def list_items_by_code(db, code):
+        asked.append(code)
+        return []
+
+    monkeypatch.setattr(zoho_service, "list_items_by_code", list_items_by_code)
+    for query in ("pla", "1234567", "123456789012345", "12345678a"):
+        await actions.search_items(db_session, query)
+    assert asked == []
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_barcode_lookup_is_busy_and_opens_the_window(db_session, lines_edit, monkeypatch):
+    async def list_items_by_code(db, code):
+        raise _rate_limited()
+
+    monkeypatch.setattr(zoho_service, "list_items_by_code", list_items_by_code)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.search_items(db_session, "12345678")
+    _assert_window_open()
 
 
 # --- Edit a packed parcel ----------------------------------------------------------------------------------------

@@ -11648,6 +11648,7 @@ export default {
       title: 'Nuevo pedido',
       draft: 'Borrador',
       abandon: 'Abandonar',
+      abandonBack: 'Abandonar y volver a la lista',
       hidden_one: '{{count}} pedido más oculto mientras creas este',
       hidden_other: '{{count}} pedidos más ocultos mientras creas este',
       search: 'Escanear o buscar un producto (nombre, SKU)…',

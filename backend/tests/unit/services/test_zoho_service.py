@@ -961,6 +961,21 @@ async def test_list_items_page_has_more_page_defaults_false_when_page_context_is
 
 
 @pytest.mark.asyncio
+async def test_list_items_by_code_asks_upc_then_ean_and_dedupes(db_session, monkeypatch):
+    """Books' search_text never matches a barcode; only the upc / ean filters do."""
+    asked = []
+
+    async def fake_request(db, method, path, **kwargs):
+        asked.append((method, path, kwargs.get("params")))
+        return {"items": [{"item_id": "1"}] if "upc" in kwargs["params"] else [{"item_id": "1"}, {"item_id": "2"}]}
+
+    monkeypatch.setattr(zoho_service, "_request", fake_request)
+    items = await zoho_service.list_items_by_code(db_session, "3760123456789")
+    assert asked == [("GET", "/items", {"upc": "3760123456789"}), ("GET", "/items", {"ean": "3760123456789"})]
+    assert [i["item_id"] for i in items] == ["1", "2"]
+
+
+@pytest.mark.asyncio
 async def test_get_shipping_catalogue_fetches_once_then_serves_the_cache(db_session, monkeypatch):
     calls = []
 

@@ -137,6 +137,9 @@ export function NewOrderDraftRow({ hiddenCount, currency, open, finished, onCrea
         <div className="flex items-center gap-2 rounded-lg border border-dashed border-bambu-dark-tertiary px-4 py-2 text-xs text-bambu-gray">
           <EyeOff aria-hidden="true" className="h-3.5 w-3.5" />
           {t('orders.newOrder.hidden', { count: hiddenCount })}
+          <button type="button" onClick={onClose} className={`ml-auto rounded px-1 underline hover:text-white ${focusRingCls}`}>
+            {t('orders.newOrder.abandonBack')}
+          </button>
         </div>
       )}
     </div>

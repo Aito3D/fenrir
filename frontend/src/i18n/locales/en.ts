@@ -11696,6 +11696,7 @@ export default {
       title: 'New order',
       draft: 'Draft',
       abandon: 'Abandon',
+      abandonBack: 'Abandon and go back to the list',
       hidden_one: '{{count}} other order hidden while you create this one',
       hidden_other: '{{count}} other orders hidden while you create this one',
       search: 'Scan or search a product (name, SKU)…',

@@ -11625,6 +11625,7 @@ export default {
       title: 'Novo pedido',
       draft: 'Rascunho',
       abandon: 'Abandonar',
+      abandonBack: 'Abandonar e voltar à lista',
       hidden_one: '{{count}} outro pedido oculto enquanto você cria este',
       hidden_other: '{{count}} outros pedidos ocultos enquanto você cria este',
       search: 'Escaneie ou busque um produto (nome, SKU)…',

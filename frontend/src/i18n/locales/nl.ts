@@ -11664,6 +11664,7 @@ export default {
       title: 'Nieuwe bestelling',
       draft: 'Concept',
       abandon: 'Annuleren',
+      abandonBack: 'Annuleren en terug naar de lijst',
       hidden_one: '{{count}} andere bestelling verborgen tijdens het aanmaken',
       hidden_other: '{{count}} andere bestellingen verborgen tijdens het aanmaken',
       search: 'Scan of zoek een product (naam, SKU)…',

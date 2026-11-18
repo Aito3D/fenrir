@@ -11625,6 +11625,7 @@ export default {
       title: 'Nuovo ordine',
       draft: 'Bozza',
       abandon: 'Abbandona',
+      abandonBack: 'Abbandona e torna all\'elenco',
       hidden_one: '{{count}} altro ordine nascosto durante la creazione',
       hidden_other: '{{count}} altri ordini nascosti durante la creazione',
       search: 'Scansiona o cerca un prodotto (nome, SKU)…',

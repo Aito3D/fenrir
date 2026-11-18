@@ -11639,6 +11639,7 @@ export default {
       title: '新規注文',
       draft: '下書き',
       abandon: '破棄',
+      abandonBack: '破棄して一覧に戻る',
       hidden_one: '作成中は他の注文 {{count}} 件を非表示',
       hidden_other: '作成中は他の注文 {{count}} 件を非表示',
       search: '商品をスキャンまたは検索（名前、SKU）…',

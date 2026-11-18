@@ -11625,6 +11625,7 @@ export default {
       title: 'Nouvelle commande',
       draft: 'Brouillon',
       abandon: 'Abandonner',
+      abandonBack: 'Abandonner et revenir à la liste',
       hidden_one: '{{count}} autre commande masquée pendant la création',
       hidden_other: '{{count}} autres commandes masquées pendant la création',
       search: 'Scanner ou chercher un produit (nom, SKU)…',

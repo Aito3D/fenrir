@@ -951,6 +951,15 @@ class ZohoService:
         body = await self._request(db, "GET", "/items", params={"search_text": search_text})
         return body.get("items") or []
 
+    async def list_items_by_code(self, db: AsyncSession, code: str) -> list[dict]:
+        """Books items whose UPC or EAN is ``code`` (a scanned barcode; ``search_text`` never matches these)."""
+        found: dict[str, dict] = {}
+        for field in ("upc", "ean"):
+            body = await self._request(db, "GET", "/items", params={field: code})
+            for item in body.get("items") or []:
+                found.setdefault(item.get("item_id") or "", item)
+        return list(found.values())
+
     async def list_items_page(
         self, db: AsyncSession, *, category: str, page: int, per_page: int
     ) -> tuple[list[dict], bool]:

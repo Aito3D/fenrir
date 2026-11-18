@@ -58,6 +58,40 @@ describe('NewOrderDraftRow', () => {
     expect(screen.getAllByTestId('draft-line-total')).toHaveLength(1);
   });
 
+  it('a scanned barcode adds the line once the search answers, and a second scan bumps it', async () => {
+    const user = userEvent.setup();
+    server.use(http.get('/api/v1/order-board/items', ({ request }) => HttpResponse.json({
+      items: new URL(request.url).searchParams.get('q') === '3760123456789'
+        ? [item({ id: 'B', name: 'PLA Silk Or', sku: 'PLA-SILK' }), item({ ean: '3760123456789' })]
+        : [],
+    })));
+    renderRow();
+    const search = screen.getByLabelText('Scan or search a product (name, SKU)…');
+    await user.type(search, '3760123456789{Enter}'); // Enter lands before the search has answered
+    await waitFor(() => expect(screen.getByLabelText('Qty · Bambu Lab PLA Basic Noir')).toHaveValue(1));
+    expect(search).toHaveValue('');
+    expect(screen.queryByLabelText('Qty · PLA Silk Or')).not.toBeInTheDocument();
+    await user.type(search, '3760123456789{Enter}');
+    await waitFor(() => expect(screen.getByLabelText('Qty · Bambu Lab PLA Basic Noir')).toHaveValue(2));
+    expect(search).toHaveValue('');
+  });
+
+  it('a scanned code nothing matches adds nothing', async () => {
+    const user = userEvent.setup();
+    let answered = 0;
+    server.use(http.get('/api/v1/order-board/items', () => {
+      answered += 1;
+      return HttpResponse.json({ items: [item(), item({ id: 'B', name: 'PLA Silk Or', sku: 'PLA-SILK' })] });
+    }));
+    renderRow();
+    const search = screen.getByLabelText('Scan or search a product (name, SKU)…');
+    await user.type(search, '99999999{Enter}');
+    await waitFor(() => expect(answered).toBe(1));
+    await screen.findByRole('button', { name: /^PLA Silk Or/ }); // the hits show, none was picked
+    expect(screen.queryByTestId('draft-line-total')).not.toBeInTheDocument();
+    expect(search).toHaveValue('99999999');
+  });
+
   it('discount 10% and 5 change the line total; 120% blocks create', async () => {
     const user = userEvent.setup();
     let posted = 0;
@@ -143,7 +177,8 @@ describe('NewOrderDraftRow', () => {
     seed([{ item: item(), quantity: 2, discount: '' }]);
     const { onClose } = renderRow();
     await user.click(screen.getByRole('button', { name: 'Abandon' }));
-    expect(onClose).toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Abandon and go back to the list' }));
+    expect(onClose).toHaveBeenCalledTimes(2);
     expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull();
   });
 });

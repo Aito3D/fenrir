@@ -11567,6 +11567,7 @@ export default {
       title: 'Yeni sipariş',
       draft: 'Taslak',
       abandon: 'Vazgeç',
+      abandonBack: 'Vazgeç ve listeye dön',
       hidden_one: 'Oluşturma sırasında {{count}} diğer sipariş gizlendi',
       hidden_other: 'Oluşturma sırasında {{count}} diğer sipariş gizlendi',
       search: 'Ürün tarayın veya arayın (ad, SKU)…',

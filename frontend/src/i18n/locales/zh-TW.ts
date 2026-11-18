@@ -11623,6 +11623,7 @@ export default {
       title: '新訂單',
       draft: '草稿',
       abandon: '放棄',
+      abandonBack: '放棄並返回列表',
       hidden_one: '建立期間隱藏了其他 {{count}} 筆訂單',
       hidden_other: '建立期間隱藏了其他 {{count}} 筆訂單',
       search: '掃描或搜尋產品（名稱、SKU）…',
