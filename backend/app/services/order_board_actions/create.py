@@ -44,10 +44,10 @@ async def create_counter_order(
     """Create, confirm and store a counter order; returns its ``salesorder_id``. The same ``client_ref`` twice
     returns the first order instead of creating another. Prices are the Books items' own (tax inclusive); a line
     discount is "N%" (0 to 100) or an amount up to the line total."""
+    if client_ref in _created:  # before the busy check: a retry of a stored order needs no Books call
+        return _created[client_ref]
     if sync.zoho_busy():
         raise sync.ZohoBusy(client_ref)
-    if client_ref in _created:
-        return _created[client_ref]
     entry = _ref_locks.setdefault(client_ref, [asyncio.Lock(), 0])
     entry[1] += 1  # callers holding or waiting on the lock; the last one out drops it
     try:
@@ -99,6 +99,12 @@ async def _create(db: AsyncSession, customer_id: str, lines: list[dict], client_
     salesorder_id = created["salesorder_id"]
     number = created.get("salesorder_number") or salesorder_id
     logger.info("Order board write: order=%s step=create", number)
+    if created.get("is_inclusive_tax") is not True:  # shelf prices are TTC; a Books org can override the flag
+        logger.warning(
+            "Order board: new order %s is not tax inclusive (is_inclusive_tax=%r)",
+            number,
+            created.get("is_inclusive_tax"),
+        )
     sync.note_write(salesorder_id)  # no pass may store a copy fetched before the confirm
     try:
         await zoho_service.mark_salesorder_open(db, salesorder_id)

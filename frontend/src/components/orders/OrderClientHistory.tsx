@@ -21,21 +21,24 @@ interface Entry {
   lines: OrderBoardLine[] | null; // null: a finished order, fetched on expand
 }
 
-const Lines = ({ lines }: { lines: OrderBoardLine[] }) => (
+const Lines = ({ lines, currency }: { lines: OrderBoardLine[]; currency: string }) => (
   <ul className="space-y-0.5 px-2.5 pb-1.5 text-xs text-bambu-gray-light">
     {lines.map((l) => (
       <li key={l.id} className="flex justify-between gap-2">
         <span className="truncate">{l.name}</span>
-        <span className="tabular-nums">×{formatQty(l.quantity)}</span>
+        <span className="whitespace-nowrap tabular-nums">×{formatQty(l.quantity)} · {formatMoney(l.rate, currency)}</span>
       </li>
     ))}
   </ul>
 );
 
 // Same query key as FinishedOrderCard, so an order opened in either place is fetched once.
-function FinishedLines({ id }: { id: string }) {
+function FinishedLines({ id, currency }: { id: string; currency: string }) {
+  const { t } = useTranslation();
   const detail = useQuery({ queryKey: ['order-board-finished-order', id], queryFn: () => api.getFinishedOrder(id), staleTime: 60_000 });
-  return detail.data ? <Lines lines={detail.data.lines} /> : null;
+  if (detail.data) return <Lines lines={detail.data.lines} currency={currency} />;
+  const [msg, cls] = detail.isError ? [t('common.errorLoading'), 'text-red-400'] : [t('common.loading'), 'text-bambu-gray'];
+  return <p className={`px-2.5 pb-1.5 text-xs ${cls}`}>{msg}</p>;
 }
 
 /** The client's past orders (open and shipped), newest first, each expandable to what they bought. */
@@ -71,7 +74,7 @@ export function OrderClientHistory({ customerId, open, finished, currency }: { c
                   onClick={() => setExpanded(isOpen ? null : e.id)}
                   className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left ${focusRingCls}`}
                 >
-                  <span data-testid="history-order-number" className="font-mono font-semibold text-white">{e.number}</span>
+                  <span data-testid="history-order-number" className="whitespace-nowrap font-mono font-semibold text-white">{e.number}</span>
                   <span className="text-bambu-gray">
                     {parseDay(e.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                   </span>
@@ -79,7 +82,7 @@ export function OrderClientHistory({ customerId, open, finished, currency }: { c
                   {e.state && <PaymentPill state={e.state} />}
                   <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 text-bambu-gray transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </button>
-                {isOpen && (e.lines ? <Lines lines={e.lines} /> : <FinishedLines id={e.id} />)}
+                {isOpen && (e.lines ? <Lines lines={e.lines} currency={e.currency || currency} /> : <FinishedLines id={e.id} currency={e.currency || currency} />)}
               </li>
             );
           })}

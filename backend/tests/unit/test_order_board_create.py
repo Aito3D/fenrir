@@ -220,6 +220,23 @@ async def test_rate_limited_create_is_busy(db_session, books):
 
 
 @pytest.mark.asyncio
+async def test_retry_of_a_created_order_inside_a_backoff_window_returns_it(db_session, books):
+    lines = [{"item_id": "A", "quantity": 1}]
+    assert await actions.create_counter_order(db_session, "c1", lines, "ref-1", by=None) == "9"
+    sync.open_rate_limit_window(ZohoRateLimited("429", retry_after=30))
+    assert sync.zoho_busy()
+    assert await actions.create_counter_order(db_session, "c1", lines, "ref-1", by=None) == "9"
+    assert len(books.payloads) == 1
+
+
+@pytest.mark.asyncio
+async def test_warns_when_books_does_not_return_a_tax_inclusive_order(db_session, books, caplog):
+    with caplog.at_level("WARNING"):
+        await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-1", by=None)
+    assert "SO-00009 is not tax inclusive" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_busy_zoho_sends_nothing(db_session, books, monkeypatch):
     monkeypatch.setattr(sync, "zoho_busy", lambda: True)
     with pytest.raises(sync.ZohoBusy):

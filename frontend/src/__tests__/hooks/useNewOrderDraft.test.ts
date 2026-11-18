@@ -29,7 +29,7 @@ describe('useNewOrderDraft', () => {
   });
 
   it('restores nothing from junk storage', () => {
-    for (const junk of ['{', '[]', JSON.stringify({ lines: [{ quantity: 1 }, null, { item: {} }, { item: { id: 'x' }, quantity: 1 }, { item, quantity: 0.0001 }], client: 5 })]) {
+    for (const junk of ['{', '[]', JSON.stringify({ lines: [{ quantity: 1 }, null, { item: {} }, { item: { id: 'x' }, quantity: 1 }, { item, quantity: 0.0001 }], client: 5 }), JSON.stringify({ lines: [], clientRef: 'not-a-uuid' })]) {
       localStorage.setItem(KEY, junk);
       const { result } = renderHook(() => useNewOrderDraft());
       expect(result.current.draft.lines).toEqual([]);

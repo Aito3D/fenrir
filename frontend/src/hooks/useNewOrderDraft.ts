@@ -41,6 +41,8 @@ const validItem = (i: unknown) =>
 const validQuantity = (q: unknown) =>
   typeof q === 'number' && Number.isFinite(q) && q > 0 && Math.round(q * 1000) / 1000 === q;
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function readDraft(): NewOrderDraft {
   const empty: NewOrderDraft = { lines: [], client: null, clientRef: newClientRef() };
   try {
@@ -55,7 +57,7 @@ function readDraft(): NewOrderDraft {
             .map((l) => ({ item: l.item, quantity: l.quantity, discount: typeof l.discount === 'string' ? l.discount : '' }))
         : [],
       client: isObj(c) && typeof c.id === 'string' && typeof c.name === 'string' ? { id: c.id, name: c.name, isDefault: c.isDefault === true } : null,
-      clientRef: typeof parsed.clientRef === 'string' && parsed.clientRef ? parsed.clientRef : empty.clientRef,
+      clientRef: typeof parsed.clientRef === 'string' && UUID_RE.test(parsed.clientRef) ? parsed.clientRef : empty.clientRef,
     };
   } catch {
     return empty;

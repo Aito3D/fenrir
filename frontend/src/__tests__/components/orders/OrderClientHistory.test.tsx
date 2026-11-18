@@ -57,7 +57,21 @@ describe('OrderClientHistory', () => {
     render(<OrderClientHistory customerId="c1" currency="XPF" open={[]} finished={[fin({})]} />);
     await userEvent.click(screen.getByRole('button', { name: /SO-F/ }));
     expect(await screen.findByText('PETG Red')).toBeInTheDocument();
-    expect(hit).toContain('/f');
+    expect(new URL(hit).pathname).toBe('/api/v1/order-board/finished/f');
+  });
+
+  it('shows the unit price next to quantity', async () => {
+    const lines = [{ id: 'l1', name: 'PLA Basic', quantity: 3, rate: 3400 }] as OrderBoardRow['lines'];
+    render(<OrderClientHistory customerId="c1" currency="XPF" open={[open({ lines })]} finished={[]} />);
+    await userEvent.click(screen.getByRole('button', { name: /SO-1/ }));
+    expect(screen.getByText(/×3 · .*3.?400/)).toBeInTheDocument();
+  });
+
+  it('shows an error line when the finished order fails to load', async () => {
+    server.use(http.get('/api/v1/order-board/finished/f', () => HttpResponse.json({ detail: 'x' }, { status: 500 })));
+    render(<OrderClientHistory customerId="c1" currency="XPF" open={[]} finished={[fin({})]} />);
+    await userEvent.click(screen.getByRole('button', { name: /SO-F/ }));
+    expect(await screen.findByText('Error loading data', undefined, { timeout: 5000 })).toBeInTheDocument();
   });
 
   it('renders nothing without a customer', () => {
