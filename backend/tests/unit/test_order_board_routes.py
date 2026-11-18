@@ -179,6 +179,11 @@ PARCEL = {**PICK, "picklist_id": "pl1"}
 HAND = {"mode": "pickup", "apply_credit": False}
 INVOICE = {"apply_credit": True}
 LINES = {"version": "v1", "lines": [{"line_id": "l1", "quantity": 3}]}
+NEW_ORDER = {
+    "customer_id": "c1",
+    "client_ref": "6f1c3f0e-7c4b-4b8e-9a51-2d1f0c9e8a11",
+    "lines": [{"item_id": "A", "quantity": 1, "discount": "10%"}],
+}
 PARCEL_EDIT = {"version": "v1", "was": [{"line_id": "l1", "quantity": 2}], "lines": [{"line_id": "l1", "quantity": 1}]}
 NEW_ROUTES = [
     ("post", f"{BASE}/orders/so1/prep-sheet", None, True),
@@ -200,6 +205,7 @@ NEW_ROUTES = [
     ("get", f"{BASE}/invoices/inv1/pdf", None, False),
     ("get", f"{BASE}/invoices/inv1/email", None, False),
     ("post", f"{BASE}/invoices/inv1/email", {"to": "a@b.pf"}, True),
+    ("post", f"{BASE}/orders", NEW_ORDER, True),
 ]
 
 
@@ -742,6 +748,30 @@ async def test_edit_routes_pass_the_choice_through(async_client, tokens, monkeyp
     body = {"version": "v1", "was": [{"line_id": "l1", "quantity": 2}], "lines": []}
     r = await async_client.put(f"{BASE}/orders/so1/packages/p1", json=body, headers=tokens["both"])
     assert r.status_code == 200 and seen["was"] == {"l1": 2} and seen["plines"] == {}
+
+
+@pytest.mark.asyncio
+async def test_create_order_route_returns_201_with_the_id(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+
+    seen = {}
+
+    async def fake_create(db, customer_id, lines, client_ref, *, by=None):
+        seen.update(customer_id=customer_id, lines=lines, client_ref=client_ref, by=by)
+        return "9"
+
+    monkeypatch.setattr(actions, "create_counter_order", fake_create)
+    r = await async_client.post(f"{BASE}/orders", json=NEW_ORDER, headers=tokens["both"])
+    assert r.status_code == 201
+    assert r.json()["salesorder_id"] == "9" and "board" in r.json() and r.json()["row"] is None
+    assert seen == {
+        "customer_id": "c1",
+        "lines": [{"item_id": "A", "quantity": 1, "discount": "10%"}],
+        "client_ref": NEW_ORDER["client_ref"],
+        "by": "orders-both",
+    }
+    for bad in ({**NEW_ORDER, "lines": []}, {**NEW_ORDER, "customer_id": ""}, {**NEW_ORDER, "client_ref": "x"}):
+        assert (await async_client.post(f"{BASE}/orders", json=bad, headers=tokens["both"])).status_code == 422
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,7 @@
 
 import time
 from typing import Literal
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -71,6 +72,18 @@ class LinesBody(BaseModel):
         if len(set(keys)) != len(keys):
             raise ValueError("a line may appear only once")
         return lines
+
+
+class CounterLine(BaseModel):
+    item_id: str = Field(min_length=1, max_length=64)
+    quantity: float = Field(gt=0, allow_inf_nan=False)
+    discount: str | None = Field(default=None, max_length=20)
+
+
+class CounterOrderBody(BaseModel):
+    customer_id: str = Field(min_length=1, max_length=64)
+    client_ref: UUID
+    lines: list[CounterLine] = Field(min_length=1, max_length=200)
 
 
 class ParcelQty(BaseModel):
@@ -177,6 +190,30 @@ async def edit_order_lines(
     )
     _logged(user, salesorder_id, "edit_lines")
     return {"board": await order_board_sync.read_board(db), "row": row or None}
+
+
+@router.post("/orders", status_code=201)
+async def create_counter_order(
+    body: CounterOrderBody,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> dict:
+    """A walk-in order: created and confirmed in Books, then on the board at once."""
+    salesorder_id = await _run(
+        order_board_actions.create_counter_order(
+            db,
+            body.customer_id,
+            [line.model_dump(exclude_none=True) for line in body.lines],
+            str(body.client_ref),
+            by=_by(user),
+        )
+    )
+    _logged(user, salesorder_id, "create_order")
+    return {
+        "board": await order_board_sync.read_board(db),
+        "row": await order_board_sync.find_board_row(db, salesorder_id),
+        "salesorder_id": salesorder_id,
+    }
 
 
 @router.get("/orders/{salesorder_id}/packages/{package_id}")

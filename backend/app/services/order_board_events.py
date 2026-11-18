@@ -20,6 +20,7 @@ KINDS: dict[str, str] = {
     **dict.fromkeys(
         (
             "order.received",
+            "order.created",
             "order.ready",
             "order.packed",
             "package.created",

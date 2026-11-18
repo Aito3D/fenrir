@@ -10,6 +10,7 @@ from backend.app.services.order_board_actions._common import (
     writing,
 )
 from backend.app.services.order_board_actions.cancel import cancel_order
+from backend.app.services.order_board_actions.create import create_counter_order
 from backend.app.services.order_board_actions.handover import hand_over, handover_preview
 from backend.app.services.order_board_actions.invoice import (
     InvoiceScope,
@@ -45,6 +46,7 @@ __all__ = [
     "hand_over",
     "handover_preview",
     "cancel_order",
+    "create_counter_order",
     "search_items",
     "edit_lines",
     "package_content",
