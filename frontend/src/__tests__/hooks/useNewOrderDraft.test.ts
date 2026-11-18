@@ -29,7 +29,7 @@ describe('useNewOrderDraft', () => {
   });
 
   it('restores nothing from junk storage', () => {
-    for (const junk of ['{', '[]', JSON.stringify({ lines: [{ quantity: 1 }, null, { item: {} }], client: 5 })]) {
+    for (const junk of ['{', '[]', JSON.stringify({ lines: [{ quantity: 1 }, null, { item: {} }, { item: { id: 'x' }, quantity: 1 }, { item, quantity: 0.0001 }], client: 5 })]) {
       localStorage.setItem(KEY, junk);
       const { result } = renderHook(() => useNewOrderDraft());
       expect(result.current.draft.lines).toEqual([]);
@@ -49,6 +49,15 @@ describe('useNewOrderDraft', () => {
     expect(result.current.draft.lines).toEqual([]);
     expect(result.current.draft.clientRef).not.toBe(before);
     clearNewOrderDraft();
+  });
+
+  it('clearNewOrderDraft while a write is queued does not resurrect the draft', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useNewOrderDraft());
+    act(() => result.current.setDraft({ ...result.current.draft, lines: [{ item, quantity: 1, discount: '' }] }));
+    clearNewOrderDraft();
+    act(() => void vi.advanceTimersByTime(500));
+    expect(localStorage.getItem(KEY)).toBeNull();
   });
 
   it('storage that throws does not crash', () => {

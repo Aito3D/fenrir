@@ -35,6 +35,12 @@ function newClientRef(): string {
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
+const validItem = (i: unknown) =>
+  isObj(i) && typeof i.id === 'string' && typeof i.name === 'string' && typeof i.rate === 'number' && Number.isFinite(i.rate);
+// Same rule as the backend: positive, at most 3 decimals.
+const validQuantity = (q: unknown) =>
+  typeof q === 'number' && Number.isFinite(q) && q > 0 && Math.round(q * 1000) / 1000 === q;
+
 function readDraft(): NewOrderDraft {
   const empty: NewOrderDraft = { lines: [], client: null, clientRef: newClientRef() };
   try {
@@ -44,8 +50,9 @@ function readDraft(): NewOrderDraft {
     const c = parsed.client;
     return {
       lines: Array.isArray(parsed.lines)
-        ? parsed.lines.filter((l): l is NewOrderDraftLine => isObj(l) && isObj(l.item) && typeof l.item.id === 'string')
-            .map((l) => ({ item: l.item, quantity: Number(l.quantity) > 0 ? Number(l.quantity) : 1, discount: typeof l.discount === 'string' ? l.discount : '' }))
+        ? parsed.lines
+            .filter((l): l is NewOrderDraftLine => isObj(l) && validItem(l.item) && validQuantity(l.quantity))
+            .map((l) => ({ item: l.item, quantity: l.quantity, discount: typeof l.discount === 'string' ? l.discount : '' }))
         : [],
       client: isObj(c) && typeof c.id === 'string' && typeof c.name === 'string' ? { id: c.id, name: c.name, isDefault: c.isDefault === true } : null,
       clientRef: typeof parsed.clientRef === 'string' && parsed.clientRef ? parsed.clientRef : empty.clientRef,
