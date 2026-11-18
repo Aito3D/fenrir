@@ -329,6 +329,7 @@ async def reconcile_project(
 async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimate: dict)
 async def record_and_broadcast(
 async def record_deposit_application(
+async def record_deposit_refusal(
 async def record_manual_payment_route(
 async def record_manual_payment(
 async def record_on_linked_orders(
@@ -2787,6 +2788,7 @@ aito.history.empty
 aito.history.fromZoho
 aito.history.invoiceCreated
 aito.history.invoiceDepositApplied
+aito.history.invoiceDepositRefused
 aito.history.invoiceDetected
 aito.history.invoiceEmailed
 aito.history.loadMore

@@ -1133,6 +1133,7 @@ export default {
       invoiceCreated: 'створив рахунок',
       invoiceDetected: 'виявив рахунок у Zoho',
       invoiceDepositApplied: 'зарахував аванс у рахунок',
+      invoiceDepositRefused: 'Zoho Books відхилив аванс за рахунок',
       quoteViewed: "переглянув пропозицію",
       quoteAccepted: "прийняв пропозицію",
       quoteUnaccepted: 'скасував(-ла) прийняття кошторису',

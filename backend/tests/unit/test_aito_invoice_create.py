@@ -772,6 +772,11 @@ async def test_a_failed_retainer_application_still_returns_the_real_invoice(asyn
     assert response.json()["retainers"] == [
         {"number": "RET-00269", "total": 1000.0, "applied": 0.0, "outcome": "refused"}
     ]
+    # T-698: the refusal reaches the timeline, attributed to the operator.
+    refusals = (
+        (await db_session.execute(select(AitoEvent).where(AitoEvent.kind == "invoice.deposit_refused"))).scalars().all()
+    )
+    assert [(e.actor_class, e.detail["retainer_number"]) for e in refusals] == [("user", "RET-00269")]
 
 
 @pytest.mark.asyncio
@@ -812,8 +817,11 @@ async def test_a_rate_limited_deposit_application_arms_the_shared_throttle(async
         aito_quote_sync._throttled_until = None
 
     assert response.status_code == 200
-    assert response.json()["retainers"][0]["outcome"] == "refused"
+    assert response.json()["retainers"][0]["outcome"] == "not_attempted"
     assert armed is not None
+    assert (
+        await db_session.execute(select(AitoEvent.id).where(AitoEvent.kind == "invoice.deposit_refused"))
+    ).all() == []
 
 
 def _fail_second_customerpayments_read(books, error):

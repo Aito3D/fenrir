@@ -134,6 +134,7 @@
    "client.transferred": null,
    "invoice.created": null,
    "invoice.deposit_applied": null,
+   "invoice.deposit_refused": null,
    "invoice.detected": null,
    "invoice.emailed": null,
    "note.added": null,

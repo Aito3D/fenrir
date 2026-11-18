@@ -1132,6 +1132,7 @@ export default {
       invoiceCreated: 'создал счёт',
       invoiceDetected: 'обнаружил счёт в Zoho',
       invoiceDepositApplied: 'зачёл аванс в счёт',
+      invoiceDepositRefused: 'Zoho Books отклонил аванс по счёту',
       quoteViewed: 'просмотрел смету',
       quoteAccepted: 'принял смету',
       quoteUnaccepted: 'отменил(а) принятие сметы',

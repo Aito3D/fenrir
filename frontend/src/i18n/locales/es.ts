@@ -1132,6 +1132,7 @@ export default {
       invoiceCreated: 'creó la factura',
       invoiceDetected: 'encontró una factura en Zoho',
       invoiceDepositApplied: 'aplicó el anticipo a la factura',
+      invoiceDepositRefused: 'Zoho Books rechazó el anticipo para la factura',
       quoteViewed: 'vio el presupuesto',
       quoteAccepted: 'aceptó el presupuesto',
       quoteUnaccepted: 'quitó la aceptación del presupuesto',

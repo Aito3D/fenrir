@@ -1132,6 +1132,7 @@ export default {
       invoiceCreated: 'faturayı oluşturdu',
       invoiceDetected: "Zoho'da bir fatura buldu",
       invoiceDepositApplied: 'depozitoyu faturaya uyguladı',
+      invoiceDepositRefused: 'Zoho Books fatura için depozitoyu reddetti',
       quoteViewed: 'teklifi görüntüledi',
       quoteAccepted: 'teklifi kabul etti',
       quoteUnaccepted: 'teklifin kabulünü kaldırdı',

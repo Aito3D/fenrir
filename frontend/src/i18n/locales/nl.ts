@@ -10303,6 +10303,7 @@ export default {
       invoiceCreated: 'heeft de factuur aangemaakt',
       invoiceDetected: 'heeft een factuur in Zoho gevonden',
       invoiceDepositApplied: 'heeft de aanbetaling op de factuur toegepast',
+      invoiceDepositRefused: 'Zoho Books heeft de aanbetaling voor de factuur geweigerd',
       quoteViewed: 'heeft de offerte bekeken',
       quoteAccepted: 'heeft de offerte geaccepteerd',
       quoteUnaccepted: 'heeft de acceptatie van de offerte ingetrokken',

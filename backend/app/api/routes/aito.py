@@ -134,7 +134,7 @@ from backend.app.services.aito_invoice_create import (
     plan_invoice,
     share_out,
 )
-from backend.app.services.aito_invoice_sweep import record_deposit_application
+from backend.app.services.aito_invoice_sweep import record_deposit_application, record_deposit_refusal
 from backend.app.services.aito_payment_links import current_link, current_links, link_view, reconcile_payment_links
 from backend.app.services.aito_quote_import import build_preview
 from backend.app.services.aito_quote_rating import read_client_quote_rating
@@ -3029,6 +3029,10 @@ async def create_invoice(
             for a in applications:
                 if a.unknown_amount > 0:
                     await record_deposit_application(
+                        db, project_pk, {"number": invoice_number}, a, "user", _actor(current_user)
+                    )
+                elif a.outcome == "refused":
+                    await record_deposit_refusal(
                         db, project_pk, {"number": invoice_number}, a, "user", _actor(current_user)
                     )
             await db.commit()

@@ -174,6 +174,30 @@ class TestStalledSliceFails:
         assert "unreachable" in str(exc.value)
 
 
+class TestCancelledSliceAbortsThePost:
+    @pytest.mark.asyncio
+    async def test_cancelling_mid_post_returns_promptly_and_aborts_the_request(self):
+        """T-696: cancelling the job must not wait for the sidecar to finish."""
+        aborted = asyncio.Event()
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/slice"):
+                try:
+                    await asyncio.sleep(30)
+                except asyncio.CancelledError:
+                    aborted.set()
+                    raise
+            return httpx.Response(404)
+
+        svc = _service(handler, timeout_seconds=60.0)
+        job = asyncio.create_task(svc.slice_with_profiles(**SLICE_ARGS, request_id="req-c", on_progress=None))
+        await asyncio.sleep(0.1)
+        job.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(job, timeout=2.0)
+        assert aborted.is_set()
+
+
 class TestStallTimeoutSetting:
     @pytest.mark.asyncio
     async def test_reads_the_configured_value(self):

@@ -365,7 +365,8 @@ async def apply_retainers(
                     throttle = hit = e
                 elif isinstance(e, ZohoUnreachable | ZohoAmbiguous):
                     unknown_amount = round(applied, 2)
-                outcome = "unknown" if unknown_amount else "refused"
+                # A 429 is a retryable "not tried", not Books refusing the deposit.
+                outcome = "unknown" if unknown_amount else ("not_attempted" if hit else "refused")
                 # Nothing was applied. The share is NOT handed to the
                 # retainers behind it — see the comment above the loop.
                 applied = 0.0

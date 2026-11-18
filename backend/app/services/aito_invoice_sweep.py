@@ -179,6 +179,38 @@ async def record_deposit_application(
     )
 
 
+async def record_deposit_refusal(
+    db: AsyncSession,
+    project_id: int,
+    invoice: dict,
+    application: RetainerApplication,
+    actor_class: str = "system",
+    actor_name: str | None = None,
+) -> None:
+    """One ``invoice.deposit_refused`` per retainer+invoice: the hourly sweep retries a refused deposit, so an
+    existing entry for the pair means it is already on the timeline."""
+    detail = {"retainer_number": application.number, "invoice_number": str(invoice.get("number") or "")}
+    earlier = (
+        await db.execute(
+            select(AitoEvent.detail).where(
+                AitoEvent.project_id == project_id, AitoEvent.kind == "invoice.deposit_refused"
+            )
+        )
+    ).scalars()
+    if any(d == detail for d in earlier):
+        return
+    await aito_events.record(
+        db,
+        project_id,
+        "invoice.deposit_refused",
+        actor_class=actor_class,
+        actor_name=actor_name,
+        subject_type="project",
+        subject_id=project_id,
+        detail=detail,
+    )
+
+
 async def settle_deposits(
     db: AsyncSession, project_id: int, quote_id: str, invoice: dict, quote_number: str | None = None
 ) -> DepositSettlement:
@@ -220,6 +252,9 @@ async def settle_deposits(
             continue
         applied_total += application.applied
         await record_deposit_application(db, project_id, invoice, application)
+    for application in applications:
+        if application.outcome == "refused":
+            await record_deposit_refusal(db, project_id, invoice, application)
     # What landed is recorded above; a 429 now escapes so the caller arms the shared throttle.
     for application in applications:
         if application.rate_limited is not None:

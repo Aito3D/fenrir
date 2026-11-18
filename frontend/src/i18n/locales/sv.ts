@@ -10336,6 +10336,7 @@ errors: {
       invoiceCreated: 'skapade fakturan',
       invoiceDetected: 'hittade en faktura i Zoho',
       invoiceDepositApplied: 'tillämpade förskottet på fakturan',
+      invoiceDepositRefused: 'Zoho Books avvisade förskottet för fakturan',
       quoteViewed: 'visade offerten',
       quoteAccepted: 'accepterade offerten',
       quoteUnaccepted: 'tog bort offertens godkännande',

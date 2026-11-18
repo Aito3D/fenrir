@@ -1136,6 +1136,7 @@ export default {
       invoiceCreated: 'raised the invoice',
       invoiceDetected: 'found an invoice in Zoho',
       invoiceDepositApplied: 'applied the deposit to the invoice',
+      invoiceDepositRefused: 'Zoho Books refused the deposit for the invoice',
       quoteViewed: 'viewed the quote',
       quoteAccepted: 'accepted the quote',
       quoteUnaccepted: "removed the quote's acceptance",

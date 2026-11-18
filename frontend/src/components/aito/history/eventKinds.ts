@@ -15,6 +15,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'invoice.created': 'aito.history.invoiceCreated',
   'invoice.detected': 'aito.history.invoiceDetected',
   'invoice.deposit_applied': 'aito.history.invoiceDepositApplied',
+  'invoice.deposit_refused': 'aito.history.invoiceDepositRefused',
   'quote.viewed': 'aito.history.quoteViewed',
   'quote.accepted': 'aito.history.quoteAccepted',
   'quote.unaccepted': 'aito.history.quoteUnaccepted',
@@ -352,6 +353,11 @@ export function detailText(kind: string, detail: Record<string, unknown> | null,
         : detail.retainer_number;
     // Books never said whether this one landed (timeout / gateway error).
     return detail.outcome === 'unknown' ? `${text} (?)` : text;
+  }
+
+  if (kind === 'invoice.deposit_refused') {
+    // The retainer number is what the operator looks up in Books.
+    return typeof detail.retainer_number === 'string' && detail.retainer_number ? detail.retainer_number : null;
   }
 
   if (kind === 'quote.accepted') {

@@ -1132,6 +1132,7 @@ export default {
       invoiceCreated: 'a créé la facture',
       invoiceDetected: 'a trouvé une facture dans Zoho',
       invoiceDepositApplied: "a imputé l'acompte sur la facture",
+      invoiceDepositRefused: "Zoho Books a refusé l'acompte pour la facture",
       quoteViewed: 'a consulté le devis',
       quoteAccepted: 'a accepté le devis',
       quoteUnaccepted: 'a retiré l\'acceptation du devis',

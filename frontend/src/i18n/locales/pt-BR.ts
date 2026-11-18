@@ -1132,6 +1132,7 @@ export default {
       invoiceCreated: 'criou a fatura',
       invoiceDetected: 'encontrou uma fatura no Zoho',
       invoiceDepositApplied: 'aplicou o sinal à fatura',
+      invoiceDepositRefused: 'O Zoho Books recusou o sinal da fatura',
       quoteViewed: 'visualizou o orçamento',
       quoteAccepted: 'aceitou o orçamento',
       quoteUnaccepted: 'removeu a aceitação do orçamento',

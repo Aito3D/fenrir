@@ -1132,6 +1132,7 @@ export default {
       invoiceCreated: '建立了發票',
       invoiceDetected: '在 Zoho 中發現了發票',
       invoiceDepositApplied: '已將訂金抵扣至發票',
+      invoiceDepositRefused: 'Zoho Books 拒絕了發票的訂金',
       quoteViewed: '檢視了報價單',
       quoteAccepted: '接受了報價單',
       quoteUnaccepted: '撤銷了報價單的接受',

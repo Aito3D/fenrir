@@ -10307,6 +10307,7 @@ export default {
       invoiceCreated: 'wystawił(a) fakturę',
       invoiceDetected: 'znalazł(a) fakturę w Zoho',
       invoiceDepositApplied: 'zastosował(a) zaliczkę do faktury',
+      invoiceDepositRefused: 'Zoho Books odrzucił zaliczkę do faktury',
       quoteViewed: 'wyświetlił(a) wycenę',
       quoteAccepted: 'zaakceptował(a) wycenę',
       quoteUnaccepted: 'cofnął(ęła) akceptację wyceny',

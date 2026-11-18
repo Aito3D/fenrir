@@ -903,6 +903,33 @@ async def test_failed_application_keeps_the_balance_and_records_nothing(db_sessi
     assert (row.invoice_status, row.invoice_balance) == ("overdue", 4000.0)
     assert row.customer_credit_total == 4000.0
     assert isinstance(row.invoice_checked_at, datetime)
+    # T-698: the refusal leaves ONE timeline entry, and the hourly retry does not repeat it.
+    events = await _events(db_session, p_id)
+    assert [e.kind for e in events] == ["invoice.deposit_refused"]
+    assert events[0].actor_class == "system"
+    assert events[0].detail == {"retainer_number": "RET-RET1", "invoice_number": "INV-1"}
+    assert await sweep_invoices(db_session, force=True) == 1
+    assert len(books.applied) == 2  # the retry itself is unchanged
+    assert [e.kind for e in await _events(db_session, p_id)] == ["invoice.deposit_refused"]
+
+
+@pytest.mark.asyncio
+async def test_a_429_on_a_deposit_apply_records_no_refusal(db_session, monkeypatch):
+    """T-699/T-698: a rate-limited apply is retryable, not refused."""
+    p = await _project(db_session, quote_id="EST1")
+    p_id = p.id
+    _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(4000.0, "overdue")]},
+        estimate=_estimate("RET1"),
+        payments=[_payment("P1", "RET1", 4000.0)],
+        apply_error=ZohoRateLimited("Too many requests", retry_after=5.0),
+    )
+
+    with pytest.raises(ZohoRateLimited):
+        await sweep_invoices(db_session, force=True)
+    await db_session.rollback()
+
     assert await _events(db_session, p_id) == []
 
 

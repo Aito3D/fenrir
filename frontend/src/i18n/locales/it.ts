@@ -1132,6 +1132,7 @@ export default {
       invoiceCreated: 'ha creato la fattura',
       invoiceDetected: 'ha trovato una fattura in Zoho',
       invoiceDepositApplied: "ha applicato l'acconto alla fattura",
+      invoiceDepositRefused: "Zoho Books ha rifiutato l'acconto per la fattura",
       quoteViewed: 'ha visualizzato il preventivo',
       quoteAccepted: 'ha accettato il preventivo',
       quoteUnaccepted: 'ha rimosso l\'accettazione del preventivo',

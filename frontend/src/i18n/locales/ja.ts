@@ -1132,6 +1132,7 @@ export default {
       invoiceCreated: '請求書を作成しました',
       invoiceDetected: 'Zoho で請求書を検出しました',
       invoiceDepositApplied: '前受金を請求書に充当しました',
+      invoiceDepositRefused: 'Zoho Books が請求書への前受金を拒否しました',
       quoteViewed: '見積もりを閲覧しました',
       quoteAccepted: '見積もりを承諾しました',
       quoteUnaccepted: '見積もりの承認を取り消しました',

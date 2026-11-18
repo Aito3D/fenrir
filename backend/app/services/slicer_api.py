@@ -607,6 +607,8 @@ class SlicerApiService:
                 if post_task in done:
                     break
         finally:
+            # No-op once finished; on cancellation it aborts the in-flight POST at once.
+            post_task.cancel()
             if progress_task is not None:
                 progress_task.cancel()
             # Await both so neither is left pending — a cancelled POST still
