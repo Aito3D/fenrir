@@ -3,14 +3,15 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Box, Loader2, PackageCheck, Plug, PowerOff, Printer, RefreshCw, Search, SearchX } from 'lucide-react';
+import { AlertTriangle, Box, Loader2, PackageCheck, Plug, Plus, PowerOff, Printer, RefreshCw, Search, SearchX } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
-import type { OrderBoardResponse, OrderBoardRow } from '../api/client';
+import type { OrderBoardResponse, OrderBoardRow, OrderEditResult } from '../api/client';
 import { Button } from '../components/Button';
 import { Skeleton } from '../components/Skeleton';
 import { usePrintBlob } from '../components/aito/usePrintBlob';
 import { FinishedOrderCard } from '../components/orders/FinishedOrderCard';
+import { NewOrderDraftRow } from '../components/orders/NewOrderDraftRow';
 import { OrderCard } from '../components/orders/OrderCard';
 import { OrderStatsStrip } from '../components/orders/OrderStatsStrip';
 import {
@@ -119,6 +120,8 @@ export function OrderBoardPage() {
   const [statsOpen, setStatsOpen] = useState(readStatsOpen);
   const [shown, setShown] = useState(PAGE);
   const [start, setStart] = useState<{ id: string; target: string; tick: number } | null>(null);
+  // A counter order being drafted: the board steps aside (filters, figures and the other orders hidden) until it is created or abandoned.
+  const [drafting, setDrafting] = useState(false);
   const scrollTarget = useRef<{ id: string; block: ScrollLogicalPosition } | null>(null);
   // One order is open at a time and the URL says which (`?order=`): a copied address or Back lands on it.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -266,6 +269,15 @@ export function OrderBoardPage() {
   const firstCounts = useRef<typeof tileCounts | null>(null);
   if (ready && !firstCounts.current && !searchText.trim()) firstCounts.current = tileCounts;
   const hidden = all.length - branded.length;
+  // The new order comes back open, with nothing filtering it out.
+  const onCreated = (result: OrderEditResult & { salesorder_id: string }) => {
+    const id = result.salesorder_id;
+    queryClient.setQueryData(BOARD_KEY, result.board);
+    setDrafting(false);
+    if (coreOnly && result.board.rows.find(r => r.id === id)?.is_core === false) setCoreOnly(false);
+    setOrder(id, true);
+    scrollTarget.current = { id, block: 'start' };
+  };
   const syncing = !!data && (data.sync.running || data.sync.pending > 0);
 
   const tile = (id: StatusFilter, label: string, hint: string, tone: Tone) => (
@@ -371,6 +383,12 @@ export function OrderBoardPage() {
                 : data.computed_at && t('orders.updated', { when: formatRelativeTime(data.computed_at, 'system', t) })}
             </span>
           )}
+          {hasPermission('orders:update') && !drafting && (
+            <Button size="sm" onClick={() => setDrafting(true)}>
+              <Plus aria-hidden="true" className="h-4 w-4" />
+              {t('orders.newOrder.button')}
+            </Button>
+          )}
           {hasPermission('orders:update') && (
             <Button variant="secondary" size="sm" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
               <RefreshCw aria-hidden="true" className={`h-4 w-4 ${refresh.isPending ? 'animate-spin' : ''}`} />
@@ -389,6 +407,16 @@ export function OrderBoardPage() {
         </div>
       )}
 
+      {drafting ? (
+        <NewOrderDraftRow
+          hiddenCount={all.length}
+          currency={all[0]?.currency ?? finishedQuery.data?.rows[0]?.currency ?? ''}
+          open={all}
+          finished={finishedQuery.data?.rows ?? []}
+          onCreated={onCreated}
+          onClose={() => setDrafting(false)}
+        />
+      ) : (<>
       <div data-testid="orders-tiles" className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         {STATUSES.map(id => tile(
           id,
@@ -496,6 +524,7 @@ export function OrderBoardPage() {
           </Button>
         </div>
       )}
+      </>)}
     </div>
   );
 }

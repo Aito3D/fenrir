@@ -4,6 +4,7 @@
 //   tiles and total value  -> byBrand only
 //   chip counts            -> byBrand + bySearch
 //   the list               -> byBrand + bySearch + byStatus
+import type { NewOrderDraftLine } from '../../hooks/useNewOrderDraft';
 import type {
   FinishedOrderRow,
   OrderBoardLine,
@@ -332,3 +333,22 @@ export const parcelLines = (p: ParcelEdit): { line_id: string; quantity: number 
 /** The parcel as the editor showed it when it opened: the server refuses the save if Books moved since. */
 export const parcelWas = (p: ParcelEdit): { line_id: string; quantity: number }[] =>
   Object.entries(p.was).filter(([, q]) => q > 0).map(([line_id, quantity]) => ({ line_id, quantity }));
+
+// Same grammar as the server: "N%" or a plain amount, dot decimals.
+const DISCOUNT = /^(\d+(?:\.\d+)?)(%?)$/;
+
+/** The discount as the server reads it: spaces dropped, a decimal comma made a dot ("10 %" → "10%"). */
+export const normDiscount = (raw: string) => raw.replace(/\s/g, '').replace(',', '.');
+
+/** The line total after its discount (prices are tax inclusive); null when the discount is neither "N%" with N ≤ 100
+ *  nor an amount up to the line total. */
+export function lineTotal(l: NewOrderDraftLine): number | null {
+  const gross = l.quantity * l.item.rate;
+  const d = normDiscount(l.discount);
+  if (!d) return gross;
+  const m = DISCOUNT.exec(d);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (m[2]) return n <= 100 ? gross * (1 - n / 100) : null;
+  return n <= gross + 1e-9 ? gross - n : null;
+}

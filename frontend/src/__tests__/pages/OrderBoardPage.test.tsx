@@ -918,4 +918,55 @@ describe('OrderBoardPage actions', () => {
     await waitFor(() => expect(lead).toHaveAttribute('title', 'No hand-over date stored for the last 90 days'));
     expect(lead).toHaveTextContent(/average–$/);
   });
+
+  describe('new counter order', () => {
+    const zohoStatus = () => server.use(http.get('/api/v1/zoho/status', () =>
+      HttpResponse.json({ configured: true, reachable: true, default_contact_id: 'walk-in', default_contact_name: 'Client de passage' })));
+
+    it('new order hides other rows and filters', async () => {
+      zohoStatus();
+      serve(board());
+      render(<OrderBoardPage />);
+      await screen.findByText('SO-00412');
+      fireEvent.click(screen.getByRole('button', { name: 'New order' }));
+      expect(await screen.findByText('3 other orders hidden while you create this one')).toBeInTheDocument();
+      expect(screen.queryByText('SO-00412')).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText('Order number, customer, product, SKU…')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('orders-tiles')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Figures' })).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Abandon' }));
+      expect(await screen.findByText('SO-00412')).toBeInTheDocument();
+      expect(screen.getByTestId('orders-tiles')).toBeInTheDocument();
+    });
+
+    it('the new order button needs orders:update', async () => {
+      mockUseAuth.hasPermission.mockImplementation((p: string) => p !== 'orders:update');
+      serve(board());
+      render(<OrderBoardPage />);
+      await screen.findByText('SO-00412');
+      expect(screen.queryByRole('button', { name: 'New order' })).not.toBeInTheDocument();
+    });
+
+    it('after create the new order is open (?order=9) and the list is back', async () => {
+      zohoStatus();
+      localStorage.setItem('orders.newOrderDraft.v1', JSON.stringify({
+        lines: [{ item: { id: 'A', name: 'Bambu Lab PLA Basic Noir', sku: 'BL-PLA-BK', rate: 3400, stock_on_hand: 9, product_type: 'goods' }, quantity: 1, discount: '' }],
+        client: null, clientRef: 'ref-1',
+      }));
+      serve(board());
+      const fresh = board({ rows: [row({ id: '9', number: 'SO-00999', customer: 'Client de passage' }), ...ROWS] });
+      server.use(http.post('/api/v1/order-board/orders', () => HttpResponse.json({ board: fresh, row: null, salesorder_id: '9' })));
+      render(<OrderBoardPage />);
+      await screen.findByText('SO-00412');
+      fireEvent.click(screen.getByRole('button', { name: 'New order' }));
+      await screen.findByDisplayValue('Client de passage');
+      fireEvent.click(screen.getByRole('button', { name: 'Create order' }));
+      await waitFor(() => expect(window.location.search).toBe('?order=9'));
+      expect(within(await screen.findByTestId('orders-list')).getAllByTestId('order-number').map(n => n.textContent)).toContain('SO-00999');
+      expect(screen.getByText('SO-00412')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('Order number, customer, product, SKU…')).toBeInTheDocument();
+      expect(within(document.getElementById('order-9')!).getByRole('button', { expanded: true })).toBeInTheDocument();
+    });
+  });
 });

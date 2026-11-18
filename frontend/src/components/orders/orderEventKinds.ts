@@ -4,6 +4,7 @@ import { formatMoney } from '../../utils/pricing';
 // Explicit maps rather than template-literal keys: the i18n gate scans for literal keys.
 const LABEL_KEY: Record<string, string> = {
   'order.received': 'orders.history.orderReceived',
+  'order.created': 'orders.history.orderCreated',
   'order.ready': 'orders.history.orderReady',
   'order.packed': 'orders.history.orderPacked',
   'picklist.created': 'orders.history.picklistCreated',
@@ -30,6 +31,7 @@ const LABEL_KEY: Record<string, string> = {
 /** The row subtitle's noun phrase per kind ("SMS de retrait"). */
 export const SHORT_LABEL_KEY: Record<string, string> = {
   'order.received': 'orders.history.short.received',
+  'order.created': 'orders.history.short.created',
   'order.ready': 'orders.history.short.ready',
   'order.packed': 'orders.history.short.packed',
   'picklist.created': 'orders.history.short.picklist',

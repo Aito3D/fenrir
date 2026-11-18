@@ -4,6 +4,7 @@ process.env.TZ = 'Pacific/Tahiti';
 import { describe, expect, it } from 'vitest';
 import type { FinishedOrderRow, OrderBoardLine, OrderBoardResponse, OrderBoardRow, OrderPayment } from '../../../api/client';
 import {
+  lineTotal,
   ageTone,
   avgLeadDays,
   weeklyCounts,
@@ -444,5 +445,19 @@ describe('stats strip', () => {
       { date: '2026-11-05', handed_over: '2026-11-05' },
       { date: '2026-01-01', handed_over: '2026-01-02' }, // handed over before the 90-day window
     ], '2026-11-12')).toEqual({ days: 3.7, n: 3 });
+  });
+});
+
+describe('lineTotal', () => {
+  const l = (discount: string) => ({ item: { id: 'A', name: 'A', sku: '', rate: 1000, stock_on_hand: null, product_type: 'goods' }, quantity: 2, discount });
+  it('reads a percentage or an amount, spaces and a decimal comma allowed', () => {
+    expect(lineTotal(l(''))).toBe(2000);
+    expect(lineTotal(l('10 %'))).toBe(1800);
+    expect(lineTotal(l('100%'))).toBe(0);
+    expect(lineTotal(l('2,5'))).toBe(1997.5);
+    expect(lineTotal(l('2000'))).toBe(0);
+  });
+  it('refuses over 100%, over the line total, negatives and words', () => {
+    for (const d of ['100.5%', '2001', '-5', 'abc', '5%%', '%']) expect(lineTotal(l(d))).toBeNull();
   });
 });

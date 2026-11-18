@@ -9,8 +9,9 @@ import { formatQty } from './orderBoard';
 import { TONE } from './orderStatus';
 
 /** The "add an item" field of an order edit: Books items by name or SKU, from two characters, the ones already on the order left out. */
-export function OrderItemSearch({ orderItemIds, currency, disabled, onAdd }: { orderItemIds: Set<string>; currency: string; disabled: boolean; onAdd: (item: OrderItemHit) => void }) {
+export function OrderItemSearch({ orderItemIds, currency, disabled, onAdd, label }: { orderItemIds: Set<string>; currency: string; disabled: boolean; onAdd: (item: OrderItemHit) => void; label?: string }) {
   const { t } = useTranslation();
+  const placeholder = label ?? t('orders.edit.search');
   const [text, setText] = useState('');
   const [q, setQ] = useState('');
   useEffect(() => {
@@ -34,8 +35,8 @@ export function OrderItemSearch({ orderItemIds, currency, disabled, onAdd }: { o
           type="search"
           value={text}
           disabled={disabled}
-          aria-label={t('orders.edit.search')}
-          placeholder={t('orders.edit.search')}
+          aria-label={placeholder}
+          placeholder={placeholder}
           onChange={e => setText(e.target.value)}
           onKeyDown={e => {
             if (e.key === 'Enter' && hits[0]) {
