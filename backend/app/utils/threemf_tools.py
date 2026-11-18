@@ -526,6 +526,9 @@ class RackGroup:
     on_rack: bool
     nozzle_diameter: str
     volume_type: str
+    # MQTT extruder id of the carriage this group prints on (0=right, 1=left),
+    # the id a loaded tray's ``extruder_id`` is compared against.
+    extruder_id: int
     # Only a hint, for preferring a rack position already loaded with this
     # colour. Excluded from equality on purpose: two filaments may share a
     # group and differ in colour without the group being contradictory, and
@@ -668,6 +671,7 @@ def _rack_plan(zf: zipfile.ZipFile, plate_id: int | None) -> RackPlan | None:
             on_rack=extruder_index in rack_indices,
             nozzle_diameter=(elem.get("nozzle_diameter") or "").strip(),
             volume_type=(elem.get("volume_type") or "").strip(),
+            extruder_id=int(physical_extruder_map[extruder_index]),
             filament_color=(elem.get("color") or "").strip(),
         )
         # Filaments sharing a group must want the same hotend, or "the group is

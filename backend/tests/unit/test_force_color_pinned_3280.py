@@ -117,10 +117,11 @@ class TestMatcherHonoursForcedSlots:
         trays = [_tray(0, "A4AAACFF"), _tray(1, "000000FF")]
         assert PrintScheduler()._match_filaments_to_slots([unforced, forced], trays) == [1, 0]
 
-    def test_an_unforced_slot_still_falls_back_to_type_only(self):
-        """Nothing changes for jobs that did not ask for strict matching."""
+    def test_an_unforced_slot_still_falls_back_to_another_colour(self):
+        """A job that did not ask for strict matching still prints -- on the
+        nearest colour of its type (white for a light grey), not the first."""
         req = {"slot_id": 1, "type": "PLA", "color": "#A4AAAC", "tray_info_idx": ""}
-        assert PrintScheduler()._match_filaments_to_slots([req], A1_TRAYS) == [1]
+        assert PrintScheduler()._match_filaments_to_slots([req], A1_TRAYS) == [3]
 
 
 class TestOverridesCarryTheForceFlag:

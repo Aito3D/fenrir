@@ -272,7 +272,7 @@ export function SlotPicker({
             id={listId}
             role="listbox"
             aria-label={ariaLabel}
-            className="fixed z-[60] max-h-60 overflow-y-auto rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1 shadow-xl"
+            className="fixed z-[60] max-h-60 overflow-y-auto rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1 shadow-xl origin-top animate-aito-pop-in"
             style={{
               top: coords?.top ?? -9999,
               left: coords?.left ?? -9999,

@@ -1,41 +1,26 @@
-import { useState, useMemo } from 'react';
-import { useQueryClient, useQueries } from '@tanstack/react-query';
-import {
-  Printer as PrinterIcon,
-  Loader2,
-  AlertCircle,
-  AlertTriangle,
-  Check,
-  Circle,
-  RefreshCw,
-  Wand2,
-  Users,
-} from 'lucide-react';
+import { useState, useMemo, type ReactNode } from 'react';
+import { useQueries } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
+import { Printer as PrinterIcon, Loader2, AlertCircle, AlertTriangle, Check, Users } from 'lucide-react';
 import { api, type PrinterStatus } from '../../api/client';
-import { getColorName } from '../../utils/colors';
 import { isGcodeCompatible } from '../../utils/printer';
-import {
-  normalizeColorForCompare,
-  colorsAreSimilar,
-  filamentTypesCompatible,
-  autoMatchFilament,
-  filterFilamentsByNozzle,
-  effectivePreferLowest,
-} from '../../utils/amsHelpers';
+import { effectivePreferLowest } from '../../utils/amsHelpers';
 import type { PrinterSelectorProps, AssignmentMode } from './types';
-import type { PrinterMappingResult, PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
-import type { FilamentRequirement, LoadedFilament } from '../../hooks/useFilamentMapping';
+import type { PrinterMappingResult, PrinterMatchStatus } from '../../hooks/useMultiPrinterFilamentMapping';
+import {
+  buildFilamentComparison,
+  buildLoadedFilaments,
+  type FilamentRequirement,
+} from '../../hooks/useFilamentMapping';
 import { useUiSettings } from '../../hooks/useUiSettings';
 
 interface PrinterSelectorWithMappingProps extends PrinterSelectorProps {
-  /** Per-printer mapping results (only used when multiple printers selected) */
+  /** Mapping results of the selected printers, for their readiness badge */
   printerMappingResults?: PrinterMappingResult[];
+  /** The filament mapping panel of a selected printer, drawn inside its card */
+  renderMapping?: (printerId: number) => ReactNode;
   /** Filament requirements for the print */
   filamentReqs?: { filaments: FilamentRequirement[] };
-  /** Callback to auto-configure a printer */
-  onAutoConfigurePrinter?: (printerId: number) => void;
-  /** Callback to update printer config */
-  onUpdatePrinterConfig?: (printerId: number, config: Partial<PerPrinterConfig>) => void;
   /** Current assignment mode */
   assignmentMode?: AssignmentMode;
   /** Handler for assignment mode change */
@@ -56,164 +41,9 @@ interface PrinterSelectorWithMappingProps extends PrinterSelectorProps {
 const AVAILABLE_STATES = new Set(['IDLE', 'FINISH', 'FAILED']);
 
 /**
- * Inline AMS mapping editor for a single printer.
- */
-function InlineMappingEditor({
-  printerResult,
-  filamentReqs,
-  onUpdateConfig,
-}: {
-  printerResult: PrinterMappingResult;
-  filamentReqs: FilamentRequirement[];
-  onUpdateConfig: (config: Partial<PerPrinterConfig>) => void;
-}) {
-  const queryClient = useQueryClient();
-  const { data: uiSettings } = useUiSettings();
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const handleSlotChange = (slotId: number, value: string) => {
-    if (slotId <= 0) return;
-
-    const newMappings = { ...printerResult.config.manualMappings };
-    if (value === '') {
-      delete newMappings[slotId];
-    } else {
-      newMappings[slotId] = parseInt(value, 10);
-    }
-
-    onUpdateConfig({
-      useDefault: false,
-      manualMappings: newMappings,
-      autoConfigured: false,
-    });
-  };
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      await api.refreshPrinterStatus(printerResult.printerId);
-      await new Promise((r) => setTimeout(r, 500));
-      await queryClient.refetchQueries({ queryKey: ['printer-status', printerResult.printerId] });
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  // Compute current slot assignments
-  const slotAssignments = filamentReqs.map((req) => {
-    const slotId = req.slot_id || 0;
-    const currentMapping = printerResult.config.manualMappings[slotId];
-
-    let loaded: LoadedFilament | undefined;
-    let isManual = false;
-
-    if (currentMapping !== undefined) {
-      loaded = printerResult.loadedFilaments.find((f) => f.globalTrayId === currentMapping);
-      isManual = true;
-    } else {
-      const usedTrayIds = new Set<number>(Object.values(printerResult.config.manualMappings));
-      loaded = autoMatchFilament(
-        req,
-        printerResult.loadedFilaments,
-        usedTrayIds,
-        effectivePreferLowest(uiSettings?.prefer_lowest_filament, printerResult.status?.ams_filament_backup),
-        printerResult.inventoryByTrayId,
-      ) as LoadedFilament | undefined;
-    }
-
-    // Determine status
-    let status: 'match' | 'type_only' | 'mismatch' = 'mismatch';
-    if (loaded) {
-      const typeMatch = filamentTypesCompatible(loaded.type, req.type);
-      const colorMatch =
-        normalizeColorForCompare(loaded.color) === normalizeColorForCompare(req.color) ||
-        colorsAreSimilar(loaded.color, req.color);
-
-      if (typeMatch && colorMatch) {
-        status = 'match';
-      } else if (typeMatch) {
-        status = 'type_only';
-      }
-    }
-
-    return { req, loaded, status, isManual };
-  });
-
-  return (
-    <div className="mt-2 bg-bambu-dark rounded-lg p-3 space-y-2">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-bambu-gray">Custom slot mapping</span>
-        <button
-          type="button"
-          onClick={handleRefresh}
-          className="flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-bambu-gray/30 hover:border-bambu-gray hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray hover:text-white"
-          disabled={isRefreshing}
-        >
-          <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-          <span>Re-read</span>
-        </button>
-      </div>
-
-      {slotAssignments.map(({ req, loaded, status, isManual }, idx) => (
-        // Below `sm` the slot select gets a line of its own, as on the
-        // single-printer mapping row (#3294).
-        <div
-          key={idx}
-          className="grid items-center gap-2 text-xs grid-cols-[16px_minmax(0,1fr)_16px] sm:grid-cols-[16px_minmax(70px,1fr)_auto_2fr_16px]"
-        >
-          <span title={`Required: ${req.type} - ${getColorName(req.color)}`}>
-            <Circle className="w-3 h-3" fill={req.color} stroke={req.color} />
-          </span>
-          {/* Only the name truncates; the gram usage is pinned (shrink-0) so
-              it never clips on narrow/mobile widths (#2669). */}
-          <span className="text-white flex items-center gap-1 min-w-0 col-span-2 sm:col-span-1">
-            <span className="truncate min-w-0" title={req.type}>{req.type}</span>
-            <span className="text-bambu-gray shrink-0 whitespace-nowrap">({req.used_grams}g)</span>
-          </span>
-          <span className="text-bambu-gray">→</span>
-          <select
-            value={loaded?.globalTrayId ?? ''}
-            onChange={(e) => handleSlotChange(req.slot_id || 0, e.target.value)}
-            className={`flex-1 min-w-0 px-2 py-1 rounded border text-xs bg-bambu-dark-secondary focus:outline-none focus:ring-1 focus:ring-bambu-green ${
-              status === 'match'
-                ? 'border-bambu-green/50 text-bambu-green'
-                : status === 'type_only'
-                ? 'border-yellow-500 dark:border-yellow-400/50 text-yellow-700 dark:text-yellow-400'
-                : 'border-orange-500 dark:border-orange-400/50 text-orange-700 dark:text-orange-400'
-            } ${isManual ? 'ring-1 ring-blue-400/50' : ''}`}
-            title={isManual ? 'Manually selected' : 'Auto-matched'}
-          >
-            <option value="" className="bg-bambu-dark text-bambu-gray">
-              -- Select slot --
-            </option>
-            {filterFilamentsByNozzle(printerResult.loadedFilaments, req.nozzle_id)
-              .map((f) => (
-              <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
-                {f.label}: {f.traySubBrands || f.type} ({f.colorName})
-              </option>
-            ))}
-          </select>
-          {status === 'match' ? (
-            <Check className="w-3 h-3 text-bambu-green" />
-          ) : status === 'type_only' ? (
-            <span title="Same type, different color">
-              <AlertTriangle className="w-3 h-3 text-yellow-600 dark:text-yellow-400" />
-            </span>
-          ) : (
-            <span title="Filament type not loaded">
-              <AlertTriangle className="w-3 h-3 text-orange-600 dark:text-orange-400" />
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/**
  * Printer selection component with grid-based UI.
  * Supports single or multi-select modes.
- * When multiple printers are selected, shows per-printer mapping overrides.
+ * Each selected printer's card carries its own filament mapping panel.
  */
 export function PrinterSelector({
   printers,
@@ -225,8 +55,7 @@ export function PrinterSelector({
   disableBusy = false,
   printerMappingResults,
   filamentReqs,
-  onAutoConfigurePrinter,
-  onUpdatePrinterConfig,
+  renderMapping,
   assignmentMode = 'printer',
   onAssignmentModeChange,
   targetModel,
@@ -235,6 +64,8 @@ export function PrinterSelector({
   onTargetLocationChange,
   slicedForModel,
 }: PrinterSelectorWithMappingProps) {
+  const { t } = useTranslation();
+  const { data: uiSettings } = useUiSettings();
   // State for showing all printers vs only matching model
   const [showAllPrinters, setShowAllPrinters] = useState(false);
 
@@ -292,8 +123,10 @@ export function PrinterSelector({
     // Filter to only show printers matching the sliced model
     const matching = activePrinters.filter((p) => p.model === slicedForModel);
     // If no matching printers, show all
-    return matching.length > 0 ? matching : activePrinters;
-  }, [activePrinters, assignmentMode, slicedForModel, showAllPrinters]);
+    if (matching.length === 0) return activePrinters;
+    // A selected printer is never hidden: its card is where its mapping lives.
+    return activePrinters.filter((p) => p.model === slicedForModel || selectedPrinterIds.includes(p.id));
+  }, [activePrinters, assignmentMode, slicedForModel, showAllPrinters, selectedPrinterIds]);
 
   // Check if there are hidden printers due to model filtering
   const hiddenPrinterCount = activePrinters.length - displayPrinters.length;
@@ -318,14 +151,6 @@ export function PrinterSelector({
 
   // Check if model-based assignment is available (need callbacks and multiple printers of same model)
   const modelAssignmentAvailable = onAssignmentModeChange && onTargetModelChange && uniqueModels.length > 0;
-
-  const showMappingOptions = allowMultiple &&
-    selectedPrinterIds.length > 1 &&
-    printerMappingResults &&
-    filamentReqs?.filaments &&
-    filamentReqs.filaments.length > 0 &&
-    onAutoConfigurePrinter &&
-    onUpdatePrinterConfig;
 
   if (isLoading) {
     return (
@@ -369,26 +194,29 @@ export function PrinterSelector({
     onMultiSelect([]);
   };
 
-  const handleOverrideToggle = (printerId: number, enabled: boolean, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!onAutoConfigurePrinter || !onUpdatePrinterConfig) return;
-
-    if (enabled) {
-      onAutoConfigurePrinter(printerId);
-    } else {
-      onUpdatePrinterConfig(printerId, {
-        useDefault: true,
-        manualMappings: {},
-        autoConfigured: false,
-      });
-    }
-  };
-
   const isSelected = (printerId: number) => selectedPrinterIds.includes(printerId);
   const selectedCount = selectedPrinterIds.length;
 
-  const getPrinterMappingResult = (printerId: number) => {
-    return printerMappingResults?.find((r) => r.printerId === printerId);
+  // Whether the printer already holds the filaments this print needs, shown
+  // on every card so the choice of printer can be made on it. A selected
+  // printer reports the mapping that will be sent (manual picks included); the
+  // others, what auto-matching would give them.
+  const readinessOf = (printerId: number): PrinterMatchStatus | null => {
+    if (!filamentReqs?.filaments?.length) return null;
+    const result = printerMappingResults?.find((r) => r.printerId === printerId);
+    if (result) return result.status ? result.matchStatus : null;
+    const status = printerStatusMap.get(printerId);
+    if (!status?.connected) return null;
+    const comparison = buildFilamentComparison(
+      filamentReqs,
+      buildLoadedFilaments(status),
+      {},
+      effectivePreferLowest(uiSettings?.prefer_lowest_filament, status.ams_filament_backup),
+      undefined,
+      status.fila_switch?.installed === true,
+    );
+    if (comparison.some((f) => f.status === 'mismatch')) return 'missing';
+    return comparison.some((f) => f.status === 'type_only') ? 'partial' : 'full';
   };
 
   return (
@@ -564,59 +392,81 @@ export function PrinterSelector({
       {/* Printer list (only in printer mode) */}
       {assignmentMode === 'printer' && displayPrinters.map((printer) => {
         const selected = isSelected(printer.id);
-        const mappingResult = getPrinterMappingResult(printer.id);
-        const hasOverride = mappingResult && !mappingResult.config.useDefault;
         const busy = isPrinterBusy(printer.id);
         const disabled = disableBusy && busy;
         const stateLabel = getPrinterStateLabel(printer.id);
+        const readiness = readinessOf(printer.id);
+        const mapping = selected ? renderMapping?.(printer.id) : null;
 
         return (
-          <div key={printer.id}>
-            {/* Printer selection button */}
+          // The card is the border; the button is its header, and a selected
+          // printer's filament mapping unfolds inside the same border.
+          <div
+            key={printer.id}
+            className={`rounded-lg border transition-colors duration-200 ${
+              disabled
+                ? 'border-bambu-dark-tertiary bg-bambu-dark opacity-50'
+                : selected
+                ? 'border-bambu-green bg-bambu-green/10'
+                : 'border-bambu-dark-tertiary bg-bambu-dark hover:border-bambu-gray'
+            } ${!printer.is_active ? 'opacity-60' : ''}`}
+          >
             <button
               type="button"
               onClick={() => handlePrinterClick(printer.id)}
               disabled={disabled}
-              className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                disabled
-                  ? 'border-bambu-dark-tertiary bg-bambu-dark opacity-50 cursor-not-allowed'
-                  : selected
-                  ? 'border-bambu-green bg-bambu-green/10'
-                  : 'border-bambu-dark-tertiary bg-bambu-dark hover:border-bambu-gray'
-              } ${!printer.is_active ? 'opacity-60' : ''}`}
+              aria-pressed={selected}
+              className={`w-full flex items-center gap-3 p-3 rounded-lg transition-transform duration-100 active:scale-[0.99] motion-reduce:transition-none ${
+                disabled ? 'cursor-not-allowed' : ''
+              }`}
             >
               <div
-                className={`p-2 rounded-lg ${
+                className={`p-2 rounded-lg transition-colors duration-200 ${
                   disabled ? 'bg-bambu-dark-tertiary' : selected ? 'bg-bambu-green/20' : 'bg-bambu-dark-tertiary'
                 }`}
               >
                 <PrinterIcon
-                  className={`w-5 h-5 ${
+                  className={`w-5 h-5 transition-colors duration-200 ${
                     disabled ? 'text-bambu-gray/50' : selected ? 'text-bambu-green' : 'text-bambu-gray'
                   }`}
                 />
               </div>
-              <div className="text-left flex-1">
-                <p className={`font-medium ${disabled ? 'text-bambu-gray' : 'text-white'}`}>
+              <div className="text-left flex-1 min-w-0">
+                <p className={`font-medium truncate ${disabled ? 'text-bambu-gray' : 'text-white'}`}>
                   {printer.name}
                   {!printer.is_active && <span className="text-bambu-gray text-xs ml-2">(inactive)</span>}
                 </p>
-                <p className="text-xs text-bambu-gray">
-                  {printer.model || 'Unknown model'} • {printer.ip_address}
-                </p>
+                <p className="text-xs text-bambu-gray">{printer.model || 'Unknown model'}</p>
               </div>
+              {readiness && (
+                <span
+                  className={`animate-rise shrink-0 text-xs px-2 py-0.5 rounded-full transition-colors duration-200 ${
+                    readiness === 'full'
+                      ? 'bg-bambu-green/20 text-bambu-green'
+                      : readiness === 'partial'
+                      ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400'
+                      : 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400'
+                  }`}
+                >
+                  {readiness === 'full'
+                    ? t('printModal.statusReady')
+                    : readiness === 'partial'
+                    ? t('printModal.statusColorMismatch')
+                    : t('printModal.statusTypeNotFound')}
+                </span>
+              )}
               {stateLabel && (
-                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full ${
                   busy
                     ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400'
-                    : 'bg-bambu-green/20 text-bambu-green'
+                    : 'bg-bambu-dark-tertiary text-bambu-gray'
                 }`}>
                   {stateLabel}
                 </span>
               )}
               {allowMultiple && (
                 <div
-                  className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                  className={`shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors duration-150 ${
                     disabled
                       ? 'border-bambu-gray/30'
                       : selected
@@ -624,71 +474,11 @@ export function PrinterSelector({
                       : 'border-bambu-gray/50'
                   }`}
                 >
-                  {selected && <Check className="w-3 h-3 text-white" />}
+                  {selected && <Check className="w-3 h-3 text-white animate-slice-done" />}
                 </div>
               )}
             </button>
-
-            {/* Per-printer override checkbox + mapping (only when selected and multi-printer) */}
-            {selected && showMappingOptions && mappingResult && (
-              <div className="ml-4 mt-2 mb-3">
-                {/* Override checkbox row */}
-                <div className="flex items-center gap-2">
-                  <label
-                    className="flex items-center gap-2 cursor-pointer"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={hasOverride}
-                      onChange={(e) => handleOverrideToggle(printer.id, e.target.checked, e as unknown as React.MouseEvent)}
-                      className="w-3.5 h-3.5 rounded border-bambu-gray/30 bg-bambu-dark-secondary text-bambu-green focus:ring-bambu-green focus:ring-offset-0"
-                    />
-                    <span className="text-xs text-bambu-gray">Custom mapping</span>
-                  </label>
-
-                  {/* Match status indicator */}
-                  <span className={`text-xs ml-2 ${
-                    mappingResult.matchStatus === 'full'
-                      ? 'text-bambu-green'
-                      : mappingResult.matchStatus === 'partial'
-                      ? 'text-yellow-700 dark:text-yellow-400'
-                      : 'text-orange-700 dark:text-orange-400'
-                  }`}>
-                    ({mappingResult.exactMatches}/{mappingResult.totalSlots} matched)
-                  </span>
-
-                  {/* Loading indicator */}
-                  {mappingResult.isLoading && (
-                    <RefreshCw className="w-3 h-3 text-bambu-gray animate-spin" />
-                  )}
-
-                  {/* Auto-configure button (when override is enabled) */}
-                  {hasOverride && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAutoConfigurePrinter!(printer.id);
-                      }}
-                      className="ml-auto flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-bambu-gray/30 hover:border-bambu-gray hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray hover:text-white"
-                    >
-                      <Wand2 className="w-3 h-3" />
-                      Auto
-                    </button>
-                  )}
-                </div>
-
-                {/* Inline mapping editor (shown when override is checked) */}
-                {hasOverride && (
-                  <InlineMappingEditor
-                    printerResult={mappingResult}
-                    filamentReqs={filamentReqs!.filaments}
-                    onUpdateConfig={(config) => onUpdatePrinterConfig!(printer.id, config)}
-                  />
-                )}
-              </div>
-            )}
+            {mapping}
           </div>
         );
       })}

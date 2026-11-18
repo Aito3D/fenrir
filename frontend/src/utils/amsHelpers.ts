@@ -341,9 +341,7 @@ function ciede2000(lab1: [number, number, number], lab2: [number, number, number
 /**
  * Perceptual distance between two hex colours, or null if either is unusable.
  *
- * Used to rank the candidates `colorsAreSimilar` admits. Eligibility stays the
- * per-channel box that shipped; this only decides which of several eligible
- * spools is closest, so no spool becomes usable or unusable because of it.
+ * Used to rank the trays a filament could take; see `matchFilamentsToTrays`.
  *
  * It ranks by how far apart the colours *look*, not how far apart their numbers
  * are. RGB distance overweights blue badly enough to invert the answer: against
@@ -362,43 +360,6 @@ export function colorDistance(
   const lab2 = hexToLab(color2);
   if (!lab1 || !lab2) return null;
   return ciede2000(lab1, lab2);
-}
-
-/**
- * The closest colour match among `candidates`, or undefined if none is similar
- * enough to qualify.
- *
- * Callers pass candidates in the order they already established — slot order,
- * or the "prefer lowest remaining" sort. Ties keep the earliest of them, so
- * that order survives as the tie-break and Prefer Lowest still decides between
- * two equally close spools, which is the case it was actually for.
- *
- * This exists so the four matchers that pick a spool (`autoMatchFilament`,
- * `computeAmsMapping`, `computeMappingWithOverrides`, `computeMatchDetails`)
- * share one ranking rule instead of four copies of "first one within
- * tolerance", which made the winner depend on AMS slot order.
- */
-export function findNearestSimilar<T>(
-  candidates: T[],
-  requiredColor: string | undefined,
-  getColor: (candidate: T) => string | undefined,
-): T | undefined {
-  let best: T | undefined;
-  let bestDistance = Infinity;
-
-  for (const candidate of candidates) {
-    const color = getColor(candidate);
-    if (!colorsAreSimilar(color, requiredColor)) continue;
-    const distance = colorDistance(color, requiredColor);
-    if (distance === null) continue;
-    // Strict <: an equally close candidate never displaces an earlier one.
-    if (distance < bestDistance) {
-      best = candidate;
-      bestDistance = distance;
-    }
-  }
-
-  return best;
 }
 
 /** Classify an empty AMS slot for UI rendering (#1322 follow-up).
@@ -632,50 +593,126 @@ export function effectivePreferLowest(
   return amsFilamentBackup !== false;
 }
 
+/** What the matcher reads off a required filament. */
+interface MatchRequirement {
+  type?: string;
+  color?: string;
+  tray_info_idx?: string;
+  nozzle_id?: number | null;
+}
+
+/** What the matcher reads off a loaded tray. */
+interface MatchTray {
+  globalTrayId: number;
+  amsId?: number;
+  trayId?: number;
+  type?: string;
+  color?: string;
+  trayInfoIdx?: string;
+  extruderId?: number;
+  remain?: number;
+}
+
 /**
- * Auto-match a filament requirement to a loaded filament, respecting nozzle constraints.
- * Used by both single-printer (FilamentMapping) and multi-printer (InlineMappingEditor) paths.
+ * Assign loaded trays to required filaments, closest pair first.
+ *
+ * Every (requirement, tray) pair the requirement may use is scored and the
+ * best-scoring pair is assigned before the next, so the result does not depend
+ * on the order of filaments in the file and a filament never takes the tray
+ * another one matches better. Score: a tray of the same variant
+ * (`tray_info_idx`, e.g. "GFA00" — Basic is not Matte, #2650) before another
+ * tray of the type, then perceptual colour distance, then tray order (slot
+ * order, or lowest remaining first when `preferLowest` is on).
+ *
+ * A far colour is still assigned — the nearest one, where this used to take
+ * the first free tray of the type and printed blue in yellow with a blue spool
+ * two slots along. Whether the pick counts as a colour match is the caller's
+ * verdict, on the tray actually picked.
+ *
+ * The nozzle is a hard filter: a tray on the other nozzle's AMS cannot feed
+ * this filament at all, so it is never a fallback. An FTS lifts it, since the
+ * switch routes any slot to either extruder (#1162).
+ *
+ * Returns one entry per requirement, `undefined` where nothing fits or `skip`
+ * said to leave it. Mirrors `_match_filaments_to_slots` in
+ * `backend/app/services/print_scheduler.py`: the dialog must not promise a
+ * spool the scheduler would not pick.
  */
-export function autoMatchFilament(
-  req: { type?: string; color?: string; nozzle_id?: number | null },
-  loadedFilaments: { globalTrayId: number; amsId?: number; trayId?: number; type?: string; color?: string; extruderId?: number; remain?: number }[],
-  usedTrayIds: Set<number>,
-  preferLowest?: boolean,
-  inventoryByTrayId?: Map<number, number>,
-): typeof loadedFilaments[number] | undefined {
-  let nozzleFilaments = filterFilamentsByNozzle(loadedFilaments, req.nozzle_id);
-
-  if (preferLowest) {
-    nozzleFilaments = [...nozzleFilaments].sort((a, b) =>
-      compareSortKeys(
-        preferLowestSortKey(a, inventoryByTrayId),
-        preferLowestSortKey(b, inventoryByTrayId),
-      ),
-    );
-  }
-
-  const exactMatch = nozzleFilaments.find(
-    (f) =>
-      !usedTrayIds.has(f.globalTrayId) &&
-      filamentTypesCompatible(f.type, req.type) &&
-      normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
-  );
-  const similarMatch = exactMatch
-    ? undefined
-    : findNearestSimilar(
-        nozzleFilaments.filter(
-          (f) => !usedTrayIds.has(f.globalTrayId) && filamentTypesCompatible(f.type, req.type),
+export function matchFilamentsToTrays<R extends MatchRequirement, T extends MatchTray>(
+  requirements: R[],
+  trays: T[],
+  options: {
+    /** Trays already spoken for, e.g. by a manual pick. */
+    usedTrayIds?: Iterable<number>;
+    /** Requirements to leave unassigned, e.g. the manually mapped ones. */
+    skip?: (requirement: R, index: number) => boolean;
+    preferLowest?: boolean;
+    inventoryByTrayId?: Map<number, number>;
+    ftsActive?: boolean;
+  } = {},
+): (T | undefined)[] {
+  const used = new Set<number>(options.usedTrayIds ?? []);
+  const ordered = options.preferLowest
+    ? [...trays].sort((x, y) =>
+        compareSortKeys(
+          preferLowestSortKey(x, options.inventoryByTrayId),
+          preferLowestSortKey(y, options.inventoryByTrayId),
         ),
-        req.color,
-        (f) => f.color,
-      );
-  const typeOnlyMatch =
-    exactMatch || similarMatch
-      ? undefined
-      : nozzleFilaments.find(
-          (f) => !usedTrayIds.has(f.globalTrayId) && filamentTypesCompatible(f.type, req.type)
-        );
-  return exactMatch ?? similarMatch ?? typeOnlyMatch;
+      )
+    : trays;
+
+  const pairs: { key: [number, number, number, number]; requirement: number; tray: T }[] = [];
+  requirements.forEach((requirement, index) => {
+    if (options.skip?.(requirement, index)) return;
+    ordered.forEach((tray, rank) => {
+      if (used.has(tray.globalTrayId)) return;
+      if (requirement.nozzle_id != null && !options.ftsActive && tray.extruderId !== requirement.nozzle_id) return;
+      const sameVariant = !!requirement.tray_info_idx && tray.trayInfoIdx === requirement.tray_info_idx;
+      if (!sameVariant && !filamentTypesCompatible(tray.type, requirement.type)) return;
+      const distance = colorDistance(tray.color, requirement.color) ?? Infinity;
+      pairs.push({ key: [sameVariant ? 0 : 1, distance, rank, index], requirement: index, tray });
+    });
+  });
+  pairs.sort((x, y) => compareKeys(x.key, y.key));
+
+  const picked: (T | undefined)[] = requirements.map(() => undefined);
+  for (const { requirement, tray } of pairs) {
+    if (picked[requirement] || used.has(tray.globalTrayId)) continue;
+    picked[requirement] = tray;
+    used.add(tray.globalTrayId);
+  }
+  return picked;
+}
+
+// Not `a - b`: Infinity - Infinity is NaN, which is no order at all.
+function compareKeys(x: number[], y: number[]): number {
+  for (let i = 0; i < x.length; i++) {
+    if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+  }
+  return 0;
+}
+
+/**
+ * Order the trays of a slot picker for one required filament: the trays it can
+ * use first, best match on top (same variant, then same type, then nearest
+ * colour — the matcher's ranking), then the trays it cannot use (the other
+ * nozzle's AMS) in slot order. `usable` is the caller's own disabled rule.
+ */
+export function rankTraysForPicker<T extends MatchTray>(
+  requirement: MatchRequirement,
+  trays: T[],
+  usable: (tray: T) => boolean,
+): T[] {
+  const key = (tray: T, index: number): number[] => {
+    if (!usable(tray)) return [1, 0, 0, index];
+    const sameVariant = !!requirement.tray_info_idx && tray.trayInfoIdx === requirement.tray_info_idx;
+    const fit = sameVariant ? 0 : filamentTypesCompatible(tray.type, requirement.type) ? 1 : 2;
+    return [0, fit, colorDistance(tray.color, requirement.color) ?? Infinity, index];
+  };
+  return trays
+    .map((tray, index) => ({ tray, key: key(tray, index) }))
+    .sort((x, y) => compareKeys(x.key, y.key))
+    .map(({ tray }) => tray);
 }
 
 /**

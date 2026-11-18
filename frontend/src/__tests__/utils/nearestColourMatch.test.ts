@@ -3,8 +3,8 @@
  *
  * Three matchers in the interface fell back to "first spool within tolerance"
  * when no exact colour was loaded, so the winner depended on AMS slot order.
- * They now share `findNearestSimilar` with the scheduler's equivalent, so the
- * dialog cannot promise a spool the backend would not have picked.
+ * They now share `matchFilamentsToTrays` with the scheduler's equivalent, so
+ * the dialog cannot promise a spool the backend would not have picked.
  *
  * The worked example is the maintainer's: required `#3A7BD5`, a purple
  * `#6253AD` in tray 1 (40/40/40 off — admitted) and a near-identical `#3B7AD2`
@@ -12,20 +12,27 @@
  *
  * Ranking is by CIEDE2000 delta-E, matching the backend's
  * `perceptual_color_distance`, so those two are ~18.5 and ~0.5 apart rather
- * than the ~69 and ~3 an RGB metric reported. Eligibility is still the
- * per-channel RGB box, unchanged — only the ordering within it is perceptual.
+ * than the ~69 and ~3 an RGB metric reported. A colour outside the old
+ * per-channel box is ranked too: the nearest tray wins, however far.
  */
 
 import { describe, expect, it } from 'vitest';
-import { colorDistance, colorsAreSimilar, findNearestSimilar } from '../../utils/amsHelpers';
+import { colorDistance, matchFilamentsToTrays } from '../../utils/amsHelpers';
 
 const REQUIRED = '#3A7BD5';
 const NEAR = '3B7AD2FF';
 const FAR_BUT_ADMITTED = '6253ADFF';
 
-const tray = (globalTrayId: number, color: string) => ({ globalTrayId, color });
-const pick = (candidates: { globalTrayId: number; color: string }[], required = REQUIRED) =>
-  findNearestSimilar(candidates, required, (c) => c.color)?.globalTrayId;
+const tray = (globalTrayId: number, color: string, extruderId?: number) => ({
+  globalTrayId,
+  color,
+  type: 'PETG',
+  extruderId,
+});
+const req = (color: string, nozzle_id?: number) => ({ type: 'PETG', color, nozzle_id });
+const ids = (picked: ({ globalTrayId: number } | undefined)[]) => picked.map((t) => t?.globalTrayId);
+const pick = (candidates: ReturnType<typeof tray>[], required = REQUIRED) =>
+  ids(matchFilamentsToTrays([req(required)], candidates))[0];
 
 describe('colorDistance', () => {
   it('is zero for the same colour', () => {
@@ -64,8 +71,8 @@ describe('colorDistance', () => {
   });
 });
 
-describe('findNearestSimilar', () => {
-  it('picks the closest admitted colour, not the first one', () => {
+describe('matchFilamentsToTrays', () => {
+  it('picks the closest colour, not the first one', () => {
     expect(pick([tray(1, FAR_BUT_ADMITTED), tray(3, NEAR)])).toBe(3);
   });
 
@@ -82,20 +89,69 @@ describe('findNearestSimilar', () => {
     expect(pick([tray(7, NEAR), tray(2, NEAR)])).toBe(7);
   });
 
-  it('admits exactly what the tolerance admitted before', () => {
-    // 41 off on one channel is outside the box and must not be ranked in.
-    expect(colorsAreSimilar('3A7BFEFF', REQUIRED)).toBe(false);
-    expect(pick([tray(5, '3A7BFEFF')])).toBeUndefined();
-    // 40 off on all three is inside it, as it was.
-    expect(colorsAreSimilar(FAR_BUT_ADMITTED, REQUIRED)).toBe(true);
-    expect(pick([tray(5, FAR_BUT_ADMITTED)])).toBe(5);
+  it('ranks a tray with no usable colour last instead of throwing', () => {
+    expect(pick([tray(1, ''), tray(3, NEAR)])).toBe(3);
+    expect(pick([tray(1, '')])).toBe(1);
   });
 
-  it('returns undefined when nothing qualifies', () => {
-    expect(pick([tray(1, 'FF0000FF')])).toBeUndefined();
+  // Black/orange/blue/white on black/grey/yellow/blue: no close colour loaded
+  // used to mean "first free tray of the type", which printed blue in yellow
+  // with a blue spool two slots along.
+  const LOADED = [tray(0, '161616FF'), tray(1, 'DCDCDCFF'), tray(2, 'FFF144FF'), tray(3, '46A8F9FF')];
+
+  it('gives a far colour the nearest tray, not the next one', () => {
+    const required = [req('#000000'), req('#FF8000'), req('#0A2CA5'), req('#FFFFFF')];
+    expect(ids(matchFilamentsToTrays(required, LOADED))).toEqual([0, 2, 3, 1]);
   });
 
-  it('skips candidates with no usable colour instead of throwing', () => {
-    expect(pick([{ globalTrayId: 1, color: '' }, tray(3, NEAR)])).toBe(3);
+  it('does not depend on the order of filaments in the file', () => {
+    // The pale filament comes first and would have taken the blue tray the
+    // blue filament matches far better.
+    const loaded = [tray(3, '46A8F9FF'), tray(1, 'DCDCDCFF')];
+    expect(ids(matchFilamentsToTrays([req('#9FC5E8'), req('#46A8F9')], loaded))).toEqual([1, 3]);
+  });
+
+  it('never reaches a tray on the other nozzle, unless a switch routes it', () => {
+    const loaded = [tray(0, 'FF8000FF', 0), tray(1, 'DCDCDCFF', 1)];
+    expect(ids(matchFilamentsToTrays([req('#FF8000', 1)], loaded))).toEqual([1]);
+    expect(ids(matchFilamentsToTrays([req('#FF8000', 1)], loaded, { ftsActive: true }))).toEqual([0]);
+  });
+
+  it('prefers a tray of the same variant over a closer colour of another', () => {
+    const loaded = [
+      { ...tray(0, '3A7BD5FF'), trayInfoIdx: 'GFG00' },
+      { ...tray(1, 'FF0000FF'), trayInfoIdx: 'GFG99' },
+    ];
+    const required = [{ ...req(REQUIRED), tray_info_idx: 'GFG99' }];
+    expect(ids(matchFilamentsToTrays(required, loaded))).toEqual([1]);
+  });
+});
+
+describe('buildFilamentComparison row order', () => {
+  it('lists right-nozzle (main) filaments before left-nozzle ones, slot order within', async () => {
+    const { buildFilamentComparison } = await import('../../hooks/useFilamentMapping');
+    const req = (slot_id: number, nozzle_id: number) => ({ slot_id, nozzle_id, type: 'PLA', color: '#FFFFFF', used_grams: 1 });
+    const rows = buildFilamentComparison(
+      { filaments: [req(1, 1), req(2, 0), req(3, 1), req(4, 0)] } as never,
+      [],
+      {},
+    );
+    expect(rows.map((r) => r.slot_id)).toEqual([2, 4, 1, 3]);
+  });
+});
+
+describe('rankTraysForPicker', () => {
+  it('puts usable trays first, nearest colour on top, and unusable ones after in slot order', async () => {
+    const { rankTraysForPicker } = await import('../../utils/amsHelpers');
+    const tray = (globalTrayId: number, extruderId: number, color: string, type = 'PLA') => ({ globalTrayId, extruderId, color, type });
+    const trays = [
+      tray(0, 0, '#FF0000'), // other nozzle, exact colour: still last
+      tray(1, 0, '#FFFFFF'),
+      tray(4, 1, '#0000FF'),
+      tray(5, 1, '#00FF00', 'PETG'), // usable but wrong type: after the PLA ones
+      tray(6, 1, '#EE1111'),
+    ];
+    const ranked = rankTraysForPicker({ type: 'PLA', color: '#FF0000', nozzle_id: 1 }, trays, (t) => t.extruderId === 1);
+    expect(ranked.map((t) => t.globalTrayId)).toEqual([6, 4, 5, 0, 1]);
   });
 });

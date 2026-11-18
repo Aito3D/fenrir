@@ -124,3 +124,37 @@ class TestNearestSimilarWins:
         loaded = [tray(1, FAR_BUT_ADMITTED), tray(3, NEAR)]
         mapping = scheduler._match_filaments_to_slots([req(slot_id=1), req(slot_id=2)], loaded)
         assert mapping == [3, 1]
+
+
+class TestClosestPairFirst:
+    """No close colour loaded used to mean "first free tray of the type", so a
+    plate of black/orange/blue/white on black/grey/yellow/blue printed blue in
+    yellow with a blue spool two slots along."""
+
+    LOADED = [
+        tray(0, "161616FF"),  # black
+        tray(1, "DCDCDCFF"),  # light grey
+        tray(2, "FFF144FF"),  # yellow
+        tray(3, "46A8F9FF"),  # blue
+    ]
+
+    def test_far_colours_take_the_nearest_tray_not_the_next_one(self, scheduler):
+        required = [
+            req(slot_id=1, color="#000000"),
+            req(slot_id=2, color="#FF8000"),  # orange
+            req(slot_id=3, color="#0A2CA5"),  # blue, far outside the box
+            req(slot_id=4, color="#FFFFFF"),
+        ]
+        assert scheduler._match_filaments_to_slots(required, self.LOADED) == [0, 2, 3, 1]
+
+    def test_the_result_does_not_depend_on_slot_order_in_the_file(self, scheduler):
+        """The pale slot comes first and would have taken the blue tray the
+        blue slot matches far better."""
+        required = [req(slot_id=1, color="#9FC5E8"), req(slot_id=2, color="#46A8F9")]
+        loaded = [tray(3, "46A8F9FF"), tray(1, "DCDCDCFF")]
+        assert scheduler._match_filaments_to_slots(required, loaded) == [1, 3]
+
+    def test_a_slot_never_reaches_the_other_nozzles_tray(self, scheduler):
+        loaded = [tray(0, "FF8000FF"), tray(1, "DCDCDCFF") | {"extruder_id": 1}]
+        required = [req(slot_id=1, color="#FF8000") | {"nozzle_id": 1}]
+        assert scheduler._match_filaments_to_slots(required, loaded) == [1]

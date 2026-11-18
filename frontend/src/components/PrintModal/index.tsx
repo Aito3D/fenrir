@@ -1,6 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, AlertTriangle, Layers, Loader2, Pencil, Printer, ThumbsUp, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { CostCenterSummary, PrintQueueItemCreate, PrintQueueItemUpdate, SlotMaterial } from '../../api/client';
 import { api } from '../../api/client';
@@ -384,7 +384,6 @@ export function PrintModal({
 
   // Track which printers have had the "Expand custom mapping by default" setting applied
   // This ensures the setting only affects initial state, not preventing unchecking
-  const [initialExpandApplied, setInitialExpandApplied] = useState<Set<number>>(new Set());
 
   // Printer counts and effective printer for filament mapping
   const effectivePrinterCount = selectedPrinters.length;
@@ -926,7 +925,6 @@ export function PrintModal({
         setManualMappings({});
         setManualMappingsByPlate({});
         setPerPrinterConfigs({});
-        setInitialExpandApplied(new Set());
       }
       // Rack positions name slots of the queued printer's nozzle rack.
       if (printersChanged) {
@@ -937,7 +935,6 @@ export function PrintModal({
       setManualMappings({});
       setManualMappingsByPlate({});
       setPerPrinterConfigs({});
-      setInitialExpandApplied(new Set());
     }
   }, [mode, selectedPrinters, selectedPlate, initialPrinterIds, initialPlateId]);
 
@@ -975,38 +972,6 @@ export function PrintModal({
       setTargetModel(selectorModel);
     }
   }, [assignmentMode, targetModel, selectorModel, printers]);
-
-  // Auto-expand per-printer mapping when setting is enabled and multiple printers selected
-  // Only applies once per printer on initial selection, not when user unchecks
-  useEffect(() => {
-    if (!settings?.per_printer_mapping_expanded) return;
-    if (selectedPrinters.length <= 1) return;
-
-    // Only auto-configure printers that:
-    // 1. Haven't had initial expand applied yet
-    // 2. Have their status loaded (so auto-configure will actually work)
-    const printersReadyForExpand = selectedPrinters.filter(printerId => {
-      if (initialExpandApplied.has(printerId)) return false;
-
-      // Check if this printer has status loaded
-      const result = multiPrinterMapping.printerResults.find(r => r.printerId === printerId);
-      return result && result.status && !result.isLoading;
-    });
-
-    if (printersReadyForExpand.length > 0) {
-      // Mark these printers as having been initially expanded
-      setInitialExpandApplied(prev => {
-        const next = new Set(prev);
-        printersReadyForExpand.forEach(id => next.add(id));
-        return next;
-      });
-
-      // Auto-configure printers
-      printersReadyForExpand.forEach(printerId => {
-        multiPrinterMapping.autoConfigurePrinter(printerId);
-      });
-    }
-  }, [settings?.per_printer_mapping_expanded, selectedPrinters, initialExpandApplied, multiPrinterMapping]);
 
   // Close on Escape key
   useEffect(() => {
@@ -2101,6 +2066,105 @@ export function PrintModal({
   const showPerPlateFilamentMapping =
     !isSeparateJobs && !!effectivePrinterId && isMultiPlateSelection && selectedPrinters.length === 1;
 
+  const printerSelectorShown = !isCrossModel && !hasEditingVariants && !initialSelectedPrinterIds?.length;
+
+  // The mapping panel(s) of one selected printer: one component whether one
+  // printer is selected or several, drawn inside that printer's card.
+  const renderFilamentMapping = (printerId: number, className: string): ReactNode => {
+    if (archiveDataMissing) return null;
+    const single = selectedPrinters.length === 1;
+    const shared = {
+      printerId,
+      className,
+      budgetAvailable: billingEnabled ? selectedCostCenter?.budget_available ?? null : null,
+      currencySymbol,
+      defaultCostPerKg,
+      // Force colour match is only saved for a single printer (#3445), so the
+      // box is only offered there.
+      forceColorMatch: single ? forceColorMatch : undefined,
+      onForceColorMatchChange: single
+        ? (slotId: number, value: boolean) => setForceColorMatch((prev) => ({ ...prev, [slotId]: value }))
+        : undefined,
+    };
+    if (showPerPlateFilamentMapping) {
+      // Several plates on this printer: one panel per plate, each with its own slots.
+      return selectedPlateIds.map((plateId) => {
+        const plate = plates.find((p) => p.index === plateId);
+        const plateReqs = mappingPerPlateReqs.get(plateId);
+        if (!plateReqs) return null;
+        return (
+          <FilamentMapping
+            key={plateId}
+            {...shared}
+            plateLabel={plate?.name || t('printModal.plateN', 'Plate {{n}}', { n: plateId })}
+            filamentReqs={plateReqs}
+            manualMappings={manualMappingsByPlate[plateId] ?? {}}
+            onManualMappingChange={(mappings) =>
+              setManualMappingsByPlate((prev) => ({ ...prev, [plateId]: mappings }))
+            }
+            onEstimatedCostChange={(cost) =>
+              setEstimatedCostsByPlate((prev) => ({ ...prev, [plateId]: cost }))
+            }
+            quantity={quantityForPlate(plateId)}
+            defaultExpanded={false}
+            archiveAmsMapping={archiveSlicerAmsMapping}
+            nozzleRackChoice={nozzleRackChoiceByPlate[plateId] ?? {}}
+            onNozzleRackChoiceChange={(choice) =>
+              setNozzleRackChoiceByPlate((prev) => ({ ...prev, [plateId]: choice }))
+            }
+          />
+        );
+      });
+    }
+    if (!showFilamentMapping) return null;
+    if (single) {
+      return (
+        <FilamentMapping
+          {...shared}
+          filamentReqs={mappingFilamentReqs}
+          manualMappings={manualMappings}
+          onManualMappingChange={(next) => {
+            // Tray IDs belong to the printer they were picked on (#2799).
+            setSharedMappingPrinterId(printerId);
+            setManualMappings(next);
+          }}
+          onEstimatedCostChange={setEstimatedCost}
+          quantity={effectiveQuantity}
+          defaultExpanded={!!initialSelectedPrinterIds?.length || (settings?.per_printer_mapping_expanded ?? false)}
+          archiveAmsMapping={archiveSlicerAmsMapping}
+          nozzleRackChoice={nozzleRackChoice}
+          onNozzleRackChoiceChange={setNozzleRackChoice}
+        />
+      );
+    }
+    // Several printers: each keeps its own picks. The overrides in force are
+    // the ones useMultiPrinterFilamentMapping submits for this printer.
+    const config = perPrinterConfigs[printerId];
+    const inForce =
+      config && !config.useDefault
+        ? config.manualMappings
+        : sharedMappingPrinterId === printerId
+          ? manualMappings
+          : {};
+    return (
+      <FilamentMapping
+        {...shared}
+        filamentReqs={mappingFilamentReqs}
+        manualMappings={inForce}
+        onManualMappingChange={(next) =>
+          multiPrinterMapping.updatePrinterConfig(printerId, {
+            useDefault: false,
+            manualMappings: next,
+            autoConfigured: false,
+          })
+        }
+        defaultExpanded={settings?.per_printer_mapping_expanded ?? false}
+        // Rack positions are one shared choice today, so read-only here.
+        nozzleRackChoice={nozzleRackChoice}
+      />
+    );
+  };
+
   // Model mode has no printer and so no trays to map onto; what it offers instead
   // is the filament each slot must be printed in, which the scheduler matches
   // against whatever printer of the model it picks. Needs the model's loaded
@@ -2280,7 +2344,7 @@ export function PrintModal({
             )}
 
             {/* Printer selection with per-printer mapping — hidden when printer is pre-selected via props */}
-            {!isCrossModel && !hasEditingVariants && !initialSelectedPrinterIds?.length && (
+            {printerSelectorShown && (
               <PrinterSelector
                 printers={printers || []}
                 selectedPrinterIds={selectedPrinters}
@@ -2298,8 +2362,9 @@ export function PrintModal({
                 // Separate jobs alike: those are the first file's filaments, and
                 // every job ships without a mapping.
                 filamentReqs={isMultiPlateSelection || isSeparateJobs ? undefined : mappingFilamentReqs}
-                onAutoConfigurePrinter={multiPrinterMapping.autoConfigurePrinter}
-                onUpdatePrinterConfig={multiPrinterMapping.updatePrinterConfig}
+                renderMapping={(printerId) =>
+                  renderFilamentMapping(printerId, 'border-t border-bambu-dark-tertiary px-3 py-2')
+                }
                 assignmentMode={assignmentMode}
                 onAssignmentModeChange={setAssignmentMode}
                 targetModel={targetModel}
@@ -2438,70 +2503,11 @@ export function PrintModal({
               </div>
             )}
 
-            {/* Filament mapping - only show when single printer selected */}
-            {showFilamentMapping && !archiveDataMissing && selectedPrinters.length === 1 && (
-              <FilamentMapping
-                printerId={effectivePrinterId!}
-                filamentReqs={mappingFilamentReqs}
-                manualMappings={manualMappings}
-                onManualMappingChange={(next) => {
-                  // This panel only renders for a single selected printer, so
-                  // its tray IDs belong to that printer alone (#2799).
-                  setSharedMappingPrinterId(effectivePrinterId!);
-                  setManualMappings(next);
-                }}
-                onEstimatedCostChange={setEstimatedCost}
-                budgetAvailable={billingEnabled ? selectedCostCenter?.budget_available ?? null : null}
-                quantity={effectiveQuantity}
-                defaultExpanded={!!initialSelectedPrinterIds?.length || (settings?.per_printer_mapping_expanded ?? false)}
-                currencySymbol={currencySymbol}
-                defaultCostPerKg={defaultCostPerKg}
-                forceColorMatch={forceColorMatch}
-                onForceColorMatchChange={(slotId, value) =>
-                  setForceColorMatch((prev) => ({ ...prev, [slotId]: value }))
-                }
-                archiveAmsMapping={archiveSlicerAmsMapping}
-                nozzleRackChoice={nozzleRackChoice}
-                onNozzleRackChoiceChange={setNozzleRackChoice}
-              />
-            )}
-
-            {/* Filament mapping, one panel per selected plate — each plate is its
-                own print with its own slots, so it gets its own AMS mapping. */}
-            {showPerPlateFilamentMapping && !archiveDataMissing && selectedPlateIds.map((plateId) => {
-              const plate = plates.find((p) => p.index === plateId);
-              const plateReqs = mappingPerPlateReqs.get(plateId);
-              if (!plateReqs) return null;
-              return (
-                <FilamentMapping
-                  key={plateId}
-                  printerId={effectivePrinterId!}
-                  plateLabel={plate?.name || t('printModal.plateN', 'Plate {{n}}', { n: plateId })}
-                  filamentReqs={plateReqs}
-                  manualMappings={manualMappingsByPlate[plateId] ?? {}}
-                  onManualMappingChange={(mappings) =>
-                    setManualMappingsByPlate((prev) => ({ ...prev, [plateId]: mappings }))
-                  }
-                  onEstimatedCostChange={(cost) =>
-                    setEstimatedCostsByPlate((prev) => ({ ...prev, [plateId]: cost }))
-                  }
-                  budgetAvailable={billingEnabled ? selectedCostCenter?.budget_available ?? null : null}
-                  quantity={quantityForPlate(plateId)}
-                  defaultExpanded={false}
-                  currencySymbol={currencySymbol}
-                  defaultCostPerKg={defaultCostPerKg}
-                  forceColorMatch={forceColorMatch}
-                  onForceColorMatchChange={(slotId, value) =>
-                    setForceColorMatch((prev) => ({ ...prev, [slotId]: value }))
-                  }
-                  archiveAmsMapping={archiveSlicerAmsMapping}
-                  nozzleRackChoice={nozzleRackChoiceByPlate[plateId] ?? {}}
-                  onNozzleRackChoiceChange={(choice) =>
-                    setNozzleRackChoiceByPlate((prev) => ({ ...prev, [plateId]: choice }))
-                  }
-                />
-              );
-            })}
+            {/* Filament mapping normally lives inside the printer's card; it is
+                drawn here only when the printer list itself is hidden. */}
+            {!printerSelectorShown && selectedPrinters.map((printerId) => (
+              <Fragment key={printerId}>{renderFilamentMapping(printerId, 'mb-4')}</Fragment>
+            ))}
 
             {/* Print options */}
             {(mode === 'create' || effectivePrinterCount > 0 || (assignmentMode === 'model' && targetModel)) && (

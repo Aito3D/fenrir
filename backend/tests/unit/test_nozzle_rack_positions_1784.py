@@ -456,6 +456,10 @@ class TestEveryRequirementsPathIsAnnotated:
         assert [f["group_id"] for f in filaments] == [2, 0, 1]
         assert filaments[0]["group"]["on_rack"] is True
         assert filaments[1]["group"]["on_rack"] is False
+        # The carriage is known even though the rack position is not: the rack
+        # is the right carriage (0), the fixed hotend the left (1). Without it
+        # a left-nozzle slot was offered the right nozzle's AMS.
+        assert [f["nozzle_id"] for f in filaments] == [0, 1, 0]
 
     def test_a_slot_the_plate_does_not_print_is_left_untagged(self, benchy):
         from backend.app.services.filament_requirements import annotate_rack_groups

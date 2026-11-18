@@ -143,6 +143,11 @@ def annotate_rack_groups(filaments: list[dict], file_path: Path, plate_id: int |
             continue
         filament["group_id"] = group_id
         filament["group"] = group_dicts.get(group_id)
+        # The slot-to-nozzle mapping is withheld for a plate that takes several
+        # hotends off the rack, but which *carriage* a slot prints on is still
+        # known, and that is what decides which AMS can feed it.
+        if filament.get("nozzle_id") is None:
+            filament["nozzle_id"] = rack_plan.groups[group_id].extruder_id
 
 
 def overrides_for_plate(

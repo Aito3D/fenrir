@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Palette } from 'lucide-react';
+import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, Palette, RotateCcw } from 'lucide-react';
 import { api } from '../../api/client';
 import type { SlotSpoolIdentity } from '../../api/client';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
-import { effectivePreferLowest, FTS_INLET_SIDE, normalizeColorForCompare } from '../../utils/amsHelpers';
+import { effectivePreferLowest, FTS_INLET_SIDE, normalizeColorForCompare, rankTraysForPicker } from '../../utils/amsHelpers';
 import { disambiguateColorNames, getColorName } from '../../utils/colors';
 import { SlotPicker } from './SlotPicker';
 import { displayHex } from './displayHex';
@@ -35,11 +35,14 @@ export function FilamentMapping({
   archiveAmsMapping,
   nozzleRackChoice,
   onNozzleRackChoiceChange,
-}: FilamentMappingProps & { defaultExpanded?: boolean }) {
+  className = 'mb-4',
+}: FilamentMappingProps & { defaultExpanded?: boolean; className?: string }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  // null until the operator toggles it: until then a panel with a missing
+  // filament opens by itself, since that is the one that needs a decision.
+  const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
   // "Mapping" toggle (only shown when the archive has a saved slicer pick):
   // ON selects every slot straight from `archiveAmsMapping`, bypassing the
   // type/color auto-match entirely — same mechanism as a manual per-slot
@@ -298,11 +301,8 @@ export function FilamentMapping({
   }
 
   // Determine status indicator color
-  const statusColor = hasTypeMismatch
-    ? '#f97316' // orange
-    : hasColorMismatch
-    ? '#facc15' // yellow
-    : '#00ae42'; // green
+  const isExpanded = userExpanded ?? (defaultExpanded || hasTypeMismatch);
+  const hasManualPick = Object.keys(manualMappings).length > 0;
 
   const handleSlotChange = (slotId: number, value: string) => {
     if (slotId > 0) {
@@ -334,26 +334,56 @@ export function FilamentMapping({
   };
 
   return (
-    <div className="mb-4">
+    <div className={`fold-open ${className}`}>
+      {/* One line per printer: each required colour and the slot it will print
+          from. The whole line toggles the editor below. */}
       <button
         type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-2 text-sm text-bambu-gray hover:text-white transition-colors w-full"
+        onClick={() => setUserExpanded(!isExpanded)}
+        aria-expanded={isExpanded}
+        className="group flex items-center gap-2 text-xs text-bambu-gray hover:text-white transition-colors w-full text-left"
       >
-        <Circle className="w-4 h-4" fill={statusColor} stroke="none" />
-        <span>{plateLabel ? `${t('printModal.filamentMapping')} — ${plateLabel}` : t('printModal.filamentMapping')}</span>
+        <span className={plateLabel ? 'shrink-0 text-sm' : 'sr-only'}>
+          {plateLabel ? `${t('printModal.filamentMapping')} — ${plateLabel}` : t('printModal.filamentMapping')}
+        </span>
+        <span className="flex flex-wrap items-center gap-1 min-w-0">
+          {filamentComparison.map((item, idx) => (
+            <span
+              key={idx}
+              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 bg-bambu-dark-secondary transition-colors duration-200 ${
+                item.status === 'match'
+                  ? 'border-bambu-dark-tertiary text-white'
+                  : item.status === 'type_only'
+                  ? 'border-yellow-500/60 text-yellow-700 dark:text-yellow-400'
+                  : 'border-orange-500/70 text-orange-700 dark:text-orange-400'
+              } ${item.isManual ? 'ring-1 ring-blue-400/50' : ''}`}
+            >
+              {/* Ringed, so a black filament still reads on the dark card. */}
+              <span className="w-2.5 h-2.5 shrink-0 rounded-full ring-1 ring-white/30" style={{ backgroundColor: item.color }} />
+              <span className="text-bambu-gray">→</span>
+              {item.loaded ? (
+                <>
+                  <span className="w-2.5 h-2.5 shrink-0 rounded-full ring-1 ring-white/30" style={{ backgroundColor: item.loaded.color }} />
+                  {item.loaded.label}
+                </>
+              ) : (
+                '—'
+              )}
+            </span>
+          ))}
+        </span>
         {hasTypeMismatch ? (
-          <span className="text-xs text-orange-700 dark:text-orange-400">({t('printModal.statusTypeNotFound')})</span>
+          <span className="shrink-0 text-orange-700 dark:text-orange-400">({t('printModal.statusTypeNotFound')})</span>
         ) : hasColorMismatch ? (
-          <span className="text-xs text-yellow-700 dark:text-yellow-400">({t('printModal.statusColorMismatch')})</span>
+          <span className="shrink-0 text-yellow-700 dark:text-yellow-400">({t('printModal.statusColorMismatch')})</span>
         ) : (
-          <span className="text-xs text-bambu-green">({t('printModal.statusReady')})</span>
+          <span className="shrink-0 text-bambu-green">({t('printModal.statusReady')})</span>
         )}
-        {isExpanded ? (
-          <ChevronUp className="w-4 h-4 ml-auto" />
-        ) : (
-          <ChevronDown className="w-4 h-4 ml-auto" />
-        )}
+        <ChevronDown
+          className={`w-4 h-4 ml-auto shrink-0 transition-transform duration-200 ease-[var(--ease-signature)] motion-reduce:transition-none ${
+            isExpanded ? 'rotate-180' : ''
+          }`}
+        />
       </button>
 
       {isExpanded && (
@@ -361,6 +391,17 @@ export function FilamentMapping({
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-bambu-gray">{t('printModal.clickToChangeSlot')}</span>
             <div className="flex items-center gap-1.5">
+              {hasManualPick && (
+                <button
+                  type="button"
+                  onClick={() => onManualMappingChange({})}
+                  title={t('printModal.autoMatched')}
+                  className="animate-rise flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-bambu-gray/30 hover:border-bambu-gray hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray hover:text-white active:scale-[0.97]"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>{t('common.reset')}</span>
+                </button>
+              )}
               {archiveAmsMapping && (
                 <button
                   type="button"
@@ -512,7 +553,15 @@ export function FilamentMapping({
                       : 'border-orange-500 dark:border-orange-400/50 text-orange-700 dark:text-orange-400'
                   } ${item.isManual ? 'ring-1 ring-blue-400/50' : ''}`}
                   title={item.isManual ? t('printModal.manuallySelected') : t('printModal.autoMatched')}
-                  options={loadedFilaments.map((f) => {
+                  // Usable trays first, best match on top; the other nozzle's
+                  // greyed trays underneath, in slot order.
+                  options={rankTraysForPicker(
+                    item,
+                    loadedFilaments,
+                    (f) =>
+                      ftsInstalled || !isDualNozzle || f.extruderId == null ||
+                      item.nozzle_id == null || f.extruderId === item.nozzle_id,
+                  ).map((f) => {
                       const remainingWeight = trayRemainingWeightMap.get(f.globalTrayId);
                       const remainingLabel = remainingWeight != null
                         ? t('printModal.slotRemainingShort', {

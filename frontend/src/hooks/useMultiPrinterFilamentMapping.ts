@@ -3,20 +3,14 @@ import { useQueries } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { PrinterStatus, Printer } from '../api/client';
 import {
+  buildAmsMapping,
+  buildFilamentComparison,
   buildLoadedFilaments,
   computeAmsMapping,
   type LoadedFilament,
   type FilamentRequirement,
 } from './useFilamentMapping';
-import {
-  normalizeColorForCompare,
-  colorsAreSimilar,
-  filamentTypesCompatible,
-  findNearestSimilar,
-  preferLowestSortKey,
-  compareSortKeys,
-  effectivePreferLowest,
-} from '../utils/amsHelpers';
+import { effectivePreferLowest } from '../utils/amsHelpers';
 
 /**
  * Match status for a single printer's filament configuration.
@@ -91,6 +85,9 @@ export interface UseMultiPrinterFilamentMappingResult {
 
 /**
  * Compute match details for a printer given filament requirements and loaded filaments.
+ *
+ * Counted off `buildFilamentComparison`, the same comparison the mapping is
+ * built from, so the badge cannot disagree with the trays actually assigned.
  */
 function computeMatchDetails(
   filamentReqs: FilamentRequirement[] | undefined,
@@ -98,93 +95,21 @@ function computeMatchDetails(
   manualMappings: Record<number, number>,
   preferLowest?: boolean,
   inventoryByTrayId?: Map<number, number>,
+  ftsActive = false,
 ): { exactMatches: number; typeOnlyMatches: number; missingTypes: number; totalSlots: number; status: PrinterMatchStatus } {
-  if (!filamentReqs || filamentReqs.length === 0) {
-    return { exactMatches: 0, typeOnlyMatches: 0, missingTypes: 0, totalSlots: 0, status: 'full' };
-  }
+  const comparison = buildFilamentComparison(
+    filamentReqs && { filaments: filamentReqs },
+    loadedFilaments,
+    manualMappings,
+    preferLowest,
+    inventoryByTrayId,
+    ftsActive,
+  );
+  const count = (status: string) => comparison.filter((f) => f.status === status).length;
+  const exactMatches = count('match');
+  const typeOnlyMatches = count('type_only');
+  const missingTypes = count('mismatch');
 
-  let exactMatches = 0;
-  let typeOnlyMatches = 0;
-  let missingTypes = 0;
-  const usedTrayIds = new Set<number>(Object.values(manualMappings));
-
-  for (const req of filamentReqs) {
-    const slotId = req.slot_id || 0;
-
-    // Check manual override first
-    if (slotId > 0 && manualMappings[slotId] !== undefined) {
-      const manualTrayId = manualMappings[slotId];
-      const manualLoaded = loadedFilaments.find((f) => f.globalTrayId === manualTrayId);
-
-      if (manualLoaded) {
-        const typeMatch = filamentTypesCompatible(manualLoaded.type, req.type);
-        const colorMatch =
-          normalizeColorForCompare(manualLoaded.color) === normalizeColorForCompare(req.color) ||
-          colorsAreSimilar(manualLoaded.color, req.color);
-
-        if (typeMatch && colorMatch) {
-          exactMatches++;
-        } else if (typeMatch) {
-          typeOnlyMatches++;
-        } else {
-          missingTypes++;
-        }
-        continue;
-      }
-    }
-
-    // Auto-match with nozzle-aware filtering
-    let candidates = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
-    if (req.nozzle_id != null) {
-      const nozzleFiltered = candidates.filter((f) => f.extruderId === req.nozzle_id);
-      if (nozzleFiltered.length > 0) {
-        candidates = nozzleFiltered;
-      }
-    }
-
-    if (preferLowest) {
-      candidates = [...candidates].sort((a, b) =>
-        compareSortKeys(
-          preferLowestSortKey(a, inventoryByTrayId),
-          preferLowestSortKey(b, inventoryByTrayId),
-        ),
-      );
-    }
-
-    const exactMatch = candidates.find(
-      (f) =>
-        filamentTypesCompatible(f.type, req.type) &&
-        normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
-    );
-    const similarMatch = exactMatch
-      ? undefined
-      : findNearestSimilar(
-          candidates.filter((f) => filamentTypesCompatible(f.type, req.type)),
-          req.color,
-          (f) => f.color,
-        );
-    const typeOnlyMatch =
-      exactMatch || similarMatch
-        ? undefined
-        : candidates.find(
-            (f) => filamentTypesCompatible(f.type, req.type)
-          );
-    const loaded = exactMatch ?? similarMatch ?? typeOnlyMatch;
-
-    if (loaded) {
-      usedTrayIds.add(loaded.globalTrayId);
-    }
-
-    if (exactMatch || similarMatch) {
-      exactMatches++;
-    } else if (typeOnlyMatch) {
-      typeOnlyMatches++;
-    } else {
-      missingTypes++;
-    }
-  }
-
-  const totalSlots = filamentReqs.length;
   let status: PrinterMatchStatus = 'full';
   if (missingTypes > 0) {
     status = 'missing';
@@ -192,7 +117,7 @@ function computeMatchDetails(
     status = 'partial';
   }
 
-  return { exactMatches, typeOnlyMatches, missingTypes, totalSlots, status };
+  return { exactMatches, typeOnlyMatches, missingTypes, totalSlots: comparison.length, status };
 }
 
 /**
@@ -205,78 +130,25 @@ function computeMappingWithOverrides(
   preferLowest?: boolean,
   inventoryByTrayId?: Map<number, number>,
 ): number[] | undefined {
-  if (!filamentReqs?.filaments || filamentReqs.filaments.length === 0) return undefined;
-
   const loadedFilaments = buildLoadedFilaments(printerStatus);
   if (loadedFilaments.length === 0) return undefined;
 
-  const usedTrayIds = new Set<number>(Object.values(manualMappings));
-  const comparisons: { slot_id: number; globalTrayId: number }[] = [];
-
-  for (const req of filamentReqs.filaments) {
-    const slotId = req.slot_id || 0;
-
-    // Check manual override first
-    if (slotId > 0 && manualMappings[slotId] !== undefined) {
-      comparisons.push({ slot_id: slotId, globalTrayId: manualMappings[slotId] });
-      continue;
-    }
-
-    // Auto-match with nozzle-aware filtering
-    let candidates = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
-    if (req.nozzle_id != null) {
-      const nozzleFiltered = candidates.filter((f) => f.extruderId === req.nozzle_id);
-      if (nozzleFiltered.length > 0) {
-        candidates = nozzleFiltered;
-      }
-    }
-
-    if (preferLowest) {
-      candidates = [...candidates].sort((a, b) =>
-        compareSortKeys(
-          preferLowestSortKey(a, inventoryByTrayId),
-          preferLowestSortKey(b, inventoryByTrayId),
-        ),
-      );
-    }
-
-    const exactMatch = candidates.find(
-      (f) =>
-        filamentTypesCompatible(f.type, req.type) &&
-        normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
-    );
-    const similarMatch = exactMatch
-      ? undefined
-      : findNearestSimilar(
-          candidates.filter((f) => filamentTypesCompatible(f.type, req.type)),
-          req.color,
-          (f) => f.color,
-        );
-    const typeOnlyMatch =
-      exactMatch || similarMatch
-        ? undefined
-        : candidates.find(
-            (f) => filamentTypesCompatible(f.type, req.type)
-          );
-    const loaded = exactMatch ?? similarMatch ?? typeOnlyMatch;
-
-    if (loaded) {
-      usedTrayIds.add(loaded.globalTrayId);
-    }
-
-    comparisons.push({ slot_id: slotId, globalTrayId: loaded?.globalTrayId ?? -1 });
-  }
-
-  const maxSlotId = Math.max(...comparisons.map((f) => f.slot_id || 0));
-  if (maxSlotId <= 0) return undefined;
-
-  const mapping = new Array(maxSlotId).fill(-1);
-  comparisons.forEach((f) => {
-    if (f.slot_id && f.slot_id > 0) {
-      mapping[f.slot_id - 1] = f.globalTrayId;
-    }
+  const mapping = buildAmsMapping(
+    buildFilamentComparison(
+      filamentReqs,
+      loadedFilaments,
+      manualMappings,
+      preferLowest,
+      inventoryByTrayId,
+      printerStatus?.fila_switch?.installed === true,
+    ),
+  );
+  // A manual pick is submitted as picked even when its tray has since dropped
+  // out of the printer's status; the comparison can only describe loaded trays.
+  mapping?.forEach((_, index) => {
+    const manualTrayId = manualMappings[index + 1];
+    if (manualTrayId !== undefined) mapping[index] = manualTrayId;
   });
-
   return mapping;
 }
 
@@ -377,6 +249,7 @@ export function useMultiPrinterFilamentMapping(
         effectiveMappings,
         printerPreferLowest,
         inventoryByTrayId,
+        printerStatus?.fila_switch?.installed === true,
       );
 
       return {

@@ -23,7 +23,6 @@ import { SlotPicker } from '../../components/PrintModal/SlotPicker';
 import { FilamentMapping } from '../../components/PrintModal/FilamentMapping';
 import { FilamentOverride } from '../../components/PrintModal/FilamentOverride';
 import { PrinterSelector } from '../../components/PrintModal/PrinterSelector';
-import type { PrinterMappingResult } from '../../hooks/useMultiPrinterFilamentMapping';
 import type { Printer, PrinterStatus } from '../../api/client';
 
 const SCREEN = 412;
@@ -205,42 +204,24 @@ describe('override row on a narrow screen', () => {
   });
 });
 
-describe('custom slot mapping of one of several printers, on a narrow screen', () => {
+describe('filament mapping inside the printer cards', () => {
   afterEach(() => cleanup());
 
-  it('puts the select on its own line, and keeps the wide layout from sm up', async () => {
+  it('draws the mapping panel inside each selected printer card, and only there', async () => {
     const printer = (id: number) => ({ id, name: `H2C-${id}`, model: 'H2C', ip_address: `192.0.2.${id}`, is_active: true }) as unknown as Printer;
-    const result = (id: number): PrinterMappingResult => ({
-      printerId: id,
-      printerName: `H2C-${id}`,
-      status: undefined,
-      isLoading: false,
-      loadedFilaments: [],
-      autoMapping: undefined,
-      finalMapping: undefined,
-      matchStatus: 'missing',
-      exactMatches: 0,
-      typeOnlyMatches: 0,
-      missingTypes: 1,
-      totalSlots: 1,
-      config: { useDefault: false, manualMappings: {}, autoConfigured: false },
-    });
     render(
       <PrinterSelector
-        printers={[printer(1), printer(2)]}
+        printers={[printer(1), printer(2), printer(3)]}
         selectedPrinterIds={[1, 2]}
         onMultiSelect={() => {}}
         allowMultiple
-        printerMappingResults={[result(1), result(2)]}
-        filamentReqs={{ filaments: [{ slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 25, used_meters: 8.5 }] }}
-        onAutoConfigurePrinter={() => {}}
-        onUpdatePrinterConfig={() => {}}
+        renderMapping={(printerId) => <div data-testid="mapping">mapping of {printerId}</div>}
       />,
     );
-    const selects = await screen.findAllByRole('combobox');
-    expect(selects.length).toBe(2);
-    for (const select of selects) {
-      expectStackedBelowSm(rowOf(select), '16px_minmax(70px,1fr)_auto_2fr_16px');
-    }
+    const panels = await screen.findAllByTestId('mapping');
+    expect(panels.map((p) => p.textContent)).toEqual(['mapping of 1', 'mapping of 2']);
+    // Same card as its printer: the panel's parent holds that printer's button.
+    expect(panels[0].parentElement).toContainElement(screen.getByRole('button', { name: /H2C-1/ }));
+    expect(panels[0].parentElement).not.toContainElement(screen.getByRole('button', { name: /H2C-2/ }));
   });
 });

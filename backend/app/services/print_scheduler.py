@@ -5277,13 +5277,11 @@ class PrintScheduler:
     ) -> list[int] | None:
         """Match required filaments to loaded filaments and build AMS mapping.
 
-        Priority: unique tray_info_idx match > exact color match > similar color match > type-only match
+        Forced slots take their exact tray first. The rest are assigned closest
+        pair first: a tray of the same variant (tray_info_idx, e.g. "GFA00")
+        before another tray of the type, then by perceptual colour distance.
 
-        The tray_info_idx is a filament type identifier stored in the 3MF file when the user
-        slices (e.g., "GFA00" for generic PLA, "P4d64437" for custom presets). If the same
-        tray_info_idx appears in only ONE available tray, we use that tray. If multiple trays
-        have the same tray_info_idx (e.g., two spools of generic PLA), we fall back to color
-        matching among those trays.
+        Mirrored by `matchFilamentsToTrays` in `frontend/src/utils/amsHelpers.ts`.
 
         Args:
             required: List of required filaments with slot_id, type, color, tray_info_idx
@@ -5297,200 +5295,141 @@ class PrintScheduler:
 
         # Track used trays to avoid duplicate assignment
         used_tray_ids: set[int] = set()
-        comparisons = []
+        picked: dict[int, dict] = {}  # index into `required` -> tray
 
-        # Forced slots first: a slot that would take any tray of its type must
-        # not take the one tray a forced slot can use (#3280). The mapping is
-        # built by slot_id below, so the order only decides who goes first.
-        # Among forced slots, those naming a variant first, as
-        # `_get_missing_force_color_slots` counts them.
-        for req in sorted(
-            required,
-            key=lambda r: (
-                not r.get("force_color_match"),
-                bool(r.get("force_color_match")) and not r.get("tray_info_idx"),
-            ),
-        ):
-            req_type = (req.get("type") or "").upper()
-            req_color = req.get("color", "")
-            req_tray_info_idx = req.get("tray_info_idx", "")
+        # Tray order is the tie-break between equally close spools: slot order,
+        # or lowest-remaining first when the preference is on. Inventory-tracked
+        # spools sort before MQTT-only ones (#1508); see _prefer_lowest_sort_key.
+        ordered = list(loaded)
+        if prefer_lowest:
+            ordered.sort(key=lambda f: self._prefer_lowest_sort_key(f, inventory_remain_overrides))
+            # INFO-level decision trace for "Prefer Lowest Filament" #1766, so a
+            # bug report can be diagnosed without enabling debug logging.
+            logger.info(
+                "[prefer-lowest] trays (sorted lowest-first): %s",
+                [
+                    {
+                        "gtid": f.get("global_tray_id"),
+                        "type": f.get("type"),
+                        "color": f.get("color"),
+                        "tii": f.get("tray_info_idx"),
+                        "remain": f.get("remain"),
+                        "inv_g": (
+                            inventory_remain_overrides.get(f.get("global_tray_id"))
+                            if inventory_remain_overrides
+                            else None
+                        ),
+                    }
+                    for f in ordered
+                ],
+            )
 
-            # Find best match: unique tray_info_idx > exact color > similar color > type-only
-            idx_match = None
-            exact_match = None
-            similar_match = None
-            similar_distance = float("inf")
-            type_only_match = None
-
-            # Get available trays (not already used)
-            available = [f for f in loaded if f["global_tray_id"] not in used_tray_ids]
-
+        def reachable(req: dict) -> list[dict]:
             # Nozzle-aware filtering: restrict to trays on the correct nozzle.
             # Hard filter — cross-nozzle assignment causes print failures
             # ("position of left hotend is abnormal"), so never fall back.
             # Skipped when an FTS is installed: it routes any AMS slot to either
             # extruder, so restricting to one nozzle would wrongly exclude the
             # correct spool sitting in the other nozzle's AMS (#2186).
-            req_nozzle_id = req.get("nozzle_id")
-            if req_nozzle_id is not None and not fts_installed:
-                available = [f for f in available if f.get("extruder_id") == req_nozzle_id]
+            nozzle_id = req.get("nozzle_id")
+            return [
+                f
+                for f in ordered
+                if f["global_tray_id"] not in used_tray_ids
+                and (nozzle_id is None or fts_installed or f.get("extruder_id") == nozzle_id)
+            ]
 
-            # Sort by remaining filament (ascending) so lowest-remain spool wins .find().
-            # Inventory-tracked spools sort before MQTT-only ones (#1508); see
-            # _prefer_lowest_sort_key for the full rationale.
-            if prefer_lowest:
-                available.sort(key=lambda f: self._prefer_lowest_sort_key(f, inventory_remain_overrides))
-                # INFO-level decision trace for "Prefer Lowest Filament" #1766.
-                # One line per filament req so a bug report can be diagnosed
-                # without enabling debug logging: shows what the matcher saw
-                # (req shape + sorted candidate trays with their remain values
-                # and any inventory override that was applied). Mirrored by
-                # the picked-match log at the bottom of the loop.
-                logger.info(
-                    "[prefer-lowest] req slot=%s type=%r color=%r tii=%r nozzle=%s; available (sorted lowest-first): %s",
-                    req.get("slot_id"),
-                    req_type,
-                    req_color,
-                    req_tray_info_idx,
-                    req_nozzle_id,
-                    [
-                        {
-                            "gtid": f.get("global_tray_id"),
-                            "type": f.get("type"),
-                            "color": f.get("color"),
-                            "tii": f.get("tray_info_idx"),
-                            "remain": f.get("remain"),
-                            "inv_g": (
-                                inventory_remain_overrides.get(f.get("global_tray_id"))
-                                if inventory_remain_overrides
-                                else None
-                            ),
-                        }
-                        for f in available
-                    ],
-                )
-
+        # Forced slots first: a slot that would take any tray of its type must
+        # not take the one tray a forced slot can use (#3280). Among forced
+        # slots, those naming a variant first, as
+        # `_get_missing_force_color_slots` counts them.
+        forced_indices = [i for i, r in enumerate(required) if r.get("force_color_match")]
+        for i in sorted(forced_indices, key=lambda i: not required[i].get("tray_info_idx")):
+            req = required[i]
+            req_tray_info_idx = req.get("tray_info_idx", "")
             # A forced slot takes only what `_get_missing_force_color_slots`
             # accepts: same type, exact colour, and the same variant when both
             # sides name one -- preferring the tray that does. Nothing looser:
             # the model-based path holds a job the printer cannot satisfy this
             # way, and a printer-pinned job fell through to type_only and
             # printed in whatever colour came first (#3280).
-            forced = bool(req.get("force_color_match"))
-            if forced:
-                want_type = canonical_filament_type(req_type)
-                want_color = self._normalize_color_for_compare(req_color)
-                candidates = [
-                    f
-                    for f in available
-                    if canonical_filament_type((f.get("type") or "").upper()) == want_type
-                    and self._normalize_color_for_compare(f.get("color", "")) == want_color
-                    and (
-                        not req_tray_info_idx
-                        or not f.get("tray_info_idx")
-                        or f.get("tray_info_idx") == req_tray_info_idx
-                    )
-                ]
-                exact_match = next(
-                    (f for f in candidates if req_tray_info_idx and f.get("tray_info_idx") == req_tray_info_idx),
-                    candidates[0] if candidates else None,
-                )
-
-            # Check if tray_info_idx is unique among available trays
-            if req_tray_info_idx and not forced:
-                idx_matches = [f for f in available if f.get("tray_info_idx") == req_tray_info_idx]
-                if len(idx_matches) == 1:
-                    # Unique tray_info_idx - use it as definitive match
-                    idx_match = idx_matches[0]
-                    logger.debug(
-                        f"Matched filament slot {req.get('slot_id')} by unique tray_info_idx={req_tray_info_idx} "
-                        f"-> tray {idx_match['global_tray_id']}"
-                    )
-                elif len(idx_matches) > 1:
-                    # Multiple trays with same tray_info_idx - use color matching among them
-                    logger.debug(
-                        f"Non-unique tray_info_idx={req_tray_info_idx} found in {len(idx_matches)} trays, "
-                        f"using color matching among trays: {[f['global_tray_id'] for f in idx_matches]}"
-                    )
-                    if prefer_lowest:
-                        idx_matches.sort(key=lambda f: self._prefer_lowest_sort_key(f, inventory_remain_overrides))
-                    # Use color matching within this subset
-                    for f in idx_matches:
-                        f_color = f.get("color", "")
-                        if self._normalize_color_for_compare(f_color) == self._normalize_color_for_compare(req_color):
-                            if not exact_match:
-                                exact_match = f
-                        elif self._colors_are_similar(f_color, req_color):
-                            distance = self._color_distance(f_color, req_color)
-                            if distance is not None and distance < similar_distance:
-                                similar_match = f
-                                similar_distance = distance
-                        elif not type_only_match:
-                            type_only_match = f
-
-            # If no idx_match yet, do standard type/color matching on all available trays
-            if not forced and not idx_match and not exact_match and not similar_match and not type_only_match:
-                for f in available:
-                    f_type = (f.get("type") or "").upper()
-                    if canonical_filament_type(f_type) != canonical_filament_type(req_type):
-                        continue
-
-                    # Type matches - check color
-                    f_color = f.get("color", "")
-                    if self._normalize_color_for_compare(f_color) == self._normalize_color_for_compare(req_color):
-                        if not exact_match:
-                            exact_match = f
-                    elif self._colors_are_similar(f_color, req_color):
-                        # Nearest wins, not first-in-tray-order. `available` is
-                        # already in the caller's order (slot order, or the
-                        # prefer-lowest sort), and `<` keeps the earliest of
-                        # equally close spools — so that order survives as the
-                        # tie-break (#2804).
-                        distance = self._color_distance(f_color, req_color)
-                        if distance is not None and distance < similar_distance:
-                            similar_match = f
-                            similar_distance = distance
-                    elif not type_only_match:
-                        type_only_match = f
-
-            match = idx_match or exact_match or similar_match or type_only_match
+            want_type = canonical_filament_type((req.get("type") or "").upper())
+            want_color = self._normalize_color_for_compare(req.get("color", ""))
+            candidates = [
+                f
+                for f in reachable(req)
+                if canonical_filament_type((f.get("type") or "").upper()) == want_type
+                and self._normalize_color_for_compare(f.get("color", "")) == want_color
+                and (not req_tray_info_idx or not f.get("tray_info_idx") or f.get("tray_info_idx") == req_tray_info_idx)
+            ]
+            match = next(
+                (f for f in candidates if req_tray_info_idx and f.get("tray_info_idx") == req_tray_info_idx),
+                candidates[0] if candidates else None,
+            )
             if match:
+                picked[i] = match
                 used_tray_ids.add(match["global_tray_id"])
-                comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": match["global_tray_id"]})
-            else:
-                comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": -1})
-            # Which bucket won, always — not only under Prefer Lowest (#2804).
-            # "Why did it pick that spool" is the question every wrong-filament
-            # report starts with, and a `similar_color` win is now a ranked
-            # choice among several eligible spools rather than whichever tray
-            # came first, so it is worth being able to see after the fact.
-            # Pairs with the "available (sorted)" log above when Prefer Lowest
-            # is on (#1766).
-            if match:
-                bucket = (
-                    "idx"
-                    if idx_match is not None
-                    else "exact_color"
-                    if exact_match is not None
-                    else "similar_color"
-                    if similar_match is not None
-                    else "type_only"
+
+        # Everything else: closest pair first. Every (slot, tray) pair the slot
+        # may use is scored, and the best-scoring pair is assigned before the
+        # next, so the result does not depend on the order of slots in the file
+        # and a slot never takes the tray another slot matches better.
+        # Score: same variant (tray_info_idx, #2650) before other trays of the
+        # type, then perceptual colour distance, then tray order. A far colour
+        # is still assigned -- nearest, not first -- and the caller reports it
+        # as a substitution.
+        rank = {f["global_tray_id"]: n for n, f in enumerate(ordered)}
+        pairs: list[tuple[bool, float, int, int, dict]] = []
+        for i, req in enumerate(required):
+            if i in forced_indices:
+                continue
+            req_type = canonical_filament_type((req.get("type") or "").upper())
+            req_tray_info_idx = req.get("tray_info_idx", "")
+            for f in reachable(req):
+                same_variant = bool(req_tray_info_idx) and f.get("tray_info_idx") == req_tray_info_idx
+                if not same_variant and canonical_filament_type((f.get("type") or "").upper()) != req_type:
+                    continue
+                distance = self._color_distance(f.get("color", ""), req.get("color", ""))
+                pairs.append(
+                    (
+                        not same_variant,
+                        float("inf") if distance is None else distance,
+                        rank[f["global_tray_id"]],
+                        i,
+                        f,
+                    )
                 )
+        distances: dict[int, float] = {}
+        for _other_variant, distance, _rank, i, f in sorted(pairs, key=lambda pair: pair[:4]):
+            if i in picked or f["global_tray_id"] in used_tray_ids:
+                continue
+            picked[i] = f
+            distances[i] = distance
+            used_tray_ids.add(f["global_tray_id"])
+
+        comparisons = []
+        for i, req in enumerate(required):
+            match = picked.get(i)
+            comparisons.append(
+                {"slot_id": req.get("slot_id", 0), "global_tray_id": match["global_tray_id"] if match else -1}
+            )
+            # Which spool and how close, always (#2804): "why did it pick that
+            # spool" is the question every wrong-filament report starts with.
+            if match:
                 logger.info(
-                    "[ams-match] picked gtid=%s via %s for req slot=%s%s",
+                    "[ams-match] picked gtid=%s for req slot=%s%s",
                     match["global_tray_id"],
-                    bucket,
                     req.get("slot_id"),
-                    f" (deltaE {similar_distance:.2f})" if bucket == "similar_color" else "",
+                    f" (deltaE {distances[i]:.2f})" if i in distances else " (forced)",
                 )
             else:
                 logger.info(
                     "[ams-match] NO MATCH for req slot=%s (type=%r color=%r tii=%r%s)",
                     req.get("slot_id"),
-                    req_type,
-                    req_color,
-                    req_tray_info_idx,
-                    ", force color match" if forced else "",
+                    req.get("type"),
+                    req.get("color", ""),
+                    req.get("tray_info_idx", ""),
+                    ", force color match" if req.get("force_color_match") else "",
                 )
 
         # Build mapping array

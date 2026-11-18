@@ -185,7 +185,7 @@ describe('PrintModal', () => {
 
       await waitFor(() => {
         expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
-        expect(screen.getByText('P1S')).toBeInTheDocument();
+        expect(screen.getAllByText('P1S')[0]).toBeInTheDocument();
       });
     });
 
@@ -663,7 +663,7 @@ describe('PrintModal', () => {
 
       // PrinterSelector shows printer names directly
       await waitFor(() => {
-        expect(screen.getByText('P1S')).toBeInTheDocument();
+        expect(screen.getAllByText('P1S')[0]).toBeInTheDocument();
       });
     });
   });
@@ -2086,7 +2086,7 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
 
     await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
     await user.click(screen.getByText('X1 Carbon'));
-    await user.click(screen.getByText('P1S'));
+    await user.click(screen.getAllByText('P1S')[0]);
     await waitFor(() => expect(screen.getByText('Plate 2')).toBeInTheDocument());
     await user.click(screen.getByText('Plate 2'));
 
@@ -2148,7 +2148,7 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
 
     // Now move the job to the other printer.
     await user.click(screen.getByText('X1 Carbon')); // deselect
-    await user.click(screen.getByText('P1S'));
+    await user.click(screen.getAllByText('P1S')[0]);
 
     await clickSubmit(user);
     await waitFor(() => expect(queued.length).toBe(2));
@@ -2182,7 +2182,7 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
     render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
     await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
     await user.click(screen.getByText('X1 Carbon'));
-    await user.click(screen.getByText('P1S'));
+    await user.click(screen.getAllByText('P1S')[0]);
 
     await clickSubmit(user);
     await waitFor(() => expect(screen.getByText(/Not enough filament/i)).toBeInTheDocument());
@@ -3265,7 +3265,7 @@ describe('PrintModal default printer', () => {
     render(<PrintModal mode="create" archiveId={1} archiveName="Test Print" onClose={vi.fn()} />);
     await screen.findByText('1 printer selected');
 
-    await user.click(screen.getByText('P1S'));
+    await user.click(screen.getAllByText('P1S')[0]);
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     expect(screen.queryByText('1 printer selected')).not.toBeInTheDocument();
@@ -3284,7 +3284,7 @@ describe('PrintModal default printer', () => {
     await user.click(await screen.findByText('show all'));
     await new Promise((resolve) => setTimeout(resolve, 200));
 
-    expect(screen.getByText('P1S').closest('button')).not.toHaveClass('border-bambu-green');
+    expect(screen.getAllByText('P1S')[0].closest('button')).not.toHaveClass('border-bambu-green');
   });
 });
 
@@ -3345,7 +3345,9 @@ describe('PrintModal — "Force color match" on a specific printer is saved (#34
   const BLACK_FORCED = { slot_id: 1, type: 'PLA', color: '#000000', tray_info_idx: 'GFA01', force_color_match: true };
 
   const openMapping = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(await screen.findByText(/filament mapping/i));
+    // A panel with a missing filament is already open; clicking would close it.
+    const toggle = (await screen.findByText(/filament mapping/i)).closest('button')!;
+    if (toggle.getAttribute('aria-expanded') !== 'true') await user.click(toggle);
     return screen.findByRole('checkbox', { name: /force color match/i });
   };
 

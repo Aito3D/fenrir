@@ -9,14 +9,24 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  autoMatchFilament,
   canonicalFilamentType,
   filamentTypesCompatible,
   filterFilamentsByNozzle,
+  matchFilamentsToTrays,
 } from '../../utils/amsHelpers';
 import type { LoadedFilament, FilamentRequirement } from '../../hooks/useFilamentMapping';
 
 // -- helpers -----------------------------------------------------------------
+
+// One requirement against the trays, the way the editor's per-slot matcher was
+// called before every path moved onto `matchFilamentsToTrays`.
+const autoMatchFilament = (
+  req: Partial<FilamentRequirement>,
+  filaments: LoadedFilament[],
+  usedTrayIds: Set<number>,
+  preferLowest?: boolean,
+  inventoryByTrayId?: Map<number, number>,
+) => matchFilamentsToTrays([req], filaments, { usedTrayIds, preferLowest, inventoryByTrayId })[0];
 
 function makeFilament(overrides: Partial<LoadedFilament> & { globalTrayId: number }): LoadedFilament {
   return {
