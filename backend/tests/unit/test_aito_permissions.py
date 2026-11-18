@@ -206,6 +206,8 @@ _PUBLIC_ROUTE_NAMES = {"get_tracking", "heimdall_webhook"}
 # exactly why it already sits in WRITE_ROUTES above.
 _READ_ONLY_ROUTE_NAMES = {
     "get_3mf_import",
+    # T-685: AITO_READ like the poll, owner-checked; it only cancels the caller's own in-memory slice job.
+    "cancel_3mf_import",
     "list_projects",
     "list_trash",
     "get_aito_stats",
@@ -247,7 +249,7 @@ def test_every_aito_route_declares_a_permission_gate_or_is_the_public_tracking_r
     fails HERE, instead of silently escaping both this sweep and the
     hand-maintained WRITE_ROUTES parametrization below (T-037)."""
     aito_routes = _aito_routes()
-    assert len(aito_routes) == 76, (
+    assert len(aito_routes) == 77, (
         "aito.py + aito_payments.py grew or shrank a route — update this count, "
         "WRITE_ROUTES, and _READ_ONLY_ROUTE_NAMES/_PUBLIC_ROUTE_NAMES together"
     )

@@ -128,6 +128,8 @@ class RetainerApplication:
     unknown_amount: float = 0.0
     # Set on the application Books answered 429 to; the retainers behind it were not tried.
     rate_limited: ZohoRateLimited | None = None
+    # "applied" | "refused" (Books said no) | "unknown" (answer lost) | "not_attempted" (no share, or throttled before it).
+    outcome: str = "applied"
 
 
 def build_line_items(estimate_lines: list[dict]) -> list[dict]:
@@ -350,9 +352,11 @@ async def apply_retainers(
         applied = sum(p["amount_applied"] for p in payments)
         unknown_amount = 0.0
         hit = None
+        outcome = "applied" if payments else "not_attempted"
         if throttle is not None:
             # Books is throttling: do not spend more calls, report the rest as not applied.
             applied = 0.0
+            outcome = "not_attempted"
         elif payments:
             try:
                 await zoho_service.apply_invoice_credits(db, invoice_id, payments)
@@ -361,6 +365,7 @@ async def apply_retainers(
                     throttle = hit = e
                 elif isinstance(e, ZohoUnreachable | ZohoAmbiguous):
                     unknown_amount = round(applied, 2)
+                outcome = "unknown" if unknown_amount else "refused"
                 # Nothing was applied. The share is NOT handed to the
                 # retainers behind it — see the comment above the loop.
                 applied = 0.0
@@ -377,6 +382,7 @@ async def apply_retainers(
                 applied=applied,
                 unknown_amount=unknown_amount,
                 rate_limited=hit,
+                outcome=outcome,
             )
         )
     return applications

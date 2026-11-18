@@ -30,7 +30,7 @@ export interface AitoZohoResult {
 
 /** Kinds whose own mutation already toasts on success: the acting operator skips the Zoho-result toast (colleagues
  *  still get it). Background kinds (sync.*, payment_link.replaced, payment.manual.partial) always toast. */
-const SELF_TOASTED_KINDS = new Set(['quote.emailed', 'invoice.emailed', 'retainer.emailed', 'invoice.created', 'payment_link.created']);
+const SELF_TOASTED_KINDS = new Set(['quote.emailed', 'invoice.emailed', 'retainer.emailed', 'invoice.created', 'payment_link.created', 'payment.manual.recorded']);
 
 type ZohoToastType = 'success' | 'error' | 'warning';
 

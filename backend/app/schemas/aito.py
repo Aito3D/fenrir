@@ -1182,6 +1182,8 @@ class AitoRetainerApplied(BaseModel):
     number: str
     total: float
     applied: float
+    # "applied" | "refused" | "unknown" (Books may have taken it) | "not_attempted".
+    outcome: str = "applied"
 
 
 class AitoInvoiceCreatedResponse(BaseModel):

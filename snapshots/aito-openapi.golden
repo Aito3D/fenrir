@@ -484,6 +484,61 @@
   }
  },
  "/api/v1/aito/import-3mf/{job_id}": {
+  "delete": {
+   "description": "Stop the slice of an import this caller started, so an abandoned one frees its upload and slice slot.\n204 for an own job in any state (a finished one is left as is), 404 for anyone else's or an expired one.",
+   "operationId": "cancel_3mf_import_api_v1_aito_import_3mf__job_id__delete",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "job_id",
+     "required": true,
+     "schema": {
+      "title": "Job Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "204": {
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Cancel 3Mf Import",
+   "tags": [
+    "aito"
+   ]
+  },
   "get": {
    "description": "Progress, then the plate facts, of an import this caller started. 404 for anyone else's.",
    "operationId": "get_3mf_import_api_v1_aito_import_3mf__job_id__get",

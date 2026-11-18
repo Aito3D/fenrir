@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Box, Check, Loader2, X } from 'lucide-react';
@@ -46,14 +46,28 @@ export function Import3mfPanel({ file, onAdd, onClose, pollMs = 1500 }: Import3m
   const [choices, setChoices] = useState<Record<number, RowChoice>>({});
   const [elapsed, setElapsed] = useState(0);
 
+  // Whether the server already settled the job; a settled one has nothing left to cancel.
+  const settledRef = useRef(false);
+  // Fire-and-forget: the job may already be gone, and a failure here changes nothing for the operator.
+  const cancelJob = (id: number) => void api.cancelAito3mfImport(id).catch(() => undefined);
+
   useEffect(() => {
     let cancelled = false;
+    let startedId: number | null = null;
+    settledRef.current = false;
     api
       .startAito3mfImport(file)
-      .then((r) => !cancelled && setJobId(r.job_id))
+      .then((r) => {
+        // Closed or re-picked while the upload was in flight: stop the slice nobody will read.
+        if (cancelled) return cancelJob(r.job_id);
+        startedId = r.job_id;
+        setJobId(r.job_id);
+      })
       .catch((e: unknown) => !cancelled && setStartError(e instanceof Error ? e.message : String(e)));
     return () => {
       cancelled = true;
+      // Unmount, another file or a Retry re-upload: the previous job is abandoned.
+      if (startedId !== null && !settledRef.current) cancelJob(startedId);
     };
   }, [file, attempt]);
 
@@ -81,6 +95,7 @@ export function Import3mfPanel({ file, onAdd, onClose, pollMs = 1500 }: Import3m
   const failedLists = [filamentsQuery, printersQuery, defaultsQuery].filter((q) => q.isError);
 
   const state = job.data;
+  settledRef.current = state?.status === 'completed' || state?.status === 'failed';
   const jobError = startError ?? (job.isError ? (job.error as Error).message : state?.status === 'failed' ? state.error : null);
   // A list that cannot load would otherwise leave the slicing spinner up for good.
   const error = jobError ?? (failedLists.length > 0 ? (failedLists[0].error as Error).message : null);

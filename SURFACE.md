@@ -18,6 +18,7 @@ client method — and fails the iteration unless the user approved it.
 /api/v1/aito/import ['POST']
 /api/v1/aito/import-3mf ['POST']
 /api/v1/aito/import-3mf/{job_id} ['GET']
+/api/v1/aito/import-3mf/{job_id} ['DELETE']
 /api/v1/aito/payments/webhook ['POST']
 /api/v1/aito/project-codes ['GET']
 /api/v1/aito/project-warnings ['GET']
@@ -110,6 +111,7 @@ client method — and fails the iteration unless the user approved it.
 ```regen: grep -hE "^@router\.(get|post|put|patch|delete)\(" backend/app/api/routes/aito.py backend/app/api/routes/aito_payments.py backend/app/api/routes/heimdall.py backend/app/api/routes/zoho.py backend/app/api/routes/inbox.py | sed "s/, *$//" | sort```
 ```
 @router.delete("/{project_id}", status_code=204)
+@router.delete("/import-3mf/{job_id}", status_code=204)
 @router.delete("/tasks/{task_id}", status_code=204)
 @router.get("", response_model=InboxPage)
 @router.get("/", response_model=list[AitoProjectResponse])
@@ -211,6 +213,7 @@ async def balance_state(db: AsyncSession, project: AitoProject)
 async def broadcast_orders_changed(order_ids: Iterable[int], actor: str | None)
 async def broadcast_pending(db: AsyncSession)
 async def build_tracking_url(db: AsyncSession, project: AitoProject)
+async def cancel_3mf_import(
 async def cancel_invoice_link(
 async def cancel_invoice_payment_link(
 async def cancel_order_link(
@@ -325,6 +328,7 @@ async def reconcile_payment_links(
 async def reconcile_project(
 async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimate: dict)
 async def record_and_broadcast(
+async def record_deposit_application(
 async def record_manual_payment_route(
 async def record_manual_payment(
 async def record_on_linked_orders(
@@ -1068,6 +1072,7 @@ print(json.dumps(out, indent=1, sort_keys=True))" 2>/dev/null```
  "AitoRetainerApplied": {
   "applied": "<class 'float'>",
   "number": "<class 'str'>",
+  "outcome": "<class 'str'>",
   "total": "<class 'float'>"
  },
  "AitoRetainerEmailContent": {
@@ -1785,7 +1790,7 @@ os.environ.get("AITO_TRACK_COLLAPSED_PROXY"
 ```
 17 Permission.AITO_CREATE
 3 Permission.AITO_DELETE
-26 Permission.AITO_READ
+27 Permission.AITO_READ
 41 Permission.AITO_UPDATE
 ```
 
@@ -2423,6 +2428,7 @@ const AitoTrackEntryPage = lazyWithReload(() => import('./pages/AitoTrackEntryPa
   aito_payment_mode_cheque
   aito_pull_quote_lines
   applyAitoInvoiceDeposit
+  cancelAito3mfImport
   cancelAitoPaymentLink
   createAitoInvoice
   createAitoInvoicePaymentLink

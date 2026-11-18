@@ -2,7 +2,7 @@
 ### stdout:
 12 RequirePermissionIfAuthEnabled(Permission.AITO_CREATE)
 2 RequirePermissionIfAuthEnabled(Permission.AITO_DELETE)
-27 RequirePermissionIfAuthEnabled(Permission.AITO_READ)
+28 RequirePermissionIfAuthEnabled(Permission.AITO_READ)
 33 RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE)
 1 RequirePermissionIfAuthEnabled(Permission.API_KEYS_CREATE)
 1 RequirePermissionIfAuthEnabled(Permission.API_KEYS_DELETE)

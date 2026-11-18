@@ -32,7 +32,8 @@ export function useCreateInvoiceMutation(projectId: number, onDone: () => void) 
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
       queryClient.invalidateQueries({ queryKey: ['aito-events', projectId] });
       const applied = invoice.retainers.reduce((sum, r) => sum + r.applied, 0);
-      const missed = invoice.retainers.filter((r) => r.applied < r.total);
+      // An unknown outcome is voiced by the aito_zoho broadcast (depositUnknown warning), not repeated here; older servers send no outcome.
+      const missed = invoice.retainers.filter((r) => r.applied < r.total && r.outcome !== 'unknown');
       showToast(
         missed.length > 0
           ? t('aito.createInvoiceDonePartial', {

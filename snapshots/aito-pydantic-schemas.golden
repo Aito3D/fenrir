@@ -1864,6 +1864,11 @@
       "title": "Number",
       "type": "string"
      },
+     "outcome": {
+      "default": "applied",
+      "title": "Outcome",
+      "type": "string"
+     },
      "total": {
       "title": "Total",
       "type": "number"
@@ -6568,6 +6573,11 @@
    },
    "number": {
     "title": "Number",
+    "type": "string"
+   },
+   "outcome": {
+    "default": "applied",
+    "title": "Outcome",
     "type": "string"
    },
    "total": {

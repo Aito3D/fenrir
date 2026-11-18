@@ -63,7 +63,7 @@ describe('useAitoZohoToasts', () => {
 
   it("skips the actor's own send/create results (their mutation already toasts), colleagues still hear them", () => {
     renderHook(() => useAitoZohoToasts());
-    const own = ['quote.emailed', 'invoice.emailed', 'retainer.emailed', 'invoice.created', 'payment_link.created'];
+    const own = ['quote.emailed', 'invoice.emailed', 'retainer.emailed', 'invoice.created', 'payment_link.created', 'payment.manual.recorded'];
     for (const kind of own) send({ kind, doc: 'X-1', actor: 'paul' });
     settle();
     expect(showToast).not.toHaveBeenCalled();
@@ -74,6 +74,7 @@ describe('useAitoZohoToasts', () => {
       'X-1 emailed to the client',
       'Invoice X-1 created in Zoho',
       'Payment link ready for X-1',
+      'Payment on X-1 recorded in Zoho',
       '2 documents emailed to clients',
     ]);
   });

@@ -2,6 +2,19 @@
 ### stdout:
 {
  "operations": {
+  "DELETE /api/v1/aito/import-3mf/{job_id}": {
+   "operationId": "cancel_3mf_import_api_v1_aito_import_3mf__job_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:job_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "204": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "DELETE /api/v1/aito/tasks/{task_id}": {
    "operationId": "delete_task_api_v1_aito_tasks__task_id__delete",
    "params": [
@@ -15523,6 +15536,7 @@
    "properties": {
     "applied": "number",
     "number": "string",
+    "outcome": "string",
     "total": "number"
    },
    "required": [

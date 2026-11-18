@@ -63,7 +63,13 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_events
 from backend.app.services.aito_events import utc_now_naive as _now
 from backend.app.services.aito_invoice_cache import invoice_total_of
-from backend.app.services.aito_invoice_create import RetainerCredit, apply_retainers, customer_credits, share_out
+from backend.app.services.aito_invoice_create import (
+    RetainerApplication,
+    RetainerCredit,
+    apply_retainers,
+    customer_credits,
+    share_out,
+)
 from backend.app.services.aito_search import remember_document_numbers
 from backend.app.services.inbox import broadcast_pending, purge_old
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
@@ -145,6 +151,34 @@ async def settle_with_deposits(
     return settlement.invoice, settlement.remaining
 
 
+async def record_deposit_application(
+    db: AsyncSession,
+    project_id: int,
+    invoice: dict,
+    application: RetainerApplication,
+    actor_class: str = "system",
+    actor_name: str | None = None,
+) -> None:
+    """The ``invoice.deposit_applied`` event for one application (system actor by default)."""
+    detail = {
+        "retainer_number": application.number,
+        "invoice_number": str(invoice.get("number") or ""),
+        "amount": round(application.applied or application.unknown_amount, 2),
+    }
+    if application.unknown_amount:
+        detail["outcome"] = "unknown"
+    await aito_events.record(
+        db,
+        project_id,
+        "invoice.deposit_applied",
+        actor_class=actor_class,
+        actor_name=actor_name,
+        subject_type="project",
+        subject_id=project_id,
+        detail=detail,
+    )
+
+
 async def settle_deposits(
     db: AsyncSession, project_id: int, quote_id: str, invoice: dict, quote_number: str | None = None
 ) -> DepositSettlement:
@@ -185,22 +219,7 @@ async def settle_deposits(
         if amount <= 0:
             continue
         applied_total += application.applied
-        detail = {
-            "retainer_number": application.number,
-            "invoice_number": str(invoice.get("number") or ""),
-            "amount": round(amount, 2),
-        }
-        if application.unknown_amount:
-            detail["outcome"] = "unknown"
-        await aito_events.record(
-            db,
-            project_id,
-            "invoice.deposit_applied",
-            actor_class="system",
-            subject_type="project",
-            subject_id=project_id,
-            detail=detail,
-        )
+        await record_deposit_application(db, project_id, invoice, application)
     # What landed is recorded above; a 429 now escapes so the caller arms the shared throttle.
     for application in applications:
         if application.rate_limited is not None:

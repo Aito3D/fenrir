@@ -109,3 +109,67 @@ async def test_import_over_its_own_cap_is_413(async_client: AsyncClient, stub_sl
     assert (r.status_code, r.json()["detail"]) == (413, "The .3mf is too large")
     monkeypatch.setattr(aito, "_IMPORT_3MF_MAX_BYTES", len(SOURCE))
     assert (await async_client.post(URL, files=_upload(SOURCE))).status_code == 202
+
+
+# ---- T-685: DELETE cancels an abandoned import ----
+
+
+async def test_cancel_stops_a_running_import_and_frees_its_slice_slot(async_client: AsyncClient, monkeypatch):
+    from backend.app.services.project_slice import _MAX_CONCURRENT_SLICES, _slice_slot
+
+    started = asyncio.Event()
+
+    async def hang(db, source, filename, job_id):
+        async with _slice_slot():
+            started.set()
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(aito_3mf_import, "slice_source", hang)
+    job_id = (await async_client.post(URL, files=_upload(SOURCE))).json()["job_id"]
+    await asyncio.wait_for(started.wait(), 5)
+    assert _slice_slot()._value == _MAX_CONCURRENT_SLICES - 1
+
+    r = await async_client.delete(f"{URL}/{job_id}")
+
+    assert r.status_code == 204
+    body = await _settled(async_client, job_id)
+    assert (body["status"], body["error"], body["plates"]) == ("failed", "Cancelled", None)
+    assert _slice_slot()._value == _MAX_CONCURRENT_SLICES
+    assert job_id not in slice_dispatch._tasks
+
+
+async def test_cancel_of_a_finished_import_is_a_noop(async_client: AsyncClient, stub_slicer):
+    job_id = (await async_client.post(URL, files=_upload(SOURCE))).json()["job_id"]
+    await _settled(async_client, job_id)
+
+    assert (await async_client.delete(f"{URL}/{job_id}")).status_code == 204
+    assert (await async_client.delete(f"{URL}/{job_id}")).status_code == 204
+    assert (await async_client.get(f"{URL}/{job_id}")).json()["status"] == "completed"
+
+
+async def test_cancel_refuses_other_users_unknown_and_non_import_jobs(async_client: AsyncClient):
+    other = await slice_dispatch.enqueue(kind="aito_import", source_id=0, source_name="x.3mf", owner_id=4242, run=_noop)
+    library = await slice_dispatch.enqueue(kind="library_file", source_id=1, source_name="x.3mf", run=_noop)
+    for job_id in (other.id, library.id, 987654321):
+        assert (await async_client.delete(f"{URL}/{job_id}")).status_code == 404
+
+
+async def test_dispatch_cancel_marks_any_job_failed_and_never_touches_finished_ones():
+    gate = asyncio.Event()
+
+    async def hang(job_id: int) -> dict:
+        await gate.wait()
+        return {}
+
+    running = await slice_dispatch.enqueue(kind="project_revision", source_id=1, source_name="a", run=hang)
+    await asyncio.sleep(0)
+    slice_dispatch.cancel(running.id)
+    await asyncio.sleep(0.01)
+    assert (running.status, running.error_status, running.error_detail) == ("failed", 499, "Cancelled")
+
+    gate.set()
+    done = await slice_dispatch.enqueue(kind="project_revision", source_id=2, source_name="b", run=_noop)
+    await asyncio.sleep(0.01)
+    slice_dispatch.cancel(done.id)
+    slice_dispatch.cancel(123456789)
+    assert done.status == "completed"
