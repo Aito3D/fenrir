@@ -166,6 +166,39 @@ async def test_an_order_a_pass_stored_first_is_reused(db_session, books, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_a_failure_after_the_confirm_never_creates_twice(db_session, books, monkeypatch):
+    async def log_boom(*a, **k):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(create_module, "_log", log_boom)
+    lines = [{"item_id": "A", "quantity": 1}]
+    with pytest.raises(RuntimeError):
+        await actions.create_counter_order(db_session, "c1", lines, "ref-4", by=None)
+    assert await actions.create_counter_order(db_session, "c1", lines, "ref-4", by=None) == "9"
+    assert len(books.payloads) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("void_fails", [False, True])
+async def test_rate_limited_confirm_voids_and_is_busy(db_session, books, monkeypatch, caplog, void_fails):
+    books.open_error = ZohoRateLimited("429", retry_after=30)
+    if void_fails:
+
+        async def void_boom(db, salesorder_id):
+            raise ZohoRateLimited("429", retry_after=30)
+
+        monkeypatch.setattr(zoho_service, "void_salesorder", void_boom)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-5", by=None)
+    assert sync.zoho_busy()
+    assert books.voided == ([] if void_fails else ["9"])
+    assert await _docs(db_session) == []
+    assert create_module._created == {}
+    if void_fails:
+        assert any(r.levelname == "ERROR" and "draft order is left in Books" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_a_failed_void_still_refuses_create_failed(db_session, books, monkeypatch):
     books.open_error = ZohoUpstreamError("open boom")
 

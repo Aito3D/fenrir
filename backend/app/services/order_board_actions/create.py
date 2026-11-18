@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
 from backend.app.services.order_board_actions._common import OrderActionRefused, _best_effort_refresh, _log, _num
-from backend.app.services.zoho import zoho_service
+from backend.app.services.zoho import ZohoRateLimited, zoho_service
 
 logger = logging.getLogger(__name__)
 
@@ -54,18 +54,14 @@ async def create_counter_order(
         async with entry[0]:
             if client_ref in _created:  # a concurrent duplicate finished while this one waited
                 return _created[client_ref]
-            salesorder_id = await _create(db, customer_id, lines, by)
-            _created[client_ref] = salesorder_id
-            while len(_created) > _KEEP_REFS:
-                del _created[next(iter(_created))]
-            return salesorder_id
+            return await _create(db, customer_id, lines, client_ref, by)
     finally:
         entry[1] -= 1
         if entry[1] == 0:
             _ref_locks.pop(client_ref, None)
 
 
-async def _create(db: AsyncSession, customer_id: str, lines: list[dict], by: str | None) -> str:
+async def _create(db: AsyncSession, customer_id: str, lines: list[dict], client_ref: str, by: str | None) -> str:
     wanted: dict[str, tuple[float, str | None, tuple[float, bool] | None]] = {}
     for entry in lines:
         q = entry.get("quantity")
@@ -108,13 +104,25 @@ async def _create(db: AsyncSession, customer_id: str, lines: list[dict], by: str
         await zoho_service.mark_salesorder_open(db, salesorder_id)
     except Exception as e:
         logger.warning("Order board: confirming the new order %s failed (%s)", number, type(e).__name__)
+        if isinstance(e, ZohoRateLimited):
+            sync.open_rate_limit_window(e)
         try:  # nothing half-made may stay in Books
             await zoho_service.void_salesorder(db, salesorder_id)
         except Exception as void_error:
-            logger.error("Order board: voiding the draft %s failed (%s)", number, type(void_error).__name__)
+            logger.error(
+                "Order board: voiding %s failed (%s), a draft order is left in Books",
+                number,
+                type(void_error).__name__,
+            )
+        if isinstance(e, ZohoRateLimited):
+            raise sync.ZohoBusy(customer_id) from e
         raise OrderActionRefused("create_failed") from e
     finally:
         sync.note_write(salesorder_id)
+    # Remembered before any local write: a retry after a database failure must not confirm a second order.
+    _created[client_ref] = salesorder_id
+    while len(_created) > _KEEP_REFS:
+        del _created[next(iter(_created))]
     doc = await sync.find_stored(db, salesorder_id)  # a pass may have listed it already
     if doc is None:
         db.add(OrderBoardDoc(kind="salesorder", zoho_id=salesorder_id, header=created, pending=True))
