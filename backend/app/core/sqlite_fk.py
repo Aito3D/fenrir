@@ -105,6 +105,9 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         # A profile default's K profile would select a calibration slot on
         # the next printer given the id (#1326).
         ("filament_profile_default_k_profile", "printer_id"),
+        # The maintenance log outlives its printer; the next printer given the
+        # id would take over its history.
+        ("maintenance_log_entries", "printer_id"),
         # filament_profile_default: the next default given the id would take
         # over its presets and K profiles (#1326).
         ("filament_profile_default_k_profile", "profile_default_id"),
@@ -115,6 +118,13 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("filament_tree_overrides", "tree_id"),
         ("filament_tree_leaves", "tree_id"),
         ("filament_tree_leaves", "preset_id"),
+        # maintenance_types: the log keeps a deleted custom task's entries; the
+        # next task given the id would take them over.
+        ("maintenance_log_entries", "maintenance_type_id"),
+        # maintenance_history goes with its printer task; the next reset given
+        # the id, maybe on another printer, would have its history deleted
+        # with this entry.
+        ("maintenance_log_entries", "history_id"),
         # external_links: the next link given the id would show the count an
         # app reported for the deleted one.
         ("external_link_badges", "link_id"),
@@ -139,6 +149,7 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("long_lived_tokens", "user_id"),
         ("notifications", "user_id"),  # Fenrir
         ("order_board_watches", "user_id"),  # Fenrir
+        ("maintenance_log_entries", "performed_by_id"),
         ("pending_uploads", "uploaded_by_id"),
         ("pipeline_runs", "created_by"),
         ("print_archives", "created_by_id"),

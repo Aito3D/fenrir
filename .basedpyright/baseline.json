@@ -3502,14 +3502,6 @@
             {
                 "code": "reportOptionalMemberAccess",
                 "range": {
-                    "startColumn": 19,
-                    "endColumn": 23,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportOptionalMemberAccess",
-                "range": {
                     "startColumn": 15,
                     "endColumn": 32,
                     "lineCount": 1
@@ -3528,14 +3520,6 @@
                 "range": {
                     "startColumn": 11,
                     "endColumn": 16,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportOptionalMemberAccess",
-                "range": {
-                    "startColumn": 26,
-                    "endColumn": 30,
                     "lineCount": 1
                 }
             }

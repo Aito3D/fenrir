@@ -27,6 +27,7 @@ import {
 } from '../utils/filamentForecast';
 import { useUiSettings } from '../hooks/useUiSettings';
 import { ConfirmModal } from './ConfirmModal';
+import { csvCell } from '../utils/csvCell';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1149,7 +1150,7 @@ function ShoppingListPanel({
         restock,
         i.status,
         i.note ?? '',
-      ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',');
+      ].map((v) => csvCell(v)).join(',');
     });
     const csv = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });

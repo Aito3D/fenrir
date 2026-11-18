@@ -45,6 +45,7 @@ from backend.app.models.maintenance import (
     HourMachine,
     HourReading,
     MaintenanceHistory,
+    MaintenanceLogEntry,
     MaintenanceType,
     PrinterMaintenance,
 )
@@ -122,6 +123,7 @@ __all__ = [
     "HourMachine",
     "HourReading",
     "MaintenanceHistory",
+    "MaintenanceLogEntry",
     "KProfileNote",
     "NotificationTemplate",
     "NotificationLog",

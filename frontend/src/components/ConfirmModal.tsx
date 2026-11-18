@@ -38,6 +38,10 @@ interface ConfirmModalProps {
   // used for opt-in checkboxes (e.g. the "Also remove from statistics"
   // toggle in the archive delete confirmation, #1343).
   children?: ReactNode;
+  // When false, a click on the backdrop and Escape do nothing; only the
+  // buttons close it. For a dialog holding typed input (the maintenance
+  // reset comment) that a stray click would otherwise throw away.
+  dismissible?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -58,6 +62,7 @@ export function ConfirmModal({
   isolateEscape = false,
   stacked = false,
   children,
+  dismissible = true,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
@@ -89,11 +94,11 @@ export function ConfirmModal({
       // Claimed before anything else sees it: the window capture phase runs
       // first, so the host's own bubble-phase Escape never fires.
       if (isolateEscape) e.stopPropagation();
-      if (!isLoading) setClosing(true);
+      if (!isLoading && dismissible) setClosing(true);
     };
     window.addEventListener('keydown', handleKeyDown, isolateEscape);
     return () => window.removeEventListener('keydown', handleKeyDown, isolateEscape);
-  }, [isLoading, isolateEscape]);
+  }, [isLoading, isolateEscape, dismissible]);
 
   const variantStyles = {
     danger: {
@@ -115,7 +120,7 @@ export function ConfirmModal({
   return (
     <div
       className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 ${closing ? 'animate-overlay-out' : 'animate-overlay-in'} ${overlayZIndex ?? 'z-50'}`}
-      onClick={isLoading ? undefined : requestCancel}
+      onClick={isLoading || !dismissible ? undefined : requestCancel}
     >
       <Card
         className={`w-full max-w-md ${closing ? 'animate-modal-out' : 'animate-modal-in'} ${cardClassName ?? ''}`}
