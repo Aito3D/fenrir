@@ -11692,6 +11692,11 @@ errors: {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    newOrder: {
+      historyTitle: 'Kundhistorik',
+      showAll: 'Visa alla',
+      empty: 'Inga tidigare ordrar',
+    },
     watch: {
       off: 'Bevaka',
       on: 'Bevakas',

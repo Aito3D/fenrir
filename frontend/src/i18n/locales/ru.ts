@@ -11239,6 +11239,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    newOrder: {
+      historyTitle: 'История клиента',
+      showAll: 'Показать все',
+      empty: 'Предыдущих заказов нет',
+    },
     watch: {
       off: 'Следить',
       on: 'Отслеживается',

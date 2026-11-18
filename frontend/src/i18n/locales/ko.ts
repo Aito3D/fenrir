@@ -11256,6 +11256,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    newOrder: {
+      historyTitle: '고객 이력',
+      showAll: '모두 보기',
+      empty: '이전 주문 없음',
+    },
     watch: {
       off: '지켜보기',
       on: '지켜보는 중',

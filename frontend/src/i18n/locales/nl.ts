@@ -11659,6 +11659,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    newOrder: {
+      historyTitle: 'Klantgeschiedenis',
+      showAll: 'Alles tonen',
+      empty: 'Geen eerdere bestellingen',
+    },
     watch: {
       off: 'Volgen',
       on: 'Gevolgd',

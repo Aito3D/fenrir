@@ -11634,6 +11634,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    newOrder: {
+      historyTitle: '顧客の履歴',
+      showAll: 'すべて表示',
+      empty: '過去の注文はありません',
+    },
     watch: {
       off: 'ウォッチ',
       on: 'ウォッチ中',

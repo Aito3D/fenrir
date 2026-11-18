@@ -11562,6 +11562,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    newOrder: {
+      historyTitle: 'Müşteri geçmişi',
+      showAll: 'Tümünü göster',
+      empty: 'Önceki sipariş yok',
+    },
     watch: {
       off: 'İzle',
       on: 'İzleniyor',

@@ -11618,6 +11618,11 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    newOrder: {
+      historyTitle: '客户历史',
+      showAll: '显示全部',
+      empty: '暂无历史订单',
+    },
     watch: {
       off: '关注',
       on: '已关注',
