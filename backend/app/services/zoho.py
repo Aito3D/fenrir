@@ -1463,6 +1463,14 @@ class ZohoService:
         )
         return payload.get("shipmentorder") or payload.get("shipment_order") or {}
 
+    async def create_salesorder(self, db: AsyncSession, payload: dict) -> dict:
+        """Create a draft sales order. From Zoho's API reference, unverified against a live write."""
+        return (await self._request(db, "POST", "/salesorders", json=payload)).get("salesorder", {})
+
+    async def mark_salesorder_open(self, db: AsyncSession, salesorder_id: str) -> None:
+        """Confirm a draft sales order (draft -> open). Unverified against a live write."""
+        await self._request(db, "POST", f"/salesorders/{_seg(salesorder_id)}/status/open")
+
     async def void_salesorder(self, db: AsyncSession, salesorder_id: str) -> None:
         """Mark a sales order void. From Zoho's API reference, unverified against a live write."""
         await self._request(db, "POST", f"/salesorders/{_seg(salesorder_id)}/status/void")
