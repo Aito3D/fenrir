@@ -5442,6 +5442,7 @@ export type OrderEditLine = { line_id: string; quantity: number } | { item_id: s
 export interface OrderPackageContent { id: string; number: string; version: string; picklist_id: string; lines: { line_id: string; quantity: number; max: number }[]; pending: boolean }
 /** `row` is null when the edit took the order off the board. */
 export type OrderEditResult = { board: OrderBoardResponse; row: OrderBoardRow | null };
+export interface CounterOrderLine { item_id: string; quantity: number; discount?: string }
 
 /** What the opened panel needs: a board row, or a finished order fetched on demand. */
 export type OrderPanelRow = Omit<OrderBoardRow, 'status'>;
@@ -10468,6 +10469,8 @@ export const api = {
       body: JSON.stringify({ picklist_id: picklistId, lines }),
     }),
   searchOrderItems: (q: string) => request<{ items: OrderItemHit[] }>(`/order-board/items?q=${encodeURIComponent(q)}`),
+  createCounterOrder: (body: { customer_id: string; client_ref: string; lines: CounterOrderLine[] }) =>
+    request<OrderEditResult & { salesorder_id: string }>('/order-board/orders', { method: 'POST', body: JSON.stringify(body) }),
   updateOrderLines: (id: string, body: { version: string; lines: OrderEditLine[] }) =>
     request<OrderEditResult>(`/order-board/orders/${encodeURIComponent(id)}/lines`, { method: 'PUT', body: JSON.stringify(body) }),
   getOrderPackage: (id: string, packageId: string) =>
