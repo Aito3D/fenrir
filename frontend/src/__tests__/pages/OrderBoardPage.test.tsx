@@ -952,7 +952,7 @@ describe('OrderBoardPage actions', () => {
       zohoStatus();
       localStorage.setItem('orders.newOrderDraft.v1', JSON.stringify({
         lines: [{ item: { id: 'A', name: 'Bambu Lab PLA Basic Noir', sku: 'BL-PLA-BK', rate: 3400, stock_on_hand: 9, product_type: 'goods' }, quantity: 1, discount: '' }],
-        client: null, clientRef: 'ref-1',
+        client: null, clientRef: '11111111-1111-4111-8111-111111111111',
       }));
       serve(board());
       const fresh = board({ rows: [row({ id: '9', number: 'SO-00999', customer: 'Client de passage' }), ...ROWS] });

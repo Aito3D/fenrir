@@ -14,7 +14,7 @@ const item = (o: Partial<OrderItemHit> = {}): OrderItemHit => ({
   id: 'A', name: 'Bambu Lab PLA Basic Noir', sku: 'BL-PLA-BK', rate: 1000, stock_on_hand: 9, product_type: 'goods', ...o,
 });
 const seed = (lines: { item: OrderItemHit; quantity: number; discount: string }[]) =>
-  localStorage.setItem(DRAFT_KEY, JSON.stringify({ lines, client: null, clientRef: 'ref-1' }));
+  localStorage.setItem(DRAFT_KEY, JSON.stringify({ lines, client: null, clientRef: '11111111-1111-4111-8111-111111111111' }));
 
 const boardResult = { board: { rows: [], computed_at: null, stock_loaded_at: null, sync: {} }, row: null, salesorder_id: '9' };
 
@@ -141,7 +141,7 @@ describe('NewOrderDraftRow', () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(boardResult));
     expect(body).toEqual({
       customer_id: DEFAULT_ID,
-      client_ref: 'ref-1',
+      client_ref: '11111111-1111-4111-8111-111111111111',
       lines: [{ item_id: 'A', quantity: 2, discount: '10%' }, { item_id: 'B', quantity: 1 }],
     });
     expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
