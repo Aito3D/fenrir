@@ -30,6 +30,8 @@ export interface PrintModalProps {
   archiveName: string;
   /** Existing queue item (only for edit-queue-item mode) */
   queueItem?: PrintQueueItem;
+  /** Pending copies of `queueItem` already queued (itself included); the edit dialog's Quantity starts here. */
+  existingCopies?: number;
   /** Pre-select specific printers when opening the modal */
   initialSelectedPrinterIds?: number[];
   /**

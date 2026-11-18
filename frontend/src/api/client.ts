@@ -3378,6 +3378,8 @@ export interface PrintBatchDispatchRequest {
 }
 
 export interface PrintQueueItemUpdate {
+  /** Queue this many more copies of the job, grouped with it as a batch. */
+  add_copies?: number;
   printer_id?: number | null;  // null = unassign
   // A deliberate filament substitution in the mapping (#2799); see PrintModal.
   skip_filament_check?: boolean;

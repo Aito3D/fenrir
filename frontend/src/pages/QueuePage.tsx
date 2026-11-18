@@ -3187,6 +3187,9 @@ export function QueuePage() {
           libraryFileId={editItem.library_file_id ?? undefined}
           archiveName={queueItemDisplayName(editItem, (n) => t('common.plusNMore', { count: n }))}
           queueItem={editItem}
+          existingCopies={editItem.batch_id == null ? 1 : Math.max(1, pendingItems.filter(
+            (i) => i.batch_id === editItem.batch_id && i.plate_id === editItem.plate_id,
+          ).length)}
           onClose={() => setEditItem(null)}
         />
       )}

@@ -1362,19 +1362,21 @@ describe('PrintModal', () => {
       expect(screen.getByLabelText('Quantity')).toBeInTheDocument();
     });
 
-    it('does not show quantity input in edit-queue-item mode', () => {
+    it('starts the quantity at the copies already queued in edit-queue-item mode', () => {
       render(
         <PrintModal
           mode="edit-queue-item"
           archiveId={1}
           archiveName="Benchy"
           queueItem={createMockQueueItem()}
+          existingCopies={2}
           onClose={mockOnClose}
           onSuccess={mockOnSuccess}
         />
       );
 
-      expect(screen.queryByLabelText('Quantity')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Quantity')).toHaveValue(2);
+      expect(screen.getByLabelText('Quantity')).toHaveAttribute('min', '2');
     });
 
     it('defaults quantity to 1', () => {

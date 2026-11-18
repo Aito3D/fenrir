@@ -101,6 +101,7 @@ export function PrintModal({
   libraryFileId,
   archiveName,
   queueItem,
+  existingCopies = 1,
   initialSelectedPrinterIds,
   preselectPlateId,
   onClose,
@@ -234,7 +235,7 @@ export function PrintModal({
   const selectedPlate = selectedPlates.size === 1 ? [...selectedPlates][0] : null;
 
   // Quantity — number of copies (creates a batch if > 1)
-  const [quantity, setQuantity] = useState(() => resumedSettings?.quantity ?? 1);
+  const [quantity, setQuantity] = useState(() => (mode === 'edit-queue-item' ? existingCopies : resumedSettings?.quantity ?? 1));
 
   // Per-plate quantities for multi-plate files (#342). Keyed by plate index;
   // a plate with no entry means one run. Only used in create mode on a
@@ -1778,6 +1779,7 @@ export function PrintModal({
               manual_start: editManualStart,
               ams_mapping: undefined,
               plate_id: plateId,
+              add_copies: addCopies || undefined,
               scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
                 ? new Date(scheduleOptions.scheduledTime).toISOString()
                 : null,
@@ -1848,6 +1850,7 @@ export function PrintModal({
                 // stale ones on the row (#1784).
                 nozzle_rack_choice: rackChoiceForPlate(plateId) ?? null,
                 plate_id: plateId,
+                add_copies: addCopies || undefined,
                 scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
                   ? new Date(scheduleOptions.scheduledTime).toISOString()
                   : null,
@@ -1979,6 +1982,8 @@ export function PrintModal({
 
   // Quantity only applies for single-printer or model-based assignment (not multi-printer)
   const effectiveQuantity = (assignmentMode === 'printer' && selectedPrinters.length > 1) ? 1 : quantity;
+  // Edit mode: the copies to add on top of the ones already queued (never fewer; remove those from the queue).
+  const addCopies = isEditing ? Math.max(0, effectiveQuantity - existingCopies) : 0;
 
   // On a multi-plate file the per-plate steppers own the quantity and the
   // global field is hidden (#342) — the reporter's case is "plate 1 once,
@@ -2539,7 +2544,7 @@ export function PrintModal({
             {/* Quantity — create multiple copies (batch). Hidden for multi-printer
                 selection, and for multi-plate files where the per-plate steppers
                 in PlateSelector own the number instead (#342). */}
-            {mode !== 'edit-queue-item' && !usePerPlateQuantities
+            {!usePerPlateQuantities
               && (assignmentMode === 'model' || selectedPrinters.length <= 1) && (
               <div className="flex items-center gap-3">
                 <label htmlFor="printQuantity" className="text-sm text-bambu-gray whitespace-nowrap">
@@ -2547,18 +2552,18 @@ export function PrintModal({
                 </label>
                 <NumberInput
                   id="printQuantity"
-                  min={1}
+                  min={isEditing ? existingCopies : 1}
                   max={999}
                   value={quantity}
                   onChange={setQuantity}
-                  fallback={1}
+                  fallback={isEditing ? existingCopies : 1}
                   className="w-20 px-2 py-1 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded text-white focus:outline-none focus:ring-1 focus:ring-bambu-green"
                 />
-                {quantity > 1 && (
+                {(isEditing ? addCopies > 0 : quantity > 1) && (
                   <span className="text-xs text-bambu-gray">
                     {/* Separate jobs post the quantity once per listed file. */}
                     {t('queue.quantityHint', 'Creates {{count}} queue items', {
-                      count: isSeparateJobs ? quantity * candidates.length : quantity,
+                      count: isEditing ? addCopies : isSeparateJobs ? quantity * candidates.length : quantity,
                     })}
                   </span>
                 )}

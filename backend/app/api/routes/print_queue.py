@@ -66,6 +66,7 @@ from backend.app.services.filament_requirements import overrides_for_plate
 from backend.app.services.finance_budget import release_budget_reservation, validate_print_budget
 from backend.app.services.print_batch import (
     BatchDispatchError,
+    clone_runs,
     dispatch_remaining,
     load_progress,
     refresh_batch_status,
@@ -2587,6 +2588,7 @@ async def update_queue_item(
         raise HTTPException(409, "Item is being dispatched — cancel it first to make changes")
 
     update_data = data.model_dump(exclude_unset=True)
+    add_copies = update_data.pop("add_copies", 0)
 
     # Clearing "wait for manual start" starts the job, which needs the same
     # right as the start button (#1620)
@@ -2720,6 +2722,7 @@ async def update_queue_item(
         estimated_cost=trusted_estimated_cost,
         current_user=actor,
         exclude_queue_item_id=item.id,
+        quantity=1 + add_copies,
     )
 
     # Another plate takes another time: shortest-job-first orders by it (#3375).
@@ -2744,12 +2747,57 @@ async def update_queue_item(
     for field, value in update_data.items():
         setattr(item, field, value)
 
+    if add_copies:
+        await _add_copies(db, item, add_copies, actor)
+
     await db.commit()
     await notify_queue_changed()
     await db.refresh(item, ["archive", "printer", "library_file", "created_by", "batch"])
 
     logger.info("Updated queue item %s", item_id)
     return _hide_aito_task(_enrich_response(item), can_read_aito)
+
+
+async def _add_copies(db: AsyncSession, item: PrintQueueItem, copies: int, actor: User | ApiKeyActor | None) -> None:
+    """Queue *copies* more runs of *item* right after it, grouped with it as a batch. The caller commits."""
+    if item.batch_id is None:
+        archive = await db.get(PrintArchive, item.archive_id) if item.archive_id else None
+        library_file = await db.get(LibraryFile, item.library_file_id) if item.library_file_id else None
+        if archive:
+            base = archive.print_name or archive.filename
+        elif library_file:
+            base = (library_file.file_metadata or {}).get("print_name") or library_file.filename
+        else:
+            base = None
+        base = (base or "Batch").replace(".gcode.3mf", "").replace(".3mf", "")
+        batch = PrintBatch(
+            name=f"{base} ×{1 + copies}",
+            archive_id=item.archive_id,
+            library_file_id=item.library_file_id,
+            quantity=1 + copies,
+            status="active",
+            created_by_id=actor.id if actor else None,
+        )
+        db.add(batch)
+        await db.flush()
+        item.batch_id = batch.id
+    else:
+        batch = await db.get(PrintBatch, item.batch_id)
+        if batch is not None:
+            # Keep an auto-generated "name ×N" in step; a name the user typed stays.
+            suffix = f" ×{batch.quantity}"
+            if batch.name and batch.name.endswith(suffix):
+                batch.name = f"{batch.name[: -len(suffix)]} ×{batch.quantity + copies}"
+            batch.quantity += copies
+
+    await lock_queue_positions(db)
+    await db.execute(
+        update(PrintQueueItem)
+        .where(PrintQueueItem.status.in_(("pending", *SLICE_WAIT_STATUSES)))
+        .where(PrintQueueItem.position > item.position)
+        .values(position=PrintQueueItem.position + copies)
+    )
+    await clone_runs(db, item, copies, position=item.position + 1, created_by_id=actor.id if actor else None)
 
 
 def _cached_print_time(

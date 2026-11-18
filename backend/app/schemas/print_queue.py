@@ -195,6 +195,8 @@ class PrintQueueItemUpdate(IgnoresNullForRequiredColumns):
     # {group_id: 1-based position}. The operator's pick, re-checked against the
     # live rack at dispatch; null means "assign them for me".
     nozzle_rack_choice: dict[int, int] | None = None
+    # Not a column: queue this many more copies of the job, grouped with it as a batch.
+    add_copies: int = Field(default=0, ge=0, le=998)
 
 
 class QueueVariantSummary(BaseModel):

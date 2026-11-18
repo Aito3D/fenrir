@@ -870,6 +870,30 @@ class TestPrintQueueAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_update_queue_item_add_copies(self, async_client: AsyncClient, queue_item_factory, db_session):
+        """Raising the quantity in the edit dialog clones the job into a batch, right after it."""
+        item = await queue_item_factory(position=1)
+        later = await queue_item_factory(position=2)
+
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"timelapse": True, "add_copies": 2})
+        assert response.status_code == 200
+        batch_id = response.json()["batch_id"]
+        assert batch_id is not None
+        assert response.json()["batch_name"].endswith("×3")
+
+        queue = (await async_client.get("/api/v1/queue/")).json()
+        copies = sorted((i for i in queue if i["batch_id"] == batch_id), key=lambda i: i["position"])
+        assert [c["position"] for c in copies] == [1, 2, 3]
+        assert all(c["status"] == "pending" and c["timelapse"] is True for c in copies)
+        assert next(i for i in queue if i["id"] == later.id)["position"] == 4
+
+        # A second raise joins the same batch and keeps its name in step.
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"add_copies": 1})
+        assert response.json()["batch_id"] == batch_id
+        assert response.json()["batch_name"].endswith("×4")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_update_queue_item_print_options(self, async_client: AsyncClient, queue_item_factory, db_session):
         """Verify queue item print options can be updated."""
         item = await queue_item_factory()
