@@ -183,6 +183,59 @@ describe('RevenuePage — view tabs and tax switch', () => {
   });
 });
 
+describe('RevenuePage — stored segment and customer permission', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  it('drops a stored segment from the request without revenue:view_customers', async () => {
+    granted.delete('revenue:view_customers');
+    localStorage.setItem('revenue-segment', 'pro');
+    stubFetch(payload());
+    renderPage();
+    await flush();
+    expect(String(seriesCalls()[0][0])).not.toContain('segment=');
+  });
+
+  it('sends a stored segment with revenue:view_customers', async () => {
+    localStorage.setItem('revenue-segment', 'pro');
+    stubFetch(payload());
+    renderPage();
+    await flush();
+    expect(String(seriesCalls()[0][0])).toContain('&segment=pro');
+  });
+});
+
+describe('RevenuePage — view tabs keyboard', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  it('arrow keys, Home and End move the selection and focus; only the selected tab is tabbable', async () => {
+    stubFetch(payload());
+    renderPage();
+    await flush();
+    const tabs = () => within(screen.getByRole('tablist', { name: 'View' })).getAllByRole('tab');
+    expect(tabs().map((t) => t.tabIndex)).toEqual([0, -1, -1, -1]);
+    const panel = screen.getByRole('tabpanel');
+    expect(tabs()[0]).toHaveAttribute('aria-controls', panel.id);
+    expect(panel).toHaveAttribute('aria-labelledby', tabs()[0].id);
+
+    fireEvent.keyDown(tabs()[0], { key: 'ArrowRight' });
+    expect(tabs()[1]).toHaveAttribute('aria-selected', 'true');
+    expect(tabs()[1]).toHaveFocus();
+    expect(tabs().map((t) => t.tabIndex)).toEqual([-1, 0, -1, -1]);
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', tabs()[1].id);
+
+    fireEvent.keyDown(tabs()[1], { key: 'End' });
+    expect(tabs()[3]).toHaveAttribute('aria-selected', 'true');
+    expect(tabs()[3]).toHaveFocus();
+    fireEvent.keyDown(tabs()[3], { key: 'ArrowRight' });
+    expect(tabs()[0]).toHaveFocus();
+    fireEvent.keyDown(tabs()[0], { key: 'ArrowLeft' });
+    expect(tabs()[3]).toHaveFocus();
+    fireEvent.keyDown(tabs()[3], { key: 'Home' });
+    expect(tabs()[0]).toHaveAttribute('aria-selected', 'true');
+    expect(tabs()[0]).toHaveFocus();
+  });
+});
+
 describe('RevenuePage — rebuild', () => {
   beforeEach(() => vi.useFakeTimers());
 

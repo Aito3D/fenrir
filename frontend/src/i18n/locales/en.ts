@@ -12220,7 +12220,7 @@ export default {
       historyHint: 'The daily sales report is being pulled from Zoho. Figures appear as the current months land.',
     },
     sync: {
-      upToDate: 'Cache up to date · {{days}} days',
+      upToDate: 'Cache up to date · days cached: {{days}}',
       lastSync: 'last sync {{time}}',
       lastSyncAt: 'Last sync {{time}}',
       legacy: 'split by customer: {{done}} / {{total}} days',

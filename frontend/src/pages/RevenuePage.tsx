@@ -4,7 +4,7 @@ import { bearerAuthHeaders } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Empty } from '../components/aito/stats/primitives';
-import { RevenueSegmented } from '../components/revenue/RevenueSegmented';
+import { RevenueSegmented, segmentPanelId, segmentTabId } from '../components/revenue/RevenueSegmented';
 import { RevenueSyncBanner } from '../components/revenue/RevenueSyncBanner';
 import { focusRingCls } from '../components/formStyles';
 import type { StackDimension } from '../components/revenue/lib/chart';
@@ -106,7 +106,13 @@ export function RevenuePage() {
     if (patch.taxMode) persist(REVENUE_STORAGE_KEYS.taxMode, patch.taxMode);
     if (patch.view) persist(REVENUE_STORAGE_KEYS.view, patch.view === 'evolution' ? null : patch.view);
   };
-  const view: RevenueView = controls.view === 'clients' && !can.customers ? 'evolution' : controls.view;
+  // What the page may use: a view or segment stored by a user with more rights (shared terminal) falls back.
+  const active: RevenueControls = {
+    ...controls,
+    view: controls.view === 'clients' && !can.customers ? 'evolution' : controls.view,
+    segment: can.customers ? controls.segment : null,
+  };
+  const { view } = active;
 
   const [loader] = useState(() => createSeriesLoader(bearerAuthHeaders));
   const [data, setData] = useState<RevenueResponse | null>(null);
@@ -118,12 +124,12 @@ export function RevenuePage() {
   const syncActive = useRef(false);
 
   const url = seriesQuery({
-    granularity: controls.granularity,
-    range: controls.range,
-    basketIds: controls.basket.map((b) => b.itemId),
-    brands: controls.brands,
-    kind: controls.kind,
-    segment: controls.segment,
+    granularity: active.granularity,
+    range: active.range,
+    basketIds: active.basket.map((b) => b.itemId),
+    brands: active.brands,
+    kind: active.kind,
+    segment: active.segment,
   });
 
   // Load, then poll: 4 s while the back-fill runs, 60 s idle, nothing while the tab is hidden.
@@ -211,7 +217,7 @@ export function RevenuePage() {
       <div className="space-y-4 border-t border-bambu-dark-tertiary pt-5">
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
           <div data-slot="revenue-controls" />
-          <RevenueSegmented tabs label={t('revenue.views.label')} value={view} onChange={(v) => setControls({ view: v })} options={views} />
+          <RevenueSegmented tabs idPrefix="revenue-view" label={t('revenue.views.label')} value={view} onChange={(v) => setControls({ view: v })} options={views} />
         </div>
       </div>
 
@@ -230,7 +236,11 @@ export function RevenuePage() {
           {!loading && <span className="mt-1 block text-xs">{itemsPending ? t('revenue.state.itemsPendingHint') : t('revenue.state.historyHint')}</span>}
         </Empty>
       ) : (
-        <section role="tabpanel" aria-label={views.find((v) => v.id === view)?.label} data-slot={`revenue-view-${view}`} className="grid gap-3" />
+        <section
+          role="tabpanel"
+          id={segmentPanelId('revenue-view', view)}
+          aria-labelledby={segmentTabId('revenue-view', view)}
+          data-slot={`revenue-view-${view}`} className="grid gap-3" />
       )}
     </div>
   );

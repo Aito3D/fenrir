@@ -26,7 +26,7 @@ function renderBanner(s: RevenueSyncStatus, o: { canSync?: boolean; busy?: boole
 describe('RevenueSyncBanner', () => {
   it('idle: says the cache is up to date with the day count and last sync', () => {
     renderBanner(sync());
-    expect(screen.getByText(/Cache up to date · 300 days · last sync \d\d:\d\d/)).toBeInTheDocument();
+    expect(screen.getByText(/Cache up to date · days cached: 300 · last sync \d\d:\d\d/)).toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).toBeNull();
   });
 
