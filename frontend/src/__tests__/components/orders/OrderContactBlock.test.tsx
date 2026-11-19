@@ -11,28 +11,29 @@ import { OrderContactBlock } from '../../../components/orders/OrderContactBlock'
 const contact = (o: Partial<OrderContact> = {}): OrderContact => ({ name: 'Kelly SACAULT', email: 'k@x.pf', phone: '', mobile: '', ...o });
 
 let bodies: unknown[] = [];
-let creditCalls = 0;
+let ratingCalls = 0;
 let contactStatus = 200;
+let contactDetail: unknown = 'boom';
 let release: (() => void) | null = null;
 afterEach(() => {
   server.resetHandlers();
   bodies = [];
-  creditCalls = 0;
+  ratingCalls = 0;
   contactStatus = 200;
+  contactDetail = 'boom';
   release = null;
 });
 
 function useHandlers(hold = false) {
   server.use(
-    http.get('/api/v1/order-board/orders/so1/client-rating', () => HttpResponse.json(null)),
-    http.get('/api/v1/order-board/orders/so1/customer-credit', () => {
-      creditCalls += 1;
-      return HttpResponse.json({ credit: 0 });
+    http.get('/api/v1/order-board/orders/so1/client-rating', () => {
+      ratingCalls += 1;
+      return HttpResponse.json(null);
     }),
     http.put('/api/v1/order-board/orders/so1/contact', async ({ request }) => {
       bodies.push(await request.json());
       if (hold) await new Promise<void>(r => { release = r; });
-      if (contactStatus !== 200) return HttpResponse.json({ detail: 'boom' }, { status: contactStatus });
+      if (contactStatus !== 200) return HttpResponse.json({ detail: contactDetail }, { status: contactStatus });
       return HttpResponse.json({ board: { rows: [] } });
     }),
   );
@@ -67,18 +68,25 @@ describe('OrderContactBlock editor', () => {
   it('closes the editor and refreshes the customer queries on success', async () => {
     useHandlers();
     const user = await openEditor(contact({ mobile: '111' }));
-    await waitFor(() => expect(creditCalls).toBe(1));
+    await waitFor(() => expect(ratingCalls).toBe(1));
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(screen.queryByLabelText('Phone')).not.toBeInTheDocument());
-    await waitFor(() => expect(creditCalls).toBe(2));
+    await waitFor(() => expect(ratingCalls).toBe(2));
   });
 
-  it('shows the failure toast and keeps the form open on a server error', async () => {
-    contactStatus = 500;
+  it.each([
+    ['a plain server error shows its message', 500, 'boom', 'boom'],
+    ['a refusal shows the stale-order reason', 409, 'order_invoiced', 'The order changed, check the quantities.'],
+    ['a coded refusal shows its reason', 400, 'bad_quantity', 'a quantity is not valid'],
+    ['Zoho busy shows the busy notice', 503, 'x', 'Zoho is busy, try again in a moment.'],
+    ['an empty message falls back to the generic failure', 500, { code: 'x', message: '' }, 'Could not update the client. Please try again.'],
+  ])('%s and keeps the form open', async (_n, status, detail, toast) => {
+    contactStatus = status;
+    contactDetail = detail;
     useHandlers();
     const user = await openEditor(contact({ mobile: '111' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText('Could not update the client. Please try again.')).toBeInTheDocument();
+    expect(await screen.findByText(toast)).toBeInTheDocument();
     expect(screen.getByLabelText('Phone')).toBeInTheDocument();
   });
 

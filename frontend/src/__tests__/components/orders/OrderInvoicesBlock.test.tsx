@@ -229,7 +229,7 @@ describe('OrderInvoicesBlock', () => {
     const credited = (invoices: OrderInvoice[], retainer = 60000, advance = 0, o: Partial<OrderBoardRow> = {}) =>
       row(invoices, { ...o, payment: { ...pay(invoices), retainer, advance } });
     const spendUrl = '/api/v1/order-board/orders/so1/invoices/inv1/apply-credit';
-    const spendBtn = () => screen.queryAllByRole('button', { name: /^Apply the customer.s credit/ });
+    const spendBtn = () => screen.queryAllByRole('button', { name: 'Apply deposit' });
 
     it('shows the button only to an updater, with credit, a balance and a non-draft invoice', () => {
       const { unmount } = render(<OrderInvoicesBlock row={credited([inv()])} />);
@@ -254,9 +254,8 @@ describe('OrderInvoicesBlock', () => {
     it('offers min(credit, balance), the credit being the deposits plus the advance', () => {
       render(<OrderInvoicesBlock canEmail row={credited([inv({ balance: 30000 }), inv({ id: 'inv2', number: 'FAC-2', balance: 250000 })], 40000, 20000)} />);
       const [small, big] = spendBtn();
-      expect(small).toHaveAccessibleName(/\(30.000/); // balance below the 60 000 credit
-      expect(big).toHaveAccessibleName(/\(60.000/); // credit below the balance
-      expect(big).toHaveAttribute('title', big.getAttribute('aria-label'));
+      expect(small).toHaveAttribute('title', expect.stringMatching(/\(30.000/)); // balance below the 60 000 credit
+      expect(big).toHaveAttribute('title', expect.stringMatching(/\(60.000/)); // credit below the balance
     });
 
     it('posts the apply once, blocks a second click while pending and toasts the applied amount', async () => {
