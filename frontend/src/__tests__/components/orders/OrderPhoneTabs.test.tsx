@@ -109,6 +109,19 @@ describe('the order panel by phone tab', () => {
     await waitFor(() => expect(events).toHaveBeenCalled());
   });
 
+  it('the ?sms=1 draft opens visibly even off the client tab', async () => {
+    mockUseAuth.isAdmin = true;
+    vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue({ message: 'Bonjour', kind: 'filaments', partial: false, due: 0 });
+    window.history.pushState({}, '', '/?order=so1&sms=1');
+    try {
+      render(<OrderLinesPanel row={panelRow({ contact: { name: 'Teva', email: '', phone: '', mobile: '87 22 45 67' } })} phoneTab="lines" />);
+      expect(await screen.findByRole('dialog')).toBeVisible();
+    } finally {
+      mockUseAuth.isAdmin = false;
+      window.history.pushState({}, '', '/');
+    }
+  });
+
   it('onBarOpen follows the bar and closes on unmount', async () => {
     const user = userEvent.setup();
     server.use(http.get(`${BASE}/picklist`, () => HttpResponse.json({ lines: [{ line_id: 'l1', quantity: 5 }] })));

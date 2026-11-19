@@ -56,7 +56,6 @@ export function OrderSidePanel({
   const invoiceSent = useRef(false);
   // Built once so the desktop tab and the phone tabs render the very same blocks.
   const contactBlock = (
-    <>
       <OrderContactBlock
         contact={row.contact}
         orderId={row.id}
@@ -66,9 +65,9 @@ export function OrderSidePanel({
         onGoto={onGoto}
         sms={smsAllowed ? { contacted: row.contacted ?? null, onOpen: setSmsPhone } : undefined}
       />
-      {smsPhone && <OrderSmsModal row={row} phone={smsPhone} onClose={() => setSmsPhone(null)} />}
-    </>
   );
+  // Fixed over the screen, so on the phone it sits outside the hidden tab wrapper.
+  const smsModal = smsPhone && <OrderSmsModal row={row} phone={smsPhone} onClose={() => setSmsPhone(null)} />;
   const invoicesBlock = (
     <OrderInvoicesBlock
       row={row}
@@ -94,6 +93,7 @@ export function OrderSidePanel({
       <div className="min-w-0">
         <div hidden={phoneTab !== 'billing'}>{invoicesBlock}</div>
         <div hidden={phoneTab !== 'client'}>{contactBlock}</div>
+        {smsModal}
         {phoneTab === 'activity' && <OrderActivity soId={row.id} currency={row.currency} />}
       </div>
     );
@@ -115,6 +115,7 @@ export function OrderSidePanel({
         {sideTab === 'details' ? (
           <div className="space-y-3">
             {contactBlock}
+            {smsModal}
             {invoicesBlock}
           </div>
         ) : (
