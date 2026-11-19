@@ -6,9 +6,9 @@ Reads take a connection from `snapshot()` (one point in time); writes take the c
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import and_, delete, func, select
+from sqlalchemy import CursorResult, and_, delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from backend.app.core import database
@@ -114,7 +114,7 @@ async def write_day(
         for ln in lines
     ]
     for i in range(0, len(rows), LINE_CHUNK_SIZE):
-        await db.execute(RevenueDayLine.__table__.insert(), rows[i : i + LINE_CHUNK_SIZE])
+        await db.execute(insert(RevenueDayLine), rows[i : i + LINE_CHUNK_SIZE])
     await db.commit()
 
 
@@ -183,7 +183,7 @@ async def clear_decision(db: AsyncSession, item_id: str) -> bool:
 async def _delete_one(db: AsyncSession, stmt: Any) -> bool:
     result = await db.execute(stmt)
     await db.commit()
-    return result.rowcount > 0
+    return cast(CursorResult, result).rowcount > 0
 
 
 async def read_customer_facts(conn: AsyncConnection) -> dict[str, RevenueCustomerFacts]:
@@ -294,7 +294,7 @@ async def replace_items(db: AsyncSession, items: list[dict], now: datetime) -> N
     if items:
         blank = {c.name: None for c in RevenueItem.__table__.columns}
         await db.execute(
-            RevenueItem.__table__.insert(), [{**blank, "name": "", "sku": "", **i, "fetched_at": stamp} for i in items]
+            insert(RevenueItem), [{**blank, "name": "", "sku": "", **i, "fetched_at": stamp} for i in items]
         )
     setting = (await db.execute(select(Settings).where(Settings.key == ITEMS_SYNCED_KEY))).scalar_one_or_none()
     if setting is None:

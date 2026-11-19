@@ -5,7 +5,7 @@ import logging
 import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel
@@ -107,7 +107,7 @@ async def get_revenue(
     flags = memo.caller_flags(user)
     filters = _filters(flags, items, brand, kind, segment)
     base = (
-        series.range_preset(preset, today, REVENUE_HISTORY_START)
+        series.range_preset(cast(series.RangePresetId, preset), today, REVENUE_HISTORY_START)
         if preset in series.RANGE_PRESETS
         else series.default_range(granularity, today, REVENUE_HISTORY_START)
     )
