@@ -98,8 +98,32 @@ describe('RevenueTable', () => {
     const cells = within(bodyRows()[0]).getAllByRole('cell');
     expect(within(cells[1]).getByText('−50.000 FCP')).toBeInTheDocument();
     expect(cells[3]).toHaveTextContent(/^—$/);
-    expect(within(cells[3]).getByText('—')).toHaveClass('text-bambu-gray');
+    // Flat is a badge; a missing comparison is the empty marker (the year-ago cell here).
+    expect(cells[3].querySelector('[data-missing]')).toBeNull();
+    expect(cells[4].querySelector('[data-missing]')).not.toBeNull();
     expect(cells[5]).toHaveTextContent(/^—$/);
+  });
+
+  it('scrolls sideways in a keyboard-focusable region', () => {
+    render(renderTable());
+    const region = screen.getByRole('region', { name: 'Detail by period' });
+    expect(region).toHaveAttribute('tabindex', '0');
+    expect(region).toHaveClass('overflow-x-auto');
+    expect(within(region).getByRole('table', { name: 'Detail by period' })).toBeInTheDocument();
+  });
+
+  it('marks the cost coverage of a period whose cost is only partly known', () => {
+    const partial = bucket({ key: '2026-08', label: 'août 2026', start: '2026-08-01', end: '2026-08-31', ht: 400_000, cost: 150_000, costedHt: 300_000 });
+    const nearly = bucket({ key: '2026-07', label: 'juil. 2026', start: '2026-07-01', end: '2026-07-31', ht: 400_000, cost: 100_000, costedHt: 399_999 });
+    const { unmount } = render(renderTable({ buckets: [nearly, partial, sept] }));
+    const [septRow, augRow, julRow] = bodyRows();
+    const marker = within(augRow).getByText('cost known: 75 %');
+    expect(marker.closest('[role="cell"]')).toHaveAttribute('title', 'cost known on 75 % of revenue HT');
+    expect(within(septRow).queryByText(/cost known/)).toBeNull();
+    expect(within(julRow).queryByText(/cost known/)).toBeNull();
+    unmount();
+    render(renderTable({ buckets: [partial], canMargin: false }));
+    expect(screen.queryByText(/cost known/)).toBeNull();
   });
 
   it('shows the margin amount with its rate and explains the column', () => {

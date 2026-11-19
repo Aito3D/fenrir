@@ -12334,6 +12334,8 @@ export default {
       yoy: '同比',
       cumulative: '累计',
       marginHint: '毛利 HT，按当前成本计算（经销商价格，否则为采购价）',
+      coverage: '已知成本覆盖营业额 HT 的 {{pct}}',
+      coverageShort: '已知成本：{{pct}}',
       toDate: '截至今日',
       empty: '此期间没有 Aito3D 销售。',
     },

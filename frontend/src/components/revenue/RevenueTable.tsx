@@ -20,7 +20,7 @@ function Evo({ v, elapsedDays }: { v: number | null; elapsedDays: number | null 
   const { t } = useTranslation();
   return (
     <span role="cell" className={CELL}>
-      {v == null ? <span className="text-bambu-gray">—</span> : <DeltaBadge delta={asDelta(v)} />}
+      {v == null ? <span data-missing className="text-bambu-gray">—</span> : <DeltaBadge delta={asDelta(v)} />}
       {v != null && elapsedDays !== null && <span className="ml-1 block text-[10px] text-bambu-gray">{t('revenue.table.toDate')}</span>}
     </span>
   );
@@ -77,30 +77,33 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
   const cols = `minmax(0,1.5fr) repeat(${margin ? 7 : 6},minmax(0,1fr))`;
   const rows = [...buckets].reverse();
   const heads = [
-    granularity === 'day' ? t('revenue.controls.day') : t('revenue.table.period'),
-    t('revenue.table.ht'),
-    t('revenue.table.ttc'),
-    t('revenue.table.change'),
-    t('revenue.table.yoy'),
-    ...(margin ? [t('revenue.table.margin')] : []),
-    t('revenue.table.cumulative'),
-    t('revenue.table.units'),
+    { id: 'period', label: granularity === 'day' ? t('revenue.controls.day') : t('revenue.table.period') },
+    { id: 'ht', label: t('revenue.table.ht') },
+    { id: 'ttc', label: t('revenue.table.ttc') },
+    { id: 'change', label: t('revenue.table.change') },
+    { id: 'yoy', label: t('revenue.table.yoy') },
+    ...(margin ? [{ id: 'margin', label: t('revenue.table.margin') }] : []),
+    { id: 'cumulative', label: t('revenue.table.cumulative') },
+    { id: 'units', label: t('revenue.table.units') },
   ];
 
   return (
     <Panel title={t('revenue.table.title')}>
       <span id={hintId} hidden>{t('revenue.table.marginHint')}</span>
       {/* Eight figures do not fit a phone or the narrow split column: the rows scroll sideways, never wrap. */}
-      <div className="overflow-x-auto">
+      <div role="region" tabIndex={0} aria-label={t('revenue.table.title')} className={`overflow-x-auto rounded-lg ${focusRingCls}`}>
       <div role="table" aria-label={t('revenue.table.title')} className="grid min-w-[60rem] gap-1.5 text-[13px]">
         <div role="row" className={`${ROW} text-[11px] text-bambu-gray`} style={{ gridTemplateColumns: cols }}>
           {heads.map((h, i) => (
-            <span key={h} role="columnheader" className={i === 0 ? '' : 'text-right'}
-              {...(margin && h === t('revenue.table.margin') ? { title: t('revenue.table.marginHint'), 'aria-describedby': hintId } : {})}>{h}</span>
+            <span key={h.id} role="columnheader" className={i === 0 ? '' : 'text-right'}
+              {...(h.id === 'margin' ? { title: t('revenue.table.marginHint'), 'aria-describedby': hintId } : {})}>{h.label}</span>
           ))}
         </div>
         {rows.map((b) => {
           const expanded = open.has(b.key);
+          // The margin is computed on the costed sales only; say how much of the HT that covers when it is not all of it.
+          const coverage = b.costedHt != null && b.costedHt > 0 && b.ht > 0 ? Math.round((b.costedHt / b.ht) * 100) : null;
+          const coveragePct = coverage != null && coverage < 100 ? `${coverage} %` : null;
           return (
             <Fragment key={b.key}>
               <div role="row" className={`${ROW} rounded-lg bg-bambu-dark py-2`} style={{ gridTemplateColumns: cols }}>
@@ -122,10 +125,11 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
                 <Evo v={evolutionFor(b, taxMode)} elapsedDays={b.elapsedDays} />
                 <Evo v={yearOverYear(b, taxMode)} elapsedDays={b.elapsedDays} />
                 {margin && (
-                  <span role="cell" className={`${CELL} text-bambu-gray-light`}>
+                  <span role="cell" className={`${CELL} text-bambu-gray-light`} title={coveragePct ? t('revenue.table.coverage', { pct: coveragePct }) : undefined}>
                     {b.costedHt != null && b.costedHt > 0 ? (
                       <>
                         {formatFcp(b.costedHt - (b.cost ?? 0))} <span className="text-xs text-bambu-gray">{rate(b.costedHt - (b.cost ?? 0), b.costedHt)}</span>
+                        {coveragePct && <span className="block text-[10px] text-bambu-gray">{t('revenue.table.coverageShort', { pct: coveragePct })}</span>}
                       </>
                     ) : (
                       '—'

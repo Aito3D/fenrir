@@ -12278,6 +12278,8 @@ export default {
       yoy: 'Bir yılda',
       cumulative: 'Kümülatif',
       marginHint: 'Brüt marj HT, güncel maliyetle (bayi fiyatı, yoksa alış fiyatı)',
+      coverage: 'maliyet, HT cironun {{pct}} kadarı için biliniyor',
+      coverageShort: 'bilinen maliyet: {{pct}}',
       toDate: 'bugüne kadar',
       empty: 'Bu dönemde Aito3D satışı yok.',
     },

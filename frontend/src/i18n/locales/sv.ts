@@ -12408,6 +12408,8 @@ errors: {
       yoy: 'På ett år',
       cumulative: 'Ackumulerat',
       marginHint: 'Bruttomarginal HT, till aktuell kostnad (återförsäljarpris, annars inköpspris)',
+      coverage: 'kostnad känd för {{pct}} av omsättningen HT',
+      coverageShort: 'kostnad känd: {{pct}}',
       toDate: 'hittills',
       empty: 'Ingen Aito3D-försäljning under perioden.',
     },

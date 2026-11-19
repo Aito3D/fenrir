@@ -12336,6 +12336,8 @@ export default {
       yoy: 'Su un anno',
       cumulative: 'Cumulato',
       marginHint: 'Margine lordo HT, al costo attuale (prezzo rivenditore, altrimenti prezzo di acquisto)',
+      coverage: 'costo noto sul {{pct}} del fatturato HT',
+      coverageShort: 'costo noto: {{pct}}',
       toDate: 'a oggi',
       empty: 'Nessuna vendita Aito3D in questo periodo.',
     },

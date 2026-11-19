@@ -12375,6 +12375,8 @@ export default {
       yoy: 'Over een jaar',
       cumulative: 'Cumulatief',
       marginHint: 'Brutomarge HT, tegen huidige kostprijs (dealerprijs, anders inkoopprijs)',
+      coverage: 'kostprijs bekend voor {{pct}} van de omzet HT',
+      coverageShort: 'kostprijs bekend: {{pct}}',
       toDate: 'tot nu toe',
       empty: 'Geen Aito3D-verkopen in deze periode.',
     },

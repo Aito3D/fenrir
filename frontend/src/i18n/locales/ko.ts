@@ -11972,6 +11972,8 @@ export default {
       yoy: '전년 대비',
       cumulative: '누계',
       marginHint: '매출총이익 HT, 현재 원가 기준 (딜러 가격, 없으면 매입가)',
+      coverage: '매출 HT의 {{pct}}에 대해 원가 확인됨',
+      coverageShort: '원가 확인: {{pct}}',
       toDate: '현재까지',
       empty: '이 기간에 Aito3D 판매가 없습니다.',
     },

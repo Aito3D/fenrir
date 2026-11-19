@@ -12350,6 +12350,8 @@ export default {
       yoy: '前年比',
       cumulative: '累計',
       marginHint: '粗利 HT（現在の原価：ディーラー価格、なければ仕入価格）',
+      coverage: '売上 HT の {{pct}} について原価が判明',
+      coverageShort: '原価判明: {{pct}}',
       toDate: '現時点まで',
       empty: 'この期間の Aito3D の販売はありません。',
     },

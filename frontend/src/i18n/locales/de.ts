@@ -12351,6 +12351,8 @@ export default {
       yoy: 'Über ein Jahr',
       cumulative: 'Kumuliert',
       marginHint: 'Bruttomarge HT, zu aktuellen Kosten (Händlerpreis, sonst Einkaufspreis)',
+      coverage: 'Kosten bekannt für {{pct}} des Umsatzes HT',
+      coverageShort: 'Kosten bekannt: {{pct}}',
       toDate: 'bis heute',
       empty: 'Keine Aito3D-Verkäufe in diesem Zeitraum.',
     },

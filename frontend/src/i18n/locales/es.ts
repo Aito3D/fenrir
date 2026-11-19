@@ -12359,6 +12359,8 @@ export default {
       yoy: 'En un año',
       cumulative: 'Acumulado',
       marginHint: 'Margen bruto HT, al coste actual (precio de distribuidor, si no precio de compra)',
+      coverage: 'coste conocido en el {{pct}} de las ventas HT',
+      coverageShort: 'coste conocido: {{pct}}',
       toDate: 'hasta la fecha',
       empty: 'Sin ventas de Aito3D en este período.',
     },

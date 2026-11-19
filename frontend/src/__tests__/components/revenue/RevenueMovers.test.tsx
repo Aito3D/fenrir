@@ -120,13 +120,17 @@ describe('RevenueMovers', () => {
     await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('cfrom='))).toBe(true));
     await new Promise((r) => setTimeout(r, 20));
     fireEvent.click(screen.getByRole('button', { name: '← Period movements' }));
+    // The comparison payload is still on screen while the period reloads: compare stays unavailable.
+    expect(screen.getByRole('button', { name: '⇄ Compare two periods' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: '⇄ Compare two periods' }));
-    const a = screen.queryByLabelText('Period A, start');
-    if (a) expect(a).toHaveValue('2026-11-01');
+    expect(screen.queryByLabelText('Period A, start')).toBeNull();
     await waitFor(() => expect(releaseDefault).not.toBeNull());
     releaseDefault!();
-    await waitFor(() => expect(screen.getByRole('button', { name: /Compare two periods/ })).toBeEnabled());
-    if (!screen.queryByLabelText('Period A, start')) fireEvent.click(screen.getByRole('button', { name: '⇄ Compare two periods' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '⇄ Compare two periods' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: '⇄ Compare two periods' }));
     expect(screen.getByLabelText('Period A, start')).toHaveValue('2026-11-01');
+    expect(screen.getByLabelText('Period A, end')).toHaveValue('2026-11-19');
+    expect(screen.getByLabelText('Period B, start')).toHaveValue('2026-10-01');
+    expect(screen.getByLabelText('Period B, end')).toHaveValue('2026-10-19');
   });
 });

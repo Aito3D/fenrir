@@ -12407,6 +12407,8 @@ export default {
       yoy: 'Over a year',
       cumulative: 'Running total',
       marginHint: 'Gross margin HT, at current cost (dealer price, else purchase price)',
+      coverage: 'cost known on {{pct}} of revenue HT',
+      coverageShort: 'cost known: {{pct}}',
       toDate: 'to date',
       empty: 'No Aito3D sales in this period.',
     },

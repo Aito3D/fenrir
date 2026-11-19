@@ -12334,6 +12334,8 @@ export default {
       yoy: '年增率',
       cumulative: '累計',
       marginHint: '毛利 HT，按目前成本計算（經銷商價格，否則為採購價）',
+      coverage: '已知成本涵蓋營業額 HT 的 {{pct}}',
+      coverageShort: '已知成本：{{pct}}',
       toDate: '截至今日',
       empty: '此期間沒有 Aito3D 銷售。',
     },

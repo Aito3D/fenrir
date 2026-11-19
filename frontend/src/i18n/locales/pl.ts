@@ -12556,6 +12556,8 @@ export default {
       yoy: 'W skali roku',
       cumulative: 'Narastająco',
       marginHint: 'Marża brutto HT, po bieżącym koszcie (cena dealerska, w przeciwnym razie cena zakupu)',
+      coverage: 'koszt znany dla {{pct}} przychodu HT',
+      coverageShort: 'koszt znany: {{pct}}',
       toDate: 'do dziś',
       empty: 'Brak sprzedaży Aito3D w tym okresie.',
     },
