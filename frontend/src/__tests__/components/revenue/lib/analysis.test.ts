@@ -10,20 +10,20 @@ describe("shiftBucketKey / shiftWindow", () => {
     expect(shiftBucketKey("2026", "year", -2)).toBe("2024");
   });
 
-  it("moves a window by whole buckets and clamps to the history and today", () => {
+  it("moves the window by whole buckets, clamped to the history and today", () => {
     expect(shiftWindow("2025-12-01", "2026-11-17", "month", -1, "2024-01-01", "2026-11-17")).toEqual({ from: "2025-11-01", to: "2026-10-31" });
     expect(shiftWindow("2025-11-01", "2026-10-31", "month", 1, "2024-01-01", "2026-11-17")).toEqual({ from: "2025-12-01", to: "2026-11-17" });
     expect(shiftWindow("2024-01-01", "2026-10-31", "month", -1, "2024-01-01", "2026-11-17")).toEqual({ from: "2024-01-01", to: "2026-09-30" });
   });
 
-  it("returns null when the move leaves the history or passes today", () => {
+  it("refuses to step past today or before the history", () => {
     expect(shiftWindow("2026-11-01", "2026-11-17", "month", 1, "2024-01-01", "2026-11-17")).toBeNull();
     expect(shiftWindow("2024-01-01", "2024-01-31", "month", -1, "2024-01-01", "2026-11-17")).toBeNull();
   });
 });
 
 describe("drillDown", () => {
-  it("goes one level finer, and nowhere from a day", () => {
+  it("goes one level finer over the column's own range, and stops at a day", () => {
     expect(drillDown({ start: "2026-01-01", end: "2026-12-31" }, "year")).toEqual({ granularity: "month", from: "2026-01-01", to: "2026-12-31" });
     expect(drillDown({ start: "2026-10-01", end: "2026-10-31" }, "month")).toEqual({ granularity: "day", from: "2026-10-01", to: "2026-10-31" });
     expect(drillDown({ start: "2026-10-12", end: "2026-10-18" }, "week")?.granularity).toBe("day");
