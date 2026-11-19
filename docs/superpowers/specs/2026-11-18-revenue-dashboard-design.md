@@ -206,3 +206,23 @@ Persistence: `localStorage` with loki's keys (`revenue-granularity`, `revenue-ta
 3. TTC uses the item's **current** tax rate, not the invoice's (loki accepted limitation; kept).
 4. Back-fill time: ~1 050 day calls at ≤ 30/min ≈ 35 min, vs ~17 min in loki.
 5. Fenrir's `zoho_service` has no global 700 ms gate; the revenue lane paces itself (above).
+
+## Approved look (mockup of 2026-11-19)
+
+The user reviewed a browser mockup and approved it: `docs/superpowers/specs/2026-11-18-revenue-dashboard-mockup/revenue.html`
+(static; to view it, serve the folder with the built `static/assets/index-*.css` copied beside it as `fenrir.css`).
+Numbers, brands, natures and client names in it are fake. It is the visual reference for every UI task; where it and
+the « Design mapping » paragraph above differ, the mockup wins. Behaviour still comes from loki.
+
+- The page copies the Aito statistics view (`components/aito/stats/`): every block is a `Panel` (uppercase grey
+  eyebrow title, legend at top right with round dots), every figure a `Tile` on the darker ground with a `DeltaBadge`.
+- Segmented controls and the view switch use the `ScreenTabs` look (grey track, selected = raised grey), never green
+  pills. Inside a panel the track is one step darker.
+- Lists are rows on the darker ground, not ruled tables: `Facts` rows for movers and dormant products, `HBars` rows
+  for best customers, ABC, margin and weekday average, grid rows for the period detail.
+- Header: title + sync line on the left, HT/TTC and ⋯ on the right; below a rule, the period controls and granularity
+  on the left and the view tabs on the right; filters on a second row.
+- Évolution opens with a `Finding` sentence (lead clause white, rest muted) above the hero. This is an addition to
+  loki; it is built from the same figures as the hero (share of target, change vs previous period) and omitted when
+  neither is available.
+- Reuse the stats primitives by import; move them only if a lint rule forces it.

@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+<meta charset="utf-8">
+<title>Chiffre d'affaires — maquette v2</title>
+<!-- Fenrir's own built stylesheet: same tokens, same utility classes, same 14.4px root. -->
+<link rel="stylesheet" href="/files/fenrir.css">
+<style>
+/* Only what the build cannot give a static page: segmented state, grids, SVG text. */
+body{margin:0;background:var(--bg-primary);color:var(--text-primary)}
+.tabs{display:inline-flex;gap:2px;border-radius:10px;padding:3px;background:color-mix(in srgb,var(--bg-secondary) 60%,transparent)}
+.tabs button{all:unset;cursor:pointer;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:500;color:var(--text-secondary);white-space:nowrap;transition:color .15s}
+.tabs button:hover{color:#fff}
+.tabs button.on{background:var(--bg-secondary);color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.tabs.in{background:var(--bg-primary)}                 /* inside a panel: one step darker */
+.tabs.in button{padding:4px 10px;font-size:12px}
+.tabs.in button.on{background:var(--bg-tertiary)}
+.pick{all:unset;cursor:pointer;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-secondary);padding:6px 12px;font-size:13px;color:var(--text-secondary)}
+.view{display:none}.view.on{display:grid;gap:12px}
+.split{display:grid;gap:12px;align-items:start;grid-template-columns:minmax(0,2fr) minmax(300px,1fr)}
+.tiles{display:grid;gap:8px;grid-template-columns:repeat(5,minmax(0,1fr))}
+.t4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:1100px){.split{grid-template-columns:1fr}.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}aside{display:none!important}main{margin-left:0!important}}
+svg{display:block;width:100%;height:auto}
+svg text{fill:#808080;font-size:11px}
+.cal{display:grid;grid-template-rows:repeat(7,1fr);grid-auto-flow:column;gap:3px}
+.cal i{aspect-ratio:1;border-radius:3px;background:var(--bg-primary)}
+.rowg{display:grid;align-items:baseline;gap:12px}
+</style>
+</head>
+<body>
+<aside class="bg-bambu-dark-secondary border-r border-bambu-dark-tertiary flex flex-col fixed inset-y-0 left-0 w-64">
+  <div class="border-b border-bambu-dark-tertiary flex items-center justify-center p-4"><b class="text-white" style="font-size:20px;letter-spacing:.04em">AITO<span style="color:#04A1E4">3D</span></b></div>
+  <nav class="flex-1 p-2"><ul class="space-y-2" id="nav"></ul></nav>
+</aside>
+
+<main class="bg-bambu-dark" style="margin-left:16rem;min-height:100vh">
+<div class="p-6 space-y-4" style="max-width:1500px">
+
+  <p class="rounded-lg px-3 py-2 text-xs text-amber-400" style="background:rgba(245,158,11,.1)">Maquette v2, habillée avec la feuille de style de Fenrir. Données, marques, natures et clients fictifs. Cliquables : onglets, granularité, « Empiler par ».</p>
+
+  <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Chiffre d'affaires</h1>
+      <p class="text-[12.5px] text-bambu-gray"><span class="inline-block h-2 w-2 rounded-full bg-bambu-green"></span> Zoho à jour · il y a 40 s</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <div class="tabs" data-seg><button class="on">HT</button><button>TTC</button></div>
+      <button class="pick" title="Copier le résumé · Exporter en CSV · Objectifs mensuels · Articles à classer · Reconstruire">⋯</button>
+    </div>
+  </div>
+
+  <div class="space-y-4 border-t border-bambu-dark-tertiary pt-5">
+    <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+      <div class="flex flex-wrap items-center gap-3">
+        <button class="pick" title="Période précédente (←)">‹</button>
+        <button class="pick">12 derniers mois ▾</button>
+        <button class="pick" title="Période suivante (→)">›</button>
+        <div class="tabs" id="gran"><button data-g="day">Jour</button><button data-g="week">Semaine</button><button class="on" data-g="month">Mois</button><button data-g="year">Année</button></div>
+        <span class="text-[12.5px] text-bambu-gray">déc. 2025 – nov. 2026</span>
+      </div>
+      <div class="tabs" id="views" role="tablist"><button class="on" data-v="evolution">Évolution</button><button data-v="clients">Clients</button><button data-v="produits">Produits</button><button data-v="saison">Saisonnalité</button></div>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <div class="tabs" data-seg><button class="on">Tout</button><button>Biens</button><button>Services</button></div>
+      <button class="pick">Tous clients ▾</button>
+      <button class="pick">Marques ▾</button>
+      <span class="pick flex-1" style="min-width:220px;cursor:text;color:var(--text-muted)">Rechercher un produit, un SKU…</span>
+      <span class="rounded-full bg-bambu-dark-tertiary px-3 py-1 text-xs text-bambu-gray-light">Marque : Marque A ✕</span>
+    </div>
+  </div>
+
+  <!-- ÉVOLUTION -->
+  <div class="view on" id="v-evolution">
+    <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+      <h3 class="text-[22px] font-semibold leading-[1.25] tracking-[-0.02em] text-white" style="max-width:46ch">Novembre est à 62 % de l'objectif,<span class="font-medium text-bambu-gray-light"> en avance de 8 % sur octobre au même jour.</span></h3>
+    </section>
+
+    <div class="split">
+      <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+        <div class="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <p class="text-xs uppercase tracking-wide text-bambu-gray">Novembre 2026 · en cours, jour 19 sur 30</p>
+          <span class="text-[11.5px] text-bambu-gray-light">Projection ≈ 4 270 000 · Objectif 4 400 000</span>
+        </div>
+        <div class="flex items-center gap-4 rounded-lg bg-bambu-dark px-4 py-3">
+          <svg viewBox="0 0 120 120" style="width:92px;flex:none" role="img" aria-label="62 % de l'objectif atteint, projection 97 %">
+            <circle cx="60" cy="60" r="50" fill="none" stroke="#2d2d2d" stroke-width="11"/>
+            <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(0,174,66,.35)" stroke-width="11" stroke-dasharray="304.7 314.2" transform="rotate(-90 60 60)" stroke-linecap="round"/>
+            <circle cx="60" cy="60" r="50" fill="none" stroke="#00ae42" stroke-width="11" stroke-dasharray="194.8 314.2" transform="rotate(-90 60 60)" stroke-linecap="round"/>
+            <text x="60" y="66" text-anchor="middle" style="fill:#fff;font-size:24px;font-weight:600">62 %</text>
+          </svg>
+          <div class="min-w-0 flex-1">
+            <p class="font-semibold text-white tabular-nums" style="font-size:36px;line-height:1.1;letter-spacing:-.02em">2 728 400 <span class="text-sm font-normal text-bambu-gray">FCP HT</span></p>
+            <p class="mt-0.5 text-xs tabular-nums"><span class="font-medium text-status-ok">▲ 8 %</span> <span class="text-bambu-gray">vs oct. au même jour</span> &nbsp; <span class="font-medium text-status-error">▼ 3 %</span> <span class="text-bambu-gray">vs nov. 2025</span></p>
+          </div>
+          <svg id="spark" viewBox="0 0 160 44" style="width:160px;flex:none"></svg>
+        </div>
+        <div class="tiles mt-2" id="heroTiles"></div>
+      </section>
+
+      <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+        <div class="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <p class="text-xs uppercase tracking-wide text-bambu-gray">Rythme · nov. 2026</p>
+          <ul class="flex flex-wrap justify-end gap-x-3.5 gap-y-1 text-[11.5px] text-bambu-gray-light">
+            <li class="inline-flex items-center gap-1.5"><span class="inline-block h-2 w-2 rounded-full bg-bambu-green"></span>Ce mois</li>
+            <li class="inline-flex items-center gap-1.5"><span class="inline-block h-2 w-2 rounded-full" style="background:#808080"></span>Mois précédent</li>
+            <li class="inline-flex items-center gap-1.5"><span class="inline-block h-0 w-4 border-t-2 border-dashed" style="border-color:#f59e0b"></span>Objectif</li>
+          </ul>
+        </div>
+        <svg id="pace" viewBox="0 0 500 236"></svg>
+      </section>
+    </div>
+
+    <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+      <div class="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <p class="text-xs uppercase tracking-wide text-bambu-gray" id="chartTitle"></p>
+        <div class="flex flex-wrap items-center gap-3">
+          <ul class="flex flex-wrap justify-end gap-x-3.5 gap-y-1 text-[11.5px] text-bambu-gray-light" id="mainLegend"></ul>
+          <div class="tabs in" id="stack"><button class="on" data-s="nature">Nature</button><button data-s="brand">Marque</button><button data-s="kind">Biens / Services</button><button data-s="segment">Client</button></div>
+          <button class="pick" style="padding:4px 10px;font-size:12px;background:var(--bg-primary)">◆ Notes</button>
+        </div>
+      </div>
+      <svg id="main" viewBox="0 0 1000 300" role="img" aria-label="Chiffre d'affaires empilé avec cumul"></svg>
+      <p class="mt-1 text-[11px] text-bambu-gray">Clic sur une colonne : zoom mois → semaines → jours · contour pointillé : projection · trait ambre : objectif · ◆ : note</p>
+    </section>
+
+    <div class="split">
+      <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+        <div class="mb-2"><p class="text-xs uppercase tracking-wide text-bambu-gray">Détail par période</p></div>
+        <div class="grid gap-1.5 text-[13px] tabular-nums" id="tbl"></div>
+      </section>
+      <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+        <div class="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <p class="text-xs uppercase tracking-wide text-bambu-gray">Mouvements · nov. vs oct.</p>
+          <button class="pick" style="padding:3px 9px;font-size:12px;background:var(--bg-primary)">⇄ Comparer</button>
+        </div>
+        <dl class="grid gap-1.5" id="movers"></dl>
+      </section>
+    </div>
+  </div>
+
+  <!-- CLIENTS -->
+  <div class="view" id="v-clients">
+    <div><div class="tabs" data-seg><button class="on">Tous clients</button><button>Particuliers</button><button>Professionnels</button><button>Client de passage</button></div></div>
+    <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0"><div class="tiles t4" id="custTiles"></div></section>
+    <div class="split">
+      <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+        <div class="mb-2"><p class="text-xs uppercase tracking-wide text-bambu-gray">Meilleurs clients</p></div>
+        <ol class="grid gap-1.5 text-xs" id="cust"></ol>
+      </section>
+      <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+        <div class="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <p class="text-xs uppercase tracking-wide text-bambu-gray">Nouveaux et fidèles, par mois</p>
+          <ul class="flex flex-wrap justify-end gap-x-3.5 text-[11.5px] text-bambu-gray-light">
+            <li class="inline-flex items-center gap-1.5"><span class="inline-block h-2 w-2 rounded-full" style="background:#3d86e8"></span>Fidèles</li>
+            <li class="inline-flex items-center gap-1.5"><span class="inline-block h-2 w-2 rounded-full" style="background:#1f9e8a"></span>Nouveaux</li></ul>
+        </div>
+        <svg id="acq" viewBox="0 0 500 260"></svg>
+      </section>
+    </div>
+  </div>
+
+  <!-- PRODUITS -->
+  <div class="view" id="v-produits">
+    <div class="split">
+      <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+        <div class="mb-2 flex flex-wrap items-baseline justify-between gap-x-4"><p class="text-xs uppercase tracking-wide text-bambu-gray">Classement ABC</p><span class="text-[11px] text-bambu-gray">A = 80 % du CA · B = 15 % · C = 5 %</span></div>
+        <ol class="grid gap-1.5 text-xs" id="abc"></ol>
+      </section>
+      <div class="grid gap-3">
+        <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+          <div class="mb-2 flex flex-wrap items-center justify-between gap-x-4"><p class="text-xs uppercase tracking-wide text-bambu-gray">Marge brute HT</p><div class="tabs in" data-seg><button class="on">Marque</button><button>Nature</button></div></div>
+          <ol class="grid gap-1.5 text-xs" id="margin"></ol>
+          <p class="mt-2 text-[11px] text-bambu-gray">Au coût actuel (Prix Dealer, sinon prix d'achat)</p>
+        </section>
+        <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+          <div class="mb-2"><p class="text-xs uppercase tracking-wide text-bambu-gray">Produits dormants · rien depuis 90 j</p></div>
+          <dl class="grid gap-1.5" id="dormant"></dl>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- SAISONNALITÉ -->
+  <div class="view" id="v-saison">
+    <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+      <div class="mb-2 flex flex-wrap items-baseline justify-between gap-x-4"><p class="text-xs uppercase tracking-wide text-bambu-gray">Année par année</p>
+        <ul class="flex flex-wrap justify-end gap-x-3.5 text-[11.5px] text-bambu-gray-light">
+          <li class="inline-flex items-center gap-1.5"><span class="inline-block h-2 w-2 rounded-full bg-bambu-green"></span>2026</li>
+          <li class="inline-flex items-center gap-1.5"><span class="inline-block h-2 w-2 rounded-full" style="background:#3d86e8"></span>2025</li>
+          <li class="inline-flex items-center gap-1.5"><span class="inline-block h-2 w-2 rounded-full" style="background:#6b6b6b"></span>2024</li></ul></div>
+      <svg id="yoy" viewBox="0 0 1000 270"></svg>
+    </section>
+    <div class="split">
+      <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+        <div class="mb-2 flex items-center justify-between gap-x-4"><p class="text-xs uppercase tracking-wide text-bambu-gray">Calendrier des ventes</p>
+          <span class="text-xs text-bambu-gray-light"><button class="pick" style="padding:1px 8px;background:var(--bg-primary)" aria-label="Année précédente">‹</button> 2026 <button class="pick" style="padding:1px 8px;background:var(--bg-primary)" aria-label="Année suivante">›</button></span></div>
+        <div class="cal rounded-lg bg-bambu-dark p-3" id="cal"></div>
+      </section>
+      <section class="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3 min-w-0">
+        <div class="mb-2"><p class="text-xs uppercase tracking-wide text-bambu-gray">Moyenne par jour de semaine</p></div>
+        <ol class="grid gap-1.5 text-xs" id="dow"></ol>
+      </section>
+    </div>
+  </div>
+</div>
+</main>
+
+<script>
+// Deterministic fake data so every reload shows the same picture.
+let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const $ = id => document.getElementById(id);
+const fmt = n => Math.round(n).toLocaleString('fr-FR');
+const short = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.', ',') + ' M' : Math.round(n / 1e3) + ' k';
+const COL = ['#3d86e8', '#c95aa0', '#c26a1c', '#1f9e8a', '#8f7ae5', '#6b6b6b'], GRID = '#3d3d3d';
+const MONTHS = ['déc.', 'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.'];
+const GRAN = {
+  day: { n: 30, label: i => i < 11 ? (i + 20) + '/10' : (i - 10) + '/11', base: 145e3, title: 'par jour' },
+  week: { n: 12, label: i => 'S' + (36 + i), base: 1.0e6, title: 'par semaine' },
+  month: { n: 12, label: i => MONTHS[i], base: 4.2e6, title: 'par mois' },
+  year: { n: 3, label: i => 2024 + i, base: 46e6, title: 'par année' },
+};
+const STACK = {
+  nature: { names: ['Imprimantes', 'Filaments', 'Pièces détachées', 'Accessoires', 'Services', 'Autres'], sh: [.38, .24, .16, .1, .07, .05] },
+  brand: { names: ['Marque A', 'Marque B', 'Marque C', 'Marque D', 'Marque E', 'Autres'], sh: [.42, .2, .14, .1, .08, .06] },
+  kind: { names: ['Biens', 'Services'], sh: [.86, .14] },
+  segment: { names: ['Particuliers', 'Professionnels', 'Administrations', 'Client de passage'], sh: [.34, .4, .12, .14] },
+};
+let gran = 'month', stack = 'nature';
+const sum = a => a.reduce((x, y) => x + y, 0);
+const colOf = (j, n) => COL[j === n - 1 && n > 4 ? 5 : j];
+
+// Fenrir's stats primitives, as strings (Tile, Facts row, HBars row).
+const tile = (label, value, delta, tone) => `<div class="rounded-lg bg-bambu-dark px-3 py-2.5 min-w-0"><div class="text-xs text-bambu-gray truncate">${label}</div><div class="mt-0.5 flex items-baseline gap-2"><span class="truncate text-2xl font-semibold tracking-[-0.02em] text-white tabular-nums">${value}</span>${delta ? `<span class="text-xs font-medium whitespace-nowrap ${tone === 'bad' ? 'text-status-error' : tone === 'good' ? 'text-status-ok' : 'text-bambu-gray'}">${delta}</span>` : ''}</div></div>`;
+const fact = (label, value, cls = 'text-white', note = '') => `<div class="flex items-baseline justify-between gap-4 rounded-lg bg-bambu-dark px-3 py-2 text-[13px]"><dt class="min-w-0 truncate text-bambu-gray-light">${label}</dt><dd class="shrink-0 text-right font-medium tabular-nums ${cls}">${value}${note ? `<span class="ml-1.5 text-xs font-normal text-bambu-gray">${note}</span>` : ''}</dd></div>`;
+const hbar = (label, scale, color, value) => `<li class="flex items-center gap-3 rounded-lg bg-bambu-dark px-3 py-2"><span class="w-44 shrink-0 truncate text-bambu-gray-light">${label}</span><span class="min-w-0 flex-1"><span class="block h-2 rounded-[2px]" style="width:${scale * 100}%;background:${color}"></span></span><span class="w-28 shrink-0 text-right text-bambu-gray-light tabular-nums">${value}</span></li>`;
+
+function buckets() {
+  seed = 7 + gran.length * 13; const g = GRAN[gran], s = STACK[stack];
+  return Array.from({ length: g.n }, (_, i) => {
+    const full = g.base * (.75 + rnd() * .5), last = i === g.n - 1, got = last ? full * .62 : full;
+    return { label: g.label(i), parts: s.sh.map(x => got * x * (.8 + rnd() * .4)), ghost: last ? full * .38 : 0,
+      target: gran === 'month' ? g.base * 1.05 : 0, note: gran === 'month' && (i === 3 || i === 8), last };
+  });
+}
+
+function drawMain() {
+  const b = buckets(), W = 1000, H = 300, L = 46, R = 50, T = 20, B = 24, pw = W - L - R, ph = H - T - B;
+  const tot = b.map(x => sum(x.parts)), max = Math.max(...b.map((x, i) => Math.max(tot[i] + x.ghost, x.target))) * 1.1;
+  const cum = tot.map((_, i) => sum(tot.slice(0, i + 1))), cmax = cum[cum.length - 1] * 1.05;
+  const step = pw / b.length, bw = Math.min(step * .6, 44), y = v => T + ph - v / max * ph, n = STACK[stack].names.length;
+  let o = '';
+  for (let k = 0; k <= 4; k++) { const v = max * k / 4; o += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${GRID}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${short(v)}</text><text x="${W - R + 6}" y="${y(v) + 4}">${short(cmax * k / 4)}</text>`; }
+  b.forEach((x, i) => {
+    const x0 = L + i * step + (step - bw) / 2; let acc = 0;
+    x.parts.forEach((p, j) => { o += `<rect x="${x0}" y="${y(acc + p) + 1}" width="${bw}" height="${Math.max(p / max * ph - 1, 1)}" fill="${colOf(j, n)}" rx="${j === n - 1 ? 3 : 0}"><title>${x.label} · ${STACK[stack].names[j]} : ${fmt(p)} FCP</title></rect>`; acc += p; });
+    if (x.ghost) o += `<rect x="${x0 + .5}" y="${y(acc + x.ghost)}" width="${bw - 1}" height="${x.ghost / max * ph - 2}" fill="none" stroke="#808080" stroke-dasharray="4 3" rx="3"/>`;
+    if (x.target) o += `<line x1="${x0 - 4}" x2="${x0 + bw + 4}" y1="${y(x.target)}" y2="${y(x.target)}" stroke="#f59e0b" stroke-width="2" stroke-linecap="round"/>`;
+    if (x.note) o += `<rect x="${x0 + bw / 2 - 4}" y="4" width="8" height="8" fill="#a0a0a0" transform="rotate(45 ${x0 + bw / 2} 8)"><title>Note</title></rect>`;
+    if (b.length <= 14 || i % 3 === 0) o += `<text x="${x0 + bw / 2}" y="${H - 6}" text-anchor="middle">${x.label}</text>`;
+  });
+  o += `<polyline fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="2" stroke-dasharray="4 3" points="${cum.map((c, i) => `${L + i * step + step / 2},${T + ph - c / cmax * ph}`).join(' ')}"/>`;
+  $('main').innerHTML = o;
+  $('chartTitle').textContent = "Chiffre d'affaires " + GRAN[gran].title;
+  $('mainLegend').innerHTML = STACK[stack].names.map((nm, j) => `<li class="inline-flex items-center gap-1.5"><span class="inline-block h-2 w-2 rounded-full" style="background:${colOf(j, n)}"></span>${nm}</li>`).join('') + '<li class="inline-flex items-center gap-1.5"><span class="inline-block h-0 w-4 border-t-2 border-dashed" style="border-color:#fff"></span>Cumul</li>';
+  const cols = 'grid-template-columns:minmax(0,1.4fr) repeat(5,minmax(0,1fr))';
+  $('tbl').innerHTML = `<div class="rowg px-3 text-[11px] text-bambu-gray" style="${cols}"><span>Période</span><span class="text-right">CA HT</span><span class="text-right">TTC ≈</span><span class="text-right">Évol.</span><span class="text-right">Marge</span><span class="text-right">Unités</span></div>` +
+    b.map((x, i) => { const p = i ? (tot[i] / tot[i - 1] - 1) * 100 : 0;
+      return `<div class="rowg rounded-lg bg-bambu-dark px-3 py-2" style="${cols}"><span class="truncate text-bambu-gray-light">› ${x.label}${x.last ? ' <span class="text-[11px] text-amber-400">en cours</span>' : ''}</span><span class="text-right font-medium text-white">${fmt(tot[i])}</span><span class="text-right text-bambu-gray-light">${fmt(tot[i] * 1.13)}</span><span class="text-right text-xs font-medium ${!i ? 'text-bambu-gray' : p >= 0 ? 'text-status-ok' : 'text-status-error'}">${i ? (p >= 0 ? '▲ ' : '▼ ') + Math.abs(p).toFixed(0) + ' %' : '—'}</span><span class="text-right text-bambu-gray-light">${26 + i % 5} %</span><span class="text-right text-bambu-gray-light">${fmt(tot[i] / 9000)}</span></div>`; }).reverse().slice(0, 8).join('');
+}
+
+function lines(id, W, H, series, labels) {
+  const L = 44, R = 8, T = 8, B = 22, max = Math.max(...series.flatMap(s => s.pts)) * 1.08, n = labels.length;
+  const x = i => L + i * (W - L - R) / (n - 1), y = v => T + (H - T - B) * (1 - v / max);
+  let o = '';
+  for (let k = 0; k <= 3; k++) o += `<line x1="${L}" x2="${W - R}" y1="${y(max * k / 3)}" y2="${y(max * k / 3)}" stroke="${GRID}"/><text x="${L - 6}" y="${y(max * k / 3) + 4}" text-anchor="end">${short(max * k / 3)}</text>`;
+  labels.forEach((l, i) => { if (l) o += `<text x="${x(i)}" y="${H - 5}" text-anchor="middle">${l}</text>`; });
+  series.forEach(s => o += `<polyline fill="none" stroke="${s.c}" stroke-width="${s.w || 2}" stroke-linejoin="round" stroke-dasharray="${s.d || ''}" points="${s.pts.map((v, i) => x(i) + ',' + y(v)).join(' ')}"/>`);
+  $(id).innerHTML = o;
+}
+const walk = (n, stepv) => { let a = 0; return Array.from({ length: n }, () => a += stepv * (.3 + rnd() * 1.4)); };
+
+// Sidebar: the real item classes; « Chiffre d'affaires » sits after Commandes.
+$('nav').innerHTML = ['Imprimantes', 'Archives', "File d'attente", 'Aito', 'Commandes', "Chiffre d'affaires", 'Projets', 'Statistiques', 'Filaments', 'Réglages']
+  .map(n => `<li><a class="flex items-center gap-3 px-4 py-3 rounded-lg ${n.startsWith('Chiffre') ? 'bg-bambu-green text-white' : 'text-bambu-gray-light'}"><span class="inline-block w-5 h-5 rounded" style="border:1.5px solid currentColor;opacity:.7"></span><span class="whitespace-nowrap">${n}</span></a></li>`).join('');
+
+seed = 99;
+$('heroTiles').innerHTML = tile('Biens HT', '2 346 400', '▲ 11 %', 'good') + tile('Services HT', '382 000', '▼ 5 %', 'bad') + tile('Panier moyen ≈', '18 900', '▲ 2 %', 'good') + tile('Marge brute HT', '791 200', '29 %') + tile('Jours actifs', '16 / 19');
+lines('pace', 500, 236, [{ pts: Array.from({ length: 30 }, (_, d) => 4.4e6 * d / 29), c: '#f59e0b', d: '5 4', w: 1.5 }, { pts: walk(30, 138e3), c: '#808080' }, { pts: walk(19, 144e3), c: '#00ae42', w: 3 }], Array.from({ length: 30 }, (_, i) => (i + 1) % 5 === 0 || i === 0 ? i + 1 : ''));
+$('spark').innerHTML = `<polyline fill="none" stroke="#00ae42" stroke-width="2" stroke-linejoin="round" points="${Array.from({ length: 12 }, (_, i) => i * 14 + 3 + ',' + (36 - rnd() * 28)).join(' ')}"/>`;
+$('movers').innerHTML = fact('Imprimante X1 (fictif)', '▲ 412 000', 'text-status-ok') + fact('PLA Basic 1 kg noir', '▲ 96 500', 'text-status-ok') + fact('Impression à la demande', '▲ 74 000', 'text-status-ok') + fact('Imprimante A1 mini (fictif)', '▼ 238 000', 'text-status-error') + fact('PETG 1 kg blanc', '▼ 61 200', 'text-status-error') + fact('Buse acier 0,4', '▼ 18 400', 'text-status-error');
+$('custTiles').innerHTML = tile('Nouveaux clients', '47', '▲ 12 %', 'good') + tile('Clients fidèles', '112', '▲ 4 %', 'good') + tile('Part des nouveaux', '30 %') + tile('Panier moyen ≈', '21 400', '▼ 3 %', 'bad');
+$('cust').innerHTML = [18, 11, 8, 6, 5, 4, 3, 3].map((p, i) => hbar(`Client ${String.fromCharCode(65 + i)} <span class="text-bambu-gray">· ${i % 3 ? 'Pro' : 'Particulier'}</span>`, p / 18, COL[0], `${fmt(p * 4.9e5)} · ${p} %`)).join('');
+const yl = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+$('acq').innerHTML = `<line x1="14" x2="496" y1="232" y2="232" stroke="${GRID}"/>` + yl.map((l, i) => { const a = 60 + rnd() * 90, n = 20 + rnd() * 50, x = 20 + i * 40; return `<rect x="${x}" y="${231 - a}" width="22" height="${a}" fill="#3d86e8"/><rect x="${x}" y="${229 - a - n}" width="22" height="${n}" fill="#1f9e8a" rx="3"/><text x="${x + 11}" y="250" text-anchor="middle">${l.slice(0, 3)}</text>`; }).join('');
+let cumP = 0;
+$('abc').innerHTML = [22, 17, 13, 10, 8, 7, 6, 5, 4, 3, 3, 2].map((p, i) => { cumP += p; const c = cumP <= 80 ? ['A', '#219653'] : cumP <= 95 ? ['B', '#c26a1c'] : ['C', '#6b6b6b']; return hbar(`<b class="font-semibold" style="color:${c[1]}">${c[0]}</b> &nbsp;Produit ${i + 1} <span class="text-bambu-gray">· SKU-${1040 + i * 7}</span>`, p / 22, c[1], `${fmt(p * 4.2e5)} · ${p} %`); }).join('');
+$('margin').innerHTML = STACK.brand.names.map((n, i) => { const m = [34, 22, 41, 28, 19, 25][i]; return hbar(n, m / 41, colOf(i, 6), `${m} % · ${short(m * 5e4)}`); }).join('');
+$('dormant').innerHTML = fact('Résine standard grise 1 L', '02/07', 'text-bambu-gray-light', 'dernier achat') + fact('Plateau PEI texturé 256', '19/07', 'text-bambu-gray-light', 'dernier achat') + fact('TPU 95A rouge 500 g', '03/08', 'text-bambu-gray-light', 'dernier achat');
+const yr = m => yl.map((_, i) => m * (3.4e6 + 9e5 * Math.sin(i / 1.9) + rnd() * 6e5) * (i === 11 ? 1.35 : 1));
+lines('yoy', 1000, 270, [{ pts: yr(.8), c: '#6b6b6b' }, { pts: yr(1), c: '#3d86e8' }, { pts: yr(1.08).slice(0, 11), c: '#00ae42', w: 3 }], yl);
+$('cal').innerHTML = Array.from({ length: 53 * 7 }, (_, i) => { const v = i > 322 ? -1 : (i % 7 === 6 ? 0 : Math.sqrt(rnd())); return `<i style="background:${v > 0 ? `rgba(0,174,66,${(.12 + v * .88).toFixed(2)})` : v ? 'transparent;outline:1px solid #2d2d2d;outline-offset:-1px' : '#2d2d2d'}" title="${v > 0 ? fmt(v * v * 3e5) + ' FCP' : '—'}"></i>`; }).join('');
+$('dow').innerHTML = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'].map((d, i) => { const v = [62, 71, 68, 80, 100, 54, 0][i]; return hbar(d, v / 100, '#00ae42', v ? fmt(v * 1900) : '—'); }).join('');
+
+document.querySelectorAll('.tabs').forEach(box => box.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  box.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  if (b.dataset.v) document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === 'v-' + b.dataset.v));
+  if (b.dataset.g) { gran = b.dataset.g; drawMain(); }
+  if (b.dataset.s) { stack = b.dataset.s; drawMain(); }
+}));
+drawMain();
+</script>
+</body>
+</html>
