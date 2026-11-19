@@ -67,16 +67,17 @@ async def test_watch_rejects_unknown_printer_and_disabled_kinds(async_client, db
         r = await async_client.put(f"/api/v1/aito/{card}/watch", json={"kinds": kinds}, headers=headers)
         assert r.status_code == 422, (kinds, r.text)
 
-    # aito.overdue is off by default, so watching for it is refused...
+    # aito.overdue switched off in Settings, so watching for it is refused...
+    pref = UserInboxPreference(user_id=alice.id, kinds_json=["aito.paid"], sound_kinds_json=[], auto_watch=True)
+    db_session.add(pref)
+    await db_session.commit()
     r = await async_client.put(f"/api/v1/aito/{card}/watch", json={"kinds": ["aito.overdue"]}, headers=headers)
     assert r.status_code == 422
     assert "kind disabled in preferences" in r.json()["detail"]
     assert await _watches(db_session) == []
 
-    # ...until the user turns it on in Settings.
-    db_session.add(
-        UserInboxPreference(user_id=alice.id, kinds_json=["aito.overdue"], sound_kinds_json=[], auto_watch=True)
-    )
+    # ...until the user turns it back on.
+    pref.kinds_json = ["aito.overdue"]
     await db_session.commit()
     r = await async_client.put(f"/api/v1/aito/{card}/watch", json={"kinds": ["aito.overdue"]}, headers=headers)
     assert r.status_code == 200, r.text

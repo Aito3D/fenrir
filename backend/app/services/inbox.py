@@ -71,7 +71,7 @@ KINDS: dict[str, InboxKind] = {
     "aito.paid": InboxKind(
         "aito", True, ("payment_link.paid", "payment.terminal.paid", "payment.manual.recorded"), available=True
     ),
-    "aito.overdue": InboxKind("aito", False, ("project.due.overdue",), available=True),
+    "aito.overdue": InboxKind("aito", True, ("project.due.overdue",), available=True),
     # Print jobs (main.py calls notify_print beside its provider notifications).
     "printer.job_sent": InboxKind("printer", False, ()),
     "printer.finished": InboxKind("printer", False, ()),
