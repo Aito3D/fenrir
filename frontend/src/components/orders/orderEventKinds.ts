@@ -26,6 +26,9 @@ const LABEL_KEY: Record<string, string> = {
   'prep.printed': 'orders.history.prepPrinted',
   'tracking.viewed': 'orders.history.trackingViewed',
   'zoho.edited': 'orders.history.zohoEdited',
+  'document.emailed': 'orders.history.documentEmailed',
+  'credit.applied': 'orders.history.creditApplied',
+  'contact.edited': 'orders.history.contactEdited',
 };
 
 /** The row subtitle's noun phrase per kind ("SMS de retrait"). */
@@ -53,6 +56,9 @@ export const SHORT_LABEL_KEY: Record<string, string> = {
   'prep.printed': 'orders.history.short.prepPrinted',
   'tracking.viewed': 'orders.history.short.trackingViewed',
   'zoho.edited': 'orders.history.short.zohoEdited',
+  'document.emailed': 'orders.history.short.documentEmailed',
+  'credit.applied': 'orders.history.short.creditApplied',
+  'contact.edited': 'orders.history.short.contactEdited',
 };
 
 const text = (value: unknown) => (typeof value === 'string' && value ? value : '—');
@@ -80,6 +86,13 @@ export function orderEventLabel(
     case 'invoice.created':
     case 'invoice.emailed':
       return { key: LABEL_KEY[event.kind], params: { invoice: text(d.invoice) } };
+    case 'document.emailed':
+      return { key: LABEL_KEY[event.kind], params: { document: text(d.document) } };
+    case 'credit.applied':
+      return {
+        key: LABEL_KEY[event.kind],
+        params: { invoice: text(d.invoice), amount: typeof d.amount === 'number' ? formatMoney(d.amount, currency) : '—' },
+      };
     case 'payment.received':
       return {
         key: LABEL_KEY[event.kind],
@@ -118,6 +131,7 @@ export function orderEventDetail(event: Pick<OrderEvent, 'kind' | 'detail'>, cur
         : null;
     case 'sms.sent':
     case 'invoice.emailed':
+    case 'document.emailed':
       return str(d.to);
     case 'prep.printed':
       return str(d.picklist);

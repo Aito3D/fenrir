@@ -1,6 +1,6 @@
 import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
-import type { OrderActionResult, OrderBoardResponse, OrderBoardRow, OrderEditLine, OrderInvoiceScope } from '../../api/client';
+import type { OrderActionResult, OrderBoardResponse, OrderBoardRow, OrderDocumentKind, OrderEditLine, OrderInvoiceScope } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { isRefused } from './orderErrors';
 
@@ -151,6 +151,28 @@ export function useOrderActions(callbacks?: {
     onSuccess: r => take(r.board),
   });
 
+  const emailDocument = useMutation({
+    mutationFn: ({ id, kind, docId, to }: { id: string; kind: OrderDocumentKind; docId: string; to: string }) =>
+      api.sendOrderDocumentEmail(id, kind, docId, to),
+    onSuccess: r => take(r.board),
+  });
+  const syncOrder = useMutation({ mutationFn: (id: string) => api.syncOrder(id), onSuccess: r => take(r.board) });
+  const editContact = useMutation({
+    mutationFn: ({ id, ...body }: { id: string; email: string; phone: string; phone_field: 'phone' | 'mobile' }) => api.editOrderContact(id, body),
+    onSuccess: (r, v) => {
+      void take(r.board);
+      void queryClient.invalidateQueries({ queryKey: ['order-customer', v.id] });
+    },
+  });
+  const applyCredit = useMutation({
+    mutationFn: ({ id, invoiceId }: { id: string; invoiceId: string }) => api.applyOrderCredit(id, invoiceId),
+    onSuccess: (r, v) => {
+      void take(r.board);
+      void queryClient.invalidateQueries({ queryKey: ['order-customer', v.id] });
+      void queryClient.invalidateQueries({ queryKey: ['order-payment-target', v.id] });
+    },
+  });
+
   return {
     canUpdate: hasPermission('orders:update'),
     cancelOrder,
@@ -161,9 +183,13 @@ export function useOrderActions(callbacks?: {
     handOver,
     createInvoice,
     emailInvoice,
+    emailDocument,
+    syncOrder,
+    editContact,
+    applyCredit,
     /** The blob fetcher for a print button; the server stamps the order as printed, so the board is refetched once it ran. */
-    printSheet: (id: string, picklistId: string) => async () => {
-      const blob = await api.printOrderPrepSheet(id, picklistId);
+    printSheet: (id: string, picklistId: string, whole = false) => async () => {
+      const blob = await api.printOrderPrepSheet(id, picklistId, whole);
       void queryClient.invalidateQueries({ queryKey: BOARD_KEY, exact: true });
       void queryClient.invalidateQueries({ queryKey: ['order-events', id] });
       return blob;

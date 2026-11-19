@@ -114,6 +114,8 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['order-payment-target', orderId] });
     void queryClient.invalidateQueries({ queryKey: ['order-board'], exact: true });
+    void queryClient.invalidateQueries({ queryKey: ['order-board', 'finished'], exact: true });
+    void queryClient.invalidateQueries({ queryKey: ['order-board-finished-order', orderId] });
     void queryClient.invalidateQueries({ queryKey: ['order-events', orderId] });
   };
   const openTerminal = async (doc: PaymentDocument) => {

@@ -11,6 +11,16 @@ from backend.app.services.order_board_actions._common import (
 )
 from backend.app.services.order_board_actions.cancel import cancel_order
 from backend.app.services.order_board_actions.create import create_counter_order
+from backend.app.services.order_board_actions.documents import (
+    DocumentKind,
+    apply_credit,
+    document_email_content,
+    document_pdf,
+    edit_contact,
+    email_document,
+    listed_document,
+    order_row_any,
+)
 from backend.app.services.order_board_actions.handover import hand_over, handover_preview
 from backend.app.services.order_board_actions.invoice import (
     InvoiceScope,
@@ -51,4 +61,12 @@ __all__ = [
     "edit_lines",
     "package_content",
     "edit_parcel",
+    "DocumentKind",
+    "apply_credit",
+    "document_email_content",
+    "document_pdf",
+    "edit_contact",
+    "email_document",
+    "listed_document",
+    "order_row_any",
 ]

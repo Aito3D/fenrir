@@ -274,6 +274,11 @@ def _row(order: dict, age: int, lines: list[dict], status: str, items: dict[str,
         "payment": None,
         "contact": order_contact(order),
         "facts": order_facts(order),
+        # The deposit invoices of the order's quote (or of the order itself), as the sync stored them.
+        "retainers": [
+            {k: r.get(k) for k in ("id", "number", "date", "total", "balance", "status")}
+            for r in order.get("_retainers") or []
+        ],
     }
 
 

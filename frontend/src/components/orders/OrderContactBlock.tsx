@@ -1,21 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, CheckCircle2, Copy, Mail, MailX, MessageSquareText, Phone, PhoneOff, Smartphone, UserRound } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Check, CheckCircle2, Copy, Mail, MailX, MessageSquareText, Pencil, Phone, PhoneOff, Smartphone, UserRound } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { api } from '../../api/client';
 import type { OrderContact } from '../../api/client';
+import { useToast } from '../../contexts/ToastContext';
 import { copyTextToClipboard } from '../../utils/clipboard';
+import { formatMoney } from '../../utils/pricing';
 import { Card } from '../Card';
+import { ClientRatingPill } from '../aito/ClientRatingPill';
+import { useOrderActions } from './useOrderActions';
 
 /** The contact person on the order: phone and email as links, each with a copy button.
  *  With `sms` (admins, live orders with something ready) the header carries the pickup-SMS pill,
- *  which turns into "Contacted" once an SMS went out. */
+ *  which turns into "Contacted" once an SMS went out. With `orderId` it also shows the customer's
+ *  payment rating and unspent credit (as on the Aito card); `canEdit` adds the email/phone editor. */
 export function OrderContactBlock({
   contact,
   orderNumber,
   others,
   onGoto,
   sms,
+  orderId,
+  currency = '',
+  canEdit = false,
 }: {
+  orderId?: string;
+  currency?: string;
+  canEdit?: boolean;
   contact: OrderContact | null;
   orderNumber: string;
   others: { id: string; number: string }[];
@@ -24,6 +38,21 @@ export function OrderContactBlock({
 }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState<string | null>(null);
+  const rating = useQuery({
+    queryKey: ['order-customer', orderId, 'rating'],
+    queryFn: () => api.getOrderClientRating(orderId!),
+    enabled: !!orderId,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const credit = useQuery({
+    queryKey: ['order-customer', orderId, 'credit'],
+    queryFn: () => api.getOrderCustomerCredit(orderId!),
+    enabled: !!orderId,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const [editing, setEditing] = useState(false);
   // The Contacted pill pops only when an SMS goes out while this order is open, never on mount.
   const contactedNow = !!sms?.contacted;
   const [seenContacted, setSeenContacted] = useState(contactedNow);
@@ -76,6 +105,18 @@ export function OrderContactBlock({
       <div className="flex items-center gap-2">
         <UserRound aria-hidden="true" className="h-3.5 w-3.5 text-bambu-gray" />
         <span className="font-semibold uppercase tracking-wide text-white">{t('orders.contact.title')}</span>
+        <ClientRatingPill rating={rating.data} align="start" />
+        {canEdit && orderId && contact && !editing && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            aria-label={t('aito.clientEdit')}
+            title={t('aito.clientEdit')}
+            className="btn-press rounded p-1 text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green"
+          >
+            <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
+          </button>
+        )}
         {sms && contactedAt && (
           <button
             type="button"
@@ -109,7 +150,9 @@ export function OrderContactBlock({
           </button>
         )}
       </div>
-      {contact ? (
+      {contact && editing && orderId ? (
+        <ContactEditor orderId={orderId} contact={contact} onDone={() => setEditing(false)} />
+      ) : contact ? (
         <>
           <div className="mt-2 text-sm text-white">{contact.name}</div>
           <div className="mt-1 text-sm">
@@ -123,6 +166,12 @@ export function OrderContactBlock({
         </>
       ) : (
         <div className="mt-2 text-bambu-gray">{t('orders.contact.none')}</div>
+      )}
+      {!!credit.data?.credit && credit.data.credit > 0 && (
+        <div data-testid="customer-credit" className="mt-2 flex items-center justify-between border-t border-bambu-dark-tertiary pt-2">
+          <span className="text-bambu-gray">{t('aito.forceSyncStepCredit')}</span>
+          <span className="font-semibold tabular-nums text-white">{formatMoney(credit.data.credit, currency)}</span>
+        </div>
       )}
       {others.length > 0 && (
         <div className="mt-2 border-t border-bambu-dark-tertiary pt-2 text-bambu-gray">
@@ -138,5 +187,45 @@ export function OrderContactBlock({
         </div>
       )}
     </Card>
+  );
+}
+
+const INPUT = 'w-full rounded-md border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1 text-sm text-white focus:border-bambu-green focus:outline-none';
+
+/** Email and phone of the order's contact person, written to Zoho Books. The number goes back to the field it came from. */
+function ContactEditor({ orderId, contact, onDone }: { orderId: string; contact: OrderContact; onDone: () => void }) {
+  const { t } = useTranslation();
+  const { showToast } = useToast();
+  const { editContact } = useOrderActions();
+  const phoneField = contact.mobile.trim() || !contact.phone.trim() ? 'mobile' : 'phone';
+  const [email, setEmail] = useState(contact.email);
+  const [phone, setPhone] = useState(phoneField === 'mobile' ? contact.mobile : contact.phone);
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    editContact.mutate(
+      { id: orderId, email: email.trim(), phone: phone.trim(), phone_field: phoneField },
+      { onSuccess: onDone, onError: () => showToast(t('aito.clientEditFailed'), 'error') },
+    );
+  };
+  return (
+    <form onSubmit={save} className="mt-2 space-y-2">
+      <div className="text-sm text-white">{contact.name}</div>
+      <label className="block">
+        <span className="text-bambu-gray">{t('aito.clientPhone')}</span>
+        <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} maxLength={50} className={INPUT} />
+      </label>
+      <label className="block">
+        <span className="text-bambu-gray">{t('aito.clientEmail')}</span>
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)} maxLength={200} className={INPUT} />
+      </label>
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onDone} disabled={editContact.isPending} className="btn-press rounded-md px-2.5 py-1 text-bambu-gray hover:text-white">
+          {t('common.cancel')}
+        </button>
+        <button type="submit" disabled={editContact.isPending} className="btn-press rounded-md bg-bambu-green px-2.5 py-1 font-semibold text-black hover:bg-bambu-green/90 disabled:opacity-50">
+          {editContact.isPending ? t('common.saving') : t('common.save')}
+        </button>
+      </div>
+    </form>
   );
 }

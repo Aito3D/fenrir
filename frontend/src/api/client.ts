@@ -5363,9 +5363,14 @@ export interface OrderPaymentTarget {
 }
 export interface OrderPayment { state: OrderPayState; pct: number; paid: number; invoice_paid: number; retainer: number; advance: number; due: number; overdue: number; rest: number; left: number; next_due: string | null; invoices: OrderInvoice[] }
 export interface OrderContact { name: string; email: string; phone: string; mobile: string }
-export interface OrderFacts { channel: string; reference: string; shopify_order: string; quote_number: string; delivery_method: string; payment_terms: string; shopify_url: string | null; quote_url: string | null }
+export interface OrderFacts { channel: string; reference: string; shopify_order: string; quote_number: string; estimate_id?: string | null; delivery_method: string; payment_terms: string; shopify_url: string | null; quote_url: string | null }
 
 export interface OrderPackage { id: string; shipment_id: string; number: string; status: string; date: string }
+/** A deposit (retainer) invoice of the order's quote, or of the order itself. */
+export interface OrderRetainer { id: string; number: string; date: string; total: number; balance: number; status: string }
+export type OrderDocumentKind = 'quote' | 'retainer';
+/** What a sync of one order changed: a figure, or a list of document numbers. */
+export interface OrderSyncChange { field: 'total' | 'paid' | 'left' | 'state' | 'invoices' | 'retainers' | 'packages'; from: unknown; to: unknown }
 /** A Books picklist of the order; `status` is "completed" once everything on it was picked. */
 export interface OrderPicklist { id: string; number: string; status: string; date: string }
 /** Units per order line a picklist (or a parcel made from one) may hold, as Books states them now. */
@@ -5387,6 +5392,8 @@ export interface OrderBoardRow {
   units: { total: number; shipped: number; ready: number; backordered: number; to_order: number };
   packages: OrderPackage[];
   picklists: OrderPicklist[];
+  /** Deposit invoices; absent from rows stored before it was added. */
+  retainers?: OrderRetainer[];
   /** Units a picklist counts as picked that no parcel holds yet. */
   picked: number;
   /** Handed over (shipped) but not invoiced yet. */
@@ -10417,8 +10424,8 @@ export const api = {
   setOrderWatch: (id: string, watching: boolean) =>
     request<{ watching: boolean }>(`/order-board/orders/${encodeURIComponent(id)}/watch`, { method: watching ? 'PUT' : 'DELETE' }),
   getFinishedOrder: (id: string) => request<FinishedOrderDetail>(`/order-board/finished/${encodeURIComponent(id)}`),
-  printOrderPrepSheet: (id: string, picklistId: string): Promise<Blob> =>
-    orderBoardBlob(`/order-board/orders/${encodeURIComponent(id)}/prep-sheet?picklist_id=${encodeURIComponent(picklistId)}`, 'POST'),
+  printOrderPrepSheet: (id: string, picklistId: string, whole = false): Promise<Blob> =>
+    orderBoardBlob(`/order-board/orders/${encodeURIComponent(id)}/prep-sheet?picklist_id=${encodeURIComponent(picklistId)}${whole ? '&whole=true' : ''}`, 'POST'),
   /** One PDF for several orders: a combined picking page, then each order's prep sheet. Prints only; each order is stamped as printed. */
   printOrderPrepSheetBatch: (ids: string[]): Promise<Blob> => orderBoardBlob('/order-board/prep-sheet/batch', 'POST', { ids }),
   /** The pickup SMS text for an order (admins only). */
@@ -10501,6 +10508,28 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ to }),
     }),
+  getOrderDocumentPdf: (id: string, kind: OrderDocumentKind, docId: string): Promise<Blob> =>
+    orderBoardBlob(`/order-board/orders/${encodeURIComponent(id)}/documents/${kind}/${encodeURIComponent(docId)}/pdf`),
+  getOrderDocumentEmail: (id: string, kind: OrderDocumentKind, docId: string) =>
+    request<Omit<AitoInvoiceEmailContent, 'invoice_id' | 'invoice_number'> & { document_id: string; document_number: string }>(
+      `/order-board/orders/${encodeURIComponent(id)}/documents/${kind}/${encodeURIComponent(docId)}/email`,
+    ),
+  sendOrderDocumentEmail: (id: string, kind: OrderDocumentKind, docId: string, to: string) =>
+    request<{ board: OrderBoardResponse }>(`/order-board/orders/${encodeURIComponent(id)}/documents/${kind}/${encodeURIComponent(docId)}/email`, {
+      method: 'POST',
+      body: JSON.stringify({ to }),
+    }),
+  syncOrder: (id: string) =>
+    request<{ changes: OrderSyncChange[]; board: OrderBoardResponse }>(`/order-board/orders/${encodeURIComponent(id)}/sync`, { method: 'POST' }),
+  getOrderCustomerCredit: (id: string) => request<{ credit: number | null }>(`/order-board/orders/${encodeURIComponent(id)}/customer-credit`),
+  getOrderClientRating: (id: string) => request<AitoClientRating>(`/order-board/orders/${encodeURIComponent(id)}/client-rating`),
+  editOrderContact: (id: string, body: { email: string; phone: string; phone_field: 'phone' | 'mobile' }) =>
+    request<{ board: OrderBoardResponse }>(`/order-board/orders/${encodeURIComponent(id)}/contact`, { method: 'PUT', body: JSON.stringify(body) }),
+  applyOrderCredit: (id: string, invoiceId: string) =>
+    request<{ applied: number; board: OrderBoardResponse }>(
+      `/order-board/orders/${encodeURIComponent(id)}/invoices/${encodeURIComponent(invoiceId)}/apply-credit`,
+      { method: 'POST' },
+    ),
   getOrderBoardSettings: () => request<OrderBoardSettings>('/order-board/settings'),
   updateOrderBoardSettings: (body: OrderBoardSettings) =>
     request<OrderBoardSettings>('/order-board/settings', { method: 'PUT', body: JSON.stringify(body) }),

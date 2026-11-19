@@ -28,8 +28,9 @@ from backend.app.services.zoho import ZohoUpstreamError, zoho_service
 logger = logging.getLogger(__name__)
 
 
-async def picklist_content(db: AsyncSession, salesorder_id: str, picklist_id: str) -> dict:
-    """What a parcel made from this picklist may hold. Reads only."""
+async def picklist_content(db: AsyncSession, salesorder_id: str, picklist_id: str, whole: bool = False) -> dict:
+    """What a parcel made from this picklist may hold; ``whole`` adds the units already boxed (a reprinted
+    sheet of a packed picklist). Reads only."""
     order = await _stored_order(db, salesorder_id)
     if sync.zoho_busy():
         raise sync.ZohoBusy(salesorder_id)
@@ -39,7 +40,11 @@ async def picklist_content(db: AsyncSession, salesorder_id: str, picklist_id: st
         "number": picklist.get("picklist_number") or "",
         "status": picklist.get("status") or "",
         "lines": _lines(
-            {line_id: units for line_id, (units, _, _) in _to_box(picklist, salesorder_id).items() if units > 0}
+            {
+                line_id: units + (boxed if whole else 0)
+                for line_id, (units, boxed, _) in _to_box(picklist, salesorder_id).items()
+                if units + (boxed if whole else 0) > 0
+            }
         ),
     }
 

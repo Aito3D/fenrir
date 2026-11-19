@@ -4,6 +4,8 @@ process.env.TZ = 'Pacific/Tahiti';
 import { describe, expect, it } from 'vitest';
 import type { FinishedOrderRow, OrderBoardLine, OrderBoardResponse, OrderBoardRow, OrderPayment } from '../../../api/client';
 import {
+  followDays,
+  isFollowup,
   lineTotal,
   ageTone,
   avgLeadDays,
@@ -468,5 +470,21 @@ describe('lineTotal', () => {
   });
   it('refuses over 100%, over the line total, negatives and words', () => {
     for (const d of ['100.5%', '2001', '-5', 'abc', '5%%', '%']) expect(lineTotal(l(d))).toBeNull();
+  });
+});
+
+describe('follow-ups', () => {
+  const r = (over: Partial<Pick<OrderBoardRow, 'unbilled_units' | 'contacted' | 'packed'>>) => ({ unbilled_units: 0, contacted: null, packed: 0, ...over });
+  it('unbilled is handed over without an invoice; notCollected is told with a parcel still waiting', () => {
+    expect(isFollowup(r({ unbilled_units: 2 }), 'unbilled')).toBe(true);
+    expect(isFollowup(r({}), 'unbilled')).toBe(false);
+    expect(isFollowup(r({ contacted: { at: '2026-11-10T00:00:00Z', by: 'a' }, packed: 1 }), 'notCollected')).toBe(true);
+    expect(isFollowup(r({ contacted: { at: '2026-11-10T00:00:00Z', by: 'a' } }), 'notCollected')).toBe(false);
+    expect(isFollowup(r({ packed: 3 }), 'notCollected')).toBe(false);
+  });
+  it('the longest wait counts whole days since the oldest pickup SMS', () => {
+    const now = Date.parse('2026-11-18T12:00:00Z');
+    expect(followDays([{ contacted: { at: '2026-11-15T13:00:00Z', by: '' } }, { contacted: { at: '2026-11-10T12:00:00Z', by: '' } }, { contacted: null }], now)).toBe(8);
+    expect(followDays([{ contacted: null }], now)).toBe(0);
   });
 });

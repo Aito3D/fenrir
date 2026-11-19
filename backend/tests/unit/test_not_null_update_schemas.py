@@ -30,6 +30,7 @@ NOT_A_ROW_UPDATE = {
     "SpoolWeightUpdate": "a Spoolman spool, not a database row",
     "SpoolTagLinkRequest": "a Spoolman spool, not a database row",
     "SpoolmanFilamentPatch": "a Spoolman filament, not a database row",
+    "ContactBody": "Fenrir: an order's Zoho contact (order board), not a database row",
     # Fenrir: these keep their own null handling. Several refuse an explicit null
     # with a 422 on purpose (description, revision status, preset filename), and
     # for TaskLinkRequest a null project_id means "unlink".

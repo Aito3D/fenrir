@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { PayFilter, SortKey, StatusFilter } from './orderBoard';
+import { FOLLOW_KEYS } from './orderBoard';
+import type { FollowKey, PayFilter, SortKey, StatusFilter } from './orderBoard';
 import { STATUSES } from './orderStatus';
 
 const STATUS_VALUES: StatusFilter[] = ['all', ...STATUSES, 'finished'];
@@ -14,10 +15,11 @@ const fromUrl = (params: URLSearchParams) => ({
   query: params.get('q') ?? '',
   status: pick(params.get('status'), STATUS_VALUES, 'all'),
   payFilter: pick(params.get('pay'), PAY_VALUES, 'all'),
+  follow: (FOLLOW_KEYS as string[]).includes(params.get('follow') ?? '') ? (params.get('follow') as FollowKey) : null,
   sort: { key: pick(params.get('sort'), SORTS, 'age'), flipped: params.get('flip') === '1' },
 });
 
-/** The board's filters, mirrored into the URL (`q`, `status`, `pay`, `sort`, `flip`) with defaults left out.
+/** The board's filters, mirrored into the URL (`q`, `status`, `pay`, `follow`, `sort`, `flip`) with defaults left out.
  *  State is local and the URL follows with `replace`, so typing neither lags nor fills the history; other
  *  parameters (`?order=`) are kept. A URL changed by anything else (a link to bare /orders, back/forward) is
  *  copied into the state. */
@@ -27,6 +29,7 @@ export function useOrderFilters() {
   const [query, setQuery] = useState(initial.query);
   const [status, setStatus] = useState(initial.status);
   const [payFilter, setPayFilter] = useState(initial.payFilter);
+  const [follow, setFollow] = useState<FollowKey | null>(initial.follow);
   const [sort, setSort] = useState<{ key: SortKey; flipped: boolean }>(initial.sort);
   // The search string this hook last wrote or followed: any other one came from outside.
   const known = useRef<string | null>(null);
@@ -43,6 +46,7 @@ export function useOrderFilters() {
       setQuery(f.query);
       setStatus(f.status);
       setPayFilter(f.payFilter);
+      setFollow(f.follow);
       setSort(s => (s.key === f.sort.key && s.flipped === f.sort.flipped ? s : f.sort));
       return;
     }
@@ -51,6 +55,7 @@ export function useOrderFilters() {
     put('q', query || null);
     put('status', status === 'all' ? null : status);
     put('pay', payFilter === 'all' ? null : payFilter);
+    put('follow', follow);
     put('sort', sort.key === 'age' ? null : sort.key);
     put('flip', sort.flipped ? '1' : null);
     known.current = next.toString();
@@ -58,7 +63,7 @@ export function useOrderFilters() {
       inflight.current.add(current).add(known.current);
       setParams(next, { replace: true });
     } else inflight.current.clear();
-  }, [query, status, payFilter, sort, params, setParams]);
+  }, [query, status, payFilter, follow, sort, params, setParams]);
 
-  return { query, setQuery, status, setStatus, payFilter, setPayFilter, sort, setSort };
+  return { query, setQuery, status, setStatus, payFilter, setPayFilter, follow, setFollow, sort, setSort };
 }

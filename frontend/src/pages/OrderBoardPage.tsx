@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Box, Loader2, PackageCheck, Plug, Plus, PowerOff, Printer, RefreshCw, Search, SearchX } from 'lucide-react';
+import { AlertTriangle, Box, ListFilter, Loader2, PackageCheck, Plug, Plus, PowerOff, Printer, RefreshCw, Search, SearchX, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
 import type { OrderBoardResponse, OrderBoardRow, OrderEditResult } from '../api/client';
@@ -22,8 +22,11 @@ import {
   byStatus,
   countByPayment,
   countByStatus,
+  FOLLOW_KEYS,
   finishedByBrand,
+  followDays,
   isBoardReady,
+  isFollowup,
   otherOpenOrders,
   packableUnits,
   paidPct,
@@ -33,7 +36,7 @@ import {
   totalValue,
   withFinished,
 } from '../components/orders/orderBoard';
-import type { PayFilter, StatusFilter } from '../components/orders/orderBoard';
+import type { FollowKey, PayFilter, StatusFilter } from '../components/orders/orderBoard';
 import { SORTS, useOrderFilters } from '../components/orders/useOrderFilters';
 import { STATUSES, STATUS_META, TONE } from '../components/orders/orderStatus';
 import type { Tone } from '../components/orders/orderStatus';
@@ -47,6 +50,11 @@ const BOARD_KEY = ['order-board'] as const;
 const FINISHED_KEY = ['order-board', 'finished'] as const;
 const PAGE = 50;
 const PAY_CHIPS: Exclude<PayFilter, 'all' | 'overdue'>[] = ['unpaid', 'partial', 'paid'];
+// The Aito follow-up strip's colours: unbilled money in red, an uncollected parcel in orange.
+const FOLLOW_CLS: Record<FollowKey, string> = {
+  unbilled: 'border-red-400/30 bg-red-400/[0.12] text-red-400',
+  notCollected: 'border-orange-400/30 bg-orange-400/[0.12] text-orange-400',
+};
 const CORE_ONLY_KEY = 'orders.coreOnly';
 const STATS_OPEN_KEY = 'orders.statsOpen';
 
@@ -115,7 +123,7 @@ export function OrderBoardPage() {
     onError: () => showToast(t('orders.refreshFailed'), 'error'),
   });
 
-  const { query, setQuery, status, setStatus, payFilter, setPayFilter, sort, setSort } = useOrderFilters();
+  const { query, setQuery, status, setStatus, payFilter, setPayFilter, follow, setFollow, sort, setSort } = useOrderFilters();
   const [coreOnly, setCoreOnly] = useState(readCoreOnly);
   const [statsOpen, setStatsOpen] = useState(readStatsOpen);
   const [shown, setShown] = useState(PAGE);
@@ -254,8 +262,11 @@ export function OrderBoardPage() {
   // Overdue only while something open is overdue.
   const showOverdue = payCounts.overdue > 0;
   const pay: PayFilter = payFilter === 'overdue' && !showOverdue ? 'all' : payFilter;
+  // The "to chase" pills count the open orders of the search; one pressed narrows the open list to its bucket.
+  const followed = Object.fromEntries(FOLLOW_KEYS.map(k => [k, searched.filter(r => isFollowup(r, k))])) as Record<FollowKey, OrderBoardRow[]>;
+  const open = byPayment(byStatus(searched, status), pay);
   const listed = sortRows(
-    withFinished(byPayment(byStatus(searched, status), pay), byFinishedPayment(finishedFound, pay)),
+    withFinished(follow ? open.filter(r => isFollowup(r, follow)) : open, follow ? [] : byFinishedPayment(finishedFound, pay)),
     sort.key,
     // Finished orders read newest first by default: the oldest are years old.
     sort.flipped !== (status === 'finished' && sort.key === 'age'),
@@ -474,6 +485,28 @@ export function OrderBoardPage() {
             </button>
           ))}
         </div>
+        {FOLLOW_KEYS.some(k => followed[k].length > 0 || follow === k) && (
+          <div role="group" aria-label={t('aito.followups.title')} className="flex flex-wrap items-center gap-1.5">
+            {FOLLOW_KEYS.filter(k => followed[k].length > 0 || follow === k).map(k => {
+              const days = k === 'notCollected' ? followDays(followed[k]) : 0;
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  aria-pressed={follow === k}
+                  title={t('aito.followups.hint')}
+                  onClick={() => setFollow(follow === k ? null : k)}
+                  className={`btn-press inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${FOLLOW_CLS[k]} ${follow === k ? 'ring-2 ring-current/40' : ''}`}
+                >
+                  {follow === k ? <X aria-hidden="true" className="h-3 w-3" /> : <ListFilter aria-hidden="true" className="h-3 w-3" />}
+                  {t(k === 'unbilled' ? 'orders.follow.unbilled' : 'aito.followups.notCollected')}
+                  <span className="font-semibold tabular-nums">{followed[k].length}</span>
+                  {days > 0 && <span className="opacity-70">{t('aito.followups.longest', { days })}</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="ml-auto inline-flex items-center gap-1 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1 text-xs">
           <span className="px-2 text-bambu-gray">{t('orders.sort.label')}</span>
           {SORTS.map(key => {

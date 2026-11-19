@@ -44,6 +44,7 @@ from backend.app.services.aito_terminal_payments import (
     terminal_view,
 )
 from backend.app.services.heimdall import HeimdallNotConfigured, HeimdallRateLimited, HeimdallUpstreamError
+from backend.app.services.order_board import order_row
 from backend.app.services.order_board_actions._common import _log
 from backend.app.services.order_board_payment import order_facts
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError
@@ -90,9 +91,11 @@ def _payable(docs: list[dict] | None) -> dict | None:
 
 
 async def _order_for_payment(db: AsyncSession, salesorder_id: str) -> tuple[dict, dict]:
-    """The board row and the stored sales order; an order off the board takes no payment from here."""
+    """The board row (for a finished order, its row from the stored detail) and the stored sales order."""
     row = await order_board_sync.find_board_row(db, salesorder_id)
     doc = await order_board_sync.find_stored(db, salesorder_id)
+    if row is None and doc is not None and doc.detail and await order_board_sync._finished_docs(db, salesorder_id):
+        row = order_row(doc.detail, {}, date.today())
     if row is None or doc is None or not doc.detail:
         raise HTTPException(status_code=404, detail="Order not found.")
     return row, doc.detail

@@ -15,6 +15,7 @@ import { OrderParcelEditRows } from './OrderParcelEditRows';
 import { OrderPrepActions } from './OrderPrepActions';
 import { OrderRefChips } from './OrderRefChips';
 import { OrderSidePanel } from './OrderSidePanel';
+import { OrderSyncButton } from './OrderSyncButton';
 import { OrderTodoCheckRow, OrderTodoEditRows } from './OrderTodoBand';
 import { OrderWatchButton } from './OrderWatchButton';
 import { boxablePicklists, canPick, editTotal, packableUnits, panelGroups, parseDay, scanCheck, startEdit, waitingPackages } from './orderBoard';
@@ -233,6 +234,7 @@ export function OrderLinesPanel({
       <OrderRefChips row={row}>
         {/* A finished order rings no bell: nothing to watch for. */}
         {authEnabled && (row as { status?: string }).status !== 'finished' && <OrderWatchButton orderId={row.id} />}
+        {canUpdate && <OrderSyncButton orderId={row.id} currency={row.currency} />}
         {canUpdate && (
           <HoldButton
             onHold={() => cancelOrder.mutate(row.id)}
@@ -285,7 +287,7 @@ export function OrderLinesPanel({
                       )}
                       {chips(group.id)}
                       {group.id === 'packed' && canUpdate && !handoverOpen && !edit && !parcel && (
-                        <OrderPackedActions row={row} showEdit={!check} opening={opening} onOpenParcel={id => void openParcel(id)} onHandover={setHandover} />
+                        <OrderPackedActions row={row} showEdit={!check} opening={opening} onOpenParcel={id => void openParcel(id)} onHandover={setHandover} printing={printing} onPrint={p => void print(printSheet(row.id, p.id, true))} />
                       )}
                       {group.id === 'todo' && !check && !edit && !parcel && !handoverOpen && (editLead || canPick(row) || boxablePicklists(row).length > 0) && (
                         <OrderPrepActions

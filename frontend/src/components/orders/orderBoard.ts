@@ -104,6 +104,21 @@ export const searchFinished = (rows: FinishedOrderRow[], query: string): Finishe
 export const byFinishedPayment = (rows: FinishedOrderRow[], filter: PayFilter): FinishedOrderRow[] =>
   rows.filter(r => (filter === 'overdue' || filter === 'all' ? matchesPayment(r.payment, filter) : finishedPayState(r) === filter));
 
+/** The board's "to chase" pills, the Aito strip's order twins: handed over without an invoice, and told it is
+ *  ready (pickup SMS sent) with a parcel still waiting. */
+export type FollowKey = 'unbilled' | 'notCollected';
+export const FOLLOW_KEYS: FollowKey[] = ['unbilled', 'notCollected'];
+
+export const isFollowup = (r: Pick<OrderBoardRow, 'unbilled_units' | 'contacted' | 'packed'>, key: FollowKey): boolean =>
+  key === 'unbilled' ? r.unbilled_units > 0 : !!r.contacted && r.packed > 0;
+
+/** Whole days since the pickup SMS of the longest-waiting row of the bucket; 0 when none is dated. */
+export const followDays = (rows: Pick<OrderBoardRow, 'contacted'>[], now = Date.now()): number =>
+  rows.reduce((max, r) => {
+    const at = r.contacted ? Date.parse(r.contacted.at) : NaN;
+    return Number.isFinite(at) ? Math.max(max, Math.floor((now - at) / 86_400_000)) : max;
+  }, 0);
+
 export const totalValue = (rows: OrderBoardRow[]): number => rows.reduce((sum, r) => sum + (r.total ?? 0), 0);
 
 const DAY_MS = 86_400_000;

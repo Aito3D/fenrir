@@ -253,11 +253,15 @@ async def add_order_note(
 async def print_prep_sheet(
     salesorder_id: str,
     picklist_id: str | None = Query(default=None, min_length=1, max_length=64),
+    whole: bool = False,
     db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ) -> Response:
-    """Stamp the order as printed and return its prep sheet: the units of one picklist, or everything packable."""
-    content = await _run(order_board_actions.picklist_content(db, salesorder_id, picklist_id)) if picklist_id else None
+    """Stamp the order as printed and return its prep sheet: the units of one picklist (``whole``: boxed ones
+    too, to reprint a packed picklist's sheet), or everything packable."""
+    content = (
+        await _run(order_board_actions.picklist_content(db, salesorder_id, picklist_id, whole)) if picklist_id else None
+    )
     row = await _run(
         order_board_actions.stamp_print(
             db, salesorder_id, user.username if user else "", content["number"] if content else None

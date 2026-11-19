@@ -290,7 +290,7 @@ async def test_picklist_routes_pass_the_choice_through(async_client, tokens, mon
     async def fake_preview(db, salesorder_id):
         return {"lines": [{"line_id": "l1", "quantity": 3}]}
 
-    async def fake_content(db, salesorder_id, picklist_id):
+    async def fake_content(db, salesorder_id, picklist_id, whole=False):
         return {"id": picklist_id, "number": "PL-00013", "status": "yet_to_start", "lines": PICK["lines"]}
 
     monkeypatch.setattr(actions, "create_picklist", fake_create)
@@ -315,7 +315,7 @@ async def test_prep_sheet_of_a_picklist_prints_its_units_and_number(async_client
     async def fake_stamp(db, salesorder_id, by, picklist=None):
         return {"number": "SO-1", "lines": [], "customer": "X"}
 
-    async def fake_content(db, salesorder_id, picklist_id):
+    async def fake_content(db, salesorder_id, picklist_id, whole=False):
         return {"id": picklist_id, "number": "PL-00013", "status": "yet_to_start", "lines": PICK["lines"]}
 
     def fake_render(row, **kw):

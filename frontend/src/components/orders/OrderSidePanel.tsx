@@ -65,13 +65,16 @@ export function OrderSidePanel({
           <div className="space-y-3">
             <OrderContactBlock
               contact={row.contact}
+              orderId={row.id}
+              currency={row.currency}
+              canEdit={canUpdate}
               orderNumber={row.number}
               others={others}
               onGoto={onGoto}
               sms={smsAllowed ? { contacted: row.contacted ?? null, onOpen: setSmsPhone } : undefined}
             />
             {smsPhone && <OrderSmsModal row={row} phone={smsPhone} onClose={() => setSmsPhone(null)} />}
-            {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} quoteNumber={row.facts.quote_number} orderId={canUpdate && (row as { status?: string }).status !== 'finished' ? row.id : undefined} />}
+            {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} quoteNumber={row.facts.quote_number} orderId={canUpdate ? row.id : undefined} />}
             <OrderInvoicesBlock
               row={row}
               canEmail={canUpdate}

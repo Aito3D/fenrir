@@ -844,6 +844,28 @@ async def test_an_order_off_the_board_or_without_detail_is_404(async_client, tok
 
 
 @pytest.mark.asyncio
+async def test_a_finished_order_is_paid_on_its_open_invoice(async_client, tokens, order, monkeypatch):  # noqa: F811
+    await order({"invoices": [INVOICE_NEW], "total": 12000, "currency_code": "XPF", "line_items": []})
+
+    async def off_board(db, salesorder_id):
+        return None
+
+    async def finished(db, salesorder_id=None):
+        return [object()] if salesorder_id == "so1" else []
+
+    monkeypatch.setattr(order_board_sync, "find_board_row", off_board)
+    monkeypatch.setattr(order_board_sync, "_finished_docs", finished)
+    body = (await async_client.get(f"{BASE}/payment-target", headers=tokens["both"])).json()
+    assert (body["kind"], body["document_id"], body["max_amount"]) == ("invoice", "inv-2", 12000)
+    monkeypatch.setattr(order_board_sync, "_finished_docs", lambda *_a, **_k: _empty())
+    assert (await async_client.get(f"{BASE}/payment-target", headers=tokens["both"])).status_code == 404
+
+
+async def _empty():
+    return []
+
+
+@pytest.mark.asyncio
 async def test_a_garbage_balance_counts_as_zero_and_is_not_payable(async_client, tokens, order):  # noqa: F811
     await order({"invoices": [{**INVOICE_NEW, "balance": "abc"}]})
     body = (await async_client.get(f"{BASE}/payment-target", headers=tokens["both"])).json()

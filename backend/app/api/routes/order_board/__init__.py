@@ -11,6 +11,7 @@ from backend.app.api.routes.order_board import (  # noqa: F401, I001  (import or
     tracking,
     payment,
     fulfilment,
+    documents,
 )
 from backend.app.api.routes.order_board._common import router
 

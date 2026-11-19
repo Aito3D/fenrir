@@ -1,20 +1,24 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { HandHelping, Loader2, Pencil } from 'lucide-react';
-import type { OrderPanelRow } from '../../api/client';
-import { waitingPackages } from './orderBoard';
+import { HandHelping, Loader2, Pencil, Printer, Tag } from 'lucide-react';
+import type { OrderPanelRow, OrderPicklist } from '../../api/client';
+import { boxablePicklists, waitingPackages } from './orderBoard';
 import type { ParcelEdit } from './orderBoard';
 import { FIT_VIEWPORT } from './orderStatus';
 import { EDIT_BTN } from './orderLinesShared';
 import { OrderHandoverBar } from './OrderHandoverBar';
 import { OrderParcelEditBar } from './OrderParcelEditBar';
+import { OrderShippingLabelModal } from './OrderShippingLabelModal';
 
-/** The "packed" band's header buttons: edit a waiting parcel, or hand it over. */
+/** The "packed" band's header buttons: reprint a packed picklist's sheet, edit a waiting parcel, or hand it over. */
 export function OrderPackedActions({
   row,
   showEdit,
   opening,
   onOpenParcel,
   onHandover,
+  printing,
+  onPrint,
 }: {
   row: OrderPanelRow;
   /** False while a pick / pack check is open. */
@@ -22,10 +26,28 @@ export function OrderPackedActions({
   opening: string | null;
   onOpenParcel: (packageId: string) => void;
   onHandover: (packageId: string) => void;
+  printing: boolean;
+  /** Reprints the whole sheet of a picklist already boxed (the prep band only offers open ones). */
+  onPrint: (picklist: OrderPicklist) => void;
 }) {
   const { t } = useTranslation();
+  const open = new Set(boxablePicklists(row).map(p => p.id));
+  const [labelling, setLabelling] = useState(false);
   return (
     <span className={`flex basis-full flex-wrap items-center gap-2 lg:ml-auto lg:basis-auto ${FIT_VIEWPORT}`}>
+      {(row.picklists ?? []).filter(p => !open.has(p.id)).map(p => (
+        <button
+          key={p.id}
+          type="button"
+          disabled={printing}
+          aria-label={`${t('orders.prep.reprint')} · ${p.number}`}
+          onClick={() => onPrint(p)}
+          className="btn-press inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-bambu-green hover:text-bambu-green disabled:opacity-50"
+        >
+          {printing ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <Printer aria-hidden="true" className="h-3.5 w-3.5" />}
+          {t('orders.prep.reprint')} · <span className="font-mono">{p.number}</span>
+        </button>
+      ))}
       {waitingPackages(row).map((p, _i, all) => (
         <span key={p.id} className="contents">
         {showEdit && (
@@ -51,6 +73,15 @@ export function OrderPackedActions({
         </button>
         </span>
       ))}
+      <button
+        type="button"
+        onClick={() => setLabelling(true)}
+        className="btn-press inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-bambu-green hover:text-bambu-green"
+      >
+        <Tag aria-hidden="true" className="h-3.5 w-3.5" />
+        {t('orders.label.open')}
+      </button>
+      {labelling && <OrderShippingLabelModal row={row} onClose={() => setLabelling(false)} />}
     </span>
   );
 }
