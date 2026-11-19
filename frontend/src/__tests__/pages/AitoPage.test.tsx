@@ -2364,7 +2364,8 @@ describe('client history swap', () => {
     await user.click(within(panel).getByRole('button', { name: 'Client history' }));
     const dialog = await screen.findByRole('dialog', { name: 'Client history' });
     const rows = await within(dialog).findAllByTestId('client-history-row');
-    await user.click(within(rows[1]).getByRole('button'));
+    // The row also carries a Repeat ("Duplicate") button; click the row's own button.
+    await user.click(within(rows[1]).getAllByRole('button').find((b) => b.getAttribute('aria-label') !== 'Duplicate')!);
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Client history' })).toBeNull());
     const swapped = await screen.findByRole('dialog', { name: 'ACME SARL' });
