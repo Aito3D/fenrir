@@ -11122,6 +11122,14 @@ export default {
     marge: '利润',
     priority: {
       step: '优先加价',
+      label: '优先级',
+      normal: '普通',
+      priority: '优先',
+      urgent: '加急',
+      quoteLine: {
+        priority: '优先加价',
+        urgent: '加急加价',
+      },
       settingsTitle: "优先定价",
       pct: "优先加价 %",
       minFee: "优先最低费用",

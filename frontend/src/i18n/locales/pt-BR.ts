@@ -11124,6 +11124,14 @@ export default {
     marge: 'Margem',
     priority: {
       step: 'Acréscimo de prioridade',
+      label: 'Prioridade',
+      normal: 'Normal',
+      priority: 'Prioritário',
+      urgent: 'Urgente',
+      quoteLine: {
+        priority: 'Taxa de prioridade',
+        urgent: 'Taxa de urgência',
+      },
       settingsTitle: 'Preço por prioridade',
       pct: 'Acréscimo de prioridade %',
       minFee: 'Taxa mínima de prioridade',

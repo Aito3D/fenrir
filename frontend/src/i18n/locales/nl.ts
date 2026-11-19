@@ -11164,6 +11164,14 @@ export default {
     marge: 'Marge',
     priority: {
       step: 'Prioriteitstoeslag',
+      label: 'Prioriteit',
+      normal: 'Normaal',
+      priority: 'Prioriteit',
+      urgent: 'Spoed',
+      quoteLine: {
+        priority: 'Prioriteitstoeslag',
+        urgent: 'Spoedtoeslag',
+      },
       settingsTitle: 'Prioriteitsprijzen',
       pct: 'Prioriteitstoeslag %',
       minFee: 'Minimumtarief prioriteit',

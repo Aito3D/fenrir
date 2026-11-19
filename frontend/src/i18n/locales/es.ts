@@ -11147,6 +11147,14 @@ export default {
     marge: 'Margen',
     priority: {
       step: 'Recargo por prioridad',
+      label: 'Prioridad',
+      normal: 'Normal',
+      priority: 'Prioritario',
+      urgent: 'Urgente',
+      quoteLine: {
+        priority: 'Recargo por prioridad',
+        urgent: 'Recargo por urgencia',
+      },
       settingsTitle: 'Precio por prioridad',
       pct: 'Recargo de prioridad %',
       minFee: 'Tarifa mínima de prioridad',

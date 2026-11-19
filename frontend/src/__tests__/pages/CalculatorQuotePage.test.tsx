@@ -199,6 +199,36 @@ describe('CalculatorQuotePage', () => {
     stuff_markup_pct: 20,
   });
 
+  it('prints the priority surcharge as its own line and keeps the unit price pre-surcharge', async () => {
+    server.use(http.get('/api/v1/settings/', () => HttpResponse.json({ currency: 'USD' })));
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state'
+        ? JSON.stringify({ weight: '15.5', timeH: '1', timeM: '15', quantity: '1', priority: 'urgent' })
+        : null,
+    );
+
+    render(<CalculatorQuotePage />);
+    const line = await screen.findByTestId('quote-priority-line');
+
+    const base = computePricing(quoteFixtureInputs(15.5, 1.25, 1), mockFilaments[0], mockPrinters[0], mockDefaults);
+    const urgent = computePricing(
+      { ...quoteFixtureInputs(15.5, 1.25, 1), priority: 'urgent' },
+      mockFilaments[0],
+      mockPrinters[0],
+      mockDefaults,
+    );
+    const surcharge = Math.round(urgent.margin_priority * 100) / 100;
+    expect(surcharge).toBeGreaterThan(0);
+    expect(within(line).getByText('Urgent surcharge')).toBeInTheDocument();
+    expect(line.textContent).toContain(formatMoney(surcharge, 'USD'));
+    // Unit price is the normal-level one; the task total carries the surcharge with tax.
+    expect(screen.getByTestId('quote-unit-ttc').textContent).toBe(formatMoney(Math.round(base.total_ttc * 100) / 100, 'USD'));
+    const surchargeTtc = Math.round(urgent.margin_priority * 1.13 * 100) / 100;
+    expect(screen.getByTestId('quote-task-ttc').textContent).toBe(
+      formatMoney(Math.round(base.total_ttc_qty * 100) / 100 + surchargeTtc, 'USD'),
+    );
+  });
+
   it('derives the unit price from the rounded task total, not the raw per-unit total', async () => {
     // Fixture chosen (via a throwaway scratch script scanning quantities
     // 3/6/7/9 across small weight/time tweaks) so the task total does NOT

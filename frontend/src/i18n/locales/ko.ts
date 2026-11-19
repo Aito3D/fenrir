@@ -10760,6 +10760,14 @@ export default {
     marge: '마진',
     priority: {
       step: '우선순위 할증',
+      label: '우선순위',
+      normal: '보통',
+      priority: '우선',
+      urgent: '긴급',
+      quoteLine: {
+        priority: '우선 처리 추가요금',
+        urgent: '긴급 추가요금',
+      },
       settingsTitle: '우선 처리 요금',
       pct: '우선 할증 %',
       minFee: '우선 최소 요금',

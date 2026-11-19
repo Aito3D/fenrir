@@ -11344,6 +11344,14 @@ export default {
     marge: 'Marża',
     priority: {
       step: 'Dopłata za priorytet',
+      label: 'Priorytet',
+      normal: 'Normalny',
+      priority: 'Priorytetowy',
+      urgent: 'Pilny',
+      quoteLine: {
+        priority: 'Dopłata za priorytet',
+        urgent: 'Dopłata za pilność',
+      },
       settingsTitle: 'Cennik priorytetowy',
       pct: 'Dopłata priorytetowa %',
       minFee: 'Minimalna opłata priorytetowa',

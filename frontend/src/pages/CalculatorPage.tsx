@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { focusRingCls } from '../components/formStyles';
 import { Button } from '../components/Button';
+import { PriorityControl } from '../components/PriorityControl';
 import { Toggle } from '../components/Toggle';
 import { ConfirmModal } from '../components/ConfirmModal';
 import {
@@ -438,6 +439,14 @@ export function CalculatorPage() {
                     printer={printer}
                     timeAccuracy={timeAccuracy}
                     showTimeChip={easy}
+                    priorityControl={
+                      <PriorityControl
+                        value={state.priority}
+                        onChange={(priority) => set({ priority })}
+                        surcharge={result.margin_priority * result.quantity}
+                        currency={currency}
+                      />
+                    }
                   />
                   {!easy && (
                     <CalculatorRealityCheckCard

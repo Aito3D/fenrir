@@ -11138,6 +11138,14 @@ export default {
     marge: 'マージン',
     priority: {
       step: '優先対応の割増',
+      label: '優先度',
+      normal: '通常',
+      priority: '優先',
+      urgent: '至急',
+      quoteLine: {
+        priority: '優先料金',
+        urgent: '至急料金',
+      },
       settingsTitle: '優先料金',
       pct: '優先割増 %',
       minFee: '優先の最低料金',

@@ -282,6 +282,38 @@ describe('CalculatorPage', () => {
     expect(screen.queryByLabelText('Difficulty factor (%)')).not.toBeInTheDocument();
   });
 
+  it('priority: selecting Urgent adds a surcharge row, raises the total and persists the level', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    vi.mocked(localStorage.setItem).mockClear();
+    const user = userEvent.setup();
+
+    render(<CalculatorPage />);
+    await screen.findAllByText('1 608 FCFP');
+    expect(screen.queryByText('Priority surcharge')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: 'Urgent' }));
+
+    const urgent = computePricing(
+      { ...referencePricingInputs, priority: 'urgent' },
+      referencePricingFilament,
+      referencePricingPrinter,
+      referencePricingDefaults,
+    );
+    await screen.findAllByText(collapseSpaces(formatMoney(urgent.total_ttc, 'XPF')));
+    expect(urgent.total_ttc).toBeGreaterThan(1608);
+    expect((await screen.findAllByText(/^Priority surcharge/)).length).toBeGreaterThan(0);
+
+    await waitFor(
+      () => {
+        const calls = vi.mocked(localStorage.setItem).mock.calls.filter(([k]) => k === 'calculator-state');
+        expect(JSON.parse(calls.at(-1)![1]).priority).toBe('urgent');
+      },
+      { timeout: 2000 },
+    );
+  });
+
   it('shows a per-printer price comparison above the total and switches printer on click', async () => {
     vi.mocked(localStorage.getItem).mockImplementation((key) =>
       key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,

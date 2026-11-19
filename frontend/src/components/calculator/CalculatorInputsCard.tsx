@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import type { ReactNode } from 'react';
 import { Info, Minus, Package, Plus, Timer, X, Zap } from 'lucide-react';
 import type { CalculatorFilament, CalculatorPrinter } from '../../api/client';
 import { Card, CardContent, CardHeader } from '../Card';
@@ -135,6 +136,7 @@ export function CalculatorInputsCard({
   printer,
   timeAccuracy,
   showTimeChip,
+  priorityControl,
 }: {
   state: CalcState;
   errors: Partial<Record<keyof CalcState, string>>;
@@ -147,6 +149,8 @@ export function CalculatorInputsCard({
   /** Easy mode shows the correction as this inline chip; advanced mode has
       the reality-check card's time row instead. */
   showTimeChip?: boolean;
+  /** The priority segmented control, rendered under the quantity grid. */
+  priorityControl?: ReactNode;
 }) {
   const { t } = useTranslation();
   // Offer the time correction only while the time still comes from a slicer
@@ -193,6 +197,7 @@ export function CalculatorInputsCard({
             error={errors.timeD || errors.timeH || errors.timeM}
           />
         </div>
+        {priorityControl}
         {showTimeCorrection && timeAccuracy && (
           <div className="animate-calc-badge-pop flex items-center gap-2 text-xs rounded-full bg-blue-500/10 text-blue-400 px-3 py-1.5 w-fit">
             <Timer className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />

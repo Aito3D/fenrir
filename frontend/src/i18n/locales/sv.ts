@@ -11197,6 +11197,14 @@ errors: {
     marge: 'Marginal',
     priority: {
       step: 'Prioritetstillägg',
+      label: 'Prioritet',
+      normal: 'Normal',
+      priority: 'Prioriterad',
+      urgent: 'Brådskande',
+      quoteLine: {
+        priority: 'Prioritetstillägg',
+        urgent: 'Expresstillägg',
+      },
       settingsTitle: "Prioritetspris",
       pct: "Prioritetspåslag %",
       minFee: "Minimiavgift prioritet",

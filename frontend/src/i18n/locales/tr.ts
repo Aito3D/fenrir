@@ -11066,6 +11066,14 @@ export default {
     marge: 'Marj',
     priority: {
       step: 'Öncelik ek ücreti',
+      label: 'Öncelik',
+      normal: 'Normal',
+      priority: 'Öncelikli',
+      urgent: 'Acil',
+      quoteLine: {
+        priority: 'Öncelik ek ücreti',
+        urgent: 'Acil ek ücreti',
+      },
       settingsTitle: "Öncelik fiyatlandırması",
       pct: "Öncelik ek ücreti %",
       minFee: "Öncelik asgari ücreti",

@@ -11124,6 +11124,14 @@ export default {
     marge: 'Marge',
     priority: {
       step: 'Supplément de priorité',
+      label: 'Priorité',
+      normal: 'Standard',
+      priority: 'Prioritaire',
+      urgent: 'Urgent',
+      quoteLine: {
+        priority: 'Supplément priorité',
+        urgent: 'Supplément urgence',
+      },
       settingsTitle: 'Tarification prioritaire',
       pct: 'Majoration prioritaire %',
       minFee: 'Frais minimum prioritaire',

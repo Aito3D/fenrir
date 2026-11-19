@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import type { PriorityLevel } from '../utils/pricing';
 import type { PricingInputs } from '../utils/pricing';
 import { correctedTimeH } from '../utils/calculatorInsights';
 
@@ -23,6 +24,7 @@ export interface CalcState {
   /** Measured energy in kWh from an archive prefill; '' = use the estimate. */
   energyKwh: string;
   quantity: string;
+  priority: PriorityLevel;
   modelingHours: string;
   modelingBasePrice: string;
   prepModel: string;
@@ -60,6 +62,7 @@ export const DEFAULT_STATE: CalcState = {
   timeM: '',
   energyKwh: '',
   quantity: '1',
+  priority: 'normal',
   modelingHours: '',
   modelingBasePrice: '',
   prepModel: '',
@@ -315,6 +318,7 @@ export function buildPricingInputs(state: CalcState, defaults: { stuff_markup_pc
       Math.max(0, num(state.timeD)) * 24 + Math.max(0, num(state.timeH)) + Math.max(0, num(state.timeM)) / 60,
     measured_energy_kwh: num(state.energyKwh) > 0 ? num(state.energyKwh) : undefined,
     quantity: Math.max(1, Math.floor(num(state.quantity, 1))),
+    priority: state.priority,
     modeling_hours: Math.max(0, num(state.modelingHours)),
     modeling_base_price: Math.max(0, num(state.modelingBasePrice)),
     prep_model_min: Math.max(0, num(state.prepModel)),

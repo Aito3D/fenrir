@@ -11195,6 +11195,14 @@ export default {
     marge: 'Margin',
     priority: {
       step: 'Priority surcharge',
+      label: 'Priority',
+      normal: 'Normal',
+      priority: 'Priority',
+      urgent: 'Urgent',
+      quoteLine: {
+        priority: 'Priority surcharge',
+        urgent: 'Urgent surcharge',
+      },
       settingsTitle: 'Priority pricing',
       pct: 'Priority surcharge %',
       minFee: 'Priority minimum fee',

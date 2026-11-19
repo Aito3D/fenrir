@@ -31,8 +31,15 @@ export function CalculatorQuotePage() {
     // Same session-override folding as the calculator page, so the printed
     // quote can't diverge from the totals the operator just saw.
     const effective = foldSessionOverrides(state, defaults, printer, buildPricingInputs(state, defaults));
-    return computePricing(effective.inputs, filament, effective.printer, effective.defaults);
+    // The unit price stays the pre-surcharge price; the surcharge is its own
+    // task-level line (below), so the headline figures price at normal.
+    return computePricing({ ...effective.inputs, priority: 'normal' }, filament, effective.printer, effective.defaults);
   }, [state, filament, printer, defaults]);
+  const surchargeTask = useMemo(() => {
+    if (!defaults || !filament || !printer || !result || state.priority === 'normal') return 0;
+    const effective = foldSessionOverrides(state, defaults, printer, buildPricingInputs(state, defaults));
+    return computePricing(effective.inputs, filament, effective.printer, effective.defaults).margin_priority * result.quantity;
+  }, [state, filament, printer, defaults, result]);
 
   // The quote rounds the TASK figure and derives the unit price from it, so
   // unit × quantity reproduces the printed total to the cent.
@@ -54,6 +61,10 @@ export function CalculatorQuotePage() {
   // difference. That way the three printed cells always sum exactly at
   // display precision, even when quantity doesn't divide the total evenly
   // (e.g. 100.00 HT / 113.00 TTC at quantity 3: 33.33 + 4.34 = 37.67).
+  // The surcharge is rounded on its own and taxed at the same rate as the job.
+  const surchargeHt = Math.round(surchargeTask * scale) / scale;
+  const surchargeTtc = Math.round(surchargeTask * (1 + (defaults?.tax_pct ?? 0) / 100) * scale) / scale;
+  const taskTtcFinal = taskTtcRounded + surchargeTtc;
   const unitHtDisplayed = Number(unitHtQuotient.toFixed(decimals));
   const unitTtcDisplayed = Number(unitTtcQuotient.toFixed(decimals));
   const unitTaxDisplayed = unitTtcDisplayed - unitHtDisplayed;
@@ -133,11 +144,13 @@ export function CalculatorQuotePage() {
                   {formatMoney(unitTtcDisplayed, currency)}
                 </div>
               </div>
-              {result.quantity > 1 && (
+              {(result.quantity > 1 || surchargeHt > 0) && (
                 <div className="text-right">
-                  <div className="text-sm text-gray-500">{t('calculator.forQuantity', { count: result.quantity })}</div>
+                  <div className="text-sm text-gray-500">
+                    {result.quantity > 1 ? t('calculator.forQuantity', { count: result.quantity }) : t('calculator.totalTTC')}
+                  </div>
                   <div className="text-xl font-semibold tabular-nums" data-testid="quote-task-ttc">
-                    {formatMoney(taskTtcRounded, currency)}
+                    {formatMoney(taskTtcFinal, currency)}
                   </div>
                 </div>
               )}
@@ -168,6 +181,23 @@ export function CalculatorQuotePage() {
                       {formatMoney(unitTtcDisplayed, currency)}
                     </td>
                   </tr>
+                  {surchargeHt > 0 && (
+                    <>
+                      <tr className="border-t border-gray-100" data-testid="quote-priority-line">
+                        <td className="py-1.5 text-gray-500">
+                          {t(`calculator.priority.quoteLine.${state.priority === 'urgent' ? 'urgent' : 'priority'}`)}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">+{formatMoney(surchargeHt, currency)}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 font-semibold">
+                          {t('calculator.totalTTC')}
+                          {result.quantity > 1 ? ` · ${t('calculator.forQuantity', { count: result.quantity })}` : ''}
+                        </td>
+                        <td className="py-2 text-right font-semibold tabular-nums">{formatMoney(taskTtcFinal, currency)}</td>
+                      </tr>
+                    </>
+                  )}
                 </tbody>
               </table>
             </section>

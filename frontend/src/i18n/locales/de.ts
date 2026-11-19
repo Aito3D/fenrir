@@ -11139,6 +11139,14 @@ export default {
     marge: 'Gewinnmarge',
     priority: {
       step: 'Prioritätszuschlag',
+      label: 'Priorität',
+      normal: 'Normal',
+      priority: 'Priorität',
+      urgent: 'Dringend',
+      quoteLine: {
+        priority: 'Prioritätszuschlag',
+        urgent: 'Eilzuschlag',
+      },
       settingsTitle: 'Prioritätspreise',
       pct: 'Prioritätszuschlag %',
       minFee: 'Mindestgebühr Priorität',
