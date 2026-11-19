@@ -1,10 +1,13 @@
 import { Trans, useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
-import { Building2, Loader2, User, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Building2, CopyPlus, Loader2, User, X } from 'lucide-react';
 import { Button } from '../Button';
 import { api } from '../../api/client';
 import type { AitoClientHistoryCard, AitoProject } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
+import { useDuplicateProject } from '../../hooks/useDuplicateProject';
+import { DuplicateReplaceConfirm } from './DuplicateReplaceConfirm';
 import { useCurrency } from '../../hooks/useCurrency';
 import { formatMoney } from '../../utils/pricing';
 import { formatDate } from '../../utils/date';
@@ -41,13 +44,27 @@ export function ClientHistoryModal({
   project,
   onClose,
   onOpenCard,
+  onRepeat,
 }: {
   project: AitoProject;
   onClose: () => void;
   /** Absent → rows are plain blocks (a caller without the page's swap). */
   onOpenCard?: (id: number) => void;
+  /** Called once a row's Repeat has seeded the new-project drawer (the same
+   *  seed as the panel's Duplicate). Absent → no Repeat buttons. */
+  onRepeat?: () => void;
 }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  // The history card is a summary; the seed needs the full card (contact,
+  // shipping). History lists only active cards, and the board query holds
+  // every active card, so it can always answer without a new endpoint.
+  const boardCards = onRepeat ? queryClient.getQueryData<AitoProject[]>(['aito-projects']) : undefined;
+  const [repeatSource, setRepeatSource] = useState<AitoProject | null>(null);
+  const repeatHandler = (id: number) => {
+    const source = boardCards?.find((p) => p.id === id);
+    return source ? () => setRepeatSource(source) : undefined;
+  };
   const currency = useCurrency();
   const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, { animationMs: MODAL_OUT_MS });
   const clientId = project.client_id ?? '';
@@ -179,14 +196,41 @@ export function ClientHistoryModal({
                   stage={stageLabel(item.card)}
                   currency={currency}
                   onOpen={onOpenCard}
+                  onRepeat={repeatHandler(item.card.id)}
                 />
               ),
             )}
           </ol>
         )}
       </div>
+      {repeatSource && onRepeat && (
+        <RepeatRunner key={repeatSource.id} project={repeatSource} onDone={onRepeat} onCancel={() => setRepeatSource(null)} />
+      )}
     </AitoDialogShell>
   );
+}
+
+/** Runs the panel's Duplicate gesture for a history row, mounted only after
+ *  the click so the timeline never fetches tasks for rows nobody repeats. */
+function RepeatRunner({ project, onDone, onCancel }: { project: AitoProject; onDone: () => void; onCancel: () => void }) {
+  const duplicate = useDuplicateProject(project, onDone);
+  const startedRef = useRef(false);
+  useEffect(() => {
+    // Once, even under StrictMode's double effect: a second seed would hand over twice.
+    if (startedRef.current) return;
+    startedRef.current = true;
+    duplicate.start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return duplicate.confirming ? (
+    <DuplicateReplaceConfirm
+      onConfirm={duplicate.confirmReplace}
+      onCancel={() => {
+        duplicate.cancelReplace();
+        onCancel();
+      }}
+    />
+  ) : null;
 }
 
 const STAT_CLS =
@@ -198,12 +242,14 @@ function TimelineRow({
   stage,
   currency,
   onOpen,
+  onRepeat,
 }: {
   card: AitoClientHistoryCard;
   current: boolean;
   stage: string;
   currency: string;
   onOpen?: (id: number) => void;
+  onRepeat?: () => void;
 }) {
   const { t } = useTranslation();
   const declined = card.quote_status === 'declined';
@@ -248,10 +294,14 @@ function TimelineRow({
     </>
   );
   const rowCls =
-    'grid w-full grid-cols-[62px_1fr_auto] items-baseline gap-x-3 gap-y-[3px] rounded-[9px] border px-3 py-2.5 text-left';
+    'grid w-full min-w-0 grid-cols-[62px_1fr_auto] items-baseline gap-x-3 gap-y-[3px] rounded-[9px] border px-3 py-2.5 text-left';
 
   return (
-    <li data-testid="client-history-row" aria-current={current ? 'true' : undefined} className="relative mb-1">
+    <li
+      data-testid="client-history-row"
+      aria-current={current ? 'true' : undefined}
+      className="relative mb-1 flex items-start gap-1"
+    >
       <span aria-hidden="true" className={`absolute -left-5 top-[13px] z-[1] h-3 w-3 rounded-full border-2 ${dotCls}`} />
       {current || !onOpen ? (
         <div className={`${rowCls} ${current ? 'border-bambu-green/35 bg-bambu-green/[0.07]' : 'border-transparent'}`}>{body}</div>
@@ -263,6 +313,17 @@ function TimelineRow({
           className={`${rowCls} border-transparent transition-[background-color,border-color] duration-150 hover:border-bambu-dark-tertiary hover:bg-bambu-dark ${focusRingCls}`}
         >
           {body}
+        </button>
+      )}
+      {onRepeat && (
+        <button
+          type="button"
+          onClick={onRepeat}
+          title={t('aito.duplicateProject')}
+          aria-label={t('aito.duplicateProject')}
+          className={`mt-2 shrink-0 rounded-lg p-1.5 text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
+        >
+          <CopyPlus className="h-4 w-4" aria-hidden="true" />
         </button>
       )}
     </li>
