@@ -150,7 +150,7 @@ export function RevenueHero({ payload, taxMode, canMargin }: { payload: RevenueR
           />
         )}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[36px] font-semibold leading-[1.1] tracking-[-0.02em] text-white tabular-nums">
+          <p className="text-[28px] sm:text-[36px] font-semibold leading-[1.1] tracking-[-0.02em] text-white tabular-nums">
             <span>{formatFcp(pick(last, taxMode))}</span> <span className="text-sm font-normal text-bambu-gray">{t(`revenue.${taxMode}`)}</span>
           </p>
           {deltas.length > 0 && (
@@ -166,7 +166,7 @@ export function RevenueHero({ payload, taxMode, canMargin }: { payload: RevenueR
         </div>
         {share == null && <Sparkline buckets={buckets} mode={taxMode} />}
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+      <div className="mt-2 grid grid-cols-1 gap-2 min-[480px]:grid-cols-2">
         {[previous, cumul, ...insights].map((tile) => (
           <Tile
             key={tile.label}
