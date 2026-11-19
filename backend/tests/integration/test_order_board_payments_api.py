@@ -211,10 +211,11 @@ async def test_amount_over_balance_422(async_client, tokens, order, live_invoice
         ("post", "terminal-payment"),
         ("get", "terminal-payment"),
         ("post", "payment-link/cancel"),
+        ("post", "manual-payment"),
     ],
 )
 async def test_link_and_terminal_need_orders_update(async_client, tokens, method, path):  # noqa: F811
-    kwargs = {"json": {"amount": 100}} if method == "post" else {}
+    kwargs = {"json": {"amount": 100, "mode": "cash"}} if method == "post" else {}
     r = await getattr(async_client, method)(f"{BASE}/{path}", headers=tokens["read"], **kwargs)
     assert r.status_code == 403
 
@@ -861,3 +862,114 @@ async def test_a_row_without_payment_has_no_left_cap(async_client, tokens, order
     assert r.status_code == 422 and r.json()["detail"]["code"] == "amount_above_balance"
     r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 12000}, headers=tokens["both"])
     assert r.status_code == 201
+
+
+# --- manual payment -----------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def books_payments(monkeypatch):
+    """Books' payment writes stubbed, and the order re-read after them."""
+    from backend.app.services.aito_manual_payments import _GUARD
+
+    class Books:
+        payments: list[dict] = []
+        retainers: list[dict] = []
+        refreshed: list[str] = []
+
+    async def pay(db, **kw):
+        Books.payments.append(kw)
+        return {"payment_id": f"pay-{len(Books.payments)}"}
+
+    async def retainer(db, **kw):
+        Books.retainers.append(kw)
+        return {"retainerinvoice_id": "ret-new", "retainerinvoice_number": "RET-NEW"}
+
+    async def refresh(db, salesorder_id):
+        Books.refreshed.append(salesorder_id)
+
+    monkeypatch.setattr(zoho_service, "record_customer_payment", pay)
+    monkeypatch.setattr(zoho_service, "create_retainer_invoice", retainer)
+    monkeypatch.setattr(order_board_sync, "refresh_order", refresh)
+    _GUARD.entries.clear()
+    yield Books
+    _GUARD.entries.clear()
+
+
+@pytest.mark.asyncio
+async def test_manual_cash_pays_the_target_invoice_and_records_the_method(
+    async_client,
+    tokens,  # noqa: F811
+    order,
+    live_invoice,
+    books_payments,
+    db_session,
+):
+    await order({"invoices": [INVOICE_OLD, INVOICE_NEW]})
+    r = await async_client.post(f"{BASE}/manual-payment", json={"amount": 7000, "mode": "cash"}, headers=tokens["both"])
+    assert r.status_code == 200, r.text
+    [paid] = books_payments.payments
+    assert (paid["invoice_id"], paid["amount"], paid["payment_mode"]) == ("inv-2", 7000, "cash")
+    assert books_payments.refreshed == ["so1"]
+    [event] = await _events(db_session, "payment.received")
+    assert event.detail == {"amount": 7000, "method": "cash"}
+    # The same payment again within the window is refused, not booked twice.
+    r = await async_client.post(f"{BASE}/manual-payment", json={"amount": 7000, "mode": "cash"}, headers=tokens["both"])
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "duplicate"
+    assert len(books_payments.payments) == 1
+
+
+@pytest.mark.asyncio
+async def test_manual_cheque_needs_its_number(async_client, tokens, order, live_invoice, books_payments):  # noqa: F811
+    await order({"invoices": [INVOICE_NEW]})
+    r = await async_client.post(
+        f"{BASE}/manual-payment", json={"amount": 7000, "mode": "cheque"}, headers=tokens["both"]
+    )
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "reference_required"
+    r = await async_client.post(
+        f"{BASE}/manual-payment",
+        json={"amount": 7000, "mode": "cheque", "reference": "1234567"},
+        headers=tokens["both"],
+    )
+    assert r.status_code == 200
+    assert books_payments.payments[0]["reference_number"] == "1234567"
+
+
+@pytest.mark.asyncio
+async def test_manual_refused_while_a_link_is_open(
+    async_client,
+    tokens,  # noqa: F811
+    order,
+    live_invoice,
+    books_payments,
+    db_session,
+):
+    await order({"invoices": [INVOICE_NEW]})
+    db_session.add(_pending_link())
+    await db_session.commit()
+    r = await async_client.post(f"{BASE}/manual-payment", json={"amount": 7000, "mode": "cash"}, headers=tokens["both"])
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "link_open"
+    assert books_payments.payments == []
+
+
+@pytest.mark.asyncio
+async def test_manual_on_a_sales_order_raises_a_retainer_and_pays_it(async_client, tokens, order, books_payments):  # noqa: F811
+    await order(SALES_ORDER, left=3050)
+    r = await async_client.post(f"{BASE}/manual-payment", json={"amount": 3050, "mode": "cash"}, headers=tokens["both"])
+    assert r.status_code == 200, r.text
+    assert books_payments.retainers[0]["reference_number"] == "SO-00001"
+    assert books_payments.payments[0]["retainerinvoice_id"] == "ret-new"
+
+
+@pytest.mark.asyncio
+async def test_manual_on_an_open_retainer_pays_it_directly(async_client, tokens, order, books_payments, monkeypatch):  # noqa: F811
+    await order({"invoices": [], "estimate_id": "est-1", "_retainers": [RETAINER]})
+
+    async def raw(db, retainer_id):
+        return {"retainerinvoice_number": "RET-1", "customer_id": "c1", "balance": 8000}
+
+    monkeypatch.setattr(zoho_service, "get_retainer_raw", raw)
+    r = await async_client.post(f"{BASE}/manual-payment", json={"amount": 8000, "mode": "card"}, headers=tokens["both"])
+    assert r.status_code == 200, r.text
+    assert books_payments.retainers == []
+    assert books_payments.payments[0]["retainerinvoice_id"] == "ret-1"

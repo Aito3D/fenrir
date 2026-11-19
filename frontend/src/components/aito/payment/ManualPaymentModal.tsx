@@ -20,13 +20,23 @@ import { paymentErrorText } from './paymentErrors';
 const MODAL_OUT_MS = 170;
 const MODES: AitoManualPaymentMode[] = ['card', 'cheque', 'cash'];
 
+type ManualBody = { mode: AitoManualPaymentMode; amount: number; reference: string | null };
+
 /** Record a payment taken at the counter (card/cheque/cash) against a quote's
  *  deposit or an invoice's balance. On a quote this creates a retainer
  *  invoice in Zoho Books and records the payment on it; on an invoice it
- *  records the payment directly. */
-export function ManualPaymentModal({ project, document, onClose }: {
+ *  records the payment directly. An Order Board order passes `onRecord` (its
+ *  own route) instead of a project, and `hint` for the document it pays. */
+export function ManualPaymentModal({ project, onRecord, document, hint, onClose }: ({
   project: AitoProject;
+  onRecord?: never;
+} | {
+  project?: never;
+  onRecord: (body: ManualBody) => Promise<unknown>;
+}) & {
   document: PaymentDocument;
+  /** Replaces the quote / invoice hint under the reference. */
+  hint?: string;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -37,15 +47,20 @@ export function ManualPaymentModal({ project, document, onClose }: {
   const [reference, setReference] = useState('');
   const [error, setError] = useState<string | null>(null);
   const mutation = useMutation({
-    mutationFn: (body: { mode: AitoManualPaymentMode; amount: number; reference: string | null }) =>
-      api.recordAitoManualPayment(project.id, { document_kind: document.kind, document_id: document.id, ...body }),
-    onSuccess: (fresh) => {
+    mutationFn: async (body: ManualBody) => {
+      if (!project) {
+        await onRecord(body);
+        return;
+      }
+      const fresh = await api.recordAitoManualPayment(project.id, { document_kind: document.kind, document_id: document.id, ...body });
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (rows) => replaceProject(rows, fresh));
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
       queryClient.invalidateQueries({ queryKey: ['aito-invoice', project.id] });
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
       // The payment may have just cleared the debt the rating was 'Bad' for.
       queryClient.invalidateQueries({ queryKey: ['aito-client-rating', project.client_id ?? ''] });
+    },
+    onSuccess: () => {
       showToast(t('aito.payment.manualDone'), 'success');
       requestClose();
     },
@@ -142,7 +157,7 @@ export function ManualPaymentModal({ project, document, onClose }: {
             </div>
 
             <p className="text-xs text-bambu-gray">
-              {t(document.kind === 'quote' ? 'aito.payment.manualHintQuote' : 'aito.payment.manualHintInvoice')}
+              {hint ?? t(document.kind === 'quote' ? 'aito.payment.manualHintQuote' : 'aito.payment.manualHintInvoice')}
             </p>
 
             {error && <p className="text-status-error text-sm" role="alert">{error}</p>}

@@ -1,6 +1,7 @@
 """Payment routes of the Order Board."""
 
 import math
+from datetime import date
 from typing import Literal
 
 from fastapi import Depends, HTTPException, Request
@@ -19,6 +20,14 @@ from backend.app.services import (
     order_board_sync,
 )
 from backend.app.services.aito_events import utc_now_naive
+from backend.app.services.aito_manual_payments import (
+    AmountAboveBalance,
+    DuplicateManualPayment,
+    ManualPaymentOutcomeUnknown,
+    ManualPaymentPartial,
+    ManualPaymentUnrecorded,
+    record_order_manual_payment,
+)
 from backend.app.services.aito_payment_documents import DocumentMismatch, resolve_order_document
 from backend.app.services.aito_payment_links import (
     InvoiceLinkExists,
@@ -47,6 +56,11 @@ class OrderPaymentBody(BaseModel):
 class OrderTerminalBody(OrderPaymentBody):
     # A pending payment link refuses the terminal (409 link_open) unless this asks to cancel it first.
     cancel_link: bool = False
+
+
+class OrderManualPaymentBody(OrderPaymentBody):
+    mode: Literal["card", "cheque", "cash"]
+    reference: str | None = Field(default=None, max_length=64)
 
 
 class OrderPaymentLinkView(AitoPaymentLinkView):
@@ -291,3 +305,51 @@ async def get_order_terminal_payment(
     except HeimdallRateLimited as e:
         raise _refuse(429, "rate_limited", str(e)) from e
     return terminal_view(row)
+
+
+@router.post("/orders/{salesorder_id}/manual-payment")
+async def record_order_manual_payment_route(
+    salesorder_id: str,
+    body: OrderManualPaymentBody,
+    request: Request,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> dict:
+    """A payment taken by hand (card on another device, cheque, cash), written into Books on the document the
+    terminal would charge. A pending payment link answers 409 `link_open`: the client could pay twice."""
+    _check_counter_payment_rate_limit(request, user)
+    if body.mode == "cheque" and not (body.reference or "").strip():
+        raise _refuse(422, "reference_required", "A cheque needs its number as reference")
+    document = await _payment_document(db, salesorder_id, body.amount)
+    if _open_link(await current_link(db, ("order", salesorder_id), kind=None)):
+        raise _refuse(409, "link_open", "A payment link is open for this order: cancel it first")
+    try:
+        await record_order_manual_payment(
+            db,
+            salesorder_id,
+            document=document,
+            mode=body.mode,
+            amount=body.amount,
+            reference=body.reference,
+            today=date.today(),
+        )
+    except DuplicateManualPayment as e:
+        raise _refuse(409, "duplicate", str(e)) from e
+    except AmountAboveBalance as e:
+        raise _refuse(422, "amount_above_balance", str(e)) from e
+    except ManualPaymentPartial as e:
+        raise _refuse(
+            502,
+            "manual_partial",
+            f"Retainer {e.retainer_number} was raised in Zoho Books but its payment could not be recorded: "
+            f"{e.cause}. Record the payment on it in Books.",
+        ) from e
+    except ManualPaymentOutcomeUnknown as e:
+        raise _refuse(502, "manual_outcome_unknown", f"{e}. Check Zoho Books before retrying.") from e
+    except ManualPaymentUnrecorded as e:
+        raise _refuse(502, "manual_unrecorded", str(e)) from e
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        await db.rollback()
+        raise _refuse(502, "upstream", str(e)) from e
+    _logged(user, salesorder_id, "manual_payment")
+    return {"board": await order_board_sync.read_board(db)}

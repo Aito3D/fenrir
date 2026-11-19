@@ -53,6 +53,17 @@ describe('OrderPaymentBlock payment buttons', () => {
     expect(start).toHaveBeenCalledWith('so1', 12000);
   });
 
+  it('Manual records a cash payment with left to pay on the order route', async () => {
+    vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
+    const record = vi.spyOn(api, 'recordOrderManualPayment').mockResolvedValue({ board: {} as never });
+    render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Manual' }));
+    expect(await screen.findByLabelText('Amount')).toHaveValue('12000');
+    await userEvent.click(screen.getByRole('radio', { name: 'Cash' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Record' }));
+    await vi.waitFor(() => expect(record).toHaveBeenCalledWith('so1', { mode: 'cash', amount: 12000, reference: null }));
+  });
+
   it('the waiting screen turns to paid once the terminal reports the card', async () => {
     vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
     const get = vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(null);

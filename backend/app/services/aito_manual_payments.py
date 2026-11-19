@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,7 +39,7 @@ MODE_SETTINGS = {
     "cheque": ("aito_payment_mode_cheque", "check"),
     "cash": ("aito_payment_mode_cash", "cash"),
 }
-# (project_id, kind, document_id, amount, reference) -> time.monotonic() of the last success.
+# (project_id or ("order", salesorder_id), kind, document_id, amount, reference) -> time.monotonic() of the last success.
 # Entries past DUPLICATE_WINDOW_SECONDS are pruned on the next call (see
 # record_manual_payment), so this never grows past the tuples active within
 # the window.
@@ -120,20 +121,154 @@ async def _mode_name(db: AsyncSession, mode: str) -> str:
     return (await get_setting(db, key) or "").strip() or default
 
 
-def _guard_key(project_id: int, document: PaymentDocument, amount: int, reference: str | None) -> tuple:
-    return (project_id, document.kind, document.id, int(amount), (reference or "").strip())
+def _guard_key(owner: object, document: PaymentDocument, amount: int, reference: str | None) -> tuple:
+    return (owner, document.kind, document.id, int(amount), (reference or "").strip())
 
 
-def _log_outcome_unknown(project_id: int, kind: str, number: str, retainer_number: str | None, exc: Exception) -> None:
+def _log_outcome_unknown(owner: str, kind: str, number: str, retainer_number: str | None, exc: Exception) -> None:
     logger.error(
-        "manual payment on project %s (%s %s, retainer %s): Books did not answer the payment call, "
+        "manual payment on %s (%s %s, retainer %s): Books did not answer the payment call, "
         "it may already be recorded there: %s",
-        project_id,
+        owner,
         kind,
         number,
         retainer_number,
         exc,
     )
+
+
+async def _book(
+    db: AsyncSession,
+    *,
+    document: PaymentDocument,
+    mode: str,
+    amount: int,
+    ref: str,
+    today: date,
+    owner: str,
+) -> ManualPaymentResult:
+    """The Books writes of a manual payment. An invoice, or an open retainer, takes the payment directly; a quote or a
+    sales order first gets a retainer invoice raised against it (reference = its number) and the payment lands on
+    that. `owner` names the caller in the logs ("project 12", "order SO-00248")."""
+    if document.kind in ("invoice", "retainer") and document.balance is not None and amount > document.balance:
+        raise AmountAboveBalance(document.balance)
+    mode_name = await _mode_name(db, mode)
+    today_s = today.isoformat()
+    if document.kind in ("invoice", "retainer"):
+        target = {"invoice_id": document.id} if document.kind == "invoice" else {"retainerinvoice_id": document.id}
+        try:
+            payment = await zoho_service.record_customer_payment(
+                db,
+                customer_id=document.customer_id,
+                payment_mode=mode_name,
+                amount=amount,
+                reference_number=ref,
+                description=f"{document.number} · {mode}",
+                today=today_s,
+                **target,
+            )
+        except (ZohoUnreachable, ZohoAmbiguous) as exc:
+            _log_outcome_unknown(owner, document.kind, document.number, None, exc)
+            raise ManualPaymentOutcomeUnknown(None, exc) from exc
+        return ManualPaymentResult(str(payment.get("payment_id") or ""), None, mode_name)
+    try:
+        retainer = await zoho_service.create_retainer_invoice(
+            db,
+            customer_id=document.customer_id,
+            reference_number=document.number,
+            description=f"Acompte {document.number}",
+            amount=amount,
+            today=today_s,
+        )
+    except (ZohoUnreachable, ZohoAmbiguous) as exc:
+        # T-079: a timeout (or 5xx / non-JSON answer) can land after
+        # Books created the retainer. Releasing the guard would let a
+        # reflex retry raise a second, orphaned retainer invoice, so
+        # the key is KEPT and the operator is told to check Books.
+        # A clean refusal (4xx JSON) still releases it below.
+        logger.error(
+            "manual payment on %s (%s %s): Books did not answer the retainer invoice creation, "
+            "a retainer may already exist there: %s",
+            owner,
+            document.kind,
+            document.number,
+            exc,
+        )
+        raise ManualPaymentOutcomeUnknown(None, exc, stage="retainer") from exc
+    retainer_id = str(retainer.get("retainerinvoice_id") or "")
+    retainer_number = str(retainer.get("retainerinvoice_number") or retainer_id)
+    try:
+        payment = await zoho_service.record_customer_payment(
+            db,
+            customer_id=document.customer_id,
+            payment_mode=mode_name,
+            amount=amount,
+            reference_number=ref,
+            description=document.number,
+            today=today_s,
+            retainerinvoice_id=retainer_id,
+        )
+    except (ZohoUnreachable, ZohoAmbiguous) as exc:
+        # Not `ManualPaymentPartial`: its "payment could not be
+        # recorded -- record it by hand" would have the operator book
+        # a payment Books may already hold.
+        _log_outcome_unknown(owner, document.kind, document.number, retainer_number, exc)
+        raise ManualPaymentOutcomeUnknown(retainer_number, exc) from exc
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as exc:
+        raise ManualPaymentPartial(retainer_number, exc) from exc
+    return ManualPaymentResult(str(payment.get("payment_id") or ""), retainer_number, mode_name)
+
+
+async def _guarded(key: tuple, run: Callable[[], Awaitable[ManualPaymentResult]]) -> ManualPaymentResult:
+    """Run a manual payment under the duplicate guard.
+
+    The key is reserved BEFORE any Zoho call, not just after a successful one:
+    two requests for the same document/amount/reference a few hundred ms apart
+    both pass the check under async concurrency, and reserving only after the
+    round trip would let both reach Books. A failure releases the key again,
+    except the three where something already landed in Books and a retry would
+    double it: `ManualPaymentPartial` (the retainer exists),
+    `ManualPaymentUnrecorded` (the payment itself exists) and
+    `ManualPaymentOutcomeUnknown` (a call timed out or got a 5xx / non-JSON
+    answer -- it may exist). Those KEEP the key, and their message names what
+    to check or finish by hand. The guard prunes entries past the window
+    first, so the dict never grows past the tuples active within it."""
+    now = time.monotonic()
+    if _GUARD.is_recent(key, now):
+        raise DuplicateManualPayment("This payment was recorded a moment ago")
+    _GUARD.arm(key, now)
+    try:
+        return await run()
+    except (ManualPaymentPartial, ManualPaymentUnrecorded, ManualPaymentOutcomeUnknown):
+        raise
+    except Exception:
+        _GUARD.release(key)
+        raise
+
+
+async def _keep_record(db: AsyncSession, payment_id: str, owner: str, write: Callable[[], Awaitable[None]]) -> None:
+    """Write and commit the local record of a payment Books already holds. Past this point the money HAS moved: a
+    failure here is not a failure of the payment and must not read like one. The guard key stays (a reflex retry
+    would write a second payment into Books), the Books payment id is named so a human can reconcile by hand, and
+    the session is left usable for the route's own response."""
+    try:
+        await write()
+        await db.commit()
+        await broadcast_pending(db)
+    except Exception as exc:
+        logger.error(
+            "manual payment %s is in Zoho Books (%s) but the local record failed: %s",
+            payment_id,
+            owner,
+            exc,
+            exc_info=True,
+        )
+        if not db.is_active:
+            try:
+                await db.rollback()
+            except Exception:  # noqa: BLE001 — nothing left to salvage, the error below is the story
+                pass
+        raise ManualPaymentUnrecorded(payment_id, exc) from exc
 
 
 async def record_manual_payment(
@@ -148,125 +283,33 @@ async def record_manual_payment(
     today: date,
 ) -> ManualPaymentResult:
     project_id = project.id
-    key = _guard_key(project_id, document, amount, reference)
-    now = time.monotonic()
-    # Prune first: an entry past the window is already ignored by the check
-    # below, so dropping it here changes nothing a caller can observe and
-    # keeps the dict from growing forever (every distinct project/document/
-    # amount/reference tuple ever paid, for the life of the process). Same
-    # guard as _recent_sms's in routes/aito.py (DuplicateSendGuard). After the
-    # prune, a key still present is by construction inside the window.
-    if _GUARD.is_recent(key, now):
-        raise DuplicateManualPayment("This payment was recorded a moment ago")
-    # Reserved HERE, before any Zoho call -- not just after a successful one.
-    # Two requests for the same document/amount/reference a few hundred ms
-    # apart both pass the read above under async concurrency (FastAPI runs
-    # them concurrently, not one-at-a-time); reserving only after the round
-    # trip would let both reach Books. A failure below releases the key
-    # again, except the two where something already landed in Books and a
-    # retry would double it: `ManualPaymentPartial` (the retainer exists),
-    # `ManualPaymentUnrecorded` (the payment itself exists) and
-    # `ManualPaymentOutcomeUnknown` (the payment call -- or the retainer
-    # invoice creation -- timed out, or got a 5xx / non-JSON answer -- it
-    # may exist). Those KEEP the key, and their
-    # message names what to check or finish by hand -- the prune above cannot
-    # drop them early: it only ever removes entries already past the window.
-    _GUARD.arm(key, now)
-    try:
-        if document.kind == "invoice" and document.balance is not None and amount > document.balance:
-            raise AmountAboveBalance(document.balance)
-        mode_name = await _mode_name(db, mode)
-        ref = (reference or "").strip()
-        today_s = today.isoformat()
-        retainer_number: str | None = None
-        if document.kind == "invoice":
-            try:
-                payment = await zoho_service.record_customer_payment(
-                    db,
-                    customer_id=document.customer_id,
-                    payment_mode=mode_name,
-                    amount=amount,
-                    reference_number=ref,
-                    description=f"{document.number} · {mode}",
-                    today=today_s,
-                    invoice_id=document.id,
-                )
-            except (ZohoUnreachable, ZohoAmbiguous) as exc:
-                _log_outcome_unknown(project_id, document.kind, document.number, None, exc)
-                raise ManualPaymentOutcomeUnknown(None, exc) from exc
-        else:
-            try:
-                retainer = await zoho_service.create_retainer_invoice(
-                    db,
-                    customer_id=document.customer_id,
-                    reference_number=document.number,
-                    description=f"Acompte {document.number}",
-                    amount=amount,
-                    today=today_s,
-                )
-            except (ZohoUnreachable, ZohoAmbiguous) as exc:
-                # T-079: a timeout (or 5xx / non-JSON answer) can land after
-                # Books created the retainer. Releasing the guard would let a
-                # reflex retry raise a second, orphaned retainer invoice, so
-                # the key is KEPT and the operator is told to check Books.
-                # A clean refusal (4xx JSON) still releases it below.
-                logger.error(
-                    "manual payment on project %s (%s %s): Books did not answer the retainer invoice creation, "
-                    "a retainer may already exist there: %s",
-                    project_id,
-                    document.kind,
-                    document.number,
-                    exc,
-                )
-                raise ManualPaymentOutcomeUnknown(None, exc, stage="retainer") from exc
-            retainer_id = str(retainer.get("retainerinvoice_id") or "")
-            retainer_number = str(retainer.get("retainerinvoice_number") or retainer_id)
-            try:
-                payment = await zoho_service.record_customer_payment(
-                    db,
-                    customer_id=document.customer_id,
-                    payment_mode=mode_name,
-                    amount=amount,
-                    reference_number=ref,
-                    description=document.number,
-                    today=today_s,
-                    retainerinvoice_id=retainer_id,
-                )
-            except (ZohoUnreachable, ZohoAmbiguous) as exc:
-                # Not `ManualPaymentPartial`: its "payment could not be
-                # recorded -- record it by hand" would have the operator book
-                # a payment Books may already hold. Nor its
-                # `payment.manual.partial` event, which says the same thing.
-                _log_outcome_unknown(project_id, document.kind, document.number, retainer_number, exc)
-                raise ManualPaymentOutcomeUnknown(retainer_number, exc) from exc
-            except (ZohoNotConfiguredError, ZohoUpstreamError) as exc:
-                await record(
-                    db,
-                    project_id,
-                    "payment.manual.partial",
-                    actor_class="user",
-                    actor_name=actor_name,
-                    subject_type="project",
-                    subject_id=project_id,
-                    detail={
-                        "document_kind": document.kind,
-                        "document_number": document.number,
-                        "retainer_number": retainer_number,
-                        "mode": mode,
-                        "amount": int(amount),
-                        "reference": ref,
-                        "error": str(exc)[:500],
-                    },
-                )
-                await db.commit()
-                raise ManualPaymentPartial(retainer_number, exc) from exc
-        zoho_payment_id = str(payment.get("payment_id") or "")
-        # Past this point the money HAS moved. A failure here is not a
-        # failure of the payment, and must not read like one: the guard key
-        # stays (a reflex retry would write a second payment into Books),
-        # the Books payment id is named so a human can reconcile by hand,
-        # and the session is left usable for the route's own response.
+    owner = f"project {project_id}"
+    ref = (reference or "").strip()
+    base = {"document_kind": document.kind, "document_number": document.number, "mode": mode, "amount": int(amount)}
+
+    async def run() -> ManualPaymentResult:
         try:
+            result = await _book(db, document=document, mode=mode, amount=amount, ref=ref, today=today, owner=owner)
+        except ManualPaymentPartial as exc:
+            await record(
+                db,
+                project_id,
+                "payment.manual.partial",
+                actor_class="user",
+                actor_name=actor_name,
+                subject_type="project",
+                subject_id=project_id,
+                detail={
+                    **base,
+                    "retainer_number": exc.retainer_number,
+                    "reference": ref,
+                    "error": str(exc.cause)[:500],
+                },
+            )
+            await db.commit()
+            raise
+
+        async def write() -> None:
             await record(
                 db,
                 project_id,
@@ -276,41 +319,53 @@ async def record_manual_payment(
                 subject_type="project",
                 subject_id=project_id,
                 detail={
-                    "document_kind": document.kind,
-                    "document_number": document.number,
-                    "mode": mode,
-                    "mode_name": mode_name,
-                    "amount": int(amount),
+                    **base,
+                    "mode_name": result.mode_name,
                     "reference": ref,
-                    "zoho_payment_id": zoho_payment_id,
-                    "retainer_number": retainer_number,
+                    "zoho_payment_id": result.zoho_payment_id,
+                    "retainer_number": result.retainer_number,
                 },
             )
-            await db.commit()
-            await broadcast_pending(db)
-        except Exception as exc:
-            logger.error(
-                "manual payment %s is in Zoho Books (project %s, %s %s) but the local record failed: %s",
-                zoho_payment_id,
-                project_id,
-                document.kind,
-                document.number,
-                exc,
-                exc_info=True,
-            )
-            if not db.is_active:
-                try:
-                    await db.rollback()
-                except Exception:  # noqa: BLE001 — nothing left to salvage, the error below is the story
-                    pass
-            raise ManualPaymentUnrecorded(zoho_payment_id, exc) from exc
-    except (ManualPaymentPartial, ManualPaymentUnrecorded, ManualPaymentOutcomeUnknown):
-        raise
-    except Exception:
-        _GUARD.release(key)
-        raise
+
+        await _keep_record(db, result.zoho_payment_id, owner, write)
+        return result
+
+    result = await _guarded(_guard_key(project_id, document, amount, reference), run)
     await refresh_after_payment(db, project_id, document.kind)
-    return ManualPaymentResult(zoho_payment_id=zoho_payment_id, retainer_number=retainer_number, mode_name=mode_name)
+    return result
+
+
+async def record_order_manual_payment(
+    db: AsyncSession,
+    salesorder_id: str,
+    *,
+    document: PaymentDocument,
+    mode: str,
+    amount: int,
+    reference: str | None,
+    today: date,
+) -> ManualPaymentResult:
+    """`record_manual_payment` for an Order Board order: the same Books writes and guard; the order's
+    `payment.received` (with its method) is its history line, then the order is re-read so the board shows the
+    money. Like the terminal's settle, the event is recorded before the re-read so the board tells it once."""
+    from backend.app.services.aito_payment_documents import record_order_payment, refresh_order_after_payment
+
+    owner = f"order {document.number if document.kind == 'salesorder' else salesorder_id}"
+    ref = (reference or "").strip()
+    started = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    async def run() -> ManualPaymentResult:
+        result = await _book(db, document=document, mode=mode, amount=amount, ref=ref, today=today, owner=owner)
+
+        async def write() -> None:
+            await record_order_payment(db, salesorder_id, amount=int(amount), method=mode, since=started)
+
+        await _keep_record(db, result.zoho_payment_id, owner, write)
+        return result
+
+    result = await _guarded(_guard_key(("order", salesorder_id), document, amount, reference), run)
+    await refresh_order_after_payment(db, salesorder_id)
+    return result
 
 
 async def settle_invoiced_deposits(db: AsyncSession, project: AitoProject) -> None:

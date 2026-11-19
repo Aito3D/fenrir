@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link2, Smartphone, Wallet } from 'lucide-react';
+import { Banknote, Link2, Smartphone, Wallet } from 'lucide-react';
 import { ApiError, api } from '../../api/client';
 import type { AitoTerminalPayment, OrderPayment, OrderPaymentLink } from '../../api/client';
+import { ManualPaymentModal } from '../aito/payment/ManualPaymentModal';
 import { PaymentLinkDialog } from '../aito/payment/PaymentLinkModal';
 import { TerminalPaymentDialog } from '../aito/payment/TerminalPaymentModal';
 import { isTerminalOpen } from '../aito/payment/useTerminalPayment';
@@ -86,7 +87,7 @@ export function OrderPaymentBlock({ payment, currency, total, quoteNumber = '', 
 
 const BUTTON = 'btn-press inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-xs text-white hover:bg-bambu-dark-tertiary disabled:opacity-50';
 
-/** "Lien de paiement" and "TPE" on the document the server picks (the newest invoice with a balance, else the quote's
+/** "Lien de paiement", "TPE" and "Manuel" (cheque, cash, card elsewhere) on the document the server picks (the newest invoice with a balance, else the quote's
  *  open retainer, else the quote or the sales order itself), prefilled with what is left to pay, capped at that document's balance. Hidden when there is none. */
 function OrderPaymentActions({ orderId, currency, left }: { orderId: string; currency: string; left: number }) {
   const { t } = useTranslation();
@@ -99,7 +100,7 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
     placeholderData: keepPreviousData,
   });
   // What a dialog opened on, kept here so a payment that empties the target never unmounts the dialog showing it.
-  const [open, setOpen] = useState<{ document: PaymentDocument; hint?: string; link?: OrderPaymentLink | null; terminal?: AitoTerminalPayment | null } | null>(null);
+  const [open, setOpen] = useState<{ document: PaymentDocument; hint?: string; link?: OrderPaymentLink | null; terminal?: AitoTerminalPayment | null; manual?: true } | null>(null);
   const [opening, setOpening] = useState(false);
   const data = target.data;
   const due = data?.max_amount == null ? 0 : Math.min(Math.max(0, Math.round(data.left)), data.max_amount);
@@ -135,9 +136,24 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
             <Smartphone aria-hidden="true" className="h-3.5 w-3.5" />
             {t('orders.pay.terminal')}
           </button>
+          <button type="button" className={BUTTON} onClick={() => setOpen({ document, hint, manual: true })} title={t('aito.payment.cellManualTitle')}>
+            <Banknote aria-hidden="true" className="h-3.5 w-3.5" />
+            {t('aito.payment.cellManual')}
+          </button>
         </>
       )}
-      {open && open.terminal === undefined && (
+      {open?.manual && (
+        <ManualPaymentModal
+          document={open.document}
+          hint={open.hint}
+          onClose={() => setOpen(null)}
+          onRecord={async (body) => {
+            await api.recordOrderManualPayment(orderId, body);
+            refresh();
+          }}
+        />
+      )}
+      {open && !open.manual && open.terminal === undefined && (
         <PaymentLinkDialog
           document={open.document}
           hint={open.hint}

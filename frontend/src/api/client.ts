@@ -10452,6 +10452,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(cancelLink ? { amount, cancel_link: true } : { amount }),
     }),
+  /** A payment taken by hand, booked in Books on the same document as the terminal; an open link answers 409 `link_open`. */
+  recordOrderManualPayment: (id: string, body: { mode: AitoManualPaymentMode; amount: number; reference: string | null }) =>
+    request<{ board: OrderBoardResponse }>(`/order-board/orders/${encodeURIComponent(id)}/manual-payment`, { method: 'POST', body: JSON.stringify(body) }),
   cancelOrderPaymentLink: (id: string) =>
     request<OrderPaymentLink>(`/order-board/orders/${encodeURIComponent(id)}/payment-link/cancel`, { method: 'POST' }),
   /** The order's newest terminal charge, refreshed from Heimdall while open; null if none. */
