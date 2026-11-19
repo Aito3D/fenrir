@@ -967,7 +967,8 @@ describe('OrderBoardPage actions', () => {
       expect(within(await screen.findByTestId('orders-list')).getAllByTestId('order-number').map(n => n.textContent)).toContain('SO-00999');
       expect(screen.getByText('SO-00412')).toBeInTheDocument();
       expect(screen.getByPlaceholderText('Order number, customer, product, SKU…')).toBeInTheDocument();
-      expect(within(document.getElementById('order-9')!).getByRole('button', { expanded: true })).toBeInTheDocument();
+      // the row opens a render after the URL moves: under CI load the two are not in the same tick
+      await waitFor(() => expect(within(document.getElementById('order-9')!).getByRole('button', { expanded: true })).toBeInTheDocument());
     });
   });
 });
