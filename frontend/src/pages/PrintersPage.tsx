@@ -2954,15 +2954,10 @@ function PrinterCard({
   });
 
   // AMS Filament Backup toggle (auto-switch to a backup spool when one runs out).
-  // Invalidate BOTH printer-status cache keys — the codebase has two conventions
-  // ('printerStatus' camelCase + 'printer-status' kebab-case used by PrintModal /
-  // useMultiPrinterFilamentMapping). Hitting only one would leave PrintModal
-  // showing the old backup state until the user reopens it.
   const setAmsBackupMutation = useMutation({
     mutationFn: (enabled: boolean) => api.setAmsFilamentBackup(printer.id, enabled),
     onSuccess: (_data, enabled) => {
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
-      queryClient.invalidateQueries({ queryKey: ['printer-status', printer.id] });
       showToast(t(enabled ? 'printers.amsBackup.toastEnabled' : 'printers.amsBackup.toastDisabled'), 'success');
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
@@ -9132,7 +9127,6 @@ function usePrinterOfflineStatus(printerId: number) {
   const { data: status } = useQuery({
     queryKey: ['printerStatus', printerId],
     queryFn: () => api.getPrinterStatus(printerId),
-    refetchInterval: 30000,
   });
   return !status?.connected;
 }

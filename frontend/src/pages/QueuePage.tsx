@@ -655,7 +655,6 @@ function SortableQueueItem({
   const { data: status } = useQuery({
     queryKey: ['printerStatus', item.printer_id],
     queryFn: () => api.getPrinterStatus(item.printer_id!),
-    refetchInterval: printerState === 'printing' ? 30000 : false,
     enabled: item.printer_id != null && (printerState === 'printing' || hasPhysicalAmsMapping),
   });
 
@@ -2405,7 +2404,6 @@ export function QueuePage() {
     queries: activePrinterIds.map(printerId => ({
       queryKey: ['printerStatus', printerId],
       queryFn: () => api.getPrinterStatus(printerId),
-      refetchInterval: 5000,
     })),
   });
 

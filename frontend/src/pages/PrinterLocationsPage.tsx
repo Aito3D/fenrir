@@ -336,7 +336,6 @@ export function PrinterLocationsPage() {
     queries: (printers ?? []).map((p) => ({
       queryKey: ['printerStatus', p.id],
       queryFn: () => api.getPrinterStatus(p.id),
-      refetchInterval: 30000,
     })),
   });
   const statusById = new Map((printers ?? []).map((p, i) => [p.id, statusQueries[i]?.data]));

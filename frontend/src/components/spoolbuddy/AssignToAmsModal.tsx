@@ -192,7 +192,6 @@ export function AssignToAmsModal({
     queryKey: ['printerStatus', targetPrinterId],
     queryFn: () => api.getPrinterStatus(targetPrinterId!),
     enabled: isOpen && targetPrinterId !== null,
-    refetchInterval: 5000,
   });
 
   const { data: printer } = useQuery({

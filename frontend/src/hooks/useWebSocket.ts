@@ -72,6 +72,8 @@ export function useWebSocket() {
   // The wait before the next reconnect after a handshake that failed (the
   // socket never opened); 0 once one opens.
   const handshakeDelayRef = useRef(0);
+  // True once any socket of this provider has opened, so a later open is a reconnect.
+  const everOpenedRef = useRef(false);
   const queryClient = useQueryClient();
   const boardSync = useBoardSync();
   const lastMissingSpoolWarningRef = useRef<Map<number, string>>(new Map());
@@ -188,6 +190,13 @@ export function useWebSocket() {
     ws.onopen = () => {
       opened = true;
       handshakeDelayRef.current = 0;
+      // A reconnect may have missed change events for keys that no longer poll.
+      // printerStatus needs nothing: the server re-sends every status on connect.
+      if (everOpenedRef.current) {
+        queryClient.invalidateQueries({ queryKey: ['pending-uploads'] });
+        queryClient.invalidateQueries({ queryKey: ['inbox'] });
+      }
+      everOpenedRef.current = true;
       if (import.meta.env.MODE !== 'test') console.log('[WebSocket] Connected');
       // A fresh socket has no memory of what this client was presenting
       // before it dropped — the server's viewer map lost us the instant the
@@ -274,7 +283,7 @@ export function useWebSocket() {
     };
 
     wsRef.current = ws;
-  }, [processMessageQueue]);
+  }, [processMessageQueue, queryClient]);
 
   // Write every pending printer status into the query cache.
   //

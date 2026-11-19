@@ -1470,6 +1470,25 @@ describe('useWebSocket hook', () => {
       vi.useRealTimers();
     });
 
+    it('refetches the unpolled keys on a reconnect, not on the first connect', async () => {
+      vi.useFakeTimers();
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
+      await vi.advanceTimersByTimeAsync(0);
+      const firstWs = wsInstances[wsInstances.length - 1]!;
+      act(() => firstWs.open());
+      expect(invalidateSpy).not.toHaveBeenCalled();
+
+      act(() => firstWs.close());
+      await vi.advanceTimersByTimeAsync(3000);
+      act(() => wsInstances[wsInstances.length - 1]!.open());
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['pending-uploads'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inbox'] });
+      vi.useRealTimers();
+    });
+
     it.each([
       ['spoolbuddy_tag_link_failed', 'spoolbuddy-tag-link-failed'],
       ['spoolman_unavailable', 'spoolman-unavailable'],

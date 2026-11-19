@@ -47,7 +47,6 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
   const { data: status } = useQuery({
     queryKey: ['printerStatus', printerId],
     queryFn: () => api.getPrinterStatus(printerId),
-    refetchInterval: 30000,
     enabled: isOpen,
   });
 
