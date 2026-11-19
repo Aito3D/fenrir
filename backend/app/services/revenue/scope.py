@@ -8,7 +8,7 @@ from backend.app.services.revenue.config import REVENUE_BRANDS, REVENUE_NATURES
 
 ScopeReason = Literal["decision-include", "nature", "brand", "decision-exclude", "unclassified", "unknown-item"]
 
-ITEM_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+ITEM_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 
 
 @dataclass(frozen=True)
