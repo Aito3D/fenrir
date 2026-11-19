@@ -32,7 +32,7 @@ def l(day, item_id, amount, customer_id="", quantity=1):  # noqa: E743
 
 
 def breakdown(lines, filters=None, first_days=None, from_="2026-10-01"):
-    return customer_breakdown(lines, ITEMS, [], CUSTOMERS, filters or LineFilters(), first_days, from_, HISTORY_START)
+    return customer_breakdown(lines, ITEMS, [], CUSTOMERS, filters or LineFilters(), first_days, from_)
 
 
 def movers(lines, ranges):
@@ -119,9 +119,9 @@ def test_follows_the_filters():
     assert [c["ht"] for c in r["customers"]] == [2000, 100]
 
 
-def test_acquisition_only_when_first_days_given_and_range_is_past_history_start():
+def test_acquisition_is_present_at_the_history_start_and_absent_only_without_first_days():
     assert breakdown(LINES)["acquisition"] is None
-    assert breakdown(LINES, first_days={"biz": "2026-10-01"}, from_=HISTORY_START)["acquisition"] is None
+    assert breakdown(LINES, first_days={"biz": "2026-10-01"}, from_=HISTORY_START)["acquisition"] is not None
     a = breakdown(LINES, first_days={"biz": "2026-10-01"})["acquisition"]
     assert (a["newCount"], a["returningCount"]) == (1, 1)
 
@@ -198,4 +198,5 @@ def test_validates_months_and_amounts():
         parse_target_amount(float("inf")),
         parse_target_amount(True),
         parse_target_amount(1e12 + 1),
-    ] == [1500, None, None, None, None, None]
+        parse_target_amount(10**400),
+    ] == [1500, None, None, None, None, None, None]

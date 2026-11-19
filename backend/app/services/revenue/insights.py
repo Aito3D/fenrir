@@ -1,6 +1,5 @@
 """The revenue dashboard's secondary read models: customers, movers, year over year, calendar days and targets."""
 
-import math
 import re
 from collections.abc import Iterable
 
@@ -47,9 +46,8 @@ def customer_breakdown(
     filters: LineFilters,
     first_days: dict[str, str] | None,
     from_: str,
-    history_start: str,
 ) -> dict:
-    """`acquisition` is None without first-purchase days or when the range starts at the history start (everyone looks new)."""
+    """`acquisition` is None only without first-purchase days; the history-start caveat is the client's."""
     seg = {s: {**dict.fromkeys(_SEGMENT_KEYS, 0.0), "ids": set()} for s in CUSTOMER_SEGMENTS}
     rows: dict[str, dict] = {}
     unsplit = 0.0
@@ -106,9 +104,7 @@ def customer_breakdown(
         "customers": everyone[:TOP_CUSTOMERS],
         "customerCount": len(everyone),
         "unsplitHt": js_round(unsplit),
-        "acquisition": acquisition_of(everyone, first_days, from_)
-        if first_days is not None and from_ > history_start
-        else None,
+        "acquisition": acquisition_of(everyone, first_days, from_) if first_days is not None else None,
     }
 
 
@@ -215,8 +211,8 @@ def is_target_month(v: object) -> bool:
 
 
 def parse_target_amount(v: object) -> int | None:
-    """A finite number in 0..10^12, rounded; None otherwise (bool is not a number here)."""
-    if isinstance(v, bool) or not isinstance(v, int | float) or not math.isfinite(v) or not 0 <= v <= 1e12:
+    """A number in 0..10^12 (the range test rejects nan, inf and huge ints without overflowing), rounded; None otherwise (bool is not a number here)."""
+    if isinstance(v, bool) or not isinstance(v, int | float) or not 0 <= v <= 1e12:
         return None
     return js_round(v)
 
