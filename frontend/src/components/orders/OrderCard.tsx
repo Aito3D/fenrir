@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, History } from 'lucide-react';
 import type { OrderBoardRow, OrderLastEvent } from '../../api/client';
@@ -8,8 +9,10 @@ import { SHORT_LABEL_KEY } from './orderEventKinds';
 import { formatMoney } from '../../utils/pricing';
 import { Card } from '../Card';
 import { useAuth } from '../../contexts/AuthContext';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { ageTone, formatQty, nextStep, packableUnits, parseDay } from './orderBoard';
 import { OrderLinesPanel } from './OrderLinesPanel';
+import { OrderMobileView } from './OrderMobileView';
 import { OrderRowAction } from './OrderRowAction';
 import { PaymentPill } from './PaymentPill';
 import { ROW_GRID, STATUS_META, TONE } from './orderStatus';
@@ -69,6 +72,7 @@ export function OrderCard({
   onSelect?: (on: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const phone = useIsMobile();
   const meta = STATUS_META[row.status];
   const tone = TONE[meta.tone];
   const Icon = meta.icon;
@@ -97,7 +101,7 @@ export function OrderCard({
         className={`relative flex items-stretch ${edited ? 'bg-bambu-green/10 motion-safe:animate-[pulse_1s_ease-in-out_2]' : ''}`}
       >
         {/* Beside the row button, not inside it: ticking must not open the order. The empty slot keeps the columns aligned. */}
-        {onSelect && (
+        {onSelect && !phone && (
           <label className="grid w-8 shrink-0 place-items-center pl-3">
             {packableUnits(row) > 0 && (
               <input
@@ -166,7 +170,12 @@ export function OrderCard({
         </button>
         {step && !(open && handingOff && !step.startsWith('handover-')) && <OrderRowAction row={row} target={step} onStart={onStart} />}
       </div>
-      {open && <OrderLinesPanel row={row} others={others} onGoto={onGoto} start={start} startTick={startTick} onHandoverOpen={setHandingOff} onEdited={() => setEdited(true)} />}
+      {open && phone && createPortal(
+        // In the body, not the row: the list rows animate, and a transformed ancestor would capture position:fixed.
+        <OrderMobileView key={row.id} row={row} status={row.status} onClose={onToggle} others={others} onGoto={onGoto} onStart={onStart} start={start} startTick={startTick} onEdited={() => setEdited(true)} />,
+        document.body,
+      )}
+      {open && !phone && <OrderLinesPanel row={row} others={others} onGoto={onGoto} start={start} startTick={startTick} onHandoverOpen={setHandingOff} onEdited={() => setEdited(true)} />}
     </Card>
   );
 }

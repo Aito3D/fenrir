@@ -2,7 +2,7 @@
  * The Orders page: list states in the brief's sequence, the three filter
  * scopes, the "3D only" toggle and the grouped lines panel.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -970,5 +970,80 @@ describe('OrderBoardPage actions', () => {
       // the row opens a render after the URL moves: under CI load the two are not in the same tick
       await waitFor(() => expect(within(document.getElementById('order-9')!).getByRole('button', { expanded: true })).toBeInTheDocument());
     });
+  });
+});
+
+describe('OrderBoardPage on the phone', () => {
+  const realMatchMedia = window.matchMedia;
+  beforeEach(() => {
+    window.matchMedia = ((query: string) => ({
+      ...realMatchMedia(query),
+      matches: query === '(max-width: 767px)',
+    })) as typeof window.matchMedia;
+  });
+  afterEach(() => { window.matchMedia = realMatchMedia; });
+
+  const twoOfOne = () => serve(board({ rows: [
+    row({ customer_id: 'c1', contact: { name: 'Intendance', email: '', phone: '', mobile: '' } }),
+    row({ id: 'so3', number: 'SO-00421', customer_id: 'c1' }),
+  ] }));
+
+  it('opening an order shows the full-screen view', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /SO-00412/ }));
+    expect(await screen.findByRole('tab', { name: 'Products' })).toBeInTheDocument();
+    expect(screen.getByTestId('order-mobile')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /SO-00412/, expanded: true })).toBeInTheDocument();
+  });
+
+  it('back clears ?order= and closes the view', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /SO-00412/ }));
+    await user.click(await screen.findByRole('button', { name: 'Back to orders' }));
+    await waitFor(() => expect(screen.queryByTestId('order-mobile')).not.toBeInTheDocument());
+    expect(new URLSearchParams(window.location.search).has('order')).toBe(false);
+  });
+
+  it('history back closes the view', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /SO-00412/ }));
+    await screen.findByTestId('order-mobile');
+    act(() => { window.history.back(); });
+    await waitFor(() => expect(screen.queryByTestId('order-mobile')).not.toBeInTheDocument());
+  });
+
+  it('"also open" swaps the order in place, back on Products', async () => {
+    const user = userEvent.setup();
+    twoOfOne();
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /SO-00412/ }));
+    await user.click(await screen.findByRole('tab', { name: 'Customer' }));
+    await user.click(await screen.findByRole('button', { name: 'SO-00421' }));
+    const view = await screen.findByTestId('order-mobile');
+    await waitFor(() => expect(within(view).getByText('SO-00421')).toBeInTheDocument());
+    expect(within(view).getByRole('tab', { name: 'Products' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('has no batch checkbox', async () => {
+    serve(board());
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it('a finished order opens full screen once its detail loads', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    serveFinished([fin(1)]);
+    render(<OrderBoardPage />);
+    await showFinished();
+    await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
+    expect(await screen.findByRole('tab', { name: 'Products' })).toBeInTheDocument();
   });
 });

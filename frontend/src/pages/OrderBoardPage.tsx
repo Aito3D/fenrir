@@ -41,6 +41,7 @@ import { SORTS, useOrderFilters } from '../components/orders/useOrderFilters';
 import { STATUSES, STATUS_META, TONE } from '../components/orders/orderStatus';
 import type { Tone } from '../components/orders/orderStatus';
 import { useAuth } from '../contexts/AuthContext';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { useToast } from '../contexts/ToastContext';
 import { formatDateTime, formatRelativeTime } from '../utils/date';
 import { prefersReducedMotion } from '../utils/motion';
@@ -105,6 +106,7 @@ function Notice({ icon: Icon, title, hint, rise }: { icon: LucideIcon; title: st
 export function OrderBoardPage() {
   const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
+  const phone = useIsMobile();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
@@ -216,6 +218,7 @@ export function OrderBoardPage() {
   }, [openId, ready, data, finishedQuery.data, finishedQuery.isLoading, coreOnly, status, setStatus]);
   // After the target renders, bring it into view. Declared after the effect above, so one pass does both.
   useEffect(() => {
+    if (phone) return; // the full-screen view covers the list
     const target = scrollTarget.current;
     const el = target ? document.getElementById(`order-${target.id}`) : null;
     if (!target || !el) return;
@@ -373,7 +376,7 @@ export function OrderBoardPage() {
         start={start?.id === row.id ? start.target : undefined}
         startTick={start?.id === row.id ? start.tick : undefined}
         selected={ticked.has(row.id)}
-        onSelect={hasPermission('orders:update') ? on => select(row.id, on) : undefined}
+        onSelect={hasPermission('orders:update') && !phone ? on => select(row.id, on) : undefined}
       />
     ));
   }

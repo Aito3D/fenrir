@@ -55,7 +55,7 @@ export function OrderMobileView({
   const kind = target ? KIND[target.split('-')[0] as keyof typeof KIND] : null;
 
   return (
-    <div data-testid="order-mobile" className="fixed inset-0 z-40 flex flex-col bg-bambu-dark">
+    <div data-testid="order-mobile" className="fixed inset-0 z-[45] flex flex-col bg-bambu-dark">
       <header className="flex items-center gap-1 border-b border-bambu-dark-tertiary px-2 py-2">
         <button type="button" onClick={onClose} aria-label={t('orders.mobile.back')} className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-bambu-gray hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green">
           <ChevronLeft aria-hidden="true" className="h-5 w-5" />

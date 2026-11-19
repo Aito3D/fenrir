@@ -1,20 +1,24 @@
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, PackageCheck } from 'lucide-react';
 import { api, ApiError } from '../../api/client';
 import type { FinishedOrderRow } from '../../api/client';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { formatMoney } from '../../utils/pricing';
 import { Button } from '../Button';
 import { Card } from '../Card';
 import { Skeleton } from '../Skeleton';
 import { finishedPayState, formatQty, parseDay } from './orderBoard';
 import { OrderLinesPanel } from './OrderLinesPanel';
+import { OrderMobileView } from './OrderMobileView';
 import { PaymentPill } from './PaymentPill';
 import { ROW_GRID, TONE } from './orderStatus';
 
 /** A shipped order: the list row knows little, so opening it fetches the lines, contact and invoices from Zoho. */
 export function FinishedOrderCard({ row, open, onToggle }: { row: FinishedOrderRow; open: boolean; onToggle: () => void }) {
   const { t } = useTranslation();
+  const phone = useIsMobile();
   const detail = useQuery({
     queryKey: ['order-board-finished-order', row.id],
     queryFn: () => api.getFinishedOrder(row.id),
@@ -74,7 +78,11 @@ export function FinishedOrderCard({ row, open, onToggle }: { row: FinishedOrderR
         </span>
         <ChevronDown aria-hidden="true" className={`h-4 w-4 text-bambu-gray transition-transform [grid-area:chev] lg:[grid-area:auto] lg:justify-self-end ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && detail.data && <OrderLinesPanel row={detail.data} />}
+      {open && detail.data && phone && createPortal(
+        <OrderMobileView key={row.id} row={detail.data} status="finished" onClose={onToggle} />,
+        document.body,
+      )}
+      {open && detail.data && !phone && <OrderLinesPanel row={detail.data} />}
       {open && detail.isError && (
         <div className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-white">
           {t('orders.finished.loadFailed')}
