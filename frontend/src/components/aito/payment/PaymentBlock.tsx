@@ -186,7 +186,7 @@ export function PaymentBlock({ project, document, link, terminal, canUpdate, hei
  *  child component in its own right — it calls `useTranslation` itself and
  *  takes only what it cannot derive (the state, the document, the copy
  *  flash and the two callbacks) as props. */
-function StateLine({
+export function StateLine({
   state,
   document,
   copied,

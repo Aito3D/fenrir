@@ -25,45 +25,16 @@ const contact = (o: Partial<OrderContact> = {}): OrderContact => ({ name: 'Teva 
 const flat = (el: HTMLElement) => (el.textContent ?? '').replace(/\s/g, ' ');
 
 describe('OrderPaymentBlock', () => {
-  it('shows what is left to pay and each non-zero legend part; the invoices live in their own card', () => {
+  it('read-only: what is left to pay, no bar, no legend, no button', () => {
     render(<OrderPaymentBlock payment={pay()} currency="XPF" />);
     expect(screen.getByText('Left to pay')).toBeInTheDocument();
     expect(flat(screen.getByTestId('pay-left'))).toMatch(/362.000/);
-    expect(screen.getAllByText('Paid').length).toBeGreaterThan(0); // legend
-    expect(screen.getByText('Invoiced, awaiting payment')).toBeInTheDocument();
-    expect(screen.getByText('Still to pay, not invoiced')).toBeInTheDocument();
-    expect(screen.queryByText('Overdue')).not.toBeInTheDocument();
-    expect(screen.queryByText('FAC-0001')).not.toBeInTheDocument();
-    expect(screen.queryByText('FAC-0002')).not.toBeInTheDocument();
-    expect(screen.queryByText(/^Due /)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
-  it('an advance renames the paid part and explains itself', () => {
-    render(<OrderPaymentBlock payment={pay({ advance: 50000, paid: 300000 })} currency="XPF" />);
-    expect(screen.getByText('Paid on invoice')).toBeInTheDocument();
-    expect(screen.getByText('Paid in advance')).toBeInTheDocument();
-    expect(screen.getByText(/the customer's unused credit in Zoho/)).toBeInTheDocument();
-  });
-
-  it('a retainer on the quote is its own part, named by the quote', () => {
-    render(<OrderPaymentBlock payment={pay({ retainer: 40000, paid: 290000 })} currency="XPF" quoteNumber="DEV26-0042" />);
-    expect(screen.getByText('Deposit on quote DEV26-0042')).toBeInTheDocument();
-    expect(screen.getByText('Paid on invoice')).toBeInTheDocument();
-    expect(screen.getByTestId('pay-seg-retainer')).toBeInTheDocument();
-    expect(screen.queryByText('Paid in advance')).not.toBeInTheDocument();
-  });
-
-  it('segments never exceed the bar', () => {
-    render(<OrderPaymentBlock payment={pay({ invoice_paid: 20500, paid: 20500, due: 24439, rest: 0, left: 24439, invoices: [] })} currency="XPF" />);
-    const widths = screen.getAllByTestId(/^pay-seg-/).map(s => parseFloat((s as HTMLElement).style.width));
-    expect(widths.length).toBeGreaterThan(0);
-    expect(widths.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(100.0001);
-  });
-
-  it('says nothing is left to pay', () => {
+  it('says nothing once nothing is left to pay', () => {
     render(<OrderPaymentBlock payment={pay({ state: 'paid', pct: 100, due: 0, rest: 0, left: 0, invoices: [] })} currency="XPF" />);
-    expect(screen.getByText('Nothing left to pay')).toBeInTheDocument();
-    expect(screen.queryByText('No invoice yet for this order.')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pay-left')).not.toBeInTheDocument();
   });
 });
 

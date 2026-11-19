@@ -179,7 +179,7 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
         reverse=True,
     )
     for doc in finished[: max(0, MAX_DETAILS_PER_PASS - fetched_count)]:
-        if zoho_busy():
+        if zoho_busy(CALL_CEILING):
             break
         try:
             await _ensure_finished_detail(db, doc)

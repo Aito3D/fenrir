@@ -8,15 +8,15 @@ import { api } from '../../api/client';
 import type { OrderContact } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { copyTextToClipboard } from '../../utils/clipboard';
-import { formatMoney } from '../../utils/pricing';
 import { Card } from '../Card';
 import { ClientRatingPill } from '../aito/ClientRatingPill';
+import { errorReason } from './orderErrors';
 import { useOrderActions } from './useOrderActions';
 
 /** The contact person on the order: phone and email as links, each with a copy button.
  *  With `sms` (admins, live orders with something ready) the header carries the pickup-SMS pill,
  *  which turns into "Contacted" once an SMS went out. With `orderId` it also shows the customer's
- *  payment rating and unspent credit (as on the Aito card); `canEdit` adds the email/phone editor. */
+ *  payment rating (as on the Aito card); `canEdit` adds the email/phone editor. */
 export function OrderContactBlock({
   contact,
   orderNumber,
@@ -24,11 +24,9 @@ export function OrderContactBlock({
   onGoto,
   sms,
   orderId,
-  currency = '',
   canEdit = false,
 }: {
   orderId?: string;
-  currency?: string;
   canEdit?: boolean;
   contact: OrderContact | null;
   orderNumber: string;
@@ -43,13 +41,6 @@ export function OrderContactBlock({
     queryFn: () => api.getOrderClientRating(orderId!),
     enabled: !!orderId,
     staleTime: 5 * 60_000,
-    retry: false,
-  });
-  const credit = useQuery({
-    queryKey: ['order-customer', orderId, 'credit'],
-    queryFn: () => api.getOrderCustomerCredit(orderId!),
-    enabled: !!orderId,
-    staleTime: 60_000,
     retry: false,
   });
   const [editing, setEditing] = useState(false);
@@ -167,12 +158,6 @@ export function OrderContactBlock({
       ) : (
         <div className="mt-2 text-bambu-gray">{t('orders.contact.none')}</div>
       )}
-      {!!credit.data?.credit && credit.data.credit > 0 && (
-        <div data-testid="customer-credit" className="mt-2 flex items-center justify-between border-t border-bambu-dark-tertiary pt-2">
-          <span className="text-bambu-gray">{t('aito.forceSyncStepCredit')}</span>
-          <span className="font-semibold tabular-nums text-white">{formatMoney(credit.data.credit, currency)}</span>
-        </div>
-      )}
       {others.length > 0 && (
         <div className="mt-2 border-t border-bambu-dark-tertiary pt-2 text-bambu-gray">
           {t('orders.contact.alsoOpen')}{' '}
@@ -204,7 +189,7 @@ function ContactEditor({ orderId, contact, onDone }: { orderId: string; contact:
     e.preventDefault();
     editContact.mutate(
       { id: orderId, email: email.trim(), phone: phone.trim(), phone_field: phoneField },
-      { onSuccess: onDone, onError: () => showToast(t('aito.clientEditFailed'), 'error') },
+      { onSuccess: onDone, onError: e => showToast(errorReason(t, e) || t('aito.clientEditFailed'), 'error') },
     );
   };
   return (

@@ -882,7 +882,7 @@ async def test_opening_during_a_back_off_raises_busy_and_sends_nothing(db_sessio
     with pytest.raises(sync.ZohoBusy):
         await sync.read_finished_order(db_session, "so1")
     sync_common._rate_limited_until = 0.0
-    zoho.meter = sync.CALL_CEILING
+    zoho.meter = sync.OPERATOR_CALL_CEILING
     with pytest.raises(sync.ZohoBusy):
         await sync.read_finished_order(db_session, "so1")
     assert sum(zoho.calls.values()) == before
@@ -1466,3 +1466,13 @@ async def test_the_call_ceiling_stops_the_quote_number_reads(db_session, zoho, m
     assert await sync.run_pass(db_session) is True
     assert zoho.calls["estimate"] == calls
     assert "estimate_number" not in (await _doc(db_session, "so1")).detail
+
+
+def test_an_operator_action_is_not_refused_at_the_background_ceiling(monkeypatch):
+    """The Kanban's sweeps run up to 50 calls a minute: an order action must still go through then."""
+    monkeypatch.setattr(sync_common, "_rate_limited_until", 0.0)
+    monkeypatch.setattr(sync_common.zoho_service, "calls_in_last_minute", lambda: 50)
+    assert not sync.zoho_busy()
+    assert sync.zoho_busy(sync.CALL_CEILING)
+    monkeypatch.setattr(sync_common.zoho_service, "calls_in_last_minute", lambda: sync.OPERATOR_CALL_CEILING)
+    assert sync.zoho_busy()

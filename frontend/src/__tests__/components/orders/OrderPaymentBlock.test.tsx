@@ -26,18 +26,39 @@ const link = (o: Partial<OrderPaymentLink> = {}): OrderPaymentLink => ({
 describe('OrderPaymentBlock payment buttons', () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it('reads as the Aito collect block: the amount due, the state of a charge in flight, three cells', async () => {
+    vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
+    vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(tpe());
+    render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+    expect(await screen.findByText('Terminal · waiting for the card')).toBeInTheDocument();
+    expect(screen.getByText('Balance due')).toBeInTheDocument();
+    expect(screen.getByTestId('pay-left')).toHaveTextContent(/12.000/);
+    // A charge in flight locks the two other channels; the terminal cell reopens its waiting screen.
+    expect(screen.getByRole('button', { name: 'Payment link' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Manual — record a payment' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Pay by card on the terminal' })).toBeEnabled();
+  });
+
+  it('draws nothing once the order is paid and nothing is in motion', async () => {
+    const get = vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target({ kind: null, document_id: null, number: null, max_amount: null, left: 0 }));
+    vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(null);
+    render(<OrderPaymentBlock payment={pay({ left: 0 })} currency="XPF" orderId="so1" />);
+    await vi.waitFor(() => expect(get).toHaveBeenCalled());
+    expect(screen.queryByTestId('payment-block')).not.toBeInTheDocument();
+  });
+
   it('buttons hidden without target', async () => {
     const get = vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target({ kind: null, document_id: null, number: null, max_amount: null }));
     render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
     await vi.waitFor(() => expect(get).toHaveBeenCalledWith('so1'));
     expect(screen.queryByRole('button', { name: /Payment link/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Card terminal/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pay by card on the terminal' })).not.toBeInTheDocument();
   });
 
   it('buttons hidden without orders:update (no orderId), and the target is never asked', () => {
     const get = vi.spyOn(api, 'getOrderPaymentTarget');
     render(<OrderPaymentBlock payment={pay()} currency="XPF" />);
-    expect(screen.queryByRole('button', { name: /Card terminal/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pay by card on the terminal' })).not.toBeInTheDocument();
     expect(get).not.toHaveBeenCalled();
   });
 
@@ -46,7 +67,7 @@ describe('OrderPaymentBlock payment buttons', () => {
     vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(null);
     const start = vi.spyOn(api, 'startOrderTerminalPayment').mockResolvedValue(tpe());
     render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
-    await userEvent.click(await screen.findByRole('button', { name: /Card terminal/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pay by card on the terminal' }));
     expect(await screen.findByLabelText('Amount')).toHaveValue('12000');
     await userEvent.click(screen.getByRole('button', { name: 'Start the terminal' }));
     expect(await screen.findByText('Waiting for the card on the terminal…')).toBeInTheDocument();
@@ -57,7 +78,7 @@ describe('OrderPaymentBlock payment buttons', () => {
     vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
     const record = vi.spyOn(api, 'recordOrderManualPayment').mockResolvedValue({ board: {} as never });
     render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Manual' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Manual — record a payment' }));
     expect(await screen.findByLabelText('Amount')).toHaveValue('12000');
     await userEvent.click(screen.getByRole('radio', { name: 'Cash' }));
     await userEvent.click(screen.getByRole('button', { name: 'Record' }));
@@ -69,7 +90,7 @@ describe('OrderPaymentBlock payment buttons', () => {
     const get = vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(null);
     vi.spyOn(api, 'startOrderTerminalPayment').mockResolvedValue(tpe());
     render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
-    await userEvent.click(await screen.findByRole('button', { name: /Card terminal/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pay by card on the terminal' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Start the terminal' }));
     expect(await screen.findByText('Waiting for the card on the terminal…')).toBeInTheDocument();
     get.mockResolvedValue(tpe({ status: 'paid', amount_confirmed: 12000, booking_status: 'booked', settled_at: '2026-11-11T01:01:00' }));
@@ -80,7 +101,7 @@ describe('OrderPaymentBlock payment buttons', () => {
     vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target({ max_amount: 5000 }));
     vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(null);
     render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
-    await userEvent.click(await screen.findByRole('button', { name: /Card terminal/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pay by card on the terminal' }));
     expect(await screen.findByLabelText('Amount')).toHaveValue('5000');
   });
 
@@ -88,7 +109,7 @@ describe('OrderPaymentBlock payment buttons', () => {
     vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target({ kind: 'retainer', document_id: 'ret-1', number: 'RET-1' }));
     vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(null);
     render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
-    await userEvent.click(await screen.findByRole('button', { name: /Card terminal/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pay by card on the terminal' }));
     expect(await screen.findByText(/Deposit invoice on the quote/)).toBeInTheDocument();
     expect(screen.queryByText(/Heimdall caps it at the balance/)).not.toBeInTheDocument();
   });
@@ -97,7 +118,7 @@ describe('OrderPaymentBlock payment buttons', () => {
     vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target({ kind: 'quote', document_id: 'est-1', number: 'DEV26-2681', max_amount: 12000 }));
     const create = vi.spyOn(api, 'createOrderPaymentLink').mockResolvedValue(link({ document_number: 'DEV26-2681' }));
     render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
-    expect(await screen.findByRole('button', { name: /Card terminal/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Pay by card on the terminal' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /Payment link/ }));
     expect(await screen.findByText(/Zoho records it as a new deposit invoice/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Create the link' }));
@@ -109,7 +130,7 @@ describe('OrderPaymentBlock payment buttons', () => {
     vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
     vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(tpe());
     render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
-    await userEvent.click(await screen.findByRole('button', { name: /Card terminal/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pay by card on the terminal' }));
     expect(await screen.findByText('Waiting for the card on the terminal…')).toBeInTheDocument();
     expect(screen.queryByLabelText('Amount')).not.toBeInTheDocument();
   });
@@ -130,7 +151,11 @@ describe('OrderPaymentBlock payment buttons', () => {
     vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target({ link: link() }));
     const cancel = vi.spyOn(api, 'cancelOrderPaymentLink').mockResolvedValue(link({ state: 'cancelled' }));
     render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
-    await userEvent.click(await screen.findByRole('button', { name: /Payment link/ }));
+    // A live link is the state line (open, copy, manage); the Link cell gives way to it.
+    const manage = await screen.findByRole('button', { name: 'Online payment' });
+    expect(screen.queryByRole('button', { name: 'Payment link' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open payment link' })).toHaveAttribute('href', 'https://pay.example/x');
+    await userEvent.click(manage);
     await userEvent.click(await screen.findByRole('button', { name: 'Cancel the link' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Cancel this link?' }));
     await vi.waitFor(() => expect(cancel).toHaveBeenCalledWith('so1'));
@@ -143,7 +168,7 @@ describe('OrderPaymentBlock payment buttons', () => {
       .mockRejectedValueOnce(new ApiError('A payment link is open for this order', 409, 'link_open'))
       .mockResolvedValueOnce(tpe());
     render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
-    await userEvent.click(await screen.findByRole('button', { name: /Card terminal/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pay by card on the terminal' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Start the terminal' }));
     expect(await screen.findByText(/A payment link is open for this order: the client could pay it as well/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Cancel the link and charge the terminal' }));

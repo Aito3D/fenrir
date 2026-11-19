@@ -40,19 +40,19 @@ describe('OrderInvoicesBlock', () => {
   });
 
   it('lists each invoice with number, amount, status and its three actions', () => {
-    render(<OrderInvoicesBlock row={row([inv(), inv({ id: 'inv2', number: 'FAC-0002', url: null, due_date: day(-5), balance: 100 })])} />);
-    expect(screen.getByText('Invoices')).toBeInTheDocument();
-    // The number opens the invoice in Books when a link exists; without one it is plain text.
-    expect(screen.getByText('FAC-0001').closest('a')).toHaveAttribute('href', inv().url);
-    expect(screen.getByText('FAC-0002').closest('a')).toBeNull();
+    render(<OrderInvoicesBlock row={row([inv(), inv({ id: 'inv2', number: 'FAC-0002', url: null, due_date: day(-5), balance: 100, status: 'overdue' })])} />);
+    expect(screen.getByText('Billing')).toBeInTheDocument();
+    // One Aito document row each: the number is plain text, the last icon goes to Books.
+    expect(screen.getByText('FAC-0001').closest('a')).toBeNull();
+    expect(screen.getByText('FAC-0001')).toHaveAttribute('title', 'Issued 2026-10-01 · due 2099-01-01');
     expect(screen.getAllByText(/250.000/).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: 'Download invoice' })).toHaveLength(2);
     expect(screen.getAllByRole('button', { name: 'Print invoice' })).toHaveLength(2);
     // The link is hidden when Books gave no url.
     expect(screen.getAllByRole('link', { name: 'Open in Zoho Books' })).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Open in Zoho Books' })).toHaveAttribute('href', 'https://books.example/inv/inv1');
-    expect(screen.getByText(/^Due /)).toBeInTheDocument();
-    expect(screen.getByText(/^Overdue 5 d/)).toBeInTheDocument();
+    expect(screen.getByText('Sent')).toBeInTheDocument();
+    expect(screen.getByText('Overdue')).toBeInTheDocument();
   });
 
   it('a draft reads Draft and a paid invoice Paid', () => {
@@ -61,9 +61,10 @@ describe('OrderInvoicesBlock', () => {
     expect(screen.getByText('Paid')).toBeInTheDocument();
   });
 
-  it('an invoice with a balance but no due date reads as awaiting payment, never Invalid Date', () => {
+  it('an invoice with no due date keeps its status, never Invalid Date', () => {
     render(<OrderInvoicesBlock row={row([inv({ due_date: '' })])} />);
-    expect(screen.getByText('Invoiced, awaiting payment')).toBeInTheDocument();
+    expect(screen.getByText('Sent')).toBeInTheDocument();
+    expect(screen.getByText('FAC-0001')).toHaveAttribute('title', 'Issued 2026-10-01 · due —');
     expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
   });
 

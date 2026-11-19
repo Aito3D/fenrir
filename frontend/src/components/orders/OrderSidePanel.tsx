@@ -7,6 +7,7 @@ import { panelTabId, panelTabPanelId } from '../aito/panelTabIds';
 import { usePanelTab } from '../../hooks/usePanelTab';
 import { OrderActivity } from './OrderActivity';
 import { OrderContactBlock } from './OrderContactBlock';
+import { OrderDepositAvailable } from './OrderDepositAvailable';
 import { OrderInvoicesBlock } from './OrderInvoicesBlock';
 import { OrderPaymentBlock } from './OrderPaymentBlock';
 import { OrderSmsModal } from './OrderSmsModal';
@@ -66,7 +67,6 @@ export function OrderSidePanel({
             <OrderContactBlock
               contact={row.contact}
               orderId={row.id}
-              currency={row.currency}
               canEdit={canUpdate}
               orderNumber={row.number}
               others={others}
@@ -74,7 +74,6 @@ export function OrderSidePanel({
               sms={smsAllowed ? { contacted: row.contacted ?? null, onOpen: setSmsPhone } : undefined}
             />
             {smsPhone && <OrderSmsModal row={row} phone={smsPhone} onClose={() => setSmsPhone(null)} />}
-            {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} quoteNumber={row.facts.quote_number} orderId={canUpdate ? row.id : undefined} />}
             <OrderInvoicesBlock
               row={row}
               canEmail={canUpdate}
@@ -89,7 +88,10 @@ export function OrderSidePanel({
                 invoiceSent.current = true;
                 createInvoice.mutate({ id: row.id, applyCredit, scope }, { onSettled: () => { invoiceSent.current = false; } });
               } : undefined}
-            />
+            >
+              <OrderDepositAvailable orderId={row.id} currency={row.currency} />
+              {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} orderId={canUpdate ? row.id : undefined} />}
+            </OrderInvoicesBlock>
           </div>
         ) : (
           <OrderActivity soId={row.id} currency={row.currency} />
