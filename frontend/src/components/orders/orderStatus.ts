@@ -1,6 +1,6 @@
 // How each order status and tone looks. One place, so tiles, chips, badges and
 // the progress bar cannot drift apart. Light and dark pairs as elsewhere in the app.
-import { CircleCheck, CircleDashed, CircleDotDashed, PackageCheck, PackageOpen, ShoppingCart, Truck } from 'lucide-react';
+import { CircleCheck, CircleDashed, CircleDotDashed, ClipboardList, HandHelping, PackageCheck, PackagePlus, PackageOpen, ShoppingCart, Truck } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { OrderPayState, OrderStatus } from '../../api/client';
 
@@ -37,3 +37,10 @@ export const ROW_GRID =
   'grid items-center gap-x-3 gap-y-1.5 grid-cols-[minmax(0,1fr)_auto_1.25rem] ' +
   "[grid-template-areas:'num_status_chev'_'cust_value_chev'_'bar_bar_bar'_'pay_pay_pay'] " +
   'lg:[grid-template-areas:none] lg:grid-cols-[6.5rem_minmax(0,1fr)_3.5rem_minmax(11rem,16rem)_auto_9.5rem_7.5rem_3.5rem]';
+
+/** The next step of an order (the `nextStep` target's first word): its icon and button label. */
+export const KIND = {
+  pick: { icon: ClipboardList, label: 'orders.pick.open' },
+  pack: { icon: PackagePlus, label: 'orders.parcel.create' },
+  handover: { icon: HandHelping, label: 'orders.handover.open' },
+};

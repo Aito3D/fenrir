@@ -11692,6 +11692,14 @@ errors: {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    mobile: {
+      back: 'Tillbaka till beställningar',
+      more: 'Mer',
+      tabs: { lines: 'Produkter', billing: 'Fakturering', client: 'Kund' },
+      collect: 'Ta betalt',
+      filters: 'Filter och sortering',
+      showOrders: 'Visa {{n}} beställningar',
+    },
     newOrder: {
       button: 'Ny order',
       title: 'Ny order',

@@ -11620,6 +11620,14 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    mobile: {
+      back: 'Retour aux commandes',
+      more: 'Plus',
+      tabs: { lines: 'Produits', billing: 'Facturation', client: 'Client' },
+      collect: 'Encaisser',
+      filters: 'Filtres et tri',
+      showOrders: 'Voir {{n}} commandes',
+    },
     newOrder: {
       button: 'Nouvelle commande',
       title: 'Nouvelle commande',

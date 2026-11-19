@@ -11256,6 +11256,14 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    mobile: {
+      back: '주문으로 돌아가기',
+      more: '더 보기',
+      tabs: { lines: '제품', billing: '청구', client: '고객' },
+      collect: '결제 받기',
+      filters: '필터 및 정렬',
+      showOrders: '주문 {{n}}건 보기',
+    },
     newOrder: {
       button: '새 주문',
       title: '새 주문',

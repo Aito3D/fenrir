@@ -11562,6 +11562,14 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    mobile: {
+      back: 'Siparişlere dön',
+      more: 'Daha fazla',
+      tabs: { lines: 'Ürünler', billing: 'Faturalama', client: 'Müşteri' },
+      collect: 'Ödeme al',
+      filters: 'Filtreler ve sıralama',
+      showOrders: '{{n}} siparişi göster',
+    },
     newOrder: {
       button: 'Yeni sipariş',
       title: 'Yeni sipariş',
