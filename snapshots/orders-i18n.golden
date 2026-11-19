@@ -2,7 +2,7 @@
 ### stdout:
 locale files (16): de.ts en.ts es.ts fr.ts it.ts ja.ts ko.ts nl.ts pl.ts pt-BR.ts ru.ts sv.ts tr.ts uk.ts zh-CN.ts zh-TW.ts
 extra literal keys read by the scope (96): aito.applyDepositDone aito.applyDepositError aito.clientEdit aito.clientEditFailed aito.clientEmail aito.clientPhone aito.contacted aito.downloadQuote aito.downloadRetainer aito.followups.hint aito.followups.longest aito.followups.notCollected aito.followups.title aito.forceSyncStepCredit aito.history.title aito.invoiceEmailFailed aito.invoiceEmailed aito.noClient aito.panelTabAttention aito.panelTabDetails aito.payment.cellManual aito.payment.cellManualTitle aito.payment.linkTitle aito.printFailed aito.printQuote aito.printRetainer aito.printShippingLabel aito.quoteEmailFailed aito.quoteEmailed aito.quoteOpenInZoho aito.retainerEmailFailed aito.retainerEmailed aito.retainerLabel aito.retainerPrintFailed aito.sendInvoice aito.sendInvoiceLoadFailed aito.sendInvoiceTitle aito.sendQuote aito.sendQuoteLoadFailed aito.sendQuoteTitle aito.sendRetainer aito.sendRetainerLoadFailed aito.sendRetainerTitle aito.shippingIsland aito.shippingLabelPrintFailed aito.shippingPhone aito.shippingRecipient aito.shippingService aito.smsGenerateFailed aito.smsGenerating aito.smsMaybeSent aito.smsMessageLabel aito.smsNoPhone aito.smsPickup aito.smsPickupShort aito.smsRelayUnreachable aito.smsSend aito.smsSendFailed aito.smsSent aito.smsTitle aito.sync aito.syncUpToDate aito.track.codeTooMany aito.track.error aito.track.invalidEnterCode aito.track.invalidTitle aito.track.order.appHint aito.track.order.invalidBody aito.track.order.line.handedOn aito.track.order.linesHeading aito.track.order.pay.heading aito.track.order.pay.left aito.track.order.pay.methods aito.track.order.pay.paidSub aito.track.order.pay.settled aito.track.order.pay.total aito.track.order.pickup aito.track.order.pickupLink aito.track.order.placed aito.track.order.question aito.track.order.ref aito.track.order.showAll aito.track.order.title aito.track.retry aito.track.retrying aito.track.updated aito.trackingCopied aito.trackingCopy aito.trackingCopyFailed aito.trackingNeedsExternalUrl common.cancel common.error common.errorLoading common.loading common.save common.saving
---- en values (520 keys)
+--- en values (523 keys)
 aito.applyDepositDone = "{{amount}} applied to {{invoice}}"  placeholders={{amount}},{{invoice}}
 aito.applyDepositError = "The deposit could not be applied"
 aito.clientEdit = "Edit the client"
@@ -186,6 +186,7 @@ orders.err.below_floor = "a quantity is under what already left or is billed"
 orders.err.create_failed = "Zoho Books did not confirm the order, nothing was created"
 orders.err.nothing_changed = "nothing changed"
 orders.err.nothing_to_pack = "there is nothing to pack on these rows"
+orders.err.order_invoiced = "the order has an invoice, it can no longer be cancelled"
 orders.err.package_changed = "the parcel changed in Books, look again"
 orders.err.package_shipped = "this parcel was already handed over"
 orders.err.picklist_open = "a picklist is still open on this order, finish it first"
@@ -251,6 +252,7 @@ orders.history.handoverShipped = "shipped package {{package}}"  placeholders={{p
 orders.history.invoiceCreated = "created invoice {{invoice}}"  placeholders={{invoice}}
 orders.history.invoiceEmailed = "emailed invoice {{invoice}}"  placeholders={{invoice}}
 orders.history.noteAdded = "added a note"
+orders.history.orderCancelFailed = "cancelling the order failed after deleting parcels {{packages}} and picklists {{picklists}}"  placeholders={{packages}},{{picklists}}
 orders.history.orderCancelled = "cancelled the order"
 orders.history.orderCreated = "created the order"
 orders.history.orderEdited = "edited the order"
@@ -269,6 +271,7 @@ orders.history.paymentReceived = "Payment received {{amount}}"  placeholders={{a
 orders.history.picklistCreated = "created picklist {{picklist}}"  placeholders={{picklist}}
 orders.history.prepPrinted = "printed the prep sheet"
 orders.history.seenBySync = "seen by the sync"
+orders.history.short.cancelFailed = "Cancel failed"
 orders.history.short.cancelled = "Cancelled"
 orders.history.short.contactEdited = "Contact edited"
 orders.history.short.created = "Order created"
@@ -524,7 +527,7 @@ orders.watch.off = "Watch"
 orders.watch.on = "Watching"
 settings.tabs.orders = "Orders"
 
---- de.ts keys=520 values-sha256=631d997d43a6a441
+--- de.ts keys=523 values-sha256=1185890a355e5f4f
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -711,6 +714,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -776,6 +780,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -794,6 +799,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -1049,7 +1055,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- en.ts keys=520 values-sha256=c26efc5a28911ecc
+--- en.ts keys=523 values-sha256=4bc0681beba6a21b
 missing=[] extra=[]
 same-as-en=0 non-string=[]
 placeholder-drift=[]
@@ -1236,6 +1242,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -1301,6 +1308,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -1319,6 +1327,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -1574,7 +1583,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- es.ts keys=520 values-sha256=9e499f865ff4a4fd
+--- es.ts keys=523 values-sha256=425c132283d5c078
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
@@ -1761,6 +1770,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -1826,6 +1836,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -1844,6 +1855,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -2099,7 +2111,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- fr.ts keys=520 values-sha256=995c63e6ff5717c3
+--- fr.ts keys=523 values-sha256=f8803809d5d7f525
 missing=[] extra=[]
 same-as-en=5 non-string=[]
 placeholder-drift=[]
@@ -2286,6 +2298,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -2351,6 +2364,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -2369,6 +2383,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -2624,7 +2639,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- it.ts keys=520 values-sha256=ed69f4d9c943efd7
+--- it.ts keys=523 values-sha256=8ca27b5d125d6d29
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -2811,6 +2826,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -2876,6 +2892,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -2894,6 +2911,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -3149,7 +3167,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- ja.ts keys=520 values-sha256=210e10c5e0a8ed47
+--- ja.ts keys=523 values-sha256=9c4e18db10d8287a
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -3336,6 +3354,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -3401,6 +3420,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -3419,6 +3439,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -3674,7 +3695,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- ko.ts keys=520 values-sha256=6026d59a0a922c5c
+--- ko.ts keys=523 values-sha256=060481cba5042d86
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -3861,6 +3882,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -3926,6 +3948,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -3944,6 +3967,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -4199,7 +4223,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- nl.ts keys=520 values-sha256=ba8b9f443a975f78
+--- nl.ts keys=523 values-sha256=1c86816b939ac7c4
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -4386,6 +4410,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -4451,6 +4476,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -4469,6 +4495,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -4724,7 +4751,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- pl.ts keys=520 values-sha256=b8bb872b6f518f98
+--- pl.ts keys=523 values-sha256=1e57fa5c8c2b4316
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -4911,6 +4938,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -4976,6 +5004,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -4994,6 +5023,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -5249,7 +5279,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- pt-BR.ts keys=520 values-sha256=2bbfba4cb032e9f3
+--- pt-BR.ts keys=523 values-sha256=637711d1fdfbec2d
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
@@ -5436,6 +5466,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -5501,6 +5532,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -5519,6 +5551,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -5774,7 +5807,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- ru.ts keys=520 values-sha256=9d2d3fd312d33c56
+--- ru.ts keys=523 values-sha256=a9b45cbe344c4ab8
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -5961,6 +5994,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -6026,6 +6060,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -6044,6 +6079,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -6299,7 +6335,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- sv.ts keys=520 values-sha256=81356a216eec005a
+--- sv.ts keys=523 values-sha256=3b73148d332749e6
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -6486,6 +6522,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -6551,6 +6588,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -6569,6 +6607,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -6824,7 +6863,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- tr.ts keys=520 values-sha256=afeed68d3a667a7b
+--- tr.ts keys=523 values-sha256=0d0c15cdc8a62937
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -7011,6 +7050,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -7076,6 +7116,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -7094,6 +7135,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -7349,7 +7391,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- uk.ts keys=520 values-sha256=de57b1a820de85e8
+--- uk.ts keys=523 values-sha256=64dd74a552611d93
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -7536,6 +7578,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -7601,6 +7644,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -7619,6 +7663,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -7874,7 +7919,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- zh-CN.ts keys=520 values-sha256=23a10fd73aae498c
+--- zh-CN.ts keys=523 values-sha256=7dea28d13019a670
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -8061,6 +8106,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -8126,6 +8172,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -8144,6 +8191,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created
@@ -8399,7 +8447,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- zh-TW.ts keys=520 values-sha256=6adae46603e1ebda
+--- zh-TW.ts keys=523 values-sha256=970c1a5b42290494
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -8586,6 +8634,7 @@ orders.err.below_floor
 orders.err.create_failed
 orders.err.nothing_changed
 orders.err.nothing_to_pack
+orders.err.order_invoiced
 orders.err.package_changed
 orders.err.package_shipped
 orders.err.picklist_open
@@ -8651,6 +8700,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -8669,6 +8719,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created

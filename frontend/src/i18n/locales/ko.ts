@@ -11312,6 +11312,7 @@ export default {
       paymentReceived: '결제 수신 {{amount}}',
       orderEdited: '주문 수정',
       orderCancelled: '주문 취소',
+      orderCancelFailed: "패키지 {{packages}}와 피킹 리스트 {{picklists}}를 삭제한 뒤 취소에 실패",
       orderFinished: '주문 완료',
       noteAdded: '메모 추가',
       smsSent: '픽업 SMS 발송',
@@ -11350,6 +11351,7 @@ export default {
         zohoEdited: 'Zoho에서 수정됨',
         documentEmailed: "문서 발송",
         creditApplied: "크레딧 적용",
+        cancelFailed: "취소 실패",
         contactEdited: "연락처 수정",
       },
     },
@@ -11613,6 +11615,7 @@ export default {
       unknown_package: '이 소포는 더 이상 주문에 없습니다. 다시 확인하세요',
       bad_discount: '할인이 올바르지 않습니다',
       create_failed: 'Zoho Books가 주문을 확인하지 않아 아무것도 생성되지 않았습니다',
+      order_invoiced: "청구서가 있어 이 주문은 더 이상 취소할 수 없습니다",
       unknown_picklist: '이 피킹 리스트는 더 이상 주문에 없습니다. 다시 확인하세요',
     },
     cancel: {

@@ -793,6 +793,7 @@ orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
+orders.history.orderCancelFailed
 orders.history.orderCancelled
 orders.history.orderCreated
 orders.history.orderEdited
@@ -811,6 +812,7 @@ orders.history.paymentReceived
 orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
+orders.history.short.cancelFailed
 orders.history.short.cancelled
 orders.history.short.contactEdited
 orders.history.short.created

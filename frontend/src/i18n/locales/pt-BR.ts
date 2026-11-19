@@ -11676,6 +11676,7 @@ export default {
       paymentReceived: 'Pagamento recebido {{amount}}',
       orderEdited: 'editou o pedido',
       orderCancelled: 'cancelou o pedido',
+      orderCancelFailed: "o cancelamento falhou após excluir os pacotes {{packages}} e as listas de separação {{picklists}}",
       orderFinished: 'Pedido concluído',
       noteAdded: 'adicionou uma nota',
       smsSent: 'enviou o SMS de retirada',
@@ -11714,6 +11715,7 @@ export default {
         zohoEdited: 'Editado no Zoho',
         documentEmailed: "Documento enviado",
         creditApplied: "Crédito aplicado",
+        cancelFailed: "Cancelamento falhou",
         contactEdited: "Contato editado",
       },
     },
@@ -11977,6 +11979,7 @@ export default {
       unknown_package: 'este pacote não está mais no pedido, olhe de novo',
       bad_discount: 'o desconto não é válido',
       create_failed: 'O Zoho Books não confirmou o pedido, nada foi criado',
+      order_invoiced: "o pedido tem uma fatura e não pode mais ser cancelado",
       unknown_picklist: 'esta lista de separação não está mais no pedido, olhe de novo',
     },
     cancel: {

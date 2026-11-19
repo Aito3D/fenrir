@@ -11618,6 +11618,7 @@ export default {
       paymentReceived: 'Ödeme alındı {{amount}}',
       orderEdited: 'siparişi düzenledi',
       orderCancelled: 'siparişi iptal etti',
+      orderCancelFailed: "{{packages}} paketleri ve {{picklists}} toplama listeleri silindikten sonra iptal başarısız oldu",
       orderFinished: 'Sipariş tamamlandı',
       noteAdded: 'not ekledi',
       smsSent: 'teslim alma SMS\'ini gönderdi',
@@ -11656,6 +11657,7 @@ export default {
         zohoEdited: 'Zoho\'da düzenlendi',
         documentEmailed: "Belge gönderildi",
         creditApplied: "Alacak uygulandı",
+        cancelFailed: "İptal başarısız",
         contactEdited: "Kişi düzenlendi",
       },
     },
@@ -11919,6 +11921,7 @@ export default {
       unknown_package: 'bu paket artık siparişte değil, yeniden bakın',
       bad_discount: 'indirim geçersiz',
       create_failed: 'Zoho Books siparişi onaylamadı, hiçbir şey oluşturulmadı',
+      order_invoiced: "siparişin faturası var, artık iptal edilemez",
       unknown_picklist: 'bu toplama listesi artık siparişte değil, yeniden bakın',
     },
     cancel: {

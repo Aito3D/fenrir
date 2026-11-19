@@ -11676,6 +11676,7 @@ export default {
       paymentReceived: 'Paiement reçu {{amount}}',
       orderEdited: 'a modifié la commande',
       orderCancelled: 'a annulé la commande',
+      orderCancelFailed: "l’annulation a échoué après la suppression des colis {{packages}} et des prélèvements {{picklists}}",
       orderFinished: 'Commande terminée',
       noteAdded: 'a ajouté une note',
       smsSent: 'a envoyé le SMS de retrait',
@@ -11714,6 +11715,7 @@ export default {
         zohoEdited: 'Modifiée dans Zoho',
         documentEmailed: "Document envoyé",
         creditApplied: "Avoir appliqué",
+        cancelFailed: "Annulation échouée",
         contactEdited: "Contact modifié",
       },
     },
@@ -11977,6 +11979,7 @@ export default {
       unknown_package: 'ce colis n’est plus sur la commande, regardez à nouveau',
       bad_discount: 'la remise n\'est pas valide',
       create_failed: 'Zoho Books n\'a pas confirmé la commande, rien n\'a été créé',
+      order_invoiced: "la commande a une facture, elle ne peut plus être annulée",
       unknown_picklist: 'ce prélèvement n’est plus sur la commande, regardez à nouveau',
     },
     cancel: {

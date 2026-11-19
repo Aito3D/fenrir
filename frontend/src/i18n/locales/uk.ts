@@ -11338,6 +11338,7 @@ export default {
       paymentReceived: 'Отримано платіж {{amount}}',
       orderEdited: 'змінив(ла) замовлення',
       orderCancelled: 'скасував(ла) замовлення',
+      orderCancelFailed: "скасування не вдалося після видалення посилок {{packages}} і листів підбору {{picklists}}",
       orderFinished: 'Замовлення завершено',
       noteAdded: 'додав(ла) нотатку',
       smsSent: 'надіслав(ла) SMS про готовність',
@@ -11376,6 +11377,7 @@ export default {
         zohoEdited: 'Змінено в Zoho',
         documentEmailed: "Документ надіслано",
         creditApplied: "Кредит зараховано",
+        cancelFailed: "Скасування не вдалося",
         contactEdited: "Контакт змінено",
       },
     },
@@ -11639,6 +11641,7 @@ export default {
       unknown_package: 'цієї посилки більше немає в замовленні, подивіться ще раз',
       bad_discount: 'знижка недійсна',
       create_failed: 'Zoho Books не підтвердив замовлення, нічого не створено',
+      order_invoiced: "до замовлення є рахунок, його вже не можна скасувати",
       unknown_picklist: 'цього листа підбору більше немає в замовленні, подивіться ще раз',
     },
     cancel: {

@@ -1,6 +1,7 @@
 """The Order Board payment routes: which document the buttons charge, the amount cap, permissions, Heimdall
 refusals and the events they write. The ledger services (Task 8) and Zoho are stubbed here."""
 
+import sys
 from datetime import datetime
 
 import pytest
@@ -13,6 +14,11 @@ from backend.app.models.aito_terminal_payment import AitoTerminalPayment
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_actions, order_board_sync
+from backend.app.services.aito_manual_payments import (
+    ManualPaymentOutcomeUnknown,
+    ManualPaymentPartial,
+    ManualPaymentUnrecorded,
+)
 from backend.app.services.aito_payment_links import InvoiceLinkExists
 from backend.app.services.aito_terminal_payments import TerminalInProgress
 from backend.app.services.heimdall import (
@@ -975,6 +981,45 @@ async def test_manual_refused_while_a_link_is_open(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "refused"), [("pending", True), ("processing", True), ("paid", False), ("failed", False)]
+)
+async def test_manual_refused_only_while_the_terminal_is_waiting(
+    async_client,
+    tokens,  # noqa: F811
+    order,
+    live_invoice,
+    books_payments,
+    db_session,
+    status,
+    refused,
+):
+    await order({"invoices": [INVOICE_NEW]})
+    db_session.add(
+        AitoTerminalPayment(
+            project_id=0,
+            salesorder_id="so1",
+            document_kind="invoice",
+            document_id="inv-2",
+            document_number="FA-2",
+            idempotency_key="order-tpe:so1:1",
+            heimdall_id="h-1",
+            amount=7000,
+            status=status,
+            created_at=NOW,
+        )
+    )
+    await db_session.commit()
+    r = await async_client.post(f"{BASE}/manual-payment", json={"amount": 7000, "mode": "cash"}, headers=tokens["both"])
+    if refused:
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "terminal_in_progress"
+        assert books_payments.payments == []
+    else:
+        assert r.status_code == 200, r.text
+        assert len(books_payments.payments) == 1
+
+
+@pytest.mark.asyncio
 async def test_manual_on_a_sales_order_raises_a_retainer_and_pays_it(async_client, tokens, order, books_payments):  # noqa: F811
     await order(SALES_ORDER, left=3050)
     r = await async_client.post(f"{BASE}/manual-payment", json={"amount": 3050, "mode": "cash"}, headers=tokens["both"])
@@ -995,3 +1040,50 @@ async def test_manual_on_an_open_retainer_pays_it_directly(async_client, tokens,
     assert r.status_code == 200, r.text
     assert books_payments.retainers == []
     assert books_payments.payments[0]["retainerinvoice_id"] == "ret-1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "code", "needle"),
+    [
+        (ManualPaymentPartial("RET-9", RuntimeError("boom")), "manual_partial", "Retainer RET-9"),
+        (ManualPaymentOutcomeUnknown(None, RuntimeError("timeout")), "manual_outcome_unknown", "Check Zoho Books"),
+        (ManualPaymentUnrecorded("pay-1", RuntimeError("locked")), "manual_unrecorded", "pay-1"),
+        (ZohoUpstreamError("books down"), "upstream", "books down"),
+        (ZohoNotConfiguredError("no creds"), "upstream", "no creds"),
+    ],
+)
+async def test_manual_payment_failures_map_to_502_codes(
+    async_client,
+    tokens,  # noqa: F811
+    order,
+    live_invoice,
+    books_payments,
+    monkeypatch,
+    error,
+    code,
+    needle,
+):
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    await order({"invoices": [INVOICE_NEW]})
+
+    rollbacks = []
+
+    async def boom(*a, **kw):
+        raise error
+
+    real_rollback = AsyncSession.rollback
+
+    async def spy(self):
+        if sys._getframe(1).f_code is routes.record_order_manual_payment_route.__code__:
+            rollbacks.append(1)
+        return await real_rollback(self)
+
+    monkeypatch.setattr(routes, "record_order_manual_payment", boom)
+    monkeypatch.setattr(AsyncSession, "rollback", spy)
+    r = await async_client.post(f"{BASE}/manual-payment", json={"amount": 7000, "mode": "cash"}, headers=tokens["both"])
+    assert r.status_code == 502, r.text
+    assert r.json()["detail"]["code"] == code
+    assert needle in r.json()["detail"]["message"]
+    assert bool(rollbacks) == (code == "upstream")

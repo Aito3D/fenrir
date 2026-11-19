@@ -11748,6 +11748,7 @@ errors: {
       paymentReceived: 'Betalning mottagen {{amount}}',
       orderEdited: 'ändrade ordern',
       orderCancelled: 'avbröt ordern',
+      orderCancelFailed: "avbrytandet misslyckades efter att paketen {{packages}} och plocklistorna {{picklists}} raderats",
       orderFinished: 'Order avslutad',
       noteAdded: 'lade till en anteckning',
       smsSent: 'skickade upphämtnings-sms:et',
@@ -11786,6 +11787,7 @@ errors: {
         zohoEdited: 'Ändrad i Zoho',
         documentEmailed: "Dokument mejlat",
         creditApplied: "Tillgodo tillämpat",
+        cancelFailed: "Avbrytande misslyckades",
         contactEdited: "Kontakt redigerad",
       },
     },
@@ -12049,6 +12051,7 @@ errors: {
       unknown_package: 'det här paketet finns inte längre på ordern, titta igen',
       bad_discount: 'rabatten är ogiltig',
       create_failed: 'Zoho Books bekräftade inte ordern, inget skapades',
+      order_invoiced: "ordern har en faktura och kan inte längre avbrytas",
       unknown_picklist: 'den här plocklistan finns inte längre på ordern, titta igen',
     },
     cancel: {

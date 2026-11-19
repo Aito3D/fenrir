@@ -11747,6 +11747,7 @@ export default {
       paymentReceived: 'Payment received {{amount}}',
       orderEdited: 'edited the order',
       orderCancelled: 'cancelled the order',
+      orderCancelFailed: "cancelling the order failed after deleting parcels {{packages}} and picklists {{picklists}}",
       orderFinished: 'Order finished',
       noteAdded: 'added a note',
       smsSent: 'sent the pickup SMS',
@@ -11785,6 +11786,7 @@ export default {
         zohoEdited: 'Edited in Zoho',
         documentEmailed: "Document emailed",
         creditApplied: "Credit applied",
+        cancelFailed: "Cancel failed",
         contactEdited: "Contact edited",
       },
     },
@@ -12048,6 +12050,7 @@ export default {
       unknown_package: 'this parcel is no longer on the order, look again',
       bad_discount: 'the discount is not valid',
       create_failed: 'Zoho Books did not confirm the order, nothing was created',
+      order_invoiced: "the order has an invoice, it can no longer be cancelled",
       unknown_picklist: 'this picklist is no longer on the order, look again',
     },
     cancel: {

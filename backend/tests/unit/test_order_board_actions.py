@@ -2142,6 +2142,51 @@ async def test_cancel_leaves_a_shipped_parcel_and_lets_books_refuse(db_session, 
     assert parcels.steps == []
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invoiced", ["invoice", "line"])
+async def test_cancel_of_an_invoiced_order_is_refused_before_anything_is_deleted(db_session, parcels, voids, invoiced):
+    doc = _packed(parcels)
+    if invoiced == "invoice":
+        doc["invoices"] = [{"invoice_id": "i1", "invoice_number": "INV-1", "status": "sent"}]
+    else:
+        doc["line_items"][0]["quantity_invoiced"] = 1
+    await _board(db_session, parcels, doc)
+    with pytest.raises(actions.OrderActionRefused, match="order_invoiced"):
+        await actions.cancel_order(db_session, "so1")
+    assert parcels.steps == [] and voids.voided == []
+    assert await events_of(db_session, "so1") == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_with_only_a_void_invoice_goes_ahead(db_session, parcels, voids):
+    doc = _packed(parcels)
+    doc["invoices"] = [{"invoice_id": "i1", "invoice_number": "INV-1", "status": "void"}]
+    await _board(db_session, parcels, doc)
+    await actions.cancel_order(db_session, "so1")
+    assert voids.voided == ["so1"]
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_that_fails_after_deleting_records_what_it_removed(db_session, parcels, voids):
+    await _board(db_session, parcels, _packed(parcels))
+    voids.void_error = ZohoUpstreamError("refused")
+    with pytest.raises(ZohoUpstreamError):
+        await actions.cancel_order(db_session, "so1", by="paul")
+    assert parcels.steps == [("delete_package", "p1"), ("delete_picklist", "pl1")]
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["order.cancel_failed"]
+    assert events[0].detail["picklists"] == ["PL-00001"] and len(events[0].detail["packages"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_that_fails_before_deleting_records_nothing(db_session, voids):
+    await _board(db_session, voids, order(1))
+    voids.void_error = ZohoUpstreamError("refused")
+    with pytest.raises(ZohoUpstreamError):
+        await actions.cancel_order(db_session, "so1")
+    assert await events_of(db_session, "so1") == []
+
+
 # --- Edit the order's lines --------------------------------------------------------------------------------------
 
 VERSION = "2026-11-01T08:00:00-1000"

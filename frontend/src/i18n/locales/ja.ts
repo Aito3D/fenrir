@@ -11690,6 +11690,7 @@ export default {
       paymentReceived: '入金 {{amount}}',
       orderEdited: '注文を編集',
       orderCancelled: '注文をキャンセル',
+      orderCancelFailed: "パッケージ {{packages}} とピッキングリスト {{picklists}} を削除した後、キャンセルに失敗",
       orderFinished: '注文完了',
       noteAdded: 'メモを追加',
       smsSent: '受け取り SMS を送信',
@@ -11728,6 +11729,7 @@ export default {
         zohoEdited: 'Zoho で編集',
         documentEmailed: "書類を送信",
         creditApplied: "クレジット適用",
+        cancelFailed: "キャンセル失敗",
         contactEdited: "連絡先を編集",
       },
     },
@@ -11991,6 +11993,7 @@ export default {
       unknown_package: 'この荷物は注文にありません。もう一度確認してください',
       bad_discount: '割引が無効です',
       create_failed: 'Zoho Books が注文を確定しなかったため、何も作成されていません',
+      order_invoiced: "請求書があるため、この注文はキャンセルできません",
       unknown_picklist: 'このピッキングリストは注文にありません。もう一度確認してください',
     },
     cancel: {

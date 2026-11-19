@@ -878,6 +878,7 @@
   "payment.received": "orders.history.short.payment",
   "order.edited": "orders.history.short.edited",
   "order.cancelled": "orders.history.short.cancelled",
+  "order.cancel_failed": "orders.history.short.cancelFailed",
   "order.finished": "orders.history.short.finished",
   "note.added": "orders.history.short.note",
   "sms.sent": "orders.history.short.sms",
@@ -1718,6 +1719,92 @@
     "key": "orders.history.orderCancelled"
    }
   ],
+  "order.cancel_failed": [
+   {
+    "key": "orders.history.orderCancelFailed",
+    "params": {
+     "packages": "—",
+     "picklists": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderCancelFailed",
+    "params": {
+     "packages": "—",
+     "picklists": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderCancelFailed",
+    "params": {
+     "packages": "—",
+     "picklists": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderCancelFailed",
+    "params": {
+     "packages": "—",
+     "picklists": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderCancelFailed",
+    "params": {
+     "packages": "—",
+     "picklists": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderCancelFailed",
+    "params": {
+     "packages": "—",
+     "picklists": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderCancelFailed",
+    "params": {
+     "packages": "—",
+     "picklists": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderCancelFailed",
+    "params": {
+     "packages": "—",
+     "picklists": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderCancelFailed",
+    "params": {
+     "packages": "—",
+     "picklists": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderCancelFailed",
+    "params": {
+     "packages": "—",
+     "picklists": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderCancelFailed",
+    "params": {
+     "packages": "—",
+     "picklists": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderCancelFailed",
+    "params": {
+     "packages": "—",
+     "picklists": "—"
+    }
+   }
+  ],
   "order.finished": [
    {
     "key": "orders.history.orderFinished"
@@ -2457,6 +2544,20 @@
    null
   ],
   "order.cancelled": [
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null
+  ],
+  "order.cancel_failed": [
    null,
    null,
    null,

@@ -11896,6 +11896,7 @@ export default {
       paymentReceived: 'Otrzymano płatność {{amount}}',
       orderEdited: 'zmienił(a) zamówienie',
       orderCancelled: 'anulował(a) zamówienie',
+      orderCancelFailed: "anulowanie nie powiodło się po usunięciu paczek {{packages}} i list kompletacji {{picklists}}",
       orderFinished: 'Zamówienie zakończone',
       noteAdded: 'dodał(a) notatkę',
       smsSent: 'wysłał(a) SMS o odbiorze',
@@ -11934,6 +11935,7 @@ export default {
         zohoEdited: 'Zmienione w Zoho',
         documentEmailed: "Dokument wysłany",
         creditApplied: "Środki zastosowane",
+        cancelFailed: "Anulowanie nieudane",
         contactEdited: "Kontakt zmieniony",
       },
     },
@@ -12197,6 +12199,7 @@ export default {
       unknown_package: 'ta paczka nie jest już w zamówieniu, sprawdź ponownie',
       bad_discount: 'rabat jest nieprawidłowy',
       create_failed: 'Zoho Books nie potwierdziło zamówienia, nic nie zostało utworzone',
+      order_invoiced: "zamówienie ma fakturę i nie można go już anulować",
       unknown_picklist: 'ta lista kompletacji nie jest już w zamówieniu, sprawdź ponownie',
     },
     cancel: {

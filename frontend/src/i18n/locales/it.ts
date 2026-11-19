@@ -11676,6 +11676,7 @@ export default {
       paymentReceived: 'Pagamento ricevuto {{amount}}',
       orderEdited: 'ha modificato l\'ordine',
       orderCancelled: 'ha annullato l\'ordine',
+      orderCancelFailed: "l’annullamento è fallito dopo l’eliminazione dei colli {{packages}} e delle liste di prelievo {{picklists}}",
       orderFinished: 'Ordine completato',
       noteAdded: 'ha aggiunto una nota',
       smsSent: 'ha inviato l\'SMS di ritiro',
@@ -11714,6 +11715,7 @@ export default {
         zohoEdited: 'Modificato in Zoho',
         documentEmailed: "Documento inviato",
         creditApplied: "Credito applicato",
+        cancelFailed: "Annullamento fallito",
         contactEdited: "Contatto modificato",
       },
     },
@@ -11977,6 +11979,7 @@ export default {
       unknown_package: 'questo pacco non è più nell’ordine, controlla di nuovo',
       bad_discount: 'lo sconto non è valido',
       create_failed: 'Zoho Books non ha confermato l\'ordine, non è stato creato nulla',
+      order_invoiced: "l’ordine ha una fattura e non può più essere annullato",
       unknown_picklist: 'questa lista di prelievo non è più nell’ordine, controlla di nuovo',
     },
     cancel: {

@@ -11295,6 +11295,7 @@ export default {
       paymentReceived: 'Получен платёж {{amount}}',
       orderEdited: 'изменил(а) заказ',
       orderCancelled: 'отменил(а) заказ',
+      orderCancelFailed: "отмена не удалась после удаления посылок {{packages}} и листов подбора {{picklists}}",
       orderFinished: 'Заказ завершён',
       noteAdded: 'добавил(а) заметку',
       smsSent: 'отправил(а) SMS о готовности',
@@ -11333,6 +11334,7 @@ export default {
         zohoEdited: 'Изменено в Zoho',
         documentEmailed: "Документ отправлен",
         creditApplied: "Кредит зачтён",
+        cancelFailed: "Отмена не удалась",
         contactEdited: "Контакт изменён",
       },
     },
@@ -11596,6 +11598,7 @@ export default {
       unknown_package: 'этой посылки больше нет в заказе, посмотрите снова',
       bad_discount: 'скидка недействительна',
       create_failed: 'Zoho Books не подтвердил заказ, ничего не создано',
+      order_invoiced: "у заказа есть счёт, его больше нельзя отменить",
       unknown_picklist: 'этого листа подбора больше нет в заказе, посмотрите снова',
     },
     cancel: {

@@ -11674,6 +11674,7 @@ export default {
       paymentReceived: '已收到付款 {{amount}}',
       orderEdited: '修改了訂單',
       orderCancelled: '取消了訂單',
+      orderCancelFailed: "刪除包裹 {{packages}} 和揀貨單 {{picklists}} 後取消失敗",
       orderFinished: '訂單已完成',
       noteAdded: '新增了備註',
       smsSent: '傳送了取貨簡訊',
@@ -11712,6 +11713,7 @@ export default {
         zohoEdited: '已在 Zoho 中修改',
         documentEmailed: "單據已寄送",
         creditApplied: "餘額已抵扣",
+        cancelFailed: "取消失敗",
         contactEdited: "聯絡人已編輯",
       },
     },
@@ -11975,6 +11977,7 @@ export default {
       unknown_package: '此包裹已不在訂單中，請重新查看',
       bad_discount: '折扣無效',
       create_failed: 'Zoho Books 未確認訂單，未建立任何內容',
+      order_invoiced: "訂單已有發票，無法再取消",
       unknown_picklist: '此揀貨單已不在訂單中，請重新查看',
     },
     cancel: {

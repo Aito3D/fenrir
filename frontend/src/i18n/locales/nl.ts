@@ -11715,6 +11715,7 @@ export default {
       paymentReceived: 'Betaling ontvangen {{amount}}',
       orderEdited: 'wijzigde de bestelling',
       orderCancelled: 'annuleerde de bestelling',
+      orderCancelFailed: "annuleren mislukt nadat pakketten {{packages}} en picklijsten {{picklists}} waren verwijderd",
       orderFinished: 'Bestelling afgerond',
       noteAdded: 'voegde een notitie toe',
       smsSent: 'stuurde de ophaal-sms',
@@ -11753,6 +11754,7 @@ export default {
         zohoEdited: 'Gewijzigd in Zoho',
         documentEmailed: "Document gemaild",
         creditApplied: "Tegoed toegepast",
+        cancelFailed: "Annuleren mislukt",
         contactEdited: "Contact bewerkt",
       },
     },
@@ -12016,6 +12018,7 @@ export default {
       unknown_package: 'dit pakket staat niet meer op de bestelling, kijk opnieuw',
       bad_discount: 'de korting is ongeldig',
       create_failed: 'Zoho Books heeft de bestelling niet bevestigd, er is niets aangemaakt',
+      order_invoiced: "de bestelling heeft een factuur en kan niet meer worden geannuleerd",
       unknown_picklist: 'deze picklijst staat niet meer op de bestelling, kijk opnieuw',
     },
     cancel: {

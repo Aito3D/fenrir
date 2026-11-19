@@ -11691,6 +11691,7 @@ export default {
       paymentReceived: 'Zahlung erhalten {{amount}}',
       orderEdited: 'hat die Bestellung geändert',
       orderCancelled: 'hat die Bestellung storniert',
+      orderCancelFailed: "Stornierung fehlgeschlagen, nachdem die Pakete {{packages}} und Picklisten {{picklists}} gelöscht wurden",
       orderFinished: 'Bestellung abgeschlossen',
       noteAdded: 'hat eine Notiz hinzugefügt',
       smsSent: 'hat die Abhol-SMS gesendet',
@@ -11729,6 +11730,7 @@ export default {
         zohoEdited: 'In Zoho geändert',
         documentEmailed: "Dokument gesendet",
         creditApplied: "Guthaben angerechnet",
+        cancelFailed: "Stornierung fehlgeschlagen",
         contactEdited: "Kontakt bearbeitet",
       },
     },
@@ -11992,6 +11994,7 @@ export default {
       unknown_package: 'dieses Paket ist nicht mehr auf der Bestellung, bitte neu laden',
       bad_discount: 'der Rabatt ist ungültig',
       create_failed: 'Zoho Books hat die Bestellung nicht bestätigt, nichts wurde angelegt',
+      order_invoiced: "die Bestellung hat eine Rechnung und kann nicht mehr storniert werden",
       unknown_picklist: 'diese Pickliste ist nicht mehr auf der Bestellung, bitte neu laden',
     },
     cancel: {
