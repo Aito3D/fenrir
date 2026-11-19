@@ -87,6 +87,7 @@ export default {
     emailPreviewTitle: 'メールのプレビュー',
     invoiceEmailed: '請求書を {{email}} に送信しました',
     invoiceEmailFailed: '請求書を送信できませんでした',
+    emailRecipientRecentlyEdited: 'このアドレスは編集されたばかりです。送信前に顧客に確認してください',
     createInvoice: '請求書を作成',
     createInvoiceTitle: '請求書の作成',
     createInvoiceIntro_one: '見積 {{quote}}、{{count}} 行。Zoho Books に請求書の下書きを作成します（メールは送信されません）。',

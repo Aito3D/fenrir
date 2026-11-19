@@ -70,6 +70,21 @@ describe('OrderDocumentEmailModal', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('says the address was just edited when the server refuses it for that', async () => {
+    server.use(
+      http.get(url('quote'), () => HttpResponse.json(content)),
+      http.post(url('quote'), () =>
+        HttpResponse.json({ detail: { code: 'recipient_recently_edited', message: 'edited' } }, { status: 409 }),
+      ),
+    );
+    const user = userEvent.setup();
+    open('quote');
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('moana@client.pf'));
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    expect(await screen.findByText(/just edited/)).toBeInTheDocument();
+    expect(screen.queryByText('Could not send the quote')).not.toBeInTheDocument();
+  });
+
   it.each([
     ['quote', 'Could not load the email details'],
     ['retainer', 'Could not load the retainer email details'],

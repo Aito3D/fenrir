@@ -87,6 +87,7 @@ export default {
     emailPreviewTitle: 'Prévia do e-mail',
     invoiceEmailed: 'Fatura enviada para {{email}}',
     invoiceEmailFailed: 'Não foi possível enviar a fatura',
+    emailRecipientRecentlyEdited: 'Esse endereço acabou de ser editado: confirme com o cliente antes de enviar',
     createInvoice: 'Criar fatura',
     createInvoiceTitle: 'Criar a fatura',
     createInvoiceIntro_one: 'Orçamento {{quote}}, {{count}} linha. Um rascunho de fatura é criado no Zoho Books — nada é enviado por e-mail.',

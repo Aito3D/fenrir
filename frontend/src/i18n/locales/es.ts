@@ -87,6 +87,7 @@ export default {
     emailPreviewTitle: 'Vista previa del correo',
     invoiceEmailed: 'Factura enviada a {{email}}',
     invoiceEmailFailed: 'No se pudo enviar la factura',
+    emailRecipientRecentlyEdited: 'Esa dirección se acaba de modificar: confírmala con el cliente antes de enviar',
     createInvoice: 'Crear factura',
     createInvoiceTitle: 'Crear la factura',
     createInvoiceIntro_one: 'Presupuesto {{quote}}, {{count}} línea. Se crea un borrador de factura en Zoho Books — no se envía ningún correo.',

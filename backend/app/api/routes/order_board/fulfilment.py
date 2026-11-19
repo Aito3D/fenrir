@@ -395,6 +395,8 @@ async def send_invoice_email(
             by=_by(user),
             invoice_number=content["invoice_number"],
         ),
+        db=db,
+        salesorder_id=salesorder_id,
     )
     _logged(user, salesorder_id, "invoice_email")
     return {"board": await order_board_sync.read_board(db)}

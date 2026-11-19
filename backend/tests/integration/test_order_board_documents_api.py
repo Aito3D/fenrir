@@ -2,6 +2,7 @@
 per-order sync report, customer credit, client rating, contact edit and the manual credit apply. Books is stubbed."""
 
 import time
+from datetime import timedelta
 
 import pytest
 from sqlalchemy import select
@@ -295,3 +296,44 @@ async def test_a_quote_email_with_an_ambiguous_answer_cannot_be_resent(async_cli
     quote_mail["error"] = None
     r = await async_client.post(url, headers=h, json=mail)  # Books may have sent it: the guard stays armed
     assert r.status_code == 409 and quote_mail["sent"] == []
+
+
+@pytest.mark.asyncio
+async def test_contact_edit_refuses_a_malformed_email_but_takes_valid_or_empty(
+    async_client, tokens, order, monkeypatch
+):  # noqa: F811
+    async def update(db, contact_id, **kw):
+        return None
+
+    monkeypatch.setattr(zoho_service, "update_contact_person", update)
+    for bad in ("not-an-email", "a@b", "two@@x.pf", "a b@x.pf"):
+        r = await async_client.put(f"{BASE}/contact", json={"email": bad}, headers=tokens["both"])
+        assert r.status_code == 422, bad
+    for good in ("new@example.com", ""):
+        r = await async_client.put(f"{BASE}/contact", json={"email": good, "phone": "87"}, headers=tokens["both"])
+        assert r.status_code == 200, good
+
+
+@pytest.mark.asyncio
+async def test_quote_email_refuses_an_address_a_contact_edit_just_set(
+    async_client, tokens, order, quote_mail, monkeypatch
+):  # noqa: F811
+    from backend.app.api.routes.order_board import _common
+
+    async def update(db, contact_id, **kw):
+        return None
+
+    monkeypatch.setattr(zoho_service, "update_contact_person", update)
+    url, h = f"{BASE}/documents/quote/est-1/email", tokens["both"]
+    # bob is offered by Books; ana is the stored contact and stays unchanged by a phone-only edit.
+    await async_client.put(f"{BASE}/contact", json={"email": "Bob@Example.com"}, headers=h)
+    await async_client.put(f"{BASE}/contact", json={"email": "ana@example.com", "phone": "87"}, headers=h)
+    r = await async_client.post(url, headers=h, json={"to": "bob@example.com"})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "recipient_recently_edited"
+    assert quote_mail["sent"] == []
+    r = await async_client.post(url, headers=h, json={"to": "ana@example.com"})  # not edited: sent as before
+    assert r.status_code == 200 and len(quote_mail["sent"]) == 1
+    later = _common.utc_now_naive() + _common._RECIPIENT_EDIT_COOLDOWN + timedelta(seconds=1)
+    monkeypatch.setattr(_common, "utc_now_naive", lambda: later)  # the window has passed
+    r = await async_client.post(url, headers=h, json={"to": "bob@example.com"})
+    assert r.status_code == 200 and len(quote_mail["sent"]) == 2

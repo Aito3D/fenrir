@@ -932,3 +932,27 @@ async def test_an_invoice_email_with_an_ambiguous_answer_can_be_retried(async_cl
     invoice_mail["error"] = None
     r = await async_client.post(url, headers=h, json=mail)  # unchanged: the guard is released here
     assert r.status_code == 200 and len(invoice_mail["sent"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_invoice_email_refuses_an_address_a_contact_edit_just_set(async_client, tokens, db_session, invoice_mail):
+    from backend.app.models.order_board_event import OrderBoardEvent
+    from backend.app.services.aito_events import utc_now_naive
+
+    await _store_invoiced_order(db_session)
+    db_session.add(
+        OrderBoardEvent(
+            salesorder_id="so1",
+            occurred_at=utc_now_naive(),
+            kind="contact.edited",
+            actor_class="user",
+            detail={"email": "compta@client.pf"},
+        )
+    )
+    await db_session.commit()
+    url, h = f"{BASE}/invoices/inv1/email", tokens["both"]
+    r = await async_client.post(url, headers=h, json={"to": "Compta@client.pf"})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "recipient_recently_edited"
+    assert invoice_mail["sent"] == []
+    r = await async_client.post(url, headers=h, json={"to": "moana@client.pf"})  # another address: unchanged
+    assert r.status_code == 200 and len(invoice_mail["sent"]) == 1

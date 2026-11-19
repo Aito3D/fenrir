@@ -9355,6 +9355,7 @@ export default {
     emailPreviewTitle: 'Podgląd e-maila',
     invoiceEmailed: 'Faktura wysłana na adres {{email}}',
     invoiceEmailFailed: 'Nie udało się wysłać faktury',
+    emailRecipientRecentlyEdited: 'Ten adres został właśnie zmieniony: potwierdź go z klientem przed wysłaniem',
     createInvoice: 'Utwórz fakturę',
     createInvoiceTitle: 'Utwórz fakturę',
     createInvoiceIntro_one: 'Wycena {{quote}}, {{count}} pozycja. W Zoho Books powstanie szkic faktury — nic nie zostanie wysłane e-mailem.',

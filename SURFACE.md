@@ -601,6 +601,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected

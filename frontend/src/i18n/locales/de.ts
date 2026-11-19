@@ -87,6 +87,7 @@ export default {
     emailPreviewTitle: 'E-Mail-Vorschau',
     invoiceEmailed: 'Rechnung an {{email}} gesendet',
     invoiceEmailFailed: 'Rechnung konnte nicht gesendet werden',
+    emailRecipientRecentlyEdited: 'Diese Adresse wurde gerade geändert: vor dem Senden mit dem Kunden bestätigen',
     createInvoice: 'Rechnung erstellen',
     createInvoiceTitle: 'Rechnung erstellen',
     createInvoiceIntro_one: 'Angebot {{quote}}, {{count}} Position. In Zoho Books wird ein Rechnungsentwurf erstellt — es wird nichts versendet.',

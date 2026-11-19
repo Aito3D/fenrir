@@ -87,6 +87,7 @@ export default {
     emailPreviewTitle: '이메일 미리보기',
     invoiceEmailed: '{{email}}(으)로 청구서를 보냈습니다',
     invoiceEmailFailed: '청구서를 보내지 못했습니다',
+    emailRecipientRecentlyEdited: '이 주소는 방금 수정되었습니다. 보내기 전에 고객에게 확인하세요',
     createInvoice: '청구서 생성',
     createInvoiceTitle: '청구서 만들기',
     createInvoiceIntro_one: '견적 {{quote}}, {{count}}개 항목. Zoho Books에 청구서 초안이 생성됩니다 — 메일은 발송되지 않습니다.',

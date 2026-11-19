@@ -5,7 +5,7 @@ Every document id is checked against the stored order before Books is asked: no 
 
 import logging
 from datetime import date
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -138,5 +138,9 @@ async def edit_contact(
                 contact_person_id=str(person.get("contact_person_id") or "") or None,
             ),
         )
-        await _log(db, salesorder_id, "contact.edited", by)
+        new_email = email.strip().lower()
+        # Recorded only for an address that changed: the email guard refuses to mail it for a few minutes.
+        changed = new_email and new_email != str(person.get("email") or "").strip().lower()
+        detail: dict[str, Any] = {"email": new_email} if changed else {}
+        await _log(db, salesorder_id, "contact.edited", by, **detail)
         await _best_effort_refresh(db, salesorder_id, number)

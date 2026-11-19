@@ -1,8 +1,8 @@
 ### exit: 0
 ### stdout:
 locale files (16): de.ts en.ts es.ts fr.ts it.ts ja.ts ko.ts nl.ts pl.ts pt-BR.ts ru.ts sv.ts tr.ts uk.ts zh-CN.ts zh-TW.ts
-extra literal keys read by the scope (96): aito.applyDepositDone aito.applyDepositError aito.clientEdit aito.clientEditFailed aito.clientEmail aito.clientPhone aito.contacted aito.downloadQuote aito.downloadRetainer aito.followups.hint aito.followups.longest aito.followups.notCollected aito.followups.title aito.forceSyncStepCredit aito.history.title aito.invoiceEmailFailed aito.invoiceEmailed aito.noClient aito.panelTabAttention aito.panelTabDetails aito.payment.cellManual aito.payment.cellManualTitle aito.payment.linkTitle aito.printFailed aito.printQuote aito.printRetainer aito.printShippingLabel aito.quoteEmailFailed aito.quoteEmailed aito.quoteOpenInZoho aito.retainerEmailFailed aito.retainerEmailed aito.retainerLabel aito.retainerPrintFailed aito.sendInvoice aito.sendInvoiceLoadFailed aito.sendInvoiceTitle aito.sendQuote aito.sendQuoteLoadFailed aito.sendQuoteTitle aito.sendRetainer aito.sendRetainerLoadFailed aito.sendRetainerTitle aito.shippingIsland aito.shippingLabelPrintFailed aito.shippingPhone aito.shippingRecipient aito.shippingService aito.smsGenerateFailed aito.smsGenerating aito.smsMaybeSent aito.smsMessageLabel aito.smsNoPhone aito.smsPickup aito.smsPickupShort aito.smsRelayUnreachable aito.smsSend aito.smsSendFailed aito.smsSent aito.smsTitle aito.sync aito.syncUpToDate aito.track.codeTooMany aito.track.error aito.track.invalidEnterCode aito.track.invalidTitle aito.track.order.appHint aito.track.order.invalidBody aito.track.order.line.handedOn aito.track.order.linesHeading aito.track.order.pay.heading aito.track.order.pay.left aito.track.order.pay.methods aito.track.order.pay.paidSub aito.track.order.pay.settled aito.track.order.pay.total aito.track.order.pickup aito.track.order.pickupLink aito.track.order.placed aito.track.order.question aito.track.order.ref aito.track.order.showAll aito.track.order.title aito.track.retry aito.track.retrying aito.track.updated aito.trackingCopied aito.trackingCopy aito.trackingCopyFailed aito.trackingNeedsExternalUrl common.cancel common.error common.errorLoading common.loading common.save common.saving
---- en values (526 keys)
+extra literal keys read by the scope (97): aito.applyDepositDone aito.applyDepositError aito.clientEdit aito.clientEditFailed aito.clientEmail aito.clientPhone aito.contacted aito.downloadQuote aito.downloadRetainer aito.emailRecipientRecentlyEdited aito.followups.hint aito.followups.longest aito.followups.notCollected aito.followups.title aito.forceSyncStepCredit aito.history.title aito.invoiceEmailFailed aito.invoiceEmailed aito.noClient aito.panelTabAttention aito.panelTabDetails aito.payment.cellManual aito.payment.cellManualTitle aito.payment.linkTitle aito.printFailed aito.printQuote aito.printRetainer aito.printShippingLabel aito.quoteEmailFailed aito.quoteEmailed aito.quoteOpenInZoho aito.retainerEmailFailed aito.retainerEmailed aito.retainerLabel aito.retainerPrintFailed aito.sendInvoice aito.sendInvoiceLoadFailed aito.sendInvoiceTitle aito.sendQuote aito.sendQuoteLoadFailed aito.sendQuoteTitle aito.sendRetainer aito.sendRetainerLoadFailed aito.sendRetainerTitle aito.shippingIsland aito.shippingLabelPrintFailed aito.shippingPhone aito.shippingRecipient aito.shippingService aito.smsGenerateFailed aito.smsGenerating aito.smsMaybeSent aito.smsMessageLabel aito.smsNoPhone aito.smsPickup aito.smsPickupShort aito.smsRelayUnreachable aito.smsSend aito.smsSendFailed aito.smsSent aito.smsTitle aito.sync aito.syncUpToDate aito.track.codeTooMany aito.track.error aito.track.invalidEnterCode aito.track.invalidTitle aito.track.order.appHint aito.track.order.invalidBody aito.track.order.line.handedOn aito.track.order.linesHeading aito.track.order.pay.heading aito.track.order.pay.left aito.track.order.pay.methods aito.track.order.pay.paidSub aito.track.order.pay.settled aito.track.order.pay.total aito.track.order.pickup aito.track.order.pickupLink aito.track.order.placed aito.track.order.question aito.track.order.ref aito.track.order.showAll aito.track.order.title aito.track.retry aito.track.retrying aito.track.updated aito.trackingCopied aito.trackingCopy aito.trackingCopyFailed aito.trackingNeedsExternalUrl common.cancel common.error common.errorLoading common.loading common.save common.saving
+--- en values (527 keys)
 aito.applyDepositDone = "{{amount}} applied to {{invoice}}"  placeholders={{amount}},{{invoice}}
 aito.applyDepositError = "The deposit could not be applied"
 aito.clientEdit = "Edit the client"
@@ -12,6 +12,7 @@ aito.clientPhone = "Phone"
 aito.contacted = "Contacted"
 aito.downloadQuote = "Download quote"
 aito.downloadRetainer = "Download retainer invoice"
+aito.emailRecipientRecentlyEdited = "That address was just edited: confirm it with the client before sending"
 aito.followups.hint = "Click a tile to show only those projects"
 aito.followups.longest = "{{days}} d"  placeholders={{days}}
 aito.followups.notCollected = "Not collected"
@@ -530,7 +531,7 @@ orders.watch.off = "Watch"
 orders.watch.on = "Watching"
 settings.tabs.orders = "Orders"
 
---- de.ts keys=526 values-sha256=8d149f279c6a8ad3
+--- de.ts keys=527 values-sha256=ab3f01769d016ede
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -543,6 +544,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -1061,7 +1063,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- en.ts keys=526 values-sha256=c6a0d8034c73d70a
+--- en.ts keys=527 values-sha256=5e7d2725927efa71
 missing=[] extra=[]
 same-as-en=0 non-string=[]
 placeholder-drift=[]
@@ -1074,6 +1076,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -1592,7 +1595,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- es.ts keys=526 values-sha256=0150791bf8187b16
+--- es.ts keys=527 values-sha256=e806cd996b489ab0
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
@@ -1605,6 +1608,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -2123,7 +2127,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- fr.ts keys=526 values-sha256=937e9516001e4fa6
+--- fr.ts keys=527 values-sha256=f9ee602dae2d3f7c
 missing=[] extra=[]
 same-as-en=5 non-string=[]
 placeholder-drift=[]
@@ -2136,6 +2140,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -2654,7 +2659,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- it.ts keys=526 values-sha256=67016fd560df1ae6
+--- it.ts keys=527 values-sha256=d82e95e557bc313e
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -2667,6 +2672,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -3185,7 +3191,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- ja.ts keys=526 values-sha256=b8fe3b3dff3e31f2
+--- ja.ts keys=527 values-sha256=5259f8a965824ce8
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -3198,6 +3204,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -3716,7 +3723,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- ko.ts keys=526 values-sha256=7b79dbdbc4dc084d
+--- ko.ts keys=527 values-sha256=191061b64684b885
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -3729,6 +3736,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -4247,7 +4255,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- nl.ts keys=526 values-sha256=a9d57fa7d54bcf09
+--- nl.ts keys=527 values-sha256=143af7e6595e852c
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -4260,6 +4268,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -4778,7 +4787,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- pl.ts keys=526 values-sha256=16cff5199eb5f919
+--- pl.ts keys=527 values-sha256=4b478a61b304ca9e
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -4791,6 +4800,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -5309,7 +5319,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- pt-BR.ts keys=526 values-sha256=9ee7ef9d4055672d
+--- pt-BR.ts keys=527 values-sha256=a5699e098657a0b0
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
@@ -5322,6 +5332,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -5840,7 +5851,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- ru.ts keys=526 values-sha256=3ebf290da227838d
+--- ru.ts keys=527 values-sha256=871e6eefb7d26229
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -5853,6 +5864,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -6371,7 +6383,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- sv.ts keys=526 values-sha256=3d0c9f3d84e5214a
+--- sv.ts keys=527 values-sha256=9ad3f62a495bb249
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -6384,6 +6396,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -6902,7 +6915,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- tr.ts keys=526 values-sha256=b301b00d444af832
+--- tr.ts keys=527 values-sha256=3709a6b99c77948c
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -6915,6 +6928,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -7433,7 +7447,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- uk.ts keys=526 values-sha256=0aae3647c431f81a
+--- uk.ts keys=527 values-sha256=cfb37649aef1cdc4
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -7446,6 +7460,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -7964,7 +7979,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- zh-CN.ts keys=526 values-sha256=d22d8784abe2d002
+--- zh-CN.ts keys=527 values-sha256=d1c6c12c12048160
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -7977,6 +7992,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
@@ -8495,7 +8511,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- zh-TW.ts keys=526 values-sha256=de779230b2f67695
+--- zh-TW.ts keys=527 values-sha256=70b94f746e434f2b
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -8508,6 +8524,7 @@ aito.clientPhone
 aito.contacted
 aito.downloadQuote
 aito.downloadRetainer
+aito.emailRecipientRecentlyEdited
 aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected

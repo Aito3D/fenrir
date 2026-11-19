@@ -87,6 +87,7 @@ export default {
     emailPreviewTitle: 'Email preview',
     invoiceEmailed: 'Invoice sent to {{email}}',
     invoiceEmailFailed: 'Could not send the invoice',
+    emailRecipientRecentlyEdited: 'That address was just edited: confirm it with the client before sending',
     createInvoice: 'Create invoice',
     createInvoiceTitle: 'Create the invoice',
     createInvoiceIntro_one: 'Quote {{quote}}, {{count}} line. A draft invoice is created in Zoho Books — nothing is emailed.',

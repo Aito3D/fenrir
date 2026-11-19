@@ -1,9 +1,10 @@
 """An order's quote and deposit documents, its sync, credit, rating and contact: the Aito card's tools on an order."""
 
+import re
 from typing import Literal
 
 from fastapi import Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.aito import (
@@ -32,6 +33,13 @@ class ContactBody(BaseModel):
     email: str = Field(default="", max_length=200)
     phone: str = Field(default="", max_length=50)
     phone_field: Literal["phone", "mobile"] = "mobile"
+
+    @field_validator("email")
+    @classmethod
+    def _email_shape(cls, v: str) -> str:
+        if v.strip() and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", v.strip()):
+            raise ValueError("not an email address")
+        return v
 
 
 @router.get("/orders/{salesorder_id}/documents/{kind}/{document_id}/pdf")
@@ -96,6 +104,8 @@ async def send_document_email(
         content,
         "That address is not a recipient of this document",
         lambda: order_board_actions.email_document(db, salesorder_id, kind, document, to, by=_by(user)),
+        db=db,
+        salesorder_id=salesorder_id,
         keep_armed=(ZohoUnreachable, ZohoAmbiguous),  # a gateway page does not say Books did not send it
     )
     _logged(user, salesorder_id, f"{kind}_email")

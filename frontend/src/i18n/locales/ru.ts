@@ -87,6 +87,7 @@ export default {
     emailPreviewTitle: 'Предпросмотр письма',
     invoiceEmailed: 'Счёт отправлен на {{email}}',
     invoiceEmailFailed: 'Не удалось отправить счёт',
+    emailRecipientRecentlyEdited: 'Этот адрес только что изменён: подтвердите его у клиента перед отправкой',
     createInvoice: 'Создать счёт',
     createInvoiceTitle: 'Создание счёта',
     createInvoiceIntro_one: 'Смета {{quote}}, строка: {{count}}. В Zoho Books будет создан черновик счёта — письма не отправляются.',

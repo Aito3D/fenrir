@@ -87,6 +87,7 @@ export default {
     emailPreviewTitle: '邮件预览',
     invoiceEmailed: '发票已发送至 {{email}}',
     invoiceEmailFailed: '无法发送发票',
+    emailRecipientRecentlyEdited: '该邮箱地址刚被修改：发送前请与客户确认',
     createInvoice: '创建发票',
     createInvoiceTitle: '创建发票',
     createInvoiceIntro_one: '报价单 {{quote}}，{{count}} 行。将在 Zoho Books 中创建发票草稿 — 不会发送邮件。',

@@ -9355,6 +9355,7 @@ export default {
     emailPreviewTitle: 'Voorbeeld van e-mail',
     invoiceEmailed: 'Factuur verzonden naar {{email}}',
     invoiceEmailFailed: 'De factuur kon niet worden verzonden',
+    emailRecipientRecentlyEdited: 'Dit adres is net gewijzigd: bevestig het bij de klant voordat je verstuurt',
     createInvoice: 'Factuur aanmaken',
     createInvoiceTitle: 'Factuur aanmaken',
     createInvoiceIntro_one: 'Offerte {{quote}}, {{count}} regel. Er wordt een conceptfactuur aangemaakt in Zoho Books — er wordt geen e-mail verzonden.',

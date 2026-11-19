@@ -87,6 +87,7 @@ export default {
     emailPreviewTitle: "Aperçu de l'e-mail",
     invoiceEmailed: 'Facture envoyée à {{email}}',
     invoiceEmailFailed: "Impossible d'envoyer la facture",
+    emailRecipientRecentlyEdited: "Cette adresse vient d'être modifiée : confirmez-la avec le client avant d'envoyer",
     createInvoice: 'Créer la facture',
     createInvoiceTitle: 'Créer la facture',
     createInvoiceIntro_one: 'Devis {{quote}}, {{count}} ligne. Une facture brouillon est créée dans Zoho Books — aucun e-mail ne part.',

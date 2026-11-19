@@ -87,6 +87,7 @@ export default {
     emailPreviewTitle: '郵件預覽',
     invoiceEmailed: '發票已寄送至 {{email}}',
     invoiceEmailFailed: '無法寄送發票',
+    emailRecipientRecentlyEdited: '此電子郵件地址剛被修改：寄送前請與客戶確認',
     createInvoice: '建立發票',
     createInvoiceTitle: '建立發票',
     createInvoiceIntro_one: '報價單 {{quote}}，{{count}} 行。將在 Zoho Books 中建立發票草稿 — 不會寄送郵件。',

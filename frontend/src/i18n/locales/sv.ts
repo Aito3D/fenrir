@@ -9388,6 +9388,7 @@ errors: {
     emailPreviewTitle: 'Förhandsgranskning av e-post',
     invoiceEmailed: 'Faktura skickad till {{email}}',
     invoiceEmailFailed: 'Kunde inte skicka fakturan',
+    emailRecipientRecentlyEdited: 'Adressen har just ändrats: bekräfta den med kunden innan du skickar',
     createInvoice: 'Skapa faktura',
     createInvoiceTitle: 'Skapa fakturan',
     createInvoiceIntro_one: 'Offert {{quote}}, {{count}} rad. Ett fakturautkast skapas i Zoho Books — inget mejlas.',

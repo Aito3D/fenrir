@@ -88,6 +88,7 @@ export default {
     emailPreviewTitle: 'Попередній перегляд листа',
     invoiceEmailed: 'Рахунок надіслано на {{email}}',
     invoiceEmailFailed: 'Не вдалося надіслати рахунок',
+    emailRecipientRecentlyEdited: 'Цю адресу щойно змінено: підтвердьте її з клієнтом перед надсиланням',
     createInvoice: 'Створити рахунок',
     createInvoiceTitle: 'Створення рахунку',
     createInvoiceIntro_one: 'Кошторис {{quote}}, рядок: {{count}}. У Zoho Books буде створено чернетку рахунку — листи не надсилаються.',

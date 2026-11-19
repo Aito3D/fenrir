@@ -3,6 +3,7 @@
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import TypeVar
 
 from fastapi import APIRouter, HTTPException, Response
@@ -10,18 +11,23 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.aito import _EMAIL_GUARD, _email_guard_key_or_409
+from backend.app.api.routes.aito_payments import _refuse
 from backend.app.models.order_board_doc import OrderBoardDoc
+from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.models.user import User
 from backend.app.services import (
     order_board_actions,
     order_board_sync,
 )
+from backend.app.services.aito_events import utc_now_naive
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUnreachable, ZohoUpstreamError
 from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__package__)
 _T = TypeVar("_T")
 router = APIRouter(prefix="/order-board", tags=["order-board"])
+# A contact edit needs only orders:update: an address it just set is not mailed a document until this has passed.
+_RECIPIENT_EDIT_COOLDOWN = timedelta(minutes=10)
 
 
 async def _guarded_email(
@@ -32,11 +38,22 @@ async def _guarded_email(
     refused_detail: str,
     action: Callable[[], Awaitable[None]],
     *,
+    db: AsyncSession,
+    salesorder_id: str,
     keep_armed: tuple[type[Exception], ...] = (ZohoUnreachable,),
 ) -> None:
-    """Send one document email: only to an address Books offered, once a minute per document and address."""
+    """Send one document email: only to an address Books offered and not just edited, once a minute per document and address."""
     if to.lower() not in {r["email"].lower() for r in content["recipients"]}:
         raise HTTPException(status_code=422, detail=refused_detail)
+    edits = await db.execute(
+        select(OrderBoardEvent.detail).where(
+            OrderBoardEvent.salesorder_id == salesorder_id,
+            OrderBoardEvent.kind == "contact.edited",
+            OrderBoardEvent.occurred_at >= utc_now_naive() - _RECIPIENT_EDIT_COOLDOWN,
+        )
+    )
+    if any((d or {}).get("email") == to.lower() for d in edits.scalars()):
+        raise _refuse(409, "recipient_recently_edited", "That address was just edited: check it with the client first")
     key = _email_guard_key_or_409(key_prefix, 0, doc_id, to)
     _EMAIL_GUARD.arm(key, time.monotonic())
 

@@ -87,6 +87,7 @@ export default {
     emailPreviewTitle: 'E-posta önizlemesi',
     invoiceEmailed: 'Fatura {{email}} adresine gönderildi',
     invoiceEmailFailed: 'Fatura gönderilemedi',
+    emailRecipientRecentlyEdited: 'Bu adres az önce düzenlendi: göndermeden önce müşteriyle doğrulayın',
     createInvoice: 'Fatura oluştur',
     createInvoiceTitle: 'Faturayı oluştur',
     createInvoiceIntro_one: 'Teklif {{quote}}, {{count}} satır. Zoho Books içinde bir fatura taslağı oluşturulur — e-posta gönderilmez.',
