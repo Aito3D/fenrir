@@ -9,6 +9,7 @@ import { RevenuePage } from '../../pages/RevenuePage';
 import { Layout } from '../../components/Layout';
 import { setAuthToken } from '../../api/client';
 import type { RevenueResponse, RevenueSyncStatus } from '../../components/revenue/lib/types';
+import { orgToday } from '../../components/revenue/lib/dates';
 
 let granted = new Set<string>();
 const mockUseAuth = {
@@ -249,6 +250,30 @@ describe('RevenuePage — view tabs and tax switch', () => {
     expect(screen.getByRole('tabpanel')).toHaveAttribute('data-slot', 'revenue-view-produits');
     expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/analysis?from=2025-12-01&to=2026-11-19&kind=goods');
     expect(within(screen.getByRole('tabpanel')).getByText('Nothing to rank.')).toBeInTheDocument();
+  });
+
+  it('opens Seasonality with the filters', async () => {
+    window.history.replaceState(null, '', '/revenue?kind=goods');
+    localStorage.setItem('revenue-view', 'saison');
+    stubFetch(payload());
+    const series = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+      url.startsWith('/api/v1/revenue/yoy')
+        ? json({ years: [], today: '2026-11-19' })
+        : url.startsWith('/api/v1/revenue/daily')
+          ? json({ from: '2026-01-01', to: '2026-01-01', days: [] })
+          : series(url, init),
+    );
+    renderPage();
+    await flush();
+    await flush();
+    const year = orgToday().slice(0, 4);
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('data-slot', 'revenue-view-saison');
+    const urls = fetchMock.mock.calls.map(([u]) => String(u));
+    expect(urls).toContain('/api/v1/revenue/yoy?kind=goods');
+    expect(urls).toContain(`/api/v1/revenue/daily?from=${year}-01-01&to=${year}-12-31&kind=goods`);
+    expect(within(screen.getByRole('tabpanel')).getByText('Year by year')).toBeInTheDocument();
+    expect(within(screen.getByRole('tabpanel')).getByText('Sales calendar')).toBeInTheDocument();
   });
 
   it('switches HT / TTC and remembers it', async () => {

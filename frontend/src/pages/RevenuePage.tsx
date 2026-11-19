@@ -13,6 +13,8 @@ import { RevenueTable } from '../components/revenue/RevenueTable';
 import { RevenueMovers } from '../components/revenue/RevenueMovers';
 import { RevenueCustomers } from '../components/revenue/RevenueCustomers';
 import { RevenueAnalysis } from '../components/revenue/RevenueAnalysis';
+import { RevenueYoy } from '../components/revenue/RevenueYoy';
+import { RevenueCalendar } from '../components/revenue/RevenueCalendar';
 import { RevenueControls as ControlsRow } from '../components/revenue/RevenueControls';
 import { RevenueChip, RevenueProductSearch } from '../components/revenue/RevenueProductSearch';
 import { useRevenueResource } from '../components/revenue/useRevenueResource';
@@ -418,6 +420,12 @@ export function RevenuePage() {
               segment={active.segment} onSegment={(segment) => setControls({ segment })} version={data} />
           )}
           {view === 'produits' && data && <RevenueAnalysis from={data.from} to={data.to} filterParams={filterParams} version={data} />}
+          {view === 'saison' && data && (
+            <>
+              <RevenueYoy filterParams={filterParams} taxMode={active.taxMode} version={data} />
+              <RevenueCalendar filterParams={filterParams} taxMode={active.taxMode} version={data} today={today} />
+            </>
+          )}
         </section>
       )}
     </div>
