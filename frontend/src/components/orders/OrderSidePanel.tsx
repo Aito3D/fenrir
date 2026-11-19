@@ -15,6 +15,9 @@ import type { useOrderActions } from './useOrderActions';
 
 const SIDE_TABS = ['details', 'activity'] as const;
 
+/** The phone view's tabs: the products live in the lines panel, the rest here. */
+export type PhoneTab = 'lines' | 'billing' | 'client' | 'activity';
+
 /** The column beside the lines: contact, payment and invoices, or the order's history. */
 export function OrderSidePanel({
   row,
@@ -24,6 +27,7 @@ export function OrderSidePanel({
   createInvoice,
   smsAllowed,
   editingTotal,
+  phoneTab,
 }: {
   row: OrderPanelRow;
   others: { id: string; number: string }[];
@@ -33,6 +37,8 @@ export function OrderSidePanel({
   smsAllowed: boolean;
   /** The total with the open edit applied, while one is open. */
   editingTotal: number | null;
+  /** On the phone the panel shows one block at a time and has no tab strip of its own. */
+  phoneTab?: PhoneTab;
 }) {
   const { t } = useTranslation();
   const [sideTab, setSideTab] = usePanelTab(SIDE_TABS, 'orders.panel.tab');
@@ -48,6 +54,50 @@ export function OrderSidePanel({
     setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('sms'); return next; }, { replace: true });
   }, [askedSms, smsAllowed, contactPhone, setSearchParams]);
   const invoiceSent = useRef(false);
+  // Built once so the desktop tab and the phone tabs render the very same blocks.
+  const contactBlock = (
+    <>
+      <OrderContactBlock
+        contact={row.contact}
+        orderId={row.id}
+        canEdit={canUpdate}
+        orderNumber={row.number}
+        others={others}
+        onGoto={onGoto}
+        sms={smsAllowed ? { contacted: row.contacted ?? null, onOpen: setSmsPhone } : undefined}
+      />
+      {smsPhone && <OrderSmsModal row={row} phone={smsPhone} onClose={() => setSmsPhone(null)} />}
+    </>
+  );
+  const invoicesBlock = (
+    <OrderInvoicesBlock
+      row={row}
+      canEmail={canUpdate}
+      busy={createInvoice.isPending}
+      onCreateInvoice={canUpdate ? () => {
+        if (createInvoice.isPending || invoiceSent.current) return;
+        invoiceSent.current = true;
+        createInvoice.mutate({ id: row.id, applyCredit: (row.payment?.advance ?? 0) + (row.payment?.retainer ?? 0) > 0 }, { onSettled: () => { invoiceSent.current = false; } });
+      } : undefined}
+      onInvoiceNow={canUpdate ? (scope, applyCredit) => {
+        if (createInvoice.isPending || invoiceSent.current) return;
+        invoiceSent.current = true;
+        createInvoice.mutate({ id: row.id, applyCredit, scope }, { onSettled: () => { invoiceSent.current = false; } });
+      } : undefined}
+    >
+      <OrderDepositAvailable orderId={row.id} currency={row.currency} />
+      {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} orderId={canUpdate ? row.id : undefined} />}
+    </OrderInvoicesBlock>
+  );
+  if (phoneTab) {
+    return (
+      <div className="min-w-0">
+        <div hidden={phoneTab !== 'billing'}>{invoicesBlock}</div>
+        <div hidden={phoneTab !== 'client'}>{contactBlock}</div>
+        {phoneTab === 'activity' && <OrderActivity soId={row.id} currency={row.currency} />}
+      </div>
+    );
+  }
   return (
     <div className="min-w-0 lg:self-start">
       <PanelTabs
@@ -64,34 +114,8 @@ export function OrderSidePanel({
       <div key={sideTab} className="animate-fade-in" role="tabpanel" id={panelTabPanelId(sideTab, tabScope)} aria-labelledby={panelTabId(sideTab, tabScope)}>
         {sideTab === 'details' ? (
           <div className="space-y-3">
-            <OrderContactBlock
-              contact={row.contact}
-              orderId={row.id}
-              canEdit={canUpdate}
-              orderNumber={row.number}
-              others={others}
-              onGoto={onGoto}
-              sms={smsAllowed ? { contacted: row.contacted ?? null, onOpen: setSmsPhone } : undefined}
-            />
-            {smsPhone && <OrderSmsModal row={row} phone={smsPhone} onClose={() => setSmsPhone(null)} />}
-            <OrderInvoicesBlock
-              row={row}
-              canEmail={canUpdate}
-              busy={createInvoice.isPending}
-              onCreateInvoice={canUpdate ? () => {
-                if (createInvoice.isPending || invoiceSent.current) return;
-                invoiceSent.current = true;
-                createInvoice.mutate({ id: row.id, applyCredit: (row.payment?.advance ?? 0) + (row.payment?.retainer ?? 0) > 0 }, { onSettled: () => { invoiceSent.current = false; } });
-              } : undefined}
-              onInvoiceNow={canUpdate ? (scope, applyCredit) => {
-                if (createInvoice.isPending || invoiceSent.current) return;
-                invoiceSent.current = true;
-                createInvoice.mutate({ id: row.id, applyCredit, scope }, { onSettled: () => { invoiceSent.current = false; } });
-              } : undefined}
-            >
-              <OrderDepositAvailable orderId={row.id} currency={row.currency} />
-              {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} orderId={canUpdate ? row.id : undefined} />}
-            </OrderInvoicesBlock>
+            {contactBlock}
+            {invoicesBlock}
           </div>
         ) : (
           <OrderActivity soId={row.id} currency={row.currency} />

@@ -1,23 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Lock, Pencil, Trash2 } from 'lucide-react';
+import { Lock, Pencil } from 'lucide-react';
 import { api } from '../../api/client';
 import type { OrderBoardResponse, OrderPicklist, OrderPanelRow } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { HoldButton } from '../aito/HoldButton';
 import { usePrintBlob } from '../aito/usePrintBlob';
 import { errorReason, isRefused } from './orderErrors';
 import { OrderLineRow } from './OrderLineRow';
 import { OrderPackedActions, OrderPackedBars } from './OrderPackedBand';
 import { OrderParcelEditRows } from './OrderParcelEditRows';
 import { OrderPrepActions } from './OrderPrepActions';
-import { OrderRefChips } from './OrderRefChips';
+import { OrderRefActions } from './OrderRefActions';
 import { OrderSidePanel } from './OrderSidePanel';
-import { OrderSyncButton } from './OrderSyncButton';
+import type { PhoneTab } from './OrderSidePanel';
 import { OrderTodoCheckRow, OrderTodoEditRows } from './OrderTodoBand';
-import { OrderWatchButton } from './OrderWatchButton';
 import { boxablePicklists, canPick, editTotal, packableUnits, panelGroups, parseDay, scanCheck, startEdit, waitingPackages } from './orderBoard';
 import type { OrderCheck, OrderEdit, PanelGroup, ParcelEdit } from './orderBoard';
 import { EDIT_BTN, GROUP } from './orderLinesShared';
@@ -39,6 +37,8 @@ export function OrderLinesPanel({
   startTick,
   onHandoverOpen,
   onEdited,
+  phoneTab,
+  onBarOpen,
 }: {
   row: OrderPanelRow;
   others?: { id: string; number: string }[];
@@ -51,18 +51,21 @@ export function OrderLinesPanel({
   onHandoverOpen?: (open: boolean) => void;
   /** Told once an order edit was saved: the row flashes. */
   onEdited?: () => void;
+  /** The phone view shows one tab of the order at a time; the others stay mounted (hidden) so an open bar keeps its state. */
+  phoneTab?: PhoneTab;
+  /** Told when any bar (edit, check, hand-over, parcel edit) opens or closes, and closed on unmount. */
+  onBarOpen?: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
   const toasts = useOrderOutcomeToasts();
   const { showToast } = useToast();
-  const { canUpdate, createInvoice, cancelOrder, printSheet } = useOrderActions({
+  const { canUpdate, createInvoice, printSheet } = useOrderActions({
     invoice: { onSuccess: r => toasts.outcome(r.outcome), onError: toasts.failed },
-    cancel: { onSuccess: () => showToast(t('orders.cancel.done', { number: row.number })), onError: toasts.failed },
   });
   // The parcel whose hand-over bar is open.
   const [handover, setHandover] = useState<string | null>(null);
   // The pickup SMS: admins, on a live order with something ready (a finished order has nothing to collect).
-  const { isAdmin, authEnabled } = useAuth();
+  const { isAdmin } = useAuth();
   const smsAllowed = isAdmin && (row as { status?: string }).status !== 'finished' && row.ready_ratio > 0;
   // While a hand-over of this order is in flight, the bar on screen stays as it is.
   const handingOver = useHandOverPending(row.id);
@@ -140,7 +143,7 @@ export function OrderLinesPanel({
   const packable = checkState?.kind === 'pack' ? panelGroups(row).some(g => g.id === 'todo') : packableUnits(row) > 0;
   const check = checkState && packable ? checkState : null;
   const checkLabel = check ? (check.kind === 'pick' ? 'orders.pick.toPick' : 'orders.parcel.inParcel') : null;
-  useScan(scan && check?.kind === 'pack' && !pending, code => {
+  useScan(scan && check?.kind === 'pack' && !pending && (!phoneTab || phoneTab === 'lines'), code => {
     if (!check) return;
     const r = scanCheck(check, row.lines, code);
     if (r.hit === 'added') return setCheck(r.check);
@@ -166,6 +169,11 @@ export function OrderLinesPanel({
   // A refetch where the parcel is no longer waiting (handed over, deleted) closes its edit.
   const parcel = parcelState && waitingPackages(row).some(p => p.id === parcelState.packageId) ? parcelState : null;
   barOpen.current = !!edit || !!check || handoverOpen || !!parcel;
+  const anyBarOpen = barOpen.current;
+  useEffect(() => {
+    onBarOpen?.(anyBarOpen);
+    return () => onBarOpen?.(false);
+  }, [anyBarOpen, onBarOpen]);
   useEffect(() => {
     if (parcelState && !parcel) {
       setParcel(null);
@@ -229,27 +237,9 @@ export function OrderLinesPanel({
         if (edit && !saving) closeEdit();
         if (parcel && !parcelBusy) closeParcel();
       }}
-      className="animate-rise-sm grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_27rem]">
-      <div className="order-last min-w-0 lg:order-none">
-      <OrderRefChips row={row}>
-        {/* A finished order rings no bell: nothing to watch for. */}
-        {authEnabled && (row as { status?: string }).status !== 'finished' && <OrderWatchButton orderId={row.id} />}
-        {canUpdate && <OrderSyncButton orderId={row.id} currency={row.currency} />}
-        {canUpdate && (
-          <HoldButton
-            onHold={() => cancelOrder.mutate(row.id)}
-            disabled={cancelOrder.isPending}
-            durationMs={1000}
-            label={t('orders.cancel.label')}
-            hint={t('orders.cancel.hint')}
-            progress="bar"
-            className="border border-bambu-dark-tertiary px-2.5 py-1 text-xs text-bambu-gray hover:border-red-400/45 hover:text-red-400 focus-visible:ring-red-400/40 data-[holding=true]:border-red-400 data-[holding=true]:text-red-400"
-          >
-            <Trash2 aria-hidden="true" className="relative h-3.5 w-3.5 text-red-400" />
-            <span className="relative">{t('orders.cancel.label')}</span>
-          </HoldButton>
-        )}
-      </OrderRefChips>
+      className={`animate-rise-sm grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 ${phoneTab ? '' : 'lg:grid-cols-[minmax(0,1fr)_27rem]'}`}>
+      <div hidden={!!phoneTab && phoneTab !== 'lines'} className="order-last min-w-0 lg:order-none">
+      {!phoneTab && <OrderRefActions row={row} />}
       <div
         role="region"
         tabIndex={0}
@@ -367,6 +357,7 @@ export function OrderLinesPanel({
         createInvoice={createInvoice}
         smsAllowed={smsAllowed}
         editingTotal={editingTotal}
+        phoneTab={phoneTab}
       />
     </div>
   );
