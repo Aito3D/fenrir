@@ -12590,7 +12590,7 @@ export default {
       activeFilter: 'filtr aktywny',
       segmentDetail: 'Towary {{goods}} · Usługi {{services}} · Klienci: {{n}}',
       unsplit: '{{amount}} jeszcze nie rozdzielone na klientów — historia wczytuje się ponownie w tle.',
-      byType: '{{label}} według typu klienta',
+      byType: '{{label}} według typu klienta: {{total}}',
       fromPro: '{{label}}: {{pct}} % pochodzi od firm',
       fromParticulier: '{{label}}: {{pct}} % pochodzi od osób prywatnych',
       fromPassage: '{{label}}: {{pct}} % pochodzi od klientów przypadkowych',

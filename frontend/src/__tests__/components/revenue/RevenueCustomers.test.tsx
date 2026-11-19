@@ -48,8 +48,8 @@ function stub(body: unknown, status = 200) {
   return fetchMock;
 }
 
-const view = (o: { segment?: CustomerSegment | null; onSegment?: (s: CustomerSegment | null) => void; from?: string } = {}) => (
-  <RevenueCustomers from={o.from ?? '2026-01-01'} to="2026-11-19" filterParams="&kind=goods" taxMode="ht" segment={o.segment ?? null} onSegment={o.onSegment ?? (() => {})} version={0} />
+const view = (o: { taxMode?: 'ht' | 'ttc'; segment?: CustomerSegment | null; onSegment?: (s: CustomerSegment | null) => void; from?: string } = {}) => (
+  <RevenueCustomers from={o.from ?? '2026-01-01'} to="2026-11-19" filterParams="&kind=goods" taxMode={o.taxMode ?? 'ht'} segment={o.segment ?? null} onSegment={o.onSegment ?? (() => {})} version={0} />
 );
 
 const tile = (label: string) => screen.getByText(label).closest('.rounded-lg') as HTMLElement;
@@ -88,7 +88,8 @@ describe('RevenueCustomers', () => {
   it('shows « — » for an average basket that cannot be computed', async () => {
     stub(payload({ acquisition: { newCount: 0, newHt: 0, returningCount: 0, returningHt: 0, customerDays: 0, avgBasketHt: null } }));
     render(view());
-    expect(tile(await screen.findByText('Average basket ≈').then((e) => e.textContent!))).toHaveTextContent('—');
+    await screen.findByText('Average basket ≈');
+    expect(tile('Average basket ≈')).toHaveTextContent('—');
     expect(tile('Share of new customers')).toHaveTextContent('0 %');
   });
 
@@ -161,6 +162,39 @@ describe('RevenueCustomers', () => {
     stub(payload());
     render(view());
     expect(await screen.findByText('Customers in total: 2')).toBeInTheDocument();
+  });
+
+  it('names the goods and services bars with their total while keeping label and total readable as text', async () => {
+    stub(payload());
+    render(view());
+    const img = await screen.findByRole('img', { name: 'Goods by customer type: 700.000 FCP' });
+    expect(img).not.toHaveTextContent('700.000 FCP');
+    expect(img).not.toHaveTextContent('Goods');
+    expect(screen.getByText('700.000 FCP')).toBeVisible();
+  });
+
+  it('states the tax mode of the best customers amount', async () => {
+    stub(payload());
+    const { unmount } = render(view());
+    await screen.findByText('Atelier Moana');
+    expect(screen.getByText('Revenue HT')).toBeInTheDocument();
+    unmount();
+    stub(payload());
+    render(view({ taxMode: 'ttc' }));
+    await screen.findByText('Atelier Moana');
+    expect(screen.getByText('Revenue TTC')).toBeInTheDocument();
+    const rows = within(screen.getByRole('list', { name: 'Best customers' })).getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent('452.000 FCP · 40 %');
+  });
+
+  it('draws no bar for a customer at or below zero', async () => {
+    stub(payload({ customers: [customer('c1', 'Atelier Moana', 'pro', 400_000), customer('c2', 'Refunded', 'particulier', 0), customer('c3', 'Credit', 'pro', -20_000)] }));
+    render(view());
+    await screen.findByText('Refunded');
+    const rows = within(screen.getByRole('list', { name: 'Best customers' })).getAllByRole('listitem');
+    expect(rows[0].querySelector('[data-bar]')).not.toBeNull();
+    expect(rows[1].querySelector('[data-bar]')).toBeNull();
+    expect(rows[2].querySelector('[data-bar]')).toBeNull();
   });
 
   it('says so when no customer is identified', async () => {

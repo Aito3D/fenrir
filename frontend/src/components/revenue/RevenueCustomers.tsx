@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { HBars, Legend, LegendList, Panel, Split, Tile } from '../aito/stats/primitives';
+import { Legend, LegendList, Panel, Split, Tile } from '../aito/stats/primitives';
 import { focusRingCls } from '../formStyles';
 import { Skeleton } from '../Skeleton';
 import { RevenueSegmented } from './RevenueSegmented';
@@ -31,17 +31,14 @@ function KindBar({ label, values }: { label: string; values: { segment: Customer
   const name = (s: CustomerSegment) => t(`revenue.filters.segments.${s}`);
   return (
     <div className="space-y-1.5">
-      <div role="img" aria-label={t('revenue.customers.byType', { label })}>
-        <HBars
-          labelWidth="w-24"
-          rows={[{
-            key: label,
-            label,
-            scale: total > 0 ? 1 : 0,
-            segments: positive.map((v) => ({ weight: v.value, color: SEGMENT_COLOR[v.segment], title: `${name(v.segment)} ${share(v.value, total)} %` })),
-            value: formatFcp(total),
-          }]}
-        />
+      <div className="flex items-center gap-3 rounded-lg bg-bambu-dark px-3 py-2 text-xs">
+        <span className="w-24 shrink-0 truncate text-bambu-gray-light">{label}</span>
+        <span role="img" aria-label={t('revenue.customers.byType', { label, total: formatFcp(total) })} className="flex h-2 min-w-0 flex-1 gap-[2px]">
+          {positive.filter((v) => v.value > 0).map((v) => (
+            <span key={v.segment} className="block h-full min-w-[3px] rounded-[2px]" style={{ flexGrow: v.value, backgroundColor: SEGMENT_COLOR[v.segment] }} />
+          ))}
+        </span>
+        <span className="shrink-0 text-right tabular-nums text-bambu-gray-light">{formatFcp(total)}</span>
       </div>
       <LegendList>
         {positive.map((v) => (
@@ -131,6 +128,7 @@ export function RevenueCustomers(p: {
           title={t('revenue.customers.topTitle')}
           action={
             <span className="text-xs tabular-nums text-bambu-gray">
+              <span className="mr-2 text-bambu-gray-light">{t(`revenue.table.${mode}`)}</span>
               {t('revenue.customers.total', { n: data.customerCount })}
               {data.customerCount > data.customers.length ? ` · ${t('revenue.customers.shown', { n: data.customers.length })}` : ''}
             </span>
@@ -148,17 +146,21 @@ export function RevenueCustomers(p: {
                       <span className="inline-flex shrink-0 items-center gap-1 text-bambu-gray"><Dot segment={c.segment} />{segName(c.segment)}</span>
                     </span>
                     <span className="min-w-0 flex-1" aria-hidden="true">
-                      <span className="block h-2 min-w-[3px] rounded-[2px]" style={{ width: `${topValue > 0 ? Math.max(0, pick(c) / topValue) * 100 : 0}%`, backgroundColor: SEGMENT_COLOR[c.segment] }} />
+                      {pick(c) > 0 && topValue > 0 && (
+                        <span data-bar className="block h-2 min-w-[3px] rounded-[2px]" style={{ width: `${(pick(c) / topValue) * 100}%`, backgroundColor: SEGMENT_COLOR[c.segment] }} />
+                      )}
                     </span>
                     <span className="shrink-0 text-right tabular-nums text-bambu-gray-light">{`${formatFcp(pick(c))} · ${share(pick(c), grand)} %`}</span>
                   </div>
-                  <p className="mt-0.5 truncate text-[11px] tabular-nums text-bambu-gray">
+                  <p className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] tabular-nums text-bambu-gray">
                     {t('revenue.customers.customerDetail', {
                       goods: formatFcp(c.goods),
                       services: formatFcp(c.services),
                       days: c.activeDays,
                       date: date.format(new Date(`${c.lastDay}T00:00:00Z`)),
-                    })}
+                    }).split(' · ').map((part, i) => (
+                      <span key={i} className="whitespace-nowrap">{i > 0 ? `· ${part}` : part}</span>
+                    ))}
                   </p>
                 </li>
               ))}

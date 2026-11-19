@@ -11989,7 +11989,7 @@ export default {
       activeFilter: 'фильтр активен',
       segmentDetail: 'Товары {{goods}} · Услуги {{services}} · Клиентов: {{n}}',
       unsplit: '{{amount}} ещё не распределены по клиентам — история перезагружается в фоне.',
-      byType: '{{label}} по типу клиента',
+      byType: '{{label}} по типу клиента: {{total}}',
       fromPro: '{{label}}: {{pct}} % приходится на компании',
       fromParticulier: '{{label}}: {{pct}} % приходится на частных лиц',
       fromPassage: '{{label}}: {{pct}} % приходится на разовых клиентов',

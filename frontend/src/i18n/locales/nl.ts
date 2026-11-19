@@ -12409,7 +12409,7 @@ export default {
       activeFilter: 'filter actief',
       segmentDetail: 'Goederen {{goods}} · Diensten {{services}} · Klanten: {{n}}',
       unsplit: '{{amount}} nog niet per klant verdeeld — de historie wordt op de achtergrond opnieuw geladen.',
-      byType: '{{label}} per klanttype',
+      byType: '{{label}} per klanttype: {{total}}',
       fromPro: '{{label}}: {{pct}} % komt van zakelijke klanten',
       fromParticulier: '{{label}}: {{pct}} % komt van particulieren',
       fromPassage: '{{label}}: {{pct}} % komt van passanten',

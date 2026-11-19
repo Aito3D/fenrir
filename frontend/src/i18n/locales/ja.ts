@@ -12384,7 +12384,7 @@ export default {
       activeFilter: 'フィルター適用中',
       segmentDetail: '商品 {{goods}} · サービス {{services}} · 顧客数：{{n}}',
       unsplit: '{{amount}} はまだ顧客別に分けられていません — 履歴をバックグラウンドで再読み込み中です。',
-      byType: '顧客タイプ別の{{label}}',
+      byType: '顧客タイプ別の{{label}}：{{total}}',
       fromPro: '{{label}}：{{pct}} % は法人から',
       fromParticulier: '{{label}}：{{pct}} % は個人から',
       fromPassage: '{{label}}：{{pct}} % は一見客から',

@@ -12312,7 +12312,7 @@ export default {
       activeFilter: 'filtre etkin',
       segmentDetail: 'Mallar {{goods}} · Hizmetler {{services}} · Müşteri: {{n}}',
       unsplit: '{{amount}} henüz müşteriye göre ayrılmadı — geçmiş arka planda yeniden yükleniyor.',
-      byType: 'Müşteri türüne göre {{label}}',
+      byType: 'Müşteri türüne göre {{label}}: {{total}}',
       fromPro: '{{label}}: %{{pct}} kurumsal müşterilerden geliyor',
       fromParticulier: '{{label}}: %{{pct}} bireysel müşterilerden geliyor',
       fromPassage: '{{label}}: %{{pct}} geçici müşterilerden geliyor',

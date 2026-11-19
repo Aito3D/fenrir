@@ -12370,7 +12370,7 @@ export default {
       activeFilter: 'filtro ativo',
       segmentDetail: 'Bens {{goods}} · Serviços {{services}} · Clientes: {{n}}',
       unsplit: '{{amount}} ainda não divididos por cliente — o histórico está sendo recarregado em segundo plano.',
-      byType: '{{label}} por tipo de cliente',
+      byType: '{{label}} por tipo de cliente: {{total}}',
       fromPro: '{{label}}: {{pct}} % vêm de empresas',
       fromParticulier: '{{label}}: {{pct}} % vêm de pessoas físicas',
       fromPassage: '{{label}}: {{pct}} % vêm de clientes avulsos',

@@ -12442,7 +12442,7 @@ errors: {
       activeFilter: 'filter aktivt',
       segmentDetail: 'Varor {{goods}} · Tjänster {{services}} · Kunder: {{n}}',
       unsplit: '{{amount}} ännu inte fördelat per kund — historiken laddas om i bakgrunden.',
-      byType: '{{label}} per kundtyp',
+      byType: '{{label}} per kundtyp: {{total}}',
       fromPro: '{{label}}: {{pct}} % kommer från företag',
       fromParticulier: '{{label}}: {{pct}} % kommer från privatpersoner',
       fromPassage: '{{label}}: {{pct}} % kommer från tillfälliga kunder',

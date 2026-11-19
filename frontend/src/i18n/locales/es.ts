@@ -12393,7 +12393,7 @@ export default {
       activeFilter: 'filtro activo',
       segmentDetail: 'Bienes {{goods}} · Servicios {{services}} · Clientes: {{n}}',
       unsplit: '{{amount}} aún sin desglosar por cliente — el historial se recarga en segundo plano.',
-      byType: '{{label}} por tipo de cliente',
+      byType: '{{label}} por tipo de cliente: {{total}}',
       fromPro: '{{label}}: el {{pct}} % procede de profesionales',
       fromParticulier: '{{label}}: el {{pct}} % procede de particulares',
       fromPassage: '{{label}}: el {{pct}} % procede de clientes de paso',

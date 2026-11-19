@@ -12368,7 +12368,7 @@ export default {
       activeFilter: '筛选已启用',
       segmentDetail: '商品 {{goods}} · 服务 {{services}} · 客户数：{{n}}',
       unsplit: '{{amount}} 尚未按客户拆分 — 历史数据正在后台重新加载。',
-      byType: '按客户类型划分的{{label}}',
+      byType: '按客户类型划分的{{label}}：{{total}}',
       fromPro: '{{label}}：{{pct}} % 来自企业客户',
       fromParticulier: '{{label}}：{{pct}} % 来自个人客户',
       fromPassage: '{{label}}：{{pct}} % 来自散客',

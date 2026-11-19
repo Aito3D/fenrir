@@ -12032,7 +12032,7 @@ export default {
       activeFilter: 'фільтр активний',
       segmentDetail: 'Товари {{goods}} · Послуги {{services}} · Клієнтів: {{n}}',
       unsplit: '{{amount}} ще не розподілено за клієнтами — історія перезавантажується у фоні.',
-      byType: '{{label}} за типом клієнта',
+      byType: '{{label}} за типом клієнта: {{total}}',
       fromPro: '{{label}}: {{pct}} % припадає на компанії',
       fromParticulier: '{{label}}: {{pct}} % припадає на приватних осіб',
       fromPassage: '{{label}}: {{pct}} % припадає на разових клієнтів',

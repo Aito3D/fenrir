@@ -12370,7 +12370,7 @@ export default {
       activeFilter: 'filtre actif',
       segmentDetail: 'Biens {{goods}} · Services {{services}} · Clients : {{n}}',
       unsplit: '{{amount}} pas encore ventilés par client — l\'historique se recharge en arrière-plan.',
-      byType: '{{label}} par type de client',
+      byType: '{{label}} par type de client : {{total}}',
       fromPro: '{{label}} : {{pct}} % viennent des Pro',
       fromParticulier: '{{label}} : {{pct}} % viennent des Particuliers',
       fromPassage: '{{label}} : {{pct}} % viennent du passage',

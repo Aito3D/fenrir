@@ -12006,7 +12006,7 @@ export default {
       activeFilter: '필터 적용 중',
       segmentDetail: '상품 {{goods}} · 서비스 {{services}} · 고객 수: {{n}}',
       unsplit: '{{amount}}이(가) 아직 고객별로 나뉘지 않았습니다 — 이력을 백그라운드에서 다시 불러오는 중입니다.',
-      byType: '고객 유형별 {{label}}',
+      byType: '고객 유형별 {{label}}: {{total}}',
       fromPro: '{{label}}: {{pct}} %가 기업 고객',
       fromParticulier: '{{label}}: {{pct}} %가 개인 고객',
       fromPassage: '{{label}}: {{pct}} %가 방문 고객',

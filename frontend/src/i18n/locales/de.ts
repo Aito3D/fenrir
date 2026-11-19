@@ -12385,7 +12385,7 @@ export default {
       activeFilter: 'Filter aktiv',
       segmentDetail: 'Waren {{goods}} · Dienstleistungen {{services}} · Kunden: {{n}}',
       unsplit: '{{amount}} noch nicht nach Kunden aufgeteilt — die Historie wird im Hintergrund neu geladen.',
-      byType: '{{label}} nach Kundentyp',
+      byType: '{{label}} nach Kundentyp: {{total}}',
       fromPro: '{{label}}: {{pct}} % stammen von Gewerbekunden',
       fromParticulier: '{{label}}: {{pct}} % stammen von Privatkunden',
       fromPassage: '{{label}}: {{pct}} % stammen von Laufkundschaft',

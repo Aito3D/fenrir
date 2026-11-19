@@ -12441,7 +12441,7 @@ export default {
       activeFilter: 'active filter',
       segmentDetail: 'Goods {{goods}} · Services {{services}} · Customers: {{n}}',
       unsplit: '{{amount}} not yet split by customer — the history reloads in the background.',
-      byType: '{{label}} by customer type',
+      byType: '{{label}} by customer type: {{total}}',
       fromPro: '{{label}}: {{pct}} % come from Business',
       fromParticulier: '{{label}}: {{pct}} % come from Individuals',
       fromPassage: '{{label}}: {{pct}} % come from walk-in customers',
