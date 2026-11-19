@@ -1520,6 +1520,10 @@ class ZohoService:
         """Mark an invoice sent. Unverified against a live write (spec, "Not verified")."""
         await self._request(db, "POST", f"/invoices/{_seg(invoice_id)}/status/sent")
 
+    async def add_invoice_comment(self, db: AsyncSession, invoice_id: str, description: str) -> None:
+        """Add a comment to an invoice's history (used for the shipping LTA number)."""
+        await self._request(db, "POST", f"/invoices/{_seg(invoice_id)}/comments", json={"description": description})
+
     async def get_invoice_raw(self, db: AsyncSession, invoice_id: str) -> dict:
         """One invoice as Books states it, unmapped.
 

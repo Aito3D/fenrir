@@ -9,6 +9,7 @@ once. So the tests below are mostly about the calls that must NOT happen.
 import asyncio
 
 import pytest
+from fastapi import BackgroundTasks
 from sqlalchemy import select
 
 from backend.app.models.aito_event import AitoEvent
@@ -991,7 +992,9 @@ async def test_a_failed_rollback_after_a_db_failure_still_returns_the_real_invoi
     monkeypatch.setattr("backend.app.api.routes.aito.record", bad_record)
     monkeypatch.setattr(db_session, "rollback", broken_rollback)
 
-    body = await aito_routes.create_invoice(project_id=project_id, db=db_session, current_user=None)
+    body = await aito_routes.create_invoice(
+        project_id=project_id, background_tasks=BackgroundTasks(), db=db_session, current_user=None
+    )
 
     assert body.number == "FA-26-4100"
     assert body.id == "inv-1"
@@ -1067,7 +1070,9 @@ async def test_a_failed_rollback_after_a_failed_re_read_still_returns_the_create
     monkeypatch.setattr(zoho_service, "get_invoice", broken_get_invoice)
     monkeypatch.setattr(db_session, "rollback", broken_rollback)
 
-    body = await aito_routes.create_invoice(project_id=project_id, db=db_session, current_user=None)
+    body = await aito_routes.create_invoice(
+        project_id=project_id, background_tasks=BackgroundTasks(), db=db_session, current_user=None
+    )
 
     assert body.number == "FA-26-4100"
     assert body.id == "inv-1"

@@ -1628,6 +1628,25 @@ async def _log_tracking_view(project_id: int, now: datetime) -> None:
         logger.warning("tracking view log failed for project %s", project_id, exc_info=True)
 
 
+async def _post_lta_comment(project_id: int, lta: str, invoice_id: str | None = None) -> None:
+    """Note the shipping LTA on the card's Books invoice. Runs after the response, on its own
+    session, and never fails anything: Books has no waybill field, so the comment is a courtesy copy."""
+    try:
+        async with core_database.async_session() as session:
+            if invoice_id is None:
+                project = await session.get(AitoProject, project_id)
+                # quote_invoiced gates the Books read: most shipped cards are not invoiced yet.
+                if project is None or not project.quote_invoiced or not project.quote_id:
+                    return
+                invoices = await zoho_service.list_project_invoices(session, project.quote_id, project.client_id or "")
+                invoice_id = invoices[0]["id"] if invoices else ""
+            if not invoice_id:
+                return
+            await zoho_service.add_invoice_comment(session, invoice_id, f"LTA Air Tahiti : {lta}")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Aito: could not note LTA on the invoice of project %s: %s", project_id, e)
+
+
 @router.get("/track/{token}", response_model=AitoTrackingResponse)
 async def get_tracking(
     token: str,
@@ -2884,6 +2903,7 @@ async def get_invoice_preview(
 @router.post("/{project_id}/invoice", response_model=AitoInvoiceCreatedResponse)
 async def create_invoice(
     project_id: int,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
@@ -2917,6 +2937,7 @@ async def create_invoice(
     # raises MissingGreenlet rather than lazily re-loading it. Same rule, and
     # the same hard-won reason, as send_invoice_email.
     project_pk, quote_id, client_id = project.id, project.quote_id, project.client_id or ""
+    lta = project.shipping_lta
 
     # T-041: the duplicate read, the Books create and the local
     # `quote_invoiced` commit are ONE critical section. Between the read
@@ -2977,6 +2998,9 @@ async def create_invoice(
                 await zoho_service.link_invoice_to_estimate(db, invoice_id, quote_id)
             except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
                 logger.warning("Aito invoice %s could not be linked to estimate %s: %s", invoice_number, quote_id, e)
+        if invoice_id and lta:
+            # An LTA typed before the invoice existed had nowhere to go.
+            background_tasks.add_task(_post_lta_comment, project_pk, lta, invoice_id)
         applications = await apply_retainers(db, invoice_id, float(created.get("balance") or 0), plan.retainers)
         for a in applications:
             if a.rate_limited is not None:
@@ -4423,12 +4447,14 @@ async def _claim_and_bump_version(db: AsyncSession, project: AitoProject, expect
 async def update_project(
     project_id: int,
     payload: AitoProjectUpdate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Edit a card's content. Only fields present in the body are written, so a
     null client_phone clears it while an omitted one is left alone."""
     project = await _get_active_project_or_404(db, project_id)
+    old_lta = project.shipping_lta
 
     if payload.expected_version is not None and payload.expected_version != (project.version or 0):
         raise _version_conflict()
@@ -4554,7 +4580,10 @@ async def update_project(
     )
     await _record_sync_queued_on_transition(db, project, was_pending)
     queued = project.quote_sync_state == "pending"
+    new_lta = project.shipping_lta
     await _commit_and_wake(db, queued, project.id)
+    if new_lta and new_lta != old_lta:
+        background_tasks.add_task(_post_lta_comment, project_id, new_lta)
     # Same no-op silence `set_project_flag` and `set_quote_status` already
     # give a repeated/empty write — see their own comments. `changes` alone
     # is not enough here: a shipping PATCH sends its six columns through
