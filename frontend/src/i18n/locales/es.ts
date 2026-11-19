@@ -512,6 +512,7 @@ export default {
         sub: 'Taller y tienda Aito 3D',
         mapTitle: 'Mapa de la tienda',
         mapLoading: 'Cargando el mapa…',
+        hours: 'Horario',
         phone: 'Teléfono',
         email: 'Correo',
         website: 'Sitio web',
@@ -4890,6 +4891,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Un trabajo terminado cuyo cliente fue avisado pero no lo ha recogido aparece en la barra tras estos días.',
     aitoFollowupLinkDays: 'Enlace de pago por caducar (días)',
     aitoFollowupLinkDaysDescription: 'Marca los presupuestos cuyo enlace de pago caduca dentro de estos días',
+    shopOpeningHours: 'Horario de la tienda',
+    shopOpeningHoursDescription: 'Se muestra a los clientes en las páginas de seguimiento y en el SMS de recogida. Déjalo vacío para ocultarlo.',
   },
 
   // Notifications (for push notifications)

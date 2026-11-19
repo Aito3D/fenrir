@@ -57,7 +57,9 @@ async def test_pickup_draft_ends_with_the_link_when_configured(async_client, db_
     body = (await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")).json()
     # The signature stays the last line: the link slots in between the
     # message and « Aito3D », not after it.
-    assert body["message"].startswith("Bonjour, c'est prêt.\nSuivi et paiement : https://aito.example/t/")
+    assert body["message"].startswith(
+        "Bonjour, c'est prêt. Horaires : Lun-Ven 8h-17h.\nSuivi et paiement : https://aito.example/t/"
+    )
     assert body["message"].endswith("\n\nAito3D")
     # The draft request committed the minted token: the public link works.
     token = body["message"].splitlines()[1].rsplit("/", 1)[1]
@@ -87,7 +89,7 @@ async def test_pickup_draft_is_untouched_without_external_url(async_client, db_s
     _patch_pickup_message(monkeypatch, fake)
 
     body = (await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")).json()
-    assert body["message"] == "Bonjour, c'est prêt."
+    assert body["message"] == "Bonjour, c'est prêt. Horaires : Lun-Ven 8h-17h."  # the default hours only
 
 
 # --------------------------------------------------------- Zoho estimate sync

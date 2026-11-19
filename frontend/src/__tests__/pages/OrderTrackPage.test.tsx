@@ -24,6 +24,7 @@ const BASE: OrderTracking = {
   pickup: true,
   payment: { currency: 'XPF', total: 5345, paid: 2295, left: 3050 },
   pay_url: 'https://pay.example/p/abc',
+  shop_hours: 'Lun-Ven 8h-17h',
   updated_at: '2026-11-12T08:00:00',
 };
 
@@ -250,6 +251,7 @@ describe('OrderTrackPage', () => {
     await userEvent.click(within(screen.getByTestId('track-pickup')).getByRole('button', { name: "Voir la boutique et l'itinéraire" }));
     expect(stage).toHaveAttribute('data-open', 'shop');
     expect(within(shop).getByRole('heading', { name: 'Nous trouver' })).toHaveFocus();
+    expect(within(shop).getByTestId('track-shop-hours')).toHaveTextContent('Horaires Lun-Ven 8h-17h');
 
     await userEvent.keyboard('{Escape}');
     expect(stage).not.toHaveAttribute('data-open');
@@ -257,6 +259,13 @@ describe('OrderTrackPage', () => {
     expect(stage).toHaveAttribute('data-open', 'shop');
     await userEvent.click(within(shop).getByRole('button', { name: 'Fermer' }));
     expect(stage).not.toHaveAttribute('data-open');
+  });
+
+  it('the shop panel has no hours line once the setting is cleared', async () => {
+    mockTrack({ shop_hours: null });
+    renderPage();
+    await h2('Une partie de ta commande est prête');
+    expect(screen.queryByTestId('track-shop-hours')).not.toBeInTheDocument();
   });
 
   it('an unknown, cancelled or expired link gets the invalid page and the way to type a code', async () => {

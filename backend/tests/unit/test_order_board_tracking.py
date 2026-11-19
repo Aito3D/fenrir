@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.api.routes import aito as aito_routes
+from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
@@ -179,7 +180,19 @@ async def test_no_link_and_no_code_without_the_external_url(db_session):
 
 # --- the public route ------------------------------------------------------------------------------------------
 
-KEYS = {"reference", "date", "state", "stage", "lines", "counts", "pickup", "payment", "pay_url", "updated_at"}
+KEYS = {
+    "reference",
+    "date",
+    "state",
+    "stage",
+    "lines",
+    "counts",
+    "pickup",
+    "payment",
+    "pay_url",
+    "shop_hours",
+    "updated_at",
+}
 
 
 async def _open(client, code):
@@ -210,6 +223,7 @@ async def test_payload_is_only_what_the_page_shows_and_costs_no_zoho_call(async_
     assert body["counts"] == {"open": 2, "ready": 1, "waiting": 0}
     assert body["payment"] == {"currency": "XPF", "total": 1000, "paid": 0, "left": 1000}
     assert body["pickup"] is True and body["pay_url"] is None
+    assert body["shop_hours"] == "Lun-Ven 8h-17h"  # the default until the setting is saved
     assert datetime.fromisoformat(body["updated_at"]).tzinfo is None  # naive UTC, as the Aito page's
     for leak in ("so1", "SO-00001", "Customer", "Marie", "87000000", "SKU", "c1", "l1", "stock"):
         assert leak not in r.text
@@ -288,6 +302,18 @@ def _link(**over):
         "document_kind": "invoice",
     }
     return AitoPaymentLink(**{**values, **over})
+
+
+@pytest.mark.asyncio
+async def test_shop_hours_follow_the_setting_and_vanish_when_cleared(async_client, db_session, zoho, tokens):  # noqa: F811
+    await _synced(db_session, zoho, order(1))
+    code = await tracking.ensure_token(db_session, "so1")
+    await set_setting(db_session, "shop_opening_hours", "  Lun-Sam 9h-12h ")
+    await db_session.commit()
+    assert (await _open(async_client, code)).json()["shop_hours"] == "Lun-Sam 9h-12h"
+    await set_setting(db_session, "shop_opening_hours", "")
+    await db_session.commit()
+    assert (await _open(async_client, code)).json()["shop_hours"] is None
 
 
 @pytest.mark.asyncio

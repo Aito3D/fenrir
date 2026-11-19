@@ -512,6 +512,7 @@ export default {
         sub: 'Atelier et magasin Aito 3D',
         mapTitle: "Plan d'accès au magasin",
         mapLoading: 'Chargement du plan…',
+        hours: 'Horaires',
         phone: 'Téléphone',
         email: 'E-mail',
         website: 'Site',
@@ -4876,6 +4877,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Un travail terminé dont le client a été prévenu mais qui n’est pas venu le chercher rejoint la barre après ce délai.',
     aitoFollowupLinkDays: 'Lien de paiement expirant (jours)',
     aitoFollowupLinkDaysDescription: 'Signale les devis dont le lien de paiement expire dans ce délai',
+    shopOpeningHours: 'Horaires de la boutique',
+    shopOpeningHoursDescription: 'Affichés aux clients sur les pages de suivi et dans le SMS de retrait. Laisser vide pour les masquer.',
   },
 
   // Notifications (for push notifications)

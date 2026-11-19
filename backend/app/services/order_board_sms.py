@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_actions as actions, order_board_tracking
 from backend.app.services.aito_payment_links import current_link
+from backend.app.services.aito_tracking import shop_opening_hours, with_opening_hours_sms
 
 FILAMENTS = "Filaments"
 PRINTERS = "3D Printers"
@@ -33,9 +34,16 @@ def _goods(row: dict) -> list[dict]:
     ]
 
 
-def compose(row: dict, natures: dict[str, str], link_url: str | None = None, tracking_url: str | None = None) -> dict:
+def compose(
+    row: dict,
+    natures: dict[str, str],
+    link_url: str | None = None,
+    tracking_url: str | None = None,
+    hours: str | None = None,
+) -> dict:
     """The draft for one board row. ``natures`` maps item id to its Zoho nature; ``link_url`` is the order's open
-    payment link, if any; ``tracking_url`` its public tracking page, when the external URL is set."""
+    payment link, if any; ``tracking_url`` its public tracking page, when the external URL is set; ``hours`` the
+    shop's opening hours, when set."""
     goods = _goods(row)
     kinds = [natures.get(line["item_id"] or "", "") for line in goods]
     printers = [line for line, kind in zip(goods, kinds, strict=True) if kind == PRINTERS]
@@ -67,6 +75,7 @@ def compose(row: dict, natures: dict[str, str], link_url: str | None = None, tra
     message = f"Ia Ora na, {opening}. Tu peux venir {pronoun} récupérer à notre boutique à Arue."
     if due > 0:
         message += f" Reste à régler : {_amount(due, row.get('currency') or '')}."
+    message = with_opening_hours_sms(message, hours)
     if link_url:
         message += f"\nLien de paiement : {link_url}"
     if tracking_url:
@@ -86,6 +95,6 @@ async def draft(db: AsyncSession, salesorder_id: str) -> dict:
     natures = {d.zoho_id: (d.header or {}).get("cf_nature_du_produit") or "" for d in docs}
     link = await current_link(db, ("order", salesorder_id), kind=None)
     live = link if link is not None and link.heimdall_id and link.status == "pending" and link.url else None
-    out = compose(row, natures, live.url if live else None, tracking_url)
+    out = compose(row, natures, live.url if live else None, tracking_url, await shop_opening_hours(db))
     out["payment_link"] = {"id": live.id, "url": live.url, "amount": live.amount} if live else None
     return out

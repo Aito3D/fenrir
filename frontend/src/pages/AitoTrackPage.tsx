@@ -398,7 +398,7 @@ export function AitoTrackPage() {
                 </PanelReveal>
               </TrackingPanel>
             )}
-            <TrackingShopPanel open={panel.open === 'shop'} onClose={panel.close} titleRef={panel.titleRef('shop')} />
+            <TrackingShopPanel open={panel.open === 'shop'} onClose={panel.close} titleRef={panel.titleRef('shop')} hours={data?.shop_hours} />
           </>
         )}
       </div>

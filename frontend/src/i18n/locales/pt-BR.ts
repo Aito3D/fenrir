@@ -512,6 +512,7 @@ export default {
         sub: 'Oficina e loja Aito 3D',
         mapTitle: 'Mapa da loja',
         mapLoading: 'Carregando o mapa…',
+        hours: 'Horário de funcionamento',
         phone: 'Telefone',
         email: 'E-mail',
         website: 'Site',
@@ -4875,6 +4876,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Um trabalho concluído cujo cliente foi avisado mas não retirou entra na barra após esses dias.',
     aitoFollowupLinkDays: 'Link de pagamento expirando (dias)',
     aitoFollowupLinkDaysDescription: 'Sinaliza orçamentos cujo link de pagamento expira dentro deste número de dias',
+    shopOpeningHours: 'Horário de funcionamento da loja',
+    shopOpeningHoursDescription: 'Exibido aos clientes nas páginas de acompanhamento e no SMS de retirada. Deixe vazio para ocultar.',
   },
 
   // Notifications (for push notifications)

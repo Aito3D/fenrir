@@ -94,6 +94,16 @@ def test_an_open_payment_link_gets_its_own_line_before_the_signature():
     assert set(out["message"]) <= _GSM
 
 
+def test_opening_hours_close_the_text_before_the_links():
+    out = compose(_row(_line("fil"), left=3050), NATURES, "https://pay.aito3d.fr/p/abc", hours="Lun-Ven 8h-17h")
+    assert out["message"].endswith(
+        " Reste à régler : 3 050 FCFP. Horaires : Lun-Ven 8h-17h.\nLien de paiement : https://pay.aito3d.fr/p/abc\nAito3D"
+    )
+    assert set(out["message"]) <= _GSM
+    assert "Horaires" not in compose(_row(_line("fil")), NATURES, hours=None)["message"]
+    assert "Horaires" not in compose(_row(_line("fil")), NATURES, hours="")["message"]
+
+
 @pytest.mark.parametrize("left", [0, 3050, 1234567])
 def test_every_variant_stays_in_the_sms_alphabet(left):
     for lines, ready in (
@@ -101,7 +111,7 @@ def test_every_variant_stays_in_the_sms_alphabet(left):
         ([_line("p2s", "Bambu Lab - P2S Combo"), _line("fil")], 1),
         ([_line("ams")], 0.5),
     ):
-        message = compose(_row(*lines, ready=ready, left=left), NATURES)["message"]
+        message = compose(_row(*lines, ready=ready, left=left), NATURES, hours="Lun-Ven 8h-17h")["message"]
         assert set(message) <= _GSM, set(message) - _GSM
 
 

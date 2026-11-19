@@ -3690,6 +3690,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Ett klart jobb där kunden informerats men inte hämtat läggs till i listen efter så här många dagar.',
     aitoFollowupLinkDays: 'Betalningslänk löper ut (dagar)',
     aitoFollowupLinkDaysDescription: 'Flagga offerter vars betalningslänk löper ut inom så här många dagar',
+    shopOpeningHours: 'Butikens öppettider',
+    shopOpeningHoursDescription: 'Visas för kunder på spårningssidorna och i upphämtnings-sms:et. Lämna tomt för att dölja dem.',
   },
 
   // Notifications (for push notifications)
@@ -9813,6 +9815,7 @@ errors: {
         sub: 'Aito 3D:s verkstad och butik',
         mapTitle: 'Karta över butiken',
         mapLoading: 'Läser in kartan…',
+        hours: 'Öppettider',
         phone: 'Telefon',
         email: 'E-post',
         website: 'Webbplats',

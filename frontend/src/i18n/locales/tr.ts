@@ -512,6 +512,7 @@ export default {
         sub: 'Aito 3D atölyesi ve mağazası',
         mapTitle: 'Mağaza haritası',
         mapLoading: 'Harita yükleniyor…',
+        hours: 'Çalışma saatleri',
         phone: 'Telefon',
         email: 'E-posta',
         website: 'Web sitesi',
@@ -4891,6 +4892,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Müşterisi bilgilendirilmiş ama teslim alınmamış bitmiş bir iş bu kadar gün sonra şeride düşer.',
     aitoFollowupLinkDays: 'Ödeme bağlantısı sona eriyor (gün)',
     aitoFollowupLinkDaysDescription: 'Ödeme bağlantısı bu gün sayısı içinde sona eren teklifleri işaretler',
+    shopOpeningHours: 'Mağaza çalışma saatleri',
+    shopOpeningHoursDescription: 'Takip sayfalarında ve teslim alma SMS’inde müşterilere gösterilir. Gizlemek için boş bırakın.',
   },
 
   // Bildirimler (push bildirimleri için)

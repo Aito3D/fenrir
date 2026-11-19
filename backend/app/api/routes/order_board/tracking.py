@@ -110,6 +110,8 @@ class OrderTrackingResponse(BaseModel):
     pickup: bool
     payment: OrderTrackingPayment | None
     pay_url: str | None
+    # The shop's opening hours (the shop_opening_hours setting), None when cleared.
+    shop_hours: str | None
     updated_at: datetime
 
 

@@ -512,6 +512,7 @@ export default {
         sub: 'Werkstatt und Geschäft von Aito 3D',
         mapTitle: 'Karte zum Geschäft',
         mapLoading: 'Karte wird geladen…',
+        hours: 'Öffnungszeiten',
         phone: 'Telefon',
         email: 'E-Mail',
         website: 'Webseite',
@@ -4888,6 +4889,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Ein fertiger Auftrag, dessen Kunde informiert wurde, ihn aber nicht abgeholt hat, erscheint nach so vielen Tagen in der Leiste.',
     aitoFollowupLinkDays: 'Zahlungslink läuft ab (Tage)',
     aitoFollowupLinkDaysDescription: 'Angebote markieren, deren Zahlungslink innerhalb dieser Tage abläuft',
+    shopOpeningHours: 'Öffnungszeiten des Ladens',
+    shopOpeningHoursDescription: 'Wird Kunden auf den Tracking-Seiten und in der Abhol-SMS angezeigt. Leer lassen, um sie auszublenden.',
   },
 
   // Notifications (for push notifications)

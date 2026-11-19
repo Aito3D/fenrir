@@ -512,6 +512,7 @@ export default {
         sub: 'Aito 3D 공방 및 매장',
         mapTitle: '매장 지도',
         mapLoading: '지도를 불러오는 중…',
+        hours: '영업시간',
         phone: '전화',
         email: '이메일',
         website: '웹사이트',
@@ -4742,6 +4743,8 @@ export default {
     aitoFollowupPickupDaysDescription: '통보했지만 아직 수령하지 않은 완료 작업은 이 일수가 지나면 표시줄에 나타납니다.',
     aitoFollowupLinkDays: '결제 링크 만료 (일)',
     aitoFollowupLinkDaysDescription: '결제 링크가 이 일수 이내에 만료되는 견적을 표시합니다',
+    shopOpeningHours: '매장 영업시간',
+    shopOpeningHoursDescription: '추적 페이지와 픽업 SMS에서 고객에게 표시됩니다. 비워 두면 숨겨집니다.',
   },
   notification: {
     printStarted: {

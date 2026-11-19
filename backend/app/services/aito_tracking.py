@@ -166,6 +166,28 @@ def with_tracking_sms(message: str, url: str) -> str:
     return f"{text}{SMS_SIGNATURE_SEP}{SMS_SIGNATURE}" if signed else text
 
 
+def with_opening_hours_sms(message: str, hours: str | None) -> str:
+    """The pickup SMS with the shop's opening hours as its last sentence, the
+    signature kept on its own last line. No hours, no sentence."""
+    if not hours:
+        return message
+    body = message.rstrip()
+    signed = body.endswith(SMS_SIGNATURE)
+    if signed:
+        body = body.removesuffix(SMS_SIGNATURE).rstrip()
+    text = f"{body} Horaires : {hours.rstrip('.')}."
+    return f"{text}\n{SMS_SIGNATURE}" if signed else text
+
+
+async def shop_opening_hours(db: AsyncSession) -> str | None:
+    """The shop's opening hours shown to customers: the default until saved,
+    None once cleared."""
+    from backend.app.api.routes.settings import DEFAULT_SETTINGS, get_setting
+
+    value = await get_setting(db, "shop_opening_hours")
+    return (DEFAULT_SETTINGS.shop_opening_hours if value is None else value).strip() or None
+
+
 def with_tracking_notes(existing: str | None, url: str, token: str) -> str:
     """The estimate's customer notes with this card's tracking block under
     them. Books fills the notes from the org default on create — the
@@ -515,5 +537,6 @@ async def compute_tracking(
         invoice_pay_url=await invoice_pay_url(db, project, now),
         accepted=project.quote_status == "accepted",
         balance=await balance_state(db, project),
+        shop_hours=await shop_opening_hours(db),
     )
     return project.id, data

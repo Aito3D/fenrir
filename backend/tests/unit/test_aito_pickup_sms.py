@@ -71,10 +71,26 @@ async def test_draft_returns_the_model_answer(async_client, monkeypatch):
     _patch_pickup_message(monkeypatch, fake)
     r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")
     assert r.status_code == 200
+    # The default opening hours go in as the last sentence, the signature kept on its own line.
     assert r.json() == {
-        "message": "Ia Ora na, la pièce pour la Renault Clio est disponible à nos bureaux à Arue. Aito3D",
+        "message": "Ia Ora na, la pièce pour la Renault Clio est disponible à nos bureaux à Arue. "
+        "Horaires : Lun-Ven 8h-17h.\nAito3D",
         "model": "m",
     }
+
+
+@pytest.mark.asyncio
+async def test_draft_has_no_hours_sentence_once_the_setting_is_cleared(async_client, db_session, monkeypatch):
+    db_session.add(Settings(key="shop_opening_hours", value=""))
+    await db_session.commit()
+    project = await _create_finished(async_client)
+
+    async def fake(db, description, client_name=None, parts=None):
+        return "Ia Ora na, c'est prêt.\nAito3D", "m"
+
+    _patch_pickup_message(monkeypatch, fake)
+    r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")
+    assert r.json()["message"] == "Ia Ora na, c'est prêt.\nAito3D"
 
 
 @pytest.mark.asyncio

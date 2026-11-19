@@ -41,6 +41,7 @@ export function AiSettings() {
   const [quoteDays, setQuoteDays] = useState('5');
   const [pickupDays, setPickupDays] = useState('7');
   const [linkDays, setLinkDays] = useState('3');
+  const [shopHours, setShopHours] = useState('');
 
   const { data: settings, isLoading: settingsLoading } = useQuery<AppSettings>({
     queryKey: ['settings'],
@@ -60,6 +61,7 @@ export function AiSettings() {
       setQuoteDays(String(settings.aito_followup_quote_days ?? 5));
       setPickupDays(String(settings.aito_followup_pickup_days ?? 7));
       setLinkDays(String(settings.aito_followup_link_days ?? 3));
+      setShopHours(settings.shop_opening_hours ?? '');
     }
   }, [settings]);
 
@@ -83,6 +85,7 @@ export function AiSettings() {
       aito_followup_quote_days: clampDays(quoteDays, settings?.aito_followup_quote_days ?? 5),
       aito_followup_pickup_days: clampDays(pickupDays, settings?.aito_followup_pickup_days ?? 7),
       aito_followup_link_days: clampDays(linkDays, settings?.aito_followup_link_days ?? 3),
+      shop_opening_hours: shopHours.trim(),
     });
   };
 
@@ -178,6 +181,21 @@ export function AiSettings() {
             />
             <p className="text-sm text-bambu-gray mt-1">{t('settings.aitoFollowupLinkDaysDescription')}</p>
           </div>
+        </div>
+
+        <div>
+          <label htmlFor="shop-opening-hours" className="block text-sm text-bambu-gray mb-1">
+            {t('settings.shopOpeningHours')}
+          </label>
+          <input
+            id="shop-opening-hours"
+            type="text"
+            maxLength={200}
+            value={shopHours}
+            onChange={(e) => setShopHours(e.target.value)}
+            className={INPUT}
+          />
+          <p className="text-sm text-bambu-gray mt-1">{t('settings.shopOpeningHoursDescription')}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-bambu-dark-tertiary">

@@ -229,6 +229,7 @@ async def compute(db: AsyncSession, token: str, now: datetime) -> tuple[str, dic
         if payment and row.get("total")
         else None,
         "pay_url": await _pay_url(db, salesorder_id, now) if left > 0 else None,
+        "shop_hours": await aito_tracking.shop_opening_hours(db),
         "updated_at": updated.replace(microsecond=0),
     }
 

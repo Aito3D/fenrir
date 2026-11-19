@@ -515,6 +515,7 @@ export default {
         sub: 'Aito 3D workshop and shop',
         mapTitle: 'Map of the shop',
         mapLoading: 'Loading the map…',
+        hours: 'Opening hours',
         phone: 'Phone',
         email: 'Email',
         website: 'Website',
@@ -4924,6 +4925,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'A finished job whose client was told but has not collected it joins the strip after this many days.',
     aitoFollowupLinkDays: 'Payment link expiring (days)',
     aitoFollowupLinkDaysDescription: 'Flag quotes whose payment link expires within this many days',
+    shopOpeningHours: 'Shop opening hours',
+    shopOpeningHoursDescription: 'Shown to customers on the tracking pages and in the pickup SMS. Leave empty to hide them.',
   },
 
   // Notifications (for push notifications)

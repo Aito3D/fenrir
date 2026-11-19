@@ -1617,6 +1617,8 @@ class AitoTrackingResponse(BaseModel):
     # figure it needs is unknown (no quote total; an invoice cached before
     # its total was kept). Follows the page's precedence: an open invoice wins.
     balance: AitoTrackingBalance | None = None
+    # The shop's opening hours (the shop_opening_hours setting), None when cleared.
+    shop_hours: str | None = None
 
 
 class AitoTrackingLinkResponse(BaseModel):

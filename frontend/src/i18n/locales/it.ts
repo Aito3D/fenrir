@@ -512,6 +512,7 @@ export default {
         sub: 'Laboratorio e negozio Aito 3D',
         mapTitle: 'Mappa del negozio',
         mapLoading: 'Caricamento della mappa…',
+        hours: 'Orari',
         phone: 'Telefono',
         email: 'E-mail',
         website: 'Sito web',
@@ -4875,6 +4876,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Un lavoro finito il cui cliente è stato avvisato ma non lo ha ritirato entra nella barra dopo questi giorni.',
     aitoFollowupLinkDays: 'Link di pagamento in scadenza (giorni)',
     aitoFollowupLinkDaysDescription: 'Segnala i preventivi il cui link di pagamento scade entro questi giorni',
+    shopOpeningHours: 'Orari del negozio',
+    shopOpeningHoursDescription: 'Mostrati ai clienti nelle pagine di tracciamento e nell’SMS di ritiro. Lascia vuoto per nasconderli.',
   },
 
   // Notifications (for push notifications)
