@@ -1030,6 +1030,34 @@ describe('OrderBoardPage on the phone', () => {
     expect(within(view).getByRole('tab', { name: 'Products' })).toHaveAttribute('aria-selected', 'true');
   });
 
+  it('the view is a dialog that takes focus; closing hands focus back to the row; j does not walk the list behind it', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /SO-00412/ }));
+    const view = await screen.findByRole('dialog', { name: 'SO-00412' });
+    await waitFor(() => expect(view).toHaveFocus());
+    await user.keyboard('j');
+    expect(view).toHaveFocus();
+    await user.click(screen.getByRole('button', { name: 'Back to orders' }));
+    await waitFor(() => expect(screen.queryByTestId('order-mobile')).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /SO-00412/ })).toHaveFocus();
+  });
+
+  it('an opened order stays on screen when a filter would drop it', async () => {
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/orders?pay=unpaid');
+    const unpaidRow = row({ payment: pay() });
+    serve(board({ rows: [unpaidRow, row({ id: 'so2', number: 'SO-00413', payment: pay() })] }));
+    server.use(http.post('/api/v1/order-board/refresh', () => HttpResponse.json(board({ rows: [row({ payment: pay({ state: 'paid', pct: 100, left: 0 }) }), row({ id: 'so2', number: 'SO-00413', payment: pay() })] }))));
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /SO-00412/ }));
+    await screen.findByTestId('order-mobile');
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.getByTestId('order-mobile-summary')).toHaveTextContent('Paid'));
+    expect(screen.getByTestId('order-mobile')).toBeInTheDocument();
+  });
+
   it('has no batch checkbox', async () => {
     serve(board());
     render(<OrderBoardPage />);

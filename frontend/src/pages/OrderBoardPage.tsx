@@ -211,7 +211,10 @@ export function OrderBoardPage() {
   }, [openId, ready, data, finishedQuery.data, finishedQuery.isLoading, coreOnly, status, setStatus]);
   // After the target renders, bring it into view. Declared after the effect above, so one pass does both.
   useEffect(() => {
-    if (phone) return; // the full-screen view covers the list
+    if (phone) { // the full-screen view covers the list
+      scrollTarget.current = null;
+      return;
+    }
     const target = scrollTarget.current;
     const el = target ? document.getElementById(`order-${target.id}`) : null;
     if (!target || !el) return;
@@ -268,6 +271,10 @@ export function OrderBoardPage() {
     sort.flipped !== (status === 'finished' && sort.key === 'age'),
     i18n.language,
   );
+  // Phone: the opened order is a full screen, so a filter that drops it mid-task (payment taken under "unpaid") must not remove it.
+  const keepOpen = phone && !!openId && !listed.some(e => (e.open ? e.open.id : e.fin.id) === openId);
+  const kept = keepOpen ? withFinished(all.filter(r => r.id === openId), (finishedQuery.data?.rows ?? []).filter(r => r.id === openId)) : [];
+  const rendered = kept.length ? [...listed, ...kept] : listed;
   const tileCounts = countByStatus(searched);
   tileCounts.finished = finishedSearched.length;
   // Orders counted under "To order" that sit under Partial: the tiles add up to more than the total because of them.
@@ -377,15 +384,15 @@ export function OrderBoardPage() {
     );
   } else if (status === 'finished' && finishedQuery.isLoading) {
     list = Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-16 rounded-xl" />);
-  } else if (listed.length === 0 && all.length === 0 && status !== 'finished') {
+  } else if (rendered.length === 0 && all.length === 0 && status !== 'finished') {
     list = <Notice rise icon={PackageCheck} title={t('orders.empty.none')} hint={t('orders.empty.noneHint')} />;
-  } else if (listed.length === 0 && coreOnly && branded.length === 0 && !searchText.trim() && status === 'all') {
+  } else if (rendered.length === 0 && coreOnly && branded.length === 0 && !searchText.trim() && status === 'all') {
     list = <Notice rise icon={Box} title={t('orders.empty.core')} hint={t('orders.empty.coreHint')} />;
-  } else if (listed.length === 0) {
+  } else if (rendered.length === 0) {
     list = <Notice icon={SearchX} title={t('orders.empty.noResults')} />;
   } else {
     // An opened order always renders, even past the page: a `?order=` link or "Also open" may target one further down.
-    list = listed.filter((e, i) => i < shown || (e.open ? e.open.id : e.fin.id) === openId).map(({ open: row, fin }) => !row ? (
+    list = rendered.filter((e, i) => i < shown || (e.open ? e.open.id : e.fin.id) === openId).map(({ open: row, fin }) => !row ? (
       <FinishedOrderCard key={fin.id} row={fin} open={openId === fin.id} onToggle={() => toggleOpen(fin.id)} />
     ) : (
       <OrderCard
@@ -408,7 +415,7 @@ export function OrderBoardPage() {
   }
 
   return (
-    <div className="p-4 md:p-8">
+    <div className="p-4 pb-24 md:p-8">
       {!phone && (
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 animate-rise-lg vt-page-title">
         <h1 className="flex items-center gap-3 text-2xl font-bold text-white max-md:hidden">
@@ -600,7 +607,7 @@ export function OrderBoardPage() {
           type="button"
           aria-label={t('orders.newOrder.button')}
           onClick={() => setDrafting(true)}
-          className="btn-press fixed bottom-5 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-bambu-green text-white shadow-lg"
+          className="btn-press fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-bambu-green text-white shadow-lg"
         >
           <Plus aria-hidden="true" className="h-6 w-6" />
         </button>

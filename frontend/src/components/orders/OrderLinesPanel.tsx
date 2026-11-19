@@ -6,6 +6,7 @@ import { api } from '../../api/client';
 import type { OrderBoardResponse, OrderPicklist, OrderPanelRow } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { panelTabId, panelTabPanelId } from '../aito/panelTabIds';
 import { usePrintBlob } from '../aito/usePrintBlob';
 import { errorReason, isRefused } from './orderErrors';
 import { OrderLineRow } from './OrderLineRow';
@@ -38,6 +39,7 @@ export function OrderLinesPanel({
   onHandoverOpen,
   onEdited,
   phoneTab,
+  tabScope,
   onBarOpen,
 }: {
   row: OrderPanelRow;
@@ -53,6 +55,8 @@ export function OrderLinesPanel({
   onEdited?: () => void;
   /** The phone view shows one tab of the order at a time; the others stay mounted (hidden) so an open bar keeps its state. */
   phoneTab?: PhoneTab;
+  /** Scope of the phone tab strip ids, so each panel names its tab. */
+  tabScope?: string;
   /** Told when any bar (edit, check, hand-over, parcel edit) opens or closes, and closed on unmount. */
   onBarOpen?: (open: boolean) => void;
 }) {
@@ -237,8 +241,11 @@ export function OrderLinesPanel({
         if (edit && !saving) closeEdit();
         if (parcel && !parcelBusy) closeParcel();
       }}
-      className={`animate-rise-sm grid gap-4 border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 ${phoneTab ? '' : 'lg:grid-cols-[minmax(0,1fr)_27rem]'}`}>
-      <div hidden={!!phoneTab && phoneTab !== 'lines'} className="order-last min-w-0 lg:order-none">
+      className={`animate-rise-sm grid ${phoneTab ? '' : 'gap-4'} border-t border-bambu-dark-tertiary bg-bambu-dark/40 px-4 py-3 ${phoneTab ? '' : 'lg:grid-cols-[minmax(0,1fr)_27rem]'}`}>
+      <div
+        hidden={!!phoneTab && phoneTab !== 'lines'}
+        {...(phoneTab && { role: 'tabpanel', id: panelTabPanelId('lines', tabScope), 'aria-labelledby': panelTabId('lines', tabScope) })}
+        className={`min-w-0 ${phoneTab ? '' : 'order-last lg:order-none'}`}>
       {!phoneTab && <OrderRefActions row={row} />}
       <div
         role="region"
@@ -358,6 +365,7 @@ export function OrderLinesPanel({
         smsAllowed={smsAllowed}
         editingTotal={editingTotal}
         phoneTab={phoneTab}
+        phoneScope={tabScope}
       />
     </div>
   );

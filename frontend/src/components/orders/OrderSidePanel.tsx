@@ -28,6 +28,7 @@ export function OrderSidePanel({
   smsAllowed,
   editingTotal,
   phoneTab,
+  phoneScope,
 }: {
   row: OrderPanelRow;
   others: { id: string; number: string }[];
@@ -39,6 +40,7 @@ export function OrderSidePanel({
   editingTotal: number | null;
   /** On the phone the panel shows one block at a time and has no tab strip of its own. */
   phoneTab?: PhoneTab;
+  phoneScope?: string;
 }) {
   const { t } = useTranslation();
   const [sideTab, setSideTab] = usePanelTab(SIDE_TABS, 'orders.panel.tab');
@@ -56,15 +58,15 @@ export function OrderSidePanel({
   const invoiceSent = useRef(false);
   // Built once so the desktop tab and the phone tabs render the very same blocks.
   const contactBlock = (
-      <OrderContactBlock
-        contact={row.contact}
-        orderId={row.id}
-        canEdit={canUpdate}
-        orderNumber={row.number}
-        others={others}
-        onGoto={onGoto}
-        sms={smsAllowed ? { contacted: row.contacted ?? null, onOpen: setSmsPhone } : undefined}
-      />
+    <OrderContactBlock
+      contact={row.contact}
+      orderId={row.id}
+      canEdit={canUpdate}
+      orderNumber={row.number}
+      others={others}
+      onGoto={onGoto}
+      sms={smsAllowed ? { contacted: row.contacted ?? null, onOpen: setSmsPhone } : undefined}
+    />
   );
   // Fixed over the screen, so on the phone it sits outside the hidden tab wrapper.
   const smsModal = smsPhone && <OrderSmsModal row={row} phone={smsPhone} onClose={() => setSmsPhone(null)} />;
@@ -89,12 +91,13 @@ export function OrderSidePanel({
     </OrderInvoicesBlock>
   );
   if (phoneTab) {
+    const tabPanel = (id: PhoneTab) => ({ role: 'tabpanel', id: panelTabPanelId(id, phoneScope), 'aria-labelledby': panelTabId(id, phoneScope) });
     return (
       <div className="min-w-0">
-        <div hidden={phoneTab !== 'billing'}>{invoicesBlock}</div>
-        <div hidden={phoneTab !== 'client'}>{contactBlock}</div>
+        <div hidden={phoneTab !== 'billing'} {...tabPanel('billing')}>{invoicesBlock}</div>
+        <div hidden={phoneTab !== 'client'} {...tabPanel('client')}>{contactBlock}</div>
         {smsModal}
-        {phoneTab === 'activity' && <OrderActivity soId={row.id} currency={row.currency} />}
+        {phoneTab === 'activity' && <div {...tabPanel('activity')}><OrderActivity soId={row.id} currency={row.currency} /></div>}
       </div>
     );
   }

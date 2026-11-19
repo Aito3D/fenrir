@@ -1,6 +1,7 @@
 /** The full-screen order on the phone: header, summary, tabs and the action bar. */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { useMutation } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../mocks/server';
@@ -51,7 +52,41 @@ const view = (row: OrderPanelRow, props: Partial<Parameters<typeof OrderMobileVi
 const bar = () => screen.queryByTestId('order-mobile-bar');
 const selected = (name: string) => expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
 
+function HandOver() {
+  const m = useMutation({ mutationKey: ['order-hand-over'], mutationFn: () => new Promise(() => {}) });
+  return <button type="button" onClick={() => m.mutate({ id: 'so1' } as never)}>go</button>;
+}
+
 describe('OrderMobileView', () => {
+  it('is a labelled modal dialog that takes focus', async () => {
+    render(view(panelRow()));
+    const dialog = screen.getByRole('dialog', { name: 'SO-00412' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    await waitFor(() => expect(dialog).toHaveFocus());
+  });
+
+  it('Escape closes the view, but not while the pick check is open', async () => {
+    server.use(http.get('/api/v1/order-board/orders/so1/picklist', () => HttpResponse.json({ lines: [{ line_id: 'l1', quantity: 5 }] })));
+    const onClose = vi.fn();
+    const { unmount } = render(view(panelRow(), { onClose }));
+    fireEvent.keyDown(screen.getByRole('dialog', { name: 'SO-00412' }), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    unmount();
+    const open = vi.fn();
+    render(view(panelRow(), { onClose: open, start: 'pick', startTick: 1 }));
+    const qty = await screen.findByTestId('pack-qty-l1');
+    await waitFor(() => expect(bar()).not.toBeInTheDocument());
+    fireEvent.keyDown(qty, { key: 'Escape' });
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('the primary button is disabled while a hand-over of the order is in flight', async () => {
+    render(<><HandOver />{view(panelRow())}</>);
+    expect(within(bar()!).getByRole('button', { name: 'Prepare' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'go' }));
+    await waitFor(() => expect(within(bar()!).getByRole('button', { name: 'Prepare' })).toBeDisabled());
+  });
+
   it('renders header, summary and the four tabs', () => {
     render(view(panelRow()));
     expect(screen.getByText('Lycée de Taravao')).toBeInTheDocument();
@@ -108,7 +143,7 @@ describe('OrderMobileView', () => {
   it('more opens a sheet with the ref actions', async () => {
     render(view(panelRow()));
     await userEvent.click(screen.getByRole('button', { name: 'More' }));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('dialog', { name: 'More' });
     expect(dialog).toHaveTextContent(/Zoho Books · SO-00412/);
   });
 });

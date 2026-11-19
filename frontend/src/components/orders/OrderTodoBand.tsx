@@ -34,7 +34,7 @@ export function OrderTodoEditRows({
   return (
     <>
       {edit.added.map(({ item, quantity }) => (
-        <tr key={`add-${item.id}`} className="max-md:grid max-md:grid-cols-[1fr_auto_auto] max-md:gap-x-3 max-md:py-2 border-t border-bambu-dark-tertiary/60">
+        <tr key={`add-${item.id}`} className="max-md:grid max-md:grid-cols-[1fr_auto_auto] max-md:gap-x-3 border-t border-bambu-dark-tertiary/60">
           <td className="max-md:col-span-3 animate-rise-sm border-l-2 border-bambu-green py-2 pl-4 pr-3">
             <div className="text-white">{item.name}</div>
             {item.sku && <div className="font-mono text-xs text-bambu-gray">{item.sku}</div>}

@@ -21,6 +21,6 @@ export const LINE_STATE: Record<OrderBoardLine['state'], { label: string; cls: s
   service: { label: 'orders.line.service', cls: 'text-bambu-gray' },
 };
 
-export const dash = <span className="text-bambu-gray">–</span>;
+export const dash = <span className="text-bambu-gray max-md:hidden">–</span>;
 export const EDIT_BTN = 'btn-press inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary bg-bambu-dark/60 px-2.5 py-1 text-xs text-white hover:border-bambu-green hover:text-bambu-green disabled:opacity-50';
 export const TRASH = 'grid h-7 w-7 place-items-center rounded-md text-bambu-gray hover:bg-red-500/15 hover:text-red-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-bambu-gray';

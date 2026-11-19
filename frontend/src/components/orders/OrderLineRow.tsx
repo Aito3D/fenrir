@@ -52,7 +52,7 @@ export function OrderLineRow({
   // An item Books prices at 0 has no catalogue price to differ from.
   const priceGap = priced && line.item_rate ? line.rate - line.item_rate : 0;
   return (
-    <tr className={`max-md:grid max-md:grid-cols-[1fr_auto_auto] max-md:gap-x-3 max-md:py-2 transition-opacity duration-150 ease-out ${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${(todo && check && !(check.max[line.id] > 0)) || gone ? 'opacity-40' : ''}`}>
+    <tr className={`max-md:grid max-md:grid-cols-[1fr_auto_auto] max-md:gap-x-3 transition-opacity duration-150 ease-out ${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${(todo && check && !(check.max[line.id] > 0)) || gone ? 'opacity-40' : ''}`}>
       <td className={`max-md:col-span-3 border-l-2 py-2 pl-4 pr-3 ${TONE[meta.tone].rail} ${gone ? 'line-through' : ''}`}>
         <div className="text-white">
           {line.name}
@@ -110,7 +110,7 @@ export function OrderLineRow({
             onChange={v => setCheck({ ...check, qty: { ...check.qty, [line.id]: v } })}
           />
         ) : (
-          formatQty(qty)
+          <><span className="md:hidden">{t('orders.col.qty')} </span>{formatQty(qty)}</>
         )}
         {ofQty !== null && !editing && <span className="ml-1 text-xs text-bambu-gray">{t('orders.ofOrdered', { n: formatQty(ofQty) })}</span>}
         {todo && line.invoiced > 0 && (

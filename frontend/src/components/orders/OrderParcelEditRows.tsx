@@ -6,8 +6,8 @@ import type { ParcelEdit } from './orderBoard';
 import { OrderQtyStepper } from './OrderQtyStepper';
 import { TONE } from './orderStatus';
 
-const G = 'max-md:grid max-md:grid-cols-[1fr_auto_auto] max-md:gap-x-3 max-md:py-2';
-const dash = <td className="text-right"><span className="text-bambu-gray">–</span></td>;
+const G = 'max-md:grid max-md:grid-cols-[1fr_auto_auto] max-md:gap-x-3';
+const dash = <td className="text-right"><span className="text-bambu-gray max-md:hidden">–</span></td>;
 
 const Tag = ({ d }: { d: number }) =>
   d ? <span className={`ml-1.5 rounded px-1.5 py-0.5 text-[10px] ${d > 0 ? 'bg-green-500/15 text-green-400' : 'bg-yellow-400/15 text-yellow-400'}`}>{d > 0 ? `+${formatQty(d)}` : `−${formatQty(-d)}`}</span> : null;
@@ -29,7 +29,7 @@ export function OrderParcelEditRows({
       {caption.map(c => <div key={c} className="text-[10px] text-bambu-gray">{c}</div>)}
     </>
   ); };
-  const stock = (line: OrderBoardLine) => <td className="text-right tabular-nums text-white">{line.stock_available !== null ? formatQty(line.stock_available) : '–'}</td>;
+  const stock = (line: OrderBoardLine) => <td className="text-right tabular-nums text-white">{line.stock_available !== null ? <><span className="md:hidden">{t('orders.col.available')} </span>{formatQty(line.stock_available)}</> : <span className="max-md:hidden">–</span>}</td>;
   const adds = all.filter(l => l.id in parcel.max && !(l.id in parcel.was));
   const others = (line: OrderBoardLine) => {
     const n = Math.round((line.packed_waiting - (parcel.was[line.id] ?? 0)) * 100) / 100;

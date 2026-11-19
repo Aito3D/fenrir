@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, MoreHorizontal } from 'lucide-react';
@@ -11,6 +11,7 @@ import { formatQty, nextStep } from './orderBoard';
 import { OrderLinesPanel } from './OrderLinesPanel';
 import { OrderRefActions } from './OrderRefActions';
 import type { PhoneTab } from './OrderSidePanel';
+import { useHandOverPending } from './useOrderActions';
 import { PaymentPill } from './PaymentPill';
 import { KIND, STATUS_META, TONE } from './orderStatus';
 
@@ -45,6 +46,15 @@ export function OrderMobileView({
   const [tab, setTab] = useState<PhoneTab>(params.get('sms') === '1' && params.get('order') === row.id ? 'client' : 'lines');
   const [barOpen, setBarOpen] = useState(false);
   const [more, setMore] = useState(false);
+  const tabScope = `order-${row.id}-m-`;
+  const handingOver = useHandOverPending(row.id);
+  const root = useRef<HTMLDivElement>(null);
+  // A full-screen layer: focus moves in, and back to the order's row when it closes.
+  useEffect(() => {
+    root.current?.focus();
+    const id = row.id;
+    return () => document.querySelector<HTMLElement>(`#order-${id} [data-order-row]`)?.focus();
+  }, [row.id]);
   const canUpdate = hasPermission('orders:update');
   const target = canUpdate && onStart ? nextStep(row) : null;
   const collect = canUpdate && !!row.payment && row.payment.left > 0;
@@ -55,7 +65,20 @@ export function OrderMobileView({
   const kind = target ? KIND[target.split('-')[0] as keyof typeof KIND] : null;
 
   return (
-    <div data-testid="order-mobile" className="fixed inset-0 z-[45] flex flex-col bg-bambu-dark">
+    <div
+      ref={root}
+      data-testid="order-mobile"
+      role="dialog"
+      aria-modal="true"
+      aria-label={row.number}
+      tabIndex={-1}
+      onKeyDown={e => {
+        // Not while a bar, the ⋯ sheet or a modal inside the view owns Escape.
+        if (e.key !== 'Escape' || barOpen || more || (e.target as Element).closest('[role="dialog"]') !== root.current) return;
+        onClose();
+      }}
+      className="fixed inset-0 z-[45] flex flex-col bg-bambu-dark focus:outline-none"
+    >
       <header className="flex items-center gap-1 border-b border-bambu-dark-tertiary px-2 py-2">
         <button type="button" onClick={onClose} aria-label={t('orders.mobile.back')} className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-bambu-gray hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green">
           <ChevronLeft aria-hidden="true" className="h-5 w-5" />
@@ -95,11 +118,11 @@ export function OrderMobileView({
           selected={tab}
           onSelect={setTab}
           attentionLabel={t('aito.panelTabAttention')}
-          scope={`order-${row.id}-m-`}
+          scope={tabScope}
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <OrderLinesPanel row={row} phoneTab={tab} onBarOpen={setBarOpen} start={start} startTick={startTick} onGoto={onGoto} others={others} onEdited={onEdited} />
+        <OrderLinesPanel row={row} phoneTab={tab} tabScope={tabScope} onBarOpen={setBarOpen} start={start} startTick={startTick} onGoto={onGoto} others={others} onEdited={onEdited} />
       </div>
       {!barOpen && (collect || kind) && (
         <div data-testid="order-mobile-bar" className="flex gap-2 border-t border-bambu-dark-tertiary bg-bambu-dark-secondary px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
@@ -109,7 +132,7 @@ export function OrderMobileView({
             </button>
           )}
           {kind && target && (
-            <button type="button" onClick={() => { setTab('lines'); onStart?.(target); }} className={`${BAR_BTN} flex-1 bg-bambu-green text-black`}>
+            <button type="button" disabled={handingOver} onClick={() => { setTab('lines'); onStart?.(target); }} className={`${BAR_BTN} flex-1 bg-bambu-green text-black disabled:opacity-50`}>
               {t(kind.label)}
             </button>
           )}
