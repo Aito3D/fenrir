@@ -1127,16 +1127,7 @@ async def test_an_overdue_card_alerts_once_per_due_date(db_session):
     due = (date.today() - timedelta(days=3)).isoformat()
     late = await _project(db_session, board_column="print", due_date=due)
     late_id = late.id
-    await aito_events.record(
-        db_session,
-        late_id,
-        "project.due.overdue",
-        actor_class="system",
-        detail={"due_date": due},
-        occurred_at=datetime.utcnow() - timedelta(days=2),
-    )
-    await db_session.commit()
-
+    await sweep_inbox(db_session, force=True)
     await sweep_inbox(db_session, force=True)
     assert len(await _overdue_events(db_session, late_id)) == 1
 
@@ -1147,6 +1138,51 @@ async def test_an_overdue_card_alerts_once_per_due_date(db_session):
     await sweep_inbox(db_session, force=True)
     events = await _overdue_events(db_session, late_id)
     assert [e.detail["due_date"] for e in events] == [due, moved]
+
+
+@pytest.mark.asyncio
+async def test_a_card_already_late_before_the_kind_was_on_alerts_once(db_session, monkeypatch):
+    """Overdue events recorded while the kind was off by default reached
+    nobody: after the switch-on the card alerts once, then not again."""
+    from datetime import date, timedelta
+
+    from backend.app.models.notification_inbox import AitoWatch, Notification, UserInboxPreference
+    from backend.app.services import inbox
+    from backend.app.services.aito_invoice_sweep import sweep_inbox
+    from backend.tests.unit.test_inbox_service import _user
+
+    async def fake_broadcast_to_user(user_id, message):
+        pass
+
+    monkeypatch.setattr(inbox.ws_manager, "broadcast_to_user", fake_broadcast_to_user)
+    alice = await _user(db_session, "alice")
+    alice_id = alice.id
+    due = (date.today() - timedelta(days=27)).isoformat()
+    late = await _project(db_session, board_column="print", due_date=due)
+    late_id = late.id
+    # Settings saved before deploy, when the kind was off by default.
+    db_session.add(UserInboxPreference(user_id=alice_id, kinds_json=["aito.paid"], sound_kinds_json=["aito.paid"]))
+    db_session.add(
+        AitoWatch(
+            user_id=alice_id, project_id=late_id, kinds_json=None, created_at=datetime.utcnow() - timedelta(days=30)
+        )
+    )
+    await aito_events.record(
+        db_session,
+        late_id,
+        "project.due.overdue",
+        actor_class="system",
+        detail={"due_date": due},
+        occurred_at=datetime.utcnow() - timedelta(days=26),
+    )
+    await db_session.commit()
+    assert (await db_session.execute(select(Notification))).scalars().first() is None
+
+    await sweep_inbox(db_session, force=True)
+    await sweep_inbox(db_session, force=True)
+    rows = list((await db_session.execute(select(Notification))).scalars())
+    assert [(r.user_id, r.kind, r.target_id) for r in rows] == [(alice_id, "aito.overdue", late_id)]
+    assert len(await _overdue_events(db_session, late_id)) == 2
 
 
 @pytest.mark.asyncio
