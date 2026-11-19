@@ -141,11 +141,11 @@ export function RevenueCustomers(p: {
               {data.customers.map((c) => (
                 <li key={c.customerId} className="rounded-lg bg-bambu-dark px-3 py-2">
                   <div className="flex items-center gap-3">
-                    <span className="flex w-40 shrink-0 items-center gap-2 sm:w-56">
+                    <span className="flex min-w-0 flex-1 items-center gap-2 sm:w-56 sm:flex-none sm:shrink-0">
                       <span className="truncate text-white" title={c.name}>{c.name}</span>
                       <span className="inline-flex shrink-0 items-center gap-1 text-bambu-gray"><Dot segment={c.segment} />{segName(c.segment)}</span>
                     </span>
-                    <span className="min-w-0 flex-1" aria-hidden="true">
+                    <span className="hidden min-w-0 flex-1 sm:block" aria-hidden="true">
                       {pick(c) > 0 && topValue > 0 && (
                         <span data-bar className="block h-2 min-w-[3px] rounded-[2px]" style={{ width: `${(pick(c) / topValue) * 100}%`, backgroundColor: SEGMENT_COLOR[c.segment] }} />
                       )}
