@@ -1,6 +1,6 @@
 import { evaluate, summariseTasks } from './aitoBoardRules';
 import type { TaskLike, TaskSummary } from './aitoBoardRules';
-import type { AitoProject, AitoProjectUpdate } from '../api/client';
+import type { AitoPriority, AitoProject, AitoProjectUpdate } from '../api/client';
 
 /** Pure optimistic transforms over the `['aito-projects']` cache.
  *
@@ -392,6 +392,7 @@ export function placeholderProject(fields: {
   quote_total?: number | null;
   quote_status?: string | null;
   due_date?: string | null;
+  priority?: AitoPriority;
   tasks?: readonly TaskLike[];
 }): AitoProject {
   const quoteStatus = fields.quote_status ?? null;
@@ -442,6 +443,7 @@ export function placeholderProject(fields: {
     client_contacted_at: null,
     done_at: null,
     due_date: fields.due_date ?? null,
+    priority: fields.priority ?? 'normal',
     quote_sync_error: null,
     quote_status_block: null,
     quote_status_remote: null,

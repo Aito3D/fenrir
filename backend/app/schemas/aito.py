@@ -298,6 +298,9 @@ class _OptionalClientContactChecks:
         return value if value is None else _check_phone(value)
 
 
+AitoPriority = Literal["normal", "priority", "urgent"]
+
+
 class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput, _OptionalClientContactChecks):
     # 10_000 is generous headroom over anything a human types — it exists to keep a
     # pathological payload from ballooning the row or the AI summarizer's prompt.
@@ -336,6 +339,7 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput, _OptionalClien
     # The promised delivery day. Parsed as a real calendar date and stored as
     # its ISO string; any past date is accepted.
     due_date: date | None = None
+    priority: AitoPriority = "normal"
     # Restricted to the Zoho vocabulary — an import usually carries one of
     # these (it is read straight off the Books estimate), and a hand-made
     # card only ever sends 'sent'/'accepted'/'declined' through the dedicated
@@ -668,6 +672,12 @@ class AitoDueDateUpdate(BaseModel):
     due_date: date | None
 
 
+class AitoPriorityUpdate(BaseModel):
+    """Body of PATCH /aito/{id}/priority."""
+
+    priority: AitoPriority
+
+
 class AitoContactedUpdate(BaseModel):
     """Body of PATCH /aito/{id}/contacted.
 
@@ -832,6 +842,7 @@ class AitoProjectResponse(BaseModel):
     # ISO `YYYY-MM-DD` promised to the client, or null. Local only — see the
     # column comment on AitoProject.due_date.
     due_date: str | None
+    priority: AitoPriority
     # Whether the card has a public tracking link configured (services/aito_tracking.py):
     # true only when the card has a token AND `external_url` is set. The URL itself is not
     # embedded here — fetch it from the AITO_UPDATE-gated GET /aito/{id}/tracking-link route.

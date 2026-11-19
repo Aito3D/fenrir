@@ -1159,6 +1159,7 @@ export default {
       projectFiverrCleared: 'Espera do Fiverr removida',
       projectDueSet: 'definiu a data prometida',
       projectDueCleared: 'removeu a data prometida',
+      projectPrioritySet: 'alterou a prioridade',
       projectContactedSet: 'marcou o cliente como contatado',
       projectContactedCleared: 'removeu a marca de contatado',
       projectShippedSet: 'marcou o pacote como enviado',

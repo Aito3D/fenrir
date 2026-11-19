@@ -1159,6 +1159,7 @@ export default {
       projectFiverrCleared: 'Fiverr待ちを解除',
       projectDueSet: '約束日を設定しました',
       projectDueCleared: '約束日を削除しました',
+      projectPrioritySet: '優先度を変更しました',
       projectContactedSet: '顧客を連絡済みに設定しました',
       projectContactedCleared: '連絡済みの設定を解除しました',
       projectShippedSet: '荷物を発送済みに設定しました',

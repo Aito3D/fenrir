@@ -1160,6 +1160,7 @@ export default {
       projectFiverrCleared: "Очікування Fiverr знято",
       projectDueSet: "встановив обіцяну дату",
       projectDueCleared: "видалив обіцяну дату",
+      projectPrioritySet: 'змінив(ла) пріоритет',
       projectContactedSet: "позначив, що з клієнтом зв'язалися",
       projectContactedCleared: "зняв позначку, що з клієнтом зв'язалися",
       projectShippedSet: 'позначив, що посилку відправлено',

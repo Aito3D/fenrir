@@ -1163,6 +1163,7 @@ export default {
       projectFiverrCleared: 'Fiverr wait cleared',
       projectDueSet: 'set the promised date',
       projectDueCleared: 'cleared the promised date',
+      projectPrioritySet: 'changed the priority',
       projectContactedSet: 'marked the client as contacted',
       projectContactedCleared: 'cleared the contacted mark',
       projectShippedSet: 'marked the parcel as sent',

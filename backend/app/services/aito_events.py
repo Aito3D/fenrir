@@ -112,6 +112,7 @@ KINDS: dict[str, str] = {
     # reason the contacted pair is: it is the audit trail of a commitment.
     "project.due.set": "story",
     "project.due.cleared": "story",
+    "project.priority.set": "story",
     # The promise was broken: emitted once per overdue day by the hourly
     # sweep (aito_invoice_sweep.sweep_inbox), never by a person. The
     # inbox's `aito.overdue`. detail = {due_date}. Detail, not story, unlike

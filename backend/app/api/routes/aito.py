@@ -64,6 +64,7 @@ from backend.app.schemas.aito import (
     AitoNoteCreate,
     AitoPaymentLinkView,
     AitoPickupMessageResponse,
+    AitoPriorityUpdate,
     AitoProjectCreate,
     AitoProjectImport,
     AitoProjectMove,
@@ -578,6 +579,7 @@ def _to_response(
         client_contacted_at=p.client_contacted_at,
         done_at=p.done_at,
         due_date=p.due_date,
+        priority=p.priority,
         tracking_configured=external_url != "",
         # Mirrors quote_invoiced above: in-memory rows that never flushed
         # read None.
@@ -1919,6 +1921,7 @@ async def create_project(
         quote_url=payload.quote_url,
         quote_salesperson=payload.quote_salesperson,
         due_date=payload.due_date.isoformat() if payload.due_date else None,
+        priority=payload.priority,
         quote_status=payload.quote_status,
         # None when auth is disabled, and for API-key requests — the dependency
         # returns None for both rather than a synthetic user.
@@ -5105,6 +5108,40 @@ async def set_project_due_date(
         )
         await db.commit()
         await _broadcast_changed("due_date", project.id, _actor(current_user))
+        await db.refresh(project)
+
+    return await _project_response(db, project)
+
+
+@router.patch("/{project_id}/priority", response_model=AitoProjectResponse)
+async def set_project_priority(
+    project_id: int,
+    payload: AitoPriorityUpdate,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Set the rush level. Own route (not `update_project`) so an unchanged
+    value queues nothing; a change alters the quote, so it is refused on an
+    invoiced card and marks the quote pending."""
+    project = await _get_active_project_or_404(db, project_id)
+
+    if project.priority != payload.priority:
+        _reject_task_change_if_invoiced(project)
+        previous = project.priority
+        project.priority = payload.priority
+        await record(
+            db,
+            project.id,
+            "project.priority.set",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project.id,
+            changes=[{"field": "priority", "from": previous, "to": payload.priority}],
+        )
+        _mark_pending_if_ours(project)
+        await db.commit()
+        await _broadcast_changed("priority", project.id, _actor(current_user))
         await db.refresh(project)
 
     return await _project_response(db, project)

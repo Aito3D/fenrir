@@ -10435,6 +10435,7 @@ export default {
       projectFiverrCleared: 'Usunięto oczekiwanie na Fiverr',
       projectDueSet: 'ustawił(a) obiecaną datę',
       projectDueCleared: 'usunął(ęła) obiecaną datę',
+      projectPrioritySet: 'zmienił(a) priorytet',
       projectContactedSet: 'oznaczył(a) klienta jako skontaktowanego',
       projectContactedCleared: 'usunął(ęła) oznaczenie kontaktu',
       projectShippedSet: 'oznaczył(a) paczkę jako wysłaną',

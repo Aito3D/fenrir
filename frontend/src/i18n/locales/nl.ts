@@ -10431,6 +10431,7 @@ export default {
       projectFiverrCleared: 'Fiverr-wachttijd opgeheven',
       projectDueSet: 'heeft de beloofde datum ingesteld',
       projectDueCleared: 'heeft de beloofde datum verwijderd',
+      projectPrioritySet: 'heeft de prioriteit gewijzigd',
       projectContactedSet: 'heeft de klant als gecontacteerd gemarkeerd',
       projectContactedCleared: 'heeft de gecontacteerd-markering verwijderd',
       projectShippedSet: 'heeft het pakket als verzonden gemarkeerd',

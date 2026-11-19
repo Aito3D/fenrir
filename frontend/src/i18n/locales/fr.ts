@@ -1159,6 +1159,7 @@ export default {
       projectFiverrCleared: 'Attente Fiverr retirée',
       projectDueSet: 'a fixé la date promise',
       projectDueCleared: 'a retiré la date promise',
+      projectPrioritySet: 'a changé la priorité',
       projectContactedSet: 'a marqué le client comme contacté',
       projectContactedCleared: 'a retiré la mention contacté',
       projectShippedSet: 'a marqué le colis comme envoyé',

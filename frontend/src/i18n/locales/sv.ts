@@ -10464,6 +10464,7 @@ errors: {
       projectFiverrCleared: 'Fiverr-väntan borttagen',
       projectDueSet: 'satte det utlovade datumet',
       projectDueCleared: 'tog bort det utlovade datumet',
+      projectPrioritySet: 'ändrade prioriteten',
       projectContactedSet: 'markerade kunden som kontaktad',
       projectContactedCleared: 'tog bort kontaktad-markeringen',
       projectShippedSet: 'markerade paketet som skickat',

@@ -3,6 +3,7 @@ import type { BambuCatalogColor } from '../utils/colors';
 import type { ArchivePlatesResponse, LibraryFilePlatesResponse } from '../types/plates';
 import { batched, byField, byId } from './batch';
 import { localDateKey } from '../utils/date';
+import type { PriorityLevel } from '../utils/pricing';
 
 const API_BASE = '/api/v1';
 
@@ -5734,6 +5735,7 @@ export interface HeimdallStatus {
 }
 
 export type AitoFlag = 'urgent' | 'sav' | 'pause' | 'fiverr';
+export type AitoPriority = PriorityLevel;
 
 /** A Books sales tax a card may use (GET /aito/taxes). */
 export interface AitoTax { tax_id: string; name: string; pct: number }
@@ -5844,6 +5846,8 @@ export interface AitoProject {
   /** ISO `YYYY-MM-DD` promised to the client, or null. Set through its own
    *  route (`setAitoProjectDueDate`), never the generic PATCH. */
   due_date: string | null;
+  /** Rush level; a surcharge line on the quote. Set through `setAitoPriority`. */
+  priority: AitoPriority;
   /** The last push failure, or null. Only meaningful when quote_sync_state
    *  is 'error'; stale/ignored otherwise. */
   quote_sync_error: string | null;
@@ -10164,6 +10168,7 @@ export const api = {
     quote_salesperson?: string | null;
     quote_status?: string | null;
     due_date?: string | null;
+    priority?: AitoPriority;
     shipping_island?: string | null;
     shipping_first_name?: string | null;
     shipping_last_name?: string | null;
@@ -10409,6 +10414,11 @@ export const api = {
     request<AitoProject>(`/aito/${id}/due-date`, {
       method: 'PATCH',
       body: JSON.stringify({ due_date: dueDate }),
+    }),
+  setAitoPriority: (id: number, priority: AitoPriority) =>
+    request<AitoProject>(`/aito/${id}/priority`, {
+      method: 'PATCH',
+      body: JSON.stringify({ priority }),
     }),
   // Order Board: one local read; refresh runs one bounded Zoho sync pass.
   getOrderBoard: () => request<OrderBoardResponse>('/order-board'),

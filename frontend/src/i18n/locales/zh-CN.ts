@@ -1159,6 +1159,7 @@ export default {
       projectFiverrCleared: '已取消等待 Fiverr',
       projectDueSet: '设置了承诺日期',
       projectDueCleared: '清除了承诺日期',
+      projectPrioritySet: '更改了优先级',
       projectContactedSet: '将客户标记为已联系',
       projectContactedCleared: '取消了已联系标记',
       projectShippedSet: '将包裹标记为已寄出',

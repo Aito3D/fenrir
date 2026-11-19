@@ -1159,6 +1159,7 @@ export default {
       projectFiverrCleared: 'Fiverr 대기 해제됨',
       projectDueSet: '약속 날짜를 설정했습니다',
       projectDueCleared: '약속 날짜를 삭제했습니다',
+      projectPrioritySet: '우선순위를 변경했습니다',
       projectContactedSet: '고객을 연락함으로 설정했습니다',
       projectContactedCleared: '연락함 설정을 해제했습니다',
       projectShippedSet: '소포를 발송함으로 설정했습니다',

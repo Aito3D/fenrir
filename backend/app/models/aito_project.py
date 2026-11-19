@@ -171,6 +171,9 @@ class AitoProject(Base):
     # NOT in VERSIONED_FIELDS and is written by its own route, never through
     # `update_project`, so setting it queues no quote push.
     due_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Rush level: 'normal' | 'priority' | 'urgent'. Unlike due_date it changes
+    # the quote (a surcharge line), so its own route marks the quote pending.
+    priority: Mapped[str] = mapped_column(String(10), nullable=False, default="normal", server_default="normal")
     # When the client was told the job is ready to collect (or that it has
     # shipped). NULL means nobody has told them yet, which is why this is a
     # timestamp and not a boolean: the card shows how long they have been

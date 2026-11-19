@@ -1159,6 +1159,7 @@ export default {
       projectFiverrCleared: 'Fiverr-Wartezeit aufgehoben',
       projectDueSet: 'hat das zugesagte Datum gesetzt',
       projectDueCleared: 'hat das zugesagte Datum entfernt',
+      projectPrioritySet: 'hat die Priorität geändert',
       projectContactedSet: 'hat den Kunden als kontaktiert markiert',
       projectContactedCleared: 'hat die Markierung „kontaktiert“ entfernt',
       projectShippedSet: 'hat das Paket als versendet markiert',

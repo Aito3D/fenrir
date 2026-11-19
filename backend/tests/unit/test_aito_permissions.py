@@ -154,6 +154,7 @@ WRITE_ROUTES = [
     # T-037: found by the dynamic sweep below — gated with AITO_UPDATE like
     # every other mutation here, but never hand-added to this list.
     ("set_project_due_date", "patch", f"/api/v1/aito/{_MISSING_ID}/due-date", {"due_date": "2026-01-01"}),
+    ("set_project_priority", "patch", f"/api/v1/aito/{_MISSING_ID}/priority", {"priority": "urgent"}),
     # Projects-PDM phase 3: task <-> project links.
     ("put_task_project", "put", f"/api/v1/aito/tasks/{_MISSING_ID}/project", {"project_id": None}),
     ("post_task_project", "post", f"/api/v1/aito/tasks/{_MISSING_ID}/project", {"name": "X"}),
@@ -163,8 +164,8 @@ WRITE_ROUTES = [
     ("link_retainer", "post", f"/api/v1/aito/{_MISSING_ID}/unlinked-retainers/r1/link", None),
 ]
 
-assert len(WRITE_ROUTES) == 45, (
-    "WRITE_ROUTES must cover exactly the 45 gated write routes aito.py and aito_payments.py declare"
+assert len(WRITE_ROUTES) == 46, (
+    "WRITE_ROUTES must cover exactly the 46 gated write routes aito.py and aito_payments.py declare"
 )
 
 
@@ -249,7 +250,7 @@ def test_every_aito_route_declares_a_permission_gate_or_is_the_public_tracking_r
     fails HERE, instead of silently escaping both this sweep and the
     hand-maintained WRITE_ROUTES parametrization below (T-037)."""
     aito_routes = _aito_routes()
-    assert len(aito_routes) == 77, (
+    assert len(aito_routes) == 78, (
         "aito.py + aito_payments.py grew or shrank a route — update this count, "
         "WRITE_ROUTES, and _READ_ONLY_ROUTE_NAMES/_PUBLIC_ROUTE_NAMES together"
     )

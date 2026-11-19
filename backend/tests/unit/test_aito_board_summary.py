@@ -118,6 +118,7 @@ def test_to_response_carries_the_step_counters():
         board_column="print",
         position=0,
         status="active",
+        priority="normal",
         quote_status="accepted",
         # AitoProject.created_at/updated_at carry only a server_default, so an
         # in-memory instance that never went through a DB flush leaves them
@@ -147,6 +148,7 @@ def test_to_response_carries_the_pending_services():
         board_column="print",
         position=0,
         status="active",
+        priority="normal",
         quote_status="accepted",
         # AitoProject.created_at/updated_at carry only a server_default, so an
         # in-memory instance that never went through a DB flush leaves them

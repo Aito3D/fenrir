@@ -101,6 +101,7 @@ function demoProject(card: (typeof DEMO_CARDS)[number]): AitoProject {
     client_contacted_at: null,
     done_at: null,
     due_date: null,
+    priority: 'normal',
     quote_sync_error: null,
     quote_status_block: null,
     quote_status_remote: null,

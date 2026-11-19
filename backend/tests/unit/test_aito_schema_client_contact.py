@@ -182,6 +182,7 @@ _FIELD_ORDER = {
         "quote_url",
         "quote_salesperson",
         "due_date",
+        "priority",
         "quote_status",
         "regenerate_description",
         "tasks",
@@ -210,7 +211,7 @@ _FIELD_ORDER = {
 # sha256 of json.dumps(Model.model_json_schema()) — key order included, so a
 # reordered property, a changed cap or a new description all change the hash.
 _SCHEMA_SHA256 = {
-    AitoProjectCreate: "91e4d68599ffe724fcc1ce41652013cb4b33125c7197cbf729b882d90f7d8d0f",
+    AitoProjectCreate: "7c0a2bb7c214aaf693e3161404f1f5d405dc1f74c46f502a5e67f07ce2ee8e34",
     AitoClientTransfer: "617ea1452080ca6ff6ec41043506990d57a4f0848ebfb591712317dcaccfb366",
     AitoProjectUpdate: "b068b6760da4381ebbbccd6ec60960b2fc914680d35ac24e82d2b9e4ac688ece",
     AitoClientEdit: "f40a0c00a70ea75f79109794c93b2eb3889c0373d6d73f03468fabc8d7d7ba8b",

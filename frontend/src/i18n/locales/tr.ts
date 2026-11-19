@@ -1159,6 +1159,7 @@ export default {
       projectFiverrCleared: 'Fiverr beklemesi kaldırıldı',
       projectDueSet: 'söz verilen tarihi belirledi',
       projectDueCleared: 'söz verilen tarihi kaldırdı',
+      projectPrioritySet: 'önceliği değiştirdi',
       projectContactedSet: 'müşteriyle iletişime geçildiğini işaretledi',
       projectContactedCleared: 'iletişim işaretini kaldırdı',
       projectShippedSet: 'paketi gönderildi olarak işaretledi',
