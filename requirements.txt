@@ -43,7 +43,6 @@ python-dotenv>=1.2.2
 
 # Bambu Lab Printer Communication
 paho-mqtt>=2.0.0
-aioftp>=0.22.0
 
 # Virtual Printer (emulates Bambu printer for slicer uploads)
 pyftpdlib>=2.0.0
@@ -75,7 +74,6 @@ openpyxl>=3.1.0
 # 0.0.27 → 0.0.31 clears three CVEs in the parser surface that FastAPI
 # uses for multipart form bodies (CVE-2026-53538/53539/53540).
 python-multipart>=0.0.31
-aiofiles>=23.0.0
 
 # QR Code generation
 qrcode[pil]>=7.4.0
