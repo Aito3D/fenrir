@@ -291,7 +291,7 @@ export function CameraGrid({
     };
   }, []);
 
-  // Kiosk mode: on the fullscreen wall, hide cursor + toolbar after idle input
+  // Kiosk mode: on the fullscreen wall, hide the cursor after idle input
   const kioskIdle = useIdleHide(!!fullscreen, KIOSK_IDLE_MS);
   // The cursor is hidden on <body>, not on the grid wrapper: a mouse parked
   // over the page header or the clock still sat visible on the kiosk display.
@@ -404,9 +404,9 @@ export function CameraGrid({
 
   // Fullscreen wall: measure the box the grid can fill so tiles can be sized
   // to it (see computeWallFit). Width comes from the grid itself; height is
-  // whatever remains of the viewport below the grid's top edge. The kiosk
-  // toolbar above only fades (opacity), so the top edge is stable and only
-  // real resizes re-measure.
+  // whatever remains of the viewport below the grid's top edge. The toolbar
+  // is not rendered in fullscreen, so the top edge is stable and only real
+  // resizes re-measure.
   const [wallBox, setWallBox] = useState<{ width: number; height: number } | null>(null);
   useLayoutEffect(() => {
     if (!fullscreen) {
@@ -480,16 +480,18 @@ export function CameraGrid({
 
   return (
     <div>
-      <GridToolbar
-        canChangeQuality={canChangeQuality}
-        quality={gridParamsKey}
-        qualityPending={qualityMutation.isPending}
-        onQualityChange={handleQualityChange}
-        onRestart={handleRestart}
-        subscribeStats={subscribeStats}
-        getStatsSnapshot={getStatsSnapshot}
-        hidden={kioskHidden}
-      />
+      {/* Kiosk wall: no toolbar row, the tiles get the height instead */}
+      {!fullscreen && (
+        <GridToolbar
+          canChangeQuality={canChangeQuality}
+          quality={gridParamsKey}
+          qualityPending={qualityMutation.isPending}
+          onQualityChange={handleQualityChange}
+          onRestart={handleRestart}
+          subscribeStats={subscribeStats}
+          getStatsSnapshot={getStatsSnapshot}
+        />
+      )}
       <div
         ref={gridRef}
         className={`grid ${gapClass} ${wallFit ? 'justify-center' : GRID_LAYOUT_COLS[layout]}`}

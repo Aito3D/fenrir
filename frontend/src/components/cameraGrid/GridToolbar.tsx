@@ -41,8 +41,6 @@ export interface GridToolbarProps {
   onRestart: () => void;
   subscribeStats: (cb: () => void) => () => void;
   getStatsSnapshot: () => GridStreamStats;
-  /** Kiosk idle — fade the toolbar out (fullscreen wall, no recent input). */
-  hidden?: boolean;
 }
 
 /** Quality preset picker + stream refresh + live stats row above the wall. */
@@ -54,14 +52,13 @@ export function GridToolbar({
   onRestart,
   subscribeStats,
   getStatsSnapshot,
-  hidden,
 }: GridToolbarProps) {
   const { t } = useTranslation();
   // The preset is a server-side setting: changing it restarts producers and
   // affects every connected viewer — the hint keeps that from surprising users.
   const qualityHint = `${t('printers.cameraGrid.quality')} — ${t('printers.cameraGrid.qualityGlobalHint')}`;
   return (
-    <div className={`flex items-center justify-end gap-3 mb-2 tabular-nums transition-opacity duration-500 ${hidden ? 'opacity-0 pointer-events-none' : ''}`}>
+    <div className="flex items-center justify-end gap-3 mb-2 tabular-nums">
       {canChangeQuality && (
         <div className="flex h-6 items-center bg-bambu-dark rounded-md border border-bambu-dark-tertiary overflow-hidden" role="group" aria-label={qualityHint}>
           {QUALITY_OPTIONS.map(q => {

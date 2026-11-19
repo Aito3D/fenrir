@@ -10131,6 +10131,8 @@ export function PrintersPage() {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const expandedToolbarControlsRef = useRef<HTMLDivElement>(null);
   const expandedToolbarWidthRef = useRef(0);
+  // Kiosk = fullscreen camera wall: a passive TV display, nobody interacts.
+  const kiosk = fullscreen && pageView === 'camwall';
   const [compactToolbar, setCompactToolbar] = useState(false);
 
   const measureToolbar = useCallback(() => {
@@ -10174,6 +10176,7 @@ export function PrintersPage() {
     availableLocations.length,
     hideDisconnected,
     smartPlugCount,
+    kiosk, // the toolbar row unmounts in kiosk mode; re-observe when it returns
   ]);
 
   const renderFilterControls = (inMenu = false) => (
@@ -10435,9 +10438,27 @@ export function PrintersPage() {
     </>
   );
 
+  // Fullscreen toggle — hides nav chrome, banners, title, and bug report bubble
+  const fullscreenToggle = (
+    <button
+      type="button"
+      onClick={toggleFullscreen}
+      className={`h-8 w-8 flex items-center justify-center rounded-lg border transition-colors shrink-0 ${
+        fullscreen
+          ? 'bg-bambu-green border-bambu-green text-white'
+          : 'bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary'
+      }`}
+      title={fullscreen ? t('printers.exitFullscreen') : t('printers.fullscreen')}
+      aria-label={fullscreen ? t('printers.exitFullscreen') : t('printers.fullscreen')}
+      aria-pressed={fullscreen}
+    >
+      {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+    </button>
+  );
+
   return (
-    <div className="p-4 md:p-8">
-      <div className="space-y-3 mb-6 animate-topbar-in">
+    <div className={kiosk ? 'px-4 pb-4 pt-2 md:px-8 md:pb-8 md:pt-3' : 'p-4 md:p-8'}>
+      <div className={`space-y-3 ${kiosk ? 'mb-3' : 'mb-6'} animate-topbar-in`}>
         <div className="flex items-end justify-between gap-4 animate-rise-lg vt-page-title">
           <div>
             {!fullscreen && (
@@ -10448,10 +10469,18 @@ export function PrintersPage() {
             )}
             <StatusSummaryBar printers={printers} smartPlugs={smartPlugs} />
           </div>
-          {/* Camera-wall clock: right edge (over the fullscreen toggle below),
-              baseline-aligned with the status bar row */}
-          {fullscreen && pageView === 'camwall' && <CamWallClock />}
+          {/* Camera-wall clock + exit toggle: right edge, bottom-aligned with
+              the status bar row */}
+          {kiosk && (
+            <div className="flex items-end gap-3">
+              <CamWallClock />
+              {fullscreenToggle}
+            </div>
+          )}
         </div>
+        {/* Kiosk: no search/filter row — the wall gets the height. The exit
+            toggle moves up beside the clock (Escape also exits). */}
+        {!kiosk && (
         <div ref={toolbarRef} className="relative flex items-center gap-2">
           {/* Only show search bar when printers exist */}
           {printers && printers.length > 0 && (
@@ -10509,22 +10538,9 @@ export function PrintersPage() {
             </div>
           )}
 
-          {/* Fullscreen toggle — hides nav chrome, banners, title, and bug report bubble */}
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            className={`h-8 w-8 flex items-center justify-center rounded-lg border transition-colors shrink-0 ${
-              fullscreen
-                ? 'bg-bambu-green border-bambu-green text-white'
-                : 'bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary'
-            }`}
-            title={fullscreen ? t('printers.exitFullscreen') : t('printers.fullscreen')}
-            aria-label={fullscreen ? t('printers.exitFullscreen') : t('printers.fullscreen')}
-            aria-pressed={fullscreen}
-          >
-            {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
+          {fullscreenToggle}
         </div>
+        )}
       </div>
 
       {isLoading ? (
