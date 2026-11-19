@@ -11044,6 +11044,8 @@ export default {
     testNotConfigured: 'Heimdall is niet geconfigureerd',
   },
   calculator: {
+    createAitoCard: 'Aito-kaart maken',
+    createAitoCardReplaceBody: 'De lade voor nieuwe projecten bevat al werk dat nog niet is aangemaakt. Een kaart maken vanuit de calculator vervangt dit.',
     brand: 'Merk',
     material: 'Materiaal',
     title: 'Prijscalculator',

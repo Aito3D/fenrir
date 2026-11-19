@@ -1,6 +1,6 @@
 import { DEFAULT_COUNTRY_CODE, isSocialNetwork, parsePhone } from './clientDraft';
 import type { ClientDraft } from './clientDraft';
-import { freshenTaskDraft, isBlankTaskDraft, emptyTaskDraft } from './taskDraft';
+import { freshenTaskDraft, isBlankTaskDraft, emptyTaskDraft, roundUpTo50 } from './taskDraft';
 import type { TaskDraft } from './taskDraft';
 import { splitRecipientName } from './shippingDraft';
 import type { ShippingDraft } from './shippingDraft';
@@ -143,4 +143,48 @@ export function isBlankPersistedDraft(draft: PersistedDraft | null): boolean {
   // A contact the operator picked is content; the default walk-in one, which
   // the drawer fills in by itself, is not.
   return draft.client === null || draft.client.isDefault;
+}
+
+/** What the calculator hands over to a new card: the raw job inputs it priced
+ *  and the per-piece price (TTC) it showed. */
+export interface CalculatorSeedInput {
+  printerId: number;
+  filamentId: number;
+  weightG: number;
+  printingTimeH: number;
+  quantity: number;
+  unitPriceTtc: number;
+}
+
+/** A calculator result turned into a new-project draft with one printing task.
+ *
+ *  The price follows the drawer's own convention (`ImpressionFields`): the
+ *  per-piece price rounded up to the 50 tier, stored times quantity. When the
+ *  calculator priced extras the drawer does not (labour, modelling, applied
+ *  reality checks) the drawer therefore badges the figure "Manual" and keeps
+ *  it, which is the calculator's price surviving the hand-off. The client is
+ *  left to the drawer's default-contact effect. */
+export function seedFromCalculator(input: CalculatorSeedInput): PersistedDraft {
+  const quantity = Math.max(1, Math.floor(input.quantity || 1));
+  const task = emptyTaskDraft();
+  task.impression = {
+    ...task.impression,
+    printerId: input.printerId,
+    filamentId: input.filamentId,
+    weightG: input.weightG > 0 ? input.weightG : null,
+    // impression_time_min is an integer column; the calculator works in hours.
+    timeMin: input.printingTimeH > 0 ? Math.round(input.printingTimeH * 60) : null,
+    quantity,
+  };
+  task.impressionCost = input.unitPriceTtc > 0 ? roundUpTo50(input.unitPriceTtc) * quantity : null;
+  return {
+    tasks: [task],
+    client: null,
+    summaryText: '',
+    summaryEdited: false,
+    summarySignature: '',
+    shipping: null,
+    dueDate: '',
+    socialPrefilledFor: [],
+  };
 }

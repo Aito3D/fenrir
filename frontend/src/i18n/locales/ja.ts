@@ -11018,6 +11018,8 @@ export default {
 
   // Pricing Calculator
   calculator: {
+    createAitoCard: 'Aitoカードを作成',
+    createAitoCardReplaceBody: '新規プロジェクトのドロワーには、まだ作成されていない作業があります。計算機からカードを作成すると置き換えられます。',
     brand: 'ブランド',
     material: '材料',
     title: '計算機',

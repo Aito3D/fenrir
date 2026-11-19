@@ -10640,6 +10640,8 @@ export default {
 
   // Pricing Calculator
   calculator: {
+    createAitoCard: 'Aito 카드 만들기',
+    createAitoCardReplaceBody: '새 프로젝트 서랍에 아직 생성되지 않은 작업이 있습니다. 계산기에서 카드를 만들면 그 작업이 대체됩니다.',
     brand: '브랜드',
     material: '재료',
     title: '계산기',

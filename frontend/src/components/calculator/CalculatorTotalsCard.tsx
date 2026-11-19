@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { Copy, Crosshair, FileText, Receipt } from 'lucide-react';
+import { Copy, Crosshair, FileText, Kanban, Receipt } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '../Card';
 import { Button } from '../Button';
 import { Collapsible } from '../Collapsible';
@@ -27,6 +27,7 @@ export function CalculatorTotalsCard({
   selectedPrinterId = null,
   onSelectPrinter,
   onOpenQuote,
+  onCreateAitoCard,
 }: {
   result: PricingResult;
   segments: Segment[];
@@ -41,6 +42,8 @@ export function CalculatorTotalsCard({
   selectedPrinterId?: number | null;
   onSelectPrinter?: (id: number) => void;
   onOpenQuote?: () => void;
+  /** Seeds a new Aito card from this result; omitted without aito:create. */
+  onCreateAitoCard?: () => void;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -81,6 +84,11 @@ export function CalculatorTotalsCard({
           {onOpenQuote && (
             <Button variant="ghost" size="sm" onClick={onOpenQuote} aria-label={t('calculator.quote.open')} title={t('calculator.quote.open')}>
               <FileText className="w-4 h-4" />
+            </Button>
+          )}
+          {onCreateAitoCard && (
+            <Button variant="ghost" size="sm" onClick={onCreateAitoCard} aria-label={t('calculator.createAitoCard')} title={t('calculator.createAitoCard')}>
+              <Kanban className="w-4 h-4" />
             </Button>
           )}
         </span>

@@ -10946,6 +10946,8 @@ export default {
 
   // Pricing Calculator
   calculator: {
+    createAitoCard: 'Aito kartı oluştur',
+    createAitoCardReplaceBody: 'Yeni proje çekmecesinde henüz oluşturulmamış bir çalışma var. Hesaplayıcıdan kart oluşturmak onun yerini alır.',
     brand: 'Marka',
     material: 'Malzeme',
     title: 'Hesaplayıcı',

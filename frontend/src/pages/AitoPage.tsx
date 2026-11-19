@@ -219,6 +219,14 @@ export function AitoPage() {
 
 
   const { projectSeed, resetProjectSeed } = useNewFromProject({ canCreate, setShowModal });
+  // `?new=1` (the calculator's "Create Aito card"): the seed is already in the
+  // drawer's storage, so all that is left is to open it, once.
+  const [newParam, clearNewParam] = useDeepLinkParam('new');
+  useEffect(() => {
+    if (newParam === null) return;
+    clearNewParam();
+    if (canCreate) setShowModal(true);
+  }, [newParam, canCreate, clearNewParam]);
 
   // `/` jumps to the search box, as on most sites with one. Not while typing
   // in a field, and not while a panel or modal is up: the box sits behind it.

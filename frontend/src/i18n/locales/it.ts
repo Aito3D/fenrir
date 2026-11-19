@@ -11004,6 +11004,8 @@ export default {
 
   // Pricing Calculator
   calculator: {
+    createAitoCard: 'Crea scheda Aito',
+    createAitoCardReplaceBody: 'Il pannello del nuovo progetto contiene già un lavoro non ancora creato. Creare una scheda dal calcolatore lo sostituisce.',
     brand: 'Marchio',
     material: 'Materiale',
     title: 'Calcolatrice',
