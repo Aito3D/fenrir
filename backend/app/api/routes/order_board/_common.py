@@ -31,6 +31,8 @@ async def _guarded_email(
     content: dict,
     refused_detail: str,
     action: Callable[[], Awaitable[None]],
+    *,
+    keep_armed: tuple[type[Exception], ...] = (ZohoUnreachable,),
 ) -> None:
     """Send one document email: only to an address Books offered, once a minute per document and address."""
     if to.lower() not in {r["email"].lower() for r in content["recipients"]}:
@@ -41,7 +43,7 @@ async def _guarded_email(
     async def send() -> None:
         try:
             await action()
-        except ZohoUnreachable:
+        except keep_armed:
             raise  # Books may have sent it all the same: the guard stays armed
         except Exception:
             _EMAIL_GUARD.release(key)

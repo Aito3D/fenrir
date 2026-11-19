@@ -918,3 +918,17 @@ async def test_a_concurrent_watch_is_recovered_not_a_500(async_client, tokens, d
     r = await async_client.put("/api/v1/order-board/orders/so1/watch", headers=tokens["read"])
     assert (r.status_code, r.json()) == (200, {"watching": True})
     assert (await db_session.execute(select(func.count()).select_from(OrderWatch))).scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_an_invoice_email_with_an_ambiguous_answer_can_be_retried(async_client, tokens, db_session, invoice_mail):
+    from backend.app.services.zoho import ZohoAmbiguous
+
+    await _store_invoiced_order(db_session)
+    url, h, mail = f"{BASE}/invoices/inv1/email", tokens["both"], {"to": "moana@client.pf"}
+    invoice_mail["error"] = ZohoAmbiguous("502 gateway page")
+    r = await async_client.post(url, headers=h, json=mail)
+    assert r.status_code == 502
+    invoice_mail["error"] = None
+    r = await async_client.post(url, headers=h, json=mail)  # unchanged: the guard is released here
+    assert r.status_code == 200 and len(invoice_mail["sent"]) == 1

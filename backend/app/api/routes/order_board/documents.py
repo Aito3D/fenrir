@@ -19,6 +19,7 @@ from backend.app.services import order_board_actions, order_board_sync
 from backend.app.services.aito_client_rating import read_client_rating
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.order_board_payment import order_contact
+from backend.app.services.zoho import ZohoAmbiguous, ZohoUnreachable
 
 Kind = Literal["quote", "retainer"]
 
@@ -95,6 +96,7 @@ async def send_document_email(
         content,
         "That address is not a recipient of this document",
         lambda: order_board_actions.email_document(db, salesorder_id, kind, document, to, by=_by(user)),
+        keep_armed=(ZohoUnreachable, ZohoAmbiguous),  # a gateway page does not say Books did not send it
     )
     _logged(user, salesorder_id, f"{kind}_email")
     return {"board": await order_board_sync.read_board(db)}
@@ -114,6 +116,12 @@ def _sync_facts(row: dict) -> dict:
     }
 
 
+async def _refresh_busy_on_429(db: AsyncSession, salesorder_id: str) -> None:
+    # Inside _run's reach: a Books 429 must become ZohoBusy before _run maps it to a 502.
+    with order_board_sync._busy_on_rate_limit(salesorder_id):
+        await order_board_sync.refresh_order(db, salesorder_id)
+
+
 @router.post("/orders/{salesorder_id}/sync")
 async def sync_order(
     salesorder_id: str,
@@ -124,7 +132,7 @@ async def sync_order(
     if order_board_sync.zoho_busy():
         raise HTTPException(status_code=503, detail="Zoho is busy, try again shortly.")
     before = _sync_facts(await _run(order_board_actions.order_row_any(db, salesorder_id)))
-    await _run(order_board_sync.refresh_order(db, salesorder_id))
+    await _run(_refresh_busy_on_429(db, salesorder_id))
     after = _sync_facts(await _run(order_board_actions.order_row_any(db, salesorder_id)))
     _logged(user, salesorder_id, "sync")
     return {

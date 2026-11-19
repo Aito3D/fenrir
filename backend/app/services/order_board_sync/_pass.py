@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.order_board_doc import OrderBoardDoc
+from backend.app.services import order_board_events
 from backend.app.services.aito_poll_watermark import format_books_time
 from backend.app.services.inbox import broadcast_pending
 from backend.app.services.order_board_payment import quote_number_missing
@@ -245,6 +246,30 @@ async def _sync(db: AsyncSession) -> None:
     await _reload_stock(db, stored, settings)
 
 
+async def _record_void_failed(db: AsyncSession, salesorder_id: str, number: str) -> None:
+    await order_board_events.record(
+        db, salesorder_id, "order.void_failed", actor_class="system", detail={"order": number}
+    )
+
+
+async def _void_pending_drafts(db: AsyncSession) -> None:
+    """Void the half-made orders a rate-limited confirm left behind. A 429 propagates (the entry stays, the window
+    reopens); any other failure is named in an order event and the draft is dropped."""
+    for salesorder_id, number in list(_common._pending_voids.items()):
+        try:
+            await zoho_service.void_salesorder(db, salesorder_id)
+        except ZohoRateLimited:
+            raise
+        except Exception as e:
+            logger.error(
+                "Order board: voiding %s failed (%s), a draft order is left in Books", number, type(e).__name__
+            )
+            await _observe(db, "void_failed", _record_void_failed, salesorder_id, number)
+            await db.commit()
+            await broadcast_pending(db)
+        del _common._pending_voids[salesorder_id]
+
+
 async def run_pass(db: AsyncSession) -> bool:
     """One bounded sync pass. False when nothing ran: another pass is already
     running, or Books asked us to back off and that window is still open.
@@ -258,6 +283,7 @@ async def run_pass(db: AsyncSession) -> bool:
         return False
     async with _pass_lock:
         try:
+            await _void_pending_drafts(db)
             await _sync(db)
         except (ZohoUpstreamError, ZohoNotConfiguredError) as e:
             await db.rollback()

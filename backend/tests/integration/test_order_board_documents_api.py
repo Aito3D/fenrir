@@ -1,6 +1,8 @@
 """The Order Board's document routes: quote and deposit PDF/email (ids checked against the stored order), the
 per-order sync report, customer credit, client rating, contact edit and the manual credit apply. Books is stubbed."""
 
+import time
+
 import pytest
 from sqlalchemy import select
 
@@ -8,7 +10,8 @@ from backend.app.api.routes import aito as aito_routes
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_sync
-from backend.app.services.zoho import zoho_service
+from backend.app.services.order_board_sync import _common as sync_common
+from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 from backend.tests.unit.test_order_board_routes import tokens  # noqa: F401
 
 BASE = "/api/v1/order-board/orders/so1"
@@ -119,6 +122,42 @@ async def test_sync_reports_what_changed(async_client, tokens, order, monkeypatc
         "state": ("partial", "paid"),
         "invoices": ([], ["FA-1"]),
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "status", "window"),
+    [
+        (ZohoRateLimited("429", retry_after=30), 503, True),
+        (ZohoUpstreamError("Books said no"), 502, False),
+    ],
+)
+async def test_sync_refresh_429_is_busy_and_opens_the_window(
+    async_client,
+    tokens,
+    order,
+    monkeypatch,
+    error,
+    status,
+    window,  # noqa: F811
+):
+    async def board_row(db, salesorder_id):
+        return {"id": "so1", "payment": {}}
+
+    async def refresh(db, salesorder_id):
+        raise error
+
+    monkeypatch.setattr(order_board_sync, "find_board_row", board_row)
+    monkeypatch.setattr(order_board_sync, "refresh_order", refresh)
+    monkeypatch.setattr(sync_common, "_rate_limited_until", 0.0)
+    r = await async_client.post(f"{BASE}/sync", headers=tokens["both"])
+    assert r.status_code == status
+    if window:
+        assert r.json()["detail"] == "Zoho is busy, try again shortly."
+    else:
+        assert r.json()["detail"] == "Books said no"
+    assert (sync_common._rate_limited_until > time.monotonic() + 20) is window
+    monkeypatch.setattr(sync_common, "_rate_limited_until", 0.0)
 
 
 @pytest.mark.asyncio
@@ -243,3 +282,16 @@ async def test_quote_email_waits_for_a_write_on_the_same_order(async_client, tok
     assert r.status_code == 409 and quote_mail["sent"] == []
     r = await async_client.post(url, headers=h, json=mail)
     assert r.status_code == 200 and len(quote_mail["sent"]) == 1  # the busy refusal released the guard
+
+
+@pytest.mark.asyncio
+async def test_a_quote_email_with_an_ambiguous_answer_cannot_be_resent(async_client, tokens, order, quote_mail):  # noqa: F811
+    from backend.app.services.zoho import ZohoAmbiguous
+
+    url, h, mail = f"{BASE}/documents/quote/est-1/email", tokens["both"], {"to": "ana@example.com"}
+    quote_mail["error"] = ZohoAmbiguous("502 gateway page")
+    r = await async_client.post(url, headers=h, json=mail)
+    assert r.status_code == 502
+    quote_mail["error"] = None
+    r = await async_client.post(url, headers=h, json=mail)  # Books may have sent it: the guard stays armed
+    assert r.status_code == 409 and quote_mail["sent"] == []

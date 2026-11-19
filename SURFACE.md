@@ -803,6 +803,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -838,6 +839,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit

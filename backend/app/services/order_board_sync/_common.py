@@ -37,6 +37,8 @@ _pass_lock = asyncio.Lock()
 _detail_locks: dict[str, asyncio.Lock] = {}
 # time.monotonic() before which Books asked us not to call again (429).
 _rate_limited_until = 0.0
+# shortcut: pending drafts live in memory and are lost on restart; persist if that matters
+_pending_voids: dict[str, str] = {}  # salesorder_id -> number of a half-made draft whose void waits out a 429 window
 # Set to cut the loop's sleep short (settings saved). Created by the loop
 # itself, so it belongs to the loop's event loop.
 _wake: asyncio.Event | None = None

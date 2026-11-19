@@ -16,3 +16,12 @@ describe('orderEventLabel order.cancel_failed', () => {
     });
   });
 });
+
+describe('orderEventLabel order.void_failed', () => {
+  it('names the draft left in Books', () => {
+    expect(orderEventLabel({ kind: 'order.void_failed', detail: { order: 'SO-00009' } }, 'XPF')).toEqual({
+      key: 'orders.history.orderVoidFailed',
+      params: { order: 'SO-00009' },
+    });
+  });
+});

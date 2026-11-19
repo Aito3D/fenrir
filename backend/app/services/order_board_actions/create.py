@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
 from backend.app.services.order_board_actions._common import OrderActionRefused, _best_effort_refresh, _log, _num
+from backend.app.services.order_board_sync import _common as sync_common
 from backend.app.services.zoho import ZohoRateLimited, zoho_service
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,8 @@ async def _create(
         logger.warning("Order board: confirming the new order %s failed (%s)", number, type(e).__name__)
         if isinstance(e, ZohoRateLimited):
             sync.open_rate_limit_window(e)
+            sync_common._pending_voids[salesorder_id] = number  # a void now would meet the same 429; a pass sends it
+            raise sync.ZohoBusy(customer_id) from e
         try:  # nothing half-made may stay in Books
             await zoho_service.void_salesorder(db, salesorder_id)
         except Exception as void_error:
@@ -140,8 +143,6 @@ async def _create(
                 number,
                 type(void_error).__name__,
             )
-        if isinstance(e, ZohoRateLimited):
-            raise sync.ZohoBusy(customer_id) from e
         raise OrderActionRefused("create_failed") from e
     finally:
         sync.note_write(salesorder_id)

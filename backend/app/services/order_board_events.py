@@ -30,6 +30,7 @@ KINDS: dict[str, str] = {
             "payment.received",
             "order.cancelled",
             "order.cancel_failed",
+            "order.void_failed",
             "order.finished",
             "note.added",
         ),

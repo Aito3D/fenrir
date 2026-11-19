@@ -879,6 +879,7 @@
   "order.edited": "orders.history.short.edited",
   "order.cancelled": "orders.history.short.cancelled",
   "order.cancel_failed": "orders.history.short.cancelFailed",
+  "order.void_failed": "orders.history.short.voidFailed",
   "order.finished": "orders.history.short.finished",
   "note.added": "orders.history.short.note",
   "sms.sent": "orders.history.short.sms",
@@ -1805,6 +1806,80 @@
     }
    }
   ],
+  "order.void_failed": [
+   {
+    "key": "orders.history.orderVoidFailed",
+    "params": {
+     "order": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderVoidFailed",
+    "params": {
+     "order": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderVoidFailed",
+    "params": {
+     "order": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderVoidFailed",
+    "params": {
+     "order": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderVoidFailed",
+    "params": {
+     "order": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderVoidFailed",
+    "params": {
+     "order": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderVoidFailed",
+    "params": {
+     "order": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderVoidFailed",
+    "params": {
+     "order": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderVoidFailed",
+    "params": {
+     "order": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderVoidFailed",
+    "params": {
+     "order": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderVoidFailed",
+    "params": {
+     "order": "—"
+    }
+   },
+   {
+    "key": "orders.history.orderVoidFailed",
+    "params": {
+     "order": "—"
+    }
+   }
+  ],
   "order.finished": [
    {
     "key": "orders.history.orderFinished"
@@ -2558,6 +2633,20 @@
    null
   ],
   "order.cancel_failed": [
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null
+  ],
+  "order.void_failed": [
    null,
    null,
    null,

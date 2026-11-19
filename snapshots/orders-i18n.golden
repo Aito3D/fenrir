@@ -2,7 +2,7 @@
 ### stdout:
 locale files (16): de.ts en.ts es.ts fr.ts it.ts ja.ts ko.ts nl.ts pl.ts pt-BR.ts ru.ts sv.ts tr.ts uk.ts zh-CN.ts zh-TW.ts
 extra literal keys read by the scope (96): aito.applyDepositDone aito.applyDepositError aito.clientEdit aito.clientEditFailed aito.clientEmail aito.clientPhone aito.contacted aito.downloadQuote aito.downloadRetainer aito.followups.hint aito.followups.longest aito.followups.notCollected aito.followups.title aito.forceSyncStepCredit aito.history.title aito.invoiceEmailFailed aito.invoiceEmailed aito.noClient aito.panelTabAttention aito.panelTabDetails aito.payment.cellManual aito.payment.cellManualTitle aito.payment.linkTitle aito.printFailed aito.printQuote aito.printRetainer aito.printShippingLabel aito.quoteEmailFailed aito.quoteEmailed aito.quoteOpenInZoho aito.retainerEmailFailed aito.retainerEmailed aito.retainerLabel aito.retainerPrintFailed aito.sendInvoice aito.sendInvoiceLoadFailed aito.sendInvoiceTitle aito.sendQuote aito.sendQuoteLoadFailed aito.sendQuoteTitle aito.sendRetainer aito.sendRetainerLoadFailed aito.sendRetainerTitle aito.shippingIsland aito.shippingLabelPrintFailed aito.shippingPhone aito.shippingRecipient aito.shippingService aito.smsGenerateFailed aito.smsGenerating aito.smsMaybeSent aito.smsMessageLabel aito.smsNoPhone aito.smsPickup aito.smsPickupShort aito.smsRelayUnreachable aito.smsSend aito.smsSendFailed aito.smsSent aito.smsTitle aito.sync aito.syncUpToDate aito.track.codeTooMany aito.track.error aito.track.invalidEnterCode aito.track.invalidTitle aito.track.order.appHint aito.track.order.invalidBody aito.track.order.line.handedOn aito.track.order.linesHeading aito.track.order.pay.heading aito.track.order.pay.left aito.track.order.pay.methods aito.track.order.pay.paidSub aito.track.order.pay.settled aito.track.order.pay.total aito.track.order.pickup aito.track.order.pickupLink aito.track.order.placed aito.track.order.question aito.track.order.ref aito.track.order.showAll aito.track.order.title aito.track.retry aito.track.retrying aito.track.updated aito.trackingCopied aito.trackingCopy aito.trackingCopyFailed aito.trackingNeedsExternalUrl common.cancel common.error common.errorLoading common.loading common.save common.saving
---- en values (524 keys)
+--- en values (526 keys)
 aito.applyDepositDone = "{{amount}} applied to {{invoice}}"  placeholders={{amount}},{{invoice}}
 aito.applyDepositError = "The deposit could not be applied"
 aito.clientEdit = "Edit the client"
@@ -263,6 +263,7 @@ orders.history.orderReady = "Stock arrived: the order is ready to ship"
 orders.history.orderReceived = "Order received"
 orders.history.orderReceivedQuote = "Order created from quote {{reference}}"  placeholders={{reference}}
 orders.history.orderReceivedShopify = "Order received from Shopify {{reference}}"  placeholders={{reference}}
+orders.history.orderVoidFailed = "the draft order {{order}} could not be voided in Books and was left there"  placeholders={{order}}
 orders.history.packageCreated = "created package {{package}}"  placeholders={{package}}
 orders.history.packageDeleted = "deleted package {{package}}"  placeholders={{package}}
 orders.history.packageEdited = "edited package {{package}}"  placeholders={{package}}
@@ -298,6 +299,7 @@ orders.history.short.shipped = "Shipped"
 orders.history.short.sms = "Pickup SMS"
 orders.history.short.terminal = "Card terminal"
 orders.history.short.trackingViewed = "Tracking opened"
+orders.history.short.voidFailed = "Draft left in Books"
 orders.history.short.zohoEdited = "Edited in Zoho"
 orders.history.smsSent = "sent the pickup SMS"
 orders.history.sub.credit = "Credit applied {{amount}}"  placeholders={{amount}}
@@ -528,7 +530,7 @@ orders.watch.off = "Watch"
 orders.watch.on = "Watching"
 settings.tabs.orders = "Orders"
 
---- de.ts keys=524 values-sha256=356f4d18da46400b
+--- de.ts keys=526 values-sha256=8d149f279c6a8ad3
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -792,6 +794,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -827,6 +830,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -1057,7 +1061,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- en.ts keys=524 values-sha256=9442e2c3ce0a2e30
+--- en.ts keys=526 values-sha256=c6a0d8034c73d70a
 missing=[] extra=[]
 same-as-en=0 non-string=[]
 placeholder-drift=[]
@@ -1321,6 +1325,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -1356,6 +1361,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -1586,7 +1592,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- es.ts keys=524 values-sha256=1335ca7c7ff38fc7
+--- es.ts keys=526 values-sha256=0150791bf8187b16
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
@@ -1850,6 +1856,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -1885,6 +1892,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -2115,7 +2123,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- fr.ts keys=524 values-sha256=fecfbfc148ddacb8
+--- fr.ts keys=526 values-sha256=937e9516001e4fa6
 missing=[] extra=[]
 same-as-en=5 non-string=[]
 placeholder-drift=[]
@@ -2379,6 +2387,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -2414,6 +2423,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -2644,7 +2654,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- it.ts keys=524 values-sha256=d922db6d44b1cd2a
+--- it.ts keys=526 values-sha256=67016fd560df1ae6
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -2908,6 +2918,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -2943,6 +2954,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -3173,7 +3185,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- ja.ts keys=524 values-sha256=6dbf100b24166410
+--- ja.ts keys=526 values-sha256=b8fe3b3dff3e31f2
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -3437,6 +3449,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -3472,6 +3485,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -3702,7 +3716,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- ko.ts keys=524 values-sha256=34c8f85bb2d96e8d
+--- ko.ts keys=526 values-sha256=7b79dbdbc4dc084d
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -3966,6 +3980,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -4001,6 +4016,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -4231,7 +4247,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- nl.ts keys=524 values-sha256=62cfccbee6118f5c
+--- nl.ts keys=526 values-sha256=a9d57fa7d54bcf09
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -4495,6 +4511,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -4530,6 +4547,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -4760,7 +4778,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- pl.ts keys=524 values-sha256=d2b82b4b1bcd67d7
+--- pl.ts keys=526 values-sha256=16cff5199eb5f919
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -5024,6 +5042,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -5059,6 +5078,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -5289,7 +5309,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- pt-BR.ts keys=524 values-sha256=70287a9510e3bb29
+--- pt-BR.ts keys=526 values-sha256=9ee7ef9d4055672d
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
@@ -5553,6 +5573,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -5588,6 +5609,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -5818,7 +5840,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- ru.ts keys=524 values-sha256=b70f99988adc9d01
+--- ru.ts keys=526 values-sha256=3ebf290da227838d
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -6082,6 +6104,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -6117,6 +6140,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -6347,7 +6371,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- sv.ts keys=524 values-sha256=9e80373093d1ad93
+--- sv.ts keys=526 values-sha256=3d0c9f3d84e5214a
 missing=[] extra=[]
 same-as-en=2 non-string=[]
 placeholder-drift=[]
@@ -6611,6 +6635,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -6646,6 +6671,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -6876,7 +6902,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- tr.ts keys=524 values-sha256=d55c2dfac2834301
+--- tr.ts keys=526 values-sha256=b301b00d444af832
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -7140,6 +7166,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -7175,6 +7202,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -7405,7 +7433,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- uk.ts keys=524 values-sha256=256192ace4bb2ada
+--- uk.ts keys=526 values-sha256=0aae3647c431f81a
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -7669,6 +7697,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -7704,6 +7733,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -7934,7 +7964,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- zh-CN.ts keys=524 values-sha256=95494de0736142c8
+--- zh-CN.ts keys=526 values-sha256=d22d8784abe2d002
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -8198,6 +8228,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -8233,6 +8264,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit
@@ -8463,7 +8495,7 @@ orders.watch.off
 orders.watch.on
 settings.tabs.orders
 
---- zh-TW.ts keys=524 values-sha256=5fb732620715ba09
+--- zh-TW.ts keys=526 values-sha256=de779230b2f67695
 missing=[] extra=[]
 same-as-en=1 non-string=[]
 placeholder-drift=[]
@@ -8727,6 +8759,7 @@ orders.history.orderReady
 orders.history.orderReceived
 orders.history.orderReceivedQuote
 orders.history.orderReceivedShopify
+orders.history.orderVoidFailed
 orders.history.packageCreated
 orders.history.packageDeleted
 orders.history.packageEdited
@@ -8762,6 +8795,7 @@ orders.history.short.shipped
 orders.history.short.sms
 orders.history.short.terminal
 orders.history.short.trackingViewed
+orders.history.short.voidFailed
 orders.history.short.zohoEdited
 orders.history.smsSent
 orders.history.sub.credit

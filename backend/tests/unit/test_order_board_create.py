@@ -7,8 +7,10 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.models.order_board_doc import OrderBoardDoc
+from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_actions as actions, order_board_sync as sync
 from backend.app.services.order_board_actions import create as create_module
+from backend.app.services.order_board_sync import _common as sync_common
 from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 from backend.tests.unit.test_order_board_actions import events_of
 from backend.tests.unit.test_order_board_sync import (  # noqa: F401
@@ -28,9 +30,11 @@ ITEMS = {
 def no_ref_left_over():
     create_module._created.clear()
     create_module._ref_locks.clear()
+    sync_common._pending_voids.clear()
     yield
     create_module._created.clear()
     create_module._ref_locks.clear()
+    sync_common._pending_voids.clear()
 
 
 @pytest.fixture
@@ -223,23 +227,67 @@ async def test_a_failure_after_the_confirm_never_creates_twice(db_session, books
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("void_fails", [False, True])
-async def test_rate_limited_confirm_voids_and_is_busy(db_session, books, monkeypatch, caplog, void_fails):
+async def test_rate_limited_confirm_sends_no_void_and_remembers_the_draft(db_session, books):
     books.open_error = ZohoRateLimited("429", retry_after=30)
-    if void_fails:
-
-        async def void_boom(db, salesorder_id):
-            raise ZohoRateLimited("429", retry_after=30)
-
-        monkeypatch.setattr(zoho_service, "void_salesorder", void_boom)
     with pytest.raises(sync.ZohoBusy):
         await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-5", by=None)
     assert sync.zoho_busy()
-    assert books.voided == ([] if void_fails else ["9"])
+    assert books.voided == []
+    assert sync_common._pending_voids == {"9": "SO-00009"}
     assert await _docs(db_session) == []
     assert create_module._created == {}
-    if void_fails:
-        assert any(r.levelname == "ERROR" and "draft order is left in Books" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_a_pass_after_the_window_voids_the_pending_draft(db_session, books):
+    sync_common._pending_voids["9"] = "SO-00009"
+    assert await sync.run_pass(db_session) is True
+    assert books.voided == ["9"]
+    assert sync_common._pending_voids == {}
+
+
+@pytest.mark.asyncio
+async def test_a_pass_inside_the_window_keeps_the_draft_and_a_429_reopens_it(db_session, books, monkeypatch):
+    sync_common._pending_voids["9"] = "SO-00009"
+    assert await sync.run_pass(db_session) is True  # window closed: voided
+
+    sync_common._pending_voids["8"] = "SO-00008"
+
+    async def void_429(db, salesorder_id):
+        raise ZohoRateLimited("429", retry_after=30)
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_429)
+    assert await sync.run_pass(db_session) is True
+    assert sync.zoho_busy()
+    assert sync_common._pending_voids == {"8": "SO-00008"}
+    assert await sync.run_pass(db_session) is False  # inside the window nothing is sent
+
+
+@pytest.mark.asyncio
+async def test_a_failing_deferred_void_records_an_event_and_drops_the_draft(db_session, books, monkeypatch):
+    sync_common._pending_voids["9"] = "SO-00009"
+
+    async def void_boom(db, salesorder_id):
+        raise ZohoUpstreamError("void boom")
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_boom)
+    await sync.run_pass(db_session)
+    assert sync_common._pending_voids == {}
+    events = (
+        (await db_session.execute(select(OrderBoardEvent).where(OrderBoardEvent.kind == "order.void_failed")))
+        .scalars()
+        .all()
+    )
+    assert [(e.salesorder_id, e.detail) for e in events] == [("9", {"order": "SO-00009"})]
+
+
+@pytest.mark.asyncio
+async def test_a_non_rate_limited_confirm_failure_still_voids_at_once(db_session, books):
+    books.open_error = ZohoUpstreamError("open boom")
+    with pytest.raises(actions.OrderActionRefused):
+        await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-6", by=None)
+    assert books.voided == ["9"]
+    assert sync_common._pending_voids == {}
 
 
 @pytest.mark.asyncio

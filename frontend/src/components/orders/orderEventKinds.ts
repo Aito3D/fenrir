@@ -18,6 +18,7 @@ const LABEL_KEY: Record<string, string> = {
   'order.edited': 'orders.history.orderEdited',
   'order.cancelled': 'orders.history.orderCancelled',
   'order.cancel_failed': 'orders.history.orderCancelFailed',
+  'order.void_failed': 'orders.history.orderVoidFailed',
   'order.finished': 'orders.history.orderFinished',
   'note.added': 'orders.history.noteAdded',
   'sms.sent': 'orders.history.smsSent',
@@ -49,6 +50,7 @@ export const SHORT_LABEL_KEY: Record<string, string> = {
   'order.edited': 'orders.history.short.edited',
   'order.cancelled': 'orders.history.short.cancelled',
   'order.cancel_failed': 'orders.history.short.cancelFailed',
+  'order.void_failed': 'orders.history.short.voidFailed',
   'order.finished': 'orders.history.short.finished',
   'note.added': 'orders.history.short.note',
   'sms.sent': 'orders.history.short.sms',
@@ -89,6 +91,8 @@ export function orderEventLabel(
       return { key: LABEL_KEY[event.kind], params: { picklist: text(d.picklist) } };
     case 'order.cancel_failed':
       return { key: LABEL_KEY[event.kind], params: { packages: list(d.packages), picklists: list(d.picklists) } };
+    case 'order.void_failed':
+      return { key: LABEL_KEY[event.kind], params: { order: text(d.order) } };
     case 'invoice.created':
     case 'invoice.emailed':
       return { key: LABEL_KEY[event.kind], params: { invoice: text(d.invoice) } };
