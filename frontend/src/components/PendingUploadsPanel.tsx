@@ -180,7 +180,7 @@ export function PendingUploadsPanel() {
   const { data: uploads, isLoading: uploadsLoading } = useQuery({
     queryKey: ['pending-uploads'],
     queryFn: pendingUploadsApi.list,
-    refetchInterval: 10000, // Refresh every 10 seconds
+    // No poll: the WebSocket's pending_uploads_changed invalidates this key.
   });
 
   // Fetch projects for dropdown. Nothing pending is filed anywhere yet, so

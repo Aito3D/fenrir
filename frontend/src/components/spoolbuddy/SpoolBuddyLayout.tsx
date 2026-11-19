@@ -148,7 +148,6 @@ export function SpoolBuddyLayout() {
     queries: printers.map((printer: Printer) => ({
       queryKey: ['printerStatus', printer.id],
       queryFn: () => api.getPrinterStatus(printer.id),
-      refetchInterval: 10000,
       select: (data: PrinterStatus) => ({ connected: data?.connected }),
     })),
   });

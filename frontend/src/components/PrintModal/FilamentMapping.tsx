@@ -99,7 +99,7 @@ export function FilamentMapping({
 
   // Fetch printer status
   const { data: printerStatus } = useQuery({
-    queryKey: ['printer-status', printerId],
+    queryKey: ['printerStatus', printerId],
     queryFn: () => api.getPrinterStatus(printerId),
     enabled: !!printerId,
   });
@@ -339,7 +339,7 @@ export function FilamentMapping({
       await api.refreshPrinterStatus(printerId);
       // Wait a moment for printer to respond, then refetch
       await new Promise((r) => setTimeout(r, 500));
-      await queryClient.refetchQueries({ queryKey: ['printer-status', printerId] });
+      await queryClient.refetchQueries({ queryKey: ['printerStatus', printerId] });
     } finally {
       setIsRefreshing(false);
     }
