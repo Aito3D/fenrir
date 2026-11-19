@@ -8,16 +8,17 @@ import uuid
 import zipfile
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import cast
 
 from fastapi import HTTPException
-from sqlalchemy import delete, false, func, or_, select, true, update
+from sqlalchemy import delete, event, false, func, or_, select, true, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.config import settings
 from backend.app.core.database import async_session, run_with_retry
@@ -1427,6 +1428,8 @@ class PrintScheduler:
 
     def __init__(self):
         self._running = False
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._wake_event = asyncio.Event()
         self._check_interval = 30  # seconds
         # After a pass that actually dispatched something, loop again almost
         # immediately instead of sleeping the full interval (#2555). A dispatch
@@ -1650,6 +1653,9 @@ class PrintScheduler:
     async def run(self):
         """Main loop - check queue every interval."""
         self._running = True
+        self._loop = asyncio.get_running_loop()
+        # Inherited by every task this loop spawns, so the scheduler's own commits never wake it.
+        _in_scheduler.set(True)
         logger.info("Print scheduler started")
 
         await self._clear_stale_dispatch_claims(at_startup=True)
@@ -1670,7 +1676,19 @@ class PrintScheduler:
 
             # Re-check quickly after a productive pass so a draining batch does
             # not stall behind the idle interval; otherwise sleep normally (#2555).
-            await asyncio.sleep(self._fast_check_interval if dispatched else self._check_interval)
+            # A queue commit from outside the scheduler (wake()) cuts the sleep short.
+            try:
+                await asyncio.wait_for(
+                    self._wake_event.wait(), self._fast_check_interval if dispatched else self._check_interval
+                )
+            except TimeoutError:
+                pass
+            self._wake_event.clear()
+
+    def wake(self) -> None:
+        """Run the next pass now instead of after the sleep. Safe from any thread."""
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self._wake_event.set)
 
     async def _close_stranded_printing_items(self) -> None:
         """Close a ``printing`` row the completion event never closed (#2829).
@@ -11497,3 +11515,25 @@ class PrintScheduler:
 
 # Global scheduler instance
 scheduler = PrintScheduler()
+
+# True inside the scheduler loop and the tasks it spawns (see PrintScheduler.run).
+_in_scheduler: ContextVar[bool] = ContextVar("_in_scheduler", default=False)
+
+
+@event.listens_for(Session, "before_flush")
+def _flag_queue_change(session: Session, _flush_context: object, _instances: object) -> None:
+    """Mark a session that adds or edits a queue item outside the scheduler, so its commit wakes the loop."""
+    if not _in_scheduler.get() and any(isinstance(o, PrintQueueItem) for o in (*session.new, *session.dirty)):
+        session.info["_wake_scheduler"] = True
+
+
+@event.listens_for(Session, "after_commit")
+def _wake_on_queue_commit(session: Session) -> None:
+    # A job the operator just queued starts within a second instead of up to 30 s later.
+    if session.info.pop("_wake_scheduler", False):
+        scheduler.wake()
+
+
+@event.listens_for(Session, "after_rollback")
+def _drop_queue_wake(session: Session) -> None:
+    session.info.pop("_wake_scheduler", None)
