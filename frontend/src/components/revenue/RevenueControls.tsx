@@ -11,7 +11,9 @@ import type { CustomerSegment, RangePresetId, RevenueGranularity, RevenueKind } 
 export const PICK_CLS = `inline-flex items-center gap-1.5 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-3 py-1.5 text-[13px] text-bambu-gray-light hover:text-white disabled:opacity-40 disabled:hover:text-bambu-gray-light ${focusRingCls}`;
 const MENU_ITEM = `w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors ${focusRingCls}`;
 const menuItemCls = (on: boolean) => `${MENU_ITEM} ${on ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white'}`;
-const DATE_INPUT = `rounded-md border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1 text-sm text-white ${focusRingCls}`;
+const DATE_INPUT = `rounded-md border bg-bambu-dark px-2 py-1 text-sm text-white ${focusRingCls}`;
+// The error border of `inputErrorCls`, without its full-width form sizing.
+const dateInputCls = (bad: boolean) => `${DATE_INPUT} ${bad ? 'border-status-error/70' : 'border-bambu-dark-tertiary'}`;
 
 /** A trigger and the menu hanging under it, the `TimeframeSelector` way (backdrop click and Escape close it). */
 export function RevenuePopover(p: {
@@ -124,13 +126,21 @@ export function RevenueControls(p: {
   const day = (d: string) => short.format(new Date(`${d}T00:00:00Z`));
   const rangeLabel =
     p.range.preset === 'custom' ? t('revenue.controls.custom') : p.range.preset === 'default' ? t('revenue.controls.auto') : t(`revenue.controls.${PRESET_KEY[p.range.preset]}`);
-  // An incomplete or inverted pair stays a local draft; only a valid one becomes the range.
-  const [draft, setDraft] = useState<{ from: string; to: string } | null>(null);
-  const customFrom = draft?.from ?? (p.range.preset === 'custom' ? p.range.from : p.from);
-  const customTo = draft?.to ?? (p.range.preset === 'custom' ? p.range.to : p.to);
+  // An incomplete, inverted or out-of-bounds pair stays a local draft, tied to the range it was typed
+  // against: once the applied range moves (stepping, granularity, a preset) the draft is ignored.
+  const appliedFrom = p.range.preset === 'custom' ? p.range.from : p.from;
+  const appliedTo = p.range.preset === 'custom' ? p.range.to : p.to;
+  const appliedKey = `${p.granularity}|${p.range.preset}|${appliedFrom}|${appliedTo}`;
+  const [stored, setDraft] = useState<{ key: string; from: string; to: string } | null>(null);
+  const draft = stored?.key === appliedKey ? stored : null;
+  const customFrom = draft?.from ?? appliedFrom;
+  const customTo = draft?.to ?? appliedTo;
+  const inverted = !!customFrom && !!customTo && customFrom > customTo;
+  const fromBad = !!draft && (!customFrom || customFrom < REVENUE_HISTORY_START || inverted);
+  const toBad = !!draft && (!customTo || customTo > p.today || inverted);
   const editCustom = (next: { from: string; to: string }) => {
     const valid = next.from && next.to && REVENUE_HISTORY_START <= next.from && next.from <= next.to && next.to <= p.today;
-    setDraft(valid ? null : next);
+    setDraft(valid ? null : { key: appliedKey, ...next });
     if (valid) p.onRange({ preset: 'custom', ...next });
   };
   const segmentLabel = (s: CustomerSegment | null) => t(`revenue.filters.segments.${s ?? 'all'}`);
@@ -161,10 +171,10 @@ export function RevenueControls(p: {
               <div className="space-y-1.5 border-t border-bambu-dark-tertiary pt-2">
                 <p className="px-1 text-xs uppercase tracking-wide text-bambu-gray">{t('revenue.controls.custom')}</p>
                 <div className="flex items-center gap-1.5">
-                  <input type="date" aria-label={t('revenue.controls.from')} className={DATE_INPUT} min={REVENUE_HISTORY_START} max={p.today} value={customFrom}
+                  <input type="date" aria-label={t('revenue.controls.from')} aria-invalid={fromBad || undefined} className={dateInputCls(fromBad)} min={REVENUE_HISTORY_START} max={p.today} value={customFrom}
                     onChange={(e) => editCustom({ from: e.target.value, to: customTo })} />
                   <span aria-hidden className="text-sm text-bambu-gray">→</span>
-                  <input type="date" aria-label={t('revenue.controls.to')} className={DATE_INPUT} min={REVENUE_HISTORY_START} max={p.today} value={customTo}
+                  <input type="date" aria-label={t('revenue.controls.to')} aria-invalid={toBad || undefined} className={dateInputCls(toBad)} min={REVENUE_HISTORY_START} max={p.today} value={customTo}
                     onChange={(e) => editCustom({ from: customFrom, to: e.target.value })} />
                 </div>
               </div>

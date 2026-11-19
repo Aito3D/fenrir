@@ -144,6 +144,50 @@ describe('RevenueControls — range popover', () => {
     expect(onRange).toHaveBeenCalledWith({ preset: 'custom', from: '2025-09-01', to: '2025-12-31' });
   });
 
+  const rangeEl = (granularity: RevenueGranularity, range: RangeChoice, onRange = vi.fn()) => (
+    <RevenueControls
+      granularity={granularity} range={range} from="2025-01-01" to="2025-06-30" today="2026-11-19" canPrev canNext
+      kind={null} segment={null} showSegment
+      onGranularity={vi.fn()} onRange={onRange} onShift={vi.fn()} onKind={vi.fn()} onSegment={vi.fn()}
+    />
+  );
+  const typeInverted = () => {
+    fireEvent.click(screen.getByRole('button', { name: /Custom/ }));
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2025-09-01' } });
+    expect(screen.getByLabelText('From')).toHaveValue('2025-09-01');
+  };
+
+  it('drops the draft when the applied range moves (stepping)', () => {
+    const { rerender } = render(rangeEl('month', { preset: 'custom', from: '2025-01-01', to: '2025-06-30' }));
+    typeInverted();
+    rerender(rangeEl('month', { preset: 'custom', from: '2025-02-01', to: '2025-07-31' }));
+    expect(screen.getByLabelText('From')).toHaveValue('2025-02-01');
+    expect(screen.getByLabelText('To')).toHaveValue('2025-07-31');
+  });
+
+  it('drops the draft when the granularity changes', () => {
+    const range: RangeChoice = { preset: 'custom', from: '2025-01-01', to: '2025-06-30' };
+    const { rerender } = render(rangeEl('month', range));
+    typeInverted();
+    rerender(rangeEl('week', range));
+    expect(screen.getByLabelText('From')).toHaveValue('2025-01-01');
+  });
+
+  it('marks a draft pair aria-invalid until it is valid', () => {
+    const onRange = vi.fn();
+    render(rangeEl('month', { preset: 'custom', from: '2025-01-01', to: '2025-06-30' }, onRange));
+    typeInverted();
+    expect(screen.getByLabelText('From')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText('To')).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2027-01-01' } });
+    expect(screen.getByLabelText('To')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText('From')).not.toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2025-12-31' } });
+    expect(onRange).toHaveBeenCalledWith({ preset: 'custom', from: '2025-09-01', to: '2025-12-31' });
+    expect(screen.getByLabelText('From')).not.toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText('To')).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('labels the trigger Auto or Custom and closes on Escape', () => {
     renderControls({ range: { preset: 'custom', from: '2025-01-01', to: '2025-02-01' } });
     const trigger = screen.getByRole('button', { name: /Custom/ });

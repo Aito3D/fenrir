@@ -439,6 +439,24 @@ describe('RevenuePage — controls, URL and persistence', () => {
     expect(lastSeries()).toBe('/api/v1/revenue?granularity=month');
   });
 
+  it('sends no request for an out-of-bounds custom pair', async () => {
+    stubWithProducts(payload());
+    renderPage();
+    await flush();
+    const before = seriesCalls().length;
+    fireEvent.click(screen.getByRole('button', { name: /Auto/ }));
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2023-06-01' } });
+    await flush();
+    expect(screen.getByLabelText('From')).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2025-01-01' } });
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2099-01-01' } });
+    await flush();
+    expect(screen.getByLabelText('To')).toHaveAttribute('aria-invalid', 'true');
+    expect(seriesCalls().length).toBe(before + 1);
+    expect(lastSeries()).toContain('from=2025-01-01&to=2026-11-19');
+    expect(window.location.search).not.toMatch(/2023-06-01|2099/);
+  });
+
   it('toggling a brand leaves localStorage untouched', async () => {
     stubWithProducts(payload());
     renderPage();
