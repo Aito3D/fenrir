@@ -8325,6 +8325,9 @@ export default {
     printsCount: 'Stampe: {{count}}',
     goodCount: 'Riuscite: {{count}}',
     failedCount: 'Fallite: {{count}}',
+    similarTitle: 'Stampe simili',
+    similarCompare: 'Confronta',
+    similarSelect: 'Seleziona {{name}} da confrontare',
     close: 'Chiudi',
   },
 

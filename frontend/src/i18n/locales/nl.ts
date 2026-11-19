@@ -6595,6 +6595,9 @@ export default {
     printsCount: 'Afdrukken: {{count}}',
     goodCount: 'Goed: {{count}}',
     failedCount: 'Mislukt: {{count}}',
+    similarTitle: 'Vergelijkbare prints',
+    similarCompare: 'Vergelijken',
+    similarSelect: '{{name}} selecteren om te vergelijken',
     close: 'Sluiten',
   },
 

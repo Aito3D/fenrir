@@ -8090,6 +8090,9 @@ export default {
     printsCount: '출력: {{count}}',
     goodCount: '성공: {{count}}',
     failedCount: '실패: {{count}}',
+    similarTitle: '유사한 출력',
+    similarCompare: '비교',
+    similarSelect: '비교할 {{name}} 선택',
     close: '닫기',
   },
 

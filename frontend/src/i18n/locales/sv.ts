@@ -6627,6 +6627,9 @@ errors: {
     printsCount: 'Utskrifter: {{count}}',
     goodCount: 'Bra: {{count}}',
     failedCount: 'Misslyckade: {{count}}',
+    similarTitle: 'Liknande utskrifter',
+    similarCompare: 'Jämför',
+    similarSelect: 'Välj {{name}} för jämförelse',
     close: 'Stäng',
   },
 

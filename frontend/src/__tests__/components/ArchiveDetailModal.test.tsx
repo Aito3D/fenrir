@@ -122,6 +122,7 @@ describe('ArchiveDetailModal', () => {
       http.get('/api/v1/archives/:id', ({ params }) =>
         Number(params.id) === 5 || Number(params.id) === 4 ? HttpResponse.json(archive) : new HttpResponse(null, { status: 404 })
       ),
+      http.get('/api/v1/archives/:id/similar', () => HttpResponse.json([])),
       http.get('/api/v1/archives/5/runs', () => HttpResponse.json({ items: runs, total: runs.length })),
       http.get('/api/v1/archives/5/plates', () =>
         HttpResponse.json({ archive_id: 5, filename: 'planter.gcode.3mf', plates: [plate(1, 3300), plate(2, 3600)], is_multi_plate: true }),
@@ -553,5 +554,71 @@ describe('ArchiveDetailModal', () => {
     expect(await screen.findByRole('heading', { name: 'Planter' })).toBeInTheDocument();
     // Its prints load alongside, not after the archive.
     expect(await screen.findAllByTestId(/archive-run-/)).toHaveLength(2);
+  });
+
+  describe('similar prints', () => {
+    const similar = (id: number, status: string, score = 100) => ({
+      archive: {
+        id,
+        print_name: 'Planter',
+        status,
+        created_at: '2026-10-0' + (id % 9) + 'T09:00:00Z',
+        printer_name: 'H2S01',
+        duration_seconds: 3600,
+        has_thumbnail: false,
+      },
+      match_reason: 'Same print name',
+      match_score: score,
+    });
+    let compared: string | null;
+
+    beforeEach(() => {
+      compared = null;
+      server.use(
+        http.get('/api/v1/archives/5/similar', () =>
+          HttpResponse.json([similar(6, 'completed'), similar(7, 'failed'), similar(8, 'aborted'), similar(9, 'completed', 50)]),
+        ),
+        http.get('/api/v1/archives/compare', ({ request }) => {
+          compared = new URL(request.url).searchParams.get('archive_ids');
+          return HttpResponse.json({ archives: [], comparison: [], differences: [], success_correlation: {} });
+        }),
+      );
+    });
+
+    it('lists the same model with an ok / failed summary, leaving filament-only matches out', async () => {
+      render(<ArchiveDetailModal archiveId={5} onClose={onClose} />);
+
+      const section = await screen.findByTestId('similar-prints');
+      expect(within(section).getAllByRole('listitem')).toHaveLength(3);
+      expect(within(section).getByText('Good: 1')).toBeInTheDocument();
+      expect(within(section).getByText('Failed: 2')).toBeInTheDocument();
+      expect(within(section).getAllByRole('link', { name: 'Planter' })[0]).toHaveAttribute('href', '/archives/6');
+    });
+
+    it('is hidden when nothing matches', async () => {
+      server.use(http.get('/api/v1/archives/5/similar', () => HttpResponse.json([similar(9, 'completed', 50)])));
+      render(<ArchiveDetailModal archiveId={5} onClose={onClose} />);
+
+      await screen.findAllByTestId(/archive-run-/);
+      await waitFor(() => expect(screen.queryByTestId('similar-prints')).toBeNull());
+    });
+
+    it('compares this archive with the picked ones', async () => {
+      render(<ArchiveDetailModal archiveId={5} onClose={onClose} />);
+
+      const section = await screen.findByTestId('similar-prints');
+      const compare = within(section).getByRole('button', { name: 'Compare' });
+      expect(compare).toBeDisabled();
+      const boxes = within(section).getAllByRole('checkbox', { name: 'Select Planter to compare' });
+      fireEvent.click(boxes[1]);
+      fireEvent.click(compare);
+
+      expect(await screen.findByText('Compare Archives (2)')).toBeInTheDocument();
+      await waitFor(() => expect(compared).toBe('5,7'));
+      // Escape closes the compare view, not the archive.
+      fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByText('Compare Archives (2)')).toBeNull());
+      expect(onClose).not.toHaveBeenCalled();
+    });
   });
 });

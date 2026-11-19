@@ -8081,6 +8081,9 @@ export default {
     printsCount: 'Печатей: {{count}}',
     goodCount: 'Успешно: {{count}}',
     failedCount: 'Неудачно: {{count}}',
+    similarTitle: 'Похожие печати',
+    similarCompare: 'Сравнить',
+    similarSelect: 'Выбрать {{name}} для сравнения',
     close: 'Закрыть',
   },
 

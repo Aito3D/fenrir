@@ -1275,6 +1275,22 @@ export interface ArchiveComparison {
   success_correlation: SuccessCorrelation;
 }
 
+/** One row of GET /archives/{id}/similar. */
+export interface SimilarArchive {
+  archive: {
+    id: number;
+    print_name: string;
+    status: string;
+    created_at: string | null;
+    printer_name: string | null;
+    duration_seconds: number | null;
+    has_thumbnail: boolean;
+  };
+  match_reason: string;
+  /** 100 = same print name, 95 = same file content, 50 = same filament type only. */
+  match_score: number;
+}
+
 // Project types
 export interface ProjectStats {
   total_archives: number;
@@ -7957,6 +7973,8 @@ export const api = {
   },
   compareArchives: (archiveIds: number[]) =>
     request<ArchiveComparison>(`/archives/compare?archive_ids=${archiveIds.join(',')}`),
+  getSimilarArchives: (archiveId: number, limit = 10) =>
+    request<SimilarArchive[]>(`/archives/${archiveId}/similar?limit=${limit}`),
   exportArchives: async (options?: {
     format?: 'csv' | 'xlsx';
     fields?: string[];

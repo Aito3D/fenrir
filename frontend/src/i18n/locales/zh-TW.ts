@@ -8325,6 +8325,9 @@ export default {
     printsCount: '列印：{{count}}',
     goodCount: '成功：{{count}}',
     failedCount: '失敗：{{count}}',
+    similarTitle: '相似列印',
+    similarCompare: '比較',
+    similarSelect: '選擇 {{name}} 進行比較',
     close: '關閉',
   },
 
