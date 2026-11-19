@@ -1,5 +1,6 @@
 import type { RevenueBucket } from "./types";
 
+// Cells are period labels and numbers only, so no quoting or formula guard is needed; a column carrying Zoho text would need both.
 /** The table as CSV: BOM so Excel/Sheets read UTF-8, semicolons (fr locale), plain integers, evolution in % with one decimal; the last two columns flag an in-progress bucket (its elapsed days) and an approximate TTC (`oui`). */
 export function toCsv(buckets: RevenueBucket[]): string {
   const header =

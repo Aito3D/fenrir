@@ -134,7 +134,7 @@ export type SeriesLoad = { status: "data"; payload: RevenueResponse } | { status
  * The series fetch the poller's `load` calls: sends the auth headers (a function, so a refreshed
  * token is picked up) and `If-None-Match` for the last ETag of the same URL; a 304 is "unchanged"
  * (the page keeps its data) and an answer overtaken by a newer `load` is "stale" (dropped).
- * Throws `Error(failureMessage)` on a failed, current answer.
+ * Throws on a failed or non-JSON current answer (`Error(failureMessage)`); an overtaken request never throws.
  */
 export function createSeriesLoader(getHeaders: () => Record<string, string>, doFetch: typeof fetch = fetch) {
   let seq = 0;
@@ -142,16 +142,21 @@ export function createSeriesLoader(getHeaders: () => Record<string, string>, doF
   return {
     async load(url: string): Promise<SeriesLoad> {
       const mySeq = ++seq;
-      const headers = { ...getHeaders(), ...(etag?.url === url ? { "If-None-Match": etag.tag } : {}) };
-      const res = await doFetch(url, { headers });
-      if (mySeq !== seq) return { status: "stale" };
-      if (res.status === 304) return { status: "unchanged" };
-      const body = await readJsonBody(res);
-      if (mySeq !== seq) return { status: "stale" };
-      if (!res.ok) throw new Error(failureMessage(res.status, body));
-      const tag = res.headers.get("etag");
-      etag = tag ? { url, tag } : null;
-      return { status: "data", payload: body as RevenueResponse };
+      try {
+        const headers = { ...getHeaders(), ...(etag?.url === url ? { "If-None-Match": etag.tag } : {}) };
+        const res = await doFetch(url, { headers });
+        if (mySeq !== seq) return { status: "stale" };
+        if (res.status === 304) return { status: "unchanged" };
+        const body = await readJsonBody(res);
+        if (mySeq !== seq) return { status: "stale" };
+        if (!res.ok || body === null) throw new Error(failureMessage(res.status, body));
+        const tag = res.headers.get("etag");
+        etag = tag ? { url, tag } : null;
+        return { status: "data", payload: body as RevenueResponse };
+      } catch (e) {
+        if (mySeq !== seq) return { status: "stale" };
+        throw e;
+      }
     },
     /** Forget the ETag so the next load always returns data (the page's refresh). */
     reset() {

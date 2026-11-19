@@ -32,4 +32,13 @@ describe("toCsv", () => {
     expect(lines[1].endsWith(";16;oui")).toBe(true);
     expect(lines[2].endsWith(";;")).toBe(true);
   });
+
+  it("toCsv leaves the En cours column empty for a complete bucket", () => {
+    expect(toCsv([sept]).split("\n")[1].split(";")[15]).toBe("");
+  });
+
+  it("toCsv prints an empty En cours cell for a partial bucket whose elapsedDays is null", () => {
+    const row = toCsv([{ ...sept, partial: true, elapsedDays: null }]).split("\n")[1].split(";");
+    expect(row[15]).toBe("");
+  });
 });

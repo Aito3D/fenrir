@@ -475,4 +475,26 @@ describe("createSeriesLoader", () => {
     const failing = createSeriesLoader(() => ({}), vi.fn().mockResolvedValue(new Response('{"detail":"nope"}', { status: 422 })));
     await expect(failing.load("/u")).rejects.toThrow("nope");
   });
+
+  it("an older request that rejects after a newer one started resolves stale, without throwing", async () => {
+    let fail: (e: Error) => void = () => {};
+    const f = vi.fn().mockImplementationOnce(() => new Promise<Response>((_, rej) => { fail = rej; })).mockResolvedValueOnce(ok({ n: 2 }));
+    const loader = createSeriesLoader(() => ({}), f);
+    const first = loader.load("/u");
+    await loader.load("/u");
+    fail(new Error("network"));
+    expect(await first).toEqual({ status: "stale" });
+  });
+
+  it("the latest request's rejection throws, and the next load works normally", async () => {
+    const f = vi.fn().mockRejectedValueOnce(new Error("network")).mockResolvedValueOnce(ok({ n: 3 }));
+    const loader = createSeriesLoader(() => ({}), f);
+    await expect(loader.load("/u")).rejects.toThrow("network");
+    expect(await loader.load("/u")).toEqual({ status: "data", payload: { n: 3 } });
+  });
+
+  it("a 2xx answer whose body is not JSON throws the failure message instead of yielding null data", async () => {
+    const loader = createSeriesLoader(() => ({}), vi.fn().mockResolvedValue(new Response("<html>", { status: 200 })));
+    await expect(loader.load("/u")).rejects.toThrow("Failed (200)");
+  });
 });
