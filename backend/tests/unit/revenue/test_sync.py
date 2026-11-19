@@ -1,0 +1,424 @@
+"""Port of loki's revenue-sync.test.ts plus the pacing and failure cases; Zoho is mocked, nothing waits in real time."""
+
+import asyncio
+from datetime import datetime, timezone
+
+import pytest
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from backend.app.core import database
+from backend.app.core.database import Base, _set_sqlite_pragmas, load_all_models
+from backend.app.services.revenue import store, sync
+from backend.app.services.revenue.config import SYNC
+from backend.app.services.revenue.series import RevenueLine
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoNotFound, ZohoRateLimited, zoho_service
+
+TODAY = "2026-10-15"
+
+
+class FakeZoho:
+    def __init__(self):
+        self.sales_calls: list[tuple[str, int]] = []
+        self.contact_calls: list[str] = []
+        self.item_pages: list[int] = []
+        self.sales = self.default_sales
+        self.contact = self.default_contact
+        self.items = self.default_items
+
+    async def default_sales(self, day, page):
+        return [], False
+
+    async def default_contact(self, contact_id):
+        raise ZohoNotFound("Not found in Zoho Books")
+
+    async def default_items(self, page):
+        return [], False
+
+    async def sales_by_item_by_customer(self, db, day, page):
+        self.sales_calls.append((day, page))
+        return await self.sales(day, page)
+
+    async def get_contact(self, db, contact_id):
+        self.contact_calls.append(contact_id)
+        return await self.contact(contact_id)
+
+    async def list_items_page_all(self, db, page):
+        self.item_pages.append(page)
+        return await self.items(page)
+
+
+@pytest.fixture
+async def engine(tmp_path, monkeypatch):
+    load_all_models()
+    eng = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'revenue.db'}")
+    event.listen(eng.sync_engine, "connect", _set_sqlite_pragmas)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    monkeypatch.setattr(database, "engine", eng)
+    monkeypatch.setattr(database, "async_session", async_sessionmaker(eng, expire_on_commit=False))
+    yield eng
+    await eng.dispose()
+
+
+@pytest.fixture
+def sleeps(monkeypatch):
+    calls: list[float] = []
+
+    async def fake_sleep(s):
+        calls.append(s)
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(sync, "_sleep", fake_sleep)
+    return calls
+
+
+@pytest.fixture
+def zoho(engine, sleeps, monkeypatch):
+    fake = FakeZoho()
+    for name in ("sales_by_item_by_customer", "get_contact", "list_items_page_all"):
+        monkeypatch.setattr(zoho_service, name, getattr(fake, name))
+    monkeypatch.setattr(zoho_service, "calls_in_last_minute", lambda: 0)
+    monkeypatch.setattr(zoho_service, "daily_remaining", None)
+    monkeypatch.setattr(sync, "org_today", lambda now=None: TODAY)
+    monkeypatch.setattr(sync, "REVENUE_HISTORY_START", "2026-10-01")
+    sync.reset_revenue_sync_state_for_tests()
+    yield fake
+    sync.reset_revenue_sync_state_for_tests()
+
+
+async def day_index(engine):
+    async with store.snapshot(engine) as conn:
+        return await store.read_day_index(conn)
+
+
+async def lines(engine, day):
+    async with store.snapshot(engine) as conn:
+        return await store.read_lines(conn, day, day)
+
+
+async def status(engine):
+    async with store.snapshot(engine) as conn:
+        return await sync.get_revenue_sync_status(conn, datetime.now(timezone.utc))
+
+
+def group(customer_id, *rows):
+    return {"group_name": customer_id, "sales": list(rows)}
+
+
+ROW_A = {"item_id": "i1", "item_name": "A", "quantity_sold": 1, "amount": 1034, "item": {"sku": ""}}
+
+
+# ── ported from revenue-sync.test.ts ─────────────────────────────────────────
+
+
+async def test_fetches_one_batch_of_missing_days_newest_first_one_report_call_per_day_and_reports_pending(zoho, engine):
+    async def sales(day, page):
+        return ([group("c1", ROW_A)] if day == TODAY else []), False
+
+    zoho.sales = sales
+    r = await sync.run_revenue_sync_batch()
+    assert r["fetched"] == 10
+    assert r["days"][0] == TODAY
+    assert r["pending"] == 5
+    assert len(zoho.sales_calls) == 10
+    assert (TODAY, 1) in zoho.sales_calls
+    assert await lines(engine, TODAY) == [RevenueLine(TODAY, "i1", "c1", "A", "", 1, 1034)]
+    assert zoho.contact_calls == ["c1"]
+    assert r["customers"] == 1
+    idx = {d.day: d for d in await day_index(engine)}
+    assert idx[TODAY].closed is False
+    assert idx["2026-10-14"].closed is True
+
+
+async def test_a_second_batch_finishes_the_back_fill_and_a_third_has_nothing_to_do(zoho):
+    await sync.run_revenue_sync_batch()
+    r2 = await sync.run_revenue_sync_batch()
+    assert r2["fetched"] == 5
+    assert r2["pending"] == 0
+    r3 = await sync.run_revenue_sync_batch()
+    assert r3["fetched"] == 0
+    assert len(zoho.sales_calls) == 15
+
+
+async def test_writes_every_day_that_succeeded_before_a_failing_one_records_last_error_and_rethrows(zoho, engine):
+    async def sales(day, page):
+        if len(zoho.sales_calls) == 3:
+            raise ZohoRateLimited("Zoho Books error (HTTP 429)")
+        return [], False
+
+    zoho.sales = sales
+    with pytest.raises(ZohoRateLimited):
+        await sync.run_revenue_sync_batch()
+    assert [d.day for d in await day_index(engine)] == ["2026-10-14", "2026-10-15"]
+    assert (await status(engine))["lastError"] == "Zoho Books error (HTTP 429)"
+    zoho.sales = zoho.default_sales
+    await sync.run_revenue_sync_batch()
+    assert (await status(engine))["lastError"] is None
+
+
+async def test_hides_a_non_app_error_message_from_last_error(zoho, engine):
+    async def sales(day, page):
+        raise ConnectionRefusedError("connect ECONNREFUSED 10.0.0.1:443")
+
+    zoho.sales = sales
+    with pytest.raises(ConnectionRefusedError):
+        await sync.run_revenue_sync_batch()
+    assert (await status(engine))["lastError"] == "ConnectionRefusedError"
+
+
+async def test_full_true_clears_the_cache_first_and_rebuilds_from_scratch(zoho, engine):
+    async with database.async_session() as db:
+        await store.write_day(
+            db, "2026-10-10", [RevenueLine("2026-10-10", "x", "", "X", "", 1, 1)], True, datetime.now(timezone.utc), 2
+        )
+    await sync.run_revenue_sync_batch(full=True)
+    assert await lines(engine, "2026-10-10") == []
+    assert ("2026-10-10", 1) in zoho.sales_calls
+
+
+async def test_a_day_whose_org_day_ends_during_its_fetch_is_stored_open(zoho, engine, monkeypatch):
+    today = {"v": TODAY}
+    monkeypatch.setattr(sync, "org_today", lambda now=None: today["v"])
+
+    async def sales(day, page):
+        if day == TODAY:
+            today["v"] = "2026-10-16"
+        return [], False
+
+    zoho.sales = sales
+    await sync.run_revenue_sync_batch()
+    idx = {d.day: d for d in await day_index(engine)}
+    assert idx[TODAY].closed is False
+
+
+async def test_concurrent_callers_share_one_in_flight_batch(zoho):
+    a, b = await asyncio.gather(sync.run_revenue_sync_batch(), sync.run_revenue_sync_batch())
+    assert a is b
+    assert len(zoho.sales_calls) == 10
+
+
+async def test_a_full_rebuild_requested_mid_batch_chains_behind_it_instead_of_sharing_its_promise(zoho):
+    gate = asyncio.Event()
+
+    async def sales(day, page):
+        if len(zoho.sales_calls) == 1:
+            await gate.wait()
+        return [], False
+
+    zoho.sales = sales
+    a = asyncio.ensure_future(sync.run_revenue_sync_batch())
+    while not zoho.sales_calls:
+        await asyncio.sleep(0)
+    b = asyncio.ensure_future(sync.run_revenue_sync_batch(full=True))
+    await asyncio.sleep(0)
+    gate.set()
+    ra, rb = await asyncio.gather(a, b)
+    assert ra["days"][0] == TODAY
+    assert rb is not ra
+    assert rb["days"][0] == TODAY
+    assert rb["fetched"] == 10
+    assert len([c for c in zoho.sales_calls if c[0] == TODAY]) == 2
+    assert len(zoho.sales_calls) == 20
+
+
+async def test_counts_fetched_vs_total_days_over_history_start_today_and_flags_backfilling(zoho, engine):
+    s = await status(engine)
+    assert s["running"] is False
+    assert (s["fetchedDays"], s["totalDays"], s["missingDays"], s["backfilling"]) == (0, 15, 15, True)
+    await sync.run_revenue_sync_batch()
+    s = await status(engine)
+    assert (s["fetchedDays"], s["totalDays"], s["missingDays"], s["backfilling"]) == (10, 15, 5, True)
+    await sync.run_revenue_sync_batch()
+    s = await status(engine)
+    assert (s["fetchedDays"], s["missingDays"], s["backfilling"], s["legacyDays"]) == (15, 0, False, 0)
+    assert s["lastBatchAt"] is not None
+
+
+async def test_sync_state_survives_a_module_re_evaluation_and_stays_shared_with_the_original_instance(zoho, engine):
+    # Python never re-evaluates the module (no --reload in production); state is the one module's, so a second
+    # import must see the same cells.
+    import importlib
+
+    async def sales(day, page):
+        raise ZohoRateLimited("Zoho Books error (HTTP 429)")
+
+    zoho.sales = sales
+    with pytest.raises(ZohoRateLimited):
+        await sync.run_revenue_sync_batch()
+    fresh = importlib.import_module("backend.app.services.revenue.sync")
+    async with store.snapshot(engine) as conn:
+        s = await fresh.get_revenue_sync_status(conn, datetime.now(timezone.utc))
+    assert s["lastError"] == "Zoho Books error (HTTP 429)"
+    assert s["running"] is False
+    zoho.sales = zoho.default_sales
+    await fresh.run_revenue_sync_batch()
+    assert (await status(engine))["lastError"] is None
+    assert (await status(engine))["lastBatchAt"] is not None
+
+
+def test_wakes_at_the_live_ttl_so_today_is_re_fetched_when_due_t_1516():
+    assert SYNC.idle_interval_s == SYNC.live_ttl_s
+
+
+async def test_hands_the_heartbeat_the_revenue_sync_config_and_a_batch_adapter_reporting_pending(zoho, sleeps):
+    def stop_after_first(s):
+        sync._last_read_at = float("-inf")
+
+    async def fake_sleep(s):
+        sleeps.append(s)
+        stop_after_first(s)
+
+    sync._sleep = fake_sleep
+    sync.ensure_revenue_sync_loop()
+    task = sync._loop_task
+    sync.ensure_revenue_sync_loop()
+    assert sync._loop_task is task
+    assert task.get_name() == "revenue-sync"
+    await asyncio.wait_for(task, 5)
+    assert sleeps[-1] == SYNC.batch_pause_s
+    assert len(zoho.sales_calls) == 10
+
+
+# ── pacing and failure handling ──────────────────────────────────────────────
+
+
+async def test_not_configured_sets_public_error(zoho, engine, sleeps, caplog):
+    async def sales(day, page):
+        raise ZohoNotConfiguredError("Zoho credentials are not configured")
+
+    async def items(page):
+        raise ZohoNotConfiguredError("Zoho credentials are not configured")
+
+    zoho.sales = sales
+    zoho.items = items
+    with pytest.raises(ZohoNotConfiguredError):
+        await sync.run_revenue_sync_batch()
+    assert (await status(engine))["lastError"] == "Zoho credentials are not configured"
+    assert await day_index(engine) == []
+
+    turns = []
+
+    async def fake_sleep(s):
+        if s >= 1:
+            turns.append(s)
+        if len(turns) == 2:
+            sync._last_read_at = float("-inf")
+
+    sync._sleep = fake_sleep
+    sync.ensure_revenue_sync_loop()
+    await asyncio.wait_for(sync._loop_task, 5)
+    assert turns == [SYNC.error_backoff_s, SYNC.error_backoff_s]
+    assert len([r for r in caplog.records if "credentials" in r.getMessage()]) <= 1  # logged on change, not per turn
+
+
+async def test_waits_on_shared_minute_ceiling(zoho, sleeps, monkeypatch):
+    meter = iter([30, 0])
+    monkeypatch.setattr(zoho_service, "calls_in_last_minute", lambda: next(meter, 0))
+    seen_at_call = []
+
+    async def sales(day, page):
+        seen_at_call.append(list(sleeps))
+        return [], False
+
+    zoho.sales = sales
+    r = await sync.run_revenue_sync_batch()
+    assert r["fetched"] == 10
+    assert seen_at_call[0] == [1.0]
+
+
+async def test_stops_below_daily_floor(zoho, engine, monkeypatch):
+    monkeypatch.setattr(zoho_service, "daily_remaining", 4999)
+    r = await sync.run_revenue_sync_batch()
+    assert r["fetched"] == 0
+    assert zoho.sales_calls == []
+    assert await day_index(engine) == []
+
+
+async def test_closed_read_before_fetch(zoho, engine, monkeypatch):
+    today = {"v": "2026-10-14"}
+    monkeypatch.setattr(sync, "org_today", lambda now=None: today["v"])
+
+    async def sales(day, page):
+        today["v"] = "2026-10-15"
+        return [], False
+
+    zoho.sales = sales
+    await sync.run_revenue_sync_batch()
+    idx = {d.day: d for d in await day_index(engine)}
+    assert idx["2026-10-14"].closed is False
+
+
+async def test_concurrent_callers_share_batch(zoho):
+    tasks = [asyncio.ensure_future(sync.run_revenue_sync_batch()) for _ in range(3)]
+    results = await asyncio.gather(*tasks)
+    assert results[0] is results[1] is results[2]
+    assert len(zoho.sales_calls) == 10
+
+
+async def test_full_chains_behind_inflight(zoho, engine):
+    gate = asyncio.Event()
+
+    async def sales(day, page):
+        if len(zoho.sales_calls) == 1:
+            await gate.wait()
+        return [], False
+
+    zoho.sales = sales
+    a = asyncio.ensure_future(sync.run_revenue_sync_batch())
+    while not zoho.sales_calls:
+        await asyncio.sleep(0)
+    b = asyncio.ensure_future(sync.run_revenue_sync_batch(full=True))
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert len(zoho.sales_calls) == 1  # b has not started beside a
+    gate.set()
+    ra, rb = await asyncio.gather(a, b)
+    assert ra is not rb
+    assert rb["fetched"] == 10
+    assert sync._inflight is None
+
+
+async def test_pages_capped(zoho, engine):
+    async def sales(day, page):
+        return [group("c1", ROW_A)], True
+
+    zoho.sales = sales
+    with pytest.raises(Exception, match="pages"):
+        await sync.run_revenue_sync_batch()
+    assert len(zoho.sales_calls) == sync.DAY_PAGE_CAP
+    assert await day_index(engine) == []
+
+
+async def test_refresh_items_maps_zoho_fields_and_stamps(zoho, engine):
+    async def items(page):
+        row = {
+            "item_id": f"i{page}",
+            "name": "PLA",
+            "sku": "S",
+            "brand": "SUNLU",
+            "cf_nature_du_produit": "Filaments",
+            "item_type": "inventory",
+            "tax_percentage": 16,
+            "purchase_rate": 1000,
+            "cf_prix_dealer_usd_unformatted": "",
+            "status": "active",
+        }
+        return [row], page < 2
+
+    zoho.items = items
+    now = datetime.now(timezone.utc)
+    async with database.async_session() as db:
+        assert await sync.refresh_revenue_items(db, now) is True
+    async with store.snapshot(engine) as conn:
+        scope = await store.read_scope_items(conn)
+        assert await store.items_synced_at(conn) == now.isoformat()
+    assert sorted(scope) == ["i1", "i2"]
+    assert (scope["i1"].brand, scope["i1"].nature, scope["i1"].tax_percentage) == ("SUNLU", "Filaments", 16)
+
+
+async def test_refresh_items_keeps_the_table_on_an_empty_listing(zoho, engine):
+    async with database.async_session() as db:
+        assert await sync.refresh_revenue_items(db, datetime.now(timezone.utc)) is False
+    async with store.snapshot(engine) as conn:
+        assert await store.items_synced_at(conn) is None
