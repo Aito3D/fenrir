@@ -11138,6 +11138,13 @@ export default {
     marge: 'マージン',
     priority: {
       step: '優先対応の割増',
+      settingsTitle: '優先料金',
+      pct: '優先割増 %',
+      minFee: '優先の最低料金',
+      urgentPct: '至急割増 %',
+      urgentMinFee: '至急の最低料金',
+      priorityDays: '優先の納期(日)',
+      urgentDays: '至急の納期(日)',
     },
     marginPct: '利益率',
     marginGlobal: '全体マージン',

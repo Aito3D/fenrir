@@ -61,6 +61,12 @@ const baseDefaults: CalculatorDefaults = {
   qty_min_factor: 0.4,
   qty_k: 5,
   min_task_price: 12,
+  priority_pct: 15,
+  priority_min_fee: 500,
+  urgent_pct: 35,
+  urgent_min_fee: 1500,
+  priority_days: 5,
+  urgent_days: 2,
   updated_at: '2026-08-27T00:00:00Z',
 };
 

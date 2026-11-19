@@ -11124,6 +11124,13 @@ export default {
     marge: 'Margine',
     priority: {
       step: 'Supplemento di priorità',
+      settingsTitle: 'Prezzo per priorità',
+      pct: 'Maggiorazione priorità %',
+      minFee: 'Tariffa minima priorità',
+      urgentPct: 'Maggiorazione urgente %',
+      urgentMinFee: 'Tariffa minima urgente',
+      priorityDays: 'Tempi priorità (giorni)',
+      urgentDays: 'Tempi urgente (giorni)',
     },
     marginPct: 'Margine in %',
     marginGlobal: 'Margine globale',

@@ -45,7 +45,8 @@ const MONEY_CEILING = 100_000_000;
 /** Input ids keep their historical prefixes (`calc-def-*` for the former
  *  Defaults fields, `calc-curve-*` for the curve) so deep links and tests
  *  written against either tab still resolve. */
-const CURVE_KEYS = new Set<FieldKey>(['margin_min_mult', 'margin_max_mult', 'margin_k', 'qty_min_factor', 'qty_k', 'min_task_price']);
+const CURVE_KEYS = new Set<FieldKey>(['margin_min_mult', 'margin_max_mult', 'margin_k', 'qty_min_factor', 'qty_k', 'min_task_price',
+  'priority_pct', 'priority_min_fee', 'urgent_pct', 'urgent_min_fee', 'priority_days', 'urgent_days']);
 const inputId = (key: FieldKey) => `${CURVE_KEYS.has(key) ? 'calc-curve' : 'calc-def'}-${key}`;
 
 const RATES: Field[] = [
@@ -83,6 +84,17 @@ const MARGIN_GROUPS: Array<{ labelKey: string; fields: Field[] }> = [
   {
     labelKey: 'calculator.floorGroup',
     fields: [{ key: 'min_task_price', labelKey: 'calculator.minTaskPrice', min: 0, max: MONEY_CEILING, calc: true }],
+  },
+  {
+    labelKey: 'calculator.priority.settingsTitle',
+    fields: [
+      { key: 'priority_pct', labelKey: 'calculator.priority.pct', min: 0, max: 500 },
+      { key: 'priority_min_fee', labelKey: 'calculator.priority.minFee', min: 0, max: MONEY_CEILING, calc: true },
+      { key: 'urgent_pct', labelKey: 'calculator.priority.urgentPct', min: 0, max: 500 },
+      { key: 'urgent_min_fee', labelKey: 'calculator.priority.urgentMinFee', min: 0, max: MONEY_CEILING, calc: true },
+      { key: 'priority_days', labelKey: 'calculator.priority.priorityDays', min: 0, max: 365 },
+      { key: 'urgent_days', labelKey: 'calculator.priority.urgentDays', min: 0, max: 365 },
+    ],
   },
 ];
 const MARGIN: Field[] = MARGIN_GROUPS.flatMap((g) => g.fields);

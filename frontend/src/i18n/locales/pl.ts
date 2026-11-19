@@ -11344,6 +11344,13 @@ export default {
     marge: 'Marża',
     priority: {
       step: 'Dopłata za priorytet',
+      settingsTitle: 'Cennik priorytetowy',
+      pct: 'Dopłata priorytetowa %',
+      minFee: 'Minimalna opłata priorytetowa',
+      urgentPct: 'Dopłata za pilne %',
+      urgentMinFee: 'Minimalna opłata za pilne',
+      priorityDays: 'Termin priorytetowy (dni)',
+      urgentDays: 'Termin pilny (dni)',
     },
     marginPct: 'Marża %',
     marginGlobal: 'Marża globalna',

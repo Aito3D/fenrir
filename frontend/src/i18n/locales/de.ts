@@ -11139,6 +11139,13 @@ export default {
     marge: 'Gewinnmarge',
     priority: {
       step: 'Prioritätszuschlag',
+      settingsTitle: 'Prioritätspreise',
+      pct: 'Prioritätszuschlag %',
+      minFee: 'Mindestgebühr Priorität',
+      urgentPct: 'Eilzuschlag %',
+      urgentMinFee: 'Mindestgebühr Eilauftrag',
+      priorityDays: 'Lieferzeit Priorität (Tage)',
+      urgentDays: 'Lieferzeit Eilauftrag (Tage)',
     },
     marginPct: 'Marge in %',
     marginGlobal: 'Globale Marge',

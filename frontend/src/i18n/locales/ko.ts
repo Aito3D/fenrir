@@ -10760,6 +10760,13 @@ export default {
     marge: '마진',
     priority: {
       step: '우선순위 할증',
+      settingsTitle: '우선 처리 요금',
+      pct: '우선 할증 %',
+      minFee: '우선 최소 요금',
+      urgentPct: '긴급 할증 %',
+      urgentMinFee: '긴급 최소 요금',
+      priorityDays: '우선 소요일(일)',
+      urgentDays: '긴급 소요일(일)',
     },
     marginPct: '마진율',
     marginGlobal: '전체 마진',

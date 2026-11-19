@@ -11197,6 +11197,13 @@ errors: {
     marge: 'Marginal',
     priority: {
       step: 'Prioritetstillägg',
+      settingsTitle: "Prioritetspris",
+      pct: "Prioritetspåslag %",
+      minFee: "Minimiavgift prioritet",
+      urgentPct: "Expresspåslag %",
+      urgentMinFee: "Minimiavgift express",
+      priorityDays: "Ledtid prioritet (dagar)",
+      urgentDays: "Ledtid express (dagar)",
     },
     marginPct: 'Marginal %',
     marginGlobal: 'Global marginal',

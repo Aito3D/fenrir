@@ -11164,6 +11164,13 @@ export default {
     marge: 'Marge',
     priority: {
       step: 'Prioriteitstoeslag',
+      settingsTitle: 'Prioriteitsprijzen',
+      pct: 'Prioriteitstoeslag %',
+      minFee: 'Minimumtarief prioriteit',
+      urgentPct: 'Spoedtoeslag %',
+      urgentMinFee: 'Minimumtarief spoed',
+      priorityDays: 'Levertijd prioriteit (dagen)',
+      urgentDays: 'Levertijd spoed (dagen)',
     },
     marginPct: 'Marge %',
     marginGlobal: 'Totale marge',

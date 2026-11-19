@@ -11195,6 +11195,13 @@ export default {
     marge: 'Margin',
     priority: {
       step: 'Priority surcharge',
+      settingsTitle: 'Priority pricing',
+      pct: 'Priority surcharge %',
+      minFee: 'Priority minimum fee',
+      urgentPct: 'Urgent surcharge %',
+      urgentMinFee: 'Urgent minimum fee',
+      priorityDays: 'Priority lead time (days)',
+      urgentDays: 'Urgent lead time (days)',
     },
     marginPct: 'Margin %',
     marginGlobal: 'Global margin',

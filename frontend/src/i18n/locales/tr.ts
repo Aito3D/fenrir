@@ -11066,6 +11066,13 @@ export default {
     marge: 'Marj',
     priority: {
       step: 'Öncelik ek ücreti',
+      settingsTitle: "Öncelik fiyatlandırması",
+      pct: "Öncelik ek ücreti %",
+      minFee: "Öncelik asgari ücreti",
+      urgentPct: "Acil ek ücreti %",
+      urgentMinFee: "Acil asgari ücreti",
+      priorityDays: "Öncelik süresi (gün)",
+      urgentDays: "Acil süre (gün)",
     },
     marginPct: 'Marj oranı',
     marginGlobal: 'Genel marj',

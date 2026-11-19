@@ -11122,6 +11122,13 @@ export default {
     marge: '利润',
     priority: {
       step: '优先加价',
+      settingsTitle: "优先定价",
+      pct: "优先加价 %",
+      minFee: "优先最低费用",
+      urgentPct: "加急加价 %",
+      urgentMinFee: "加急最低费用",
+      priorityDays: "优先工期(天)",
+      urgentDays: "加急工期(天)",
     },
     marginPct: '利润率',
     marginGlobal: '整体利润',

@@ -38,6 +38,12 @@ const baseDefaults: CalculatorDefaults = {
   qty_min_factor: 0.4,
   qty_k: 5,
   min_task_price: 12,
+  priority_pct: 15,
+  priority_min_fee: 500,
+  urgent_pct: 35,
+  urgent_min_fee: 1500,
+  priority_days: 5,
+  urgent_days: 2,
   updated_at: '2026-08-27T00:00:00Z',
 };
 
@@ -243,6 +249,28 @@ describe('CalculatorSettingsPanel', () => {
     expect(saveButton()).toBeDisabled();
   });
 
+  it('renders the six priority inputs and saves an edited urgent %', async () => {
+    let sent: Record<string, number> = {};
+    server.use(
+      http.get('/api/v1/calculator/defaults', () => HttpResponse.json(baseDefaults)),
+      http.patch('/api/v1/calculator/defaults', async ({ request }) => {
+        sent = (await request.json()) as Record<string, number>;
+        return HttpResponse.json({ ...baseDefaults, ...sent });
+      }),
+    );
+    const user = userEvent.setup();
+    const { container } = render(<CalculatorSettingsPanel canUpdate />);
+    await screen.findByLabelText(/Electricity tariff/, {}, { timeout: 5000 });
+    const ids = ['priority_pct', 'priority_min_fee', 'urgent_pct', 'urgent_min_fee', 'priority_days', 'urgent_days'];
+    const vals = ids.map((k) => container.querySelector<HTMLInputElement>(`#calc-curve-${k}`)?.value);
+    expect(vals).toEqual(['15', '500', '35', '1500', '5', '2']);
+    const urgent = container.querySelector<HTMLInputElement>('#calc-curve-urgent_pct')!;
+    await user.clear(urgent);
+    await user.type(urgent, '40');
+    await user.click(saveButton());
+    await waitFor(() => expect(sent.urgent_pct).toBe(40));
+  });
+
   // Transcribed from CalculatorDefaultsUpdate's Field(...) bounds
   // (backend/app/schemas/calculator.py). The panel's own copy is
   // module-private, so this pins the mirror behaviorally: drive each input
@@ -266,6 +294,12 @@ describe('CalculatorSettingsPanel', () => {
     { id: 'calc-curve-qty_min_factor', min: 0, max: 1 },
     { id: 'calc-curve-qty_k', min: 0, max: 1_000_000 },
     { id: 'calc-curve-min_task_price', min: 0, max: MONEY_CEILING },
+    { id: 'calc-curve-priority_pct', min: 0, max: 500 },
+    { id: 'calc-curve-priority_min_fee', min: 0, max: MONEY_CEILING },
+    { id: 'calc-curve-urgent_pct', min: 0, max: 500 },
+    { id: 'calc-curve-urgent_min_fee', min: 0, max: MONEY_CEILING },
+    { id: 'calc-curve-priority_days', min: 0, max: 365 },
+    { id: 'calc-curve-urgent_days', min: 0, max: 365 },
     { id: 'calc-def-default_difficulty_pct', min: 100, max: 1000 },
     { id: 'calc-def-default_margin_over_cost_pct', min: 0, max: 1000 },
   ];

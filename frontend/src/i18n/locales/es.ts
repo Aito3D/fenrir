@@ -11147,6 +11147,13 @@ export default {
     marge: 'Margen',
     priority: {
       step: 'Recargo por prioridad',
+      settingsTitle: 'Precio por prioridad',
+      pct: 'Recargo de prioridad %',
+      minFee: 'Tarifa mínima de prioridad',
+      urgentPct: 'Recargo de urgencia %',
+      urgentMinFee: 'Tarifa mínima de urgencia',
+      priorityDays: 'Plazo de prioridad (días)',
+      urgentDays: 'Plazo de urgencia (días)',
     },
     marginPct: 'Margen en %',
     marginGlobal: 'Margen global',
