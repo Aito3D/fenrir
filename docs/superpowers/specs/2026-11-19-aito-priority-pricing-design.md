@@ -127,6 +127,14 @@ Visibility: visible Zoho line vs folded into prices. **Picked visible.**
   "hand-picked" column.
 - **Calculator quote page prints the surcharge as its own line**; the unit
   price stays the print price (total before surcharge ÷ quantity).
+- **Minimum fee is tax-inclusive in Aito** (ruling during the build): every
+  Aito price is what the client pays (TTC), so `max(base × pct, min_fee)`
+  yields a TTC line there; in the calculator the same figure is HT. A
+  min-fee-bound job is therefore ~13 % cheaper in Aito than the calculator
+  shows for a 13 %-tax client.
+- **Books item ids** `zoho_item_priority_id` / `zoho_item_urgent_id` are set
+  through the settings API (no UI); until set, non-Normal projects stay
+  pending.
 - **Aito task prices never include it**: `computeImpressionCost` passes
   `normal`; the project line is the only surcharge.
 
