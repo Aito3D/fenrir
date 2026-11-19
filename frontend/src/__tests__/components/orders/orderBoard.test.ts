@@ -149,6 +149,15 @@ describe('sortRows', () => {
   it('customer: A to Z, locale-aware', () => expect(ids('customer')).toEqual(['dan', 'emile', 'fred']));
   it('% ready: highest first', () => expect(ids('ready')).toEqual(['dan', 'fred', 'emile']));
   it('flipped reverses', () => expect(ids('age', true)).toEqual(['fred', 'emile', 'dan']));
+  it('age: same-day orders tie-break on order number, both directions', () => {
+    const sameDay = [
+      row({ id: 'b', number: 'SO-00276', age_days: 0 }),
+      row({ id: 'a', number: 'SO-00274', age_days: 0 }),
+      row({ id: 'c', number: 'SO-00275', age_days: 0 }),
+    ];
+    expect(sortRows(sameDay, 'age', false, 'fr').map(r => r.id)).toEqual(['a', 'c', 'b']);
+    expect(sortRows(sameDay, 'age', true, 'fr').map(r => r.id)).toEqual(['b', 'c', 'a']);
+  });
   it('does not reorder its input', () => {
     sortRows(rows, 'age', false, 'fr');
     expect(rows[0].id).toBe('fred');

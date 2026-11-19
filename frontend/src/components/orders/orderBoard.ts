@@ -135,10 +135,11 @@ export const avgLeadDays = (
 };
 
 /** Default directions: age oldest first, value and % ready highest first, customer A to Z. */
-type Sortable = Pick<OrderBoardRow, 'age_days' | 'total' | 'customer' | 'ready_ratio'>;
+type Sortable = Pick<OrderBoardRow, 'age_days' | 'number' | 'total' | 'customer' | 'ready_ratio'>;
 export const sortRows = <T extends Sortable>(rows: T[], key: SortKey, flipped: boolean, locale: string): T[] => {
   const compare: Record<SortKey, (a: T, b: T) => number> = {
-    age: (a, b) => b.age_days - a.age_days,
+    // Same-day orders tie on whole days: the lower order number is the older one.
+    age: (a, b) => b.age_days - a.age_days || a.number.localeCompare(b.number, undefined, { numeric: true }),
     value: (a, b) => (b.total ?? 0) - (a.total ?? 0),
     customer: (a, b) => (a.customer ?? '').localeCompare(b.customer ?? '', locale),
     ready: (a, b) => b.ready_ratio - a.ready_ratio,
@@ -152,7 +153,7 @@ export type BoardEntry = Sortable & ({ open: OrderBoardRow; fin?: never } | { fi
 
 export const withFinished = (open: OrderBoardRow[], finished: FinishedOrderRow[]): BoardEntry[] => [
   ...open.map(r => ({ ...r, open: r })),
-  ...finished.map(f => ({ age_days: daysPastDue(f.date), total: f.total, customer: f.customer, ready_ratio: 1, fin: f })),
+  ...finished.map(f => ({ age_days: daysPastDue(f.date), number: f.number, total: f.total, customer: f.customer, ready_ratio: 1, fin: f })),
 ];
 
 /** An empty or half-built board must never look like a verified answer. */

@@ -479,7 +479,8 @@ describe('OrderBoardPage', () => {
     render(<OrderBoardPage />);
     await screen.findByText('SO-00412');
     await user.click(await screen.findByRole('button', { name: /^Finished 60/ }));
-    expect(screen.getByText('SO-F001')).toBeInTheDocument();
+    // Same-day finished orders read newest number first
+    expect(screen.getByText('SO-F060')).toBeInTheDocument();
     expect(screen.queryByText('SO-00412')).not.toBeInTheDocument();
     expect(tile(/^In progress 2/)).toBeInTheDocument(); // open orders only
     expect(screen.getAllByTestId('order-number')).toHaveLength(50);
@@ -488,7 +489,7 @@ describe('OrderBoardPage', () => {
     expect(screen.queryByRole('button', { name: 'Show more' })).not.toBeInTheDocument();
     expect(new URLSearchParams(window.location.search).get('status')).toBe('finished');
     await user.click(tile(/^To ship 1/));
-    expect(screen.queryByText('SO-F001')).not.toBeInTheDocument();
+    expect(screen.queryByText('SO-F060')).not.toBeInTheDocument();
     expect(screen.getByText('SO-00412')).toBeInTheDocument();
   });
 
