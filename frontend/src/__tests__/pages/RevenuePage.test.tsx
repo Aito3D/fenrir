@@ -105,6 +105,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   setHidden(false);
   setAuthToken(null);
+  window.history.replaceState(null, '', '/');
 });
 
 describe('RevenuePage — waiting states', () => {
@@ -146,7 +147,7 @@ describe('RevenuePage — waiting states', () => {
     expect(screen.getByText('Zoho is down')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(seriesCalls()).toHaveLength(2);
   });
 });
 
@@ -163,6 +164,7 @@ describe('RevenuePage — view tabs and tax switch', () => {
     expect(screen.getByRole('tabpanel')).toHaveAttribute('data-slot', 'revenue-view-produits');
     expect(localStorage.getItem('revenue-view')).toBe('produits');
     unmount();
+    window.history.replaceState(null, '', '/');
 
     granted.delete('revenue:view_customers');
     localStorage.setItem('revenue-view', 'clients');
@@ -303,6 +305,139 @@ describe('RevenuePage — polling', () => {
     });
     await flush();
     expect(seriesCalls()).toHaveLength(2);
+  });
+});
+
+const PRODUCTS = [
+  { itemId: 'p1', name: 'Support Mini starlink', sku: 'SM-1', totalHt: 5000, quantity: 1, lastDay: '2026-11-01', brand: 'Aito' },
+  { itemId: 'p2', name: 'eSUN PETG', sku: 'ES-2', totalHt: 4000, quantity: 1, lastDay: '2026-11-01', brand: 'eSUN' },
+];
+
+function stubWithProducts(series: RevenueResponse) {
+  fetchMock = vi.fn(async (url: string) => {
+    if (url.startsWith('/api/v1/revenue/products')) return json({ products: PRODUCTS, fetchedAt: '2026-11-19T08:00:00.000Z' });
+    if (url.startsWith('/api/v1/revenue?')) return json(series);
+    return json({ detail: 'not stubbed' }, 404);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+}
+const lastSeries = () => String(seriesCalls().at(-1)?.[0]);
+const productCalls = () => fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/v1/revenue/products'));
+
+describe('RevenuePage — controls, URL and persistence', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  it('restores the URL over localStorage before the first request', async () => {
+    localStorage.setItem('revenue-granularity', 'week');
+    localStorage.setItem('revenue-kind', 'goods');
+    window.history.replaceState(null, '', '/revenue?g=year&kind=services');
+    stubWithProducts(payload());
+    renderPage();
+    await flush();
+    expect(seriesCalls()).toHaveLength(1);
+    expect(lastSeries()).toContain('granularity=year');
+    expect(lastSeries()).toContain('kind=services');
+    expect(localStorage.getItem('revenue-granularity')).toBe('week');
+  });
+
+  it('writes nothing to the URL before the controls are restored', async () => {
+    localStorage.setItem('revenue-granularity', 'week');
+    window.history.replaceState(null, '', '/revenue');
+    const spy = vi.spyOn(window.history, 'replaceState');
+    stubWithProducts(payload());
+    renderPage();
+    await flush();
+    expect(spy.mock.calls.length).toBeGreaterThan(0);
+    for (const call of spy.mock.calls) expect(String(call[2])).toContain('g=week');
+    expect(window.location.search).toBe('?g=week');
+    spy.mockRestore();
+  });
+
+  it('keeps a stored segment out of the URL without revenue:view_customers, never erasing it', async () => {
+    granted.delete('revenue:view_customers');
+    localStorage.setItem('revenue-segment', 'pro');
+    stubWithProducts(payload());
+    renderPage();
+    await flush();
+    expect(window.location.search).not.toContain('segment');
+    expect(screen.queryByRole('button', { name: /All customers/ })).toBeNull();
+    expect(localStorage.getItem('revenue-segment')).toBe('pro');
+  });
+
+  it('persists granularity, range, kind and segment with the stored-control rules', async () => {
+    stubWithProducts(payload());
+    renderPage();
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
+    expect(localStorage.getItem('revenue-granularity')).toBe('week');
+    fireEvent.click(screen.getByRole('button', { name: /Auto/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Since 2024' }));
+    expect(localStorage.getItem('revenue-range')).toBe('all');
+    fireEvent.click(screen.getByRole('button', { name: /Since 2024/ }));
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2025-01-01' } });
+    expect(localStorage.getItem('revenue-range')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Goods' }));
+    expect(localStorage.getItem('revenue-kind')).toBe('goods');
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    expect(localStorage.getItem('revenue-kind')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /All customers/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Business' }));
+    expect(localStorage.getItem('revenue-segment')).toBe('pro');
+    await flush();
+    expect(lastSeries()).toContain('segment=pro');
+  });
+
+  it('steps the period inside the history: ‹ disabled at its start', async () => {
+    stubWithProducts(payload({ from: '2024-01-01', to: '2024-01-31' }));
+    renderPage();
+    await flush();
+    expect(screen.getByRole('button', { name: 'Previous period (←)' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Next period (→)' }));
+    await flush();
+    expect(lastSeries()).toContain('from=2024-02-01&to=2024-02-29');
+  });
+
+  it('adds a product: the series follows the basket, the stack switches to item, nothing persisted', async () => {
+    stubWithProducts(payload());
+    renderPage();
+    await flush();
+    expect(productCalls()).toHaveLength(1);
+    const box = screen.getByRole('searchbox', { name: 'Search for a product' });
+    fireEvent.change(box, { target: { value: 'starlink' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await flush();
+    expect(lastSeries()).toContain('items=p1');
+    expect(window.location.search).toContain('stack=item');
+    expect(window.location.search).toContain('items=p1');
+    const stored = vi.mocked(localStorage.setItem).mock.calls.map((c) => c[0]);
+    expect(stored.filter((k) => !k.startsWith('revenue-') || /brand|basket|items/.test(k))).toEqual([]);
+    expect(localStorage.getItem('revenue-stack')).toBeNull();
+  });
+
+  it('turns a linked basket and brand into chips once the products load', async () => {
+    window.history.replaceState(null, '', '/revenue?items=p2,zz&brand=eSUN');
+    stubWithProducts(payload());
+    renderPage();
+    await flush();
+    await flush();
+    const chips = screen.getByLabelText('Selection');
+    expect(within(chips).getByText('eSUN PETG')).toBeInTheDocument();
+    expect(within(chips).getByRole('button', { name: 'Remove brand eSUN' })).toBeInTheDocument();
+    expect(lastSeries()).toContain('items=p2');
+    expect(lastSeries()).toContain('brand=esun');
+  });
+
+  it('clears the filters but keeps a stored segment it may not see', async () => {
+    granted.delete('revenue:view_customers');
+    localStorage.setItem('revenue-segment', 'pro');
+    localStorage.setItem('revenue-kind', 'goods');
+    stubWithProducts(payload());
+    renderPage();
+    await flush();
+    const chips = screen.getByLabelText('Selection');
+    fireEvent.click(within(chips).getByRole('button', { name: 'Clear all' }));
+    expect(localStorage.getItem('revenue-kind')).toBeNull();
+    expect(localStorage.getItem('revenue-segment')).toBe('pro');
   });
 });
 

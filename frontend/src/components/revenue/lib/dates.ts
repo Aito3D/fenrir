@@ -1,5 +1,13 @@
 export const DAY_MS = 86_400_000;
 
+/** The first day the revenue history holds (the backend's `REVENUE_HISTORY_START`). */
+export const REVENUE_HISTORY_START = "2024-01-01";
+
+const ORG_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Tahiti" });
+
+/** The org's calendar day (Pacific/Tahiti) as `yyyy-MM-dd`, never the browser's or UTC's. */
+export const orgToday = (now: Date = new Date()): string => ORG_DAY.format(now);
+
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function dayToUtc(day: string): number {

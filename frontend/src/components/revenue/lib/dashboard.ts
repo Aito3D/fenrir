@@ -228,6 +228,10 @@ export const REVENUE_STORAGE_KEYS = {
   view: "revenue-view",
 } as const;
 
+/** The ids tying a `RevenueSegmented` tab to its panel (fast refresh wants the component file to export components only). */
+export const segmentTabId = (idPrefix: string, id: string) => `${idPrefix}-tab-${id}`;
+export const segmentPanelId = (idPrefix: string, id: string) => `${idPrefix}-panel-${id}`;
+
 /** The page's four views: the series (« Évolution »), the customer split, the product analysis, the seasonality charts. */
 export const REVENUE_VIEWS = [
   { id: "evolution", label: "Évolution" },

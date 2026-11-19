@@ -4,8 +4,16 @@ import { bearerAuthHeaders } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Empty } from '../components/aito/stats/primitives';
-import { RevenueSegmented, segmentPanelId, segmentTabId } from '../components/revenue/RevenueSegmented';
+import { RevenueSegmented } from '../components/revenue/RevenueSegmented';
 import { RevenueSyncBanner } from '../components/revenue/RevenueSyncBanner';
+import { RevenueControls as ControlsRow } from '../components/revenue/RevenueControls';
+import { RevenueChip, RevenueProductSearch } from '../components/revenue/RevenueProductSearch';
+import { useRevenueResource } from '../components/revenue/useRevenueResource';
+import { shiftWindow } from '../components/revenue/lib/analysis';
+import { addToBasket } from '../components/revenue/lib/basket';
+import { orgToday, REVENUE_HISTORY_START } from '../components/revenue/lib/dates';
+import { filterByKind } from '../components/revenue/lib/products';
+import { controlsFromSearch, controlsToSearch } from '../components/revenue/lib/url';
 import { focusRingCls } from '../components/formStyles';
 import type { StackDimension } from '../components/revenue/lib/chart';
 import {
@@ -18,12 +26,17 @@ import {
   REVENUE_STORAGE_KEYS,
   REVENUE_VIEWS,
   restoreStoredControls,
+  segmentPanelId,
+  segmentTabId,
   seriesQuery,
+  shouldFetchProducts,
   startSeriesPoller,
+  storedRangeValue,
+  toggleInSet,
   type RangeChoice,
   type RevenueView,
 } from '../components/revenue/lib/dashboard';
-import type { CustomerSegment, RevenueGranularity, RevenueKind, RevenueProduct, RevenueResponse, TaxMode } from '../components/revenue/lib/types';
+import type { CustomerSegment, ProductsResponse, RevenueGranularity, RevenueKind, RevenueProduct, RevenueResponse, TaxMode } from '../components/revenue/lib/types';
 
 export interface RevenueControls {
   granularity: RevenueGranularity;
@@ -57,6 +70,7 @@ export interface RevenuePanelProps {
 
 const VIEW_KEYS: Record<RevenueView, string> = { evolution: 'evolution', clients: 'clients', produits: 'products', saison: 'seasonality' };
 
+/** Restored before the first render and the first request: a linked URL wins, localStorage fills the rest. */
 function initialControls(): RevenueControls {
   let stored: ReturnType<typeof restoreStoredControls> = {};
   try {
@@ -64,15 +78,16 @@ function initialControls(): RevenueControls {
   } catch {
     // Storage unavailable (private window): the defaults stand.
   }
+  const url = controlsFromSearch(window.location.search);
   return {
-    granularity: stored.granularity ?? 'month',
-    taxMode: stored.taxMode ?? 'ht',
-    stack: stored.stack ?? 'nature',
-    range: stored.preset ? { preset: stored.preset } : { preset: 'default' },
-    kind: stored.kind ?? null,
-    segment: stored.segment ?? null,
-    view: stored.view ?? 'evolution',
-    brands: new Set(),
+    granularity: url.granularity ?? stored.granularity ?? 'month',
+    taxMode: url.taxMode ?? stored.taxMode ?? 'ht',
+    stack: url.stack ?? stored.stack ?? 'nature',
+    range: url.range ?? (stored.preset ? { preset: stored.preset } : { preset: 'default' }),
+    kind: url.kind ?? stored.kind ?? null,
+    segment: url.segment ?? stored.segment ?? null,
+    view: url.view ?? stored.view ?? 'evolution',
+    brands: new Set(url.brands ?? []),
     basket: [],
   };
 }
@@ -103,7 +118,13 @@ export function RevenuePage() {
   const [controls, setControlsState] = useState(initialControls);
   const setControls = (patch: Partial<RevenueControls>) => {
     setControlsState((c) => ({ ...c, ...patch }));
+    if (patch.granularity) persist(REVENUE_STORAGE_KEYS.granularity, patch.granularity);
     if (patch.taxMode) persist(REVENUE_STORAGE_KEYS.taxMode, patch.taxMode);
+    // « Produit » needs a basket, which is never persisted.
+    if (patch.stack && patch.stack !== 'item') persist(REVENUE_STORAGE_KEYS.stack, patch.stack);
+    if (patch.range) persist(REVENUE_STORAGE_KEYS.range, storedRangeValue(patch.range));
+    if ('kind' in patch) persist(REVENUE_STORAGE_KEYS.kind, patch.kind ?? null);
+    if ('segment' in patch) persist(REVENUE_STORAGE_KEYS.segment, patch.segment ?? null);
     if (patch.view) persist(REVENUE_STORAGE_KEYS.view, patch.view === 'evolution' ? null : patch.view);
   };
   // What the page may use: a view or segment stored by a user with more rights (shared terminal) falls back.
@@ -113,6 +134,9 @@ export function RevenuePage() {
     segment: can.customers ? controls.segment : null,
   };
   const { view } = active;
+  const basketIds = active.basket.map((b) => b.itemId);
+  // Basket ids from a linked URL, resolved against the products list once it loads.
+  const [pendingItems, setPendingItems] = useState(() => controlsFromSearch(window.location.search).items ?? null);
 
   const [loader] = useState(() => createSeriesLoader(bearerAuthHeaders));
   const [data, setData] = useState<RevenueResponse | null>(null);
@@ -126,7 +150,7 @@ export function RevenuePage() {
   const url = seriesQuery({
     granularity: active.granularity,
     range: active.range,
-    basketIds: active.basket.map((b) => b.itemId),
+    basketIds,
     brands: active.brands,
     kind: active.kind,
     segment: active.segment,
@@ -159,6 +183,61 @@ export function RevenuePage() {
     });
     return () => poller.stop();
   }, [loader, url, tick]);
+
+  // The controls live on the URL too, so a view can be bookmarked or sent.
+  const search = controlsToSearch({
+    granularity: active.granularity,
+    taxMode: active.taxMode,
+    stack: active.stack,
+    range: active.range,
+    kind: active.kind,
+    segment: active.segment,
+    view: active.view,
+    brands: active.brands,
+    items: pendingItems ?? basketIds,
+  });
+  useEffect(() => {
+    if (search !== window.location.search) window.history.replaceState(window.history.state, '', `${window.location.pathname}${search}${window.location.hash}`);
+  }, [search]);
+
+  // The products list behind the search box: on mount, then when the cached days or the review decisions move.
+  const fetchedDays = data?.sync.fetchedDays;
+  const reviewCount = data?.reviewCount;
+  const [productsVersion, setProductsVersion] = useState(0);
+  const products = useRevenueResource<ProductsResponse>('/api/v1/revenue/products', productsVersion);
+  const productList = products.data?.products ?? null;
+  const productsLoaded = useRef(false);
+  productsLoaded.current = productList !== null;
+  const productsDeps = useRef<{ fetchedDays: number | undefined; reviewCount: number | undefined } | null>(null);
+  useEffect(() => {
+    const prev = productsDeps.current;
+    productsDeps.current = { fetchedDays, reviewCount };
+    // The mount fetch is the resource's own first load.
+    if (prev && shouldFetchProducts(prev, productsDeps.current, productsLoaded.current)) setProductsVersion((v) => v + 1);
+  }, [fetchedDays, reviewCount]);
+  useEffect(() => {
+    if (products.error) showToast(t('revenue.search.unavailable', { error: products.error }), 'error');
+  }, [products.error, showToast, t]);
+  useEffect(() => {
+    if (!productList || !pendingItems) return;
+    const wanted = new Set(pendingItems);
+    const linked = productList.filter((x) => wanted.has(x.itemId));
+    setPendingItems(null);
+    if (linked.length > 0) setControlsState((c) => ({ ...c, basket: linked }));
+  }, [productList, pendingItems]);
+
+  const addProducts = (added: RevenueProduct[]) => {
+    const { basket, switchToItemStack } = addToBasket(controls.basket, added);
+    // The first product added switches the chart to the per-product split.
+    setControls(switchToItemStack ? { basket, stack: 'item' } : { basket });
+  };
+
+  const today = orgToday();
+  const windowAt = (delta: number) => (data ? shiftWindow(data.from, data.to, data.granularity, delta, REVENUE_HISTORY_START, today) : null);
+  const shift = (delta: number) => {
+    const w = windowAt(delta);
+    if (w) setControls({ range: { preset: 'custom', ...w } });
+  };
 
   const refresh = () => {
     loader.reset();
@@ -214,11 +293,52 @@ export function RevenuePage() {
         </div>
       </div>
 
-      <div className="space-y-4 border-t border-bambu-dark-tertiary pt-5">
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-          <div data-slot="revenue-controls" />
-          <RevenueSegmented tabs idPrefix="revenue-view" label={t('revenue.views.label')} value={view} onChange={(v) => setControls({ view: v })} options={views} />
-        </div>
+      <div data-slot="revenue-controls" className="border-t border-bambu-dark-tertiary pt-5">
+        <ControlsRow
+          granularity={active.granularity}
+          onGranularity={(granularity) => setControls({ granularity })}
+          range={active.range}
+          onRange={(range) => setControls({ range })}
+          from={data?.from ?? ''}
+          to={data?.to ?? ''}
+          today={today}
+          canPrev={windowAt(-1) !== null}
+          canNext={windowAt(1) !== null}
+          onShift={shift}
+          kind={active.kind}
+          onKind={(kind) => setControls({ kind })}
+          segment={active.segment}
+          onSegment={(segment) => setControls({ segment })}
+          showSegment={can.customers}
+          aside={<RevenueSegmented tabs idPrefix="revenue-view" label={t('revenue.views.label')} value={view} onChange={(v) => setControls({ view: v })} options={views} />}
+        >
+          <RevenueProductSearch
+            products={filterByKind(productList, active.kind)}
+            basket={active.basket}
+            onAdd={addProducts}
+            onRemove={(id) => setControls({ basket: controls.basket.filter((b) => b.itemId !== id) })}
+            onClear={() => setControls({ basket: [] })}
+            brands={active.brands}
+            onToggleBrand={(key) => setControls({ brands: toggleInSet(controls.brands, key) })}
+            onClearBrands={() => setControls({ brands: new Set() })}
+            extraChips={
+              active.kind || active.segment ? (
+                <>
+                  {active.kind && (
+                    <RevenueChip label={t('revenue.filters.type')} value={t(`revenue.filters.${active.kind}`)}
+                      removeLabel={t('revenue.filters.removeFilter', { value: t(`revenue.filters.${active.kind}`) })} onRemove={() => setControls({ kind: null })} />
+                  )}
+                  {active.segment && (
+                    <RevenueChip label={t('revenue.filters.customers')} value={t(`revenue.filters.segments.${active.segment}`)}
+                      removeLabel={t('revenue.filters.removeFilter', { value: t(`revenue.filters.segments.${active.segment}`) })} onRemove={() => setControls({ segment: null })} />
+                  )}
+                </>
+              ) : null
+            }
+            // A stored segment this user may not see is not theirs to erase.
+            onClearExtra={() => setControls(can.customers ? { kind: null, segment: null } : { kind: null })}
+          />
+        </ControlsRow>
       </div>
 
       {error && (

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { addDays, allDays, daysBetween, daysInMonth, isValidDay, isoWeek } from "@/components/revenue/lib/dates";
+import { addDays, allDays, daysBetween, daysInMonth, isValidDay, isoWeek, orgToday } from "@/components/revenue/lib/dates";
 
 describe("revenue-dates", () => {
+  it("orgToday reads the Pacific/Tahiti day, a day behind UTC's evening", () => {
+    expect(orgToday(new Date("2026-11-20T05:00:00Z"))).toBe("2026-11-19");
+    expect(orgToday(new Date("2026-11-20T10:00:00Z"))).toBe("2026-11-20");
+  });
+
   it("isValidDay accepts yyyy-MM-dd that round-trips and rejects everything else", () => {
     expect(isValidDay("2026-10-15")).toBe(true);
     expect(isValidDay("2024-02-29")).toBe(true);
