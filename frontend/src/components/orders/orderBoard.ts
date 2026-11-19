@@ -368,3 +368,7 @@ export function lineTotal(l: NewOrderDraftLine): number | null {
   if (m[2]) return n <= 100 ? gross * (1 - n / 100) : null;
   return n <= gross + 1e-9 ? gross - n : null;
 }
+
+export const PAY_CHIPS: Exclude<PayFilter, 'all' | 'overdue'>[] = ['unpaid', 'partial', 'paid'];
+export const chipCls = (active: boolean) =>
+  `btn-press rounded-full border px-3 py-1.5 text-xs ${active ? 'border-bambu-green bg-bambu-green/15 text-white' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`;

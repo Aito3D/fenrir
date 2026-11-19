@@ -1046,4 +1046,64 @@ describe('OrderBoardPage on the phone', () => {
     await user.click(await screen.findByRole('button', { name: /SO-F001/ }));
     expect(await screen.findByRole('tab', { name: 'Products' })).toBeInTheDocument();
   });
+
+  it('status chips replace the tiles', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    expect(screen.queryByTestId('orders-tiles')).not.toBeInTheDocument();
+    const chip = screen.getByRole('button', { name: /^To ship\s*1$/ });
+    await user.click(chip);
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get('status')).toBe('to_ship'));
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
+    await user.click(chip);
+    await waitFor(() => expect(new URLSearchParams(window.location.search).has('status')).toBe(false));
+  });
+
+  it('the filter sheet changes the payment filter', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    const trigger = screen.getByRole('button', { name: 'Filters and sort' });
+    expect(trigger).not.toHaveTextContent('1');
+    await user.click(trigger);
+    const dialog = await screen.findByRole('dialog', { name: 'Filters and sort' });
+    await user.click(within(dialog).getByRole('button', { name: /^Unpaid/ }));
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get('pay')).toBe('unpaid'));
+    expect(within(dialog).getByRole('button', { name: 'Show 0 orders' })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: /^Show \d+ orders$/ }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Filters and sort' })).toHaveTextContent('1');
+  });
+
+  it('the fab starts a new order', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    await user.click(screen.getByRole('button', { name: 'New order' }));
+    expect(await screen.findByRole('button', { name: 'Abandon' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New order' })).not.toBeInTheDocument();
+  });
+
+  it('a viewer without orders:update has no fab and no refresh', async () => {
+    mockUseAuth.hasPermission.mockImplementation((p: string) => p !== 'orders:update');
+    serve(board());
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    expect(screen.queryByRole('button', { name: 'New order' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument();
+  });
+
+  it('the summary line shows the value and the sync status', async () => {
+    serve(board());
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
+    const line = screen.getByTestId('orders-summary');
+    expect(line).toHaveTextContent(/38\D?350/);
+    expect(line).toHaveTextContent(/Updated/);
+    expect(within(line).getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+  });
 });
