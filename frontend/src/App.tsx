@@ -64,6 +64,8 @@ const loadAitoPage = () => import('./pages/AitoPage').then(m => ({ default: m.Ai
 const AitoPage = lazyWithReload(loadAitoPage);
 const loadOrderBoardPage = () => import('./pages/OrderBoardPage').then(m => ({ default: m.OrderBoardPage }));
 const OrderBoardPage = lazyWithReload(loadOrderBoardPage);
+const loadRevenuePage = () => import('./pages/RevenuePage').then(m => ({ default: m.RevenuePage }));
+const RevenuePage = lazyWithReload(loadRevenuePage);
 // Design bench for the Done celebration, dev-only in the literal sense: the
 // ternary is what keeps it out of production, not the route guard below.
 // `import.meta.env.DEV` is replaced by `false` at build time, so the whole
@@ -100,6 +102,7 @@ const ROUTE_PRELOADS: RoutePreloadTable = [
   [/^\/projects\/?$/, loadProjectListPage],
   [/^\/aito(\/|$)/, loadAitoPage],
   [/^\/orders\/?$/, loadOrderBoardPage],
+  [/^\/revenue\/?$/, loadRevenuePage],
   [/^\/files\/?$/, loadFileManagerPage],
   [/^\/t\/o\/[^/]+$/, loadOrderTrackPage],
   [/^\/(t|track)\/[^/]+$/, loadAitoTrackPage],
@@ -358,6 +361,7 @@ const router = createBrowserRouter(
         <Route path="projects/:id" element={<ProjectDetailPage />} />
         <Route path="aito" element={<PermissionRoute permission="aito:read"><AitoPage /></PermissionRoute>} />
         <Route path="orders" element={<PermissionRoute permission="orders:read"><OrderBoardPage /></PermissionRoute>} />
+        <Route path="revenue" element={<PermissionRoute permission="revenue:read"><RevenuePage /></PermissionRoute>} />
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="files" element={<FileManagerPage />} />
         <Route path="files/trash" element={<LibraryTrashPage />} />

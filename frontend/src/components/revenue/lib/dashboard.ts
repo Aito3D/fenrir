@@ -128,7 +128,7 @@ export function startSeriesPoller(deps: SeriesPollerDeps): { stop(): void } {
   };
 }
 
-export type SeriesLoad = { status: "data"; payload: RevenueResponse } | { status: "unchanged" } | { status: "stale" };
+export type SeriesLoad<T = RevenueResponse> = { status: "data"; payload: T } | { status: "unchanged" } | { status: "stale" };
 
 /**
  * The series fetch the poller's `load` calls: sends the auth headers (a function, so a refreshed
@@ -136,11 +136,11 @@ export type SeriesLoad = { status: "data"; payload: RevenueResponse } | { status
  * (the page keeps its data) and an answer overtaken by a newer `load` is "stale" (dropped).
  * Throws on a failed or non-JSON current answer (`Error(failureMessage)`); an overtaken request never throws.
  */
-export function createSeriesLoader(getHeaders: () => Record<string, string>, doFetch: typeof fetch = fetch) {
+export function createSeriesLoader<T = RevenueResponse>(getHeaders: () => Record<string, string>, doFetch: typeof fetch = fetch) {
   let seq = 0;
   let etag: { url: string; tag: string } | null = null;
   return {
-    async load(url: string): Promise<SeriesLoad> {
+    async load(url: string): Promise<SeriesLoad<T>> {
       const mySeq = ++seq;
       try {
         const headers = { ...getHeaders(), ...(etag?.url === url ? { "If-None-Match": etag.tag } : {}) };
@@ -152,7 +152,7 @@ export function createSeriesLoader(getHeaders: () => Record<string, string>, doF
         if (!res.ok || body === null) throw new Error(failureMessage(res.status, body));
         const tag = res.headers.get("etag");
         etag = tag ? { url, tag } : null;
-        return { status: "data", payload: body as RevenueResponse };
+        return { status: "data", payload: body as T };
       } catch (e) {
         if (mySeq !== seq) return { status: "stale" };
         throw e;

@@ -300,7 +300,7 @@ async function uploadSpoolsCsv<T>(file: File, dryRun: boolean): Promise<T> {
 
 /** `Authorization: Bearer …` when a token is set, otherwise no headers. For the
  *  raw fetches that bypass `request()` (and so must not force a Content-Type). */
-function bearerAuthHeaders(): Record<string, string> {
+export function bearerAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
   if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
   return headers;
