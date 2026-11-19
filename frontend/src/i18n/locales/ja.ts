@@ -11344,6 +11344,7 @@ export default {
       ordersReady: '準備可能な注文',
       ordersPacked: "注文の梱包完了：お客様に連絡",
       ordersNew: '新しい注文',
+      ordersPaid: '注文の支払い完了',
     },
   },
   projectsPdm: {

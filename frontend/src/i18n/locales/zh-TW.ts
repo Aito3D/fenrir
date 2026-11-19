@@ -11328,6 +11328,7 @@ export default {
       ordersReady: '訂單可備貨',
       ordersPacked: "訂單已包裝：通知客戶",
       ordersNew: '新訂單',
+      ordersPaid: '訂單已付款',
     },
   },
   projectsPdm: {

@@ -11369,6 +11369,7 @@ export default {
       ordersReady: 'Bestelling klaar om voor te bereiden',
       ordersPacked: "Bestelling ingepakt: klant verwittigen",
       ordersNew: 'Nieuwe bestelling',
+      ordersPaid: 'Bestelling betaald',
     },
   },
   projectsPdm: {

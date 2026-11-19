@@ -74,6 +74,7 @@ async def test_kind_mapping():
         "orders.ready",
         "orders.new",
         "orders.packed",
+        "orders.paid",
     }
     assert set(inbox.SOUND_DEFAULT_KINDS) == set(inbox.DEFAULT_KINDS) - {"hours.readings_due", "orders.new"}
 

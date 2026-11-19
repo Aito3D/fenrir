@@ -11402,6 +11402,7 @@ errors: {
       ordersReady: 'Beställning redo att förberedas',
       ordersPacked: "Beställningen är packad: meddela kunden",
       ordersNew: 'Ny beställning',
+      ordersPaid: 'Beställning betald',
     },
   },
   projectsPdm: {

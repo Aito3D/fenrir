@@ -11550,6 +11550,7 @@ export default {
       ordersReady: 'Zamówienie gotowe do przygotowania',
       ordersPacked: "Zamówienie spakowane: powiadom klienta",
       ordersNew: 'Nowe zamówienie',
+      ordersPaid: 'Zamówienie opłacone',
     },
   },
   projectsPdm: {

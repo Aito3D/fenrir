@@ -10992,6 +10992,7 @@ export default {
       ordersReady: 'Замовлення готове до комплектації',
       ordersPacked: "Замовлення спаковано: повідомте клієнта",
       ordersNew: 'Нове замовлення',
+      ordersPaid: 'Замовлення оплачено',
     },
   },
   projectsPdm: {

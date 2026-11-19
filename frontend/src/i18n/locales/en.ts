@@ -11401,6 +11401,7 @@ export default {
       ordersReady: 'Order ready to prepare',
       ordersPacked: "Order packed: tell the customer",
       ordersNew: 'New order',
+      ordersPaid: 'Order paid',
     },
   },
   projectsPdm: {

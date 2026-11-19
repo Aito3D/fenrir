@@ -10966,6 +10966,7 @@ export default {
       ordersReady: '준비 가능한 주문',
       ordersPacked: "주문 포장 완료: 고객에게 알리기",
       ordersNew: '새 주문',
+      ordersPaid: '주문 결제 완료',
     },
   },
   projectsPdm: {

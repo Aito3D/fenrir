@@ -81,6 +81,7 @@ KINDS: dict[str, InboxKind] = {
     "orders.ready": InboxKind("orders", True, ("order.ready",)),
     "orders.new": InboxKind("orders", True, ("order.received",), sound_default=False),
     "orders.packed": InboxKind("orders", True, ("order.packed",)),
+    "orders.paid": InboxKind("orders", True, ("payment.received",)),
 }
 DEFAULT_KINDS: list[str] = [k for k, v in KINDS.items() if v.default_on]
 SOUND_DEFAULT_KINDS: list[str] = [k for k, v in KINDS.items() if v.default_on and v.sound_default]

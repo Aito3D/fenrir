@@ -11345,6 +11345,7 @@ export default {
       ordersReady: 'Bestellung bereit zum Vorbereiten',
       ordersPacked: "Bestellung verpackt: Kunden benachrichtigen",
       ordersNew: 'Neue Bestellung',
+      ordersPaid: 'Bestellung bezahlt',
     },
   },
   projectsPdm: {

@@ -11272,6 +11272,7 @@ export default {
       ordersReady: 'Sipariş hazırlanmaya hazır',
       ordersPacked: "Sipariş paketlendi: müşteriye haber verin",
       ordersNew: 'Yeni sipariş',
+      ordersPaid: 'Sipariş ödendi',
     },
   },
   projectsPdm: {

@@ -11328,6 +11328,7 @@ export default {
       ordersReady: '订单可备货',
       ordersPacked: "订单已打包：通知客户",
       ordersNew: '新订单',
+      ordersPaid: '订单已付款',
     },
   },
   projectsPdm: {
