@@ -447,9 +447,17 @@ async def _body(request: Request, model: type[_M]) -> _M:
     """Lenient parse: a malformed or non-object body becomes an empty model, so the handler's own message applies."""
     try:
         raw = await request.json()
-    except ValueError:
+    except (ValueError, RecursionError):
         raw = None
     return model.model_validate(raw if isinstance(raw, dict) else {})
+
+
+def _unencodable(text: str) -> bool:
+    try:
+        text.encode()
+    except UnicodeEncodeError:
+        return True
+    return False
 
 
 def _writer() -> async_sessionmaker:
@@ -517,7 +525,7 @@ async def post_annotation(
     label = body.label.strip() if isinstance(body.label, str) else ""
     if not is_valid_day(day) or day < REVENUE_HISTORY_START:
         raise _unprocessable(f"day must be yyyy-MM-dd from {REVENUE_HISTORY_START}")
-    if not label or len(label) > store.MAX_ANNOTATION_LABEL:
+    if not label or len(label) > store.MAX_ANNOTATION_LABEL or not label.isascii() and _unencodable(label):
         raise _unprocessable(f"label must be 1 to {store.MAX_ANNOTATION_LABEL} characters")
     async with _writer()() as db:
         return {"annotation": await store.add_annotation(db, day, label, datetime.now(timezone.utc))}

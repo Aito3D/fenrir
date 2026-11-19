@@ -378,10 +378,12 @@ async def test_every_write_route_has_its_own_permission(
     [
         ("put", "/scope/a b", {"included": True}),
         ("delete", "/scope/a b", None),
+        ("put", "/scope/i1", {"included": "yes"}),
         ("put", "/targets/2026-13", {"amountHt": 1}),
+        ("put", "/targets/2025-03", {"amountHt": -1}),
         ("delete", "/targets/2026-13", None),
         ("delete", "/annotations/abc", None),
-        ("post", "/annotations", {"day": DAY, "label": "x"}),
+        ("post", "/annotations", {"day": "2023-12-31", "label": " "}),
     ],
 )
 async def test_write_validation_never_precedes_the_permission(async_client, revenue_db, tokens, method, path, body):
@@ -474,3 +476,41 @@ async def test_sync_post_timeout_and_failure_are_clean_errors(async_client, reve
     r = await async_client.post(f"{URL}/sync", headers=tokens["sync"])
     assert r.status_code == 504
     assert r.json()["detail"] == "Upstream request timed out"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw",
+    [b'{"day": "2026-01-05", "label": "\\ud800x"}', b"[" * 100_000],
+    ids=["lone-surrogate", "deep-nesting"],
+)
+async def test_annotation_body_that_breaks_the_parser_or_encoding_is_a_422(async_client, revenue_db, tokens, raw):
+    headers = {**tokens["notes"], "Content-Type": "application/json"}
+    r = await async_client.post(f"{URL}/annotations", content=raw, headers=headers)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_deeply_nested_body_gets_the_routes_own_message(async_client, revenue_db, tokens):
+    headers = {**tokens["scope"], "Content-Type": "application/json"}
+    r = await async_client.put(f"{URL}/scope/i1", content=b"[" * 100_000, headers=headers)
+    assert r.status_code == 422
+    assert r.json()["detail"] == "body must be { included: boolean }"
+
+
+@pytest.mark.asyncio
+async def test_target_put_and_annotation_post_invalidate_the_etag(async_client, revenue_db, tokens):
+    for path, write in (
+        (
+            "/targets",
+            lambda: async_client.put(f"{URL}/targets/2025-03", json={"amountHt": 5}, headers=tokens["targets"]),
+        ),
+        (
+            "/annotations",
+            lambda: async_client.post(f"{URL}/annotations", json={"day": DAY, "label": "x"}, headers=tokens["notes"]),
+        ),
+    ):
+        etag = (await async_client.get(URL + path, headers=tokens["read"])).headers["etag"]
+        assert (await write()).status_code in (200, 201)
+        again = await async_client.get(URL + path, headers={**tokens["read"], "If-None-Match": etag})
+        assert again.status_code == 200
