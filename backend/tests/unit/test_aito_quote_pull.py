@@ -12,10 +12,10 @@ from backend.tests.unit.test_aito_quote_export import _SKU_FOR_ITEM, CATALOGUE, 
 SHIPPING_CATALOGUE = replace(CATALOGUE, shipping={"standard": "ITEM_SHIP"})
 
 
-def books(tasks, shipping=None, catalogue: Catalogue = CATALOGUE, total=None) -> dict:
+def books(tasks, shipping=None, catalogue: Catalogue = CATALOGUE, total=None, priority=None) -> dict:
     """The estimate Books would return after this card's push."""
     lines = []
-    for number, line in enumerate(build_line_items(tasks, [], catalogue, shipping), start=1):
+    for number, line in enumerate(build_line_items(tasks, [], catalogue, shipping, priority), start=1):
         line = {**line, "sku": _SKU_FOR_ITEM.get(line.get("item_id"), "")}
         if line.get("line_item_category") == "header":
             # Books' read-back spelling: the title under `name`, no id.

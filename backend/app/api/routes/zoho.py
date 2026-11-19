@@ -14,7 +14,7 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.user import User
-from backend.app.schemas.aito import AitoPriority, AitoTaskCreate
+from backend.app.schemas.aito import AitoTaskCreate
 from backend.app.services.aito_quote_import import build_preview
 from backend.app.services.zoho import (
     ZohoNotConfiguredError,
@@ -480,9 +480,6 @@ class ZohoQuotePreview(BaseModel):
     skipped_lines: list[ZohoSkippedLine]
     discount_issues: list[ZohoDiscountIssue]
     shipping: ZohoQuoteShipping | None
-    # Read from the quote's priority surcharge line (aito_quote_import.build_preview).
-    priority: AitoPriority = "normal"
-    priority_amount: float = 0.0
     existing_project_id: int | None
 
 
@@ -523,9 +520,7 @@ async def preview_estimate(
             logger.warning("Quote preview: contact %s unavailable: %s", customer_id, e)
 
     catalogue = await zoho_service.get_catalogue(db)
-    preview = build_preview(
-        estimate, contact, quote_url, shipping_ids=catalogue.shipping, priority_ids=catalogue.priority_items
-    )
+    preview = build_preview(estimate, contact, quote_url, shipping_ids=catalogue.shipping)
     # Soft-deleted cards do not count: re-importing a quote whose card was
     # thrown away is not a duplicate.
     existing = await db.scalar(

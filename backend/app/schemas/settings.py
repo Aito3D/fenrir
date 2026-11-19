@@ -721,8 +721,6 @@ class AppSettings(BaseModel):
     zoho_organization_id: str = Field(default="", description="Zoho Books organization id")
     zoho_base_url: str = Field(default="https://www.zohoapis.eu", description="Zoho API base URL")
     zoho_accounts_url: str = Field(default="https://accounts.zoho.eu", description="Zoho accounts (OAuth) URL")
-    zoho_item_priority_id: str = Field(default="", description="Books item id of the Priority surcharge line")
-    zoho_item_urgent_id: str = Field(default="", description="Books item id of the Urgent surcharge line")
     zoho_default_contact_id: str = Field(
         default="66407000001237340", description="Zoho contact used as the default Aito client"
     )
@@ -1027,8 +1025,6 @@ class AppSettingsUpdate(BaseModel):
     zoho_refresh_token: str | None = None
     zoho_organization_id: str | None = None
     zoho_base_url: str | None = None
-    zoho_item_priority_id: str | None = None
-    zoho_item_urgent_id: str | None = None
     zoho_accounts_url: str | None = None
     zoho_default_contact_id: str | None = None
     zoho_default_contact_name: str | None = None

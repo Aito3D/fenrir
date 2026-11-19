@@ -405,39 +405,31 @@ def load_export_shipping(project: AitoProject, catalogue: Catalogue) -> ExportSh
     )
 
 
-class PriorityCatalogueUnavailable(Exception):
-    """The project has a priority level but its Books item is not configured.
-
-    Same contract as `ShippingCatalogueUnavailable`: a quote pushed without
-    the surcharge it was promised could be sent to a client, so the project
-    stays `pending` (no failure spent) until the setting named in the message
-    is filled in.
-    """
-
-
 async def load_export_priority(
-    db: AsyncSession, project: AitoProject, catalogue: Catalogue, tasks: list[ExportTask]
+    db: AsyncSession, project: AitoProject, tasks: list[ExportTask]
 ) -> ExportPriority | None:
-    """The project's priority surcharge line, or None for a Normal project.
+    """The factor the project's priority surcharge scales its task lines by,
+    or None (no scaling) for a Normal project or a zero base.
 
     The base is the net task total the board shows (`net_cost`, after each
     service's discount, shipping excluded), from the same `tasks` snapshot the
-    push writes, so the line always matches the lines above it.
+    push writes; the surcharge is rounded half-up like the drawer's Math.round.
     """
     level = project.priority or "normal"
     if level == "normal":
         return None
-    if level not in catalogue.priority_items:
-        raise PriorityCatalogueUnavailable(f"No Books item for priority level {level!r}: set zoho_item_{level}_id")
+    base = sum(cost for task in tasks for service in SERVICES if (cost := net_cost(task, service)) is not None)
+    if base <= 0:
+        return None
     defaults = (
         await db.execute(select(CalculatorDefaults).order_by(CalculatorDefaults.id).limit(1))
     ).scalar_one_or_none()
     if defaults is None:
         # Seeded at startup (database.py), so only a wiped table lands here.
-        raise PriorityCatalogueUnavailable("No calculator defaults row to price the priority surcharge")
-    base = sum(cost for task in tasks for service in SERVICES if (cost := net_cost(task, service)) is not None)
-    # Half-up like the drawer's Math.round; round() is half-to-even (454.5 -> 454).
-    return ExportPriority(level, math.floor(priority_surcharge(level, base, defaults) + 0.5))
+        logger.warning("Aito project %s: no calculator defaults row, priority surcharge not applied", project.id)
+        return None
+    surcharge = math.floor(priority_surcharge(level, base, defaults) + 0.5)
+    return ExportPriority(level, 1 + surcharge / base)
 
 
 async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTask]:
@@ -670,7 +662,7 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         [],
         catalogue,
         shipping=load_export_shipping(project, catalogue),
-        priority=await load_export_priority(db, project, catalogue, tasks),
+        priority=await load_export_priority(db, project, tasks),
     )
     # Idempotency guard: a prior tick can have POSTed successfully and then
     # died before the commit that would have recorded the returned
@@ -1316,7 +1308,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         estimate.get("line_items") or [],
         catalogue,
         shipping=load_export_shipping(project, catalogue),
-        priority=await load_export_priority(db, project, catalogue, tasks),
+        priority=await load_export_priority(db, project, tasks),
     )
     # Pre-existing quotes get an expiry ONCE; one set by hand in Books is
     # never overwritten. Its own call, not folded into the line-item PUT, so
@@ -1727,7 +1719,7 @@ async def sync_project(
         # Not a failure: sync is simply off. Leave the project pending so it
         # syncs the moment credentials are entered.
         return
-    except (ShippingCatalogueUnavailable, PriorityCatalogueUnavailable) as e:
+    except ShippingCatalogueUnavailable as e:
         await _defer_on_catalogue(db, project_id, e)
         return
     except ZohoRequestRejected as e:
@@ -2004,7 +1996,13 @@ async def _pull_lines(db: AsyncSession, project_id: int, estimate: dict) -> None
         tasks = await load_export_tasks(db, project_id)  # same order as `rows`
         catalogue = await zoho_service.get_catalogue(db)
         try:
-            plan = plan_pull(tasks, estimate, catalogue, load_export_shipping(project, catalogue))
+            plan = plan_pull(
+                tasks,
+                estimate,
+                catalogue,
+                load_export_shipping(project, catalogue),
+                await load_export_priority(db, project, tasks),
+            )
         except ShippingCatalogueUnavailable:
             plan = PullPlan(refused="shipping")
         except Exception:
@@ -2055,7 +2053,7 @@ async def _pull_lines(db: AsyncSession, project_id: int, estimate: dict) -> None
                 subject_label=row.title,
                 changes=changes,
             )
-        # The surcharge base moved: queue a re-push so the Books priority line follows.
+        # The surcharge base moved: queue a re-push so every line takes the new factor.
         if plan.task_patches and project.priority != "normal" and project.quote_sync_state != "unmanaged":
             project.quote_sync_state = "pending"
         if plan.shipping:
@@ -2293,7 +2291,7 @@ async def _sync_push(db: AsyncSession, project: AitoProject, project_id: int) ->
     else:
         await _update_quote(db, project)
     # Reached only when _create_quote/_update_quote returned WITHOUT
-    # raising Shipping/PriorityCatalogueUnavailable — this tick's push (or one of
+    # raising ShippingCatalogueUnavailable — this tick's push (or one of
     # their own terminal-error branches) completed normally. Drop any
     # stale deferral memory for this project so a later recurrence of the
     # same reason logs afresh rather than staying suppressed forever by a
@@ -2304,10 +2302,8 @@ async def _sync_push(db: AsyncSession, project: AitoProject, project_id: int) ->
     _throttled_until = None
 
 
-async def _defer_on_catalogue(
-    db: AsyncSession, project_id: int, e: ShippingCatalogueUnavailable | PriorityCatalogueUnavailable
-) -> None:
-    """``sync_project``'s Shipping/PriorityCatalogueUnavailable handler body; never raises."""
+async def _defer_on_catalogue(db: AsyncSession, project_id: int, e: ShippingCatalogueUnavailable) -> None:
+    """``sync_project``'s ShippingCatalogueUnavailable handler body; never raises."""
     # Not an error state: nothing is wrong with the project, the catalogue
     # simply has not resolved yet. Stay `pending` and retry next tick
     # rather than burning a failure and eventually going to 'error' — see
@@ -2339,10 +2335,6 @@ async def _defer_on_catalogue(
     if _deferred_reasons.get(project_id) != message:
         logger.warning("Aito project %s deferred: %s", project_id, e)
         _deferred_reasons[project_id] = message
-    if isinstance(e, PriorityCatalogueUnavailable):
-        # A setting only an operator can fill; warming the shipping cache
-        # would spend Books calls every tick for nothing.
-        return
     try:
         await zoho_service.get_shipping_catalogue(db, refresh=True)
     except Exception:

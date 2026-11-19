@@ -63,14 +63,3 @@ async def test_an_unrelated_settings_change_keeps_the_cache(async_client):
         assert zoho_filaments._cache == []
     finally:
         zoho_filaments.reset_cache()
-
-
-@pytest.mark.asyncio
-async def test_priority_item_ids_are_settable_and_reach_the_catalogue(async_client, db_session):
-    from backend.app.services.zoho import zoho_service
-
-    r = await async_client.put("/api/v1/settings/", json={"zoho_item_priority_id": "P-1", "zoho_item_urgent_id": "U-1"})
-    assert r.status_code == 200
-    assert r.json()["zoho_item_priority_id"] == "P-1"
-    catalogue = await zoho_service.get_catalogue(db_session)
-    assert (catalogue.priority_item_id, catalogue.urgent_item_id) == ("P-1", "U-1")

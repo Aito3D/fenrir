@@ -178,7 +178,6 @@ export function useAitoPageMutations() {
         quote_url: preview.quote.url,
         quote_salesperson: preview.quote.salesperson,
         quote_status: preview.quote.status,
-        priority: preview.priority,
         // `preview.shipping` (ZohoQuoteShipping) is unprefixed and carries a
         // `service` the request body must never see — the server derives
         // `shipping_service` from the island alone. `service` is deliberately

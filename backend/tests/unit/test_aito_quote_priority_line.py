@@ -1,149 +1,136 @@
-"""The project's priority surcharge as its own Zoho quote line: push, import, pull.
+"""The project's priority surcharge spread over its Zoho quote lines: every
+task service rate is raised by one common factor. Push, write-back, pull.
 
 Pure functions against a fake catalogue, plus one push through the sync
-worker's MockTransport seam (the card's tax must reach the line). No network.
+worker's MockTransport seam. No network.
 """
-
-from dataclasses import replace
 
 import httpx
 import pytest
 
-from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.calculator import CalculatorDefaults
 from backend.app.services.aito_quote_export import ExportPriority, build_line_items
-from backend.app.services.aito_quote_import import build_preview, discount_issues
 from backend.app.services.aito_quote_pull import plan_pull
-from backend.app.services.aito_quote_sync import (
-    PriorityCatalogueUnavailable,
-    _deferred_reasons,
-    load_export_priority,
-    run_sync_once,
-)
+from backend.app.services.aito_quote_sync import _deferred_reasons, load_export_priority, run_sync_once
 from backend.app.services.zoho import zoho_service
-from backend.tests.unit.test_aito_quote_export import _SKU_FOR_ITEM, CATALOGUE, task
-from backend.tests.unit.test_aito_quote_pull import books
+from backend.tests.unit.test_aito_quote_export import CATALOGUE, SHIPPING, SHIPPING_CATALOGUE, task
+from backend.tests.unit.test_aito_quote_pull import CARD, books, line
 from backend.tests.unit.test_aito_quote_sync import _configure_zoho, zoho_handler
 
-CAT = replace(CATALOGUE, priority_item_id="P1", urgent_item_id="U1")
-PRIORITY_IDS = {"priority": "P1", "urgent": "U1"}
-TASKS = [task(title="Helice", scan_cost=5000)]
+TASKS = [task(title="Helice", impression_cost=8000, modelisation_cost=2000)]
 
 
-def _ids(lines):
-    return [line.get("item_id") for line in lines]
+def _rates(lines):
+    return [item["rate"] for item in lines if "rate" in item]
 
 
-def test_the_priority_line_comes_last_with_its_rate_and_no_discount():
-    shipping_free = build_line_items(TASKS, [], CAT, priority=ExportPriority("urgent", 1500))
-    assert shipping_free[-1] == {"item_id": "U1", "rate": 1500, "quantity": 1, "tax_id": "TAX", "item_order": 3}
+async def _priority(db, level, tasks, **defaults):
+    db.add(CalculatorDefaults(id=1, **defaults))
+    await db.commit()
+    return await load_export_priority(db, AitoProject(priority=level), tasks)
 
 
-def test_a_project_set_back_to_normal_drops_its_old_priority_line():
-    existing = [{"line_item_id": "L9", "item_id": "U1", "rate": 1500, "item_order": 3}]
-    lines = build_line_items(TASKS, existing, CAT)
-    assert not {"P1", "U1"} & set(_ids(lines))
-    assert all(line.get("line_item_id") != "L9" for line in lines)
+@pytest.mark.asyncio
+async def test_urgent_raises_every_task_line_by_the_same_factor_and_adds_none(db_session):
+    priority = await _priority(db_session, "urgent", TASKS)
+    assert priority == ExportPriority("urgent", 1.35)  # base 10000, 35% = 3500 beats the 1500 floor
+    plain = build_line_items(TASKS, [], CATALOGUE)
+    raised = build_line_items(TASKS, [], CATALOGUE, priority=priority)
+    assert len(raised) == len(plain)
+    assert sorted(_rates(raised)) == [2700, 10800]
 
 
-def test_a_level_change_replaces_the_line_rather_than_adding_one():
-    existing = [{"line_item_id": "L9", "item_id": "U1", "rate": 1500, "item_order": 3}]
-    lines = build_line_items(TASKS, existing, CAT, priority=ExportPriority("priority", 500))
-    assert [i for i in _ids(lines) if i in {"P1", "U1"}] == ["P1"]
-    assert all(line.get("line_item_id") != "L9" for line in lines)
+@pytest.mark.asyncio
+async def test_the_minimum_fee_sets_the_factor_on_a_small_job(db_session):
+    tasks = [task(title="A", impression_cost=1400)]
+    priority = await _priority(db_session, "urgent", tasks)
+    assert _rates(build_line_items(tasks, [], CATALOGUE, priority=priority)) == [2900]
+
+
+@pytest.mark.asyncio
+async def test_a_multi_unit_line_scales_its_unit_rate(db_session):
+    tasks = [task(title="A", impression_cost=3000, impression_quantity=3)]
+    priority = await _priority(db_session, "priority", tasks)  # 15% of 3000 = 450 < 500 floor
+    (item,) = [item for item in build_line_items(tasks, [], CATALOGUE, priority=priority) if "rate" in item]
+    assert (item["rate"], item["quantity"]) == (1167, 3)  # 1000 x 3500/3000 = 1166.67
+
+
+def test_a_discounted_line_keeps_its_discount_and_only_its_rate_scales():
+    tasks = [task(title="A", impression_cost=10000, impression_discount_pct=10)]
+    plain = next(item for item in build_line_items(tasks, [], CATALOGUE) if "rate" in item)
+    raised = next(
+        item
+        for item in build_line_items(tasks, [], CATALOGUE, priority=ExportPriority("urgent", 1.35))
+        if "rate" in item
+    )
+    assert {**plain, "rate": 13500} == raised
+    assert raised["discount"] == "10%"
+
+
+def test_the_shipping_line_is_never_scaled():
+    lines = build_line_items(TASKS, [], SHIPPING_CATALOGUE, SHIPPING, ExportPriority("urgent", 1.35))
+    ship = next(item for item in lines if item.get("item_id") == "SHIP-TU")
+    assert ship["rate"] == SHIPPING.price
 
 
 def test_a_normal_project_pushes_exactly_what_it_did_before():
     existing = [{"line_item_id": "F1", "item_id": "", "sku": "", "rate": 100, "item_order": 9}]
-    assert build_line_items(TASKS, existing, CAT, priority=None) == build_line_items(TASKS, existing, CATALOGUE)
-
-
-def test_an_unset_priority_item_does_not_claim_free_text_lines():
-    # Books answers a free-text line with item_id "": an empty setting must
-    # never make such a foreign line read as ours (it would be deleted).
-    existing = [{"line_item_id": "F1", "item_id": "", "sku": "", "rate": 100, "item_order": 9}]
-    assert {"line_item_id": "F1", "item_order": 3} in build_line_items(TASKS, existing, CATALOGUE)
+    assert build_line_items(TASKS, existing, CATALOGUE, priority=None) == build_line_items(TASKS, existing, CATALOGUE)
 
 
 @pytest.mark.asyncio
-async def test_an_unset_item_id_refuses_rather_than_dropping_the_line(db_session):
-    project = AitoProject(priority="urgent")
-    with pytest.raises(PriorityCatalogueUnavailable, match="zoho_item_urgent_id"):
-        await load_export_priority(db_session, project, replace(CAT, urgent_item_id=""), TASKS)
+async def test_no_scaling_for_a_normal_project_or_an_empty_base(db_session):
+    assert await load_export_priority(None, AitoProject(priority="normal"), TASKS) is None
+    assert await load_export_priority(None, AitoProject(priority="urgent"), [task(title="A", scan_cost=0)]) is None
 
 
 @pytest.mark.asyncio
-async def test_a_normal_project_never_reads_the_catalogue():
-    assert await load_export_priority(None, AitoProject(priority="normal"), None, TASKS) is None
-
-
-@pytest.mark.asyncio
-async def test_the_base_is_the_net_task_total_and_the_minimum_fee_applies(db_session):
-    db_session.add(CalculatorDefaults(id=1))
-    await db_session.commit()
+async def test_the_base_is_the_net_task_total(db_session):
     tasks = [
         task(title="A", scan_cost=10000, scan_discount_pct=10),
         task(title="B", impression_cost=2001, impression_quantity=3),
     ]
-    # 9000 + 2001 = 11001; 35% = 3850.35 -> rounded for price_precision 0.
-    assert await load_export_priority(db_session, AitoProject(priority="urgent"), CAT, tasks) == ExportPriority(
-        "urgent", 3850
-    )
-    # 15% of 5000 = 750 beats the 500 floor; 15% of 1000 = 150 does not.
-    assert (await load_export_priority(db_session, AitoProject(priority="priority"), CAT, TASKS)).amount == 750
-    small = [task(title="C", scan_cost=1000)]
-    assert (await load_export_priority(db_session, AitoProject(priority="priority"), CAT, small)).amount == 500
+    # 9000 + 2001 = 11001; 35% = 3850.35 -> 3850.
+    assert (await _priority(db_session, "urgent", tasks)).factor == 1 + 3850 / 11001
 
 
 @pytest.mark.asyncio
-async def test_the_amount_rounds_half_up_like_the_drawer(db_session):
-    db_session.add(CalculatorDefaults(id=1, priority_min_fee=0))
-    await db_session.commit()
+async def test_the_surcharge_rounds_half_up_like_the_drawer(db_session):
     tasks = [task(title="A", scan_cost=3030)]  # 15% = 454.5; round() would give 454
-    assert (await load_export_priority(db_session, AitoProject(priority="priority"), CAT, tasks)).amount == 455
+    assert (await _priority(db_session, "priority", tasks, priority_min_fee=0)).factor == 1 + 455 / 3030
 
 
-def _estimate_with_urgent_line(**urgent_fields) -> dict:
-    estimate = books(TASKS, catalogue=CAT)
-    estimate["line_items"].append(
-        {"line_item_id": "L9", "item_id": "U1", "sku": "SVC-URG", "rate": 1500, "quantity": 1, "item_order": 9}
-        | urgent_fields
-    )
-    return estimate
+# --- pull -----------------------------------------------------------------
+
+URGENT = ExportPriority("urgent", 1.35)
 
 
-def test_import_reads_the_level_and_does_not_list_the_line_as_skipped():
-    preview = build_preview(_estimate_with_urgent_line(), None, "", priority_ids=PRIORITY_IDS)
-    assert (preview["priority"], preview["priority_amount"]) == ("urgent", 1500)
-    assert all(row["sku"] != "SVC-URG" for row in preview["skipped_lines"])
-    assert build_preview(books(TASKS, catalogue=CAT), None, "", priority_ids=PRIORITY_IDS)["priority"] == "normal"
+def test_an_untouched_urgent_quote_plans_nothing():
+    assert plan_pull(CARD, books(CARD, priority=URGENT), CATALOGUE, None, URGENT) is None
 
 
-def test_a_discount_on_the_priority_line_is_an_issue():
-    estimate = _estimate_with_urgent_line(discount="10%")
-    issues = discount_issues(estimate, priority_ids=PRIORITY_IDS)
-    assert [issue["sku"] for issue in issues] == ["SVC-URG"]
+def test_reading_an_urgent_quote_without_its_factor_sees_every_rate_as_edited():
+    # The guard on the test above: the factor is what makes it plan nothing.
+    plan = plan_pull(CARD, books(CARD, priority=URGENT), CATALOGUE, None)
+    assert plan is not None and plan.task_patches
 
 
-def test_a_hand_edited_priority_rate_is_neither_a_task_change_nor_a_refusal():
-    estimate = _estimate_with_urgent_line(rate=900)
-    plan = plan_pull(TASKS, estimate, CAT, None)
-    assert plan is None or (plan.task_patches == {} and plan.refused is None)
-    # Even a discount typed on it: the next push rewrites the line anyway.
-    plan = plan_pull(TASKS, _estimate_with_urgent_line(discount="10%"), CAT, None)
-    assert plan is None or (plan.task_patches == {} and plan.refused is None)
+def test_a_books_rate_raised_on_an_urgent_card_lands_divided_by_the_factor():
+    estimate = books(CARD, priority=URGENT)
+    line(estimate, "P3DSCAN")["rate"] = 8100  # pushed at 6750 = 5000 x 1.35
+    line(estimate, "P3DIMP")["rate"] = 1350  # pushed at 1080 = 800 x 1.35, 3 units
+    plan = plan_pull(CARD, estimate, CATALOGUE, None, URGENT)
+    assert plan is not None and plan.refused is None
+    assert plan.task_patches == {0: {"scan_cost": 6000, "impression_cost": 3000}}  # 8100 / 1.35; 1350 x 3 / 1.35
 
 
-def test_a_priority_item_whose_sku_looks_like_a_service_is_still_ignored_by_the_pull():
-    estimate = _estimate_with_urgent_line(sku=_SKU_FOR_ITEM["ITEM_SCAN"], rate=900)
-    plan = plan_pull(TASKS, estimate, CAT, None)
-    assert plan is None or (plan.task_patches == {} and plan.refused is None)
+# --- push through the worker ------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_the_pushed_priority_line_carries_the_card_tax(db_session):
+async def test_an_urgent_push_scales_the_rate_but_stores_the_unscaled_rounded_cost(db_session):
     _deferred_reasons.clear()
     project = AitoProject(
         description="Helice",
@@ -158,10 +145,12 @@ async def test_the_pushed_priority_line_carries_the_card_tax(db_session):
     db_session.add(project)
     db_session.add(CalculatorDefaults(id=1))
     await db_session.flush()
-    db_session.add(AitoTask(project_id=project.id, position=0, title="Helice grise", scan_cost=5000))
+    # 2401 over 2 units: the quote can only say 1200 x 2 = 2400.
+    db_session.add(
+        AitoTask(project_id=project.id, position=0, title="Helice", impression_cost=2401, impression_quantity=2)
+    )
     await db_session.commit()
     await _configure_zoho(db_session)
-    await set_setting(db_session, "zoho_item_urgent_id", "U1")
 
     seen: list = []
     estimate = {
@@ -169,7 +158,7 @@ async def test_the_pushed_priority_line_carries_the_card_tax(db_session):
         "estimate_number": "DEV26-9001",
         "date": "2026-07-29",
         "status": "draft",
-        "total": 6500,
+        "total": 3900,
         "last_modified_time": "2026-07-29T10:00:00-1000",
         "is_inclusive_tax": True,
     }
@@ -187,62 +176,8 @@ async def test_the_pushed_priority_line_carries_the_card_tax(db_session):
         zoho_service.invalidate_token()
 
     post = next(entry for entry in seen if entry[0] == "POST")
-    last = post[2]["line_items"][-1]
-    assert (last["item_id"], last["rate"], last["tax_id"]) == ("U1", 1750, "T0")  # 35% of 5000 beats the 1500 floor
-
-
-@pytest.mark.asyncio
-async def test_a_priority_project_with_no_item_configured_stays_pending_and_pushes_nothing(db_session):
-    _deferred_reasons.clear()
-    project = AitoProject(
-        description="Helice",
-        board_column="devis",
-        position=0,
-        client_id="C1",
-        client_name="Client de passage",
-        quote_sync_state="pending",
-        priority="priority",
-    )
-    db_session.add(project)
-    await db_session.flush()
-    db_session.add(AitoTask(project_id=project.id, position=0, title="Helice grise", scan_cost=5000))
-    await db_session.commit()
-    await _configure_zoho(db_session)
-
-    seen: list = []
-    zoho_service.transport = httpx.MockTransport(zoho_handler({("GET", "/items"): {"items": []}}, seen))
-    zoho_service.invalidate_token()
-    try:
-        assert await run_sync_once(db_session) == 1
-    finally:
-        zoho_service.transport = None
-        zoho_service.invalidate_token()
-    await db_session.refresh(project)
-    assert project.quote_sync_state == "pending"
-    assert (project.quote_sync_failures or 0) == 0
-    assert not any(method in ("POST", "PUT") for method, _, _ in seen)
-    assert "zoho_item_priority_id" in _deferred_reasons[project.id]
-    _deferred_reasons.clear()
-
-
-@pytest.mark.asyncio
-async def test_the_preview_route_returns_the_quote_priority_level(async_client):
-    from backend.app.core.database import async_session
-    from backend.tests.unit.test_zoho_estimate_routes import _books_handler, _configure, _estimate
-
-    await _configure(async_client)
-    async with async_session() as db:
-        await set_setting(db, "zoho_item_urgent_id", "U1")
-        await db.commit()
-    estimate = _estimate("dev-2461-three-services")
-    estimate["line_items"].append(
-        {"line_item_id": "L9", "item_id": "U1", "sku": "SVC-URG", "rate": 1500, "quantity": 1}
-    )
-    zoho_service.transport = httpx.MockTransport(_books_handler(estimate))
-    try:
-        body = (await async_client.get(f"/api/v1/zoho/estimates/{estimate['estimate_id']}/preview")).json()
-    finally:
-        zoho_service.transport = None
-        zoho_service.invalidate_token()
-    assert (body["priority"], body["priority_amount"]) == ("urgent", 1500)
-    assert body["skipped_lines"] == []
+    (item,) = [item for item in post[2]["line_items"] if "rate" in item]
+    # Base 2401 -> 1500 floor; 1200 x (1 + 1500/2401) = 1949.69 -> 1950. The card's tax rides along.
+    assert (item["rate"], item["quantity"], item["tax_id"]) == (1950, 2, "T0")
+    stored = (await db_session.execute(AitoTask.__table__.select())).one()
+    assert stored.impression_cost == 2400

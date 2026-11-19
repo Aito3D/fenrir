@@ -21,6 +21,7 @@ from dataclasses import dataclass, field, fields, replace
 from backend.app.services.aito_quote_export import (
     SERVICES,
     Catalogue,
+    ExportPriority,
     ExportShipping,
     ExportTask,
     build_line_items,
@@ -66,27 +67,45 @@ class PullPlan:
 
 
 def _readings(
-    tasks: list[ExportTask], estimate: dict, catalogue: Catalogue, shipping: ExportShipping | None
+    tasks: list[ExportTask],
+    estimate: dict,
+    catalogue: Catalogue,
+    shipping: ExportShipping | None,
+    priority: ExportPriority | None = None,
 ) -> tuple[dict, dict]:
-    """(what Books holds, what the card would push), both as import previews."""
+    """(what Books holds, what the card would push), both as import previews.
+
+    With a ``priority``, Books holds task rates raised by its factor; each one
+    is read back as ``round(rate / factor)``, which exactly inverts the push's
+    half-up ``round(unit x factor)`` (factor > 1), so both readings compare
+    un-surcharged unit rates and a Books edit lands on the task divided by it.
+    """
     pushed = build_line_items(tasks, estimate.get("line_items") or [], catalogue, shipping)
     # Lines the push echoes by id are not the card's to describe: foreign
     # lines, a hand-typed labour line, a shipment to an island we do not
     # know. They stay in the estimate (its total still counts them) but are
     # blanked so the reader files them under "not ours".
     echoed = {line["line_item_id"] for line in pushed if "item_id" not in line and "line_item_id" in line}
-    # The priority surcharge line is not the card's to describe either: its
-    # rate is a formula the next push rewrites (it is pushed without one here
-    # so neither reading carries it), and its discount is dropped the same way.
-    priority_ids = set(catalogue.priority_items.values())
     sku_by_item = {catalogue.item_id(service): sku for service, sku in _SKU.items()}
+    shipping_ids = set(catalogue.shipping.values())
 
     def relabel(line: dict) -> dict:
-        if line.get("line_item_id") in echoed or line.get("item_id") in priority_ids:
+        if line.get("line_item_id") in echoed:
             return {**line, "sku": "", "item_id": ""}
         return {**line, "sku": sku_by_item.get(line.get("item_id") or "", line.get("sku") or "")}
 
-    theirs = {**estimate, "line_items": [relabel(line) for line in estimate.get("line_items") or []]}
+    def descale(line: dict, factor: float) -> dict:
+        if line.get("line_item_category") == "header" or line.get("item_id") in shipping_ids:
+            return line
+        return {**line, "rate": round(float(line.get("rate") or 0) / factor)}
+
+    their_lines = [relabel(line) for line in estimate.get("line_items") or []]
+    theirs = {**estimate, "line_items": their_lines}
+    if priority is not None:
+        # Echoed lines are blanked (item_id "") and so pass through unread by
+        # the reader either way. `total` no longer matches the scaled-down
+        # lines: dropped so a flat line discount is refused, never converted.
+        theirs = {**theirs, "total": None, "line_items": [descale(line, priority.factor) for line in their_lines]}
     ours = {
         "is_inclusive_tax": True,
         "price_precision": estimate.get("price_precision"),
@@ -135,7 +154,11 @@ def _task_patch(card: ExportTask, ours: dict, theirs: dict) -> dict | None:
 
 
 def plan_pull(
-    tasks: list[ExportTask], estimate: dict, catalogue: Catalogue, shipping: ExportShipping | None
+    tasks: list[ExportTask],
+    estimate: dict,
+    catalogue: Catalogue,
+    shipping: ExportShipping | None,
+    priority: ExportPriority | None = None,
 ) -> PullPlan | None:
     """None when Books holds what the card would push; otherwise the plan.
 
@@ -150,8 +173,11 @@ def plan_pull(
     together with any other change, a discount a card cannot hold, a shipping
     line added, removed or sent to another island, and anything that would
     not read back from the card exactly as Books holds it.
+
+    ``priority`` is the factor the card pushes its task rates at: Books rates
+    are compared and applied divided by it (see ``_readings``).
     """
-    theirs, ours = _readings(tasks, estimate, catalogue, shipping)
+    theirs, ours = _readings(tasks, estimate, catalogue, shipping, priority)
     if theirs["discount_issues"]:
         # Before the comparison: a discount a card cannot hold reads as "no
         # discount", so the lines would look unchanged while the totals differ.
@@ -192,7 +218,7 @@ def plan_pull(
     if missing_maindoeuvre_description(patched):
         return PullPlan(refused="description")  # the next push would be refused for it
     patched_shipping = replace(shipping, **shipping_patch) if shipping is not None else None
-    theirs, ours = _readings(patched, estimate, catalogue, patched_shipping)
+    theirs, ours = _readings(patched, estimate, catalogue, patched_shipping, priority)
     if theirs["tasks"] != ours["tasks"] or theirs["shipping"] != ours["shipping"]:
         return PullPlan(refused="unverified")
     return PullPlan(task_patches=task_patches, shipping=shipping_patch)
