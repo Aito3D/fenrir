@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from backend.app.services.revenue.config import ORG_TIME_ZONE
 
-_DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}", re.ASCII)
 
 
 def _parse(day: str) -> date | None:

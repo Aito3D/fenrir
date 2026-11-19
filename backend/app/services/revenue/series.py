@@ -1,15 +1,31 @@
 """The revenue dashboard's read model: bucket keys, ranges and French labels (the series builder follows)."""
 
+import math
 import re
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from typing import Literal, get_args
 
+from backend.app.services.revenue.customers import RevenueCustomerFacts, segment_of
 from backend.app.services.revenue.dates import (
     add_days,
+    all_days,
+    days_between,
     days_in_month,
     is_valid_day,
     iso_week,
     iso_week1_monday,
     utc_to_day,
+)
+from backend.app.services.revenue.scope import (
+    RevenueDecision,
+    ScopeItem,
+    ScopeVerdict,
+    brand_key,
+    classify_revenue_item,
+    is_service_item,
+    item_display_name,
+    matches_kind,
 )
 
 Granularity = Literal["day", "week", "month", "year"]
@@ -90,7 +106,7 @@ def is_bucket_key(key: str, g: Granularity) -> bool:
     if g == "day":
         return is_valid_day(key)
     pattern = {"week": r"\d{4}-W\d{2}", "month": r"\d{4}-\d{2}", "year": r"\d{4}"}[g]
-    return re.fullmatch(pattern, key) is not None
+    return re.fullmatch(pattern, key, re.ASCII) is not None
 
 
 def clamp_range(from_: str, to: str, history_start: str, today: str) -> tuple[str, str]:
@@ -130,3 +146,318 @@ def series_line_range(g: Granularity, from_: str, to: str, history_start: str) -
     back = shift_bucket_year(bucket_key_for(first_start, g), g, -1)
     start = bucket_range(back, g)[0] if back else add_days(first_start, -366)
     return max(start, history_start), to
+
+
+NO_NATURE = "Sans nature"
+NO_BRAND = "Sans marque"
+# Below this share of last year's bucket reached at the same point, the seasonal ratio is noise.
+SEASONAL_MIN_SHARE = 0.1
+
+
+def js_round(x: float) -> int:
+    """Math.round: halves round toward +infinity (Python's round() is banker's)."""
+    return math.floor(x + 0.5)
+
+
+@dataclass(frozen=True)
+class RevenueLine:
+    day: str
+    item_id: str
+    customer_id: str
+    name: str
+    sku: str
+    quantity: float
+    amount: float
+
+
+@dataclass(frozen=True)
+class LineFilters:
+    item_ids: frozenset[str] | None = None
+    brands: frozenset[str] | None = None
+    kind: str | None = None
+    segment: str | None = None
+
+
+def is_filtered(f: LineFilters) -> bool:
+    return bool(f.item_ids is not None or f.brands is not None or f.kind or f.segment)
+
+
+def ttc_of(amount: float, item: ScopeItem | None) -> tuple[float, bool]:
+    tax = item.tax_percentage if item else None
+    return (amount, True) if tax is None else (amount * (1 + tax / 100), False)
+
+
+def in_scope_lines(
+    lines: Iterable[RevenueLine],
+    items: dict[str, ScopeItem],
+    decisions: Iterable[RevenueDecision],
+    item_ids: frozenset[str] | None = None,
+) -> Iterator[tuple[RevenueLine, ScopeItem | None, ScopeVerdict]]:
+    decision_by_id = {d.item_id: d for d in decisions}
+    for line in lines:
+        if item_ids is not None and line.item_id not in item_ids:
+            continue
+        item = items.get(line.item_id)
+        verdict = classify_revenue_item(item, decision_by_id.get(line.item_id))
+        if verdict.included:
+            yield line, item, verdict
+
+
+@dataclass(frozen=True)
+class MatchedLine:
+    line: RevenueLine
+    item: ScopeItem | None
+    verdict: ScopeVerdict
+    segment: str
+
+
+def matching_lines(
+    lines: Iterable[RevenueLine],
+    items: dict[str, ScopeItem],
+    decisions: Iterable[RevenueDecision],
+    customers: dict[str, RevenueCustomerFacts] | None,
+    filters: LineFilters,
+) -> Iterator[MatchedLine]:
+    """The one place the series and the item rows decide which lines count."""
+    for line, item, verdict in in_scope_lines(lines, items, decisions, filters.item_ids):
+        if filters.brands is not None and brand_key(item.brand if item else None) not in filters.brands:
+            continue
+        if not matches_kind(item, filters.kind):
+            continue
+        facts = customers.get(line.customer_id) if customers and line.customer_id else None
+        segment = segment_of(line.customer_id, facts)
+        if filters.segment and filters.segment != segment:
+            continue
+        yield MatchedLine(line, item, verdict, segment)
+
+
+class _Acc:
+    def __init__(self) -> None:
+        self.ht = self.ttc = self.goods = self.services = self.goods_ttc = self.services_ttc = 0.0
+        self.cost = self.costed_ht = self.quantity = 0.0
+        self.ttc_approx = False
+        self.splits: dict[str, dict[str, float]] = {
+            k: {} for k in ("nature", "brand", "item", "nature_ttc", "brand_ttc", "item_ttc", "segment", "segment_ttc")
+        }
+
+    def add(self, line: RevenueLine, item: ScopeItem | None, segment: str) -> None:
+        amount = line.amount
+        ttc, approx = ttc_of(amount, item)
+        nature = item.nature if item and item.nature is not None else NO_NATURE
+        brand = item.brand if item and item.brand is not None else NO_BRAND
+        name = item_display_name(item, line.name)
+        if item is not None and item.unit_cost is not None:
+            self.cost += line.quantity * item.unit_cost
+            self.costed_ht += amount
+        self.ht += amount
+        self.ttc += ttc
+        self.ttc_approx = self.ttc_approx or approx
+        self.quantity += line.quantity
+        if is_service_item(item):
+            self.services += amount
+            self.services_ttc += ttc
+        else:
+            self.goods += amount
+            self.goods_ttc += ttc
+        for split, key, value in (
+            ("segment", segment, amount),
+            ("segment_ttc", segment, ttc),
+            ("nature", nature, amount),
+            ("brand", brand, amount),
+            ("item", name, amount),
+            ("nature_ttc", nature, ttc),
+            ("brand_ttc", brand, ttc),
+            ("item_ttc", name, ttc),
+        ):
+            d = self.splits[split]
+            d[key] = d.get(key, 0) + value
+
+
+def _round_record(r: dict[str, float]) -> dict[str, int]:
+    return {k: js_round(v) for k, v in r.items()}
+
+
+def _evolution(cur: float, prev: float | None) -> float | None:
+    return None if prev is None or prev <= 0 else (cur - prev) / prev
+
+
+def project_bucket(
+    cur: tuple[float, float],
+    elapsed_days: int,
+    total_days: int,
+    year_ago_to_date: tuple[float, float] | None,
+    year_ago_full: tuple[float, float] | None,
+) -> tuple[dict[str, int], str]:
+    """Seasonal when last year's bucket is fully known and was far enough along, else linear; never below the figure made."""
+    if (
+        year_ago_to_date
+        and year_ago_full
+        and year_ago_full[0] > 0
+        and year_ago_to_date[0] >= SEASONAL_MIN_SHARE * year_ago_full[0]
+    ):
+        ratio = max(1, year_ago_full[0] / year_ago_to_date[0])
+        method = "seasonal"
+    else:
+        ratio = max(1, total_days / max(1, elapsed_days))
+        method = "linear"
+    return {"ht": js_round(cur[0] * ratio), "ttc": js_round(cur[1] * ratio)}, method
+
+
+def build_revenue_series(
+    *,
+    lines: Iterable[RevenueLine],
+    fetched_days: Iterable[str],
+    items: dict[str, ScopeItem],
+    decisions: Iterable[RevenueDecision],
+    granularity: Granularity,
+    from_: str,
+    to: str,
+    today: str,
+    history_start: str,
+    filters: LineFilters | None = None,
+    customers: dict[str, RevenueCustomerFacts] | None = None,
+) -> list[dict]:
+    g = granularity
+    filters = filters or LineFilters()
+    totals: dict[str, _Acc] = {}
+    per_day: dict[str, list[float]] = {}
+    for m in matching_lines(lines, items, decisions, customers, filters):
+        d = per_day.setdefault(m.line.day, [0.0, 0.0])
+        d[0] += m.line.amount
+        d[1] += ttc_of(m.line.amount, m.item)[0]
+        totals.setdefault(bucket_key_for(m.line.day, g), _Acc()).add(m.line, m.item, m.segment)
+
+    keys: list[str] = []
+    for day in all_days(from_, to):
+        key = bucket_key_for(day, g)
+        if not keys or keys[-1] != key:
+            keys.append(key)
+
+    fetched = set(fetched_days)
+
+    def sum_range(a: str, b: str) -> tuple[int, int] | None:
+        if a < history_start:
+            return None
+        days = all_days(a, b)
+        if not days or not all(d in fetched for d in days):
+            return None
+        ht = ttc = 0.0
+        for d in days:
+            if d in per_day:
+                ht += per_day[d][0]
+                ttc += per_day[d][1]
+        return js_round(ht), js_round(ttc)
+
+    def money(m: tuple[int, int] | None) -> dict[str, int] | None:
+        return None if m is None else {"ht": m[0], "ttc": m[1]}
+
+    def comparison_range(cmp_key: str, elapsed: int | None) -> tuple[str, str]:
+        start, end = bucket_range(cmp_key, g)
+        clipped = end if elapsed is None else add_days(start, elapsed - 1)
+        return start, min(clipped, end)
+
+    show_items = filters.item_ids is not None or filters.brands is not None
+    out: list[dict] = []
+    cum_ht = cum_ttc = 0
+    for key in keys:
+        acc = totals.get(key) or _Acc()
+        sp = acc.splits
+        start, end = bucket_range(key, g)
+        ht, ttc = js_round(acc.ht), js_round(acc.ttc)
+        cum_ht += ht
+        cum_ttc += ttc
+        partial = end >= today
+        elapsed = days_between(start, today) if partial else None
+        back = shift_bucket_year(key, g, -1)
+        year_ago = sum_range(*comparison_range(back, elapsed)) if back else None
+        prev_sum = sum_range(*comparison_range(bucket_key_for(add_days(start, -1), g), elapsed))
+        count_from = max(start, history_start)
+        count_to = min(end, today)
+        missing = sum(1 for d in all_days(count_from, count_to) if d not in fetched)
+        projection = projection_method = None
+        if partial and elapsed is not None and g != "day" and missing == 0:
+            year_ago_full = sum_range(*bucket_range(back, g)) if back else None
+            projection, projection_method = project_bucket(
+                (ht, ttc), elapsed, days_between(start, end), year_ago, year_ago_full
+            )
+        out.append(
+            {
+                "key": key,
+                "label": bucket_label(key, g),
+                "start": start,
+                "end": end,
+                "ht": ht,
+                "ttc": ttc,
+                "goods": js_round(acc.goods),
+                "services": js_round(acc.services),
+                "byNature": _round_record(sp["nature"]),
+                "byBrand": _round_record(sp["brand"]),
+                **({"byItem": _round_record(sp["item"])} if show_items else {}),
+                "goodsTtc": js_round(acc.goods_ttc),
+                "servicesTtc": js_round(acc.services_ttc),
+                "byNatureTtc": _round_record(sp["nature_ttc"]),
+                "byBrandTtc": _round_record(sp["brand_ttc"]),
+                **({"byItemTtc": _round_record(sp["item_ttc"])} if show_items else {}),
+                "bySegment": _round_record(sp["segment"]),
+                "bySegmentTtc": _round_record(sp["segment_ttc"]),
+                "cost": js_round(acc.cost),
+                "costedHt": js_round(acc.costed_ht),
+                "projection": projection,
+                "projectionMethod": projection_method,
+                "quantity": acc.quantity,
+                "evolution": {
+                    "ht": _evolution(ht, prev_sum[0] if prev_sum else None),
+                    "ttc": _evolution(ttc, prev_sum[1] if prev_sum else None),
+                },
+                "yearAgo": money(year_ago),
+                "elapsedDays": elapsed,
+                "cumulative": {"ht": cum_ht, "ttc": cum_ttc},
+                "partial": partial,
+                "missingDays": missing,
+                "ttcApprox": acc.ttc_approx,
+            }
+        )
+    return out
+
+
+def item_breakdown(
+    lines: Iterable[RevenueLine],
+    items: dict[str, ScopeItem],
+    decisions: Iterable[RevenueDecision],
+    customers: dict[str, RevenueCustomerFacts] | None,
+    filters: LineFilters,
+) -> list[dict]:
+    rows: dict[str, dict] = {}
+    for m in matching_lines(lines, items, decisions, customers, filters):
+        line, item = m.line, m.item
+        row = rows.get(line.item_id)
+        if row is None:
+            row = rows[line.item_id] = {
+                "itemId": line.item_id,
+                "name": item_display_name(item, line.name),
+                "sku": line.sku,
+                "quantity": 0,
+                "ht": 0,
+                "ttc": 0.0,
+                "cost": 0.0 if item is not None and item.unit_cost is not None else None,
+                "nature": item.nature if item else None,
+                "brand": item.brand if item else None,
+                "kind": "service" if is_service_item(item) else "goods",
+                "reason": m.verdict.reason,
+            }
+        row["quantity"] += line.quantity
+        row["ht"] += line.amount
+        row["ttc"] += ttc_of(line.amount, item)[0]
+        if row["cost"] is not None and item is not None and item.unit_cost is not None:
+            row["cost"] += line.quantity * item.unit_cost
+    result = [
+        {
+            **r,
+            "ht": js_round(r["ht"]),
+            "ttc": js_round(r["ttc"]),
+            "cost": None if r["cost"] is None else js_round(r["cost"]),
+        }
+        for r in rows.values()
+    ]
+    # localeCompare is ICU collation; casefold is the closest stdlib order.
+    return sorted(result, key=lambda r: (-r["ht"], r["name"].casefold()))
