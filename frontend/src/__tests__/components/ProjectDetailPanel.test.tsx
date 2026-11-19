@@ -391,6 +391,21 @@ describe('ProjectDetailPanel client fields', () => {
     expect(screen.getByTestId('panel-header-total').textContent).toBe(formatMoney(8500, 'USD'));
   });
 
+  it.each([
+    ['urgent', 3851], // 10.03 % of 3 500 = 351.05, rounded to 351 as the quote line is
+    ['normal', 3500],
+  ] as const)('header total for a %s project includes the rounded surcharge', async (priority, expected) => {
+    server.use(
+      http.get('/api/v1/calculator/defaults', () =>
+        HttpResponse.json({ ...mockDefaults, urgent_pct: 10.03, urgent_min_fee: 0, priority_pct: 5, priority_min_fee: 0 }),
+      ),
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([{ ...mockTask, scan_cost: 3500 }])),
+    );
+    show({ priority });
+    await waitFor(() => expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuemax', '3500'));
+    await waitFor(() => expect(screen.getByTestId('panel-header-total').textContent).toBe(formatMoney(expected, 'USD')));
+  });
+
   it('gives the ring the same formatted amount the visible caption shows', async () => {
     // Regression: the ring's aria-label used to interpolate the raw number
     // (`t('aito.amountDone', { amount: `${done}` })`) while the caption right

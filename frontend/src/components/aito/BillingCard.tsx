@@ -55,6 +55,7 @@ export function BillingCard({
   depositPct = 0,
   currency,
   heimdallConfigured,
+  prioritySurcharge = 0,
 }: {
   project: AitoProject;
   canUpdate: boolean;
@@ -77,6 +78,8 @@ export function BillingCard({
    *  itself with an explanation rather than starting a charge Heimdall can
    *  never process. */
   heimdallConfigured: boolean;
+  /** Rounded priority surcharge, passed to the tax row so its total matches the header. */
+  prioritySurcharge?: number;
 }) {
   const { t } = useTranslation();
   const { syncLabelKey, blockKey, hasQuoteMessage, canForceSync } = deriveQuoteSync(project);
@@ -169,7 +172,7 @@ export function BillingCard({
             download={<QuoteDownloadButton project={project} variant="icon" />}
             send={canUpdate && project.quote_number ? <SendQuoteButton project={project} variant="icon" /> : undefined}
           />
-          <TaxRow project={project} canUpdate={canUpdate} currency={currency} />
+          <TaxRow project={project} canUpdate={canUpdate} currency={currency} prioritySurcharge={prioritySurcharge} />
           <RetainerRows project={project} canUpdate={canUpdate} currency={currency} />
           <InvoiceCard project={project} canUpdate={canUpdate} />
         </div>

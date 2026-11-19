@@ -2055,6 +2055,9 @@ async def _pull_lines(db: AsyncSession, project_id: int, estimate: dict) -> None
                 subject_label=row.title,
                 changes=changes,
             )
+        # The surcharge base moved: queue a re-push so the Books priority line follows.
+        if plan.task_patches and project.priority != "normal" and project.quote_sync_state != "unmanaged":
+            project.quote_sync_state = "pending"
         if plan.shipping:
             patch = {f"shipping_{key}": value for key, value in plan.shipping.items()}
             changes = diff_fields(project, patch)

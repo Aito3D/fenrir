@@ -53,6 +53,15 @@ describe('TaxRow', () => {
     expect(screen.getByRole('radio', { name: /Franchise/ }).closest('label')).toHaveTextContent(/9.500/);
   });
 
+  it('counts the priority surcharge in the total, as the panel header does', async () => {
+    vi.spyOn(api, 'getAitoTaxes').mockResolvedValue(TAXES);
+    const user = userEvent.setup();
+    render(<TaxRow project={card()} canUpdate currency="XPF" prioritySurcharge={500} />);
+    await user.click(screen.getByRole('button', { name: /Standard/ }));
+    await user.click(await screen.findByRole('button', { name: 'Price the client pays' }));
+    expect(screen.getByRole('radio', { name: /Franchise/ }).closest('label')).toHaveTextContent(/10.000/);
+  });
+
   it("names the customer account's default and locks once invoiced", async () => {
     vi.spyOn(api, 'getAitoTaxes').mockResolvedValue({ ...TAXES, customer_tax_id: 'T0' });
     const { unmount } = render(<TaxRow project={card({ tax_id: 'T0', tax_pct: 0 })} canUpdate currency="XPF" />);

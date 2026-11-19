@@ -425,3 +425,16 @@ async def test_with_the_switch_off_nothing_is_applied_and_nothing_is_recorded(db
     await db_session.refresh(project)
     assert project.quote_synced_at == PUSHED_AT
     assert seen == []
+
+
+@pytest.mark.parametrize(("priority", "state"), [("urgent", "pending"), ("normal", "idle")])
+async def test_a_pull_on_a_priority_card_queues_a_push_for_the_surcharge_line(db_session, priority, state):
+    project = await _card(db_session, priority=priority)
+    await _configure_zoho(db_session)
+    _serve(_edited(), [])
+
+    await run_sync_once(db_session)
+
+    await db_session.refresh(project)
+    assert len(await _events(db_session, project.id, "quote.lines_pulled")) == 1
+    assert project.quote_sync_state == state

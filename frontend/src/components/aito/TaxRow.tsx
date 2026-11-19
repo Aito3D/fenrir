@@ -10,7 +10,18 @@ import { settleProject } from './settleProject';
 /** The card's Books tax, in the Billing panel: the rate on every quote line, opened in place to pick another one.
  *  Keeping the price before tax rescales every price (a tax-free client pays less); keeping the price the client
  *  pays moves none. "Use for <customer>'s next cards" is the customer account's default, not the contact's. */
-export function TaxRow({ project, canUpdate, currency }: { project: AitoProject; canUpdate: boolean; currency: string }) {
+export function TaxRow({
+  project,
+  canUpdate,
+  currency,
+  prioritySurcharge = 0,
+}: {
+  project: AitoProject;
+  canUpdate: boolean;
+  currency: string;
+  /** The rounded priority surcharge the panel header already adds to the total. */
+  prioritySurcharge?: number;
+}) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -52,7 +63,7 @@ export function TaxRow({ project, canUpdate, currency }: { project: AitoProject;
   // The current rate and the card total; a new rate keeps either the price before tax or the total.
   const current = data?.taxes.find(x => x.tax_id === (project.tax_id ?? data.default_tax_id));
   const currentPct = project.tax_id ? project.tax_pct ?? 0 : current?.pct ?? 0;
-  const total = (project.tasks_total ?? 0) + (project.shipping_price ?? 0);
+  const total = (project.tasks_total ?? 0) + (project.shipping_price ?? 0) + prioritySurcharge;
   const totalWith = (newPct: number) => (keepBeforeTax ? Math.round((total / (1 + currentPct / 100)) * (1 + newPct / 100)) : total);
   const chosen = data?.taxes.find(x => x.tax_id === (picked ?? project.tax_id ?? data.default_tax_id));
   const rememberOn = remember ?? isCustomerDefault;

@@ -11,7 +11,7 @@ const STEP_COLOR: Record<WaterfallStep['key'], string> = {
   other: 'var(--viz-5)',
   labor: 'var(--viz-6)',
   marge: 'var(--color-bambu-green)',
-  priority: 'var(--viz-3)',
+  priority: 'var(--color-amber-300)',
   tax: 'transparent', // hatched via CSS — tax is collected, not kept
 };
 

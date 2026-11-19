@@ -1535,6 +1535,7 @@ export function ProjectDetailPanel({
                       depositPct={depositPct}
                       currency={currency}
                       heimdallConfigured={heimdallConfigured}
+                      prioritySurcharge={prioritySurchargeAmount}
                     />
                     <RecordCard
                       project={project}
