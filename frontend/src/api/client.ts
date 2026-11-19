@@ -5191,6 +5191,12 @@ export interface CalculatorDefaults {
   qty_min_factor: number;
   qty_k: number;
   min_task_price: number;
+  priority_pct: number;
+  priority_min_fee: number;
+  urgent_pct: number;
+  urgent_min_fee: number;
+  priority_days: number;
+  urgent_days: number;
   updated_at: string;
 }
 

@@ -624,6 +624,18 @@ class TestCalculatorDefaults:
         assert defaults["qty_min_factor"] == 0.4
         assert defaults["qty_k"] == 5.0
         assert defaults["min_task_price"] == 12.0
+        assert (defaults["priority_pct"], defaults["priority_min_fee"]) == (15.0, 500.0)
+        assert (defaults["urgent_pct"], defaults["urgent_min_fee"]) == (35.0, 1500.0)
+        assert (defaults["priority_days"], defaults["urgent_days"]) == (5.0, 2.0)
+
+    @pytest.mark.asyncio
+    async def test_patch_priority_fields_round_trip_and_bounds(self, async_client):
+        resp = await async_client.patch("/api/v1/calculator/defaults", json={"urgent_pct": 40})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["urgent_pct"] == 40.0
+        assert (await async_client.get("/api/v1/calculator/defaults")).json()["urgent_pct"] == 40.0
+        resp = await async_client.patch("/api/v1/calculator/defaults", json={"priority_pct": -1})
+        assert resp.status_code == 422
 
     @pytest.mark.asyncio
     async def test_patch_curve_fields_round_trip(self, async_client):

@@ -304,6 +304,12 @@ async def test_margin_curve_columns_are_added_with_defaults(raw_conn):
         "qty_min_factor",
         "qty_k",
         "min_task_price",
+        "priority_pct",
+        "priority_min_fee",
+        "urgent_pct",
+        "urgent_min_fee",
+        "priority_days",
+        "urgent_days",
     ):
         await raw_conn.execute(text(f"ALTER TABLE calculator_defaults DROP COLUMN {column}"))
     # Every other column on this table is NOT NULL with no DB-level default, so
@@ -325,12 +331,13 @@ async def test_margin_curve_columns_are_added_with_defaults(raw_conn):
     row = (
         await raw_conn.execute(
             text(
-                "SELECT margin_min_mult, margin_max_mult, margin_k, qty_min_factor, qty_k, min_task_price "
+                "SELECT margin_min_mult, margin_max_mult, margin_k, qty_min_factor, qty_k, min_task_price, "
+                "priority_pct, priority_min_fee, urgent_pct, urgent_min_fee, priority_days, urgent_days "
                 "FROM calculator_defaults WHERE id = 1"
             )
         )
     ).one()
-    assert tuple(row) == (1.15, 1.6, 33.0, 0.4, 5.0, 12.0)
+    assert tuple(row) == (1.15, 1.6, 33.0, 0.4, 5.0, 12.0, 15.0, 500.0, 35.0, 1500.0, 5.0, 2.0)
 
     await run_migrations(raw_conn)  # idempotent
 

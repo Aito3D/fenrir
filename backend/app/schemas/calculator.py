@@ -183,6 +183,12 @@ class CalculatorDefaultsUpdate(BaseModel):
     qty_min_factor: float | None = Field(default=None, gt=0, le=1)
     qty_k: float | None = Field(default=None, gt=0, le=1_000_000)
     min_task_price: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
+    priority_pct: float | None = Field(default=None, ge=0, le=500)
+    priority_min_fee: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
+    urgent_pct: float | None = Field(default=None, ge=0, le=500)
+    urgent_min_fee: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
+    priority_days: float | None = Field(default=None, ge=0, le=365)
+    urgent_days: float | None = Field(default=None, ge=0, le=365)
 
     @model_validator(mode="after")
     def _margin_pair_ordered(self) -> "CalculatorDefaultsUpdate":
@@ -218,6 +224,12 @@ class CalculatorDefaultsResponse(BaseModel):
     qty_min_factor: float
     qty_k: float
     min_task_price: float
+    priority_pct: float
+    priority_min_fee: float
+    urgent_pct: float
+    urgent_min_fee: float
+    priority_days: float
+    urgent_days: float
     updated_at: datetime
 
     model_config = {"from_attributes": True}

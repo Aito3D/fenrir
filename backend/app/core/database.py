@@ -6219,6 +6219,13 @@ async def _run_migrations(conn):
         ("qty_min_factor", 0.4),
         ("qty_k", 5.0),
         ("min_task_price", 12.0),
+        # Priority surcharge settings
+        ("priority_pct", 15.0),
+        ("priority_min_fee", 500.0),
+        ("urgent_pct", 35.0),
+        ("urgent_min_fee", 1500.0),
+        ("priority_days", 5.0),
+        ("urgent_days", 2.0),
     ):
         await _safe_execute(conn, f"ALTER TABLE calculator_defaults ADD COLUMN {column} FLOAT DEFAULT {default}")
 

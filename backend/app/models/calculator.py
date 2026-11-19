@@ -83,5 +83,12 @@ class CalculatorDefaults(Base):
     qty_min_factor: Mapped[float] = mapped_column(Float, default=0.4)
     qty_k: Mapped[float] = mapped_column(Float, default=5.0)
     min_task_price: Mapped[float] = mapped_column(Float, default=12.0)  # app currency
+    # Priority surcharge: max(base * pct / 100, min_fee); *_days are used as ints.
+    priority_pct: Mapped[float] = mapped_column(Float, default=15.0)
+    priority_min_fee: Mapped[float] = mapped_column(Float, default=500.0)
+    urgent_pct: Mapped[float] = mapped_column(Float, default=35.0)
+    urgent_min_fee: Mapped[float] = mapped_column(Float, default=1500.0)
+    priority_days: Mapped[float] = mapped_column(Float, default=5.0)
+    urgent_days: Mapped[float] = mapped_column(Float, default=2.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
