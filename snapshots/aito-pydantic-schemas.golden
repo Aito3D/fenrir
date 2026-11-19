@@ -2509,6 +2509,25 @@
   "title": "AitoPickupMessageResponse",
   "type": "object"
  },
+ "AitoPriorityUpdate": {
+  "description": "Body of PATCH /aito/{id}/priority.",
+  "properties": {
+   "priority": {
+    "enum": [
+     "normal",
+     "priority",
+     "urgent"
+    ],
+    "title": "Priority",
+    "type": "string"
+   }
+  },
+  "required": [
+   "priority"
+  ],
+  "title": "AitoPriorityUpdate",
+  "type": "object"
+ },
  "AitoProjectCreate": {
   "$defs": {
    "AitoTaskCreate": {
@@ -2978,6 +2997,16 @@
     ],
     "default": null,
     "title": "Due Date"
+   },
+   "priority": {
+    "default": "normal",
+    "enum": [
+     "normal",
+     "priority",
+     "urgent"
+    ],
+    "title": "Priority",
+    "type": "string"
    },
    "quote_date": {
     "anyOf": [
@@ -3830,6 +3859,15 @@
     "title": "Print Minutes Pending",
     "type": "integer"
    },
+   "priority": {
+    "enum": [
+     "normal",
+     "priority",
+     "urgent"
+    ],
+    "title": "Priority",
+    "type": "string"
+   },
    "quote_accepted_at": {
     "anyOf": [
      {
@@ -4220,6 +4258,7 @@
    "client_contacted_at",
    "done_at",
    "due_date",
+   "priority",
    "tracking_configured",
    "quote_sync_error",
    "quote_status_block",
@@ -4970,6 +5009,15 @@
       "title": "Print Minutes Pending",
       "type": "integer"
      },
+     "priority": {
+      "enum": [
+       "normal",
+       "priority",
+       "urgent"
+      ],
+      "title": "Priority",
+      "type": "string"
+     },
      "quote_accepted_at": {
       "anyOf": [
        {
@@ -5360,6 +5408,7 @@
      "client_contacted_at",
      "done_at",
      "due_date",
+     "priority",
      "tracking_configured",
      "quote_sync_error",
      "quote_status_block",
@@ -5950,6 +5999,15 @@
       "title": "Print Minutes Pending",
       "type": "integer"
      },
+     "priority": {
+      "enum": [
+       "normal",
+       "priority",
+       "urgent"
+      ],
+      "title": "Priority",
+      "type": "string"
+     },
      "quote_accepted_at": {
       "anyOf": [
        {
@@ -6340,6 +6398,7 @@
      "client_contacted_at",
      "done_at",
      "due_date",
+     "priority",
      "tracking_configured",
      "quote_sync_error",
      "quote_status_block",
@@ -10318,6 +10377,15 @@
       "title": "Print Minutes Pending",
       "type": "integer"
      },
+     "priority": {
+      "enum": [
+       "normal",
+       "priority",
+       "urgent"
+      ],
+      "title": "Priority",
+      "type": "string"
+     },
      "quote_accepted_at": {
       "anyOf": [
        {
@@ -10708,6 +10776,7 @@
      "client_contacted_at",
      "done_at",
      "due_date",
+     "priority",
      "tracking_configured",
      "quote_sync_error",
      "quote_status_block",
@@ -11854,6 +11923,18 @@
       "type": "null"
      }
     ]
+   },
+   "shop_hours": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Shop Hours"
    },
    "tasks": {
     "items": {

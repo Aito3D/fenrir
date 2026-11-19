@@ -3558,6 +3558,80 @@
    ]
   }
  },
+ "/api/v1/aito/{project_id}/priority": {
+  "patch": {
+   "description": "Set the rush level. Own route (not `update_project`) so an unchanged\nvalue queues nothing; a change alters the quote, so it is refused on an\ninvoiced card and marks the quote pending.",
+   "operationId": "set_project_priority_api_v1_aito__project_id__priority_patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoPriorityUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoProjectResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Set Project Priority",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
  "/api/v1/aito/{project_id}/quote-email": {
   "get": {
    "description": "What Books would send if this quote were emailed right now.\n\nPreview only. The send path deliberately re-reads all of this rather than\ntrusting whatever the client echoes back \u2014 see ``send_quote_email``.",

@@ -4,7 +4,7 @@
 2 RequirePermissionIfAuthEnabled(Permission.AITO_DELETE)
 26 RequirePermissionIfAuthEnabled(Permission.AITO_READ)
 1 RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE, Permission.AITO_DELETE)
-32 RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE)
+33 RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE)
 1 RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE)
 
 ### stderr:

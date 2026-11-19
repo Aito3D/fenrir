@@ -50,6 +50,7 @@
         "payment": "AitoTrackingPayment | null",
         "reference": "string | null",
         "shipping": "AitoTrackingShipping | null",
+        "shop_hours": "string | null",
         "tasks": "array<AitoTrackingTask>",
         "updated_at": "string(date-time)"
       },
