@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
