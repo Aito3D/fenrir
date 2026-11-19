@@ -34,7 +34,13 @@ interface Rect {
   height: number;
 }
 
-export function useFlipReorder(containerRef: React.RefObject<HTMLElement | null>, orderKey: string): void {
+export function useFlipReorder(
+  containerRef: React.RefObject<HTMLElement | null>,
+  orderKey: string,
+  // false still records positions but skips the slide, for reorders the user
+  // already watched happen (a dnd-kit drop).
+  animate = true,
+): void {
   const positionsRef = useRef(new Map<string, Rect>());
   const prevOrderKeyRef = useRef(orderKey);
 
@@ -57,7 +63,7 @@ export function useFlipReorder(containerRef: React.RefObject<HTMLElement | null>
     // been populated — the very first paint (empty → full) is owned by
     // useStaggeredEntrance, and animating both would double up.
     const wallPopulated = positionsRef.current.size > 0;
-    if (orderChanged && !reduceMotion) {
+    if (orderChanged && animate && !reduceMotion) {
       for (const child of container.children) {
         const key = child.getAttribute('data-flip-key');
         if (!key) continue;

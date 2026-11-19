@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { bulkUpdateToast } from '../utils/queueBulkUpdate';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -87,6 +87,7 @@ import { useSliceJobPercent } from '../hooks/useSliceJobPercent';
 import { useAuth } from '../contexts/AuthContext';
 import { QueueStatsBar } from '../components/QueueStatsBar';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useFlipReorder } from '../hooks/useFlipReorder';
 import { MobileQueue, type QueueTabId, type QueueTabMeta } from '../components/queue/mobile/MobileQueue';
 import { CompactHistoryRow } from '../components/CompactHistoryRow';
 import { ColorSubstitutionNotes } from '../components/ColorSubstitutionNotes';
@@ -754,6 +755,7 @@ function SortableQueueItem({
     <div
       ref={setNodeRef}
       style={style}
+      data-flip-key={item.id}
       className={`
         group relative bg-bambu-dark-secondary rounded-xl border transition-colors duration-200
         border-l-[3px] ${
@@ -1410,6 +1412,7 @@ function SortableBatchRow({
     <div
       ref={setNodeRef}
       style={style}
+      data-flip-key={`b${batchRow.batchId}`}
       className={`bg-bambu-dark-secondary rounded-xl border border-l-[3px] border-l-cyan-400 border-bambu-dark-tertiary overflow-hidden ${
         isDragging ? 'opacity-50 scale-[1.01] shadow-xl z-50' : ''
       }`}
@@ -1477,11 +1480,9 @@ function SortableBatchRow({
           className="flex items-center justify-center w-8 h-8 rounded-lg bg-bambu-dark hover:bg-bambu-dark-tertiary transition-colors shrink-0"
           title={collapsed ? t('queue.batch.expand') : t('queue.batch.collapse')}
         >
-          {collapsed ? (
-            <ChevronRight className="w-4 h-4 text-bambu-gray" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-bambu-gray" />
-          )}
+          <ChevronRight
+            className={`w-4 h-4 text-bambu-gray transition-transform duration-150 ease-[var(--ease-signature)] motion-reduce:transition-none ${collapsed ? '' : 'rotate-90'}`}
+          />
         </button>
         <div className="w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 bg-bambu-dark rounded-lg flex items-center justify-center">
           {collapsed ? (
@@ -2452,6 +2453,7 @@ export function QueuePage() {
   const handleDragStart = (event: DragStartEvent) => {
     const id = event.active.id;
     setActiveDragId(typeof id === 'number' || typeof id === 'string' ? id : null);
+    setFlipRows(false);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -2554,6 +2556,16 @@ export function QueuePage() {
   const rowItemIds = (row: QueueRow): number[] =>
     row.kind === 'item' ? [row.item.id] : row.items.map((i) => i.id);
 
+  // Arrow taps slide rows to their new slot; a drag skips it because dnd-kit
+  // already showed the move.
+  const rowListRef = useRef<HTMLDivElement>(null);
+  const [flipRows, setFlipRows] = useState(true);
+  useFlipReorder(
+    rowListRef,
+    groupedRows.map((r) => (r.kind === 'item' ? r.item.id : `b${r.batchId}`)).join(','),
+    flipRows,
+  );
+
   // Move a block of items to sit immediately before (or after) an anchor item
   // in the global pending order, then persist — the same remove-and-reinsert
   // shape as handleDragEnd, so arrows and drag agree. Anchoring to a real item
@@ -2567,6 +2579,7 @@ export function QueuePage() {
     const remaining = pendingItems.filter((i) => !movingIds.includes(i.id));
     let insertAt = remaining.findIndex((i) => i.id === anchorId);
     if (insertAt === -1) return;
+    setFlipRows(true);
     if (placeAfter) insertAt += 1;
     const movingItems = movingIds
       .map((id) => pendingItems.find((i) => i.id === id))
@@ -3009,16 +3022,16 @@ export function QueuePage() {
                 </Button>
                 {selectedItems.length > 0 && (
                   <>
-                    <span className="text-xs sm:text-sm text-bambu-gray">
+                    <span className="animate-rise-sm text-xs sm:text-sm text-bambu-gray">
                       {t('queue.bulkEdit.selected', { count: selectedItems.length })}
                     </span>
-                    <div className="hidden sm:block h-4 w-px bg-bambu-dark-tertiary" />
+                    <div className="animate-rise-sm hidden sm:block h-4 w-px bg-bambu-dark-tertiary" />
                     {canGroupSelected && (
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => setGroupBatchModal(true)}
-                        className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-cyan-700 dark:text-cyan-300 hover:text-cyan-900 dark:hover:text-cyan-200"
+                        className="animate-rise-sm flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-cyan-700 dark:text-cyan-300 hover:text-cyan-900 dark:hover:text-cyan-200"
                         title={t('queue.batch.groupAsBatch')}
                       >
                         <Package className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -3029,7 +3042,7 @@ export function QueuePage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => setShowBulkEditModal(true)}
-                      className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-bambu-green hover:text-bambu-green-light"
+                      className="animate-rise-sm flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-bambu-green hover:text-bambu-green-light"
                       disabled={!hasAnyPermission('queue:update_own', 'queue:update_all')}
                       title={!hasAnyPermission('queue:update_own', 'queue:update_all') ? t('queue.permissions.noEditItems') : t('queue.bulkEdit.editSelected')}
                     >
@@ -3040,7 +3053,7 @@ export function QueuePage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => bulkCancelMutation.mutate(selectedItems)}
-                      className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                      className="animate-rise-sm flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                       disabled={bulkCancelMutation.isPending || !hasAnyPermission('queue:delete_own', 'queue:delete_all')}
                       title={!hasAnyPermission('queue:delete_own', 'queue:delete_all') ? t('queue.permissions.noCancelItems') : t('queue.bulkEdit.cancelSelected')}
                     >
@@ -3062,7 +3075,7 @@ export function QueuePage() {
                   strategy={verticalListSortingStrategy}
                 >
                   {activeLayout === 'position' ? (
-                    <div className="space-y-2 sm:space-y-3">
+                    <div ref={rowListRef} className="space-y-2 sm:space-y-3">
                       {groupedRows.map((row, idx) => (
                         <QueueRowRender
                           key={row.kind === 'item' ? `item-${row.item.id}` : `batch-${row.batchId}`}
@@ -3133,7 +3146,7 @@ export function QueuePage() {
                     </div>
                   )}
                 </SortableContext>
-                <DragOverlay>
+                <DragOverlay dropAnimation={{ duration: 200, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' /* var(--ease-signature) */ }}>
                   {(() => {
                     if (activeDragId === null) return null;
                     // Batch drag — show the group ghost with copy count.
