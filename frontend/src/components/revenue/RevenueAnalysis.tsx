@@ -105,7 +105,7 @@ function Margins({ byBrand, byNature }: { byBrand: MarginRow[]; byNature: Margin
   const { t } = useTranslation();
   const [dim, setDim] = useState<'brand' | 'nature'>('brand');
   const rows = (dim === 'brand' ? byBrand : byNature).filter((r) => r.ht !== 0);
-  const max = Math.max(1, ...rows.map((r) => r.margin));
+  const max = Math.max(1, ...rows.map((r) => Math.abs(r.margin)));
   const title = t('revenue.analysis.marginTitle');
   return (
     <Panel
@@ -124,7 +124,9 @@ function Margins({ byBrand, byNature }: { byBrand: MarginRow[]; byNature: Margin
               <div className="flex items-center gap-3">
                 <span className="min-w-0 shrink basis-28 truncate text-bambu-gray-light" title={serverLabel(r.key, t)}>{serverLabel(r.key, t)}</span>
                 <span className="min-w-0 flex-1" aria-hidden="true">
-                  {r.margin > 0 && <span data-bar className="block h-2 min-w-[3px] rounded-[2px] bg-bambu-green" style={{ width: `${(r.margin / max) * 100}%` }} />}
+                  {r.margin !== 0 && (
+                    <span data-bar className={`block h-2 min-w-[3px] rounded-[2px] ${r.margin > 0 ? 'bg-bambu-green' : 'bg-status-error'}`} style={{ width: `${(Math.abs(r.margin) / max) * 100}%` }} />
+                  )}
                 </span>
                 <span className="shrink-0 whitespace-nowrap text-right tabular-nums text-bambu-gray-light">{`${r.rate == null ? '—' : pct(r.rate)} · ${formatFcp(r.margin)}`}</span>
               </div>

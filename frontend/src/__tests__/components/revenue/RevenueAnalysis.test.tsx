@@ -163,11 +163,16 @@ describe('RevenueAnalysis', () => {
     expect(screen.getByText('No data.')).toBeInTheDocument();
   });
 
-  it('draws a bar only for a margin above zero', async () => {
+  it('draws a green bar for a positive margin, a red one from the absolute value for a negative margin, and none at zero', async () => {
     stub(payload({ marginByBrand: [margin('Bambu Lab', 800_000, 200_000, 0.25, 1), margin('Elegoo', 100_000, -10_000, -0.13, 1), margin('Flat', 50_000, 0, 0, 1)] }));
     render(view());
     const rows = within(await screen.findByRole('list', { name: 'Gross margin HT' })).getAllByRole('listitem');
-    expect(rows.map((r) => r.querySelector('[data-bar]') !== null)).toEqual([true, false, false]);
+    const bars = rows.map((r) => r.querySelector<HTMLElement>('[data-bar]'));
+    expect(bars[0]).toHaveClass('bg-bambu-green');
+    expect(bars[0]!.style.width).toBe('100%');
+    expect(bars[1]).toHaveClass('bg-status-error');
+    expect(bars[1]!.style.width).toBe('5%');
+    expect(bars[2]).toBeNull();
   });
 
   it('translates the server fallback labels « Sans marque » and « Sans nature »', async () => {
