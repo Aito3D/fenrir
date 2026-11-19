@@ -2,7 +2,7 @@
 
 Lazy: the loop starts on a revenue read and exits after `idle_after_s` without one. One salesbyitem report per
 org day; each batch then names a few customers the cache does not know yet. Every Zoho call goes through `_paced`,
-which keeps call starts 0.7 s apart, waits while the shared per-minute meter is at the Order Board's ceiling, and
+which keeps call starts 0.7 s apart, waits while the shared per-minute meter is at this lane's ceiling (below the Order Board's), and
 stops the batch when Books' daily budget runs low.
 """
 
@@ -18,7 +18,13 @@ from backend.app.services.revenue.config import REVENUE_HISTORY_START, REVENUE_L
 from backend.app.services.revenue.dates import days_between, org_today
 from backend.app.services.revenue.series import RevenueLine
 from backend.app.services.revenue.sync_plan import count_legacy_days, merge_day_rows, plan_revenue_sync
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoNotFound, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import (
+    ZohoNotConfiguredError,
+    ZohoNotFound,
+    ZohoRateLimited,
+    ZohoUpstreamError,
+    zoho_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -257,8 +263,18 @@ async def _loop() -> None:
             await _sleep(SYNC.idle_interval_s)
             continue
         try:
-            await _refresh_items_if_stale()
+            item_error = None
+            try:
+                await _refresh_items_if_stale()
+            except ZohoRateLimited:
+                raise
+            except Exception as exc:  # a persistent /items failure must not stop today's figures
+                _record_error(exc)
+                item_error = exc
             result = await run_revenue_sync_batch()
+            if item_error is not None:
+                global _last_error
+                _last_error = _public_error(item_error)  # the batch cleared it; a batch failure raises instead
             wait = SYNC.batch_pause_s if result["pending"] else SYNC.idle_interval_s
         except Exception as exc:
             _record_error(exc)

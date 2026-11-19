@@ -12,7 +12,13 @@ from backend.app.core.database import Base, _set_sqlite_pragmas, load_all_models
 from backend.app.services.revenue import store, sync
 from backend.app.services.revenue.config import SYNC
 from backend.app.services.revenue.series import RevenueLine
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoNotFound, ZohoRateLimited, zoho_service
+from backend.app.services.zoho import (
+    ZohoNotConfiguredError,
+    ZohoNotFound,
+    ZohoRateLimited,
+    ZohoUpstreamError,
+    zoho_service,
+)
 
 TODAY = "2026-10-15"
 
@@ -309,11 +315,12 @@ async def test_not_configured_sets_public_error(zoho, engine, sleeps, caplog):
     sync.ensure_revenue_sync_loop()
     await asyncio.wait_for(sync._loop_task, 5)
     assert turns == [SYNC.error_backoff_s, SYNC.error_backoff_s]
-    assert len([r for r in caplog.records if "credentials" in r.getMessage()]) <= 1  # logged on change, not per turn
+    assert len([r for r in caplog.records if "credentials" in r.getMessage()]) == 1  # logged on change, not per turn
 
 
 async def test_waits_on_shared_minute_ceiling(zoho, sleeps, monkeypatch):
-    meter = iter([30, 0])
+    assert SYNC.call_ceiling == 20
+    meter = iter([20, 0])
     monkeypatch.setattr(zoho_service, "calls_in_last_minute", lambda: next(meter, 0))
     seen_at_call = []
 
@@ -325,6 +332,13 @@ async def test_waits_on_shared_minute_ceiling(zoho, sleeps, monkeypatch):
     r = await sync.run_revenue_sync_batch()
     assert r["fetched"] == 10
     assert seen_at_call[0] == [1.0]
+
+
+async def test_does_not_wait_below_the_ceiling(zoho, sleeps, monkeypatch):
+    monkeypatch.setattr(zoho_service, "calls_in_last_minute", lambda: 19)
+    r = await sync.run_revenue_sync_batch()
+    assert r["fetched"] == 10
+    assert 1.0 not in sleeps
 
 
 async def test_stops_below_daily_floor(zoho, engine, monkeypatch):
@@ -384,7 +398,7 @@ async def test_pages_capped(zoho, engine):
         return [group("c1", ROW_A)], True
 
     zoho.sales = sales
-    with pytest.raises(Exception, match="pages"):
+    with pytest.raises(ZohoUpstreamError, match="pages"):
         await sync.run_revenue_sync_batch()
     assert len(zoho.sales_calls) == sync.DAY_PAGE_CAP
     assert await day_index(engine) == []
@@ -422,3 +436,49 @@ async def test_refresh_items_keeps_the_table_on_an_empty_listing(zoho, engine):
         assert await sync.refresh_revenue_items(db, datetime.now(timezone.utc)) is False
     async with store.snapshot(engine) as conn:
         assert await store.items_synced_at(conn) is None
+
+
+async def _one_loop_turn(sleeps):
+    async def fake_sleep(s):
+        sleeps.append(s)
+        sync._last_read_at = float("-inf")
+
+    sync._sleep = fake_sleep
+    sync.ensure_revenue_sync_loop()
+    await asyncio.wait_for(sync._loop_task, 5)
+
+
+async def test_item_refresh_failure_does_not_skip_the_day_batch(zoho, engine, sleeps):
+    async def items(page):
+        raise ZohoUpstreamError("items down")
+
+    zoho.items = items
+    await _one_loop_turn(sleeps)
+    assert len(zoho.sales_calls) == 10
+    assert (await status(engine))["lastError"] == "items down"
+    assert sleeps[-1] == SYNC.batch_pause_s
+
+
+async def test_batch_failure_wins_over_item_refresh_failure(zoho, engine, sleeps):
+    async def items(page):
+        raise ZohoUpstreamError("items down")
+
+    async def sales(day, page):
+        raise ZohoUpstreamError("sales down")
+
+    zoho.items = items
+    zoho.sales = sales
+    await _one_loop_turn(sleeps)
+    assert (await status(engine))["lastError"] == "sales down"
+    assert sleeps[-1] == SYNC.error_backoff_s
+
+
+async def test_item_refresh_rate_limit_ends_the_turn(zoho, engine, sleeps):
+    async def items(page):
+        raise ZohoRateLimited("Zoho Books error (HTTP 429)")
+
+    zoho.items = items
+    await _one_loop_turn(sleeps)
+    assert zoho.sales_calls == []
+    assert sleeps[-1] == SYNC.error_backoff_s
+    assert (await status(engine))["lastError"] == "Zoho Books error (HTTP 429)"

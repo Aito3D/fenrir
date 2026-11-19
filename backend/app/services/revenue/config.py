@@ -44,7 +44,7 @@ class SyncConfig:
     customer_lookups: int = 5
     items_ttl_s: int = 600
     min_call_gap_s: float = 0.7
-    call_ceiling: int = 30
+    call_ceiling: int = 20  # Order Board stops at 30; staying below keeps its lane fed during a back-fill
     daily_budget_floor: int = 5000
 
 

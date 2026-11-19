@@ -118,7 +118,8 @@ Three new methods on `ZohoService`, nothing else in the client changes:
 
 **Pacing.** Fenrir has no 700 ms gate. The revenue loop is its own lane (it is the only caller of these methods, and it
 calls serially) and, before each call: waits so call starts are ≥ 700 ms apart; waits while
-`zoho_service.calls_in_last_minute() >= 30` (Order Board's `CALL_CEILING`); stops the batch when
+`zoho_service.calls_in_last_minute() >= 20`, ten below Order Board's `CALL_CEILING` of 30 so that lane keeps
+headroom during a back-fill; stops the batch when
 `zoho_service.daily_remaining` is known and < 5 000 (`DAILY_BUDGET_FLOOR`). A `ZohoRateLimited` ends the batch and the
 loop sleeps `max(error_backoff, retry_after)`. Interactive routes never call Zoho.
 
@@ -204,7 +205,7 @@ Persistence: `localStorage` with loki's keys (`revenue-granularity`, `revenue-ta
 1. `reference/loki-revenue/` missing → `../loki` @ `f150c2e2` used instead.
 2. Brief: « keep French labels » vs Fenrir's 16-locale gate → translated keys, French verbatim.
 3. TTC uses the item's **current** tax rate, not the invoice's (loki accepted limitation; kept).
-4. Back-fill time: ~1 050 day calls at ≤ 30/min ≈ 35 min, vs ~17 min in loki.
+4. Back-fill time: ~1 050 day calls at ≤ 20/min ≈ 53 min, vs ~17 min in loki.
 5. Fenrir's `zoho_service` has no global 700 ms gate; the revenue lane paces itself (above).
 
 ## Approved look (mockup of 2026-11-19)
