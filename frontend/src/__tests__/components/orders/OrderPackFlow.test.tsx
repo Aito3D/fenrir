@@ -406,4 +406,43 @@ describe('scanning into a parcel', () => {
     scan('BL-PLA-BK');
     expect(screen.getByText(/Parcel: 2 of 2 on PL-00013/)).toBeInTheDocument();
   });
+
+  const scanOn = async (row: OrderPanelRow) => {
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+    const client = new QueryClient();
+    client.setQueryData(['order-board'], { rows: [], scan: true });
+    const ui = (r: OrderPanelRow) => (
+      <QueryClientProvider client={client}>
+        <OrderLinesPanel row={r} start="pack-pl1" startTick={1} />
+      </QueryClientProvider>
+    );
+    const view = render(ui(row));
+    return { view, ui };
+  };
+
+  it('a scan of a line that is already complete says so', async () => {
+    server.use(content());
+    await scanOn(picking({ lines: [line({ codes: ['BL-PLA-BK'] })] }));
+    expect(await screen.findByText(/Parcel: 0 of 2 on PL-00013/)).toBeInTheDocument();
+    scan('BL-PLA-BK');
+    expect(await screen.findByText(/Parcel: 1 of 2 on PL-00013/)).toBeInTheDocument();
+    scan('BL-PLA-BK');
+    expect(await screen.findByText(/Parcel: 2 of 2 on PL-00013/)).toBeInTheDocument();
+    scan('BL-PLA-BK');
+    expect(await screen.findByText('Bambu Lab PLA Basic Noir is already complete')).toBeInTheDocument();
+    expect(screen.getByText(/Parcel: 2 of 2 on PL-00013/)).toBeInTheDocument();
+  });
+
+  it('a refetch that leaves nothing to box closes the parcel check', async () => {
+    server.use(content());
+    const { view, ui } = await scanOn(picking({ lines: [line({ codes: ['BL-PLA-BK'] })] }));
+    expect(await screen.findByText(/Parcel: 0 of 2 on PL-00013/)).toBeInTheDocument();
+    view.rerender(ui(picking({ lines: [line({ remaining: 0, packable: 0, packed_waiting: 2 })] })));
+    await waitFor(() => expect(screen.queryByTestId('pack-qty-l1')).not.toBeInTheDocument());
+    expect(screen.queryByText(/Parcel: 0 of 2/)).not.toBeInTheDocument();
+    // closed for good: the units coming back does not bring the old check back
+    view.rerender(ui(picking({ lines: [line({ codes: ['BL-PLA-BK'] })] })));
+    expect(await screen.findByRole('button', { name: 'Create parcel · PL-00013' })).toBeInTheDocument();
+    expect(screen.queryByTestId('pack-qty-l1')).not.toBeInTheDocument();
+  });
 });

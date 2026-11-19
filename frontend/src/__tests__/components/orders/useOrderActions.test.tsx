@@ -147,4 +147,58 @@ describe('useOrderActions', () => {
     await new Promise(r => setTimeout(r, 300));
     expect(client.getQueryData(['order-board'])).toEqual(board);
   });
+
+  it('emailDocument posts the address to the document route and takes the board', async () => {
+    let seen: unknown;
+    server.use(http.post('*/order-board/orders/so1/documents/quote/d1/email', async ({ request }) => {
+      seen = await request.json();
+      return HttpResponse.json({ board });
+    }));
+    const { client, result } = setup();
+    await act(async () => {
+      await result.current.emailDocument.mutateAsync({ id: 'so1', kind: 'quote', docId: 'd1', to: 'a@b.c' });
+    });
+    expect(seen).toEqual({ to: 'a@b.c' });
+    expect(client.getQueryData(['order-board'])).toEqual(board);
+  });
+
+  it('syncOrder posts the order id and takes the board', async () => {
+    server.use(http.post('*/order-board/orders/so1/sync', () => HttpResponse.json({ changes: [], board })));
+    const { client, result } = setup();
+    await act(async () => {
+      await result.current.syncOrder.mutateAsync('so1');
+    });
+    expect(client.getQueryData(['order-board'])).toEqual(board);
+  });
+
+  it('editContact puts the body without the id, takes the board and refreshes the customer', async () => {
+    let seen: unknown;
+    server.use(http.put('*/order-board/orders/so1/contact', async ({ request }) => {
+      seen = await request.json();
+      return HttpResponse.json({ board });
+    }));
+    const { client, result } = setup();
+    client.setQueryData(['order-customer', 'so1'], {});
+    client.setQueryData(['order-payment-target', 'so1'], {});
+    await act(async () => {
+      await result.current.editContact.mutateAsync({ id: 'so1', email: 'a@b.c', phone: '123', phone_field: 'mobile' });
+    });
+    expect(seen).toEqual({ email: 'a@b.c', phone: '123', phone_field: 'mobile' });
+    await waitFor(() => expect(client.getQueryData(['order-board'])).toEqual(board));
+    expect(client.getQueryState(['order-customer', 'so1'])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['order-payment-target', 'so1'])?.isInvalidated).toBe(false);
+  });
+
+  it('applyCredit posts to the invoice route, takes the board and refreshes customer and payment target', async () => {
+    server.use(http.post('*/order-board/orders/so1/invoices/i1/apply-credit', () => HttpResponse.json({ applied: 5, board })));
+    const { client, result } = setup();
+    client.setQueryData(['order-customer', 'so1'], {});
+    client.setQueryData(['order-payment-target', 'so1'], {});
+    await act(async () => {
+      await result.current.applyCredit.mutateAsync({ id: 'so1', invoiceId: 'i1' });
+    });
+    await waitFor(() => expect(client.getQueryData(['order-board'])).toEqual(board));
+    expect(client.getQueryState(['order-customer', 'so1'])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['order-payment-target', 'so1'])?.isInvalidated).toBe(true);
+  });
 });

@@ -260,3 +260,35 @@ describe('editing a parcel', () => {
     expect(parcelButton()).toHaveFocus();
   });
 });
+
+describe('opening a parcel that Books will not give', () => {
+  it('a plain failure toasts its reason and leaves the board alone; a refusal also refetches it', async () => {
+    const user = userEvent.setup();
+    let status = 500;
+    server.use(http.get(`${BASE}/packages/p1`, () => HttpResponse.json({ detail: status === 500 ? 'Books is down' : 'unknown_package' }, { status })));
+    let reads = 0;
+    const Probe = () => { useQuery({ queryKey: ['order-board'], queryFn: () => { reads += 1; return board; }, staleTime: Infinity }); return null; };
+    render(<><Probe /><OrderLinesPanel row={panelRow()} /></>);
+    await waitFor(() => expect(reads).toBe(1));
+    await user.click(parcelButton());
+    expect(await screen.findByText('Parcel edit failed: Books is down')).toBeInTheDocument();
+    expect(reads).toBe(1);
+    expect(screen.queryByRole('columnheader', { name: 'In the parcel' })).not.toBeInTheDocument();
+    await waitFor(() => expect(parcelButton()).toBeEnabled());
+    status = 409;
+    await user.click(parcelButton());
+    await waitFor(() => expect(reads).toBe(2));
+    expect(screen.queryByRole('columnheader', { name: 'In the parcel' })).not.toBeInTheDocument();
+  });
+
+  it('a refetch where the parcel is no longer waiting closes its edit', async () => {
+    const user = userEvent.setup();
+    server.use(content);
+    const view = render(<OrderLinesPanel row={panelRow()} />);
+    await openParcel(user);
+    view.rerender(<OrderLinesPanel row={panelRow({ packages: [{ ...pkg('p1', 'PKG-00031'), status: 'shipped' }] })} />);
+    await waitFor(() => expect(screen.queryByRole('columnheader', { name: 'In the parcel' })).not.toBeInTheDocument());
+    expect(screen.queryByTestId('pack-qty-l1')).not.toBeInTheDocument();
+  });
+});
+
