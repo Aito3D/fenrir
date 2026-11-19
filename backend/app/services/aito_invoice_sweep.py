@@ -52,7 +52,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime, time as dtime, timedelta, timezone
+from datetime import date, timedelta
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -60,6 +60,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
+from backend.app.models.notification_inbox import UserInboxPreference
 from backend.app.services import aito_events
 from backend.app.services.aito_events import utc_now_naive as _now
 from backend.app.services.aito_invoice_cache import invoice_total_of
@@ -281,23 +282,37 @@ async def settle_deposits(
 _FINISHED_COLUMNS: tuple[str, ...] = ("finish", "done")
 
 
-def _local_midnight_utc(today: date) -> datetime:
-    """Start of ``today`` on the server's calendar, as a naive-UTC timestamp
-    comparable with ``AitoEvent.occurred_at``. ``due_date`` is a local
-    calendar date (the board's ``_today_iso`` reads the server's clock too),
-    so "already said today" must mean the same day."""
-    return datetime.combine(today, dtime.min).astimezone(timezone.utc).replace(tzinfo=None)
+_OVERDUE_BACKFILL_KEY = "aito_overdue_kind_backfilled"
+
+
+async def _backfill_overdue_kind(db: AsyncSession) -> None:
+    """Once: switch ``aito.overdue`` on (with sound) in inbox preferences saved
+    while it was off by default, as order_board_events.backfill_alert_kinds
+    does for its kinds. Never commits."""
+    from backend.app.api.routes.settings import get_setting, set_setting  # the route module imports services
+
+    if await get_setting(db, _OVERDUE_BACKFILL_KEY) == "1":
+        return
+    kind = "aito.overdue"
+    for pref in (await db.execute(select(UserInboxPreference))).scalars():
+        if kind not in (pref.kinds_json or []):
+            pref.kinds_json = [*(pref.kinds_json or []), kind]  # new list: JSON column change tracking
+            if pref.sound_kinds_json and kind not in pref.sound_kinds_json:  # empty = bell muted: keep it silent
+                pref.sound_kinds_json = [*pref.sound_kinds_json, kind]
+    await set_setting(db, _OVERDUE_BACKFILL_KEY, "1")
 
 
 async def _record_overdue(db: AsyncSession, today: date) -> int:
-    """One ``project.due.overdue`` per open card whose promise is past and
-    that has not had one since local midnight. Never commits."""
+    """One ``project.due.overdue`` per open card per broken promise: once for
+    each due date that passes, so moving the date later and missing it again
+    alerts again. ``today`` is the server's calendar day, as the board's
+    ``_today_iso`` reads it. Never commits."""
     already = (
         select(AitoEvent.id)
         .where(
             AitoEvent.project_id == AitoProject.id,
             AitoEvent.kind == "project.due.overdue",
-            AitoEvent.occurred_at >= _local_midnight_utc(today),
+            AitoEvent.detail["due_date"].as_string() == AitoProject.due_date,
         )
         .exists()
     )
@@ -333,6 +348,7 @@ async def sweep_inbox(db: AsyncSession, *, force: bool = False) -> None:
         return
     _last_inbox_run = time.monotonic()
     try:
+        await _backfill_overdue_kind(db)
         overdue = await _record_overdue(db, date.today())
         purged = await purge_old(db, now=_now())
         await db.commit()

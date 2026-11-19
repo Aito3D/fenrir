@@ -1079,8 +1079,8 @@ async def test_rate_limit_during_the_deposit_read_propagates(db_session, monkeyp
 
 # --- The local hourly step: overdue events (and the inbox purge) -----------
 #
-# A broken promise is news once a day: the step records one
-# `project.due.overdue` per card per calendar day, which the inbox turns
+# A broken promise is news once: the step records one
+# `project.due.overdue` per card per due date, which the inbox turns
 # into `aito.overdue` for whoever watches for it. No Books involved.
 
 
@@ -1089,7 +1089,7 @@ async def _overdue_events(db, project_id: int) -> list[AitoEvent]:
 
 
 @pytest.mark.asyncio
-async def test_an_overdue_card_gets_one_event_per_day(db_session):
+async def test_an_overdue_card_gets_one_event_and_skips_finished_cards(db_session):
     from datetime import date, timedelta
 
     from backend.app.services.aito_invoice_sweep import sweep_inbox
@@ -1117,7 +1117,9 @@ async def test_an_overdue_card_gets_one_event_per_day(db_session):
 
 
 @pytest.mark.asyncio
-async def test_an_overdue_event_from_yesterday_does_not_block_today_s(db_session):
+async def test_an_overdue_card_alerts_once_per_due_date(db_session):
+    """Days later the same broken promise is not news again; a new due date
+    that passes in turn is."""
     from datetime import date, timedelta
 
     from backend.app.services.aito_invoice_sweep import sweep_inbox
@@ -1131,12 +1133,59 @@ async def test_an_overdue_event_from_yesterday_does_not_block_today_s(db_session
         "project.due.overdue",
         actor_class="system",
         detail={"due_date": due},
-        occurred_at=datetime.utcnow() - timedelta(days=1, hours=1),
+        occurred_at=datetime.utcnow() - timedelta(days=2),
     )
     await db_session.commit()
 
     await sweep_inbox(db_session, force=True)
-    assert len(await _overdue_events(db_session, late_id)) == 2
+    assert len(await _overdue_events(db_session, late_id)) == 1
+
+    moved = (date.today() - timedelta(days=1)).isoformat()
+    late.due_date = moved
+    await db_session.commit()
+    await sweep_inbox(db_session, force=True)
+    await sweep_inbox(db_session, force=True)
+    events = await _overdue_events(db_session, late_id)
+    assert [e.detail["due_date"] for e in events] == [due, moved]
+
+
+@pytest.mark.asyncio
+async def test_saved_inbox_preferences_get_the_overdue_kind_once(db_session):
+    from backend.app.models.notification_inbox import UserInboxPreference
+    from backend.app.services.aito_invoice_sweep import sweep_inbox
+    from backend.tests.unit.test_inbox_service import _user
+
+    alice = await _user(db_session, "alice")
+    bob = await _user(db_session, "bob")
+    alice_id, bob_id = alice.id, bob.id
+    db_session.add_all(
+        [
+            UserInboxPreference(user_id=alice_id, kinds_json=["aito.paid"], sound_kinds_json=["aito.paid"]),
+            UserInboxPreference(user_id=bob_id, kinds_json=["aito.paid"], sound_kinds_json=[]),
+        ]
+    )
+    await db_session.commit()
+
+    await sweep_inbox(db_session, force=True)
+
+    async def prefs(user_id):
+        row = (
+            await db_session.execute(select(UserInboxPreference).where(UserInboxPreference.user_id == user_id))
+        ).scalar_one()
+        await db_session.refresh(row)
+        return row.kinds_json, row.sound_kinds_json
+
+    assert await prefs(alice_id) == (["aito.paid", "aito.overdue"], ["aito.paid", "aito.overdue"])
+    assert await prefs(bob_id) == (["aito.paid", "aito.overdue"], [])  # a muted bell stays muted
+
+    # Switched off afterwards, it stays off.
+    row = (
+        await db_session.execute(select(UserInboxPreference).where(UserInboxPreference.user_id == alice_id))
+    ).scalar_one()
+    row.kinds_json = ["aito.paid"]
+    await db_session.commit()
+    await sweep_inbox(db_session, force=True)
+    assert (await prefs(alice_id))[0] == ["aito.paid"]
 
 
 @pytest.mark.asyncio
