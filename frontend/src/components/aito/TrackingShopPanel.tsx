@@ -18,7 +18,18 @@ import { PanelReveal, TrackingPanel } from './TrackingPanel';
  *  (index.css `.track-map`), and only requested the first time the panel
  *  opens: a third-party frame has no business loading under a page the
  *  client may never open it on. */
-export function TrackingShopPanel({ open, onClose, titleRef }: { open: boolean; onClose: () => void; titleRef: (el: HTMLHeadingElement | null) => void }) {
+export function TrackingShopPanel({
+  open,
+  onClose,
+  titleRef,
+  hours,
+}: {
+  open: boolean;
+  onClose: () => void;
+  titleRef: (el: HTMLHeadingElement | null) => void;
+  /** The shop_opening_hours setting, shown verbatim; nothing when empty. */
+  hours?: string | null;
+}) {
   const { t, i18n } = useTranslation();
   const [mapSrc, setMapSrc] = useState<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -86,6 +97,12 @@ export function TrackingShopPanel({ open, onClose, titleRef }: { open: boolean; 
           <b className="block font-semibold">{street}</b>
           <span className="text-aito-muted">{rest.join(', ')}</span>
         </p>
+        {hours && (
+          <p className="mt-[6px] text-[13.5px] leading-[1.4]" data-testid="track-shop-hours">
+            <span className="text-aito-muted">{t('aito.track.shop.hours')} </span>
+            {hours}
+          </p>
+        )}
       </PanelReveal>
       <PanelReveal i={2} className="mt-[14px] overflow-hidden rounded-[10px] border border-aito-line">
         {row(t('aito.track.shop.phone'), AITO3D_SENDER.phone, SHOP_TEL_HREF, <Phone className={iconCls} />)}

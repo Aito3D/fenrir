@@ -46,6 +46,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { MobileTabs } from '../components/mobile/MobileTabs';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { readNewProjectDraft, writeNewProjectDraft } from '../hooks/useNewProjectDraft';
+import { isBlankPersistedDraft, seedFromCalculator } from '../utils/projectSeed';
 
 const TAB_ICONS: Record<PageTab, LucideIcon> = { calculator: CalculatorIcon, filaments: Cylinder, printers: Printer, settings: Settings };
 const TAB_LABEL_KEYS: Record<PageTab, string> = {
@@ -90,6 +92,8 @@ export function CalculatorPage() {
   });
   const { hasPermission } = useAuth();
   const canUpdateCalculator = hasPermission('calculator:update');
+  const canCreateAito = hasPermission('aito:create');
+  const [showAitoReplaceConfirm, setShowAitoReplaceConfirm] = useState(false);
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const currency = settings?.currency || 'USD';
@@ -318,7 +322,42 @@ export function CalculatorPage() {
     tabRefs.current[next]?.focus();
   };
 
-  const resetConfirm = showResetConfirm && (
+  // Same hand-off as duplicate-a-card: seed the drawer's own storage, then let
+  // the board open it (`?new=1`). Raw inputs for the print fields, the shown
+  // result for the price.
+  const createAitoCard = () => {
+    setShowAitoReplaceConfirm(false);
+    if (!inputs || !result || !printer || !filament) return;
+    writeNewProjectDraft(
+      seedFromCalculator({
+        printerId: printer.id,
+        filamentId: filament.id,
+        weightG: inputs.weight_g,
+        printingTimeH: inputs.printing_time_h,
+        quantity: inputs.quantity,
+        unitPriceTtc: result.total_ttc,
+      }),
+    );
+    navigate('/aito?new=1');
+  };
+  const startAitoCard = () => {
+    if (isBlankPersistedDraft(readNewProjectDraft())) createAitoCard();
+    else setShowAitoReplaceConfirm(true);
+  };
+
+  const confirmModals = (
+    <>
+      {showAitoReplaceConfirm && (
+        <ConfirmModal
+          title={t('aito.duplicateReplaceTitle')}
+          message={t('calculator.createAitoCardReplaceBody')}
+          confirmText={t('aito.duplicateReplaceConfirm')}
+          variant="warning"
+          onConfirm={createAitoCard}
+          onCancel={() => setShowAitoReplaceConfirm(false)}
+        />
+      )}
+      {showResetConfirm && (
         <ConfirmModal
           title={t('calculator.resetConfirmTitle')}
           message={t('calculator.resetConfirmMessage')}
@@ -329,6 +368,8 @@ export function CalculatorPage() {
           }}
           onCancel={() => setShowResetConfirm(false)}
         />
+      )}
+    </>
   );
 
   const actions = tab === 'calculator' && (
@@ -539,6 +580,7 @@ export function CalculatorPage() {
                           persistCalculatorStateNow(state);
                           navigate('/calculator/quote');
                         }}
+                        onCreateAitoCard={canCreateAito ? startAitoCard : undefined}
                       />
                       {!easy && <CalculatorBreakdownCard result={result} currency={currency} />}
                       <CalculatorDiscountTable result={result} currency={currency} easy={easy} />
@@ -566,7 +608,7 @@ export function CalculatorPage() {
           headerRight={mobileActions || undefined}
           renderTab={renderTab}
         />
-        {resetConfirm}
+        {confirmModals}
       </>
     );
   }
@@ -621,7 +663,7 @@ export function CalculatorPage() {
 
       {renderTab(tab)}
 
-      {resetConfirm}
+      {confirmModals}
     </div>
   );
 }

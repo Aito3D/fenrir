@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18next from 'i18next';
-import { availableLanguages, LOCALE_LOADERS } from '../i18n';
+import { LOCALE_LOADERS } from '../i18n';
+import { availableLanguages } from '../i18n/languages';
 import { trackingDefaultLanguage } from '../utils/aitoTracking';
 import { I18N_ENGLISH_EXTRA_MS, I18N_SETTLE_TIMEOUT_MS } from '../utils/trackingShell';
 

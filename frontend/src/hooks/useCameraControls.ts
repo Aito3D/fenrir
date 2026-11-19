@@ -20,7 +20,6 @@ export function useCameraControls({ printerId }: UseCameraControlsOptions) {
   const { data: status } = useQuery({
     queryKey: ['printerStatus', printerId],
     queryFn: () => api.getPrinterStatus(printerId),
-    refetchInterval: 30000,
     enabled: printerId > 0,
   });
 

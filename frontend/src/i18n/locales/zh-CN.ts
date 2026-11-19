@@ -513,6 +513,7 @@ export default {
         sub: 'Aito 3D 工作室与门店',
         mapTitle: '门店地图',
         mapLoading: '地图加载中…',
+        hours: '营业时间',
         phone: '电话',
         email: '邮箱',
         website: '网站',
@@ -1560,7 +1561,7 @@ export default {
     addPreflight: {
       checking: '正在检查连接...',
       warning: '部分连接检查未通过。此打印机可能显示为离线。请查看下方的检查项，尽量修复，或仍然保存。',
-      back: '返回',
+      checkAgain: '重新检查',
       saveAnyway: '仍然保存',
     },
     title: '打印机',
@@ -1571,6 +1572,8 @@ export default {
     serialNumber: '序列号',
     ipAddress: 'IP 地址 / 主机名',
     accessCode: '访问码',
+    showAccessCode: '显示访问码',
+    hideAccessCode: '隐藏访问码',
     model: '型号',
     nozzleCount: '喷嘴数量',
     autoArchive: '自动归档',
@@ -1755,6 +1758,10 @@ export default {
     enabled: '已启用',
     disabled: '已禁用',
     addedOn: '添加日期',
+    errorHistory: '错误历史',
+    errorHistoryTop: '最常见（30 天）',
+    errorHistoryRecent: '最近',
+    errorHistoryEmpty: '尚未记录任何错误。',
     sdCard: 'SD 卡',
     inserted: '已插入',
     notInserted: '未插入',
@@ -3769,8 +3776,8 @@ export default {
     smartPlugs: '智能插座',
     spoolman: 'Spoolman',
     updates: '更新',
-    language: '语言',
-    languageDescription: '选择您的首选语言',
+    language: 'SpoolBuddy 显示屏语言',
+    languageDescription: 'SpoolBuddy 显示屏的语言。每个人可以在“账户”菜单中，或在未启用登录时通过地球图标按钮，选择自己的界面语言。',
     theme: '主题',
     themeLight: '浅色',
     themeDark: '深色',
@@ -4877,6 +4884,8 @@ export default {
     aitoFollowupPickupDaysDescription: '已通知客户但尚未取件的完成作业，超过此天数后进入跟进栏。',
     aitoFollowupLinkDays: '支付链接即将到期（天）',
     aitoFollowupLinkDaysDescription: '标记支付链接将在此天数内到期的报价单',
+    shopOpeningHours: '门店营业时间',
+    shopOpeningHoursDescription: '在追踪页面和取货短信中向客户显示。留空则隐藏。',
   },
 
   // Notifications (for push notifications)
@@ -8324,6 +8333,9 @@ export default {
     printsCount: '打印：{{count}}',
     goodCount: '成功：{{count}}',
     failedCount: '失败：{{count}}',
+    similarTitle: '相似打印',
+    similarCompare: '对比',
+    similarSelect: '选择 {{name}} 进行对比',
     close: '关闭',
   },
 
@@ -9575,6 +9587,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: '账户',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: '语言',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {
@@ -11001,6 +11017,8 @@ export default {
 
   // Pricing Calculator
   calculator: {
+    createAitoCard: '创建 Aito 卡片',
+    createAitoCardReplaceBody: '新项目抽屉中已有尚未创建的内容。从计算器创建卡片将替换它。',
     brand: '品牌',
     material: '材料',
     title: '计算器',
@@ -11345,6 +11363,7 @@ export default {
       ordersReady: '订单可备货',
       ordersPacked: "订单已打包：通知客户",
       ordersNew: '新订单',
+      ordersPaid: '订单已付款',
     },
   },
   projectsPdm: {

@@ -381,3 +381,62 @@ async def test_an_lta_edit_leaves_a_locked_quote_locked(async_client, resolved_c
     body = (await async_client.patch(f"/api/v1/aito/{project_id}", json={"shipping_lta": "123-4567"})).json()
     assert body["shipping_lta"] == "123-4567"
     assert body["quote_sync_state"] == "locked"
+
+
+# --- LTA copied to the Books invoice as a comment ------------------------------
+
+
+@pytest.fixture
+def invoice_comments(monkeypatch):
+    """Stubbed Books: the card's quote has one invoice; comments are recorded."""
+    posted: list[tuple[str, str]] = []
+
+    async def invoices(db, estimate_id, customer_id):
+        return [{"id": "INV-1"}]
+
+    async def comment(db, invoice_id, description):
+        posted.append((invoice_id, description))
+
+    monkeypatch.setattr(zoho_service, "list_project_invoices", invoices)
+    monkeypatch.setattr(zoho_service, "add_invoice_comment", comment)
+    return posted
+
+
+async def _invoiced(async_client, db_session, invoiced: bool = True) -> int:
+    project_id = (await _create(async_client, **SHIPPING)).json()["id"]
+    project = (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
+    project.quote_id = "EST-1"
+    project.quote_invoiced = invoiced
+    await db_session.commit()
+    return project_id
+
+
+async def test_lta_is_noted_on_the_invoice_when_set_and_changed(
+    async_client, resolved_catalogue, db_session, invoice_comments
+):
+    project_id = await _invoiced(async_client, db_session)
+    await async_client.patch(f"/api/v1/aito/{project_id}", json={"shipping_lta": " 123-4567 "})
+    await async_client.patch(f"/api/v1/aito/{project_id}", json={"shipping_lta": "123-4567"})  # unchanged
+    await async_client.patch(f"/api/v1/aito/{project_id}", json={"shipping_lta": "999"})
+    await async_client.patch(f"/api/v1/aito/{project_id}", json={"shipping_lta": ""})  # cleared
+    assert invoice_comments == [("INV-1", "LTA Air Tahiti : 123-4567"), ("INV-1", "LTA Air Tahiti : 999")]
+
+
+async def test_lta_is_not_noted_without_an_invoice(async_client, resolved_catalogue, db_session, invoice_comments):
+    project_id = await _invoiced(async_client, db_session, invoiced=False)
+    response = await async_client.patch(f"/api/v1/aito/{project_id}", json={"shipping_lta": "123"})
+    assert response.status_code == 200
+    assert invoice_comments == []
+
+
+async def test_lta_patch_succeeds_when_books_fails(async_client, resolved_catalogue, db_session, monkeypatch):
+    from backend.app.services.zoho import ZohoUpstreamError
+
+    async def down(*args, **kwargs):
+        raise ZohoUpstreamError("Books down")
+
+    monkeypatch.setattr(zoho_service, "list_project_invoices", down)
+    project_id = await _invoiced(async_client, db_session)
+    response = await async_client.patch(f"/api/v1/aito/{project_id}", json={"shipping_lta": "123"})
+    assert response.status_code == 200
+    assert response.json()["shipping_lta"] == "123"

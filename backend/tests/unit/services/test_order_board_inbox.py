@@ -50,6 +50,15 @@ async def test_ready_notifies_order_readers_only(db_session, pushes):  # noqa: F
 
 
 @pytest.mark.asyncio
+async def test_payment_received_rings_orders_paid(db_session):
+    reader = await _user(db_session, "reader", perms=("orders:read",))
+    await seed_order(db_session)
+    await order_board_events.record(db_session, "so1", "payment.received", actor_class="system", detail={"amount": 5})
+    (row,) = await rows(db_session)
+    assert (row.user_id, row.kind, row.family, row.target_ref) == (reader.id, "orders.paid", "orders", "so1")
+
+
+@pytest.mark.asyncio
 async def test_body_falls_back_when_order_not_stored(db_session):
     await _user(db_session, "reader", perms=("orders:read",))
     await order_board_events.record(db_session, "so9", "order.ready", actor_class="system")
@@ -210,8 +219,8 @@ async def test_backfill_adds_order_kinds_once(db_session):
     await db_session.commit()
     assert await order_board_events.backfill_alert_kinds(db_session) == 2
     prefs = {p.user_id: p for p in (await db_session.execute(select(UserInboxPreference))).scalars()}
-    assert prefs[a.id].kinds_json == ["aito.paid", "orders.ready", "orders.new", "orders.packed"]
-    assert prefs[a.id].sound_kinds_json == ["aito.paid", "orders.ready", "orders.packed"]
+    assert prefs[a.id].kinds_json == ["aito.paid", "orders.ready", "orders.new", "orders.packed", "orders.paid"]
+    assert prefs[a.id].sound_kinds_json == ["aito.paid", "orders.ready", "orders.packed", "orders.paid"]
     assert prefs[b.id].sound_kinds_json == []
     prefs[a.id].kinds_json = ["aito.paid"]
     await db_session.commit()
@@ -228,7 +237,7 @@ async def test_backfill_offers_only_the_kinds_added_since_the_first_run(db_sessi
     await db_session.commit()
     assert await order_board_events.backfill_alert_kinds(db_session) == 1
     pref = (await db_session.execute(select(UserInboxPreference))).scalar_one()
-    assert pref.kinds_json == ["orders.new", "orders.packed"]  # the kind switched off stays off
+    assert pref.kinds_json == ["orders.new", "orders.packed", "orders.paid"]  # the kind switched off stays off
     assert await order_board_events.backfill_alert_kinds(db_session) == 0
 
 

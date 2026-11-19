@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, Globe } from 'lucide-react';
-import { availableLanguages } from '../../i18n';
+import { availableLanguages } from '../../i18n/languages';
 
 /** The language pill in the card's top-right corner. The visible pill —
  *  globe, the language's own name from `sm:` up, a chevron — is drawn by

@@ -152,6 +152,8 @@ export function OrderTrackPage() {
   const money = (n: number) => formatMoney(n, payment?.currency ?? 'XPF');
   const reference = data ? t('aito.track.order.ref', { ref: data.reference }) : '';
   const small = 'text-[12px] uppercase tracking-[.08em] text-aito-muted';
+  // The server sends the day only before anything is ready; a day gone by reads as being updated, as on the Aito page.
+  const expectedPassed = data?.expected_date ? new Date(`${data.expected_date}T23:59:59`) < new Date() : false;
   return (
     <div className={PAGE}>
       <div className="track-stage" data-open={panel.open ?? undefined} data-testid="track-stage">
@@ -202,6 +204,14 @@ export function OrderTrackPage() {
                 >
                   <h2 className="text-[19px] font-semibold tracking-tight">{copy.title}</h2>
                   <p className="mt-[8px] text-[15px] text-aito-muted">{copy.sub}</p>
+                  {data.expected_date && (
+                    <div className="mt-[12px] border-t border-aito-line/60 pt-[12px]" data-testid="track-eta">
+                      <p className={small}>{t('aito.track.eta')}</p>
+                      <p className={expectedPassed ? 'mt-[4px] text-[15px] text-aito-ink' : 'mt-[4px] text-[17px] font-semibold text-aito-cyan'}>
+                        {expectedPassed ? t('aito.track.etaUpdating') : longDate(data.expected_date, lng)}
+                      </p>
+                    </div>
+                  )}
                   {data.pickup && data.stage === 'ready' && (
                     <div className="mt-[12px] border-t border-aito-line/60 pt-[12px]" data-testid="track-pickup">
                       <p className={small}>{t('aito.track.order.pickup')}</p>
@@ -332,7 +342,7 @@ export function OrderTrackPage() {
                 </PanelReveal>
               </TrackingPanel>
             )}
-            <TrackingShopPanel open={panel.open === 'shop'} onClose={panel.close} titleRef={panel.titleRef('shop')} />
+            <TrackingShopPanel open={panel.open === 'shop'} onClose={panel.close} titleRef={panel.titleRef('shop')} hours={data?.shop_hours} />
           </>
         )}
       </div>

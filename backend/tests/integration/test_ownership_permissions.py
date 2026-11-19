@@ -2421,6 +2421,10 @@ class TestSimilarAndDuplicatesOwnership(TestOwnershipPermissionsSetup):
         ids = {row["archive"]["id"] for row in similar.json()}
         assert mine_too.id in ids
         assert theirs.id not in ids
+        # The archive detail's "Similar prints" list reads these.
+        row = next(r["archive"] for r in similar.json() if r["archive"]["id"] == mine_too.id)
+        assert row["printer_name"] == printer.name
+        assert {"duration_seconds", "has_thumbnail", "status"} <= row.keys()
 
         dupes = await async_client.get(f"/api/v1/archives/{mine.id}/duplicates", headers=headers)
         assert theirs.id not in {d["id"] for d in dupes.json()["duplicates"]}

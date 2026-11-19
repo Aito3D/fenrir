@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isBlankPersistedDraft, seedFromProject } from '../../utils/projectSeed';
+import { isBlankPersistedDraft, seedFromCalculator, seedFromProject } from '../../utils/projectSeed';
 import { emptyTaskDraft, taskDraftFromAitoTask } from '../../utils/taskDraft';
 import { defaultClientDraft } from '../../utils/clientDraft';
 import type { AitoProject, AitoShippingService, AitoTask } from '../../api/client';
@@ -214,5 +214,28 @@ describe('isBlankPersistedDraft', () => {
     expect(isBlankPersistedDraft({ ...blank(), dueDate: '2026-09-20' })).toBe(false);
     expect(isBlankPersistedDraft({ ...blank(), client: seed().client })).toBe(false);
     expect(isBlankPersistedDraft({ ...blank(), shipping: seed().shipping })).toBe(false);
+  });
+});
+
+describe('seedFromCalculator', () => {
+  const base = { printerId: 2, filamentId: 5, weightG: 42.5, printingTimeH: 2.5, quantity: 3, unitPriceTtc: 1608.4 };
+
+  it('maps hours to whole minutes, keeps grams, and stores the 50-tier unit price times quantity', () => {
+    const draft = seedFromCalculator(base);
+    expect(draft.tasks).toHaveLength(1);
+    expect(draft.tasks[0].impression).toEqual({
+      printerId: 2, filamentId: 5, weightG: 42.5, timeMin: 150, quantity: 3, color: '',
+    });
+    expect(draft.tasks[0].impressionCost).toBe(1650 * 3);
+    expect(draft.client).toBeNull();
+    expect(draft.shipping).toBeNull();
+    expect(isBlankPersistedDraft(draft)).toBe(false);
+  });
+
+  it('rounds sub-minute times and leaves zero inputs empty', () => {
+    expect(seedFromCalculator({ ...base, printingTimeH: 1 / 120 }).tasks[0].impression.timeMin).toBe(1);
+    const empty = seedFromCalculator({ ...base, weightG: 0, printingTimeH: 0, quantity: 0, unitPriceTtc: 0 });
+    expect(empty.tasks[0].impression).toMatchObject({ weightG: null, timeMin: null, quantity: 1 });
+    expect(empty.tasks[0].impressionCost).toBeNull();
   });
 });

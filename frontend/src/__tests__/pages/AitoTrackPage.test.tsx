@@ -966,7 +966,7 @@ describe('AitoTrackPage — side panels', () => {
   });
 
   it('the footer button opens the shop panel on the left: map, address, contact rows and directions', async () => {
-    mockTrack(UNPAID);
+    mockTrack({ ...UNPAID, shop_hours: 'Lun-Ven 8h-17h' });
     renderAt('tok');
     await screen.findByTestId('track-invoice');
     // The map is a third-party frame: not fetched until someone asks for it.
@@ -986,6 +986,7 @@ describe('AitoTrackPage — side panels', () => {
     expect(map.getAttribute('src')).toContain('hl=fr');
     expect(within(shopPanel()).getByText("20 Route de l'eau Royale")).toBeInTheDocument();
     expect(within(shopPanel()).getByText('Arue – Tahiti, Polynésie française')).toBeInTheDocument();
+    expect(within(shopPanel()).getByTestId('track-shop-hours')).toHaveTextContent('Horaires Lun-Ven 8h-17h');
     expect(within(shopPanel()).getByRole('link', { name: /Téléphone/ })).toHaveAttribute('href', 'tel:+68989253210');
     expect(within(shopPanel()).getByRole('link', { name: /E-mail/ })).toHaveAttribute('href', 'mailto:contact@aito3d.fr');
     expect(within(shopPanel()).getByRole('link', { name: /Site/ })).toHaveAttribute('href', 'https://aito3d.fr');

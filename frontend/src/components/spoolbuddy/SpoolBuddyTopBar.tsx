@@ -26,7 +26,6 @@ export function SpoolBuddyTopBar({ selectedPrinterId, onPrinterChange, deviceOnl
     queries: printers.map((printer: Printer) => ({
       queryKey: ['printerStatus', printer.id],
       queryFn: () => api.getPrinterStatus(printer.id),
-      refetchInterval: 10000,
     })),
   });
 

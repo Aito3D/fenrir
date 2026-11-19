@@ -183,7 +183,6 @@ export function SpoolBuddyDashboard() {
     queries: printers.map((printer: Printer) => ({
       queryKey: ['printerStatus', printer.id],
       queryFn: () => api.getPrinterStatus(printer.id),
-      refetchInterval: 10000,
       select: (data: PrinterStatus) => ({
         connected: data?.connected,
         awaiting_plate_clear: data?.awaiting_plate_clear === true,

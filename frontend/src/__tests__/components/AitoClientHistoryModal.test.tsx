@@ -8,6 +8,8 @@ import { ClientHistoryModal } from '../../components/aito/ClientHistoryModal';
 import type { AitoClientHistoryCard, AitoProject } from '../../api/client';
 import { formatMoney } from '../../utils/pricing';
 import { formatDate } from '../../utils/date';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { readNewProjectDraft } from '../../hooks/useNewProjectDraft';
 
 // The test currency is USD (mocked settings); amounts are compared through
 // formatMoney rather than typed, so a locale change cannot break this file.
@@ -185,5 +187,44 @@ describe('ClientHistoryModal', () => {
     await screen.findByRole('dialog', { name: 'Client history' });
     await userEvent.setup().click(screen.getByRole('button', { name: 'Close' }));
     await waitFor(() => expect(onButtonClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('Repeat on a row seeds the new-project drawer from that card and hands over', async () => {
+    mockHistory({ cards });
+    server.use(
+      http.get('/api/v1/aito/33/tasks', () =>
+        HttpResponse.json([{ id: 9, project_id: 33, position: 0, title: 'Tambour inox', impression_quantity: 2, impression_cost: 20000, impression_done: true }]),
+      ),
+    );
+    // The full card comes from the board query's cache, as on the page.
+    const board = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    board.setQueryData(['aito-projects'], [
+      { ...project, id: 33, description: 'Pièce de tambour en inox', shipping_island: null, due_date: '2026-08-01' },
+    ]);
+    const onRepeat = vi.fn();
+    render(
+      <QueryClientProvider client={board}>
+        <ClientHistoryModal project={project} onClose={vi.fn()} onRepeat={onRepeat} />
+      </QueryClientProvider>,
+    );
+    const rows = await screen.findAllByTestId('client-history-row');
+    // Only cards the board can supply get the action.
+    expect(screen.getAllByRole('button', { name: 'Duplicate' })).toHaveLength(1);
+    await userEvent.setup().click(within(rows[1]).getByRole('button', { name: 'Duplicate' }));
+
+    await waitFor(() => expect(onRepeat).toHaveBeenCalledTimes(1));
+    const seeded = readNewProjectDraft()!;
+    expect(seeded.client?.name).toBe('PACIFIC MARINE');
+    expect(seeded.summaryText).toBe('Pièce de tambour en inox');
+    expect(seeded.tasks.map((task) => task.title)).toEqual(['Tambour inox']);
+    expect(seeded.tasks[0].id).toBeNull();
+    expect(seeded.dueDate).toBe('');
+  });
+
+  it('offers no Repeat without onRepeat', async () => {
+    mockHistory({ cards });
+    render(<ClientHistoryModal project={project} onClose={vi.fn()} />);
+    await screen.findAllByTestId('client-history-row');
+    expect(screen.queryByRole('button', { name: 'Duplicate' })).toBeNull();
   });
 });

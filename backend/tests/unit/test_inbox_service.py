@@ -62,17 +62,19 @@ async def test_kind_mapping():
     assert inbox.inbox_kind_for("payment.terminal.paid") == "aito.paid"
     assert inbox.inbox_kind_for("payment.manual.recorded") == "aito.paid"
     assert inbox.inbox_kind_for("task.added") is None
-    assert "aito.overdue" in inbox.KINDS and "aito.overdue" not in inbox.DEFAULT_KINDS
+    assert inbox.inbox_kind_for("project.due.overdue") == "aito.overdue"
     assert "printer.finished" in inbox.KINDS and "printer.finished" not in inbox.DEFAULT_KINDS
     assert set(inbox.DEFAULT_KINDS) == {
         "aito.quote_viewed",
         "aito.quote_accepted",
         "aito.quote_declined",
         "aito.paid",
+        "aito.overdue",
         "hours.readings_due",
         "orders.ready",
         "orders.new",
         "orders.packed",
+        "orders.paid",
     }
     assert set(inbox.SOUND_DEFAULT_KINDS) == set(inbox.DEFAULT_KINDS) - {"hours.readings_due", "orders.new"}
 
@@ -545,15 +547,18 @@ async def test_an_auto_watch_stores_no_kinds_and_follows_settings(async_client, 
     assert watch.kinds_json is None
     watch.created_at = datetime.utcnow() - timedelta(minutes=5)
 
-    # Defaults leave overdue off: nothing yet.
+    # Settings leave overdue off: nothing yet.
+    pref = UserInboxPreference(
+        user_id=alice.id, kinds_json=["aito.quote_accepted"], sound_kinds_json=[], auto_watch=True
+    )
+    db_session.add(pref)
+    await db_session.commit()
     await record(db_session, p["id"], "project.due.overdue", actor_class="system")
     await db_session.commit()
     assert (await db_session.execute(select(Notification))).scalars().first() is None
 
     # Enabled in Settings later — the existing auto-watch now delivers it.
-    db_session.add(
-        UserInboxPreference(user_id=alice.id, kinds_json=["aito.overdue"], sound_kinds_json=[], auto_watch=True)
-    )
+    pref.kinds_json = ["aito.overdue"]
     await db_session.commit()
     await record(db_session, p["id"], "project.due.overdue", actor_class="system", detail={"day": 2})
     await record(db_session, p["id"], "quote.accepted", actor_class="client")  # default kind, now turned off

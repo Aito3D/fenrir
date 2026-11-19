@@ -9,6 +9,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
+import { server } from '../mocks/server';
 import { render } from '../utils';
 import { PrinterInfoModal } from '../../components/PrinterInfoModal';
 import type { Printer } from '../../api/client';
@@ -132,5 +134,33 @@ describe('PrinterInfoModal — CopyButton clipboard fallback (#1174)', () => {
     await waitFor(() => {
       expect(document.querySelectorAll('textarea').length).toBe(0);
     });
+  });
+});
+
+describe('PrinterInfoModal — error history', () => {
+  it('lists the most frequent codes and recent occurrences', async () => {
+    const recent = new Date(Date.now() - 5 * 60_000).toISOString();
+    server.use(
+      http.get('*/api/v1/printers/1/hms/history', () =>
+        HttpResponse.json({
+          days: 30,
+          top_codes: [
+            { code: '0C00010000020017', count: 4, description: 'Nozzle camera lens is dirty.', severity: 2, last_seen: recent },
+          ],
+          recent: [
+            { code: '0300010000010008', severity: 1, description: null, first_seen: recent, cleared_at: null },
+          ],
+        }),
+      ),
+    );
+
+    render(<PrinterInfoModal printer={mockPrinter()} onClose={() => {}} />);
+
+    expect(await screen.findByText('Error history')).toBeInTheDocument();
+    expect(screen.getByText('Nozzle camera lens is dirty.')).toBeInTheDocument();
+    expect(screen.getByText('×4')).toBeInTheDocument();
+    // No catalogue text: the code itself stands in.
+    expect(screen.getByText('0300010000010008')).toBeInTheDocument();
+    expect(screen.getByText('5m ago')).toBeInTheDocument();
   });
 });

@@ -26,6 +26,7 @@ import { Button } from './Button';
 import aito3dLogo from '../assets/aito3d_logo.png';
 import { AnnouncementsPanel } from './AnnouncementsPanel';
 import { AccountMenu } from './AccountMenu';
+import { LanguageMenu } from './LanguageMenu';
 import { AnnouncementBanner } from './AnnouncementBanner';
 import { useAnnouncements } from '../hooks/useAnnouncements';
 // Required by upstream's root-level mount adopted in this merge. The fork had
@@ -905,6 +906,8 @@ export function Layout() {
                 >
                   <ThemeIcon className="w-5 h-5" />
                 </button>
+                {/* Auth off: no account menu, so the language gets its own button (#3623). */}
+                {!authEnabled && <LanguageMenu />}
                 {authEnabled && user && (
                   <>
                     <AccountMenu username={user.username} onChangePassword={() => setShowChangePasswordModal(true)} />
@@ -1014,6 +1017,8 @@ export function Layout() {
               >
                 <ThemeIcon className="w-5 h-5" />
               </button>
+              {/* Auth off: no account menu, so the language gets its own button (#3623). */}
+              {!authEnabled && <LanguageMenu />}
               {authEnabled && user && (
                 <>
                   <AccountMenu username={user.username} onChangePassword={() => setShowChangePasswordModal(true)} />

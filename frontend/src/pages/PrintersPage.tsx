@@ -2954,15 +2954,10 @@ function PrinterCard({
   });
 
   // AMS Filament Backup toggle (auto-switch to a backup spool when one runs out).
-  // Invalidate BOTH printer-status cache keys — the codebase has two conventions
-  // ('printerStatus' camelCase + 'printer-status' kebab-case used by PrintModal /
-  // useMultiPrinterFilamentMapping). Hitting only one would leave PrintModal
-  // showing the old backup state until the user reopens it.
   const setAmsBackupMutation = useMutation({
     mutationFn: (enabled: boolean) => api.setAmsFilamentBackup(printer.id, enabled),
     onSuccess: (_data, enabled) => {
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
-      queryClient.invalidateQueries({ queryKey: ['printer-status', printer.id] });
       showToast(t(enabled ? 'printers.amsBackup.toastEnabled' : 'printers.amsBackup.toastDisabled'), 'success');
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
@@ -7965,6 +7960,47 @@ function PrinterCard({
   );
 }
 
+/**
+ * A printer's access code, hidden unless shown (#3624). It is eight
+ * characters read off the printer's screen, some easy to confuse, and a typo
+ * was only found by the failed connection check.
+ */
+function AccessCodeInput({
+  value,
+  onChange,
+  placeholder,
+  required,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  required?: boolean;
+}) {
+  const { t } = useTranslation();
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        type={shown ? 'text' : 'password'}
+        required={required}
+        aria-label={t('printers.accessCode')}
+        className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none pr-10"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+      <button
+        type="button"
+        onClick={() => setShown(!shown)}
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-bambu-gray hover:text-white"
+        aria-label={shown ? t('printers.hideAccessCode') : t('printers.showAccessCode')}
+      >
+        {shown ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+      </button>
+    </div>
+  );
+}
+
 export function AddPrinterModal({
   onClose,
   onAdd,
@@ -8008,6 +8044,14 @@ export function AddPrinterModal({
   // failed result awaiting an explicit "save anyway".
   const [checkingSave, setCheckingSave] = useState(false);
   const [saveWarning, setSaveWarning] = useState<PrinterDiagnosticResult | null>(null);
+
+  // A field the connection check reads was changed: its warning is about
+  // values no longer in the form, so it goes, and the next save checks the
+  // new ones (#3624).
+  const setCheckedFields = (patch: Partial<typeof form>) => {
+    setForm((f) => ({ ...f, ...patch }));
+    setSaveWarning(null);
+  };
 
   // Fetch discovery info on mount + restore the last custom CIDR the user
   // typed (kept in localStorage so they don't retype `10.1.1.0/24` every
@@ -8143,8 +8187,7 @@ export function AddPrinterModal({
   const selectPrinter = (printer: DiscoveredPrinter) => {
     // Don't pre-fill serial if it's a placeholder (unknown-*) - user needs to enter actual serial
     const serialNumber = printer.serial.startsWith('unknown-') ? '' : printer.serial;
-    setForm({
-      ...form,
+    setCheckedFields({
       name: printer.name || '',
       serial_number: serialNumber,
       ip_address: printer.ip_address,
@@ -8328,7 +8371,7 @@ export function AddPrinterModal({
                 pattern="(\d{1,3}(\.\d{1,3}){3}|[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*)"
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 value={form.ip_address}
-                onChange={(e) => setForm({ ...form, ip_address: e.target.value })}
+                onChange={(e) => setCheckedFields({ ip_address: e.target.value })}
                 placeholder="192.168.1.100 or printer.local"
               />
             </div>
@@ -8339,18 +8382,16 @@ export function AddPrinterModal({
                 required
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 value={form.serial_number}
-                onChange={(e) => setForm({ ...form, serial_number: e.target.value })}
+                onChange={(e) => setCheckedFields({ serial_number: e.target.value })}
                 placeholder="01P00A000000000"
               />
             </div>
             <div>
               <label className="block text-sm text-bambu-gray mb-1">{t('printers.accessCode')}</label>
-              <input
-                type="password"
+              <AccessCodeInput
                 required
-                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 value={form.access_code}
-                onChange={(e) => setForm({ ...form, access_code: e.target.value })}
+                onChange={(access_code) => setCheckedFields({ access_code })}
                 placeholder={t('printers.modal.fromPrinterSettings')}
               />
             </div>
@@ -8434,13 +8475,10 @@ export function AddPrinterModal({
                 </div>
                 <DiagnosticChecklist result={saveWarning} />
                 <div className="flex gap-3">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setSaveWarning(null)}
-                    className="flex-1"
-                  >
-                    {t('printers.addPreflight.back')}
+                  {/* Runs the check again on the form's values: the printer
+                      may just have been switched on (#3624). */}
+                  <Button type="submit" variant="secondary" disabled={checkingSave} className="flex-1">
+                    {checkingSave ? t('printers.addPreflight.checking') : t('printers.addPreflight.checkAgain')}
                   </Button>
                   <Button type="button" onClick={() => onAdd(form)} className="flex-1">
                     {t('printers.addPreflight.saveAnyway')}
@@ -8817,6 +8855,14 @@ function EditPrinterModal({
   const [checkingSave, setCheckingSave] = useState(false);
   const [saveWarning, setSaveWarning] = useState<PrinterDiagnosticResult | null>(null);
 
+  // A field the connection check reads was changed: its warning is about
+  // values no longer in the form, so it goes, and the next save checks the
+  // new ones (#3624).
+  const setCheckedFields = (patch: Partial<typeof form>) => {
+    setForm((f) => ({ ...f, ...patch }));
+    setSaveWarning(null);
+  };
+
   const updateMutation = useMutation({
     mutationFn: (data: Partial<PrinterCreate>) => api.updatePrinter(printer.id, data),
     onSuccess: () => {
@@ -8908,7 +8954,7 @@ function EditPrinterModal({
                 pattern="(\d{1,3}(\.\d{1,3}){3}|[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*)"
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 value={form.ip_address}
-                onChange={(e) => setForm({ ...form, ip_address: e.target.value })}
+                onChange={(e) => setCheckedFields({ ip_address: e.target.value })}
                 placeholder="192.168.1.100 or printer.local"
               />
             </div>
@@ -8924,11 +8970,9 @@ function EditPrinterModal({
             </div>
             <div>
               <label className="block text-sm text-bambu-gray mb-1">{t('printers.accessCode')}</label>
-              <input
-                type="password"
-                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              <AccessCodeInput
                 value={form.access_code}
-                onChange={(e) => setForm({ ...form, access_code: e.target.value })}
+                onChange={(access_code) => setCheckedFields({ access_code })}
                 placeholder={t('printers.accessCodePlaceholder')}
               />
             </div>
@@ -9084,13 +9128,10 @@ function EditPrinterModal({
                 </div>
                 <DiagnosticChecklist result={saveWarning} />
                 <div className="flex gap-3">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setSaveWarning(null)}
-                    className="flex-1"
-                  >
-                    {t('printers.addPreflight.back')}
+                  {/* Runs the check again on the form's values: the printer
+                      may just have been switched on (#3624). */}
+                  <Button type="submit" variant="secondary" disabled={checkingSave} className="flex-1">
+                    {checkingSave ? t('printers.addPreflight.checking') : t('printers.addPreflight.checkAgain')}
                   </Button>
                   <Button
                     type="button"
@@ -9132,7 +9173,6 @@ function usePrinterOfflineStatus(printerId: number) {
   const { data: status } = useQuery({
     queryKey: ['printerStatus', printerId],
     queryFn: () => api.getPrinterStatus(printerId),
-    refetchInterval: 30000,
   });
   return !status?.connected;
 }

@@ -514,6 +514,7 @@ export default {
         sub: 'Майстерня та магазин Aito 3D',
         mapTitle: 'Мапа магазину',
         mapLoading: 'Завантаження мапи…',
+        hours: 'Години роботи',
         phone: 'Телефон',
         email: 'Ел. пошта',
         website: 'Сайт',
@@ -1560,7 +1561,7 @@ export default {
     addPreflight: {
       checking: "Перевірка підключення...",
       warning: "Деякі перевірки підключення завершилися невдало. Принтер може відображатися як офлайн. Перегляньте результати нижче, усуньте можливі проблеми або все одно збережіть принтер.",
-      back: "Назад",
+      checkAgain: "Перевірити знову",
       saveAnyway: "Усе одно зберегти",
     },
     editPrinter: "Редагувати принтер",
@@ -1569,6 +1570,8 @@ export default {
     serialNumber: "Серійний номер",
     ipAddress: "IP-адреса / ім’я хоста",
     accessCode: "Код доступу",
+    showAccessCode: "Показати код доступу",
+    hideAccessCode: "Приховати код доступу",
     model: "Модель",
     nozzleCount: "Кількість сопел",
     autoArchive: "Автоархів",
@@ -1742,6 +1745,10 @@ export default {
     enabled: "Увімкнено",
     disabled: "Вимкнено",
     addedOn: "Додано",
+    errorHistory: 'Історія помилок',
+    errorHistoryTop: 'Найчастіші (30 днів)',
+    errorHistoryRecent: 'Нещодавні',
+    errorHistoryEmpty: 'Помилок поки не зареєстровано.',
     sdCard: "SD-картка",
     inserted: "Вставлено",
     notInserted: "Не вставлено",
@@ -3683,8 +3690,8 @@ export default {
     smartPlugs: "Розумні розетки",
     spoolman: "Spoolman",
     updates: "Оновлення",
-    language: "Мова",
-    languageDescription: "Виберіть бажану мову",
+    language: "Мова екранів SpoolBuddy",
+    languageDescription: "Мова екранів SpoolBuddy. Кожен користувач обирає власну мову інтерфейсу в меню «Обліковий запис» або, без входу, кнопкою з глобусом.",
     theme: "Тема",
     themeLight: "Світла",
     themeDark: "Темна",
@@ -4751,6 +4758,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Готове замовлення, про яке клієнта повідомили, але не забрали, потрапляє до смуги через стільки днів.',
     aitoFollowupLinkDays: 'Спливання посилання на оплату (дні)',
     aitoFollowupLinkDaysDescription: 'Позначати кошториси, посилання на оплату яких спливає протягом цієї кількості днів',
+    shopOpeningHours: 'Години роботи магазину',
+    shopOpeningHoursDescription: 'Показуються клієнтам на сторінках відстеження та в SMS про отримання. Залиште порожнім, щоб приховати.',
   },
   notification: {
     printStarted: {
@@ -8110,6 +8119,9 @@ export default {
     printsCount: 'Друків: {{count}}',
     goodCount: 'Успішно: {{count}}',
     failedCount: 'Невдало: {{count}}',
+    similarTitle: 'Схожі друки',
+    similarCompare: 'Порівняти',
+    similarSelect: 'Вибрати {{name}} для порівняння',
     close: 'Закрити',
   },
 
@@ -9313,6 +9325,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: "Обліковий запис",
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: "Мова",
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {
@@ -10665,6 +10681,8 @@ export default {
     noWriteAccess: "Ви не маєте дозволу змінювати налаштування прогнозу.",
   },
   calculator: {
+    createAitoCard: 'Створити картку Aito',
+    createAitoCardReplaceBody: 'У панелі нового проєкту вже є нестворена робота. Створення картки з калькулятора замінить її.',
     brand: "Бренд",
     material: "Матеріал",
     title: "Калькулятор",
@@ -11009,6 +11027,7 @@ export default {
       ordersReady: 'Замовлення готове до комплектації',
       ordersPacked: "Замовлення спаковано: повідомте клієнта",
       ordersNew: 'Нове замовлення',
+      ordersPaid: 'Замовлення оплачено',
     },
   },
   projectsPdm: {

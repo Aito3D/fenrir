@@ -690,6 +690,7 @@ async def init_db():
         finance,
         github_backup,
         group,
+        hms_fault_occurrence,
         hms_notified_fault,
         kprofile_note,
         label_template,

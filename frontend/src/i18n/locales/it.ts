@@ -513,6 +513,7 @@ export default {
         sub: 'Laboratorio e negozio Aito 3D',
         mapTitle: 'Mappa del negozio',
         mapLoading: 'Caricamento della mappa…',
+        hours: 'Orari',
         phone: 'Telefono',
         email: 'E-mail',
         website: 'Sito web',
@@ -1560,7 +1561,7 @@ export default {
     addPreflight: {
       checking: 'Verifica della connessione...',
       warning: 'Alcuni controlli di connessione non sono riusciti. Questa stampante potrebbe risultare offline. Controlla le verifiche qui sotto, risolvi ciò che puoi oppure salva comunque.',
-      back: 'Indietro',
+      checkAgain: 'Verifica di nuovo',
       saveAnyway: 'Salva comunque',
     },
     title: 'Stampanti',
@@ -1571,6 +1572,8 @@ export default {
     serialNumber: 'Numero Seriale',
     ipAddress: 'Indirizzo IP',
     accessCode: 'Codice di Accesso',
+    showAccessCode: 'Mostra codice di accesso',
+    hideAccessCode: 'Nascondi codice di accesso',
     model: 'Modello',
     nozzleCount: 'Numero Ugelli',
     autoArchive: 'Auto Archiviazione',
@@ -1755,6 +1758,10 @@ export default {
     enabled: 'Attivato',
     disabled: 'Disattivato',
     addedOn: 'Aggiunta il',
+    errorHistory: 'Cronologia errori',
+    errorHistoryTop: 'Più frequenti (30 giorni)',
+    errorHistoryRecent: 'Recenti',
+    errorHistoryEmpty: 'Nessun errore registrato finora.',
     sdCard: 'Scheda SD',
     inserted: 'Inserita',
     notInserted: 'Non inserita',
@@ -3724,8 +3731,8 @@ export default {
     smartPlugs: 'Prese smart',
     spoolman: 'Spoolman',
     updates: 'Aggiornamenti',
-    language: 'Lingua',
-    languageDescription: 'Seleziona la lingua preferita',
+    language: 'Lingua dei display SpoolBuddy',
+    languageDescription: 'La lingua dei display SpoolBuddy. Ogni persona sceglie la propria lingua dell\'interfaccia nel menu «Account» o, senza accesso, con il pulsante del globo.',
     theme: 'Tema',
     themeLight: 'Chiaro',
     themeDark: 'Scuro',
@@ -4877,6 +4884,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Un lavoro finito il cui cliente è stato avvisato ma non lo ha ritirato entra nella barra dopo questi giorni.',
     aitoFollowupLinkDays: 'Link di pagamento in scadenza (giorni)',
     aitoFollowupLinkDaysDescription: 'Segnala i preventivi il cui link di pagamento scade entro questi giorni',
+    shopOpeningHours: 'Orari del negozio',
+    shopOpeningHoursDescription: 'Mostrati ai clienti nelle pagine di tracciamento e nell’SMS di ritiro. Lascia vuoto per nasconderli.',
   },
 
   // Notifications (for push notifications)
@@ -8324,6 +8333,9 @@ export default {
     printsCount: 'Stampe: {{count}}',
     goodCount: 'Riuscite: {{count}}',
     failedCount: 'Fallite: {{count}}',
+    similarTitle: 'Stampe simili',
+    similarCompare: 'Confronta',
+    similarSelect: 'Seleziona {{name}} da confrontare',
     close: 'Chiudi',
   },
 
@@ -9577,6 +9589,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Account',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Lingua',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {
@@ -11003,6 +11019,8 @@ export default {
 
   // Pricing Calculator
   calculator: {
+    createAitoCard: 'Crea scheda Aito',
+    createAitoCardReplaceBody: 'Il pannello del nuovo progetto contiene già un lavoro non ancora creato. Creare una scheda dal calcolatore lo sostituisce.',
     brand: 'Marchio',
     material: 'Materiale',
     title: 'Calcolatrice',
@@ -11347,6 +11365,7 @@ export default {
       ordersReady: 'Ordine pronto da preparare',
       ordersPacked: "Ordine imballato: avvisare il cliente",
       ordersNew: 'Nuovo ordine',
+      ordersPaid: 'Ordine pagato',
     },
   },
   projectsPdm: {

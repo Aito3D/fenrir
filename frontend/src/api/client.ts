@@ -568,6 +568,20 @@ export interface HMSError {
   description?: string | null;
 }
 
+export interface HMSHistoryEntry {
+  code: string;
+  severity: number;
+  description: string | null;
+  first_seen: string;
+  cleared_at: string | null;
+}
+
+export interface HMSHistory {
+  days: number;
+  top_codes: { code: string; count: number; description: string | null; severity: number; last_seen: string }[];
+  recent: HMSHistoryEntry[];
+}
+
 export interface HMSActionBody {
   print_error: string;  // HMS error code (e.g. "05000070")
   action: string;  // "HMS action to execute (e.g. 'resume_after_error')"
@@ -1276,6 +1290,22 @@ export interface ArchiveComparison {
   success_correlation: SuccessCorrelation;
 }
 
+/** One row of GET /archives/{id}/similar. */
+export interface SimilarArchive {
+  archive: {
+    id: number;
+    print_name: string;
+    status: string;
+    created_at: string | null;
+    printer_name: string | null;
+    duration_seconds: number | null;
+    has_thumbnail: boolean;
+  };
+  match_reason: string;
+  /** 100 = same print name, 95 = same file content, 50 = same filament type only. */
+  match_score: number;
+}
+
 // Project types
 export interface ProjectStats {
   total_archives: number;
@@ -1910,6 +1940,8 @@ export interface AppSettings {
   aito_followup_quote_days: number;
   aito_followup_pickup_days: number;
   aito_followup_link_days: number;
+  /** Shown on the public tracking pages and in the pickup SMS; empty hides it. */
+  shop_opening_hours: string;
   location_sensor_poll_interval: number;
   // JSON map of sensor category → {alertAbove, alertBelow, notifyOnAlert},
   // seeding new storage-location sensor bindings. Empty = built-in defaults.
@@ -5428,6 +5460,8 @@ export interface OrderTracking {
   /** Shopify « #1079 » when there is one, else the sales order number. */
   reference: string;
   date: string | null;
+  /** Expected shipment day (YYYY-MM-DD), only while nothing is ready yet. Optional only for older payloads. */
+  expected_date?: string | null;
   state: 'received' | 'preparing' | 'partly_ready' | 'ready' | 'handed_over';
   stage: 'received' | 'preparing' | 'ready' | 'handed_over';
   /** Goods only, already sorted: ready, in preparation, waiting for stock, handed over.
@@ -5439,6 +5473,8 @@ export interface OrderTracking {
   payment: { currency: string; total: number; paid: number; left: number } | null;
   /** The checkout page of an open payment link, else null. */
   pay_url: string | null;
+  /** The shop's opening hours, null when the setting is empty. Optional only for older payloads. */
+  shop_hours?: string | null;
   updated_at: string;
 }
 
@@ -5659,6 +5695,8 @@ export interface AitoTracking {
    *  the open invoice, which wins. Null when that card is settled or absent,
    *  or a figure it needs is unknown. Optional only for older payloads. */
   balance?: AitoTrackingBalance | null;
+  /** The shop's opening hours, null when the setting is empty. Optional only for older payloads. */
+  shop_hours?: string | null;
 }
 
 /** Whole currency units (the shop bills in XPF). `paid_pct` is rounded
@@ -7599,6 +7637,7 @@ export const api = {
   // HMS Errors
   clearHMSErrors: (printerId: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/hms/clear`, { method: 'POST' }),
+  getHMSHistory: (printerId: number) => request<HMSHistory>(`/printers/${printerId}/hms/history`),
   executeHMSAction: (printerId: number, data: HMSActionBody) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/hms/execute-action`, {
       method: 'POST',
@@ -7965,6 +8004,8 @@ export const api = {
   },
   compareArchives: (archiveIds: number[]) =>
     request<ArchiveComparison>(`/archives/compare?archive_ids=${archiveIds.join(',')}`),
+  getSimilarArchives: (archiveId: number, limit = 10) =>
+    request<SimilarArchive[]>(`/archives/${archiveId}/similar?limit=${limit}`),
   exportArchives: async (options?: {
     format?: 'csv' | 'xlsx';
     fields?: string[];

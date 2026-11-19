@@ -679,7 +679,7 @@ export function PrintModal({
 
   // Only fetch printer status when single printer selected (for filament mapping)
   const { data: printerStatus, isLoading: printerStatusLoading } = useQuery({
-    queryKey: ['printer-status', effectivePrinterId],
+    queryKey: ['printerStatus', effectivePrinterId],
     queryFn: () => api.getPrinterStatus(effectivePrinterId!),
     enabled: !!effectivePrinterId,
   });
@@ -700,7 +700,7 @@ export function PrintModal({
       const statuses = await Promise.all(
         selectedPrinters.map((printerId) =>
           queryClient.fetchQuery({
-            queryKey: ['printer-status', printerId],
+            queryKey: ['printerStatus', printerId],
             queryFn: () => api.getPrinterStatus(printerId),
             staleTime: 0,
           }),

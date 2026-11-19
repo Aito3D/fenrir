@@ -301,7 +301,7 @@ export default {
     addPreflight: {
       checking: 'Verbinding controleren...',
       warning: 'Sommige verbindingscontroles zijn mislukt. Deze printer kan als offline worden weergegeven. Controleer de onderstaande controles, herstel wat je kunt of sla toch op.',
-      back: 'Terug',
+      checkAgain: 'Opnieuw controleren',
       saveAnyway: 'Toch opslaan',
     },
     editPrinter: 'Printer bewerken',
@@ -310,6 +310,8 @@ export default {
     serialNumber: 'Serienummer',
     ipAddress: 'IP-adres / hostnaam',
     accessCode: 'Toegangscode',
+    showAccessCode: 'Toegangscode tonen',
+    hideAccessCode: 'Toegangscode verbergen',
     model: 'Model',
     nozzleCount: 'Aantal nozzles',
     autoArchive: 'Automatisch archiveren',
@@ -468,6 +470,10 @@ export default {
     enabled: 'Ingeschakeld',
     disabled: 'Uitgeschakeld',
     addedOn: 'Toegevoegd',
+    errorHistory: 'Foutgeschiedenis',
+    errorHistoryTop: 'Meest voorkomend (30 dagen)',
+    errorHistoryRecent: 'Recent',
+    errorHistoryEmpty: 'Nog geen fouten geregistreerd.',
     sdCard: 'SD-kaart',
     inserted: 'Geplaatst',
     notInserted: 'Niet geplaatst',
@@ -2528,8 +2534,8 @@ export default {
     smartPlugs: 'Slimme stekkers',
     spoolman: 'Spoolman',
     updates: 'Updates',
-    language: 'Taal',
-    languageDescription: 'Selecteer je voorkeurstaal',
+    language: 'Taal van de SpoolBuddy-schermen',
+    languageDescription: 'De taal van de SpoolBuddy-schermen. Iedereen kiest zijn eigen interfacetaal in het menu \'Account\' of, zonder aanmelding, met de wereldbolknop.',
     theme: 'Thema',
     themeLight: 'Licht',
     themeDark: 'Donker',
@@ -3658,6 +3664,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Een afgeronde taak waarvan de klant is ingelicht maar die nog niet is opgehaald, verschijnt na dit aantal dagen in de strook.',
     aitoFollowupLinkDays: 'Betaallink verloopt binnen (dagen)',
     aitoFollowupLinkDaysDescription: 'Markeer offertes waarvan de betaallink binnen dit aantal dagen verloopt',
+    shopOpeningHours: 'Openingstijden van de winkel',
+    shopOpeningHoursDescription: 'Getoond aan klanten op de volgpagina’s en in de afhaal-sms. Laat leeg om ze te verbergen.',
   },
 
   // Notifications (for push notifications)
@@ -6593,6 +6601,9 @@ export default {
     printsCount: 'Afdrukken: {{count}}',
     goodCount: 'Goed: {{count}}',
     failedCount: 'Mislukt: {{count}}',
+    similarTitle: 'Vergelijkbare prints',
+    similarCompare: 'Vergelijken',
+    similarSelect: '{{name}} selecteren om te vergelijken',
     close: 'Sluiten',
   },
 
@@ -7846,6 +7857,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Account',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Taal',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {
@@ -9781,6 +9796,7 @@ export default {
         sub: 'Werkplaats en winkel van Aito 3D',
         mapTitle: 'Kaart van de winkel',
         mapLoading: 'Kaart wordt geladen…',
+        hours: 'Openingstijden',
         phone: 'Telefoon',
         email: 'E-mail',
         website: 'Site',
@@ -11043,6 +11059,8 @@ export default {
     testNotConfigured: 'Heimdall is niet geconfigureerd',
   },
   calculator: {
+    createAitoCard: 'Aito-kaart maken',
+    createAitoCardReplaceBody: 'De lade voor nieuwe projecten bevat al werk dat nog niet is aangemaakt. Een kaart maken vanuit de calculator vervangt dit.',
     brand: 'Merk',
     material: 'Materiaal',
     title: 'Prijscalculator',
@@ -11386,6 +11404,7 @@ export default {
       ordersReady: 'Bestelling klaar om voor te bereiden',
       ordersPacked: "Bestelling ingepakt: klant verwittigen",
       ordersNew: 'Nieuwe bestelling',
+      ordersPaid: 'Bestelling betaald',
     },
   },
   projectsPdm: {

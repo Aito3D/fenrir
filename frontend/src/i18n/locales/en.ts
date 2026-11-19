@@ -516,6 +516,7 @@ export default {
         sub: 'Aito 3D workshop and shop',
         mapTitle: 'Map of the shop',
         mapLoading: 'Loading the map…',
+        hours: 'Opening hours',
         phone: 'Phone',
         email: 'Email',
         website: 'Website',
@@ -1568,7 +1569,7 @@ export default {
     addPreflight: {
       checking: 'Checking connection...',
       warning: 'Some connection checks failed. This printer may show as offline. Review the checks below, fix what you can, or save anyway.',
-      back: 'Back',
+      checkAgain: 'Check again',
       saveAnyway: 'Save anyway',
     },
     editPrinter: 'Edit Printer',
@@ -1577,6 +1578,8 @@ export default {
     serialNumber: 'Serial Number',
     ipAddress: 'IP Address / Hostname',
     accessCode: 'Access Code',
+    showAccessCode: 'Show access code',
+    hideAccessCode: 'Hide access code',
     model: 'Model',
     nozzleCount: 'Nozzle Count',
     autoArchive: 'Auto Archive',
@@ -1764,6 +1767,10 @@ export default {
     enabled: 'Enabled',
     disabled: 'Disabled',
     addedOn: 'Added',
+    errorHistory: 'Error history',
+    errorHistoryTop: 'Most frequent (30 days)',
+    errorHistoryRecent: 'Recent',
+    errorHistoryEmpty: 'No errors recorded yet.',
     sdCard: 'SD Card',
     inserted: 'Inserted',
     notInserted: 'Not inserted',
@@ -3795,8 +3802,8 @@ export default {
     smartPlugs: 'Smart Plugs',
     spoolman: 'Spoolman',
     updates: 'Updates',
-    language: 'Language',
-    languageDescription: 'Select your preferred language',
+    language: 'SpoolBuddy display language',
+    languageDescription: 'The language of the SpoolBuddy displays. Each person chooses their own interface language in the account menu, or with the globe button when login is off.',
     theme: 'Theme',
     themeLight: 'Light',
     themeDark: 'Dark',
@@ -4926,6 +4933,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'A finished job whose client was told but has not collected it joins the strip after this many days.',
     aitoFollowupLinkDays: 'Payment link expiring (days)',
     aitoFollowupLinkDaysDescription: 'Flag quotes whose payment link expires within this many days',
+    shopOpeningHours: 'Shop opening hours',
+    shopOpeningHoursDescription: 'Shown to customers on the tracking pages and in the pickup SMS. Leave empty to hide them.',
   },
 
   // Notifications (for push notifications)
@@ -8395,6 +8404,9 @@ export default {
     printsCount: 'Prints: {{count}}',
     goodCount: 'Good: {{count}}',
     failedCount: 'Failed: {{count}}',
+    similarTitle: 'Similar prints',
+    similarCompare: 'Compare',
+    similarSelect: 'Select {{name}} to compare',
     close: 'Close',
   },
 
@@ -9647,6 +9659,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Account',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Language',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {
@@ -11074,6 +11090,8 @@ export default {
 
   // Pricing Calculator
   calculator: {
+    createAitoCard: 'Create Aito card',
+    createAitoCardReplaceBody: 'The new-project drawer already holds work that has not been created yet. Creating a card from the calculator replaces it.',
     brand: 'Brand',
     material: 'Material',
     title: 'Calculator',
@@ -11418,6 +11436,7 @@ export default {
       ordersReady: 'Order ready to prepare',
       ordersPacked: "Order packed: tell the customer",
       ordersNew: 'New order',
+      ordersPaid: 'Order paid',
     },
   },
   projectsPdm: {

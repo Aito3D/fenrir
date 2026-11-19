@@ -1246,6 +1246,15 @@ export function ProjectDetailPanel({
                   }
                 : undefined
             }
+            // Same gate as the ⋯ menu's Duplicate row.
+            onRepeat={
+              canCreate && onDuplicate
+                ? () => {
+                    setHistoryOpen(false);
+                    onDuplicate();
+                  }
+                : undefined
+            }
           />
         )}
 

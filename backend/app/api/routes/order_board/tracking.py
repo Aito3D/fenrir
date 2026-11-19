@@ -103,6 +103,8 @@ class OrderTrackingResponse(BaseModel):
 
     reference: str
     date: str | None
+    # The sales order's expected shipment day (YYYY-MM-DD), only while nothing is ready yet.
+    expected_date: str | None = None
     state: Literal["received", "preparing", "partly_ready", "ready", "handed_over"]
     stage: Literal["received", "preparing", "ready", "handed_over"]
     lines: list[OrderTrackingLine]
@@ -110,6 +112,8 @@ class OrderTrackingResponse(BaseModel):
     pickup: bool
     payment: OrderTrackingPayment | None
     pay_url: str | None
+    # The shop's opening hours (the shop_opening_hours setting), None when cleared.
+    shop_hours: str | None
     updated_at: datetime
 
 

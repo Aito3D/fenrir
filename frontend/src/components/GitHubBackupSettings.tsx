@@ -380,13 +380,12 @@ export function GitHubBackupSettings() {
     queryFn: api.getPrinters,
   });
 
-  // Fetch printer statuses from API (not just cache) to get accurate connection status
+  // Printer statuses; the WebSocket keeps `connected` current.
   const printerStatusQueries = useQueries({
     queries: (printers ?? []).map(printer => ({
       queryKey: ['printerStatus', printer.id],
       queryFn: () => api.getPrinterStatus(printer.id),
       staleTime: 10000, // Consider stale after 10s
-      refetchInterval: 30000, // Refresh every 30s
     })),
   });
 

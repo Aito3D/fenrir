@@ -301,7 +301,7 @@ export default {
     addPreflight: {
       checking: 'Kontrollerar anslutning...',
       warning: 'Vissa anslutningskontroller misslyckades. Denna skrivare kan visas som offline. Granska kontrollerna nedan, åtgärda vad du kan, eller spara ändå.',
-      back: 'Tillbaka',
+      checkAgain: 'Kontrollera igen',
       saveAnyway: 'Spara ändå',
     },
     editPrinter: 'Redigera skrivare',
@@ -310,6 +310,8 @@ export default {
     serialNumber: 'Serienummer',
     ipAddress: 'IP-adress / värdnamn',
     accessCode: 'Åtkomstkod',
+    showAccessCode: 'Visa åtkomstkod',
+    hideAccessCode: 'Dölj åtkomstkod',
     model: 'Modell',
     nozzleCount: 'Antal munstycken',
     autoArchive: 'Autoarkivera',
@@ -468,6 +470,10 @@ export default {
     enabled: 'Aktiverad',
     disabled: 'Inaktiverad',
     addedOn: 'Tillagd',
+    errorHistory: 'Felhistorik',
+    errorHistoryTop: 'Vanligast (30 dagar)',
+    errorHistoryRecent: 'Senaste',
+    errorHistoryEmpty: 'Inga fel registrerade än.',
     sdCard: 'SD-kort',
     inserted: 'Insatt',
     notInserted: 'Ej insatt',
@@ -2560,8 +2566,8 @@ export default {
     smartPlugs: 'Smarta kontakter',
     spoolman: 'Spoolman',
     updates: 'Uppdateringar',
-    language: 'Språk',
-    languageDescription: 'Välj ditt föredragna språk',
+    language: 'Språk för SpoolBuddy-skärmarna',
+    languageDescription: 'Språket i SpoolBuddy-skärmarna. Var och en väljer sitt eget gränssnittsspråk i menyn \'Konto\' eller, utan inloggning, med jordglobsknappen.',
     theme: 'Tema',
     themeLight: 'Ljust',
     themeDark: 'Mörkt',
@@ -3690,6 +3696,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Ett klart jobb där kunden informerats men inte hämtat läggs till i listen efter så här många dagar.',
     aitoFollowupLinkDays: 'Betalningslänk löper ut (dagar)',
     aitoFollowupLinkDaysDescription: 'Flagga offerter vars betalningslänk löper ut inom så här många dagar',
+    shopOpeningHours: 'Butikens öppettider',
+    shopOpeningHoursDescription: 'Visas för kunder på spårningssidorna och i upphämtnings-sms:et. Lämna tomt för att dölja dem.',
   },
 
   // Notifications (for push notifications)
@@ -6625,6 +6633,9 @@ errors: {
     printsCount: 'Utskrifter: {{count}}',
     goodCount: 'Bra: {{count}}',
     failedCount: 'Misslyckade: {{count}}',
+    similarTitle: 'Liknande utskrifter',
+    similarCompare: 'Jämför',
+    similarSelect: 'Välj {{name}} för jämförelse',
     close: 'Stäng',
   },
 
@@ -7877,6 +7888,10 @@ errors: {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Konto',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Språk',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {
@@ -9814,6 +9829,7 @@ errors: {
         sub: 'Aito 3D:s verkstad och butik',
         mapTitle: 'Karta över butiken',
         mapLoading: 'Läser in kartan…',
+        hours: 'Öppettider',
         phone: 'Telefon',
         email: 'E-post',
         website: 'Webbplats',
@@ -11076,6 +11092,8 @@ errors: {
     paymentModeCash: 'Kontant',
   },
   calculator: {
+    createAitoCard: 'Skapa Aito-kort',
+    createAitoCardReplaceBody: 'Lådan för nya projekt innehåller redan arbete som inte har skapats ännu. Att skapa ett kort från kalkylatorn ersätter det.',
     brand: 'Märke',
     material: 'Material',
     title: 'Kalkylator',
@@ -11419,6 +11437,7 @@ errors: {
       ordersReady: 'Beställning redo att förberedas',
       ordersPacked: "Beställningen är packad: meddela kunden",
       ordersNew: 'Ny beställning',
+      ordersPaid: 'Beställning betald',
     },
   },
   projectsPdm: {

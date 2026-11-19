@@ -513,6 +513,7 @@ export default {
         sub: 'Oficina e loja Aito 3D',
         mapTitle: 'Mapa da loja',
         mapLoading: 'Carregando o mapa…',
+        hours: 'Horário de funcionamento',
         phone: 'Telefone',
         email: 'E-mail',
         website: 'Site',
@@ -1560,7 +1561,7 @@ export default {
     addPreflight: {
       checking: 'Verificando a conexão...',
       warning: 'Algumas verificações de conexão falharam. Esta impressora pode aparecer como offline. Revise as verificações abaixo, corrija o que puder ou salve mesmo assim.',
-      back: 'Voltar',
+      checkAgain: 'Verificar novamente',
       saveAnyway: 'Salvar mesmo assim',
     },
     title: 'Impressoras',
@@ -1571,6 +1572,8 @@ export default {
     serialNumber: 'Número de Série',
     ipAddress: 'Endereço IP / Nome do Host',
     accessCode: 'Código de Acesso',
+    showAccessCode: 'Mostrar código de acesso',
+    hideAccessCode: 'Ocultar código de acesso',
     model: 'Modelo',
     nozzleCount: 'Número de Bicos',
     autoArchive: 'Arquivamento Automático',
@@ -1755,6 +1758,10 @@ export default {
     enabled: 'Ativado',
     disabled: 'Desativado',
     addedOn: 'Adicionada em',
+    errorHistory: 'Histórico de erros',
+    errorHistoryTop: 'Mais frequentes (30 dias)',
+    errorHistoryRecent: 'Recentes',
+    errorHistoryEmpty: 'Nenhum erro registrado ainda.',
     sdCard: 'Cartão SD',
     inserted: 'Inserido',
     notInserted: 'Não inserido',
@@ -3724,8 +3731,8 @@ export default {
     smartPlugs: 'Tomadas Inteligentes',
     spoolman: 'Spoolman',
     updates: 'Atualizações',
-    language: 'Idioma',
-    languageDescription: 'Selecione seu idioma preferido',
+    language: 'Idioma das telas do SpoolBuddy',
+    languageDescription: 'O idioma das telas do SpoolBuddy. Cada pessoa escolhe o próprio idioma da interface no menu «Conta» ou, sem login, no botão do globo.',
     theme: 'Tema',
     themeLight: 'Claro',
     themeDark: 'Escuro',
@@ -4877,6 +4884,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Um trabalho concluído cujo cliente foi avisado mas não retirou entra na barra após esses dias.',
     aitoFollowupLinkDays: 'Link de pagamento expirando (dias)',
     aitoFollowupLinkDaysDescription: 'Sinaliza orçamentos cujo link de pagamento expira dentro deste número de dias',
+    shopOpeningHours: 'Horário de funcionamento da loja',
+    shopOpeningHoursDescription: 'Exibido aos clientes nas páginas de acompanhamento e no SMS de retirada. Deixe vazio para ocultar.',
   },
 
   // Notifications (for push notifications)
@@ -8324,6 +8333,9 @@ export default {
     printsCount: 'Impressões: {{count}}',
     goodCount: 'Boas: {{count}}',
     failedCount: 'Com falha: {{count}}',
+    similarTitle: 'Impressões semelhantes',
+    similarCompare: 'Comparar',
+    similarSelect: 'Selecionar {{name}} para comparar',
     close: 'Fechar',
   },
 
@@ -9577,6 +9589,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Conta',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Idioma',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {
@@ -11003,6 +11019,8 @@ export default {
 
   // Pricing Calculator
   calculator: {
+    createAitoCard: 'Criar cartão Aito',
+    createAitoCardReplaceBody: 'A gaveta de novo projeto já contém um trabalho que ainda não foi criado. Criar um cartão pela calculadora o substitui.',
     brand: 'Marca',
     material: 'Material',
     title: 'Calculadora',
@@ -11347,6 +11365,7 @@ export default {
       ordersReady: 'Pedido pronto para preparar',
       ordersPacked: "Pedido embalado: avisar o cliente",
       ordersNew: 'Novo pedido',
+      ordersPaid: 'Pedido pago',
     },
   },
   projectsPdm: {

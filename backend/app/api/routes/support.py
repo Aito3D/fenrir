@@ -1248,7 +1248,6 @@ async def _collect_support_info() -> dict:
             "paho-mqtt",
             "psutil",
             "httpx",
-            "aiofiles",
             "cryptography",
             "opencv-python-headless",
             "numpy",

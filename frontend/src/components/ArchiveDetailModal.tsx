@@ -27,6 +27,7 @@ import type { Archive, PrintLogEntry } from '../api/client';
 import type { PlateMetadata } from '../types/plates';
 import { Button } from './Button';
 import { Card, CardContent } from './Card';
+import { CompareArchivesModal } from './CompareArchivesModal';
 import { ConfirmModal } from './ConfirmModal';
 import { ConfirmOutcomeDialog } from './ConfirmOutcomeDialog';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
@@ -115,6 +116,7 @@ export function ArchiveDetailModal({ archiveId, onClose }: { archiveId: number; 
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const [plateFilter, setPlateFilter] = useState<number | null>(null);
   const [openRun, setOpenRun] = useState<number | null>(highlightRun);
+  const [compareIds, setCompareIds] = useState<number[] | null>(null);
 
   const archiveQuery = useQuery({
     queryKey: ['archive', archiveId],
@@ -150,7 +152,8 @@ export function ArchiveDetailModal({ archiveId, onClose }: { archiveId: number; 
 
   // Escape closes the archive, unless it closes a dialog opened from it first.
   const childOpen =
-    showEdit || reprintPlate !== undefined || showSlice || showDelete || confirmRun != null || media != null || menu != null;
+    showEdit || reprintPlate !== undefined || showSlice || showDelete || confirmRun != null || media != null || menu != null ||
+    compareIds != null;
   useEffect(() => {
     if (childOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -605,6 +608,9 @@ export function ArchiveDetailModal({ archiveId, onClose }: { archiveId: number; 
         )}
       </section>
 
+      <SimilarPrints archiveId={archive.id} timeFormat={timeFormat} onCompare={setCompareIds} />
+
+      {compareIds && <CompareArchivesModal archiveIds={compareIds} onClose={() => setCompareIds(null)} />}
       {showEdit && <EditArchiveModal archive={archive} onClose={() => setShowEdit(false)} />}
       {reprintPlate !== undefined && (
         <PrintModal
@@ -728,6 +734,87 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     <section className="space-y-3">
       <h3 className="text-sm font-semibold uppercase tracking-wider text-bambu-gray">{title}</h3>
       {children}
+    </section>
+  );
+}
+
+/**
+ * Other archives of the same model, so a file that failed 3 of its last 5
+ * runs shows it. Reads /similar, not /duplicates: only /similar returns each
+ * archive's status. Its filament-only matches (score 50) are not the same
+ * model, so only same-name (100) and same-file (95) rows are kept.
+ */
+function SimilarPrints({
+  archiveId,
+  timeFormat,
+  onCompare,
+}: {
+  archiveId: number;
+  timeFormat: TimeFormat;
+  onCompare: (ids: number[]) => void;
+}) {
+  const { t } = useTranslation();
+  const [picked, setPicked] = useState<number[]>([]);
+  const { data } = useQuery({
+    queryKey: ['archive-similar', archiveId],
+    queryFn: () => api.getSimilarArchives(archiveId),
+  });
+  const rows = (data ?? []).filter((s) => s.match_score >= 95).map((s) => s.archive);
+  if (rows.length === 0) return null;
+  const good = rows.filter((a) => a.status === 'completed').length;
+  const failed = rows.filter((a) => FAILED.has(a.status)).length;
+  // The compare view takes up to 5 archives: this one and 4 picked.
+  const full = picked.length >= 4;
+
+  return (
+    <section className="space-y-3" data-testid="similar-prints">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <h3 className="mr-3 text-sm font-semibold uppercase tracking-wider text-bambu-gray">{t('archivePage.similarTitle')}</h3>
+        {good > 0 && <Chip className="bg-bambu-green/20 text-bambu-green">{t('archivePage.goodCount', { count: good })}</Chip>}
+        {failed > 0 && (
+          <Chip className="bg-red-500/20 text-red-700 dark:text-red-400">{t('archivePage.failedCount', { count: failed })}</Chip>
+        )}
+        <Button variant="secondary" className="ml-auto" disabled={picked.length === 0} onClick={() => onCompare([archiveId, ...picked])}>
+          {t('archivePage.similarCompare')}
+        </Button>
+      </div>
+      <ul className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary divide-y divide-bambu-dark-tertiary">
+        {rows.map((a) => {
+          const checked = picked.includes(a.id);
+          return (
+            <li key={a.id} className="flex items-center gap-3 px-4 py-2 text-sm">
+              <input
+                type="checkbox"
+                aria-label={t('archivePage.similarSelect', { name: a.print_name })}
+                checked={checked}
+                disabled={!checked && full}
+                onChange={() => setPicked(checked ? picked.filter((id) => id !== a.id) : [...picked, a.id])}
+                className="accent-bambu-green"
+              />
+              <div className="w-10 h-10 rounded bg-bambu-dark overflow-hidden flex items-center justify-center shrink-0">
+                {a.has_thumbnail ? (
+                  <img src={api.getArchiveThumbnail(a.id)} alt="" loading="lazy" className="w-full h-full object-contain" />
+                ) : (
+                  <Package className="w-5 h-5 text-bambu-gray/50" />
+                )}
+              </div>
+              <Link to={`/archives/${a.id}`} className="flex-1 min-w-0 truncate text-white hover:text-bambu-green hover:underline">
+                {a.print_name}
+              </Link>
+              <span className="hidden sm:inline text-bambu-gray truncate max-w-[10rem]">{a.printer_name ?? ''}</span>
+              <span className="hidden md:inline text-bambu-gray whitespace-nowrap">
+                {a.created_at ? formatDateTime(a.created_at, timeFormat) : ''}
+              </span>
+              <span className="hidden md:inline text-bambu-gray whitespace-nowrap">
+                {a.duration_seconds ? formatDuration(a.duration_seconds) : ''}
+              </span>
+              <span className={`px-2 py-0.5 rounded-full text-xs whitespace-nowrap ${RUN_STATUS_CLASSES[a.status] ?? 'bg-bambu-dark text-bambu-gray-light'}`}>
+                {t(`archives.runLog.status.${a.status}`, { defaultValue: a.status })}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }

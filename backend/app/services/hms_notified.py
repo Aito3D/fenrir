@@ -7,11 +7,14 @@ send every fault a printer still lists again.
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from backend.app.core.database import async_session
+from backend.app.models.hms_fault_occurrence import HmsFaultOccurrence
 from backend.app.models.hms_notified_fault import HmsNotifiedFault
+from backend.app.utils.local_time import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -56,3 +59,44 @@ async def save_notified_hms_faults(printer_id: int, current_keys) -> None:
             for key in keys - stored:
                 db.add(HmsNotifiedFault(printer_id=printer_id, fault_key=key))
             await db.commit()
+
+
+# Error history older than this is purged when a new fault is recorded.
+HMS_HISTORY_RETENTION_DAYS = 180
+
+
+async def record_hms_occurrences(printer_id: int, appeared: dict, cleared: dict[str, float]) -> None:
+    """Add a history row per fault in *appeared*; close the open rows of *cleared*.
+
+    *appeared* maps a fault key to its HMSError, *cleared* maps a fault key to when it was last seen (epoch seconds).
+    """
+    now = utcnow_naive()
+    async with async_session() as db:
+        for key, last_seen in cleared.items():
+            await db.execute(
+                update(HmsFaultOccurrence)
+                .where(
+                    HmsFaultOccurrence.printer_id == printer_id,
+                    HmsFaultOccurrence.code == key,
+                    HmsFaultOccurrence.cleared_at.is_(None),
+                )
+                .values(cleared_at=datetime.fromtimestamp(last_seen, tz=timezone.utc).replace(tzinfo=None))
+            )
+        for key, error in appeared.items():
+            db.add(
+                HmsFaultOccurrence(
+                    printer_id=printer_id,
+                    code=key,
+                    severity=error.severity,
+                    description=error.description,
+                    first_seen=now,
+                )
+            )
+        if appeared:
+            # shortcut: purge rides on inserts, so a printer with no new faults keeps old rows; fine at this volume.
+            await db.execute(
+                delete(HmsFaultOccurrence).where(
+                    HmsFaultOccurrence.first_seen < now - timedelta(days=HMS_HISTORY_RETENTION_DAYS)
+                )
+            )
+        await db.commit()

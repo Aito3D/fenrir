@@ -513,6 +513,7 @@ export default {
         sub: 'Aito 3D の工房とショップ',
         mapTitle: '店舗の地図',
         mapLoading: '地図を読み込み中…',
+        hours: '営業時間',
         phone: '電話',
         email: 'メール',
         website: 'ウェブサイト',
@@ -1559,7 +1560,7 @@ export default {
     addPreflight: {
       checking: '接続を確認しています...',
       warning: '一部の接続チェックに失敗しました。このプリンターはオフラインと表示される可能性があります。下のチェックを確認し、可能な範囲で修正するか、そのまま保存してください。',
-      back: '戻る',
+      checkAgain: '再確認',
       saveAnyway: 'そのまま保存',
     },
     title: 'プリンター',
@@ -1570,6 +1571,8 @@ export default {
     serialNumber: 'シリアル番号',
     ipAddress: 'IPアドレス / ホスト名',
     accessCode: 'アクセスコード',
+    showAccessCode: 'アクセスコードを表示',
+    hideAccessCode: 'アクセスコードを隠す',
     model: 'モデル',
     nozzleCount: 'ノズル数',
     autoArchive: '自動アーカイブ',
@@ -1754,6 +1757,10 @@ export default {
     enabled: '有効',
     disabled: '無効',
     addedOn: '追加日',
+    errorHistory: 'エラー履歴',
+    errorHistoryTop: '頻度の高いエラー（30日間）',
+    errorHistoryRecent: '最近',
+    errorHistoryEmpty: 'まだエラーは記録されていません。',
     sdCard: 'SDカード',
     inserted: '挿入済み',
     notInserted: '未挿入',
@@ -3768,8 +3775,8 @@ export default {
     smartPlugs: 'スマートプラグ',
     spoolman: 'Spoolman',
     updates: 'アップデート',
-    language: '言語',
-    languageDescription: '表示言語を選択してください',
+    language: 'SpoolBuddy 表示の言語',
+    languageDescription: 'SpoolBuddy の表示の言語です。インターフェースの言語は、各ユーザーが「アカウント」メニューで、ログインなしの場合は地球儀ボタンで個別に選べます。',
     theme: 'テーマ',
     themeLight: 'ライト',
     themeDark: 'ダーク',
@@ -4890,6 +4897,8 @@ export default {
     aitoFollowupPickupDaysDescription: '連絡済みでまだ受け取られていない完成品は、この日数を過ぎるとフォロー欄に表示されます。',
     aitoFollowupLinkDays: '決済リンクの期限切れ（日数）',
     aitoFollowupLinkDaysDescription: '決済リンクがこの日数以内に期限切れになる見積を表示します',
+    shopOpeningHours: '店舗の営業時間',
+    shopOpeningHoursDescription: '追跡ページと受け取りSMSでお客様に表示されます。空欄にすると非表示になります。',
   },
 
   // Notifications (for push notifications)
@@ -8338,6 +8347,9 @@ export default {
     printsCount: '印刷: {{count}}',
     goodCount: '成功: {{count}}',
     failedCount: '失敗: {{count}}',
+    similarTitle: '類似の印刷',
+    similarCompare: '比較',
+    similarSelect: '{{name}} を比較対象に選択',
     close: '閉じる',
   },
 
@@ -9591,6 +9603,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'アカウント',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: '言語',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {
@@ -11017,6 +11033,8 @@ export default {
 
   // Pricing Calculator
   calculator: {
+    createAitoCard: 'Aitoカードを作成',
+    createAitoCardReplaceBody: '新規プロジェクトのドロワーには、まだ作成されていない作業があります。計算機からカードを作成すると置き換えられます。',
     brand: 'ブランド',
     material: '材料',
     title: '計算機',
@@ -11361,6 +11379,7 @@ export default {
       ordersReady: '準備可能な注文',
       ordersPacked: "注文の梱包完了：お客様に連絡",
       ordersNew: '新しい注文',
+      ordersPaid: '注文の支払い完了',
     },
   },
   projectsPdm: {

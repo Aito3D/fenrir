@@ -513,6 +513,7 @@ export default {
         sub: 'Aito 3D atölyesi ve mağazası',
         mapTitle: 'Mağaza haritası',
         mapLoading: 'Harita yükleniyor…',
+        hours: 'Çalışma saatleri',
         phone: 'Telefon',
         email: 'E-posta',
         website: 'Web sitesi',
@@ -1562,7 +1563,7 @@ export default {
     addPreflight: {
       checking: 'Bağlantı kontrol ediliyor...',
       warning: 'Bazı bağlantı kontrolleri başarısız oldu. Bu yazıcı çevrimdışı olarak görünebilir. Aşağıdaki kontrolleri inceleyin, düzeltebileceklerinizi düzeltin veya yine de kaydedin.',
-      back: 'Geri',
+      checkAgain: 'Tekrar kontrol et',
       saveAnyway: 'Yine de kaydet',
     },
     editPrinter: 'Yazıcıyı Düzenle',
@@ -1571,6 +1572,8 @@ export default {
     serialNumber: 'Seri Numarası',
     ipAddress: 'IP Adresi / Ana Bilgisayar Adı',
     accessCode: 'Erişim Kodu',
+    showAccessCode: 'Erişim kodunu göster',
+    hideAccessCode: 'Erişim kodunu gizle',
     model: 'Model',
     nozzleCount: 'Nozul Sayısı',
     autoArchive: 'Otomatik Arşivle',
@@ -1755,6 +1758,10 @@ export default {
     enabled: 'Etkin',
     disabled: 'Devre dışı',
     addedOn: 'Eklendi',
+    errorHistory: 'Hata geçmişi',
+    errorHistoryTop: 'En sık (30 gün)',
+    errorHistoryRecent: 'Son',
+    errorHistoryEmpty: 'Henüz kaydedilmiş hata yok.',
     sdCard: 'SD Kart',
     inserted: 'Takılı',
     notInserted: 'Takılı değil',
@@ -3772,8 +3779,8 @@ export default {
     smartPlugs: 'Akıllı Prizler',
     spoolman: 'Spoolman',
     updates: 'Güncellemeler',
-    language: 'Dil',
-    languageDescription: 'Tercih ettiğiniz dili seçin',
+    language: 'SpoolBuddy ekranlarının dili',
+    languageDescription: 'SpoolBuddy ekranlarının dili. Herkes kendi arayüz dilini \'Hesap\' menüsünden veya oturum açma kapalıyken dünya düğmesiyle seçer.',
     theme: 'Tema',
     themeLight: 'Açık',
     themeDark: 'Koyu',
@@ -4893,6 +4900,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Müşterisi bilgilendirilmiş ama teslim alınmamış bitmiş bir iş bu kadar gün sonra şeride düşer.',
     aitoFollowupLinkDays: 'Ödeme bağlantısı sona eriyor (gün)',
     aitoFollowupLinkDaysDescription: 'Ödeme bağlantısı bu gün sayısı içinde sona eren teklifleri işaretler',
+    shopOpeningHours: 'Mağaza çalışma saatleri',
+    shopOpeningHoursDescription: 'Takip sayfalarında ve teslim alma SMS’inde müşterilere gösterilir. Gizlemek için boş bırakın.',
   },
 
   // Bildirimler (push bildirimleri için)
@@ -8312,6 +8321,9 @@ export default {
     printsCount: 'Baskı: {{count}}',
     goodCount: 'Başarılı: {{count}}',
     failedCount: 'Başarısız: {{count}}',
+    similarTitle: 'Benzer baskılar',
+    similarCompare: 'Karşılaştır',
+    similarSelect: 'Karşılaştırmak için {{name}} seç',
     close: 'Kapat',
   },
 
@@ -9534,6 +9546,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Hesap',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Dil',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {
@@ -10945,6 +10961,8 @@ export default {
 
   // Pricing Calculator
   calculator: {
+    createAitoCard: 'Aito kartı oluştur',
+    createAitoCardReplaceBody: 'Yeni proje çekmecesinde henüz oluşturulmamış bir çalışma var. Hesaplayıcıdan kart oluşturmak onun yerini alır.',
     brand: 'Marka',
     material: 'Malzeme',
     title: 'Hesaplayıcı',
@@ -11289,6 +11307,7 @@ export default {
       ordersReady: 'Sipariş hazırlanmaya hazır',
       ordersPacked: "Sipariş paketlendi: müşteriye haber verin",
       ordersNew: 'Yeni sipariş',
+      ordersPaid: 'Sipariş ödendi',
     },
   },
   projectsPdm: {

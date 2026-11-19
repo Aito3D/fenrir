@@ -219,6 +219,9 @@ async def compute(db: AsyncSession, token: str, now: datetime) -> tuple[str, dic
         **tracking,
         "reference": f"#{facts['shopify_order']}" if facts.get("shopify_order") else row["number"],
         "date": row.get("date") or None,
+        "expected_date": (str(detail.get("shipment_date") or "")[:10] or None)
+        if tracking["state"] in ("received", "preparing", "partly_ready")
+        else None,
         "pickup": (facts.get("delivery_method") or "").upper() in ("", "PICK UP"),
         "payment": {
             "currency": row.get("currency") or "XPF",
@@ -229,6 +232,7 @@ async def compute(db: AsyncSession, token: str, now: datetime) -> tuple[str, dic
         if payment and row.get("total")
         else None,
         "pay_url": await _pay_url(db, salesorder_id, now) if left > 0 else None,
+        "shop_hours": await aito_tracking.shop_opening_hours(db),
         "updated_at": updated.replace(microsecond=0),
     }
 
