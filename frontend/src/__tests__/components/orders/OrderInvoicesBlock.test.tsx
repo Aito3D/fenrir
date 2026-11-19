@@ -2,7 +2,7 @@
 process.env.TZ = 'Pacific/Tahiti';
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../mocks/server';
@@ -222,5 +222,152 @@ describe('OrderInvoicesBlock', () => {
     expect(await screen.findByText('Could not send the invoice')).toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: 'Send invoice by email' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
+  });
+
+  describe('apply credit', () => {
+    const credited = (invoices: OrderInvoice[], retainer = 60000, advance = 0, o: Partial<OrderBoardRow> = {}) =>
+      row(invoices, { ...o, payment: { ...pay(invoices), retainer, advance } });
+    const spendUrl = '/api/v1/order-board/orders/so1/invoices/inv1/apply-credit';
+    const spendBtn = () => screen.queryAllByRole('button', { name: /^Apply the customer.s credit/ });
+
+    it('shows the button only to an updater, with credit, a balance and a non-draft invoice', () => {
+      const { unmount } = render(<OrderInvoicesBlock row={credited([inv()])} />);
+      expect(spendBtn()).toHaveLength(0); // no orders:update
+      unmount();
+      const r1 = render(<OrderInvoicesBlock canEmail row={credited([inv()], 0, 0)} />);
+      expect(spendBtn()).toHaveLength(0); // no credit
+      r1.unmount();
+      const r2 = render(<OrderInvoicesBlock canEmail row={credited([inv({ balance: 0, status: 'paid' })])} />);
+      expect(spendBtn()).toHaveLength(0); // settled
+      r2.unmount();
+      const r3 = render(<OrderInvoicesBlock canEmail row={credited([inv({ status: 'draft' })])} />);
+      expect(spendBtn()).toHaveLength(0); // draft
+      r3.unmount();
+      const r4 = render(<OrderInvoicesBlock canEmail row={credited([inv()], 60000, 0, { id: undefined })} />);
+      expect(spendBtn()).toHaveLength(0); // no order id
+      r4.unmount();
+      render(<OrderInvoicesBlock canEmail row={credited([inv()])} />);
+      expect(spendBtn()).toHaveLength(1);
+    });
+
+    it('offers min(credit, balance), the credit being the deposits plus the advance', () => {
+      render(<OrderInvoicesBlock canEmail row={credited([inv({ balance: 30000 }), inv({ id: 'inv2', number: 'FAC-2', balance: 250000 })], 40000, 20000)} />);
+      const [small, big] = spendBtn();
+      expect(small).toHaveAccessibleName(/\(30.000/); // balance below the 60 000 credit
+      expect(big).toHaveAccessibleName(/\(60.000/); // credit below the balance
+      expect(big).toHaveAttribute('title', big.getAttribute('aria-label'));
+    });
+
+    it('posts the apply once, blocks a second click while pending and toasts the applied amount', async () => {
+      let posts = 0;
+      server.use(
+        http.post(spendUrl, async () => {
+          posts += 1;
+          await new Promise(r => setTimeout(r, 100));
+          return HttpResponse.json({ applied: 60000, board: { rows: [], sync: {} } });
+        }),
+      );
+      const user = userEvent.setup();
+      render(<OrderInvoicesBlock canEmail row={credited([inv()])} />);
+      const btn = spendBtn()[0];
+      await user.click(btn);
+      await waitFor(() => expect(btn).toBeDisabled());
+      await user.click(btn);
+      expect(await screen.findByText(/60.000.* applied to FAC-0001/)).toBeInTheDocument();
+      expect(posts).toBe(1);
+    });
+
+    it('toasts the failure', async () => {
+      server.use(http.post(spendUrl, () => HttpResponse.json({ detail: 'no' }, { status: 502 })));
+      const user = userEvent.setup();
+      render(<OrderInvoicesBlock canEmail row={credited([inv()])} />);
+      await user.click(spendBtn()[0]);
+      expect(await screen.findByText('The deposit could not be applied')).toBeInTheDocument();
+    });
+  });
+
+  describe('invoice now toggle', () => {
+    const lines = [{ remaining: 10, invoiced: 0 }] as OrderBoardRow['lines'];
+    const preview = () =>
+      server.use(
+        http.get('*/order-board/orders/so1/invoice', () =>
+          HttpResponse.json({
+            available: true, credit: 0, drafts: [],
+            packed: { units: 6, invoice_total: 40000, manual_reason: null },
+            whole: { units: 10, invoice_total: 60955, manual_reason: null },
+          }),
+        ),
+      );
+
+    it('says no invoice yet beside the button, and Cancel gives the button back', async () => {
+      preview();
+      const user = userEvent.setup();
+      render(<OrderInvoicesBlock row={row([], { lines })} onInvoiceNow={vi.fn()} />);
+      expect(screen.getByText(/No invoice yet. The hand-over creates it/)).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Invoice now' }));
+      expect(screen.queryByRole('button', { name: 'Invoice now' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/The hand-over creates it/)).not.toBeInTheDocument();
+      await user.click(await screen.findByRole('button', { name: 'Cancel' }));
+      expect(screen.getByRole('button', { name: 'Invoice now' })).toBeInTheDocument();
+    });
+
+    it('closes by itself when the new invoice appears', async () => {
+      preview();
+      const user = userEvent.setup();
+      const props = { onInvoiceNow: vi.fn() };
+      const view = render(<OrderInvoicesBlock row={row([], { lines })} {...props} />);
+      await user.click(screen.getByRole('button', { name: 'Invoice now' }));
+      await screen.findByRole('radio', { name: /What is packed/ });
+      view.rerender(<OrderInvoicesBlock row={row([inv()], { lines: [{ remaining: 10, invoiced: 10 }] as OrderBoardRow['lines'] })} {...props} />);
+      expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+      expect(screen.getByText('FAC-0001')).toBeInTheDocument();
+    });
+
+    it('disables the button while busy', () => {
+      render(<OrderInvoicesBlock busy row={row([], { lines })} onInvoiceNow={vi.fn()} />);
+      expect(screen.getByRole('button', { name: 'Invoice now' })).toBeDisabled();
+    });
+  });
+
+  describe('quote and retainer documents', () => {
+    const facts = { estimate_id: 'est1', quote_number: 'DEV-Q1', quote_url: 'https://books.example/q' } as OrderBoardRow['facts'];
+    const retainers = [
+      { id: 'r1', number: 'RET-1', date: '2026-10-02', total: 50000, balance: 0, status: 'paid' },
+      { id: 'r2', number: 'RET-2', date: '', total: 1000, balance: 0, status: 'void' },
+    ];
+
+    it('lists the quote and the non-void retainers with their open-in-Books link', () => {
+      render(<OrderInvoicesBlock row={row([], { facts, retainers })} />);
+      expect(within(screen.getByTestId('doc-quote')).getByText('DEV-Q1')).toBeInTheDocument();
+      expect(within(screen.getByTestId('doc-quote')).getByRole('link', { name: 'Open in Zoho Books' })).toHaveAttribute('href', 'https://books.example/q');
+      expect(screen.getAllByTestId('doc-retainer')).toHaveLength(1);
+      expect(screen.getByText('RET-1')).toBeInTheDocument();
+      expect(screen.queryByText('RET-2')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Send quote' })).not.toBeInTheDocument(); // no orders:update
+      expect(screen.queryByRole('button', { name: 'Send retainer invoice' })).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ['Send quote', 'doc-quote', 'quote', 'est1', 'Send quote by email'],
+      ['Send retainer invoice', 'doc-retainer', 'retainer', 'r1', 'Send retainer invoice by email'],
+    ] as const)('%s opens the email dialog for that document and closes it', async (label, testid, kind, id, title) => {
+      const asked: string[] = [];
+      server.use(
+        http.get(`/api/v1/order-board/orders/so1/documents/${kind}/${id}/email`, () => {
+          asked.push(`${kind}/${id}`);
+          return HttpResponse.json({
+            subject: 's', body: '', recipients: [{ email: 'moana@client.pf', name: 'Moana', contact_person_id: 'cp2' }],
+            default_email: 'moana@client.pf', document_id: id, document_number: 'N',
+          });
+        }),
+      );
+      const user = userEvent.setup();
+      render(<OrderInvoicesBlock canEmail row={row([], { facts, retainers })} />);
+      await user.click(within(screen.getByTestId(testid)).getByRole('button', { name: label }));
+      expect(await screen.findByRole('dialog', { name: title })).toBeInTheDocument();
+      expect(asked).toEqual([`${kind}/${id}`]);
+      await user.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
   });
 });
