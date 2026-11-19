@@ -105,6 +105,50 @@ async def test_same_client_ref_creates_once(db_session, books):
 
 
 @pytest.mark.asyncio
+async def test_a_retry_with_the_same_lines_in_another_order_returns_the_first_order(db_session, books):
+    first = [{"item_id": "A", "quantity": 1}, {"item_id": "B", "quantity": 2, "discount": ""}]
+    again = [{"item_id": "B", "quantity": 2}, {"item_id": "A", "quantity": 1}]
+    assert await actions.create_counter_order(db_session, "c1", first, "ref-1", by=None) == "9"
+    assert await actions.create_counter_order(db_session, "c1", again, "ref-1", by=None) == "9"
+    assert len(books.payloads) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("customer_id", "lines"),
+    [
+        ("c1", [{"item_id": "A", "quantity": 2}]),
+        ("c1", [{"item_id": "B", "quantity": 1}]),
+        ("c1", [{"item_id": "A", "quantity": 1, "discount": "5%"}]),
+        ("c1", [{"item_id": "A", "quantity": 1}, {"item_id": "B", "quantity": 1}]),
+        ("c2", [{"item_id": "A", "quantity": 1}]),
+    ],
+)
+async def test_a_known_ref_with_other_lines_or_client_is_refused_without_a_books_call(
+    db_session, books, monkeypatch, customer_id, lines
+):
+    assert (
+        await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-1", by=None) == "9"
+    )
+    monkeypatch.setattr(sync, "zoho_busy", lambda: True)  # a refusal comes before the busy check too
+    with pytest.raises(actions.OrderActionRefused, match="ref_reused"):
+        await actions.create_counter_order(db_session, customer_id, lines, "ref-1", by=None)
+    assert len(books.payloads) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_changed_resubmit_waiting_on_the_lock_is_refused(db_session, books):
+    results = await asyncio.gather(
+        actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-2", by=None),
+        actions.create_counter_order(db_session, "c1", [{"item_id": "B", "quantity": 1}], "ref-2", by=None),
+        return_exceptions=True,
+    )
+    assert results[0] == "9"
+    assert isinstance(results[1], actions.OrderActionRefused) and str(results[1]) == "ref_reused"
+    assert len(books.payloads) == 1
+
+
+@pytest.mark.asyncio
 async def test_concurrent_same_client_ref_creates_once(db_session, books):
     lines = [{"item_id": "A", "quantity": 1}]
     ids = await asyncio.gather(
@@ -162,7 +206,7 @@ async def test_an_order_a_pass_stored_first_is_reused(db_session, books, monkeyp
     docs = await _docs(db_session)
     assert len(docs) == 1 and docs[0].detail["status"] == "open"  # refreshed
     assert [e.kind for e in await events_of(db_session, "9")] == ["order.created"]
-    assert create_module._created == {"r": "9"}
+    assert {ref: order_id for ref, (_, order_id) in create_module._created.items()} == {"r": "9"}
 
 
 @pytest.mark.asyncio

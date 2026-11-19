@@ -11995,6 +11995,7 @@ export default {
       bad_discount: 'der Rabatt ist ungültig',
       create_failed: 'Zoho Books hat die Bestellung nicht bestätigt, nichts wurde angelegt',
       order_invoiced: "die Bestellung hat eine Rechnung und kann nicht mehr storniert werden",
+      ref_reused: "der erste Versuch hat bereits eine Bestellung angelegt, prüfen Sie das Board, bevor Sie eine neue beginnen",
       unknown_picklist: 'diese Pickliste ist nicht mehr auf der Bestellung, bitte neu laden',
     },
     cancel: {

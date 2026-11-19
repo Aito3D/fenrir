@@ -12019,6 +12019,7 @@ export default {
       bad_discount: 'de korting is ongeldig',
       create_failed: 'Zoho Books heeft de bestelling niet bevestigd, er is niets aangemaakt',
       order_invoiced: "de bestelling heeft een factuur en kan niet meer worden geannuleerd",
+      ref_reused: "de eerste poging heeft al een bestelling aangemaakt, controleer het bord voordat je een nieuwe begint",
       unknown_picklist: 'deze picklijst staat niet meer op de bestelling, kijk opnieuw',
     },
     cancel: {

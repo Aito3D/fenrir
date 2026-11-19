@@ -11980,6 +11980,7 @@ export default {
       bad_discount: 'la remise n\'est pas valide',
       create_failed: 'Zoho Books n\'a pas confirmé la commande, rien n\'a été créé',
       order_invoiced: "la commande a une facture, elle ne peut plus être annulée",
+      ref_reused: "la première tentative a déjà créé une commande, vérifiez le tableau avant d'en commencer une nouvelle",
       unknown_picklist: 'ce prélèvement n’est plus sur la commande, regardez à nouveau',
     },
     cancel: {

@@ -12200,6 +12200,7 @@ export default {
       bad_discount: 'rabat jest nieprawidłowy',
       create_failed: 'Zoho Books nie potwierdziło zamówienia, nic nie zostało utworzone',
       order_invoiced: "zamówienie ma fakturę i nie można go już anulować",
+      ref_reused: "pierwsza próba już utworzyła zamówienie, sprawdź tablicę, zanim zaczniesz nowe",
       unknown_picklist: 'ta lista kompletacji nie jest już w zamówieniu, sprawdź ponownie',
     },
     cancel: {

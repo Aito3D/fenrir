@@ -11994,6 +11994,7 @@ export default {
       bad_discount: '割引が無効です',
       create_failed: 'Zoho Books が注文を確定しなかったため、何も作成されていません',
       order_invoiced: "請求書があるため、この注文はキャンセルできません",
+      ref_reused: "最初の試行で注文はすでに作成されています。新しく始める前にボードを確認してください",
       unknown_picklist: 'このピッキングリストは注文にありません。もう一度確認してください',
     },
     cancel: {

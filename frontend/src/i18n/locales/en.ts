@@ -12051,6 +12051,7 @@ export default {
       bad_discount: 'the discount is not valid',
       create_failed: 'Zoho Books did not confirm the order, nothing was created',
       order_invoiced: "the order has an invoice, it can no longer be cancelled",
+      ref_reused: "the first attempt already created an order, check the board before starting a new one",
       unknown_picklist: 'this picklist is no longer on the order, look again',
     },
     cancel: {

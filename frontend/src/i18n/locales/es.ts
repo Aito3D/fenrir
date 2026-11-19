@@ -12003,6 +12003,7 @@ export default {
       bad_discount: 'el descuento no es válido',
       create_failed: 'Zoho Books no confirmó el pedido, no se creó nada',
       order_invoiced: "el pedido tiene una factura y ya no se puede cancelar",
+      ref_reused: "el primer intento ya creó un pedido, revise el tablero antes de empezar uno nuevo",
       unknown_picklist: 'esta lista de picking ya no está en el pedido, vuelve a mirar',
     },
     cancel: {

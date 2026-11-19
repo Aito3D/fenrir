@@ -21,8 +21,25 @@ _KEEP_REFS = 200
 # shortcut: in-memory dedupe, lost on restart; upgrade to a stored marker if restarts mid-sale matter
 # shortcut: a create that times out after Books saved it is not remembered, so a retry makes a second order the
 # operator voids; upgrade by searching Books for the ref before creating if that happens in practice
-_created: dict[str, str] = {}
+_created: dict[str, tuple[str, str]] = {}  # client_ref -> (fingerprint, salesorder_id)
 _ref_locks: dict[str, list] = {}  # client_ref -> [lock, callers using it]
+
+
+def _fingerprint(customer_id: str, lines: list[dict]) -> str:
+    """What a retry must repeat: the client and the lines, in any order."""
+    return repr(
+        (customer_id, sorted(repr((e.get("item_id"), e.get("quantity"), e.get("discount") or None)) for e in lines))
+    )
+
+
+def _remembered(client_ref: str, fingerprint: str) -> str | None:
+    """The order a stored ``client_ref`` made; a retry that changed the client or lines is refused."""
+    if client_ref not in _created:
+        return None
+    stored_fingerprint, salesorder_id = _created[client_ref]
+    if stored_fingerprint != fingerprint:
+        raise OrderActionRefused("ref_reused")
+    return salesorder_id
 
 
 def _discount(raw: str | None) -> tuple[float, bool] | None:
@@ -44,24 +61,27 @@ async def create_counter_order(
     """Create, confirm and store a counter order; returns its ``salesorder_id``. The same ``client_ref`` twice
     returns the first order instead of creating another. Prices are the Books items' own (tax inclusive); a line
     discount is "N%" (0 to 100) or an amount up to the line total."""
-    if client_ref in _created:  # before the busy check: a retry of a stored order needs no Books call
-        return _created[client_ref]
+    fingerprint = _fingerprint(customer_id, lines)
+    if (known := _remembered(client_ref, fingerprint)) is not None:  # before the busy check: no Books call
+        return known
     if sync.zoho_busy():
         raise sync.ZohoBusy(client_ref)
     entry = _ref_locks.setdefault(client_ref, [asyncio.Lock(), 0])
     entry[1] += 1  # callers holding or waiting on the lock; the last one out drops it
     try:
         async with entry[0]:
-            if client_ref in _created:  # a concurrent duplicate finished while this one waited
-                return _created[client_ref]
-            return await _create(db, customer_id, lines, client_ref, by)
+            if (known := _remembered(client_ref, fingerprint)) is not None:  # a concurrent duplicate finished
+                return known
+            return await _create(db, customer_id, lines, client_ref, by, fingerprint)
     finally:
         entry[1] -= 1
         if entry[1] == 0:
             _ref_locks.pop(client_ref, None)
 
 
-async def _create(db: AsyncSession, customer_id: str, lines: list[dict], client_ref: str, by: str | None) -> str:
+async def _create(
+    db: AsyncSession, customer_id: str, lines: list[dict], client_ref: str, by: str | None, fingerprint: str
+) -> str:
     wanted: dict[str, tuple[float, str | None, tuple[float, bool] | None]] = {}
     for entry in lines:
         q = entry.get("quantity")
@@ -126,7 +146,7 @@ async def _create(db: AsyncSession, customer_id: str, lines: list[dict], client_
     finally:
         sync.note_write(salesorder_id)
     # Remembered before any local write: a retry after a database failure must not confirm a second order.
-    _created[client_ref] = salesorder_id
+    _created[client_ref] = (fingerprint, salesorder_id)
     while len(_created) > _KEEP_REFS:
         del _created[next(iter(_created))]
     doc = await sync.find_stored(db, salesorder_id)  # a pass may have listed it already

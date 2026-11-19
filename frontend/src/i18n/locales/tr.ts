@@ -11922,6 +11922,7 @@ export default {
       bad_discount: 'indirim geçersiz',
       create_failed: 'Zoho Books siparişi onaylamadı, hiçbir şey oluşturulmadı',
       order_invoiced: "siparişin faturası var, artık iptal edilemez",
+      ref_reused: "ilk deneme zaten bir sipariş oluşturdu, yenisine başlamadan önce panoyu kontrol edin",
       unknown_picklist: 'bu toplama listesi artık siparişte değil, yeniden bakın',
     },
     cancel: {

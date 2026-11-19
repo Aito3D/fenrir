@@ -11978,6 +11978,7 @@ export default {
       bad_discount: '折扣無效',
       create_failed: 'Zoho Books 未確認訂單，未建立任何內容',
       order_invoiced: "訂單已有發票，無法再取消",
+      ref_reused: "第一次嘗試已建立訂單，請先查看看板再開始新訂單",
       unknown_picklist: '此揀貨單已不在訂單中，請重新查看',
     },
     cancel: {

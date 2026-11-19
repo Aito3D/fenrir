@@ -11616,6 +11616,7 @@ export default {
       bad_discount: '할인이 올바르지 않습니다',
       create_failed: 'Zoho Books가 주문을 확인하지 않아 아무것도 생성되지 않았습니다',
       order_invoiced: "청구서가 있어 이 주문은 더 이상 취소할 수 없습니다",
+      ref_reused: "첫 번째 시도에서 이미 주문이 생성되었습니다. 새로 시작하기 전에 보드를 확인하세요",
       unknown_picklist: '이 피킹 리스트는 더 이상 주문에 없습니다. 다시 확인하세요',
     },
     cancel: {

@@ -12052,6 +12052,7 @@ errors: {
       bad_discount: 'rabatten är ogiltig',
       create_failed: 'Zoho Books bekräftade inte ordern, inget skapades',
       order_invoiced: "ordern har en faktura och kan inte längre avbrytas",
+      ref_reused: "det första försöket skapade redan en order, kontrollera tavlan innan du börjar en ny",
       unknown_picklist: 'den här plocklistan finns inte längre på ordern, titta igen',
     },
     cancel: {
