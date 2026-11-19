@@ -12490,6 +12490,7 @@ errors: {
     },
     calendar: {
       title: 'Försäljningskalender',
+      rolling: 'Senaste 12 månaderna',
       prevYear: 'Föregående år',
       nextYear: 'Nästa år',
       gridLabel: 'Omsättning per dag',

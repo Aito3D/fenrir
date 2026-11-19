@@ -12432,6 +12432,7 @@ export default {
     },
     calendar: {
       title: '売上カレンダー',
+      rolling: '直近12か月',
       prevYear: '前の年',
       nextYear: '次の年',
       gridLabel: '日別売上',

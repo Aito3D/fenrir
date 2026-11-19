@@ -12416,6 +12416,7 @@ export default {
     },
     calendar: {
       title: '銷售日曆',
+      rolling: '最近 12 個月',
       prevYear: '上一年',
       nextYear: '下一年',
       gridLabel: '每日營業額',

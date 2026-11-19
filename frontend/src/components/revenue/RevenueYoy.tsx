@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { AXIS, GRID } from '../aito/stats/palette';
-import { Empty, Legend, LegendList, Panel } from '../aito/stats/primitives';
+import { Empty, LegendList, Panel } from '../aito/stats/primitives';
 import { CHART_TOOLTIP_STYLE } from '../stats/chartTheme';
 import { Skeleton } from '../Skeleton';
 import { RevenueSegmented } from './RevenueSegmented';
@@ -10,13 +10,14 @@ import { compactAxis, formatFcp, formatPct } from './lib/format';
 import type { TaxMode, YoyResponse, YoyYear } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
 
-// Newest year first: the accent green, then fading steps, so the current year reads on top.
+// Newest year first: the accent green, then fading steps, so the current year reads on top. The two oldest are told
+// apart by pattern as well as lightness; every stroke stays at 3:1 or better on the dark panel (#2d2d2d).
 const YEAR_STYLE = [
-  { color: '#00ae42', width: 3 },
-  { color: '#3d86e8', width: 2 },
-  { color: '#808080', width: 1.5 },
-  { color: '#5c5c5c', width: 1.5 },
-];
+  { color: '#00ae42', width: 3, dash: undefined, border: 'solid' },
+  { color: '#3d86e8', width: 2, dash: undefined, border: 'solid' },
+  { color: '#a0a0a0', width: 1.5, dash: '6 4', border: 'dashed' },
+  { color: '#808080', width: 1.5, dash: '2 3', border: 'dotted' },
+] as const;
 
 type Mode = 'cumul' | 'mensuel';
 
@@ -59,7 +60,7 @@ export function RevenueYoy({ filterParams, taxMode, version }: { filterParams: s
     </div>
   );
 
-  if (error && !data) return <Panel title={title}><p className="text-sm text-status-error">{error}</p></Panel>;
+  if (error && !data) return <Panel title={title}><p role="alert" className="text-sm text-status-error">{error}</p></Panel>;
   if (!data) return <Panel title={title}><Skeleton className="h-[260px] w-full" /></Panel>;
   if (years.length === 0) return <Panel title={title}><Empty>{t('revenue.analysis.noData')}</Empty></Panel>;
 
@@ -79,10 +80,11 @@ export function RevenueYoy({ filterParams, taxMode, version }: { filterParams: s
           {years.map((y, k) => {
             const i = lastKnown(cum(y));
             return (
-              <Legend key={y.year} color={YEAR_STYLE[k].color}>
+              <li key={y.year} className="inline-flex items-center gap-1.5">
+                <span data-swatch aria-hidden="true" className="inline-block h-0 w-4 border-t-2" style={{ borderTopColor: YEAR_STYLE[k].color, borderTopStyle: YEAR_STYLE[k].border }} />
                 <span className={k === 0 ? 'text-white' : ''}>{y.year}</span>{' '}
                 <span className="tabular-nums text-bambu-gray">{i >= 0 ? formatFcp(cum(y)[i]!) : '—'}</span>
-              </Legend>
+              </li>
             );
           })}
         </LegendList>
@@ -100,6 +102,7 @@ export function RevenueYoy({ filterParams, taxMode, version }: { filterParams: s
               labelStyle={{ color: '#fff' }}
               itemStyle={{ color: '#a0a0a0' }}
               separator=": "
+              itemSorter={(item) => -Number(String(item.dataKey).slice(1))}
               labelFormatter={(m) => (mode === 'cumul' ? t('revenue.yoy.tooltipCumul', { month: m }) : String(m))}
               formatter={(value: number | undefined, key: string | undefined) => [value == null ? '—' : formatFcp(value), String(key ?? '').slice(1)]}
             />
@@ -107,13 +110,14 @@ export function RevenueYoy({ filterParams, taxMode, version }: { filterParams: s
             {[...years].reverse().map((y) => {
               const k = years.indexOf(y);
               const vals = valuesOf(y);
-              const { color, width } = YEAR_STYLE[k];
+              const { color, width, dash } = YEAR_STYLE[k];
               return (
                 <Line
                   key={y.year}
                   dataKey={`y${y.year}`}
                   stroke={color}
                   strokeWidth={width}
+                  strokeDasharray={dash}
                   strokeLinejoin="round"
                   isAnimationActive={false}
                   activeDot={{ r: 4 }}

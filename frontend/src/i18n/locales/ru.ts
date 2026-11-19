@@ -12037,6 +12037,7 @@ export default {
     },
     calendar: {
       title: 'Календарь продаж',
+      rolling: 'Последние 12 месяцев',
       prevYear: 'Предыдущий год',
       nextYear: 'Следующий год',
       gridLabel: 'Выручка по дням',

@@ -92,6 +92,17 @@ describe('RevenueYoy', () => {
     expect(widths.filter((w) => w === 3)).toHaveLength(1);
   });
 
+  it('tells the older years apart by stroke pattern too, in the lines and the legend', async () => {
+    stubFetch(FIVE);
+    const { container } = renderYoy();
+    await waitFor(() => expect(pathOf(container, '#808080')).not.toBeNull());
+    expect(pathOf(container, '#00ae42')).not.toHaveAttribute('stroke-dasharray');
+    expect(pathOf(container, '#a0a0a0')).toHaveAttribute('stroke-dasharray', '6 4');
+    expect(pathOf(container, '#808080')).toHaveAttribute('stroke-dasharray', '2 3');
+    const swatches = Array.from(screen.getByRole('list', { name: 'Legend' }).querySelectorAll('[data-swatch]')) as HTMLElement[];
+    expect(swatches.map((s) => s.style.borderTopStyle)).toEqual(['solid', 'solid', 'dashed', 'dotted']);
+  });
+
   it('switches between Cumul and Mensuel', async () => {
     stubFetch(FIVE);
     renderYoy();
@@ -152,6 +163,6 @@ describe('RevenueYoy', () => {
   it('shows the server error', async () => {
     stubFetch(json({ detail: 'Zoho indisponible' }, 503));
     renderYoy();
-    expect(await screen.findByText('Zoho indisponible')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Zoho indisponible');
   });
 });

@@ -12080,6 +12080,7 @@ export default {
     },
     calendar: {
       title: 'Календар продажів',
+      rolling: 'Останні 12 місяців',
       prevYear: 'Попередній рік',
       nextYear: 'Наступний рік',
       gridLabel: 'Виручка за днями',

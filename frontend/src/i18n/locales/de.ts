@@ -12433,6 +12433,7 @@ export default {
     },
     calendar: {
       title: 'Verkaufskalender',
+      rolling: 'Letzte 12 Monate',
       prevYear: 'Vorheriges Jahr',
       nextYear: 'Nächstes Jahr',
       gridLabel: 'Umsatz pro Tag',

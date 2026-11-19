@@ -12441,6 +12441,7 @@ export default {
     },
     calendar: {
       title: 'Calendario de ventas',
+      rolling: 'Últimos 12 meses',
       prevYear: 'Año anterior',
       nextYear: 'Año siguiente',
       gridLabel: 'Facturación por día',

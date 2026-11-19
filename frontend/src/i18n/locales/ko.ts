@@ -12054,6 +12054,7 @@ export default {
     },
     calendar: {
       title: '판매 달력',
+      rolling: '최근 12개월',
       prevYear: '이전 연도',
       nextYear: '다음 연도',
       gridLabel: '일별 매출',

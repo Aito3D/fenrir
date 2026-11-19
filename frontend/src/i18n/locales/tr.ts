@@ -12360,6 +12360,7 @@ export default {
     },
     calendar: {
       title: 'Satış takvimi',
+      rolling: 'Son 12 ay',
       prevYear: 'Önceki yıl',
       nextYear: 'Sonraki yıl',
       gridLabel: 'Günlük ciro',

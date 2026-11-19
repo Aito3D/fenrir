@@ -9,7 +9,6 @@ import { RevenuePage } from '../../pages/RevenuePage';
 import { Layout } from '../../components/Layout';
 import { setAuthToken } from '../../api/client';
 import type { RevenueResponse, RevenueSyncStatus } from '../../components/revenue/lib/types';
-import { orgToday } from '../../components/revenue/lib/dates';
 
 let granted = new Set<string>();
 const mockUseAuth = {
@@ -267,11 +266,10 @@ describe('RevenuePage — view tabs and tax switch', () => {
     renderPage();
     await flush();
     await flush();
-    const year = orgToday().slice(0, 4);
     expect(screen.getByRole('tabpanel')).toHaveAttribute('data-slot', 'revenue-view-saison');
     const urls = fetchMock.mock.calls.map(([u]) => String(u));
     expect(urls).toContain('/api/v1/revenue/yoy?kind=goods');
-    expect(urls).toContain(`/api/v1/revenue/daily?from=${year}-01-01&to=${year}-12-31&kind=goods`);
+    expect(urls).toContain('/api/v1/revenue/daily?kind=goods');
     expect(within(screen.getByRole('tabpanel')).getByText('Year by year')).toBeInTheDocument();
     expect(within(screen.getByRole('tabpanel')).getByText('Sales calendar')).toBeInTheDocument();
   });

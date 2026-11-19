@@ -12638,6 +12638,7 @@ export default {
     },
     calendar: {
       title: 'Kalendarz sprzedaży',
+      rolling: 'Ostatnie 12 miesięcy',
       prevYear: 'Poprzedni rok',
       nextYear: 'Następny rok',
       gridLabel: 'Przychód dzienny',

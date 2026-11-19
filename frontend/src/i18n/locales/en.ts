@@ -12489,6 +12489,7 @@ export default {
     },
     calendar: {
       title: 'Sales calendar',
+      rolling: 'Last 12 months',
       prevYear: 'Previous year',
       nextYear: 'Next year',
       gridLabel: 'Revenue by day',

@@ -37,16 +37,24 @@ const urls = (m: ReturnType<typeof stubFetch>) => m.mock.calls.map((c) => c[0]);
 afterEach(() => vi.unstubAllGlobals());
 
 describe('RevenueCalendar', () => {
-  it('reads the whole org year with the filters', async () => {
+  it('opens on the rolling twelve months with the filters', async () => {
     const fetchMock = stubFetch();
     renderCal({ filterParams: '&kind=goods' });
     await screen.findByRole('grid', { name: 'Revenue by day' });
-    expect(urls(fetchMock)).toContain('/api/v1/revenue/daily?from=2026-01-01&to=2026-12-31&kind=goods');
+    expect(urls(fetchMock)).toEqual(['/api/v1/revenue/daily?kind=goods']);
     expect(screen.getByText('Sales calendar')).toBeInTheDocument();
+    expect(screen.getByText('Last 12 months')).toBeInTheDocument();
     expect(screen.getByText('Jan 5, 2026 → Jan 12, 2026 · HT')).toBeInTheDocument();
   });
 
-  it('steps between years from the history start to the current org year', async () => {
+  it('reads the rolling window without a query string when no filter is set', async () => {
+    const fetchMock = stubFetch();
+    renderCal();
+    await screen.findByRole('grid');
+    expect(urls(fetchMock)).toEqual(['/api/v1/revenue/daily']);
+  });
+
+  it('steps from the rolling window to the current year, back to the history start, and forward again', async () => {
     const fetchMock = stubFetch();
     renderCal();
     await screen.findByRole('grid');
@@ -54,12 +62,83 @@ describe('RevenueCalendar', () => {
     const next = screen.getByRole('button', { name: 'Next year' });
     expect(next).toBeDisabled();
     fireEvent.click(prev);
+    await waitFor(() => expect(urls(fetchMock)).toContain('/api/v1/revenue/daily?from=2026-01-01&to=2026-12-31'));
+    expect(screen.getByText('2026')).toBeInTheDocument();
+    expect(next).toBeEnabled();
+    fireEvent.click(prev);
     await waitFor(() => expect(urls(fetchMock)).toContain('/api/v1/revenue/daily?from=2025-01-01&to=2025-12-31'));
-    expect(screen.getByText('2025')).toBeInTheDocument();
     fireEvent.click(prev);
     await waitFor(() => expect(urls(fetchMock)).toContain('/api/v1/revenue/daily?from=2024-01-01&to=2024-12-31'));
     expect(prev).toBeDisabled();
-    expect(next).toBeEnabled();
+    fireEvent.click(next);
+    fireEvent.click(next);
+    expect(screen.getByText('2026')).toBeInTheDocument();
+    fireEvent.click(next);
+    expect(screen.getByText('Last 12 months')).toBeInTheDocument();
+    expect(next).toBeDisabled();
+  });
+
+  it('moves focus to the other stepper button when a step disables the focused one', async () => {
+    stubFetch();
+    renderCal();
+    await screen.findByRole('grid');
+    const prev = screen.getByRole('button', { name: 'Previous year' });
+    const next = screen.getByRole('button', { name: 'Next year' });
+    prev.focus();
+    fireEvent.click(prev);
+    fireEvent.click(prev);
+    expect(prev).toHaveFocus();
+    fireEvent.click(prev);
+    expect(prev).toBeDisabled();
+    expect(next).toHaveFocus();
+    fireEvent.click(next);
+    fireEvent.click(next);
+    fireEvent.click(next);
+    expect(next).toBeDisabled();
+    expect(prev).toHaveFocus();
+  });
+
+  it('lays the grid on a fixed 54 week columns whatever the window holds', async () => {
+    stubFetch();
+    renderCal();
+    const grid = await screen.findByRole('grid');
+    const rows = within(grid).getAllByRole('row');
+    expect(rows).toHaveLength(7);
+    for (const row of rows) {
+      expect(row.style.gridTemplateColumns).toContain('repeat(54,');
+      expect(row.children).toHaveLength(55);
+    }
+    const pads = Array.from(rows[0].children).slice(1).filter((c) => c.getAttribute('role') !== 'gridcell');
+    expect(pads).toHaveLength(52);
+    for (const pad of pads) {
+      expect(pad).toHaveAttribute('aria-hidden', 'true');
+      expect(pad).not.toHaveAttribute('tabindex');
+    }
+  });
+
+  it('shows the loading state, not the previous window, while a step loads', async () => {
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => (calls++ === 0 ? json({ from: '2026-01-05', to: '2026-01-12', days: DAYS }) : new Promise<Response>(() => {}))));
+    renderCal();
+    await screen.findByRole('grid');
+    fireEvent.click(screen.getByRole('button', { name: 'Previous year' }));
+    expect(screen.getByText('2026')).toBeInTheDocument();
+    expect(screen.queryByRole('grid')).toBeNull();
+    expect(cell('2026-01-05')).toBeNull();
+    expect(screen.queryByText('Jan 5, 2026 → Jan 12, 2026 · HT')).toBeNull();
+    expect(screen.queryByTestId('weekday-means')).toBeNull();
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
+  });
+
+  it('shows the error of a step that fails instead of the previous window', async () => {
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => (calls++ === 0 ? json({ from: '2026-01-05', to: '2026-01-12', days: DAYS }) : json({ detail: 'Zoho indisponible' }, 503))));
+    renderCal();
+    await screen.findByRole('grid');
+    fireEvent.click(screen.getByRole('button', { name: 'Previous year' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Zoho indisponible');
+    expect(screen.queryByRole('grid')).toBeNull();
+    expect(screen.queryByTestId('weekday-means')).toBeNull();
   });
 
   it('draws a day not fetched with a dashed outline, never in the zero colour', async () => {
@@ -164,6 +243,6 @@ describe('RevenueCalendar', () => {
   it('shows the server error', async () => {
     stubFetch(() => json({ detail: 'Zoho indisponible' }, 503));
     renderCal();
-    expect(await screen.findByText('Zoho indisponible')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Zoho indisponible');
   });
 });

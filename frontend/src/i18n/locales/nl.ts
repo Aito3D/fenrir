@@ -12457,6 +12457,7 @@ export default {
     },
     calendar: {
       title: 'Verkoopkalender',
+      rolling: 'Laatste 12 maanden',
       prevYear: 'Vorig jaar',
       nextYear: 'Volgend jaar',
       gridLabel: 'Omzet per dag',

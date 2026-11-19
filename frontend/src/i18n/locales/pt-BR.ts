@@ -12418,6 +12418,7 @@ export default {
     },
     calendar: {
       title: 'Calendário de vendas',
+      rolling: 'Últimos 12 meses',
       prevYear: 'Ano anterior',
       nextYear: 'Próximo ano',
       gridLabel: 'Faturamento por dia',
