@@ -91,6 +91,7 @@ from backend.app.api.routes import (
     project_files,
     projects,
     projects_pdm,
+    revenue,
     scheduled_dryings,
     settings as settings_routes,
     showcase,
@@ -14206,6 +14207,7 @@ app.include_router(inbox.router, prefix=app_settings.api_prefix)
 app.include_router(zoho.router, prefix=app_settings.api_prefix)
 app.include_router(heimdall.router, prefix=app_settings.api_prefix)
 app.include_router(order_board.router, prefix=app_settings.api_prefix)
+app.include_router(revenue.router, prefix=app_settings.api_prefix)
 app.include_router(users.router, prefix=app_settings.api_prefix)
 app.include_router(groups.router, prefix=app_settings.api_prefix)
 app.include_router(
