@@ -10,11 +10,12 @@ import type { RevenueProduct } from './lib/types';
 const LINK = `text-xs text-bambu-green hover:underline ${focusRingCls}`;
 
 /** One active filter as a removable chip (the mockup's « Marque : X ✕ »). */
-export function RevenueChip(p: { label?: string; value: string; removeLabel: string; onRemove: () => void; title?: string }) {
+export function RevenueChip(p: { label?: string; value: string; removeLabel: string; onRemove: () => void; title?: string; amount?: number }) {
   return (
     <span className="inline-flex max-w-xs items-center gap-1.5 rounded-full bg-bambu-dark-tertiary py-1 pl-3 pr-1 text-xs text-bambu-gray-light">
       {p.label && <span className="text-bambu-gray">{p.label}</span>}
       <span className="truncate text-white" title={p.title}>{p.value}</span>
+      {p.amount !== undefined && <span className="shrink-0 tabular-nums text-bambu-gray">{formatFcp(p.amount)}</span>}
       <button type="button" aria-label={p.removeLabel} onClick={p.onRemove}
         className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full hover:bg-bambu-dark-secondary hover:text-white ${focusRingCls}`}>
         <X aria-hidden className="h-3 w-3" />
@@ -66,7 +67,7 @@ export function RevenueProductSearch(p: {
         {() => (
           <>
             <div className="flex items-center justify-between border-b border-bambu-dark-tertiary px-3 py-1.5 text-xs text-bambu-gray">
-              <span>{t('revenue.filters.brandCount', { count: options.length })}</span>
+              <span>{t('revenue.filters.brandCount', { n: options.length })}</span>
               {picked.length > 0 && (
                 <button type="button" className={LINK} onClick={p.onClearBrands}>{t('revenue.filters.clearAll')}</button>
               )}
@@ -136,7 +137,7 @@ export function RevenueProductSearch(p: {
               <>
                 <div className="flex items-center justify-between border-b border-bambu-dark-tertiary px-3 py-1.5 text-xs text-bambu-gray">
                   <span>
-                    {t('revenue.search.results', { count: matches.length })}
+                    {t('revenue.search.results', { n: matches.length })}
                     {matches.length > MAX_SHOWN_MATCHES ? ` · ${t('revenue.search.shown', { n: MAX_SHOWN_MATCHES })}` : ''}
                   </span>
                   {matches.length > 1 && (
@@ -169,9 +170,9 @@ export function RevenueProductSearch(p: {
             <RevenueChip key={o.key} label={t('revenue.filters.brand')} value={o.brand}
               removeLabel={t('revenue.filters.removeBrand', { brand: o.brand })} onRemove={() => p.onToggleBrand(o.key)} />
           ))}
-          {p.basket.length > 0 && <span className="text-xs text-bambu-gray">{t('revenue.search.products', { count: p.basket.length })}</span>}
+          {p.basket.length > 0 && <span className="text-xs text-bambu-gray">{t('revenue.search.products', { n: p.basket.length })}</span>}
           {p.basket.map((b) => (
-            <RevenueChip key={b.itemId} value={b.name} title={b.name}
+            <RevenueChip key={b.itemId} value={b.name} title={b.name} amount={b.totalHt}
               removeLabel={t('revenue.search.remove', { name: b.name })} onRemove={() => p.onRemove(b.itemId)} />
           ))}
           <button

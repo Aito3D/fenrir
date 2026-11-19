@@ -105,7 +105,7 @@ export function RevenueControls(p: {
   useEffect(() => {
     onKey.current = (e) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
+      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
       const g = SHORTCUT[e.key.toLowerCase()];
       if (e.key === 'ArrowLeft' && p.canPrev) p.onShift(-1);
       else if (e.key === 'ArrowRight' && p.canNext) p.onShift(1);
@@ -124,8 +124,15 @@ export function RevenueControls(p: {
   const day = (d: string) => short.format(new Date(`${d}T00:00:00Z`));
   const rangeLabel =
     p.range.preset === 'custom' ? t('revenue.controls.custom') : p.range.preset === 'default' ? t('revenue.controls.auto') : t(`revenue.controls.${PRESET_KEY[p.range.preset]}`);
-  const customFrom = p.range.preset === 'custom' ? p.range.from : p.from;
-  const customTo = p.range.preset === 'custom' ? p.range.to : p.to;
+  // An incomplete or inverted pair stays a local draft; only a valid one becomes the range.
+  const [draft, setDraft] = useState<{ from: string; to: string } | null>(null);
+  const customFrom = draft?.from ?? (p.range.preset === 'custom' ? p.range.from : p.from);
+  const customTo = draft?.to ?? (p.range.preset === 'custom' ? p.range.to : p.to);
+  const editCustom = (next: { from: string; to: string }) => {
+    const valid = next.from && next.to && REVENUE_HISTORY_START <= next.from && next.from <= next.to && next.to <= p.today;
+    setDraft(valid ? null : next);
+    if (valid) p.onRange({ preset: 'custom', ...next });
+  };
   const segmentLabel = (s: CustomerSegment | null) => t(`revenue.filters.segments.${s ?? 'all'}`);
   const navCls = `${PICK_CLS} px-2`;
 
@@ -142,12 +149,12 @@ export function RevenueControls(p: {
               <div className="grid gap-0.5">
                 {RANGE_PRESETS.map((r) => (
                   <button key={r.id} type="button" aria-pressed={p.range.preset === r.id} className={menuItemCls(p.range.preset === r.id)}
-                    onClick={() => { p.onRange({ preset: r.id }); close(); }}>
+                    onClick={() => { p.onRange({ preset: r.id }); setDraft(null); close(); }}>
                     {t(`revenue.controls.${PRESET_KEY[r.id]}`)}
                   </button>
                 ))}
                 <button type="button" aria-pressed={p.range.preset === 'default'} className={menuItemCls(p.range.preset === 'default')}
-                  onClick={() => { p.onRange({ preset: 'default' }); close(); }}>
+                  onClick={() => { p.onRange({ preset: 'default' }); setDraft(null); close(); }}>
                   {t('revenue.controls.auto')} <span className="text-xs text-bambu-gray">{t('revenue.controls.autoHint')}</span>
                 </button>
               </div>
@@ -155,10 +162,10 @@ export function RevenueControls(p: {
                 <p className="px-1 text-xs uppercase tracking-wide text-bambu-gray">{t('revenue.controls.custom')}</p>
                 <div className="flex items-center gap-1.5">
                   <input type="date" aria-label={t('revenue.controls.from')} className={DATE_INPUT} min={REVENUE_HISTORY_START} max={p.today} value={customFrom}
-                    onChange={(e) => e.target.value && p.onRange({ preset: 'custom', from: e.target.value, to: customTo })} />
+                    onChange={(e) => editCustom({ from: e.target.value, to: customTo })} />
                   <span aria-hidden className="text-sm text-bambu-gray">→</span>
                   <input type="date" aria-label={t('revenue.controls.to')} className={DATE_INPUT} min={REVENUE_HISTORY_START} max={p.today} value={customTo}
-                    onChange={(e) => e.target.value && p.onRange({ preset: 'custom', from: customFrom, to: e.target.value })} />
+                    onChange={(e) => editCustom({ from: customFrom, to: e.target.value })} />
                 </div>
               </div>
             </>

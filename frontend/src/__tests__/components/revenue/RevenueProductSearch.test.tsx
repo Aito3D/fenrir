@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { RevenueProductSearch } from '../../../components/revenue/RevenueProductSearch';
 import type { RevenueProduct } from '../../../components/revenue/lib/types';
+import i18n from '../../../i18n';
 
 const product = (itemId: string, name: string, brand: string | null = null, totalHt = 1000): RevenueProduct => ({
   itemId,
@@ -59,10 +60,10 @@ describe('RevenueProductSearch — brand popover', () => {
       expect.stringContaining('Sunlu'),
     ]);
     expect(options[1]).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByText('3 brands')).toBeInTheDocument();
+    expect(screen.getByText('Brands: 3')).toBeInTheDocument();
     fireEvent.click(within(options[2]).getByRole('checkbox'));
     expect(onToggleBrand).toHaveBeenCalledWith('sunlu');
-    fireEvent.click(within(screen.getByText('3 brands').parentElement!).getByRole('button', { name: 'Clear all' }));
+    fireEvent.click(within(screen.getByText('Brands: 3').parentElement!).getByRole('button', { name: 'Clear all' }));
     expect(onClearBrands).toHaveBeenCalled();
   });
 
@@ -89,7 +90,7 @@ describe('RevenueProductSearch — search', () => {
     fireEvent.change(searchBox(), { target: { value: 'starlink' } });
     const list = screen.getByRole('listbox', { name: 'Matching products' });
     expect(within(list).getAllByRole('option')).toHaveLength(2);
-    expect(within(list).getByText('2 results')).toBeInTheDocument();
+    expect(within(list).getByText('Results: 2')).toBeInTheDocument();
   });
 
   it('shows 12 of the matches and adds them all', () => {
@@ -98,7 +99,7 @@ describe('RevenueProductSearch — search', () => {
     fireEvent.change(searchBox(), { target: { value: 'filament' } });
     const list = screen.getByRole('listbox', { name: 'Matching products' });
     expect(within(list).getAllByRole('option')).toHaveLength(12);
-    expect(within(list).getByText(/15 results · 12 shown/)).toBeInTheDocument();
+    expect(within(list).getByText(/Results: 15 · 12 shown/)).toBeInTheDocument();
     fireEvent.click(within(list).getByRole('button', { name: 'Add all 15 results' }));
     expect(onAdd.mock.calls[0][0]).toHaveLength(15);
     expect(searchBox()).toHaveValue('');
@@ -143,7 +144,7 @@ describe('RevenueProductSearch — chips', () => {
     const { onRemove, onClear, onClearBrands, onClearExtra } = renderSearch({ basket: [CATALOGUE[2]], extra: true });
     const chips = screen.getByLabelText('Selection');
     expect(within(chips).getByText('extra chip')).toBeInTheDocument();
-    expect(within(chips).getByText('1 product')).toBeInTheDocument();
+    expect(within(chips).getByText('Products: 1')).toBeInTheDocument();
     fireEvent.click(within(chips).getByRole('button', { name: 'Remove Sunlu PLA High Speed' }));
     expect(onRemove).toHaveBeenCalledWith('3');
     fireEvent.click(within(chips).getByRole('button', { name: 'Clear all' }));
@@ -155,5 +156,29 @@ describe('RevenueProductSearch — chips', () => {
   it('renders no chip row when nothing is picked', () => {
     renderSearch();
     expect(screen.queryByLabelText('Selection')).toBeNull();
+  });
+});
+
+describe('RevenueProductSearch — counted labels', () => {
+  it('prints counts of 3 in Russian, never a key path', async () => {
+    await i18n.changeLanguage('ru');
+    try {
+      const three = [product('a', 'Starlink A', 'X'), product('b', 'Starlink B', 'Y'), product('c', 'Starlink C', 'Z')];
+      renderSearch({ products: [...three, product('d', 'Other D', 'W')], basket: [] });
+      fireEvent.click(screen.getByRole('button', { name: 'Бренд' }));
+      fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'starlink' } });
+      expect(screen.getByText('Брендов: 4')).toBeInTheDocument();
+      expect(screen.getByText('Результатов: 3')).toBeInTheDocument();
+      expect(document.body.textContent).not.toMatch(/revenue\./);
+    } finally {
+      await i18n.changeLanguage('en');
+    }
+  });
+
+  it('shows each basket product with its HT amount', () => {
+    renderSearch({ basket: [CATALOGUE[2], CATALOGUE[3], CATALOGUE[0]] });
+    const chips = screen.getByLabelText('Selection');
+    expect(within(chips).getByText('Products: 3')).toBeInTheDocument();
+    expect(within(chips).getByText('2.000 FCP')).toHaveClass('tabular-nums');
   });
 });

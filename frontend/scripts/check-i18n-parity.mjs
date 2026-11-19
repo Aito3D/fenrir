@@ -634,7 +634,7 @@ const UK_COGNATES = [
 // are used untranslated by Dutch slicer users. Each entry below was
 // checked individually against the Dutch translation in #2891.
 const NL_COGNATES = [
-  'Week', '{{count}} product',  // revenue.controls.week, revenue.search.products_one — the Dutch words too
+  'Week',  // revenue.controls.week — the Dutch word too
   'Contact',  // orders.contact.title — same word in Dutch
   'Filters',  // queue.mobile.filters — same word in Dutch
   '{{count}} project',  // projectsPdm.catalog.mobile.projects_one — "project" is the Dutch word too

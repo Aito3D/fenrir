@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { bearerAuthHeaders } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -206,6 +206,7 @@ export function RevenuePage() {
   const [productsVersion, setProductsVersion] = useState(0);
   const products = useRevenueResource<ProductsResponse>('/api/v1/revenue/products', productsVersion);
   const productList = products.data?.products ?? null;
+  const kindProducts = useMemo(() => filterByKind(productList, active.kind), [productList, active.kind]);
   const productsLoaded = useRef(false);
   productsLoaded.current = productList !== null;
   const productsDeps = useRef<{ fetchedDays: number | undefined; reviewCount: number | undefined } | null>(null);
@@ -313,7 +314,7 @@ export function RevenuePage() {
           aside={<RevenueSegmented tabs idPrefix="revenue-view" label={t('revenue.views.label')} value={view} onChange={(v) => setControls({ view: v })} options={views} />}
         >
           <RevenueProductSearch
-            products={filterByKind(productList, active.kind)}
+            products={kindProducts}
             basket={active.basket}
             onAdd={addProducts}
             onRemove={(id) => setControls({ basket: controls.basket.filter((b) => b.itemId !== id) })}

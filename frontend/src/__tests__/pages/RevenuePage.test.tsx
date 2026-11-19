@@ -427,6 +427,32 @@ describe('RevenuePage — controls, URL and persistence', () => {
     expect(lastSeries()).toContain('brand=esun');
   });
 
+  it('never puts a malformed URL value into a request', async () => {
+    window.history.replaceState(null, '', '/revenue?granularity=hour&g=hour&from=2026-13-40&to=2026-01-01&items=a%20b&kind=x');
+    stubWithProducts(payload());
+    renderPage();
+    await flush();
+    await flush();
+    for (const [u] of fetchMock.mock.calls) {
+      expect(String(u)).not.toMatch(/hour|2026-13-40|a%20b|a b|kind=x/);
+    }
+    expect(lastSeries()).toBe('/api/v1/revenue?granularity=month');
+  });
+
+  it('toggling a brand leaves localStorage untouched', async () => {
+    stubWithProducts(payload());
+    renderPage();
+    await flush();
+    vi.mocked(localStorage.setItem).mockClear();
+    vi.mocked(localStorage.removeItem).mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Brand' }));
+    fireEvent.click(within(screen.getByRole('listbox', { name: 'Brands' })).getAllByRole('checkbox')[1]);
+    await flush();
+    expect(lastSeries()).toContain('brand=esun');
+    expect(localStorage.setItem).not.toHaveBeenCalled();
+    expect(localStorage.removeItem).not.toHaveBeenCalled();
+  });
+
   it('clears the filters but keeps a stored segment it may not see', async () => {
     granted.delete('revenue:view_customers');
     localStorage.setItem('revenue-segment', 'pro');

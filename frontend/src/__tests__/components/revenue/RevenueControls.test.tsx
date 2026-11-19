@@ -37,6 +37,7 @@ function renderControls(
         <option>x</option>
       </select>
       <div aria-label="typing editable" contentEditable suppressContentEditableWarning />
+      <div aria-label="typing plaintext" {...{ contentEditable: 'plaintext-only' as unknown as boolean }} suppressContentEditableWarning />
     </>,
   );
   return { ...spies, ...view };
@@ -80,7 +81,7 @@ describe('RevenueControls — keyboard shortcuts', () => {
 
   it('ignores the shortcuts while typing in an input, textarea, select or contenteditable', () => {
     const { onGranularity, onShift } = renderControls();
-    for (const name of ['typing input', 'typing area', 'typing select', 'typing editable']) {
+    for (const name of ['typing input', 'typing area', 'typing select', 'typing editable', 'typing plaintext']) {
       const el = screen.getByLabelText(name);
       fireEvent.keyDown(el, { key: 'j' });
       fireEvent.keyDown(el, { key: 'ArrowLeft' });
@@ -129,6 +130,18 @@ describe('RevenueControls — range popover', () => {
     expect(from).toHaveValue('2025-12-01');
     fireEvent.change(from, { target: { value: '2025-03-01' } });
     expect(onRange).toHaveBeenCalledWith({ preset: 'custom', from: '2025-03-01', to: '2026-11-19' });
+  });
+
+  it('keeps the previous range while the custom pair is incomplete or inverted', () => {
+    const { onRange } = renderControls({ range: { preset: 'custom', from: '2025-01-01', to: '2025-06-30' } });
+    fireEvent.click(screen.getByRole('button', { name: /Custom/ }));
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2025-09-01' } });
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2024-12-31' } });
+    expect(onRange).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('From')).toHaveValue('2025-09-01');
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2025-12-31' } });
+    expect(onRange).toHaveBeenCalledWith({ preset: 'custom', from: '2025-09-01', to: '2025-12-31' });
   });
 
   it('labels the trigger Auto or Custom and closes on Escape', () => {
