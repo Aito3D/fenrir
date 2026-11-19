@@ -103,6 +103,8 @@ class OrderTrackingResponse(BaseModel):
 
     reference: str
     date: str | None
+    # The sales order's expected shipment day (YYYY-MM-DD), only while nothing is ready yet.
+    expected_date: str | None = None
     state: Literal["received", "preparing", "partly_ready", "ready", "handed_over"]
     stage: Literal["received", "preparing", "ready", "handed_over"]
     lines: list[OrderTrackingLine]

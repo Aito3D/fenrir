@@ -219,6 +219,9 @@ async def compute(db: AsyncSession, token: str, now: datetime) -> tuple[str, dic
         **tracking,
         "reference": f"#{facts['shopify_order']}" if facts.get("shopify_order") else row["number"],
         "date": row.get("date") or None,
+        "expected_date": (str(detail.get("shipment_date") or "")[:10] or None)
+        if tracking["state"] in ("received", "preparing", "partly_ready")
+        else None,
         "pickup": (facts.get("delivery_method") or "").upper() in ("", "PICK UP"),
         "payment": {
             "currency": row.get("currency") or "XPF",

@@ -183,6 +183,7 @@ async def test_no_link_and_no_code_without_the_external_url(db_session):
 KEYS = {
     "reference",
     "date",
+    "expected_date",
     "state",
     "stage",
     "lines",
@@ -235,6 +236,22 @@ async def test_without_a_shopify_number_the_reference_is_the_order_number(async_
     await _synced(db_session, zoho, order(1))
     body = (await _open(async_client, await tracking.ensure_token(db_session, "so1"))).json()
     assert body["reference"] == "SO-00001" and body["state"] == "received"
+    assert body["expected_date"] is None  # no expected shipment day in Books
+
+
+@pytest.mark.asyncio
+async def test_the_expected_day_shows_until_the_order_is_ready(async_client, db_session, zoho):  # noqa: F811
+    await _synced(
+        db_session,
+        zoho,
+        {**order(1), "shipment_date": "2026-12-03"},
+        {**order(2, packed=1), "shipment_date": "2026-12-03"},
+    )
+    received, ready = [
+        (await _open(async_client, await tracking.ensure_token(db_session, f"so{n}"))).json() for n in (1, 2)
+    ]
+    assert (received["state"], received["expected_date"]) == ("received", "2026-12-03")
+    assert (ready["state"], ready["expected_date"]) == ("ready", None)
 
 
 @pytest.mark.asyncio

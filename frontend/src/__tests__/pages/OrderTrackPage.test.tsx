@@ -116,6 +116,18 @@ describe('OrderTrackPage', () => {
     expect(screen.queryByTestId('track-pickup') !== null).toBe(stage === 'ready');
   });
 
+  it('shows the expected day while the server sends one, and nothing without it', async () => {
+    mockTrack({ state: 'received', stage: 'received', expected_date: '2099-12-03' });
+    const { unmount } = renderPage();
+    const eta = await screen.findByTestId('track-eta');
+    expect(flat(eta)).toContain('3 décembre 2099');
+    unmount();
+    mockTrack({});
+    renderPage();
+    await screen.findByTestId('track-state');
+    expect(screen.queryByTestId('track-eta')).not.toBeInTheDocument();
+  });
+
   it('a delivery order shows no pickup address and says the shop will call', async () => {
     mockTrack({ state: 'ready', pickup: false });
     renderPage();

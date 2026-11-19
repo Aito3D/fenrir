@@ -5423,6 +5423,8 @@ export interface OrderTracking {
   /** Shopify « #1079 » when there is one, else the sales order number. */
   reference: string;
   date: string | null;
+  /** Expected shipment day (YYYY-MM-DD), only while nothing is ready yet. Optional only for older payloads. */
+  expected_date?: string | null;
   state: 'received' | 'preparing' | 'partly_ready' | 'ready' | 'handed_over';
   stage: 'received' | 'preparing' | 'ready' | 'handed_over';
   /** Goods only, already sorted: ready, in preparation, waiting for stock, handed over.
