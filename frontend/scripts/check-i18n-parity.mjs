@@ -202,6 +202,7 @@ const DE_COGNATES = [
 // French cognates — many UI labels overlap with English exactly.
 const FR_COGNATES = [
   'Services',  // revenue.filters.services — loki's French label, same word
+  'Projection ≈ {{amount}}', 'vs {{what}}',  // revenue.hero.projection / vs — same words in French
   'Contact',  // orders.contact.title — same word in French
   'Perspective', '{{count}} triangle', '{{count}} triangles', 'Photos',  // partViewer — same words in French
   'via {{name}}',  // projectsPdm.reslice.viaPipeline

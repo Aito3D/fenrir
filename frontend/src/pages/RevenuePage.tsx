@@ -3,9 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { bearerAuthHeaders } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { Empty } from '../components/aito/stats/primitives';
+import { Empty, Split } from '../components/aito/stats/primitives';
 import { RevenueSegmented } from '../components/revenue/RevenueSegmented';
 import { RevenueSyncBanner } from '../components/revenue/RevenueSyncBanner';
+import { RevenueFinding, RevenueHero } from '../components/revenue/RevenueHero';
+import { RevenuePace } from '../components/revenue/RevenuePace';
 import { RevenueControls as ControlsRow } from '../components/revenue/RevenueControls';
 import { RevenueChip, RevenueProductSearch } from '../components/revenue/RevenueProductSearch';
 import { useRevenueResource } from '../components/revenue/useRevenueResource';
@@ -20,6 +22,7 @@ import {
   createSeriesLoader,
   dashboardReady,
   failureMessage,
+  filterQuery,
   pollActive,
   readJsonBody,
   REVENUE_POLL,
@@ -271,6 +274,7 @@ export function RevenuePage() {
   };
 
   const { itemsPending, ready } = dashboardReady(data);
+  const lastBucket = data?.buckets[data.buckets.length - 1];
   const views = REVENUE_VIEWS.filter((v) => v.id !== 'clients' || can.customers).map((v) => ({ id: v.id, label: t(`revenue.views.${VIEW_KEYS[v.id]}`) }));
 
   return (
@@ -361,7 +365,19 @@ export function RevenuePage() {
           role="tabpanel"
           id={segmentPanelId('revenue-view', view)}
           aria-labelledby={segmentTabId('revenue-view', view)}
-          data-slot={`revenue-view-${view}`} className="grid gap-3" />
+          data-slot={`revenue-view-${view}`} className="grid gap-3">
+          {view === 'evolution' && data && (
+            <>
+              <RevenueFinding payload={data} taxMode={active.taxMode} />
+              <Split>
+                <RevenueHero payload={data} taxMode={active.taxMode} canMargin={can.margin} />
+                {lastBucket && (
+                  <RevenuePace monthKey={(lastBucket.end > today ? today : lastBucket.end).slice(0, 7)} filterParams={filterQuery(basketIds, active.brands, active.kind, active.segment)} taxMode={active.taxMode} version={data} />
+                )}
+              </Split>
+            </>
+          )}
+        </section>
       )}
     </div>
   );

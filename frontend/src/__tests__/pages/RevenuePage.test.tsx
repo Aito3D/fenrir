@@ -139,6 +139,23 @@ describe('RevenuePage — waiting states', () => {
     expect((init as RequestInit).headers).toMatchObject({ Authorization: 'Bearer tok' });
   });
 
+  it('opens Évolution with the finding, the hero and the pace of the last bucket, filters included', async () => {
+    window.history.replaceState(null, '', '/revenue?kind=goods');
+    const nov = {
+      key: '2026-11', label: 'nov. 2026', start: '2026-11-01', end: '2026-11-30', ht: 620_000, ttc: 700_600, goods: 620_000, services: 0,
+      byNature: {}, byBrand: {}, goodsTtc: 700_600, servicesTtc: 0, byNatureTtc: {}, byBrandTtc: {}, projection: null, projectionMethod: null,
+      target: 1_000_000, quantity: 3, evolution: { ht: 0.08, ttc: 0.08 }, yearAgo: null, elapsedDays: 19, cumulative: { ht: 620_000, ttc: 700_600 },
+      partial: true, missingDays: 0, ttcApprox: false,
+    };
+    stubFetch(payload({ buckets: [nov] }));
+    renderPage();
+    await flush();
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByTestId('revenue-finding')).toHaveTextContent('Nov. 2026 is at 62 % of the target, 8 % ahead of 1–19 oct. (to date).');
+    expect(within(panel).getByRole('img', { name: '62 % of the target reached' })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/daily?from=2026-11-01&to=2026-11-30&kind=goods');
+  });
+
   it('shows the error with a retry that reloads', async () => {
     fetchMock = vi.fn(async () => json({ detail: 'Zoho is down' }, 502));
     vi.stubGlobal('fetch', fetchMock);
