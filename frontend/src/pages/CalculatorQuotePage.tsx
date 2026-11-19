@@ -183,11 +183,20 @@ export function CalculatorQuotePage() {
                   </tr>
                   {surchargeHt > 0 && (
                     <>
+                      {/* Task-level lines, all TTC like the row above: the task
+                          subtotal + the surcharge (incl. tax) = the total. */}
+                      {result.quantity > 1 && (
+                        <tr className="border-t border-gray-100" data-testid="quote-task-subtotal">
+                          <td className="py-1.5 text-gray-500">{t('calculator.forQuantity', { count: result.quantity })}</td>
+                          <td className="py-1.5 text-right tabular-nums">{formatMoney(taskTtcRounded, currency)}</td>
+                        </tr>
+                      )}
                       <tr className="border-t border-gray-100" data-testid="quote-priority-line">
                         <td className="py-1.5 text-gray-500">
                           {t(`calculator.priority.quoteLine.${state.priority === 'urgent' ? 'urgent' : 'priority'}`)}
+                          {` · ${t('calculator.totalTTC')}`}
                         </td>
-                        <td className="py-1.5 text-right tabular-nums">+{formatMoney(surchargeHt, currency)}</td>
+                        <td className="py-1.5 text-right tabular-nums">+{formatMoney(surchargeTtc, currency)}</td>
                       </tr>
                       <tr>
                         <td className="py-2 font-semibold">

@@ -219,14 +219,39 @@ describe('CalculatorQuotePage', () => {
     );
     const surcharge = Math.round(urgent.margin_priority * 100) / 100;
     expect(surcharge).toBeGreaterThan(0);
-    expect(within(line).getByText('Urgent surcharge')).toBeInTheDocument();
-    expect(line.textContent).toContain(formatMoney(surcharge, 'USD'));
+    expect(within(line).getByText(/^Urgent surcharge/)).toBeInTheDocument();
+    expect(line.textContent).toContain(formatMoney(Math.round(urgent.margin_priority * 1.13 * 100) / 100, 'USD'));
     // Unit price is the normal-level one; the task total carries the surcharge with tax.
     expect(screen.getByTestId('quote-unit-ttc').textContent).toBe(formatMoney(Math.round(base.total_ttc * 100) / 100, 'USD'));
     const surchargeTtc = Math.round(urgent.margin_priority * 1.13 * 100) / 100;
     expect(screen.getByTestId('quote-task-ttc').textContent).toBe(
       formatMoney(Math.round(base.total_ttc_qty * 100) / 100 + surchargeTtc, 'USD'),
     );
+  });
+
+  it('reconciles the printed task subtotal, surcharge and total at quantity 3', async () => {
+    server.use(http.get('/api/v1/settings/', () => HttpResponse.json({ currency: 'USD' })));
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state'
+        ? JSON.stringify({ weight: '15.5', timeH: '1', timeM: '15', quantity: '3', priority: 'priority' })
+        : null,
+    );
+    render(<CalculatorQuotePage />);
+    const money = (s: string) => Number(s.slice(s.lastIndexOf('$') + 1).replace(/[^\d.]/g, ''));
+    const sub = money((await screen.findByTestId('quote-task-subtotal')).textContent!);
+    const sur = money(screen.getByTestId('quote-priority-line').textContent!);
+    expect(sur).toBeGreaterThan(0);
+    expect(Math.round((sub + sur) * 100) / 100).toBe(money(screen.getByTestId('quote-task-ttc').textContent!));
+  });
+
+  it('treats an unknown stored priority as normal', async () => {
+    server.use(http.get('/api/v1/settings/', () => HttpResponse.json({ currency: 'USD' })));
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '15.5', timeH: '1', priority: 'bogus' }) : null,
+    );
+    render(<CalculatorQuotePage />);
+    await screen.findByTestId('quote-unit-ttc');
+    expect(screen.queryByTestId('quote-priority-line')).not.toBeInTheDocument();
   });
 
   it('derives the unit price from the rounded task total, not the raw per-unit total', async () => {

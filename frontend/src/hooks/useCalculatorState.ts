@@ -6,8 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import type { PriorityLevel } from '../utils/pricing';
-import type { PricingInputs } from '../utils/pricing';
+import type { PricingInputs, PriorityLevel } from '../utils/pricing';
 import { correctedTimeH } from '../utils/calculatorInsights';
 
 export const PAGE_TABS = ['calculator', 'filaments', 'printers', 'settings'] as const;
@@ -126,6 +125,7 @@ function loadState(): CalcState {
         Object.assign(state, splitDecimalHours(t));
       }
     }
+    if (!['normal', 'priority', 'urgent'].includes(state.priority)) state.priority = 'normal';
     delete (state as unknown as Record<string, unknown>).time;
     return state;
   } catch {
