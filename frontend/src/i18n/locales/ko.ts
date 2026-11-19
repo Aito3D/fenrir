@@ -11947,6 +11947,8 @@ export default {
       hintDrill: '열 클릭: 연 → 월 → 일 확대',
       back: '← 뒤로',
       backLevels: '← 뒤로 (단계: {{n}})',
+      roleDescription: '차트',
+      values: '기간별 값',
     },
     notes: {
       button: '◆ 메모',

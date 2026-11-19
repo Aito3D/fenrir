@@ -11973,6 +11973,8 @@ export default {
       hintDrill: 'Натисніть на стовпець: масштаб рік → місяці → дні',
       back: '← Назад',
       backLevels: '← Назад (рівнів: {{n}})',
+      roleDescription: 'діаграма',
+      values: 'Значення за періодами',
     },
     notes: {
       button: '◆ Нотатки',

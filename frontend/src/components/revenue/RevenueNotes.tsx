@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { bearerAuthHeaders } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
@@ -18,14 +18,19 @@ export function RevenueNotes({ annotations, onChanged, today, canManage }: { ann
   const [day, setDay] = useState(today);
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
+  // State lags a render behind: two Enters in one tick would both see busy=false.
+  const inFlight = useRef(false);
   const trimmed = label.trim();
   const valid = trimmed.length >= 1 && trimmed.length <= MAX_LABEL && isValidDay(day) && day >= REVENUE_HISTORY_START && day <= today;
 
   const call = async (url: string, method: 'POST' | 'DELETE', body?: unknown) => {
+    inFlight.current = true;
     setBusy(true);
     try {
       const headers = body === undefined ? bearerAuthHeaders() : { ...bearerAuthHeaders(), 'Content-Type': 'application/json' };
-      const res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+      const res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }).catch(() => null);
+      // No response at all (network down): the browser's own message is not for the user.
+      if (!res) throw new Error(t('revenue.notes.failed'));
       if (!res.ok) throw new Error(failureMessage(res.status, await readJsonBody(res)));
       onChanged();
       return true;
@@ -33,12 +38,13 @@ export function RevenueNotes({ annotations, onChanged, today, canManage }: { ann
       showToast(e instanceof Error && e.message ? e.message : t('revenue.notes.failed'), 'error');
       return false;
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
 
   const add = async () => {
-    if (!valid) return;
+    if (!valid || inFlight.current) return;
     const ok = await call('/api/v1/revenue/annotations', 'POST', { day, label: trimmed });
     if (ok) setLabel('');
   };

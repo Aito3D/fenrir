@@ -12326,6 +12326,8 @@ export default {
       hintDrill: 'Klick auf eine Spalte: Zoom Jahr → Monate → Tage',
       back: '← Zurück',
       backLevels: '← Zurück (Ebenen: {{n}})',
+      roleDescription: 'Diagramm',
+      values: 'Werte pro Zeitraum',
     },
     notes: {
       button: '◆ Notizen',

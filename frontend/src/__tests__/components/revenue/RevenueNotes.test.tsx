@@ -11,8 +11,8 @@ const notes: RevenueAnnotation[] = [
   { id: 5, day: '2026-03-02', label: 'Salon' },
 ];
 
-function setup(o: { canManage?: boolean; response?: Response } = {}) {
-  const fetchMock = vi.fn(async () => o.response ?? json({ ok: true }));
+function setup(o: { canManage?: boolean; response?: Response; fetchImpl?: () => Promise<Response> } = {}) {
+  const fetchMock = vi.fn(o.fetchImpl ?? (async () => o.response ?? json({ ok: true })));
   vi.stubGlobal('fetch', fetchMock);
   const onChanged = vi.fn();
   render(
@@ -87,6 +87,35 @@ describe('RevenueNotes', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/v1/revenue/annotations/5');
     expect(init.method).toBe('DELETE');
+  });
+
+  it('posts once on a fast double submit', async () => {
+    let resolve: (r: Response) => void = () => {};
+    const { fetchMock, onChanged } = setup({ fetchImpl: () => new Promise<Response>((r) => { resolve = r; }) });
+    const label = screen.getByRole('textbox', { name: 'Note' });
+    fireEvent.change(label, { target: { value: 'Salon' } });
+    fireEvent.submit(label.closest('form')!);
+    fireEvent.submit(label.closest('form')!);
+    resolve(json({ ok: true }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the server detail when an add fails and leaves the list as it was', async () => {
+    const { onChanged } = setup({ response: json({ detail: 'day must be within the history' }, 422) });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Note' }), { target: { value: 'Salon' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    expect(await screen.findByText('day must be within the history')).toBeInTheDocument();
+    expect(onChanged).not.toHaveBeenCalled();
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.getByRole('textbox', { name: 'Note' })).toHaveValue('Salon');
+  });
+
+  it('shows the translated failure when the request never reaches the server', async () => {
+    setup({ fetchImpl: () => Promise.reject(new TypeError('Failed to fetch')) });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete the note Salon' }));
+    expect(await screen.findByText('Note not saved')).toBeInTheDocument();
+    expect(screen.queryByText('Failed to fetch')).toBeNull();
   });
 
   it('shows the server detail when a change fails', async () => {

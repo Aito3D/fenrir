@@ -12350,6 +12350,8 @@ export default {
       hintDrill: 'Klik op een kolom: zoom jaar → maanden → dagen',
       back: '← Terug',
       backLevels: '← Terug (niveaus: {{n}})',
+      roleDescription: 'grafiek',
+      values: 'Waarden per periode',
     },
     notes: {
       button: '◆ Notities',

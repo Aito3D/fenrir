@@ -12383,6 +12383,8 @@ errors: {
       hintDrill: 'Klicka på en kolumn: zooma år → månader → dagar',
       back: '← Tillbaka',
       backLevels: '← Tillbaka (nivåer: {{n}})',
+      roleDescription: 'diagram',
+      values: 'Värden per period',
     },
     notes: {
       button: '◆ Anteckningar',

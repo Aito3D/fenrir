@@ -11930,6 +11930,8 @@ export default {
       hintDrill: 'Нажмите на столбец: масштаб год → месяцы → дни',
       back: '← Назад',
       backLevels: '← Назад (уровней: {{n}})',
+      roleDescription: 'диаграмма',
+      values: 'Значения по периодам',
     },
     notes: {
       button: '◆ Заметки',

@@ -12531,6 +12531,8 @@ export default {
       hintDrill: 'Kliknij kolumnę: powiększ rok → miesiące → dni',
       back: '← Wstecz',
       backLevels: '← Wstecz (poziomy: {{n}})',
+      roleDescription: 'wykres',
+      values: 'Wartości według okresu',
     },
     notes: {
       button: '◆ Notatki',

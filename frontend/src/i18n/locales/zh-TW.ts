@@ -12309,6 +12309,8 @@ export default {
       hintDrill: '點擊柱子：年 → 月 → 日 逐級放大',
       back: '← 返回',
       backLevels: '← 返回（層級：{{n}}）',
+      roleDescription: '圖表',
+      values: '各期數值',
     },
     notes: {
       button: '◆ 備註',

@@ -12311,6 +12311,8 @@ export default {
       hintDrill: 'Clic su una colonna: zoom anno → mesi → giorni',
       back: '← Indietro',
       backLevels: '← Indietro (livelli: {{n}})',
+      roleDescription: 'grafico',
+      values: 'Valori per periodo',
     },
     notes: {
       button: '◆ Note',

@@ -12325,6 +12325,8 @@ export default {
       hintDrill: '列をクリック: 年 → 月 → 日にズーム',
       back: '← 戻る',
       backLevels: '← 戻る（階層: {{n}}）',
+      roleDescription: 'グラフ',
+      values: '期間別の値',
     },
     notes: {
       button: '◆ メモ',

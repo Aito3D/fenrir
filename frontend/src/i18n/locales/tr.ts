@@ -12253,6 +12253,8 @@ export default {
       hintDrill: 'Bir sütuna tıklayın: yıl → ay → gün yakınlaştırma',
       back: '← Geri',
       backLevels: '← Geri (seviye: {{n}})',
+      roleDescription: 'grafik',
+      values: 'Döneme göre değerler',
     },
     notes: {
       button: '◆ Notlar',

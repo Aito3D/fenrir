@@ -63,10 +63,14 @@ const legendColor = (name: string) => {
 };
 
 describe('RevenueChart', () => {
-  it('is an image with a label that says what it shows', () => {
+  it('is a labelled chart group whose columns stay reachable', () => {
     renderChart();
     expect(screen.getByText('Revenue by month')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Revenue per period (HT), stacked by Nature, with the running total' })).toBeInTheDocument();
+    // Not role="img": an image's children are presentational, the column buttons would go silent.
+    const chart = screen.getByRole('group', { name: 'Revenue per period (HT), stacked by Nature, with the running total' });
+    expect(chart).toHaveAttribute('aria-roledescription', 'chart');
+    expect(within(chart).getByRole('button', { name: 'janv. 2026 – 600 FCP' })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /Revenue per period/ })).toBeNull();
   });
 
   it('lists every series and the running total in the legend', () => {
@@ -104,6 +108,10 @@ describe('RevenueChart', () => {
     expect(props.onDrill).toHaveBeenCalledWith(1);
     fireEvent.click(screen.getByRole('button', { name: 'janv. 2026 – 600 FCP' }));
     expect(props.onDrill).toHaveBeenCalledWith(0);
+    const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+    screen.getByRole('button', { name: 'mars 2026 – 200 FCP' }).dispatchEvent(space);
+    expect(props.onDrill).toHaveBeenCalledWith(2);
+    expect(space.defaultPrevented).toBe(true);
   });
 
   it('has no operable column without a finer level', () => {
@@ -170,7 +178,7 @@ describe('RevenueChart', () => {
 
   it('gives the figures as text too', () => {
     renderChart();
-    const summary = screen.getByRole('list', { name: 'Revenue per period (HT), stacked by Nature, with the running total' });
+    const summary = screen.getByRole('list', { name: 'Values per period' });
     expect(within(summary).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
       'janv. 2026 – 600 FCP',
       'févr. 2026 – 900 FCP · missing days: 3',

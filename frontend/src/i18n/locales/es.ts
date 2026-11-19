@@ -12334,6 +12334,8 @@ export default {
       hintDrill: 'Clic en una columna: zoom año → meses → días',
       back: '← Volver',
       backLevels: '← Volver (niveles: {{n}})',
+      roleDescription: 'gráfico',
+      values: 'Valores por periodo',
     },
     notes: {
       button: '◆ Notas',

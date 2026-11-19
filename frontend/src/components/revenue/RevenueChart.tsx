@@ -86,7 +86,9 @@ function ColumnMarks(p: {
                   'aria-label': p.label(i),
                   onClick: () => drill(i),
                   onKeyDown: (e: React.KeyboardEvent) => {
-                    if (e.key === 'Enter') drill(i);
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    e.preventDefault();
+                    drill(i);
                   },
                   onFocus: () => setFocused(i),
                   onBlur: () => setFocused(null),
@@ -251,7 +253,8 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
         </div>
       }
     >
-      <div role="img" aria-label={chartLabel}>
+      {/* A group, not an img: an image's children are presentational and the column buttons would go silent. */}
+      <div role="group" aria-label={chartLabel} aria-roledescription={t('revenue.chart.roleDescription')}>
         <ResponsiveContainer width="100%" height={HEIGHT}>
           <ComposedChart data={rows} stackOffset="sign" accessibilityLayer={false} margin={{ top: 20, right: 0, left: -4, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke={GRID} />
@@ -276,7 +279,7 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      <ul className="sr-only" aria-label={chartLabel}>
+      <ul className="sr-only" aria-label={t('revenue.chart.values')}>
         {columns.map((c, i) => <li key={c.key}>{columnLabel(i)}</li>)}
       </ul>
       <p className="mt-1 text-[11px] text-bambu-gray">{onDrill ? `${t('revenue.chart.hintDrill')} · ${t('revenue.chart.hint')}` : t('revenue.chart.hint')}</p>
