@@ -165,6 +165,8 @@ describe('RevenuePage — waiting states', () => {
     expect(within(panel).getByTestId('revenue-finding')).toHaveTextContent('Nov. 2026 is at 62 % of the target, 8 % ahead of 1–19 oct. (to date).');
     expect(within(panel).getByRole('img', { name: '62 % of the target reached' })).toBeInTheDocument();
     expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/daily?from=2026-11-01&to=2026-11-30&kind=goods');
+    expect(within(panel).getByRole('table', { name: 'Detail by period' })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/movers?granularity=month&key=2026-11&kind=goods');
   });
 
   it('shows the error with a retry that reloads', async () => {

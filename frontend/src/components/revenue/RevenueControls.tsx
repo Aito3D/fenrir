@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { focusRingCls } from '../formStyles';
 import { RevenueSegmented } from './RevenueSegmented';
+import { dateInputCls } from './styles';
 import { RANGE_PRESETS } from './lib/buckets';
 import { REVENUE_HISTORY_START } from './lib/dates';
 import type { RangeChoice } from './lib/dashboard';
@@ -11,9 +12,6 @@ import type { CustomerSegment, RangePresetId, RevenueGranularity, RevenueKind } 
 export const PICK_CLS = `inline-flex items-center gap-1.5 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-3 py-1.5 text-[13px] text-bambu-gray-light hover:text-white disabled:opacity-40 disabled:hover:text-bambu-gray-light ${focusRingCls}`;
 const MENU_ITEM = `w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors ${focusRingCls}`;
 const menuItemCls = (on: boolean) => `${MENU_ITEM} ${on ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white'}`;
-const DATE_INPUT = `rounded-md border bg-bambu-dark px-2 py-1 text-sm text-white ${focusRingCls}`;
-// The error border of `inputErrorCls`, without its full-width form sizing.
-const dateInputCls = (bad: boolean) => `${DATE_INPUT} ${bad ? 'border-status-error/70' : 'border-bambu-dark-tertiary'}`;
 
 /** A trigger and the menu hanging under it, the `TimeframeSelector` way (backdrop click and Escape close it). */
 export function RevenuePopover(p: {

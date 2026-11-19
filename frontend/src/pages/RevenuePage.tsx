@@ -9,6 +9,8 @@ import { RevenueSyncBanner } from '../components/revenue/RevenueSyncBanner';
 import { RevenueFinding, RevenueHero } from '../components/revenue/RevenueHero';
 import { RevenuePace } from '../components/revenue/RevenuePace';
 import { RevenueChart } from '../components/revenue/RevenueChart';
+import { RevenueTable } from '../components/revenue/RevenueTable';
+import { RevenueMovers } from '../components/revenue/RevenueMovers';
 import { RevenueControls as ControlsRow } from '../components/revenue/RevenueControls';
 import { RevenueChip, RevenueProductSearch } from '../components/revenue/RevenueProductSearch';
 import { useRevenueResource } from '../components/revenue/useRevenueResource';
@@ -300,6 +302,7 @@ export function RevenuePage() {
 
   const { itemsPending, ready } = dashboardReady(data);
   const lastBucket = data?.buckets[data.buckets.length - 1];
+  const filterParams = filterQuery(basketIds, active.brands, active.kind, active.segment);
   const views = REVENUE_VIEWS.filter((v) => v.id !== 'clients' || can.customers).map((v) => ({ id: v.id, label: t(`revenue.views.${VIEW_KEYS[v.id]}`) }));
 
   return (
@@ -397,11 +400,15 @@ export function RevenuePage() {
               <Split>
                 <RevenueHero payload={data} taxMode={active.taxMode} canMargin={can.margin} />
                 {lastBucket && (
-                  <RevenuePace monthKey={(lastBucket.end > today ? today : lastBucket.end).slice(0, 7)} filterParams={filterQuery(basketIds, active.brands, active.kind, active.segment)} taxMode={active.taxMode} version={data} />
+                  <RevenuePace monthKey={(lastBucket.end > today ? today : lastBucket.end).slice(0, 7)} filterParams={filterParams} taxMode={active.taxMode} version={data} />
                 )}
               </Split>
               <RevenueChart payload={data} controls={active} can={can} onStack={(stack) => setControls({ stack })}
                 onDrill={data.granularity !== 'day' ? drill : undefined} drillDepth={drillStack.length} onBack={drillBack} today={today} />
+              <Split>
+                <RevenueTable buckets={data.buckets} granularity={data.granularity} taxMode={active.taxMode} canMargin={can.margin} filterParams={filterParams} version={data} />
+                <RevenueMovers granularity={data.granularity} bucketKey={lastBucket?.key ?? null} bucketLabel={lastBucket?.label ?? ''} filterParams={filterParams} version={data} today={today} />
+              </Split>
             </>
           )}
         </section>

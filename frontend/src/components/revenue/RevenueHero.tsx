@@ -2,10 +2,9 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Finding, Panel, Tile } from '../aito/stats/primitives';
 import { DeltaBadge } from '../stats/DeltaBadge';
-import type { StatDelta } from '../stats/deltas';
 import { bucketKeyFor, bucketLabel, isBucketKey, shiftBucketYear, toDateRangeLabel } from './lib/buckets';
 import { addDays, daysBetween } from './lib/dates';
-import { findingCase, isLevel } from './lib/finding';
+import { asDelta, findingCase } from './lib/finding';
 import { formatFcp } from './lib/format';
 import { evolutionFor, insightTiles, kpiTiles, yearOverYear, type KpiTile } from './lib/kpis';
 import type { RevenueBucket, RevenueGranularity, RevenueResponse, TaxMode } from './lib/types';
@@ -20,11 +19,6 @@ const MARGIN_LABEL = 'Marge brute HT';
 
 const pick = (m: { ht: number; ttc: number }, mode: TaxMode) => (mode === 'ttc' ? m.ttc : m.ht);
 const pctText = (v: number) => `${Math.round(v * 100)} %`;
-function asDelta(v: number | null): StatDelta | null {
-  if (v == null) return null;
-  if (isLevel(v)) return { pct: 0, direction: 'flat', tone: 'neutral' };
-  return { pct: v * 100, direction: v > 0 ? 'up' : 'down', tone: v > 0 ? 'good' : 'bad' };
-}
 const targetOf = (b: RevenueBucket) => (b.target != null && b.target > 0 ? b.target : null);
 
 /** What the last bucket is compared with: the clipped range of a partial bucket, else the whole previous or year-ago bucket. */
