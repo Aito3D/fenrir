@@ -2435,7 +2435,7 @@ export function PrintModal({
                 // every job ships without a mapping.
                 filamentReqs={isMultiPlateSelection || isSeparateJobs ? undefined : mappingFilamentReqs}
                 renderMapping={(printerId) =>
-                  renderFilamentMapping(printerId, 'border-t border-bambu-dark-tertiary px-3 py-2')
+                  renderFilamentMapping(printerId, '-mt-1 px-3 pb-2.5')
                 }
                 assignmentMode={assignmentMode}
                 onAssignmentModeChange={setAssignmentMode}

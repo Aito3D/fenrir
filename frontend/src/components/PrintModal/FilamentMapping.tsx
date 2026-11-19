@@ -358,11 +358,11 @@ export function FilamentMapping({
         <span className={plateLabel ? 'shrink-0 text-sm' : 'sr-only'}>
           {plateLabel ? `${t('printModal.filamentMapping')} — ${plateLabel}` : t('printModal.filamentMapping')}
         </span>
-        <span className="flex flex-wrap items-center gap-1 min-w-0">
+        <span className="flex flex-wrap items-center gap-1.5 min-w-0">
           {filamentComparison.map((item, idx) => (
             <span
               key={idx}
-              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 bg-bambu-dark-secondary transition-colors duration-200 ${
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-sm font-medium bg-bambu-dark-secondary transition-colors duration-200 ${
                 item.status === 'match'
                   ? 'border-bambu-dark-tertiary text-white'
                   : item.status === 'type_only'
@@ -371,11 +371,11 @@ export function FilamentMapping({
               } ${item.isManual ? 'ring-1 ring-blue-400/50' : ''}`}
             >
               {/* Ringed, so a black filament still reads on the dark card. */}
-              <span className="w-2.5 h-2.5 shrink-0 rounded-full ring-1 ring-white/30" style={{ backgroundColor: item.color }} />
+              <span className="w-5 h-5 shrink-0 rounded-full ring-1 ring-white/30" style={{ backgroundColor: item.color }} />
               <span className="text-bambu-gray">→</span>
               {item.loaded ? (
                 <>
-                  <span className="w-2.5 h-2.5 shrink-0 rounded-full ring-1 ring-white/30" style={{ backgroundColor: item.loaded.color }} />
+                  <span className="w-5 h-5 shrink-0 rounded-full ring-1 ring-white/30" style={{ backgroundColor: item.loaded.color }} />
                   {item.loaded.label}
                 </>
               ) : (
@@ -499,7 +499,7 @@ export function FilamentMapping({
               >
                 {/* Required color */}
                 <span title={t('printModal.requiredTooltip', { name: resolvedName, color: requiredColorLabel })}>
-                  <Circle className="w-3 h-3" fill={item.color} stroke={item.color} />
+                  <Circle className="w-4 h-4" fill={item.color} stroke={item.color} />
                 </span>
                 {/* Required type + grams + nozzle badge. Only the name
                     truncates; the gram usage is pinned (shrink-0) so it never
