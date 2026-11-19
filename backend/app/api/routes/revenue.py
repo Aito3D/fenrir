@@ -1,10 +1,17 @@
 """Revenue dashboard read endpoints. Camel-case plain dicts (loki's shapes); zero Zoho calls."""
 
+import asyncio
+import logging
+import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from typing import Any, TypeVar
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from backend.app.core import database
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
@@ -12,13 +19,18 @@ from backend.app.services.revenue import analysis, insights, memo, products, ser
 from backend.app.services.revenue.config import REVENUE_GRANULARITIES, REVENUE_HISTORY_START
 from backend.app.services.revenue.dates import add_days, is_valid_day, org_today
 from backend.app.services.revenue.insights import attach_targets, calendar_days, yoy_pivot
-from backend.app.services.revenue.scope import build_review_list
+from backend.app.services.revenue.scope import ITEM_ID_RE, build_review_list
 from backend.app.services.revenue.series import LineFilters
 
 router = APIRouter(prefix="/revenue", tags=["revenue"])
 
 _FROM_TO_ERROR = "from/to must be yyyy-MM-dd"
 COMPARE_SHOWN = 10
+SYNC_TIMEOUT_S = 60
+_ANNOTATION_ID_RE = re.compile(r"[0-9]{1,12}")
+_AMOUNT_ERROR = "amountHt must be a number between 0 and 10^12"
+
+logger = logging.getLogger(__name__)
 
 
 def _unprocessable(message: str) -> HTTPException:
@@ -413,3 +425,125 @@ async def get_analysis(
         }
 
     return await _respond(request, user, build, flags=flags, now=now)
+
+
+_M = TypeVar("_M", bound=BaseModel)
+
+
+class ScopeBody(BaseModel):
+    included: Any = None
+
+
+class TargetBody(BaseModel):
+    amountHt: Any = None  # noqa: N815 - loki's field name
+
+
+class AnnotationBody(BaseModel):
+    day: Any = None
+    label: Any = None
+
+
+async def _body(request: Request, model: type[_M]) -> _M:
+    """Lenient parse: a malformed or non-object body becomes an empty model, so the handler's own message applies."""
+    try:
+        raw = await request.json()
+    except ValueError:
+        raw = None
+    return model.model_validate(raw if isinstance(raw, dict) else {})
+
+
+def _writer() -> async_sessionmaker:
+    return async_sessionmaker(database.engine, expire_on_commit=False)
+
+
+def _check_item_id(item_id: str) -> None:
+    if not ITEM_ID_RE.fullmatch(item_id):
+        raise _unprocessable("malformed itemId")
+
+
+def _check_month(month: str) -> None:
+    if not insights.is_target_month(month):
+        raise _unprocessable("month must be yyyy-MM")
+
+
+@router.put("/scope/{item_id}")
+async def put_scope(
+    item_id: str, request: Request, user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_MANAGE_SCOPE)
+):
+    _check_item_id(item_id)
+    included = (await _body(request, ScopeBody)).included
+    if not isinstance(included, bool):
+        raise _unprocessable("body must be { included: boolean }")
+    async with _writer()() as db:
+        return {"decision": await store.set_decision(db, item_id, included, datetime.now(timezone.utc))}
+
+
+@router.delete("/scope/{item_id}")
+async def delete_scope(
+    item_id: str, user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_MANAGE_SCOPE)
+):
+    _check_item_id(item_id)
+    async with _writer()() as db:
+        return {"cleared": await store.clear_decision(db, item_id)}
+
+
+@router.put("/targets/{month}")
+async def put_target(
+    month: str, request: Request, user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_MANAGE_TARGETS)
+):
+    _check_month(month)
+    amount = insights.parse_target_amount((await _body(request, TargetBody)).amountHt)
+    if amount is None:
+        raise _unprocessable(_AMOUNT_ERROR)
+    async with _writer()() as db:
+        return {"target": await store.set_target(db, month, amount, datetime.now(timezone.utc))}
+
+
+@router.delete("/targets/{month}")
+async def delete_target(
+    month: str, user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_MANAGE_TARGETS)
+):
+    _check_month(month)
+    async with _writer()() as db:
+        return {"cleared": await store.clear_target(db, month)}
+
+
+@router.post("/annotations", status_code=201)
+async def post_annotation(
+    request: Request, user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_MANAGE_NOTES)
+):
+    body = await _body(request, AnnotationBody)
+    day = body.day if isinstance(body.day, str) else ""
+    label = body.label.strip() if isinstance(body.label, str) else ""
+    if not is_valid_day(day) or day < REVENUE_HISTORY_START:
+        raise _unprocessable(f"day must be yyyy-MM-dd from {REVENUE_HISTORY_START}")
+    if not label or len(label) > store.MAX_ANNOTATION_LABEL:
+        raise _unprocessable(f"label must be 1 to {store.MAX_ANNOTATION_LABEL} characters")
+    async with _writer()() as db:
+        return {"annotation": await store.add_annotation(db, day, label, datetime.now(timezone.utc))}
+
+
+@router.delete("/annotations/{annotation_id}")
+async def delete_annotation(
+    annotation_id: str, user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_MANAGE_NOTES)
+):
+    if not _ANNOTATION_ID_RE.fullmatch(annotation_id):
+        raise _unprocessable("id must be a positive integer")
+    async with _writer()() as db:
+        return {"deleted": await store.delete_annotation(db, int(annotation_id))}
+
+
+@router.post("/sync")
+async def post_sync(
+    full: str | None = None, user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_SYNC)
+):
+    sync.ensure_revenue_sync_loop()
+    try:
+        result = await asyncio.wait_for(sync.run_revenue_sync_batch(full=full == "1"), SYNC_TIMEOUT_S)
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Upstream request timed out") from None
+    except Exception as e:
+        logger.error("revenue sync failed: %s", type(e).__name__)  # the message may carry a URL or token
+        raise HTTPException(status_code=500, detail="Internal server error") from None
+    async with store.snapshot() as conn:
+        return {**result, "sync": await sync.get_revenue_sync_status(conn, datetime.now(timezone.utc))}

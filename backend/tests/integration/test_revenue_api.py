@@ -4,12 +4,14 @@ Revenue rows live in a file database that `store.snapshot()` reads (it opens its
 connection); users and permissions live in the shared test database.
 """
 
+import asyncio
 from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from backend.app.api.routes import revenue as revenue_routes
 from backend.app.core import database
 from backend.app.core.database import Base, _set_sqlite_pragmas, load_all_models
 from backend.app.core.permissions import Permission
@@ -65,6 +67,10 @@ async def tokens(db_session):
         "read_customers": [read, customers],
         "read_margin": [read, margin],
         "all": [read, customers, margin],
+        "scope": [Permission.REVENUE_MANAGE_SCOPE.value],
+        "targets": [Permission.REVENUE_MANAGE_TARGETS.value],
+        "notes": [Permission.REVENUE_MANAGE_NOTES.value],
+        "sync": [Permission.REVENUE_SYNC.value],
     }
     for name, perms in principals.items():
         group = Group(name=f"revenue-{name}", permissions=perms, is_system=False)
@@ -133,6 +139,12 @@ async def test_auth_disabled_gives_every_flag_and_unstripped_payloads(async_clie
     r = await async_client.get(URL, params={**MONTH, "segment": "pro"})
     assert r.status_code == 200
     assert {"cost", "bySegment"} <= set(r.json()["buckets"][0])
+
+
+@pytest.mark.asyncio
+async def test_customers_with_auth_disabled_is_allowed(async_client, revenue_db):
+    r = await async_client.get(f"{URL}/customers", params={"from": "2025-03-01", "to": "2025-03-31"})
+    assert r.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -259,7 +271,13 @@ async def test_customers_and_analysis_validate_the_range(async_client, revenue_d
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "params",
-    [{"key": "2023-12"}, {"granularity": "month", "key": "2026-W42"}, {"key": "2999-01"}],
+    [
+        {"key": "2023-12"},
+        {"granularity": "month", "key": "2026-W42"},
+        {"key": "2999-01"},
+        {"granularity": "week", "key": "9999-W53"},
+        {"granularity": "month", "key": "0000-01"},
+    ],
 )
 async def test_movers_refuses_a_key_outside_the_history(async_client, revenue_db, tokens, params):
     r = await async_client.get(f"{URL}/movers", params=params, headers=tokens["read"])
@@ -315,3 +333,144 @@ async def test_analysis_payload_and_margin_stripping(async_client, revenue_db, t
     full = (await async_client.get(f"{URL}/analysis", params=RANGE, headers=tokens["read_margin"])).json()
     assert set(full) == {"from", "to", "abc", "marginByBrand", "marginByNature", "dormant"}
     assert full["marginByBrand"][0]["key"] == "eSUN"
+
+
+WRITES = [
+    ("put", "/scope/i1", {"included": True}, "scope"),
+    ("delete", "/scope/i1", None, "scope"),
+    ("put", "/targets/2025-03", {"amountHt": 5000}, "targets"),
+    ("delete", "/targets/2025-03", None, "targets"),
+    ("post", "/annotations", {"day": DAY, "label": "Promo"}, "notes"),
+    ("delete", "/annotations/1", None, "notes"),
+    ("post", "/sync", None, "sync"),
+]
+
+
+@pytest.fixture
+def stub_sync(monkeypatch):
+    calls = []
+
+    async def fake(*, full=False):
+        calls.append(full)
+        return {"fetched": 3, "pending": 2, "days": 10, "customers": 1}
+
+    monkeypatch.setattr(sync, "run_revenue_sync_batch", fake)
+    return calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("method", "path", "body", "perm"), WRITES)
+async def test_every_write_route_has_its_own_permission(
+    async_client, revenue_db, tokens, stub_sync, method, path, body, perm
+):
+    def send(url, **kw):
+        return async_client.request(method.upper(), url, **kw)
+
+    assert (await send(URL + path, json=body, headers=tokens["read"])).status_code == 403
+    for other in {"scope", "targets", "notes", "sync"} - {perm}:
+        assert (await send(URL + path, json=body, headers=tokens[other])).status_code == 403
+    assert (await send(URL + path, json=body, headers=tokens[perm])).status_code in (200, 201)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("put", "/scope/a b", {"included": True}),
+        ("delete", "/scope/a b", None),
+        ("put", "/targets/2026-13", {"amountHt": 1}),
+        ("delete", "/targets/2026-13", None),
+        ("delete", "/annotations/abc", None),
+        ("post", "/annotations", {"day": DAY, "label": "x"}),
+    ],
+)
+async def test_write_validation_never_precedes_the_permission(async_client, revenue_db, tokens, method, path, body):
+    r = await async_client.request(method.upper(), URL + path, json=body, headers=tokens["read"])
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path", "body", "who", "message"),
+    [
+        ("put", "/scope/a b", {"included": True}, "scope", "malformed itemId"),
+        ("delete", "/scope/a b", None, "scope", "malformed itemId"),
+        ("put", "/scope/i1", {"included": "yes"}, "scope", "body must be { included: boolean }"),
+        ("put", "/scope/i1", [1], "scope", "body must be { included: boolean }"),
+        ("put", "/targets/2026-13", {"amountHt": 1}, "targets", "month must be yyyy-MM"),
+        ("delete", "/targets/2026-13", None, "targets", "month must be yyyy-MM"),
+        ("put", "/targets/2025-03", {"amountHt": -1}, "targets", "amountHt must be a number between 0 and 10^12"),
+        ("put", "/targets/2025-03", {"amountHt": 1e13}, "targets", "amountHt must be a number between 0 and 10^12"),
+        ("put", "/targets/2025-03", {"amountHt": "x"}, "targets", "amountHt must be a number between 0 and 10^12"),
+        ("put", "/targets/2025-03", {}, "targets", "amountHt must be a number between 0 and 10^12"),
+        ("delete", "/annotations/abc", None, "notes", "id must be a positive integer"),
+        (
+            "post",
+            "/annotations",
+            {"day": "2023-12-31", "label": "x"},
+            "notes",
+            "day must be yyyy-MM-dd from 2024-01-01",
+        ),
+        ("post", "/annotations", {"day": 5, "label": "x"}, "notes", "day must be yyyy-MM-dd from 2024-01-01"),
+        ("post", "/annotations", {"day": DAY, "label": " "}, "notes", "label must be 1 to 80 characters"),
+        ("post", "/annotations", {"day": DAY, "label": "x" * 81}, "notes", "label must be 1 to 80 characters"),
+    ],
+)
+async def test_write_validation_messages(async_client, revenue_db, tokens, method, path, body, who, message):
+    r = await async_client.request(method.upper(), URL + path, json=body, headers=tokens[who])
+    assert r.status_code == 422
+    assert r.json()["detail"] == message
+
+
+@pytest.mark.asyncio
+async def test_scope_put_changes_the_next_etag_and_delete_clears(async_client, revenue_db, tokens):
+    etag = (await async_client.get(URL, params=MONTH, headers=tokens["read"])).headers["etag"]
+    r = await async_client.put(f"{URL}/scope/i1", json={"included": False}, headers=tokens["scope"])
+    assert r.json()["decision"]["included"] is False
+    assert (await async_client.get(URL, params=MONTH, headers=tokens["read"])).headers["etag"] != etag
+    assert (await async_client.delete(f"{URL}/scope/i1", headers=tokens["scope"])).json() == {"cleared": True}
+    assert (await async_client.delete(f"{URL}/scope/i1", headers=tokens["scope"])).json() == {"cleared": False}
+
+
+@pytest.mark.asyncio
+async def test_targets_and_annotations_round_trip(async_client, revenue_db, tokens):
+    r = await async_client.put(f"{URL}/targets/2025-03", json={"amountHt": 1234.6}, headers=tokens["targets"])
+    assert r.json()["target"]["amountHt"] == 1235
+    assert (await async_client.get(f"{URL}/targets", headers=tokens["read"])).json()["targets"][0]["month"] == "2025-03"
+    assert (await async_client.delete(f"{URL}/targets/2025-03", headers=tokens["targets"])).json() == {"cleared": True}
+    assert (await async_client.delete(f"{URL}/targets/2025-03", headers=tokens["targets"])).status_code == 200
+    r = await async_client.post(f"{URL}/annotations", json={"day": DAY, "label": "  Promo "}, headers=tokens["notes"])
+    assert r.status_code == 201
+    note = r.json()["annotation"]
+    assert note["label"] == "Promo"
+    assert (await async_client.get(f"{URL}/annotations", headers=tokens["read"])).json()["annotations"] == [note]
+    gone = await async_client.delete(f"{URL}/annotations/{note['id']}", headers=tokens["notes"])
+    assert gone.json() == {"deleted": True}
+
+
+@pytest.mark.asyncio
+async def test_sync_post_returns_the_batch_and_status_and_honours_full(async_client, revenue_db, tokens, stub_sync):
+    r = await async_client.post(f"{URL}/sync", headers=tokens["sync"])
+    assert {"fetched", "pending", "days", "customers", "sync"} == set(r.json())
+    await async_client.post(f"{URL}/sync", params={"full": "1"}, headers=tokens["sync"])
+    assert stub_sync == [False, True]
+
+
+@pytest.mark.asyncio
+async def test_sync_post_timeout_and_failure_are_clean_errors(async_client, revenue_db, tokens, monkeypatch):
+    async def boom(*, full=False):
+        raise RuntimeError("https://zoho.example/?token=SECRET")
+
+    monkeypatch.setattr(sync, "run_revenue_sync_batch", boom)
+    r = await async_client.post(f"{URL}/sync", headers=tokens["sync"])
+    assert r.status_code == 500
+    assert r.json()["detail"] == "Internal server error"
+
+    async def slow(*, full=False):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(sync, "run_revenue_sync_batch", slow)
+    monkeypatch.setattr(revenue_routes, "SYNC_TIMEOUT_S", 0.05)
+    r = await async_client.post(f"{URL}/sync", headers=tokens["sync"])
+    assert r.status_code == 504
+    assert r.json()["detail"] == "Upstream request timed out"
