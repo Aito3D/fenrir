@@ -1,0 +1,218 @@
+export type TaxMode = "ht" | "ttc";
+export type RevenueGranularity = "day" | "week" | "month" | "year";
+export type RangePresetId = "this-year" | "last-12-months" | "all";
+export type RevenueKind = "goods" | "services";
+export type CustomerSegment = "pro" | "particulier" | "passage" | "inconnu";
+export type ScopeReason = "decision-include" | "nature" | "brand" | "decision-exclude" | "unclassified" | "unknown-item";
+
+export interface Money {
+  ht: number;
+  ttc: number;
+}
+
+export interface RevenueBucket {
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+  ht: number;
+  ttc: number;
+  goods: number;
+  services: number;
+  byNature: Record<string, number>;
+  byBrand: Record<string, number>;
+  byItem?: Record<string, number>;
+  goodsTtc: number;
+  servicesTtc: number;
+  byNatureTtc: Record<string, number>;
+  byBrandTtc: Record<string, number>;
+  byItemTtc?: Record<string, number>;
+  /** Stripped by the server for users without the customers permission. */
+  bySegment?: Record<string, number>;
+  bySegmentTtc?: Record<string, number>;
+  /** Stripped by the server for users without the margin permission. */
+  cost?: number;
+  costedHt?: number;
+  projection: Money | null;
+  projectionMethod: "seasonal" | "linear" | null;
+  target?: number | null;
+  quantity: number;
+  evolution: { ht: number | null; ttc: number | null };
+  yearAgo: Money | null;
+  elapsedDays: number | null;
+  cumulative: Money;
+  partial: boolean;
+  missingDays: number;
+  ttcApprox: boolean;
+}
+
+export interface RevenueItemRow {
+  itemId: string;
+  name: string;
+  sku: string;
+  quantity: number;
+  ht: number;
+  ttc: number;
+  /** Absent without the margin permission; null when the item has no cost. */
+  cost?: number | null;
+  nature: string | null;
+  brand: string | null;
+  kind: "goods" | "service";
+  reason: ScopeReason;
+}
+
+export interface RevenueSyncStatus {
+  running: boolean;
+  fetchedDays: number;
+  totalDays: number;
+  missingDays: number;
+  backfilling: boolean;
+  legacyDays: number;
+  lastBatchAt: string | null;
+  lastError: string | null;
+}
+
+export interface RevenueItemSummary {
+  itemId: string;
+  name: string;
+  sku: string;
+  totalHt: number;
+  quantity: number;
+  lastDay: string;
+}
+
+export type RevenueProduct = RevenueItemSummary & {
+  brand: string | null;
+  kind?: "goods" | "service";
+};
+
+export type ReviewRow = RevenueItemSummary & { brand: string | null; nature: string | null };
+
+export interface DecidedRow extends ReviewRow {
+  included: boolean;
+  decidedAt: string;
+}
+
+export interface SegmentRow {
+  segment: CustomerSegment;
+  ht: number;
+  ttc: number;
+  goods: number;
+  services: number;
+  goodsTtc: number;
+  servicesTtc: number;
+  customers: number;
+}
+
+export interface CustomerRow {
+  customerId: string;
+  name: string;
+  segment: CustomerSegment;
+  ht: number;
+  ttc: number;
+  goods: number;
+  services: number;
+  quantity: number;
+  activeDays: number;
+  lastDay: string;
+}
+
+export interface Acquisition {
+  newCount: number;
+  newHt: number;
+  returningCount: number;
+  returningHt: number;
+  customerDays: number;
+  avgBasketHt: number | null;
+}
+
+export interface CustomerBreakdown {
+  segments: SegmentRow[];
+  customers: CustomerRow[];
+  customerCount: number;
+  unsplitHt: number;
+  acquisition: Acquisition | null;
+}
+
+export interface DayRange {
+  from: string;
+  to: string;
+}
+
+export interface Mover {
+  key: string;
+  label: string;
+  current: number;
+  previous: number;
+  delta: number;
+  change: number | null;
+}
+
+export interface MoversResult {
+  current: DayRange;
+  previous: DayRange;
+  items: { up: Mover[]; down: Mover[] };
+  brands: { up: Mover[]; down: Mover[] };
+  totals: { current: number; previous: number };
+}
+
+export interface YoyYear {
+  year: number;
+  ht: (number | null)[];
+  ttc: (number | null)[];
+  cumulativeHt: (number | null)[];
+  cumulativeTtc: (number | null)[];
+}
+
+export interface CalendarDay {
+  day: string;
+  ht: number;
+  ttc: number;
+  fetched: boolean;
+}
+
+export type AbcClass = "A" | "B" | "C";
+
+export interface AbcRow extends RevenueItemRow {
+  share: number;
+  cumShare: number;
+  cls: AbcClass;
+}
+
+export interface AbcResult {
+  rows: AbcRow[];
+  total: number;
+  classes: Record<AbcClass, { count: number; ht: number }>;
+}
+
+export interface MarginRow {
+  key: string;
+  ht: number;
+  costedHt: number;
+  cost: number;
+  margin: number;
+  rate: number | null;
+  coverage: number;
+}
+
+export interface DormantRow {
+  itemId: string;
+  name: string;
+  sku: string;
+  brand: string | null;
+  ht: number;
+  quantity: number;
+  lastDay: string;
+}
+
+export interface RevenueTarget {
+  month: string;
+  amountHt: number;
+  updatedAt: string;
+}
+
+export interface RevenueAnnotation {
+  id: number;
+  day: string;
+  label: string;
+}
