@@ -97,6 +97,14 @@ async def test_the_base_is_the_net_task_total_and_the_minimum_fee_applies(db_ses
     assert (await load_export_priority(db_session, AitoProject(priority="priority"), CAT, small)).amount == 500
 
 
+@pytest.mark.asyncio
+async def test_the_amount_rounds_half_up_like_the_drawer(db_session):
+    db_session.add(CalculatorDefaults(id=1, priority_min_fee=0))
+    await db_session.commit()
+    tasks = [task(title="A", scan_cost=3030)]  # 15% = 454.5; round() would give 454
+    assert (await load_export_priority(db_session, AitoProject(priority="priority"), CAT, tasks)).amount == 455
+
+
 def _estimate_with_urgent_line(**urgent_fields) -> dict:
     estimate = books(TASKS, catalogue=CAT)
     estimate["line_items"].append(
@@ -108,7 +116,7 @@ def _estimate_with_urgent_line(**urgent_fields) -> dict:
 
 def test_import_reads_the_level_and_does_not_list_the_line_as_skipped():
     preview = build_preview(_estimate_with_urgent_line(), None, "", priority_ids=PRIORITY_IDS)
-    assert preview["priority"] == "urgent"
+    assert (preview["priority"], preview["priority_amount"]) == ("urgent", 1500)
     assert all(row["sku"] != "SVC-URG" for row in preview["skipped_lines"])
     assert build_preview(books(TASKS, catalogue=CAT), None, "", priority_ids=PRIORITY_IDS)["priority"] == "normal"
 
@@ -236,5 +244,5 @@ async def test_the_preview_route_returns_the_quote_priority_level(async_client):
     finally:
         zoho_service.transport = None
         zoho_service.invalidate_token()
-    assert body["priority"] == "urgent"
+    assert (body["priority"], body["priority_amount"]) == ("urgent", 1500)
     assert body["skipped_lines"] == []

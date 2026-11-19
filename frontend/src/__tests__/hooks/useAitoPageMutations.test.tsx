@@ -74,6 +74,7 @@ describe('importMutation — importableShipping gate', () => {
       discount_issues: [],
       shipping,
       priority: 'urgent',
+      priority_amount: 0,
       existing_project_id: null,
     };
   }

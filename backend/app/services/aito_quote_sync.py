@@ -436,7 +436,8 @@ async def load_export_priority(
         # Seeded at startup (database.py), so only a wiped table lands here.
         raise PriorityCatalogueUnavailable("No calculator defaults row to price the priority surcharge")
     base = sum(cost for task in tasks for service in SERVICES if (cost := net_cost(task, service)) is not None)
-    return ExportPriority(level, round(priority_surcharge(level, base, defaults)))
+    # Half-up like the drawer's Math.round; round() is half-to-even (454.5 -> 454).
+    return ExportPriority(level, math.floor(priority_surcharge(level, base, defaults) + 0.5))
 
 
 async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTask]:
@@ -2289,7 +2290,7 @@ async def _sync_push(db: AsyncSession, project: AitoProject, project_id: int) ->
     else:
         await _update_quote(db, project)
     # Reached only when _create_quote/_update_quote returned WITHOUT
-    # raising ShippingCatalogueUnavailable — this tick's push (or one of
+    # raising Shipping/PriorityCatalogueUnavailable — this tick's push (or one of
     # their own terminal-error branches) completed normally. Drop any
     # stale deferral memory for this project so a later recurrence of the
     # same reason logs afresh rather than staying suppressed forever by a
@@ -2303,7 +2304,7 @@ async def _sync_push(db: AsyncSession, project: AitoProject, project_id: int) ->
 async def _defer_on_catalogue(
     db: AsyncSession, project_id: int, e: ShippingCatalogueUnavailable | PriorityCatalogueUnavailable
 ) -> None:
-    """``sync_project``'s ShippingCatalogueUnavailable handler body; never raises."""
+    """``sync_project``'s Shipping/PriorityCatalogueUnavailable handler body; never raises."""
     # Not an error state: nothing is wrong with the project, the catalogue
     # simply has not resolved yet. Stay `pending` and retry next tick
     # rather than burning a failure and eventually going to 'error' — see

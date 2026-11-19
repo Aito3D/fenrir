@@ -106,7 +106,9 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
   // agree with the quote on a shipped import — which made the mismatch
   // caption below fire on every one of them.
   const projectTotal =
-    (preview?.tasks ?? []).reduce((sum, task) => sum + taskTotal(task), 0) + (preview?.shipping?.price ?? 0);
+    (preview?.tasks ?? []).reduce((sum, task) => sum + taskTotal(task), 0) +
+    (preview?.shipping?.price ?? 0) +
+    (preview?.priority_amount ?? 0);
   const hasTasks = (preview?.tasks.length ?? 0) > 0;
   // A quote already backing an ACTIVE project is a hard block, not a warn:
   // the backend 409s the create anyway (_reject_duplicate_quote), so letting

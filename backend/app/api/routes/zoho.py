@@ -482,6 +482,7 @@ class ZohoQuotePreview(BaseModel):
     shipping: ZohoQuoteShipping | None
     # Read from the quote's priority surcharge line (aito_quote_import.build_preview).
     priority: AitoPriority = "normal"
+    priority_amount: float = 0.0
     existing_project_id: int | None
 
 

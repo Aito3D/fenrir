@@ -882,13 +882,8 @@ def build_preview(
     """Everything the import modal needs, in the shape POST /aito/ accepts."""
     lines, skipped, shipping = parse_lines(estimate, shipping_ids, priority_ids)
     level_by_item = {item_id: level for level, item_id in (priority_ids or {}).items()}
-    priority = next(
-        (
-            level_by_item[line["item_id"]]
-            for line in estimate.get("line_items") or []
-            if line.get("item_id") in level_by_item
-        ),
-        "normal",
+    priority_line = next(
+        (line for line in estimate.get("line_items") or [] if line.get("item_id") in level_by_item), None
     )
     tasks = [_build_task(group) for group in group_lines(lines)]
     titles = [task["title"] for task in tasks if task["title"]]
@@ -921,5 +916,16 @@ def build_preview(
             if shipping
             else None
         ),
-        "priority": priority,
+        "priority": level_by_item[priority_line["item_id"]] if priority_line else "normal",
+        # Only so the drawer's project total agrees with quote.total; the
+        # next push recomputes the line from the formula.
+        "priority_amount": (
+            _line_amount(
+                priority_line,
+                inclusive=bool(estimate.get("is_inclusive_tax")),
+                precision=int(estimate.get("price_precision") or 0),
+            )
+            if priority_line
+            else 0.0
+        ),
     }

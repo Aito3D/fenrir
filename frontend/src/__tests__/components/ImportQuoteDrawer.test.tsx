@@ -55,6 +55,7 @@ const preview: ZohoQuotePreview = {
   discount_issues: [],
   shipping: null,
   priority: 'normal',
+  priority_amount: 0,
   existing_project_id: null,
 };
 
@@ -281,6 +282,17 @@ describe('ImportQuoteDrawer', () => {
     await pickTheQuote(user);
 
     await screen.findByTestId('import-receipt-totals');
+    expect(screen.queryByTestId('import-total-mismatch')).not.toBeInTheDocument();
+  });
+
+  it('counts the priority surcharge line toward the project total', async () => {
+    respondWith({ ...preview, quote: { ...preview.quote, total: 7100 }, priority: 'urgent', priority_amount: 1500 });
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={vi.fn()} />);
+    await pickTheQuote(user);
+
+    const totals = await screen.findByTestId('import-receipt-totals');
+    await waitFor(() => expect(totals.textContent?.replace(/\s/g, ' ')).toContain('7 100'));
     expect(screen.queryByTestId('import-total-mismatch')).not.toBeInTheDocument();
   });
 
