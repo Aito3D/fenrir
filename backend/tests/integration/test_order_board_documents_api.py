@@ -337,3 +337,22 @@ async def test_quote_email_refuses_an_address_a_contact_edit_just_set(
     monkeypatch.setattr(_common, "utc_now_naive", lambda: later)  # the window has passed
     r = await async_client.post(url, headers=h, json={"to": "bob@example.com"})
     assert r.status_code == 200 and len(quote_mail["sent"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_quote_email_refuses_an_address_edited_from_another_order_of_the_client(
+    async_client, tokens, order, quote_mail, db_session, monkeypatch
+):  # noqa: F811
+    async def update(db, contact_id, **kw):
+        return None
+
+    monkeypatch.setattr(zoho_service, "update_contact_person", update)
+    db_session.add(OrderBoardDoc(kind="salesorder", zoho_id="so2", header={}, detail=dict(DETAIL, salesorder_id="so2")))
+    await db_session.commit()
+    h = tokens["both"]
+    await async_client.put(f"{BASE}/contact", json={"email": "Bob@Example.com"}, headers=h)  # edited on so1
+    r = await async_client.post(
+        "/api/v1/order-board/orders/so2/documents/quote/est-1/email", headers=h, json={"to": "bob@example.com"}
+    )
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "recipient_recently_edited"
+    assert quote_mail["sent"] == []

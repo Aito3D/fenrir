@@ -45,14 +45,27 @@ async def _guarded_email(
     """Send one document email: only to an address Books offered and not just edited, once a minute per document and address."""
     if to.lower() not in {r["email"].lower() for r in content["recipients"]}:
         raise HTTPException(status_code=422, detail=refused_detail)
+    doc = (
+        await db.execute(
+            select(OrderBoardDoc).where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id)
+        )
+    ).scalar_one_or_none()
+    customer_id = str(
+        ((doc.detail or {}).get("customer_id") or (doc.header or {}).get("customer_id") or "") if doc else ""
+    )
     edits = await db.execute(
-        select(OrderBoardEvent.detail).where(
-            OrderBoardEvent.salesorder_id == salesorder_id,
+        select(OrderBoardEvent.salesorder_id, OrderBoardEvent.detail).where(
             OrderBoardEvent.kind == "contact.edited",
             OrderBoardEvent.occurred_at >= utc_now_naive() - _RECIPIENT_EDIT_COOLDOWN,
         )
     )
-    if any((d or {}).get("email") == to.lower() for d in edits.scalars()):
+    # The address lives on the client in Books: an edit made from any order of this client counts. Events recorded
+    # before customer_id was stored match by order only.
+    if any(
+        (d or {}).get("email") == to.lower()
+        and (so == salesorder_id or (customer_id and (d or {}).get("customer_id") == customer_id))
+        for so, d in edits
+    ):
         raise _refuse(409, "recipient_recently_edited", "That address was just edited: check it with the client first")
     key = _email_guard_key_or_409(key_prefix, 0, doc_id, to)
     _EMAIL_GUARD.arm(key, time.monotonic())

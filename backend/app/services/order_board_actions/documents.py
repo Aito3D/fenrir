@@ -23,7 +23,7 @@ from backend.app.services.order_board_actions._common import (
     writing,
 )
 from backend.app.services.order_board_actions.invoice import _credit
-from backend.app.services.zoho import zoho_service
+from backend.app.services.zoho import ZohoAmbiguous, ZohoUnreachable, zoho_service
 
 logger = logging.getLogger(__name__)
 
@@ -125,22 +125,27 @@ async def edit_contact(
         person = (order.get("contact_person_details") or [{}])[0]
         if not customer_id:
             raise OrderActionRefused("no_contact")
-        await _write(
-            salesorder_id,
-            number,
-            "contact",
-            zoho_service.update_contact_person(
-                db,
-                customer_id,
-                email=email.strip(),
-                phone=phone.strip(),
-                phone_field=phone_field,
-                contact_person_id=str(person.get("contact_person_id") or "") or None,
-            ),
-        )
         new_email = email.strip().lower()
         # Recorded only for an address that changed: the email guard refuses to mail it for a few minutes.
         changed = new_email and new_email != str(person.get("email") or "").strip().lower()
-        detail: dict[str, Any] = {"email": new_email} if changed else {}
+        detail: dict[str, Any] = {"email": new_email, "customer_id": customer_id} if changed else {}
+        try:
+            await _write(
+                salesorder_id,
+                number,
+                "contact",
+                zoho_service.update_contact_person(
+                    db,
+                    customer_id,
+                    email=email.strip(),
+                    phone=phone.strip(),
+                    phone_field=phone_field,
+                    contact_person_id=str(person.get("contact_person_id") or "") or None,
+                ),
+            )
+        except (ZohoUnreachable, ZohoAmbiguous):
+            # Outcome unknown: Books may hold the new address, so the cooldown must cover it.
+            await _log(db, salesorder_id, "contact.edited", by, **detail)
+            raise
         await _log(db, salesorder_id, "contact.edited", by, **detail)
         await _best_effort_refresh(db, salesorder_id, number)

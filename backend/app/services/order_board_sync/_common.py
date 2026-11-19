@@ -39,6 +39,8 @@ _detail_locks: dict[str, asyncio.Lock] = {}
 _rate_limited_until = 0.0
 # shortcut: pending drafts live in memory and are lost on restart; persist if that matters
 _pending_voids: dict[str, str] = {}  # salesorder_id -> number of a half-made draft whose void waits out a 429 window
+_VOID_ATTEMPT_CAP = 5  # transient void failures a pending draft survives before it is given up
+_void_attempts: dict[str, int] = {}  # salesorder_id -> transient failures so far
 # Set to cut the loop's sleep short (settings saved). Created by the loop
 # itself, so it belongs to the loop's event loop.
 _wake: asyncio.Event | None = None

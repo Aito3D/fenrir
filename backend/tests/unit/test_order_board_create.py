@@ -11,7 +11,15 @@ from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_actions as actions, order_board_sync as sync
 from backend.app.services.order_board_actions import create as create_module
 from backend.app.services.order_board_sync import _common as sync_common
-from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import (
+    ZohoAmbiguous,
+    ZohoNotConfiguredError,
+    ZohoRateLimited,
+    ZohoRequestRejected,
+    ZohoUnreachable,
+    ZohoUpstreamError,
+    zoho_service,
+)
 from backend.tests.unit.test_order_board_actions import events_of
 from backend.tests.unit.test_order_board_sync import (  # noqa: F401
     no_back_off_left_over,
@@ -379,3 +387,91 @@ async def test_valid_discounts_are_sent_verbatim(db_session, books):
     await actions.create_counter_order(db_session, "c1", lines, "ref-1", by=None)
     sent = books.payloads[0]["line_items"]
     assert [line["discount"] for line in sent] == ["10%", "5"]
+
+
+@pytest.fixture
+def void_attempts_reset():
+    sync_common._void_attempts.clear()
+    yield
+    sync_common._void_attempts.clear()
+
+
+async def _void_failed_events(db_session):
+    result = await db_session.execute(select(OrderBoardEvent).where(OrderBoardEvent.kind == "order.void_failed"))
+    return result.scalars().all()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [ZohoUnreachable("down"), ZohoAmbiguous("502"), ZohoNotConfiguredError("no creds")])
+async def test_a_transient_void_failure_keeps_the_draft_and_a_later_pass_voids_it(
+    db_session, books, monkeypatch, void_attempts_reset, error
+):
+    sync_common._pending_voids["9"] = "SO-00009"
+    real_void = zoho_service.void_salesorder
+
+    async def void_down(db, salesorder_id):
+        raise error
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_down)
+    await sync.run_pass(db_session)
+    assert sync_common._pending_voids == {"9": "SO-00009"}
+    assert await _void_failed_events(db_session) == []
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", real_void)
+    await sync.run_pass(db_session)
+    assert books.voided == ["9"]
+    assert sync_common._pending_voids == {}
+    assert sync_common._void_attempts == {}
+    assert await _void_failed_events(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_a_draft_is_given_up_at_the_attempt_cap_with_a_void_failed_event(
+    db_session, books, monkeypatch, void_attempts_reset
+):
+    sync_common._pending_voids["9"] = "SO-00009"
+
+    async def void_down(db, salesorder_id):
+        raise ZohoUnreachable("down")
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_down)
+    for _ in range(sync_common._VOID_ATTEMPT_CAP - 1):
+        await sync.run_pass(db_session)
+        assert sync_common._pending_voids == {"9": "SO-00009"}
+        assert await _void_failed_events(db_session) == []
+    await sync.run_pass(db_session)
+    assert sync_common._pending_voids == {}
+    assert sync_common._void_attempts == {}
+    events = await _void_failed_events(db_session)
+    assert [(e.salesorder_id, e.detail) for e in events] == [("9", {"order": "SO-00009"})]
+
+
+@pytest.mark.asyncio
+async def test_a_definitive_refusal_after_transient_failures_records_and_drops_at_once(
+    db_session, books, monkeypatch, void_attempts_reset
+):
+    sync_common._pending_voids["9"] = "SO-00009"
+    sync_common._void_attempts["9"] = 2
+
+    async def void_refused(db, salesorder_id):
+        raise ZohoRequestRejected("no")
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_refused)
+    await sync.run_pass(db_session)
+    assert sync_common._pending_voids == {}
+    assert sync_common._void_attempts == {}
+    assert len(await _void_failed_events(db_session)) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_429_void_is_not_counted_as_an_attempt(db_session, books, monkeypatch, void_attempts_reset):
+    sync_common._pending_voids["9"] = "SO-00009"
+
+    async def void_429(db, salesorder_id):
+        raise ZohoRateLimited("429", retry_after=30)
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_429)
+    await sync.run_pass(db_session)
+    assert sync_common._pending_voids == {"9": "SO-00009"}
+    assert sync_common._void_attempts == {}
+    assert await _void_failed_events(db_session) == []
