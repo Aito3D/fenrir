@@ -11480,6 +11480,8 @@ export default {
       service: 'Услуга',
       packed: 'Упаковано',
       invoiced: 'выставлен счёт',
+      priceDiffers: "Здесь продано за {{order}}, но сейчас товар стоит в Zoho {{zoho}} ({{diff}} за штуку).",
+      priceDiffersLabel: "Цена отличается от Zoho",
     },
     pkg: {
       packed: '{{number}} · упаковано {{date}}',

@@ -11803,6 +11803,8 @@ export default {
       service: 'Hizmet',
       packed: 'Paketlendi',
       invoiced: 'faturalandı',
+      priceDiffers: "Burada {{order}} fiyatla satıldı, ancak ürün bugün Zoho'da {{zoho}} ({{diff}} / adet).",
+      priceDiffersLabel: "Fiyat Zoho'dan farklı",
     },
     pkg: {
       packed: '{{number}} · {{date}} paketlendi',

@@ -11875,6 +11875,8 @@ export default {
       service: 'サービス',
       packed: '梱包済み',
       invoiced: '請求済み',
+      priceDiffers: "この注文では {{order}} ですが、Zoho の現在の商品価格は {{zoho}} です(1 個あたり {{diff}})。",
+      priceDiffersLabel: "Zoho と価格が異なります",
     },
     pkg: {
       packed: '{{number}} · {{date}} 梱包',

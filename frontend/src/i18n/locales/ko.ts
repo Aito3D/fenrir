@@ -11497,6 +11497,8 @@ export default {
       service: '서비스',
       packed: '포장됨',
       invoiced: '청구됨',
+      priceDiffers: "이 주문에서는 {{order}}에 판매되었지만 현재 Zoho의 상품 가격은 {{zoho}}입니다(개당 {{diff}}).",
+      priceDiffersLabel: "Zoho와 가격이 다릅니다",
     },
     pkg: {
       packed: '{{number}} · {{date}} 포장',

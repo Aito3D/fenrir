@@ -11876,6 +11876,8 @@ export default {
       service: 'Dienstleistung',
       packed: 'Verpackt',
       invoiced: 'berechnet',
+      priceDiffers: "Hier für {{order}} verkauft, das Produkt kostet in Zoho heute aber {{zoho}} ({{diff}} pro Stück).",
+      priceDiffersLabel: "Preis weicht von Zoho ab",
     },
     pkg: {
       packed: '{{number}} · verpackt {{date}}',

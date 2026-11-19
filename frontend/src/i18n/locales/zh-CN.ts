@@ -11859,6 +11859,8 @@ export default {
       service: '服务',
       packed: '已装箱',
       invoiced: '已开票',
+      priceDiffers: "此订单售价为 {{order}},但该产品目前在 Zoho 中的价格为 {{zoho}}(每件 {{diff}})。",
+      priceDiffersLabel: "价格与 Zoho 不一致",
     },
     pkg: {
       packed: '{{number}} · {{date}} 装箱',

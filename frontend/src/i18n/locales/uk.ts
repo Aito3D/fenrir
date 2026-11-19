@@ -11523,6 +11523,8 @@ export default {
       service: 'Послуга',
       packed: 'Запаковано',
       invoiced: 'виставлено рахунок',
+      priceDiffers: "Тут продано за {{order}}, але зараз товар коштує в Zoho {{zoho}} ({{diff}} за штуку).",
+      priceDiffersLabel: "Ціна відрізняється від Zoho",
     },
     pkg: {
       packed: '{{number}} · запаковано {{date}}',

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Check, Package, Trash2, Undo2 } from 'lucide-react';
+import { AlertTriangle, Check, Package, Trash2, Undo2 } from 'lucide-react';
 import type { OrderBoardLine } from '../../api/client';
 import { formatQty } from './orderBoard';
 import type { OrderCheck, OrderEdit, PanelGroup } from './orderBoard';
@@ -7,6 +7,7 @@ import { TONE } from './orderStatus';
 import { formatMoney } from '../../utils/pricing';
 import { GROUP, LINE_STATE, TRASH, dash } from './orderLinesShared';
 import { OrderQtyStepper } from './OrderQtyStepper';
+import { Tooltip } from '../Tooltip';
 
 /** One product row of a band: read-only, or carrying the stepper / trash of an open edit or pick check. */
 export function OrderLineRow({
@@ -48,10 +49,28 @@ export function OrderLineRow({
   const gone = !!edit && todo && edit.gone.has(line.id);
   // shortcut: Books' rate is before any line discount, so a discounted line shows its list price; read item_total if that matters.
   const priced = line.rate > 0;
+  // An item Books prices at 0 has no catalogue price to differ from.
+  const priceGap = priced && line.item_rate ? line.rate - line.item_rate : 0;
   return (
     <tr className={`transition-opacity duration-150 ease-out ${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${(todo && check && !(check.max[line.id] > 0)) || gone ? 'opacity-40' : ''}`}>
       <td className={`border-l-2 py-2 pl-4 pr-3 ${TONE[meta.tone].rail} ${gone ? 'line-through' : ''}`}>
-        <div className="text-white">{line.name}</div>
+        <div className="text-white">
+          {line.name}
+          {priceGap !== 0 && (
+            <span className="ml-1.5 inline-flex align-middle">
+              <Tooltip
+                align="start"
+                content={t('orders.line.priceDiffers', {
+                  order: formatMoney(line.rate, currency),
+                  zoho: formatMoney(line.item_rate!, currency),
+                  diff: `${priceGap > 0 ? '+' : '−'}${formatMoney(Math.abs(priceGap), currency)}`,
+                })}
+              >
+                <AlertTriangle role="img" aria-label={t('orders.line.priceDiffersLabel')} className={`h-3.5 w-3.5 ${TONE.warning.text}`} />
+              </Tooltip>
+            </span>
+          )}
+        </div>
         {(line.sku || priced) && (
           <div className="text-xs text-bambu-gray">
             {line.sku && <span className="font-mono">{line.sku}</span>}

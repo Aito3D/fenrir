@@ -11900,6 +11900,8 @@ export default {
       service: 'Dienst',
       packed: 'Verpakt',
       invoiced: 'gefactureerd',
+      priceDiffers: "Hier verkocht voor {{order}}, maar het product kost vandaag {{zoho}} in Zoho ({{diff}} per stuk).",
+      priceDiffersLabel: "Prijs wijkt af van Zoho",
     },
     pkg: {
       packed: '{{number}} · verpakt {{date}}',

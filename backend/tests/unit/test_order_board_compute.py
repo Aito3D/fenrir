@@ -492,6 +492,13 @@ def test_line_carries_rate_and_books_cumulative_floor():
     assert (only_line(row)["rate"], only_line(row)["floor"]) == (3400.0, 3.0)
 
 
+def test_line_carries_the_items_catalogue_price_when_books_gave_one():
+    (row,) = compute_board([so("SO-1", "2026-01-03", [_raw_line()])], [], {"A": {**item(9), "rate": 3600}}, TODAY)
+    assert only_line(row)["item_rate"] == 3600.0
+    (row,) = compute_board([so("SO-1", "2026-01-03", [_raw_line()])], [], {"A": item(9)}, TODAY)
+    assert only_line(row)["item_rate"] is None
+
+
 def test_floor_is_the_picked_units_when_they_exceed_packed():
     raw = _raw_line(quantity_packed=1, quantity_picked=4, quantity_invoiced=0)
     (row,) = compute_board([so("SO-1", "2026-01-03", [raw])], [], {"A": item(9)}, TODAY)

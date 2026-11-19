@@ -5344,6 +5344,8 @@ export interface OrderBoardLine {
   /** Books' price per unit and the least this line may drop to (what already left or is billed). */
   rate: number;
   floor: number;
+  /** The item's current price in Books; null or absent when the item is unknown. */
+  item_rate?: number | null;
 }
 
 export type OrderPayState = 'unpaid' | 'partial' | 'paid';

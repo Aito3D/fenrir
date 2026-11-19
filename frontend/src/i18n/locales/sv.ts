@@ -11933,6 +11933,8 @@ errors: {
       service: 'Tjänst',
       packed: 'Packat',
       invoiced: 'fakturerad',
+      priceDiffers: "Såld för {{order}} här, men produkten kostar {{zoho}} i Zoho i dag ({{diff}} per styck).",
+      priceDiffersLabel: "Priset skiljer sig från Zoho",
     },
     pkg: {
       packed: '{{number}} · packat {{date}}',

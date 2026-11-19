@@ -11861,6 +11861,8 @@ export default {
       service: 'Serviço',
       packed: 'Embalado',
       invoiced: 'faturado',
+      priceDiffers: "Vendido aqui por {{order}}, mas hoje o produto custa {{zoho}} no Zoho ({{diff}} por unidade).",
+      priceDiffersLabel: "Preço diferente do Zoho",
     },
     pkg: {
       packed: '{{number}} · embalado em {{date}}',
