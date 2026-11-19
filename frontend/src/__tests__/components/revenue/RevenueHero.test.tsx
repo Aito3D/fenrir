@@ -75,7 +75,9 @@ describe('RevenueHero', () => {
   it('hides the margin tile without revenue:view_margin or without cost fields', () => {
     const costed = oct({ costedHt: 600_000, cost: 420_000 });
     const { unmount } = renderHero([sept, costed]);
-    expect(screen.getByText('Gross margin HT · 30 %')).toBeInTheDocument();
+    expect(screen.getByText('Gross margin HT')).toBeInTheDocument();
+    expect(screen.getByText('180.000 FCP')).toBeInTheDocument();
+    expect(screen.getByText('30 % · cost known on 97 % of revenue')).toBeInTheDocument();
     unmount();
     const hidden = renderHero([sept, costed], { canMargin: false });
     expect(screen.queryByText(/Gross margin/)).toBeNull();
@@ -84,6 +86,34 @@ describe('RevenueHero', () => {
     expect(screen.queryByText(/Gross margin/)).toBeNull();
     expect(screen.getByText('Previous month')).toBeInTheDocument();
     expect(screen.getByText('Running total')).toBeInTheDocument();
+  });
+
+  it('shows the tile hints the helpers return', () => {
+    renderHero([sept, oct({ projection: { ht: 1_240_000, ttc: 1_401_200 }, projectionMethod: 'linear' })]);
+    expect(screen.getByText('sept. 2026')).toBeInTheDocument();
+    expect(screen.getByText('sept. 2026 → oct. 2026')).toBeInTheDocument();
+    expect(screen.getByText('Projection to end of month')).toBeInTheDocument();
+    expect(screen.getByText('at the current pace')).toBeInTheDocument();
+  });
+
+  it('says a seasonal projection runs at last year\'s pace', () => {
+    renderHero([sept, oct({ projection: { ht: 1_240_000, ttc: 1_401_200 }, projectionMethod: 'seasonal' })]);
+    expect(screen.getByText("at last year's pace")).toBeInTheDocument();
+  });
+
+  it('clamps the ring arc above 100 % and below 0 %', () => {
+    const c = 2 * Math.PI * 50;
+    const { container, unmount } = renderHero([sept, oct({ ht: 1_500_000, target: 1_000_000 })]);
+    expect(container.querySelector('[data-arc="share"]')).toHaveAttribute('stroke-dasharray', `${c} ${c}`);
+    unmount();
+    const neg = renderHero([sept, oct({ ht: -200_000, target: 1_000_000 })]);
+    expect(neg.container.querySelector('[data-arc="share"]')).toHaveAttribute('stroke-dasharray', `0 ${c}`);
+  });
+
+  it('shows a change under half a percent as flat', () => {
+    renderHero([sept, oct({ evolution: { ht: 0.004, ttc: 0.004 } })]);
+    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.getByText('vs 1–15 sept. (to date)')).toBeInTheDocument();
   });
 
   it('reads TTC figures in TTC', () => {
@@ -111,6 +141,19 @@ describe('RevenueFinding', () => {
   it('says the share alone without a change', () => {
     renderFinding([oct({ evolution: { ht: null, ttc: null }, target: 500_000 })]);
     expect(screen.getByTestId('revenue-finding')).toHaveTextContent('Oct. 2026 is at 124 % of the target.');
+  });
+
+  it('says level for a change under half a percent, with and without a target', () => {
+    const { unmount } = renderFinding([sept, oct({ target: 1_000_000, evolution: { ht: 0.004, ttc: 0.004 } })]);
+    expect(screen.getByTestId('revenue-finding')).toHaveTextContent('Oct. 2026 is at 62 % of the target, level with 1–15 sept. (to date).');
+    unmount();
+    renderFinding([sept, oct({ evolution: { ht: -0.004, ttc: -0.004 } })]);
+    expect(screen.getByTestId('revenue-finding')).toHaveTextContent('Oct. 2026 is level with 1–15 sept. (to date).');
+  });
+
+  it('reads the change in the tax mode shown', () => {
+    render(<RevenueFinding payload={payload([sept, oct({ evolution: { ht: 0.08, ttc: -0.03 } })])} taxMode="ttc" />);
+    expect(screen.getByTestId('revenue-finding')).toHaveTextContent('Oct. 2026 is 3 % behind 1–15 sept. (to date).');
   });
 
   it('is omitted when neither figure exists', () => {

@@ -203,6 +203,7 @@ const DE_COGNATES = [
 const FR_COGNATES = [
   'Services',  // revenue.filters.services — loki's French label, same word
   'Projection ≈ {{amount}}', 'vs {{what}}',  // revenue.hero.projection / vs — same words in French
+  '{{year}} · total {{total}}',  // revenue.pace.yearAgoTotal — « total » is the same word in French
   'Contact',  // orders.contact.title — same word in French
   'Perspective', '{{count}} triangle', '{{count}} triangles', 'Photos',  // partViewer — same words in French
   'via {{name}}',  // projectsPdm.reslice.viaPipeline
@@ -358,6 +359,7 @@ const JA_COGNATES = [
 
 // Portuguese (BR) cognates.
 const PT_BR_COGNATES = [
+  '{{year}} · total {{total}}',  // revenue.pace.yearAgoTotal — « total » is the same word in Portuguese
   'Multimaterial',  // filamentTrees.orca.tabMultimaterial — the same word in this locale (OrcaSlicer's own tab name)
   'via {{name}}',  // projectsPdm.reslice.viaPipeline
   'manual',  // maintenance.hours.manual — same word in this locale
@@ -482,6 +484,7 @@ const KO_COGNATES = [
 
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
 const ES_COGNATES = [
+  '{{year}} · total {{total}}',  // revenue.pace.yearAgoTotal — « total » is the same word in Spanish
   'Multimaterial',  // filamentTrees.orca.tabMultimaterial — the same word in this locale (OrcaSlicer's own tab name)
   'manual',  // maintenance.hours.manual — same word in this locale
   '{{hours}} h ≈ {{days}} d',  // aito.backlogShort — hour/day unit abbreviations are the same in this locale

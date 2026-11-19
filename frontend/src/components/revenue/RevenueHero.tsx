@@ -2,10 +2,10 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Finding, Panel, Tile } from '../aito/stats/primitives';
 import { DeltaBadge } from '../stats/DeltaBadge';
-import { computeDelta } from '../stats/deltas';
+import type { StatDelta } from '../stats/deltas';
 import { bucketKeyFor, bucketLabel, isBucketKey, shiftBucketYear, toDateRangeLabel } from './lib/buckets';
 import { addDays, daysBetween } from './lib/dates';
-import { findingCase } from './lib/finding';
+import { findingCase, isLevel } from './lib/finding';
 import { formatFcp } from './lib/format';
 import { evolutionFor, insightTiles, kpiTiles, yearOverYear, type KpiTile } from './lib/kpis';
 import type { RevenueBucket, RevenueGranularity, RevenueResponse, TaxMode } from './lib/types';
@@ -20,7 +20,11 @@ const MARGIN_LABEL = 'Marge brute HT';
 
 const pick = (m: { ht: number; ttc: number }, mode: TaxMode) => (mode === 'ttc' ? m.ttc : m.ht);
 const pctText = (v: number) => `${Math.round(v * 100)} %`;
-const asDelta = (v: number | null) => (v == null ? null : computeDelta(1 + v, 1, 'more-is-good'));
+function asDelta(v: number | null): StatDelta | null {
+  if (v == null) return null;
+  if (isLevel(v)) return { pct: 0, direction: 'flat', tone: 'neutral' };
+  return { pct: v * 100, direction: v > 0 ? 'up' : 'down', tone: v > 0 ? 'good' : 'bad' };
+}
 const targetOf = (b: RevenueBucket) => (b.target != null && b.target > 0 ? b.target : null);
 
 /** What the last bucket is compared with: the clipped range of a partial bucket, else the whole previous or year-ago bucket. */
@@ -35,11 +39,23 @@ function comparison(t: TFunction, buckets: RevenueBucket[], g: RevenueGranularit
   return prev?.key === key ? prev.label : bucketLabel(key, g);
 }
 
-function tileLabel(t: TFunction, tile: KpiTile, g: RevenueGranularity, last: RevenueBucket): string {
-  if (tile.label === MARGIN_LABEL) return `${t('revenue.hero.margin')} · ${Math.round(((tile.value ?? 0) / (last.costedHt || 1)) * 100)} %`;
-  if (tile.label === 'Cumul') return t('revenue.hero.cumulative');
-  if (tile.label.startsWith('Projection')) return t(`revenue.hero.projectionTile.${g}`);
-  return t(`revenue.hero.previous.${g}`);
+/** kpiTiles / insightTiles word labels and text hints in French: map them to keys; data hints (bucket labels) pass through. */
+function tileText(t: TFunction, tile: KpiTile, g: RevenueGranularity, last: RevenueBucket): { label: string; hint?: string } {
+  if (tile.label === MARGIN_LABEL) {
+    const costed = last.costedHt || 1;
+    return {
+      label: t('revenue.hero.margin'),
+      hint: t('revenue.hero.marginHint', {
+        rate: pctText((tile.value ?? 0) / costed),
+        coverage: pctText(last.ht ? costed / last.ht : 0),
+      }),
+    };
+  }
+  if (tile.label === 'Cumul') return { label: t('revenue.hero.cumulative'), hint: tile.hint };
+  if (tile.label.startsWith('Projection')) {
+    return { label: t(`revenue.hero.projectionTile.${g}`), hint: t(last.projectionMethod === 'seasonal' ? 'revenue.hero.paceLastYear' : 'revenue.hero.paceCurrent') };
+  }
+  return { label: t(`revenue.hero.previous.${g}`), hint: tile.hint };
 }
 
 /** The sentence above the hero, from the same figures: share of the target and the change vs the previous period. */
@@ -60,7 +76,7 @@ export function RevenueFinding({ payload, taxMode }: { payload: RevenueResponse;
     change: change != null ? pctText(Math.abs(change)) : '',
     comparison: against,
   };
-  const split = kind === 'targetAhead' || kind === 'targetBehind';
+  const split = kind === 'targetAhead' || kind === 'targetBehind' || kind === 'targetLevel';
   return (
     <Finding
       testId="revenue-finding"
@@ -160,7 +176,7 @@ export function RevenueHero({ payload, taxMode, canMargin }: { payload: RevenueR
         {[previous, cumul, ...insights].map((tile) => (
           <Tile
             key={tile.label}
-            label={tileLabel(t, tile, g, last)}
+            {...tileText(t, tile, g, last)}
             value={tile.value == null ? '—' : formatFcp(tile.value)}
             tone={tile.tone === 'down' ? 'alert' : undefined}
           />
