@@ -31,3 +31,11 @@ describe('the price warning', () => {
     expect(screen.queryByRole('img', { name: 'Price differs from Zoho' })).not.toBeInTheDocument();
   });
 });
+
+describe('the phone labels', () => {
+  it('shows phone labels for available and short cells', () => {
+    show({ state: 'backorder', stock_available: 47, shortfall: 1 });
+    expect(screen.getByText(/Available/).className).toContain('md:hidden');
+    expect(screen.getByText(/Short/).className).toContain('md:hidden');
+  });
+});

@@ -256,8 +256,8 @@ export function OrderLinesPanel({
         aria-label={t('orders.col.product')}
         className="overflow-x-auto overscroll-contain lg:max-h-[70vh] lg:overflow-y-auto"
       >
-        <table className="w-full min-w-[35rem] text-sm">
-          <thead className="bg-bambu-dark text-left lg:sticky lg:top-0 lg:z-10 text-[11px] uppercase tracking-wide text-bambu-gray">
+        <table className="w-full text-sm md:min-w-[35rem] max-md:block">
+          <thead className="max-md:hidden bg-bambu-dark text-left lg:sticky lg:top-0 lg:z-10 text-[11px] uppercase tracking-wide text-bambu-gray">
             <tr>
               <th className="py-1.5 font-medium">{t('orders.col.product')}</th>
               <th className="text-right font-medium">{t(edit ? 'orders.edit.ordered' : parcel ? 'orders.parcelEdit.inParcel' : (checkLabel ?? 'orders.col.qty'))}</th>
@@ -270,9 +270,9 @@ export function OrderLinesPanel({
             const meta = GROUP[group.id];
             const Icon = meta.icon;
             return (
-              <tbody key={group.id} className={meta.dim ? 'opacity-60' : ''}>
-                <tr>
-                  <th role="rowheader" colSpan={5} className="pt-3 pb-1 text-left font-normal">
+              <tbody key={group.id} className={`max-md:block ${meta.dim ? 'opacity-60' : ''}`}>
+                <tr className="max-md:block">
+                  <th role="rowheader" colSpan={5} className="max-md:block pt-3 pb-1 text-left font-normal">
                     <div
                       data-fresh={(group.id === 'packed' && parcelSaved) || undefined}
                       onAnimationEnd={e => { if (e.target === e.currentTarget) setParcelSaved(false); }}

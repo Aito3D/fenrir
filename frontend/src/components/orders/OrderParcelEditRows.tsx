@@ -6,6 +6,7 @@ import type { ParcelEdit } from './orderBoard';
 import { OrderQtyStepper } from './OrderQtyStepper';
 import { TONE } from './orderStatus';
 
+const G = 'max-md:grid max-md:grid-cols-[1fr_auto_auto] max-md:gap-x-3 max-md:py-2';
 const dash = <td className="text-right"><span className="text-bambu-gray">–</span></td>;
 
 const Tag = ({ d }: { d: number }) =>
@@ -41,14 +42,14 @@ export function OrderParcelEditRows({
         const mine = line.id in parcel.was;
         const q = parcel.qty[line.id] ?? 0;
         return (
-          <tr key={line.id} className={`${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${mine ? '' : 'opacity-40'}`}>
-            <td className={`border-l-2 py-2 pl-4 pr-3 ${TONE.info.rail}`}>{product(line, others(line))}</td>
+          <tr key={line.id} className={`${G} ${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${mine ? '' : 'opacity-40'}`}>
+            <td className={`max-md:col-span-3 border-l-2 py-2 pl-4 pr-3 ${TONE.info.rail}`}>{product(line, others(line))}</td>
             <td className="whitespace-nowrap text-right tabular-nums text-white">
               {mine ? <>{stepper(line, t('orders.parcelEdit.inParcel'))}<Tag d={Math.round((q - parcel.was[line.id]) * 100) / 100} /></> : formatQty(line.packed_waiting)}
             </td>
             {mine ? stock(line) : dash}
             {dash}
-            <td className={`whitespace-nowrap pl-4 ${TONE.info.text}`}>
+            <td className={`max-md:col-span-3 whitespace-nowrap pl-4 ${TONE.info.text}`}>
               <span className="inline-flex items-center gap-1">
                 <Package aria-hidden="true" className="h-3.5 w-3.5" />
                 {!mine ? t('orders.line.packed') : q > 0 ? t('orders.parcelEdit.inParcel') : <span className="text-yellow-400">{t('orders.parcelEdit.removedLine')}</span>}
@@ -60,14 +61,14 @@ export function OrderParcelEditRows({
       {adds.map(line => {
         const q = parcel.qty[line.id] ?? 0;
         return (
-          <tr key={`join-${line.id}`} className={`border-t border-bambu-dark-tertiary/60 ${q > 0 ? '' : 'opacity-70'}`}>
-            <td className={`border-l-2 py-2 pl-4 pr-3 ${q > 0 ? TONE.info.rail : 'border-dashed border-bambu-dark-tertiary'}`}>
+          <tr key={`join-${line.id}`} className={`${G} border-t border-bambu-dark-tertiary/60 ${q > 0 ? '' : 'opacity-70'}`}>
+            <td className={`max-md:col-span-3 border-l-2 py-2 pl-4 pr-3 ${q > 0 ? TONE.info.rail : 'border-dashed border-bambu-dark-tertiary'}`}>
               {product(line, others(line), t('orders.parcelEdit.shelf', { n: formatQty(parcel.max[line.id]) }))}
             </td>
             <td className="whitespace-nowrap text-right tabular-nums text-white">{stepper(line, t('orders.parcelEdit.addRow'))}<Tag d={q} /></td>
             {stock(line)}
             {dash}
-            <td className={`whitespace-nowrap pl-4 ${q > 0 ? TONE.info.text : 'text-bambu-gray'}`}>
+            <td className={`max-md:col-span-3 whitespace-nowrap pl-4 ${q > 0 ? TONE.info.text : 'text-bambu-gray'}`}>
               <span className="inline-flex items-center gap-1">
                 {q > 0 ? <PackagePlus aria-hidden="true" className="h-3.5 w-3.5" /> : <Plus aria-hidden="true" className="h-3.5 w-3.5" />}
                 {t(q > 0 ? 'orders.parcelEdit.addedLine' : 'orders.parcelEdit.addRow')}
