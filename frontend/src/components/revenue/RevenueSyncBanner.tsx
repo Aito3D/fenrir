@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { focusRingCls } from '../formStyles';
 import { bannerState } from './lib/dashboard';
@@ -7,22 +6,17 @@ import type { RevenueSyncStatus } from './lib/types';
 const linkCls = `underline underline-offset-2 hover:text-white disabled:opacity-50 disabled:no-underline ${focusRingCls}`;
 
 /** The sync line under the page title: idle (cache up to date), progress (back-fill bar) or error
- *  (an error always wins). Retry and Rebuild need `revenue:sync`; Rebuild asks first. */
+ *  (an error always wins). Retry needs `revenue:sync`; the full rebuild lives in the page's ⋯ menu. */
 export function RevenueSyncBanner({
   sync,
   canSync,
-  busy,
   onRetry,
-  onRebuild,
 }: {
   sync: RevenueSyncStatus;
   canSync: boolean;
-  busy: boolean;
   onRetry: () => void;
-  onRebuild: () => void;
 }) {
   const { t, i18n } = useTranslation();
-  const [confirm, setConfirm] = useState(false);
   const { kind, pctDone } = bannerState(sync);
   const hm = (iso: string) => new Date(iso).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' });
 
@@ -63,22 +57,6 @@ export function RevenueSyncBanner({
           {t('revenue.sync.retry')}
         </button>
       )}
-      {canSync &&
-        (confirm ? (
-          <>
-            <span className="text-amber-400">{t('revenue.sync.rebuildConfirm')}</span>
-            <button type="button" className={`text-amber-400 ${linkCls}`} onClick={() => { setConfirm(false); onRebuild(); }}>
-              {t('revenue.sync.rebuildYes')}
-            </button>
-            <button type="button" className={linkCls} onClick={() => setConfirm(false)}>
-              {t('revenue.sync.cancel')}
-            </button>
-          </>
-        ) : (
-          <button type="button" className={linkCls} disabled={busy} onClick={() => setConfirm(true)}>
-            {t('revenue.sync.rebuild')}
-          </button>
-        ))}
     </div>
   );
 }

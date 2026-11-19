@@ -1,7 +1,7 @@
 import type { CustomerSegment, RevenueBucket, TaxMode } from "./types";
 
 const CUSTOMER_SEGMENTS: readonly CustomerSegment[] = ["pro", "particulier", "passage", "inconnu"];
-const SEGMENT_LABEL: Record<CustomerSegment, string> = {
+export const SEGMENT_LABEL: Record<CustomerSegment, string> = {
   pro: "Pro",
   particulier: "Particuliers",
   passage: "Passage",

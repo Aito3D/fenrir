@@ -16,11 +16,10 @@ const sync = (o: Partial<RevenueSyncStatus> = {}): RevenueSyncStatus => ({
   ...o,
 });
 
-function renderBanner(s: RevenueSyncStatus, o: { canSync?: boolean; busy?: boolean } = {}) {
+function renderBanner(s: RevenueSyncStatus, o: { canSync?: boolean } = {}) {
   const onRetry = vi.fn();
-  const onRebuild = vi.fn();
-  render(<RevenueSyncBanner sync={s} canSync={o.canSync ?? true} busy={o.busy ?? false} onRetry={onRetry} onRebuild={onRebuild} />);
-  return { onRetry, onRebuild };
+  render(<RevenueSyncBanner sync={s} canSync={o.canSync ?? true} onRetry={onRetry} />);
+  return { onRetry };
 }
 
 describe('RevenueSyncBanner', () => {
@@ -53,33 +52,16 @@ describe('RevenueSyncBanner', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('error: hides Retry and Rebuild without revenue:sync', () => {
+  it('error: hides Retry without revenue:sync', () => {
     renderBanner(sync({ lastError: 'Zoho 500' }), { canSync: false });
     expect(screen.getByText('Last sync failed: Zoho 500')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Rebuild' })).toBeNull();
   });
 
-  it('rebuild asks for confirmation, then calls onRebuild', async () => {
-    const { onRebuild } = renderBanner(sync());
-    await userEvent.click(screen.getByRole('button', { name: 'Rebuild' }));
-    expect(screen.getByText(/Reload every day from Zoho/)).toBeInTheDocument();
-    expect(onRebuild).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('button', { name: 'Yes, rebuild' }));
-    expect(onRebuild).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('button', { name: 'Rebuild' })).toBeInTheDocument();
-  });
-
-  it('rebuild confirmation can be cancelled', async () => {
-    const { onRebuild } = renderBanner(sync());
-    await userEvent.click(screen.getByRole('button', { name: 'Rebuild' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(onRebuild).not.toHaveBeenCalled();
-    expect(screen.queryByText(/Reload every day from Zoho/)).toBeNull();
-  });
-
-  it('rebuild is disabled while one is in flight', () => {
-    renderBanner(sync(), { busy: true });
-    expect(screen.getByRole('button', { name: 'Rebuild' })).toBeDisabled();
+  it('offers no Rebuild: it lives in the page menu', () => {
+    renderBanner(sync({ lastError: 'Zoho 500' }));
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rebuild' })).toBeNull();
   });
 });

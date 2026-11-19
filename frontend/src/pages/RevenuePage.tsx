@@ -15,21 +15,29 @@ import { RevenueCustomers } from '../components/revenue/RevenueCustomers';
 import { RevenueAnalysis } from '../components/revenue/RevenueAnalysis';
 import { RevenueYoy } from '../components/revenue/RevenueYoy';
 import { RevenueCalendar } from '../components/revenue/RevenueCalendar';
+import { RevenueMenu } from '../components/revenue/RevenueMenu';
+import { RevenueReview } from '../components/revenue/RevenueReview';
+import { RevenueTargets } from '../components/revenue/RevenueTargets';
 import { RevenueControls as ControlsRow } from '../components/revenue/RevenueControls';
 import { RevenueChip, RevenueProductSearch } from '../components/revenue/RevenueProductSearch';
 import { useRevenueResource } from '../components/revenue/useRevenueResource';
-import { drillDown, shiftWindow } from '../components/revenue/lib/analysis';
+import { drillDown, shiftWindow, summaryText } from '../components/revenue/lib/analysis';
 import { addToBasket } from '../components/revenue/lib/basket';
 import { orgToday, REVENUE_HISTORY_START } from '../components/revenue/lib/dates';
 import { filterByKind } from '../components/revenue/lib/products';
+import { SEGMENT_LABEL, type StackDimension } from '../components/revenue/lib/chart';
+import { toCsv } from '../components/revenue/lib/csv';
+import { formatFcp, formatPct } from '../components/revenue/lib/format';
 import { controlsFromSearch, controlsToSearch } from '../components/revenue/lib/url';
 import { focusRingCls } from '../components/formStyles';
-import type { StackDimension } from '../components/revenue/lib/chart';
 import {
   createSeriesLoader,
+  csvFileName,
   dashboardReady,
   failureMessage,
   filterQuery,
+  isCustomerSegment,
+  isRevenueKind,
   pollActive,
   readJsonBody,
   REVENUE_POLL,
@@ -164,6 +172,11 @@ export function RevenuePage() {
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
   const [rebuildBusy, setRebuildBusy] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [targetsOpen, setTargetsOpen] = useState(false);
+  // Where focus goes back when a panel closes: the pill or ⋯ that opened it.
+  const reviewOpener = useRef<HTMLElement | null>(null);
+  const targetsOpener = useRef<HTMLElement | null>(null);
   // Read when the next poll is armed; a ref so a new payload never restarts the poller.
   const syncActive = useRef(false);
 
@@ -305,6 +318,48 @@ export function RevenuePage() {
   };
 
   const { itemsPending, ready } = dashboardReady(data);
+
+  const exportCsv = () => {
+    if (!data) return;
+    const href = URL.createObjectURL(new Blob([toCsv(data.buckets)], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = href;
+    // Named from the payload being exported, not the live controls (which may already hold the next query).
+    a.download = csvFileName(data.granularity, data.from, data.to, data.items?.length ?? 0, (data.brands?.length ?? 0) > 0,
+      isRevenueKind(data.kind) ? data.kind : null, isCustomerSegment(data.segment) ? data.segment : null);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(href), 0);
+  };
+  // The summary is pasted in French messages whatever the UI language, so its filter note is French too.
+  const filterNote = [
+    active.kind ? (active.kind === 'goods' ? 'Biens' : 'Services') : null,
+    active.segment ? SEGMENT_LABEL[active.segment] : null,
+    active.brands.size > 0 ? `${active.brands.size} marque${active.brands.size > 1 ? 's' : ''}` : null,
+    active.basket.length > 0 ? `${active.basket.length} produit${active.basket.length > 1 ? 's' : ''}` : null,
+  ].filter(Boolean).join(', ');
+  const copySummary = async () => {
+    if (!data) return;
+    try {
+      await navigator.clipboard.writeText(summaryText(data.buckets, active.taxMode, { money: formatFcp, pct: formatPct }, filterNote));
+      showToast(t('revenue.menu.copied'), 'success');
+    } catch {
+      showToast(t('revenue.menu.clipboardUnavailable'), 'error');
+    }
+  };
+  // The targets editor prints each month's actual HT only when the page shows the unfiltered book by month.
+  const actualByMonth =
+    data && data.granularity === 'month' && !data.items && !data.brands && !data.kind && !data.segment
+      ? Object.fromEntries(data.buckets.map((b) => [b.key, b.ht]))
+      : null;
+  // The menu puts focus back on ⋯ before it runs a pick, so the focused element is the opener there.
+  const toggleReview = (opener = document.activeElement as HTMLElement | null) => {
+    if (!reviewOpen) reviewOpener.current = opener;
+    setReviewOpen(!reviewOpen);
+  };
+  const toggleTargets = () => {
+    if (!targetsOpen) targetsOpener.current = document.activeElement as HTMLElement | null;
+    setTargetsOpen(!targetsOpen);
+  };
   const lastBucket = data?.buckets[data.buckets.length - 1];
   const filterParams = filterQuery(basketIds, active.brands, active.kind, active.segment);
   const views = REVENUE_VIEWS.filter((v) => v.id !== 'clients' || can.customers).map((v) => ({ id: v.id, label: t(`revenue.views.${VIEW_KEYS[v.id]}`) }));
@@ -314,9 +369,15 @@ export function RevenuePage() {
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-white">{t('revenue.title')}</h1>
-          {data && <RevenueSyncBanner sync={data.sync} canSync={can.sync} busy={rebuildBusy} onRetry={retry} onRebuild={rebuild} />}
+          {data && <RevenueSyncBanner sync={data.sync} canSync={can.sync} onRetry={retry} />}
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {(reviewCount ?? 0) > 0 && (
+            <button type="button" aria-pressed={reviewOpen} onClick={(e) => toggleReview(e.currentTarget)}
+              className={`hidden items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/20 sm:inline-flex ${focusRingCls}`}>
+              {t('revenue.review.pill', { n: reviewCount })}
+            </button>
+          )}
           <RevenueSegmented
             label={t('revenue.amounts')}
             value={controls.taxMode}
@@ -326,7 +387,11 @@ export function RevenuePage() {
               { id: 'ttc', label: t('revenue.ttc') },
             ]}
           />
-          <div data-slot="revenue-menu" />
+          <div data-slot="revenue-menu">
+            <RevenueMenu canExport={can.export} canSync={can.sync} ready={ready} rebuildBusy={rebuildBusy} reviewCount={reviewCount ?? 0}
+              targetsOpen={targetsOpen} onTargets={toggleTargets} onReview={() => toggleReview()} onCopy={() => void copySummary()} onExport={exportCsv}
+              onRebuild={() => void rebuild()} />
+          </div>
         </div>
       </div>
 
@@ -385,6 +450,14 @@ export function RevenuePage() {
             {t('revenue.sync.retry')}
           </button>
         </div>
+      )}
+
+      {reviewOpen && !itemsPending && (
+        <RevenueReview canManage={can.scope} onChanged={refresh} onClose={() => { setReviewOpen(false); reviewOpener.current?.focus(); }} />
+      )}
+      {targetsOpen && (
+        <RevenueTargets canManage={can.targets} onChanged={refresh} today={today} actualByMonth={actualByMonth}
+          onClose={() => { setTargetsOpen(false); targetsOpener.current?.focus(); }} />
       )}
 
       {!ready ? (

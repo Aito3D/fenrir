@@ -338,6 +338,9 @@ describe('RevenuePage — view tabs keyboard', () => {
   });
 });
 
+const openMenu = () => fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+const menuItem = (name: string) => within(screen.getByRole('menu')).getByRole('menuitem', { name });
+
 describe('RevenuePage — rebuild', () => {
   beforeEach(() => vi.useFakeTimers());
 
@@ -346,25 +349,193 @@ describe('RevenuePage — rebuild', () => {
     stubFetch(payload(), () => new Promise<Response>((resolve) => (answer = resolve)));
     renderPage();
     await flush();
-    fireEvent.click(screen.getByRole('button', { name: 'Rebuild' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Yes, rebuild' }));
+    openMenu();
+    fireEvent.click(menuItem('Rebuild'));
+    expect(screen.getByText(/Reload every day from Zoho/)).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'POST')).toBe(false);
+    fireEvent.click(menuItem('Yes, rebuild'));
     await flush();
+    expect(screen.queryByRole('menu')).toBeNull();
     const post = fetchMock.mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
     expect(post?.[0]).toBe('/api/v1/revenue/sync?full=1');
-    expect(screen.getByRole('button', { name: 'Rebuild' })).toBeDisabled();
+    openMenu();
+    expect(menuItem('Rebuild')).toBeDisabled();
     const before = seriesCalls().length;
     await act(async () => answer(json({ sync: sync({ backfilling: true }) })));
     await flush();
-    expect(screen.getByRole('button', { name: 'Rebuild' })).toBeEnabled();
+    expect(menuItem('Rebuild')).toBeEnabled();
     expect(seriesCalls().length).toBe(before + 1);
   });
 
-  it('hides Rebuild without revenue:sync', async () => {
+  it('cancels the rebuild confirmation', async () => {
+    stubFetch(payload());
+    renderPage();
+    await flush();
+    openMenu();
+    fireEvent.click(menuItem('Rebuild'));
+    fireEvent.click(menuItem('Cancel'));
+    expect(screen.queryByText(/Reload every day from Zoho/)).toBeNull();
+    expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'POST')).toBe(false);
+  });
+
+  it('hides Rebuild without revenue:sync, and the banner never offers it', async () => {
     granted.delete('revenue:sync');
     stubFetch(payload());
     renderPage();
     await flush();
     expect(screen.queryByRole('button', { name: 'Rebuild' })).toBeNull();
+    openMenu();
+    expect(within(screen.getByRole('menu')).queryByRole('menuitem', { name: 'Rebuild' })).toBeNull();
+  });
+});
+
+describe('RevenuePage — menu', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  it('opens a keyboard menu that Escape closes, focus back on ⋯', async () => {
+    stubFetch(payload());
+    renderPage();
+    await flush();
+    const trigger = screen.getByRole('button', { name: 'More actions' });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const items = within(screen.getByRole('menu')).getAllByRole('menuitem');
+    expect(items.map((i) => i.textContent)).toEqual(['Monthly targets…', 'Items to classify', 'Rebuild']);
+    expect(items[0]).toHaveFocus();
+    fireEvent.keyDown(items[0], { key: 'ArrowDown' });
+    expect(items[1]).toHaveFocus();
+    fireEvent.keyDown(items[1], { key: 'ArrowUp' });
+    fireEvent.keyDown(items[0], { key: 'ArrowUp' });
+    expect(items[2]).toHaveFocus();
+    fireEvent.keyDown(items[2], { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('disables copy and export until the dashboard is ready', async () => {
+    granted.add('revenue:export');
+    stubFetch(payload({ itemsSyncedAt: null }));
+    renderPage();
+    await flush();
+    openMenu();
+    expect(menuItem('Copy summary')).toBeDisabled();
+    expect(menuItem('Export as CSV')).toBeDisabled();
+  });
+
+  it('offers no copy or export without revenue:export', async () => {
+    stubFetch(payload());
+    renderPage();
+    await flush();
+    openMenu();
+    expect(within(screen.getByRole('menu')).queryByRole('menuitem', { name: 'Copy summary' })).toBeNull();
+    expect(within(screen.getByRole('menu')).queryByRole('menuitem', { name: 'Export as CSV' })).toBeNull();
+  });
+
+  it('exports the CSV named from the payload and revokes its URL', async () => {
+    granted.add('revenue:export');
+    const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const names: string[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.download);
+    });
+    stubFetch(payload({ kind: 'goods', brands: ['acme'] }));
+    renderPage();
+    await flush();
+    openMenu();
+    fireEvent.click(menuItem('Export as CSV'));
+    expect(names).toEqual(['aito3d-ca-month-2025-12-01-2026-11-19-biens-marques.csv']);
+    expect(create).toHaveBeenCalledTimes(1);
+    await flush();
+    expect(revoke).toHaveBeenCalledWith('blob:x');
+    expect(screen.queryByRole('menu')).toBeNull();
+    click.mockRestore();
+    create.mockRestore();
+    revoke.mockRestore();
+  });
+
+  it('copies the French summary and says so', async () => {
+    granted.add('revenue:export');
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const nov = {
+      key: '2026-11', label: 'nov. 2026', start: '2026-11-01', end: '2026-11-30', ht: 620_000, ttc: 700_600, goods: 620_000, services: 0,
+      byNature: {}, byBrand: {}, goodsTtc: 700_600, servicesTtc: 0, byNatureTtc: {}, byBrandTtc: {}, projection: null, projectionMethod: null,
+      target: null, quantity: 3, evolution: { ht: null, ttc: null }, yearAgo: null, elapsedDays: 19, cumulative: { ht: 620_000, ttc: 700_600 },
+      partial: true, missingDays: 0, ttcApprox: false,
+    };
+    window.history.replaceState(null, '', '/revenue?kind=goods');
+    stubFetch(payload({ buckets: [nov], kind: 'goods' }));
+    renderPage();
+    await flush();
+    openMenu();
+    fireEvent.click(menuItem('Copy summary'));
+    await flush();
+    expect(writeText).toHaveBeenCalledWith('CA nov. 2026 (en cours, 19 j) — Biens : 620.000 FCP HT');
+    expect(screen.getByText('Summary copied — ready to paste.')).toBeInTheDocument();
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+  });
+
+  it('says so when the clipboard is unavailable', async () => {
+    granted.add('revenue:export');
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    stubFetch(payload());
+    renderPage();
+    await flush();
+    openMenu();
+    fireEvent.click(menuItem('Copy summary'));
+    await flush();
+    expect(screen.getByText('The clipboard is unavailable.')).toBeInTheDocument();
+  });
+
+  it('opens the targets editor from the menu and gives focus back to ⋯ when it closes', async () => {
+    stubFetch(payload());
+    renderPage();
+    await flush();
+    openMenu();
+    fireEvent.click(menuItem('Monthly targets…'));
+    await flush();
+    const panel = screen.getByRole('region', { name: 'Monthly HT targets' });
+    expect(within(panel).getByRole('heading', { name: 'Monthly HT targets' })).toHaveFocus();
+    expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/targets');
+    openMenu();
+    expect(menuItem('Hide targets')).toBeInTheDocument();
+    fireEvent.keyDown(menuItem('Hide targets'), { key: 'Escape' });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('region', { name: 'Monthly HT targets' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'More actions' })).toHaveFocus();
+  });
+});
+
+describe('RevenuePage — items to classify', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  it('shows the amber pill when items wait, opening the review panel', async () => {
+    stubFetch(payload({ reviewCount: 3 }));
+    renderPage();
+    await flush();
+    const pill = screen.getByRole('button', { name: 'To classify 3' });
+    expect(pill).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(pill);
+    await flush();
+    expect(pill).toHaveAttribute('aria-pressed', 'true');
+    const panel = screen.getByRole('region', { name: 'To classify' });
+    expect(within(panel).getByRole('heading', { name: 'To classify' })).toHaveFocus();
+    expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/review');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Close' }));
+    expect(pill).toHaveFocus();
+  });
+
+  it('has no pill when nothing waits; the menu still opens the panel', async () => {
+    stubFetch(payload());
+    renderPage();
+    await flush();
+    expect(screen.queryByRole('button', { name: /To classify/ })).toBeNull();
+    openMenu();
+    fireEvent.click(menuItem('Items to classify'));
+    await flush();
+    expect(screen.getByRole('region', { name: 'To classify' })).toBeInTheDocument();
   });
 });
 
