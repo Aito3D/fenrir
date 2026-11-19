@@ -216,6 +216,16 @@ class Permission(StrEnum):
     ORDERS_READ = "orders:read"
     ORDERS_UPDATE = "orders:update"  # run a sync pass + edit the Orders settings tab
 
+    # Revenue dashboard (read-only towards Zoho; Administrators only by default)
+    REVENUE_READ = "revenue:read"
+    REVENUE_EXPORT = "revenue:export"  # CSV + copy summary (UI only)
+    REVENUE_MANAGE_SCOPE = "revenue:manage_scope"
+    REVENUE_MANAGE_TARGETS = "revenue:manage_targets"
+    REVENUE_MANAGE_NOTES = "revenue:manage_notes"
+    REVENUE_SYNC = "revenue:sync"
+    REVENUE_VIEW_CUSTOMERS = "revenue:view_customers"
+    REVENUE_VIEW_MARGIN = "revenue:view_margin"
+
     # WebSocket connection
     WEBSOCKET_CONNECT = "websocket:connect"
 
@@ -405,6 +415,16 @@ PERMISSION_CATEGORIES = {
     "Orders": [
         Permission.ORDERS_READ,
         Permission.ORDERS_UPDATE,
+    ],
+    "Revenue": [
+        Permission.REVENUE_READ,
+        Permission.REVENUE_EXPORT,
+        Permission.REVENUE_MANAGE_SCOPE,
+        Permission.REVENUE_MANAGE_TARGETS,
+        Permission.REVENUE_MANAGE_NOTES,
+        Permission.REVENUE_SYNC,
+        Permission.REVENUE_VIEW_CUSTOMERS,
+        Permission.REVENUE_VIEW_MARGIN,
     ],
     "WebSocket": [
         Permission.WEBSOCKET_CONNECT,

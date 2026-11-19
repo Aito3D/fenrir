@@ -344,6 +344,15 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         # reason as AITO_READ; refresh/settings are a UI workflow.
         Permission.ORDERS_READ,
         Permission.ORDERS_UPDATE,
+        # Revenue dashboard — sales totals, customers and margins; user-token only.
+        Permission.REVENUE_READ,
+        Permission.REVENUE_EXPORT,
+        Permission.REVENUE_MANAGE_SCOPE,
+        Permission.REVENUE_MANAGE_TARGETS,
+        Permission.REVENUE_MANAGE_NOTES,
+        Permission.REVENUE_SYNC,
+        Permission.REVENUE_VIEW_CUSTOMERS,
+        Permission.REVENUE_VIEW_MARGIN,
         # CALCULATOR_READ (T-014) — the calculator routes expose the shop's
         # cost base (filament cost/margin, labor rate, markup curve, measured
         # failure rates, energy tariff). Like AITO_READ, no kiosk or

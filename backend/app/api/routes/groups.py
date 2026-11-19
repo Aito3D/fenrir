@@ -40,6 +40,14 @@ _PERMISSION_LABEL_OVERRIDES: dict[Permission, str] = {
     Permission.USERS_READ_SLIM: "List User Names (id + username only)",
     # "Start Unreviewed Queue" says nothing about what happens without it (#1620)
     Permission.QUEUE_START_UNREVIEWED: "Print Without Review (else jobs wait for someone to start them)",
+    Permission.REVENUE_READ: "View revenue",
+    Permission.REVENUE_EXPORT: "Export revenue",
+    Permission.REVENUE_MANAGE_SCOPE: "Classify revenue items",
+    Permission.REVENUE_MANAGE_TARGETS: "Edit revenue targets",
+    Permission.REVENUE_MANAGE_NOTES: "Edit revenue notes",
+    Permission.REVENUE_SYNC: "Sync revenue from Zoho",
+    Permission.REVENUE_VIEW_CUSTOMERS: "See revenue customers",
+    Permission.REVENUE_VIEW_MARGIN: "See revenue margin",
 }
 
 

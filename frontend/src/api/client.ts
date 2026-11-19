@@ -6571,6 +6571,8 @@ export type Permission =
   | 'calculator:read' | 'calculator:update'
   | 'aito:read' | 'aito:create' | 'aito:update' | 'aito:delete'
   | 'orders:read' | 'orders:update'
+  | 'revenue:read' | 'revenue:export' | 'revenue:manage_scope' | 'revenue:manage_targets'
+  | 'revenue:manage_notes' | 'revenue:sync' | 'revenue:view_customers' | 'revenue:view_margin'
   | 'websocket:connect';
 
 // Group types
