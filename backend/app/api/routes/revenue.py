@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
-from backend.app.services.revenue import memo, products, series, store, sync
+from backend.app.services.revenue import analysis, insights, memo, products, series, store, sync
 from backend.app.services.revenue.config import REVENUE_GRANULARITIES, REVENUE_HISTORY_START
 from backend.app.services.revenue.dates import add_days, is_valid_day, org_today
 from backend.app.services.revenue.insights import attach_targets, calendar_days, yoy_pivot
@@ -18,6 +18,7 @@ from backend.app.services.revenue.series import LineFilters
 router = APIRouter(prefix="/revenue", tags=["revenue"])
 
 _FROM_TO_ERROR = "from/to must be yyyy-MM-dd"
+COMPARE_SHOWN = 10
 
 
 def _unprocessable(message: str) -> HTTPException:
@@ -36,6 +37,11 @@ def _filters(
     return filters
 
 
+def _ordered_range(from_: str, to: str) -> None:
+    if not is_valid_day(from_) or not is_valid_day(to) or from_ > to:
+        raise _unprocessable("from/to must be yyyy-MM-dd with from ≤ to")
+
+
 async def _respond(
     request: Request,
     user: User | None,
@@ -43,11 +49,11 @@ async def _respond(
     *,
     live_sync: bool = False,
     flags: memo.CallerFlags | None = None,
+    now: datetime,
 ) -> Response:
     """One snapshot per request: it computes the stamp and then feeds the build."""
     flags = flags or memo.caller_flags(user)
     sync.ensure_revenue_sync_loop()
-    now = datetime.now(timezone.utc)
     async with store.snapshot() as conn:
         stamp = f"{await store.revenue_data_stamp(conn)}|{await store.items_synced_at(conn)}|{org_today(now)}"
         status = None
@@ -82,7 +88,8 @@ async def get_revenue(
 ):
     if granularity not in REVENUE_GRANULARITIES:
         raise _unprocessable("granularity must be day, week, month or year")
-    today = org_today()
+    now = datetime.now(timezone.utc)
+    today = org_today(now)
     if (from_ and not is_valid_day(from_)) or (to and not is_valid_day(to)):
         raise _unprocessable(_FROM_TO_ERROR)
     flags = memo.caller_flags(user)
@@ -129,7 +136,7 @@ async def get_revenue(
             "fetchedAt": now.isoformat(),
         }
 
-    return await _respond(request, user, build, live_sync=True, flags=flags)
+    return await _respond(request, user, build, live_sync=True, flags=flags, now=now)
 
 
 @router.get("/items")
@@ -143,8 +150,8 @@ async def get_items(
     segment: str | None = None,
     user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ),
 ):
-    if not is_valid_day(from_) or not is_valid_day(to) or from_ > to:
-        raise _unprocessable("from/to must be yyyy-MM-dd with from ≤ to")
+    now = datetime.now(timezone.utc)
+    _ordered_range(from_, to)
     flags = memo.caller_flags(user)
     filters = _filters(flags, items, brand, kind, segment)
 
@@ -153,7 +160,7 @@ async def get_items(
         rows = series.item_breakdown(ctx["lines"], ctx["items"], ctx["decisions"], ctx["customers"], filters)
         return {"items": rows, "from": from_, "to": to}
 
-    return await _respond(request, user, build, flags=flags)
+    return await _respond(request, user, build, flags=flags, now=now)
 
 
 @router.get("/products")
@@ -164,7 +171,7 @@ async def get_products(request: Request, user: User | None = RequirePermissionIf
         )
         return {"products": rows, "fetchedAt": now.isoformat()}
 
-    return await _respond(request, user, build)
+    return await _respond(request, user, build, now=datetime.now(timezone.utc))
 
 
 @router.get("/review")
@@ -174,7 +181,7 @@ async def get_review(request: Request, user: User | None = RequirePermissionIfAu
             await store.item_totals(conn), await store.read_scope_items(conn), await store.read_decisions(conn)
         )
 
-    return await _respond(request, user, build)
+    return await _respond(request, user, build, now=datetime.now(timezone.utc))
 
 
 @router.get("/sync")
@@ -182,7 +189,7 @@ async def get_sync(request: Request, user: User | None = RequirePermissionIfAuth
     async def build(_conn, _now, status):
         return {"sync": status}
 
-    return await _respond(request, user, build, live_sync=True)
+    return await _respond(request, user, build, live_sync=True, now=datetime.now(timezone.utc))
 
 
 @router.get("/yoy")
@@ -196,7 +203,8 @@ async def get_yoy(
 ):
     flags = memo.caller_flags(user)
     filters = _filters(flags, items, brand, kind, segment)
-    today = org_today()
+    now = datetime.now(timezone.utc)
+    today = org_today(now)
 
     async def build(conn, _now, _status):
         ctx = await _context(conn, REVENUE_HISTORY_START, today)
@@ -211,7 +219,7 @@ async def get_yoy(
         )
         return {"years": yoy_pivot(buckets), "today": today}
 
-    return await _respond(request, user, build, flags=flags)
+    return await _respond(request, user, build, flags=flags, now=now)
 
 
 @router.get("/daily")
@@ -225,7 +233,8 @@ async def get_daily(
     segment: str | None = None,
     user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ),
 ):
-    today = org_today()
+    now = datetime.now(timezone.utc)
+    today = org_today(now)
     if (from_ and not is_valid_day(from_)) or (to and not is_valid_day(to)):
         raise _unprocessable(_FROM_TO_ERROR)
     flags = memo.caller_flags(user)
@@ -250,7 +259,7 @@ async def get_daily(
         )
         return {"from": start, "to": end, "days": calendar_days(buckets)}
 
-    return await _respond(request, user, build, flags=flags)
+    return await _respond(request, user, build, flags=flags, now=now)
 
 
 @router.get("/targets")
@@ -258,7 +267,7 @@ async def get_targets(request: Request, user: User | None = RequirePermissionIfA
     async def build(conn, _now, _status):
         return {"targets": await store.read_targets(conn)}
 
-    return await _respond(request, user, build)
+    return await _respond(request, user, build, now=datetime.now(timezone.utc))
 
 
 @router.get("/annotations")
@@ -268,4 +277,139 @@ async def get_annotations(
     async def build(conn, _now, _status):
         return {"annotations": await store.read_annotations(conn)}
 
-    return await _respond(request, user, build)
+    return await _respond(request, user, build, now=datetime.now(timezone.utc))
+
+
+@router.get("/customers")
+async def get_customers(
+    request: Request,
+    from_: str = Query("", alias="from"),
+    to: str = "",
+    items: str | None = None,
+    brand: list[str] = Query(default=[]),
+    kind: str | None = None,
+    segment: str | None = None,
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_CUSTOMERS),
+):
+    now = datetime.now(timezone.utc)
+    _ordered_range(from_, to)
+    flags = memo.caller_flags(user)
+    filters = _filters(flags, items, brand, kind, segment)
+
+    async def build(conn, _now, _status):
+        ctx = await _context(conn, from_, to)
+        result = insights.customer_breakdown(
+            ctx["lines"],
+            ctx["items"],
+            ctx["decisions"],
+            ctx["customers"],
+            filters,
+            await store.customer_first_days(conn),
+            from_,
+        )
+        return {"from": from_, "to": to, **result}
+
+    return await _respond(request, user, build, flags=flags, now=now)
+
+
+def _breakdown(ctx: dict, lines: list, filters: LineFilters) -> list[dict]:
+    return series.item_breakdown(lines, ctx["items"], ctx["decisions"], ctx["customers"], filters)
+
+
+@router.get("/movers")
+async def get_movers(
+    request: Request,
+    granularity: str = "month",
+    key: str | None = None,
+    from_: str | None = Query(None, alias="from"),
+    to: str | None = None,
+    cfrom: str | None = None,
+    cto: str | None = None,
+    items: str | None = None,
+    brand: list[str] = Query(default=[]),
+    kind: str | None = None,
+    segment: str | None = None,
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ),
+):
+    now = datetime.now(timezone.utc)
+    today = org_today(now)
+    flags = memo.caller_flags(user)
+    free = cfrom is not None
+    if free:
+        days = [from_ or "", to or "", cfrom or "", cto or ""]
+        if not all(is_valid_day(d) for d in days) or days[0] > days[1] or days[2] > days[3]:
+            raise _unprocessable("from/to/cfrom/cto must be yyyy-MM-dd with from ≤ to and cfrom ≤ cto")
+        ranges = {"current": {"from": days[0], "to": days[1]}, "previous": {"from": days[2], "to": days[3]}}
+    else:
+        if granularity not in REVENUE_GRANULARITIES:
+            raise _unprocessable("granularity must be day, week, month or year")
+        key = key or series.bucket_key_for(today, granularity)
+        try:
+            start, end = series.bucket_range(key, granularity) if series.is_bucket_key(key, granularity) else ("", "")
+        except ValueError:
+            start = end = ""
+        if (
+            not is_valid_day(start)
+            or series.bucket_key_for(start, granularity) != key
+            or start > today
+            or end < REVENUE_HISTORY_START
+        ):
+            raise _unprocessable("key is not a bucket of this granularity inside the history")
+        ranges = insights.mover_ranges(key, granularity, today)
+    filters = _filters(flags, items, brand, kind, segment)
+
+    async def build(conn, _now, _status):
+        cur, prev = ranges["current"], ranges["previous"]
+        ctx = await _context(conn, min(cur["from"], prev["from"]), max(cur["to"], prev["to"]))
+
+        def rows(r: dict) -> list[dict]:
+            return _breakdown(ctx, [x for x in ctx["lines"] if r["from"] <= x.day <= r["to"]], filters)
+
+        shown = COMPARE_SHOWN if free else insights.MOVERS_SHOWN
+        moved = insights.compute_movers(rows(cur), rows(prev), ranges, shown)
+        return {"granularity": None if free else granularity, "key": None if free else key, **moved}
+
+    return await _respond(request, user, build, flags=flags, now=now)
+
+
+@router.get("/analysis")
+async def get_analysis(
+    request: Request,
+    from_: str = Query("", alias="from"),
+    to: str = "",
+    items: str | None = None,
+    brand: list[str] = Query(default=[]),
+    kind: str | None = None,
+    segment: str | None = None,
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ),
+):
+    now = datetime.now(timezone.utc)
+    today = org_today(now)
+    _ordered_range(from_, to)
+    flags = memo.caller_flags(user)
+    filters = _filters(flags, items, brand, kind, segment)
+    start, end = series.clamp_range(from_, to, REVENUE_HISTORY_START, today)
+
+    async def build(conn, _now, _status):
+        ctx = await _context(conn, start, end)
+        rows = _breakdown(ctx, ctx["lines"], filters)
+        dr = analysis.dormant_ranges(today)
+        year = await _context(conn, dr["before"]["from"], dr["recent"]["to"])
+        last_days: dict[str, str] = {}
+        for line in year["lines"]:
+            if line.amount > 0 and last_days.get(line.item_id, "") < line.day:
+                last_days[line.item_id] = line.day
+
+        def dormant_rows(r: dict) -> list[dict]:
+            return _breakdown(year, [x for x in year["lines"] if r["from"] <= x.day <= r["to"]], filters)
+
+        return {
+            "from": start,
+            "to": end,
+            "abc": analysis.abc_analysis(rows),
+            "marginByBrand": analysis.margin_by(rows, "brand"),
+            "marginByNature": analysis.margin_by(rows, "nature"),
+            "dormant": analysis.dormant_items(dormant_rows(dr["before"]), dormant_rows(dr["recent"]), last_days),
+        }
+
+    return await _respond(request, user, build, flags=flags, now=now)

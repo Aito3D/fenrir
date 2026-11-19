@@ -90,6 +90,8 @@ async def tokens(db_session):
         "/daily",
         "/targets",
         "/annotations",
+        "/movers",
+        "/analysis?from=2025-03-01&to=2025-03-31",
     ],
 )
 async def test_every_read_route_needs_revenue_read(async_client, revenue_db, tokens, path):
@@ -223,3 +225,93 @@ async def test_api_key_cannot_read_revenue(async_client, db_session, tokens):
     db_session.add(APIKey(name="k", key_hash=key_hash, key_prefix=key_prefix, can_read_status=True, enabled=True))
     await db_session.commit()
     assert (await async_client.get(URL, headers={"X-API-Key": full_key})).status_code == 403
+
+
+RANGE = {"from": "2025-03-01", "to": "2025-03-31"}
+
+
+@pytest.mark.asyncio
+async def test_customers_needs_view_customers(async_client, revenue_db, tokens):
+    path = f"{URL}/customers"
+    assert (await async_client.get(path, params=RANGE, headers=tokens["none"])).status_code == 403
+    assert (await async_client.get(path, params=RANGE, headers=tokens["read"])).status_code == 403
+    assert (await async_client.get(path, params=RANGE, headers=tokens["read_customers"])).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_customers_payload_always_carries_acquisition(async_client, revenue_db, tokens):
+    body = (await async_client.get(f"{URL}/customers", params=RANGE, headers=tokens["read_customers"])).json()
+    assert {"from", "to", "segments", "customers", "customerCount", "unsplitHt", "acquisition"} <= set(body)
+    assert body["acquisition"] is not None
+    assert body["customers"][0]["customerId"] == "c1"
+
+
+@pytest.mark.asyncio
+async def test_customers_and_analysis_validate_the_range(async_client, revenue_db, tokens):
+    for path in ("customers", "analysis"):
+        r = await async_client.get(
+            f"{URL}/{path}", params={"from": "2025-03-31", "to": "2025-03-01"}, headers=tokens["all"]
+        )
+        assert r.status_code == 422
+        assert r.json()["detail"] == "from/to must be yyyy-MM-dd with from ≤ to"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "params",
+    [{"key": "2023-12"}, {"granularity": "month", "key": "2026-W42"}, {"key": "2999-01"}],
+)
+async def test_movers_refuses_a_key_outside_the_history(async_client, revenue_db, tokens, params):
+    r = await async_client.get(f"{URL}/movers", params=params, headers=tokens["read"])
+    assert r.status_code == 422
+    assert r.json()["detail"] == "key is not a bucket of this granularity inside the history"
+
+
+@pytest.mark.asyncio
+async def test_movers_validates_granularity_and_compare_ranges(async_client, revenue_db, tokens):
+    r = await async_client.get(f"{URL}/movers", params={"granularity": "hour"}, headers=tokens["read"])
+    assert r.json()["detail"] == "granularity must be day, week, month or year"
+    r = await async_client.get(f"{URL}/movers", params={"cfrom": "2025-02-01"}, headers=tokens["read"])
+    assert r.status_code == 422
+    assert r.json()["detail"] == "from/to/cfrom/cto must be yyyy-MM-dd with from ≤ to and cfrom ≤ cto"
+
+
+@pytest.mark.asyncio
+async def test_movers_defaults_to_the_bucket_of_today_and_compares_a_bucket(async_client, revenue_db, tokens):
+    body = (await async_client.get(f"{URL}/movers", headers=tokens["read"])).json()
+    assert body["granularity"] == "month"
+    assert len(body["key"]) == 7
+    body = (await async_client.get(f"{URL}/movers", params={"key": "2025-03"}, headers=tokens["read"])).json()
+    assert body["items"]["up"][0]["key"] == "i1"
+    assert body["totals"] == {"current": 1000, "previous": 0}
+
+
+@pytest.mark.asyncio
+async def test_movers_free_mode_returns_the_top_ten(async_client, revenue_db, tokens):
+    rows = [
+        {"item_id": f"m{n}", "name": f"Item {n:02d}", "sku": f"M{n}", "brand": "eSUN", "nature": "Filaments"}
+        for n in range(12)
+    ]
+    lines = [
+        RevenueLine(
+            day=DAY, item_id=f"m{n}", customer_id="c1", name=f"Item {n:02d}", sku=f"M{n}", quantity=1, amount=100 + n
+        )
+        for n in range(12)
+    ]
+    async with async_sessionmaker(revenue_db, expire_on_commit=False)() as db:
+        await store.replace_items(db, rows, NOW)
+        await store.write_day(db, DAY, lines, True, NOW, 2)
+    params = {**RANGE, "cfrom": "2025-02-01", "cto": "2025-02-28"}
+    body = (await async_client.get(f"{URL}/movers", params=params, headers=tokens["read"])).json()
+    assert (body["granularity"], body["key"]) == (None, None)
+    assert len(body["items"]["up"]) == 10
+    assert body["previous"] == {"from": "2025-02-01", "to": "2025-02-28"}
+
+
+@pytest.mark.asyncio
+async def test_analysis_payload_and_margin_stripping(async_client, revenue_db, tokens):
+    plain = (await async_client.get(f"{URL}/analysis", params=RANGE, headers=tokens["read"])).json()
+    assert set(plain) == {"from", "to", "abc", "dormant"}
+    full = (await async_client.get(f"{URL}/analysis", params=RANGE, headers=tokens["read_margin"])).json()
+    assert set(full) == {"from", "to", "abc", "marginByBrand", "marginByNature", "dormant"}
+    assert full["marginByBrand"][0]["key"] == "eSUN"
