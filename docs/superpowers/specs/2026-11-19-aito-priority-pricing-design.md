@@ -94,15 +94,32 @@ changes it. Existing projects never get re-suggested on load.
 - Project create/update payloads and responses carry `priority`; board golden
   fixture regenerated.
 
-## Zoho line
+## Zoho lines (revised 2026-11-19, after the first build)
 
-Modelled on the shipping line in `aito_quote_export.build_line_items`: a
-catalogue item claimed for the surcharge, appended after task lines, its rate
-the computed surcharge, its description the level name. Import / pull
-(`aito_quote_import`, `aito_quote_pull`) must recognise it by item id and read
-it back as the project's level rather than as an unknown line; a project set
-back to Normal drops it on the next push. Invoice creation copies it like any
-other estimate line.
+**No separate item or line.** The user rejected the dedicated "Priority /
+Urgent service" line: the quote keeps only the items it already uses, and the
+surcharge raises their prices.
+
+- Every task service line (scan, modelling, print, machining, labour) has its
+  rate multiplied by the same factor `f = 1 + surcharge / base`, where
+  `surcharge` and `base` are exactly as in "Algorithm" (base = net task total,
+  shipping excluded; surcharge rounded half-up). Pushed rate =
+  `round_half_up(cost / qty × f)`. Discounts stay on the line, so the net
+  rises by the same factor. Shipping is never scaled. Normal → `f = 1`, the
+  push is byte-identical to before.
+- Per-line rounding means the Books total may differ from
+  `base + surcharge` by a few units. Accepted.
+- The card keeps its un-surcharged task prices: the post-push rounding
+  write-back stores the rounding of the UN-scaled rate, never the scaled one.
+- Pull (Books → card) compares Books against the scaled rates the card would
+  push; a rate edited in Books is read back into the task divided by `f`.
+- Import cannot tell a raised price from a normal one: an imported quote
+  comes in at level Normal with the prices as they are in Books.
+- Removed from the first build: the two Books items and their settings keys,
+  `PriorityCatalogueUnavailable`, recognising/stripping a priority line on
+  import and pull, the discount rule for that line, the preview's
+  `priority` / `priority_amount`, and the import drawer adding it to its total.
+- Recomputed on every push, invoiced lock, pending-after-pull: unchanged.
 
 ## Approaches considered
 
@@ -111,15 +128,15 @@ date suggestion. **Picked C.**
 Algorithm: 1 flat % · 2 % with minimum fee · 3 per displaced machine-hour.
 **Picked 2**: small jobs still pay a meaningful amount, big jobs scale; 1 is
 the removed Rush and negligible on small jobs; 3 makes long prints explode.
-Visibility: visible Zoho line vs folded into prices. **Picked visible.**
+Visibility: visible Zoho line vs folded into prices. **Picked visible**, then
+revised by the user to: existing lines only, all raised by the same % (see
+"Zoho lines").
 
 ## Calls made after the builder check (author's calls, reviewable)
 
 - **Base is after task discounts**: the surcharge scales with what the client
   actually pays for the work. The priority line itself takes no discount;
   `discount_issues` flags a discount on it exactly like the shipping line.
-- **Two catalogue items** (one per level), so import/pull reads the level
-  from the item id, never from editable description text.
 - **Recomputed on every push** like the other card-built lines; changing the
   level is blocked by the invoiced-task lock (409) like other priced edits.
 - **Date suggestion is drawer-only.** The project panel shows the control and
@@ -132,9 +149,6 @@ Visibility: visible Zoho line vs folded into prices. **Picked visible.**
   yields a TTC line there; in the calculator the same figure is HT. A
   min-fee-bound job is therefore ~13 % cheaper in Aito than the calculator
   shows for a 13 %-tax client.
-- **Books item ids** `zoho_item_priority_id` / `zoho_item_urgent_id` are set
-  through the settings API (no UI); until set, non-Normal projects stay
-  pending.
 - **Aito task prices never include it**: `computeImpressionCost` passes
   `normal`; the project line is the only surcharge.
 
