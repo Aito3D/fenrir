@@ -23,7 +23,7 @@ function setup(o: { canManage?: boolean; write?: (url: string, init: RequestInit
   const onClose = vi.fn();
   render(
     <ToastProvider>
-      <RevenueReview canManage={o.canManage ?? true} onChanged={onChanged} onClose={onClose} />
+      <RevenueReview canManage={o.canManage ?? true} onChanged={onChanged} onClose={onClose} returnFocus={vi.fn()} />
     </ToastProvider>,
   );
   const writes = () => fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method) as unknown as [string, RequestInit][];
@@ -107,12 +107,12 @@ describe('RevenueReview', () => {
     answer(json({ ok: true }));
   });
 
-  it('shows the server detail and reloads nothing when a decision fails', async () => {
-    const { onChanged, reads } = setup({ write: () => json({ detail: 'item id is not valid' }, 422) });
+  it('shows the server detail and reloads the list, not the page, when a decision fails', async () => {
+    const { onChanged, reads } = setup({ write: () => json({ detail: 'item already decided' }, 409) });
     fireEvent.click(await screen.findByRole('button', { name: 'Include' }));
-    expect(await screen.findByText('item id is not valid')).toBeInTheDocument();
+    expect(await screen.findByText('item already decided')).toBeInTheDocument();
+    await waitFor(() => expect(reads()).toHaveLength(2));
     expect(onChanged).not.toHaveBeenCalled();
-    expect(reads()).toHaveLength(1);
   });
 
   it('says the change was not saved when the request never reaches the server', async () => {
@@ -125,7 +125,7 @@ describe('RevenueReview', () => {
     vi.stubGlobal('fetch', vi.fn(async () => json({ detail: 'Zoho is down' }, 502)));
     render(
       <ToastProvider>
-        <RevenueReview canManage onChanged={vi.fn()} onClose={vi.fn()} />
+        <RevenueReview canManage onChanged={vi.fn()} onClose={vi.fn()} returnFocus={vi.fn()} />
       </ToastProvider>,
     );
     expect(await screen.findByRole('alert')).toHaveTextContent('Zoho is down');

@@ -527,6 +527,34 @@ describe('RevenuePage — items to classify', () => {
     expect(pill).toHaveFocus();
   });
 
+  it('puts focus on ⋯ when the pill that opened the panel is gone', async () => {
+    let decided = false;
+    fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.startsWith('/api/v1/revenue/scope/') && init?.method === 'PUT') {
+        decided = true;
+        return json({ decision: {} });
+      }
+      if (url === '/api/v1/revenue/review') {
+        const row = { itemId: 'x1', name: 'Mystère', sku: '', totalHt: 100, quantity: 1, lastDay: '2026-10-01', brand: null, nature: null };
+        return json({ unclassified: decided ? [] : [row], decided: [] });
+      }
+      if (url.startsWith('/api/v1/revenue?')) return json(payload({ reviewCount: decided ? 0 : 1 }));
+      return json({ detail: 'not stubbed' }, 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    granted.add('revenue:manage_scope');
+    renderPage();
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'To classify 1' }));
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'Include' }));
+    await flush();
+    await flush();
+    expect(screen.queryByRole('button', { name: /To classify/ })).toBeNull();
+    fireEvent.click(within(screen.getByRole('region', { name: 'To classify' })).getByRole('button', { name: 'Close' }));
+    expect(screen.getByRole('button', { name: 'More actions' })).toHaveFocus();
+  });
+
   it('has no pill when nothing waits; the menu still opens the panel', async () => {
     stubFetch(payload());
     renderPage();

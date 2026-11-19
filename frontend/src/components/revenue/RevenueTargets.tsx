@@ -15,10 +15,11 @@ const GROUPED = new Intl.NumberFormat('fr-FR');
 const INPUT = `w-full rounded-md border bg-bambu-dark px-2 py-1 text-right text-sm tabular-nums text-white read-only:opacity-60 ${focusRingCls}`;
 const NAV = `rounded p-1 text-bambu-gray hover:text-white disabled:opacity-30 ${focusRingCls}`;
 
-/** « 1 500 000 », « 1500000 FCP » → "1500000" (no leading zeros); "" when no digit. */
-const digitsOnly = (s: string) => {
-  const d = s.replace(/\D/g, '');
-  return d === '' ? '' : BigInt(d).toString();
+/** « 1 500 000 » → "1500000" (no leading zeros), "" for an emptied field, null for anything but ASCII digits and grouping spaces. */
+const parseAmount = (s: string): string | null => {
+  const d = s.replace(/[ \u00a0\u202f]/g, '');
+  if (d === '') return '';
+  return /^[0-9]+$/.test(d) ? BigInt(d).toString() : null;
 };
 // BigInt: a pasted run of digits past 2^53 still groups as typed instead of rounding.
 const grouped = (digits: string) => (digits === '' ? '' : GROUPED.format(BigInt(digits)));
@@ -29,10 +30,11 @@ const monthKey = (year: number, i: number) => `${year}-${String(i + 1).padStart(
  * « Enregistrer »), or every changed row with « Tout enregistrer » (sent one after the other). An
  * emptied input deletes that month's target. `actualByMonth` is null off the unfiltered month view.
  */
-export function RevenueTargets({ canManage, onChanged, onClose, today, actualByMonth }: {
+export function RevenueTargets({ canManage, onChanged, onClose, returnFocus, today, actualByMonth }: {
   canManage: boolean;
   onChanged: () => void;
   onClose: () => void;
+  returnFocus: () => void;
   today: string;
   actualByMonth: Record<string, number> | null;
 }) {
@@ -70,13 +72,22 @@ export function RevenueTargets({ canManage, onChanged, onClose, today, actualByM
     name: monthName.format(Date.UTC(2000, i, 1)).replace(/^./, (c) => c.toUpperCase()),
   }));
   const savedText = (m: string) => (saved?.[m] != null ? String(saved[m]) : '');
-  const valueOf = (m: string) => drafts[m] ?? savedText(m);
-  const changed = (m: string) => drafts[m] !== undefined && drafts[m] !== savedText(m);
-  const invalid = (m: string) => valueOf(m) !== '' && Number(valueOf(m)) > MAX_AMOUNT;
+  // Drafts hold what was typed; an entry that does not parse stays on screen as typed and is never sent.
+  const valueOf = (m: string) => (drafts[m] === undefined ? savedText(m) : parseAmount(drafts[m]));
+  const changed = (m: string) => drafts[m] !== undefined && valueOf(m) !== savedText(m);
+  const invalid = (m: string) => {
+    const v = valueOf(m);
+    return v === null || (v !== '' && Number(v) > MAX_AMOUNT);
+  };
+  const shown = (m: string) => {
+    const v = valueOf(m);
+    return v === null ? drafts[m] : grouped(v);
+  };
 
   /** Saves one month and takes the server's answer as the saved value; throws the server's message. */
   const saveMonth = async (m: string) => {
     const digits = valueOf(m);
+    if (digits === null) throw new Error(t('revenue.targets.invalid'));
     const url = `/api/v1/revenue/targets/${m}`;
     const res = await fetch(
       url,
@@ -143,7 +154,7 @@ export function RevenueTargets({ canManage, onChanged, onClose, today, actualByM
 
   /** Fills this year's empty months with the first filled one (drafts only, filled months untouched). */
   const copyAcross = () => {
-    const source = months.map((m) => valueOf(m.key)).find((v) => v !== '');
+    const source = months.map((m) => valueOf(m.key)).find((v) => v !== '' && v !== null);
     if (!source) return;
     setDrafts((d) => {
       const next = { ...d };
@@ -164,6 +175,7 @@ export function RevenueTargets({ canManage, onChanged, onClose, today, actualByM
     <RevenueClosablePanel
       title={t('revenue.targets.title')}
       onClose={onClose}
+      returnFocus={returnFocus}
       action={
         <>
           <div className="flex items-center gap-1">
@@ -179,7 +191,8 @@ export function RevenueTargets({ canManage, onChanged, onClose, today, actualByM
           </div>
           {canManage && (
             <>
-              <button type="button" className={`text-xs text-bambu-gray-light underline underline-offset-2 hover:text-white ${focusRingCls}`} onClick={copyAcross}>
+              <button type="button" disabled={busy !== null} onClick={copyAcross}
+                className={`text-xs text-bambu-gray-light underline underline-offset-2 hover:text-white disabled:opacity-40 ${focusRingCls}`}>
                 {t('revenue.targets.copyAcross')}
               </button>
               <button type="button" disabled={pending.length === 0 || anyInvalid || busy !== null} onClick={() => void saveAll(pending)}
@@ -225,13 +238,13 @@ export function RevenueTargets({ canManage, onChanged, onClose, today, actualByM
                         <input type="text" inputMode="numeric" aria-label={t('revenue.targets.input', { month: name, year })} placeholder="—"
                           aria-invalid={bad || undefined} aria-describedby={bad ? invalidId : undefined} readOnly={busy !== null}
                           className={`${INPUT} ${bad ? 'border-red-500' : 'border-bambu-dark-tertiary'}`}
-                          value={grouped(valueOf(m))}
-                          onChange={(e) => setDrafts((d) => ({ ...d, [m]: digitsOnly(e.target.value) }))}
+                          value={shown(m)}
+                          onChange={(e) => setDrafts((d) => ({ ...d, [m]: e.target.value }))}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && changed(m) && !bad) void saveOne(m);
                           }} />
                       ) : (
-                        grouped(valueOf(m)) || '—'
+                        shown(m) || '—'
                       )}
                     </td>
                     {showActual && (

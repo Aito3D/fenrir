@@ -177,6 +177,9 @@ export function RevenuePage() {
   // Where focus goes back when a panel closes: the pill or ⋯ that opened it.
   const reviewOpener = useRef<HTMLElement | null>(null);
   const targetsOpener = useRef<HTMLElement | null>(null);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+  // The opener may be gone (classifying the last item removes the pill): ⋯ is always there.
+  const focusOpener = (opener: HTMLElement | null) => (opener?.isConnected ? opener : menuTrigger.current)?.focus();
   // Read when the next poll is armed; a ref so a new payload never restarts the poller.
   const syncActive = useRef(false);
 
@@ -390,7 +393,7 @@ export function RevenuePage() {
           <div data-slot="revenue-menu">
             <RevenueMenu canExport={can.export} canSync={can.sync} ready={ready} rebuildBusy={rebuildBusy} reviewCount={reviewCount ?? 0}
               targetsOpen={targetsOpen} onTargets={toggleTargets} onReview={() => toggleReview()} onCopy={() => void copySummary()} onExport={exportCsv}
-              onRebuild={() => void rebuild()} />
+              onRebuild={() => void rebuild()} triggerRef={menuTrigger} />
           </div>
         </div>
       </div>
@@ -453,11 +456,11 @@ export function RevenuePage() {
       )}
 
       {reviewOpen && !itemsPending && (
-        <RevenueReview canManage={can.scope} onChanged={refresh} onClose={() => { setReviewOpen(false); reviewOpener.current?.focus(); }} />
+        <RevenueReview canManage={can.scope} onChanged={refresh} onClose={() => setReviewOpen(false)} returnFocus={() => focusOpener(reviewOpener.current)} />
       )}
       {targetsOpen && (
         <RevenueTargets canManage={can.targets} onChanged={refresh} today={today} actualByMonth={actualByMonth}
-          onClose={() => { setTargetsOpen(false); targetsOpener.current?.focus(); }} />
+          onClose={() => setTargetsOpen(false)} returnFocus={() => focusOpener(targetsOpener.current)} />
       )}
 
       {!ready ? (

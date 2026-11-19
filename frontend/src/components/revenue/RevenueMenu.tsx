@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { focusRingCls } from '../formStyles';
 
@@ -8,7 +8,8 @@ const ENABLED_ITEM = '[role="menuitem"]:not(:disabled)';
 /**
  * The page's ⋯ menu: targets editor, items to classify, copy and export (`revenue:export`, once the
  * dashboard is ready) and the full rebuild (`revenue:sync`, asked first). ↑ ↓ Home End move, Escape
- * closes; a pick closes the menu and puts focus back on ⋯ before it runs.
+ * closes; a pick closes the menu and puts focus back on ⋯ before it runs. The rebuild confirmation
+ * opens on « Annuler », ignores held-key repeats and the second click of a double click.
  */
 export function RevenueMenu(p: {
   canExport: boolean;
@@ -22,16 +23,21 @@ export function RevenueMenu(p: {
   onCopy: () => void;
   onExport: () => void;
   onRebuild: () => void;
+  /** The ⋯ button, for the page to put focus back on. */
+  triggerRef: RefObject<HTMLButtonElement | null>;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
+  const trigger = p.triggerRef;
   const menu = useRef<HTMLDivElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  const questionId = useId();
   const items = () => Array.from(menu.current?.querySelectorAll<HTMLButtonElement>(ENABLED_ITEM) ?? []);
 
   useEffect(() => {
-    if (open) menu.current?.querySelector<HTMLButtonElement>(ENABLED_ITEM)?.focus();
+    // Never land on « Oui »: the Enter that opened the confirmation must not be able to confirm it.
+    if (open) (confirm ? cancel.current : menu.current?.querySelector<HTMLButtonElement>(ENABLED_ITEM))?.focus();
   }, [open, confirm]);
 
   const close = () => {
@@ -44,7 +50,18 @@ export function RevenueMenu(p: {
     action();
   };
 
+  const confirmRebuild = (e: MouseEvent) => {
+    // A double click's second click lands on « Oui » where « Reconstruire » was.
+    if (e.detail > 1) return;
+    pick(p.onRebuild)();
+  };
+
   const onKeyDown = (e: KeyboardEvent) => {
+    // A held key's auto-repeat would walk through Reconstruire → Annuler → … without the user meaning it.
+    if (e.repeat && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      return;
+    }
     const list = items();
     const at = list.indexOf(document.activeElement as HTMLButtonElement);
     const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: list.length - 1 }[e.key];
@@ -71,9 +88,9 @@ export function RevenueMenu(p: {
             className="absolute right-0 top-full z-20 mt-1 w-60 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1.5 shadow-xl">
             {confirm ? (
               <>
-                <p className="px-2.5 py-1.5 text-sm text-amber-400">{t('revenue.sync.rebuildConfirm')}</p>
-                <button type="button" role="menuitem" className={`${ITEM} text-amber-400`} onClick={pick(p.onRebuild)}>{t('revenue.sync.rebuildYes')}</button>
-                <button type="button" role="menuitem" className={ITEM} onClick={() => setConfirm(false)}>{t('revenue.sync.cancel')}</button>
+                <p id={questionId} className="px-2.5 py-1.5 text-sm text-amber-400">{t('revenue.sync.rebuildConfirm')}</p>
+                <button type="button" role="menuitem" aria-describedby={questionId} className={`${ITEM} text-amber-400`} onClick={confirmRebuild}>{t('revenue.sync.rebuildYes')}</button>
+                <button ref={cancel} type="button" role="menuitem" className={ITEM} onClick={() => setConfirm(false)}>{t('revenue.sync.cancel')}</button>
               </>
             ) : (
               <>

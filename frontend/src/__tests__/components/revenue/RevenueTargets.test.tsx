@@ -28,7 +28,7 @@ function setup(o: { canManage?: boolean; write?: Write; actualByMonth?: Record<s
   const onClose = vi.fn();
   render(
     <ToastProvider>
-      <RevenueTargets canManage={o.canManage ?? true} onChanged={onChanged} onClose={onClose} today="2026-11-19"
+      <RevenueTargets canManage={o.canManage ?? true} onChanged={onChanged} onClose={onClose} returnFocus={vi.fn()} today="2026-11-19"
         actualByMonth={o.actualByMonth === undefined ? null : o.actualByMonth} />
     </ToastProvider>,
   );
@@ -69,11 +69,39 @@ describe('RevenueTargets', () => {
     expect(screen.getByRole('textbox', { name: 'Target January 2027' })).toHaveValue('');
   });
 
-  it('keeps digits only and shows them grouped', async () => {
+  it('takes ASCII digits with grouping spaces and shows them grouped', async () => {
     setup();
     await waitFor(() => expect(input('January').value).not.toBe(''));
-    fireEvent.change(input('February'), { target: { value: '1 25a0 000 FCP' } });
+    fireEvent.change(input('February'), { target: { value: '1 250\u202f000' } });
     expect(input('February').value).toBe(G.format(1_250_000));
+    expect(input('February')).not.toHaveAttribute('aria-invalid');
+  });
+
+  for (const typed of ['١٥٠٠', 'abc', '1500,50', '1.5', '1e6', '-5']) {
+    it(`keeps « ${typed} » as typed, invalid, and never sends it`, async () => {
+      const { writes } = setup();
+      await waitFor(() => expect(input('January').value).not.toBe(''));
+      fireEvent.change(input('January'), { target: { value: typed } });
+      expect(input('January').value).toBe(typed);
+      expect(input('January')).toHaveAttribute('aria-invalid', 'true');
+      expect(screen.getByRole('alert')).toHaveTextContent('Enter a whole amount');
+      fireEvent.keyDown(input('January'), { key: 'Enter' });
+      expect(screen.getByRole('button', { name: 'Save all (1)' })).toBeDisabled();
+      fireEvent.click(screen.getByRole('button', { name: 'Save all (1)' }));
+      expect(within(input('January').closest('tr')!).getByRole('button', { name: 'Save' })).toBeDisabled();
+      expect(writes()).toHaveLength(0);
+    });
+  }
+
+  it('disables Copy across the year while a batch save runs', async () => {
+    let answer: (r: Response) => void = () => {};
+    setup({ write: () => new Promise<Response>((r) => (answer = r)) });
+    await waitFor(() => expect(input('January').value).not.toBe(''));
+    fireEvent.change(input('January'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save all (1)' }));
+    expect(screen.getByRole('button', { name: 'Copy across the year' })).toBeDisabled();
+    answer(json({ cleared: true }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copy across the year' })).toBeEnabled());
   });
 
   it('saves a row on Enter as a plain integer, then reloads the page', async () => {

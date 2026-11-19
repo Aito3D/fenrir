@@ -11,7 +11,7 @@ import type { ReviewResponse } from './lib/types';
 const BTN = `rounded-md border border-bambu-dark-tertiary px-2 py-0.5 text-xs hover:bg-bambu-dark-tertiary disabled:opacity-40 ${focusRingCls}`;
 
 /** Items sold that match neither a 3D nature nor a 3D brand: include or exclude them from the revenue, or undo a decision. */
-export function RevenueReview({ canManage, onChanged, onClose }: { canManage: boolean; onChanged: () => void; onClose: () => void }) {
+export function RevenueReview({ canManage, onChanged, onClose, returnFocus }: { canManage: boolean; onChanged: () => void; onClose: () => void; returnFocus: () => void }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const [data, setData] = useState<ReviewResponse | null>(null);
@@ -53,7 +53,12 @@ export function RevenueReview({ canManage, onChanged, onClose }: { canManage: bo
       const res = await fetch(url, init).catch(() => null);
       // No response at all (network down): the browser's own message is not for the user.
       if (!res) throw new Error(t('revenue.review.failed'));
-      if (!res.ok) throw new Error(failureMessage(res.status, await readJsonBody(res)));
+      if (!res.ok) {
+        const message = failureMessage(res.status, await readJsonBody(res));
+        // Someone else may have decided the item (404, 409): show the list as the server has it now.
+        void load();
+        throw new Error(message);
+      }
       await load();
       onChanged();
     } catch (e) {
@@ -68,6 +73,7 @@ export function RevenueReview({ canManage, onChanged, onClose }: { canManage: bo
     <RevenueClosablePanel
       title={t('revenue.review.title')}
       onClose={onClose}
+      returnFocus={returnFocus}
       action={
         <button type="button" className={`text-xs text-bambu-gray-light underline underline-offset-2 hover:text-white ${focusRingCls}`} onClick={() => setShowDecided((s) => !s)}>
           {showDecided ? t('revenue.review.hideDecisions') : t('revenue.review.decisions', { n: data?.decided.length ?? 0 })}
