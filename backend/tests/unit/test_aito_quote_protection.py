@@ -11,6 +11,7 @@ transition a request causes, never letting `run_sync_once` see the row.
 """
 
 import pytest
+from fastapi import BackgroundTasks
 from sqlalchemy import select
 
 from backend.app.api.routes.aito import create_project, delete_project, restore_project, update_project
@@ -78,6 +79,7 @@ async def test_editing_a_legacy_quote_less_project_never_marks_it_pending(db_ses
     await db_session.refresh(project)
 
     response = await update_project(
+        background_tasks=BackgroundTasks(),
         project_id=project.id,
         payload=AitoProjectUpdate(description="Vieille piece modifiee"),
         db=db_session,
@@ -106,6 +108,7 @@ async def test_editing_a_project_of_ours_that_already_has_a_quote_still_marks_it
     await db_session.refresh(project)
 
     response = await update_project(
+        background_tasks=BackgroundTasks(),
         project_id=project.id,
         payload=AitoProjectUpdate(description="Piece suivie modifiee"),
         db=db_session,
@@ -133,6 +136,7 @@ async def test_editing_a_project_whose_first_creation_failed_still_retries(db_se
     await db_session.refresh(project)
 
     response = await update_project(
+        background_tasks=BackgroundTasks(),
         project_id=project.id,
         payload=AitoProjectUpdate(description="Piece en echec modifiee"),
         db=db_session,
@@ -222,6 +226,7 @@ async def test_trashing_before_first_quote_then_restoring_and_editing_is_re_enqu
     assert restored.quote_sync_state == "pending"
 
     edited = await update_project(
+        background_tasks=BackgroundTasks(),
         project_id=project.id,
         payload=AitoProjectUpdate(description="Helice modifiee"),
         db=db_session,

@@ -4141,6 +4141,8 @@ async def test_trashing_before_first_tick_then_restoring_and_editing_is_re_enque
     card. Runs the REAL route handlers and a REAL sync tick (unlike the
     hand-set-state version in test_aito_quote_protection.py), so this is the
     end-to-end regression guard for Critical 1's first bug."""
+    from fastapi import BackgroundTasks
+
     from backend.app.api.routes.aito import create_project, delete_project, restore_project, update_project
     from backend.app.schemas.aito import AitoProjectCreate, AitoProjectUpdate, AitoTaskCreate
 
@@ -4177,6 +4179,7 @@ async def test_trashing_before_first_tick_then_restoring_and_editing_is_re_enque
     assert restored.quote_sync_state == "pending"
 
     edited = await update_project(
+        background_tasks=BackgroundTasks(),
         project_id=created.id,
         payload=AitoProjectUpdate(description="Helice modifiee"),
         db=db_session,
