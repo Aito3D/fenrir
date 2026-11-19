@@ -725,6 +725,7 @@ async def init_db():
         project_item,
         project_pin,
         project_tag,
+        revenue,
         scheduled_drying,
         settings,
         shopping_list,

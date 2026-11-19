@@ -71,6 +71,15 @@ from backend.app.models.project_folder import ProjectFolder
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.models.project_pin import ProjectRevisionPin
 from backend.app.models.project_tag import ProjectTag
+from backend.app.models.revenue import (
+    RevenueAnnotation,
+    RevenueCustomer,
+    RevenueDay,
+    RevenueDayLine,
+    RevenueItem,
+    RevenueScopeDecision,
+    RevenueTarget,
+)
 from backend.app.models.scheduled_drying import ScheduledDrying
 from backend.app.models.settings import Settings
 from backend.app.models.slicer_pipeline import SlicerPipeline
@@ -144,6 +153,13 @@ __all__ = [
     "PrinterSensorHistory",
     "PrinterHASensor",
     "ScheduledDrying",
+    "RevenueAnnotation",
+    "RevenueCustomer",
+    "RevenueDay",
+    "RevenueDayLine",
+    "RevenueItem",
+    "RevenueScopeDecision",
+    "RevenueTarget",
     "AmsLabel",
     "PendingUpload",
     "PrintBatch",
