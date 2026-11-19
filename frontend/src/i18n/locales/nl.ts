@@ -12424,7 +12424,7 @@ export default {
     analysis: {
       paretoTitle: 'Paretoprincipe (ABC)',
       paretoNote: 'excl. btw · A = 80 % van de omzet, B = tot 95 %, C = de rest',
-      classLabel: 'Klasse {{cls}}',
+      classLabel: 'Klasse {{cls}} · producten',
       classHint: '{{products}} van de producten · {{revenue}} van de omzet',
       productsBar: 'Producten',
       revenueBar: 'Omzet',
@@ -12442,6 +12442,10 @@ export default {
       dormantHint: 'Verkocht binnen het jaar, al 90 dagen geen verkoop — controleren voordat je ze aanbeveelt. Omzet excl. btw over de periode daarvoor.',
       lastSale: 'laatste verkoop {{date}}',
       none: 'Geen.',
+    },
+    labels: {
+      noBrand: 'Geen merk',
+      noNature: 'Geen categorie',
     },
   },
 };

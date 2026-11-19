@@ -12383,7 +12383,7 @@ export default {
     analysis: {
       paretoTitle: '帕累托法则（ABC）',
       paretoNote: '不含税 · A = 营收的 80 %，B = 至 95 %，C = 其余',
-      classLabel: '{{cls}} 类',
+      classLabel: '{{cls}} 类 · 产品数',
       classHint: '产品的 {{products}} · 营收的 {{revenue}}',
       productsBar: '产品',
       revenueBar: '营收',
@@ -12401,6 +12401,10 @@ export default {
       dormantHint: '一年内有售出，90 天无销售——推荐前请核实。营收（不含税）为之前期间。',
       lastSale: '最后销售 {{date}}',
       none: '无。',
+    },
+    labels: {
+      noBrand: '无品牌',
+      noNature: '无类别',
     },
   },
 };

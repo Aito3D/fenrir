@@ -12605,7 +12605,7 @@ export default {
     analysis: {
       paretoTitle: 'Zasada Pareto (ABC)',
       paretoNote: 'netto · A = 80 % przychodu, B = do 95 %, C = reszta',
-      classLabel: 'Klasa {{cls}}',
+      classLabel: 'Klasa {{cls}} · produkty',
       classHint: '{{products}} produktów · {{revenue}} przychodu',
       productsBar: 'Produkty',
       revenueBar: 'Przychód',
@@ -12623,6 +12623,10 @@ export default {
       dormantHint: 'Sprzedane w ciągu roku, brak sprzedaży od 90 dni — sprawdź przed poleceniem. Przychód netto z wcześniejszego okresu.',
       lastSale: 'ostatnia sprzedaż {{date}}',
       none: 'Brak.',
+    },
+    labels: {
+      noBrand: 'Bez marki',
+      noNature: 'Bez kategorii',
     },
   },
 };

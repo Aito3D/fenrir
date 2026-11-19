@@ -12456,7 +12456,7 @@ export default {
     analysis: {
       paretoTitle: 'Pareto law (ABC)',
       paretoNote: 'HT · A = 80 % of revenue, B = up to 95 %, C = the rest',
-      classLabel: 'Class {{cls}}',
+      classLabel: 'Class {{cls}} · products',
       classHint: '{{products}} of products · {{revenue}} of revenue',
       productsBar: 'Products',
       revenueBar: 'Revenue',
@@ -12474,6 +12474,10 @@ export default {
       dormantHint: 'Sold within the year, no sale for 90 days — check before recommending them. HT revenue over the earlier period.',
       lastSale: 'last sale {{date}}',
       none: 'None.',
+    },
+    labels: {
+      noBrand: 'No brand',
+      noNature: 'No category',
     },
   },
 };

@@ -12385,7 +12385,7 @@ export default {
     analysis: {
       paretoTitle: 'Loi de Pareto (ABC)',
       paretoNote: 'HT · A = 80 % du CA, B = jusqu\'à 95 %, C = le reste',
-      classLabel: 'Classe {{cls}}',
+      classLabel: 'Classe {{cls}} · produits',
       classHint: '{{products}} des produits · {{revenue}} du CA',
       productsBar: 'Produits',
       revenueBar: 'CA',
@@ -12403,6 +12403,10 @@ export default {
       dormantHint: 'Vendus dans l\'année, aucune vente depuis 90 jours — à vérifier avant de les recommander. CA HT sur la période d\'avant.',
       lastSale: 'dernière vente {{date}}',
       none: 'Aucun.',
+    },
+    labels: {
+      noBrand: 'Sans marque',
+      noNature: 'Sans nature',
     },
   },
 };

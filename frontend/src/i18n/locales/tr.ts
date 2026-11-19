@@ -12327,7 +12327,7 @@ export default {
     analysis: {
       paretoTitle: 'Pareto ilkesi (ABC)',
       paretoNote: 'Vergi hariç · A = cironun %80\'i, B = %95\'e kadar, C = kalanı',
-      classLabel: 'Sınıf {{cls}}',
+      classLabel: 'Sınıf {{cls}} · ürünler',
       classHint: 'ürünlerin {{products}} · cironun {{revenue}}',
       productsBar: 'Ürünler',
       revenueBar: 'Ciro',
@@ -12345,6 +12345,10 @@ export default {
       dormantHint: 'Yıl içinde satılmış, 90 gündür satış yok — önermeden önce kontrol edin. Önceki dönemin vergi hariç cirosu.',
       lastSale: 'son satış {{date}}',
       none: 'Yok.',
+    },
+    labels: {
+      noBrand: 'Markasız',
+      noNature: 'Kategorisiz',
     },
   },
 };

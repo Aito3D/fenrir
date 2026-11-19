@@ -23,3 +23,11 @@ export function compactAxis(v: number): string {
   if (a >= 1_000) return `${sign}${Math.round(a / 1_000)}${THIN_SPACE}k`;
   return `${sign}${Math.round(a)}`;
 }
+
+// The server's French fallback group names (series.NO_BRAND / NO_NATURE); every other name is data and passes through.
+const SERVER_FALLBACK_KEYS: Record<string, string> = { "Sans marque": "revenue.labels.noBrand", "Sans nature": "revenue.labels.noNature" };
+
+export function serverLabel(name: string, t: (key: string) => string): string {
+  const key = SERVER_FALLBACK_KEYS[name];
+  return key ? t(key) : name;
+}

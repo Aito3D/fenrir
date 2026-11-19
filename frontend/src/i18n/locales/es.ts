@@ -12408,7 +12408,7 @@ export default {
     analysis: {
       paretoTitle: 'Ley de Pareto (ABC)',
       paretoNote: 'Sin IVA · A = 80 % de la facturación, B = hasta 95 %, C = el resto',
-      classLabel: 'Clase {{cls}}',
+      classLabel: 'Clase {{cls}} · productos',
       classHint: '{{products}} de los productos · {{revenue}} de la facturación',
       productsBar: 'Productos',
       revenueBar: 'Facturación',
@@ -12426,6 +12426,10 @@ export default {
       dormantHint: 'Vendidos en el año, sin ventas desde hace 90 días: comprobar antes de recomendarlos. Facturación sin IVA del periodo anterior.',
       lastSale: 'última venta {{date}}',
       none: 'Ninguno.',
+    },
+    labels: {
+      noBrand: 'Sin marca',
+      noNature: 'Sin categoría',
     },
   },
 };

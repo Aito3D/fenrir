@@ -12021,7 +12021,7 @@ export default {
     analysis: {
       paretoTitle: '파레토 법칙 (ABC)',
       paretoNote: '세전 · A = 매출의 80 %, B = 95 %까지, C = 나머지',
-      classLabel: '등급 {{cls}}',
+      classLabel: '등급 {{cls}} · 상품 수',
       classHint: '상품의 {{products}} · 매출의 {{revenue}}',
       productsBar: '상품',
       revenueBar: '매출',
@@ -12039,6 +12039,10 @@ export default {
       dormantHint: '1년 내 판매되었으나 90일간 판매 없음 — 추천 전에 확인하세요. 이전 기간의 세전 매출.',
       lastSale: '마지막 판매 {{date}}',
       none: '없음.',
+    },
+    labels: {
+      noBrand: '브랜드 없음',
+      noNature: '카테고리 없음',
     },
   },
 };

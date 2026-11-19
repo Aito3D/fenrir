@@ -12383,7 +12383,7 @@ export default {
     analysis: {
       paretoTitle: '帕雷托法則（ABC）',
       paretoNote: '未稅 · A = 營收的 80 %，B = 至 95 %，C = 其餘',
-      classLabel: '{{cls}} 類',
+      classLabel: '{{cls}} 類 · 產品數',
       classHint: '產品的 {{products}} · 營收的 {{revenue}}',
       productsBar: '產品',
       revenueBar: '營收',
@@ -12401,6 +12401,10 @@ export default {
       dormantHint: '一年內有售出，90 天無銷售——推薦前請確認。營收（未稅）為之前期間。',
       lastSale: '最後銷售 {{date}}',
       none: '無。',
+    },
+    labels: {
+      noBrand: '無品牌',
+      noNature: '無類別',
     },
   },
 };

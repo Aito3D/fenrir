@@ -12385,7 +12385,7 @@ export default {
     analysis: {
       paretoTitle: 'Legge di Pareto (ABC)',
       paretoNote: 'IVA esclusa · A = 80 % del fatturato, B = fino al 95 %, C = il resto',
-      classLabel: 'Classe {{cls}}',
+      classLabel: 'Classe {{cls}} · prodotti',
       classHint: '{{products}} dei prodotti · {{revenue}} del fatturato',
       productsBar: 'Prodotti',
       revenueBar: 'Fatturato',
@@ -12403,6 +12403,10 @@ export default {
       dormantHint: 'Venduti nell\'anno, nessuna vendita da 90 giorni: verificare prima di consigliarli. Fatturato IVA esclusa del periodo precedente.',
       lastSale: 'ultima vendita {{date}}',
       none: 'Nessuno.',
+    },
+    labels: {
+      noBrand: 'Senza marca',
+      noNature: 'Senza categoria',
     },
   },
 };

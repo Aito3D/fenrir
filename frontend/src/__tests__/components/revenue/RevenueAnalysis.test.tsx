@@ -82,10 +82,10 @@ describe('RevenueAnalysis', () => {
   it('shows one Pareto tile per class with its count and shares', async () => {
     stub(payload());
     render(view());
-    const tile = (await screen.findByText('Class C')).closest('.rounded-lg') as HTMLElement;
+    const tile = (await screen.findByText('Class C · products')).closest('.rounded-lg') as HTMLElement;
     expect(tile).toHaveTextContent('2');
     expect(tile).toHaveTextContent('50 % of products · 15 % of revenue');
-    expect(screen.getByText('Class A').closest('.rounded-lg')).toHaveTextContent('25 % of products · 60 % of revenue');
+    expect(screen.getByText('Class A · products').closest('.rounded-lg')).toHaveTextContent('25 % of products · 60 % of revenue');
     expect(screen.getByRole('img', { name: 'Products: A 25 %, B 25 %, C 50 %' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Revenue: A 60 %, B 25 %, C 15 %' })).toBeInTheDocument();
     expect(screen.getByText('HT · A = 80 % of revenue, B = up to 95 %, C = the rest')).toBeInTheDocument();
@@ -97,7 +97,8 @@ describe('RevenueAnalysis', () => {
     const list = await screen.findByRole('list', { name: 'Pareto law (ABC)' });
     const rows = within(list).getAllByRole('listitem');
     expect(rows).toHaveLength(3);
-    expect(rows[0]).toHaveTextContent('A');
+    expect(rows.map((r) => r.querySelector('[data-cls]')?.textContent)).toEqual(['A', 'B', 'C']);
+    expect(within(rows[0]).getByText('Bambu H2D')).toHaveAttribute('title', 'Bambu H2D');
     expect(rows[0]).toHaveTextContent('Bambu H2D');
     expect(rows[0]).toHaveTextContent('H2D-01');
     expect(rows[0]).toHaveTextContent('600.000 FCP · 60.0 %');
@@ -127,7 +128,7 @@ describe('RevenueAnalysis', () => {
     render(view());
     expect(await screen.findByText('Nothing to rank.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Show the first/ })).toBeNull();
-    expect(screen.getByText('Class A').closest('.rounded-lg')).toHaveTextContent('— of products · — of revenue');
+    expect(screen.getByText('Class A · products').closest('.rounded-lg')).toHaveTextContent('— of products · — of revenue');
   });
 
   it('shows the margin by brand, then by nature, with rate, amount and the amber coverage note under 95 %', async () => {
@@ -157,8 +158,35 @@ describe('RevenueAnalysis', () => {
     render(view());
     const row = within(await screen.findByRole('list', { name: 'Gross margin HT' })).getByRole('listitem');
     expect(row).toHaveTextContent('— · 0 FCP');
+    expect(row.querySelector('[data-bar]')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Nature' }));
     expect(screen.getByText('No data.')).toBeInTheDocument();
+  });
+
+  it('draws a bar only for a margin above zero', async () => {
+    stub(payload({ marginByBrand: [margin('Bambu Lab', 800_000, 200_000, 0.25, 1), margin('Elegoo', 100_000, -10_000, -0.13, 1), margin('Flat', 50_000, 0, 0, 1)] }));
+    render(view());
+    const rows = within(await screen.findByRole('list', { name: 'Gross margin HT' })).getAllByRole('listitem');
+    expect(rows.map((r) => r.querySelector('[data-bar]') !== null)).toEqual([true, false, false]);
+  });
+
+  it('translates the server fallback labels « Sans marque » and « Sans nature »', async () => {
+    stub(payload({ marginByBrand: [margin('Sans marque', 50_000, 10_000, 0.2, 1)], marginByNature: [margin('Sans nature', 50_000, 10_000, 0.2, 1)] }));
+    render(view());
+    const list = await screen.findByRole('list', { name: 'Gross margin HT' });
+    expect(within(list).getByText('No brand')).toBeInTheDocument();
+    expect(screen.queryByText('Sans marque')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Nature' }));
+    expect(within(screen.getByRole('list', { name: 'Gross margin HT' })).getByText('No category')).toBeInTheDocument();
+  });
+
+  it('renders no margin card when only one of the two margin lists is present', async () => {
+    const p = payload();
+    delete p.marginByNature;
+    stub(p);
+    render(view());
+    expect(await screen.findByText('Bambu H2D')).toBeInTheDocument();
+    expect(screen.queryByText('Gross margin HT')).toBeNull();
   });
 
   it('renders no margin card at all when the payload has no margin (no revenue:view_margin)', async () => {

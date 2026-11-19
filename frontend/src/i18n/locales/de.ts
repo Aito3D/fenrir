@@ -12400,7 +12400,7 @@ export default {
     analysis: {
       paretoTitle: 'Pareto-Prinzip (ABC)',
       paretoNote: 'netto · A = 80 % des Umsatzes, B = bis 95 %, C = der Rest',
-      classLabel: 'Klasse {{cls}}',
+      classLabel: 'Klasse {{cls}} · Produkte',
       classHint: '{{products}} der Produkte · {{revenue}} des Umsatzes',
       productsBar: 'Produkte',
       revenueBar: 'Umsatz',
@@ -12418,6 +12418,10 @@ export default {
       dormantHint: 'Innerhalb des Jahres verkauft, seit 90 Tagen kein Verkauf — vor einer Empfehlung prüfen. Nettoumsatz im Zeitraum davor.',
       lastSale: 'letzter Verkauf {{date}}',
       none: 'Keine.',
+    },
+    labels: {
+      noBrand: 'Ohne Marke',
+      noNature: 'Ohne Kategorie',
     },
   },
 };

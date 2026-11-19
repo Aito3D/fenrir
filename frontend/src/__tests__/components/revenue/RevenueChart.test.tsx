@@ -90,6 +90,18 @@ describe('RevenueChart', () => {
     expect(within(legend).getByText('Services')).toBeInTheDocument();
   });
 
+  it('names the server fallbacks « Sans marque » and « Sans nature » in the UI language', () => {
+    const b = bucket({ ...jan, byNature: { 'Sans nature': 100, Filaments: 50 }, byBrand: { 'Sans marque': 100, esun: 50 } });
+    const { unmount } = renderChart({ payload: payload([b]) });
+    expect(within(screen.getByRole('list', { name: 'Legend' })).getByText('No category')).toBeInTheDocument();
+    unmount();
+    renderChart({ payload: payload([b]), controls: controls({ stack: 'brand' }) });
+    const legend = screen.getByRole('list', { name: 'Legend' });
+    expect(within(legend).getByText('No brand')).toBeInTheDocument();
+    expect(within(legend).getByText('esun')).toBeInTheDocument();
+    expect(within(legend).queryByText('Sans marque')).toBeNull();
+  });
+
   it('keeps a series colour when a filter empties another series', () => {
     const { rerenderChart } = renderChart();
     const before = { a: legendColor('Imprimantes'), c: legendColor('Pièces') };

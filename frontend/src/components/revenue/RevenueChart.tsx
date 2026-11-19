@@ -11,7 +11,7 @@ import { RevenueSegmented } from './RevenueSegmented';
 import { drillDown } from './lib/analysis';
 import { effectiveStack } from './lib/basket';
 import { chartSeries, cumulativeScale, niceTicks, OTHER_SERIES, STACK_DIMENSIONS, stackColumns, yFor, type StackDimension, type StackedColumn, type StackSeries } from './lib/chart';
-import { compactAxis, formatFcp } from './lib/format';
+import { compactAxis, formatFcp, serverLabel } from './lib/format';
 import type { AnnotationsResponse, RevenueAnnotation, RevenueResponse } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
 
@@ -163,7 +163,7 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
     if (s.key === OTHER_SERIES) return t('revenue.chart.other');
     if (stack === 'kind') return t(s.key === 'Biens' ? 'revenue.filters.goods' : 'revenue.filters.services');
     if (stack === 'segment' && SEGMENT_KEY[s.key]) return t(`revenue.filters.segments.${SEGMENT_KEY[s.key]}`);
-    return s.label;
+    return serverLabel(s.label, t);
   };
 
   const projectionOf = (i: number) => {

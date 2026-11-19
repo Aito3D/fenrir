@@ -4,12 +4,12 @@ import { Facts, Panel, Split, Tile } from '../aito/stats/primitives';
 import { focusRingCls } from '../formStyles';
 import { Skeleton } from '../Skeleton';
 import { RevenueSegmented } from './RevenueSegmented';
-import { formatFcp } from './lib/format';
+import { formatFcp, serverLabel } from './lib/format';
 import type { AbcClass, AbcResult, AnalysisResponse, DormantRow, MarginRow } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
 
 const CLASSES: readonly AbcClass[] = ['A', 'B', 'C'];
-// The mockup's class colours; the letter itself is always printed, colour only backs it up.
+// The mockup's class colours, for swatches and bars only; the letter is printed in a readable text colour.
 const CLASS_COLOR: Record<AbcClass, string> = { A: '#219653', B: '#c26a1c', C: '#6b6b6b' };
 const ROWS_COLLAPSED = 25;
 const pct = (v: number) => `${Math.round(v * 100)} %`.replace('-', '−');
@@ -72,19 +72,19 @@ function Pareto({ abc }: { abc: AbcResult }) {
           {rows.map((r, i) => (
             <li key={r.itemId} className="rounded-lg bg-bambu-dark px-3 py-2">
               <div className="flex items-center gap-3">
-                <span className="flex w-44 shrink-0 items-baseline gap-2 sm:w-64">
+                <span className="flex min-w-0 shrink basis-56 items-baseline gap-2">
                   <span aria-hidden="true" className="w-5 shrink-0 text-right tabular-nums text-bambu-gray">{i + 1}</span>
-                  <b className="shrink-0 font-semibold" style={{ color: CLASS_COLOR[r.cls] }}>{r.cls}</b>
-                  <span className="truncate text-white" title={r.name}>{r.name}</span>
-                  {r.sku && <span className="shrink-0 text-bambu-gray">· {r.sku}</span>}
+                  <b data-cls className="shrink-0 font-semibold text-bambu-gray-light">{r.cls}</b>
+                  <span className="min-w-0 truncate text-white" title={r.name}>{r.name}</span>
                 </span>
                 <span className="min-w-0 flex-1" aria-hidden="true">
                   {top > 0 && <span className="block h-2 min-w-[3px] rounded-[2px]" style={{ width: `${(r.ht / top) * 100}%`, backgroundColor: CLASS_COLOR[r.cls] }} />}
                 </span>
-                <span className="shrink-0 text-right tabular-nums text-bambu-gray-light">{`${formatFcp(r.ht)} · ${(r.share * 100).toFixed(1)} %`}</span>
+                <span className="w-36 shrink-0 whitespace-nowrap text-right tabular-nums text-bambu-gray-light">{`${formatFcp(r.ht)} · ${(r.share * 100).toFixed(1)} %`}</span>
               </div>
-              <p className="mt-0.5 pl-7 text-[11px] tabular-nums text-bambu-gray">
-                {t('revenue.analysis.rowDetail', { brand: r.brand ?? '—', cum: pct(r.cumShare) })}
+              <p className="mt-0.5 flex flex-wrap gap-x-2 pl-7 text-[11px] tabular-nums text-bambu-gray">
+                {r.sku && <span className="min-w-0 truncate">{r.sku}</span>}
+                <span>{t('revenue.analysis.rowDetail', { brand: r.brand ?? '—', cum: pct(r.cumShare) })}</span>
               </p>
             </li>
           ))}
@@ -105,7 +105,7 @@ function Margins({ byBrand, byNature }: { byBrand: MarginRow[]; byNature: Margin
   const { t } = useTranslation();
   const [dim, setDim] = useState<'brand' | 'nature'>('brand');
   const rows = (dim === 'brand' ? byBrand : byNature).filter((r) => r.ht !== 0);
-  const max = Math.max(1, ...rows.map((r) => Math.abs(r.margin)));
+  const max = Math.max(1, ...rows.map((r) => r.margin));
   const title = t('revenue.analysis.marginTitle');
   return (
     <Panel
@@ -122,11 +122,11 @@ function Margins({ byBrand, byNature }: { byBrand: MarginRow[]; byNature: Margin
           {rows.map((r) => (
             <li key={r.key} className="rounded-lg bg-bambu-dark px-3 py-2">
               <div className="flex items-center gap-3">
-                <span className="w-28 shrink-0 truncate text-bambu-gray-light" title={r.key}>{r.key}</span>
+                <span className="min-w-0 shrink basis-28 truncate text-bambu-gray-light" title={serverLabel(r.key, t)}>{serverLabel(r.key, t)}</span>
                 <span className="min-w-0 flex-1" aria-hidden="true">
-                  <span className={`block h-2 min-w-[3px] rounded-[2px] ${r.margin >= 0 ? 'bg-bambu-green' : 'bg-status-error'}`} style={{ width: `${(Math.abs(r.margin) / max) * 100}%` }} />
+                  {r.margin > 0 && <span data-bar className="block h-2 min-w-[3px] rounded-[2px] bg-bambu-green" style={{ width: `${(r.margin / max) * 100}%` }} />}
                 </span>
-                <span className="shrink-0 text-right tabular-nums text-bambu-gray-light">{`${r.rate == null ? '—' : pct(r.rate)} · ${formatFcp(r.margin)}`}</span>
+                <span className="shrink-0 whitespace-nowrap text-right tabular-nums text-bambu-gray-light">{`${r.rate == null ? '—' : pct(r.rate)} · ${formatFcp(r.margin)}`}</span>
               </div>
               {r.coverage < 0.95 && (
                 <p className="mt-0.5 text-[11px] text-amber-400">{t('revenue.analysis.coverage', { pct: pct(r.coverage), amount: formatFcp(r.ht) })}</p>

@@ -12004,7 +12004,7 @@ export default {
     analysis: {
       paretoTitle: 'Закон Парето (ABC)',
       paretoNote: 'Без налогов · A = 80 % выручки, B = до 95 %, C = остальное',
-      classLabel: 'Класс {{cls}}',
+      classLabel: 'Класс {{cls}} · товары',
       classHint: '{{products}} товаров · {{revenue}} выручки',
       productsBar: 'Товары',
       revenueBar: 'Выручка',
@@ -12022,6 +12022,10 @@ export default {
       dormantHint: 'Продавались в течение года, нет продаж 90 дней — проверьте перед тем, как рекомендовать. Выручка без налогов за предыдущий период.',
       lastSale: 'последняя продажа {{date}}',
       none: 'Нет.',
+    },
+    labels: {
+      noBrand: 'Без бренда',
+      noNature: 'Без категории',
     },
   },
 };

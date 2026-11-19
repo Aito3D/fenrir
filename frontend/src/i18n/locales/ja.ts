@@ -12399,7 +12399,7 @@ export default {
     analysis: {
       paretoTitle: 'パレートの法則（ABC）',
       paretoNote: '税抜 · A = 売上の80 %、B = 95 %まで、C = 残り',
-      classLabel: 'クラス {{cls}}',
+      classLabel: 'クラス {{cls}} · 商品数',
       classHint: '商品の{{products}} · 売上の{{revenue}}',
       productsBar: '商品',
       revenueBar: '売上',
@@ -12417,6 +12417,10 @@ export default {
       dormantHint: '1年以内に売れたが90日間販売なし — 推奨する前に確認してください。売上（税抜）はそれ以前の期間。',
       lastSale: '最終販売 {{date}}',
       none: 'ありません。',
+    },
+    labels: {
+      noBrand: 'ブランドなし',
+      noNature: 'カテゴリなし',
     },
   },
 };

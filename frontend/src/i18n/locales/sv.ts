@@ -12457,7 +12457,7 @@ errors: {
     analysis: {
       paretoTitle: 'Paretoprincipen (ABC)',
       paretoNote: 'exkl. moms · A = 80 % av intäkterna, B = upp till 95 %, C = resten',
-      classLabel: 'Klass {{cls}}',
+      classLabel: 'Klass {{cls}} · produkter',
       classHint: '{{products}} av produkterna · {{revenue}} av intäkterna',
       productsBar: 'Produkter',
       revenueBar: 'Intäkter',
@@ -12475,6 +12475,10 @@ errors: {
       dormantHint: 'Sålda under året, ingen försäljning på 90 dagar — kontrollera innan du rekommenderar dem. Intäkter exkl. moms under perioden före.',
       lastSale: 'senaste försäljning {{date}}',
       none: 'Inga.',
+    },
+    labels: {
+      noBrand: 'Inget märke',
+      noNature: 'Ingen kategori',
     },
   },
 };
