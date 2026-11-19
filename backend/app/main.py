@@ -2172,10 +2172,11 @@ async def _take_new_hms_faults_and_save(printer_id: int, errors: list, print_sta
     printer still lists once more. A failed write only costs that protection
     for the next restart, so it is logged and the notification goes ahead.
     """
-    before = set(_notified_hms_errors.get(printer_id, ()))
+    before = dict(_notified_hms_errors.get(printer_id, {}))
     new = _take_new_hms_faults(printer_id, errors, print_state)
-    if set(_notified_hms_errors.get(printer_id, ())) != before:
-        from backend.app.services.hms_notified import save_notified_hms_faults
+    after = _notified_hms_errors.get(printer_id, {})
+    if after.keys() != before.keys():
+        from backend.app.services.hms_notified import record_hms_occurrences, save_notified_hms_faults
 
         try:
             await save_notified_hms_faults(printer_id, lambda: _notified_hms_errors.get(printer_id, {}).keys())
@@ -2183,6 +2184,15 @@ async def _take_new_hms_faults_and_save(printer_id: int, errors: list, print_sta
             logging.getLogger(__name__).warning(
                 "Could not store the notified HMS faults of printer %s: %s", printer_id, e
             )
+        # Error history: a fault that counts and appeared now, and the ones the tracking just forgot.
+        try:
+            await record_hms_occurrences(
+                printer_id,
+                {_hms_notify_key(e): e for e in new},
+                {key: seen for key, seen in before.items() if key not in after},
+            )
+        except Exception as e:
+            logging.getLogger(__name__).warning("Could not record the HMS history of printer %s: %s", printer_id, e)
     return new
 
 

@@ -4363,6 +4363,67 @@ async def clear_hms_errors(
     return {"success": True, "message": "HMS errors cleared"}
 
 
+@router.get("/{printer_id}/hms/history")
+async def get_hms_history(
+    printer_id: int,
+    limit: int = Query(20, ge=1, le=200),
+    days: int = Query(30, ge=1, le=180),
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """The printer's latest HMS fault occurrences, and its most frequent codes over *days*."""
+    from datetime import timedelta
+
+    from backend.app.models.hms_fault_occurrence import HmsFaultOccurrence
+    from backend.app.utils.local_time import utcnow_naive
+
+    if not await db.get(Printer, printer_id):
+        raise HTTPException(404, "Printer not found")
+
+    recent = (
+        await db.execute(
+            select(HmsFaultOccurrence)
+            .where(HmsFaultOccurrence.printer_id == printer_id)
+            .order_by(HmsFaultOccurrence.first_seen.desc(), HmsFaultOccurrence.id.desc())
+            .limit(limit)
+        )
+    ).scalars()
+    count = func.count(HmsFaultOccurrence.id)
+    top = await db.execute(
+        select(
+            HmsFaultOccurrence.code,
+            count,
+            func.max(HmsFaultOccurrence.description),
+            func.max(HmsFaultOccurrence.severity),
+            func.max(HmsFaultOccurrence.first_seen),
+        )
+        .where(
+            HmsFaultOccurrence.printer_id == printer_id,
+            HmsFaultOccurrence.first_seen >= utcnow_naive() - timedelta(days=days),
+        )
+        .group_by(HmsFaultOccurrence.code)
+        .order_by(count.desc(), func.max(HmsFaultOccurrence.first_seen).desc())
+        .limit(10)
+    )
+    return {
+        "days": days,
+        "top_codes": [
+            {"code": code, "count": n, "description": desc, "severity": sev, "last_seen": last}
+            for code, n, desc, sev, last in top
+        ],
+        "recent": [
+            {
+                "code": o.code,
+                "severity": o.severity,
+                "description": o.description,
+                "first_seen": o.first_seen,
+                "cleared_at": o.cleared_at,
+            }
+            for o in recent
+        ],
+    }
+
+
 @router.get("/{printer_id}/print/objects")
 async def get_printable_objects(
     printer_id: int,

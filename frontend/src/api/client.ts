@@ -567,6 +567,20 @@ export interface HMSError {
   description?: string | null;
 }
 
+export interface HMSHistoryEntry {
+  code: string;
+  severity: number;
+  description: string | null;
+  first_seen: string;
+  cleared_at: string | null;
+}
+
+export interface HMSHistory {
+  days: number;
+  top_codes: { code: string; count: number; description: string | null; severity: number; last_seen: string }[];
+  recent: HMSHistoryEntry[];
+}
+
 export interface HMSActionBody {
   print_error: string;  // HMS error code (e.g. "05000070")
   action: string;  // "HMS action to execute (e.g. 'resume_after_error')"
@@ -7593,6 +7607,7 @@ export const api = {
   // HMS Errors
   clearHMSErrors: (printerId: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/hms/clear`, { method: 'POST' }),
+  getHMSHistory: (printerId: number) => request<HMSHistory>(`/printers/${printerId}/hms/history`),
   executeHMSAction: (printerId: number, data: HMSActionBody) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/hms/execute-action`, {
       method: 'POST',

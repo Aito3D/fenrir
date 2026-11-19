@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Signal, Cable } from 'lucide-react';
 import { Card, CardContent } from './Card';
 import { CopyButton } from './CopyButton';
-import { formatDateOnly } from '../utils/date';
+import { formatDateOnly, formatRelativeTime } from '../utils/date';
 import { getPrinterImage, getWifiStrength } from '../utils/printer';
+import { api } from '../api/client';
 import type { Printer, PrinterStatus } from '../api/client';
 
 interface PrinterInfoModalProps {
@@ -181,7 +183,7 @@ export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: 
       aria-modal="true"
       onClick={onClose}
     >
-      <Card className="w-full max-w-md animate-modal-in" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto animate-modal-in" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CardContent>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white">
@@ -209,8 +211,63 @@ export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: 
               </div>
             ))}
           </div>
+
+          <HmsHistorySection printerId={printer.id} />
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// Bambu's alert level: 1 error, 2 warning, else notification.
+const SEVERITY_DOT: Record<number, string> = { 1: 'bg-red-400', 2: 'bg-amber-400' };
+
+function HmsHistorySection({ printerId }: { printerId: number }) {
+  const { t } = useTranslation();
+  const { data } = useQuery({
+    queryKey: ['hmsHistory', printerId],
+    queryFn: () => api.getHMSHistory(printerId),
+  });
+  if (!data) return null;
+
+  const dot = (severity: number) => (
+    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${SEVERITY_DOT[severity] ?? 'bg-bambu-gray'}`} />
+  );
+  const label = (code: string, description: string | null) => description ?? <span className="font-mono">{code}</span>;
+
+  return (
+    <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary">
+      <h3 className="text-sm font-semibold text-white mb-2">{t('printers.errorHistory')}</h3>
+      {data.recent.length === 0 ? (
+        <p className="text-sm text-bambu-gray">{t('printers.errorHistoryEmpty')}</p>
+      ) : (
+        <>
+          {data.top_codes.length > 0 && (
+            <>
+              <p className="text-xs text-bambu-gray mb-1">{t('printers.errorHistoryTop')}</p>
+              <ul className="mb-3">
+                {data.top_codes.map((c) => (
+                  <li key={c.code} className="flex items-center gap-2 py-1 text-sm" title={c.code}>
+                    {dot(c.severity)}
+                    <span className="text-white flex-1 min-w-0 truncate">{label(c.code, c.description)}</span>
+                    <span className="text-bambu-gray tabular-nums">×{c.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <p className="text-xs text-bambu-gray mb-1">{t('printers.errorHistoryRecent')}</p>
+          <ul>
+            {data.recent.map((o, i) => (
+              <li key={i} className="flex items-center gap-2 py-1 text-sm" title={o.code}>
+                {dot(o.severity)}
+                <span className="text-white flex-1 min-w-0 truncate">{label(o.code, o.description)}</span>
+                <span className="text-bambu-gray text-xs whitespace-nowrap">{formatRelativeTime(o.first_seen, 'system', t)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }
