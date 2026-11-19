@@ -1555,7 +1555,7 @@ export default {
     addPreflight: {
       checking: "Проверка подключения...",
       warning: "Некоторые проверки подключения не пройдены. Принтер может отображаться как отключённый. Проверьте результаты ниже, исправьте возможные проблемы или сохраните настройки как есть.",
-      back: "Назад",
+      checkAgain: "Проверить снова",
       saveAnyway: "Всё равно сохранить",
     },
     editPrinter: "Изменить принтер",
@@ -1564,6 +1564,8 @@ export default {
     serialNumber: "Серийный номер",
     ipAddress: "IP-адрес / имя хоста",
     accessCode: "Код доступа",
+    showAccessCode: "Показать код доступа",
+    hideAccessCode: "Скрыть код доступа",
     model: "Модель",
     nozzleCount: "Количество сопел",
     autoArchive: "Автоматически архивировать",
@@ -3677,8 +3679,8 @@ export default {
     smartPlugs: "Умные розетки",
     spoolman: "Spoolman",
     updates: "Обновления",
-    language: "Язык",
-    languageDescription: "Выберите предпочитаемый язык",
+    language: "Язык экранов SpoolBuddy",
+    languageDescription: "Язык экранов SpoolBuddy. Каждый пользователь выбирает свой язык интерфейса в меню «Учётная запись» или, без входа в систему, кнопкой с глобусом.",
     theme: "Тема",
     themeLight: "Светлая",
     themeDark: "Тёмная",
@@ -9280,6 +9282,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: "Учётная запись",
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: "Язык",
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

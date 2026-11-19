@@ -1567,7 +1567,7 @@ export default {
     addPreflight: {
       checking: 'Checking connection...',
       warning: 'Some connection checks failed. This printer may show as offline. Review the checks below, fix what you can, or save anyway.',
-      back: 'Back',
+      checkAgain: 'Check again',
       saveAnyway: 'Save anyway',
     },
     editPrinter: 'Edit Printer',
@@ -1576,6 +1576,8 @@ export default {
     serialNumber: 'Serial Number',
     ipAddress: 'IP Address / Hostname',
     accessCode: 'Access Code',
+    showAccessCode: 'Show access code',
+    hideAccessCode: 'Hide access code',
     model: 'Model',
     nozzleCount: 'Nozzle Count',
     autoArchive: 'Auto Archive',
@@ -3798,8 +3800,8 @@ export default {
     smartPlugs: 'Smart Plugs',
     spoolman: 'Spoolman',
     updates: 'Updates',
-    language: 'Language',
-    languageDescription: 'Select your preferred language',
+    language: 'SpoolBuddy display language',
+    languageDescription: 'The language of the SpoolBuddy displays. Each person chooses their own interface language in the account menu, or with the globe button when login is off.',
     theme: 'Theme',
     themeLight: 'Light',
     themeDark: 'Dark',
@@ -9655,6 +9657,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Account',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Language',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

@@ -1559,7 +1559,7 @@ export default {
     addPreflight: {
       checking: 'Vérification de la connexion...',
       warning: 'Certaines vérifications de connexion ont échoué. Cette imprimante pourrait apparaître hors ligne. Examinez les vérifications ci-dessous, corrigez ce que vous pouvez, ou enregistrez quand même.',
-      back: 'Retour',
+      checkAgain: 'Vérifier à nouveau',
       saveAnyway: 'Enregistrer quand même',
     },
     title: 'Imprimantes',
@@ -1570,6 +1570,8 @@ export default {
     serialNumber: 'Numéro de série',
     ipAddress: 'Adresse IP / Nom d\'hôte',
     accessCode: 'Code d\'accès',
+    showAccessCode: 'Afficher le code d\'accès',
+    hideAccessCode: 'Masquer le code d\'accès',
     model: 'Modèle',
     nozzleCount: 'Nombre de buses',
     autoArchive: 'Auto-archivage',
@@ -3727,8 +3729,8 @@ export default {
     smartPlugs: 'Prises connectées',
     spoolman: 'Spoolman',
     updates: 'Mises à jour',
-    language: 'Langue',
-    languageDescription: 'Choisissez votre langue',
+    language: 'Langue des écrans SpoolBuddy',
+    languageDescription: 'La langue des écrans SpoolBuddy. Chaque personne choisit sa propre langue d\'interface dans le menu « Compte » ou, sans connexion, avec le bouton globe.',
     theme: 'Thème',
     themeLight: 'Clair',
     themeDark: 'Sombre',
@@ -9586,6 +9588,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Compte',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Langue',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

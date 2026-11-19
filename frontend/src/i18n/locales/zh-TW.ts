@@ -1559,7 +1559,7 @@ export default {
     addPreflight: {
       checking: '正在檢查連線...',
       warning: '部分連線檢查未通過。此印表機可能顯示為離線。請查看下方的檢查項目，盡量修復，或仍然儲存。',
-      back: '返回',
+      checkAgain: '重新檢查',
       saveAnyway: '仍然儲存',
     },
     title: '印表機',
@@ -1570,6 +1570,8 @@ export default {
     serialNumber: '序列號',
     ipAddress: 'IP 位址 / 主機名稱',
     accessCode: '存取碼',
+    showAccessCode: '顯示存取碼',
+    hideAccessCode: '隱藏存取碼',
     model: '型號',
     nozzleCount: '噴嘴數量',
     autoArchive: '自動歸檔',
@@ -3772,8 +3774,8 @@ export default {
     smartPlugs: '智慧插座',
     spoolman: 'Spoolman',
     updates: '更新',
-    language: '語言',
-    languageDescription: '選擇您的首選語言',
+    language: 'SpoolBuddy 顯示畫面語言',
+    languageDescription: 'SpoolBuddy 顯示畫面的語言。每個人可以在「帳戶」選單中，或在未啟用登入時透過地球圖示按鈕，選擇自己的介面語言。',
     theme: '主題',
     themeLight: '淺色',
     themeDark: '深色',
@@ -9583,6 +9585,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: '帳戶',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: '語言',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

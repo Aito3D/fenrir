@@ -301,7 +301,7 @@ export default {
     addPreflight: {
       checking: 'Kontrollerar anslutning...',
       warning: 'Vissa anslutningskontroller misslyckades. Denna skrivare kan visas som offline. Granska kontrollerna nedan, åtgärda vad du kan, eller spara ändå.',
-      back: 'Tillbaka',
+      checkAgain: 'Kontrollera igen',
       saveAnyway: 'Spara ändå',
     },
     editPrinter: 'Redigera skrivare',
@@ -310,6 +310,8 @@ export default {
     serialNumber: 'Serienummer',
     ipAddress: 'IP-adress / värdnamn',
     accessCode: 'Åtkomstkod',
+    showAccessCode: 'Visa åtkomstkod',
+    hideAccessCode: 'Dölj åtkomstkod',
     model: 'Modell',
     nozzleCount: 'Antal munstycken',
     autoArchive: 'Autoarkivera',
@@ -2564,8 +2566,8 @@ export default {
     smartPlugs: 'Smarta kontakter',
     spoolman: 'Spoolman',
     updates: 'Uppdateringar',
-    language: 'Språk',
-    languageDescription: 'Välj ditt föredragna språk',
+    language: 'Språk för SpoolBuddy-skärmarna',
+    languageDescription: 'Språket i SpoolBuddy-skärmarna. Var och en väljer sitt eget gränssnittsspråk i menyn \'Konto\' eller, utan inloggning, med jordglobsknappen.',
     theme: 'Tema',
     themeLight: 'Ljust',
     themeDark: 'Mörkt',
@@ -7886,6 +7888,10 @@ errors: {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Konto',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Språk',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

@@ -1558,6 +1558,8 @@ export default {
     serialNumber: '일련번호',
     ipAddress: 'IP 주소 / 호스트명',
     accessCode: '액세스 코드',
+    showAccessCode: '액세스 코드 표시',
+    hideAccessCode: '액세스 코드 숨기기',
     model: '모델',
     nozzleCount: '노즐 수',
     autoArchive: '자동 아카이브',
@@ -2234,7 +2236,7 @@ export default {
     addPreflight: {
       checking: '연결 확인 중...',
       warning: '일부 연결 확인이 실패했습니다. 이 프린터가 오프라인으로 표시될 수 있습니다. 아래 항목을 검토하고 수정하거나 그냥 저장하세요.',
-      back: '뒤로',
+      checkAgain: '다시 확인',
       saveAnyway: '그냥 저장'
     }
   },
@@ -3679,8 +3681,8 @@ export default {
     smartPlugs: '스마트 플러그',
     spoolman: 'Spoolman',
     updates: '업데이트',
-    language: '언어',
-    languageDescription: '선호하는 언어를 선택하세요',
+    language: 'SpoolBuddy 화면 언어',
+    languageDescription: 'SpoolBuddy 화면의 언어입니다. 인터페이스 언어는 각 사용자가 \'계정\' 메뉴에서, 로그인을 사용하지 않으면 지구본 버튼으로 직접 선택합니다.',
     theme: '테마',
     themeLight: '라이트',
     themeDark: '다크',
@@ -9290,6 +9292,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: '계정',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: '언어',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

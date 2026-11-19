@@ -1559,7 +1559,7 @@ export default {
     addPreflight: {
       checking: 'Verificando a conexão...',
       warning: 'Algumas verificações de conexão falharam. Esta impressora pode aparecer como offline. Revise as verificações abaixo, corrija o que puder ou salve mesmo assim.',
-      back: 'Voltar',
+      checkAgain: 'Verificar novamente',
       saveAnyway: 'Salvar mesmo assim',
     },
     title: 'Impressoras',
@@ -1570,6 +1570,8 @@ export default {
     serialNumber: 'Número de Série',
     ipAddress: 'Endereço IP / Nome do Host',
     accessCode: 'Código de Acesso',
+    showAccessCode: 'Mostrar código de acesso',
+    hideAccessCode: 'Ocultar código de acesso',
     model: 'Modelo',
     nozzleCount: 'Número de Bicos',
     autoArchive: 'Arquivamento Automático',
@@ -3727,8 +3729,8 @@ export default {
     smartPlugs: 'Tomadas Inteligentes',
     spoolman: 'Spoolman',
     updates: 'Atualizações',
-    language: 'Idioma',
-    languageDescription: 'Selecione seu idioma preferido',
+    language: 'Idioma das telas do SpoolBuddy',
+    languageDescription: 'O idioma das telas do SpoolBuddy. Cada pessoa escolhe o próprio idioma da interface no menu «Conta» ou, sem login, no botão do globo.',
     theme: 'Tema',
     themeLight: 'Claro',
     themeDark: 'Escuro',
@@ -9585,6 +9587,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Conta',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Idioma',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {

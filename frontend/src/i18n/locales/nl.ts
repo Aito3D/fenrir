@@ -301,7 +301,7 @@ export default {
     addPreflight: {
       checking: 'Verbinding controleren...',
       warning: 'Sommige verbindingscontroles zijn mislukt. Deze printer kan als offline worden weergegeven. Controleer de onderstaande controles, herstel wat je kunt of sla toch op.',
-      back: 'Terug',
+      checkAgain: 'Opnieuw controleren',
       saveAnyway: 'Toch opslaan',
     },
     editPrinter: 'Printer bewerken',
@@ -310,6 +310,8 @@ export default {
     serialNumber: 'Serienummer',
     ipAddress: 'IP-adres / hostnaam',
     accessCode: 'Toegangscode',
+    showAccessCode: 'Toegangscode tonen',
+    hideAccessCode: 'Toegangscode verbergen',
     model: 'Model',
     nozzleCount: 'Aantal nozzles',
     autoArchive: 'Automatisch archiveren',
@@ -2532,8 +2534,8 @@ export default {
     smartPlugs: 'Slimme stekkers',
     spoolman: 'Spoolman',
     updates: 'Updates',
-    language: 'Taal',
-    languageDescription: 'Selecteer je voorkeurstaal',
+    language: 'Taal van de SpoolBuddy-schermen',
+    languageDescription: 'De taal van de SpoolBuddy-schermen. Iedereen kiest zijn eigen interfacetaal in het menu \'Account\' of, zonder aanmelding, met de wereldbolknop.',
     theme: 'Thema',
     themeLight: 'Licht',
     themeDark: 'Donker',
@@ -7855,6 +7857,10 @@ export default {
   // The sidebar footer's menu for the signed-in user (#3602).
   accountMenu: {
     title: 'Account',
+  },
+  // Per-browser interface language in the user menu (#3623).
+  languageMenu: {
+    label: 'Taal',
   },
   // What a user enters in their slicer to send to virtual printers (#3602).
   connectSlicer: {
