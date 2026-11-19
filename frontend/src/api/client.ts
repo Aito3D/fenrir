@@ -1909,6 +1909,8 @@ export interface AppSettings {
   aito_followup_quote_days: number;
   aito_followup_pickup_days: number;
   aito_followup_link_days: number;
+  /** Shown on the public tracking pages and in the pickup SMS; empty hides it. */
+  shop_opening_hours: string;
   location_sensor_poll_interval: number;
   // JSON map of sensor category → {alertAbove, alertBelow, notifyOnAlert},
   // seeding new storage-location sensor bindings. Empty = built-in defaults.
@@ -5432,6 +5434,8 @@ export interface OrderTracking {
   payment: { currency: string; total: number; paid: number; left: number } | null;
   /** The checkout page of an open payment link, else null. */
   pay_url: string | null;
+  /** The shop's opening hours, null when the setting is empty. Optional only for older payloads. */
+  shop_hours?: string | null;
   updated_at: string;
 }
 
@@ -5652,6 +5656,8 @@ export interface AitoTracking {
    *  the open invoice, which wins. Null when that card is settled or absent,
    *  or a figure it needs is unknown. Optional only for older payloads. */
   balance?: AitoTrackingBalance | null;
+  /** The shop's opening hours, null when the setting is empty. Optional only for older payloads. */
+  shop_hours?: string | null;
 }
 
 /** Whole currency units (the shop bills in XPF). `paid_pct` is rounded

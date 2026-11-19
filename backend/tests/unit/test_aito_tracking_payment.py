@@ -233,3 +233,12 @@ async def test_the_invoice_link_reaches_the_public_payload_as_a_url_only(db_sess
     body = (await _track(db_session)).model_dump_json()
     assert "https://osb/pay/I1" in body
     assert '"I1"' not in body and "aito:inv:1" not in body and "FA-1" not in body
+
+
+@pytest.mark.asyncio
+async def test_shop_hours_default_then_follow_the_setting(db_session):
+    await _project(db_session)
+    assert (await _track(db_session)).shop_hours == "Lun-Ven 8h-17h"
+    await set_setting(db_session, "shop_opening_hours", "")
+    await db_session.commit()
+    assert (await _track(db_session)).shop_hours is None

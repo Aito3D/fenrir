@@ -512,6 +512,7 @@ export default {
         sub: 'Aito 3D の工房とショップ',
         mapTitle: '店舗の地図',
         mapLoading: '地図を読み込み中…',
+        hours: '営業時間',
         phone: '電話',
         email: 'メール',
         website: 'ウェブサイト',
@@ -4888,6 +4889,8 @@ export default {
     aitoFollowupPickupDaysDescription: '連絡済みでまだ受け取られていない完成品は、この日数を過ぎるとフォロー欄に表示されます。',
     aitoFollowupLinkDays: '決済リンクの期限切れ（日数）',
     aitoFollowupLinkDaysDescription: '決済リンクがこの日数以内に期限切れになる見積を表示します',
+    shopOpeningHours: '店舗の営業時間',
+    shopOpeningHoursDescription: '追跡ページと受け取りSMSでお客様に表示されます。空欄にすると非表示になります。',
   },
 
   // Notifications (for push notifications)

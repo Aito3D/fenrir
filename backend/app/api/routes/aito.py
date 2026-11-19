@@ -168,6 +168,8 @@ from backend.app.services.aito_tracking import (
     compute_tracking,
     external_url as tracking_external_url,
     mint_unique_token,
+    shop_opening_hours,
+    with_opening_hours_sms,
     with_tracking_sms,
 )
 from backend.app.services.inbox import (
@@ -5370,6 +5372,7 @@ async def generate_pickup_message(
         raise HTTPException(status_code=409, detail="OpenRouter is not configured") from None
     except OpenRouterUpstreamError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+    message = with_opening_hours_sms(message, await shop_opening_hours(db))
     url = await build_tracking_url(db, project)
     if url:
         message = with_tracking_sms(message, url)

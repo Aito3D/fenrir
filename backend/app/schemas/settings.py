@@ -186,6 +186,11 @@ class AppSettings(BaseModel):
     aito_followup_link_days: int = Field(
         default=3, ge=1, le=365, description="Days before a payment link expires that the strip flags it"
     )
+    # Shown on both public tracking pages and appended to both pickup SMS. ASCII
+    # hyphens on purpose: the SMS must stay GSM-7. Empty hides it everywhere.
+    shop_opening_hours: str = Field(
+        default="Lun-Ven 8h-17h", description="The shop's opening hours, as shown to customers"
+    )
 
     # Queue auto-drying settings
     queue_drying_enabled: bool = Field(
@@ -908,6 +913,7 @@ class AppSettingsUpdate(BaseModel):
     aito_followup_quote_days: int | None = Field(default=None, ge=1, le=365)
     aito_followup_pickup_days: int | None = Field(default=None, ge=1, le=365)
     aito_followup_link_days: int | None = Field(default=None, ge=1, le=365)
+    shop_opening_hours: str | None = Field(default=None, max_length=200)
     queue_drying_enabled: bool | None = None
     queue_drying_block: bool | None = None
     ambient_drying_enabled: bool | None = None

@@ -3658,6 +3658,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Een afgeronde taak waarvan de klant is ingelicht maar die nog niet is opgehaald, verschijnt na dit aantal dagen in de strook.',
     aitoFollowupLinkDays: 'Betaallink verloopt binnen (dagen)',
     aitoFollowupLinkDaysDescription: 'Markeer offertes waarvan de betaallink binnen dit aantal dagen verloopt',
+    shopOpeningHours: 'Openingstijden van de winkel',
+    shopOpeningHoursDescription: 'Getoond aan klanten op de volgpagina’s en in de afhaal-sms. Laat leeg om ze te verbergen.',
   },
 
   // Notifications (for push notifications)
@@ -9780,6 +9782,7 @@ export default {
         sub: 'Werkplaats en winkel van Aito 3D',
         mapTitle: 'Kaart van de winkel',
         mapLoading: 'Kaart wordt geladen…',
+        hours: 'Openingstijden',
         phone: 'Telefoon',
         email: 'E-mail',
         website: 'Site',

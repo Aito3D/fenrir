@@ -3686,6 +3686,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Ukończone zlecenie, o którym klient został poinformowany, ale go nie odebrał, trafia na pasek po tylu dniach.',
     aitoFollowupLinkDays: 'Wygasający link do płatności (dni)',
     aitoFollowupLinkDaysDescription: 'Oznacz wyceny, których link do płatności wygasa w ciągu tylu dni',
+    shopOpeningHours: 'Godziny otwarcia sklepu',
+    shopOpeningHoursDescription: 'Wyświetlane klientom na stronach śledzenia i w SMS-ie o odbiorze. Pozostaw puste, aby je ukryć.',
   },
 
   // Notifications (for push notifications)
@@ -9779,6 +9781,7 @@ export default {
         sub: 'Pracownia i sklep Aito 3D',
         mapTitle: 'Mapa sklepu',
         mapLoading: 'Wczytywanie mapy…',
+        hours: 'Godziny otwarcia',
         phone: 'Telefon',
         email: 'E-mail',
         website: 'Strona internetowa',

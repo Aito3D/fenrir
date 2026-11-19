@@ -512,6 +512,7 @@ export default {
         sub: 'Aito 3D 工作室与门店',
         mapTitle: '门店地图',
         mapLoading: '地图加载中…',
+        hours: '营业时间',
         phone: '电话',
         email: '邮箱',
         website: '网站',
@@ -4875,6 +4876,8 @@ export default {
     aitoFollowupPickupDaysDescription: '已通知客户但尚未取件的完成作业，超过此天数后进入跟进栏。',
     aitoFollowupLinkDays: '支付链接即将到期（天）',
     aitoFollowupLinkDaysDescription: '标记支付链接将在此天数内到期的报价单',
+    shopOpeningHours: '门店营业时间',
+    shopOpeningHoursDescription: '在追踪页面和取货短信中向客户显示。留空则隐藏。',
   },
 
   // Notifications (for push notifications)

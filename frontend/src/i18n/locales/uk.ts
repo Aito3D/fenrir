@@ -513,6 +513,7 @@ export default {
         sub: 'Майстерня та магазин Aito 3D',
         mapTitle: 'Мапа магазину',
         mapLoading: 'Завантаження мапи…',
+        hours: 'Години роботи',
         phone: 'Телефон',
         email: 'Ел. пошта',
         website: 'Сайт',
@@ -4749,6 +4750,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Готове замовлення, про яке клієнта повідомили, але не забрали, потрапляє до смуги через стільки днів.',
     aitoFollowupLinkDays: 'Спливання посилання на оплату (дні)',
     aitoFollowupLinkDaysDescription: 'Позначати кошториси, посилання на оплату яких спливає протягом цієї кількості днів',
+    shopOpeningHours: 'Години роботи магазину',
+    shopOpeningHoursDescription: 'Показуються клієнтам на сторінках відстеження та в SMS про отримання. Залиште порожнім, щоб приховати.',
   },
   notification: {
     printStarted: {

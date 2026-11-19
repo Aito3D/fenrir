@@ -268,6 +268,7 @@ async def test_public_shape_titles_fallback_due_date_and_shipping(async_client, 
         "invoice_pay_url",
         "accepted",
         "balance",
+        "shop_hours",
     }
     assert body["accepted"] is False
     assert body["balance"] is None  # no live link, no invoice: nothing owed to show

@@ -512,6 +512,7 @@ export default {
         sub: 'Aito 3D 工作室與門市',
         mapTitle: '門市地圖',
         mapLoading: '地圖載入中…',
+        hours: '營業時間',
         phone: '電話',
         email: '電子郵件',
         website: '網站',
@@ -4875,6 +4876,8 @@ export default {
     aitoFollowupPickupDaysDescription: '已通知客戶但尚未取件的完成作業，超過此天數後進入跟進列。',
     aitoFollowupLinkDays: '付款連結即將到期（天）',
     aitoFollowupLinkDaysDescription: '標記付款連結將在此天數內到期的報價單',
+    shopOpeningHours: '門市營業時間',
+    shopOpeningHoursDescription: '在追蹤頁面和取貨簡訊中向客戶顯示。留空則隱藏。',
   },
 
   // Notifications (for push notifications)

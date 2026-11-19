@@ -512,6 +512,7 @@ export default {
         sub: 'Мастерская и магазин Aito 3D',
         mapTitle: 'Карта магазина',
         mapLoading: 'Загрузка карты…',
+        hours: 'Часы работы',
         phone: 'Телефон',
         email: 'Эл. почта',
         website: 'Сайт',
@@ -4735,6 +4736,8 @@ export default {
     aitoFollowupPickupDaysDescription: 'Готовый заказ, о котором клиент уведомлён, но не забрал, попадает в полосу через столько дней.',
     aitoFollowupLinkDays: 'Истечение ссылки на оплату (дни)',
     aitoFollowupLinkDaysDescription: 'Отмечать сметы, ссылка на оплату которых истекает в течение этого числа дней',
+    shopOpeningHours: 'Часы работы магазина',
+    shopOpeningHoursDescription: 'Показываются клиентам на страницах отслеживания и в SMS о получении. Оставьте пустым, чтобы скрыть.',
   },
   notification: {
     printStarted: {
