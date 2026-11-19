@@ -186,3 +186,60 @@ async def test_apply_credit_is_capped_by_balance_and_order_credit(async_client, 
     r = await async_client.post(f"{BASE}/invoices/inv-1/apply-credit", headers=tokens["both"])
     assert (r.status_code, r.json()["detail"]) == (400, "no_credit")
     assert len(applied) == 1
+
+
+@pytest.fixture
+def quote_mail(monkeypatch):
+    """A fake Books for the quote email: one offered address, every send recorded, `error` raised when set."""
+    state = {"sent": [], "error": None}
+
+    async def content(db, estimate_id):
+        return {
+            "subject": "Devis",
+            "body": "",
+            "recipients": [{"email": "ana@example.com", "name": "Ana"}, {"email": "bob@example.com", "name": "Bob"}],
+        }
+
+    async def email(db, estimate_id, *, to_mail_ids):
+        if state["error"]:
+            raise state["error"]
+        state["sent"].append((estimate_id, to_mail_ids))
+
+    aito_routes._reset_recent_emails()
+    monkeypatch.setattr(zoho_service, "get_estimate_email_content", content)
+    monkeypatch.setattr(zoho_service, "email_estimate", email)
+    yield state
+    aito_routes._reset_recent_emails()
+
+
+@pytest.mark.asyncio
+async def test_a_refused_quote_email_can_be_retried_but_a_lost_answer_cannot(async_client, tokens, order, quote_mail):  # noqa: F811
+    from backend.app.services.zoho import ZohoRequestRejected, ZohoUnreachable
+
+    url, h, mail = f"{BASE}/documents/quote/est-1/email", tokens["both"], {"to": "ana@example.com"}
+    quote_mail["error"] = ZohoRequestRejected("Books says no")
+    r = await async_client.post(url, headers=h, json=mail)
+    assert (r.status_code, r.json()["detail"]) == (502, "Books says no")
+    quote_mail["error"] = None
+    r = await async_client.post(url, headers=h, json=mail)  # a clean refusal released the guard
+    assert r.status_code == 200 and len(quote_mail["sent"]) == 1
+
+    other = {"to": "bob@example.com"}
+    quote_mail["error"] = ZohoUnreachable("timeout")
+    r = await async_client.post(url, headers=h, json=other)
+    assert r.status_code == 502
+    quote_mail["error"] = None
+    r = await async_client.post(url, headers=h, json=other)  # Books may have sent it: the guard stays armed
+    assert r.status_code == 409 and len(quote_mail["sent"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_quote_email_waits_for_a_write_on_the_same_order(async_client, tokens, order, quote_mail):  # noqa: F811
+    from backend.app.services import order_board_actions as actions
+
+    url, h, mail = f"{BASE}/documents/quote/est-1/email", tokens["both"], {"to": "ana@example.com"}
+    with actions.writing("so1"):
+        r = await async_client.post(url, headers=h, json=mail)
+    assert r.status_code == 409 and quote_mail["sent"] == []
+    r = await async_client.post(url, headers=h, json=mail)
+    assert r.status_code == 200 and len(quote_mail["sent"]) == 1  # the busy refusal released the guard

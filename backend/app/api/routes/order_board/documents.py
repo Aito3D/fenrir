@@ -1,6 +1,5 @@
 """An order's quote and deposit documents, its sync, credit, rating and contact: the Aito card's tools on an order."""
 
-import time
 from typing import Literal
 
 from fastapi import Depends, HTTPException, Request, Response
@@ -8,11 +7,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.aito import (
-    _EMAIL_GUARD,
     _check_zoho_email_rate_limit,
-    _email_guard_key_or_409,
 )
-from backend.app.api.routes.order_board._common import _by, _logged, _pdf, _run, router
+from backend.app.api.routes.order_board._common import _by, _guarded_email, _logged, _pdf, _run, router
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -22,7 +19,6 @@ from backend.app.services import order_board_actions, order_board_sync
 from backend.app.services.aito_client_rating import read_client_rating
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.order_board_payment import order_contact
-from backend.app.services.zoho import ZohoUnreachable
 
 Kind = Literal["quote", "retainer"]
 
@@ -92,21 +88,14 @@ async def send_document_email(
     document, content = await _document_email(db, salesorder_id, kind, document_id)
     to = body.to.strip()
     # Re-read, never taken from the request: otherwise any holder of orders:update could mail anyone.
-    if to.lower() not in {r["email"].lower() for r in content["recipients"]}:
-        raise HTTPException(status_code=422, detail="That address is not a recipient of this document")
-    key = _email_guard_key_or_409(f"order-{kind}", 0, document_id, to)
-    _EMAIL_GUARD.arm(key, time.monotonic())
-
-    async def send() -> None:
-        try:
-            await order_board_actions.email_document(db, salesorder_id, kind, document, to, by=_by(user))
-        except ZohoUnreachable:
-            raise  # Books may have sent it all the same: the guard stays armed
-        except Exception:
-            _EMAIL_GUARD.release(key)
-            raise
-
-    await _run(send())
+    await _guarded_email(
+        f"order-{kind}",
+        document_id,
+        to,
+        content,
+        "That address is not a recipient of this document",
+        lambda: order_board_actions.email_document(db, salesorder_id, kind, document, to, by=_by(user)),
+    )
     _logged(user, salesorder_id, f"{kind}_email")
     return {"board": await order_board_sync.read_board(db)}
 

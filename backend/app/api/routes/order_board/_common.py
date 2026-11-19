@@ -1,25 +1,53 @@
 """Shared router and helpers of the Order Board routes."""
 
 import logging
-from collections.abc import Awaitable
+import time
+from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.aito import _EMAIL_GUARD, _email_guard_key_or_409
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.user import User
 from backend.app.services import (
     order_board_actions,
     order_board_sync,
 )
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUnreachable, ZohoUpstreamError
 from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__package__)
 _T = TypeVar("_T")
 router = APIRouter(prefix="/order-board", tags=["order-board"])
+
+
+async def _guarded_email(
+    key_prefix: str,
+    doc_id: str,
+    to: str,
+    content: dict,
+    refused_detail: str,
+    action: Callable[[], Awaitable[None]],
+) -> None:
+    """Send one document email: only to an address Books offered, once a minute per document and address."""
+    if to.lower() not in {r["email"].lower() for r in content["recipients"]}:
+        raise HTTPException(status_code=422, detail=refused_detail)
+    key = _email_guard_key_or_409(key_prefix, 0, doc_id, to)
+    _EMAIL_GUARD.arm(key, time.monotonic())
+
+    async def send() -> None:
+        try:
+            await action()
+        except ZohoUnreachable:
+            raise  # Books may have sent it all the same: the guard stays armed
+        except Exception:
+            _EMAIL_GUARD.release(key)
+            raise
+
+    await _run(send())
 
 
 async def _run(call: Awaitable[_T]) -> _T:
