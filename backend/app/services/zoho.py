@@ -993,6 +993,32 @@ class ZohoService:
         )
         return body.get("items") or [], bool((body.get("page_context") or {}).get("has_more_page"))
 
+    async def list_items_page_all(self, db: AsyncSession, page: int) -> tuple[list[dict], bool]:
+        """One unfiltered page of Books items (200 per page), plus a has-more flag."""
+        body = await self._request(db, "GET", "/items", params={"page": page, "per_page": 200})
+        return body.get("items") or [], bool((body.get("page_context") or {}).get("has_more_page"))
+
+    async def sales_by_item_by_customer(self, db: AsyncSession, day: str, page: int) -> tuple[list[dict], bool]:
+        """One page of the salesbyitem report for a single org day, grouped by customer.
+
+        Groups come back under ``sales_by_item`` with ``group_name`` = the Books
+        customer id. Pages count lines, not groups, so a customer can straddle
+        two pages; callers sum by (item, customer).
+        """
+        body = await self._request(
+            db,
+            "GET",
+            "/reports/salesbyitem",
+            params={
+                "from_date": day,
+                "to_date": day,
+                "page": page,
+                "per_page": 200,
+                "group_by": json.dumps([{"field": "customer_name", "group": "report"}]),
+            },
+        )
+        return body.get("sales_by_item") or [], bool((body.get("page_context") or {}).get("has_more_page"))
+
     # --- Order Board: read-only listings of sales orders, purchase orders and stock ---
 
     async def _list_all(self, db: AsyncSession, path: str, key: str) -> list[dict]:
