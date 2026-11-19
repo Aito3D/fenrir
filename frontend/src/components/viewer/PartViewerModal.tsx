@@ -57,6 +57,8 @@ export interface PartViewerModalProps {
   printed?: number;
   /** Which tab to open on, when the file has it (a copied link). */
   initialTab?: 'model' | 'toolpath';
+  /** Which plate to open on (the `/gcode-viewer?plate=` link). */
+  initialPlate?: number | null;
   /** Everything else a copied link carries: camera, layers, hidden features, display settings. */
   initialState?: ViewerLinkState | null;
 }
@@ -116,7 +118,7 @@ function ToolButton({ label, pressed, onClick, side = 'top', children, testId }:
  *  revision, with a Model tab (the 3MF/STL/STEP mesh) and a Toolpath tab (the sliced G-code),
  *  each shown only when its file exists; a CAD view cube; the view tools; and a rail with
  *  everything known about the part. */
-export function PartViewerModal({ subject, title, onClose, onPrint, onOpenInSlicer, onDownload, onSliceWithFenrir, onSnapshot, printed = 0, initialTab, initialState = null }: PartViewerModalProps) {
+export function PartViewerModal({ subject, title, onClose, onPrint, onOpenInSlicer, onDownload, onSliceWithFenrir, onSnapshot, printed = 0, initialTab, initialPlate = null, initialState = null }: PartViewerModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const { hasPermission, hasAnyPermission } = useAuth();
@@ -190,7 +192,7 @@ export function PartViewerModal({ subject, title, onClose, onPrint, onOpenInSlic
   const [turntable, setTurntable] = useState(false);
   const [railOn, setRailOn] = useState(true);
   const [clean, setClean] = useState(false);
-  const [selectedPlateId, setSelectedPlateId] = useState<number | null>(null);
+  const [selectedPlateId, setSelectedPlateId] = useState<number | null>(initialPlate);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [isolatedIndex, setIsolatedIndex] = useState<number | null>(null);
   const [objects, setObjects] = useState<PartObject[]>([]);
