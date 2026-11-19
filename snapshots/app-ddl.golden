@@ -710,6 +710,9 @@ CREATE TABLE groups (
 	permissions JSON NOT NULL, 
 	is_system BOOLEAN NOT NULL, 
 	restrict_printers BOOLEAN DEFAULT '0' NOT NULL, 
+	restrict_filaments BOOLEAN DEFAULT '0' NOT NULL, 
+	filament_rule_mode VARCHAR(10) DEFAULT 'block' NOT NULL, 
+	filament_rules JSON, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id)
@@ -929,6 +932,24 @@ CREATE TABLE maintenance_history (
 	notes TEXT, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(printer_maintenance_id) REFERENCES printer_maintenance (id) ON DELETE CASCADE
+);
+CREATE TABLE maintenance_log_entries (
+	id INTEGER NOT NULL, 
+	printer_id INTEGER, 
+	printer_name VARCHAR(255) NOT NULL, 
+	maintenance_type_id INTEGER, 
+	maintenance_type_name VARCHAR(100) NOT NULL, 
+	hours_at_maintenance FLOAT NOT NULL, 
+	notes TEXT, 
+	performed_by_id INTEGER, 
+	performed_by_username VARCHAR(100), 
+	performed_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	history_id INTEGER, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE SET NULL, 
+	FOREIGN KEY(maintenance_type_id) REFERENCES maintenance_types (id) ON DELETE SET NULL, 
+	FOREIGN KEY(performed_by_id) REFERENCES users (id) ON DELETE SET NULL, 
+	FOREIGN KEY(history_id) REFERENCES maintenance_history (id) ON DELETE SET NULL
 );
 CREATE TABLE maintenance_types (
 	id INTEGER NOT NULL, 
@@ -1555,6 +1576,7 @@ CREATE TABLE printers (
 	plate_detection_roi_w FLOAT, 
 	plate_detection_roi_h FLOAT, 
 	awaiting_plate_clear BOOLEAN NOT NULL, 
+	require_plate_clear BOOLEAN, 
 	wled_config JSON, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
@@ -1789,6 +1811,8 @@ CREATE TABLE smart_plugs (
 	mqtt_energy_topic VARCHAR(200), 
 	mqtt_energy_path VARCHAR(100), 
 	mqtt_energy_multiplier FLOAT NOT NULL, 
+	mqtt_energy_total_path VARCHAR(100), 
+	mqtt_energy_total_multiplier FLOAT DEFAULT '1.0' NOT NULL, 
 	mqtt_state_topic VARCHAR(200), 
 	mqtt_state_path VARCHAR(100), 
 	mqtt_state_on_value VARCHAR(50), 

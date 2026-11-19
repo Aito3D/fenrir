@@ -2,6 +2,7 @@
 ### stdout:
 {
  "boardExports": [
+  "FOLLOW_KEYS",
   "ageTone",
   "avgLeadDays",
   "boxablePicklists",
@@ -21,9 +22,13 @@
   "finishedByBrand",
   "finishedPayState",
   "foldText",
+  "followDays",
   "formatQty",
   "isBoardReady",
+  "isFollowup",
+  "lineTotal",
   "nextStep",
+  "normDiscount",
   "otherOpenOrders",
   "packableUnits",
   "paidPct",
@@ -323,8 +328,8 @@
   ],
   "age-flipped": [
    "3",
-   "4",
    "5",
+   "4",
    "2",
    "1"
   ],
@@ -860,6 +865,7 @@
  ],
  "SHORT_LABEL_KEY": {
   "order.received": "orders.history.short.received",
+  "order.created": "orders.history.short.created",
   "order.ready": "orders.history.short.ready",
   "order.packed": "orders.history.short.packed",
   "picklist.created": "orders.history.short.picklist",
@@ -880,7 +886,10 @@
   "terminal.started": "orders.history.short.terminal",
   "prep.printed": "orders.history.short.prepPrinted",
   "tracking.viewed": "orders.history.short.trackingViewed",
-  "zoho.edited": "orders.history.short.zohoEdited"
+  "zoho.edited": "orders.history.short.zohoEdited",
+  "document.emailed": "orders.history.short.documentEmailed",
+  "credit.applied": "orders.history.short.creditApplied",
+  "contact.edited": "orders.history.short.contactEdited"
  },
  "orderEventLabel": {
   "order.received": [
@@ -925,6 +934,44 @@
    },
    {
     "key": "orders.history.orderReceived"
+   }
+  ],
+  "order.created": [
+   {
+    "key": "orders.history.orderCreated"
+   },
+   {
+    "key": "orders.history.orderCreated"
+   },
+   {
+    "key": "orders.history.orderCreated"
+   },
+   {
+    "key": "orders.history.orderCreated"
+   },
+   {
+    "key": "orders.history.orderCreated"
+   },
+   {
+    "key": "orders.history.orderCreated"
+   },
+   {
+    "key": "orders.history.orderCreated"
+   },
+   {
+    "key": "orders.history.orderCreated"
+   },
+   {
+    "key": "orders.history.orderCreated"
+   },
+   {
+    "key": "orders.history.orderCreated"
+   },
+   {
+    "key": "orders.history.orderCreated"
+   },
+   {
+    "key": "orders.history.orderCreated"
    }
   ],
   "order.ready": [
@@ -2013,6 +2060,204 @@
     "key": "orders.history.zohoEdited"
    }
   ],
+  "document.emailed": [
+   {
+    "key": "orders.history.documentEmailed",
+    "params": {
+     "document": "—"
+    }
+   },
+   {
+    "key": "orders.history.documentEmailed",
+    "params": {
+     "document": "—"
+    }
+   },
+   {
+    "key": "orders.history.documentEmailed",
+    "params": {
+     "document": "—"
+    }
+   },
+   {
+    "key": "orders.history.documentEmailed",
+    "params": {
+     "document": "—"
+    }
+   },
+   {
+    "key": "orders.history.documentEmailed",
+    "params": {
+     "document": "—"
+    }
+   },
+   {
+    "key": "orders.history.documentEmailed",
+    "params": {
+     "document": "—"
+    }
+   },
+   {
+    "key": "orders.history.documentEmailed",
+    "params": {
+     "document": "—"
+    }
+   },
+   {
+    "key": "orders.history.documentEmailed",
+    "params": {
+     "document": "—"
+    }
+   },
+   {
+    "key": "orders.history.documentEmailed",
+    "params": {
+     "document": "INV-9"
+    }
+   },
+   {
+    "key": "orders.history.documentEmailed",
+    "params": {
+     "document": "—"
+    }
+   },
+   {
+    "key": "orders.history.documentEmailed",
+    "params": {
+     "document": "—"
+    }
+   },
+   {
+    "key": "orders.history.documentEmailed",
+    "params": {
+     "document": "—"
+    }
+   }
+  ],
+  "credit.applied": [
+   {
+    "key": "orders.history.creditApplied",
+    "params": {
+     "invoice": "—",
+     "amount": "—"
+    }
+   },
+   {
+    "key": "orders.history.creditApplied",
+    "params": {
+     "invoice": "—",
+     "amount": "—"
+    }
+   },
+   {
+    "key": "orders.history.creditApplied",
+    "params": {
+     "invoice": "—",
+     "amount": "—"
+    }
+   },
+   {
+    "key": "orders.history.creditApplied",
+    "params": {
+     "invoice": "—",
+     "amount": "—"
+    }
+   },
+   {
+    "key": "orders.history.creditApplied",
+    "params": {
+     "invoice": "—",
+     "amount": "—"
+    }
+   },
+   {
+    "key": "orders.history.creditApplied",
+    "params": {
+     "invoice": "—",
+     "amount": "—"
+    }
+   },
+   {
+    "key": "orders.history.creditApplied",
+    "params": {
+     "invoice": "—",
+     "amount": "—"
+    }
+   },
+   {
+    "key": "orders.history.creditApplied",
+    "params": {
+     "invoice": "INV-9",
+     "amount": "—"
+    }
+   },
+   {
+    "key": "orders.history.creditApplied",
+    "params": {
+     "invoice": "—",
+     "amount": "2 500 FCFP"
+    }
+   },
+   {
+    "key": "orders.history.creditApplied",
+    "params": {
+     "invoice": "—",
+     "amount": "—"
+    }
+   },
+   {
+    "key": "orders.history.creditApplied",
+    "params": {
+     "invoice": "—",
+     "amount": "—"
+    }
+   },
+   {
+    "key": "orders.history.creditApplied",
+    "params": {
+     "invoice": "—",
+     "amount": "—"
+    }
+   }
+  ],
+  "contact.edited": [
+   {
+    "key": "orders.history.contactEdited"
+   },
+   {
+    "key": "orders.history.contactEdited"
+   },
+   {
+    "key": "orders.history.contactEdited"
+   },
+   {
+    "key": "orders.history.contactEdited"
+   },
+   {
+    "key": "orders.history.contactEdited"
+   },
+   {
+    "key": "orders.history.contactEdited"
+   },
+   {
+    "key": "orders.history.contactEdited"
+   },
+   {
+    "key": "orders.history.contactEdited"
+   },
+   {
+    "key": "orders.history.contactEdited"
+   },
+   {
+    "key": "orders.history.contactEdited"
+   },
+   {
+    "key": "orders.history.contactEdited"
+   },
+   {
+    "key": "orders.history.contactEdited"
+   }
+  ],
   "unknown.kind": [
    null,
    null,
@@ -2039,6 +2284,20 @@
    "orders.units|{\"count\":1.5}",
    "5 000 FCFP",
    "3 000 FCFP",
+   null,
+   null,
+   null
+  ],
+  "order.created": [
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
    null,
    null,
    null
@@ -2324,6 +2583,48 @@
    null
   ],
   "zoho.edited": [
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null
+  ],
+  "document.emailed": [
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   "a@b.test",
+   null,
+   null,
+   "+68987123456",
+   null
+  ],
+  "credit.applied": [
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null
+  ],
+  "contact.edited": [
    null,
    null,
    null,

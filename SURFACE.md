@@ -33,12 +33,14 @@ unless the user approved it.
 ['POST'] /api/v1/order-board/orders/{salesorder_id}/payment-link/cancel cancel_order_payment_link
 ['POST'] /api/v1/order-board/orders/{salesorder_id}/terminal-payment start_order_terminal_payment_route
 ['GET'] /api/v1/order-board/orders/{salesorder_id}/terminal-payment get_order_terminal_payment
+['POST'] /api/v1/order-board/orders/{salesorder_id}/manual-payment record_order_manual_payment_route
 ['GET'] /api/v1/order-board/orders/{salesorder_id}/picklist get_picklist_preview
 ['POST'] /api/v1/order-board/orders/{salesorder_id}/picklists create_picklist
 ['GET'] /api/v1/order-board/orders/{salesorder_id}/picklists/{picklist_id} get_picklist_content
 ['POST'] /api/v1/order-board/orders/{salesorder_id}/packages create_parcel
 ['GET'] /api/v1/order-board/items search_items
 ['PUT'] /api/v1/order-board/orders/{salesorder_id}/lines edit_order_lines
+['POST'] /api/v1/order-board/orders create_counter_order
 ['GET'] /api/v1/order-board/orders/{salesorder_id}/packages/{package_id} get_package_content
 ['PUT'] /api/v1/order-board/orders/{salesorder_id}/packages/{package_id} edit_parcel
 ['GET'] /api/v1/order-board/orders/{salesorder_id}/packages/{package_id}/handover get_handover_preview
@@ -49,6 +51,14 @@ unless the user approved it.
 ['GET'] /api/v1/order-board/invoices/{invoice_id}/pdf get_invoice_pdf
 ['GET'] /api/v1/order-board/invoices/{invoice_id}/email get_invoice_email
 ['POST'] /api/v1/order-board/invoices/{invoice_id}/email send_invoice_email
+['GET'] /api/v1/order-board/orders/{salesorder_id}/documents/{kind}/{document_id}/pdf get_document_pdf
+['GET'] /api/v1/order-board/orders/{salesorder_id}/documents/{kind}/{document_id}/email get_document_email
+['POST'] /api/v1/order-board/orders/{salesorder_id}/documents/{kind}/{document_id}/email send_document_email
+['POST'] /api/v1/order-board/orders/{salesorder_id}/sync sync_order
+['GET'] /api/v1/order-board/orders/{salesorder_id}/customer-credit get_customer_credit
+['GET'] /api/v1/order-board/orders/{salesorder_id}/client-rating get_order_client_rating
+['PUT'] /api/v1/order-board/orders/{salesorder_id}/contact edit_order_contact
+['POST'] /api/v1/order-board/orders/{salesorder_id}/invoices/{invoice_id}/apply-credit apply_order_credit
 ```
 
 ## Route decorators per module (routes/order_board/)
@@ -67,12 +77,21 @@ backend/app/api/routes/order_board/board.py:@router.get("/orders/{salesorder_id}
 backend/app/api/routes/order_board/board.py:@router.post("/orders/{salesorder_id}/events", response_model=OrderEventResponse, status_code=201)
 backend/app/api/routes/order_board/board.py:@router.post("/orders/{salesorder_id}/prep-sheet")
 backend/app/api/routes/order_board/board.py:@router.post("/prep-sheet/batch")
+backend/app/api/routes/order_board/documents.py:@router.get("/orders/{salesorder_id}/documents/{kind}/{document_id}/pdf")
+backend/app/api/routes/order_board/documents.py:@router.get("/orders/{salesorder_id}/documents/{kind}/{document_id}/email")
+backend/app/api/routes/order_board/documents.py:@router.post("/orders/{salesorder_id}/documents/{kind}/{document_id}/email")
+backend/app/api/routes/order_board/documents.py:@router.post("/orders/{salesorder_id}/sync")
+backend/app/api/routes/order_board/documents.py:@router.get("/orders/{salesorder_id}/customer-credit")
+backend/app/api/routes/order_board/documents.py:@router.get("/orders/{salesorder_id}/client-rating", response_model=AitoClientRatingResponse)
+backend/app/api/routes/order_board/documents.py:@router.put("/orders/{salesorder_id}/contact")
+backend/app/api/routes/order_board/documents.py:@router.post("/orders/{salesorder_id}/invoices/{invoice_id}/apply-credit")
 backend/app/api/routes/order_board/fulfilment.py:@router.get("/orders/{salesorder_id}/picklist")
 backend/app/api/routes/order_board/fulfilment.py:@router.post("/orders/{salesorder_id}/picklists")
 backend/app/api/routes/order_board/fulfilment.py:@router.get("/orders/{salesorder_id}/picklists/{picklist_id}")
 backend/app/api/routes/order_board/fulfilment.py:@router.post("/orders/{salesorder_id}/packages")
 backend/app/api/routes/order_board/fulfilment.py:@router.get("/items")
 backend/app/api/routes/order_board/fulfilment.py:@router.put("/orders/{salesorder_id}/lines")
+backend/app/api/routes/order_board/fulfilment.py:@router.post("/orders", status_code=201)
 backend/app/api/routes/order_board/fulfilment.py:@router.get("/orders/{salesorder_id}/packages/{package_id}")
 backend/app/api/routes/order_board/fulfilment.py:@router.put("/orders/{salesorder_id}/packages/{package_id}")
 backend/app/api/routes/order_board/fulfilment.py:@router.get("/orders/{salesorder_id}/packages/{package_id}/handover")
@@ -88,6 +107,7 @@ backend/app/api/routes/order_board/payment.py:@router.post("/orders/{salesorder_
 backend/app/api/routes/order_board/payment.py:@router.post("/orders/{salesorder_id}/payment-link/cancel", response_model=OrderPaymentLinkView)
 backend/app/api/routes/order_board/payment.py:@router.post("/orders/{salesorder_id}/terminal-payment", response_model=AitoTerminalPaymentView, status_code=201)
 backend/app/api/routes/order_board/payment.py:@router.get("/orders/{salesorder_id}/terminal-payment", response_model=AitoTerminalPaymentView | None)
+backend/app/api/routes/order_board/payment.py:@router.post("/orders/{salesorder_id}/manual-payment")
 backend/app/api/routes/order_board/tracking.py:@router.get("/orders/{salesorder_id}/sms-draft")
 backend/app/api/routes/order_board/tracking.py:@router.post("/orders/{salesorder_id}/sms")
 backend/app/api/routes/order_board/tracking.py:@router.get("/orders/{salesorder_id}/tracking-link")
@@ -117,12 +137,25 @@ async def add_order_note(
 async def print_prep_sheet(
 class PrepSheetBatchBody(BaseModel):
 async def print_prep_sheet_batch(
+# backend/app/api/routes/order_board/documents.py
+class DocumentEmailBody(BaseModel):
+class ContactBody(BaseModel):
+async def get_document_pdf(
+async def get_document_email(
+async def send_document_email(
+async def sync_order(
+async def get_customer_credit(
+async def get_order_client_rating(
+async def edit_order_contact(
+async def apply_order_credit(
 # backend/app/api/routes/order_board/fulfilment.py
 class ParcelLine(BaseModel):
 class ParcelBody(BaseModel):
 class PackBody(ParcelBody):
 class EditLine(BaseModel):
 class LinesBody(BaseModel):
+class CounterLine(BaseModel):
+class CounterOrderBody(BaseModel):
 class ParcelQty(BaseModel):
 class ParcelEditBody(BaseModel):
 class HandoverBody(BaseModel):
@@ -134,6 +167,7 @@ async def get_picklist_content(
 async def create_parcel(
 async def search_items(
 async def edit_order_lines(
+async def create_counter_order(
 async def get_package_content(
 async def edit_parcel(
 async def get_handover_preview(
@@ -147,6 +181,7 @@ async def send_invoice_email(
 # backend/app/api/routes/order_board/payment.py
 class OrderPaymentBody(BaseModel):
 class OrderTerminalBody(OrderPaymentBody):
+class OrderManualPaymentBody(OrderPaymentBody):
 class OrderPaymentLinkView(AitoPaymentLinkView):
 class OrderPaymentTarget(BaseModel):
 async def get_payment_target(
@@ -154,6 +189,7 @@ async def create_order_payment_link(
 async def cancel_order_payment_link(
 async def start_order_terminal_payment_route(
 async def get_order_terminal_payment(
+async def record_order_manual_payment_route(
 # backend/app/api/routes/order_board/tracking.py
 async def get_pickup_sms_draft(
 class SmsSentBody(BaseModel):
@@ -210,7 +246,7 @@ async def log_view(
 ```regen: for p in order_board_actions order_board_sync; do echo "# backend/app/services/$p/__init__.py __all__"; sed -n "/^__all__ = \[/,/^\]/p" backend/app/services/$p/__init__.py | grep -oE "\"[A-Za-z_0-9]+\"" | tr -d "\"" | sort | tr "\n" " "; echo; done```
 ```
 # backend/app/services/order_board_actions/__init__.py __all__
-InvoiceScope OrderActionRefused OrderBusy OrderNotOnBoard _row cancel_order confirm_stored_copy create_parcel create_picklist edit_lines edit_parcel email_invoice hand_over handover_preview invoice_payload invoice_preview invoice_shipped package_content picklist_content picklist_preview search_items stamp_contact stamp_print writing 
+DocumentKind InvoiceScope OrderActionRefused OrderBusy OrderNotOnBoard _row apply_credit cancel_order confirm_stored_copy create_counter_order create_parcel create_picklist document_email_content document_pdf edit_contact edit_lines edit_parcel email_document email_invoice hand_over handover_preview invoice_payload invoice_preview invoice_shipped listed_document order_row_any package_content picklist_content picklist_preview search_items stamp_contact stamp_print writing 
 # backend/app/services/order_board_sync/__init__.py __all__
 CALL_CEILING DAILY_BUDGET_FLOOR FINISHED_DETAIL_DAYS FINISHED_DETAIL_GRACE_DAYS MAX_DETAILS_PER_PASS OrderBoardSettings OrderNotFinished OrderNotStored PENDING_PAUSE_SECONDS ZohoBusy _busy_on_rate_limit _find_state _finished_docs _has_event _iteration _naive_utc _now _unconfirmed _written_at announce_board_change find_board_row find_stored load_settings needs_refresh note_write open_rate_limit_window read_board read_finished read_finished_order refresh_order run_loop run_pass save_settings start_order_board_sync ws_manager zoho_busy 
 ```
@@ -230,6 +266,8 @@ board.OrderBoardSettingsBody: sync_enabled: <class 'bool'>, sync_minutes: Litera
 board.OrderEventPage: events: list[backend.app.api.routes.order_board.board.OrderEventResponse], has_more: <class 'bool'>
 board.OrderEventResponse: id: <class 'int'>, occurred_at: <class 'datetime.datetime'>, kind: <class 'str'>, actor_class: <class 'str'>, actor_name: str | None, changes: list[dict] | None, detail: dict | None, note: str | None
 board.PrepSheetBatchBody: ids: list[Annotated[str, StringConstraints(strip_whitespace=None, to_upper=None, to_lower=None, strict=None, min_length=1, max_length=64, pattern=None)]]
+fulfilment.CounterLine: item_id: <class 'str'>, quantity: <class 'float'>, discount: str | None
+fulfilment.CounterOrderBody: customer_id: <class 'str'>, client_ref: <class 'uuid.UUID'>, lines: list[backend.app.api.routes.order_board.fulfilment.CounterLine]
 fulfilment.EditLine: line_id: str | None, item_id: str | None, quantity: <class 'float'>
 fulfilment.HandoverBody: mode: Literal['pickup', 'delivery'], apply_credit: <class 'bool'>
 fulfilment.InvoiceBody: apply_credit: <class 'bool'>, scope: Literal['shipped', 'packed', 'whole']
@@ -240,6 +278,7 @@ fulfilment.ParcelBody: lines: list[backend.app.api.routes.order_board.fulfilment
 fulfilment.ParcelEditBody: version: <class 'str'>, was: list[backend.app.api.routes.order_board.fulfilment.ParcelLine], lines: list[backend.app.api.routes.order_board.fulfilment.ParcelQty]
 fulfilment.ParcelLine: line_id: <class 'str'>, quantity: <class 'float'>
 fulfilment.ParcelQty: line_id: <class 'str'>, quantity: <class 'float'>
+payment.OrderManualPaymentBody: amount: <class 'int'>, mode: Literal['card', 'cheque', 'cash'], reference: str | None
 payment.OrderPaymentBody: amount: <class 'int'>
 payment.OrderPaymentLinkView: id: <class 'int'>, state: Literal['pending', 'paid', 'failed', 'cancelled', 'expired'], amount: <class 'int'>, currency: <class 'str'>, url: str | None, expires_on: <class 'str'>, paid_at: datetime.datetime | None, sync_error: str | None, minted: <class 'bool'>, document_number: str | None
 payment.OrderPaymentTarget: kind: Optional[Literal['invoice', 'retainer', 'quote', 'salesorder']], document_id: str | None, number: str | None, max_amount: int | None, left: <class 'float'>, link: backend.app.api.routes.order_board.payment.OrderPaymentLinkView | None
@@ -325,9 +364,13 @@ app.include_router(order_board.router, prefix=app_settings.api_prefix)
 ```regen: for f in $(find frontend/src/components/orders -type f | sort) frontend/src/pages/OrderBoardPage.tsx frontend/src/pages/OrderTrackPage.tsx frontend/src/utils/orderTracking.ts; do grep -HoE "^export (default )?(async )?(function|const|type|interface|class|enum) [A-Za-z0-9_]+" "$f"; done```
 ```
 frontend/src/components/orders/FinishedOrderCard.tsx:export function FinishedOrderCard
+frontend/src/components/orders/NewOrderDraftRow.tsx:export function NewOrderDraftRow
+frontend/src/components/orders/NewOrderLines.tsx:export function NewOrderLines
 frontend/src/components/orders/OrderActivity.tsx:export function OrderActivity
 frontend/src/components/orders/OrderCard.tsx:export function OrderCard
+frontend/src/components/orders/OrderClientHistory.tsx:export function OrderClientHistory
 frontend/src/components/orders/OrderContactBlock.tsx:export function OrderContactBlock
+frontend/src/components/orders/OrderDocumentEmailModal.tsx:export function OrderDocumentEmailModal
 frontend/src/components/orders/OrderEditBar.tsx:export function OrderEditBar
 frontend/src/components/orders/OrderHandoverBar.tsx:export function OrderHandoverBar
 frontend/src/components/orders/OrderInvoiceEmailModal.tsx:export function OrderInvoiceEmailModal
@@ -346,9 +389,11 @@ frontend/src/components/orders/OrderPrepActions.tsx:export function OrderPrepAct
 frontend/src/components/orders/OrderQtyStepper.tsx:export function OrderQtyStepper
 frontend/src/components/orders/OrderRefChips.tsx:export function OrderRefChips
 frontend/src/components/orders/OrderRowAction.tsx:export function OrderRowAction
+frontend/src/components/orders/OrderShippingLabelModal.tsx:export function OrderShippingLabelModal
 frontend/src/components/orders/OrderSidePanel.tsx:export function OrderSidePanel
 frontend/src/components/orders/OrderSmsModal.tsx:export function OrderSmsModal
 frontend/src/components/orders/OrderStatsStrip.tsx:export function OrderStatsStrip
+frontend/src/components/orders/OrderSyncButton.tsx:export function OrderSyncButton
 frontend/src/components/orders/OrderTodoBand.tsx:export function OrderTodoEditRows
 frontend/src/components/orders/OrderTodoBand.tsx:export function OrderTodoCheckRow
 frontend/src/components/orders/OrderWatchButton.tsx:export function OrderWatchButton
@@ -370,6 +415,10 @@ frontend/src/components/orders/orderBoard.ts:export const otherOpenOrders
 frontend/src/components/orders/orderBoard.ts:export const finishedPayState
 frontend/src/components/orders/orderBoard.ts:export const searchFinished
 frontend/src/components/orders/orderBoard.ts:export const byFinishedPayment
+frontend/src/components/orders/orderBoard.ts:export type FollowKey
+frontend/src/components/orders/orderBoard.ts:export const FOLLOW_KEYS
+frontend/src/components/orders/orderBoard.ts:export const isFollowup
+frontend/src/components/orders/orderBoard.ts:export const followDays
 frontend/src/components/orders/orderBoard.ts:export const totalValue
 frontend/src/components/orders/orderBoard.ts:export const utcToday
 frontend/src/components/orders/orderBoard.ts:export const weeklyCounts
@@ -403,6 +452,8 @@ frontend/src/components/orders/orderBoard.ts:export interface ParcelEdit
 frontend/src/components/orders/orderBoard.ts:export const parcelDiff
 frontend/src/components/orders/orderBoard.ts:export const parcelLines
 frontend/src/components/orders/orderBoard.ts:export const parcelWas
+frontend/src/components/orders/orderBoard.ts:export const normDiscount
+frontend/src/components/orders/orderBoard.ts:export function lineTotal
 frontend/src/components/orders/orderErrors.ts:export const isRefused
 frontend/src/components/orders/orderErrors.ts:export const errorReason
 frontend/src/components/orders/orderEventKinds.ts:export const SHORT_LABEL_KEY
@@ -463,6 +514,9 @@ export interface OrderPayment
 export interface OrderContact
 export interface OrderFacts
 export interface OrderPackage
+export interface OrderRetainer
+export type OrderDocumentKind
+export interface OrderSyncChange
 export interface OrderPicklist
 export interface OrderPickLines
 export interface OrderBoardRow
@@ -503,6 +557,7 @@ api.getOrderTrackingLink
 api.getOrderPaymentTarget
 api.createOrderPaymentLink
 api.startOrderTerminalPayment
+api.recordOrderManualPayment
 api.cancelOrderPaymentLink
 api.getOrderTerminalPayment
 api.getOrderPicklistPreview
@@ -510,6 +565,7 @@ api.createOrderPicklist
 api.getOrderPicklist
 api.createOrderParcel
 api.searchOrderItems
+api.createCounterOrder
 api.updateOrderLines
 api.getOrderPackage
 api.updateOrderPackage
@@ -521,6 +577,14 @@ api.cancelOrder
 api.getOrderInvoicePdf
 api.getOrderInvoiceEmail
 api.sendOrderInvoiceEmail
+api.getOrderDocumentPdf
+api.getOrderDocumentEmail
+api.sendOrderDocumentEmail
+api.syncOrder
+api.getOrderCustomerCredit
+api.getOrderClientRating
+api.editOrderContact
+api.applyOrderCredit
 api.getOrderBoardSettings
 api.updateOrderBoardSettings
 ```
@@ -528,16 +592,54 @@ api.updateOrderBoardSettings
 ## Translation keys the scope files name literally
 ```regen: perl -nle "print \$1 while /[\x27\"\x60]((?:orders|aito|common|nav|settings)\.[\w.]*\w)[\x27\"\x60]/g" $(find frontend/src/components/orders -type f | sort) frontend/src/pages/OrderBoardPage.tsx frontend/src/pages/OrderTrackPage.tsx frontend/src/utils/orderTracking.ts | sort -u```
 ```
+aito.applyDepositDone
+aito.applyDepositError
+aito.clientEdit
+aito.clientEditFailed
+aito.clientEmail
+aito.clientPhone
 aito.contacted
+aito.downloadQuote
+aito.downloadRetainer
+aito.followups.hint
+aito.followups.longest
+aito.followups.notCollected
+aito.followups.title
+aito.forceSyncStepCredit
 aito.history.title
 aito.invoiceEmailFailed
 aito.invoiceEmailed
+aito.noClient
 aito.panelTabAttention
 aito.panelTabDetails
+aito.payment.cellManual
+aito.payment.cellManualTitle
 aito.payment.linkTitle
+aito.printFailed
+aito.printQuote
+aito.printRetainer
+aito.printShippingLabel
+aito.quoteEmailFailed
+aito.quoteEmailed
+aito.quoteOpenInZoho
+aito.retainerEmailFailed
+aito.retainerEmailed
+aito.retainerLabel
+aito.retainerPrintFailed
 aito.sendInvoice
 aito.sendInvoiceLoadFailed
 aito.sendInvoiceTitle
+aito.sendQuote
+aito.sendQuoteLoadFailed
+aito.sendQuoteTitle
+aito.sendRetainer
+aito.sendRetainerLoadFailed
+aito.sendRetainerTitle
+aito.shippingIsland
+aito.shippingLabelPrintFailed
+aito.shippingPhone
+aito.shippingRecipient
+aito.shippingService
 aito.smsGenerateFailed
 aito.smsGenerating
 aito.smsMaybeSent
@@ -550,6 +652,8 @@ aito.smsSend
 aito.smsSendFailed
 aito.smsSent
 aito.smsTitle
+aito.sync
+aito.syncUpToDate
 aito.track.codeTooMany
 aito.track.error
 aito.track.invalidEnterCode
@@ -581,6 +685,9 @@ aito.trackingNeedsExternalUrl
 common.cancel
 common.error
 common.errorLoading
+common.loading
+common.save
+common.saving
 orders.age
 orders.busy
 orders.cancel.done
@@ -641,6 +748,7 @@ orders.finished.loadListFailed
 orders.finished.loading
 orders.finished.shipped
 orders.firstSync
+orders.follow.unbilled
 orders.group.other
 orders.group.packed
 orders.group.shipped
@@ -676,13 +784,17 @@ orders.hint.partial
 orders.hint.toOrder
 orders.hint.toOrderIncl
 orders.hint.toShip
+orders.history.contactEdited
+orders.history.creditApplied
 orders.history.depth
+orders.history.documentEmailed
 orders.history.handoverDelivered
 orders.history.handoverShipped
 orders.history.invoiceCreated
 orders.history.invoiceEmailed
 orders.history.noteAdded
 orders.history.orderCancelled
+orders.history.orderCreated
 orders.history.orderEdited
 orders.history.orderFinished
 orders.history.orderPacked
@@ -700,7 +812,11 @@ orders.history.picklistCreated
 orders.history.prepPrinted
 orders.history.seenBySync
 orders.history.short.cancelled
+orders.history.short.contactEdited
+orders.history.short.created
+orders.history.short.creditApplied
 orders.history.short.delivered
+orders.history.short.documentEmailed
 orders.history.short.edited
 orders.history.short.finished
 orders.history.short.invoice
@@ -749,15 +865,40 @@ orders.inv.title
 orders.inv.total
 orders.inv.unbilled
 orders.inv.what
+orders.label.open
 orders.line.backorder
 orders.line.cancelled
 orders.line.invoiced
 orders.line.packed
+orders.line.priceDiffers
+orders.line.priceDiffersLabel
 orders.line.ready
 orders.line.service
 orders.line.shipped
 orders.line.toOrder
 orders.loadFailed
+orders.newOrder.abandon
+orders.newOrder.abandonBack
+orders.newOrder.button
+orders.newOrder.create
+orders.newOrder.creating
+orders.newOrder.discount
+orders.newOrder.discountInvalid
+orders.newOrder.draft
+orders.newOrder.empty
+orders.newOrder.failed
+orders.newOrder.hidden
+orders.newOrder.historyTitle
+orders.newOrder.holdToReset
+orders.newOrder.noLines
+orders.newOrder.rate
+orders.newOrder.ready
+orders.newOrder.reset
+orders.newOrder.search
+orders.newOrder.showAll
+orders.newOrder.title
+orders.newOrder.toOrder
+orders.newOrder.total
 orders.notConnected
 orders.notConnectedHint
 orders.ofOrdered
@@ -897,6 +1038,15 @@ orders.status.incoming
 orders.status.partial
 orders.status.toOrder
 orders.status.toShip
+orders.sync.hint
+orders.sync.invoices
+orders.sync.left
+orders.sync.packages
+orders.sync.paid
+orders.sync.retainers
+orders.sync.state
+orders.sync.total
+orders.sync.updated
 orders.syncFailed
 orders.syncOff
 orders.syncOffHint
@@ -912,7 +1062,14 @@ orders.watch.on
 ## Test ids the scope binds
 ```regen: grep -rhoE "data-testid=\"[^\"]+\"|testId=\"[^\"]+\"|data-testid=\{[^}]+\}" $(find frontend/src/components/orders -type f | sort) frontend/src/pages/OrderBoardPage.tsx frontend/src/pages/OrderTrackPage.tsx frontend/src/utils/orderTracking.ts | sort | uniq -c | sed "s/^ *//"```
 ```
+1 data-testid="customer-credit"
+1 data-testid="doc-quote"
+1 data-testid="doc-retainer"
+1 data-testid="draft-line-total"
+1 data-testid="draft-total"
 1 data-testid="edit-total"
+1 data-testid="history-order-number"
+1 data-testid="order-client-history"
 1 data-testid="order-last-activity"
 2 data-testid="order-number"
 2 data-testid="order-pay"
@@ -938,6 +1095,7 @@ orders.watch.on
 1 data-testid="track-tally"
 1 data-testid={`pack-qty-${id}
 1 data-testid={`pay-seg-${x.id}
+1 testId="order-shipping-label"
 1 testId="track-panel-pay"
 ```
 

@@ -142,19 +142,22 @@
    140	path="system"
    141	element=SystemInfoPage
    142	<Route
-   143	path="notifications"
-   144	element=NotificationsPage
+   143	path="connect-slicer"
+   144	element=ConnectSlicerPage
    145	<Route
-   146	path="gcode-viewer"
-   147	element=GCodeViewerPage
+   146	path="notifications"
+   147	element=NotificationsPage
    148	<Route
-   149	path="external/:id"
-   150	element=ExternalLinkPage
+   149	path="gcode-viewer"
+   150	element=GCodeViewerPage
    151	<Route
-   152	path="camera-tokens"
-   153	element=Navigate
+   152	path="external/:id"
+   153	element=ExternalLinkPage
    154	<Route
-   155	<Route
+   155	path="camera-tokens"
+   156	element=Navigate
+   157	<Route
+   158	<Route
 
 ### stderr:
 

@@ -789,6 +789,46 @@
    },
    "security": true
   },
+  "DELETE /api/v1/maintenance/log": {
+   "operationId": "clean_up_maintenance_log_api_v1_maintenance_log_delete",
+   "params": [
+    "header:X-API-Key",
+    "query:older_than_days!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/maintenance/log/{entry_id}": {
+   "operationId": "delete_maintenance_log_entry_api_v1_maintenance_log__entry_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:entry_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/maintenance/printers/{printer_id}/log": {
+   "operationId": "clean_up_printer_maintenance_log_api_v1_maintenance_printers__printer_id__log_delete",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!",
+    "query:older_than_days!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "DELETE /api/v1/maintenance/types/{type_id}": {
    "operationId": "delete_maintenance_type_api_v1_maintenance_types__type_id__delete",
    "params": [
@@ -4510,6 +4550,18 @@
    },
    "security": true
   },
+  "GET /api/v1/maintenance/log/export": {
+   "operationId": "export_maintenance_log_api_v1_maintenance_log_export_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/maintenance/overview": {
    "operationId": "get_all_maintenance_overview_api_v1_maintenance_overview_get",
    "params": [
@@ -4531,6 +4583,34 @@
    "requestBody": {},
    "responses": {
     "200": "PrinterMaintenanceOverview",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/maintenance/printers/{printer_id}/log": {
+   "operationId": "get_printer_maintenance_log_api_v1_maintenance_printers__printer_id__log_get",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!",
+    "query:limit",
+    "query:offset"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "MaintenanceLogPage",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/maintenance/printers/{printer_id}/log/export": {
+   "operationId": "export_printer_maintenance_log_api_v1_maintenance_printers__printer_id__log_export_get",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -4970,6 +5050,62 @@
    "requestBody": {},
    "responses": {
     "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/order-board/orders/{salesorder_id}/client-rating": {
+   "operationId": "get_order_client_rating_api_v1_order_board_orders__salesorder_id__client_rating_get",
+   "params": [
+    "header:X-API-Key",
+    "path:salesorder_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoClientRatingResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/order-board/orders/{salesorder_id}/customer-credit": {
+   "operationId": "get_customer_credit_api_v1_order_board_orders__salesorder_id__customer_credit_get",
+   "params": [
+    "header:X-API-Key",
+    "path:salesorder_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/order-board/orders/{salesorder_id}/documents/{kind}/{document_id}/email": {
+   "operationId": "get_document_email_api_v1_order_board_orders__salesorder_id__documents__kind___document_id__email_get",
+   "params": [
+    "header:X-API-Key",
+    "path:document_id!",
+    "path:kind!",
+    "path:salesorder_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/order-board/orders/{salesorder_id}/documents/{kind}/{document_id}/pdf": {
+   "operationId": "get_document_pdf_api_v1_order_board_orders__salesorder_id__documents__kind___document_id__pdf_get",
+   "params": [
+    "header:X-API-Key",
+    "path:document_id!",
+    "path:kind!",
+    "path:salesorder_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -7099,6 +7235,18 @@
    "params": [
     "header:X-API-Key",
     "path:platform!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/virtual-printers/connect-info": {
+   "operationId": "get_connect_info_api_v1_virtual_printers_connect_info_get",
+   "params": [
+    "header:X-API-Key"
    ],
    "requestBody": {},
    "responses": {
@@ -11360,6 +11508,20 @@
    },
    "security": true
   },
+  "POST /api/v1/order-board/orders": {
+   "operationId": "create_counter_order_api_v1_order_board_orders_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "CounterOrderBody"
+   },
+   "responses": {
+    "201": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/order-board/orders/{salesorder_id}/cancel": {
    "operationId": "cancel_order_api_v1_order_board_orders__salesorder_id__cancel_post",
    "params": [
@@ -11367,6 +11529,23 @@
     "path:salesorder_id!"
    ],
    "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/order-board/orders/{salesorder_id}/documents/{kind}/{document_id}/email": {
+   "operationId": "send_document_email_api_v1_order_board_orders__salesorder_id__documents__kind___document_id__email_post",
+   "params": [
+    "header:X-API-Key",
+    "path:document_id!",
+    "path:kind!",
+    "path:salesorder_id!"
+   ],
+   "requestBody": {
+    "application/json": "DocumentEmailBody"
+   },
    "responses": {
     "200": "object",
     "422": "HTTPValidationError"
@@ -11396,6 +11575,35 @@
    ],
    "requestBody": {
     "application/json": "InvoiceBody"
+   },
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/order-board/orders/{salesorder_id}/invoices/{invoice_id}/apply-credit": {
+   "operationId": "apply_order_credit_api_v1_order_board_orders__salesorder_id__invoices__invoice_id__apply_credit_post",
+   "params": [
+    "header:X-API-Key",
+    "path:invoice_id!",
+    "path:salesorder_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/order-board/orders/{salesorder_id}/manual-payment": {
+   "operationId": "record_order_manual_payment_route_api_v1_order_board_orders__salesorder_id__manual_payment_post",
+   "params": [
+    "header:X-API-Key",
+    "path:salesorder_id!"
+   ],
+   "requestBody": {
+    "application/json": "OrderManualPaymentBody"
    },
    "responses": {
     "200": "object",
@@ -11482,7 +11690,8 @@
    "params": [
     "header:X-API-Key",
     "path:salesorder_id!",
-    "query:picklist_id"
+    "query:picklist_id",
+    "query:whole"
    ],
    "requestBody": {},
    "responses": {
@@ -11500,6 +11709,19 @@
    "requestBody": {
     "application/json": "anyOf(SmsSentBody,null)"
    },
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/order-board/orders/{salesorder_id}/sync": {
+   "operationId": "sync_order_api_v1_order_board_orders__salesorder_id__sync_post",
+   "params": [
+    "header:X-API-Key",
+    "path:salesorder_id!"
+   ],
+   "requestBody": {},
    "responses": {
     "200": "object",
     "422": "HTTPValidationError"
@@ -14256,6 +14478,21 @@
    },
    "security": true
   },
+  "PUT /api/v1/order-board/orders/{salesorder_id}/contact": {
+   "operationId": "edit_order_contact_api_v1_order_board_orders__salesorder_id__contact_put",
+   "params": [
+    "header:X-API-Key",
+    "path:salesorder_id!"
+   ],
+   "requestBody": {
+    "application/json": "ContactBody"
+   },
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PUT /api/v1/order-board/orders/{salesorder_id}/lines": {
    "operationId": "edit_order_lines_api_v1_order_board_orders__salesorder_id__lines_put",
    "params": [
@@ -16518,6 +16755,7 @@
     "use_slicer_api": "boolean",
     "user_notifications_enabled": "boolean",
     "virtual_printer_archive_name_source": "string",
+    "virtual_printer_connect_instructions": "string",
     "zoho_accounts_url": "string",
     "zoho_base_url": "string",
     "zoho_client_id": "string",
@@ -16700,6 +16938,7 @@
     "use_slicer_api": "anyOf(boolean,null)",
     "user_notifications_enabled": "anyOf(boolean,null)",
     "virtual_printer_archive_name_source": "anyOf(string,null)",
+    "virtual_printer_connect_instructions": "anyOf(string,null)",
     "zoho_accounts_url": "anyOf(string,null)",
     "zoho_base_url": "anyOf(string,null)",
     "zoho_client_id": "anyOf(string,null)",
@@ -16861,8 +17100,12 @@
     "time_estimate_seconds": "anyOf(integer,null)",
     "timelapse_count": "integer",
     "timelapse_path": "anyOf(string,null)",
+    "total_cost": "anyOf(number,null)",
+    "total_energy_cost": "anyOf(number,null)",
+    "total_energy_kwh": "anyOf(number,null)",
     "total_filament_actual_grams": "anyOf(number,null)",
     "total_layers": "anyOf(integer,null)",
+    "total_wear_cost": "anyOf(number,null)",
     "user_verdict": "anyOf(string,null)",
     "user_verdict_at": "anyOf(string,null)",
     "user_verdict_source": "anyOf(string,null)",
@@ -18253,6 +18496,14 @@
     "username"
    ]
   },
+  "ContactBody": {
+   "properties": {
+    "email": "string",
+    "phone": "string",
+    "phone_field": "string"
+   },
+   "required": []
+  },
   "CostCenterBudgetUpdateRequest": {
    "properties": {
     "monthly_budget": "anyOf(number,null)",
@@ -18349,6 +18600,29 @@
     "name": "anyOf(string,null)"
    },
    "required": []
+  },
+  "CounterLine": {
+   "properties": {
+    "discount": "anyOf(string,null)",
+    "item_id": "string",
+    "quantity": "number"
+   },
+   "required": [
+    "item_id",
+    "quantity"
+   ]
+  },
+  "CounterOrderBody": {
+   "properties": {
+    "client_ref": "string",
+    "customer_id": "string",
+    "lines": "[CounterLine]"
+   },
+   "required": [
+    "client_ref",
+    "customer_id",
+    "lines"
+   ]
   },
   "CreateSpoolFromSlotRequest": {
    "properties": {
@@ -18554,6 +18828,14 @@
    "required": [
     "blank_timeout",
     "brightness"
+   ]
+  },
+  "DocumentEmailBody": {
+   "properties": {
+    "to": "string"
+   },
+   "required": [
+    "to"
    ]
   },
   "DropFilesError": {
@@ -18962,6 +19244,17 @@
     "type"
    ]
   },
+  "FilamentPolicyBrief": {
+   "properties": {
+    "group": "string",
+    "mode": "string",
+    "rules": "[FilamentRuleSchema]"
+   },
+   "required": [
+    "group",
+    "mode"
+   ]
+  },
   "FilamentPresetCreate": {
    "properties": {
     "brand": "string",
@@ -19099,6 +19392,16 @@
     "name",
     "type",
     "updated_at"
+   ]
+  },
+  "FilamentRuleSchema": {
+   "properties": {
+    "match": "string",
+    "value": "string"
+   },
+   "required": [
+    "match",
+    "value"
    ]
   },
   "FilamentSkuSettingsResponse": {
@@ -19833,10 +20136,13 @@
   "GroupCreate": {
    "properties": {
     "description": "anyOf(string,null)",
+    "filament_rule_mode": "string",
+    "filament_rules": "[FilamentRuleSchema]",
     "locations": "[string]",
     "name": "string",
     "permissions": "[string]",
     "printer_ids": "[integer]",
+    "restrict_filaments": "boolean",
     "restrict_printers": "boolean"
    },
    "required": [
@@ -19847,12 +20153,15 @@
    "properties": {
     "created_at": "string",
     "description": "anyOf(string,null)",
+    "filament_rule_mode": "string",
+    "filament_rules": "[FilamentRuleSchema]",
     "id": "integer",
     "is_system": "boolean",
     "locations": "[string]",
     "name": "string",
     "permissions": "[string]",
     "printer_ids": "[integer]",
+    "restrict_filaments": "boolean",
     "restrict_printers": "boolean",
     "updated_at": "string",
     "user_count": "integer",
@@ -19872,12 +20181,15 @@
    "properties": {
     "created_at": "string",
     "description": "anyOf(string,null)",
+    "filament_rule_mode": "string",
+    "filament_rules": "[FilamentRuleSchema]",
     "id": "integer",
     "is_system": "boolean",
     "locations": "[string]",
     "name": "string",
     "permissions": "[string]",
     "printer_ids": "[integer]",
+    "restrict_filaments": "boolean",
     "restrict_printers": "boolean",
     "updated_at": "string",
     "user_count": "integer"
@@ -19895,10 +20207,13 @@
   "GroupUpdate": {
    "properties": {
     "description": "anyOf(string,null)",
+    "filament_rule_mode": "anyOf(string,null)",
+    "filament_rules": "anyOf([FilamentRuleSchema],null)",
     "locations": "anyOf([string],null)",
     "name": "anyOf(string,null)",
     "permissions": "anyOf([string],null)",
     "printer_ids": "anyOf([integer],null)",
+    "restrict_filaments": "anyOf(boolean,null)",
     "restrict_printers": "anyOf(boolean,null)"
    },
    "required": []
@@ -21113,6 +21428,42 @@
     "printer_maintenance_id"
    ]
   },
+  "MaintenanceLogEntryResponse": {
+   "properties": {
+    "hours_at_maintenance": "number",
+    "id": "integer",
+    "maintenance_type_id": "anyOf(integer,null)",
+    "maintenance_type_name": "string",
+    "notes": "anyOf(string,null)",
+    "performed_at": "string",
+    "performed_by_id": "anyOf(integer,null)",
+    "performed_by_username": "anyOf(string,null)",
+    "printer_id": "anyOf(integer,null)",
+    "printer_name": "string"
+   },
+   "required": [
+    "hours_at_maintenance",
+    "id",
+    "maintenance_type_id",
+    "maintenance_type_name",
+    "notes",
+    "performed_at",
+    "performed_by_id",
+    "performed_by_username",
+    "printer_id",
+    "printer_name"
+   ]
+  },
+  "MaintenanceLogPage": {
+   "properties": {
+    "items": "[MaintenanceLogEntryResponse]",
+    "total": "integer"
+   },
+   "required": [
+    "items",
+    "total"
+   ]
+  },
   "MaintenanceStatus": {
    "properties": {
     "current_hours": "number",
@@ -22100,6 +22451,17 @@
     "occurred_at"
    ]
   },
+  "OrderManualPaymentBody": {
+   "properties": {
+    "amount": "integer",
+    "mode": "string",
+    "reference": "anyOf(string,null)"
+   },
+   "required": [
+    "amount",
+    "mode"
+   ]
+  },
   "OrderPaymentBody": {
    "properties": {
     "amount": "integer"
@@ -22908,6 +23270,7 @@
   },
   "PrintQueueItemUpdate": {
    "properties": {
+    "add_copies": "integer",
     "ams_mapping": "anyOf([integer],null)",
     "auto_off_after": "anyOf(boolean,null)",
     "bed_levelling": "anyOf(string,null)",
@@ -23258,6 +23621,7 @@
     "plate_detection_enabled": "boolean",
     "plate_detection_roi": "anyOf(PlateDetectionROI,null)",
     "print_hours_offset": "number",
+    "require_plate_clear": "anyOf(boolean,null)",
     "serial_number": "string",
     "supports_nozzle_flow_type": "boolean",
     "supports_rtsp": "boolean",
@@ -23408,6 +23772,7 @@
     "plate_detection_enabled": "anyOf(boolean,null)",
     "plate_detection_roi": "anyOf(PlateDetectionROI,null)",
     "print_hours_offset": "anyOf(number,null)",
+    "require_plate_clear": "anyOf(boolean,null)",
     "wear_cost_per_hour": "anyOf(number,null)",
     "wled_config": "anyOf(WLEDConfig,null)"
    },
@@ -24764,6 +25129,8 @@
     "mqtt_energy_multiplier": "number",
     "mqtt_energy_path": "anyOf(string,null)",
     "mqtt_energy_topic": "anyOf(string,null)",
+    "mqtt_energy_total_multiplier": "number",
+    "mqtt_energy_total_path": "anyOf(string,null)",
     "mqtt_multiplier": "number",
     "mqtt_power_multiplier": "number",
     "mqtt_power_path": "anyOf(string,null)",
@@ -24848,6 +25215,8 @@
     "mqtt_energy_multiplier": "number",
     "mqtt_energy_path": "anyOf(string,null)",
     "mqtt_energy_topic": "anyOf(string,null)",
+    "mqtt_energy_total_multiplier": "number",
+    "mqtt_energy_total_path": "anyOf(string,null)",
     "mqtt_multiplier": "number",
     "mqtt_power_multiplier": "number",
     "mqtt_power_path": "anyOf(string,null)",
@@ -24923,6 +25292,8 @@
     "mqtt_energy_multiplier": "number",
     "mqtt_energy_path": "anyOf(string,null)",
     "mqtt_energy_topic": "anyOf(string,null)",
+    "mqtt_energy_total_multiplier": "number",
+    "mqtt_energy_total_path": "anyOf(string,null)",
     "mqtt_multiplier": "number",
     "mqtt_power_multiplier": "number",
     "mqtt_power_path": "anyOf(string,null)",
@@ -25013,6 +25384,8 @@
     "mqtt_energy_multiplier": "anyOf(number,null)",
     "mqtt_energy_path": "anyOf(string,null)",
     "mqtt_energy_topic": "anyOf(string,null)",
+    "mqtt_energy_total_multiplier": "anyOf(number,null)",
+    "mqtt_energy_total_path": "anyOf(string,null)",
     "mqtt_multiplier": "anyOf(number,null)",
     "mqtt_power_multiplier": "anyOf(number,null)",
     "mqtt_power_path": "anyOf(string,null)",
@@ -26317,6 +26690,7 @@
     "auth_source": "string",
     "created_at": "string",
     "email": "anyOf(string,null)",
+    "filament_policies": "anyOf([FilamentPolicyBrief],null)",
     "groups": "[GroupBrief]",
     "id": "integer",
     "is_active": "boolean",
