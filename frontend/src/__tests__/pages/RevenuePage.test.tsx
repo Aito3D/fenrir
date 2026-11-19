@@ -202,6 +202,32 @@ describe('RevenuePage — view tabs and tax switch', () => {
     await flush();
     expect(within(screen.getByRole('tablist', { name: 'View' })).queryByRole('tab', { name: 'Customers' })).toBeNull();
     expect(screen.getByRole('tabpanel')).toHaveAttribute('data-slot', 'revenue-view-evolution');
+    expect(fetchMock.mock.calls.some(([u]) => String(u).startsWith('/api/v1/revenue/customers'))).toBe(false);
+  });
+
+  it('opens Clients on the page range and filters, and its segment rows drive the page segment filter', async () => {
+    window.history.replaceState(null, '', '/revenue?kind=goods');
+    localStorage.setItem('revenue-view', 'clients');
+    stubFetch(payload());
+    const series = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+      url.startsWith('/api/v1/revenue/customers')
+        ? json({
+            from: '2025-12-01', to: '2026-11-19', customerCount: 0, customers: [], unsplitHt: 0,
+            segments: [{ segment: 'pro', ht: 100, ttc: 113, goods: 100, services: 0, goodsTtc: 113, servicesTtc: 0, customers: 1 }],
+            acquisition: { newCount: 1, newHt: 100, returningCount: 0, returningHt: 0, customerDays: 1, avgBasketHt: 100 },
+          })
+        : series(url, init),
+    );
+    renderPage();
+    await flush();
+    await flush();
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('data-slot', 'revenue-view-clients');
+    expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/customers?from=2025-12-01&to=2026-11-19&kind=goods');
+    fireEvent.click(within(screen.getByRole('tabpanel')).getByRole('button', { name: /^Business.+FCP/ }));
+    await flush();
+    expect(String(seriesCalls()[seriesCalls().length - 1][0])).toContain('&segment=pro');
+    expect(localStorage.getItem('revenue-segment')).toBe('pro');
   });
 
   it('switches HT / TTC and remembers it', async () => {
