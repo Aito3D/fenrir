@@ -230,6 +230,27 @@ describe('RevenuePage — view tabs and tax switch', () => {
     expect(localStorage.getItem('revenue-segment')).toBe('pro');
   });
 
+  it('opens Products on the page range and filters', async () => {
+    window.history.replaceState(null, '', '/revenue?kind=goods');
+    localStorage.setItem('revenue-view', 'produits');
+    stubFetch(payload());
+    const series = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+      url.startsWith('/api/v1/revenue/analysis')
+        ? json({
+            from: '2025-12-01', to: '2026-11-19', dormant: [],
+            abc: { rows: [], total: 0, classes: { A: { count: 0, ht: 0 }, B: { count: 0, ht: 0 }, C: { count: 0, ht: 0 } } },
+          })
+        : series(url, init),
+    );
+    renderPage();
+    await flush();
+    await flush();
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('data-slot', 'revenue-view-produits');
+    expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/analysis?from=2025-12-01&to=2026-11-19&kind=goods');
+    expect(within(screen.getByRole('tabpanel')).getByText('Nothing to rank.')).toBeInTheDocument();
+  });
+
   it('switches HT / TTC and remembers it', async () => {
     stubFetch(payload());
     renderPage();
