@@ -68,7 +68,12 @@ export function RevenueMovers(p: { granularity: RevenueGranularity; bucketKey: s
   const [compare, setCompare] = useState<Compare | null>(null);
   const bucketUrl = `/api/v1/revenue/movers?granularity=${p.granularity}${p.bucketKey ? `&key=${encodeURIComponent(p.bucketKey)}` : ''}${p.filterParams}`;
   const url = compare ? `/api/v1/revenue/movers?from=${compare.from}&to=${compare.to}&cfrom=${compare.cfrom}&cto=${compare.cto}${p.filterParams}` : bucketUrl;
-  const { data, error } = useRevenueResource<MoversResponse>(url, p.version);
+  const res = useRevenueResource<MoversResponse>(url, p.version);
+  const { error } = res;
+  // A failed latest request shows its error, never the previous URL's rows.
+  const data = error ? null : res.data;
+  // Compare prefills from the period's own payload, once it has landed (not from a comparison still on screen).
+  const base = !res.loading && data?.granularity != null ? data : null;
   const totals = data?.totals;
   const delta = totals ? totals.current - totals.previous : 0;
   const date = new Intl.DateTimeFormat(i18n.language, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -84,8 +89,8 @@ export function RevenueMovers(p: { granularity: RevenueGranularity; bucketKey: s
     if (draft) {
       setDraft(null);
       setCompare(null);
-    } else if (data) {
-      const c = { from: data.current.from, to: data.current.to, cfrom: data.previous.from, cto: data.previous.to };
+    } else if (base) {
+      const c = { from: base.current.from, to: base.current.to, cfrom: base.previous.from, cto: base.previous.to };
       setDraft(c);
       setCompare(c);
     }
@@ -95,7 +100,7 @@ export function RevenueMovers(p: { granularity: RevenueGranularity; bucketKey: s
     <Panel
       title={draft ? t('revenue.movers.compareTitle') : t('revenue.movers.title')}
       action={
-        <button type="button" aria-pressed={draft !== null} disabled={!data && !draft} onClick={toggle} className={`${PICK_CLS} px-2.5 py-1 text-xs`}>
+        <button type="button" aria-pressed={draft !== null} disabled={!base && !draft} onClick={toggle} className={`${PICK_CLS} px-2.5 py-1 text-xs`}>
           {draft ? t('revenue.movers.back') : t('revenue.movers.compare')}
         </button>
       }
@@ -117,8 +122,8 @@ export function RevenueMovers(p: { granularity: RevenueGranularity; bucketKey: s
             {data && <span className="block tabular-nums">{`${fmtRange(data.current)} ${t('revenue.hero.vs', { what: fmtRange(data.previous) })}`}</span>}
           </p>
         )}
-        {error && !data ? (
-          <p className="text-sm text-status-error">{error}</p>
+        {error ? (
+          <p role="alert" className="text-sm text-status-error">{error}</p>
         ) : !data ? (
           <Skeleton className="h-40 w-full" />
         ) : (

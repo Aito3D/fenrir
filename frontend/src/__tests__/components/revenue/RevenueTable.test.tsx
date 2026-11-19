@@ -18,6 +18,8 @@ const oct = bucket({
   ttcApprox: true,
   elapsedDays: 15,
   evolution: { ht: 0.24, ttc: 0.24 },
+  yearAgo: { ht: 400_000, ttc: 452_000 },
+  cumulative: { ht: 1_120_000, ttc: 1_265_600 },
 });
 
 const item = (o: Partial<RevenueItemRow> = {}): RevenueItemRow => ({
@@ -53,7 +55,7 @@ describe('RevenueTable', () => {
   it('lists the periods newest first under named columns', () => {
     render(renderTable());
     expect(screen.getByRole('table', { name: 'Detail by period' })).toBeInTheDocument();
-    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Period', 'Revenue HT', 'Revenue TTC', 'Change', 'Margin', 'Units']);
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Period', 'Revenue HT', 'Revenue TTC', 'Change', 'Over a year', 'Margin', 'Running total', 'Units']);
     const rows = bodyRows();
     expect(rows[0]).toHaveTextContent('oct. 2026');
     expect(rows[1]).toHaveTextContent('sept. 2026');
@@ -78,13 +80,51 @@ describe('RevenueTable', () => {
     expect(within(septRow).queryByText(/Missing days/)).toBeNull();
   });
 
-  it('shows the margin rate only with view_margin and cost fields', () => {
-    const { unmount } = render(renderTable());
-    expect(within(bodyRows()[0]).getByText('30 %')).toBeInTheDocument();
-    unmount();
-    const r2 = render(renderTable({ canMargin: false }));
+  it('shows the year-over-year change and the running total, both marked to date on a partial bucket', () => {
+    render(renderTable());
+    const [octRow, septRow] = bodyRows();
+    const cells = within(octRow).getAllByRole('cell');
+    expect(within(cells[4]).getByText('▲ 55%')).toBeInTheDocument();
+    expect(within(cells[3]).getByText('to date')).toBeInTheDocument();
+    expect(within(cells[4]).getByText('to date')).toBeInTheDocument();
+    expect(within(cells[6]).getByText('1.120.000 FCP')).toBeInTheDocument();
+    expect(within(septRow).getAllByRole('cell')[4]).toHaveTextContent('—');
+    expect(within(septRow).queryByText('to date')).toBeNull();
+  });
+
+  it('shows a negative amount with U+2212, a zero change as flat and no margin rate on a non-positive costed HT', () => {
+    const credit = bucket({ ht: -50_000, ttc: -56_500, cost: 10_000, costedHt: -50_000, evolution: { ht: 0, ttc: 0 } });
+    render(renderTable({ buckets: [credit] }));
+    const cells = within(bodyRows()[0]).getAllByRole('cell');
+    expect(within(cells[1]).getByText('−50.000 FCP')).toBeInTheDocument();
+    expect(cells[3]).toHaveTextContent(/^—$/);
+    expect(within(cells[3]).getByText('—')).toHaveClass('text-bambu-gray');
+    expect(cells[5]).toHaveTextContent(/^—$/);
+  });
+
+  it('shows the margin amount with its rate and explains the column', () => {
+    render(renderTable());
+    const cells = within(bodyRows()[0]).getAllByRole('cell');
+    expect(cells[5]).toHaveTextContent('186.000 FCP 30 %');
+    expect(screen.getByRole('columnheader', { name: 'Margin' })).toHaveAccessibleDescription('Gross margin HT, at current cost (dealer price, else purchase price)');
+  });
+
+  it('shows the margin only with view_margin and cost fields', async () => {
+    stubItems([item()]);
+    const { unmount } = render(renderTable({ canMargin: false }));
     expect(screen.queryByRole('columnheader', { name: 'Margin' })).toBeNull();
-    r2.unmount();
+    expect(within(bodyRows()[0]).getAllByRole('cell')).toHaveLength(7);
+    expect(screen.queryByText('186.000 FCP')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /oct\. 2026/ }));
+    await screen.findByText('PLA Basic 1 kg');
+    const itemRow = screen.getByText('PLA Basic 1 kg').closest('[role="row"]') as HTMLElement;
+    expect(within(itemRow).getAllByRole('cell')).toHaveLength(7);
+    expect(screen.queryByText('14.000 FCP')).toBeNull();
+    unmount();
+    const { unmount: u1 } = render(renderTable());
+    expect(within(bodyRows()[0]).getAllByRole('cell')).toHaveLength(8);
+    u1();
+    unmount();
     const strip = ({ cost: _c, costedHt: _h, ...b }: RevenueBucket) => b as RevenueBucket;
     render(renderTable({ buckets: [strip(sept), strip(oct)] }));
     expect(screen.queryByRole('columnheader', { name: 'Margin' })).toBeNull();
@@ -101,7 +141,7 @@ describe('RevenueTable', () => {
     expect(await screen.findByText('PLA Basic 1 kg')).toBeInTheDocument();
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/revenue/items?from=2026-10-01&to=2026-10-31&brand=bambu&kind=goods');
     expect(screen.getByText('40.000 FCP')).toBeInTheDocument();
-    expect(screen.getByText('35 %')).toBeInTheDocument();
+    expect(screen.getByText('14.000 FCP')).toBeInTheDocument();
     expect(screen.getByText('Printing service')).toBeInTheDocument();
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'false');

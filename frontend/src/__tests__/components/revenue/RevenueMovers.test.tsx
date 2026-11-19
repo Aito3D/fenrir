@@ -24,8 +24,8 @@ function stubMovers() {
   return fetchMock;
 }
 
-const renderMovers = (version: unknown = 0) => (
-  <RevenueMovers granularity="month" bucketKey="2026-11" bucketLabel="nov. 2026" filterParams="&brand=bambu" version={version} today="2026-11-19" />
+const renderMovers = (version: unknown = 0, filterParams = '&brand=bambu') => (
+  <RevenueMovers granularity="month" bucketKey="2026-11" bucketLabel="nov. 2026" filterParams={filterParams} version={version} today="2026-11-19" />
 );
 
 afterEach(() => vi.unstubAllGlobals());
@@ -90,5 +90,43 @@ describe('RevenueMovers', () => {
     await screen.findByText('Printer X1');
     rerender(renderMovers(2));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('shows the failure of the latest request instead of the previous rows', async () => {
+    const fetchMock = vi.fn(async (u: string) =>
+      u.includes('kind=goods') ? new Response(JSON.stringify({ detail: 'movers unavailable' }), { status: 500, headers: { 'Content-Type': 'application/json' } }) : json(payload()),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const { rerender } = render(renderMovers(0));
+    await screen.findByText('Printer X1');
+    rerender(renderMovers(0, '&kind=goods'));
+    expect(await screen.findByText('movers unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Printer X1')).toBeNull();
+  });
+
+  it('prefills the comparison from the period payload, never from a stale comparison', async () => {
+    let releaseDefault: (() => void) | null = null;
+    let defaultCalls = 0;
+    const fetchMock = vi.fn(async (u: string) => {
+      if (u.includes('cfrom=')) return json(payload({ granularity: null, key: null, current: { from: '2026-01-01', to: '2026-01-31' }, previous: { from: '2025-01-01', to: '2025-01-31' } }));
+      defaultCalls += 1;
+      if (defaultCalls > 1) await new Promise<void>((r) => { releaseDefault = r; });
+      return json(payload());
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(renderMovers());
+    await screen.findByText('Printer X1');
+    fireEvent.click(screen.getByRole('button', { name: '⇄ Compare two periods' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('cfrom='))).toBe(true));
+    await new Promise((r) => setTimeout(r, 20));
+    fireEvent.click(screen.getByRole('button', { name: '← Period movements' }));
+    fireEvent.click(screen.getByRole('button', { name: '⇄ Compare two periods' }));
+    const a = screen.queryByLabelText('Period A, start');
+    if (a) expect(a).toHaveValue('2026-11-01');
+    await waitFor(() => expect(releaseDefault).not.toBeNull());
+    releaseDefault!();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Compare two periods/ })).toBeEnabled());
+    if (!screen.queryByLabelText('Period A, start')) fireEvent.click(screen.getByRole('button', { name: '⇄ Compare two periods' }));
+    expect(screen.getByLabelText('Period A, start')).toHaveValue('2026-11-01');
   });
 });
