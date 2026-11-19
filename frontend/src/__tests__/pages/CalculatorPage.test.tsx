@@ -13,6 +13,7 @@ import { computePricing, CURVE_QUANTITIES, formatMoney } from '../../utils/prici
 import { buildQuoteSummary } from '../../utils/quoteSummary';
 import { DEFAULT_STATE, num, splitDecimalHours } from '../../hooks/useCalculatorState';
 import { correctedTimeH } from '../../utils/calculatorInsights';
+import { roundUpTo50 } from '../../utils/taskDraft';
 // Pinned by name (not re-derived) so a wiring mistake in CalculatorQuantityCurve
 // or CalculatorDiscountTable — pointing at calculatorSettingsShared's
 // differently-styled tdCls instead of this one — shows up as a real
@@ -1555,6 +1556,58 @@ describe('CalculatorPage', () => {
       expect(JSON.parse(calls.at(-1)![1]).weight).toBe('55');
 
       expect(window.location.pathname).toBe('/calculator/quote');
+    });
+  });
+
+  describe('totals card — create Aito card button', () => {
+    afterEach(() => {
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('seeds the new-card drawer with one printing task and opens the board', async () => {
+      vi.mocked(localStorage.getItem).mockImplementation((key) =>
+        key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2', quantity: '3' }) : null,
+      );
+      const user = userEvent.setup();
+      render(<CalculatorPage />);
+      await user.click(await screen.findByRole('button', { name: 'Create Aito card' }));
+
+      const calls = vi.mocked(localStorage.setItem).mock.calls.filter(([k]) => k === 'aito.newProjectDraft.v1');
+      expect(calls).toHaveLength(1);
+      const draft = JSON.parse(calls[0][1]);
+      expect(draft.client).toBeNull();
+      expect(draft.tasks).toHaveLength(1);
+      expect(draft.tasks[0].impression).toMatchObject({
+        printerId: 1,
+        filamentId: 1,
+        weightG: 40,
+        timeMin: 120,
+        quantity: 3,
+      });
+      // Per-piece price rounded up to the 50 tier, times quantity (the drawer's convention).
+      const unit = computePricing({ ...referencePricingInputs, quantity: 3 }, mockFilaments[0], mockPrinters[0], mockDefaults).total_ttc;
+      expect(draft.tasks[0].impressionCost).toBe(roundUpTo50(unit) * 3);
+      expect(window.location.pathname).toBe('/aito');
+      expect(window.location.search).toBe('?new=1');
+    });
+
+    it('asks before replacing a draft the operator has not created yet', async () => {
+      vi.mocked(localStorage.getItem).mockImplementation((key) => {
+        if (key === 'calculator-state') return JSON.stringify({ weight: '40', time: '2' });
+        if (key === 'aito.newProjectDraft.v1') {
+          return JSON.stringify({ tasks: [], client: null, summaryText: 'half typed', summaryEdited: false, summarySignature: '' });
+        }
+        return null;
+      });
+      const user = userEvent.setup();
+      render(<CalculatorPage />);
+      await user.click(await screen.findByRole('button', { name: 'Create Aito card' }));
+
+      expect(await screen.findByText('Replace the draft in progress?')).toBeInTheDocument();
+      expect(vi.mocked(localStorage.setItem).mock.calls.some(([k]) => k === 'aito.newProjectDraft.v1')).toBe(false);
+      await user.click(screen.getByRole('button', { name: 'Replace' }));
+      expect(vi.mocked(localStorage.setItem).mock.calls.some(([k]) => k === 'aito.newProjectDraft.v1')).toBe(true);
+      expect(window.location.pathname).toBe('/aito');
     });
   });
 });

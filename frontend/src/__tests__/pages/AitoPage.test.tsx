@@ -2311,6 +2311,15 @@ describe('print backlog badge', () => {
     expect(screen.getByLabelText('Project summary')).toHaveValue('Support GoPro');
   });
 
+  // The calculator's "Create Aito card" seeds storage, then lands on `?new=1`.
+  it('opens the new-project drawer from a ?new=1 link and drops the parameter', async () => {
+    server.use(http.get('/api/v1/aito/', () => HttpResponse.json([project])));
+    window.history.replaceState({}, '', '/aito?new=1');
+    render(<AitoPage />);
+    await waitFor(() => expect(screen.getByTestId('drawer-section-work')).toBeInTheDocument());
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get('new')).toBeNull());
+  });
+
 });
 
 describe('client history swap', () => {

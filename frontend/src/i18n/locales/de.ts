@@ -11023,6 +11023,8 @@ export default {
 
   // Pricing Calculator
   calculator: {
+    createAitoCard: 'Aito-Karte erstellen',
+    createAitoCardReplaceBody: 'Die Schublade für neue Projekte enthält bereits Arbeit, die noch nicht angelegt wurde. Eine Karte aus dem Rechner zu erstellen ersetzt sie.',
     brand: 'Marke',
     material: 'Material',
     title: 'Rechner',

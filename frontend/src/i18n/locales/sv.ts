@@ -11081,6 +11081,8 @@ errors: {
     paymentModeCash: 'Kontant',
   },
   calculator: {
+    createAitoCard: 'Skapa Aito-kort',
+    createAitoCardReplaceBody: 'Lådan för nya projekt innehåller redan arbete som inte har skapats ännu. Att skapa ett kort från kalkylatorn ersätter det.',
     brand: 'Märke',
     material: 'Material',
     title: 'Kalkylator',

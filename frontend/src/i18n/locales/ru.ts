@@ -10627,6 +10627,8 @@ export default {
     noWriteAccess: "У вас нет прав на изменение настроек прогноза.",
   },
   calculator: {
+    createAitoCard: 'Создать карточку Aito',
+    createAitoCardReplaceBody: 'В панели нового проекта уже есть несозданная работа. Создание карточки из калькулятора заменит её.',
     brand: "Бренд",
     material: "Материал",
     title: "Калькулятор",

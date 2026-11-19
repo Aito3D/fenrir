@@ -11079,6 +11079,8 @@ export default {
 
   // Pricing Calculator
   calculator: {
+    createAitoCard: 'Create Aito card',
+    createAitoCardReplaceBody: 'The new-project drawer already holds work that has not been created yet. Creating a card from the calculator replaces it.',
     brand: 'Brand',
     material: 'Material',
     title: 'Calculator',

@@ -11006,6 +11006,8 @@ export default {
 
   // Pricing Calculator
   calculator: {
+    createAitoCard: '创建 Aito 卡片',
+    createAitoCardReplaceBody: '新项目抽屉中已有尚未创建的内容。从计算器创建卡片将替换它。',
     brand: '品牌',
     material: '材料',
     title: '计算器',

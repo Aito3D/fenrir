@@ -11229,6 +11229,8 @@ export default {
     },
   },
   calculator: {
+    createAitoCard: 'Utwórz kartę Aito',
+    createAitoCardReplaceBody: 'Szuflada nowego projektu zawiera już pracę, która nie została jeszcze utworzona. Utworzenie karty z kalkulatora ją zastąpi.',
     brand: 'Marka',
     material: 'Materiał',
     title: 'Kalkulator',
