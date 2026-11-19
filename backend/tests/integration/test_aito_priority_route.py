@@ -68,6 +68,8 @@ async def test_patch_rejects_unknown_level(async_client):
     project_id = (await _create(async_client)).json()["id"]
     r = await async_client.patch(f"/api/v1/aito/{project_id}/priority", json={"priority": "rush"})
     assert r.status_code == 422
+    r = await async_client.patch(f"/api/v1/aito/{project_id}/priority", json={"priority": None})
+    assert r.status_code == 422
 
 
 @pytest.mark.asyncio

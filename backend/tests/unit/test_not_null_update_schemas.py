@@ -44,6 +44,7 @@ NOT_A_ROW_UPDATE = {
     "AitoClientTransfer": "Fenrir: keeps its own null handling (unchanged by the 2026-10-17 merge)",
     "AitoClientEdit": "Fenrir: keeps its own null handling (unchanged by the 2026-10-17 merge)",
     "AitoFlagUpdate": "Fenrir: keeps its own null handling (unchanged by the 2026-10-17 merge)",
+    "AitoPriorityUpdate": "Fenrir: one required field; an explicit null fails the Literal with a 422",
     "AitoDueDateUpdate": "Fenrir: keeps its own null handling (unchanged by the 2026-10-17 merge)",
     "AitoContactedUpdate": "Fenrir: keeps its own null handling (unchanged by the 2026-10-17 merge)",
     "AitoWatchUpdate": "Fenrir: keeps its own null handling (unchanged by the 2026-10-17 merge)",
