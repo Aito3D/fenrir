@@ -52,7 +52,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime, time as dtime, timezone
+from datetime import date, datetime, time as dtime, timedelta, timezone
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -348,7 +348,9 @@ async def sweep_inbox(db: AsyncSession, *, force: bool = False) -> None:
         logger.info("Inbox sweep: %d overdue card(s) recorded, %d inbox row(s) purged", overdue, purged)
 
 
-async def _load_sweep_targets(db: AsyncSession) -> list[tuple[AitoProject, int, str, str, str | None]]:
+async def _load_sweep_targets(
+    db: AsyncSession, *, force: bool = False
+) -> list[tuple[AitoProject, int, str, str, str | None]]:
     """The projects still owing money, least-recently-checked first, each with the
     plain locals the pass reads (see T-027 below)."""
     stmt = (
@@ -368,6 +370,12 @@ async def _load_sweep_targets(db: AsyncSession) -> list[tuple[AitoProject, int, 
         # calls on the same head-of-list projects every tick.
         .order_by(AitoProject.invoice_checked_at.asc().nulls_first(), AitoProject.id)
     )
+    if not force:
+        # A pass cut short at the call ceiling never stamps ``_last_run`` and is
+        # back on the next tick: without this it re-read the same head of the
+        # list every 300 s and never reached the end (prod, 2026-11-18).
+        fresh_after = _now() - timedelta(seconds=_SWEEP_INTERVAL_SECONDS)
+        stmt = stmt.where(or_(AitoProject.invoice_checked_at.is_(None), AitoProject.invoice_checked_at < fresh_after))
     projects = list((await db.execute(stmt)).scalars().all())
     # T-027: id/quote_id/client_id are captured up front, while every row
     # is still fresh, rather than re-read off `project` inside the loop.
@@ -520,7 +528,7 @@ async def sweep_invoices(
 
     updated = 0
     try:
-        targets = await _load_sweep_targets(db)
+        targets = await _load_sweep_targets(db, force=force)
         cut_short = False
         for project, project_id, quote_id, client_id, quote_number in targets:
             if serve_due_pushes is not None:

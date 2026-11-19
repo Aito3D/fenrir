@@ -2897,9 +2897,9 @@ async def run_sync_once(
     return attempted
 
 
-# How many open cards each change pass re-reads whatever Books reported: the
-# safety net under the change polls. Two a minute walks a 77-card board in
-# about forty minutes.
+# How many open cards the full tick's change pass re-reads whatever Books
+# reported: the safety net under the change polls. Two per 300 s tick walks a
+# 140-card board in about six hours.
 TRICKLE_PER_PASS = 2
 # Background reads stop for the pass once this many Books calls went out in
 # the last minute, from anyone in the process. Books refuses at 100; the
@@ -2984,9 +2984,12 @@ async def _drain_reconcile_queue(db: AsyncSession) -> int:
     return reconciled
 
 
-async def run_change_pass(db: AsyncSession) -> int:
+async def run_change_pass(db: AsyncSession, *, trickle: bool = True) -> int:
     """Ask Books what changed, reconcile the cards that names plus the
     trickle. Returns how many cards were reconciled.
+
+    ``trickle=False`` (the passes between full ticks) skips the trickle: at
+    two cards a minute it was two thirds of this loop's Books calls.
 
     Costs three listings whatever the board's size; the per-card reads are
     spent only on cards with a reason. Skipped whole inside a rate-limit
@@ -3000,7 +3003,8 @@ async def run_change_pass(db: AsyncSession) -> int:
     if changes.rate_limited is not None:
         _arm_rate_limit_throttle(changes.rate_limited)
         return 0
-    _enqueue_reconcile(await _next_trickle(db))
+    if trickle:
+        _enqueue_reconcile(await _next_trickle(db))
     reconciled = await _drain_reconcile_queue(db)
     logger.log(
         logging.INFO if reconciled else logging.DEBUG,
@@ -3368,6 +3372,10 @@ def change_pass_seconds() -> float:
     remaining = zoho_service.daily_remaining
     if remaining is not None and remaining < DAILY_BUDGET_FLOOR:
         return float("inf")
+    # Nobody has the app open: nobody to show a change to within the minute.
+    # shortcut: read once per pass, so the first person back waits for the next full tick (<= 300 s)
+    if not ws_manager.active_connections:
+        return float("inf")
     return CHANGE_PASS_SECONDS
 
 
@@ -3608,6 +3616,13 @@ async def run_sync_loop() -> None:
             # One line per tick so a slow board (many quoted cards, a slow Books
             # day) is visible in the log rather than guessed at.
             logger.info("Aito quote sync tick took %.1fs", time.monotonic() - tick_started)
+            # Every Books call this process sent since the last tick, whoever sent it.
+            counts = zoho_service.take_call_counts()
+            logger.info(
+                "Zoho calls since the last tick: %d (%s)",
+                sum(n for _, n in counts),
+                ", ".join(f"{endpoint} x{n}" for endpoint, n in counts),
+            )
             loop = asyncio.get_running_loop()
             deadline = loop.time() + interval
             next_change = loop.time() + change_pass_seconds()
@@ -3660,7 +3675,7 @@ async def run_sync_loop() -> None:
                                 # next tick, a Print click timing out on 503.
                                 # Cancellation is not an Exception.
                                 try:
-                                    await run_change_pass(db)
+                                    await run_change_pass(db, trickle=False)
                                 except Exception:
                                     logger.exception("Aito change pass failed")
                                     with contextlib.suppress(Exception):

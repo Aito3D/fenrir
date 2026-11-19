@@ -74,9 +74,12 @@ def _loop_fakes(monkeypatch, drains: list, *, interval: float = 300):
         aito_push_schedule.drop_due_except(now, keep=set())
         return 0
 
-    async def fake_change_pass(db):
+    async def fake_change_pass(db, trickle=True):
         drains.append(("change", time.monotonic()))
         return 0
+
+    # Somebody has the app open: without a client the change pass rides the tick only.
+    monkeypatch.setattr(aito_quote_sync.ws_manager, "active_connections", [object()])
 
     monkeypatch.setattr(aito_quote_sync, "async_session", _fake_session)
     monkeypatch.setattr(aito_quote_sync, "run_sync_once", fake_run_sync_once)
@@ -296,6 +299,20 @@ async def test_the_change_pass_runs_on_its_own_cadence_between_ticks(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_with_nobody_connected_the_change_pass_is_left_to_the_tick(monkeypatch):
+    drains: list = []
+    _loop_fakes(monkeypatch, drains)
+    monkeypatch.setattr(aito_quote_sync, "CHANGE_PASS_SECONDS", 0.1)
+    monkeypatch.setattr(aito_quote_sync.ws_manager, "active_connections", [])
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        await asyncio.sleep(0.5)
+        assert [kind for kind, _ in drains].count("change") == 1  # the tick's own
+    finally:
+        await _stop(loop_task)
+
+
+@pytest.mark.asyncio
 async def test_a_low_daily_budget_leaves_the_change_pass_to_the_tick(monkeypatch):
     drains: list = []
     _loop_fakes(monkeypatch, drains)
@@ -358,7 +375,7 @@ async def test_a_failing_change_pass_does_not_cost_the_tick_its_other_passes(mon
     _loop_fakes(monkeypatch, drains)
     terminal_polled = asyncio.Event()
 
-    async def broken_change_pass(db):
+    async def broken_change_pass(db, trickle=True):
         raise RuntimeError("database is locked")
 
     async def fake_terminal_poll(db, **_kwargs):
@@ -456,7 +473,7 @@ async def test_a_failing_wake_lap_change_pass_keeps_the_windows_that_fell_due_du
     async def session():
         yield Session()
 
-    async def change_pass_fails_after_a_window_closes(db):
+    async def change_pass_fails_after_a_window_closes(db, trickle=True):
         nonlocal change_passes
         change_passes += 1
         drains.append(("change", time.monotonic()))
