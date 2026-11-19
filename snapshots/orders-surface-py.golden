@@ -223,6 +223,7 @@ DAILY_BUDGET_FLOOR = 5000
 FINISHED_DETAIL_DAYS = 90
 FINISHED_DETAIL_GRACE_DAYS = 7
 MAX_DETAILS_PER_PASS = 20
+OPERATOR_CALL_CEILING = 80
 class OrderBoardSettings(object)
 class OrderNotFinished(Exception)
 class OrderNotStored(Exception)
@@ -253,7 +254,7 @@ async def run_pass(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> bool
 async def save_settings(db: sqlalchemy.ext.asyncio.session.AsyncSession, settings: backend.app.services.order_board_sync._common.OrderBoardSettings) -> None
 def start_order_board_sync() -> None
 ws_manager: ConnectionManager
-def zoho_busy() -> bool
+def zoho_busy(ceiling: int = 80) -> bool
 
 === schemas
 ## backend.app.api.routes.order_board

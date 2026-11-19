@@ -3,6 +3,7 @@
 {
  "boardExports": [
   "FOLLOW_KEYS",
+  "PAY_CHIPS",
   "ageTone",
   "avgLeadDays",
   "boxablePicklists",
@@ -13,6 +14,7 @@
   "byStatus",
   "canPick",
   "checkLines",
+  "chipCls",
   "countByPayment",
   "countByStatus",
   "daysPastDue",
@@ -714,6 +716,7 @@
  ],
  "statusExports": [
   "FIT_VIEWPORT",
+  "KIND",
   "PAY_META",
   "ROW_GRID",
   "STATUSES",

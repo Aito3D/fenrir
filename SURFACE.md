@@ -248,7 +248,7 @@ async def log_view(
 # backend/app/services/order_board_actions/__init__.py __all__
 DocumentKind InvoiceScope OrderActionRefused OrderBusy OrderNotOnBoard _row apply_credit cancel_order confirm_stored_copy create_counter_order create_parcel create_picklist document_email_content document_pdf edit_contact edit_lines edit_parcel email_document email_invoice hand_over handover_preview invoice_payload invoice_preview invoice_shipped listed_document order_row_any package_content picklist_content picklist_preview search_items stamp_contact stamp_print writing 
 # backend/app/services/order_board_sync/__init__.py __all__
-CALL_CEILING DAILY_BUDGET_FLOOR FINISHED_DETAIL_DAYS FINISHED_DETAIL_GRACE_DAYS MAX_DETAILS_PER_PASS OrderBoardSettings OrderNotFinished OrderNotStored PENDING_PAUSE_SECONDS ZohoBusy _busy_on_rate_limit _find_state _finished_docs _has_event _iteration _naive_utc _now _unconfirmed _written_at announce_board_change find_board_row find_stored load_settings needs_refresh note_write open_rate_limit_window read_board read_finished read_finished_order refresh_order run_loop run_pass save_settings start_order_board_sync ws_manager zoho_busy 
+CALL_CEILING DAILY_BUDGET_FLOOR FINISHED_DETAIL_DAYS FINISHED_DETAIL_GRACE_DAYS MAX_DETAILS_PER_PASS OPERATOR_CALL_CEILING OrderBoardSettings OrderNotFinished OrderNotStored PENDING_PAUSE_SECONDS ZohoBusy _busy_on_rate_limit _find_state _finished_docs _has_event _iteration _naive_utc _now _unconfirmed _written_at announce_board_change find_board_row find_stored load_settings needs_refresh note_write open_rate_limit_window read_board read_finished read_finished_order refresh_order run_loop run_pass save_settings start_order_board_sync ws_manager zoho_busy 
 ```
 
 ## Request/response models declared by the routes, with fields
@@ -370,6 +370,7 @@ frontend/src/components/orders/OrderActivity.tsx:export function OrderActivity
 frontend/src/components/orders/OrderCard.tsx:export function OrderCard
 frontend/src/components/orders/OrderClientHistory.tsx:export function OrderClientHistory
 frontend/src/components/orders/OrderContactBlock.tsx:export function OrderContactBlock
+frontend/src/components/orders/OrderDepositAvailable.tsx:export function OrderDepositAvailable
 frontend/src/components/orders/OrderDocumentEmailModal.tsx:export function OrderDocumentEmailModal
 frontend/src/components/orders/OrderEditBar.tsx:export function OrderEditBar
 frontend/src/components/orders/OrderHandoverBar.tsx:export function OrderHandoverBar
@@ -379,6 +380,8 @@ frontend/src/components/orders/OrderInvoicesBlock.tsx:export function OrderInvoi
 frontend/src/components/orders/OrderItemSearch.tsx:export function OrderItemSearch
 frontend/src/components/orders/OrderLineRow.tsx:export function OrderLineRow
 frontend/src/components/orders/OrderLinesPanel.tsx:export function OrderLinesPanel
+frontend/src/components/orders/OrderMobileFilters.tsx:export function OrderMobileFilters
+frontend/src/components/orders/OrderMobileView.tsx:export function OrderMobileView
 frontend/src/components/orders/OrderPackBar.tsx:export function OrderPackBar
 frontend/src/components/orders/OrderPackedBand.tsx:export function OrderPackedActions
 frontend/src/components/orders/OrderPackedBand.tsx:export function OrderPackedBars
@@ -387,9 +390,11 @@ frontend/src/components/orders/OrderParcelEditRows.tsx:export function OrderParc
 frontend/src/components/orders/OrderPaymentBlock.tsx:export function OrderPaymentBlock
 frontend/src/components/orders/OrderPrepActions.tsx:export function OrderPrepActions
 frontend/src/components/orders/OrderQtyStepper.tsx:export function OrderQtyStepper
+frontend/src/components/orders/OrderRefActions.tsx:export function OrderRefActions
 frontend/src/components/orders/OrderRefChips.tsx:export function OrderRefChips
 frontend/src/components/orders/OrderRowAction.tsx:export function OrderRowAction
 frontend/src/components/orders/OrderShippingLabelModal.tsx:export function OrderShippingLabelModal
+frontend/src/components/orders/OrderSidePanel.tsx:export type PhoneTab
 frontend/src/components/orders/OrderSidePanel.tsx:export function OrderSidePanel
 frontend/src/components/orders/OrderSmsModal.tsx:export function OrderSmsModal
 frontend/src/components/orders/OrderStatsStrip.tsx:export function OrderStatsStrip
@@ -454,6 +459,8 @@ frontend/src/components/orders/orderBoard.ts:export const parcelLines
 frontend/src/components/orders/orderBoard.ts:export const parcelWas
 frontend/src/components/orders/orderBoard.ts:export const normDiscount
 frontend/src/components/orders/orderBoard.ts:export function lineTotal
+frontend/src/components/orders/orderBoard.ts:export const PAY_CHIPS
+frontend/src/components/orders/orderBoard.ts:export const chipCls
 frontend/src/components/orders/orderErrors.ts:export const isRefused
 frontend/src/components/orders/orderErrors.ts:export const errorReason
 frontend/src/components/orders/orderEventKinds.ts:export const SHORT_LABEL_KEY
@@ -471,6 +478,7 @@ frontend/src/components/orders/orderStatus.ts:export const STATUSES
 frontend/src/components/orders/orderStatus.ts:export const STATUS_META
 frontend/src/components/orders/orderStatus.ts:export const PAY_META
 frontend/src/components/orders/orderStatus.ts:export const ROW_GRID
+frontend/src/components/orders/orderStatus.ts:export const KIND
 frontend/src/components/orders/useOrderActions.ts:export function useHandOverPending
 frontend/src/components/orders/useOrderActions.ts:export function useOrderActions
 frontend/src/components/orders/useOrderFilters.ts:export const SORTS
@@ -592,13 +600,17 @@ api.updateOrderBoardSettings
 ## Translation keys the scope files name literally
 ```regen: perl -nle "print \$1 while /[\x27\"\x60]((?:orders|aito|common|nav|settings)\.[\w.]*\w)[\x27\"\x60]/g" $(find frontend/src/components/orders -type f | sort) frontend/src/pages/OrderBoardPage.tsx frontend/src/pages/OrderTrackPage.tsx frontend/src/utils/orderTracking.ts | sort -u```
 ```
+aito.applyDeposit
 aito.applyDepositDone
 aito.applyDepositError
+aito.billingLabel
 aito.clientEdit
 aito.clientEditFailed
 aito.clientEmail
 aito.clientPhone
 aito.contacted
+aito.depositAvailable
+aito.downloadInvoice
 aito.downloadQuote
 aito.downloadRetainer
 aito.emailRecipientRecentlyEdited
@@ -606,23 +618,32 @@ aito.followups.hint
 aito.followups.longest
 aito.followups.notCollected
 aito.followups.title
-aito.forceSyncStepCredit
 aito.history.title
+aito.invoiceDatesTitle
 aito.invoiceEmailFailed
 aito.invoiceEmailed
+aito.invoiceLabel
+aito.invoiceOpenInZoho
+aito.invoicePrintFailed
 aito.noClient
 aito.panelTabAttention
 aito.panelTabDetails
+aito.payment.cellLink
+aito.payment.cellLinkTitle
 aito.payment.cellManual
 aito.payment.cellManualTitle
-aito.payment.linkTitle
+aito.payment.cellTerminal
+aito.payment.cellTerminalTitle
+aito.payment.dueInvoice
 aito.printFailed
+aito.printInvoice
 aito.printQuote
 aito.printRetainer
 aito.printShippingLabel
 aito.quoteEmailFailed
 aito.quoteEmailed
 aito.quoteOpenInZoho
+aito.quoteSearchLabel
 aito.retainerEmailFailed
 aito.retainerEmailed
 aito.retainerLabel
@@ -855,18 +876,12 @@ orders.inv.after
 orders.inv.confirm
 orders.inv.create
 orders.inv.creating
-orders.inv.download
-orders.inv.draft
 orders.inv.empty
 orders.inv.emptyNow
 orders.inv.noAmount
 orders.inv.nothing
 orders.inv.now
-orders.inv.open
-orders.inv.pdfFailed
-orders.inv.print
 orders.inv.samePacked
-orders.inv.title
 orders.inv.total
 orders.inv.unbilled
 orders.inv.what
@@ -882,6 +897,14 @@ orders.line.service
 orders.line.shipped
 orders.line.toOrder
 orders.loadFailed
+orders.mobile.back
+orders.mobile.collect
+orders.mobile.filters
+orders.mobile.more
+orders.mobile.showOrders
+orders.mobile.tabs.billing
+orders.mobile.tabs.client
+orders.mobile.tabs.lines
 orders.newOrder.abandon
 orders.newOrder.abandonBack
 orders.newOrder.button
@@ -941,22 +964,10 @@ orders.parcelEdit.shelf
 orders.parcelEdit.summary
 orders.parcelEdit.was
 orders.parcelEdit.writes
-orders.pay.advanceNote
 orders.pay.any
 orders.pay.cancelLinkAndCharge
-orders.pay.invDue
-orders.pay.invLeft
-orders.pay.invOverdue
 orders.pay.left
-orders.pay.legendAdvance
-orders.pay.legendDue
-orders.pay.legendInvoice
-orders.pay.legendOverdue
-orders.pay.legendPaid
-orders.pay.legendRest
-orders.pay.legendRetainer
 orders.pay.linkOpen
-orders.pay.nothingLeft
 orders.pay.orderHint
 orders.pay.overdue
 orders.pay.overdueChip
@@ -965,9 +976,7 @@ orders.pay.partial
 orders.pay.pct
 orders.pay.quoteHint
 orders.pay.retainerHint
-orders.pay.terminal
 orders.pay.tile
-orders.pay.title
 orders.pay.unpaid
 orders.pick.boxed
 orders.pick.create
@@ -1067,15 +1076,17 @@ orders.watch.on
 ## Test ids the scope binds
 ```regen: grep -rhoE "data-testid=\"[^\"]+\"|testId=\"[^\"]+\"|data-testid=\{[^}]+\}" $(find frontend/src/components/orders -type f | sort) frontend/src/pages/OrderBoardPage.tsx frontend/src/pages/OrderTrackPage.tsx frontend/src/utils/orderTracking.ts | sort | uniq -c | sed "s/^ *//"```
 ```
+1 data-testid="apply-deposit"
 1 data-testid="customer-credit"
-1 data-testid="doc-quote"
-1 data-testid="doc-retainer"
 1 data-testid="draft-line-total"
 1 data-testid="draft-total"
 1 data-testid="edit-total"
 1 data-testid="history-order-number"
 1 data-testid="order-client-history"
 1 data-testid="order-last-activity"
+1 data-testid="order-mobile"
+1 data-testid="order-mobile-bar"
+1 data-testid="order-mobile-summary"
 2 data-testid="order-number"
 2 data-testid="order-pay"
 1 data-testid="order-sms-length"
@@ -1083,8 +1094,10 @@ orders.watch.on
 1 data-testid="orders-batch"
 1 data-testid="orders-list"
 1 data-testid="orders-stats"
+1 data-testid="orders-summary"
 1 data-testid="orders-tiles"
 1 data-testid="pay-left"
+1 data-testid="payment-block"
 1 data-testid="row-printed"
 1 data-testid="track-content"
 1 data-testid="track-error"
@@ -1099,7 +1112,9 @@ orders.watch.on
 1 data-testid="track-state"
 1 data-testid="track-tally"
 1 data-testid={`pack-qty-${id}
-1 data-testid={`pay-seg-${x.id}
+1 testId="doc-invoice"
+1 testId="doc-quote"
+1 testId="doc-retainer"
 1 testId="order-shipping-label"
 1 testId="track-panel-pay"
 ```
