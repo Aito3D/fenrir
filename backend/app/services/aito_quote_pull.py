@@ -18,6 +18,7 @@ the card ends up holding what Books holds, not an approximation of it.
 
 from dataclasses import dataclass, field, fields, replace
 
+from backend.app.services.aito_priority import base_before_surcharge
 from backend.app.services.aito_quote_export import (
     SERVICES,
     Catalogue,
@@ -71,14 +72,14 @@ def _readings(
     estimate: dict,
     catalogue: Catalogue,
     shipping: ExportShipping | None,
-    priority: ExportPriority | None = None,
+    factor: float | None = None,
 ) -> tuple[dict, dict]:
     """(what Books holds, what the card would push), both as import previews.
 
-    With a ``priority``, Books holds task rates raised by its factor; each one
-    is read back as ``round(rate / factor)``, which exactly inverts the push's
-    half-up ``round(unit x factor)`` (factor > 1), so both readings compare
-    un-surcharged unit rates and a Books edit lands on the task divided by it.
+    With a ``factor``, Books holds task rates raised by it; each one is read
+    back as ``round(rate / factor)``, which exactly inverts the push's half-up
+    ``round(unit x factor)`` (factor >= 1), so both readings compare
+    un-surcharged unit rates.
     """
     pushed = build_line_items(tasks, estimate.get("line_items") or [], catalogue, shipping)
     # Lines the push echoes by id are not the card's to describe: foreign
@@ -94,18 +95,18 @@ def _readings(
             return {**line, "sku": "", "item_id": ""}
         return {**line, "sku": sku_by_item.get(line.get("item_id") or "", line.get("sku") or "")}
 
-    def descale(line: dict, factor: float) -> dict:
+    def descale(line: dict, by: float) -> dict:
         if line.get("line_item_category") == "header" or line.get("item_id") in shipping_ids:
             return line
-        return {**line, "rate": round(float(line.get("rate") or 0) / factor)}
+        return {**line, "rate": round(float(line.get("rate") or 0) / by)}
 
     their_lines = [relabel(line) for line in estimate.get("line_items") or []]
     theirs = {**estimate, "line_items": their_lines}
-    if priority is not None:
+    if factor is not None:
         # Echoed lines are blanked (item_id "") and so pass through unread by
         # the reader either way. `total` no longer matches the scaled-down
         # lines: dropped so a flat line discount is refused, never converted.
-        theirs = {**theirs, "total": None, "line_items": [descale(line, priority.factor) for line in their_lines]}
+        theirs = {**theirs, "total": None, "line_items": [descale(line, factor) for line in their_lines]}
     ours = {
         "is_inclusive_tax": True,
         "price_precision": estimate.get("price_precision"),
@@ -170,20 +171,43 @@ def plan_pull(
 
     Refused (``PullPlan.refused``), leaving the card untouched: a different
     number of tasks, a line that moved between unnamed tasks, a rename
-    together with any other change, a discount a card cannot hold, a shipping
-    line added, removed or sent to another island, and anything that would
-    not read back from the card exactly as Books holds it.
+    together with any other change, a discount a card cannot hold (on a
+    priority card, any flat line discount typed in Books), a shipping line
+    added, removed or sent to another island, a priority card whose Books
+    task total is not above the minimum fee, and anything that would not read
+    back from the card exactly as Books holds it.
 
-    ``priority`` is the factor the card pushes its task rates at: Books rates
-    are compared and applied divided by it (see ``_readings``).
+    ``priority`` is how the card raises its task rates. An untouched quote is
+    recognised with the card's own factor; a Books rate within about factor/2
+    of the pushed one reads as unchanged and is left for the next push to
+    rewrite. An edit is read with the factor that keeps Books' task total:
+    the base solving ``base + surcharge(base) = total``, so the re-push that
+    follows (the base moved, so the factor does too) lands back on the
+    prices typed in Books.
     """
-    theirs, ours = _readings(tasks, estimate, catalogue, shipping, priority)
+    factor = priority.factor if priority is not None else None
+    theirs, ours = _readings(tasks, estimate, catalogue, shipping, factor)
     if theirs["discount_issues"]:
         # Before the comparison: a discount a card cannot hold reads as "no
         # discount", so the lines would look unchanged while the totals differ.
         return PullPlan(refused="discount")
     if theirs["tasks"] == ours["tasks"] and theirs["shipping"] == ours["shipping"]:
         return None
+    if priority is not None:
+        raw, _ = _readings(tasks, estimate, catalogue, shipping)
+        total = sum(
+            task[f"{service}_cost"] * (1 - (task.get(f"{service}_discount_pct") or 0) / 100)
+            for task in raw["tasks"]
+            for service in SERVICES
+            if task.get(f"{service}_cost") is not None
+        )
+        base = base_before_surcharge(total, priority.pct, priority.min_fee)
+        if base <= 0:
+            return PullPlan(refused="unverified")
+        factor = total / base
+        theirs, ours = _readings(tasks, estimate, catalogue, shipping, factor)
+        if theirs["tasks"] == ours["tasks"] and theirs["shipping"] == ours["shipping"]:
+            return None
     emitted = [index for index, task in enumerate(tasks) if enabled_services(task)]
     # The second test is the card's own: untitled tasks have no header and may
     # read back merged, and then no line can be traced to its task.
@@ -218,7 +242,7 @@ def plan_pull(
     if missing_maindoeuvre_description(patched):
         return PullPlan(refused="description")  # the next push would be refused for it
     patched_shipping = replace(shipping, **shipping_patch) if shipping is not None else None
-    theirs, ours = _readings(patched, estimate, catalogue, patched_shipping, priority)
+    theirs, ours = _readings(patched, estimate, catalogue, patched_shipping, factor)
     if theirs["tasks"] != ours["tasks"] or theirs["shipping"] != ours["shipping"]:
         return PullPlan(refused="unverified")
     return PullPlan(task_patches=task_patches, shipping=shipping_patch)

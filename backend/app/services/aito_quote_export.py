@@ -117,10 +117,13 @@ class ExportShipping:
 @dataclass(frozen=True)
 class ExportPriority:
     """The project's priority surcharge, spread over its task lines: every
-    task service rate is multiplied by ``factor`` (1 + surcharge / base)."""
+    task service rate is multiplied by ``factor`` (1 + surcharge / base).
+    ``pct`` / ``min_fee`` are the level's terms, which the pull inverts."""
 
     level: str
     factor: float
+    pct: float
+    min_fee: float
 
 
 def cost_of(task: ExportTask, service: str) -> float | None:

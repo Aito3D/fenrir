@@ -17,8 +17,10 @@ from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.models.calculator import CalculatorDefaults
 from backend.app.models.settings import Settings
 from backend.app.services import aito_quote_sync
+from backend.app.services.aito_quote_export import ExportPriority
 from backend.app.services.aito_quote_sync import run_sync_once
 from backend.app.services.zoho import zoho_service
 from backend.tests.unit.test_aito_quote_export import task
@@ -107,10 +109,10 @@ async def _events(db, project_id: int, kind: str) -> list[AitoEvent]:
     return list((await db.execute(stmt)).scalars())
 
 
-def _edited() -> dict:
+def _edited(priority=None) -> dict:
     """Books after someone raised the scan to 6 500 and printed 5 instead of 3."""
-    estimate = books(CARD)
-    line(estimate, "P3DSCAN")["rate"] = 6500
+    estimate = books(CARD, priority=priority)
+    line(estimate, "P3DSCAN")["rate"] = round(6500 * (priority.factor if priority else 1))
     line(estimate, "P3DIMP")["quantity"] = 5
     return estimate
 
@@ -428,13 +430,18 @@ async def test_with_the_switch_off_nothing_is_applied_and_nothing_is_recorded(db
 
 
 @pytest.mark.parametrize(("priority", "state"), [("urgent", "pending"), ("normal", "idle")])
-async def test_a_pull_on_a_priority_card_queues_a_push_for_the_surcharge_line(db_session, priority, state):
+async def test_a_pull_on_a_priority_card_reads_scaled_rates_and_queues_a_push(db_session, priority, state):
     project = await _card(db_session, priority=priority)
+    db_session.add(CalculatorDefaults(id=1))
+    await db_session.commit()
     await _configure_zoho(db_session)
-    _serve(_edited(), [])
+    # Base 15 400; 35 % = 5 390 beats the 1 500 floor, so urgent rates go out x 1.35.
+    _serve(_edited(ExportPriority("urgent", 1.35, 35, 1500) if priority == "urgent" else None), [])
 
     await run_sync_once(db_session)
 
     await db_session.refresh(project)
     assert len(await _events(db_session, project.id, "quote.lines_pulled")) == 1
+    helice, _ = await _tasks(db_session, project.id)
+    assert (helice.scan_cost, helice.impression_cost) == (6500, 4000)
     assert project.quote_sync_state == state

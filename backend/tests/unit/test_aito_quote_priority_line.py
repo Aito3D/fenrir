@@ -5,6 +5,8 @@ Pure functions against a fake catalogue, plus one push through the sync
 worker's MockTransport seam. No network.
 """
 
+from dataclasses import fields, replace
+
 import httpx
 import pytest
 
@@ -27,15 +29,16 @@ def _rates(lines):
 
 
 async def _priority(db, level, tasks, **defaults):
-    db.add(CalculatorDefaults(id=1, **defaults))
-    await db.commit()
+    if await db.get(CalculatorDefaults, 1) is None:
+        db.add(CalculatorDefaults(id=1, **defaults))
+        await db.commit()
     return await load_export_priority(db, AitoProject(priority=level), tasks)
 
 
 @pytest.mark.asyncio
 async def test_urgent_raises_every_task_line_by_the_same_factor_and_adds_none(db_session):
     priority = await _priority(db_session, "urgent", TASKS)
-    assert priority == ExportPriority("urgent", 1.35)  # base 10000, 35% = 3500 beats the 1500 floor
+    assert priority == ExportPriority("urgent", 1.35, 35, 1500)  # base 10000, 35% = 3500 beats the 1500 floor
     plain = build_line_items(TASKS, [], CATALOGUE)
     raised = build_line_items(TASKS, [], CATALOGUE, priority=priority)
     assert len(raised) == len(plain)
@@ -62,7 +65,7 @@ def test_a_discounted_line_keeps_its_discount_and_only_its_rate_scales():
     plain = next(item for item in build_line_items(tasks, [], CATALOGUE) if "rate" in item)
     raised = next(
         item
-        for item in build_line_items(tasks, [], CATALOGUE, priority=ExportPriority("urgent", 1.35))
+        for item in build_line_items(tasks, [], CATALOGUE, priority=ExportPriority("urgent", 1.35, 35, 1500))
         if "rate" in item
     )
     assert {**plain, "rate": 13500} == raised
@@ -70,7 +73,7 @@ def test_a_discounted_line_keeps_its_discount_and_only_its_rate_scales():
 
 
 def test_the_shipping_line_is_never_scaled():
-    lines = build_line_items(TASKS, [], SHIPPING_CATALOGUE, SHIPPING, ExportPriority("urgent", 1.35))
+    lines = build_line_items(TASKS, [], SHIPPING_CATALOGUE, SHIPPING, ExportPriority("urgent", 1.35, 35, 1500))
     ship = next(item for item in lines if item.get("item_id") == "SHIP-TU")
     assert ship["rate"] == SHIPPING.price
 
@@ -104,7 +107,7 @@ async def test_the_surcharge_rounds_half_up_like_the_drawer(db_session):
 
 # --- pull -----------------------------------------------------------------
 
-URGENT = ExportPriority("urgent", 1.35)
+URGENT = ExportPriority("urgent", 1.35, 35, 1500)
 
 
 def test_an_untouched_urgent_quote_plans_nothing():
@@ -181,3 +184,53 @@ async def test_an_urgent_push_scales_the_rate_but_stores_the_unscaled_rounded_co
     assert (item["rate"], item["quantity"], item["tax_id"]) == (1950, 2, "T0")
     stored = (await db_session.execute(AitoTask.__table__.select())).one()
     assert stored.impression_cost == 2400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("level", "tasks"),
+    [
+        ("urgent", [task(title="A", impression_cost=1400)]),  # min fee binds
+        (
+            "priority",
+            [  # non-whole: discount, several units, the factor 1 + 1112/7413
+                task(title="A", scan_cost=3030, scan_discount_pct=10, impression_cost=2001, impression_quantity=3),
+                task(title="B", usinage_cost=2685, usinage_quantity=5),
+            ],
+        ),
+    ],
+)
+async def test_an_untouched_quote_plans_nothing_whatever_the_factor(db_session, level, tasks):
+    priority = await _priority(db_session, level, tasks)
+    assert priority is not None and priority.factor > 1
+    assert plan_pull(tasks, books(tasks, priority=priority), CATALOGUE, None, priority) is None
+
+
+async def _pull_then_push(db, level, tasks, typed: dict[str, int]) -> list:
+    """Type rates in Books (sku -> rate), pull, then what the next push sends."""
+    priority = await _priority(db, level, tasks)
+    estimate = books(tasks, priority=priority)
+    for sku, rate in typed.items():
+        line(estimate, sku)["rate"] = rate
+    plan = plan_pull(tasks, estimate, CATALOGUE, None, priority)
+    assert plan is not None and plan.refused is None
+    names = {f.name for f in fields(tasks[0])}
+    patched = [
+        replace(t, **{k: v for k, v in plan.task_patches.get(i, {}).items() if k in names}) for i, t in enumerate(tasks)
+    ]
+    return _rates(build_line_items(patched, [], CATALOGUE, priority=await _priority(db, level, patched)))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("typed", [3500, 2500])
+async def test_a_rate_typed_on_a_min_fee_card_is_what_the_next_push_sends(db_session, typed):
+    # Pushed at 2900 (1400 + the 1500 floor).
+    (rate,) = await _pull_then_push(db_session, "urgent", [task(title="A", impression_cost=1400)], {"P3DIMP": typed})
+    assert abs(rate - typed) <= 1
+
+
+@pytest.mark.asyncio
+async def test_a_rate_typed_on_a_percentage_card_is_what_the_next_push_sends(db_session):
+    # Pushed at 10800 / 2700; the print raised to 12000.
+    rates = await _pull_then_push(db_session, "urgent", TASKS, {"P3DIMP": 12000})
+    assert sorted(rates) == [2700, 12000]

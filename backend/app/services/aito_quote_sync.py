@@ -58,7 +58,7 @@ from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_events import contact_mark_kind, diff_fields, record, utc_now_naive
 from backend.app.services.aito_invoice_sweep import _same_reference, sweep_inbox, sweep_invoices
 from backend.app.services.aito_payment_links import QUOTE_VALIDITY, deposit_pct, required_amount
-from backend.app.services.aito_priority import priority_surcharge
+from backend.app.services.aito_priority import priority_surcharge, priority_terms
 from backend.app.services.aito_quote_export import (
     SERVICES,
     SERVICES_WITH_QUANTITY,
@@ -429,7 +429,7 @@ async def load_export_priority(
         logger.warning("Aito project %s: no calculator defaults row, priority surcharge not applied", project.id)
         return None
     surcharge = math.floor(priority_surcharge(level, base, defaults) + 0.5)
-    return ExportPriority(level, 1 + surcharge / base)
+    return ExportPriority(level, 1 + surcharge / base, *priority_terms(level, defaults))
 
 
 async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTask]:
