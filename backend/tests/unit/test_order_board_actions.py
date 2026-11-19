@@ -458,7 +458,7 @@ async def test_content_lists_what_is_left_to_box(db_session, parcels):
 @pytest.mark.asyncio
 async def test_busy_zoho_gives_no_picklist_preview(db_session, parcels):
     await _board(db_session, parcels, order(1))
-    parcels.meter = sync.CALL_CEILING
+    parcels.meter = sync.OPERATOR_CALL_CEILING
     reads = parcels.calls["detail"]
     with pytest.raises(sync.ZohoBusy):
         await actions.picklist_preview(db_session, "so1")
@@ -618,7 +618,7 @@ async def test_fractional_units_can_be_boxed_in_full(db_session, parcels):
 async def test_busy_zoho_is_not_called(db_session, parcels):
     await _board(db_session, parcels, order(1))
     pl = await _pick(db_session, "so1", {"l1": 1})
-    parcels.meter = sync.CALL_CEILING
+    parcels.meter = sync.OPERATOR_CALL_CEILING
     with pytest.raises(sync.ZohoBusy):
         await actions.create_parcel(db_session, "so1", pl, {"l1": 1})
     with pytest.raises(sync.ZohoBusy):
@@ -1685,7 +1685,7 @@ async def test_busy_zoho_hands_nothing_over(db_session, books):
     doc = await _doc(db_session, "so1")
     doc.pending = True  # would need an entry re-read: busy must stop it first
     await db_session.commit()
-    books.meter = sync.CALL_CEILING
+    books.meter = sync.OPERATOR_CALL_CEILING
     with pytest.raises(sync.ZohoBusy):
         await actions.hand_over(db_session, "so1", "pk1", mode="pickup", apply_credit=False)
     with pytest.raises(sync.ZohoBusy):
@@ -2108,7 +2108,7 @@ async def test_cancel_of_an_unknown_or_busy_order_writes_nothing(db_session, voi
     await _board(db_session, voids, order(1))
     with pytest.raises(actions.OrderNotOnBoard):
         await actions.cancel_order(db_session, "nope")
-    voids.meter = sync.CALL_CEILING
+    voids.meter = sync.OPERATOR_CALL_CEILING
     with pytest.raises(sync.ZohoBusy):
         await actions.cancel_order(db_session, "so1")
     assert voids.voided == []
@@ -3077,7 +3077,7 @@ async def test_a_new_shipment_needs_the_row_still_on_the_board(db_session, books
 @pytest.mark.asyncio
 async def test_busy_zoho_makes_the_preview_unavailable_without_a_call(db_session, books):
     await _ready(db_session, books)
-    books.meter = sync.CALL_CEILING
+    books.meter = sync.OPERATOR_CALL_CEILING
     preview = await actions.handover_preview(db_session, "so1", "pk1")
     assert (preview["units"], preview["available"], preview["to_invoice"], preview["manual"]) == (
         2.0,
@@ -3207,7 +3207,7 @@ async def test_a_rate_limited_parcel_read_is_busy_and_opens_the_window(db_sessio
 @pytest.mark.asyncio
 async def test_busy_zoho_gives_no_parcel_content(db_session, parcels):
     await _board(db_session, parcels, _packed(parcels))
-    parcels.meter = sync.CALL_CEILING
+    parcels.meter = sync.OPERATOR_CALL_CEILING
     reads = parcels.calls["detail"]
     with pytest.raises(sync.ZohoBusy):
         await actions.package_content(db_session, "so1", "p1")
@@ -3369,7 +3369,10 @@ async def test_a_parcel_timeout_whose_confirming_read_fails_records_nothing(db_s
 async def test_a_parcel_timeout_while_books_is_busy_makes_no_confirming_read(db_session, parcels, monkeypatch):
     await _board(db_session, parcels, _packed(parcels))
     _applied_then_fail(
-        monkeypatch, "update_package", ZohoUnreachable, after=lambda: setattr(parcels, "meter", sync.CALL_CEILING)
+        monkeypatch,
+        "update_package",
+        ZohoUnreachable,
+        after=lambda: setattr(parcels, "meter", sync.OPERATOR_CALL_CEILING),
     )
     with pytest.raises(ZohoUnreachable):
         await actions.edit_parcel(db_session, "so1", "p1", VERSION, {"l1": 2}, {"l1": 1})
@@ -3431,7 +3434,7 @@ async def test_invoice_preview_skips_a_parcel_without_an_id_and_one_that_has_shi
 @pytest.mark.asyncio
 async def test_invoice_preview_is_unknown_while_books_is_busy(db_session, books):
     await _ready(db_session, books)
-    books.meter = sync.CALL_CEILING
+    books.meter = sync.OPERATOR_CALL_CEILING
     assert await actions.invoice_preview(db_session, "so1") == _PREVIEW_UNKNOWN
     assert books.log == []
 

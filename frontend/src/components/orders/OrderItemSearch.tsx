@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Search } from 'lucide-react';
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import type { OrderItemHit } from '../../api/client';
+import { errorReason } from './orderErrors';
 import { formatMoney } from '../../utils/pricing';
 import { formatQty } from './orderBoard';
 import { TONE } from './orderStatus';
@@ -21,7 +22,14 @@ export function OrderItemSearch({ orderItemIds, currency, disabled, onAdd, label
     return () => clearTimeout(timer);
   }, [text]);
   const asking = q.length >= 2 && text.trim().length >= 2;
-  const { data } = useQuery({ queryKey: ['order-items', q], queryFn: () => api.searchOrderItems(q), enabled: asking });
+  const { data, error } = useQuery({
+    queryKey: ['order-items', q],
+    queryFn: () => api.searchOrderItems(q),
+    enabled: asking,
+    // A sync pass can spend the Books call budget for a few seconds (503): keep asking rather than go silent.
+    retry: (n, e) => n < (e instanceof ApiError && e.status === 503 ? 5 : 1),
+    retryDelay: 2000,
+  });
   const hits = asking && data ? data.items.filter(i => !orderItemIds.has(i.id)).slice(0, 5) : [];
   // The text an Enter was pressed on before its search answered.
   const [pending, setPending] = useState<string | null>(null);
@@ -90,6 +98,10 @@ export function OrderItemSearch({ orderItemIds, currency, disabled, onAdd, label
       ) : asking && data ? (
         <div className="absolute left-0 right-0 top-full z-20 mt-1 rounded-md border border-bambu-dark-tertiary bg-bambu-dark-secondary px-3 py-1.5 text-xs text-bambu-gray">
           {t('orders.edit.noItem')}
+        </div>
+      ) : asking && error ? (
+        <div role="alert" className={`absolute left-0 right-0 top-full z-20 mt-1 rounded-md border border-bambu-dark-tertiary bg-bambu-dark-secondary px-3 py-1.5 text-xs ${TONE.danger.text}`}>
+          {errorReason(t, error)}
         </div>
       ) : null}
     </div>

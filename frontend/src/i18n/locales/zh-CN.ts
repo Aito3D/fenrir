@@ -11619,6 +11619,14 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    mobile: {
+      back: '返回订单',
+      more: '更多',
+      tabs: { lines: '产品', billing: '账单', client: '客户' },
+      collect: '收款',
+      filters: '筛选和排序',
+      showOrders: '查看 {{n}} 个订单',
+    },
     newOrder: {
       button: '新订单',
       title: '新订单',

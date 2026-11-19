@@ -251,6 +251,12 @@ async def test_a_change_pass_reconciles_only_changed_cards_plus_the_trickle(db_s
     assert reconciled == 4
     assert aito_quote_sync._trickle_cursor == cards[1].id
 
+    # Between full ticks: nothing new changed, and the trickle stays where it was.
+    seen.clear()
+    assert await run_change_pass(db_session, trickle=False) == 0
+    assert _single_reads(seen) == []
+    assert aito_quote_sync._trickle_cursor == cards[1].id
+
 
 @pytest.mark.asyncio
 async def test_the_trickle_walks_the_board_and_wraps_around(db_session):

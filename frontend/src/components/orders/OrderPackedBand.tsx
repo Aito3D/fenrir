@@ -108,15 +108,15 @@ export function OrderPackedBars({
   return (
     <>
       {parcel && (
-        <tr>
-          <td colSpan={5} className="pt-2 animate-rise-sm">
+        <tr className="max-md:block">
+          <td colSpan={5} className="max-md:block pt-2 animate-rise-sm">
             <OrderParcelEditBar row={row} parcel={parcel} onClose={onParcelClose} onBusy={onParcelBusy} onSaved={onParcelSaved} />
           </td>
         </tr>
       )}
       {handover && (
-        <tr>
-          <td colSpan={5} className="pt-2 animate-rise-sm">
+        <tr className="max-md:block">
+          <td colSpan={5} className="max-md:block pt-2 animate-rise-sm">
             <OrderHandoverBar key={handover} row={row} packageId={handover} onClose={onHandoverClose} />
           </td>
         </tr>

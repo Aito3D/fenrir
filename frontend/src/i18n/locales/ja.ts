@@ -11635,6 +11635,14 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    mobile: {
+      back: '注文に戻る',
+      more: 'その他',
+      tabs: { lines: '商品', billing: '請求', client: '顧客' },
+      collect: '入金を受け取る',
+      filters: '絞り込みと並べ替え',
+      showOrders: '{{n}}件の注文を表示',
+    },
     newOrder: {
       button: '新規注文',
       title: '新規注文',

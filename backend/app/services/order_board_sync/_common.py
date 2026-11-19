@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 MAX_DETAILS_PER_PASS = 20
 CALL_CEILING = 30
+# An operator's action waits behind no background job: the Kanban's sweeps stop at 50 calls a minute
+# (aito_quote_sync.BACKGROUND_CALL_CEILING) and Books itself refuses at 100.
+OPERATOR_CALL_CEILING = 80
 ITEM_BATCH = 50
 PENDING_PAUSE_SECONDS = 60
 # Books also caps calls per day. Below this many left, the loop stops running
@@ -138,9 +141,10 @@ async def _pending_count(db: AsyncSession) -> int:
     ).scalar_one()
 
 
-def zoho_busy() -> bool:
-    """Books is throttling us, or the shared call budget is spent."""
-    return time.monotonic() < _rate_limited_until or zoho_service.calls_in_last_minute() >= CALL_CEILING
+def zoho_busy(ceiling: int = OPERATOR_CALL_CEILING) -> bool:
+    """Books is throttling us, or the shared call budget is spent. The default ceiling is the operator's; the
+    board's own pass asks with ``CALL_CEILING``."""
+    return time.monotonic() < _rate_limited_until or zoho_service.calls_in_last_minute() >= ceiling
 
 
 def note_write(salesorder_id: str) -> None:

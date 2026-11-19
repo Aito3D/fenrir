@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import time
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -215,7 +214,7 @@ async def _store_quote_number(db: AsyncSession, doc: OrderBoardDoc) -> None:
 
 async def _fetch_finished_detail(db: AsyncSession, doc: OrderBoardDoc) -> None:
     salesorder_id = doc.zoho_id
-    if time.monotonic() < _common._rate_limited_until or zoho_service.calls_in_last_minute() >= CALL_CEILING:
+    if _common.zoho_busy():  # an operator opening the order; the pass asks with its own ceiling first
         raise ZohoBusy(salesorder_id)
     before = _snapshot(doc)
     try:

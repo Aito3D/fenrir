@@ -52,8 +52,8 @@ export function OrderLineRow({
   // An item Books prices at 0 has no catalogue price to differ from.
   const priceGap = priced && line.item_rate ? line.rate - line.item_rate : 0;
   return (
-    <tr className={`transition-opacity duration-150 ease-out ${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${(todo && check && !(check.max[line.id] > 0)) || gone ? 'opacity-40' : ''}`}>
-      <td className={`border-l-2 py-2 pl-4 pr-3 ${TONE[meta.tone].rail} ${gone ? 'line-through' : ''}`}>
+    <tr className={`max-md:grid max-md:grid-cols-[1fr_auto_auto] max-md:gap-x-3 transition-opacity duration-150 ease-out ${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${(todo && check && !(check.max[line.id] > 0)) || gone ? 'opacity-40' : ''}`}>
+      <td className={`max-md:col-span-3 border-l-2 py-2 pl-4 pr-3 ${TONE[meta.tone].rail} ${gone ? 'line-through' : ''}`}>
         <div className="text-white">
           {line.name}
           {priceGap !== 0 && (
@@ -110,7 +110,7 @@ export function OrderLineRow({
             onChange={v => setCheck({ ...check, qty: { ...check.qty, [line.id]: v } })}
           />
         ) : (
-          formatQty(qty)
+          <><span className="md:hidden">{t('orders.col.qty')} </span>{formatQty(qty)}</>
         )}
         {ofQty !== null && !editing && <span className="ml-1 text-xs text-bambu-gray">{t('orders.ofOrdered', { n: formatQty(ofQty) })}</span>}
         {todo && line.invoiced > 0 && (
@@ -118,13 +118,13 @@ export function OrderLineRow({
         )}
       </td>
       <td className={`text-right tabular-nums ${todo && line.state === 'ready' ? TONE.success.text : 'text-white'}`}>
-        {todo && line.stock_available !== null ? formatQty(line.stock_available) : dash}
+        {todo && line.stock_available !== null ? <><span className="md:hidden">{t('orders.col.available')} </span>{formatQty(line.stock_available)}</> : dash}
       </td>
       <td className={`text-right tabular-nums ${short ? LINE_STATE[line.state].cls : ''}`}>
-        {short ? <>−{formatQty(line.shortfall)}</> : dash}
+        {short ? <><span className="md:hidden">{t('orders.col.short')} </span>−{formatQty(line.shortfall)}</> : dash}
       </td>
       {editing ? (
-        <td className="whitespace-nowrap pl-4">
+        <td className="max-md:col-span-3 whitespace-nowrap pl-4">
           {gone ? (
             <button type="button" disabled={saving} onClick={() => setGone(line.id, false)} className="inline-flex items-center gap-1 text-xs text-bambu-gray hover:text-white disabled:opacity-50">
               <Undo2 aria-hidden="true" className="h-3.5 w-3.5" />
@@ -144,7 +144,7 @@ export function OrderLineRow({
           )}
         </td>
       ) : (
-      <td className="whitespace-nowrap pl-4">
+      <td className="max-md:col-span-3 whitespace-nowrap pl-4">
         {groupId === 'packed' && (
           <span className={`inline-flex items-center gap-1 ${TONE.info.text}`}>
             <Package aria-hidden="true" className="h-3.5 w-3.5" />

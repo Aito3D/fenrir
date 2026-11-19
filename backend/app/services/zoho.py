@@ -11,7 +11,7 @@ import json
 import logging
 import re
 import time
-from collections import deque
+from collections import Counter, deque
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote as urlquote, urlparse
@@ -23,6 +23,10 @@ from backend.app.services.aito_quote_export import Catalogue
 from backend.app.services.aito_shipping import SERVICE_LABELS, ShippingItem, merge_shipping_catalogue
 
 logger = logging.getLogger(__name__)
+
+
+# A Books document id inside a path, for the per-endpoint call count.
+_ID_SEGMENT = re.compile(r"/\d+")
 
 
 def _seg(value: str) -> str:
@@ -414,12 +418,22 @@ class ZohoService:
         self._sent_at: deque[float] = deque()
         self.calls_total = 0
         self.daily_remaining: int | None = None
+        # Calls per endpoint since the last ``take_call_counts``, for the log.
+        self._calls_by_endpoint: Counter[str] = Counter()
 
-    def _note_call(self) -> None:
+    def _note_call(self, method: str = "", path: str = "") -> None:
         now = time.monotonic()
         self._sent_at.append(now)
         self.calls_total += 1
+        # Ids folded away: one key per endpoint, never per document.
+        self._calls_by_endpoint[f"{method} {_ID_SEGMENT.sub('/{id}', path)}"] += 1
         self._prune_calls(now)
+
+    def take_call_counts(self) -> list[tuple[str, int]]:
+        """Calls per endpoint since the last take, busiest first; resets the count."""
+        counts = self._calls_by_endpoint.most_common()
+        self._calls_by_endpoint.clear()
+        return counts
 
     def _prune_calls(self, now: float) -> None:
         while self._sent_at and now - self._sent_at[0] >= 60.0:
@@ -433,6 +447,7 @@ class ZohoService:
     def reset_call_meter(self) -> None:
         """Test seam: the meter is process state on a module singleton."""
         self._sent_at.clear()
+        self._calls_by_endpoint.clear()
         self.calls_total = 0
         self.daily_remaining = None
 
@@ -547,7 +562,7 @@ class ZohoService:
             token = await self.get_access_token(db)
             try:
                 client = await self._http()
-                self._note_call()
+                self._note_call(method, path)
                 response = await client.request(
                     method,
                     f"{config['zoho_base_url']}/books/v3{path}",

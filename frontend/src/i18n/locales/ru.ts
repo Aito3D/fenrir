@@ -11240,6 +11240,14 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    mobile: {
+      back: 'Назад к заказам',
+      more: 'Ещё',
+      tabs: { lines: 'Товары', billing: 'Оплата', client: 'Клиент' },
+      collect: 'Принять оплату',
+      filters: 'Фильтры и сортировка',
+      showOrders: 'Показать заказов: {{n}}',
+    },
     newOrder: {
       button: 'Новый заказ',
       title: 'Новый заказ',

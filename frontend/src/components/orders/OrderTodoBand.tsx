@@ -34,8 +34,8 @@ export function OrderTodoEditRows({
   return (
     <>
       {edit.added.map(({ item, quantity }) => (
-        <tr key={`add-${item.id}`} className="border-t border-bambu-dark-tertiary/60">
-          <td className="animate-rise-sm border-l-2 border-bambu-green py-2 pl-4 pr-3">
+        <tr key={`add-${item.id}`} className="max-md:grid max-md:grid-cols-[1fr_auto_auto] max-md:gap-x-3 border-t border-bambu-dark-tertiary/60">
+          <td className="max-md:col-span-3 animate-rise-sm border-l-2 border-bambu-green py-2 pl-4 pr-3">
             <div className="text-white">{item.name}</div>
             {item.sku && <div className="font-mono text-xs text-bambu-gray">{item.sku}</div>}
             <span className="mt-0.5 inline-block rounded bg-bambu-green/15 px-1.5 py-0.5 text-[10px] text-bambu-green">
@@ -56,7 +56,7 @@ export function OrderTodoEditRows({
           </td>
           <td className="animate-rise-sm text-right tabular-nums text-white">{item.stock_on_hand !== null ? formatQty(item.stock_on_hand) : dash}</td>
           <td className="animate-rise-sm text-right">{dash}</td>
-          <td className="animate-rise-sm pl-4">
+          <td className="max-md:col-span-3 animate-rise-sm pl-4">
             <button
               type="button"
               aria-label={`${t('orders.edit.remove')} · ${item.name}`}
@@ -70,8 +70,8 @@ export function OrderTodoEditRows({
           </td>
         </tr>
       ))}
-      <tr className="border-t border-bambu-dark-tertiary/60">
-        <td colSpan={5} className="py-2 pl-4">
+      <tr className="max-md:block border-t border-bambu-dark-tertiary/60">
+        <td colSpan={5} className="max-md:block py-2 pl-4">
           <OrderItemSearch
             orderItemIds={itemIds}
             currency={row.currency}
@@ -80,8 +80,8 @@ export function OrderTodoEditRows({
           />
         </td>
       </tr>
-      <tr>
-        <td colSpan={5} className="pt-2 animate-rise-sm">
+      <tr className="max-md:block">
+        <td colSpan={5} className="max-md:block pt-2 animate-rise-sm">
           <OrderEditBar row={row} edit={edit} onClose={onClose} onBusy={onBusy} onSaved={onSaved} />
         </td>
       </tr>
@@ -104,8 +104,8 @@ export function OrderTodoCheckRow({
   onPicked: React.ComponentProps<typeof OrderPackBar>['onPicked'];
 }) {
   return (
-    <tr>
-      <td colSpan={5} className="pt-2 animate-rise-sm">
+    <tr className="max-md:block">
+      <td colSpan={5} className="max-md:block pt-2 animate-rise-sm">
         <OrderPackBar row={row} check={check} onClose={onClose} onBusy={onBusy} onPicked={onPicked} />
       </td>
     </tr>

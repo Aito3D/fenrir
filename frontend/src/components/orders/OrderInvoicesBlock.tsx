@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ExternalLink, HandCoins, Mail, ReceiptText } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Mail, PiggyBank } from 'lucide-react';
 import { api } from '../../api/client';
 import type { OrderBoardRow, OrderDocumentKind, OrderInvoice } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { formatMoney } from '../../utils/pricing';
-import { Card } from '../Card';
+import { DocumentRow } from '../aito/DocumentRow';
+import { PanelCard } from '../aito/PanelCard';
+import { INVOICE_STATUS_TEXT_TONE_CLASSES, invoiceStatusLabelKey, invoiceStatusTone } from '../aito/invoiceStatus';
 import { PdfDownloadButton } from '../aito/PdfDownloadButton';
 import { PdfPrintButton } from '../aito/PdfPrintButton';
 import { DOC_ICON_BUTTON_CLS, LINK_ICON_CLS } from '../aito/linkActionHelpers';
@@ -13,7 +16,6 @@ import { RETAINER_STATUS_TEXT_TONE_CLASSES, retainerStatusLabelKey, retainerStat
 import { OrderDocumentEmailModal } from './OrderDocumentEmailModal';
 import { OrderInvoiceEmailModal } from './OrderInvoiceEmailModal';
 import { OrderInvoiceNow } from './OrderInvoiceNow';
-import { daysPastDue, parseDay } from './orderBoard';
 import { TONE } from './orderStatus';
 import { useOrderActions } from './useOrderActions';
 
@@ -21,7 +23,9 @@ import { useOrderActions } from './useOrderActions';
  *  invoice what was handed over without one, and `onInvoiceNow` to invoice what is packed or the whole order before
  *  the hand-over. `canEmail` (the caller's orders:update) adds the send-by-mail buttons of the Aito card and the
  *  way to spend the order's deposits and advance on an open invoice. */
-export function OrderInvoicesBlock({ row, onCreateInvoice, onInvoiceNow, busy = false, canEmail = false }: {
+export function OrderInvoicesBlock({ row, onCreateInvoice, onInvoiceNow, busy = false, canEmail = false, children }: {
+  /** The collect section: the customer's credit and the payment block. */
+  children?: ReactNode;
   row: Pick<OrderBoardRow, 'currency' | 'payment' | 'unbilled_units'> & Partial<Pick<OrderBoardRow, 'id' | 'lines' | 'facts' | 'retainers'>>;
   onCreateInvoice?: () => void;
   onInvoiceNow?: (scope: 'packed' | 'whole', applyCredit: boolean) => void;
@@ -30,7 +34,6 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, onInvoiceNow, busy = 
 }) {
   const { t } = useTranslation();
   const money = (n: number) => formatMoney(n, row.currency);
-  const shortDay = (day: string) => parseDay(day).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const invoices = row.payment?.invoices ?? [];
   // An invoice that was not in the list on the previous render flashes once; the ones present at mount never do.
   const [seen, setSeen] = useState(() => new Set(invoices.map(i => i.id)));
@@ -38,6 +41,11 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, onInvoiceNow, busy = 
   const [emailing, setEmailing] = useState<OrderInvoice | null>(null);
   const [mailingDoc, setMailingDoc] = useState<{ kind: OrderDocumentKind; id: string } | null>(null);
   const { showToast } = useToast();
+  const mailButton = (label: string, onClick: () => void) => (
+    <button type="button" onClick={onClick} aria-label={label} title={label} className={DOC_ICON_BUTTON_CLS}>
+      <Mail aria-hidden="true" className={LINK_ICON_CLS} />
+    </button>
+  );
   const { applyCredit } = useOrderActions();
   // What the board counts as this order's to spend: its quote's deposits, then its advance.
   const credit = (row.payment?.retainer ?? 0) + (row.payment?.advance ?? 0);
@@ -51,25 +59,14 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, onInvoiceNow, busy = 
       },
     );
   };
-  const docIcons = (kind: OrderDocumentKind, id: string, number: string, url?: string | null) => {
+  const docButtons = (kind: OrderDocumentKind, id: string, number: string) => {
     const fetchPdf = () => api.getOrderDocumentPdf(row.id!, kind, id);
     const quote = kind === 'quote';
-    return (
-      <span className="-mr-1 inline-flex shrink-0 items-center">
-        <PdfDownloadButton variant="icon" fetchPdf={fetchPdf} label={t(quote ? 'aito.downloadQuote' : 'aito.downloadRetainer')} filename={number} failureMessage={t(quote ? 'aito.printFailed' : 'aito.retainerPrintFailed')} />
-        <PdfPrintButton variant="icon" fetchPdf={fetchPdf} label={t(quote ? 'aito.printQuote' : 'aito.printRetainer')} failureMessage={t(quote ? 'aito.printFailed' : 'aito.retainerPrintFailed')} />
-        {canEmail && (
-          <button type="button" onClick={() => setMailingDoc({ kind, id })} aria-label={t(quote ? 'aito.sendQuote' : 'aito.sendRetainer')} title={t(quote ? 'aito.sendQuote' : 'aito.sendRetainer')} className={DOC_ICON_BUTTON_CLS}>
-            <Mail aria-hidden="true" className={LINK_ICON_CLS} />
-          </button>
-        )}
-        {url && (
-          <a href={url} target="_blank" rel="noopener noreferrer" aria-label={t('aito.quoteOpenInZoho')} title={t('aito.quoteOpenInZoho')} className={DOC_ICON_BUTTON_CLS}>
-            <ExternalLink aria-hidden="true" className={LINK_ICON_CLS} />
-          </a>
-        )}
-      </span>
-    );
+    return {
+      print: <PdfPrintButton variant="icon" fetchPdf={fetchPdf} label={t(quote ? 'aito.printQuote' : 'aito.printRetainer')} failureMessage={t(quote ? 'aito.printFailed' : 'aito.retainerPrintFailed')} />,
+      download: <PdfDownloadButton variant="icon" fetchPdf={fetchPdf} label={t(quote ? 'aito.downloadQuote' : 'aito.downloadRetainer')} filename={number} failureMessage={t(quote ? 'aito.printFailed' : 'aito.retainerPrintFailed')} />,
+      send: canEmail ? mailButton(t(quote ? 'aito.sendQuote' : 'aito.sendRetainer'), () => setMailingDoc({ kind, id })) : undefined,
+    };
   };
   const quoteId = row.facts?.estimate_id;
   const retainers = (row.retainers ?? []).filter(r => r.status !== 'void');
@@ -82,27 +79,67 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, onInvoiceNow, busy = 
   // Units not handed over and not invoiced: something an invoice could bill ahead of the hand-over.
   const ahead = !!onInvoiceNow && !!row.id && row.unbilled_units <= 0 && (row.lines ?? []).some(l => l.remaining > l.invoiced);
 
-  const state = (i: OrderInvoice) => {
-    if (i.status === 'draft') return <span className="text-bambu-gray">{t('orders.inv.draft')}</span>;
-    const part = i.balance < i.total ? ` · ${t('orders.pay.invLeft', { amount: money(i.balance) })}` : '';
-    if (i.balance <= 0) return <span className={TONE.success.text}>{t('orders.pay.paid')}</span>;
-    if (!/^\d{4}-\d{2}-\d{2}/.test(i.due_date ?? '')) return <span className={TONE.warning.text}>{t('orders.pay.legendDue')}{part}</span>;
-    const late = daysPastDue(i.due_date);
-    return late > 0 ? (
-      <span className={TONE.danger.text}>{t('orders.pay.invOverdue', { n: late })}{part}</span>
-    ) : (
-      <span className={TONE.warning.text}>{t('orders.pay.invDue', { date: shortDay(i.due_date) })}{part}</span>
-    );
-  };
-
   return (
-    <Card className="p-3 text-xs">
-      <div className="flex items-center gap-2">
-        <ReceiptText aria-hidden="true" className="h-3.5 w-3.5 text-bambu-gray" />
-        <span className="font-semibold uppercase tracking-wide text-white">{t('orders.inv.title')}</span>
+    <PanelCard title={t('aito.billingLabel')}>
+      <div className="-mt-1.5 divide-y divide-bambu-dark-tertiary">
+        {row.id && quoteId && (
+          <DocumentRow
+            testId="doc-quote"
+            label={t('aito.quoteSearchLabel')}
+            number={row.facts?.quote_number || quoteId}
+            booksUrl={row.facts?.quote_url}
+            booksLabel={t('aito.quoteOpenInZoho')}
+            {...docButtons('quote', quoteId, row.facts?.quote_number || quoteId)}
+          />
+        )}
+        {row.id && retainers.map(r => {
+          const key = retainerStatusLabelKey(r.status);
+          return (
+            <DocumentRow
+              key={r.id}
+              testId="doc-retainer"
+              label={t('aito.retainerLabel')}
+              number={r.number}
+              numberTitle={r.date || undefined}
+              status={r.status ? { text: key ? t(key) : r.status, toneClass: RETAINER_STATUS_TEXT_TONE_CLASSES[retainerStatusTone(r.status)] } : null}
+              amount={money(r.total)}
+              booksLabel={t('aito.invoiceOpenInZoho')}
+              {...docButtons('retainer', r.id, r.number)}
+            />
+          );
+        })}
+        {invoices.map(i => {
+          const key = invoiceStatusLabelKey(i.status);
+          const fetchPdf = () => api.getOrderInvoicePdf(i.id);
+          return (
+            <div key={i.id} data-fresh={fresh.has(i.id) || undefined} className={fresh.has(i.id) ? 'rounded-md bg-bambu-green/10 motion-safe:animate-[pulse_1s_ease-in-out_2]' : ''}>
+              <DocumentRow
+                testId="doc-invoice"
+                label={t('aito.invoiceLabel')}
+                number={i.number || i.id}
+                numberTitle={i.date ? t('aito.invoiceDatesTitle', { date: i.date, due: i.due_date || '—' }) : undefined}
+                status={i.status ? { text: key ? t(key) : i.status, toneClass: INVOICE_STATUS_TEXT_TONE_CLASSES[invoiceStatusTone(i.status)] } : null}
+                amount={money(i.total)}
+                booksUrl={i.url}
+                booksLabel={t('aito.invoiceOpenInZoho')}
+                extra={
+                  canEmail && row.id && credit > 0 && i.balance > 0 && i.status !== 'draft' ? (
+                    <button type="button" disabled={applyCredit.isPending} onClick={() => spend(i)} aria-label={t('aito.applyDeposit')} title={t('orders.handover.applyCredit', { amount: money(Math.min(credit, i.balance)) })} data-testid="apply-deposit" className={DOC_ICON_BUTTON_CLS}>
+                      <PiggyBank aria-hidden="true" className={LINK_ICON_CLS} />
+                    </button>
+                  ) : undefined
+                }
+                print={<PdfPrintButton variant="icon" fetchPdf={fetchPdf} label={t('aito.printInvoice')} failureMessage={t('aito.invoicePrintFailed')} />}
+                download={<PdfDownloadButton variant="icon" fetchPdf={fetchPdf} label={t('aito.downloadInvoice')} filename={i.number} failureMessage={t('aito.invoicePrintFailed')} />}
+                send={canEmail ? mailButton(t('aito.sendInvoice'), () => setEmailing(i)) : undefined}
+              />
+            </div>
+          );
+        })}
       </div>
+      {invoices.length === 0 && !ahead && !now && !(row.id && (quoteId || retainers.length)) && <p className="text-xs text-bambu-gray">{t('orders.inv.empty')}</p>}
       {row.unbilled_units > 0 && onCreateInvoice && (
-        <div className={`mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md px-2.5 py-1.5 ${TONE.warning.soft}`}>
+        <div className={`mt-2 flex flex-wrap text-xs items-center justify-between gap-2 rounded-md px-2.5 py-1.5 ${TONE.warning.soft}`}>
           <span className={TONE.warning.text}>{t('orders.inv.unbilled', { units: t('orders.units', { count: row.unbilled_units }) })}</span>
           <button type="button" disabled={busy} onClick={onCreateInvoice} className="btn-press rounded-md bg-bambu-green px-2.5 py-1 font-semibold text-black hover:bg-bambu-green/90 disabled:opacity-50">
             {t('orders.inv.create')}
@@ -112,95 +149,17 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, onInvoiceNow, busy = 
       {now && onInvoiceNow && row.id ? (
         <OrderInvoiceNow row={{ id: row.id, currency: row.currency }} busy={busy} onCreate={onInvoiceNow} onClose={() => setNow(false)} />
       ) : ahead && (
-        <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="mt-2 flex items-center justify-between gap-2 text-xs">
           <span className="text-bambu-gray">{invoices.length === 0 ? t('orders.inv.emptyNow') : ''}</span>
           <button type="button" disabled={busy} onClick={() => setNow(true)} className="btn-press shrink-0 rounded-md border border-bambu-green/50 px-2.5 py-1 font-semibold text-bambu-green hover:bg-bambu-green/10 disabled:opacity-50">
             {t('orders.inv.now')}
           </button>
         </div>
       )}
-      <div className="mt-1.5 divide-y divide-bambu-dark-tertiary/60">
-        {row.id && quoteId && (
-          <div data-testid="doc-quote" className="flex items-center justify-between gap-2 px-1 py-1.5">
-            <span className="min-w-0 truncate">
-              <span className="text-bambu-gray">{t('orders.chip.quote')} · </span>
-              <span className="font-mono text-sm text-white">{row.facts?.quote_number || quoteId}</span>
-            </span>
-            {docIcons('quote', quoteId, row.facts?.quote_number || quoteId, row.facts?.quote_url)}
-          </div>
-        )}
-        {row.id && retainers.map(r => {
-          const key = retainerStatusLabelKey(r.status);
-          return (
-            <div key={r.id} data-testid="doc-retainer" className="px-1 py-1.5">
-              <div className="flex items-baseline justify-between gap-3 text-sm">
-                <span className="min-w-0 truncate">
-                  <span className="text-xs text-bambu-gray">{t('aito.retainerLabel')} · </span>
-                  <span className="font-mono text-white">{r.number}</span>
-                </span>
-                <span className="font-semibold tabular-nums text-white">{money(r.total)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate">
-                  <span className="text-bambu-gray">{r.date ? `${shortDay(r.date)} · ` : ''}</span>
-                  <span className={RETAINER_STATUS_TEXT_TONE_CLASSES[retainerStatusTone(r.status)]}>{key ? t(key) : r.status}</span>
-                </span>
-                {docIcons('retainer', r.id, r.number)}
-              </div>
-            </div>
-          );
-        })}
-        {invoices.length === 0 ? (
-          !ahead && !now && <div className="py-1.5 text-bambu-gray">{t('orders.inv.empty')}</div>
-        ) : (
-          invoices.map(i => (
-            <div key={i.id} data-fresh={fresh.has(i.id) || undefined} className={`px-1 py-1.5 ${fresh.has(i.id) ? 'rounded-md bg-bambu-green/10 motion-safe:animate-[pulse_1s_ease-in-out_2]' : ''}`}>
-              <div className="flex items-baseline justify-between gap-3 text-sm">
-                {i.url ? (
-                  <a href={i.url} target="_blank" rel="noopener noreferrer" title={t('orders.inv.open')} className="font-mono text-white hover:text-bambu-green hover:underline">{i.number}</a>
-                ) : (
-                  <span className="font-mono text-white">{i.number}</span>
-                )}
-                <span className="font-semibold tabular-nums text-white">{money(i.total)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate">
-                  <span className="text-bambu-gray">{i.date ? `${shortDay(i.date)} · ` : ""}</span>
-                  {state(i)}
-                </span>
-                <span className="-mr-1 inline-flex shrink-0 items-center">
-                  {canEmail && row.id && credit > 0 && i.balance > 0 && i.status !== 'draft' && (
-                    <button
-                      type="button"
-                      disabled={applyCredit.isPending}
-                      onClick={() => spend(i)}
-                      aria-label={t('orders.handover.applyCredit', { amount: money(Math.min(credit, i.balance)) })}
-                      title={t('orders.handover.applyCredit', { amount: money(Math.min(credit, i.balance)) })}
-                      className={DOC_ICON_BUTTON_CLS}
-                    >
-                      <HandCoins aria-hidden="true" className={LINK_ICON_CLS} />
-                    </button>
-                  )}
-                  <PdfDownloadButton variant="icon" fetchPdf={() => api.getOrderInvoicePdf(i.id)} label={t('orders.inv.download')} filename={i.number} failureMessage={t('orders.inv.pdfFailed')} />
-                  <PdfPrintButton variant="icon" fetchPdf={() => api.getOrderInvoicePdf(i.id)} label={t('orders.inv.print')} failureMessage={t('orders.inv.pdfFailed')} />
-                  {canEmail && (
-                    <button type="button" onClick={() => setEmailing(i)} aria-label={t('aito.sendInvoice')} title={t('aito.sendInvoice')} className={DOC_ICON_BUTTON_CLS}>
-                      <Mail aria-hidden="true" className={LINK_ICON_CLS} />
-                    </button>
-                  )}
-                  {i.url && (
-                    <a href={i.url} target="_blank" rel="noopener noreferrer" aria-label={t('orders.inv.open')} title={t('orders.inv.open')} className={DOC_ICON_BUTTON_CLS}>
-                      <ExternalLink aria-hidden="true" className={LINK_ICON_CLS} />
-                    </a>
-                  )}
-                </span>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+      {/* The collect section under a hairline, as on the Aito card; it draws nothing when it has no child. */}
+      <div className="space-y-2 empty:hidden has-[*]:mt-2 has-[*]:border-t has-[*]:border-bambu-dark-tertiary has-[*]:pt-2">{children}</div>
       {emailing && <OrderInvoiceEmailModal invoice={emailing} onClose={() => setEmailing(null)} />}
       {mailingDoc && row.id && <OrderDocumentEmailModal orderId={row.id} kind={mailingDoc.kind} docId={mailingDoc.id} onClose={() => setMailingDoc(null)} />}
-    </Card>
+    </PanelCard>
   );
 }

@@ -141,6 +141,24 @@ describe('editing the order', () => {
     expect(screen.queryByTestId('pack-qty-add-B')).not.toBeInTheDocument();
   });
 
+  it('search keeps asking while Zoho is busy, and says so when it never answers', async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+    server.use(http.get('/api/v1/order-board/items', ({ request }) => {
+      const q = new URL(request.url).searchParams.get('q');
+      if (q === 'pla' && ++calls > 1) return HttpResponse.json({ items: [{ id: 'B', name: 'PLA Silk Or', sku: 'PLA-SILK-GD', rate: 1500, stock_on_hand: 4, product_type: 'goods' }] });
+      return HttpResponse.json({ detail: 'Zoho is busy, try again shortly.' }, { status: 503 });
+    }));
+    render(<OrderLinesPanel row={panelRow()} />);
+    await openEdit(user);
+    const box = screen.getByRole('searchbox', { name: 'Add an item · name or SKU in Zoho Books' });
+    await user.type(box, 'pla');
+    expect(await screen.findByRole('button', { name: /PLA Silk Or/ }, { timeout: 4000 })).toBeInTheDocument();
+    await user.clear(box);
+    await user.type(box, 'zz');
+    expect(await screen.findByRole('alert', {}, { timeout: 15000 })).toHaveTextContent('Zoho is busy, try again in a moment.');
+  }, 20000);
+
   it('the bar lists the changes and the new total beside the old one; the payment card follows', async () => {
     const user = userEvent.setup();
     server.use(hits);

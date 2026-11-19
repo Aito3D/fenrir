@@ -3,16 +3,18 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Box, ListFilter, Loader2, PackageCheck, Plug, Plus, PowerOff, Printer, RefreshCw, Search, SearchX, X } from 'lucide-react';
+import { AlertTriangle, Box, Loader2, PackageCheck, Plug, Plus, PowerOff, Printer, RefreshCw, Search, SearchX, SlidersHorizontal } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
 import type { OrderBoardResponse, OrderBoardRow, OrderEditResult } from '../api/client';
 import { Button } from '../components/Button';
 import { Skeleton } from '../components/Skeleton';
+import { Sheet } from '../components/mobile/Sheet';
 import { usePrintBlob } from '../components/aito/usePrintBlob';
 import { FinishedOrderCard } from '../components/orders/FinishedOrderCard';
 import { NewOrderDraftRow } from '../components/orders/NewOrderDraftRow';
 import { OrderCard } from '../components/orders/OrderCard';
+import { OrderMobileFilters } from '../components/orders/OrderMobileFilters';
 import { OrderStatsStrip } from '../components/orders/OrderStatsStrip';
 import {
   byBrand,
@@ -20,15 +22,16 @@ import {
   byPayment,
   bySearch,
   byStatus,
+  chipCls,
   countByPayment,
   countByStatus,
   FOLLOW_KEYS,
   finishedByBrand,
-  followDays,
   isBoardReady,
   isFollowup,
   otherOpenOrders,
   packableUnits,
+  PAY_CHIPS,
   paidPct,
   pollMs,
   searchFinished,
@@ -37,10 +40,11 @@ import {
   withFinished,
 } from '../components/orders/orderBoard';
 import type { FollowKey, PayFilter, StatusFilter } from '../components/orders/orderBoard';
-import { SORTS, useOrderFilters } from '../components/orders/useOrderFilters';
+import { useOrderFilters } from '../components/orders/useOrderFilters';
 import { STATUSES, STATUS_META, TONE } from '../components/orders/orderStatus';
 import type { Tone } from '../components/orders/orderStatus';
 import { useAuth } from '../contexts/AuthContext';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { useToast } from '../contexts/ToastContext';
 import { formatDateTime, formatRelativeTime } from '../utils/date';
 import { prefersReducedMotion } from '../utils/motion';
@@ -49,18 +53,8 @@ import { formatMoney } from '../utils/pricing';
 const BOARD_KEY = ['order-board'] as const;
 const FINISHED_KEY = ['order-board', 'finished'] as const;
 const PAGE = 50;
-const PAY_CHIPS: Exclude<PayFilter, 'all' | 'overdue'>[] = ['unpaid', 'partial', 'paid'];
-// The Aito follow-up strip's colours: unbilled money in red, an uncollected parcel in orange.
-const FOLLOW_CLS: Record<FollowKey, string> = {
-  unbilled: 'border-red-400/30 bg-red-400/[0.12] text-red-400',
-  notCollected: 'border-orange-400/30 bg-orange-400/[0.12] text-orange-400',
-};
 const CORE_ONLY_KEY = 'orders.coreOnly';
 const STATS_OPEN_KEY = 'orders.statsOpen';
-
-const chipCls = (active: boolean) =>
-  `btn-press rounded-full border px-3 py-1.5 text-xs ${active ? 'border-bambu-green bg-bambu-green/15 text-white' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`;
-
 // "3D only" is on unless the viewer turned it off. Storage can throw (private
 // windows, blocked site data); the page must render without it.
 function readCoreOnly(): boolean {
@@ -105,6 +99,7 @@ function Notice({ icon: Icon, title, hint, rise }: { icon: LucideIcon; title: st
 export function OrderBoardPage() {
   const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
+  const phone = useIsMobile();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
@@ -216,6 +211,10 @@ export function OrderBoardPage() {
   }, [openId, ready, data, finishedQuery.data, finishedQuery.isLoading, coreOnly, status, setStatus]);
   // After the target renders, bring it into view. Declared after the effect above, so one pass does both.
   useEffect(() => {
+    if (phone) { // the full-screen view covers the list
+      scrollTarget.current = null;
+      return;
+    }
     const target = scrollTarget.current;
     const el = target ? document.getElementById(`order-${target.id}`) : null;
     if (!target || !el) return;
@@ -272,6 +271,10 @@ export function OrderBoardPage() {
     sort.flipped !== (status === 'finished' && sort.key === 'age'),
     i18n.language,
   );
+  // Phone: the opened order is a full screen, so a filter that drops it mid-task (payment taken under "unpaid") must not remove it.
+  const keepOpen = phone && !!openId && !listed.some(e => (e.open ? e.open.id : e.fin.id) === openId);
+  const kept = keepOpen ? withFinished(all.filter(r => r.id === openId), (finishedQuery.data?.rows ?? []).filter(r => r.id === openId)) : [];
+  const rendered = kept.length ? [...listed, ...kept] : listed;
   const tileCounts = countByStatus(searched);
   tileCounts.finished = finishedSearched.length;
   // Orders counted under "To order" that sit under Partial: the tiles add up to more than the total because of them.
@@ -317,6 +320,39 @@ export function OrderBoardPage() {
     return formatMoney(totalValue(rows), rows[0].currency) + (share === null ? '' : ` · ${t('orders.pay.tile', { pct: share })}`);
   };
 
+  const toggleStats = () => {
+    setStatsOpen(!statsOpen);
+    remember(STATS_OPEN_KEY, !statsOpen);
+  };
+  const controlsEl = (layout: 'row' | 'sheet', close?: () => void) => (
+    <OrderMobileFilters
+      layout={layout}
+      coreOnly={coreOnly}
+      hidden={hidden}
+      onToggleCore={toggleCoreOnly}
+      pay={pay}
+      payCounts={payCounts}
+      showOverdue={showOverdue}
+      onPay={setPayFilter}
+      follow={follow}
+      followed={followed}
+      onFollow={setFollow}
+      sort={sort}
+      onSort={setSort}
+      statsOpen={statsOpen}
+      onToggleStats={toggleStats}
+      listedCount={listed.length}
+      onClose={close}
+    />
+  );
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  // What differs from the defaults (3D only on, any payment, no follow-up, age sort).
+  const activeFilters = [!coreOnly, pay !== 'all', !!follow, sort.key !== 'age' || sort.flipped].filter(Boolean).length;
+  const syncText = syncing
+    ? t('orders.syncing', { n: data?.sync.pending })
+    : data?.computed_at && t('orders.updated', { when: formatRelativeTime(data.computed_at, 'system', t) });
+  const chips = [...STATUSES, 'all', 'finished'] as StatusFilter[];
+
   let list: ReactNode;
   if (isError && !data) {
     list = (
@@ -348,15 +384,15 @@ export function OrderBoardPage() {
     );
   } else if (status === 'finished' && finishedQuery.isLoading) {
     list = Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-16 rounded-xl" />);
-  } else if (listed.length === 0 && all.length === 0 && status !== 'finished') {
+  } else if (rendered.length === 0 && all.length === 0 && status !== 'finished') {
     list = <Notice rise icon={PackageCheck} title={t('orders.empty.none')} hint={t('orders.empty.noneHint')} />;
-  } else if (listed.length === 0 && coreOnly && branded.length === 0 && !searchText.trim() && status === 'all') {
+  } else if (rendered.length === 0 && coreOnly && branded.length === 0 && !searchText.trim() && status === 'all') {
     list = <Notice rise icon={Box} title={t('orders.empty.core')} hint={t('orders.empty.coreHint')} />;
-  } else if (listed.length === 0) {
+  } else if (rendered.length === 0) {
     list = <Notice icon={SearchX} title={t('orders.empty.noResults')} />;
   } else {
     // An opened order always renders, even past the page: a `?order=` link or "Also open" may target one further down.
-    list = listed.filter((e, i) => i < shown || (e.open ? e.open.id : e.fin.id) === openId).map(({ open: row, fin }) => !row ? (
+    list = rendered.filter((e, i) => i < shown || (e.open ? e.open.id : e.fin.id) === openId).map(({ open: row, fin }) => !row ? (
       <FinishedOrderCard key={fin.id} row={fin} open={openId === fin.id} onToggle={() => toggleOpen(fin.id)} />
     ) : (
       <OrderCard
@@ -373,13 +409,14 @@ export function OrderBoardPage() {
         start={start?.id === row.id ? start.target : undefined}
         startTick={start?.id === row.id ? start.tick : undefined}
         selected={ticked.has(row.id)}
-        onSelect={hasPermission('orders:update') ? on => select(row.id, on) : undefined}
+        onSelect={hasPermission('orders:update') && !phone ? on => select(row.id, on) : undefined}
       />
     ));
   }
 
   return (
-    <div className="p-4 md:p-8">
+    <div className="p-4 pb-24 md:p-8">
+      {!phone && (
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 animate-rise-lg vt-page-title">
         <h1 className="flex items-center gap-3 text-2xl font-bold text-white max-md:hidden">
           <PackageCheck className="h-7 w-7 text-bambu-green" />
@@ -408,6 +445,7 @@ export function OrderBoardPage() {
           )}
         </div>
       </div>
+      )}
 
       {data?.sync.last_error && (
         <div className="animate-rise-sm mb-5 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200" role="alert">
@@ -428,6 +466,61 @@ export function OrderBoardPage() {
           onClose={() => setDrafting(false)}
         />
       ) : (<>
+      {phone && (
+        <>
+          <div className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1">
+            {chips.map(id => (
+              <button key={id} type="button" aria-pressed={status === id} onClick={() => setStatus(status === id ? 'all' : id)} className={`${chipCls(status === id)} shrink-0`}>
+                {id === 'all' ? t('orders.status.inProgress') : id === 'finished' ? t('orders.status.finished') : t(STATUS_META[id].label)}{' '}
+                <span className="text-bambu-gray">
+                  {ready && !(id === 'finished' && finishedQuery.isLoading) ? tileCounts[id] : '–'}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="mb-3 flex items-center gap-2">
+            <div className="relative grow">
+              <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-bambu-gray/50" />
+              <input
+                type="search"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder={t('orders.search')}
+                aria-label={t('orders.search')}
+                className="w-full rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary py-2 pl-10 pr-3 text-sm text-white placeholder:text-bambu-gray/50 focus:border-bambu-green focus:outline-none"
+              />
+            </div>
+            <button
+              type="button"
+              aria-label={t('orders.mobile.filters')}
+              onClick={() => setFiltersOpen(true)}
+              className="btn-press relative rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-2.5 text-bambu-gray hover:text-white"
+            >
+              <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
+              {activeFilters > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-bambu-green px-1 text-[10px] font-bold text-white">{activeFilters}</span>
+              )}
+            </button>
+          </div>
+          <div data-testid="orders-summary" className="mb-3 flex items-center gap-2 text-xs text-bambu-gray">
+            <span className="min-w-0 truncate text-white">{moneyLine(searched) ?? '–'}</span>
+            <span role="status" className="ml-auto inline-flex items-center gap-1.5 whitespace-nowrap">
+              {syncing && <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />}
+              {syncText}
+            </span>
+            {hasPermission('orders:update') && (
+              <button type="button" aria-label={t('orders.refresh')} onClick={() => refresh.mutate()} disabled={refresh.isPending} className="btn-press rounded-md p-1.5 hover:text-white disabled:opacity-60">
+                <RefreshCw aria-hidden="true" className={`h-4 w-4 ${refresh.isPending ? 'animate-spin' : ''}`} />
+              </button>
+            )}
+          </div>
+          {ready && statsOpen && (
+            <OrderStatsStrip open onToggle={toggleStats} rows={branded} finished={finishedQuery.data && finishedByBrand(finishedQuery.data.rows, coreOnly)} />
+          )}
+        </>
+      )}
+
+      {!phone && (<>
       <div data-testid="orders-tiles" className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         {STATUSES.map(id => tile(
           id,
@@ -452,7 +545,9 @@ export function OrderBoardPage() {
           finished={finishedQuery.data && finishedByBrand(finishedQuery.data.rows, coreOnly)}
         />
       )}
+      </>)}
 
+      {!phone && (
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative max-w-md grow basis-64">
           <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-bambu-gray/50" />
@@ -467,65 +562,9 @@ export function OrderBoardPage() {
             className="w-full rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary py-2 pl-10 pr-3 text-sm text-white placeholder:text-bambu-gray/50 focus:border-bambu-green focus:outline-none"
           />
         </div>
-        <button
-          type="button"
-          aria-pressed={coreOnly}
-          onClick={toggleCoreOnly}
-          className={`btn-press inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${coreOnly ? 'border-bambu-green/50 bg-bambu-green/10 text-bambu-green' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`}
-        >
-          <Box aria-hidden="true" className="h-4 w-4" />
-          {t('orders.coreOnly')}
-          {coreOnly && hidden > 0 && <span className="text-xs text-bambu-gray">{t('orders.hidden', { n: hidden })}</span>}
-        </button>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {(['all', ...PAY_CHIPS, ...(showOverdue ? ['overdue' as const] : [])] as PayFilter[]).map(id => (
-            <button key={id} type="button" aria-pressed={pay === id} onClick={() => setPayFilter(id)} className={chipCls(pay === id)}>
-              {id === 'all' ? t('orders.pay.any') : id === 'overdue' ? t('orders.pay.overdueChip') : t(`orders.pay.${id}`)}{' '}
-              <span className="text-bambu-gray">{payCounts[id]}</span>
-            </button>
-          ))}
-        </div>
-        {FOLLOW_KEYS.some(k => followed[k].length > 0 || follow === k) && (
-          <div role="group" aria-label={t('aito.followups.title')} className="flex flex-wrap items-center gap-1.5">
-            {FOLLOW_KEYS.filter(k => followed[k].length > 0 || follow === k).map(k => {
-              const days = k === 'notCollected' ? followDays(followed[k]) : 0;
-              return (
-                <button
-                  key={k}
-                  type="button"
-                  aria-pressed={follow === k}
-                  title={t('aito.followups.hint')}
-                  onClick={() => setFollow(follow === k ? null : k)}
-                  className={`btn-press inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${FOLLOW_CLS[k]} ${follow === k ? 'ring-2 ring-current/40' : ''}`}
-                >
-                  {follow === k ? <X aria-hidden="true" className="h-3 w-3" /> : <ListFilter aria-hidden="true" className="h-3 w-3" />}
-                  {t(k === 'unbilled' ? 'orders.follow.unbilled' : 'aito.followups.notCollected')}
-                  <span className="font-semibold tabular-nums">{followed[k].length}</span>
-                  {days > 0 && <span className="opacity-70">{t('aito.followups.longest', { days })}</span>}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        <div className="ml-auto inline-flex items-center gap-1 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1 text-xs">
-          <span className="px-2 text-bambu-gray">{t('orders.sort.label')}</span>
-          {SORTS.map(key => {
-            const active = sort.key === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={active}
-                onClick={() => setSort(active ? { key, flipped: !sort.flipped } : { key, flipped: false })}
-                className={`btn-press inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 ${active ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'}`}
-              >
-                {t(`orders.sort.${key}`)}
-                {active && <span>{sort.flipped ? '↑' : '↓'}</span>}
-              </button>
-            );
-          })}
-        </div>
+        {controlsEl('row')}
       </div>
+      )}
 
       {batch.length > 0 && (
         <div data-testid="orders-batch" className="animate-rise-sm sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-bambu-green/50 bg-bambu-dark-secondary px-3 py-2">
@@ -557,7 +596,22 @@ export function OrderBoardPage() {
           </Button>
         </div>
       )}
+      {phone && filtersOpen && (
+        <Sheet label={t('orders.mobile.filters')} onClose={() => setFiltersOpen(false)}>
+          {close => controlsEl('sheet', close)}
+        </Sheet>
+      )}
       </>)}
+      {phone && hasPermission('orders:update') && !drafting && (
+        <button
+          type="button"
+          aria-label={t('orders.newOrder.button')}
+          onClick={() => setDrafting(true)}
+          className="btn-press fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-bambu-green text-white shadow-lg"
+        >
+          <Plus aria-hidden="true" className="h-6 w-6" />
+        </button>
+      )}
     </div>
   );
 }

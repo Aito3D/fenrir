@@ -101,6 +101,12 @@ async def test_the_call_meter_counts_books_calls_and_forgets_old_ones(db_session
 
     assert zoho_service.calls_in_last_minute() == 2
     assert zoho_service.calls_total == 2
+    assert zoho_service.take_call_counts() == [("GET /estimates", 2)]
+    assert zoho_service.take_call_counts() == []  # taking resets
+    zoho_service._note_call("GET", "/estimates/66407000010455616/comments")
+    assert zoho_service.take_call_counts() == [("GET /estimates/{id}/comments", 1)]
+    zoho_service.calls_total -= 1
+    zoho_service._sent_at.pop()
     # A call older than a minute leaves the window; the total keeps it.
     zoho_service._sent_at.appendleft(time.monotonic() - 61)
     assert zoho_service.calls_in_last_minute() == 2

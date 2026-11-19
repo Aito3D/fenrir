@@ -11660,6 +11660,14 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    mobile: {
+      back: 'Terug naar bestellingen',
+      more: 'Meer',
+      tabs: { lines: 'Producten', billing: 'Facturatie', client: 'Klant' },
+      collect: 'Betaling innen',
+      filters: 'Filters en sortering',
+      showOrders: '{{n}} bestellingen tonen',
+    },
     newOrder: {
       button: 'Nieuwe bestelling',
       title: 'Nieuwe bestelling',

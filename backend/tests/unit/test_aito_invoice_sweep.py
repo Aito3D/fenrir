@@ -1338,13 +1338,15 @@ async def test_the_call_ceiling_cuts_the_pass_without_spending_the_hourly_slot(d
     assert (await db_session.get(AitoProject, b_id)).invoice_checked_at is None
     assert (await db_session.get(AitoProject, c_id)).invoice_checked_at is None
 
-    # The next (non-forced) pass resumes with the unreached tail.
+    # The next (non-forced) pass reads the unreached tail only: A was read
+    # within the hour, and re-reading it each tick is what kept a cut-short
+    # pass from ever finishing.
     resumed: list[str] = []
     monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({}, resumed))
     monkeypatch.setattr(zoho_service, "calls_in_last_minute", lambda: 0)
 
-    assert await sweep_invoices(db_session, call_ceiling=50) == 3
-    assert resumed == ["EST-B", "EST-C", "EST-A"]
+    assert await sweep_invoices(db_session, call_ceiling=50) == 2
+    assert resumed == ["EST-B", "EST-C"]
     assert aito_invoice_sweep._last_run != 0.0
 
 

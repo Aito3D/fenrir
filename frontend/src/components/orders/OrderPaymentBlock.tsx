@@ -1,103 +1,66 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banknote, Link2, Smartphone, Wallet } from 'lucide-react';
+import { Banknote, Link2, Smartphone } from 'lucide-react';
 import { ApiError, api } from '../../api/client';
 import type { AitoTerminalPayment, OrderPayment, OrderPaymentLink } from '../../api/client';
+import { useToast } from '../../contexts/ToastContext';
+import { copyTextToClipboard } from '../../utils/clipboard';
+import { useCopiedFlash } from '../aito/linkActionHelpers';
+import { ACTION_CELL, ACTION_GROUP } from '../aito/quoteActionGroup';
 import { ManualPaymentModal } from '../aito/payment/ManualPaymentModal';
+import { StateLine } from '../aito/payment/PaymentBlock';
 import { PaymentLinkDialog } from '../aito/payment/PaymentLinkModal';
 import { TerminalPaymentDialog } from '../aito/payment/TerminalPaymentModal';
 import { isTerminalOpen } from '../aito/payment/useTerminalPayment';
 import type { PaymentDocument } from '../aito/payment/paymentDocument';
+import { blockVisible, derivePaymentState } from '../aito/payment/paymentState';
 import { formatMoney } from '../../utils/pricing';
-import { Card } from '../Card';
-import { Tooltip } from '../Tooltip';
-import { PaymentPill } from './PaymentPill';
-import { TONE } from './orderStatus';
 
-const HATCH = {
-  backgroundImage: 'repeating-linear-gradient(135deg, rgb(34 197 94 / 0.85) 0 3px, rgb(34 197 94 / 0.25) 3px 6px)',
-};
+/** The collect block of one order, in the shape of the Aito card's: what is left to pay, the one-line state of a
+ *  link or a charge in motion, then the three ways to collect. `total` replaces the order total while an edit is
+ *  open: what is left (or the credit left over) follows it. With `orderId` (the caller holds orders:update) it
+ *  collects on the document the server picks. Renders nothing when nothing is left and nothing is in motion. */
+export function OrderPaymentBlock({ payment, currency, total, orderId }: { payment: OrderPayment; currency: string; total?: number; orderId?: string }) {
+  const left = total === undefined ? payment.left : Math.round((total - payment.paid) * 100) / 100;
+  return orderId ? <Collect orderId={orderId} currency={currency} left={left} boardLeft={payment.left} /> : <Due left={left} currency={currency} labelKey="orders.pay.left" />;
+}
 
-/** Payment of one order: left to pay, the bar with its legend. `total` replaces the order total while an edit is open:
- *  what is left (or the credit left over) and the uninvoiced rest follow it. A paid retainer on the order's quote
- *  (`quoteNumber`) is its own part. With `orderId` (the caller holds orders:update) it also offers Aito's payment
- *  link and counter terminal on the order's document. */
-export function OrderPaymentBlock({ payment, currency, total, quoteNumber = '', orderId }: { payment: OrderPayment; currency: string; total?: number; quoteNumber?: string; orderId?: string }) {
+/** The head line: "Balance due 12 000", or the credit an edit leaves over. Nothing at exactly zero. */
+function Due({ left, currency, labelKey }: { left: number; currency: string; labelKey: string }) {
   const { t } = useTranslation();
-  const money = (n: number) => formatMoney(n, currency);
-  const p = total === undefined ? payment : {
-    ...payment,
-    left: Math.round((total - payment.paid) * 100) / 100,
-    rest: Math.max(0, Math.round((total - payment.invoice_paid - payment.retainer - payment.advance - payment.due - payment.overdue) * 100) / 100),
-  };
-  // Parts never add up to more than the bar, even when invoices exceed the order total.
-  const whole = p.invoice_paid + p.retainer + p.advance + p.due + p.overdue + p.rest;
-  const parts = [
-    { id: 'invoice_paid', n: p.invoice_paid, cls: TONE.success.bar, dot: TONE.success.bar, label: t(p.advance > 0 || p.retainer > 0 ? 'orders.pay.legendInvoice' : 'orders.pay.legendPaid') },
-    { id: 'retainer', n: p.retainer, cls: TONE.success.bar, dot: TONE.success.bar, label: t('orders.pay.legendRetainer', { number: quoteNumber }).trim() },
-    { id: 'advance', n: p.advance, cls: '', dot: '', label: t('orders.pay.legendAdvance') },
-    { id: 'due', n: p.due, cls: TONE.warning.bar, dot: TONE.warning.bar, label: t('orders.pay.legendDue') },
-    { id: 'overdue', n: p.overdue, cls: TONE.danger.bar, dot: TONE.danger.bar, label: t('orders.pay.legendOverdue') },
-    { id: 'rest', n: p.rest, cls: '', dot: 'bg-bambu-dark ring-1 ring-bambu-dark-tertiary', label: t('orders.pay.legendRest') },
-  ];
-
+  if (left === 0) return null;
   return (
-    <Card className="p-3 text-xs">
-      <div className="flex flex-wrap items-center gap-2">
-        <Wallet aria-hidden="true" className="h-3.5 w-3.5 text-bambu-gray" />
-        <span className="font-semibold uppercase tracking-wide text-white">{t('orders.pay.title')}</span>
-        <PaymentPill state={p.state} pct={p.pct} overdue={p.overdue > 0} />
-        <span data-testid="pay-left" className="ml-auto tabular-nums text-bambu-gray">
-          {p.left > 0 ? (
-            <>{t('orders.pay.left')} <span className="font-semibold text-white">{money(p.left)}</span></>
-          ) : p.left < 0 ? (
-            t('orders.edit.creditLeft', { amount: money(-p.left) })
-          ) : (
-            t('orders.pay.nothingLeft')
-          )}
-        </span>
-      </div>
-      <div aria-hidden="true" className="mt-2.5 flex h-2.5 overflow-hidden rounded-full bg-bambu-dark">
-        {parts.filter(x => x.id !== 'rest').map(x => (
-          <span
-            key={x.id}
-            data-testid={`pay-seg-${x.id}`}
-            className={`${x.cls} transition-[width] duration-300 ease-(--ease-signature) motion-reduce:duration-[120ms] motion-reduce:ease-linear`}
-            style={{ width: `${whole > 0 ? Math.min(100, (100 * x.n) / whole) : 0}%`, ...(x.id === 'advance' ? HATCH : {}) }}
-          />
-        ))}
-      </div>
-      <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
-        {parts.filter(x => x.n > 0).map(x => {
-          const item = (
-            <span key={x.id} className="inline-flex items-center gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${x.dot}`} style={x.id === 'advance' ? HATCH : undefined} />
-              <span className="text-bambu-gray">{x.label}</span>
-              <span className="tabular-nums text-white">{money(x.n)}</span>
-            </span>
-          );
-          return x.id === 'advance' ? <Tooltip key={x.id} content={t('orders.pay.advanceNote')} align="start">{item}</Tooltip> : item;
-        })}
-      </div>
-      {orderId && <OrderPaymentActions orderId={orderId} currency={currency} left={payment.left} />}
-    </Card>
+    <div className="flex items-baseline justify-between gap-3 text-sm">
+      <span className="text-bambu-gray">{left > 0 ? t(labelKey) : ''}</span>
+      <span data-testid="pay-left" className="font-medium text-white">
+        {left > 0 ? formatMoney(left, currency) : t('orders.edit.creditLeft', { amount: formatMoney(-left, currency) })}
+      </span>
+    </div>
   );
 }
 
-const BUTTON = 'btn-press inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-xs text-white hover:bg-bambu-dark-tertiary disabled:opacity-50';
-
-/** "Lien de paiement", "TPE" and "Manuel" (cheque, cash, card elsewhere) on the document the server picks (the newest invoice with a balance, else the quote's
- *  open retainer, else the quote or the sales order itself), prefilled with what is left to pay, capped at that document's balance. Hidden when there is none. */
-function OrderPaymentActions({ orderId, currency, left }: { orderId: string; currency: string; left: number }) {
+/** The order's collect block on the document the server picks (the newest invoice with a balance, else the quote's
+ *  open retainer, else the quote or the sales order itself): link, terminal and manual (cheque, cash, card
+ *  elsewhere), prefilled with what is left to pay, capped at that document's balance. */
+function Collect({ orderId, currency, left, boardLeft }: { orderId: string; currency: string; left: number; boardLeft: number }) {
   const { t } = useTranslation();
+  const { showToast } = useToast();
   const queryClient = useQueryClient();
-  // `left` in the key: a payment that lands on the board re-reads the target. The previous answer stays while it
-  // loads, so an open dialog is never unmounted by the payment it just took.
+  const [copied, flashCopied] = useCopiedFlash();
+  // `boardLeft` in the key: a payment that lands on the board re-reads the target. The previous answer stays while
+  // it loads, so an open dialog is never unmounted by the payment it just took.
   const target = useQuery({
-    queryKey: ['order-payment-target', orderId, left],
+    queryKey: ['order-payment-target', orderId, boardLeft],
     queryFn: () => api.getOrderPaymentTarget(orderId),
     placeholderData: keepPreviousData,
+  });
+  // The order's newest charge, for the state line; polled only while one is in flight.
+  const charge = useQuery({
+    queryKey: ['order-terminal-current', orderId, boardLeft],
+    queryFn: () => api.getOrderTerminalPayment(orderId).catch(() => null),
+    refetchInterval: q => (isTerminalOpen(q.state.data) ? 3000 : false),
+    retry: false,
   });
   // What a dialog opened on, kept here so a payment that empties the target never unmounts the dialog showing it.
   const [open, setOpen] = useState<{ document: PaymentDocument; hint?: string; link?: OrderPaymentLink | null; terminal?: AitoTerminalPayment | null; manual?: true } | null>(null);
@@ -113,6 +76,7 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
   const hint = data?.kind === 'retainer' ? t('orders.pay.retainerHint') : data?.kind === 'quote' ? t('orders.pay.quoteHint') : data?.kind === 'salesorder' ? t('orders.pay.orderHint') : undefined;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['order-payment-target', orderId] });
+    void queryClient.invalidateQueries({ queryKey: ['order-terminal-current', orderId] });
     void queryClient.invalidateQueries({ queryKey: ['order-board'], exact: true });
     void queryClient.invalidateQueries({ queryKey: ['order-board', 'finished'], exact: true });
     void queryClient.invalidateQueries({ queryKey: ['order-board-finished-order', orderId] });
@@ -125,24 +89,46 @@ function OrderPaymentActions({ orderId, currency, left }: { orderId: string; cur
     setOpening(false);
     setOpen({ document: doc, hint, terminal: isTerminalOpen(current) ? current : null });
   };
-  if (!document && !open) return null;
+  const state = derivePaymentState(data?.link ?? null, charge.data ?? null);
+  // "Balance due" once an invoice carries the debt, "Left to pay" on the order before that.
+  const invoiced = data?.kind === 'invoice';
+  const lineDocument: PaymentDocument = { kind: invoiced ? 'invoice' : 'quote', id: data?.document_id ?? '', number: data?.number ?? '', due, currency };
+  const copyLink = async (url: string) => {
+    if (await copyTextToClipboard(url)) flashCopied();
+    else showToast(t('common.errorLoading'), 'error');
+  };
+  if (left === 0 && !open && !blockVisible(null, state)) return null;
+  const busy = state.kind === 'terminal_processing';
   return (
-    <div className="mt-2.5 flex flex-wrap gap-2">
+    <div data-testid="payment-block" data-state={state.kind} className="text-sm">
+      <Due left={left} currency={currency} labelKey={invoiced ? 'aito.payment.dueInvoice' : 'orders.pay.left'} />
+      <StateLine
+        state={state}
+        document={lineDocument}
+        copied={copied}
+        canUpdate={!!document}
+        onCopy={url => void copyLink(url)}
+        onReopenTerminal={() => document && void openTerminal(document)}
+        onManageLink={() => document && setOpen({ document, hint, link: data?.link ?? null })}
+      />
       {document && (
-        <>
-          <button type="button" className={BUTTON} onClick={() => setOpen({ document, hint, link: data?.link ?? null })}>
-            <Link2 aria-hidden="true" className="h-3.5 w-3.5" />
-            {t('aito.payment.linkTitle')}
-          </button>
-          <button type="button" className={BUTTON} onClick={() => void openTerminal(document)} disabled={opening}>
+        <div className={ACTION_GROUP}>
+          {/* A live link is the state line above (open, copy, manage): the row offers the two other channels. */}
+          {state.kind !== 'link_pending' && (
+            <button type="button" disabled={busy} className={`${ACTION_CELL} gap-1.5 text-xs`} onClick={() => setOpen({ document, hint, link: data?.link ?? null })} aria-label={t('aito.payment.cellLinkTitle')} title={t('aito.payment.cellLinkTitle')}>
+              <Link2 aria-hidden="true" className="h-3.5 w-3.5" />
+              {t('aito.payment.cellLink')}
+            </button>
+          )}
+          <button type="button" className={`${ACTION_CELL} gap-1.5 text-xs`} onClick={() => void openTerminal(document)} disabled={opening} aria-label={t('aito.payment.cellTerminalTitle')} title={t('aito.payment.cellTerminalTitle')}>
             <Smartphone aria-hidden="true" className="h-3.5 w-3.5" />
-            {t('orders.pay.terminal')}
+            {t('aito.payment.cellTerminal')}
           </button>
-          <button type="button" className={BUTTON} onClick={() => setOpen({ document, hint, manual: true })} title={t('aito.payment.cellManualTitle')}>
+          <button type="button" disabled={busy} className={`${ACTION_CELL} gap-1.5 text-xs`} onClick={() => setOpen({ document, hint, manual: true })} aria-label={t('aito.payment.cellManualTitle')} title={t('aito.payment.cellManualTitle')}>
             <Banknote aria-hidden="true" className="h-3.5 w-3.5" />
             {t('aito.payment.cellManual')}
           </button>
-        </>
+        </div>
       )}
       {open?.manual && (
         <ManualPaymentModal
