@@ -2118,6 +2118,25 @@ async def test_a_refused_void_reraises_and_keeps_the_order_on_the_board(db_sessi
     assert [r["id"] for r in (await sync.read_board(db_session))["rows"]] == ["so1"]
 
 
+@pytest.mark.asyncio
+async def test_cancel_deletes_an_unshipped_parcel_and_its_picklist_before_the_void(db_session, parcels, voids):
+    await _board(db_session, parcels, _packed(parcels))
+    await actions.cancel_order(db_session, "so1")
+    assert parcels.steps == [("delete_package", "p1"), ("delete_picklist", "pl1")]
+    assert voids.voided == ["so1"]
+
+
+@pytest.mark.asyncio
+async def test_cancel_leaves_a_shipped_parcel_and_lets_books_refuse(db_session, parcels, voids):
+    doc = _packed(parcels)
+    doc["packages"][0]["status"] = "shipped"
+    await _board(db_session, parcels, doc)
+    voids.void_error = ZohoUpstreamError("has shipments")
+    with pytest.raises(ZohoUpstreamError):
+        await actions.cancel_order(db_session, "so1")
+    assert parcels.steps == []
+
+
 # --- Edit the order's lines --------------------------------------------------------------------------------------
 
 VERSION = "2026-11-01T08:00:00-1000"
