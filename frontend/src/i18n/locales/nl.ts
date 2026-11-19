@@ -9415,6 +9415,7 @@ export default {
     markFlag: 'Markeren',
     flagFailed: 'De markering kon niet worden gewijzigd',
     dueDate: 'Beloofde datum',
+    prioritySuggested: 'Voorgesteld op basis van de leverdatum',
     dueDateClear: 'Datum wissen',
     dueDateEmpty: 'Datum instellen',
     dueLateDays: '{{count}} d te laat',

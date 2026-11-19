@@ -105,6 +105,7 @@ describe('NewProjectDrawer seed', () => {
       null,
       null,
       false,
+      'normal',
       { keepStoredDraft: true },
     );
     // Past the save debounce, then the unmount flush.

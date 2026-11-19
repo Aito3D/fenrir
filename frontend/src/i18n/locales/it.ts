@@ -147,6 +147,7 @@ export default {
     markFlag: 'Segna',
     flagFailed: 'Impossibile modificare il contrassegno',
     dueDate: 'Data promessa',
+    prioritySuggested: 'Suggerito in base alla data di consegna',
     dueDateClear: 'Cancella la data',
     dueDateEmpty: 'Scegli una data',
     dueLateDays: '{{count}} g di ritardo',

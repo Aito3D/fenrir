@@ -85,6 +85,14 @@ describe('computeImpressionCost', () => {
     ).toBeNull();
   });
 
+  it('never carries the priority surcharge, even with tight priority settings', () => {
+    // The project line is the only surcharge (spec): task prices stay at normal.
+    const withPriority = { ...defaults, priority_pct: 90, priority_min_fee: 99_999, urgent_pct: 90, urgent_min_fee: 99_999 };
+    expect(computeImpressionCost(impression, filament, printer, withPriority)).toEqual(
+      computeImpressionCost(impression, filament, printer, defaults),
+    );
+  });
+
   it('returns null when the filament or printer record is unavailable', () => {
     expect(computeImpressionCost(impression, null, printer, defaults)).toBeNull();
     expect(computeImpressionCost(impression, filament, null, defaults)).toBeNull();

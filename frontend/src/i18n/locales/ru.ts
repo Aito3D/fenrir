@@ -147,6 +147,7 @@ export default {
     markFlag: 'Отметить',
     flagFailed: 'Не удалось изменить отметку',
     dueDate: 'Обещанная дата',
+    prioritySuggested: 'Предложено по сроку',
     dueDateClear: 'Очистить дату',
     dueDateEmpty: 'Указать дату',
     dueLateDays: 'просрочено {{count}} д',

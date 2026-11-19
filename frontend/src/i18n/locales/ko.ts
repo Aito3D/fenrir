@@ -147,6 +147,7 @@ export default {
     markFlag: '표시',
     flagFailed: '표시를 변경하지 못했습니다',
     dueDate: '약속 날짜',
+    prioritySuggested: '납기일 기준 추천',
     dueDateClear: '날짜 지우기',
     dueDateEmpty: '날짜 지정',
     dueLateDays: '{{count}}일 지연',

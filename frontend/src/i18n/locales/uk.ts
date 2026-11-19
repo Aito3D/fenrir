@@ -148,6 +148,7 @@ export default {
     markFlag: "Позначити",
     flagFailed: "Не вдалося змінити позначку",
     dueDate: "Обіцяна дата",
+    prioritySuggested: "Запропоновано за терміном",
     dueDateClear: "Очистити дату",
     dueDateEmpty: 'Указати дату',
     dueLateDays: 'прострочено {{count}} д',

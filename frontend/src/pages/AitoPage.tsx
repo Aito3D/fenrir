@@ -18,7 +18,7 @@ import { TrashGrid } from '../components/aito/TrashGrid';
 import { StatsView } from '../components/aito/StatsView';
 import { useTimeframe } from '../components/stats/timeframe';
 import { ViewToggleButton } from '../components/aito/ViewToggleButton';
-import { api, type AitoProject } from '../api/client';
+import { api, type AitoPriority, type AitoProject } from '../api/client';
 import { clientFieldsFromDraft } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
 import type { TaskDraft } from '../utils/taskDraft';
@@ -421,6 +421,7 @@ export function AitoPage() {
     shipping: ShippingDraft | null,
     dueDate: string | null,
     regenerateDescription: boolean,
+    priority: AitoPriority,
     options?: { keepStoredDraft: boolean },
   ) => {
     // Closed here, not in onSuccess: the whole point is that the modal does
@@ -435,6 +436,7 @@ export function AitoPage() {
       tasks,
       shipping,
       dueDate,
+      priority,
       regenerateDescription,
       keepStoredDraft: options?.keepStoredDraft ?? false,
       linkProjectId,
@@ -446,6 +448,7 @@ export function AitoPage() {
         client_name: draft.name,
         ...clientFieldsFromDraft(draft),
         due_date: dueDate,
+        priority,
         // No quote_status: a manual create posts none (see the mutationFn
         // in useAitoPageMutations), so it defaults to null — the same
         // "waits for Accept" state a draft import has. `TaskDraft` already structurally matches

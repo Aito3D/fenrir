@@ -147,6 +147,7 @@ export default {
     markFlag: 'Markieren',
     flagFailed: 'Markierung konnte nicht geändert werden',
     dueDate: 'Zugesagtes Datum',
+    prioritySuggested: 'Vorschlag anhand des Liefertermins',
     dueDateClear: 'Datum löschen',
     dueDateEmpty: 'Datum festlegen',
     dueLateDays: '{{count}} T überfällig',

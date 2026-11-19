@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { api, ApiError, type AitoProject, type ZohoQuotePreview, type ZohoQuoteShipping } from '../api/client';
+import { api, ApiError, type AitoPriority, type AitoProject, type ZohoQuotePreview, type ZohoQuoteShipping } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { clientFieldsFromDraft, formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
@@ -103,6 +103,7 @@ export function useAitoPageMutations() {
       tasks: TaskDraft[];
       shipping: ShippingDraft | null;
       dueDate: string | null;
+      priority: AitoPriority;
       /** The drawer's verdict that `description` no longer describes `tasks`
        *  (see NewProjectDrawer.create): the server summarises them itself. */
       regenerateDescription: boolean;
@@ -116,7 +117,7 @@ export function useAitoPageMutations() {
       linkProjectId?: number;
     }
   >({
-    mutationFn: ({ description, draft, tasks, shipping, dueDate, regenerateDescription }) =>
+    mutationFn: ({ description, draft, tasks, shipping, dueDate, priority, regenerateDescription }) =>
       api.createAitoProject({
         description,
         regenerate_description: regenerateDescription,
@@ -124,6 +125,7 @@ export function useAitoPageMutations() {
         client_name: draft.name,
         ...clientFieldsFromDraft(draft),
         due_date: dueDate,
+        priority,
         tasks: tasks.map(taskDraftToTaskCreate),
         ...(shipping ? shippingPayload(shipping) : {}),
       }),

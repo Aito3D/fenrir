@@ -4,6 +4,7 @@ import { normaliseClientDraft } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
 import type { TaskDraft } from '../utils/taskDraft';
 import type { ShippingDraft } from '../utils/shippingDraft';
+import type { PriorityLevel } from '../utils/pricing';
 
 const STORAGE_KEY = 'aito.newProjectDraft.v1';
 const SAVE_DEBOUNCE_MS = 400;
@@ -20,6 +21,9 @@ export interface PersistedDraft {
   /** ISO `YYYY-MM-DD` or '' for none. Optional for the same reason shipping
    *  is: an older blob simply lacks the key. */
   dueDate?: string;
+  /** Optional like dueDate: an older blob reads as normal / untouched. */
+  priority?: PriorityLevel;
+  priorityTouched?: boolean;
   /** Zoho contact ids the social-handle prefill has already run for (see
    *  NewProjectDrawer's prefill effect). Persisted so a close/reopen — which
    *  remounts the drawer and would otherwise reset an in-memory-only marker

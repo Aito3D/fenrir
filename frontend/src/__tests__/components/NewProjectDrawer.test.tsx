@@ -10,6 +10,7 @@ import type { AitoClientHistory, AitoShippingService, AitoTask } from '../../api
 import { defaultClientDraft } from '../../utils/clientDraft';
 import { emptyTaskDraft } from '../../utils/taskDraft';
 import { tasksSignature } from '../../utils/aitoSummary';
+import { localDateKey } from '../../utils/date';
 
 const DEFAULT_ID = '66407000001237340';
 
@@ -255,6 +256,7 @@ async function renderDrawer(overrides: { onClose?: () => void; onCreate?: () => 
   return { ...view, onClose, onCreate };
 }
 
+const SOCIAL_GROUP = /social network/i;
 const workHeader = () => screen.getByTestId('drawer-section-work');
 const clientHeader = () => screen.getByTestId('drawer-section-client');
 const createButton = () => screen.getByRole('button', { name: /Create Project/i });
@@ -719,6 +721,7 @@ describe('NewProjectDrawer', () => {
       null,
       null,
       false,
+      'normal',
     );
   });
 
@@ -747,6 +750,8 @@ describe('NewProjectDrawer', () => {
       null,
       '2026-09-20',
       false,
+      // The fixed date is already past, so the untouched level suggests urgent.
+      'urgent',
     );
   });
 
@@ -842,6 +847,7 @@ describe('NewProjectDrawer', () => {
       expect.objectContaining({ island: 'rangiroa', service: 'tuamotu', price: 3200 }),
       null,
       false,
+      'normal',
     );
   });
 
@@ -965,6 +971,7 @@ describe('NewProjectDrawer', () => {
       null,
       null,
       false,
+      'normal',
     );
   });
 
@@ -1133,7 +1140,8 @@ describe('repeat-client recall', () => {
 
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByLabelText(/username/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('radio', { checked: true })).not.toBeInTheDocument();
+    // Scoped to the social chooser: the priority control always has a checked radio.
+    expect(within(screen.getByRole('radiogroup', { name: SOCIAL_GROUP })).queryByRole('radio', { checked: true })).not.toBeInTheDocument();
   });
 
   // A second, distinct client — its own history carries its own
@@ -1200,7 +1208,8 @@ describe('repeat-client recall', () => {
     await userEvent.click(await screen.findByText('Jean-Pierre DUPONT'));
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByLabelText(/username/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('radio', { checked: true })).not.toBeInTheDocument();
+    // Scoped to the social chooser: the priority control always has a checked radio.
+    expect(within(screen.getByRole('radiogroup', { name: SOCIAL_GROUP })).queryByRole('radio', { checked: true })).not.toBeInTheDocument();
   });
 
   it('does not refill a handle the operator cleared, across a drawer close and reopen', async () => {
@@ -1328,6 +1337,7 @@ describe('company contact persons', () => {
       null,
       null,
       false,
+      'normal',
     );
   });
 
@@ -1391,6 +1401,7 @@ describe('company contact persons', () => {
       null,
       null,
       false,
+      'normal',
     );
   });
 });
@@ -1423,6 +1434,7 @@ describe('NewProjectDrawer — stale summary at Create', () => {
       null,
       null,
       true,
+      'normal',
     );
   });
 
@@ -1471,6 +1483,7 @@ describe('NewProjectDrawer — stale summary at Create', () => {
       null,
       null,
       false,
+      'normal',
     );
   });
 });
@@ -1543,5 +1556,93 @@ describe('NewProjectDrawer — .3mf import', () => {
       dataTransfer: { files: [new File(['x'], 'Depose.3mf')] },
     });
     expect(await panel().findByText('Depose')).toBeInTheDocument();
+  });
+});
+
+describe('NewProjectDrawer — priority', () => {
+  /** Local `YYYY-MM-DD` n days from today — the same clock the drawer reads. */
+  const inDays = (n: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return localDateKey(d);
+  };
+  const radio = (name: string) => screen.getByRole('radio', { name });
+
+  beforeEach(() => {
+    server.use(
+      http.get('/api/v1/calculator/defaults', () =>
+        HttpResponse.json({
+          ...mockDefaults,
+          priority_pct: 15, priority_min_fee: 500, urgent_pct: 30, urgent_min_fee: 2000,
+          priority_days: 5, urgent_days: 2,
+        }),
+      ),
+    );
+  });
+
+  /** Prices one task at 10 000 and opens the client section, where the date and level live. */
+  async function readyDrawer(onCreate = vi.fn()) {
+    await renderDrawer({ onCreate });
+    await fillOneTask();
+    await openClientSection();
+    return onCreate;
+  }
+
+  it('a due date two days out suggests Urgent with the hint, and the rail adds the surcharge', async () => {
+    await readyDrawer();
+    fireEvent.change(screen.getByLabelText(/promised date/i), { target: { value: inDays(2) } });
+    await waitFor(() => expect(radio('Urgent')).toHaveAttribute('aria-checked', 'true'));
+    expect(screen.getByText('Suggested from the due date')).toBeInTheDocument();
+    // 10 000 + max(10 000 × 30 %, 2 000) = 13 000.
+    expect(screen.getByTestId('rail-project-total')).toHaveTextContent('13 000');
+  });
+
+  it('a hand pick wins over later date changes', async () => {
+    await readyDrawer();
+    fireEvent.change(screen.getByLabelText(/promised date/i), { target: { value: inDays(2) } });
+    await waitFor(() => expect(radio('Urgent')).toHaveAttribute('aria-checked', 'true'));
+    await userEvent.click(radio('Normal'));
+    fireEvent.change(screen.getByLabelText(/promised date/i), { target: { value: inDays(1) } });
+    expect(radio('Normal')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByText('Suggested from the due date')).not.toBeInTheDocument();
+    expect(screen.getByTestId('rail-project-total')).toHaveTextContent('10 000');
+  });
+
+  it('sends the level on create', async () => {
+    const onCreate = await readyDrawer();
+    fireEvent.change(screen.getByLabelText(/promised date/i), { target: { value: inDays(2) } });
+    await waitFor(() => expect(radio('Urgent')).toHaveAttribute('aria-checked', 'true'));
+    await userEvent.click(createButton());
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.any(String), expect.any(Object), expect.any(Array), null, inDays(2), expect.any(Boolean), 'urgent',
+    );
+  });
+
+  it('a restored draft keeps the level and the touched flag', async () => {
+    localStorage.setItem(
+      'aito.newProjectDraft.v1',
+      JSON.stringify({
+        tasks: [emptyTaskDraft()], client: null, summaryText: '', summaryEdited: false, summarySignature: '',
+        dueDate: '', priority: 'priority', priorityTouched: true,
+      }),
+    );
+    await renderDrawer();
+    await userEvent.click(clientHeader());
+    expect(radio('Priority')).toHaveAttribute('aria-checked', 'true');
+    // Touched: a close date no longer re-suggests.
+    fireEvent.change(screen.getByLabelText(/promised date/i), { target: { value: inDays(1) } });
+    expect(radio('Priority')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('an old draft without the keys reads as normal and untouched', async () => {
+    localStorage.setItem(
+      'aito.newProjectDraft.v1',
+      JSON.stringify({ tasks: [emptyTaskDraft()], client: null, summaryText: '', summaryEdited: false, summarySignature: '' }),
+    );
+    await renderDrawer();
+    await userEvent.click(clientHeader());
+    expect(radio('Normal')).toHaveAttribute('aria-checked', 'true');
+    fireEvent.change(screen.getByLabelText(/promised date/i), { target: { value: inDays(4) } });
+    await waitFor(() => expect(radio('Priority')).toHaveAttribute('aria-checked', 'true'));
   });
 });

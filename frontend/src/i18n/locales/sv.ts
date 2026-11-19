@@ -9448,6 +9448,7 @@ errors: {
     markFlag: 'Markera',
     flagFailed: 'Kunde inte ändra flaggan',
     dueDate: 'Utlovat datum',
+    prioritySuggested: 'Föreslaget utifrån leveransdatumet',
     dueDateClear: 'Ta bort datumet',
     dueDateEmpty: 'Ange ett datum',
     dueLateDays: '{{count}} d försenad',

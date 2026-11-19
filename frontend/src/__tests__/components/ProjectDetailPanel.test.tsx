@@ -53,6 +53,7 @@ const project: AitoProject = {
   client_contacted_at: null,
   done_at: null,
   due_date: null,
+  priority: 'normal',
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -4467,5 +4468,33 @@ describe('ProjectDetailPanel footer: constant height and a status caption', () =
     showWith({ column: 'finish', quote_status: null, client_contacted_at: '2026-09-01T00:00:00' }, false);
     expect(within(screen.getByTestId('panel-footer')).getByRole('button')).toBeInTheDocument();
     expect(caption()).not.toBeInTheDocument();
+  });
+});
+
+describe('ProjectDetailPanel — priority', () => {
+  const panelRadio = (name: string) => within(screen.getByTestId('panel-priority')).getByRole('radio', { name });
+
+  it('saves a clicked level through the priority route', async () => {
+    const spy = vi.spyOn(api, 'setAitoPriority').mockResolvedValue({ ...project, priority: 'priority' });
+    show();
+    await userEvent.click(panelRadio('Priority'));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(12, 'priority'));
+  });
+
+  it('a due date picked in the panel never changes the level', async () => {
+    const prioritySpy = vi.spyOn(api, 'setAitoPriority');
+    const dueSpy = vi.spyOn(api, 'setAitoProjectDueDate').mockResolvedValue(project);
+    show();
+    fireEvent.click(within(screen.getByTestId('due-date-control')).getByRole('button'));
+    fireEvent.click(screen.getByRole('gridcell', { name: /\(suggested\)/ }));
+    await waitFor(() => expect(dueSpy).toHaveBeenCalled());
+    expect(prioritySpy).not.toHaveBeenCalled();
+    expect(panelRadio('Normal')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('locks the control on an invoiced project', () => {
+    show({ quote_invoiced: true, priority: 'urgent' });
+    expect(screen.getByTestId('panel-priority')).toBeDisabled();
+    expect(panelRadio('Urgent')).toBeDisabled();
   });
 });

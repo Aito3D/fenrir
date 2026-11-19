@@ -147,6 +147,7 @@ export default {
     markFlag: '标记',
     flagFailed: '无法更改标记',
     dueDate: '承诺日期',
+    prioritySuggested: '根据交付日期建议',
     dueDateClear: '清除日期',
     dueDateEmpty: '设置日期',
     dueLateDays: '逾期 {{count}} 天',

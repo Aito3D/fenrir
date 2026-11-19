@@ -147,6 +147,7 @@ export default {
     markFlag: 'マーク',
     flagFailed: 'マークを変更できませんでした',
     dueDate: '約束日',
+    prioritySuggested: '納期から提案',
     dueDateClear: '日付をクリア',
     dueDateEmpty: '日付を設定',
     dueLateDays: '{{count}}日遅れ',

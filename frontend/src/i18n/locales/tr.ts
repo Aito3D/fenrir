@@ -147,6 +147,7 @@ export default {
     markFlag: 'İşaretle',
     flagFailed: 'İşaret değiştirilemedi',
     dueDate: 'Söz verilen tarih',
+    prioritySuggested: 'Teslim tarihine göre önerildi',
     dueDateClear: 'Tarihi temizle',
     dueDateEmpty: 'Tarih seç',
     dueLateDays: '{{count}} g gecikme',

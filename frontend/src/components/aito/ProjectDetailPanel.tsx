@@ -47,6 +47,8 @@ import { ContactedControl } from './ContactedControl';
 import { SmsPickupButton } from './SmsPickupButton';
 import { FlagControl } from './FlagControl';
 import { DueDateControl } from './DueDateControl';
+import { PriorityControl } from '../PriorityControl';
+import { usePriorityMutation } from '../../hooks/usePriorityMutation';
 import { TrackingLinkControl } from './TrackingLinkControl';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
 import { sendAitoPresence, useAitoViewers } from '../../hooks/useAitoPresence';
@@ -62,7 +64,8 @@ import { ageAnchor, agingColorCls } from '../../utils/aitoAging';
 import { isFinished, shipsToClient } from '../../utils/aitoBoard';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { elapsedDays, parseUTCDate } from '../../utils/date';
-import { formatMoney } from '../../utils/pricing';
+import { formatMoney, prioritySurcharge } from '../../utils/pricing';
+import { projectTotal } from '../../utils/taskDraft';
 import { applyDescription, applySyncState } from '../../utils/aitoOptimistic';
 import { contactNameStandsOut, formatPhoneDisplay, isSocialNetwork } from '../../utils/clientDraft';
 import { islandLabel } from '../../utils/shippingDraft';
@@ -313,6 +316,7 @@ function PanelHeader({
   valueDone,
   valueTotal,
   quotedTotal,
+  prioritySurchargeAmount,
   stepsDone,
   stepsTotal,
   editingClient,
@@ -337,6 +341,8 @@ function PanelHeader({
    *  not a step: adding it to the ring's denominator would stop a finished
    *  project ever reading 100 %. */
   quotedTotal: number;
+  /** The priority line the quote carries, from the loaded tasks (0 for normal). */
+  prioritySurchargeAmount: number;
   /** Summed from `stagesWithWork(tasks)`, NOT `project.steps_done`/`steps_total`.
    *  Those are server board fields that lag a local tick; stagesWithWork is
    *  local and updates the instant a step is ticked. Money and step count used
@@ -395,6 +401,9 @@ function PanelHeader({
   // it, so the stat survives without `canUpdate` — it is only the empty,
   // "Set a date" version of it that would then be offering nothing.
   const showDue = project.column !== 'done' && (canUpdate || project.due_date !== null);
+  const priorityMutation = usePriorityMutation(project);
+  // Same lock as the task editor: an invoiced quote is frozen (the server 409s too).
+  const priorityLocked = !canUpdate || project.quote_invoiced;
   return (
     <div
       // `relative z-[2]` so the cast shadow below paints ONTO the body rather
@@ -682,6 +691,18 @@ function PanelHeader({
           <DueDateControl project={project} canUpdate={canUpdate} />
         </>
       )}
+      <div className="w-px self-stretch bg-bambu-dark-tertiary" />
+      {/* No date suggestion here (spec): the panel saves what is clicked. */}
+      <fieldset disabled={priorityLocked} data-testid="panel-priority" className="flex-shrink-0 disabled:opacity-60">
+        <PriorityControl
+          value={project.priority}
+          onChange={(level) => {
+            if (level !== project.priority) priorityMutation.mutate(level);
+          }}
+          surcharge={prioritySurchargeAmount}
+          currency={currency}
+        />
+      </fieldset>
       <div className="w-px self-stretch bg-bambu-dark-tertiary" />
 
       <div className="flex items-center gap-3 flex-shrink-0">
@@ -1037,9 +1058,15 @@ export function ProjectDetailPanel({
   const stageWork = stagesWithWork(tasks);
   const valueTotal = stageWork.reduce((sum, s) => sum + s.value, 0);
   const valueDone = stageWork.reduce((sum, s) => sum + s.valueDone, 0);
+  // Same query key ImpressionFields runs. Base = net task total, as the backend uses.
+  const defaultsQuery = useQuery({ queryKey: ['calculatorDefaults'], queryFn: api.getCalculatorDefaults, staleTime: 60_000 });
+  // `?? 'normal'`: a row from a server older than the priority column has none.
+  const prioritySurchargeAmount = defaultsQuery.data
+    ? Math.round(prioritySurcharge(project.priority ?? 'normal', projectTotal(tasks), defaultsQuery.data))
+    : 0;
   // The figure the quote states, not the work value — see PanelHeader's
   // `quotedTotal` doc for why freight is added here and not to the ring.
-  const quotedTotal = valueTotal + (project.shipping_price ?? 0);
+  const quotedTotal = valueTotal + (project.shipping_price ?? 0) + prioritySurchargeAmount;
   // Same source as the money above, not project.steps_done/steps_total — see
   // PanelHeader's doc on why those two used to visibly disagree.
   const stepsDone = stageWork.reduce((sum, s) => sum + s.stepsDone, 0);
@@ -1145,6 +1172,7 @@ export function ProjectDetailPanel({
           valueDone={valueDone}
           valueTotal={valueTotal}
           quotedTotal={quotedTotal}
+          prioritySurchargeAmount={prioritySurchargeAmount}
           stepsDone={stepsDone}
           stepsTotal={stepsTotal}
           editingClient={sheetOpen}

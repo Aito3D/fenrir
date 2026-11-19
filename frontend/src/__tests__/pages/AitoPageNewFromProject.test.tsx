@@ -35,6 +35,7 @@ vi.mock('../../components/aito/NewProjectDrawer', () => ({
             null,
             null,
             false,
+            'normal',
             { keepStoredDraft: true },
           )
         }

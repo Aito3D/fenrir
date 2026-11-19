@@ -9415,6 +9415,7 @@ export default {
     markFlag: 'Oznacz',
     flagFailed: 'Nie udało się zmienić oznaczenia',
     dueDate: 'Obiecana data',
+    prioritySuggested: 'Sugerowane na podstawie terminu',
     dueDateClear: 'Wyczyść datę',
     dueDateEmpty: 'Ustaw datę',
     dueLateDays: '{{count}} d opóźnienia',

@@ -4,12 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Box, Check, ChevronDown, Plus, RotateCcw, X } from 'lucide-react';
 import { api } from '../../api/client';
-import type { AitoTask, ZohoContact } from '../../api/client';
+import type { AitoPriority, AitoTask, ZohoContact } from '../../api/client';
 import { AiSummaryPanel } from './AiSummaryPanel';
 import { CLIENT_HISTORY_LIMIT } from './ClientHistory';
 import { ClientSection } from './ClientSection';
 import { CreateChecklist } from './CreateChecklist';
 import { HoldButton } from './HoldButton';
+import { PriorityControl } from '../PriorityControl';
 import { Import3mfPanel } from './Import3mfPanel';
 import { NewContactForm } from './NewContactForm';
 import { TaskEditor } from './TaskEditor';
@@ -22,6 +23,8 @@ import { useNewProjectDraft } from '../../hooks/useNewProjectDraft';
 import type { PersistedDraft } from '../../hooks/useNewProjectDraft';
 import { useToast } from '../../contexts/ToastContext';
 import { buildFallbackSummary, tasksSignature } from '../../utils/aitoSummary';
+import { localDateKey } from '../../utils/date';
+import { prioritySurcharge, suggestPriority } from '../../utils/pricing';
 import {
   defaultClientDraft,
   draftFromContact,
@@ -64,6 +67,7 @@ export interface NewProjectDrawerProps {
      *  describe `tasks` — see `create` below. The server then summarises the
      *  tasks it actually creates. */
     regenerateDescription: boolean,
+    priority: AitoPriority,
     /** Passed only by a seeded drawer, always `{ keepStoredDraft: true }`:
      *  a seeded drawer never wrote the stored draft, so what is stored is the
      *  operator's own unrelated card and a successful create must not wipe
@@ -89,6 +93,8 @@ function seededDraft(seed: { description: string; taskTitle: string }): Persiste
     summarySignature: '',
     shipping: null,
     dueDate: '',
+    priority: 'normal',
+    priorityTouched: false,
     socialPrefilledFor: [],
   };
 }
@@ -207,6 +213,15 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
   const [generateNonce, setGenerateNonce] = useState(0);
   const [shipping, setShipping] = useState<ShippingDraft | null>(() => restored?.shipping ?? null);
   const [dueDate, setDueDate] = useState<string>(() => restored?.dueDate ?? '');
+  const [priority, setPriority] = useState<AitoPriority>(() => restored?.priority ?? 'normal');
+  // Once the operator clicks a level, the due date stops suggesting one.
+  const [priorityTouched, setPriorityTouched] = useState(() => restored?.priorityTouched ?? false);
+  // Same query key ImpressionFields runs, so this reuses its cache.
+  const defaultsQuery = useQuery({
+    queryKey: ['calculatorDefaults'],
+    queryFn: api.getCalculatorDefaults,
+    staleTime: 60_000,
+  });
   const [openSections, setOpenSections] = useState<Set<SectionId>>(() => new Set<SectionId>(['work']));
   // Seeded from the RESTORED rows, not empty. "Revealed" means "the user has
   // already left this surface", and a row that survived a close/reopen, a
@@ -351,10 +366,12 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
       summarySignature: summarySignatureRef.current,
       shipping,
       dueDate,
+      priority,
+      priorityTouched,
       socialPrefilledFor: socialPrefilledForRef.current,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, draft, summaryText, summaryEdited, shipping, dueDate, generateNonce, socialPrefilledForTick]);
+  }, [tasks, draft, summaryText, summaryEdited, shipping, dueDate, priority, priorityTouched, generateNonce, socialPrefilledForTick]);
 
   const toggleSection = (id: SectionId) =>
     setOpenSections((current) => {
@@ -439,9 +456,20 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
     setCreatingClient(false);
     setShipping(null);
     setDueDate('');
+    setPriority('normal');
+    setPriorityTouched(false);
     // A later pick of any client (including one already in the list) must
     // prefill again against a wiped draft.
     socialPrefilledForRef.current = [];
+  };
+
+  // Base = net task total, shipping excluded — what the backend surcharges (net_cost).
+  const surcharge = defaultsQuery.data ? prioritySurcharge(priority, projectTotal(tasks), defaultsQuery.data) : 0;
+  const onDueDateChange = (next: string) => {
+    setDueDate(next);
+    if (!priorityTouched && defaultsQuery.data) {
+      setPriority(suggestPriority(next || null, localDateKey(new Date()), defaultsQuery.data));
+    }
   };
 
   const taskName = (task: TaskDraft, index: number) => task.title.trim() || t('aito.taskFallbackName', { n: index + 1 });
@@ -553,11 +581,11 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
       !summaryEdited && (summaryText.trim() === '' || tasksSignature(tasks) !== summarySignatureRef.current);
     const description = summaryText.trim() || buildFallbackSummary(tasks, serviceLabel);
     if (seedInitial) {
-      onCreate(description, draft, tasks, revealedShipping, dueDate || null, regenerateDescription, {
+      onCreate(description, draft, tasks, revealedShipping, dueDate || null, regenerateDescription, priority, {
         keepStoredDraft: true,
       });
     } else {
-      onCreate(description, draft, tasks, revealedShipping, dueDate || null, regenerateDescription);
+      onCreate(description, draft, tasks, revealedShipping, dueDate || null, regenerateDescription, priority);
     }
   };
 
@@ -732,8 +760,20 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
                       id="new-project-due-date"
                       type="date"
                       value={dueDate}
-                      onChange={(e) => setDueDate(e.target.value)}
+                      onChange={(e) => onDueDateChange(e.target.value)}
                       className={inputCls}
+                    />
+                  </div>
+                  <div className="mt-3">
+                    <PriorityControl
+                      value={priority}
+                      onChange={(level) => {
+                        setPriority(level);
+                        setPriorityTouched(true);
+                      }}
+                      surcharge={surcharge}
+                      currency={currency}
+                      hint={!priorityTouched && priority !== 'normal' ? t('aito.prioritySuggested') : undefined}
                     />
                   </div>
                   {/* Soft, never blocking: one channel is enough to create the
@@ -802,7 +842,7 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
                   <span className="font-semibold text-white">{t('aito.projectTotal')}</span>
                   <Money
                     currency={currency}
-                    value={projectTotal(tasks) + (shipping?.price ?? 0)}
+                    value={projectTotal(tasks) + (shipping?.price ?? 0) + Math.round(surcharge)}
                     className="flex-shrink-0 font-bold text-bambu-green-light"
                   />
                 </div>

@@ -147,6 +147,7 @@ export default {
     markFlag: 'Marcar',
     flagFailed: 'No se pudo cambiar la marca',
     dueDate: 'Fecha prometida',
+    prioritySuggested: 'Sugerido según la fecha de entrega',
     dueDateClear: 'Borrar la fecha',
     dueDateEmpty: 'Elegir una fecha',
     dueLateDays: '{{count}} d de retraso',

@@ -147,6 +147,7 @@ export default {
     markFlag: 'Mark',
     flagFailed: 'Could not change the flag',
     dueDate: 'Promised date',
+    prioritySuggested: 'Suggested from the due date',
     dueDateClear: 'Clear the date',
     dueDateEmpty: 'Set a date',
     dueLateDays: '{{count}} d late',
