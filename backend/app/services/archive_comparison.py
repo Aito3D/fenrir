@@ -8,6 +8,21 @@ from sqlalchemy.orm import selectinload
 from backend.app.models.archive import PrintArchive
 
 
+def _similar_summary(a: PrintArchive) -> dict:
+    """One similar archive as the archive detail lists it (needs ``printer`` loaded)."""
+    measured = int((a.completed_at - a.started_at).total_seconds()) if a.started_at and a.completed_at else 0
+    return {
+        "id": a.id,
+        "print_name": a.print_name or a.filename,
+        "status": a.status,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+        "printer_name": a.printer.name if a.printer else None,
+        # Measured time when both ends were logged, else the slicer's estimate.
+        "duration_seconds": measured if measured > 0 else a.print_time_seconds,
+        "has_thumbnail": bool(a.thumbnail_path),
+    }
+
+
 class ArchiveComparisonService:
     """Service for comparing print archives."""
 
@@ -217,6 +232,7 @@ class ArchiveComparisonService:
         if reference.print_name:
             result = await self.db.execute(
                 select(PrintArchive)
+                .options(selectinload(PrintArchive.printer))
                 .where(
                     PrintArchive.id != archive_id,
                     PrintArchive.print_name == reference.print_name,
@@ -230,12 +246,7 @@ class ArchiveComparisonService:
             for a in result.scalars().all():
                 similar.append(
                     {
-                        "archive": {
-                            "id": a.id,
-                            "print_name": a.print_name or a.filename,
-                            "status": a.status,
-                            "created_at": a.created_at.isoformat() if a.created_at else None,
-                        },
+                        "archive": _similar_summary(a),
                         "match_reason": "Same print name",
                         "match_score": 100,
                     }
@@ -245,6 +256,7 @@ class ArchiveComparisonService:
         if reference.content_hash and len(similar) < limit:
             result = await self.db.execute(
                 select(PrintArchive)
+                .options(selectinload(PrintArchive.printer))
                 .where(
                     PrintArchive.id != archive_id,
                     PrintArchive.content_hash == reference.content_hash,
@@ -259,12 +271,7 @@ class ArchiveComparisonService:
                 if not any(s["archive"]["id"] == a.id for s in similar):
                     similar.append(
                         {
-                            "archive": {
-                                "id": a.id,
-                                "print_name": a.print_name or a.filename,
-                                "status": a.status,
-                                "created_at": a.created_at.isoformat() if a.created_at else None,
-                            },
+                            "archive": _similar_summary(a),
                             "match_reason": "Same file content",
                             "match_score": 95,
                         }
@@ -274,6 +281,7 @@ class ArchiveComparisonService:
         if reference.filament_type and len(similar) < limit:
             result = await self.db.execute(
                 select(PrintArchive)
+                .options(selectinload(PrintArchive.printer))
                 .where(
                     PrintArchive.id != archive_id,
                     PrintArchive.filament_type == reference.filament_type,
@@ -288,12 +296,7 @@ class ArchiveComparisonService:
                 if not any(s["archive"]["id"] == a.id for s in similar):
                     similar.append(
                         {
-                            "archive": {
-                                "id": a.id,
-                                "print_name": a.print_name or a.filename,
-                                "status": a.status,
-                                "created_at": a.created_at.isoformat() if a.created_at else None,
-                            },
+                            "archive": _similar_summary(a),
                             "match_reason": f"Same filament type ({reference.filament_type})",
                             "match_score": 50,
                         }

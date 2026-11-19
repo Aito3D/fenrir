@@ -8343,6 +8343,9 @@ export default {
     printsCount: 'Drucke: {{count}}',
     goodCount: 'Gut: {{count}}',
     failedCount: 'Fehlgeschlagen: {{count}}',
+    similarTitle: 'Ähnliche Drucke',
+    similarCompare: 'Vergleichen',
+    similarSelect: '{{name}} zum Vergleichen auswählen',
     close: 'Schließen',
   },
 

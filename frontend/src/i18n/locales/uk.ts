@@ -8115,6 +8115,9 @@ export default {
     printsCount: 'Друків: {{count}}',
     goodCount: 'Успішно: {{count}}',
     failedCount: 'Невдало: {{count}}',
+    similarTitle: 'Схожі друки',
+    similarCompare: 'Порівняти',
+    similarSelect: 'Вибрати {{name}} для порівняння',
     close: 'Закрити',
   },
 

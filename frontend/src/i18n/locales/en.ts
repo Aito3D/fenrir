@@ -8400,6 +8400,9 @@ export default {
     printsCount: 'Prints: {{count}}',
     goodCount: 'Good: {{count}}',
     failedCount: 'Failed: {{count}}',
+    similarTitle: 'Similar prints',
+    similarCompare: 'Compare',
+    similarSelect: 'Select {{name}} to compare',
     close: 'Close',
   },
 

@@ -8329,6 +8329,9 @@ export default {
     printsCount: '打印：{{count}}',
     goodCount: '成功：{{count}}',
     failedCount: '失败：{{count}}',
+    similarTitle: '相似打印',
+    similarCompare: '对比',
+    similarSelect: '选择 {{name}} 进行对比',
     close: '关闭',
   },
 

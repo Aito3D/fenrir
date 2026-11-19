@@ -8330,6 +8330,9 @@ export default {
     printsCount: 'Impressions : {{count}}',
     goodCount: 'Réussies : {{count}}',
     failedCount: 'Échouées : {{count}}',
+    similarTitle: 'Impressions similaires',
+    similarCompare: 'Comparer',
+    similarSelect: 'Sélectionner {{name}} pour comparer',
     close: 'Fermer',
   },
 

@@ -8317,6 +8317,9 @@ export default {
     printsCount: 'Baskı: {{count}}',
     goodCount: 'Başarılı: {{count}}',
     failedCount: 'Başarısız: {{count}}',
+    similarTitle: 'Benzer baskılar',
+    similarCompare: 'Karşılaştır',
+    similarSelect: 'Karşılaştırmak için {{name}} seç',
     close: 'Kapat',
   },
 

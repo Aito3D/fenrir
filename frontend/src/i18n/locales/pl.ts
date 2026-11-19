@@ -6628,6 +6628,9 @@ export default {
     printsCount: 'Wydruki: {{count}}',
     goodCount: 'Udane: {{count}}',
     failedCount: 'Nieudane: {{count}}',
+    similarTitle: 'Podobne wydruki',
+    similarCompare: 'Porównaj',
+    similarSelect: 'Wybierz {{name}} do porównania',
     close: 'Zamknij',
   },
 

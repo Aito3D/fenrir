@@ -8343,6 +8343,9 @@ export default {
     printsCount: '印刷: {{count}}',
     goodCount: '成功: {{count}}',
     failedCount: '失敗: {{count}}',
+    similarTitle: '類似の印刷',
+    similarCompare: '比較',
+    similarSelect: '{{name}} を比較対象に選択',
     close: '閉じる',
   },
 
