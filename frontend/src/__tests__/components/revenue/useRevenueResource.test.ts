@@ -56,4 +56,26 @@ describe('useRevenueResource', () => {
     await waitFor(() => expect(result.current.data).toEqual({ ok: true }));
     expect(result.current.error).toBeNull();
   });
+
+  it('names the url its data was loaded from, through a 304, a failed refetch and a failed new url', async () => {
+    const answers: Record<string, Response[]> = {
+      '/a': [json({ u: 'a' }, '"a1"'), new Response(null, { status: 304 }), new Response(JSON.stringify({ detail: 'flaky' }), { status: 503 })],
+      '/b': [new Response(JSON.stringify({ detail: 'down' }), { status: 503 })],
+    };
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => answers[u].shift()!));
+    const { result, rerender } = renderHook(({ url, v }) => useRevenueResource<{ u: string }>(url, v), { initialProps: { url: '/a', v: 0 } });
+    expect(result.current.dataUrl).toBeNull();
+    await waitFor(() => expect(result.current.data).toEqual({ u: 'a' }));
+    expect(result.current.dataUrl).toBe('/a');
+    rerender({ url: '/a', v: 1 });
+    await waitFor(() => expect(answers['/a']).toHaveLength(1));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current).toMatchObject({ data: { u: 'a' }, dataUrl: '/a', error: null });
+    rerender({ url: '/a', v: 2 });
+    await waitFor(() => expect(result.current.error).toBe('flaky'));
+    expect(result.current).toMatchObject({ data: { u: 'a' }, dataUrl: '/a' });
+    rerender({ url: '/b', v: 2 });
+    await waitFor(() => expect(result.current.error).toBe('down'));
+    expect(result.current).toMatchObject({ data: { u: 'a' }, dataUrl: '/a', loading: false });
+  });
 });

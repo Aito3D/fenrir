@@ -33,10 +33,11 @@ export function RevenueCalendar({ filterParams, taxMode, version, today }: { fil
   // null = the server's rolling window (the last 364 days to today).
   const [year, setYear] = useState<number | null>(null);
   const query = year === null ? filterParams.slice(1) : `from=${year}-01-01&to=${year}-12-31${filterParams}`;
-  const res = useRevenueResource<DailyResponse>(`/api/v1/revenue/daily${query ? `?${query}` : ''}`, version);
+  const url = `/api/v1/revenue/daily${query ? `?${query}` : ''}`;
+  const res = useRevenueResource<DailyResponse>(url, version);
   const { error } = res;
-  // Data from the previous window is never shown under the new label.
-  const data = res.loading || error ? null : res.data;
+  // Only this window's data: never the previous window's under the new label; a failed refetch keeps it.
+  const data = res.dataUrl === url ? res.data : null;
   const layout = useMemo(() => (data ? calendarLayout(data.days) : null), [data]);
   const prevRef = useRef<HTMLButtonElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
@@ -109,8 +110,9 @@ export function RevenueCalendar({ filterParams, taxMode, version, today }: { fil
 
   let calendar;
   let means;
-  if (error) {
-    calendar = <p role="alert" className="text-sm text-status-error">{error}</p>;
+  const alert = error ? <p role="alert" className="mb-2 text-sm text-status-error">{error}</p> : null;
+  if (error && !data) {
+    calendar = alert;
     means = null;
   } else if (!data || !layout) {
     calendar = <div aria-busy="true"><Skeleton className="h-[140px] w-full" /></div>;
@@ -133,11 +135,13 @@ export function RevenueCalendar({ filterParams, taxMode, version, today }: { fil
     };
     calendar = (
       <>
+        {alert}
         <div className="overflow-x-auto rounded-lg bg-bambu-dark p-3">
-          <div aria-hidden="true" className="grid gap-[3px] text-[10px] text-bambu-gray" style={{ gridTemplateColumns: cols }}>
+          <div data-months aria-hidden="true" className="grid gap-[3px] text-[10px] text-bambu-gray" style={{ gridTemplateColumns: cols }}>
             <span />
             {weeks.map((w, i) => (
-              <span key={i} className="whitespace-nowrap">{monthOf(w, i)}</span>
+              // The first week's own month would run into the next column's label when that week starts a month.
+              <span key={i} className="whitespace-nowrap">{i === 0 && monthOf(weeks[1], 1) ? '' : monthOf(w, i)}</span>
             ))}
           </div>
           <div ref={gridRef} role="grid" aria-label={t('revenue.calendar.gridLabel')} className="mt-1 grid gap-[3px]">

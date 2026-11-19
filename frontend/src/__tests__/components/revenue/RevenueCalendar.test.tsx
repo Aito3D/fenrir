@@ -240,6 +240,34 @@ describe('RevenueCalendar', () => {
     expect(list.querySelector('li')).toHaveTextContent('Monday82.500 FCP');
   });
 
+  it('keeps the window on screen with an inline alert when its refetch fails, and drops the alert once it succeeds', async () => {
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => (++calls === 2 ? json({ detail: 'Zoho indisponible' }, 503) : json({ from: '2026-01-05', to: '2026-01-12', days: DAYS }))));
+    const props = { filterParams: '', taxMode: 'ht' as TaxMode, today: '2026-11-19' };
+    const { rerender } = render(<RevenueCalendar {...props} version={0} />);
+    await screen.findByRole('grid');
+    rerender(<RevenueCalendar {...props} version={1} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Zoho indisponible');
+    expect(screen.getByRole('grid')).toBeInTheDocument();
+    expect(screen.getByTestId('weekday-means')).toBeInTheDocument();
+    expect(cell('2026-01-12').tabIndex).toBe(0);
+    rerender(<RevenueCalendar {...props} version={2} />);
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(screen.getByRole('grid')).toBeInTheDocument();
+  });
+
+  it('labels a month only where no label sits in the column before', async () => {
+    const days = Array.from({ length: 14 }, (_, i) => day(`2025-${i < 4 ? `11-${27 + i}` : `12-${String(i - 3).padStart(2, '0')}`}`, 1_000));
+    stubFetch(days);
+    renderCal();
+    await screen.findByRole('grid');
+    const labels = Array.from(document.querySelector('[data-months]')!.children).slice(1).map((c) => c.textContent);
+    expect(labels.slice(0, 3)).toEqual(['', 'Dec', '']);
+    labels.forEach((l, i) => {
+      if (l && i > 0) expect(labels[i - 1]).toBe('');
+    });
+  });
+
   it('shows the server error', async () => {
     stubFetch(() => json({ detail: 'Zoho indisponible' }, 503));
     renderCal();
