@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import text
@@ -74,7 +74,8 @@ async def test_migration_backfills_calibrated_at_from_offset(engine):
         await _seed(conn)
         await _migrate_printer_hours_columns(conn)
         result = await _calibrated(conn)
-    assert result == {1: "2026-04-25", 2: date.today().isoformat(), 3: None}
+    # CURRENT_TIMESTAMP is UTC; local date.today() differs around midnight.
+    assert result == {1: "2026-04-25", 2: datetime.now(timezone.utc).date().isoformat(), 3: None}
 
 
 async def test_migration_is_idempotent(engine):
