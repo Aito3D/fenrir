@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render as rtlRender, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
@@ -30,6 +31,16 @@ const mockUseAuth = {
 vi.mock('../../contexts/AuthContext', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../contexts/AuthContext')>();
   return { ...actual, useAuth: () => mockUseAuth };
+});
+// jsdom has no layout, so ResponsiveContainer renders nothing; pin a size.
+vi.mock('recharts', async (orig) => {
+  const actual = await orig<typeof import('recharts')>();
+  return {
+    ...actual,
+    ResponsiveContainer: (props: ComponentProps<typeof actual.ResponsiveContainer>) => (
+      <actual.ResponsiveContainer {...props} width={800} height={300} />
+    ),
+  };
 });
 vi.mock('../../hooks/useWebSocket', () => ({ useWebSocket: () => {} }));
 vi.mock('../../hooks/usePrintProgressTitle', () => ({ usePrintProgressTitle: () => {} }));
@@ -480,7 +491,8 @@ describe('RevenuePage — controls, URL and persistence', () => {
     await flush();
     vi.mocked(localStorage.setItem).mockClear();
     vi.mocked(localStorage.removeItem).mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'Brand' }));
+    // The chart's « Stack by » has a Brand button too.
+    fireEvent.click(within(document.querySelector<HTMLElement>('[data-slot="revenue-controls"]')!).getByRole('button', { name: 'Brand' }));
     fireEvent.click(within(screen.getByRole('listbox', { name: 'Brands' })).getAllByRole('checkbox')[1]);
     await flush();
     expect(lastSeries()).toContain('brand=esun');
@@ -542,5 +554,60 @@ describe('Revenue nav item and route', () => {
     expect(await screen.findByText('No printers configured yet', {}, { timeout: 5000 })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Revenue' })).toBeNull();
     window.history.replaceState(null, '', '/');
+  });
+});
+
+describe('RevenuePage — chart drill-down', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  const month = (key: string, label: string, start: string, end: string, ht: number) => ({
+    key, label, start, end, ht, ttc: ht, goods: ht, services: 0, byNature: { Filaments: ht }, byBrand: {}, goodsTtc: ht, servicesTtc: 0,
+    byNatureTtc: { Filaments: ht }, byBrandTtc: {}, projection: null, projectionMethod: null, target: null, quantity: 1,
+    evolution: { ht: null, ttc: null }, yearAgo: null, elapsedDays: null, cumulative: { ht, ttc: ht }, partial: false, missingDays: 0, ttcApprox: false,
+  });
+  const lastSeries = () => String(seriesCalls().at(-1)?.[0]);
+
+  it('drills into a column for this visit only; Retour and a manual granularity change undo it', async () => {
+    stubFetch(payload({ buckets: [month('2026-10', 'oct. 2026', '2026-10-01', '2026-10-31', 500_000), month('2026-11', 'nov. 2026', '2026-11-01', '2026-11-30', 600_000)] }));
+    renderPage();
+    await flush();
+    const first = lastSeries();
+    const search = window.location.search;
+    vi.mocked(localStorage.setItem).mockClear();
+    vi.mocked(localStorage.removeItem).mockClear();
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'oct. 2026 – 500.000 FCP' }), { key: 'Enter' });
+    await flush();
+    expect(lastSeries()).toBe('/api/v1/revenue?granularity=day&from=2026-10-01&to=2026-10-31');
+    expect(localStorage.setItem).not.toHaveBeenCalled();
+    expect(localStorage.removeItem).not.toHaveBeenCalled();
+    expect(window.location.search).toBe(search);
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'nov. 2026 – 600.000 FCP' }), { key: 'Enter' });
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: '← Back (levels: 2)' }));
+    await flush();
+    expect(lastSeries()).toBe('/api/v1/revenue?granularity=day&from=2026-10-01&to=2026-10-31');
+    fireEvent.click(screen.getByRole('button', { name: '← Back' }));
+    await flush();
+    expect(lastSeries()).toBe(first);
+    expect(screen.queryByRole('button', { name: /← Back/ })).toBeNull();
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'oct. 2026 – 500.000 FCP' }), { key: 'Enter' });
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
+    await flush();
+    expect(lastSeries()).toBe('/api/v1/revenue?granularity=week');
+    expect(screen.queryByRole('button', { name: /← Back/ })).toBeNull();
+  });
+
+  it('stacks the chart by the chosen dimension and persists it', async () => {
+    stubFetch(payload({ buckets: [month('2026-11', 'nov. 2026', '2026-11-01', '2026-11-30', 600_000)] }));
+    renderPage();
+    await flush();
+    const stackBy = screen.getByRole('group', { name: 'Stack by' });
+    fireEvent.click(within(stackBy).getByRole('button', { name: 'Goods / Services' }));
+    expect(within(stackBy).getByRole('button', { name: 'Goods / Services' })).toHaveAttribute('aria-pressed', 'true');
+    expect(localStorage.getItem('revenue-stack')).toBe('kind');
   });
 });

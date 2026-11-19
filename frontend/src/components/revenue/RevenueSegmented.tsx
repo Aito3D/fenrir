@@ -13,6 +13,8 @@ export function RevenueSegmented<T extends string>(p: {
   onChange: (v: T) => void;
   tabs?: boolean;
   idPrefix?: string;
+  /** Inside a panel: the track one step darker, the selection one step lighter. */
+  inPanel?: boolean;
 }) {
   const prefix = p.idPrefix ?? 'segment';
   const move = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -30,7 +32,7 @@ export function RevenueSegmented<T extends string>(p: {
   };
 
   return (
-    <div role={p.tabs ? 'tablist' : 'group'} aria-label={p.label} className="inline-flex shrink-0 gap-0.5 rounded-[10px] bg-bambu-dark-secondary/60 p-[3px]">
+    <div role={p.tabs ? 'tablist' : 'group'} aria-label={p.label} className={`inline-flex shrink-0 gap-0.5 rounded-[10px] p-[3px] ${p.inPanel ? 'bg-bambu-dark' : 'bg-bambu-dark-secondary/60'}`}>
       {p.options.map((o, index) => {
         const on = o.id === p.value;
         return (
@@ -50,7 +52,7 @@ export function RevenueSegmented<T extends string>(p: {
             title={o.title}
             onClick={() => p.onChange(o.id)}
             className={`rounded-lg px-3.5 py-1.5 text-[13px] font-medium whitespace-nowrap transition-colors duration-150 ${
-              on ? 'bg-bambu-dark-secondary text-white shadow-sm' : 'text-bambu-gray-light hover:text-white'
+              on ? `${p.inPanel ? 'bg-bambu-dark-tertiary' : 'bg-bambu-dark-secondary'} text-white shadow-sm` : 'text-bambu-gray-light hover:text-white'
             } ${focusRingCls}`}
           >
             {o.label}

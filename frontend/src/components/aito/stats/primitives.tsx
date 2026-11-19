@@ -248,6 +248,6 @@ export function Legend({ color, cls, line, children }: { color?: string; cls?: s
   );
 }
 
-export function LegendList({ children }: { children: ReactNode }) {
-  return <ul className="flex flex-wrap justify-end gap-x-3.5 gap-y-1 text-[11.5px] text-bambu-gray-light">{children}</ul>;
+export function LegendList({ children, label }: { children: ReactNode; label?: string }) {
+  return <ul aria-label={label} className="flex flex-wrap justify-end gap-x-3.5 gap-y-1 text-[11.5px] text-bambu-gray-light">{children}</ul>;
 }

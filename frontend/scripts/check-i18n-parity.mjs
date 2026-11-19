@@ -204,6 +204,7 @@ const FR_COGNATES = [
   'Services',  // revenue.filters.services — loki's French label, same word
   'Projection ≈ {{amount}}', 'vs {{what}}',  // revenue.hero.projection / vs — same words in French
   '{{year}} · total {{total}}',  // revenue.pace.yearAgoTotal — « total » is the same word in French
+  'Nature', 'Projection', '◆ Notes',  // revenue.chart.stack.nature / projection, revenue.notes.button — same words in French
   'Contact',  // orders.contact.title — same word in French
   'Perspective', '{{count}} triangle', '{{count}} triangles', 'Photos',  // partViewer — same words in French
   'via {{name}}',  // projectsPdm.reslice.viaPipeline

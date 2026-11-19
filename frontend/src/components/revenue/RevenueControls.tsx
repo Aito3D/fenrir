@@ -23,6 +23,8 @@ export function RevenuePopover(p: {
   disabled?: boolean;
   pressed?: boolean;
   className?: string;
+  /** `end`: the menu hangs from the trigger's right edge (a trigger that closes its row). */
+  align?: 'end';
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -58,8 +60,8 @@ export function RevenuePopover(p: {
         role="dialog"
         aria-label={p.label}
         hidden={!open}
-        data-align="start"
-        className={`aito-tf-menu absolute left-0 top-full z-20 mt-1 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-2 shadow-xl ${p.className ?? ''}`}
+        data-align={p.align === 'end' ? undefined : 'start'}
+        className={`aito-tf-menu absolute ${p.align === 'end' ? 'right-0' : 'left-0'} top-full z-20 mt-1 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-2 shadow-xl ${p.className ?? ''}`}
       >
         {p.children(close)}
       </div>

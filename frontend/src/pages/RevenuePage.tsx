@@ -8,10 +8,11 @@ import { RevenueSegmented } from '../components/revenue/RevenueSegmented';
 import { RevenueSyncBanner } from '../components/revenue/RevenueSyncBanner';
 import { RevenueFinding, RevenueHero } from '../components/revenue/RevenueHero';
 import { RevenuePace } from '../components/revenue/RevenuePace';
+import { RevenueChart } from '../components/revenue/RevenueChart';
 import { RevenueControls as ControlsRow } from '../components/revenue/RevenueControls';
 import { RevenueChip, RevenueProductSearch } from '../components/revenue/RevenueProductSearch';
 import { useRevenueResource } from '../components/revenue/useRevenueResource';
-import { shiftWindow } from '../components/revenue/lib/analysis';
+import { drillDown, shiftWindow } from '../components/revenue/lib/analysis';
 import { addToBasket } from '../components/revenue/lib/basket';
 import { orgToday, REVENUE_HISTORY_START } from '../components/revenue/lib/dates';
 import { filterByKind } from '../components/revenue/lib/products';
@@ -71,6 +72,8 @@ export interface RevenuePanelProps {
   can: RevenueCan;
 }
 
+type Zoom = Pick<RevenueControls, 'granularity' | 'range'>;
+
 const VIEW_KEYS: Record<RevenueView, string> = { evolution: 'evolution', clients: 'clients', produits: 'products', saison: 'seasonality' };
 
 /** Restored before the first render and the first request: a linked URL wins, localStorage fills the rest. */
@@ -119,8 +122,15 @@ export function RevenuePage() {
   };
 
   const [controls, setControlsState] = useState(initialControls);
+  // A chart drill-down: a window for this visit only (never stored, never on the URL), with the levels « Retour » pops.
+  const [zoom, setZoom] = useState<Zoom | null>(null);
+  const [drillStack, setDrillStack] = useState<Zoom[]>([]);
   const setControls = (patch: Partial<RevenueControls>) => {
     setControlsState((c) => ({ ...c, ...patch }));
+    if (patch.granularity || patch.range) {
+      setZoom(null);
+      setDrillStack([]);
+    }
     if (patch.granularity) persist(REVENUE_STORAGE_KEYS.granularity, patch.granularity);
     if (patch.taxMode) persist(REVENUE_STORAGE_KEYS.taxMode, patch.taxMode);
     // « Produit » needs a basket, which is never persisted.
@@ -133,6 +143,7 @@ export function RevenuePage() {
   // What the page may use: a view or segment stored by a user with more rights (shared terminal) falls back.
   const active: RevenueControls = {
     ...controls,
+    ...zoom,
     view: controls.view === 'clients' && !can.customers ? 'evolution' : controls.view,
     segment: can.customers ? controls.segment : null,
   };
@@ -189,10 +200,10 @@ export function RevenuePage() {
 
   // The controls live on the URL too, so a view can be bookmarked or sent.
   const search = controlsToSearch({
-    granularity: active.granularity,
+    granularity: controls.granularity,
     taxMode: active.taxMode,
     stack: active.stack,
-    range: active.range,
+    range: controls.range,
     kind: active.kind,
     segment: active.segment,
     view: active.view,
@@ -240,7 +251,21 @@ export function RevenuePage() {
   const windowAt = (delta: number) => (data ? shiftWindow(data.from, data.to, data.granularity, delta, REVENUE_HISTORY_START, today) : null);
   const shift = (delta: number) => {
     const w = windowAt(delta);
-    if (w) setControls({ range: { preset: 'custom', ...w } });
+    // Stepping out of a drill-down keeps its granularity: the window shown is the one stepped.
+    if (w) setControls({ range: { preset: 'custom', ...w }, granularity: active.granularity });
+  };
+  const drill = (index: number) => {
+    const d = data && drillDown(data.buckets[index], data.granularity);
+    if (!d) return;
+    setDrillStack((st) => [...st, { granularity: active.granularity, range: active.range }]);
+    setZoom({ granularity: d.granularity, range: { preset: 'custom', from: d.from, to: d.to } });
+  };
+  const drillBack = () => {
+    const top = drillStack[drillStack.length - 1];
+    if (!top) return;
+    setDrillStack(drillStack.slice(0, -1));
+    // The bottom of the stack is the stored window itself.
+    setZoom(drillStack.length > 1 ? top : null);
   };
 
   const refresh = () => {
@@ -375,6 +400,8 @@ export function RevenuePage() {
                   <RevenuePace monthKey={(lastBucket.end > today ? today : lastBucket.end).slice(0, 7)} filterParams={filterQuery(basketIds, active.brands, active.kind, active.segment)} taxMode={active.taxMode} version={data} />
                 )}
               </Split>
+              <RevenueChart payload={data} controls={active} can={can} onStack={(stack) => setControls({ stack })}
+                onDrill={data.granularity !== 'day' ? drill : undefined} drillDepth={drillStack.length} onBack={drillBack} today={today} />
             </>
           )}
         </section>
