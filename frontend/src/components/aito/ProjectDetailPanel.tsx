@@ -691,9 +691,10 @@ function PanelHeader({
           <DueDateControl project={project} canUpdate={canUpdate} />
         </>
       )}
-      <div className="w-px self-stretch bg-bambu-dark-tertiary" />
+      {/* Hidden below md like the age stat: the client name has first claim on the width. */}
+      <div className="hidden md:block w-px self-stretch bg-bambu-dark-tertiary" />
       {/* No date suggestion here (spec): the panel saves what is clicked. */}
-      <fieldset disabled={priorityLocked} data-testid="panel-priority" className="flex-shrink-0 disabled:opacity-60">
+      <fieldset disabled={priorityLocked} data-testid="panel-priority" className="hidden md:flex flex-shrink-0 disabled:opacity-60">
         <PriorityControl
           value={project.priority}
           onChange={(level) => {
