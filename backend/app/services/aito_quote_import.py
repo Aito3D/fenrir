@@ -376,7 +376,9 @@ def _quote_discount(estimate: dict) -> str | None:
     return f"{flat:g}" if flat else None
 
 
-def discount_issues(estimate: dict, shipping_ids: dict[str, str] | None = None) -> list[dict]:
+def discount_issues(
+    estimate: dict, shipping_ids: dict[str, str] | None = None, priority_ids: dict[str, str] | None = None
+) -> list[dict]:
     """The discounts on this quote that a card cannot carry exactly.
 
     Any entry refuses the import (the drawer lists them): the next push
@@ -387,6 +389,7 @@ def discount_issues(estimate: dict, shipping_ids: dict[str, str] | None = None) 
     - A flat-amount discount on a service line that is not an exact percent
       of it, or whose meaning the quote's total does not confirm.
     - Any discount on our shipping line: a shipment is a price, nothing else.
+      Same for the priority surcharge line (``priority_ids``, level -> item).
 
     A foreign line's discount is not listed: the line is echoed back
     untouched, discount included.
@@ -397,12 +400,12 @@ def discount_issues(estimate: dict, shipping_ids: dict[str, str] | None = None) 
         issues.append({"scope": "quote", "sku": "", "name": "", "discount": quote_discount})
     inclusive = bool(estimate.get("is_inclusive_tax"))
     proven = _lines_match_total(estimate)
-    shipping_item_ids = set((shipping_ids or {}).values())
+    price_only_ids = set((shipping_ids or {}).values()) | set((priority_ids or {}).values())
     for line in sorted(estimate.get("line_items") or [], key=lambda item: item.get("item_order") or 0):
         if line.get("line_item_category") == "header":
             continue
         flat = _flat_discount(line)
-        if line.get("item_id") in shipping_item_ids:
+        if line.get("item_id") in price_only_ids:
             lost = bool(flat or _discount_pct(line))
         elif service_for_sku(line.get("sku")) is None or flat is None:
             continue
@@ -506,7 +509,7 @@ def parse_shipping_line(line: dict, shipping_ids: dict[str, str]) -> ParsedShipp
 
 
 def parse_lines(
-    estimate: dict, shipping_ids: dict[str, str] | None = None
+    estimate: dict, shipping_ids: dict[str, str] | None = None, priority_ids: dict[str, str] | None = None
 ) -> tuple[list[ParsedLine], list[dict], ParsedShipping | None]:
     """Split an estimate's line items into recognised services, skipped rows,
     and (at most one) recognised shipment.
@@ -528,6 +531,10 @@ def parse_lines(
     deliberate consequence of never guessing a shipping line by name or SKU,
     not an oversight — the line itself is unaffected, since the export step's
     echo rule still preserves it by ``line_item_id`` on the next push.
+
+    A line on one of the ``priority_ids`` items (level -> item id) is the
+    project's priority surcharge: neither a task nor a skipped row.
+    ``build_preview`` reads the level from it.
     """
     inclusive = bool(estimate.get("is_inclusive_tax"))
     precision = int(estimate.get("price_precision") or 0)
@@ -542,6 +549,7 @@ def parse_lines(
     # below would reconstruct from scratch.
     shipping_id_map = _shipping_id_map(shipping_ids or {})
     shipping_id_values = set(shipping_id_map)
+    priority_id_values = set((priority_ids or {}).values())
     # Only a tax-inclusive line's flat discount is converted: there `rate x
     # quantity` is the gross figure the percent applies to.
     convert_flat = inclusive and _lines_match_total(estimate)
@@ -554,10 +562,10 @@ def parse_lines(
         if shipment is not None:
             shipping = shipment
             continue
-        if line.get("item_id") in shipping_id_values:
-            # Ours, but unparseable (an island we do not know). Not a task and
-            # not something to report as unimportable — the export step echoes
-            # it back untouched.
+        if line.get("item_id") in shipping_id_values or line.get("item_id") in priority_id_values:
+            # Ours, but unparseable (an island we do not know), or the
+            # priority surcharge. Not a task and not something to report as
+            # unimportable.
             continue
         amount = _line_amount(line, inclusive=inclusive, precision=precision)
         service = service_for_sku(line.get("sku"))
@@ -865,10 +873,23 @@ def client_snapshot(estimate: dict, contact: dict | None) -> dict:
 
 
 def build_preview(
-    estimate: dict, contact: dict | None, quote_url: str, shipping_ids: dict[str, str] | None = None
+    estimate: dict,
+    contact: dict | None,
+    quote_url: str,
+    shipping_ids: dict[str, str] | None = None,
+    priority_ids: dict[str, str] | None = None,
 ) -> dict:
     """Everything the import modal needs, in the shape POST /aito/ accepts."""
-    lines, skipped, shipping = parse_lines(estimate, shipping_ids)
+    lines, skipped, shipping = parse_lines(estimate, shipping_ids, priority_ids)
+    level_by_item = {item_id: level for level, item_id in (priority_ids or {}).items()}
+    priority = next(
+        (
+            level_by_item[line["item_id"]]
+            for line in estimate.get("line_items") or []
+            if line.get("item_id") in level_by_item
+        ),
+        "normal",
+    )
     tasks = [_build_task(group) for group in group_lines(lines)]
     titles = [task["title"] for task in tasks if task["title"]]
     number = estimate.get("estimate_number") or ""
@@ -887,7 +908,7 @@ def build_preview(
         "suggested_description": "\n".join(titles) or number,
         "tasks": tasks,
         "skipped_lines": skipped,
-        "discount_issues": discount_issues(estimate, shipping_ids),
+        "discount_issues": discount_issues(estimate, shipping_ids, priority_ids),
         "shipping": (
             {
                 "island": shipping.island,
@@ -900,4 +921,5 @@ def build_preview(
             if shipping
             else None
         ),
+        "priority": priority,
     }

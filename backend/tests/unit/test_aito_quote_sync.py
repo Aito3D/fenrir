@@ -414,10 +414,10 @@ async def test_unexpected_bug_in_one_project_does_not_abort_the_next(db_session,
 
     original_build_line_items = aito_quote_sync.build_line_items
 
-    def flaky_build_line_items(tasks, existing_line_items, catalogue, shipping=None):
+    def flaky_build_line_items(tasks, existing_line_items, catalogue, shipping=None, priority=None):
         if any(t.title == "Bad" for t in tasks):
             raise TypeError("simulated bug in export")
-        return original_build_line_items(tasks, existing_line_items, catalogue, shipping=shipping)
+        return original_build_line_items(tasks, existing_line_items, catalogue, shipping=shipping, priority=priority)
 
     monkeypatch.setattr(aito_quote_sync, "build_line_items", flaky_build_line_items)
 

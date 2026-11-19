@@ -73,6 +73,7 @@ describe('importMutation — importableShipping gate', () => {
       skipped_lines: [],
       discount_issues: [],
       shipping,
+      priority: 'urgent',
       existing_project_id: null,
     };
   }
@@ -146,6 +147,10 @@ describe('importMutation — importableShipping gate', () => {
       shipping_price: 3200,
     });
     expect(body).not.toHaveProperty('shipping_service');
+  });
+
+  it("carries the quote's priority level into the created card", async () => {
+    expect((await importBody(null)).priority).toBe('urgent');
   });
 });
 

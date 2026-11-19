@@ -6341,6 +6341,8 @@ export interface ZohoQuotePreview {
   /** null when the quote carries no shipping line, or when it carries one
    *  whose island could not be resolved. */
   shipping: ZohoQuoteShipping | null;
+  /** Read from the quote's priority surcharge line; 'normal' when it has none. */
+  priority: AitoPriority;
   /** The active project already imported from this quote, if any. */
   existing_project_id: number | null;
 }

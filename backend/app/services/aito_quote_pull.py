@@ -75,10 +75,14 @@ def _readings(
     # know. They stay in the estimate (its total still counts them) but are
     # blanked so the reader files them under "not ours".
     echoed = {line["line_item_id"] for line in pushed if "item_id" not in line and "line_item_id" in line}
+    # The priority surcharge line is not the card's to describe either: its
+    # rate is a formula the next push rewrites (it is pushed without one here
+    # so neither reading carries it), and its discount is dropped the same way.
+    priority_ids = set(catalogue.priority_items.values())
     sku_by_item = {catalogue.item_id(service): sku for service, sku in _SKU.items()}
 
     def relabel(line: dict) -> dict:
-        if line.get("line_item_id") in echoed:
+        if line.get("line_item_id") in echoed or line.get("item_id") in priority_ids:
             return {**line, "sku": "", "item_id": ""}
         return {**line, "sku": sku_by_item.get(line.get("item_id") or "", line.get("sku") or "")}
 

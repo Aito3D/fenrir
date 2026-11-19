@@ -54,6 +54,7 @@ const preview: ZohoQuotePreview = {
   skipped_lines: [],
   discount_issues: [],
   shipping: null,
+  priority: 'normal',
   existing_project_id: null,
 };
 

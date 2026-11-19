@@ -51,17 +51,19 @@ from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
-from backend.app.models.calculator import CalculatorFilament
+from backend.app.models.calculator import CalculatorDefaults, CalculatorFilament
 from backend.app.services import aito_change_poll, aito_push_schedule
-from backend.app.services.aito_board_rules import AWAY_STATUSES
+from backend.app.services.aito_board_rules import AWAY_STATUSES, net_cost
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_events import contact_mark_kind, diff_fields, record, utc_now_naive
 from backend.app.services.aito_invoice_sweep import _same_reference, sweep_inbox, sweep_invoices
 from backend.app.services.aito_payment_links import QUOTE_VALIDITY, deposit_pct, required_amount
+from backend.app.services.aito_priority import priority_surcharge
 from backend.app.services.aito_quote_export import (
     SERVICES,
     SERVICES_WITH_QUANTITY,
     Catalogue,
+    ExportPriority,
     ExportShipping,
     ExportTask,
     build_line_items,
@@ -403,6 +405,40 @@ def load_export_shipping(project: AitoProject, catalogue: Catalogue) -> ExportSh
     )
 
 
+class PriorityCatalogueUnavailable(Exception):
+    """The project has a priority level but its Books item is not configured.
+
+    Same contract as `ShippingCatalogueUnavailable`: a quote pushed without
+    the surcharge it was promised could be sent to a client, so the project
+    stays `pending` (no failure spent) until the setting named in the message
+    is filled in.
+    """
+
+
+async def load_export_priority(
+    db: AsyncSession, project: AitoProject, catalogue: Catalogue, tasks: list[ExportTask]
+) -> ExportPriority | None:
+    """The project's priority surcharge line, or None for a Normal project.
+
+    The base is the net task total the board shows (`net_cost`, after each
+    service's discount, shipping excluded), from the same `tasks` snapshot the
+    push writes, so the line always matches the lines above it.
+    """
+    level = project.priority or "normal"
+    if level == "normal":
+        return None
+    if level not in catalogue.priority_items:
+        raise PriorityCatalogueUnavailable(f"No Books item for priority level {level!r}: set zoho_item_{level}_id")
+    defaults = (
+        await db.execute(select(CalculatorDefaults).order_by(CalculatorDefaults.id).limit(1))
+    ).scalar_one_or_none()
+    if defaults is None:
+        # Seeded at startup (database.py), so only a wiped table lands here.
+        raise PriorityCatalogueUnavailable("No calculator defaults row to price the priority surcharge")
+    base = sum(cost for task in tasks for service in SERVICES if (cost := net_cost(task, service)) is not None)
+    return ExportPriority(level, round(priority_surcharge(level, base, defaults)))
+
+
 async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTask]:
     """The project's tasks, flattened for the I/O-free exporter.
 
@@ -628,7 +664,13 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         project.quote_sync_error = "Main d'oeuvre line has no description"
         project.quote_sync_failures = 0
         return
-    line_items = build_line_items(tasks, [], catalogue, shipping=load_export_shipping(project, catalogue))
+    line_items = build_line_items(
+        tasks,
+        [],
+        catalogue,
+        shipping=load_export_shipping(project, catalogue),
+        priority=await load_export_priority(db, project, catalogue, tasks),
+    )
     # Idempotency guard: a prior tick can have POSTed successfully and then
     # died before the commit that would have recorded the returned
     # estimate_id (the project stays 'pending' either way). Without this
@@ -1273,6 +1315,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         estimate.get("line_items") or [],
         catalogue,
         shipping=load_export_shipping(project, catalogue),
+        priority=await load_export_priority(db, project, catalogue, tasks),
     )
     # Pre-existing quotes get an expiry ONCE; one set by hand in Books is
     # never overwritten. Its own call, not folded into the line-item PUT, so
@@ -1683,7 +1726,7 @@ async def sync_project(
         # Not a failure: sync is simply off. Leave the project pending so it
         # syncs the moment credentials are entered.
         return
-    except ShippingCatalogueUnavailable as e:
+    except (ShippingCatalogueUnavailable, PriorityCatalogueUnavailable) as e:
         await _defer_on_catalogue(db, project_id, e)
         return
     except ZohoRequestRejected as e:
@@ -2257,7 +2300,9 @@ async def _sync_push(db: AsyncSession, project: AitoProject, project_id: int) ->
     _throttled_until = None
 
 
-async def _defer_on_catalogue(db: AsyncSession, project_id: int, e: ShippingCatalogueUnavailable) -> None:
+async def _defer_on_catalogue(
+    db: AsyncSession, project_id: int, e: ShippingCatalogueUnavailable | PriorityCatalogueUnavailable
+) -> None:
     """``sync_project``'s ShippingCatalogueUnavailable handler body; never raises."""
     # Not an error state: nothing is wrong with the project, the catalogue
     # simply has not resolved yet. Stay `pending` and retry next tick
@@ -2290,6 +2335,10 @@ async def _defer_on_catalogue(db: AsyncSession, project_id: int, e: ShippingCata
     if _deferred_reasons.get(project_id) != message:
         logger.warning("Aito project %s deferred: %s", project_id, e)
         _deferred_reasons[project_id] = message
+    if isinstance(e, PriorityCatalogueUnavailable):
+        # A setting only an operator can fill; warming the shipping cache
+        # would spend Books calls every tick for nothing.
+        return
     try:
         await zoho_service.get_shipping_catalogue(db, refresh=True)
     except Exception:

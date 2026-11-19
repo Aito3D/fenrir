@@ -658,6 +658,7 @@ describe('AitoPage (backend board)', () => {
       skipped_lines: [],
       discount_issues: [],
       shipping: null,
+      priority: 'normal',
       existing_project_id: null,
     };
 
@@ -1290,6 +1291,7 @@ describe('AitoPage (backend board)', () => {
         skipped_lines: [],
         discount_issues: [],
         shipping: null,
+        priority: 'normal',
         existing_project_id: null,
       };
 

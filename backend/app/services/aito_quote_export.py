@@ -113,6 +113,15 @@ class ExportShipping:
     price: float
 
 
+@dataclass(frozen=True)
+class ExportPriority:
+    """The project's priority surcharge line: the level picks the Books item,
+    ``amount`` is the rate, already rounded (Books ``price_precision: 0``)."""
+
+    level: str
+    amount: float
+
+
 def cost_of(task: ExportTask, service: str) -> float | None:
     """The task's cost for one service. NULL means the service is disabled;
     0 stays meaningful as 'free', so callers must test for None, not falsiness."""
@@ -301,6 +310,26 @@ class Catalogue:
     # means the catalogue has never resolved, which callers must treat as
     # "cannot push" rather than "no shipping".
     shipping: dict[str, str] = field(default_factory=dict)
+    # The two priority-surcharge items (settings zoho_item_priority_id /
+    # zoho_item_urgent_id). No fallback: "" means not configured.
+    priority_item_id: str = ""
+    urgent_item_id: str = ""
+
+    @property
+    def priority_items(self) -> dict[str, str]:
+        """Level -> Books item id, configured ones only. An empty id must
+        never claim a line: Books answers a free-text line with item_id ""."""
+        return {
+            level: item_id
+            for level, item_id in (("priority", self.priority_item_id), ("urgent", self.urgent_item_id))
+            if item_id
+        }
+
+    def priority_item(self, level: str) -> str:
+        """The Books item for one priority level. KeyError when unset;
+        ``aito_quote_sync.load_export_priority`` pre-checks it the way
+        ``load_export_shipping`` pre-checks a shipping service."""
+        return self.priority_items[level]
 
     def item_id(self, service: str) -> str:
         return {
@@ -346,6 +375,9 @@ class Catalogue:
                 self.maindoeuvre_item_id,
             }
             | set(self.shipping.values())
+            # Ours too: a priority line is rebuilt from the project on every
+            # push, so an old one (or one for the other level) is never echoed.
+            | set(self.priority_items.values())
         )
 
 
@@ -407,6 +439,7 @@ def build_line_items(
     existing_line_items: list[dict],
     catalogue: Catalogue,
     shipping: ExportShipping | None = None,
+    priority: ExportPriority | None = None,
 ) -> list[dict]:
     """The full ``line_items`` array for a create or update.
 
@@ -420,6 +453,11 @@ def build_line_items(
     right after the tasks and before any preserved foreign lines, carries no
     header row (the shipment belongs to no task, so no header should
     claim it), and its description is ``build_shipping_description(shipping)``.
+
+    Then, when ``priority`` is given, the priority surcharge line: one unit
+    at ``priority.amount``, no discount, no description rows. An existing line
+    on either priority item is never echoed (``Catalogue.item_ids`` claims
+    both), so a project set back to Normal loses it on its next push.
 
     Then every foreign line, echoed as a bare ``line_item_id``, which Books
     expands back into the untouched original. Omitting a line deletes it, so
@@ -502,6 +540,15 @@ def build_line_items(
                 "quantity": 1,
                 "description": build_shipping_description(shipping),
                 # No header row of its own: the shipment belongs to no task.
+            }
+        )
+    if priority is not None:
+        lines.append(
+            {
+                "item_id": catalogue.priority_item(priority.level),
+                "rate": priority.amount,
+                "quantity": 1,
+                "tax_id": catalogue.tax_id,
             }
         )
     shipping_ids = frozenset(catalogue.shipping.values())
