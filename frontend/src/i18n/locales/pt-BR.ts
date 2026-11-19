@@ -11121,6 +11121,9 @@ export default {
       footnote: 'Preços com impostos incluídos. Orçamento sujeito à disponibilidade de material.',
     },
     marge: 'Margem',
+    priority: {
+      step: 'Acréscimo de prioridade',
+    },
     marginPct: 'Margem em %',
     marginGlobal: 'Margem global',
     marginFilament: 'Margem de filamento',

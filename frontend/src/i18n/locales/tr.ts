@@ -11063,6 +11063,9 @@ export default {
       footnote: 'Fiyatlara vergi dahildir. Teklif malzeme mevcudiyetine tabidir.',
     },
     marge: 'Marj',
+    priority: {
+      step: 'Öncelik ek ücreti',
+    },
     marginPct: 'Marj oranı',
     marginGlobal: 'Genel marj',
     marginFilament: 'Filament marjı',

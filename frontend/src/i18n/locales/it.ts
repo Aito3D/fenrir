@@ -11121,6 +11121,9 @@ export default {
       footnote: 'Prezzi IVA inclusa. Preventivo soggetto alla disponibilità dei materiali.',
     },
     marge: 'Margine',
+    priority: {
+      step: 'Supplemento di priorità',
+    },
     marginPct: 'Margine in %',
     marginGlobal: 'Margine globale',
     marginFilament: 'Margine filamento',

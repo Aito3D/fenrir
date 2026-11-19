@@ -11135,6 +11135,9 @@ export default {
       footnote: '価格は税込です。見積もりは材料の在庫状況により変わる場合があります。',
     },
     marge: 'マージン',
+    priority: {
+      step: '優先対応の割増',
+    },
     marginPct: '利益率',
     marginGlobal: '全体マージン',
     marginFilament: 'フィラメントマージン',

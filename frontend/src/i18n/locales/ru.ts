@@ -10740,6 +10740,9 @@ export default {
       footnote: "Цены указаны с налогом. Смета действительна при наличии материалов.",
     },
     marge: "Маржа",
+    priority: {
+      step: "Надбавка за приоритет",
+    },
     marginPct: "Маржа %",
     marginGlobal: "Общая маржа",
     marginFilament: "Маржа филамента",

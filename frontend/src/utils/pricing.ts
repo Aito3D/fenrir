@@ -50,7 +50,17 @@ export interface PricingDefaults {
   qty_k?: number;
   /** Pre-tax floor per task (app currency). */
   min_task_price?: number;
+  /** Priority surcharge: percent of the base price, with a minimum fee (app currency). */
+  priority_pct?: number;
+  priority_min_fee?: number;
+  urgent_pct?: number;
+  urgent_min_fee?: number;
+  /** Due-date suggestion: days left at or under which a level is suggested. */
+  priority_days?: number;
+  urgent_days?: number;
 }
+
+export type PriorityLevel = 'normal' | 'priority' | 'urgent';
 
 export interface PricingInputs {
   weight_g: number;
@@ -70,6 +80,8 @@ export interface PricingInputs {
   post_fulfillment_min: number;
   stuff_amount: number;
   stuff_markup_pct: number;
+  /** Absent = normal. */
+  priority?: PriorityLevel;
 }
 
 export interface PricingResult {
@@ -115,6 +127,8 @@ export interface PricingResult {
   margin_filament: number;
   margin_stuff: number;
   marge: number;
+  /** Per-unit priority surcharge (task surcharge ÷ quantity); NOT part of marge. */
+  margin_priority: number;
   total_ht: number;
   total_ttc: number;
   margin_pct: number; // marge over the pre-tax price (marge / total_ht), e.g. 0.3333
@@ -146,12 +160,39 @@ export const CURVE_DEFAULTS = {
   qty_min_factor: 0.4,
   qty_k: 5,
   min_task_price: 12,
+  priority_pct: 15,
+  priority_min_fee: 500,
+  urgent_pct: 35,
+  urgent_min_fee: 1500,
+  priority_days: 5,
+  urgent_days: 2,
 } as const;
 
 const curveParam = (d: PricingDefaults, key: keyof typeof CURVE_DEFAULTS): number => {
   const v = d[key];
   return typeof v === 'number' && Number.isFinite(v) ? v : CURVE_DEFAULTS[key];
 };
+
+/** Surcharge for a priority level: max(base × pct / 100, min fee); normal is 0. */
+export function prioritySurcharge(level: PriorityLevel, base: number, d: PricingDefaults): number {
+  if (level === 'normal') return 0;
+  const pct = curveParam(d, level === 'urgent' ? 'urgent_pct' : 'priority_pct');
+  const minFee = curveParam(d, level === 'urgent' ? 'urgent_min_fee' : 'priority_min_fee');
+  return Math.max((base * pct) / 100, minFee);
+}
+
+const dayNumber = (iso: string): number => Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
+
+/** Level suggested by the calendar days from `today` to `dueDate` (ISO dates);
+ *  overdue dates count as urgent. */
+export function suggestPriority(dueDate: string | null, today: string, d: PricingDefaults): PriorityLevel {
+  if (!dueDate) return 'normal';
+  const days = dayNumber(dueDate) - dayNumber(today);
+  if (Number.isNaN(days)) return 'normal';
+  if (days <= curveParam(d, 'urgent_days')) return 'urgent';
+  if (days <= curveParam(d, 'priority_days')) return 'priority';
+  return 'normal';
+}
 
 /** Size margin: M_MIN + (M_MAX − M_MIN) × K / (u + K). Decreasing in the
  *  UNIT cost u (small parts carry more management overhead). Guards: an
@@ -302,9 +343,11 @@ export function computePricing(
 
   // Totals. Collected tax is not revenue, so the margin fraction is
   // expressed over the pre-tax price.
-  const total_ht = total_cost + marge;
+  const margin_priority =
+    prioritySurcharge(inputs.priority ?? 'normal', (total_cost + marge) * quantity, defaults) / quantity;
+  const total_ht = total_cost + marge + margin_priority;
   const total_ttc = total_ht * (1 + defaults.tax_pct / 100);
-  const margin_pct = total_ht > 0 ? marge / total_ht : 0;
+  const margin_pct = total_ht - margin_priority > 0 ? marge / (total_ht - margin_priority) : 0;
 
   return {
     filament_cost,
@@ -336,6 +379,7 @@ export function computePricing(
     margin_filament,
     margin_stuff,
     marge,
+    margin_priority,
     total_ht,
     total_ttc,
     margin_pct,
@@ -488,7 +532,7 @@ export function formatPct(fraction: number, decimals = 2): string {
 }
 
 export interface WaterfallStep {
-  key: 'filament' | 'printer' | 'energy' | 'provisions' | 'other' | 'labor' | 'marge' | 'tax';
+  key: 'filament' | 'printer' | 'energy' | 'provisions' | 'other' | 'labor' | 'marge' | 'priority' | 'tax';
   value: number;
   /** Running total AFTER this step — the last step's cumulative is total_ttc. */
   cumulative: number;
@@ -504,6 +548,7 @@ export const STEP_LABEL_KEY: Record<WaterfallStep['key'], string> = {
   other: 'calculator.splitAdsConsumables',
   labor: 'calculator.groupLabor',
   marge: 'calculator.marge',
+  priority: 'calculator.priority.step',
   tax: 'calculator.waterfall.tax',
 };
 
@@ -527,6 +572,7 @@ export function buildWaterfall(result: PricingResult): WaterfallStep[] {
     { key: 'other', value: result.ads_cost + result.consumables_flat + result.base_fee },
     { key: 'labor', value: result.labor_total },
     { key: 'marge', value: result.marge },
+    { key: 'priority', value: result.margin_priority },
     { key: 'tax', value: result.total_ttc - result.total_ht },
   ];
   const steps: WaterfallStep[] = [];

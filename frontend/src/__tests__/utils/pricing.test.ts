@@ -17,6 +17,8 @@ import {
   qtyFactor,
   unitMultiplier,
   CURVE_DEFAULTS,
+  prioritySurcharge,
+  suggestPriority,
   type PricingDefaults,
   type PricingFilament,
   type PricingInputs,
@@ -687,6 +689,7 @@ describe('buildWaterfall', () => {
     floor_applied: false,
     margin_filament: 0,
     margin_stuff: 0,
+    margin_priority: 0,
     marge: 0,
     total_ht: 0,
     total_ttc: 0,
@@ -752,5 +755,48 @@ describe('buildWaterfall', () => {
     const margeStep = steps.find((s) => s.key === 'marge');
     expect(margeStep).toBeDefined();
     expect(margeStep!.value).toBeCloseTo(-0.006, 6);
+  });
+});
+
+describe('prioritySurcharge', () => {
+  const d = defaults; // no priority fields -> CURVE_DEFAULTS
+  it('normal is always 0', () => expect(prioritySurcharge('normal', 20000, d)).toBe(0));
+  it('min fee wins on small jobs', () => {
+    expect(prioritySurcharge('priority', 1400, d)).toBe(500);
+    expect(prioritySurcharge('urgent', 2031, d)).toBe(1500);
+  });
+  it('percent wins on big jobs', () => {
+    expect(prioritySurcharge('priority', 20000, d)).toBe(3000);
+    expect(prioritySurcharge('urgent', 20000, d)).toBe(7000);
+  });
+});
+
+describe('suggestPriority', () => {
+  const t = '2026-11-19';
+  it.each([
+    [null, 'normal'],
+    ['2026-11-30', 'normal'],
+    ['2026-11-24', 'priority'],
+    ['2026-11-21', 'urgent'],
+    ['2026-11-19', 'urgent'],
+    ['2026-11-10', 'urgent'],
+  ])('%s -> %s', (due, want) => expect(suggestPriority(due, t, defaults)).toBe(want));
+});
+
+describe('computePricing priority', () => {
+  const d = defaults;
+  it('adds the surcharge after the floor and before tax, as its own waterfall step', () => {
+    const inputs = { ...referenceInputs, quantity: 3 };
+    const normal = computePricing(inputs, filament, printer, d);
+    const urgent = computePricing({ ...inputs, priority: 'urgent' }, filament, printer, d);
+    const add = prioritySurcharge('urgent', normal.total_ht_qty, d);
+    expect(urgent.total_ht_qty).toBeCloseTo(normal.total_ht_qty + add, 6);
+    expect(urgent.marge).toBeCloseTo(normal.marge, 6);
+    const steps = buildWaterfall(urgent);
+    expect(steps.map((s) => s.key)).toContain('priority');
+    expect(steps.at(-1)!.cumulative).toBe(urgent.total_ttc);
+  });
+  it('no priority input prices exactly as before', () => {
+    expect(computePricing(referenceInputs, filament, printer, d).margin_priority).toBe(0);
   });
 });

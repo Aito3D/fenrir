@@ -11119,6 +11119,9 @@ export default {
       footnote: '價格含稅。報價視材料供應情況而定。',
     },
     marge: '利潤',
+    priority: {
+      step: '優先加價',
+    },
     marginPct: '利潤率',
     marginGlobal: '整體利潤',
     marginFilament: '耗材利潤',

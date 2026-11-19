@@ -11192,6 +11192,9 @@ export default {
       footnote: 'Prices include tax. Quote valid subject to material availability.',
     },
     marge: 'Margin',
+    priority: {
+      step: 'Priority surcharge',
+    },
     marginPct: 'Margin %',
     marginGlobal: 'Global margin',
     marginFilament: 'Filament margin',

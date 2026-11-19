@@ -10757,6 +10757,9 @@ export default {
       footnote: '가격은 세금 포함입니다. 견적은 자재 수급 상황에 따라 달라질 수 있습니다.',
     },
     marge: '마진',
+    priority: {
+      step: '우선순위 할증',
+    },
     marginPct: '마진율',
     marginGlobal: '전체 마진',
     marginFilament: '필라멘트 마진',

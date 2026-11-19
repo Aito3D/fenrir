@@ -11341,6 +11341,9 @@ export default {
       footnote: 'Ceny zawierają podatek. Wycena ważna z zastrzeżeniem dostępności materiałów.',
     },
     marge: 'Marża',
+    priority: {
+      step: 'Dopłata za priorytet',
+    },
     marginPct: 'Marża %',
     marginGlobal: 'Marża globalna',
     marginFilament: 'Marża filamentu',

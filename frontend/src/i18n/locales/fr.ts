@@ -11121,6 +11121,9 @@ export default {
       footnote: 'Prix TTC. Devis valable sous réserve de disponibilité des matériaux.',
     },
     marge: 'Marge',
+    priority: {
+      step: 'Supplément de priorité',
+    },
     marginPct: 'Marge',
     marginGlobal: 'Marge globale',
     marginFilament: 'Marge filament',

@@ -42,6 +42,7 @@ const baseResult: PricingResult = {
   floor_applied: false,
   margin_filament: 0,
   margin_stuff: 0,
+  margin_priority: 0,
   marge: 0,
   total_ht: 0,
   total_ttc: 42.5,

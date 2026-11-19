@@ -11136,6 +11136,9 @@ export default {
       footnote: 'Preise inkl. Steuern. Angebot vorbehaltlich Materialverfügbarkeit.',
     },
     marge: 'Gewinnmarge',
+    priority: {
+      step: 'Prioritätszuschlag',
+    },
     marginPct: 'Marge in %',
     marginGlobal: 'Globale Marge',
     marginFilament: 'Filament-Marge',

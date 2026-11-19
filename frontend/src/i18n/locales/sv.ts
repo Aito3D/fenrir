@@ -11194,6 +11194,9 @@ errors: {
       footnote: 'Priserna inkluderar moms. Offerten gäller under förutsättning att material finns tillgängligt.',
     },
     marge: 'Marginal',
+    priority: {
+      step: 'Prioritetstillägg',
+    },
     marginPct: 'Marginal %',
     marginGlobal: 'Global marginal',
     marginFilament: 'Filamentmarginal',

@@ -11161,6 +11161,9 @@ export default {
       footnote: 'Prijzen zijn inclusief btw. Offerte geldig onder voorbehoud van materiaalbeschikbaarheid.',
     },
     marge: 'Marge',
+    priority: {
+      step: 'Prioriteitstoeslag',
+    },
     marginPct: 'Marge %',
     marginGlobal: 'Totale marge',
     marginFilament: 'Filamentmarge',
