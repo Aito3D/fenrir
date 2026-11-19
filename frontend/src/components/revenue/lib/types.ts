@@ -216,3 +216,87 @@ export interface RevenueAnnotation {
   day: string;
   label: string;
 }
+
+export interface RevenueResponse {
+  granularity: RevenueGranularity;
+  from: string;
+  to: string;
+  items: string[] | null;
+  brands: string[] | null;
+  kind: string | null;
+  segment: string | null;
+  buckets: RevenueBucket[];
+  sync: RevenueSyncStatus;
+  reviewCount: number;
+  itemsSyncedAt: string | null;
+  fetchedAt: string;
+}
+
+export interface ItemsResponse {
+  items: RevenueItemRow[];
+  from: string;
+  to: string;
+}
+
+export interface ProductsResponse {
+  products: RevenueProduct[];
+  fetchedAt: string;
+}
+
+export interface ReviewResponse {
+  unclassified: ReviewRow[];
+  decided: DecidedRow[];
+}
+
+export interface SyncResponse {
+  sync: RevenueSyncStatus;
+}
+
+/** The POST /sync result: the batch figures plus the fresh status. */
+export interface SyncBatchResponse extends SyncResponse {
+  fetched: number;
+  pending: number;
+  days: string[];
+  customers: number;
+}
+
+export interface YoyResponse {
+  years: YoyYear[];
+  today: string;
+}
+
+export interface DailyResponse {
+  from: string;
+  to: string;
+  days: CalendarDay[];
+}
+
+export interface TargetsResponse {
+  targets: RevenueTarget[];
+}
+
+export interface AnnotationsResponse {
+  annotations: RevenueAnnotation[];
+}
+
+export interface CustomersResponse extends CustomerBreakdown {
+  from: string;
+  to: string;
+  acquisition: Acquisition;
+}
+
+export interface MoversResponse extends MoversResult {
+  /** Null for a free comparison (cfrom/cto). */
+  granularity: RevenueGranularity | null;
+  key: string | null;
+}
+
+export interface AnalysisResponse {
+  from: string;
+  to: string;
+  abc: AbcResult;
+  /** Dropped by the server without the margin permission. */
+  marginByBrand?: MarginRow[];
+  marginByNature?: MarginRow[];
+  dormant: DormantRow[];
+}
