@@ -164,8 +164,13 @@ async def _tree(db):
         ]
     )
     await db.flush()
-    tree.source_color_id = (
-        (await db.execute(select(FilamentTreeColor.id).order_by(FilamentTreeColor.id))).scalars().first()
+    red, blue = (await db.execute(select(FilamentTreeColor.id).order_by(FilamentTreeColor.id))).scalars().all()
+    tree.source_color_id = red
+    # Blue holds a value of its own, so it keeps its own leaves; Red shares the colour-less leaf
+    db.add(
+        FilamentTreeOverride(
+            tree_id=tree.id, machine="", nozzle="", color_id=blue, values='{"filament_shrink": ["99%"]}'
+        )
     )
     await db.commit()
     await store.regenerate_tree(db, tree.id)
@@ -243,7 +248,7 @@ async def test_source_leaf_owned_key_and_is_source_flags(db_session):
     await _mark_synced(db_session)
     leaves, _ = await pull.collect_leaf_states(db_session)
     by = {lf.name: lf for lf in leaves}
-    src = by["Polymaker PETG - Red @H2S 0.4"]
+    src = by["Polymaker PETG @H2S 0.4"]  # the colour-less leaf at the source node speaks for the tree
     assert src.is_source and src.owned_at == {"nozzle_temperature": "machine"}
     assert not by["Polymaker PETG - Blue @H2S 0.4"].is_source
     plan = plan_pull([orca(src.name, nozzle_temperature=["245"])], leaves, set())
@@ -315,7 +320,9 @@ async def test_apply_pull_rolls_back_a_tree_whose_regeneration_fails(db_session)
     leaves, names = await pull.collect_leaf_states(db_session)
     lf = next(x for x in leaves if x.name == "Polymaker PETG - Blue @H2S 0.4")
     huge = "x" * (_CONTENT_MAX_LENGTH + 1)
-    plan = plan_pull([orca(lf.name, nozzle_temperature=["255"], filament_notes=huge)], leaves, names)
+    plan = plan_pull(
+        [orca(lf.name, nozzle_temperature=["255"], filament_notes=huge, filament_shrink=["99%"])], leaves, names
+    )
     assert plan.applied and plan.ignored == 0
     refused = await pull.apply_pull(db_session, plan)
     assert refused == {(lf.tree_id, lf.machine, lf.nozzle, lf.color_id): {"nozzle_temperature", "filament_notes"}}
@@ -324,7 +331,7 @@ async def test_apply_pull_rolls_back_a_tree_whose_regeneration_fails(db_session)
     after = next(x for x in leaves if x.name == lf.name)
     assert after.generated == lf.generated and after.baseline == lf.baseline
     overrides = (await db_session.execute(select(FilamentTreeOverride))).scalars().all()
-    assert overrides == []
+    assert [o.color_id for o in overrides] == [lf.color_id]  # only the fixture's colour value
 
 
 @pytest.mark.asyncio

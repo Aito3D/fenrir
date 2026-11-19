@@ -281,7 +281,8 @@ async def apply_migration(db: AsyncSession, choices: list[dict]) -> list[int]:
                         tree_id=tree.id, machine=m, nozzle=n, color_id=color_ids.get(pid, 0), values=json.dumps(values)
                     )
                 )
-            # The old row becomes the colour's leaf at the source machine/nozzle, so its id (and references) survive.
+            # The old row becomes the colour's leaf at the source machine/nozzle, so its id survives when the colour
+            # keeps a leaf of its own; a colour without own values is dropped by the regeneration (colour-less leaf).
             for pid, color_id in color_ids.items():
                 db.add(
                     FilamentTreeLeaf(tree_id=tree.id, machine=machine, nozzle=nozzle, color_id=color_id, preset_id=pid)

@@ -53,6 +53,7 @@ from backend.app.services.filament_tree import (
     SKIP_KEYS,
     TreeData,
     is_abrasive,
+    leaf_groups,
     leaf_targets,
     match_base,
     parse_inherits,
@@ -112,7 +113,10 @@ async def _would_drop_leaf(db: AsyncSession, tree_id: int, tree, targets: dict) 
         for lf in (await db.execute(select(FilamentTreeLeaf).where(FilamentTreeLeaf.tree_id == tree_id))).scalars()
         for n in lf.nozzle.split("+")
     }
-    return bool(existing - set(leaf_targets(tree, targets)))
+    generated = {
+        (m, n, c) for m, ns, c in leaf_groups(tree, targets, await store.base_names(db)) for n in ns.split("+")
+    }
+    return bool(existing - generated)
 
 
 def _refuse_missing_delete() -> None:

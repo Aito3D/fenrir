@@ -74,21 +74,31 @@ def leaf_targets(tree: TreeData, targets: dict) -> list[tuple[str, str, int]]:
     ]
 
 
+def has_colour_values(tree: TreeData, machine: str, nozzle: str, color_id: int) -> bool:
+    wide = tree.overrides.get(("", "", color_id), {})
+    return any(k not in NOZZLE_BOUND_KEYS for k in wide) or bool(tree.overrides.get((machine, nozzle, color_id)))
+
+
 def leaf_groups(tree: TreeData, targets: dict, base_names: set[str]) -> list[tuple[str, str, int]]:
-    """The leaves as generated. With ``merge_nozzles``, nozzles of one machine and colour whose presets would be
-    identical (same values, same Bambu base) share one leaf whose nozzle reads "0.6+0.8"."""
+    """The leaves as generated. Colours without values of their own share one colour-less leaf (colour id 0): their
+    presets would differ only by name and default colour. With ``merge_nozzles``, nozzles of one machine and colour
+    whose presets would be identical (same values, same Bambu base) share one leaf whose nozzle reads "0.6+0.8"."""
+    leaves = list(
+        dict.fromkeys((m, n, c if has_colour_values(tree, m, n, c) else 0) for m, n, c in leaf_targets(tree, targets))
+    )
     if not targets.get("merge_nozzles"):
-        return leaf_targets(tree, targets)
+        return leaves
     groups: dict[tuple, list[str]] = {}
-    for m, n, c in leaf_targets(tree, targets):
-        values = {k: v for k, (v, _) in resolve_with_sources(tree, m, n, c).items()}
+    for m, n, c in leaves:
+        values = {k: v for k, (v, _) in resolve_with_sources(tree, m, n, c or None).items()}
         base = match_base(tree.base_family, m, n, base_names, tree.fallback_inherits)
         groups.setdefault((m, c, json.dumps([values, base], sort_keys=True, default=str)), []).append(n)
     return [(m, "+".join(nozzles), c) for (m, c, _), nozzles in groups.items()]
 
 
 def leaf_name(tree: TreeData, machine: str, nozzle: str, color_id: int) -> str:
-    return f"{tree.name} - {tree.colors[color_id][0]} @{machine} {nozzle}"
+    colour = f" - {tree.colors[color_id][0]}" if color_id else ""
+    return f"{tree.name}{colour} @{machine} {nozzle}"
 
 
 def target_machine(machine: str, machines: list[str]) -> str | None:
@@ -153,7 +163,7 @@ def resolve_leaf(
     # followed across a printer switch) when it has no parent: so the leaf carries the base's values itself,
     # filament_id included (a child got it from its parent). A base that cannot be read keeps the parent link.
     base = {k: v for k, v in (base_values(inherits) if base_values else {}).items() if k not in _BASE_ONLY_KEYS}
-    leaf = base | {k: v for k, (v, _) in resolve_with_sources(tree, machine, first, color_id).items()}
+    leaf = base | {k: v for k, (v, _) in resolve_with_sources(tree, machine, first, color_id or None).items()}
     leaf.update(
         {
             "name": name,
@@ -162,7 +172,7 @@ def resolve_leaf(
             "inherits": "" if base else inherits,
             "version": tree.version,
             "filament_vendor": [tree.brand],
-            "default_filament_colour": [tree.colors[color_id][1]],
+            "default_filament_colour": [tree.colors[color_id][1] if color_id else ""],
             "compatible_printers": [f"Bambu Lab {m} {n} nozzle" for m in machine.split("+") for n in nozzle.split("+")],
         }
     )

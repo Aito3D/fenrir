@@ -3,6 +3,7 @@ from dataclasses import replace
 from backend.app.services.filament_tree import (
     DEFAULT_TARGETS,
     TreeData,
+    leaf_groups,
     leaf_targets,
     match_base,
     parse_inherits,
@@ -153,3 +154,28 @@ def test_leaf_is_flattened_onto_its_bambu_base():
 def test_leaf_keeps_its_parent_when_the_base_cannot_be_read():
     leaf = resolve_leaf(TREE, "H2S", "0.4", RED, BASES, lambda _name: {})
     assert leaf["inherits"] == "Bambu PETG Basic @BBL H2S 0.4 nozzle"
+
+
+def test_colours_without_own_values_share_the_colourless_leaf():
+    targets = {"machines": ["H2S"], "nozzles": ["0.4", "0.6"]}
+    assert leaf_groups(TREE, targets, BASES) == [("H2S", "0.4", 0), ("H2S", "0.6", 0)]
+    leaf = resolve_leaf(TREE, "H2S", "0.4", 0, BASES)
+    assert leaf["name"] == "Polymaker PETG @H2S 0.4" and leaf["default_filament_colour"] == [""]
+    # a colour value (colour-wide or on one leaf) gives that colour its own leaf there; nozzle-bound colour-wide
+    # keys never reach a leaf, so they do not count
+    tree = replace(
+        TREE,
+        overrides={("", "", BLACK): {"pressure_advance": ["0.1"]}, ("H2S", "0.6", RED): {"fan_min_speed": ["40"]}},
+    )
+    assert leaf_groups(tree, targets, BASES) == [("H2S", "0.4", 0), ("H2S", "0.6", RED), ("H2S", "0.6", 0)]
+    # with one Bambu base for both nozzles, the colour-less leaf merges them; Red's 0.6 leaf stays apart
+    merged = leaf_groups(tree, targets | {"merge_nozzles": True}, BASES - {"Bambu PETG Basic @BBL H2S 0.4 nozzle"})
+    assert merged == [("H2S", "0.4+0.6", 0), ("H2S", "0.6", RED)]
+
+
+def test_pull_maps_the_colourless_leaf_to_the_nozzle_node():
+    from backend.app.services.filament_tree_pull import _LEAF_SUFFIX, _nodes
+
+    assert _nodes("color", "H2S", "0.4+0.6", 0) == [("H2S", "0.4", None), ("H2S", "0.6", None)]
+    assert _nodes("color", "H2S", "0.4", RED) == [("H2S", "0.4", RED)]
+    assert _LEAF_SUFFIX.search("Polymaker PETG @H2S 0.4+0.6") and not _LEAF_SUFFIX.search("Polymaker PETG - Red")

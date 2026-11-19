@@ -210,8 +210,56 @@ async def managed_preset_ids(db: AsyncSession) -> set[int]:
     return set((await db.execute(select(FilamentTreeLeaf.preset_id))).scalars())
 
 
+async def hoist_shared_colour_values(db: AsyncSession, tree_id: int) -> None:
+    """A key every colour holds with one value moves up a level (colour node -> nozzle node, colour-wide -> root).
+    No leaf changes, but the colours stop needing leaves of their own. OrcaSlicer edits pulled from colour leaves
+    land on each colour, so this runs on every regeneration. A one-colour tree is left alone: nothing to save, and a
+    colour added later would otherwise inherit the value."""
+    color_ids = set(
+        (await db.execute(select(FilamentTreeColor.id).where(FilamentTreeColor.tree_id == tree_id))).scalars()
+    )
+    if len(color_ids) < 2:
+        return
+    rows = (await db.execute(select(FilamentTreeOverride).where(FilamentTreeOverride.tree_id == tree_id))).scalars()
+    parents: dict[tuple[str, str], FilamentTreeOverride] = {}
+    by_node: dict[tuple[str, str], list[FilamentTreeOverride]] = {}
+    for row in rows:
+        if row.color_id == 0:
+            parents[(row.machine, row.nozzle)] = row
+        elif row.color_id in color_ids:
+            by_node.setdefault((row.machine, row.nozzle), []).append(row)
+    for (machine, nozzle), colour_rows in by_node.items():
+        if len(colour_rows) != len(color_ids):
+            continue
+        values = [json.loads(r.values) for r in colour_rows]
+        shared = {
+            k: v
+            for k, v in values[0].items()
+            if all(k in x and x[k] == v for x in values[1:]) and (machine or k not in NOZZLE_BOUND_KEYS)
+        }
+        if not shared:
+            continue
+        if machine:
+            parent = parents.get((machine, nozzle))
+            if parent is None:
+                parent = FilamentTreeOverride(tree_id=tree_id, machine=machine, nozzle=nozzle, color_id=0, values="{}")
+                db.add(parent)
+            parent.values = json.dumps(json.loads(parent.values) | shared)
+        else:  # colour-wide: the root (nozzle-bound keys never reach a leaf from there, so they stay put)
+            meta = await _get_tree(db, tree_id)
+            meta.own_values = json.dumps(json.loads(meta.own_values) | shared)
+        for row, own in zip(colour_rows, values, strict=True):
+            rest = {k: v for k, v in own.items() if k not in shared}
+            if rest:
+                row.values = json.dumps(rest)
+            else:
+                await db.delete(row)
+    await db.flush()
+
+
 async def regenerate_tree(db: AsyncSession, tree_id: int) -> dict:
     """Upsert one preset per target leaf and drop leaves (and presets) that are no longer targets."""
+    await hoist_shared_colour_values(db, tree_id)
     tree = await load_tree(db, tree_id)
     meta = await _get_tree(db, tree_id)
     bases = await base_names(db)
@@ -242,7 +290,7 @@ async def regenerate_tree(db: AsyncSession, tree_id: int) -> dict:
     for key in targets:
         machine, nozzle, color_id = key
         name = leaf_name(tree, *key)
-        color_name, color_hex = tree.colors[color_id]
+        color_name, color_hex = tree.colors.get(color_id, ("", ""))  # 0: the colour-less leaf
         content = json.dumps(resolve_leaf(tree, machine, nozzle, color_id, bases, reader.values), indent=4)
         if len(content) > _CONTENT_MAX_LENGTH:
             raise ValueError(f"{name}: the generated preset is larger than {_CONTENT_MAX_LENGTH} bytes")

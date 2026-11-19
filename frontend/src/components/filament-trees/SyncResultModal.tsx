@@ -168,8 +168,8 @@ export function SyncResultModal({ result, error, trees, targets, onClose, onRetr
   const [resolved, setResolved] = useState<Set<number>>(new Set());
   const leafName = (c: FilamentTreeConflict) => {
     const tree = trees.find((tr) => tr.id === c.tree_id);
-    const colour = tree?.colors.find((col) => col.id === c.color_id);
-    return `${tree?.name ?? `#${c.tree_id}`} - ${colour?.name ?? `#${c.color_id}`} @${c.machine} ${c.nozzle}`;
+    const colour = c.color_id ? ` - ${tree?.colors.find((col) => col.id === c.color_id)?.name ?? `#${c.color_id}`}` : '';
+    return `${tree?.name ?? `#${c.tree_id}`}${colour} @${c.machine} ${c.nozzle}`;
   };
   const conflicts = result?.conflicts ?? [];
   const unsent = result ? result.push.failed.length + result.push.remaining : 0;

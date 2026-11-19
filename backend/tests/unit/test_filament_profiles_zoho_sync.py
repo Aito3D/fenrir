@@ -843,7 +843,7 @@ async def test_zoho_sync_prices_tree_root(async_client, db_session, monkeypatch)
     await db_session.refresh(tree)
     assert json.loads(tree.own_values)["filament_cost"] == ["19.90"]
     leaves = (await db_session.execute(select(FilamentPreset))).scalars().all()
-    assert len(leaves) == 32 and all(json.loads(p.content)["filament_cost"] == ["19.90"] for p in leaves)
+    assert len(leaves) == 16 and all(json.loads(p.content)["filament_cost"] == ["19.90"] for p in leaves)
 
     # Red gets dearer and a colour joins with no Zoho item
     await store.add_color(db_session, tree.id, "Mint", "#00FF88")

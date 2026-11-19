@@ -27,7 +27,7 @@ async def test_export_zip_entries_marks_exported_not_baseline(db_session):
     zf = zipfile.ZipFile(io.BytesIO(data))
     names = zf.namelist()
     assert len(names) == 16 and names == sorted(names)
-    assert "Polymaker PETG - Red @H2S 0.4.json" in names
+    assert "Polymaker PETG @H2S 0.4.json" in names
     assert all("inherits" in json.loads(zf.read(n)) for n in names)
     leaves = (await db_session.execute(select(FilamentTreeLeaf))).scalars().all()
     # the download is not confirmed yet: everything stays pending

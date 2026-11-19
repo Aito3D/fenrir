@@ -29,14 +29,15 @@ async def test_regenerate_creates_all_leaves(db_session):
     assert counts == {"created": 16, "updated": 0, "deleted": 0}
     names = await _presets(db_session)
     assert len(names) == 16
-    assert "Polymaker PETG - Red @H2S 0.4" in names
+    assert "Polymaker PETG @H2S 0.4" in names  # a colour without own values shares the colour-less leaf
     assert await store.regenerate_tree(db_session, tree.id) == {"created": 0, "updated": 16, "deleted": 0}
 
 
 async def test_regenerate_removes_orphan_leaves(db_session):
     tree, _ = await _make_tree(db_session)
     blue = await store.add_color(db_session, tree.id, "Blue", "#0000FF")
-    assert len(await _presets(db_session)) == 32
+    await store.set_node_values(db_session, tree.id, None, None, blue, {"nozzle_temperature": ["250"]}, [])
+    assert len(await _presets(db_session)) == 32  # Blue holds a value of its own: it gets its own leaves
     await store.remove_color(db_session, tree.id, blue)
     assert len(await _presets(db_session)) == 16
     await store.update_tree(db_session, tree.id, skip_02=True)
@@ -70,7 +71,7 @@ async def test_node_edit_flows_to_children(db_session):
     await store.set_node_values(db_session, tree.id, "H2S", "0.4", None, {"filament_start_gcode": gcode}, [])
     rows = (await db_session.execute(select(FilamentPreset))).scalars().all()
     hit = [r for r in rows if "@H2S 0.4" in r.name]
-    assert len(hit) == 2 and all(json.loads(r.content)["filament_start_gcode"] == gcode for r in hit)
+    assert len(hit) == 1 and all(json.loads(r.content)["filament_start_gcode"] == gcode for r in hit)
     assert all("filament_start_gcode" not in json.loads(r.content) for r in rows if "@H2S 0.6" in r.name)
     # clearing removes the empty override row and the key
     await store.set_node_values(db_session, tree.id, "H2S", "0.4", None, {}, ["filament_start_gcode"])
@@ -234,3 +235,31 @@ async def test_regenerate_all_trees_rewrites_stale_presets(db_session):
     await db_session.refresh(stale)
     assert stale.content == fresh
     assert await store.regenerate_all_trees(factory) == 0
+
+
+async def test_values_every_colour_shares_move_up_without_changing_a_leaf(db_session):
+    tree, red = await _make_tree(db_session)
+    blue = await store.add_color(db_session, tree.id, "Blue", "#0000FF")
+    await store.set_node_values(db_session, tree.id, "H2S", "0.4", red.id, {"fan_min_speed": ["40"]}, [])
+    # one colour alone: nothing moves
+    assert await db_session.scalar(select(func.count()).select_from(store.FilamentTreeOverride)) == 1
+    both = {"fan_min_speed": ["40"], "nozzle_temperature": ["250"]}
+    await store.set_node_values(db_session, tree.id, "H2S", "0.4", red.id, {"nozzle_temperature": ["250"]}, [])
+    await store.set_node_values(db_session, tree.id, "H2S", "0.4", blue, both | {"fan_max_speed": ["90"]}, [])
+    await store.set_node_values(db_session, tree.id, None, None, red.id, {"filament_shrink": ["99%"]}, [])
+    await store.set_node_values(db_session, tree.id, None, None, blue, {"filament_shrink": ["99%"]}, [])
+
+    rows = {
+        (o.machine, o.nozzle, o.color_id): json.loads(o.values)
+        for o in (await db_session.execute(select(store.FilamentTreeOverride))).scalars()
+    }
+    assert rows == {("H2S", "0.4", 0): both, ("H2S", "0.4", blue): {"fan_max_speed": ["90"]}}
+    await db_session.refresh(tree)
+    assert json.loads(tree.own_values)["filament_shrink"] == ["99%"]
+    # Red no longer needs its own leaves; its values reach it through the shared one
+    names = await _presets(db_session)
+    assert not any(" - Red " in n for n in names) and "Polymaker PETG - Blue @H2S 0.4" in names
+    shared = (
+        await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG @H2S 0.4"))
+    ).scalar_one()
+    assert all(json.loads(shared.content)[k] == v for k, v in both.items())

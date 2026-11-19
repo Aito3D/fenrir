@@ -588,7 +588,11 @@ export function NodePanel({ node, onCreated }: { node: NodeRef; onCreated?: (tre
         <div role="tabpanel" aria-label="JSON" className="min-w-0">
           <JsonView
             rows={rows}
-            leafName={tree && color && machine && nozzle ? `${tree.name} - ${color.name} @${machine} ${nozzle}` : undefined}
+            leafNames={
+              tree && color && machine && nozzle
+                ? [`${tree.name} - ${color.name} @${machine} ${nozzle}`, `${tree.name} @${machine} ${nozzle}`]
+                : undefined
+            }
           />
         </div>
       ) : (

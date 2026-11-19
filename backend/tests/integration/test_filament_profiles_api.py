@@ -686,7 +686,7 @@ async def _tree_leaf_inherits(db: AsyncSession) -> str:
     await store.regenerate_tree(db, tree.id)
     await db.commit()
     preset = (
-        await db.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG - Red @H2S 0.4"))
+        await db.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG @H2S 0.4"))
     ).scalar_one()
     return _json.loads(preset.content)["inherits"]
 
@@ -700,7 +700,7 @@ async def _leaf_inherits_now(db: AsyncSession) -> str:
 
     db.expire_all()
     preset = (
-        await db.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG - Red @H2S 0.4"))
+        await db.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG @H2S 0.4"))
     ).scalar_one()
     return _json.loads(preset.content)["inherits"]
 

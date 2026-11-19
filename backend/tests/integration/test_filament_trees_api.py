@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 
 from backend.app.api.routes import filament_trees as routes
 from backend.app.models.filament_profile import BaseFilamentPreset, FilamentPreset
-from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor, FilamentTreeLeaf
+from backend.app.models.filament_tree import FilamentTree, FilamentTreeColor, FilamentTreeLeaf, FilamentTreeOverride
 from backend.app.schemas.filament_profile import _CONTENT_MAX_LENGTH
 from backend.app.services import filament_tree_push as push_service, filament_tree_store as store
 from backend.app.services.orca_cloud import OrcaCloudAuthError, OrcaCloudError
@@ -38,6 +38,8 @@ async def _tree(db, name="Polymaker PETG"):
     db.add_all([white, red])
     await db.flush()
     tree.source_color_id = white.id
+    # Red holds a value of its own, so it keeps its own leaves; White shares the colour-less leaf
+    db.add(FilamentTreeOverride(tree_id=tree.id, color_id=red.id, values=json.dumps({"filament_shrink": ["99%"]})))
     await db.commit()
     await store.regenerate_tree(db, tree.id)
     await db.commit()
@@ -108,7 +110,7 @@ async def test_list_trees_shape(async_client, db_session):
         "H2S": 1,
         "H2S/0.4": 1,
         f"H2S/0.6/{red.id}": 1,
-        f"color:{red.id}": 1,
+        f"color:{red.id}": 2,  # the fixture's filament_shrink + fan_min_speed
     }
 
 
@@ -674,7 +676,8 @@ async def test_concurrent_migrate_of_one_group_loses_with_400(async_client, db_s
     first, second = await asyncio.gather(post(), post())
     assert sorted([first.status_code, second.status_code]) == [200, 400], (first.text, second.text)
     loser = first if first.status_code == 400 else second
-    assert loser.json()["detail"] == "group already migrated"
+    # the winner's regeneration may already have dropped the source row (its colour shares the colour-less leaf)
+    assert loser.json()["detail"] in ("group already migrated", "no unmanaged group 'Polymaker PETG' with preset 1")
 
 
 async def test_migrate_then_list(async_client, db_session):
@@ -742,9 +745,7 @@ async def test_joined_printers_share_one_preset_per_nozzle_and_colour(async_clie
     # one printer's worth of presets fewer: 4 nozzles x 2 colours
     assert await db_session.scalar(select(func.count()).select_from(FilamentTreeLeaf)) == before - 8
     preset = (
-        await db_session.execute(
-            select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG - White @H2C+H2D 0.4")
-        )
+        await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == "Polymaker PETG @H2C+H2D 0.4"))
     ).scalar_one()
     content = json.loads(preset.content)
     assert content["compatible_printers"] == ["Bambu Lab H2C 0.4 nozzle", "Bambu Lab H2D 0.4 nozzle"]
@@ -770,7 +771,7 @@ async def test_merged_nozzles_share_a_preset_until_one_is_calibrated(async_clien
 
     # nothing is nozzle-specific yet: one preset per colour, compatible with the three nozzles
     merged = await presets()
-    assert list(merged) == ["Polymaker PETG - Red @H2S 0.4+0.6+0.8", "Polymaker PETG - White @H2S 0.4+0.6+0.8"]
+    assert list(merged) == ["Polymaker PETG - Red @H2S 0.4+0.6+0.8", "Polymaker PETG @H2S 0.4+0.6+0.8"]
     red_id = merged["Polymaker PETG - Red @H2S 0.4+0.6+0.8"]
     content = json.loads((await db_session.get(FilamentPreset, red_id)).content)
     assert content["compatible_printers"] == [f"Bambu Lab H2S {n} nozzle" for n in ("0.4", "0.6", "0.8")]
@@ -780,7 +781,7 @@ async def test_merged_nozzles_share_a_preset_until_one_is_calibrated(async_clien
     assert (await async_client.put(f"{API}/{tree_id}/node", json=body)).status_code == 200
     db_session.expire_all()
     split = await presets()
-    assert set(split) == {f"Polymaker PETG - {c} @H2S {n}" for c in ("Red", "White") for n in ("0.4+0.6", "0.8")}
+    assert set(split) == {f"Polymaker PETG{c} @H2S {n}" for c in (" - Red", "") for n in ("0.4+0.6", "0.8")}
     assert split["Polymaker PETG - Red @H2S 0.4+0.6"] == red_id
 
     # an OrcaSlicer edit to the merged preset lands on each nozzle it covers, and only those
@@ -836,6 +837,7 @@ async def test_delete_managed_preset_is_409(async_client, db_session):
 
 async def test_tree_patch_colors_and_delete(async_client, db_session):
     tree, white, red = await _tree(db_session)
+    await store.set_node_values(db_session, tree.id, None, None, red.id, {}, ["filament_shrink"])  # a source has none
     r = await async_client.patch(f"{API}/{tree.id}", json={"skip_02": True})
     assert r.status_code == 200, r.text
     r = await async_client.patch(f"{API}/{tree.id}", json={"source_color_id": red.id})
@@ -850,7 +852,7 @@ async def test_tree_patch_colors_and_delete(async_client, db_session):
     await db_session.refresh(tree)
     assert (tree.name, tree.brand, tree.material) == ("Inslogic PLA", "Inslogic", "PLA")
     names = (await db_session.execute(select(FilamentPreset.name))).scalars().all()
-    assert names and all(n.startswith("Inslogic PLA - ") for n in names)
+    assert names and all(n.startswith("Inslogic PLA @") for n in names)
     r = await async_client.patch(
         f"{API}/{tree.id}", json={"brand": old_name.split()[0], "material": old_name.split()[1]}
     )
@@ -902,11 +904,11 @@ async def test_candidate_becomes_tree(async_client, db_session, monkeypatch):
     )
     assert json.loads(tree.own_values) == {"nozzle_temperature": ["215"]}
     preset = (
-        await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == "eSUN PLA+ - Blue @H2S 0.4"))
+        await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == "eSUN PLA+ @H2S 0.4"))
     ).scalar_one()
     assert json.loads(preset.content)["filament_max_volumetric_speed"] == ["18"]
     assert "filament_max_volumetric_speed" not in json.loads(
-        (await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == "eSUN PLA+ - Blue @H2S 0.6")))
+        (await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == "eSUN PLA+ @H2S 0.6")))
         .scalar_one()
         .content
     )
@@ -1241,6 +1243,7 @@ async def test_put_targets_validates_before_source_check(async_client, db_sessio
 
 async def test_tree_patch_refuses_explicit_null_source(async_client, db_session):
     tree, _, red = await _tree(db_session)
+    await store.set_node_values(db_session, tree.id, None, None, red.id, {}, ["filament_shrink"])  # a source has none
     for key in ("source_machine", "source_nozzle", "source_color_id"):
         r = await async_client.patch(f"{API}/{tree.id}", json={key: None})
         assert r.status_code == 400 and key in r.json()["detail"]

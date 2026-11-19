@@ -10,11 +10,20 @@ import { focusRingCls } from '../formStyles';
 type View = 'own' | 'resolved' | 'profile';
 
 /** Raw JSON of a node: its own values, everything it resolves to, and for a leaf the exact profile sent to Orca. */
-export function JsonView({ rows, leafName }: {
+/** "Tree @H2S 0.4+0.6" covers "Tree @H2S 0.6": a leaf can merge nozzles. */
+function covers(name: string, want: string) {
+  const cut = (s: string) => [s.slice(0, s.lastIndexOf(' ')), s.slice(s.lastIndexOf(' ') + 1)];
+  const [head, nozzles] = cut(name);
+  const [wantHead, wantNozzle] = cut(want);
+  return head === wantHead && nozzles.split('+').includes(wantNozzle);
+}
+
+export function JsonView({ rows, leafNames }: {
   rows: FilamentTreeNodeRow[];
-  /** Generated preset name when the node is a leaf (machine + nozzle + colour); undefined otherwise. */
-  leafName?: string;
+  /** Preset names that may hold this leaf, first match wins: the colour's own, then the colour-less shared one. */
+  leafNames?: string[];
 }) {
+  const leafName = leafNames?.[0];
   const { t } = useTranslation();
   const [view, setView] = useState<View>(leafName ? 'profile' : 'own');
   const [copied, setCopied] = useState<boolean | null>(null);
@@ -23,7 +32,9 @@ export function JsonView({ rows, leafName }: {
   const current: View = !leafName && view === 'profile' ? 'own' : view;
   const own = Object.fromEntries(rows.filter((r) => r.own).map((r) => [r.key, r.value]));
   const resolved = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  const profile = presets.data?.find((p) => p.name === leafName)?.content;
+  const profile = leafNames
+    ?.map((want) => presets.data?.find((p) => covers(p.name, want)))
+    .find(Boolean)?.content;
   const text =
     current === 'own'
       ? JSON.stringify(own, null, 4)

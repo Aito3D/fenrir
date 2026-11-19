@@ -52,8 +52,11 @@ async def test_apply_migration_snapshots_first_and_keeps_ids(db_session):
     preset = await db_session.get(FilamentPreset, ids["Red"])
     assert preset.name == "Polymaker PETG - Red @H2S 0.4"
     assert json.loads(preset.content)["filament_start_gcode"] == ["M900 L1000 M10\nM900 K0.030"]
-    assert await db_session.scalar(select(func.count()).select_from(FilamentTreeLeaf)) == 48
-    assert await db_session.scalar(select(func.count()).select_from(FilamentPreset)) == 48
+    # the colours' own K values sit on their 0.4 colour nodes: those keep a leaf per colour (11), every other
+    # node shares the colour-less leaf (13); White, the source, holds no colour value at H2S 0.4 so its row goes
+    assert await db_session.scalar(select(func.count()).select_from(FilamentTreeLeaf)) == 24
+    assert await db_session.scalar(select(func.count()).select_from(FilamentPreset)) == 24
+    assert await db_session.get(FilamentPreset, ids["White"]) is None
     baselines = (await db_session.execute(select(FilamentTreeLeaf.baseline_content))).scalars().all()
     assert all(b is None for b in baselines)
 
@@ -62,9 +65,8 @@ async def test_apply_migration_source_pair_outside_compat(db_session):
     ids = await _seed(db_session)
     choice = {"prefix": "Polymaker PETG", "source_preset_id": ids["White"], "machine": "H2S", "nozzle": "0.6"}
     await apply_migration(db_session, [choice])
-    for color, k in (("White", "0.035"), ("Red", "0.030")):
-        preset = await db_session.get(FilamentPreset, ids[color])
-        assert preset.name == f"Polymaker PETG - {color} @H2S 0.6"
+    for name, k in (("Polymaker PETG @H2S 0.6", "0.035"), ("Polymaker PETG - Red @H2S 0.6", "0.030")):
+        preset = (await db_session.execute(select(FilamentPreset).where(FilamentPreset.name == name))).scalar_one()
         content = json.loads(preset.content)
         assert content["filament_start_gcode"] == [f"M900 L1000 M10\nM900 K{k}"]
         assert content["filament_max_volumetric_speed"] == ["24"]

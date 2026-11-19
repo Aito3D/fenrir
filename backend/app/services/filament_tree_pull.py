@@ -16,7 +16,7 @@ from backend.app.services.filament_tree import NOZZLE_BOUND_KEYS, SKIP_KEYS
 from backend.app.services.filament_tree_store import get_leaf_preset, regenerate_tree, set_node_values
 from backend.app.services.orca_cloud_codec import decode_content
 
-_LEAF_SUFFIX = re.compile(r" @\S+ \d\.\d$")
+_LEAF_SUFFIX = re.compile(r" @\S+ \d\.\d(\+\d\.\d)*$")
 
 
 @dataclass
@@ -57,12 +57,15 @@ def _nodes(target: str, machine: str, nozzle: str, color_id: int) -> list[tuple[
         return [(None, None, None)]
     if target == "machine":
         return [(machine, None, None)]
-    return [(machine, n, None if target == "node" else color_id) for n in nozzle.split("+")]
+    # the colour-less leaf (colour 0) speaks for every colour without own values: its value lands on the nozzle
+    return [(machine, n, None if target == "node" or not color_id else color_id) for n in nozzle.split("+")]
 
 
 def _is_source(link: FilamentTreeLeaf, tree: FilamentTree) -> bool:
-    return (link.machine, link.color_id) == (tree.source_machine, tree.source_color_id) and (
-        tree.source_nozzle in link.nozzle.split("+")
+    return (
+        link.machine == tree.source_machine
+        and link.color_id in (0, tree.source_color_id)
+        and (tree.source_nozzle in link.nozzle.split("+"))
     )
 
 
