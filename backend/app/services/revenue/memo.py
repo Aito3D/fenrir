@@ -2,18 +2,22 @@ import hashlib
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
 from backend.app.core.permissions import Permission
 
+if TYPE_CHECKING:
+    from backend.app.models.user import User
+
 _CUSTOMER_KEYS = frozenset({"bySegment", "bySegmentTtc"})
 _MARGIN_KEYS = frozenset({"cost", "costedHt", "marginByBrand", "marginByNature"})
 
 
 def revenue_etag(stamp: str, path_and_query: str) -> str:
-    digest = hashlib.sha1(f"{stamp}|{path_and_query}".encode()).hexdigest()  # noqa: S324
+    digest = hashlib.sha1(f"{stamp}|{path_and_query}".encode(), usedforsecurity=False).hexdigest()
     return f'W/"{digest[:24]}"'
 
 
@@ -26,8 +30,8 @@ def etag_matches(if_none_match: str | None, etag: str) -> bool:
 
 
 class Memo:
-    def __init__(self, max: int = 64):  # noqa: A002
-        self._max = max
+    def __init__(self, max_size: int = 64):
+        self._max = max_size
         self._data: OrderedDict[str, object] = OrderedDict()
 
     def get(self, key: str):
@@ -49,8 +53,9 @@ class CallerFlags:
     margin: bool
 
 
-def caller_flags(user) -> CallerFlags:
-    if user is None:  # auth disabled
+def caller_flags(user: User | None) -> CallerFlags:
+    # None = auth disabled; API keys never get here (revenue permissions are denied for keys in auth.py), mapping one would give keys both flags
+    if user is None:
         return CallerFlags(True, True)
     return CallerFlags(
         customers=user.has_permission(Permission.REVENUE_VIEW_CUSTOMERS.value),
