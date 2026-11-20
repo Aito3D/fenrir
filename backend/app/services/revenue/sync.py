@@ -9,7 +9,8 @@ stops the batch when Books' daily budget runs low.
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from backend.app.core import database
 from backend.app.core.tasks import spawn_background_task
@@ -22,6 +23,7 @@ from backend.app.services.zoho import (
     ZohoNotConfiguredError,
     ZohoNotFound,
     ZohoRateLimited,
+    ZohoUnreachable,
     ZohoUpstreamError,
     zoho_service,
 )
@@ -32,6 +34,17 @@ logger = logging.getLogger(__name__)
 DAY_PAGE_CAP = 20
 ITEM_PAGE_CAP = 100
 CEILING_POLL_S = 1.0
+DAY_RETRY_CAP_S = 6 * 3600
+FAILED_DAYS_SHOWN = 5
+
+
+@dataclass(frozen=True)
+class DayFailure:
+    attempts: int
+    next_retry: float  # monotonic
+    next_retry_at: str  # wall clock, for the banner
+    error: str
+
 
 _sleep = asyncio.sleep
 _inflight: asyncio.Task | None = None
@@ -41,6 +54,7 @@ _last_read_at = float("-inf")
 _last_call_at = float("-inf")
 _loop_task: asyncio.Task | None = None
 _lane = asyncio.Lock()
+_day_failures: dict[str, DayFailure] = {}
 
 
 class _BudgetLow(Exception):
@@ -72,6 +86,22 @@ def _record_error(exc: BaseException) -> None:
     if message != _last_error:
         logger.warning("Revenue sync failed: %s", message)
     _last_error = message
+
+
+def _mark_day_failed(day: str, exc: BaseException) -> None:
+    attempts = (_day_failures[day].attempts if day in _day_failures else 0) + 1
+    wait = min(SYNC.error_backoff_s * 2 ** (attempts - 1), DAY_RETRY_CAP_S)
+    _day_failures[day] = DayFailure(
+        attempts=attempts,
+        next_retry=time.monotonic() + wait,
+        next_retry_at=(_utcnow() + timedelta(seconds=wait)).isoformat(),
+        error=_public_error(exc),
+    )
+
+
+def _in_back_off(day: str) -> bool:
+    f = _day_failures.get(day)
+    return f is not None and f.next_retry > time.monotonic()
 
 
 async def _paced(fn, *args):
@@ -143,11 +173,12 @@ async def _execute_batch(full: bool) -> dict:
         async with database.async_session() as db:
             if full:
                 await store.clear_revenue_cache(db)
+                _day_failures.clear()
             now = _utcnow()
             async with store.snapshot() as conn:
                 index = await store.read_day_index(conn)
                 items = await store.read_scope_items(conn)
-            plan = plan_revenue_sync(
+            planned = plan_revenue_sync(
                 days=index,
                 today=org_today(now),
                 now=now,
@@ -157,6 +188,7 @@ async def _execute_batch(full: bool) -> dict:
                 recent_days=SYNC.recent_days,
                 recent_ttl_s=SYNC.recent_ttl_s,
             )
+            plan = [d for d in planned if not _in_back_off(d)]
             days: list[str] = []
             unknown: list[str] = []
             looked_up = 0
@@ -164,7 +196,14 @@ async def _execute_batch(full: bool) -> dict:
                 for day in plan[: SYNC.day_batch_size]:
                     # Read before the request: a day that ends mid-fetch stays open, the report may predate its close.
                     today_at_fetch = org_today()
-                    merged, malformed = merge_day_rows(await _fetch_day(db, day))
+                    try:
+                        merged, malformed = merge_day_rows(await _fetch_day(db, day))
+                    except (ZohoRateLimited, ZohoUnreachable):
+                        raise
+                    except ZohoUpstreamError as exc:
+                        # This day's report itself fails: it waits out its own back-off so the queue moves on.
+                        _mark_day_failed(day, exc)
+                        raise
                     if malformed:
                         logger.warning("Revenue sync: %d malformed report rows on %s", malformed, day)
                     day_lines = [
@@ -182,6 +221,7 @@ async def _execute_batch(full: bool) -> dict:
                         for m in merged
                     ]
                     await store.write_day(db, day, day_lines, day < today_at_fetch, _utcnow(), REVENUE_LINE_FORMAT)
+                    _day_failures.pop(day, None)
                     days.append(day)
                 unknown = await store.unknown_customer_ids(db)
                 for customer_id in unknown[: SYNC.customer_lookups]:
@@ -250,15 +290,24 @@ async def get_revenue_sync_status(conn, now: datetime) -> dict:
     total = days_between(REVENUE_HISTORY_START, today)
     index = [d for d in await store.read_day_index(conn) if REVENUE_HISTORY_START <= d.day <= today]
     missing = max(0, total - len(index))
+    cached = {d.day for d in index}
+    waiting = sum(
+        1 for d in _day_failures if d not in cached and REVENUE_HISTORY_START <= d <= today and _in_back_off(d)
+    )
+    failed = sorted(_day_failures.items(), reverse=True)[:FAILED_DAYS_SHOWN]
     return {
         "running": _inflight is not None,
         "fetchedDays": len(index),
         "totalDays": total,
         "missingDays": missing,
-        "backfilling": missing > 0,
+        "backfilling": missing - waiting > 0,
         "legacyDays": count_legacy_days(index, REVENUE_LINE_FORMAT),
         "lastBatchAt": _last_batch_at,
         "lastError": _last_error,
+        "failedDays": [
+            {"day": d, "attempts": f.attempts, "nextRetryAt": f.next_retry_at, "error": f.error} for d, f in failed
+        ],
+        "failedCount": len(_day_failures),
     }
 
 
@@ -315,3 +364,4 @@ def reset_revenue_sync_state_for_tests() -> None:
     _inflight = _last_batch_at = _last_error = _loop_task = None
     _last_read_at = _last_call_at = float("-inf")
     _lane = asyncio.Lock()
+    _day_failures.clear()

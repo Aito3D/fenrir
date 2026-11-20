@@ -540,3 +540,101 @@ async def test_a_fetched_line_freezes_the_items_cost_and_tax_rate_a_later_change
     await set_item(900, 13)
     [frozen] = await lines(engine, TODAY)
     assert (frozen.unit_cost, frozen.tax_percentage) == (600, 16)
+
+
+# ── a day that keeps failing ─────────────────────────────────────────────────
+
+BAD_DAY = "2026-10-14"
+
+
+def _fail_on(day, exc):
+    async def sales(d, page):
+        if d == day:
+            raise exc
+        return [], False
+
+    return sales
+
+
+async def test_a_failing_day_is_skipped_by_the_next_batch_and_the_queue_moves_on(zoho, engine):
+    zoho.sales = _fail_on(BAD_DAY, ZohoUpstreamError("Zoho Books error (HTTP 400)"))
+    with pytest.raises(ZohoUpstreamError):
+        await sync.run_revenue_sync_batch()
+    assert [d.day for d in await day_index(engine)] == [TODAY]
+    zoho.sales_calls.clear()
+    r = await sync.run_revenue_sync_batch()
+    assert BAD_DAY not in [c[0] for c in zoho.sales_calls]
+    assert r["fetched"] == 10
+    assert r["pending"] == 3  # 13 eligible missing days, 10 fetched; the failed one is not counted
+    assert (await status(engine))["lastError"] is None
+
+
+async def test_a_failing_days_back_off_doubles_and_caps_at_six_hours(zoho, monkeypatch):
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(sync.time, "monotonic", lambda: clock["t"])
+    zoho.sales = _fail_on(TODAY, ZohoUpstreamError("bad day"))
+    waits = []
+    for _ in range(10):
+        with pytest.raises(ZohoUpstreamError):
+            await sync.run_revenue_sync_batch()
+        f = sync._day_failures[TODAY]
+        waits.append(f.next_retry - clock["t"])
+        clock["t"] = f.next_retry + 1
+    assert waits[:3] == [SYNC.error_backoff_s, 2 * SYNC.error_backoff_s, 4 * SYNC.error_backoff_s]
+    assert waits[-1] == sync.DAY_RETRY_CAP_S
+    assert sync._day_failures[TODAY].attempts == 10
+
+
+async def test_a_rate_limit_or_transport_error_marks_no_day(zoho):
+    from backend.app.services.zoho import ZohoUnreachable
+
+    for exc in (ZohoRateLimited("429"), ZohoUnreachable("timeout"), ConnectionRefusedError("x")):
+        zoho.sales = _fail_on(TODAY, exc)
+        with pytest.raises(type(exc)):
+            await sync.run_revenue_sync_batch()
+    assert sync._day_failures == {}
+
+
+async def test_a_successful_fetch_clears_the_days_failure(zoho, monkeypatch):
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(sync.time, "monotonic", lambda: clock["t"])
+    zoho.sales = _fail_on(TODAY, ZohoUpstreamError("bad day"))
+    with pytest.raises(ZohoUpstreamError):
+        await sync.run_revenue_sync_batch()
+    assert TODAY in sync._day_failures
+    clock["t"] += SYNC.error_backoff_s + 1
+    zoho.sales = zoho.default_sales
+    r = await sync.run_revenue_sync_batch()
+    assert r["days"][0] == TODAY
+    assert sync._day_failures == {}
+
+
+async def test_a_full_rebuild_clears_every_failure(zoho):
+    zoho.sales = _fail_on(TODAY, ZohoUpstreamError("bad day"))
+    with pytest.raises(ZohoUpstreamError):
+        await sync.run_revenue_sync_batch()
+    zoho.sales = zoho.default_sales
+    r = await sync.run_revenue_sync_batch(full=True)
+    assert r["days"][0] == TODAY
+    assert sync._day_failures == {}
+
+
+async def test_status_lists_failed_days_newest_first_and_stops_backfilling_when_only_they_remain(zoho, engine):
+    async def sales(day, page):
+        if day <= "2026-10-06":
+            raise ZohoUpstreamError(f"bad {day}")
+        return [], False
+
+    zoho.sales = sales
+    for _ in range(8):  # 9 good days, then one failure per batch for the 6 bad ones (one batch fails before any)
+        try:
+            await sync.run_revenue_sync_batch()
+        except ZohoUpstreamError:
+            pass
+    s = await status(engine)
+    assert s["failedCount"] == 6
+    assert [f["day"] for f in s["failedDays"]] == ["2026-10-06", "2026-10-05", "2026-10-04", "2026-10-03", "2026-10-02"]
+    first = s["failedDays"][0]
+    assert (first["attempts"], first["error"]) == (1, "bad 2026-10-06")
+    assert datetime.fromisoformat(first["nextRetryAt"]) > datetime.now(timezone.utc)
+    assert (s["missingDays"], s["backfilling"]) == (6, False)

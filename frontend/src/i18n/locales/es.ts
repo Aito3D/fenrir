@@ -12916,6 +12916,8 @@ export default {
       legacy: 'desglose por cliente: {{done}} / {{total}} días',
       progress: 'Historial: {{fetched}} / {{total}} días cargados',
       failed: 'La última sincronización falló: {{error}}',
+      failedDay: 'Día con error: {{day}}, nuevo intento a las {{time}}',
+      failedDays: 'Días con error: {{n}}, próximo intento a las {{time}}',
       retry: 'Reintentar',
       rebuild: 'Reconstruir',
       rebuildConfirm: '¿Volver a cargar cada día desde Zoho (~1 h)?',

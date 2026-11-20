@@ -12908,6 +12908,8 @@ export default {
       legacy: 'Aufteilung nach Kunde: {{done}} / {{total}} Tage',
       progress: 'Verlauf: {{fetched}} / {{total}} Tage geladen',
       failed: 'Letzte Synchronisierung fehlgeschlagen: {{error}}',
+      failedDay: 'Fehlgeschlagener Tag: {{day}}, neuer Versuch um {{time}}',
+      failedDays: 'Fehlgeschlagene Tage: {{n}}, nächster Versuch um {{time}}',
       retry: 'Erneut versuchen',
       rebuild: 'Neu aufbauen',
       rebuildConfirm: 'Jeden Tag neu aus Zoho laden (~1 Std.)?',

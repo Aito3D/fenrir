@@ -12932,6 +12932,8 @@ export default {
       legacy: 'verdeling per klant: {{done}} / {{total}} dagen',
       progress: 'Geschiedenis: {{fetched}} / {{total}} dagen geladen',
       failed: 'Laatste synchronisatie mislukt: {{error}}',
+      failedDay: 'Mislukte dag: {{day}}, nieuwe poging om {{time}}',
+      failedDays: 'Mislukte dagen: {{n}}, volgende poging om {{time}}',
       retry: 'Opnieuw proberen',
       rebuild: 'Opnieuw opbouwen',
       rebuildConfirm: 'Elke dag opnieuw uit Zoho laden (~1 u)?',

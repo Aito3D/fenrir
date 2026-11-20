@@ -13,6 +13,8 @@ const sync = (o: Partial<RevenueSyncStatus> = {}): RevenueSyncStatus => ({
   legacyDays: 0,
   lastBatchAt: '2026-11-19T08:05:00.000Z',
   lastError: null,
+  failedDays: [],
+  failedCount: 0,
   ...o,
 });
 
@@ -23,6 +25,37 @@ function renderBanner(s: RevenueSyncStatus, o: { canSync?: boolean } = {}) {
 }
 
 describe('RevenueSyncBanner', () => {
+  const failedDay = (day: string, nextRetryAt: string) => ({ day, attempts: 2, nextRetryAt, error: 'Zoho 400' });
+
+  it('idle: names one failed day and its retry time in amber', () => {
+    renderBanner(sync({ failedCount: 1, failedDays: [failedDay('2026-11-12', '2026-11-19T10:32:00.000Z')] }));
+    const time = new Date('2026-11-19T10:32:00.000Z').toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' });
+    const note = screen.getByText(`Failed day: Nov 12, retry at ${time}`);
+    expect(note).toHaveClass('text-amber-700', 'dark:text-amber-400');
+    expect(screen.getByText(/Cache up to date/)).toBeInTheDocument();
+  });
+
+  it('progress: gives the count and the earliest retry for several failed days', () => {
+    const later = '2026-11-19T12:00:00.000Z';
+    const earliest = '2026-11-19T09:15:00.000Z';
+    renderBanner(
+      sync({
+        backfilling: true,
+        fetchedDays: 150,
+        failedCount: 3,
+        failedDays: [failedDay('2026-11-12', later), failedDay('2026-11-10', earliest), failedDay('2026-11-02', later)],
+      }),
+    );
+    const time = new Date(earliest).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' });
+    expect(screen.getByText(`Failed days: 3, next retry at ${time}`)).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+
+  it('error: the error line wins over the failed-day note', () => {
+    renderBanner(sync({ lastError: 'Zoho 500', failedCount: 1, failedDays: [failedDay('2026-11-12', '2026-11-19T10:32:00.000Z')] }));
+    expect(screen.queryByText(/Failed day/)).toBeNull();
+  });
+
   it('idle: says the cache is up to date with the day count and last sync', () => {
     renderBanner(sync());
     expect(screen.getByText(/Cache up to date · days cached: 300 · last sync \d\d:\d\d/)).toBeInTheDocument();

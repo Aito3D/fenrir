@@ -13113,6 +13113,8 @@ export default {
       legacy: 'podział według klienta: {{done}} / {{total}} dni',
       progress: 'Historia: {{fetched}} / {{total}} dni wczytanych',
       failed: 'Ostatnia synchronizacja nie powiodła się: {{error}}',
+      failedDay: 'Dzień z błędem: {{day}}, ponowna próba o {{time}}',
+      failedDays: 'Dni z błędem: {{n}}, następna próba o {{time}}',
       retry: 'Ponów',
       rebuild: 'Odbuduj',
       rebuildConfirm: 'Wczytać ponownie każdy dzień z Zoho (~1 godz.)?',

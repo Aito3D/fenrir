@@ -12891,6 +12891,8 @@ export default {
       legacy: '依客戶拆分：{{done}} / {{total}} 天',
       progress: '歷史：已載入 {{fetched}} / {{total}} 天',
       failed: '上次同步失敗：{{error}}',
+      failedDay: '失敗的日期：{{day}}，{{time}} 重試',
+      failedDays: '失敗的天數：{{n}}，下次重試 {{time}}',
       retry: '重試',
       rebuild: '重建',
       rebuildConfirm: '要從 Zoho 重新載入每一天嗎（約 1 小時）？',

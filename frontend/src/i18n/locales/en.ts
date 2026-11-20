@@ -12964,6 +12964,8 @@ export default {
       legacy: 'split by customer: {{done}} / {{total}} days',
       progress: 'History: {{fetched}} / {{total}} days loaded',
       failed: 'Last sync failed: {{error}}',
+      failedDay: 'Failed day: {{day}}, retry at {{time}}',
+      failedDays: 'Failed days: {{n}}, next retry at {{time}}',
       retry: 'Retry',
       rebuild: 'Rebuild',
       rebuildConfirm: 'Reload every day from Zoho (~1 h)?',

@@ -40,7 +40,7 @@ const mar = bucket({ key: '2026-03', label: 'mars 2026', start: '2026-03-01', en
 
 const payload = (buckets: RevenueBucket[]): RevenueResponse => ({
   granularity: 'month', from: buckets[0].start, to: buckets[buckets.length - 1].end, items: null, brands: null, kind: null, segment: null, buckets,
-  sync: { running: false, fetchedDays: 300, totalDays: 300, missingDays: 0, backfilling: false, legacyDays: 0, lastBatchAt: null, lastError: null },
+  sync: { running: false, fetchedDays: 300, totalDays: 300, missingDays: 0, backfilling: false, legacyDays: 0, lastBatchAt: null, lastError: null, failedDays: [], failedCount: 0 },
   reviewCount: 0, itemsSyncedAt: '2026-03-10T00:00:00Z', fetchedAt: '2026-03-10T00:00:00Z',
 });
 

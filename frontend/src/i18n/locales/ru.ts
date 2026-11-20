@@ -12512,6 +12512,8 @@ export default {
       legacy: 'разбивка по клиентам: {{done}} / {{total}} дн.',
       progress: 'История: загружено {{fetched}} / {{total}} дн.',
       failed: 'Последняя синхронизация не удалась: {{error}}',
+      failedDay: 'День с ошибкой: {{day}}, повтор в {{time}}',
+      failedDays: 'Дней с ошибкой: {{n}}, следующий повтор в {{time}}',
       retry: 'Повторить',
       rebuild: 'Перестроить',
       rebuildConfirm: 'Заново загрузить каждый день из Zoho (~1 ч)?',

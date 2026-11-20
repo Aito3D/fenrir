@@ -13,7 +13,7 @@ const payload = (buckets: RevenueBucket[], granularity: RevenueGranularity = 'mo
   kind: null,
   segment: null,
   buckets,
-  sync: { running: false, fetchedDays: 300, totalDays: 300, missingDays: 0, backfilling: false, legacyDays: 0, lastBatchAt: null, lastError: null },
+  sync: { running: false, fetchedDays: 300, totalDays: 300, missingDays: 0, backfilling: false, legacyDays: 0, lastBatchAt: null, lastError: null, failedDays: [], failedCount: 0 },
   reviewCount: 0,
   itemsSyncedAt: '2026-11-19T08:00:00Z',
   fetchedAt: '2026-11-19T08:00:00Z',

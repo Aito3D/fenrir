@@ -12907,6 +12907,8 @@ export default {
       legacy: '顧客別の内訳: {{done}} / {{total}} 日',
       progress: '履歴: {{fetched}} / {{total}} 日読み込み済み',
       failed: '前回の同期に失敗しました: {{error}}',
+      failedDay: '取得失敗の日: {{day}}、{{time}} に再試行',
+      failedDays: '取得失敗の日数: {{n}}、次回の再試行 {{time}}',
       retry: '再試行',
       rebuild: '再構築',
       rebuildConfirm: 'Zoho から全日を再読み込みしますか（約1時間）？',

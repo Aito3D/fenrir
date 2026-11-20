@@ -12893,6 +12893,8 @@ export default {
       legacy: 'ventilation par client : {{done}} / {{total}} jours',
       progress: 'Historique : {{fetched}} / {{total}} jours chargés',
       failed: 'Échec de la dernière synchro : {{error}}',
+      failedDay: 'Jour en échec : {{day}}, nouvel essai à {{time}}',
+      failedDays: 'Jours en échec : {{n}}, prochain essai à {{time}}',
       retry: 'Réessayer',
       rebuild: 'Reconstruire',
       rebuildConfirm: 'Recharger chaque jour depuis Zoho (~1 h) ?',

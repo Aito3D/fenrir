@@ -74,6 +74,16 @@ export interface RevenueSyncStatus {
   legacyDays: number;
   lastBatchAt: string | null;
   lastError: string | null;
+  /** Days whose own Zoho report keeps failing, newest first (at most 5); each waits out a growing back-off. */
+  failedDays: RevenueFailedDay[];
+  failedCount: number;
+}
+
+export interface RevenueFailedDay {
+  day: string;
+  attempts: number;
+  nextRetryAt: string;
+  error: string;
 }
 
 export interface RevenueItemSummary {

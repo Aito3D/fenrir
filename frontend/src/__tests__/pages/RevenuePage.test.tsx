@@ -57,6 +57,8 @@ const sync = (o: Partial<RevenueSyncStatus> = {}): RevenueSyncStatus => ({
   legacyDays: 0,
   lastBatchAt: '2026-11-19T08:05:00.000Z',
   lastError: null,
+  failedDays: [],
+  failedCount: 0,
   ...o,
 });
 

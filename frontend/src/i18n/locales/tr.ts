@@ -12835,6 +12835,8 @@ export default {
       legacy: 'müşteriye göre dağılım: {{done}} / {{total}} gün',
       progress: 'Geçmiş: {{fetched}} / {{total}} gün yüklendi',
       failed: 'Son eşitleme başarısız: {{error}}',
+      failedDay: 'Başarısız gün: {{day}}, yeniden deneme {{time}}',
+      failedDays: 'Başarısız gün sayısı: {{n}}, sonraki deneme {{time}}',
       retry: 'Yeniden dene',
       rebuild: 'Yeniden oluştur',
       rebuildConfirm: 'Her gün Zoho\'dan yeniden yüklensin mi (~1 sa)?',

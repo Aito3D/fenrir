@@ -12965,6 +12965,8 @@ errors: {
       legacy: 'uppdelning per kund: {{done}} / {{total}} dagar',
       progress: 'Historik: {{fetched}} / {{total}} dagar laddade',
       failed: 'Senaste synk misslyckades: {{error}}',
+      failedDay: 'Misslyckad dag: {{day}}, nytt försök kl. {{time}}',
+      failedDays: 'Misslyckade dagar: {{n}}, nästa försök kl. {{time}}',
       retry: 'Försök igen',
       rebuild: 'Bygg om',
       rebuildConfirm: 'Ladda om varje dag från Zoho (~1 tim)?',

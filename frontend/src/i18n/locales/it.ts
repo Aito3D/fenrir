@@ -12893,6 +12893,8 @@ export default {
       legacy: 'ripartizione per cliente: {{done}} / {{total}} giorni',
       progress: 'Storico: {{fetched}} / {{total}} giorni caricati',
       failed: 'Ultima sincronizzazione non riuscita: {{error}}',
+      failedDay: 'Giorno non riuscito: {{day}}, nuovo tentativo alle {{time}}',
+      failedDays: 'Giorni non riusciti: {{n}}, prossimo tentativo alle {{time}}',
       retry: 'Riprova',
       rebuild: 'Ricostruisci',
       rebuildConfirm: 'Ricaricare ogni giorno da Zoho (~1 h)?',

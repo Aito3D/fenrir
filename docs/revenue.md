@@ -38,6 +38,10 @@ process) that keeps a local copy of Zoho's sales-by-item report, one row per day
   Board stops at 30, so it keeps headroom), and no batch while Zoho's daily budget is known to be below 5 000. A 429
   ends the batch and the loop sleeps the longer of 2 minutes and Zoho's `Retry-After`; any other error backs off
   2 minutes.
+- A day whose own report fails (a Zoho error for that day, not a 429 or a network error) gets its own back-off:
+  2 minutes, then doubling up to 6 hours. Later batches skip it until then, so the rest of the history keeps
+  loading; a successful fetch or a full rebuild clears it. The banner names the failed day (or the count) and the
+  next retry, and the page stops fast polling once only failed days are missing.
 - The loop stops 30 minutes after the last read and starts again with the next one.
 - The page polls every 4 s while the back-fill runs and every 60 s afterwards (with ETags, so an unchanged answer is
   a 304), and not at all while the tab is hidden.

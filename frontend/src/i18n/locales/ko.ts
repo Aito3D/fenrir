@@ -12490,6 +12490,8 @@ export default {
       legacy: '고객별 분류: {{done}} / {{total}}일',
       progress: '내역: {{fetched}} / {{total}}일 불러옴',
       failed: '마지막 동기화 실패: {{error}}',
+      failedDay: '실패한 날짜: {{day}}, {{time}}에 다시 시도',
+      failedDays: '실패한 날짜 수: {{n}}, 다음 시도 {{time}}',
       retry: '다시 시도',
       rebuild: '다시 구축',
       rebuildConfirm: 'Zoho에서 모든 날을 다시 불러올까요 (약 1시간)?',
