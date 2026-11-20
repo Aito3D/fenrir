@@ -285,27 +285,30 @@
    283	# Migration: printers picked for the chamber light while the camera is in
    284	# Migration: optional per-printer WLED preset configuration (#1528).
    285	# Migration: printer-scoped groups (#1727). Defaults off, so no existing
-   286	# Migration: camera-stream and websocket tokens record who minted them, so
-   287	# Migration: electricity price on each energy snapshot, and where and when a
-   288	# Migration: library folder ownership and sharing (#3201).
-   289	# Migration: printer wear cost per printing hour, and the wear cost of each
-   290	# Migration: a printer's place in the pick order of "Any model" jobs (#2915).
-   291	# Migration: when each spool was last dried, at what temperature and for
-   292	# Migration: which plate's run the attached timelapse came from, so starting
-   293	# Migration: slots a queue item was sent with in another colour than the
-   294	# Migration: spools assigned to a tray while a print runs, so a hand swap
-   295	# Migration: a print log run whose times were not measured, a print that
-   296	# Migration: heads-up before a pause the slicer put into the print (#2984).
-   297	# Migration: per-print usage of Spoolman spools (#3407), so Spoolman mode
-   298	# Migration: mark a timelapse baseline taken off an unreadable card
-   299	# Migration: filament tree leaves whose generated preset changed since the last Export for Orca.
-   300	# Migration: the plate each print log run printed. A library file printed
-   301	# Migration: what describes one print, on the run (archive redesign P1).
-   302	# Migration: each plate's estimate on the archive (#3375). Nullable, no
-   303	# Migration: the G-code fingerprint of the archive's file (#1634), so a
-   304	# Migration: who assigned a spool to a slot, whose cloud sign-in the replay
-   305	# Migration: what a smart plug's temperature-based auto-off waits for
-   306	# Migration: the events a provider sends without its camera snapshot
+   286	# Migration: filament-scoped groups (#3522). Off by default, so no group
+   287	# Migration: camera-stream and websocket tokens record who minted them, so
+   288	# Migration: electricity price on each energy snapshot, and where and when a
+   289	# Migration: library folder ownership and sharing (#3201).
+   290	# Migration: printer wear cost per printing hour, and the wear cost of each
+   291	# Migration: a printer's place in the pick order of "Any model" jobs (#2915).
+   292	# Migration: a printer's own "Require plate-clear confirmation" (#2860).
+   293	# Migration: when each spool was last dried, at what temperature and for
+   294	# Migration: which plate's run the attached timelapse came from, so starting
+   295	# Migration: slots a queue item was sent with in another colour than the
+   296	# Migration: spools assigned to a tray while a print runs, so a hand swap
+   297	# Migration: a print log run whose times were not measured, a print that
+   298	# Migration: heads-up before a pause the slicer put into the print (#2984).
+   299	# Migration: per-print usage of Spoolman spools (#3407), so Spoolman mode
+   300	# Migration: mark a timelapse baseline taken off an unreadable card
+   301	# Migration: filament tree leaves whose generated preset changed since the last Export for Orca.
+   302	# Migration: the plate each print log run printed. A library file printed
+   303	# Migration: what describes one print, on the run (archive redesign P1).
+   304	# Migration: each plate's estimate on the archive (#3375). Nullable, no
+   305	# Migration: the G-code fingerprint of the archive's file (#1634), so a
+   306	# Migration: who assigned a spool to a slot, whose cloud sign-in the replay
+   307	# Migration: what a smart plug's temperature-based auto-off waits for
+   308	# Migration: the events a provider sends without its camera snapshot
+   309	# Migration: an MQTT plug's lifetime energy counter, separate from its daily
 
 ### stderr:
 

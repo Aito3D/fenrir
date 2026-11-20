@@ -430,6 +430,299 @@
     "order-board"
    ]
   },
+  "GET /api/v1/order-board/orders/{salesorder_id}/client-rating": {
+   "description": "The customer's payment rating, as on the Aito card. The id is the stored order's, never the caller's.",
+   "operationId": "get_order_client_rating_api_v1_order_board_orders__salesorder_id__client_rating_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoClientRatingResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Order Client Rating",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "GET /api/v1/order-board/orders/{salesorder_id}/customer-credit": {
+   "description": "The customer's unspent deposits across every order and quote; null when Books could not say.",
+   "operationId": "get_customer_credit_api_v1_order_board_orders__salesorder_id__customer_credit_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Get Customer Credit Api V1 Order Board Orders  Salesorder Id  Customer Credit Get",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Customer Credit",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "GET /api/v1/order-board/orders/{salesorder_id}/documents/{kind}/{document_id}/email": {
+   "operationId": "get_document_email_api_v1_order_board_orders__salesorder_id__documents__kind___document_id__email_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "path",
+     "name": "kind",
+     "required": true,
+     "schema": {
+      "enum": [
+       "quote",
+       "retainer"
+      ],
+      "title": "Kind",
+      "type": "string"
+     }
+    },
+    {
+     "in": "path",
+     "name": "document_id",
+     "required": true,
+     "schema": {
+      "title": "Document Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Get Document Email Api V1 Order Board Orders  Salesorder Id  Documents  Kind   Document Id  Email Get",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Document Email",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "GET /api/v1/order-board/orders/{salesorder_id}/documents/{kind}/{document_id}/pdf": {
+   "description": "The order's quote or deposit invoice as a PDF.",
+   "operationId": "get_document_pdf_api_v1_order_board_orders__salesorder_id__documents__kind___document_id__pdf_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "path",
+     "name": "kind",
+     "required": true,
+     "schema": {
+      "enum": [
+       "quote",
+       "retainer"
+      ],
+      "title": "Kind",
+      "type": "string"
+     }
+    },
+    {
+     "in": "path",
+     "name": "document_id",
+     "required": true,
+     "schema": {
+      "title": "Document Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Document Pdf",
+   "tags": [
+    "order-board"
+   ]
+  },
   "GET /api/v1/order-board/orders/{salesorder_id}/events": {
    "description": "The order's timeline, newest first; the cursor is the pair (occurred_at, id), as on Aito.",
    "operationId": "list_order_events_api_v1_order_board_orders__salesorder_id__events_get",
@@ -1386,6 +1679,71 @@
     "order-board"
    ]
   },
+  "POST /api/v1/order-board/orders": {
+   "description": "A walk-in order: created and confirmed in Books, then on the board at once.",
+   "operationId": "create_counter_order_api_v1_order_board_orders_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/CounterOrderBody"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "201": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Create Counter Order Api V1 Order Board Orders Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Create Counter Order",
+   "tags": [
+    "order-board"
+   ]
+  },
   "POST /api/v1/order-board/orders/{salesorder_id}/cancel": {
    "operationId": "cancel_order_api_v1_order_board_orders__salesorder_id__cancel_post",
    "parameters": [
@@ -1445,6 +1803,102 @@
     }
    ],
    "summary": "Cancel Order",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/orders/{salesorder_id}/documents/{kind}/{document_id}/email": {
+   "description": "Email the quote or deposit invoice through Books, only to an address Books offers for it.",
+   "operationId": "send_document_email_api_v1_order_board_orders__salesorder_id__documents__kind___document_id__email_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "path",
+     "name": "kind",
+     "required": true,
+     "schema": {
+      "enum": [
+       "quote",
+       "retainer"
+      ],
+      "title": "Kind",
+      "type": "string"
+     }
+    },
+    {
+     "in": "path",
+     "name": "document_id",
+     "required": true,
+     "schema": {
+      "title": "Document Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/DocumentEmailBody"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Send Document Email Api V1 Order Board Orders  Salesorder Id  Documents  Kind   Document Id  Email Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Send Document Email",
    "tags": [
     "order-board"
    ]
@@ -1590,6 +2044,153 @@
     }
    ],
    "summary": "Invoice Order",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/orders/{salesorder_id}/invoices/{invoice_id}/apply-credit": {
+   "description": "Spend the order's deposits and advance on one of its open invoices in Books.",
+   "operationId": "apply_order_credit_api_v1_order_board_orders__salesorder_id__invoices__invoice_id__apply_credit_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "path",
+     "name": "invoice_id",
+     "required": true,
+     "schema": {
+      "title": "Invoice Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Apply Order Credit Api V1 Order Board Orders  Salesorder Id  Invoices  Invoice Id  Apply Credit Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Apply Order Credit",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/orders/{salesorder_id}/manual-payment": {
+   "description": "A payment taken by hand (card on another device, cheque, cash), written into Books on the document the\nterminal would charge. A pending payment link answers 409 `link_open`: the client could pay twice.",
+   "operationId": "record_order_manual_payment_route_api_v1_order_board_orders__salesorder_id__manual_payment_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/OrderManualPaymentBody"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Record Order Manual Payment Route Api V1 Order Board Orders  Salesorder Id  Manual Payment Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Record Order Manual Payment Route",
    "tags": [
     "order-board"
    ]
@@ -1957,7 +2558,7 @@
    ]
   },
   "POST /api/v1/order-board/orders/{salesorder_id}/prep-sheet": {
-   "description": "Stamp the order as printed and return its prep sheet: the units of one picklist, or everything packable.",
+   "description": "Stamp the order as printed and return its prep sheet: the units of one picklist (``whole``: boxed ones\ntoo, to reprint a packed picklist's sheet), or everything packable.",
    "operationId": "print_prep_sheet_api_v1_order_board_orders__salesorder_id__prep_sheet_post",
    "parameters": [
     {
@@ -1985,6 +2586,16 @@
        }
       ],
       "title": "Picklist Id"
+     }
+    },
+    {
+     "in": "query",
+     "name": "whole",
+     "required": false,
+     "schema": {
+      "default": false,
+      "title": "Whole",
+      "type": "boolean"
      }
     },
     {
@@ -2111,6 +2722,70 @@
     }
    ],
    "summary": "Record Pickup Sms",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/orders/{salesorder_id}/sync": {
+   "description": "Re-read one order from Books now; answers with what changed and the fresh board.",
+   "operationId": "sync_order_api_v1_order_board_orders__salesorder_id__sync_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Sync Order Api V1 Order Board Orders  Salesorder Id  Sync Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Sync Order",
    "tags": [
     "order-board"
    ]
@@ -2299,6 +2974,79 @@
     }
    ],
    "summary": "Refresh Order Board",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "PUT /api/v1/order-board/orders/{salesorder_id}/contact": {
+   "operationId": "edit_order_contact_api_v1_order_board_orders__salesorder_id__contact_put",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "salesorder_id",
+     "required": true,
+     "schema": {
+      "title": "Salesorder Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/ContactBody"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Edit Order Contact Api V1 Order Board Orders  Salesorder Id  Contact Put",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Edit Order Contact",
    "tags": [
     "order-board"
    ]
@@ -2587,6 +3335,105 @@
   }
  },
  "schemas": {
+  "AitoClientRatingResponse": {
+   "description": "A customer's payment rating for the drawer and the panel masthead \u2014\nsee docs/superpowers/specs/2026-09-22-aito-client-rating-design.md.\n\nStructured fields rather than a sentence, so the frontend phrases the\ntooltip in the viewer's language. ``unavailable`` is a response-only\ntier: Books could not be read and nothing was cached, so the pill stays\nhidden. ``stale`` means the figures come from the cache because Books\ncould not be read just now.",
+   "properties": {
+    "computed_at": {
+     "anyOf": [
+      {
+       "format": "date-time",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Computed At"
+    },
+    "is_company": {
+     "default": false,
+     "title": "Is Company",
+     "type": "boolean"
+    },
+    "on_time_count": {
+     "default": 0,
+     "title": "On Time Count",
+     "type": "integer"
+    },
+    "overdue_count": {
+     "default": 0,
+     "title": "Overdue Count",
+     "type": "integer"
+    },
+    "past_due_count": {
+     "default": 0,
+     "title": "Past Due Count",
+     "type": "integer"
+    },
+    "reason": {
+     "anyOf": [
+      {
+       "enum": [
+        "overdue",
+        "chronic",
+        "new",
+        "punctual",
+        "mixed"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Reason"
+    },
+    "settled_count": {
+     "default": 0,
+     "title": "Settled Count",
+     "type": "integer"
+    },
+    "stale": {
+     "title": "Stale",
+     "type": "boolean"
+    },
+    "tier": {
+     "enum": [
+      "good",
+      "medium",
+      "bad",
+      "new",
+      "unavailable"
+     ],
+     "title": "Tier",
+     "type": "string"
+    },
+    "worst_overdue_days": {
+     "default": 0,
+     "title": "Worst Overdue Days",
+     "type": "integer"
+    },
+    "worst_overdue_number": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Worst Overdue Number"
+    }
+   },
+   "required": [
+    "tier",
+    "reason",
+    "computed_at",
+    "stale"
+   ],
+   "title": "AitoClientRatingResponse",
+   "type": "object"
+  },
   "AitoNoteCreate": {
    "description": "The ONLY thing a client may append to the timeline.\n\nDeliberately carries no kind, actor or timestamp: the handler fixes all\nthree. A body that could name its own kind could fabricate an acceptance.",
    "properties": {
@@ -2723,6 +3570,112 @@
     "settled_at"
    ],
    "title": "AitoTerminalPaymentView",
+   "type": "object"
+  },
+  "ContactBody": {
+   "properties": {
+    "email": {
+     "default": "",
+     "maxLength": 200,
+     "title": "Email",
+     "type": "string"
+    },
+    "phone": {
+     "default": "",
+     "maxLength": 50,
+     "title": "Phone",
+     "type": "string"
+    },
+    "phone_field": {
+     "default": "mobile",
+     "enum": [
+      "phone",
+      "mobile"
+     ],
+     "title": "Phone Field",
+     "type": "string"
+    }
+   },
+   "title": "ContactBody",
+   "type": "object"
+  },
+  "CounterLine": {
+   "properties": {
+    "discount": {
+     "anyOf": [
+      {
+       "maxLength": 20,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Discount"
+    },
+    "item_id": {
+     "maxLength": 64,
+     "minLength": 1,
+     "title": "Item Id",
+     "type": "string"
+    },
+    "quantity": {
+     "exclusiveMinimum": 0.0,
+     "title": "Quantity",
+     "type": "number"
+    }
+   },
+   "required": [
+    "item_id",
+    "quantity"
+   ],
+   "title": "CounterLine",
+   "type": "object"
+  },
+  "CounterOrderBody": {
+   "properties": {
+    "client_ref": {
+     "format": "uuid",
+     "title": "Client Ref",
+     "type": "string"
+    },
+    "customer_id": {
+     "maxLength": 64,
+     "minLength": 1,
+     "title": "Customer Id",
+     "type": "string"
+    },
+    "lines": {
+     "items": {
+      "$ref": "#/components/schemas/CounterLine"
+     },
+     "maxItems": 200,
+     "minItems": 1,
+     "title": "Lines",
+     "type": "array"
+    }
+   },
+   "required": [
+    "customer_id",
+    "client_ref",
+    "lines"
+   ],
+   "title": "CounterOrderBody",
+   "type": "object"
+  },
+  "DocumentEmailBody": {
+   "properties": {
+    "to": {
+     "maxLength": 254,
+     "minLength": 3,
+     "title": "To",
+     "type": "string"
+    }
+   },
+   "required": [
+    "to"
+   ],
+   "title": "DocumentEmailBody",
    "type": "object"
   },
   "EditLine": {
@@ -3007,6 +3960,43 @@
     "note"
    ],
    "title": "OrderEventResponse",
+   "type": "object"
+  },
+  "OrderManualPaymentBody": {
+   "properties": {
+    "amount": {
+     "maximum": 999999999999.0,
+     "minimum": 1.0,
+     "title": "Amount",
+     "type": "integer"
+    },
+    "mode": {
+     "enum": [
+      "card",
+      "cheque",
+      "cash"
+     ],
+     "title": "Mode",
+     "type": "string"
+    },
+    "reference": {
+     "anyOf": [
+      {
+       "maxLength": 64,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Reference"
+    }
+   },
+   "required": [
+    "amount",
+    "mode"
+   ],
+   "title": "OrderManualPaymentBody",
    "type": "object"
   },
   "OrderPaymentBody": {
@@ -3327,6 +4317,17 @@
      ],
      "title": "Date"
     },
+    "expected_date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Expected Date"
+    },
     "lines": {
      "items": {
       "$ref": "#/components/schemas/OrderTrackingLine"
@@ -3362,6 +4363,17 @@
     "reference": {
      "title": "Reference",
      "type": "string"
+    },
+    "shop_hours": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Shop Hours"
     },
     "stage": {
      "enum": [
@@ -3400,6 +4412,7 @@
     "pickup",
     "payment",
     "pay_url",
+    "shop_hours",
     "updated_at"
    ],
    "title": "OrderTrackingResponse",

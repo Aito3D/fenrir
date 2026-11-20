@@ -34,14 +34,16 @@
    "aito.quote_accepted",
    "aito.quote_declined",
    "aito.paid",
+   "aito.overdue",
    "hours.readings_due",
    "orders.ready",
    "orders.new",
-   "orders.packed"
+   "orders.packed",
+   "orders.paid"
   ],
   "KINDS": {
    "aito.overdue": {
-    "default_on": false,
+    "default_on": true,
     "events": [
      "project.due.overdue"
     ],
@@ -93,6 +95,13 @@
     "default_on": true,
     "events": [
      "order.packed"
+    ],
+    "family": "orders"
+   },
+   "orders.paid": {
+    "default_on": true,
+    "events": [
+     "payment.received"
     ],
     "family": "orders"
    },
@@ -165,6 +174,7 @@
    "project.merged": null,
    "project.pause.cleared": null,
    "project.pause.set": null,
+   "project.priority.set": null,
    "project.restored": null,
    "project.revision_added": null,
    "project.revision_status_changed": null,

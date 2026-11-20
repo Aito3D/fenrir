@@ -58,6 +58,7 @@
       "payment": null,
       "reference": "DEV-000201",
       "shipping": null,
+      "shop_hours": "Lun-Ven 8h-17h",
       "tasks": [
         {
           "quantity": 2,

@@ -692,6 +692,47 @@ class TestLdapLoginOffLoop:
         assert calls == [(True, False)]
 
 
+class TestLdapAdminRoutesOffLoop:
+    """T-724: the admin test/search/provision routes must run ldap3 off the event loop."""
+
+    @staticmethod
+    def _recorder(calls, result):
+        def fake(*_args, **_kwargs):
+            try:
+                asyncio.get_running_loop()
+                has_running_loop = True
+            except RuntimeError:
+                has_running_loop = False
+            calls.append((threading.current_thread() is not threading.main_thread(), has_running_loop))
+            return result
+
+        return fake
+
+    async def test_test_search_and_provision_run_off_event_loop(
+        self, async_client: AsyncClient, admin_token: str, db_session: AsyncSession
+    ):
+        await _seed_ldap_settings(db_session)
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        calls: list = []
+
+        with patch(
+            "backend.app.services.ldap_service.test_ldap_connection",
+            side_effect=self._recorder(calls, (True, "ok")),
+        ):
+            r = await async_client.post("/api/v1/auth/ldap/test", headers=headers)
+        assert r.status_code == 200
+
+        with patch("backend.app.services.ldap_service.search_ldap_users", side_effect=self._recorder(calls, [])):
+            r = await async_client.get("/api/v1/auth/ldap/search?q=jdoe", headers=headers)
+        assert r.status_code == 200
+
+        with patch("backend.app.services.ldap_service.lookup_ldap_user", side_effect=self._recorder(calls, None)):
+            r = await async_client.post("/api/v1/auth/ldap/provision", json={"username": "nobody"}, headers=headers)
+        assert r.status_code == 404
+
+        assert calls == [(True, False)] * 3
+
+
 class TestLdapLoginBindTimeout:
     """T-057: authenticate_ldap_user runs on the shared default executor via
     asyncio.to_thread with no bound on how long the bind can block — a

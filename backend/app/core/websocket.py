@@ -346,19 +346,12 @@ class ConnectionManager:
         data = json.dumps(message)
         printer_id = _message_printer_id(message)
         async with self._lock:
-            disconnected = []
-            for connection in self.active_connections:
-                conn_uid = getattr(connection.state, "fenrir_principal_user_id", None)
-                if conn_uid is None or conn_uid not in user_ids or not _may_receive(connection, printer_id):
-                    continue
-                try:
-                    await connection.send_text(data)
-                except Exception:
-                    disconnected.append(connection)
-
-            for conn in disconnected:
-                if conn in self.active_connections:
-                    self.active_connections.remove(conn)
+            connections = [
+                conn
+                for conn in self.active_connections
+                if getattr(conn.state, "fenrir_principal_user_id", None) in user_ids and _may_receive(conn, printer_id)
+            ]
+        await self._fan_out(connections, data)
 
     async def close_user(self, user_id: int):
         """Close a deleted user's sockets, which would otherwise keep receiving

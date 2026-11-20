@@ -1,5 +1,6 @@
 """Tests for NotificationService.send_user_print_email (per-user print emails)."""
 
+import threading
 from unittest.mock import patch
 
 import pytest
@@ -54,6 +55,14 @@ async def _call(service, db, user_id, event="user_print_complete", **kw):
 
 
 class TestSendUserPrintEmail:
+    @pytest.mark.asyncio
+    async def test_send_email_runs_off_event_loop_thread(self, service, db_session, world):
+        threads = []
+        with patch(SEND_EMAIL, side_effect=lambda *a, **k: threads.append(threading.get_ident())):
+            await _call(service, db_session, world.id)
+        assert threads
+        assert threads[0] != threading.get_ident()
+
     @pytest.mark.asyncio
     async def test_no_created_by_id_sends_nothing(self, service, db_session, world):
         with patch(SEND_EMAIL) as send:

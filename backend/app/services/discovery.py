@@ -11,6 +11,7 @@ available as an alternative discovery method.
 
 import asyncio
 import ipaddress
+import itertools
 import logging
 import os
 import re
@@ -454,13 +455,14 @@ class SubnetScanner:
 
         try:
             network = ipaddress.ip_network(subnet, strict=False)
-            hosts = list(network.hosts())
-            self._total = len(hosts)
-
-            if self._total > 1024:
-                logger.warning("Subnet %s has %s hosts, limiting to /22 (1024 hosts)", subnet, self._total)
-                self._total = 1024
+            # Lazy: never enumerate a wide IPv4 or any IPv6 network
+            hosts = list(itertools.islice(network.hosts(), 1025))
+            if len(hosts) > 1024:
+                logger.warning(
+                    "Subnet %s has %s hosts, limiting to /22 (1024 hosts)", subnet, network.num_addresses - 2
+                )
                 hosts = hosts[:1024]
+            self._total = len(hosts)
 
             logger.info("Starting subnet scan of %s (%s hosts)", subnet, self._total)
 

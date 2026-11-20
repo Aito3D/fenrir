@@ -26,6 +26,7 @@
         "payment": null,
         "reference": "DEV-000114",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [],
         "updated_at": "2026-03-14T09:00:00"
       },
@@ -48,6 +49,7 @@
         },
         "reference": "DEV-000113",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [],
         "updated_at": "2026-03-14T09:00:00"
       },
@@ -66,6 +68,7 @@
         "payment": null,
         "reference": "DEV-000101",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [
           {
             "quantity": 3,
@@ -108,6 +111,7 @@
         "payment": null,
         "reference": "DEV-000101",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [
           {
             "quantity": 3,
@@ -150,6 +154,7 @@
         "payment": null,
         "reference": "DEV-000101",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [
           {
             "quantity": 3,
@@ -197,6 +202,7 @@
           "lta": null,
           "service": "weird"
         },
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [],
         "updated_at": "2026-03-09T10:00:00"
       },
@@ -218,6 +224,7 @@
           "lta": "AWB-123",
           "service": "Fret aérien"
         },
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [
           {
             "quantity": 1,
@@ -246,6 +253,7 @@
         },
         "reference": "DEV-000104",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [],
         "updated_at": "2026-03-13T09:00:00"
       },
@@ -263,6 +271,7 @@
         "payment": null,
         "reference": "DEV-000112",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [],
         "updated_at": "2026-03-12T11:30:00"
       },
@@ -281,6 +290,7 @@
         "payment": null,
         "reference": "DEV-000115",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [],
         "updated_at": "2026-03-14T09:00:00"
       },
@@ -302,6 +312,7 @@
         },
         "reference": "DEV-000103",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [
           {
             "quantity": 2,
@@ -331,6 +342,7 @@
         },
         "reference": "DEV-000102",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [],
         "updated_at": "2026-03-14T10:00:00"
       },
@@ -352,6 +364,7 @@
         },
         "reference": "DEV-000102",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [],
         "updated_at": "2026-03-14T10:00:00"
       },
@@ -375,6 +388,7 @@
         },
         "reference": "DEV-000113",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [],
         "updated_at": "2026-03-14T09:00:00"
       },
@@ -396,6 +410,7 @@
         },
         "reference": "DEV-000104",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [],
         "updated_at": "2026-03-13T09:00:00"
       },
@@ -417,6 +432,7 @@
         },
         "reference": "DEV-000103",
         "shipping": null,
+        "shop_hours": "Lun-Ven 8h-17h",
         "tasks": [
           {
             "quantity": 2,

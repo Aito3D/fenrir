@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime, timezone
 from typing import Annotated
@@ -225,7 +226,7 @@ async def create_user(
                 subject, text_body, html_body = await create_welcome_email_from_template(
                     db, new_user.username, password, login_url
                 )
-                send_email(smtp_settings, new_user.email, subject, text_body, html_body)
+                await asyncio.to_thread(send_email, smtp_settings, new_user.email, subject, text_body, html_body)
                 logger.info(f"Welcome email sent to {new_user.email}")
             else:
                 logger.warning(f"SMTP not configured, could not send welcome email to {new_user.email}")

@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import shutil
+import sqlite3
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -1030,6 +1031,20 @@ async def get_homeassistant_settings(db: AsyncSession) -> dict:
     }
 
 
+def _sqlite_backup(src_path: Path, dst_path: Path) -> None:
+    # T-018: src_conn.backup() copies the database page by page and can take a while for a
+    # large install; callers run it off the event loop.
+    src_conn = sqlite3.connect(str(src_path))
+    try:
+        dst_conn = sqlite3.connect(str(dst_path))
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+    finally:
+        src_conn.close()
+
+
 async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]:
     """Create a complete backup ZIP (database + all data directories).
 
@@ -1049,23 +1064,15 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
         temp_path = Path(temp_dir)
 
         if is_sqlite():
-            from sqlalchemy import text
-
-            from backend.app.core.database import engine
-
             db_path = Path(app_settings.database_url.replace("sqlite+aiosqlite:///", ""))
 
-            # Checkpoint WAL to ensure all data is in main db file
-            async with engine.begin() as conn:
-                await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
-
-            # Copy database file
-            shutil.copy2(db_path, temp_path / "bambuddy.db")
+            # Consistent snapshot via the online backup API (a raw copy of a WAL-mode file can miss
+            # un-checkpointed rows or tear), off the event loop.
+            await asyncio.to_thread(_sqlite_backup, db_path, temp_path / "bambuddy.db")
         else:
             # PostgreSQL: export to a portable SQLite file via SQLAlchemy.
             # This makes backups restorable on both SQLite and Postgres installs.
             import json
-            import sqlite3
 
             from sqlalchemy import create_engine as create_sync_engine
 
@@ -1291,7 +1298,6 @@ def check_backup_schema_compatible(sqlite_path: Path, backup_version: str | None
     afterwards; the Postgres import instead recreates the schema from THIS
     process's ORM and then inserts the backup's columns into it.
     """
-    import sqlite3
 
     from backend.app.core.database import Base
 
@@ -1368,7 +1374,6 @@ async def _import_sqlite_to_postgres(sqlite_path: Path):
     Used for cross-database restore (SQLite backup → PostgreSQL).
     Reads all tables from the SQLite file and bulk-inserts into Postgres.
     """
-    import sqlite3
 
     from sqlalchemy import text
 
@@ -1799,7 +1804,6 @@ async def restore_backup(
         # took the install's data with it and left the encrypted secrets under a
         # key that no longer matches. Nothing above this line has touched
         # anything.
-        import sqlite3
 
         manifest = _read_backup_manifest(temp_path)
         backup_version = manifest.get("app_version")
@@ -1933,23 +1937,8 @@ async def restore_backup(
                 # own WAL — so concurrent open sessions see their own
                 # snapshot until they close (transaction isolation) but
                 # can't corrupt the restored state.
-                import sqlite3
 
-                def _sqlite_backup() -> None:
-                    # T-018: src_conn.backup() copies the database page by
-                    # page and can take a while for a large install; run it
-                    # off the event loop like the rest of restore's I/O.
-                    src_conn = sqlite3.connect(str(backup_db))
-                    try:
-                        dst_conn = sqlite3.connect(str(db_path))
-                        try:
-                            src_conn.backup(dst_conn)
-                        finally:
-                            dst_conn.close()
-                    finally:
-                        src_conn.close()
-
-                await asyncio.to_thread(_sqlite_backup)
+                await asyncio.to_thread(_sqlite_backup, backup_db, db_path)
             else:
                 # Import SQLite backup into PostgreSQL
                 logger.info("Importing SQLite backup into PostgreSQL...")

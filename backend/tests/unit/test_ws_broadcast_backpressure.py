@@ -397,3 +397,60 @@ async def test_broadcast_to_user_none_still_fans_out_via_broadcast():
 
     assert a.received is not None
     assert b.received is not None
+
+
+@pytest.mark.asyncio
+async def test_broadcast_to_users_lock_is_not_held_across_the_wedged_send():
+    """(T-723) Same guarantee as the single-user path: a wedged targeted
+    socket must not hold the manager lock, so connect() and a concurrent
+    broadcast_aito() still complete while the send is stalled."""
+    mgr = ConnectionManager()
+    mgr._BROADCAST_SEND_TIMEOUT = 1.0
+    wedged = _NeverReturningConn()
+    _stamp_user(wedged, 7)
+    mgr.active_connections = [wedged]
+
+    task = asyncio.create_task(mgr.broadcast_to_users({7, 9}, {"type": "queue_item_upload_progress"}))
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert wedged.started is True
+
+    new_conn = SimpleNamespace(state=SimpleNamespace(), accept=None)
+
+    async def _accept():
+        return None
+
+    new_conn.accept = _accept
+    await asyncio.wait_for(mgr.connect(new_conn), timeout=0.2)
+    assert new_conn in mgr.active_connections
+
+    aito_conn = _FastConn()
+    aito_conn.state.aito_read = True
+    mgr.active_connections.append(aito_conn)
+    await asyncio.wait_for(mgr.broadcast_aito({"type": "aito_changed"}), timeout=0.2)
+    assert aito_conn.received is not None
+
+    await asyncio.wait_for(task, timeout=2.0)
+
+
+@pytest.mark.asyncio
+async def test_broadcast_to_users_filters_recipients_and_evicts_wedged_target():
+    mgr = ConnectionManager()
+    mgr._BROADCAST_SEND_TIMEOUT = 0.05
+    wedged = _NeverReturningConnWithClose()
+    _stamp_user(wedged, 7)
+    second = _FastConnWithClose()
+    _stamp_user(second, 9)
+    other_user = _FastConn()
+    _stamp_user(other_user, 8)
+    unstamped = _FastConn()
+    mgr.active_connections = [wedged, second, other_user, unstamped]
+
+    await asyncio.wait_for(mgr.broadcast_to_users({7, 9}, {"type": "queue_item_acked"}), timeout=2.0)
+    await _drain_pending_eviction_closes(mgr)
+
+    assert wedged not in mgr.active_connections
+    wedged.close.assert_awaited_once_with(code=1011)
+    assert json.loads(second.received) == {"type": "queue_item_acked"}
+    assert other_user.received is None
+    assert unstamped.received is None

@@ -166,3 +166,35 @@ class TestDiscoveryService:
         assert response1.status_code == 200
         assert response2.status_code == 200
         assert response1.json()["subnets"] == response2.json()["subnets"]
+
+
+class TestSubnetScanBounds:
+    """T-727: wide/IPv6 networks are capped lazily; timeout is bounded."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("subnet", ["fe80::/64", "10.0.0.0/8"])
+    async def test_wide_network_probes_at_most_1024_hosts(self, subnet):
+        import asyncio
+
+        from backend.app.services.discovery import SubnetScanner
+
+        scanner = SubnetScanner()
+        probed = []
+
+        async def fake_probe(ip, timeout):
+            probed.append(ip)
+
+        scanner._probe_host = fake_probe
+        await asyncio.wait_for(scanner.scan_subnet(subnet, 0.1), timeout=10)
+
+        assert len(probed) == 1024
+        assert scanner.progress == (1024, 1024)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("timeout", [0, -1, 1e9])
+    async def test_out_of_range_timeout_rejected(self, async_client: AsyncClient, timeout):
+        response = await async_client.post(
+            "/api/v1/discovery/scan", json={"subnet": "192.168.1.0/30", "timeout": timeout}
+        )
+        assert response.status_code == 422
