@@ -1,18 +1,16 @@
 """An order's quote and deposit documents, its sync, credit, rating and contact: the Aito card's tools on an order."""
 
-import time
+import re
 from typing import Literal
 
 from fastapi import Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.aito import (
-    _EMAIL_GUARD,
     _check_zoho_email_rate_limit,
-    _email_guard_key_or_409,
 )
-from backend.app.api.routes.order_board._common import _by, _logged, _pdf, _run, router
+from backend.app.api.routes.order_board._common import _by, _guarded_email, _logged, _pdf, _run, router
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -22,7 +20,7 @@ from backend.app.services import order_board_actions, order_board_sync
 from backend.app.services.aito_client_rating import read_client_rating
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.order_board_payment import order_contact
-from backend.app.services.zoho import ZohoUnreachable
+from backend.app.services.zoho import ZohoAmbiguous, ZohoUnreachable
 
 Kind = Literal["quote", "retainer"]
 
@@ -35,6 +33,13 @@ class ContactBody(BaseModel):
     email: str = Field(default="", max_length=200)
     phone: str = Field(default="", max_length=50)
     phone_field: Literal["phone", "mobile"] = "mobile"
+
+    @field_validator("email")
+    @classmethod
+    def _email_shape(cls, v: str) -> str:
+        if v.strip() and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", v.strip()):
+            raise ValueError("not an email address")
+        return v
 
 
 @router.get("/orders/{salesorder_id}/documents/{kind}/{document_id}/pdf")
@@ -92,21 +97,17 @@ async def send_document_email(
     document, content = await _document_email(db, salesorder_id, kind, document_id)
     to = body.to.strip()
     # Re-read, never taken from the request: otherwise any holder of orders:update could mail anyone.
-    if to.lower() not in {r["email"].lower() for r in content["recipients"]}:
-        raise HTTPException(status_code=422, detail="That address is not a recipient of this document")
-    key = _email_guard_key_or_409(f"order-{kind}", 0, document_id, to)
-    _EMAIL_GUARD.arm(key, time.monotonic())
-
-    async def send() -> None:
-        try:
-            await order_board_actions.email_document(db, salesorder_id, kind, document, to, by=_by(user))
-        except ZohoUnreachable:
-            raise  # Books may have sent it all the same: the guard stays armed
-        except Exception:
-            _EMAIL_GUARD.release(key)
-            raise
-
-    await _run(send())
+    await _guarded_email(
+        f"order-{kind}",
+        document_id,
+        to,
+        content,
+        "That address is not a recipient of this document",
+        lambda: order_board_actions.email_document(db, salesorder_id, kind, document, to, by=_by(user)),
+        db=db,
+        salesorder_id=salesorder_id,
+        keep_armed=(ZohoUnreachable, ZohoAmbiguous),  # a gateway page does not say Books did not send it
+    )
     _logged(user, salesorder_id, f"{kind}_email")
     return {"board": await order_board_sync.read_board(db)}
 
@@ -125,6 +126,12 @@ def _sync_facts(row: dict) -> dict:
     }
 
 
+async def _refresh_busy_on_429(db: AsyncSession, salesorder_id: str) -> None:
+    # Inside _run's reach: a Books 429 must become ZohoBusy before _run maps it to a 502.
+    with order_board_sync._busy_on_rate_limit(salesorder_id):
+        await order_board_sync.refresh_order(db, salesorder_id)
+
+
 @router.post("/orders/{salesorder_id}/sync")
 async def sync_order(
     salesorder_id: str,
@@ -135,7 +142,7 @@ async def sync_order(
     if order_board_sync.zoho_busy():
         raise HTTPException(status_code=503, detail="Zoho is busy, try again shortly.")
     before = _sync_facts(await _run(order_board_actions.order_row_any(db, salesorder_id)))
-    await _run(order_board_sync.refresh_order(db, salesorder_id))
+    await _run(_refresh_busy_on_429(db, salesorder_id))
     after = _sync_facts(await _run(order_board_actions.order_row_any(db, salesorder_id)))
     _logged(user, salesorder_id, "sync")
     return {

@@ -2142,6 +2142,110 @@ async def test_cancel_leaves_a_shipped_parcel_and_lets_books_refuse(db_session, 
     assert parcels.steps == []
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invoiced", ["invoice", "line"])
+async def test_cancel_of_an_invoiced_order_is_refused_before_anything_is_deleted(db_session, parcels, voids, invoiced):
+    doc = _packed(parcels)
+    if invoiced == "invoice":
+        doc["invoices"] = [{"invoice_id": "i1", "invoice_number": "INV-1", "status": "sent"}]
+    else:
+        doc["line_items"][0]["quantity_invoiced"] = 1
+    await _board(db_session, parcels, doc)
+    with pytest.raises(actions.OrderActionRefused, match="order_invoiced"):
+        await actions.cancel_order(db_session, "so1")
+    assert parcels.steps == [] and voids.voided == []
+    assert await events_of(db_session, "so1") == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_with_only_a_void_invoice_goes_ahead(db_session, parcels, voids):
+    doc = _packed(parcels)
+    doc["invoices"] = [{"invoice_id": "i1", "invoice_number": "INV-1", "status": "void"}]
+    await _board(db_session, parcels, doc)
+    await actions.cancel_order(db_session, "so1")
+    assert voids.voided == ["so1"]
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_that_fails_after_deleting_records_what_it_removed(db_session, parcels, voids):
+    await _board(db_session, parcels, _packed(parcels))
+    voids.void_error = ZohoUpstreamError("refused")
+    with pytest.raises(ZohoUpstreamError):
+        await actions.cancel_order(db_session, "so1", by="paul")
+    assert parcels.steps == [("delete_package", "p1"), ("delete_picklist", "pl1")]
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["order.cancel_failed"]
+    assert events[0].detail["picklists"] == ["PL-00001"] and len(events[0].detail["packages"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancel_keeps_a_picklist_that_also_holds_another_order_and_still_voids(db_session, parcels, voids):
+    doc = _packed(parcels)
+    parcels.picklists["pl1"]["line_items"].append({**parcels.picklists["pl1"]["line_items"][0], "salesorder_id": "so2"})
+    await _board(db_session, parcels, doc)
+    await actions.cancel_order(db_session, "so1")
+    assert parcels.steps == [("delete_package", "p1")]
+    assert "pl1" in parcels.picklists
+    assert voids.voided == ["so1"]
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_failing_on_a_later_parcel_refreshes_logs_and_never_voids(
+    db_session, parcels, voids, monkeypatch
+):
+    await _board(db_session, parcels, _packed(parcels, parcels_=(("p1", 1), ("p2", 1))))
+    real = zoho_service.delete_package
+
+    async def flaky(db, package_id):
+        if package_id == "p2":
+            raise ZohoUpstreamError("boom")
+        await real(db, package_id)
+
+    monkeypatch.setattr(zoho_service, "delete_package", flaky)
+    with pytest.raises(ZohoUpstreamError, match="boom"):
+        await actions.cancel_order(db_session, "so1", by="paul")
+    assert parcels.steps == [("delete_package", "p1")]
+    assert voids.voided == []
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["order.cancel_failed"]
+    assert events[0].detail["packages"] == ["PKG-00001"] and events[0].detail["picklists"] == []
+    assert [p["package_id"] for p in (await _doc(db_session, "so1")).detail["packages"]] == ["p2"]
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_failing_at_the_picklist_delete_refreshes_logs_and_never_voids(db_session, parcels, voids):
+    await _board(db_session, parcels, _packed(parcels))
+    parcels.fail_step = "delete_picklist"
+    with pytest.raises(ZohoUpstreamError):
+        await actions.cancel_order(db_session, "so1")
+    assert voids.voided == []
+    events = await events_of(db_session, "so1")
+    assert [e.kind for e in events] == ["order.cancel_failed"]
+    assert events[0].detail["packages"] == ["PKG-00001"] and events[0].detail["picklists"] == []
+    assert (await _doc(db_session, "so1")).detail["packages"] == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_with_a_shipped_and_an_unshipped_parcel_deletes_nothing(db_session, parcels, voids):
+    doc = _packed(parcels, parcels_=(("p1", 1), ("p2", 1)))
+    doc["packages"][0]["status"] = "shipped"
+    await _board(db_session, parcels, doc)
+    voids.void_error = ZohoUpstreamError("has shipments")
+    with pytest.raises(ZohoUpstreamError):
+        await actions.cancel_order(db_session, "so1")
+    assert parcels.steps == [] and voids.voided == []
+    assert await events_of(db_session, "so1") == []
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_that_fails_before_deleting_records_nothing(db_session, voids):
+    await _board(db_session, voids, order(1))
+    voids.void_error = ZohoUpstreamError("refused")
+    with pytest.raises(ZohoUpstreamError):
+        await actions.cancel_order(db_session, "so1")
+    assert await events_of(db_session, "so1") == []
+
+
 # --- Edit the order's lines --------------------------------------------------------------------------------------
 
 VERSION = "2026-11-01T08:00:00-1000"

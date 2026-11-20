@@ -1,6 +1,9 @@
 """The Order Board's document routes: quote and deposit PDF/email (ids checked against the stored order), the
 per-order sync report, customer credit, client rating, contact edit and the manual credit apply. Books is stubbed."""
 
+import time
+from datetime import timedelta
+
 import pytest
 from sqlalchemy import select
 
@@ -8,7 +11,8 @@ from backend.app.api.routes import aito as aito_routes
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_sync
-from backend.app.services.zoho import zoho_service
+from backend.app.services.order_board_sync import _common as sync_common
+from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 from backend.tests.unit.test_order_board_routes import tokens  # noqa: F401
 
 BASE = "/api/v1/order-board/orders/so1"
@@ -122,6 +126,42 @@ async def test_sync_reports_what_changed(async_client, tokens, order, monkeypatc
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "status", "window"),
+    [
+        (ZohoRateLimited("429", retry_after=30), 503, True),
+        (ZohoUpstreamError("Books said no"), 502, False),
+    ],
+)
+async def test_sync_refresh_429_is_busy_and_opens_the_window(
+    async_client,
+    tokens,
+    order,
+    monkeypatch,
+    error,
+    status,
+    window,  # noqa: F811
+):
+    async def board_row(db, salesorder_id):
+        return {"id": "so1", "payment": {}}
+
+    async def refresh(db, salesorder_id):
+        raise error
+
+    monkeypatch.setattr(order_board_sync, "find_board_row", board_row)
+    monkeypatch.setattr(order_board_sync, "refresh_order", refresh)
+    monkeypatch.setattr(sync_common, "_rate_limited_until", 0.0)
+    r = await async_client.post(f"{BASE}/sync", headers=tokens["both"])
+    assert r.status_code == status
+    if window:
+        assert r.json()["detail"] == "Zoho is busy, try again shortly."
+    else:
+        assert r.json()["detail"] == "Books said no"
+    assert (sync_common._rate_limited_until > time.monotonic() + 20) is window
+    monkeypatch.setattr(sync_common, "_rate_limited_until", 0.0)
+
+
+@pytest.mark.asyncio
 async def test_credit_and_rating_read_the_stored_customer(async_client, tokens, order, monkeypatch):  # noqa: F811
     seen = []
 
@@ -186,3 +226,133 @@ async def test_apply_credit_is_capped_by_balance_and_order_credit(async_client, 
     r = await async_client.post(f"{BASE}/invoices/inv-1/apply-credit", headers=tokens["both"])
     assert (r.status_code, r.json()["detail"]) == (400, "no_credit")
     assert len(applied) == 1
+
+
+@pytest.fixture
+def quote_mail(monkeypatch):
+    """A fake Books for the quote email: one offered address, every send recorded, `error` raised when set."""
+    state = {"sent": [], "error": None}
+
+    async def content(db, estimate_id):
+        return {
+            "subject": "Devis",
+            "body": "",
+            "recipients": [{"email": "ana@example.com", "name": "Ana"}, {"email": "bob@example.com", "name": "Bob"}],
+        }
+
+    async def email(db, estimate_id, *, to_mail_ids):
+        if state["error"]:
+            raise state["error"]
+        state["sent"].append((estimate_id, to_mail_ids))
+
+    aito_routes._reset_recent_emails()
+    monkeypatch.setattr(zoho_service, "get_estimate_email_content", content)
+    monkeypatch.setattr(zoho_service, "email_estimate", email)
+    yield state
+    aito_routes._reset_recent_emails()
+
+
+@pytest.mark.asyncio
+async def test_a_refused_quote_email_can_be_retried_but_a_lost_answer_cannot(async_client, tokens, order, quote_mail):  # noqa: F811
+    from backend.app.services.zoho import ZohoRequestRejected, ZohoUnreachable
+
+    url, h, mail = f"{BASE}/documents/quote/est-1/email", tokens["both"], {"to": "ana@example.com"}
+    quote_mail["error"] = ZohoRequestRejected("Books says no")
+    r = await async_client.post(url, headers=h, json=mail)
+    assert (r.status_code, r.json()["detail"]) == (502, "Books says no")
+    quote_mail["error"] = None
+    r = await async_client.post(url, headers=h, json=mail)  # a clean refusal released the guard
+    assert r.status_code == 200 and len(quote_mail["sent"]) == 1
+
+    other = {"to": "bob@example.com"}
+    quote_mail["error"] = ZohoUnreachable("timeout")
+    r = await async_client.post(url, headers=h, json=other)
+    assert r.status_code == 502
+    quote_mail["error"] = None
+    r = await async_client.post(url, headers=h, json=other)  # Books may have sent it: the guard stays armed
+    assert r.status_code == 409 and len(quote_mail["sent"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_quote_email_waits_for_a_write_on_the_same_order(async_client, tokens, order, quote_mail):  # noqa: F811
+    from backend.app.services import order_board_actions as actions
+
+    url, h, mail = f"{BASE}/documents/quote/est-1/email", tokens["both"], {"to": "ana@example.com"}
+    with actions.writing("so1"):
+        r = await async_client.post(url, headers=h, json=mail)
+    assert r.status_code == 409 and quote_mail["sent"] == []
+    r = await async_client.post(url, headers=h, json=mail)
+    assert r.status_code == 200 and len(quote_mail["sent"]) == 1  # the busy refusal released the guard
+
+
+@pytest.mark.asyncio
+async def test_a_quote_email_with_an_ambiguous_answer_cannot_be_resent(async_client, tokens, order, quote_mail):  # noqa: F811
+    from backend.app.services.zoho import ZohoAmbiguous
+
+    url, h, mail = f"{BASE}/documents/quote/est-1/email", tokens["both"], {"to": "ana@example.com"}
+    quote_mail["error"] = ZohoAmbiguous("502 gateway page")
+    r = await async_client.post(url, headers=h, json=mail)
+    assert r.status_code == 502
+    quote_mail["error"] = None
+    r = await async_client.post(url, headers=h, json=mail)  # Books may have sent it: the guard stays armed
+    assert r.status_code == 409 and quote_mail["sent"] == []
+
+
+@pytest.mark.asyncio
+async def test_contact_edit_refuses_a_malformed_email_but_takes_valid_or_empty(
+    async_client, tokens, order, monkeypatch
+):  # noqa: F811
+    async def update(db, contact_id, **kw):
+        return None
+
+    monkeypatch.setattr(zoho_service, "update_contact_person", update)
+    for bad in ("not-an-email", "a@b", "two@@x.pf", "a b@x.pf"):
+        r = await async_client.put(f"{BASE}/contact", json={"email": bad}, headers=tokens["both"])
+        assert r.status_code == 422, bad
+    for good in ("new@example.com", ""):
+        r = await async_client.put(f"{BASE}/contact", json={"email": good, "phone": "87"}, headers=tokens["both"])
+        assert r.status_code == 200, good
+
+
+@pytest.mark.asyncio
+async def test_quote_email_refuses_an_address_a_contact_edit_just_set(
+    async_client, tokens, order, quote_mail, monkeypatch
+):  # noqa: F811
+    from backend.app.api.routes.order_board import _common
+
+    async def update(db, contact_id, **kw):
+        return None
+
+    monkeypatch.setattr(zoho_service, "update_contact_person", update)
+    url, h = f"{BASE}/documents/quote/est-1/email", tokens["both"]
+    # bob is offered by Books; ana is the stored contact and stays unchanged by a phone-only edit.
+    await async_client.put(f"{BASE}/contact", json={"email": "Bob@Example.com"}, headers=h)
+    await async_client.put(f"{BASE}/contact", json={"email": "ana@example.com", "phone": "87"}, headers=h)
+    r = await async_client.post(url, headers=h, json={"to": "bob@example.com"})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "recipient_recently_edited"
+    assert quote_mail["sent"] == []
+    r = await async_client.post(url, headers=h, json={"to": "ana@example.com"})  # not edited: sent as before
+    assert r.status_code == 200 and len(quote_mail["sent"]) == 1
+    later = _common.utc_now_naive() + _common._RECIPIENT_EDIT_COOLDOWN + timedelta(seconds=1)
+    monkeypatch.setattr(_common, "utc_now_naive", lambda: later)  # the window has passed
+    r = await async_client.post(url, headers=h, json={"to": "bob@example.com"})
+    assert r.status_code == 200 and len(quote_mail["sent"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_quote_email_refuses_an_address_edited_from_another_order_of_the_client(
+    async_client, tokens, order, quote_mail, db_session, monkeypatch
+):  # noqa: F811
+    async def update(db, contact_id, **kw):
+        return None
+
+    monkeypatch.setattr(zoho_service, "update_contact_person", update)
+    db_session.add(OrderBoardDoc(kind="salesorder", zoho_id="so2", header={}, detail=dict(DETAIL, salesorder_id="so2")))
+    await db_session.commit()
+    h = tokens["both"]
+    await async_client.put(f"{BASE}/contact", json={"email": "Bob@Example.com"}, headers=h)  # edited on so1
+    r = await async_client.post(
+        "/api/v1/order-board/orders/so2/documents/quote/est-1/email", headers=h, json={"to": "bob@example.com"}
+    )
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "recipient_recently_edited"
+    assert quote_mail["sent"] == []

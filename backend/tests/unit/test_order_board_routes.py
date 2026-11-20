@@ -918,3 +918,167 @@ async def test_a_concurrent_watch_is_recovered_not_a_500(async_client, tokens, d
     r = await async_client.put("/api/v1/order-board/orders/so1/watch", headers=tokens["read"])
     assert (r.status_code, r.json()) == (200, {"watching": True})
     assert (await db_session.execute(select(func.count()).select_from(OrderWatch))).scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_an_invoice_email_with_an_ambiguous_answer_can_be_retried(async_client, tokens, db_session, invoice_mail):
+    from backend.app.services.zoho import ZohoAmbiguous
+
+    await _store_invoiced_order(db_session)
+    url, h, mail = f"{BASE}/invoices/inv1/email", tokens["both"], {"to": "moana@client.pf"}
+    invoice_mail["error"] = ZohoAmbiguous("502 gateway page")
+    r = await async_client.post(url, headers=h, json=mail)
+    assert r.status_code == 502
+    invoice_mail["error"] = None
+    r = await async_client.post(url, headers=h, json=mail)  # unchanged: the guard is released here
+    assert r.status_code == 200 and len(invoice_mail["sent"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_invoice_email_refuses_an_address_a_contact_edit_just_set(async_client, tokens, db_session, invoice_mail):
+    from backend.app.models.order_board_event import OrderBoardEvent
+    from backend.app.services.aito_events import utc_now_naive
+
+    await _store_invoiced_order(db_session)
+    db_session.add(
+        OrderBoardEvent(
+            salesorder_id="so1",
+            occurred_at=utc_now_naive(),
+            kind="contact.edited",
+            actor_class="user",
+            detail={"email": "compta@client.pf"},
+        )
+    )
+    await db_session.commit()
+    url, h = f"{BASE}/invoices/inv1/email", tokens["both"]
+    r = await async_client.post(url, headers=h, json={"to": "Compta@client.pf"})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "recipient_recently_edited"
+    assert invoice_mail["sent"] == []
+    r = await async_client.post(url, headers=h, json={"to": "moana@client.pf"})  # another address: unchanged
+    assert r.status_code == 200 and len(invoice_mail["sent"]) == 1
+
+
+async def _client_edit_setup(db_session, edited_on="so1", customer_edited="c1"):
+    """so1 and so2 belong to client c1 (each has an invoice); so3 belongs to c9. A fresh contact edit of
+    compta@client.pf is recorded on `edited_on`, as edit_contact does."""
+    from backend.app.models.order_board_doc import OrderBoardDoc
+    from backend.app.models.order_board_event import OrderBoardEvent
+    from backend.app.services.aito_events import utc_now_naive
+
+    for so, customer in (("so1", "c1"), ("so2", "c1"), ("so3", "c9")):
+        detail = {"customer_id": customer, "invoices": [{"invoice_id": f"inv-{so}", "invoice_number": "FA-1"}]}
+        db_session.add(OrderBoardDoc(kind="salesorder", zoho_id=so, header={}, detail=detail))
+    db_session.add(
+        OrderBoardEvent(
+            salesorder_id=edited_on,
+            occurred_at=utc_now_naive(),
+            kind="contact.edited",
+            actor_class="user",
+            detail={"email": "compta@client.pf", "customer_id": customer_edited},
+        )
+    )
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_invoice_email_refuses_an_address_edited_from_another_order_of_the_client(
+    async_client, tokens, db_session, invoice_mail
+):
+    await _client_edit_setup(db_session)
+    h, mail = tokens["both"], {"to": "compta@client.pf"}
+    r = await async_client.post(f"{BASE}/invoices/inv-so2/email", headers=h, json=mail)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "recipient_recently_edited"
+    r = await async_client.post(f"{BASE}/invoices/inv-so3/email", headers=h, json=mail)  # another client
+    assert r.status_code == 200 and len(invoice_mail["sent"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_an_edit_logged_before_customer_ids_were_stored_still_guards_its_own_order(
+    async_client, tokens, db_session, invoice_mail
+):
+    from sqlalchemy import update
+
+    from backend.app.models.order_board_event import OrderBoardEvent
+
+    await _client_edit_setup(db_session)
+    await db_session.execute(update(OrderBoardEvent).values(detail={"email": "compta@client.pf"}))
+    await db_session.commit()
+    h, mail = tokens["both"], {"to": "compta@client.pf"}
+    r = await async_client.post(f"{BASE}/invoices/inv-so1/email", headers=h, json=mail)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "recipient_recently_edited"
+    r = await async_client.post(f"{BASE}/invoices/inv-so2/email", headers=h, json=mail)  # unknown client
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_the_client_wide_cooldown_ends_with_the_window(
+    async_client, tokens, db_session, invoice_mail, monkeypatch
+):
+    from datetime import timedelta
+
+    from backend.app.api.routes.order_board import _common
+
+    await _client_edit_setup(db_session)
+    later = _common.utc_now_naive() + _common._RECIPIENT_EDIT_COOLDOWN + timedelta(seconds=1)
+    monkeypatch.setattr(_common, "utc_now_naive", lambda: later)
+    r = await async_client.post(
+        f"{BASE}/invoices/inv-so2/email", headers=tokens["both"], json={"to": "compta@client.pf"}
+    )
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unknown", ["unreachable", "ambiguous"])
+async def test_a_contact_edit_with_an_unknown_outcome_still_guards_the_address(
+    unknown, async_client, tokens, db_session, invoice_mail, monkeypatch
+):
+    from sqlalchemy import select
+
+    from backend.app.models.order_board_doc import OrderBoardDoc
+    from backend.app.models.order_board_event import OrderBoardEvent
+    from backend.app.services.zoho import ZohoAmbiguous, ZohoUnreachable, zoho_service
+
+    await _store_invoiced_order(db_session)
+    doc = (await db_session.execute(select(OrderBoardDoc))).scalar_one()
+    doc.detail = {**doc.detail, "customer_id": "c1"}
+    await db_session.commit()
+
+    async def update(db, customer_id, **kw):
+        raise (ZohoUnreachable if unknown == "unreachable" else ZohoAmbiguous)("timed out")
+
+    monkeypatch.setattr(zoho_service, "update_contact_person", update)
+    h = tokens["both"]
+    r = await async_client.put(f"{BASE}/orders/so1/contact", headers=h, json={"email": "Compta@Client.pf"})
+    assert r.status_code == 502
+    events = (
+        await db_session.execute(select(OrderBoardEvent).where(OrderBoardEvent.kind == "contact.edited"))
+    ).scalars()
+    assert [e.detail for e in events] == [{"email": "compta@client.pf", "customer_id": "c1"}]
+    r = await async_client.post(f"{BASE}/invoices/inv1/email", headers=h, json={"to": "compta@client.pf"})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "recipient_recently_edited"
+    assert invoice_mail["sent"] == []
+
+
+@pytest.mark.asyncio
+async def test_a_refused_contact_edit_records_nothing(async_client, tokens, db_session, invoice_mail, monkeypatch):
+    from sqlalchemy import select
+
+    from backend.app.models.order_board_doc import OrderBoardDoc
+    from backend.app.models.order_board_event import OrderBoardEvent
+    from backend.app.services.zoho import ZohoRequestRejected, zoho_service
+
+    await _store_invoiced_order(db_session)
+    doc = (await db_session.execute(select(OrderBoardDoc))).scalar_one()
+    doc.detail = {**doc.detail, "customer_id": "c1"}
+    await db_session.commit()
+
+    async def update(db, customer_id, **kw):
+        raise ZohoRequestRejected("refused")
+
+    monkeypatch.setattr(zoho_service, "update_contact_person", update)
+    r = await async_client.put(f"{BASE}/orders/so1/contact", headers=tokens["both"], json={"email": "compta@client.pf"})
+    assert r.status_code >= 400
+    events = (
+        await db_session.execute(select(OrderBoardEvent).where(OrderBoardEvent.kind == "contact.edited"))
+    ).scalars()
+    assert list(events) == []

@@ -3,8 +3,10 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.services.order_board_actions._common import (
+    OrderActionRefused,
     _best_effort_refresh,
     _log,
+    _num,
     _picklist,
     _write,
     confirm_stored_copy,
@@ -22,18 +24,31 @@ async def cancel_order(db: AsyncSession, salesorder_id: str, *, by: str | None =
         number = doc.header.get("salesorder_number") or ""
         order = doc.detail or {}
         packages = order.get("packages") or []
+        # Books refuses to void an invoiced order: refuse before any parcel or picklist is deleted.
+        if any(i.get("status") != "void" for i in order.get("invoices") or []) or any(
+            _num(line.get("quantity_invoiced")) > 0 for line in order.get("line_items") or []
+        ):
+            raise OrderActionRefused("order_invoiced")
+        deleted_packages: list[str] = []
+        deleted_picklists: list[str] = []
         try:
             if all(p.get("status") == "not_shipped" for p in packages):
                 for p in packages:
                     step = zoho_service.delete_package(db, p["package_id"])
                     await _write(salesorder_id, number, "delete_package", step)
+                    deleted_packages.append(p.get("package_number") or "")
                 for p in order.get("picklists") or []:
                     picklist = await _picklist(db, order, p["picklist_id"])
                     if all(r.get("salesorder_id") == salesorder_id for r in picklist.get("line_items") or []):
                         step = zoho_service.delete_picklist(db, p["picklist_id"])
                         await _write(salesorder_id, number, "delete_picklist", step)
+                        deleted_picklists.append(p.get("picklist_number") or "")
             await _write(salesorder_id, number, "void", zoho_service.void_salesorder(db, salesorder_id))
         except Exception:
+            if deleted_packages or deleted_picklists:
+                await _log(
+                    db, salesorder_id, "order.cancel_failed", by, packages=deleted_packages, picklists=deleted_picklists
+                )
             # A timeout can mean it went through, and a parcel already deleted must show up on the board.
             await _best_effort_refresh(db, salesorder_id, number)
             raise

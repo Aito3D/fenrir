@@ -29,6 +29,8 @@ KINDS: dict[str, str] = {
             "invoice.created",
             "payment.received",
             "order.cancelled",
+            "order.cancel_failed",
+            "order.void_failed",
             "order.finished",
             "note.added",
         ),

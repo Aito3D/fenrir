@@ -37,6 +37,7 @@ from backend.app.services.aito_payment_links import (
     link_view,
 )
 from backend.app.services.aito_terminal_payments import (
+    BLOCKING_STATUSES,
     TerminalInProgress,
     current_terminal_payment,
     refresh_terminal_payment,
@@ -326,6 +327,10 @@ async def record_order_manual_payment_route(
     document = await _payment_document(db, salesorder_id, body.amount)
     if _open_link(await current_link(db, ("order", salesorder_id), kind=None)):
         raise _refuse(409, "link_open", "A payment link is open for this order: cancel it first")
+    # A terminal charge still waiting could settle on top of this payment.
+    terminal_row = await current_terminal_payment(db, ("order", salesorder_id))
+    if terminal_row is not None and terminal_row.status in BLOCKING_STATUSES:
+        raise _refuse(409, "terminal_in_progress", "A terminal payment is already in progress for this order")
     try:
         await record_order_manual_payment(
             db,

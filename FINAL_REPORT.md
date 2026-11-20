@@ -1,105 +1,89 @@
-# FINAL REPORT — refactor-loop campaign O3: the Order Board (/orders)
+# Final report — refactor-loop campaign O4: the Order Board
 
-Campaign 1 on branch `auto-refactor-loop` (worktree `../bambuddy-refactor`), cut from main `2c8d80901` on 2026-11-16.
-BASE `refactor-base` = setup commit `504291e00`. Ended 2026-11-17.
+Campaign O4 (fourth refactor-loop campaign on /orders; first on this branch). Ran 2026-11-18 → 2026-11-19.
 
-## Summary
-- **Iterations run:** 11 of 12 allowed (loop-1 … loop-11), one squashed commit + one tag per iteration.
-- **Survey rounds:** 3 of 3.
-- **Why it ended:** MAX_ROUNDS. The plan was empty after round 3's tasks, and the round cap was reached.
-- **Commits:** 1 setup commit + 11 iteration commits, plus this report.
-- **Tags:** `refactor-base`, `loop-1` … `loop-11`.
-- **Parameters:** scope = Order Board (routes/order_board/, services/order_board*, order_board_actions/, order_board_sync/, models order_board_*, components/orders/**, OrderBoardPage, OrderTrackPage, utils/orderTracking.ts, and their tests). MAX_ITER 12, MAX_ROUNDS 3, BATCH 3, auto, grouped, at-exit. TRIAGE was P2,P3 at the start and lowered to P3 by the user at the setup sweep.
-- **Tasks:** 31 filed in PLAN.md, 29 DONE, 2 WONTFIX-AUTO, 0 OPEN or BLOCKED. 19 findings remain in TRIAGE.md.
-- **Verifier:** every iteration passed. Iteration 1 needed one fix: its first verify failed the coverage ratchet arithmetically, because deleted dead code had been covered. Tests were added rather than resetting the baseline.
+- Branch `auto-refactor-loop`, worktree `../bambuddy-refactor-o4` (moved off the default `../bambuddy-refactor` after
+  another session deleted that worktree during setup; branch and tags were unaffected).
+- UPSTREAM: main `e90b2b333`. BASE: `refactor-base` = `b56175657` (setup commit: goldens re-recorded + SURFACE regenerated).
+- Iterations run: 8 (MAX_ITER 8). Survey rounds completed: 2 of MAX_ROUNDS 3.
+- Commits: 1 setup + 8 squashed iteration commits. Tags: `refactor-base`, `loop-1` … `loop-8`.
+- Parameters: BATCH 3, TRIAGE P3, mode auto, grouped commits, merge at exit.
+- **Why it ended: MAX_ITER** (iteration 9 would exceed 8). Three user-approved tasks were still OPEN.
 
-## Coverage, tests, goldens
-| | Baseline (BASE) | Final (loop-11) |
-|---|---|---|
-| Backend scoped statements | 2815/2913 = 96.64% | 2912/2938 = **99.12%** |
-| Backend scoped branches | 701/748 = 93.72% | (not reported per run) |
-| Frontend scoped statements | 1554/1636 = 94.98% | 1578/1640 = **96.21%** |
-| Backend full suite | 27969 passed, 1 known_broken | 28036 passed, 0 failed |
-| Frontend full suite | 11397 passed, 3 load flakes | 11425 passed, 0 failed |
+## User-approved behavior changes (BASELINE-CHANGELOG.md, all approved 2026-11-18)
 
-- **known_broken:** `test_printer_hours_migrations.py::test_migration_backfills_calibrated_at_from_offset` is unchanged. It is outside scope and fails between 14:00 and midnight local time.
-- **Snapshot probes:** 8/8 match. Two goldens were re-recorded for approved changes: `orders-i18n` for T-003, and `orders-surface-py` for T-016 and T-021.
-- **SURFACE.md:** one line changed. Line 215 lists the sync package's `__all__`, where `_stored_query` became `find_stored`. This is the user-approved SURFACE regeneration for T-021.
-- **Diff since BASE:** 47 files, +1589/−191, mostly tests. Production code: 31 files, +180/−96, including 16 locale files.
-- **Gates at the end:** ruff check and format clean, basedpyright in lock mode 0 errors, tsc, eslint with 0 errors (5 warnings that predate this campaign and sit outside scope), knip, and i18n parity across 16 locales.
+| Task | Change an operator can see |
+|------|----------------------------|
+| T-062 (+T-054 merged) | Cancelling an invoiced order is refused upfront (`order_invoiced`) without touching its parcels; a cancel that fails partway records an `order.cancel_failed` history line naming the parcels/picklists it deleted. |
+| T-063 | Recording a manual payment while the card terminal is pending/processing on that order → 409 `terminal_in_progress`. |
+| T-064 | A counter-order resubmit reusing a `client_ref` with a different client or lines → refused `ref_reused` (identical retry still returns the first order). |
+| T-065 | After a 429 at counter-order confirm, the cleanup void of the half-made draft is deferred to the sync pass; a failed deferred void records `order.void_failed`. In-memory (lost on restart, marked `shortcut:`). |
+| T-066 | A rate-limited order Sync answers 503 "Zoho is busy" and opens the back-off window (was 502 with Books' text). |
+| T-067 | After a Books gateway error (ZohoAmbiguous) on a quote/deposit email, an immediate resend to the same address is refused as a duplicate. Invoice email unchanged. |
+| T-055 | Contact edit rejects a malformed email (422); quote/deposit/invoice email to an address set by a contact edit in the last 10 minutes → 409 `recipient_recently_edited`. `contact.edited` now stores the new email. |
+| T-082 (+T-072 merged) | That 10-minute block applies across all orders of the same client (event also stores `customer_id`). |
+| T-084 | A deferred draft void that hits a network error is retried on later passes (cap 5) instead of being dropped at once. |
+| T-083 | A contact edit whose Books write times out / is ambiguous still records `contact.edited`, so the block applies. |
 
-## User-approved behavior changes (BASELINE-CHANGELOG.md)
-- **T-003:** three refusal codes (`nothing_to_pack`, `unknown_package`, `unknown_picklist`) now show their own message in 16 locales.
-- **T-016:** both preparation-sheet routes now require `orders:update`. The print controls are hidden from users without it.
-- **T-017:** no Books re-read is sent inside the 429 back-off window after a write.
-- **T-018:** the history line for an edited order shows the new total, and none if the re-read failed.
-- **T-019:** a sync pass compares an order against the current stored copy, so an operator's own edit is no longer logged as "edited in Books".
-- **T-020:** a sync pass that fails for a non-Zoho reason shows a short error on the board, and Refresh returns the board instead of a 500.
-- **T-021 (SURFACE only):** a single `find_stored` helper replaces 7 copies of the lookup.
-- **T-030:** one failing quote lookup no longer stops the whole pass. A deleted quote is remembered as having no number.
-- **T-047:** a quote lookup that keeps failing is retried about once a day, and the warning names the order.
-- **T-049:** a parcel edit whose Books call timed out but went through is recorded in the history.
-- **T-050:** the order search box keeps fast keystrokes.
-- **Declined by the user:** T-048, which would open the back-off window after a 429 on an invoice email.
+Goldens re-recorded under these entries: fe-i18n-parity, orders-frontend-pure, orders-i18n, orders-rules. SURFACE.md
+gained 5 i18n keys: `aito.emailRecipientRecentlyEdited`, `orders.history.orderCancelFailed`, `orders.history.orderVoidFailed`,
+`orders.history.short.cancelFailed`, `orders.history.short.voidFailed`. New translations in all 16 locales were written
+by the workers: a native-speaker skim is worthwhile.
 
-## What each round found
-- **Round 1 (setup):** 20 findings.
-  - security 1 (T-016), robustness 4 (T-017 to T-020), cleanliness 7, tests 8.
-  - Six were behavior changes, and all six were approved.
-  - 14 went to triage, and 8 of those were promoted when TRIAGE was lowered to P3.
-- **Round 2:** 21 findings.
-  - security 0.
-  - robustness 1: T-030 (high). A deleted quote froze the board.
-  - cleanliness 9: 2 filed, 7 triaged.
-  - tests 11: 8 filed, 3 triaged. One filed finding was a stamp-race test that could never fail.
-- **Round 3:** 9 findings.
-  - security 0.
-  - robustness 4: T-047, T-049 and T-050 approved, T-048 declined.
-  - cleanliness 2, both triaged.
-  - tests 3: 2 filed, 1 triaged.
+## Survey rounds
 
-## Findings by auditor (PLAN.md, `plan.py stats`)
-| Auditor | Filed in PLAN.md | DONE | BLOCKED | WONTFIX-AUTO |
-|---|---|---|---|---|
-| audit-security | 1 | 1 | 0 | 0 |
-| audit-robustness | 9 | 8 | 0 | 1 (T-048, declined) |
-| audit-cleanliness | 5 | 4 | 0 | 1 (T-026, no change: the seven mutations differ) |
-| audit-tests | 16 | 16 | 0 | 0 |
+- **Round 1** (focus: ~9.4k lines of order code added after the O3 merge): 14 filed — security 2 (both behavior
+  changes), robustness 6 (all behavior changes), cleanliness 1, tests 5 — plus 3 triaged. The two cancel findings
+  (T-054/T-062) were one bug. All 8 behavior changes approved.
+- **Round 2** (user asked to focus on frontend test coverage): 13 filed — security 1, robustness 6 (all behavior
+  changes, mostly gaps in round-1 fixes), tests 6 frontend coverage tasks — plus 7 triaged (4 cleanliness, 3 tests).
+  T-072/T-082 were one bug. All 7 behavior changes approved.
+- Round 3 never ran (iteration budget spent first).
 
-T-002 (split `_rewrite_parcel`) counts as DONE with no change. T-001's dead-branch removal had already brought that function down to about 70 lines.
+## Findings by auditor (`plan.py stats`)
 
-## Triaged (TRIAGE.md, for human review)
-Campaign-wide, 27 findings were triaged at ingest: 14 in round 1, 10 in round 2 and 3 in round 3. 8 of them were promoted into PLAN.md, so 19 remain: 13 from audit-cleanliness and 6 from audit-tests. All are P3. Each has full evidence in TRIAGE.md. Read it with `python tools/plan.py --file TRIAGE.md render --iteration 11`, and move one into the plan with `python tools/plan.py promote <id> --iteration N` (the `--iteration` flag is required).
+| Auditor | Filed to PLAN | DONE | OPEN | BLOCKED | WONTFIX-AUTO | Triaged (campaign) |
+|---------|---------------|------|------|---------|--------------|--------------------|
+| audit-security | 3 | 1 | 0 | 0 | 2 (merged duplicates T-054, T-072) | 0 |
+| audit-robustness | 12 | 9 | 3 | 0 | 0 | 0 |
+| audit-cleanliness | 1 | 1 | 0 | 0 | 0 | 6 |
+| audit-tests | 11 | 11 | 0 | 0 | 0 | 4 |
 
-- **T-004:** `get_finished_order` repeats `_run`'s Zoho error mapping.
-- **T-005:** `_order_for_payment` repeats the `_require_order` lookup. This one is largely resolved by T-021.
-- **T-006:** OrderBoardPage is one ~400-line component.
-- **T-007:** OrderLinesPanel is one ~340-line component.
-- **T-012:** some frontend order tests use fixed `setTimeout` waits.
-- **T-015:** a parcel edit that completes the order records no `order.packed` event, and no test pins either outcome.
-- **T-022:** the 429 window test is open-coded in 4 modules.
-- **T-023:** the `ZohoRateLimited` → `open_rate_limit_window` handling is hand-rolled in 4 places.
-- **T-024:** the private `actions._row` is used from `order_board_sms`.
-- **T-025:** the `['order-board']` query key is redefined in several places.
-- **T-027:** three edit bars share one submit skeleton.
-- **T-028:** the refusal toast and invalidate code is repeated.
-- **T-029:** ruff SIM105 in `_loop.py`.
-- **T-038:** `_line_changes` with a renamed line is untested.
-- **T-040:** the `orderEventDetail` money detail lines are untested.
-- **T-041:** the `useScan` guards are untested.
-- **T-042:** OrderTrackPage copies AitoTrackPage's timeout query and stage gate.
-- **T-043:** `_with_unused` repeats the tolerant `_num`.
-- **T-045:** the 429 quote test resets the window by hand.
+Triaged this campaign: **10** (cleanliness 6, tests 4), all P3, all in TRIAGE.md with full evidence. Review them with
+`python tools/plan.py --file TRIAGE.md render --iteration 0` and promote with `plan.py promote <id> --iteration N`
+(the flag is required).
+
+## Quality gates
+
+- **Coverage (scoped statements):** backend 98.59% → **99.07%**; frontend 91.04% → **95.89%** (branches 86.76% → ~89%).
+- **Known-broken tests:** 1 → 1 (`test_printer_hours_migrations::test_migration_backfills_calibrated_at_from_offset`, time-of-day; passed in every run, not fixed).
+- **Golden snapshots:** 43/43 matching at every verified iteration.
+- **SURFACE.md:** changed only by the 5 sanctioned i18n keys.
+- **Verifier:** 9 runs, 8 PASS + 1 FAIL. The FAIL was iteration 5: T-055 didn't re-record the goldens/SURFACE for its new key. A bookkeeping commit fixed it and the re-verify passed.
+- **Full suites at the last verified HEAD:** backend 28,493 passed. The one failure, `test_aito_terminal_payments::test_concurrent_starts_are_serialized_by_the_lock`, is a load flake that passes alone. Frontend: 11,655 passed.
+- **Diff since BASE:** 53 files, +2242 / −132.
+  - Production code (backend/app, components, pages): 15 files, +253 / −85.
+  - Tests: 16 files, +1512 / −16.
+  - The rest is locale strings, goldens, SURFACE.md and the changelog.
+- **Test counts:** backend 28,444 → 28,493 (+49); frontend 11,603 → 11,655 (+52).
 
 ## Left for humans
-- **OPEN / BLOCKED:** none.
-- **WONTFIX-AUTO:**
-  - T-026: no change made. The seven mutations' callbacks differ, so a shared builder would need flags.
-  - T-048: behavior change declined. A 429 on the invoice email opens no back-off window.
-- **Notes from the verifiers and workers, not filed:**
-  - T-034 pins what happens if an order row vanishes mid-pass, a state production can't reach today.
-  - T-050's in-flight guard ignores an outside navigation to the exact URL still in flight, within a few milliseconds.
-  - The frontend full suite is very load-sensitive: 13 unrelated files flaked at load 70 and all passed alone.
+
+OPEN, user-approved, not reached (the budget ran out):
+- **T-085:** `_void_pending_drafts` voids the remembered order without checking it is still a draft. Someone may have confirmed it in Books during the back-off.
+- **T-086:** `cancel_order` logs `order.cancel_failed` when the void timed out but may have gone through.
+- **T-087:** a waiting duplicate counter-order submit calls Books inside the 429 window opened by the attempt it waited on.
+
+WONTFIX-AUTO: T-054 (merged into T-062), T-072 (merged into T-082). Both were approved duplicates, not declined.
+
+Triaged (P3): T-052, T-053, T-061, T-068, T-069, T-070, T-071, T-079, T-080, T-081.
+
+Leads noted by workers, not filed:
+- ContactEditor shows only the generic "edit failed" toast for the server's new 422 (malformed email).
+- `printLabel`'s `if (!service || !island) return` guard in OrderShippingLabelModal is unreachable.
+- An order stored without `customer_id` refuses a contact edit (`no_contact`) before the write.
 
 ## Preserved state
-At the user's request, all untracked loop state is copied to `plans/refactor-campaign-orders-o3/` in the main checkout (gitignored). That covers PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log, the findings JSON files and the two briefs.
+
+Per the user's choice at exit, PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log, the findings JSON, the briefs and the
+archived O3 plans are copied to `plans/refactor-campaign-orders-o4/` in the main checkout (gitignored).

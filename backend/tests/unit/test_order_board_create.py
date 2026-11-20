@@ -7,9 +7,19 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.models.order_board_doc import OrderBoardDoc
+from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_actions as actions, order_board_sync as sync
 from backend.app.services.order_board_actions import create as create_module
-from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
+from backend.app.services.order_board_sync import _common as sync_common
+from backend.app.services.zoho import (
+    ZohoAmbiguous,
+    ZohoNotConfiguredError,
+    ZohoRateLimited,
+    ZohoRequestRejected,
+    ZohoUnreachable,
+    ZohoUpstreamError,
+    zoho_service,
+)
 from backend.tests.unit.test_order_board_actions import events_of
 from backend.tests.unit.test_order_board_sync import (  # noqa: F401
     no_back_off_left_over,
@@ -28,9 +38,11 @@ ITEMS = {
 def no_ref_left_over():
     create_module._created.clear()
     create_module._ref_locks.clear()
+    sync_common._pending_voids.clear()
     yield
     create_module._created.clear()
     create_module._ref_locks.clear()
+    sync_common._pending_voids.clear()
 
 
 @pytest.fixture
@@ -105,6 +117,50 @@ async def test_same_client_ref_creates_once(db_session, books):
 
 
 @pytest.mark.asyncio
+async def test_a_retry_with_the_same_lines_in_another_order_returns_the_first_order(db_session, books):
+    first = [{"item_id": "A", "quantity": 1}, {"item_id": "B", "quantity": 2, "discount": ""}]
+    again = [{"item_id": "B", "quantity": 2}, {"item_id": "A", "quantity": 1}]
+    assert await actions.create_counter_order(db_session, "c1", first, "ref-1", by=None) == "9"
+    assert await actions.create_counter_order(db_session, "c1", again, "ref-1", by=None) == "9"
+    assert len(books.payloads) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("customer_id", "lines"),
+    [
+        ("c1", [{"item_id": "A", "quantity": 2}]),
+        ("c1", [{"item_id": "B", "quantity": 1}]),
+        ("c1", [{"item_id": "A", "quantity": 1, "discount": "5%"}]),
+        ("c1", [{"item_id": "A", "quantity": 1}, {"item_id": "B", "quantity": 1}]),
+        ("c2", [{"item_id": "A", "quantity": 1}]),
+    ],
+)
+async def test_a_known_ref_with_other_lines_or_client_is_refused_without_a_books_call(
+    db_session, books, monkeypatch, customer_id, lines
+):
+    assert (
+        await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-1", by=None) == "9"
+    )
+    monkeypatch.setattr(sync, "zoho_busy", lambda: True)  # a refusal comes before the busy check too
+    with pytest.raises(actions.OrderActionRefused, match="ref_reused"):
+        await actions.create_counter_order(db_session, customer_id, lines, "ref-1", by=None)
+    assert len(books.payloads) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_changed_resubmit_waiting_on_the_lock_is_refused(db_session, books):
+    results = await asyncio.gather(
+        actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-2", by=None),
+        actions.create_counter_order(db_session, "c1", [{"item_id": "B", "quantity": 1}], "ref-2", by=None),
+        return_exceptions=True,
+    )
+    assert results[0] == "9"
+    assert isinstance(results[1], actions.OrderActionRefused) and str(results[1]) == "ref_reused"
+    assert len(books.payloads) == 1
+
+
+@pytest.mark.asyncio
 async def test_concurrent_same_client_ref_creates_once(db_session, books):
     lines = [{"item_id": "A", "quantity": 1}]
     ids = await asyncio.gather(
@@ -162,7 +218,7 @@ async def test_an_order_a_pass_stored_first_is_reused(db_session, books, monkeyp
     docs = await _docs(db_session)
     assert len(docs) == 1 and docs[0].detail["status"] == "open"  # refreshed
     assert [e.kind for e in await events_of(db_session, "9")] == ["order.created"]
-    assert create_module._created == {"r": "9"}
+    assert {ref: order_id for ref, (_, order_id) in create_module._created.items()} == {"r": "9"}
 
 
 @pytest.mark.asyncio
@@ -179,23 +235,67 @@ async def test_a_failure_after_the_confirm_never_creates_twice(db_session, books
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("void_fails", [False, True])
-async def test_rate_limited_confirm_voids_and_is_busy(db_session, books, monkeypatch, caplog, void_fails):
+async def test_rate_limited_confirm_sends_no_void_and_remembers_the_draft(db_session, books):
     books.open_error = ZohoRateLimited("429", retry_after=30)
-    if void_fails:
-
-        async def void_boom(db, salesorder_id):
-            raise ZohoRateLimited("429", retry_after=30)
-
-        monkeypatch.setattr(zoho_service, "void_salesorder", void_boom)
     with pytest.raises(sync.ZohoBusy):
         await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-5", by=None)
     assert sync.zoho_busy()
-    assert books.voided == ([] if void_fails else ["9"])
+    assert books.voided == []
+    assert sync_common._pending_voids == {"9": "SO-00009"}
     assert await _docs(db_session) == []
     assert create_module._created == {}
-    if void_fails:
-        assert any(r.levelname == "ERROR" and "draft order is left in Books" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_a_pass_after_the_window_voids_the_pending_draft(db_session, books):
+    sync_common._pending_voids["9"] = "SO-00009"
+    assert await sync.run_pass(db_session) is True
+    assert books.voided == ["9"]
+    assert sync_common._pending_voids == {}
+
+
+@pytest.mark.asyncio
+async def test_a_pass_inside_the_window_keeps_the_draft_and_a_429_reopens_it(db_session, books, monkeypatch):
+    sync_common._pending_voids["9"] = "SO-00009"
+    assert await sync.run_pass(db_session) is True  # window closed: voided
+
+    sync_common._pending_voids["8"] = "SO-00008"
+
+    async def void_429(db, salesorder_id):
+        raise ZohoRateLimited("429", retry_after=30)
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_429)
+    assert await sync.run_pass(db_session) is True
+    assert sync.zoho_busy()
+    assert sync_common._pending_voids == {"8": "SO-00008"}
+    assert await sync.run_pass(db_session) is False  # inside the window nothing is sent
+
+
+@pytest.mark.asyncio
+async def test_a_failing_deferred_void_records_an_event_and_drops_the_draft(db_session, books, monkeypatch):
+    sync_common._pending_voids["9"] = "SO-00009"
+
+    async def void_boom(db, salesorder_id):
+        raise ZohoUpstreamError("void boom")
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_boom)
+    await sync.run_pass(db_session)
+    assert sync_common._pending_voids == {}
+    events = (
+        (await db_session.execute(select(OrderBoardEvent).where(OrderBoardEvent.kind == "order.void_failed")))
+        .scalars()
+        .all()
+    )
+    assert [(e.salesorder_id, e.detail) for e in events] == [("9", {"order": "SO-00009"})]
+
+
+@pytest.mark.asyncio
+async def test_a_non_rate_limited_confirm_failure_still_voids_at_once(db_session, books):
+    books.open_error = ZohoUpstreamError("open boom")
+    with pytest.raises(actions.OrderActionRefused):
+        await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-6", by=None)
+    assert books.voided == ["9"]
+    assert sync_common._pending_voids == {}
 
 
 @pytest.mark.asyncio
@@ -287,3 +387,91 @@ async def test_valid_discounts_are_sent_verbatim(db_session, books):
     await actions.create_counter_order(db_session, "c1", lines, "ref-1", by=None)
     sent = books.payloads[0]["line_items"]
     assert [line["discount"] for line in sent] == ["10%", "5"]
+
+
+@pytest.fixture
+def void_attempts_reset():
+    sync_common._void_attempts.clear()
+    yield
+    sync_common._void_attempts.clear()
+
+
+async def _void_failed_events(db_session):
+    result = await db_session.execute(select(OrderBoardEvent).where(OrderBoardEvent.kind == "order.void_failed"))
+    return result.scalars().all()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [ZohoUnreachable("down"), ZohoAmbiguous("502"), ZohoNotConfiguredError("no creds")])
+async def test_a_transient_void_failure_keeps_the_draft_and_a_later_pass_voids_it(
+    db_session, books, monkeypatch, void_attempts_reset, error
+):
+    sync_common._pending_voids["9"] = "SO-00009"
+    real_void = zoho_service.void_salesorder
+
+    async def void_down(db, salesorder_id):
+        raise error
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_down)
+    await sync.run_pass(db_session)
+    assert sync_common._pending_voids == {"9": "SO-00009"}
+    assert await _void_failed_events(db_session) == []
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", real_void)
+    await sync.run_pass(db_session)
+    assert books.voided == ["9"]
+    assert sync_common._pending_voids == {}
+    assert sync_common._void_attempts == {}
+    assert await _void_failed_events(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_a_draft_is_given_up_at_the_attempt_cap_with_a_void_failed_event(
+    db_session, books, monkeypatch, void_attempts_reset
+):
+    sync_common._pending_voids["9"] = "SO-00009"
+
+    async def void_down(db, salesorder_id):
+        raise ZohoUnreachable("down")
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_down)
+    for _ in range(sync_common._VOID_ATTEMPT_CAP - 1):
+        await sync.run_pass(db_session)
+        assert sync_common._pending_voids == {"9": "SO-00009"}
+        assert await _void_failed_events(db_session) == []
+    await sync.run_pass(db_session)
+    assert sync_common._pending_voids == {}
+    assert sync_common._void_attempts == {}
+    events = await _void_failed_events(db_session)
+    assert [(e.salesorder_id, e.detail) for e in events] == [("9", {"order": "SO-00009"})]
+
+
+@pytest.mark.asyncio
+async def test_a_definitive_refusal_after_transient_failures_records_and_drops_at_once(
+    db_session, books, monkeypatch, void_attempts_reset
+):
+    sync_common._pending_voids["9"] = "SO-00009"
+    sync_common._void_attempts["9"] = 2
+
+    async def void_refused(db, salesorder_id):
+        raise ZohoRequestRejected("no")
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_refused)
+    await sync.run_pass(db_session)
+    assert sync_common._pending_voids == {}
+    assert sync_common._void_attempts == {}
+    assert len(await _void_failed_events(db_session)) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_429_void_is_not_counted_as_an_attempt(db_session, books, monkeypatch, void_attempts_reset):
+    sync_common._pending_voids["9"] = "SO-00009"
+
+    async def void_429(db, salesorder_id):
+        raise ZohoRateLimited("429", retry_after=30)
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_429)
+    await sync.run_pass(db_session)
+    assert sync_common._pending_voids == {"9": "SO-00009"}
+    assert sync_common._void_attempts == {}
+    assert await _void_failed_events(db_session) == []

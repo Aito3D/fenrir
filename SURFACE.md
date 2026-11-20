@@ -901,6 +901,25 @@ file is a change to the backend's public contract and fails the iteration.
 /api/v1/queue/{item_id}/retry-slice ['POST']
 /api/v1/queue/{item_id}/start ['POST']
 /api/v1/queue/{item_id}/stop ['POST']
+/api/v1/revenue ['GET']
+/api/v1/revenue/analysis ['GET']
+/api/v1/revenue/annotations ['GET']
+/api/v1/revenue/annotations ['POST']
+/api/v1/revenue/annotations/{annotation_id} ['DELETE']
+/api/v1/revenue/customers ['GET']
+/api/v1/revenue/daily ['GET']
+/api/v1/revenue/items ['GET']
+/api/v1/revenue/movers ['GET']
+/api/v1/revenue/products ['GET']
+/api/v1/revenue/review ['GET']
+/api/v1/revenue/scope/{item_id} ['PUT']
+/api/v1/revenue/scope/{item_id} ['DELETE']
+/api/v1/revenue/sync ['GET']
+/api/v1/revenue/sync ['POST']
+/api/v1/revenue/targets ['GET']
+/api/v1/revenue/targets/{month} ['PUT']
+/api/v1/revenue/targets/{month} ['DELETE']
+/api/v1/revenue/yoy ['GET']
 /api/v1/scheduled-dryings ['POST']
 /api/v1/scheduled-dryings ['GET']
 /api/v1/scheduled-dryings/{scheduled_drying_id} ['DELETE']
@@ -1059,6 +1078,8 @@ file is a change to the backend's public contract and fails the iteration.
 /api/v1/users/ ['GET']
 /api/v1/users/ ['POST']
 /api/v1/users/me/change-password ['POST']
+/api/v1/users/me/ui-prefs ['GET']
+/api/v1/users/me/ui-prefs/{key} ['PUT']
 /api/v1/users/slim ['GET']
 /api/v1/users/{user_id} ['GET']
 /api/v1/users/{user_id} ['PATCH']
@@ -1217,6 +1238,14 @@ queue:reorder
 queue:start_unreviewed
 queue:update_all
 queue:update_own
+revenue:export
+revenue:manage_notes
+revenue:manage_scope
+revenue:manage_targets
+revenue:read
+revenue:sync
+revenue:view_customers
+revenue:view_margin
 settings:backup
 settings:read
 settings:restore
@@ -1241,15 +1270,15 @@ websocket:connect
 ```regen: PYTHONHASHSEED=0 ./venv/bin/python3 -c "from backend.app.core.config import settings; [print(n, \"=\", repr(f.default)) for n, f in sorted(type(settings).model_fields.items())]" 2>/dev/null```
 ```
 api_prefix = '/api/v1'
-app_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-b1')
+app_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy')
 app_name = 'Fenrir'
-archive_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-b1/archive')
+archive_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy/archive')
 bambu_studio_api_url = 'http://localhost:3001'
 bambu_studio_bundle_dir = None
 bambu_studio_user_dirs = None
 bambu_user_id = '1961034787'
-base_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-b1')
-database_url = 'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy-refactor-b1/bambuddy.db'
+base_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy')
+database_url = 'sqlite+aiosqlite:////Users/paultheis/Documents/Code/bambuddy/bambuddy.db'
 db_max_overflow = None
 db_pool_pre_ping = None
 db_pool_recycle = None
@@ -1260,13 +1289,13 @@ debug = False
 library_max_upload_bytes = 2147483648
 library_max_zip_extract_bytes = 4294967296
 log_backup_count = 3
-log_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-b1/logs')
+log_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy/logs')
 log_level = 'INFO'
 log_max_bytes = 5242880
 log_to_file = True
-plate_calibration_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-b1/data/plate_calibration')
+plate_calibration_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy/data/plate_calibration')
 slicer_api_url = 'http://localhost:3003'
-static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy-refactor-b1/static')
+static_dir = PosixPath('/Users/paultheis/Documents/Code/bambuddy/static')
 ```
 
 ## Environment variables read
@@ -2945,6 +2974,13 @@ project_revision_pins 8
 project_revisions 21
 project_tags 3
 projects 25
+revenue_annotations 4
+revenue_customers 6
+revenue_day_lines 7
+revenue_days 4
+revenue_items 11
+revenue_scope_decisions 3
+revenue_targets 3
 scheduled_dryings 16
 settings 5
 slicer_pipelines 17
@@ -2973,7 +3009,7 @@ user_oidc_links 6
 user_otp_codes 7
 user_totp 8
 user_wallets 4
-users 23
+users 24
 virtual_printers 20
 wallet_transactions 13
 ```

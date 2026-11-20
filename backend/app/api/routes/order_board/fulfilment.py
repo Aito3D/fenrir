@@ -1,6 +1,5 @@
 """Picklist, parcel, invoice and cancel routes of the Order Board."""
 
-import time
 from typing import Literal
 from uuid import UUID
 
@@ -10,11 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.aito import (
-    _EMAIL_GUARD,
     _check_zoho_email_rate_limit,
-    _email_guard_key_or_409,
 )
-from backend.app.api.routes.order_board._common import _by, _logged, _pdf, _run, router
+from backend.app.api.routes.order_board._common import _by, _guarded_email, _logged, _pdf, _run, router
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -25,7 +22,7 @@ from backend.app.services import (
     order_board_sync,
 )
 from backend.app.services.order_board_payment import order_contact
-from backend.app.services.zoho import ZohoUnreachable, zoho_service
+from backend.app.services.zoho import zoho_service
 
 
 class ParcelLine(BaseModel):
@@ -382,29 +379,24 @@ async def send_invoice_email(
     to = body.to.strip()
     # Re-read, never taken from the request: otherwise any holder of orders:update could mail anyone from the
     # shop's Books account, on the shop's own template.
-    if to.lower() not in {r["email"].lower() for r in content["recipients"]}:
-        raise HTTPException(status_code=422, detail="That address is not a recipient of this invoice")
     # Same one-minute guard as the Aito card: a second tap must not mail the client the same invoice twice.
-    key = _email_guard_key_or_409("order-invoice", 0, invoice_id, to)
-    _EMAIL_GUARD.arm(key, time.monotonic())
-
-    async def send() -> None:
-        try:
-            await order_board_actions.email_invoice(
-                db,
-                salesorder_id,
-                order.get("salesorder_number") or salesorder_id,
-                invoice_id,
-                to,
-                by=_by(user),
-                invoice_number=content["invoice_number"],
-            )
-        except ZohoUnreachable:
-            raise  # Books may have sent it all the same: the guard stays armed
-        except Exception:
-            _EMAIL_GUARD.release(key)
-            raise
-
-    await _run(send())
+    await _guarded_email(
+        "order-invoice",
+        invoice_id,
+        to,
+        content,
+        "That address is not a recipient of this invoice",
+        lambda: order_board_actions.email_invoice(
+            db,
+            salesorder_id,
+            order.get("salesorder_number") or salesorder_id,
+            invoice_id,
+            to,
+            by=_by(user),
+            invoice_number=content["invoice_number"],
+        ),
+        db=db,
+        salesorder_id=salesorder_id,
+    )
     _logged(user, salesorder_id, "invoice_email")
     return {"board": await order_board_sync.read_board(db)}

@@ -6,7 +6,7 @@ import { errorReason } from '../../../components/orders/orderErrors';
 const t = ((key: string) => key) as unknown as TFunction;
 
 describe('errorReason', () => {
-  it.each(['nothing_to_pack', 'unknown_package', 'unknown_picklist'])('gives %s its own message, not the generic stale one', (code) => {
+  it.each(['nothing_to_pack', 'unknown_package', 'unknown_picklist', 'order_invoiced', 'ref_reused'])('gives %s its own message, not the generic stale one', (code) => {
     expect(errorReason(t, new ApiError(code, 400))).toBe(`orders.err.${code}`);
   });
 

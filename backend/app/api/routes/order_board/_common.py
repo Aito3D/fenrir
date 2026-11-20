@@ -1,25 +1,85 @@
 """Shared router and helpers of the Order Board routes."""
 
 import logging
-from collections.abc import Awaitable
+import time
+from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import TypeVar
 
 from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.aito import _EMAIL_GUARD, _email_guard_key_or_409
+from backend.app.api.routes.aito_payments import _refuse
 from backend.app.models.order_board_doc import OrderBoardDoc
+from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.models.user import User
 from backend.app.services import (
     order_board_actions,
     order_board_sync,
 )
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError
+from backend.app.services.aito_events import utc_now_naive
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUnreachable, ZohoUpstreamError
 from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__package__)
 _T = TypeVar("_T")
 router = APIRouter(prefix="/order-board", tags=["order-board"])
+# A contact edit needs only orders:update: an address it just set is not mailed a document until this has passed.
+_RECIPIENT_EDIT_COOLDOWN = timedelta(minutes=10)
+
+
+async def _guarded_email(
+    key_prefix: str,
+    doc_id: str,
+    to: str,
+    content: dict,
+    refused_detail: str,
+    action: Callable[[], Awaitable[None]],
+    *,
+    db: AsyncSession,
+    salesorder_id: str,
+    keep_armed: tuple[type[Exception], ...] = (ZohoUnreachable,),
+) -> None:
+    """Send one document email: only to an address Books offered and not just edited, once a minute per document and address."""
+    if to.lower() not in {r["email"].lower() for r in content["recipients"]}:
+        raise HTTPException(status_code=422, detail=refused_detail)
+    doc = (
+        await db.execute(
+            select(OrderBoardDoc).where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id)
+        )
+    ).scalar_one_or_none()
+    customer_id = str(
+        ((doc.detail or {}).get("customer_id") or (doc.header or {}).get("customer_id") or "") if doc else ""
+    )
+    edits = await db.execute(
+        select(OrderBoardEvent.salesorder_id, OrderBoardEvent.detail).where(
+            OrderBoardEvent.kind == "contact.edited",
+            OrderBoardEvent.occurred_at >= utc_now_naive() - _RECIPIENT_EDIT_COOLDOWN,
+        )
+    )
+    # The address lives on the client in Books: an edit made from any order of this client counts. Events recorded
+    # before customer_id was stored match by order only.
+    if any(
+        (d or {}).get("email") == to.lower()
+        and (so == salesorder_id or (customer_id and (d or {}).get("customer_id") == customer_id))
+        for so, d in edits
+    ):
+        raise _refuse(409, "recipient_recently_edited", "That address was just edited: check it with the client first")
+    key = _email_guard_key_or_409(key_prefix, 0, doc_id, to)
+    _EMAIL_GUARD.arm(key, time.monotonic())
+
+    async def send() -> None:
+        try:
+            await action()
+        except keep_armed:
+            raise  # Books may have sent it all the same: the guard stays armed
+        except Exception:
+            _EMAIL_GUARD.release(key)
+            raise
+
+    await _run(send())
 
 
 async def _run(call: Awaitable[_T]) -> _T:

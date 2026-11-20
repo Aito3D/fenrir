@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import type { OrderDocumentKind } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { SendEmailDialog } from '../aito/SendEmailDialog';
@@ -25,7 +25,7 @@ export function OrderDocumentEmailModal({ orderId, kind, docId, onClose }: { ord
     try {
       await emailDocument.mutateAsync({ id: orderId, kind, docId, to });
     } catch (e) {
-      showToast(t(quote ? 'aito.quoteEmailFailed' : 'aito.retainerEmailFailed'), 'error');
+      showToast(e instanceof ApiError && e.code === 'recipient_recently_edited' ? t('aito.emailRecipientRecentlyEdited') : t(quote ? 'aito.quoteEmailFailed' : 'aito.retainerEmailFailed'), 'error');
       throw e;
     }
     showToast(t(quote ? 'aito.quoteEmailed' : 'aito.retainerEmailed', { email: to }), 'success');
