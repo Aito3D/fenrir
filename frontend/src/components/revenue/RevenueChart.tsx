@@ -204,8 +204,9 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
 
   const tooltip = ({ active, payload: items }: { active?: boolean; payload?: readonly { payload?: Row }[] }) => {
     const row = active ? items?.[0]?.payload : undefined;
-    if (!row) return null;
-    const c = columns[row.i];
+    // recharts keeps the hovered row through a drill-down, so its index can point past the new columns.
+    const c = row ? columns[row.i] : undefined;
+    if (!row || !c) return null;
     const proj = projectionOf(row.i);
     const target = targets[row.i];
     return (

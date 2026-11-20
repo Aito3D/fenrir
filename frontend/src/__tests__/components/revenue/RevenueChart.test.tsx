@@ -7,11 +7,16 @@ import type { RevenueCan, RevenueControls } from '../../../pages/RevenuePage';
 import type { RevenueAnnotation, RevenueBucket, RevenueProduct, RevenueResponse } from '../../../components/revenue/lib/types';
 import { bucket } from './lib/fixtures';
 
-// jsdom has no layout, so ResponsiveContainer renders nothing; pin a size.
+// jsdom has no layout, so ResponsiveContainer renders nothing; pin a size. The tooltip's content is kept to call it directly.
+let tooltipContent: ((p: { active?: boolean; payload?: { payload?: unknown }[] }) => unknown) | undefined;
 vi.mock('recharts', async (orig) => {
   const actual = await orig<typeof import('recharts')>();
   return {
     ...actual,
+    Tooltip: (props: ComponentProps<typeof actual.Tooltip>) => {
+      tooltipContent = props.content as typeof tooltipContent;
+      return <actual.Tooltip {...props} />;
+    },
     ResponsiveContainer: (props: ComponentProps<typeof actual.ResponsiveContainer>) => (
       <actual.ResponsiveContainer {...props} width={800} height={300} />
     ),
@@ -124,6 +129,12 @@ describe('RevenueChart', () => {
     screen.getByRole('button', { name: 'mars 2026 – 200 FCP' }).dispatchEvent(space);
     expect(props.onDrill).toHaveBeenCalledWith(2);
     expect(space.defaultPrevented).toBe(true);
+  });
+
+  it('renders no tooltip for a hovered row the drilled-down data no longer has', () => {
+    renderChart({ payload: payload([jan]) });
+    // recharts keeps the hovered row across a drill-down: column 2 of the old data, past the end of the new one.
+    expect(tooltipContent?.({ active: true, payload: [{ payload: { i: 2 } }] })).toBeNull();
   });
 
   it('has no operable column without a finer level', () => {
