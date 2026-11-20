@@ -88,9 +88,10 @@ notes and scope decisions are kept.
 
 ## Known limits
 
-- TTC uses each item's current tax rate, not the rate on the invoice (as in loki).
-- Margins use today's cost (dealer price, else purchase rate) and only cover items that have one; the coverage is
-  shown next to each margin.
+- TTC uses the item's tax rate and margins its cost (dealer price, else purchase rate) as they were when the day was
+  fetched: each line keeps both, so a later price change leaves past months alone. Days cached before 2026-11-20
+  have none and use the item's current values until re-fetched. The rate is the item's, not the one on the invoice.
+- Margins only cover lines that have a cost; the coverage is shown next to each margin.
 - Sync state lives in the process: one uvicorn worker, no `--reload` in production.
 - The back-fill takes about an hour, three times loki's, because the revenue lane stays below Order Board's call
   ceiling.

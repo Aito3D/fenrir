@@ -29,6 +29,9 @@ class RevenueDayLine(Base):
     sku: Mapped[str] = mapped_column(String(255), default="")
     quantity: Mapped[float] = mapped_column(Float)
     amount: Mapped[float] = mapped_column(Float)
+    # Frozen at fetch so a later price change leaves past margins alone; NULL on days cached before.
+    unit_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tax_percentage: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class RevenueCustomer(Base):

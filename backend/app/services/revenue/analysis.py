@@ -28,7 +28,7 @@ def abc_analysis(rows: list[dict], shown: int = ABC_ROWS_SHOWN) -> dict:
 
 
 def margin_by(rows: list[dict], dim: str) -> list[dict]:
-    """Gross margin per "brand" or "nature" at today's cost, heaviest margin first."""
+    """Gross margin per "brand" or "nature" at each line's cost, heaviest margin first."""
     fallback = NO_BRAND if dim == "brand" else NO_NATURE
     groups: dict[str, dict] = {}
     for r in rows:

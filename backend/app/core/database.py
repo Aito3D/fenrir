@@ -7025,6 +7025,9 @@ async def _run_migrations(conn):
     await _migrate_hour_machines_retired_printer(conn)
     if not await _table_has_column(conn, "aito_projects", "priority"):
         await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN priority VARCHAR(10) NOT NULL DEFAULT 'normal'")
+    # Revenue lines keep the item's cost and tax rate from fetch time; older days stay NULL and use today's.
+    await _safe_execute(conn, "ALTER TABLE revenue_day_lines ADD COLUMN unit_cost FLOAT")
+    await _safe_execute(conn, "ALTER TABLE revenue_day_lines ADD COLUMN tax_percentage FLOAT")
 
     # Migration: the stock alert templates name the colour and subtype (#2955).
     # The forecast groups by colour, so two colours of one product would

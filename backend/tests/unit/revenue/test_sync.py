@@ -523,3 +523,20 @@ async def test_item_refresh_rate_limit_ends_the_turn(zoho, engine, sleeps):
     assert zoho.sales_calls == []
     assert sleeps[-1] == SYNC.error_backoff_s
     assert (await status(engine))["lastError"] == "Zoho Books error (HTTP 429)"
+
+
+async def test_a_fetched_line_freezes_the_items_cost_and_tax_rate_a_later_change_does_not_move_it(zoho, engine):
+    async def sales(day, page):
+        return ([group("c1", ROW_A)] if day == TODAY else []), False
+
+    async def set_item(purchase_rate, tax):
+        row = {"item_id": "i1", "name": "A", "purchase_rate": purchase_rate, "tax_percentage": tax}
+        async with database.async_session() as db:
+            await store.replace_items(db, [sync._item_row(row)], datetime.now(timezone.utc))
+
+    zoho.sales = sales
+    await set_item(600, 16)
+    await sync.run_revenue_sync_batch()
+    await set_item(900, 13)
+    [frozen] = await lines(engine, TODAY)
+    assert (frozen.unit_cost, frozen.tax_percentage) == (600, 16)

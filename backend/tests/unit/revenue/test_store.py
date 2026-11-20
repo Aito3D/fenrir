@@ -347,3 +347,13 @@ async def test_timestamps_are_timezone_aware(engine, db):
     assert datetime.fromisoformat(day.fetched_at).tzinfo is not None
     async with store.snapshot(engine) as conn:
         assert (await conn.execute(text("select count(*) from revenue_days"))).scalar() == 1
+
+
+async def test_write_day_keeps_each_lines_frozen_cost_and_tax_rate_null_when_unknown(engine, db):
+    from backend.app.services.revenue.series import RevenueLine
+
+    frozen = RevenueLine("2026-10-01", "i1", "", "A", "", 2, 1000, unit_cost=300, tax_percentage=16)
+    await write(db, "2026-10-01", [frozen, line("2026-10-01", L2)])
+    [a, b] = await read_lines(engine, "2026-10-01", "2026-10-01")
+    assert (a.unit_cost, a.tax_percentage) == (300, 16)
+    assert (b.unit_cost, b.tax_percentage) == (None, None)

@@ -146,6 +146,7 @@ async def _execute_batch(full: bool) -> dict:
             now = _utcnow()
             async with store.snapshot() as conn:
                 index = await store.read_day_index(conn)
+                items = await store.read_scope_items(conn)
             plan = plan_revenue_sync(
                 days=index,
                 today=org_today(now),
@@ -175,6 +176,8 @@ async def _execute_batch(full: bool) -> dict:
                             sku=m["sku"],
                             quantity=m["quantity"],
                             amount=m["amount"],
+                            unit_cost=items[m["itemId"]].unit_cost if m["itemId"] in items else None,
+                            tax_percentage=items[m["itemId"]].tax_percentage if m["itemId"] in items else None,
                         )
                         for m in merged
                     ]

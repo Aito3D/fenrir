@@ -573,8 +573,8 @@ def test_js_round_rounds_half_up_like_math_round():
 
 
 def test_ttc_of_unknown_rate_is_ht_and_flagged_approx():
-    assert ttc_of(1000, ITEMS["pla"]) == (1160.0, False)
-    assert ttc_of(1000, None) == (1000, True)
+    assert ttc_of(line("2026-09-01", "pla", 1000), ITEMS["pla"]) == (1160.0, False)
+    assert ttc_of(line("2026-09-01", "pla", 1000), None) == (1000, True)
 
 
 def test_is_filtered_and_seasonal_threshold():
@@ -634,3 +634,28 @@ def test_margin_split_charges_zoho_costs_per_line_and_print_costs_pro_rata_of_se
     assert sep["costParts"] == {"items": 600, "wear": 600}
     # No service sold: the print cost lands on the unallocated keys.
     assert oct_["marginSplit"]["nature"] == {"Sans nature": -80}
+
+
+def test_a_line_uses_its_frozen_cost_and_tax_rate_and_falls_back_to_the_items_current_ones_when_none():
+    costed = {
+        **ITEMS,
+        "pla": ScopeItem(
+            "pla",
+            "SUNLU PLA",
+            brand="SUNLU",
+            nature="Filaments",
+            item_type="inventory",
+            tax_percentage=16,
+            unit_cost=400,
+        ),
+    }
+    frozen = RevenueLine("2026-09-05", "pla", "", "pla", "", 2, 1000, unit_cost=300, tax_percentage=13)
+    cached_before = line("2026-09-06", "pla", 1000, 2)
+    [sep, *_] = series(items=costed, lines=[frozen, cached_before])
+    assert sep["cost"] == 600 + 800
+    assert sep["ttc"] == 1130 + 1160
+    [row] = item_breakdown([frozen, cached_before], costed, [], None, LineFilters())
+    assert (row["cost"], row["ttc"]) == (1400, 2290)
+    # The item lost its cost since: the frozen line still counts its own.
+    [row] = item_breakdown([frozen], ITEMS, [], None, LineFilters())
+    assert row["cost"] == 600

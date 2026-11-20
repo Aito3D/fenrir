@@ -85,6 +85,8 @@ async def read_lines(conn: AsyncConnection, from_: str, to: str) -> list[Revenue
             sku=r.sku,
             quantity=r.quantity,
             amount=r.amount,
+            unit_cost=r.unit_cost,
+            tax_percentage=r.tax_percentage,
         )
         for r in rows
     ]
@@ -112,6 +114,8 @@ async def write_day(
             "sku": ln.sku,
             "quantity": ln.quantity,
             "amount": ln.amount,
+            "unit_cost": ln.unit_cost,
+            "tax_percentage": ln.tax_percentage,
         }
         for ln in lines
     ]

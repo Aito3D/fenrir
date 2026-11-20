@@ -172,6 +172,9 @@ class RevenueLine:
     sku: str
     quantity: float
     amount: float
+    # The item's cost and tax rate when the day was fetched; None on days cached before they were kept.
+    unit_cost: float | None = None
+    tax_percentage: float | None = None
 
 
 @dataclass(frozen=True)
@@ -186,9 +189,13 @@ def is_filtered(f: LineFilters) -> bool:
     return bool(f.item_ids is not None or f.brands is not None or f.kind or f.segment)
 
 
-def ttc_of(amount: float, item: ScopeItem | None) -> tuple[float, bool]:
-    tax = item.tax_percentage if item else None
-    return (amount, True) if tax is None else (amount * (1 + tax / 100), False)
+def ttc_of(line: RevenueLine, item: ScopeItem | None) -> tuple[float, bool]:
+    tax = line.tax_percentage if line.tax_percentage is not None else item.tax_percentage if item else None
+    return (line.amount, True) if tax is None else (line.amount * (1 + tax / 100), False)
+
+
+def unit_cost_for(line: RevenueLine, item: ScopeItem | None) -> float | None:
+    return line.unit_cost if line.unit_cost is not None else item.unit_cost if item else None
 
 
 def in_scope_lines(
@@ -255,13 +262,14 @@ class _Acc:
 
     def add(self, line: RevenueLine, item: ScopeItem | None, segment: str, production_from: str | None = None) -> None:
         amount = line.amount
-        ttc, approx = ttc_of(amount, item)
+        ttc, approx = ttc_of(line, item)
+        unit_cost = unit_cost_for(line, item)
         nature = item.nature if item and item.nature is not None else NO_NATURE
         brand = item.brand if item and item.brand is not None else NO_BRAND
         name = item_display_name(item, line.name)
         keys = {"nature": nature, "brand": brand, "segment": segment, "kind": KIND_KEY[is_service_item(item)]}
-        if item is not None and item.unit_cost is not None:
-            line_cost = line.quantity * item.unit_cost
+        if unit_cost is not None:
+            line_cost = line.quantity * unit_cost
             self.cost += line_cost
             self.costed_ht += amount
             for dim, key in keys.items():
@@ -368,7 +376,7 @@ def build_revenue_series(
     for m in matching_lines(lines, items, decisions, customers, filters):
         d = per_day.setdefault(m.line.day, [0.0, 0.0])
         d[0] += m.line.amount
-        d[1] += ttc_of(m.line.amount, m.item)[0]
+        d[1] += ttc_of(m.line, m.item)[0]
         totals.setdefault(bucket_key_for(m.line.day, g), _Acc()).add(m.line, m.item, m.segment, production_from)
     if production:
         for day, parts in production.by_day.items():
@@ -492,7 +500,7 @@ def item_breakdown(
                 "quantity": 0,
                 "ht": 0,
                 "ttc": 0.0,
-                "cost": 0.0 if item is not None and item.unit_cost is not None else None,
+                "cost": None,
                 "nature": item.nature if item else None,
                 "brand": item.brand if item else None,
                 "kind": "service" if is_service_item(item) else "goods",
@@ -500,9 +508,10 @@ def item_breakdown(
             }
         row["quantity"] += line.quantity
         row["ht"] += line.amount
-        row["ttc"] += ttc_of(line.amount, item)[0]
-        if row["cost"] is not None and item is not None and item.unit_cost is not None:
-            row["cost"] += line.quantity * item.unit_cost
+        row["ttc"] += ttc_of(line, item)[0]
+        unit_cost = unit_cost_for(line, item)
+        if unit_cost is not None:
+            row["cost"] = (row["cost"] or 0.0) + line.quantity * unit_cost
     result = [
         {
             **r,

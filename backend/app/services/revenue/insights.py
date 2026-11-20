@@ -53,7 +53,7 @@ def customer_breakdown(
     unsplit = 0.0
     for m in matching_lines(lines, items, decisions, customers, filters):
         line = m.line
-        ttc = ttc_of(line.amount, m.item)[0]
+        ttc = ttc_of(line, m.item)[0]
         kind = "services" if is_service_item(m.item) else "goods"
         s = seg[m.segment]
         s["ht"] += line.amount
