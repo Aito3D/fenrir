@@ -11,7 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.api.routes.aito import (
     _check_zoho_email_rate_limit,
 )
-from backend.app.api.routes.order_board._common import _by, _guarded_email, _logged, _pdf, _run, router
+from backend.app.api.routes.order_board._common import (
+    _by,
+    _guarded_email,
+    _logged,
+    _pdf,
+    _run,
+    _with_default_email,
+    router,
+)
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -21,7 +29,6 @@ from backend.app.services import (
     order_board_actions,
     order_board_sync,
 )
-from backend.app.services.order_board_payment import order_contact
 from backend.app.services.zoho import zoho_service
 
 
@@ -344,11 +351,8 @@ async def _invoice_email(db: AsyncSession, invoice_id: str) -> tuple[str, dict, 
     """
     salesorder_id, order, invoice = await _listed_invoice(db, invoice_id)
     content = await _run(zoho_service.get_invoice_email_content(db, invoice_id))
-    emails = [r["email"] for r in content["recipients"]]
-    own = ((order_contact(order) or {}).get("email") or "").lower()
     content = {
-        **content,
-        "default_email": next((e for e in emails if e.lower() == own), emails[0] if emails else None),
+        **_with_default_email(content, order),
         "invoice_id": invoice_id,
         "invoice_number": invoice.get("invoice_number") or invoice_id,
     }

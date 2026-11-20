@@ -100,4 +100,28 @@ describe('useOrderFilters', () => {
     fireEvent.click(screen.getByText('core'));
     expect(putUiPref).toHaveBeenLastCalledWith('orders', { pay: 'unpaid', sort: 'value', flip: true, coreOnly: false });
   });
+
+  it('keeps a pick made before the account answered and saves it merged over the account copy', async () => {
+    let answer!: (v: unknown) => void;
+    getUiPrefs.mockReturnValue(new Promise(r => (answer = r)));
+    mount('/orders');
+    fireEvent.click(screen.getByText('sort'));
+    expect(putUiPref).not.toHaveBeenCalled();
+    expect(screen.getByTestId('state').textContent).toBe('all|null|value|true|true');
+    await act(async () => answer({ orders: { pay: 'unpaid', follow: 'x', coreOnly: false } }));
+    await waitFor(() => expect(putUiPref).toHaveBeenCalledTimes(1));
+    expect(putUiPref).toHaveBeenCalledWith('orders', { pay: 'unpaid', follow: 'x', coreOnly: false, sort: 'value', flip: true });
+    expect(screen.getByTestId('state').textContent).toBe('all|null|value|true|true');
+  });
+
+  it('never writes a partial copy over the account after the prefs failed to load', async () => {
+    let fail!: (e: Error) => void;
+    getUiPrefs.mockReturnValue(new Promise((_, rej) => (fail = rej)));
+    mount('/orders');
+    fireEvent.click(screen.getByText('sort'));
+    await act(async () => fail(new Error('down')));
+    fireEvent.click(screen.getByText('core'));
+    expect(putUiPref).not.toHaveBeenCalled();
+    expect(screen.getByTestId('state').textContent).toBe('all|null|value|true|false');
+  });
 });
