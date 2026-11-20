@@ -79,3 +79,24 @@ describe('RevenueMenu — rebuild confirmation', () => {
     expect(item('Yes, rebuild')).toHaveAccessibleDescription('Reload every day from Zoho (~1 h)?');
   });
 });
+
+describe('RevenueMenu — placement', () => {
+  function openWithTriggerRight(right: number) {
+    render(
+      <RevenueMenu canExport={false} canSync ready rebuildBusy={false} reviewCount={0} targetsOpen={false}
+        onTargets={vi.fn()} onReview={vi.fn()} onCopy={vi.fn()} onExport={vi.fn()} onRebuild={vi.fn()} triggerRef={createRef<HTMLButtonElement>()} />,
+    );
+    const button = screen.getByRole('button', { name: 'More actions' });
+    button.getBoundingClientRect = () => ({ right, left: right - 36, top: 0, bottom: 31, width: 36, height: 31, x: right - 36, y: 0, toJSON: () => ({}) });
+    fireEvent.click(button);
+    return screen.getByRole('menu');
+  }
+
+  it('opens to the right of ⋯ when ⋯ sits near the left edge (a wrapped phone header)', () => {
+    expect(openWithTriggerRight(164)).toHaveClass('left-0');
+  });
+
+  it('opens to the left of ⋯ when there is room', () => {
+    expect(openWithTriggerRight(1411)).toHaveClass('right-0');
+  });
+});

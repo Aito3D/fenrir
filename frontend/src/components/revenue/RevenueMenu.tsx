@@ -29,6 +29,7 @@ export function RevenueMenu(p: {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [alignLeft, setAlignLeft] = useState(false);
   const trigger = p.triggerRef;
   const menu = useRef<HTMLDivElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
@@ -77,7 +78,12 @@ export function RevenueMenu(p: {
   return (
     <div className="relative">
       <button ref={trigger} type="button" aria-label={t('revenue.menu.more')} title={t('revenue.menu.more')} aria-haspopup="menu" aria-expanded={open}
-        onClick={() => (open ? close() : setOpen(true))}
+        onClick={() => {
+          if (open) return close();
+          // A wrapped phone header puts ⋯ near the left edge: a right-aligned menu (w-60, 216 px) would start off screen.
+          setAlignLeft((trigger.current?.getBoundingClientRect().right ?? Infinity) < 240);
+          setOpen(true);
+        }}
         className={`rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-3 py-1.5 text-sm text-bambu-gray-light hover:text-white ${focusRingCls}`}>
         ⋯
       </button>
@@ -85,7 +91,7 @@ export function RevenueMenu(p: {
         <>
           <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setConfirm(false); }} />
           <div ref={menu} role="menu" aria-label={t('revenue.menu.more')} onKeyDown={onKeyDown}
-            className="absolute right-0 top-full z-20 mt-1 w-60 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1.5 shadow-xl">
+            className={`absolute ${alignLeft ? 'left-0' : 'right-0'} top-full z-20 mt-1 w-60 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1.5 shadow-xl`}>
             {confirm ? (
               <>
                 <p id={questionId} className="px-2.5 py-1.5 text-sm text-amber-400">{t('revenue.sync.rebuildConfirm')}</p>
