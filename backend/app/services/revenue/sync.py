@@ -129,7 +129,8 @@ async def refresh_revenue_items(db, now: datetime) -> bool:
             break
     else:
         raise ZohoUpstreamError(f"Zoho item listing has more than {ITEM_PAGE_CAP} pages")
-    rows = [_item_row(it) for it in items if it.get("item_id")]
+    # A listing that shifts between pages can repeat an item; the last copy wins.
+    rows = list({it["item_id"]: _item_row(it) for it in items if it.get("item_id")}.values())
     if not rows:
         return False
     await store.replace_items(db, rows, now)

@@ -459,6 +459,19 @@ async def test_refresh_items_maps_zoho_fields_and_stamps(zoho, engine):
     assert (scope["i1"].brand, scope["i1"].nature, scope["i1"].tax_percentage) == ("SUNLU", "Filaments", 16)
 
 
+async def test_refresh_items_keeps_one_row_for_an_item_listed_on_two_pages(zoho, engine):
+    async def items(page):
+        return [{"item_id": "i1", "name": f"PLA p{page}"}], page < 2
+
+    zoho.items = items
+    async with database.async_session() as db:
+        assert await sync.refresh_revenue_items(db, datetime.now(timezone.utc)) is True
+    async with store.snapshot(engine) as conn:
+        scope = await store.read_scope_items(conn)
+    assert list(scope) == ["i1"]
+    assert scope["i1"].name == "PLA p2"
+
+
 async def test_refresh_items_keeps_the_table_on_an_empty_listing(zoho, engine):
     async with database.async_session() as db:
         assert await sync.refresh_revenue_items(db, datetime.now(timezone.utc)) is False
