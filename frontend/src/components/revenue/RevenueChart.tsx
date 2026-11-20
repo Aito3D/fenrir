@@ -255,7 +255,9 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
       }
     >
       {/* A group, not an img: an image's children are presentational and the column buttons would go silent. */}
-      <div role="group" aria-label={chartLabel} aria-roledescription={t('revenue.chart.roleDescription')}>
+      {/* Bars, line and hover marks paint above the column buttons: clicks must pass through them to drill. */}
+      <div role="group" aria-label={chartLabel} aria-roledescription={t('revenue.chart.roleDescription')}
+        className="[&_.recharts-active-dot]:pointer-events-none [&_.recharts-bar]:pointer-events-none [&_.recharts-line]:pointer-events-none [&_.recharts-tooltip-cursor]:pointer-events-none">
         <ResponsiveContainer width="100%" height={HEIGHT}>
           <ComposedChart data={rows} stackOffset="sign" accessibilityLayer={false} margin={{ top: 20, right: 0, left: -4, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke={GRID} />
