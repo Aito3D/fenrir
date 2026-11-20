@@ -955,7 +955,8 @@ async def test_smtp_connection(
                 smtp_settings = smtp_settings.model_copy(update={"smtp_password": stored.smtp_password})
 
         # Send test email
-        send_email(
+        await asyncio.to_thread(
+            send_email,
             smtp_settings=smtp_settings,
             to_email=test_request.test_recipient,
             subject="Fenrir SMTP Test",
@@ -1659,7 +1660,7 @@ async def test_ldap(
     if not config:
         return {"success": False, "message": "LDAP server URL is not configured"}
 
-    success, message = test_ldap_connection(config)
+    success, message = await asyncio.to_thread(test_ldap_connection, config)
     if success:
         logger.info("LDAP connection test successful")
     else:
@@ -1731,7 +1732,7 @@ async def search_ldap_directory(
         )
 
     try:
-        results = search_ldap_users(config, query, limit=25)
+        results = await asyncio.to_thread(search_ldap_users, config, query, limit=25)
     except Exception as e:  # SEC-AUTH-EXC: raise 503 (fail-closed); route gated upstream by USERS_CREATE permission so detail leak is admin-only
         _logger.exception("LDAP directory search failed")
         # Admin-only endpoint — surface the underlying reason so the operator
@@ -1808,7 +1809,7 @@ async def provision_ldap_user(
     # entries surface as 404 to distinguish "directory unreachable" from
     # "username doesn't exist in the directory" in the UI.
     try:
-        ldap_user = lookup_ldap_user(config, username)
+        ldap_user = await asyncio.to_thread(lookup_ldap_user, config, username)
     except Exception as e:  # SEC-AUTH-EXC: raise 503 (fail-closed); LDAP provision never succeeds on lookup failure
         _logger.exception("LDAP lookup failed during provision")
         raise HTTPException(

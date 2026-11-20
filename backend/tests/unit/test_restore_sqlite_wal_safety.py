@@ -241,3 +241,40 @@ def test_sqlite_backup_api_handles_various_db_sizes(tmp_path, backup_size_pages)
 
     assert energy == ("0.12",), f"Expected '0.12', got {energy!r}"
     assert bulk_count == (rows_needed,), f"Bulk table size mismatch: expected {rows_needed} rows, got {bulk_count!r}"
+
+
+@pytest.mark.sqlite_only  # points the app at its own SQLite database file
+@pytest.mark.asyncio
+async def test_create_backup_zip_includes_rows_still_in_wal(monkeypatch, tmp_path):
+    """The backup holds a committed row that only exists in the -wal (reader blocks the checkpoint)."""
+    import zipfile
+
+    from backend.app.api.routes.settings import create_backup_zip
+    from backend.app.core.config import settings as app_settings
+
+    live_db = tmp_path / "bambuddy.db"
+    reader = _seed_live_db_with_uncheckpointed_wal(live_db)
+    try:
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+        monkeypatch.setattr(app_settings, "database_url", f"sqlite+aiosqlite:///{live_db}")
+        zip_path, _ = await create_backup_zip(output_path=tmp_path)
+    finally:
+        reader.close()
+
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extract("bambuddy.db", tmp_path / "out")
+    copy = sqlite3.connect(tmp_path / "out" / "bambuddy.db")
+    try:
+        live = sqlite3.connect(live_db)
+        try:
+            expected = live.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            assert expected
+            for (table,) in expected:
+                assert (
+                    copy.execute(f'SELECT * FROM "{table}"').fetchall()
+                    == live.execute(f'SELECT * FROM "{table}"').fetchall()
+                )
+        finally:
+            live.close()
+    finally:
+        copy.close()

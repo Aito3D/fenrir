@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import re
@@ -596,7 +597,8 @@ async def send_user_print_notification(
 """
 
     try:
-        send_email(
+        await asyncio.to_thread(
+            send_email,
             smtp_settings,
             user_email,
             subject,

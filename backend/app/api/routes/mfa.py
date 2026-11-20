@@ -1024,7 +1024,8 @@ async def enable_email_otp(
     await db.commit()
 
     try:
-        send_email(
+        await asyncio.to_thread(
+            send_email,
             smtp_settings=smtp_settings,
             to_email=current_user.email,
             subject="Verify your Fenrir email address for 2FA",
