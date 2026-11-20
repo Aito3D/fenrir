@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 const renderRow = (onCreated = vi.fn(), onClose = vi.fn()) => {
-  render(<NewOrderDraftRow hiddenCount={3} currency="XPF" open={[]} finished={[]} onCreated={onCreated} onClose={onClose} />);
+  render(<NewOrderDraftRow currency="XPF" open={[]} finished={[]} onCreated={onCreated} onClose={onClose} />);
   return { onCreated, onClose };
 };
 const createBtn = () => screen.getByRole('button', { name: 'Create order' });
@@ -42,7 +42,6 @@ describe('NewOrderDraftRow', () => {
   it('starts on the client de passage', async () => {
     renderRow();
     expect(await screen.findByDisplayValue('Client de passage')).toBeInTheDocument();
-    expect(screen.getByText('3 other orders hidden while you create this one')).toBeInTheDocument();
     expect(screen.queryByTestId('order-client-history')).not.toBeInTheDocument();
   });
 
@@ -177,8 +176,16 @@ describe('NewOrderDraftRow', () => {
     seed([{ item: item(), quantity: 2, discount: '' }]);
     const { onClose } = renderRow();
     await user.click(screen.getByRole('button', { name: 'Abandon' }));
-    await user.click(screen.getByRole('button', { name: 'Abandon and go back to the list' }));
-    expect(onClose).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+  });
+
+  it('escape and the backdrop close the modal', async () => {
+    const { onClose } = renderRow();
+    const dialog = screen.getByRole('dialog', { name: 'New order' });
+    fireEvent.click(dialog);
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 });

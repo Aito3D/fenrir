@@ -2,7 +2,8 @@
  * Tests for the PrintersPage component.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { QueryClient } from '@tanstack/react-query';
 import { act, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
@@ -1440,6 +1441,28 @@ describe('PrintersPage', () => {
         expect(screen.queryByText('X1 Carbon')).not.toBeInTheDocument();
         expect(screen.getByText('P1S Backup')).toBeInTheDocument();
       });
+    });
+
+    it('re-filters within a second when a live status write takes a printer offline', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', ({ params }) =>
+          HttpResponse.json({ ...mockPrinterStatus, connected: Number(params.id) !== 2 })
+        )
+      );
+      const spy = vi.spyOn(QueryClient.prototype, 'mount');
+      render(<PrintersPage />);
+      await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+      const client = spy.mock.contexts[spy.mock.contexts.length - 1] as QueryClient;
+      spy.mockRestore();
+
+      await selectToolbarDropdownOption(/all statuses/i, /^offline$/i);
+      await waitFor(() => expect(screen.queryByText('X1 Carbon')).not.toBeInTheDocument());
+
+      // The page batches status-driven recomputes to once a second; the last write must still land.
+      act(() => {
+        client.setQueryData(['printerStatus', 1], (old: object | undefined) => ({ ...old, connected: false }));
+      });
+      await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument(), { timeout: 2500 });
     });
 
     it('shows empty state when status filter matches nothing', async () => {

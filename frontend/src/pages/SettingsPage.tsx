@@ -723,7 +723,7 @@ export function SettingsPage() {
   const { data: virtualPrinterSettings } = useQuery({
     queryKey: ['virtual-printer-settings'],
     queryFn: virtualPrinterApi.getSettings,
-    refetchInterval: 10000,
+    refetchInterval: 60000,
   });
   const virtualPrinterRunning = virtualPrinterSettings?.status?.running ?? false;
 
@@ -731,7 +731,7 @@ export function SettingsPage() {
   const { data: spoolbuddyDevices } = useQuery({
     queryKey: ['spoolbuddy-devices'],
     queryFn: () => spoolbuddyApi.getDevices(),
-    refetchInterval: 15000,
+    refetchInterval: 60000,
   });
   const spoolbuddyDeviceCount = spoolbuddyDevices?.length ?? 0;
   const spoolbuddyAnyOnline = spoolbuddyDevices?.some((d) => d.online) ?? false;
@@ -740,12 +740,12 @@ export function SettingsPage() {
   const { data: obicoStatus } = useQuery({
     queryKey: ['obico-status'],
     queryFn: api.getObicoStatus,
-    refetchInterval: 15000,
+    refetchInterval: 60000,
   });
   const { data: octoEverywhereStatus } = useQuery({
     queryKey: ['octoeverywhere-status'],
     queryFn: api.getOctoEverywhereStatus,
-    refetchInterval: 10000,
+    refetchInterval: 60000,
   });
   const failureDetectionActive = !!(
     (obicoStatus?.is_running && obicoStatus?.enabled) ||

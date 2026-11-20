@@ -1246,7 +1246,9 @@ function StatusSummaryBar({ printers, smartPlugs }: { printers: Printer[] | unde
   const [cacheTick, setCacheTick] = useState(0);
   useEffect(() => {
     let pending = false;
-    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      // Plug statuses arrive through useQueries below; only printer statuses are read from the cache here.
+      if (event.query.queryKey[0] !== 'printerStatus') return;
       if (!pending) {
         pending = true;
         requestAnimationFrame(() => {
@@ -1268,7 +1270,7 @@ function StatusSummaryBar({ printers, smartPlugs }: { printers: Printer[] | unde
   }, [printers, smartPlugs]);
   const plugStatusQueries = useQueries({
     queries: printerPlugs.map(plug => ({
-      queryKey: ['smartPlugStatus', plug.id],
+      queryKey: ['smart-plug-status', plug.id],
       queryFn: () => api.getSmartPlugStatus(plug.id),
       refetchInterval: 10000,
     })),
@@ -2762,7 +2764,7 @@ function PrinterCard({
 
   // Fetch smart plug status if plug exists (faster refresh for energy monitoring)
   const { data: plugStatus } = useQuery({
-    queryKey: ['smartPlugStatus', smartPlug?.id],
+    queryKey: ['smart-plug-status', smartPlug?.id],
     queryFn: () => smartPlug ? api.getSmartPlugStatus(smartPlug.id) : null,
     enabled: !!smartPlug,
     refetchInterval: 10000, // 10 seconds for real-time power display
@@ -2968,7 +2970,7 @@ function PrinterCard({
     mutationFn: (action: 'on' | 'off') =>
       smartPlug ? api.controlSmartPlug(smartPlug.id, action) : Promise.reject('No plug'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['smartPlugStatus', smartPlug?.id] });
+      queryClient.invalidateQueries({ queryKey: ['smart-plug-status', smartPlug?.id] });
     },
   });
 
@@ -9193,7 +9195,7 @@ function PowerDropdownItem({
 
   // Fetch plug status
   const { data: plugStatus } = useQuery({
-    queryKey: ['smartPlugStatus', plug.id],
+    queryKey: ['smart-plug-status', plug.id],
     queryFn: () => api.getSmartPlugStatus(plug.id),
     refetchInterval: 10000,
   });
@@ -9853,17 +9855,27 @@ export function PrintersPage() {
 
   // Increment version counter whenever a printer status cache entry is updated so
   // filteredPrinters re-computes reactively on WebSocket-driven status changes.
+  // At most once a second: status writes land every ~100 ms while printing and each
+  // bump re-renders every card; the cards read live data from their own queries.
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
       if (
+        timer === null &&
         event.type === 'updated' &&
         Array.isArray(event.query.queryKey) &&
         event.query.queryKey[0] === 'printerStatus'
       ) {
-        setStatusCacheVersion(v => v + 1);
+        timer = setTimeout(() => {
+          timer = null;
+          setStatusCacheVersion(v => v + 1);
+        }, 1000);
       }
     });
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      if (timer !== null) clearTimeout(timer);
+    };
   }, [queryClient]);
 
   // Filter printers by search term, status, and location
