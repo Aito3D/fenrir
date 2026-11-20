@@ -32,13 +32,7 @@ import { ConnectionDiagnosticModal } from '../components/ConnectionDiagnostic';
 import { SystemHealthPanel } from '../components/SystemHealthPanel';
 import { formatDateTime, type TimeFormat } from '../utils/date';
 import { useUiSettings } from '../hooks/useUiSettings';
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
+import { formatFileSize } from '../utils/file';
 
 function StatCard({
   icon: Icon,
@@ -609,7 +603,7 @@ export function SystemInfoPage() {
               <StatCard
                 icon={FolderOpen}
                 label={t('system.fileManagerStorage', 'File Manager')}
-                value={formatBytes(libraryStats.total_size_bytes)}
+                value={formatFileSize(libraryStats.total_size_bytes)}
                 subValue={`${libraryStats.total_files} files, ${libraryStats.total_folders} folders`}
               />
             )}

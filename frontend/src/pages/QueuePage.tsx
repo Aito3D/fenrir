@@ -1962,7 +1962,7 @@ export function QueuePage() {
   const { data: activeQueue, isLoading } = useQuery({
     queryKey: ['queue', filterPrinter, activeStatuses],
     queryFn: () => api.getQueue(filterPrinter || undefined, activeStatuses ?? undefined),
-    refetchInterval: 5000,
+    refetchInterval: 60000, // fallback; queue_changed WS events refresh it live
     // A finished status selected in the filter leaves nothing active to show
     enabled: activeStatuses !== null,
   });
