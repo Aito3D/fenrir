@@ -8,7 +8,7 @@ Supports both SSDP discovery (for native installs) and subnet scanning (for Dock
 import logging
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.permissions import Permission
@@ -44,7 +44,7 @@ class SubnetScanRequest(BaseModel):
     """Request to scan a subnet."""
 
     subnet: str  # CIDR notation, e.g., "192.168.1.0/24"
-    timeout: float = 1.0  # Connection timeout per host
+    timeout: float = Field(default=1.0, gt=0, le=10)  # Connection timeout per host
 
 
 class SubnetScanStatus(BaseModel):
